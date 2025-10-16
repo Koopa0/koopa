@@ -8,19 +8,19 @@ Koopa 是一個基於 [Genkit](https://github.com/firebase/genkit) 的終端 AI 
 
 ### AI 能力
 
-- 🔄 **Streaming 即時回應** - 逐字顯示 AI 回應，打字機效果，提升互動體驗
-- 📝 **結構化輸出** - 支援 JSON 結構化資料輸出（Zod schema 驗證）
-- 🖼️ **多模態輸入** - 支援圖片分析、OCR、UI/UX 評估（JPEG/PNG/GIF/WebP）
-- 💬 **會話管理** - 持久化對話歷史，支援多會話（檔案存儲）
+- **Streaming 即時回應** - 逐字顯示 AI 回應，打字機效果，提升互動體驗
+- **結構化輸出** - 支援 JSON 結構化資料輸出（Zod schema 驗證）
+- **多模態輸入** - 支援圖片分析、OCR、UI/UX 評估（JPEG/PNG/GIF/WebP）
+- **會話管理** - 持久化對話歷史，支援多會話（檔案存儲）
 
 ### Genkit 完整整合
 
-- 🔌 **MCP 協議** - 連接外部工具伺服器，暴露為 MCP server（client & server）
-- ⚡ **8 個 AI Flows** - 預定義工作流程：程式碼審查、日誌分析、檔案分析、錯誤診斷等
-- 🔍 **RAG 檢索** - 向量嵌入（text-embedding-004）與語義搜尋（餘弦相似度）
-- 🔧 **9 個本地工具** - 檔案操作、系統命令、HTTP 請求、環境變數等
-- 🎯 **Dotprompt** - 靈活的 prompt 管理系統（koopa_system.prompt）
-- 📊 **Observability** - 內建 OpenTelemetry tracing 和 metrics
+- **MCP 協議** - 連接外部工具伺服器，暴露為 MCP server（client & server）
+- **8 個 AI Flows** - 預定義工作流程：程式碼審查、日誌分析、檔案分析、錯誤診斷等
+- **RAG 檢索** - 向量嵌入（text-embedding-004）與語義搜尋（餘弦相似度）
+- **9 個本地工具** - 檔案操作、系統命令、HTTP 請求、環境變數等
+- **Dotprompt** - 靈活的 prompt 管理系統（koopa_system.prompt）
+- **Observability** - 內建 OpenTelemetry tracing 和 metrics
 
 ## 快速開始
 
@@ -54,8 +54,8 @@ export GEMINI_API_KEY=your-api-key-here
 
 ```bash
 $ ./koopa
-🐢 Koopa v0.1.0 - 你的終端 AI 個人助理
-💡 輸入 /help 查看命令，Ctrl+D 或 /exit 退出
+Koopa v0.1.0 - 你的終端 AI 個人助理
+輸入 /help 查看命令，Ctrl+D 或 /exit 退出
 
 You> 你好
 Koopa> 你好！有什麼我可以幫忙的嗎？
@@ -77,7 +77,7 @@ You> 現在幾點？
 Koopa> 現在是 2025 年 10 月 16 日下午 12 點 30 分。
 
 You> /exit
-👋 再見！
+再見！
 ```
 
 #### 對話模式特殊命令
@@ -218,6 +218,3 @@ MIT
 有問題或建議歡迎開 Issue。
 
 ---
-
-**Phase 1 完成日期**：2025-10-16
-**狀態**：✅ 生產就緒（建議替換開發級組件後部署）
