@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/spf13/viper"
@@ -64,20 +63,15 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// 環境變數優先（使用 KOOPA_ 前綴避免衝突）
+	// 環境變數設定（使用 KOOPA_ 前綴）
+	// 明確綁定每個配置鍵到對應的環境變數
 	viper.SetEnvPrefix("KOOPA")
-	// 將配置名稱中的下劃線替換為環境變數中的下劃線（KOOPA_MODEL_NAME）
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	// 為所有配置鍵綁定環境變數（需要顯式綁定才能被 AutomaticEnv 讀取）
 	viper.BindEnv("model_name")
 	viper.BindEnv("temperature")
 	viper.BindEnv("max_tokens")
 	viper.BindEnv("max_history_messages")
 	viper.BindEnv("database_path")
 	viper.BindEnv("gemini_api_key")
-
-	viper.AutomaticEnv()
 
 	// 使用 Unmarshal 自動映射到結構體（類型安全）
 	var cfg Config
