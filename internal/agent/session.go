@@ -12,13 +12,176 @@ import (
 	"github.com/google/uuid"
 )
 
+// PersistedPart 穩定的持久化 Part 結構
+// 這個結構獨立於 Genkit 的內部實現，確保在 Genkit 版本升級時會話數據仍然有效
+type PersistedPart struct {
+	// Text 文字內容（如果這是文字 Part）
+	Text string `json:"text,omitempty"`
+
+	// Media 媒體內容（如果這是媒體 Part）
+	Media *struct {
+		ContentType string `json:"content_type"`
+		Data        string `json:"data"` // base64 編碼的資料或 URL
+	} `json:"media,omitempty"`
+
+	// ToolRequest 工具調用請求（如果這是工具調用 Part）
+	ToolRequest *struct {
+		Name  string         `json:"name"`
+		Input map[string]any `json:"input"`
+	} `json:"tool_request,omitempty"`
+
+	// ToolResponse 工具調用回應（如果這是工具回應 Part）
+	ToolResponse *struct {
+		Name   string         `json:"name"`
+		Output map[string]any `json:"output"`
+	} `json:"tool_response,omitempty"`
+}
+
+// PersistedMessage 穩定的持久化 Message 結構
+// 這個結構獨立於 Genkit 的內部實現，確保在 Genkit 版本升級時會話數據仍然有效
+type PersistedMessage struct {
+	Role    string           `json:"role"` // "user", "model", "system", "tool"
+	Content []*PersistedPart `json:"content"`
+}
+
 // SessionData 會話數據結構
 type SessionData struct {
-	ID        string         `json:"id"`
-	Messages  []*ai.Message  `json:"messages"`
-	Metadata  map[string]any `json:"metadata"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID        string              `json:"id"`
+	Messages  []*PersistedMessage `json:"messages"`
+	Metadata  map[string]any      `json:"metadata"`
+	CreatedAt time.Time           `json:"created_at"`
+	UpdatedAt time.Time           `json:"updated_at"`
+}
+
+// convertAIMessageToPersisted 將 ai.Message 轉換為 PersistedMessage
+func convertAIMessageToPersisted(msg *ai.Message) (*PersistedMessage, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("message 不能為 nil")
+	}
+
+	persisted := &PersistedMessage{
+		Role:    string(msg.Role),
+		Content: make([]*PersistedPart, 0, len(msg.Content)),
+	}
+
+	for _, part := range msg.Content {
+		persistedPart := &PersistedPart{}
+
+		// 處理文字 Part
+		if part.IsText() {
+			persistedPart.Text = part.Text
+		}
+
+		// 處理媒體 Part
+		if part.IsMedia() {
+			persistedPart.Media = &struct {
+				ContentType string `json:"content_type"`
+				Data        string `json:"data"`
+			}{
+				ContentType: part.ContentType,
+				Data:        part.Text, // 媒體 Part 的資料存儲在 Text 欄位中
+			}
+		}
+
+		// 處理工具請求 Part
+		if part.IsToolRequest() {
+			input, ok := part.ToolRequest.Input.(map[string]any)
+			if !ok {
+				// 如果無法轉換，嘗試使用空 map
+				input = make(map[string]any)
+			}
+			persistedPart.ToolRequest = &struct {
+				Name  string         `json:"name"`
+				Input map[string]any `json:"input"`
+			}{
+				Name:  part.ToolRequest.Name,
+				Input: input,
+			}
+		}
+
+		// 處理工具回應 Part
+		if part.IsToolResponse() {
+			output, ok := part.ToolResponse.Output.(map[string]any)
+			if !ok {
+				// 如果無法轉換，嘗試使用空 map
+				output = make(map[string]any)
+			}
+			persistedPart.ToolResponse = &struct {
+				Name   string         `json:"name"`
+				Output map[string]any `json:"output"`
+			}{
+				Name:   part.ToolResponse.Name,
+				Output: output,
+			}
+		}
+
+		persisted.Content = append(persisted.Content, persistedPart)
+	}
+
+	return persisted, nil
+}
+
+// convertPersistedToAIMessage 將 PersistedMessage 轉換回 ai.Message
+func convertPersistedToAIMessage(persisted *PersistedMessage) (*ai.Message, error) {
+	if persisted == nil {
+		return nil, fmt.Errorf("persisted message 不能為 nil")
+	}
+
+	parts := make([]*ai.Part, 0, len(persisted.Content))
+
+	for _, persistedPart := range persisted.Content {
+		// 重建文字 Part
+		if persistedPart.Text != "" && persistedPart.Media == nil &&
+			persistedPart.ToolRequest == nil && persistedPart.ToolResponse == nil {
+			parts = append(parts, ai.NewTextPart(persistedPart.Text))
+			continue
+		}
+
+		// 重建媒體 Part
+		if persistedPart.Media != nil {
+			parts = append(parts, ai.NewMediaPart(
+				persistedPart.Media.ContentType,
+				persistedPart.Media.Data,
+			))
+			continue
+		}
+
+		// 重建工具請求 Part
+		if persistedPart.ToolRequest != nil {
+			parts = append(parts, ai.NewToolRequestPart(&ai.ToolRequest{
+				Name:  persistedPart.ToolRequest.Name,
+				Input: persistedPart.ToolRequest.Input,
+			}))
+			continue
+		}
+
+		// 重建工具回應 Part
+		if persistedPart.ToolResponse != nil {
+			parts = append(parts, ai.NewToolResponsePart(&ai.ToolResponse{
+				Name:   persistedPart.ToolResponse.Name,
+				Output: persistedPart.ToolResponse.Output,
+			}))
+			continue
+		}
+	}
+
+	// 根據角色創建對應的 Message
+	var msg *ai.Message
+	switch persisted.Role {
+	case "user":
+		msg = ai.NewUserMessage(parts...)
+	case "model":
+		msg = ai.NewModelMessage(parts...)
+	case "system":
+		msg = ai.NewSystemMessage(parts...)
+	case "tool":
+		// tool 角色的訊息通常是 model 角色的一部分
+		// 如果 Genkit 沒有 NewToolMessage，我們使用 model 角色
+		msg = ai.NewModelMessage(parts...)
+	default:
+		return nil, fmt.Errorf("未知的訊息角色: %s", persisted.Role)
+	}
+	return msg, nil
 }
 
 // SessionStore 會話存儲接口
@@ -122,8 +285,10 @@ func (s *FileSessionStore) List(ctx context.Context) ([]string, error) {
 
 // SessionManager 會話管理器
 type SessionManager struct {
-	store         SessionStore
+	store          SessionStore
 	currentSession *SessionData
+	// 快取當前會話的 ai.Message，避免重複轉換
+	cachedMessages []*ai.Message
 }
 
 // NewSessionManager 創建新的會話管理器
@@ -135,9 +300,15 @@ func NewSessionManager(store SessionStore) *SessionManager {
 
 // CreateSession 創建新會話
 func (m *SessionManager) CreateSession(ctx context.Context, systemMessage *ai.Message) (*SessionData, error) {
+	// 將 ai.Message 轉換為持久化格式
+	persistedMsg, err := convertAIMessageToPersisted(systemMessage)
+	if err != nil {
+		return nil, fmt.Errorf("無法轉換系統訊息: %w", err)
+	}
+
 	session := &SessionData{
 		ID:        uuid.New().String(),
-		Messages:  []*ai.Message{systemMessage},
+		Messages:  []*PersistedMessage{persistedMsg},
 		Metadata:  make(map[string]any),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -148,6 +319,7 @@ func (m *SessionManager) CreateSession(ctx context.Context, systemMessage *ai.Me
 	}
 
 	m.currentSession = session
+	m.cachedMessages = []*ai.Message{systemMessage}
 	return session, nil
 }
 
@@ -159,6 +331,8 @@ func (m *SessionManager) LoadSession(ctx context.Context, sessionID string) (*Se
 	}
 
 	m.currentSession = session
+	// 清除快取，會在 GetMessages 時重新轉換
+	m.cachedMessages = nil
 	return session, nil
 }
 
@@ -182,7 +356,17 @@ func (m *SessionManager) AddMessage(message *ai.Message) error {
 		return fmt.Errorf("沒有當前會話")
 	}
 
-	m.currentSession.Messages = append(m.currentSession.Messages, message)
+	// 轉換為持久化格式
+	persistedMsg, err := convertAIMessageToPersisted(message)
+	if err != nil {
+		return fmt.Errorf("無法轉換訊息: %w", err)
+	}
+
+	m.currentSession.Messages = append(m.currentSession.Messages, persistedMsg)
+	// 同時更新快取
+	if m.cachedMessages != nil {
+		m.cachedMessages = append(m.cachedMessages, message)
+	}
 	return nil
 }
 
@@ -191,7 +375,26 @@ func (m *SessionManager) GetMessages() []*ai.Message {
 	if m.currentSession == nil {
 		return nil
 	}
-	return m.currentSession.Messages
+
+	// 如果已有快取，直接返回
+	if m.cachedMessages != nil && len(m.cachedMessages) == len(m.currentSession.Messages) {
+		return m.cachedMessages
+	}
+
+	// 將持久化格式轉換回 ai.Message
+	messages := make([]*ai.Message, 0, len(m.currentSession.Messages))
+	for _, persistedMsg := range m.currentSession.Messages {
+		msg, err := convertPersistedToAIMessage(persistedMsg)
+		if err != nil {
+			// 記錄錯誤但繼續處理其他訊息
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	// 更新快取
+	m.cachedMessages = messages
+	return messages
 }
 
 // SetMetadata 設置會話元數據
@@ -218,6 +421,7 @@ func (m *SessionManager) GetMetadata(key string) (any, bool) {
 func (m *SessionManager) DeleteSession(ctx context.Context, sessionID string) error {
 	if m.currentSession != nil && m.currentSession.ID == sessionID {
 		m.currentSession = nil
+		m.cachedMessages = nil
 	}
 
 	return m.store.Delete(ctx, sessionID)
@@ -231,4 +435,5 @@ func (m *SessionManager) ListSessions(ctx context.Context) ([]string, error) {
 // ClearCurrentSession 清除當前會話（不保存）
 func (m *SessionManager) ClearCurrentSession() {
 	m.currentSession = nil
+	m.cachedMessages = nil
 }

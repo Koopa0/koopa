@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
@@ -39,15 +41,8 @@ func DefineFlows(a *Agent) {
 
 	genkit.DefineFlow(a.genkitInstance, "analyzeFile",
 		func(ctx context.Context, input FileAnalysisInput) (FileAnalysisOutput, error) {
-			// 讀取檔案內容
-			content, err := genkit.Run(ctx, "read-file",
-				func() (string, error) {
-					data, err := os.ReadFile(input.FilePath)
-					if err != nil {
-						return "", err
-					}
-					return string(data), nil
-				})
+			// 讀取檔案內容（使用共用函數）
+			content, err := readFileWithLimit(ctx, input.FilePath, 0) // 0 表示無限制
 			if err != nil {
 				return FileAnalysisOutput{}, err
 			}
@@ -82,15 +77,8 @@ func DefineFlows(a *Agent) {
 
 	genkit.DefineFlow(a.genkitInstance, "reviewCode",
 		func(ctx context.Context, filePath string) (CodeReviewOutput, error) {
-			// 讀取程式碼
-			code, err := genkit.Run(ctx, "read-code",
-				func() (string, error) {
-					data, err := os.ReadFile(filePath)
-					if err != nil {
-						return "", err
-					}
-					return string(data), nil
-				})
+			// 讀取程式碼（使用共用函數）
+			code, err := readFileWithLimit(ctx, filePath, 0) // 0 表示無限制
 			if err != nil {
 				return CodeReviewOutput{}, err
 			}
@@ -120,19 +108,8 @@ func DefineFlows(a *Agent) {
 
 	genkit.DefineFlow(a.genkitInstance, "analyzeLogs",
 		func(ctx context.Context, logPath string) (LogAnalysisOutput, error) {
-			// 讀取日誌
-			logs, err := genkit.Run(ctx, "read-logs",
-				func() (string, error) {
-					data, err := os.ReadFile(logPath)
-					if err != nil {
-						return "", err
-					}
-					// 限制日誌大小
-					if len(data) > 10000 {
-						return string(data[len(data)-10000:]), nil
-					}
-					return string(data), nil
-				})
+			// 讀取日誌（限制大小，取最後 10KB）
+			logs, err := readFileWithLimit(ctx, logPath, 10000)
 			if err != nil {
 				return LogAnalysisOutput{}, err
 			}
@@ -155,18 +132,8 @@ func DefineFlows(a *Agent) {
 	// 5. 文件摘要 Flow - 快速總結文件重點
 	genkit.DefineFlow(a.genkitInstance, "summarizeDocument",
 		func(ctx context.Context, filePath string) (string, error) {
-			content, err := genkit.Run(ctx, "read-document",
-				func() (string, error) {
-					data, err := os.ReadFile(filePath)
-					if err != nil {
-						return "", err
-					}
-					// 限制長度
-					if len(data) > 5000 {
-						return string(data[:5000]) + "...", nil
-					}
-					return string(data), nil
-				})
+			// 讀取文件（限制大小，取前 5KB）
+			content, err := readFileWithLimit(ctx, filePath, 5000)
 			if err != nil {
 				return "", err
 			}
@@ -264,4 +231,40 @@ func DefineFlows(a *Agent) {
 // GetAllFlows 獲取所有已定義的 Flows
 func (a *Agent) GetAllFlows() []api.Action {
 	return genkit.ListFlows(a.genkitInstance)
+}
+
+// readFileWithLimit 讀取檔案內容並限制大小（可組合的輔助函數）
+// maxBytes: 最大字節數，0 表示無限制
+// 對於日誌檔案：返回最後 N 個字節（尾部）
+// 對於一般檔案：返回前 N 個字節（開頭）
+func readFileWithLimit(ctx context.Context, filePath string, maxBytes int) (string, error) {
+	return genkit.Run(ctx, fmt.Sprintf("read-file-%s", filePath),
+		func() (string, error) {
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return "", fmt.Errorf("無法讀取檔案 %s: %w", filePath, err)
+			}
+
+			// 無限制
+			if maxBytes <= 0 || len(data) <= maxBytes {
+				return string(data), nil
+			}
+
+			// 日誌檔案取尾部（最新的內容）
+			// 通過檔案名判斷：包含 "log" 或 ".log" 的視為日誌
+			isLogFile := containsIgnoreCase(filePath, "log")
+
+			if isLogFile {
+				// 取最後 maxBytes 字節
+				return string(data[len(data)-maxBytes:]), nil
+			} else {
+				// 一般檔案取前 maxBytes 字節
+				return string(data[:maxBytes]) + "...", nil
+			}
+		})
+}
+
+// containsIgnoreCase 不區分大小寫的字串包含檢查
+func containsIgnoreCase(str, substr string) bool {
+	return strings.Contains(strings.ToLower(str), strings.ToLower(substr))
 }
