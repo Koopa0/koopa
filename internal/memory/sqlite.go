@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // SQLiteMemory 實現基於 SQLite 的記憶系統
@@ -16,7 +16,7 @@ type SQLiteMemory struct {
 
 // NewSQLiteMemory 創建新的 SQLite 記憶實例
 func NewSQLiteMemory(dbPath string) (*SQLiteMemory, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

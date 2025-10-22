@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/spf13/viper"
@@ -11,15 +13,18 @@ import (
 // Config 存儲應用配置
 type Config struct {
 	// AI 配置
-	ModelName   string
-	Temperature float32
-	MaxTokens   int
+	ModelName   string  `mapstructure:"model_name"`
+	Temperature float32 `mapstructure:"temperature"`
+	MaxTokens   int     `mapstructure:"max_tokens"`
+
+	// 對話歷史配置
+	MaxHistoryMessages int `mapstructure:"max_history_messages"` // 最大保留的對話訊息數（0 表示無限制）
 
 	// 儲存配置
-	DatabasePath string
+	DatabasePath string `mapstructure:"database_path"`
 
 	// API Keys
-	GeminiAPIKey string
+	GeminiAPIKey string `mapstructure:"gemini_api_key"`
 }
 
 // Load 載入配置
@@ -48,6 +53,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("model_name", "gemini-2.5-flash")
 	viper.SetDefault("temperature", 0.7)
 	viper.SetDefault("max_tokens", 2048)
+	viper.SetDefault("max_history_messages", 50) // 預設保留最近 50 則訊息（約 25 輪對話）
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
 
 	// 讀取配置檔案（如果存在）
@@ -58,22 +64,28 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// 環境變數優先
+	// 環境變數優先（使用 KOOPA_ 前綴避免衝突）
+	viper.SetEnvPrefix("KOOPA")
+	// 將配置名稱中的下劃線替換為環境變數中的下劃線（KOOPA_MODEL_NAME）
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// 為所有配置鍵綁定環境變數（需要顯式綁定才能被 AutomaticEnv 讀取）
+	viper.BindEnv("model_name")
+	viper.BindEnv("temperature")
+	viper.BindEnv("max_tokens")
+	viper.BindEnv("max_history_messages")
+	viper.BindEnv("database_path")
+	viper.BindEnv("gemini_api_key")
+
 	viper.AutomaticEnv()
-	if err := viper.BindEnv("gemini_api_key", "GEMINI_API_KEY"); err != nil {
-		return nil, err
+
+	// 使用 Unmarshal 自動映射到結構體（類型安全）
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("無法解析配置: %w", err)
 	}
 
-	// 構建 Config
-	cfg := &Config{
-		ModelName:    viper.GetString("model_name"),
-		Temperature:  float32(viper.GetFloat64("temperature")),
-		MaxTokens:    viper.GetInt("max_tokens"),
-		DatabasePath: viper.GetString("database_path"),
-		GeminiAPIKey: viper.GetString("gemini_api_key"),
-	}
-
-	return cfg, nil
+	return &cfg, nil
 }
 
 // GetPlugins 返回 Genkit plugins

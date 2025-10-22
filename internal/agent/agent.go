@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -30,6 +31,12 @@ type Agent struct {
 func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
+	}
+
+	// Genkit 的 GoogleAI 插件需要從環境變數讀取 API key
+	// 確保環境變數已設置（支援 KOOPA_GEMINI_API_KEY）
+	if cfg.GeminiAPIKey != "" {
+		os.Setenv("GEMINI_API_KEY", cfg.GeminiAPIKey)
 	}
 
 	// 初始化 Genkit（啟用 Dotprompt 支援）
@@ -156,6 +163,9 @@ func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
 	// 將 AI 回應添加到歷史
 	a.messages = append(a.messages, response.Message)
 
+	// 檢查並限制歷史長度
+	a.trimHistoryIfNeeded()
+
 	return response.Text(), nil
 }
 
@@ -190,6 +200,9 @@ func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback
 
 	// 將 AI 回應添加到歷史
 	a.messages = append(a.messages, response.Message)
+
+	// 檢查並限制歷史長度
+	a.trimHistoryIfNeeded()
 
 	return response.Text(), nil
 }
@@ -346,8 +359,8 @@ func (a *Agent) LoadSession(ctx context.Context, sessionID string) (*SessionData
 		return nil, err
 	}
 
-	// 同步會話消息到 Agent
-	a.messages = session.Messages
+	// 同步會話消息到 Agent（使用轉換函式）
+	a.messages = a.sessionManager.GetMessages()
 
 	return session, nil
 }
@@ -358,9 +371,16 @@ func (a *Agent) SaveSession(ctx context.Context) error {
 		return fmt.Errorf("會話管理器未啟用")
 	}
 
-	// 同步 Agent 的消息到會話
+	// 同步 Agent 的消息到會話（使用 SessionManager 的方法）
+	// 先清除當前會話的消息
 	if session := a.sessionManager.GetCurrentSession(); session != nil {
-		session.Messages = a.messages
+		// 清空並重新添加所有消息
+		session.Messages = []*PersistedMessage{}
+		for _, msg := range a.messages {
+			if err := a.sessionManager.AddMessage(msg); err != nil {
+				return fmt.Errorf("同步消息失敗: %w", err)
+			}
+		}
 	}
 
 	return a.sessionManager.SaveCurrentSession(ctx)
@@ -393,4 +413,31 @@ func (a *Agent) DeleteSession(ctx context.Context, sessionID string) error {
 // GetSessionManager 獲取會話管理器
 func (a *Agent) GetSessionManager() *SessionManager {
 	return a.sessionManager
+}
+
+// trimHistoryIfNeeded 檢查並限制對話歷史長度（滑動窗口機制）
+// 策略：保留 system message + 最近的 N 則訊息
+func (a *Agent) trimHistoryIfNeeded() {
+	maxMessages := a.config.MaxHistoryMessages
+
+	// 0 表示無限制
+	if maxMessages <= 0 {
+		return
+	}
+
+	// +1 是因為要算上 system message
+	if len(a.messages) <= maxMessages+1 {
+		return
+	}
+
+	// 保留 system message（第一則）和最近的 maxMessages 則訊息
+	// 計算要保留的起始位置
+	keepFromIndex := len(a.messages) - maxMessages
+
+	// 重建 messages：system message + 最近的 N 則
+	newMessages := make([]*ai.Message, 0, maxMessages+1)
+	newMessages = append(newMessages, a.systemMessage) // 保留 system message
+	newMessages = append(newMessages, a.messages[keepFromIndex:]...)
+
+	a.messages = newMessages
 }

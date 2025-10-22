@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"container/heap"
 	"context"
 	"fmt"
 	"math"
@@ -18,7 +19,36 @@ type VectorDocument struct {
 	Metadata  map[string]any `json:"metadata"`
 }
 
-// SimpleVectorStore 簡單的記憶體向量存儲（用於演示）
+// docWithScore 用於排序的文檔與分數結構
+type docWithScore struct {
+	doc   *VectorDocument
+	score float64
+}
+
+// minHeap 實現最小堆，用於高效的 Top-K 檢索
+type minHeap []docWithScore
+
+func (h minHeap) Len() int           { return len(h) }
+func (h minHeap) Less(i, j int) bool { return h[i].score < h[j].score }
+func (h minHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *minHeap) Push(x interface{}) {
+	*h = append(*h, x.(docWithScore))
+}
+
+func (h *minHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
+// SimpleVectorStore 簡單的記憶體向量存儲
+//
+// 注意：這是一個僅供演示的記憶體實現，不適用於生產環境。
+// 在生產環境中，請使用專門的向量資料庫（如 ChromaDB、Pinecone、Weaviate 等）
+// 的 Genkit 插件來實現高效能和可擴展的向量檢索。
 type SimpleVectorStore struct {
 	mu        sync.RWMutex
 	documents []*VectorDocument
@@ -91,35 +121,29 @@ func (s *SimpleVectorStore) Search(ctx context.Context, query string, topK int) 
 
 	queryEmbedding := resp.Embeddings[0].Embedding
 
-	// 計算相似度並排序
-	type docWithScore struct {
-		doc   *VectorDocument
-		score float64
-	}
+	// 使用最小堆來高效地找出 Top-K 最相似的文檔
+	// 時間複雜度：O(N log K)，其中 N 是文檔總數，K 是返回的結果數
+	h := &minHeap{}
+	heap.Init(h)
 
-	scored := make([]docWithScore, len(s.documents))
-	for i, doc := range s.documents {
+	for _, doc := range s.documents {
 		similarity := cosineSimilarity(queryEmbedding, doc.Embedding)
-		scored[i] = docWithScore{doc: doc, score: similarity}
-	}
 
-	// 簡單的排序（按相似度降序）
-	for i := 0; i < len(scored)-1; i++ {
-		for j := i + 1; j < len(scored); j++ {
-			if scored[j].score > scored[i].score {
-				scored[i], scored[j] = scored[j], scored[i]
-			}
+		if h.Len() < topK {
+			// 堆未滿，直接加入
+			heap.Push(h, docWithScore{doc: doc, score: similarity})
+		} else if similarity > (*h)[0].score {
+			// 當前文檔比堆頂（最小值）更相似，替換堆頂
+			heap.Pop(h)
+			heap.Push(h, docWithScore{doc: doc, score: similarity})
 		}
 	}
 
-	// 取前 topK 個結果
-	if topK > len(scored) {
-		topK = len(scored)
-	}
-
-	results := make([]*ai.Document, topK)
-	for i := 0; i < topK; i++ {
-		results[i] = ai.DocumentFromText(scored[i].doc.Content, scored[i].doc.Metadata)
+	// 從堆中提取結果並反轉順序（從最相似到最不相似）
+	results := make([]*ai.Document, h.Len())
+	for i := h.Len() - 1; i >= 0; i-- {
+		item := heap.Pop(h).(docWithScore)
+		results[i] = ai.DocumentFromText(item.doc.Content, item.doc.Metadata)
 	}
 
 	return results, nil

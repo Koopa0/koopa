@@ -43,11 +43,11 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 	// 檢查 API Key
 	if cfg.GeminiAPIKey == "" {
-		fmt.Fprintln(os.Stderr, "❌ 錯誤：未設定 GEMINI_API_KEY 環境變數")
+		fmt.Fprintln(os.Stderr, "❌ 錯誤：未設定 KOOPA_GEMINI_API_KEY 環境變數")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "請執行：")
-		fmt.Fprintln(os.Stderr, "  export GEMINI_API_KEY=your-api-key")
-		return fmt.Errorf("GEMINI_API_KEY not set")
+		fmt.Fprintln(os.Stderr, "  export KOOPA_GEMINI_API_KEY=your-api-key")
+		return fmt.Errorf("KOOPA_GEMINI_API_KEY not set")
 	}
 
 	// 創建 Agent

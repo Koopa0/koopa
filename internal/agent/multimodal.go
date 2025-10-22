@@ -18,12 +18,13 @@ type ImageInput struct {
 	Prompt    string `json:"prompt"`
 }
 
-// analyzeImage 分析圖片內容
-func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt string) (string, error) {
+// createImagePart 讀取圖片檔案並創建 ai.Part
+// 這個輔助函式封裝了「讀取檔案 -> 判斷 media type -> base64 編碼」的通用邏輯
+func createImagePart(imagePath string) (*ai.Part, error) {
 	// 讀取圖片檔案
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
-		return "", fmt.Errorf("無法讀取圖片: %w", err)
+		return nil, fmt.Errorf("無法讀取圖片 %s: %w", imagePath, err)
 	}
 
 	// 判斷圖片類型
@@ -39,15 +40,26 @@ func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt strin
 	case ".webp":
 		mediaType = "image/webp"
 	default:
-		return "", fmt.Errorf("不支援的圖片格式: %s", ext)
+		return nil, fmt.Errorf("不支援的圖片格式: %s", ext)
 	}
 
 	// 將圖片轉換為 base64
 	base64Image := base64.StdEncoding.EncodeToString(imageData)
 
+	return ai.NewMediaPart(mediaType, "data:"+mediaType+";base64,"+base64Image), nil
+}
+
+// analyzeImage 分析圖片內容
+func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt string) (string, error) {
+	// 使用輔助函式創建圖片 Part
+	imagePart, err := createImagePart(imagePath)
+	if err != nil {
+		return "", err
+	}
+
 	// 構建包含圖片的訊息
 	userMessage := ai.NewUserMessage(
-		ai.NewMediaPart(mediaType, "data:"+mediaType+";base64,"+base64Image),
+		imagePart,
 		ai.NewTextPart(prompt),
 	)
 
@@ -75,30 +87,13 @@ func (a *Agent) AnalyzeMultipleImages(ctx context.Context, imagePaths []string, 
 	// 構建包含多個圖片的 parts
 	parts := make([]*ai.Part, 0, len(imagePaths)+1)
 
-	// 添加所有圖片
+	// 添加所有圖片，使用輔助函式
 	for i, imagePath := range imagePaths {
-		imageData, err := os.ReadFile(imagePath)
+		imagePart, err := createImagePart(imagePath)
 		if err != nil {
-			return "", fmt.Errorf("無法讀取第 %d 張圖片: %w", i+1, err)
+			return "", fmt.Errorf("處理第 %d 張圖片失敗: %w", i+1, err)
 		}
-
-		ext := strings.ToLower(filepath.Ext(imagePath))
-		var mediaType string
-		switch ext {
-		case ".jpg", ".jpeg":
-			mediaType = "image/jpeg"
-		case ".png":
-			mediaType = "image/png"
-		case ".gif":
-			mediaType = "image/gif"
-		case ".webp":
-			mediaType = "image/webp"
-		default:
-			return "", fmt.Errorf("第 %d 張圖片格式不支援: %s", i+1, ext)
-		}
-
-		base64Image := base64.StdEncoding.EncodeToString(imageData)
-		parts = append(parts, ai.NewMediaPart(mediaType, "data:"+mediaType+";base64,"+base64Image))
+		parts = append(parts, imagePart)
 	}
 
 	// 添加文字提示
@@ -150,27 +145,14 @@ type ScreenshotAnalysis struct {
 }
 
 func (a *Agent) AnalyzeScreenshot(ctx context.Context, screenshotPath string) (*ScreenshotAnalysis, error) {
-	// 讀取截圖
-	imageData, err := os.ReadFile(screenshotPath)
+	// 使用輔助函式創建圖片 Part
+	imagePart, err := createImagePart(screenshotPath)
 	if err != nil {
-		return nil, fmt.Errorf("無法讀取截圖: %w", err)
+		return nil, fmt.Errorf("處理截圖失敗: %w", err)
 	}
-
-	ext := strings.ToLower(filepath.Ext(screenshotPath))
-	var mediaType string
-	switch ext {
-	case ".jpg", ".jpeg":
-		mediaType = "image/jpeg"
-	case ".png":
-		mediaType = "image/png"
-	default:
-		return nil, fmt.Errorf("不支援的截圖格式: %s", ext)
-	}
-
-	base64Image := base64.StdEncoding.EncodeToString(imageData)
 
 	userMessage := ai.NewUserMessage(
-		ai.NewMediaPart(mediaType, "data:"+mediaType+";base64,"+base64Image),
+		imagePart,
 		ai.NewTextPart("請分析這個螢幕截圖的 UI/UX 設計，包括元素、佈局、配色方案、改進建議和無障礙性。"),
 	)
 
