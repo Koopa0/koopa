@@ -15,97 +15,97 @@ import (
 	"github.com/koopa0/koopa/internal/security"
 )
 
-// cmdValidator 命令驗證器（使用統一的安全模塊）
+// cmdValidator command validator (uses unified security module)
 var cmdValidator = security.NewCommandValidator()
 
-// httpValidator HTTP 請求驗證器（防止 SSRF 攻擊）
+// httpValidator HTTP request validator (prevents SSRF attacks)
 var httpValidator = security.NewHTTPValidator()
 
-// envValidator 環境變數驗證器（防止敏感信息泄露）
+// envValidator environment variable validator (prevents sensitive information leakage)
 var envValidator = security.NewEnvValidator()
 
-// registerTools 註冊所有可用的工具
+// registerTools registers all available tools
 func registerTools(g *genkit.Genkit) {
-	// 1. 獲取當前時間
+	// 1. Get current time
 	genkit.DefineTool(
-		g, "currentTime", "獲取當前時間",
+		g, "currentTime", "Get current time",
 		func(ctx *ai.ToolContext, input struct{}) (string, error) {
 			now := time.Now()
 			return now.Format("2006-01-02 15:04:05 (Monday)"), nil
 		},
 	)
 
-	// 2. 讀取檔案
+	// 2. Read file
 	genkit.DefineTool(
-		g, "readFile", "讀取檔案內容",
+		g, "readFile", "Read file content",
 		func(ctx *ai.ToolContext, input struct {
-			Path string `json:"path" jsonschema_description:"要讀取的檔案路徑"`
+			Path string `json:"path" jsonschema_description:"File path to read"`
 		},
 		) (string, error) {
-			// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+			// Path security validation (prevent path traversal attacks CWE-22)
 			safePath, err := pathValidator.ValidatePath(input.Path)
 			if err != nil {
-				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+				return "", fmt.Errorf("path validation failed: %w", err)
 			}
 
 			content, err := os.ReadFile(safePath)
 			if err != nil {
-				return "", fmt.Errorf("無法讀取檔案: %w", err)
+				return "", fmt.Errorf("unable to read file: %w", err)
 			}
 			return string(content), nil
 		},
 	)
 
-	// 3. 寫入檔案
+	// 3. Write file
 	genkit.DefineTool(
-		g, "writeFile", "寫入內容到檔案",
+		g, "writeFile", "Write content to file",
 		func(ctx *ai.ToolContext, input struct {
-			Path    string `json:"path" jsonschema_description:"要寫入的檔案路徑"`
-			Content string `json:"content" jsonschema_description:"要寫入的內容"`
+			Path    string `json:"path" jsonschema_description:"File path to write to"`
+			Content string `json:"content" jsonschema_description:"Content to write"`
 		},
 		) (string, error) {
-			// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+			// Path security validation (prevent path traversal attacks CWE-22)
 			safePath, err := pathValidator.ValidatePath(input.Path)
 			if err != nil {
-				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+				return "", fmt.Errorf("path validation failed: %w", err)
 			}
 
-			// 確保目錄存在（使用 0750 權限提高安全性）
+			// Ensure directory exists (use 0750 permission for better security)
 			dir := filepath.Dir(safePath)
 			if err := os.MkdirAll(dir, 0o750); err != nil {
-				return "", fmt.Errorf("無法創建目錄: %w", err)
+				return "", fmt.Errorf("unable to create directory: %w", err)
 			}
 
 			if err = os.WriteFile(safePath, []byte(input.Content), 0o600); err != nil {
-				return "", fmt.Errorf("無法寫入檔案: %w", err)
+				return "", fmt.Errorf("unable to write file: %w", err)
 			}
-			return fmt.Sprintf("成功寫入檔案: %s", safePath), nil
+			return fmt.Sprintf("Successfully wrote file: %s", safePath), nil
 		},
 	)
 
-	// 4. 列出目錄內容
+	// 4. List directory contents
 	genkit.DefineTool(
-		g, "listFiles", "列出目錄中的檔案和子目錄",
+		g, "listFiles", "List files and subdirectories in a directory",
 		func(ctx *ai.ToolContext, input struct {
-			Path string `json:"path" jsonschema_description:"要列出的目錄路徑"`
+			Path string `json:"path" jsonschema_description:"Directory path to list"`
 		},
 		) (string, error) {
-			// 路徑安全驗證
+			// Path security validation
 			safePath, err := pathValidator.ValidatePath(input.Path)
 			if err != nil {
-				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+				return "", fmt.Errorf("path validation failed: %w", err)
 			}
 
 			entries, err := os.ReadDir(safePath)
 			if err != nil {
-				return "", fmt.Errorf("無法讀取目錄: %w", err)
+				return "", fmt.Errorf("unable to read directory: %w", err)
 			}
 
 			var result []string
 			for _, entry := range entries {
-				prefix := "[檔案]"
+				prefix := "[File]"
 				if entry.IsDir() {
-					prefix = "[目錄]"
+					prefix = "[Directory]"
 				}
 				result = append(result, fmt.Sprintf("%s %s", prefix, entry.Name()))
 			}
@@ -114,81 +114,81 @@ func registerTools(g *genkit.Genkit) {
 		},
 	)
 
-	// 5. 刪除檔案
+	// 5. Delete file
 	genkit.DefineTool(
-		g, "deleteFile", "刪除指定的檔案",
+		g, "deleteFile", "Delete specified file",
 		func(ctx *ai.ToolContext, input struct {
-			Path string `json:"path" jsonschema_description:"要刪除的檔案路徑"`
+			Path string `json:"path" jsonschema_description:"File path to delete"`
 		},
 		) (string, error) {
-			// 路徑安全驗證
+			// Path security validation
 			safePath, err := pathValidator.ValidatePath(input.Path)
 			if err != nil {
-				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+				return "", fmt.Errorf("path validation failed: %w", err)
 			}
 
 			if err = os.Remove(safePath); err != nil {
-				return "", fmt.Errorf("無法刪除檔案: %w", err)
+				return "", fmt.Errorf("unable to delete file: %w", err)
 			}
-			return fmt.Sprintf("成功刪除檔案: %s", safePath), nil
+			return fmt.Sprintf("Successfully deleted file: %s", safePath), nil
 		},
 	)
 
-	// 6. 執行系統命令
+	// 6. Execute system command
 	genkit.DefineTool(
-		g, "executeCommand", "執行系統命令（謹慎使用，會自動檢查危險命令）",
+		g, "executeCommand", "Execute system command (use with caution, dangerous commands are automatically checked)",
 		func(ctx *ai.ToolContext, input struct {
-			Command string   `json:"command" jsonschema_description:"要執行的命令"`
-			Args    []string `json:"args,omitempty" jsonschema_description:"命令參數（可選）"`
+			Command string   `json:"command" jsonschema_description:"Command to execute"`
+			Args    []string `json:"args,omitempty" jsonschema_description:"Command arguments (optional)"`
 		},
 		) (string, error) {
-			// 命令安全驗證（防止命令注入攻擊 CWE-78）
+			// Command security validation (prevent command injection attacks CWE-78)
 			if err := cmdValidator.ValidateCommand(input.Command, input.Args); err != nil {
-				return "", fmt.Errorf("⚠️  安全警告：拒絕執行危險命令\n命令: %s %s\n原因: %w\n如需執行，請使用者手動在終端執行",
+				return "", fmt.Errorf("⚠️  Security warning: Dangerous command rejected\nCommand: %s %s\nReason: %w\nIf you need to execute this, please run it manually in the terminal",
 					input.Command, strings.Join(input.Args, " "), err)
 			}
 
 			cmd := exec.Command(input.Command, input.Args...)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				return "", fmt.Errorf("命令執行失敗: %w\n輸出: %s", err, string(output))
+				return "", fmt.Errorf("command execution failed: %w\nOutput: %s", err, string(output))
 			}
 			return string(output), nil
 		},
 	)
 
-	// 7. HTTP GET 請求（帶有 SSRF 防護）
+	// 7. HTTP GET request (with SSRF protection)
 	genkit.DefineTool(
-		g, "httpGet", "發送 HTTP GET 請求（已啟用 SSRF 防護）",
+		g, "httpGet", "Send HTTP GET request (SSRF protection enabled)",
 		func(ctx *ai.ToolContext, input struct {
-			URL string `json:"url" jsonschema_description:"要請求的 URL"`
+			URL string `json:"url" jsonschema_description:"URL to request"`
 		},
 		) (string, error) {
-			// URL 安全驗證（防止 SSRF 攻擊）
+			// URL security validation (prevent SSRF attacks)
 			if err := httpValidator.ValidateURL(input.URL); err != nil {
-				return "", fmt.Errorf("⚠️  安全警告：URL 驗證失敗\n原因: %w\n這可能是嘗試訪問內部網絡或元數據服務", err)
+				return "", fmt.Errorf("⚠️  Security warning: URL validation failed\nReason: %w\nThis may be an attempt to access internal network or metadata services", err)
 			}
 
-			// 使用安全配置的 HTTP 客戶端（帶超時和重定向限制）
+			// Use securely configured HTTP client (with timeout and redirect limits)
 			client := httpValidator.CreateSafeHTTPClient()
 			resp, err := client.Get(input.URL)
 			if err != nil {
-				return "", fmt.Errorf("HTTP 請求失敗: %w", err)
+				return "", fmt.Errorf("HTTP request failed: %w", err)
 			}
 			defer resp.Body.Close()
 
-			// 限制回應大小（防止資源耗盡）
+			// Limit response size (prevent resource exhaustion)
 			maxSize := httpValidator.GetMaxResponseSize()
 			limitedReader := io.LimitReader(resp.Body, maxSize)
 
 			body, err := io.ReadAll(limitedReader)
 			if err != nil {
-				return "", fmt.Errorf("讀取回應失敗: %w", err)
+				return "", fmt.Errorf("failed to read response: %w", err)
 			}
 
-			// 檢查是否超過大小限制
+			// Check if size limit exceeded
 			if int64(len(body)) >= maxSize {
-				return "", fmt.Errorf("回應大小超過限制（最大 %d MB）", maxSize/(1024*1024))
+				return "", fmt.Errorf("response size exceeds limit (max %d MB)", maxSize/(1024*1024))
 			}
 
 			result := map[string]any{
@@ -201,49 +201,49 @@ func registerTools(g *genkit.Genkit) {
 		},
 	)
 
-	// 8. 讀取環境變數（受限制的訪問）
+	// 8. Read environment variable (restricted access)
 	genkit.DefineTool(
-		g, "getEnv", "讀取環境變數（敏感變數受保護）",
+		g, "getEnv", "Read environment variable (sensitive variables are protected)",
 		func(ctx *ai.ToolContext, input struct {
-			Name string `json:"name" jsonschema_description:"環境變數名稱"`
+			Name string `json:"name" jsonschema_description:"Environment variable name"`
 		},
 		) (string, error) {
-			// 環境變數安全驗證（防止敏感信息泄露）
+			// Environment variable security validation (prevent sensitive information leakage)
 			if err := envValidator.ValidateEnvAccess(input.Name); err != nil {
-				return "", fmt.Errorf("⚠️  安全警告：%w\n提示：此環境變數可能包含敏感信息，已被保護。\n如需訪問，請使用者直接在終端查看", err)
+				return "", fmt.Errorf("⚠️  Security warning: %w\nNote: This environment variable may contain sensitive information and is protected.\nIf you need to access it, please check it directly in the terminal", err)
 			}
 
 			value := os.Getenv(input.Name)
 			if value == "" {
-				return fmt.Sprintf("環境變數 %s 未設定或為空", input.Name), nil
+				return fmt.Sprintf("Environment variable %s is not set or is empty", input.Name), nil
 			}
 			return value, nil
 		},
 	)
 
-	// 9. 獲取檔案資訊
+	// 9. Get file information
 	genkit.DefineTool(
-		g, "getFileInfo", "獲取檔案或目錄的詳細資訊",
+		g, "getFileInfo", "Get detailed information about a file or directory",
 		func(ctx *ai.ToolContext, input struct {
-			Path string `json:"path" jsonschema_description:"檔案或目錄路徑"`
+			Path string `json:"path" jsonschema_description:"File or directory path"`
 		},
 		) (string, error) {
-			// 路徑安全驗證
+			// Path security validation
 			safePath, err := pathValidator.ValidatePath(input.Path)
 			if err != nil {
-				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+				return "", fmt.Errorf("path validation failed: %w", err)
 			}
 
 			info, err := os.Stat(safePath)
 			if err != nil {
-				return "", fmt.Errorf("無法獲取檔案資訊: %w", err)
+				return "", fmt.Errorf("unable to get file information: %w", err)
 			}
 
-			result := fmt.Sprintf("名稱: %s\n", info.Name())
-			result += fmt.Sprintf("大小: %d bytes\n", info.Size())
-			result += fmt.Sprintf("是否為目錄: %v\n", info.IsDir())
-			result += fmt.Sprintf("修改時間: %s\n", info.ModTime().Format("2006-01-02 15:04:05"))
-			result += fmt.Sprintf("權限: %s\n", info.Mode().String())
+			result := fmt.Sprintf("Name: %s\n", info.Name())
+			result += fmt.Sprintf("Size: %d bytes\n", info.Size())
+			result += fmt.Sprintf("Is directory: %v\n", info.IsDir())
+			result += fmt.Sprintf("Modified time: %s\n", info.ModTime().Format("2006-01-02 15:04:05"))
+			result += fmt.Sprintf("Permissions: %s\n", info.Mode().String())
 
 			return result, nil
 		},

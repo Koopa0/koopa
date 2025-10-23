@@ -12,28 +12,28 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 )
 
-// ImageInput 圖片輸入結構
+// ImageInput image input structure
 type ImageInput struct {
 	ImagePath string `json:"image_path"`
 	Prompt    string `json:"prompt"`
 }
 
-// createImagePart 讀取圖片檔案並創建 ai.Part
-// 這個輔助函式封裝了「讀取檔案 -> 判斷 media type -> base64 編碼」的通用邏輯
+// createImagePart reads an image file and creates an ai.Part
+// This helper function encapsulates the common logic of "read file -> determine media type -> base64 encode"
 func createImagePart(imagePath string) (*ai.Part, error) {
-	// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+	// Path security validation (prevent path traversal attacks CWE-22)
 	safePath, err := pathValidator.ValidatePath(imagePath)
 	if err != nil {
-		return nil, fmt.Errorf("路徑驗證失敗: %w", err)
+		return nil, fmt.Errorf("path validation failed: %w", err)
 	}
 
-	// 讀取圖片檔案
+	// Read image file
 	imageData, err := os.ReadFile(safePath)
 	if err != nil {
-		return nil, fmt.Errorf("無法讀取圖片 %s: %w", safePath, err)
+		return nil, fmt.Errorf("unable to read image %s: %w", safePath, err)
 	}
 
-	// 判斷圖片類型（使用驗證後的安全路徑）
+	// Determine image type (using validated safe path)
 	ext := strings.ToLower(filepath.Ext(safePath))
 	var mediaType string
 	switch ext {
@@ -46,30 +46,30 @@ func createImagePart(imagePath string) (*ai.Part, error) {
 	case ".webp":
 		mediaType = "image/webp"
 	default:
-		return nil, fmt.Errorf("不支援的圖片格式: %s", ext)
+		return nil, fmt.Errorf("unsupported image format: %s", ext)
 	}
 
-	// 將圖片轉換為 base64
+	// Convert image to base64
 	base64Image := base64.StdEncoding.EncodeToString(imageData)
 
 	return ai.NewMediaPart(mediaType, "data:"+mediaType+";base64,"+base64Image), nil
 }
 
-// analyzeImage 分析圖片內容
+// AnalyzeImage analyzes image content
 func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt string) (string, error) {
-	// 使用輔助函式創建圖片 Part
+	// Use helper function to create image Part
 	imagePart, err := createImagePart(imagePath)
 	if err != nil {
 		return "", err
 	}
 
-	// 構建包含圖片的訊息
+	// Build message containing image
 	userMessage := ai.NewUserMessage(
 		imagePart,
 		ai.NewTextPart(prompt),
 	)
 
-	// 生成回應
+	// Generate response
 	response, err := genkit.Generate(ctx, a.genkitInstance,
 		ai.WithModel(a.modelRef),
 		ai.WithMessages(
@@ -78,37 +78,37 @@ func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt strin
 		),
 	)
 	if err != nil {
-		return "", fmt.Errorf("生成回應失敗: %w", err)
+		return "", fmt.Errorf("failed to generate response: %w", err)
 	}
 
 	return response.Text(), nil
 }
 
-// AnalyzeMultipleImages 分析多張圖片
+// AnalyzeMultipleImages analyzes multiple images
 func (a *Agent) AnalyzeMultipleImages(ctx context.Context, imagePaths []string, prompt string) (string, error) {
 	if len(imagePaths) == 0 {
-		return "", fmt.Errorf("未提供任何圖片")
+		return "", fmt.Errorf("no images provided")
 	}
 
-	// 構建包含多個圖片的 parts
+	// Build parts containing multiple images
 	parts := make([]*ai.Part, 0, len(imagePaths)+1)
 
-	// 添加所有圖片，使用輔助函式
+	// Add all images using helper function
 	for i, imagePath := range imagePaths {
 		imagePart, err := createImagePart(imagePath)
 		if err != nil {
-			return "", fmt.Errorf("處理第 %d 張圖片失敗: %w", i+1, err)
+			return "", fmt.Errorf("failed to process image %d: %w", i+1, err)
 		}
 		parts = append(parts, imagePart)
 	}
 
-	// 添加文字提示
+	// Add text prompt
 	parts = append(parts, ai.NewTextPart(prompt))
 
-	// 創建用戶訊息
+	// Create user message
 	userMessage := ai.NewUserMessage(parts...)
 
-	// 生成回應
+	// Generate response
 	response, err := genkit.Generate(ctx, a.genkitInstance,
 		ai.WithModel(a.modelRef),
 		ai.WithMessages(
@@ -117,31 +117,31 @@ func (a *Agent) AnalyzeMultipleImages(ctx context.Context, imagePaths []string, 
 		),
 	)
 	if err != nil {
-		return "", fmt.Errorf("生成回應失敗: %w", err)
+		return "", fmt.Errorf("failed to generate response: %w", err)
 	}
 
 	return response.Text(), nil
 }
 
-// CompareImages 比較兩張圖片
+// CompareImages compares two images
 func (a *Agent) CompareImages(ctx context.Context, imagePath1, imagePath2 string) (string, error) {
 	return a.AnalyzeMultipleImages(ctx, []string{imagePath1, imagePath2},
-		"請比較這兩張圖片，描述它們的相似點和不同點。")
+		"Please compare these two images and describe their similarities and differences.")
 }
 
-// OCRImage 從圖片中提取文字（OCR）
+// OCRImage extracts text from an image (OCR)
 func (a *Agent) OCRImage(ctx context.Context, imagePath string) (string, error) {
 	return a.AnalyzeImage(ctx, imagePath,
-		"請提取這張圖片中的所有文字內容，保持原有格式。")
+		"Please extract all text content from this image, maintaining the original format.")
 }
 
-// DescribeImage 描述圖片內容
+// DescribeImage describes image content
 func (a *Agent) DescribeImage(ctx context.Context, imagePath string) (string, error) {
 	return a.AnalyzeImage(ctx, imagePath,
-		"請詳細描述這張圖片的內容，包括主要物件、場景、顏色和氛圍。")
+		"Please describe this image in detail, including main objects, scenes, colors, and atmosphere.")
 }
 
-// AnalyzeScreenshot 分析螢幕截圖（適合 UI/UX 分析）
+// AnalyzeScreenshot analyzes a screenshot (suitable for UI/UX analysis)
 type ScreenshotAnalysis struct {
 	UIElements   []string `json:"ui_elements"`
 	Layout       string   `json:"layout"`
@@ -151,18 +151,18 @@ type ScreenshotAnalysis struct {
 }
 
 func (a *Agent) AnalyzeScreenshot(ctx context.Context, screenshotPath string) (*ScreenshotAnalysis, error) {
-	// 使用輔助函式創建圖片 Part
+	// Use helper function to create image Part
 	imagePart, err := createImagePart(screenshotPath)
 	if err != nil {
-		return nil, fmt.Errorf("處理截圖失敗: %w", err)
+		return nil, fmt.Errorf("failed to process screenshot: %w", err)
 	}
 
 	userMessage := ai.NewUserMessage(
 		imagePart,
-		ai.NewTextPart("請分析這個螢幕截圖的 UI/UX 設計，包括元素、佈局、配色方案、改進建議和無障礙性。"),
+		ai.NewTextPart("Please analyze this screenshot's UI/UX design, including elements, layout, color scheme, improvement suggestions, and accessibility."),
 	)
 
-	// 使用 Generate 並傳遞圖片
+	// Use Generate and pass image
 	resp, err := genkit.Generate(ctx, a.genkitInstance,
 		ai.WithModel(a.modelRef),
 		ai.WithMessages(
@@ -172,7 +172,7 @@ func (a *Agent) AnalyzeScreenshot(ctx context.Context, screenshotPath string) (*
 		ai.WithOutputType(ScreenshotAnalysis{}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("生成分析失敗: %w", err)
+		return nil, fmt.Errorf("failed to generate analysis: %w", err)
 	}
 
 	var analysis ScreenshotAnalysis

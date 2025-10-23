@@ -1,5 +1,3 @@
-# Koopa - Terminal AI Personal Assistant
-
 ![Koopa Assistant](docs/assets/koopa.png)
 
 [Koopa](https://github.com/koopa0/koopa) is a powerful terminal-based AI assistant built on [Genkit](https://github.com/firebase/genkit), enabling you to interact with AI directly from your command line for various tasks.

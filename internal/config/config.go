@@ -9,27 +9,27 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config 存儲應用配置
+// Config stores application configuration
 type Config struct {
-	// AI 配置
+	// AI configuration
 	ModelName   string  `mapstructure:"model_name"`
 	Temperature float32 `mapstructure:"temperature"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
 
-	// 對話歷史配置
-	MaxHistoryMessages int `mapstructure:"max_history_messages"` // 最大保留的對話訊息數（0 表示無限制）
+	// Conversation history configuration
+	MaxHistoryMessages int `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
 
-	// 儲存配置
+	// Storage configuration
 	DatabasePath string `mapstructure:"database_path"`
 
 	// API Keys
 	GeminiAPIKey string `mapstructure:"gemini_api_key"`
 }
 
-// Load 載入配置
-// 優先順序：環境變數 > 配置文件 > 預設值
+// Load loads configuration
+// Priority: Environment variables > Configuration file > Default values
 func Load() (*Config, error) {
-	// 配置目錄: ~/.koopa/
+	// Configuration directory: ~/.koopa/
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
@@ -37,34 +37,34 @@ func Load() (*Config, error) {
 
 	configDir := filepath.Join(home, ".koopa")
 
-	// 確保目錄存在（使用 0750 權限提高安全性）
+	// Ensure directory exists (use 0750 permission for better security)
 	if err := os.MkdirAll(configDir, 0750); err != nil {
 		return nil, err
 	}
 
-	// 設定 Viper
+	// Configure Viper
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(configDir)
-	viper.AddConfigPath(".") // 也支援當前目錄
+	viper.AddConfigPath(".") // Also support current directory
 
-	// 設定預設值
+	// Set default values
 	viper.SetDefault("model_name", "gemini-2.5-flash")
 	viper.SetDefault("temperature", 0.7)
 	viper.SetDefault("max_tokens", 2048)
-	viper.SetDefault("max_history_messages", 50) // 預設保留最近 50 則訊息（約 25 輪對話）
+	viper.SetDefault("max_history_messages", 50) // Default: keep recent 50 messages (~25 conversation turns)
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
 
-	// 讀取配置檔案（如果存在）
+	// Read configuration file (if exists)
 	if err := viper.ReadInConfig(); err != nil {
-		// 配置文件不存在不算錯誤，使用預設值
+		// Configuration file not found is not an error, use default values
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, err
 		}
 	}
 
-	// 環境變數設定（使用 KOOPA_ 前綴）
-	// 明確綁定每個配置鍵到對應的環境變數
+	// Environment variable settings (using KOOPA_ prefix)
+	// Explicitly bind each configuration key to corresponding environment variable
 	viper.SetEnvPrefix("KOOPA")
 	_ = viper.BindEnv("model_name")
 	_ = viper.BindEnv("temperature")
@@ -73,21 +73,21 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("database_path")
 	_ = viper.BindEnv("gemini_api_key")
 
-	// 使用 Unmarshal 自動映射到結構體（類型安全）
+	// Use Unmarshal to automatically map to struct (type-safe)
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("無法解析配置: %w", err)
+		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
 	return &cfg, nil
 }
 
-// GetPlugins 返回 Genkit plugins
+// GetPlugins returns Genkit plugins
 func (c *Config) GetPlugins() []any {
 	return []any{&googlegenai.GoogleAI{}}
 }
 
-// Validate 驗證配置
+// Validate validates configuration
 func (c *Config) Validate() error {
 	if c.GeminiAPIKey == "" {
 		return &ConfigError{
@@ -98,7 +98,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ConfigError 配置錯誤
+// ConfigError represents a configuration error
 type ConfigError struct {
 	Field   string
 	Message string

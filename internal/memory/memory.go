@@ -9,7 +9,7 @@ import (
 	"github.com/koopa0/koopa/internal/database/sqlc"
 )
 
-// Message 代表一則對話訊息
+// Message represents a conversation message
 type Message struct {
 	ID        int64
 	SessionID int64
@@ -18,7 +18,7 @@ type Message struct {
 	CreatedAt time.Time
 }
 
-// Session 代表一個對話會話
+// Session represents a conversation session
 type Session struct {
 	ID        int64
 	Title     string
@@ -26,19 +26,19 @@ type Session struct {
 	UpdatedAt time.Time
 }
 
-// Preference 代表用戶偏好設定
+// Preference represents user preference settings
 type Preference struct {
 	Key   string
 	Value string
 }
 
-// Memory 實現基於 SQLite 的記憶系統
+// Memory implements a SQLite-based memory system
 type Memory struct {
 	db      *sql.DB
 	queries *sqlc.Queries
 }
 
-// New 創建新的 Memory 實例（依賴注入）
+// New creates a new Memory instance (dependency injection)
 func New(sqlDB *sql.DB) *Memory {
 	return &Memory{
 		db:      sqlDB,
@@ -46,7 +46,7 @@ func New(sqlDB *sql.DB) *Memory {
 	}
 }
 
-// CreateSession 創建新的對話會話
+// CreateSession creates a new conversation session
 func (m *Memory) CreateSession(ctx context.Context, title string) (*Session, error) {
 	now := time.Now()
 	session, err := m.queries.CreateSession(ctx, sqlc.CreateSessionParams{
@@ -66,7 +66,7 @@ func (m *Memory) CreateSession(ctx context.Context, title string) (*Session, err
 	}, nil
 }
 
-// GetSession 獲取指定的會話
+// GetSession retrieves a specific session
 func (m *Memory) GetSession(ctx context.Context, sessionID int64) (*Session, error) {
 	session, err := m.queries.GetSession(ctx, sessionID)
 	if err == sql.ErrNoRows {
@@ -84,7 +84,7 @@ func (m *Memory) GetSession(ctx context.Context, sessionID int64) (*Session, err
 	}, nil
 }
 
-// ListSessions 列出最近的會話
+// ListSessions lists recent sessions
 func (m *Memory) ListSessions(ctx context.Context, limit int) ([]*Session, error) {
 	sessions, err := m.queries.ListSessions(ctx, int64(limit))
 	if err != nil {
@@ -104,7 +104,7 @@ func (m *Memory) ListSessions(ctx context.Context, limit int) ([]*Session, error
 	return result, nil
 }
 
-// UpdateSessionTitle 更新會話標題
+// UpdateSessionTitle updates the session title
 func (m *Memory) UpdateSessionTitle(ctx context.Context, sessionID int64, title string) error {
 	err := m.queries.UpdateSessionTitle(ctx, sqlc.UpdateSessionTitleParams{
 		Title:     title,
@@ -118,7 +118,7 @@ func (m *Memory) UpdateSessionTitle(ctx context.Context, sessionID int64, title 
 	return nil
 }
 
-// DeleteSession 刪除會話（級聯刪除相關訊息）
+// DeleteSession deletes a session (cascade delete related messages)
 func (m *Memory) DeleteSession(ctx context.Context, sessionID int64) error {
 	err := m.queries.DeleteSession(ctx, sessionID)
 	if err != nil {
@@ -128,7 +128,7 @@ func (m *Memory) DeleteSession(ctx context.Context, sessionID int64) error {
 	return nil
 }
 
-// AddMessage 添加訊息到會話
+// AddMessage adds a message to the session
 func (m *Memory) AddMessage(ctx context.Context, sessionID int64, role, content string) (*Message, error) {
 	now := time.Now()
 	message, err := m.queries.AddMessage(ctx, sqlc.AddMessageParams{
@@ -141,7 +141,7 @@ func (m *Memory) AddMessage(ctx context.Context, sessionID int64, role, content 
 		return nil, fmt.Errorf("failed to add message: %w", err)
 	}
 
-	// 更新會話的 updated_at
+	// Update session's updated_at timestamp
 	if err := m.queries.UpdateSessionTimestamp(ctx, sqlc.UpdateSessionTimestampParams{
 		UpdatedAt: now,
 		ID:        sessionID,
@@ -158,7 +158,7 @@ func (m *Memory) AddMessage(ctx context.Context, sessionID int64, role, content 
 	}, nil
 }
 
-// GetMessages 獲取會話的所有訊息
+// GetMessages retrieves all messages for a session
 func (m *Memory) GetMessages(ctx context.Context, sessionID int64, limit int) ([]*Message, error) {
 	var messages []sqlc.Message
 	var err error
@@ -190,7 +190,7 @@ func (m *Memory) GetMessages(ctx context.Context, sessionID int64, limit int) ([
 	return result, nil
 }
 
-// GetRecentMessages 獲取會話的最近 N 條訊息
+// GetRecentMessages retrieves the most recent N messages for a session
 func (m *Memory) GetRecentMessages(ctx context.Context, sessionID int64, limit int) ([]*Message, error) {
 	messages, err := m.queries.GetRecentMessages(ctx, sqlc.GetRecentMessagesParams{
 		SessionID: sessionID,
@@ -200,7 +200,7 @@ func (m *Memory) GetRecentMessages(ctx context.Context, sessionID int64, limit i
 		return nil, fmt.Errorf("failed to get recent messages: %w", err)
 	}
 
-	// 反轉順序，使其按時間正序
+	// Reverse the order to chronological order
 	result := make([]*Message, len(messages))
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		result[i] = &Message{
@@ -218,7 +218,7 @@ func (m *Memory) GetRecentMessages(ctx context.Context, sessionID int64, limit i
 			CreatedAt: messages[i].CreatedAt,
 		}
 	}
-	// 處理中間元素（當切片長度為奇數時）
+	// Handle middle element (when slice length is odd)
 	if len(messages)%2 != 0 {
 		mid := len(messages) / 2
 		result[mid] = &Message{
@@ -233,7 +233,7 @@ func (m *Memory) GetRecentMessages(ctx context.Context, sessionID int64, limit i
 	return result, nil
 }
 
-// SetPreference 設定用戶偏好
+// SetPreference sets a user preference
 func (m *Memory) SetPreference(ctx context.Context, key, value string) error {
 	err := m.queries.SetPreference(ctx, sqlc.SetPreferenceParams{
 		Key:   key,
@@ -245,7 +245,7 @@ func (m *Memory) SetPreference(ctx context.Context, key, value string) error {
 	return nil
 }
 
-// GetPreference 獲取用戶偏好
+// GetPreference retrieves a user preference
 func (m *Memory) GetPreference(ctx context.Context, key string) (string, error) {
 	pref, err := m.queries.GetPreference(ctx, key)
 	if err == sql.ErrNoRows {
@@ -258,7 +258,7 @@ func (m *Memory) GetPreference(ctx context.Context, key string) (string, error) 
 	return pref.Value, nil
 }
 
-// ListPreferences 列出所有偏好設定
+// ListPreferences lists all preference settings
 func (m *Memory) ListPreferences(ctx context.Context) ([]*Preference, error) {
 	prefs, err := m.queries.ListPreferences(ctx)
 	if err != nil {
@@ -276,7 +276,7 @@ func (m *Memory) ListPreferences(ctx context.Context) ([]*Preference, error) {
 	return result, nil
 }
 
-// Close 關閉資料庫連接
+// Close closes the database connection
 func (m *Memory) Close() error {
 	if m.db != nil {
 		return m.db.Close()

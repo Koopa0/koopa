@@ -5,164 +5,164 @@ import (
 	"strings"
 )
 
-// CommandValidator 命令驗證器
-// 用於防止命令注入攻擊（CWE-78）
+// CommandValidator command validator
+// Used to prevent command injection attacks (CWE-78)
 type CommandValidator struct {
 	blacklist []string
-	whitelist []string // 如果非空，只允許白名單中的命令
+	whitelist []string // If non-empty, only allow commands in the whitelist
 }
 
-// NewCommandValidator 創建命令驗證器
+// NewCommandValidator creates a command validator
 func NewCommandValidator() *CommandValidator {
 	return &CommandValidator{
 		blacklist: []string{
-			// 危險的刪除命令
+			// Dangerous deletion commands
 			"rm -rf /",
 			"rm -rf ~",
 			"rm -rf /*",
 			"rm -rf $HOME",
 
-			// 磁碟操作
+			// Disk operations
 			"dd if=/dev/zero",
 			"dd if=/dev/urandom",
 			"mkfs",
 			"format",
 			"fdisk",
 
-			// 設備訪問
+			// Device access
 			"> /dev/",
 			"< /dev/",
 
-			// 遠程腳本執行
-			"curl", // 需要特別處理
-			"wget", // 需要特別處理
+			// Remote script execution
+			"curl", // Needs special handling
+			"wget", // Needs special handling
 
-			// Fork 炸彈
+			// Fork bombs
 			":()",
 			"fork",
 
-			// 系統關閉
+			// System shutdown
 			"shutdown",
 			"reboot",
 			"halt",
 			"poweroff",
 
-			// 權限提升
+			// Privilege escalation
 			"sudo su",
 			"su -",
 		},
 	}
 }
 
-// NewStrictCommandValidator 創建嚴格的命令驗證器（白名單模式）
-// 只允許常見的安全命令
+// NewStrictCommandValidator creates a strict command validator (whitelist mode)
+// Only allows common safe commands
 func NewStrictCommandValidator() *CommandValidator {
 	return &CommandValidator{
-		blacklist: []string{}, // 白名單模式不需要黑名單
+		blacklist: []string{}, // Whitelist mode doesn't need blacklist
 		whitelist: []string{
-			// 文件操作
+			// File operations
 			"ls", "cat", "head", "tail", "less", "more",
 			"grep", "find", "wc", "sort", "uniq",
 
-			// 目錄操作
+			// Directory operations
 			"pwd", "cd", "mkdir", "tree",
 
-			// 系統信息
+			// System information
 			"date", "whoami", "hostname", "uname",
 			"df", "du", "free", "top", "ps",
 
-			// 網絡（只讀）
+			// Network (read-only)
 			"ping", "traceroute", "nslookup", "dig",
 
 			// Git
 			"git status", "git log", "git diff", "git branch",
 
-			// 其他
+			// Other
 			"echo", "printf", "which", "whereis",
 		},
 	}
 }
 
-// ValidateCommand 驗證命令是否安全
-// cmd: 命令名稱
-// args: 命令參數
+// ValidateCommand validates whether a command is safe
+// cmd: command name
+// args: command arguments
 func (v *CommandValidator) ValidateCommand(cmd string, args []string) error {
-	// 構建完整命令
+	// Build full command
 	fullCmd := cmd
 	if len(args) > 0 {
 		fullCmd = cmd + " " + strings.Join(args, " ")
 	}
 
-	// 如果有白名單，只檢查白名單
+	// If there's a whitelist, only check the whitelist
 	if len(v.whitelist) > 0 {
 		return v.checkWhitelist(cmd, fullCmd)
 	}
 
-	// 否則檢查黑名單
+	// Otherwise check the blacklist
 	return v.checkBlacklist(fullCmd)
 }
 
-// checkWhitelist 檢查命令是否在白名單中
+// checkWhitelist checks if the command is in the whitelist
 func (v *CommandValidator) checkWhitelist(cmd string, fullCmd string) error {
-	// 檢查命令是否在白名單中
+	// Check if command is in the whitelist
 	for _, allowed := range v.whitelist {
 		if cmd == allowed || strings.HasPrefix(fullCmd, allowed) {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("命令 '%s' 不在白名單中", cmd)
+	return fmt.Errorf("command '%s' is not in whitelist", cmd)
 }
 
-// checkBlacklist 檢查命令是否包含危險模式
+// checkBlacklist checks if the command contains dangerous patterns
 func (v *CommandValidator) checkBlacklist(fullCmd string) error {
-	// 檢查黑名單
+	// Check blacklist
 	for _, pattern := range v.blacklist {
 		if strings.Contains(fullCmd, pattern) {
-			return fmt.Errorf("命令包含危險模式: '%s'", pattern)
+			return fmt.Errorf("command contains dangerous pattern: '%s'", pattern)
 		}
 	}
 
-	// 檢查危險字符（可能的命令注入）
+	// Check dangerous characters (possible command injection)
 	dangerousChars := map[string]string{
-		";":  "命令分隔符",
-		"|":  "管道符",
-		"&":  "後台執行符",
-		"`":  "命令替換",
-		"$":  "變量替換",
-		"(":  "子shell",
-		")":  "子shell",
-		"<":  "輸入重定向",
-		">":  "輸出重定向",
-		"\\": "轉義字符",
-		"\n": "換行符",
+		";":  "command separator",
+		"|":  "pipe",
+		"&":  "background execution",
+		"`":  "command substitution",
+		"$":  "variable substitution",
+		"(":  "subshell",
+		")":  "subshell",
+		"<":  "input redirection",
+		">":  "output redirection",
+		"\\": "escape character",
+		"\n": "newline",
 	}
 
 	for char, desc := range dangerousChars {
 		if strings.Contains(fullCmd, char) {
-			return fmt.Errorf("命令包含危險字符 '%s' (%s)", char, desc)
+			return fmt.Errorf("command contains dangerous character '%s' (%s)", char, desc)
 		}
 	}
 
-	// 特別檢查 curl 和 wget（常被用於下載惡意腳本）
+	// Special check for curl and wget (often used to download malicious scripts)
 	lowerCmd := strings.ToLower(fullCmd)
 	if strings.Contains(lowerCmd, "curl") || strings.Contains(lowerCmd, "wget") {
-		// 檢查是否有管道或腳本執行
+		// Check for pipe or script execution
 		if strings.Contains(lowerCmd, "bash") ||
 			strings.Contains(lowerCmd, "sh") ||
 			strings.Contains(lowerCmd, "python") ||
 			strings.Contains(lowerCmd, "perl") {
-			return fmt.Errorf("禁止使用 curl/wget 直接執行腳本")
+			return fmt.Errorf("direct script execution with curl/wget is prohibited")
 		}
 	}
 
 	return nil
 }
 
-// IsCommandSafe 快速檢查命令字符串是否明顯不安全
-// 這是一個輕量級的檢查，不應該作為唯一的驗證
+// IsCommandSafe quickly checks if a command string is obviously unsafe
+// This is a lightweight check and should not be used as the sole validation
 func IsCommandSafe(cmd string) bool {
-	// 檢查是否包含明顯的危險模式
+	// Check for obvious dangerous patterns
 	dangerousPatterns := []string{
 		"rm -rf",
 		"mkfs",
@@ -185,24 +185,24 @@ func IsCommandSafe(cmd string) bool {
 	return true
 }
 
-// SanitizeCommandArgs 清理命令參數，移除潛在的危險字符
-// 注意：這不能替代完整的驗證，只是額外的防護層
+// SanitizeCommandArgs sanitizes command arguments, removing potentially dangerous characters
+// Note: This cannot replace complete validation, it's just an additional layer of protection
 func SanitizeCommandArgs(args []string) []string {
 	sanitized := make([]string, 0, len(args))
 
 	for _, arg := range args {
-		// 移除前後的空白
+		// Trim leading and trailing whitespace
 		arg = strings.TrimSpace(arg)
 
-		// 跳過空參數
+		// Skip empty arguments
 		if arg == "" {
 			continue
 		}
 
-		// 檢查是否包含危險字符
+		// Check for dangerous characters
 		if strings.ContainsAny(arg, ";|&`$()<>\\") {
-			// 如果包含危險字符，用引號包圍
-			// 但這仍然不夠安全，應該由 ValidateCommand 攔截
+			// If it contains dangerous characters, wrap in quotes
+			// But this still isn't safe enough, should be caught by ValidateCommand
 			arg = "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
 		}
 
