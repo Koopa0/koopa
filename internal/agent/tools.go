@@ -13,33 +13,11 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/koopa0/koopa/internal/security"
 )
 
-// 危險命令黑名單（用於 executeCommand 安全檢查）
-var dangerousCommands = map[string]string{
-	"rm":       "刪除檔案（特別是 rm -rf 可能造成嚴重損害）",
-	"mkfs":     "格式化磁碟（會清除所有資料）",
-	"dd":       "直接寫入磁碟（可能覆蓋重要資料）",
-	"fdisk":    "磁碟分割工具（可能損壞分割表）",
-	"parted":   "磁碟分割工具（可能損壞分割表）",
-	"shred":    "安全刪除檔案（不可恢復）",
-	"wipefs":   "清除檔案系統簽名",
-	"mkswap":   "建立 swap 空間（會覆蓋資料）",
-	"reboot":   "重啟系統",
-	"shutdown": "關閉系統",
-	"init":     "改變系統運行級別",
-	"halt":     "停止系統",
-	"poweroff": "關閉電源",
-}
-
-// 高風險參數模式
-var dangerousPatterns = []string{
-	"-rf",      // rm -rf
-	"--force",  // 強制執行
-	"--no-preserve-root", // 允許刪除根目錄
-	"/dev/",    // 直接操作設備
-	"> /dev/",  // 重定向到設備
-}
+// cmdValidator 命令驗證器（使用統一的安全模塊）
+var cmdValidator = security.NewCommandValidator()
 
 // registerTools 註冊所有可用的工具
 func registerTools(g *genkit.Genkit) {
@@ -58,7 +36,13 @@ func registerTools(g *genkit.Genkit) {
 		func(ctx *ai.ToolContext, input struct {
 			Path string `json:"path" jsonschema_description:"要讀取的檔案路徑"`
 		}) (string, error) {
-			content, err := os.ReadFile(input.Path)
+			// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+			safePath, err := pathValidator.ValidatePath(input.Path)
+			if err != nil {
+				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+			}
+
+			content, err := os.ReadFile(safePath)
 			if err != nil {
 				return "", fmt.Errorf("無法讀取檔案: %w", err)
 			}
@@ -73,17 +57,23 @@ func registerTools(g *genkit.Genkit) {
 			Path    string `json:"path" jsonschema_description:"要寫入的檔案路徑"`
 			Content string `json:"content" jsonschema_description:"要寫入的內容"`
 		}) (string, error) {
+			// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+			safePath, err := pathValidator.ValidatePath(input.Path)
+			if err != nil {
+				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+			}
+
 			// 確保目錄存在（使用 0750 權限提高安全性）
-			dir := filepath.Dir(input.Path)
+			dir := filepath.Dir(safePath)
 			if err := os.MkdirAll(dir, 0750); err != nil {
 				return "", fmt.Errorf("無法創建目錄: %w", err)
 			}
 
-			err := os.WriteFile(input.Path, []byte(input.Content), 0600)
+			err = os.WriteFile(safePath, []byte(input.Content), 0600)
 			if err != nil {
 				return "", fmt.Errorf("無法寫入檔案: %w", err)
 			}
-			return fmt.Sprintf("成功寫入檔案: %s", input.Path), nil
+			return fmt.Sprintf("成功寫入檔案: %s", safePath), nil
 		},
 	)
 
@@ -93,7 +83,13 @@ func registerTools(g *genkit.Genkit) {
 		func(ctx *ai.ToolContext, input struct {
 			Path string `json:"path" jsonschema_description:"要列出的目錄路徑"`
 		}) (string, error) {
-			entries, err := os.ReadDir(input.Path)
+			// 路徑安全驗證
+			safePath, err := pathValidator.ValidatePath(input.Path)
+			if err != nil {
+				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+			}
+
+			entries, err := os.ReadDir(safePath)
 			if err != nil {
 				return "", fmt.Errorf("無法讀取目錄: %w", err)
 			}
@@ -117,11 +113,17 @@ func registerTools(g *genkit.Genkit) {
 		func(ctx *ai.ToolContext, input struct {
 			Path string `json:"path" jsonschema_description:"要刪除的檔案路徑"`
 		}) (string, error) {
-			err := os.Remove(input.Path)
+			// 路徑安全驗證
+			safePath, err := pathValidator.ValidatePath(input.Path)
+			if err != nil {
+				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+			}
+
+			err = os.Remove(safePath)
 			if err != nil {
 				return "", fmt.Errorf("無法刪除檔案: %w", err)
 			}
-			return fmt.Sprintf("成功刪除檔案: %s", input.Path), nil
+			return fmt.Sprintf("成功刪除檔案: %s", safePath), nil
 		},
 	)
 
@@ -132,10 +134,10 @@ func registerTools(g *genkit.Genkit) {
 			Command string   `json:"command" jsonschema_description:"要執行的命令"`
 			Args    []string `json:"args,omitempty" jsonschema_description:"命令參數（可選）"`
 		}) (string, error) {
-			// 安全檢查：檢查是否為危險命令
-			if reason, isDangerous := isDangerousCommand(input.Command, input.Args); isDangerous {
-				return "", fmt.Errorf("⚠️  安全警告：拒絕執行危險命令\n命令: %s %s\n原因: %s\n如需執行，請使用者手動在終端執行",
-					input.Command, strings.Join(input.Args, " "), reason)
+			// 命令安全驗證（防止命令注入攻擊 CWE-78）
+			if err := cmdValidator.ValidateCommand(input.Command, input.Args); err != nil {
+				return "", fmt.Errorf("⚠️  安全警告：拒絕執行危險命令\n命令: %s %s\n原因: %w\n如需執行，請使用者手動在終端執行",
+					input.Command, strings.Join(input.Args, " "), err)
 			}
 
 			cmd := exec.Command(input.Command, input.Args...)
@@ -194,7 +196,13 @@ func registerTools(g *genkit.Genkit) {
 		func(ctx *ai.ToolContext, input struct {
 			Path string `json:"path" jsonschema_description:"檔案或目錄路徑"`
 		}) (string, error) {
-			info, err := os.Stat(input.Path)
+			// 路徑安全驗證
+			safePath, err := pathValidator.ValidatePath(input.Path)
+			if err != nil {
+				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+			}
+
+			info, err := os.Stat(safePath)
 			if err != nil {
 				return "", fmt.Errorf("無法獲取檔案資訊: %w", err)
 			}
@@ -208,26 +216,4 @@ func registerTools(g *genkit.Genkit) {
 			return result, nil
 		},
 	)
-}
-
-// isDangerousCommand 檢查命令是否為危險命令
-// 返回 (原因, 是否危險)
-func isDangerousCommand(command string, args []string) (string, bool) {
-	// 提取命令的基本名稱（去除路徑）
-	cmdBase := filepath.Base(command)
-
-	// 檢查是否在黑名單中
-	if reason, exists := dangerousCommands[cmdBase]; exists {
-		return reason, true
-	}
-
-	// 檢查參數中是否包含危險模式
-	allArgs := strings.Join(args, " ")
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(allArgs, pattern) {
-			return fmt.Sprintf("參數包含危險模式: %s", pattern), true
-		}
-	}
-
-	return "", false
 }

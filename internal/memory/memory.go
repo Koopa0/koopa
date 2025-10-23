@@ -2,14 +2,18 @@ package memory
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"time"
+
+	"github.com/koopa0/koopa/internal/database/sqlc"
 )
 
 // Message 代表一則對話訊息
 type Message struct {
 	ID        int64
 	SessionID int64
-	Role      string // "user" or "model"
+	Role      string
 	Content   string
 	CreatedAt time.Time
 }
@@ -17,7 +21,7 @@ type Message struct {
 // Session 代表一個對話會話
 type Session struct {
 	ID        int64
-	Title     string // 會話標題（可自動生成或用戶指定）
+	Title     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -28,25 +32,236 @@ type Preference struct {
 	Value string
 }
 
-// Memory 定義記憶系統接口
-type Memory interface {
-	// Session 管理
-	CreateSession(ctx context.Context, title string) (*Session, error)
-	GetSession(ctx context.Context, sessionID int64) (*Session, error)
-	ListSessions(ctx context.Context, limit int) ([]*Session, error)
-	UpdateSessionTitle(ctx context.Context, sessionID int64, title string) error
-	DeleteSession(ctx context.Context, sessionID int64) error
+// Memory 實現基於 SQLite 的記憶系統
+type Memory struct {
+	db      *sql.DB
+	queries *sqlc.Queries
+}
 
-	// Message 管理
-	AddMessage(ctx context.Context, sessionID int64, role, content string) (*Message, error)
-	GetMessages(ctx context.Context, sessionID int64, limit int) ([]*Message, error)
-	GetRecentMessages(ctx context.Context, sessionID int64, limit int) ([]*Message, error)
+// New 創建新的 Memory 實例（依賴注入）
+func New(sqlDB *sql.DB) *Memory {
+	return &Memory{
+		db:      sqlDB,
+		queries: sqlc.New(sqlDB),
+	}
+}
 
-	// Preference 管理
-	SetPreference(ctx context.Context, key, value string) error
-	GetPreference(ctx context.Context, key string) (string, error)
-	ListPreferences(ctx context.Context) ([]*Preference, error)
+// CreateSession 創建新的對話會話
+func (m *Memory) CreateSession(ctx context.Context, title string) (*Session, error) {
+	now := time.Now()
+	session, err := m.queries.CreateSession(ctx, sqlc.CreateSessionParams{
+		Title:     title,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
 
-	// 資源管理
-	Close() error
+	return &Session{
+		ID:        session.ID,
+		Title:     session.Title,
+		CreatedAt: session.CreatedAt,
+		UpdatedAt: session.UpdatedAt,
+	}, nil
+}
+
+// GetSession 獲取指定的會話
+func (m *Memory) GetSession(ctx context.Context, sessionID int64) (*Session, error) {
+	session, err := m.queries.GetSession(ctx, sessionID)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("session not found: %d", sessionID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+
+	return &Session{
+		ID:        session.ID,
+		Title:     session.Title,
+		CreatedAt: session.CreatedAt,
+		UpdatedAt: session.UpdatedAt,
+	}, nil
+}
+
+// ListSessions 列出最近的會話
+func (m *Memory) ListSessions(ctx context.Context, limit int) ([]*Session, error) {
+	sessions, err := m.queries.ListSessions(ctx, int64(limit))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	result := make([]*Session, len(sessions))
+	for i, s := range sessions {
+		result[i] = &Session{
+			ID:        s.ID,
+			Title:     s.Title,
+			CreatedAt: s.CreatedAt,
+			UpdatedAt: s.UpdatedAt,
+		}
+	}
+
+	return result, nil
+}
+
+// UpdateSessionTitle 更新會話標題
+func (m *Memory) UpdateSessionTitle(ctx context.Context, sessionID int64, title string) error {
+	err := m.queries.UpdateSessionTitle(ctx, sqlc.UpdateSessionTitleParams{
+		Title:     title,
+		UpdatedAt: time.Now(),
+		ID:        sessionID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update session title: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteSession 刪除會話（級聯刪除相關訊息）
+func (m *Memory) DeleteSession(ctx context.Context, sessionID int64) error {
+	err := m.queries.DeleteSession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to delete session: %w", err)
+	}
+
+	return nil
+}
+
+// AddMessage 添加訊息到會話
+func (m *Memory) AddMessage(ctx context.Context, sessionID int64, role, content string) (*Message, error) {
+	now := time.Now()
+	message, err := m.queries.AddMessage(ctx, sqlc.AddMessageParams{
+		SessionID: sessionID,
+		Role:      role,
+		Content:   content,
+		CreatedAt: now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to add message: %w", err)
+	}
+
+	// 更新會話的 updated_at
+	if err := m.queries.UpdateSessionTimestamp(ctx, sqlc.UpdateSessionTimestampParams{
+		UpdatedAt: now,
+		ID:        sessionID,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to update session timestamp: %w", err)
+	}
+
+	return &Message{
+		ID:        message.ID,
+		SessionID: message.SessionID,
+		Role:      message.Role,
+		Content:   message.Content,
+		CreatedAt: message.CreatedAt,
+	}, nil
+}
+
+// GetMessages 獲取會話的所有訊息
+func (m *Memory) GetMessages(ctx context.Context, sessionID int64, limit int) ([]*Message, error) {
+	var messages []sqlc.Message
+	var err error
+
+	if limit > 0 {
+		messages, err = m.queries.GetMessages(ctx, sqlc.GetMessagesParams{
+			SessionID: sessionID,
+			Limit:     int64(limit),
+		})
+	} else {
+		messages, err = m.queries.GetAllMessages(ctx, sessionID)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages: %w", err)
+	}
+
+	result := make([]*Message, len(messages))
+	for i, msg := range messages {
+		result[i] = &Message{
+			ID:        msg.ID,
+			SessionID: msg.SessionID,
+			Role:      msg.Role,
+			Content:   msg.Content,
+			CreatedAt: msg.CreatedAt,
+		}
+	}
+
+	return result, nil
+}
+
+// GetRecentMessages 獲取會話的最近 N 條訊息
+func (m *Memory) GetRecentMessages(ctx context.Context, sessionID int64, limit int) ([]*Message, error) {
+	messages, err := m.queries.GetRecentMessages(ctx, sqlc.GetRecentMessagesParams{
+		SessionID: sessionID,
+		Limit:     int64(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get recent messages: %w", err)
+	}
+
+	// 反轉順序，使其按時間正序
+	result := make([]*Message, len(messages))
+	for i, j := 0, len(messages)-1; i < len(messages); i, j = i+1, j-1 {
+		result[i] = &Message{
+			ID:        messages[j].ID,
+			SessionID: messages[j].SessionID,
+			Role:      messages[j].Role,
+			Content:   messages[j].Content,
+			CreatedAt: messages[j].CreatedAt,
+		}
+	}
+
+	return result, nil
+}
+
+// SetPreference 設定用戶偏好
+func (m *Memory) SetPreference(ctx context.Context, key, value string) error {
+	err := m.queries.SetPreference(ctx, sqlc.SetPreferenceParams{
+		Key:   key,
+		Value: value,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set preference: %w", err)
+	}
+	return nil
+}
+
+// GetPreference 獲取用戶偏好
+func (m *Memory) GetPreference(ctx context.Context, key string) (string, error) {
+	pref, err := m.queries.GetPreference(ctx, key)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("preference not found: %s", key)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get preference: %w", err)
+	}
+
+	return pref.Value, nil
+}
+
+// ListPreferences 列出所有偏好設定
+func (m *Memory) ListPreferences(ctx context.Context) ([]*Preference, error) {
+	prefs, err := m.queries.ListPreferences(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list preferences: %w", err)
+	}
+
+	result := make([]*Preference, len(prefs))
+	for i, pref := range prefs {
+		result[i] = &Preference{
+			Key:   pref.Key,
+			Value: pref.Value,
+		}
+	}
+
+	return result, nil
+}
+
+// Close 關閉資料庫連接
+func (m *Memory) Close() error {
+	if m.db != nil {
+		return m.db.Close()
+	}
+	return nil
 }

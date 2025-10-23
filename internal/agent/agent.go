@@ -18,14 +18,14 @@ import (
 type Agent struct {
 	genkitInstance *genkit.Genkit
 	config         *config.Config
-	modelRef       ai.ModelRef      // 型別安全的 model reference
-	systemMessage  *ai.Message      // System prompt（從 Dotprompt 載入）
-	messages       []*ai.Message    // 對話歷史
-	useTools       bool             // 是否使用工具
-	mcpManager     *MCPManager      // MCP 管理器（可選）
-	useMCP         bool             // 是否使用 MCP 工具
-	sessionManager *SessionManager  // 會話管理器（可選）
-	useSession     bool             // 是否使用持久化會話
+	modelRef       ai.ModelRef   // 型別安全的 model reference
+	systemMessage  *ai.Message   // System prompt（從 Dotprompt 載入）
+	messages       []*ai.Message // 對話歷史
+	useTools       bool          // 是否使用工具
+	mcpManager     *MCPManager   // MCP 管理器（可選）
+	useMCP         bool          // 是否使用 MCP 工具
+	memory         interface{}   // Memory 實例（可選，避免循環依賴用 interface{}）
+	currentSession int64         // 當前會話 ID（0 表示未使用）
 }
 
 // New 創建新的 Agent 實例
@@ -91,10 +91,10 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 		systemMessage:  systemMessage,
 		messages:       messages,
 		useTools:       false,
-		mcpManager:     nil,     // MCP 默認未啟用
+		mcpManager:     nil, // MCP 默認未啟用
 		useMCP:         false,
-		sessionManager: nil,     // Session 默認未啟用
-		useSession:     false,
+		memory:         nil, // Memory 默認未啟用
+		currentSession: 0,   // 無當前會話
 	}
 
 	// 定義所有 Genkit Flows（在 Agent 完全初始化之後）
@@ -329,96 +329,6 @@ func (a *Agent) GetMCPEnabled() bool {
 type MCPServerConfig struct {
 	Name   string
 	Config mcp.MCPServerConfig
-}
-
-// EnableSessions 啟用會話管理
-func (a *Agent) EnableSessions(ctx context.Context, sessionStore SessionStore) error {
-	if a.sessionManager == nil {
-		a.sessionManager = NewSessionManager(sessionStore)
-	}
-	a.useSession = true
-	return nil
-}
-
-// DisableSessions 禁用會話管理
-func (a *Agent) DisableSessions() {
-	a.useSession = false
-}
-
-// CreateSession 創建新會話
-func (a *Agent) CreateSession(ctx context.Context) (*SessionData, error) {
-	if a.sessionManager == nil {
-		return nil, fmt.Errorf("會話管理器未啟用")
-	}
-
-	return a.sessionManager.CreateSession(ctx, a.systemMessage)
-}
-
-// LoadSession 載入會話並同步到 Agent 的消息歷史
-func (a *Agent) LoadSession(ctx context.Context, sessionID string) (*SessionData, error) {
-	if a.sessionManager == nil {
-		return nil, fmt.Errorf("會話管理器未啟用")
-	}
-
-	session, err := a.sessionManager.LoadSession(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	// 同步會話消息到 Agent（使用轉換函式）
-	a.messages = a.sessionManager.GetMessages()
-
-	return session, nil
-}
-
-// SaveSession 保存當前會話
-func (a *Agent) SaveSession(ctx context.Context) error {
-	if a.sessionManager == nil {
-		return fmt.Errorf("會話管理器未啟用")
-	}
-
-	// 同步 Agent 的消息到會話（使用 SessionManager 的方法）
-	// 先清除當前會話的消息
-	if session := a.sessionManager.GetCurrentSession(); session != nil {
-		// 清空並重新添加所有消息
-		session.Messages = []*PersistedMessage{}
-		for _, msg := range a.messages {
-			if err := a.sessionManager.AddMessage(msg); err != nil {
-				return fmt.Errorf("同步消息失敗: %w", err)
-			}
-		}
-	}
-
-	return a.sessionManager.SaveCurrentSession(ctx)
-}
-
-// GetCurrentSession 獲取當前會話
-func (a *Agent) GetCurrentSession() *SessionData {
-	if a.sessionManager == nil {
-		return nil
-	}
-	return a.sessionManager.GetCurrentSession()
-}
-
-// ListSessions 列出所有會話
-func (a *Agent) ListSessions(ctx context.Context) ([]string, error) {
-	if a.sessionManager == nil {
-		return nil, fmt.Errorf("會話管理器未啟用")
-	}
-	return a.sessionManager.ListSessions(ctx)
-}
-
-// DeleteSession 刪除會話
-func (a *Agent) DeleteSession(ctx context.Context, sessionID string) error {
-	if a.sessionManager == nil {
-		return fmt.Errorf("會話管理器未啟用")
-	}
-	return a.sessionManager.DeleteSession(ctx, sessionID)
-}
-
-// GetSessionManager 獲取會話管理器
-func (a *Agent) GetSessionManager() *SessionManager {
-	return a.sessionManager
 }
 
 // trimHistoryIfNeeded 檢查並限制對話歷史長度（滑動窗口機制）
