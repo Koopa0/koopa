@@ -16,9 +16,9 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Open 開啟 SQLite 資料庫連接
+// Open opens a SQLite database connection
 func Open(dbPath string) (*sql.DB, error) {
-	// 確保父目錄存在（使用更嚴格的權限）
+	// Ensure parent directory exists (using stricter permissions)
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
@@ -29,7 +29,7 @@ func Open(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// 啟用外鍵約束
+	// Enable foreign key constraints
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
@@ -38,29 +38,29 @@ func Open(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Migrate 執行資料庫遷移
+// Migrate executes database migrations
 func Migrate(db *sql.DB) error {
-	// 創建 migrate driver
+	// Create migrate driver
 	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
 	if err != nil {
 		return fmt.Errorf("failed to create migrate driver: %w", err)
 	}
 
-	// 創建 iofs source（從嵌入的檔案系統）
+	// Create iofs source (from embedded filesystem)
 	sourceDriver, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("failed to create source driver: %w", err)
 	}
 
-	// 創建 migrate 實例
+	// Create migrate instance
 	m, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", driver)
 	if err != nil {
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
-	// 注意：不要 defer m.Close()，因為 sqlite driver WithInstance 不會接管 DB 連線
-	// 但 Close() 可能會影響底層連線狀態
+	// Note: Don't defer m.Close() because sqlite driver WithInstance doesn't take over DB connection
+	// but Close() might affect underlying connection state
 
-	// 執行遷移（應用所有未執行的 migrations）
+	// Execute migrations (apply all pending migrations)
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}

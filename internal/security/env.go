@@ -5,17 +5,17 @@ import (
 	"strings"
 )
 
-// EnvValidator 環境變數驗證器
-// 用於防止敏感信息泄露
+// EnvValidator environment variable validator
+// Used to prevent sensitive information leakage
 type EnvValidator struct {
 	sensitivePatterns []string
 }
 
-// NewEnvValidator 創建環境變數驗證器
+// NewEnvValidator creates an environment variable validator
 func NewEnvValidator() *EnvValidator {
 	return &EnvValidator{
 		sensitivePatterns: []string{
-			// API 金鑰和認證憑證
+			// API keys and authentication credentials
 			"API_KEY",
 			"APIKEY",
 			"SECRET",
@@ -30,7 +30,7 @@ func NewEnvValidator() *EnvValidator {
 			"PRIVATE_KEY",
 			"PRIV_KEY",
 
-			// 雲服務相關
+			// Cloud services related
 			"AWS_SECRET",
 			"AWS_ACCESS_KEY",
 			"AZURE_",
@@ -38,17 +38,17 @@ func NewEnvValidator() *EnvValidator {
 			"GOOGLE_API",
 			"GOOGLE_APPLICATION_CREDENTIALS",
 
-			// 資料庫相關
+			// Database related
 			"DB_PASSWORD",
 			"DB_PASS",
 			"DATABASE_PASSWORD",
-			"DATABASE_URL", // 可能包含密碼
+			"DATABASE_URL", // May contain password
 			"REDIS_PASSWORD",
 			"MONGO_PASSWORD",
 			"POSTGRES_PASSWORD",
 			"MYSQL_PASSWORD",
 
-			// OAuth 和第三方服務
+			// OAuth and third-party services
 			"OAUTH",
 			"GITHUB_TOKEN",
 			"GITLAB_TOKEN",
@@ -56,7 +56,7 @@ func NewEnvValidator() *EnvValidator {
 			"DISCORD_TOKEN",
 			"TELEGRAM_TOKEN",
 
-			// 加密相關
+			// Encryption related
 			"ENCRYPTION_KEY",
 			"ENCRYPT_KEY",
 			"CIPHER_KEY",
@@ -64,21 +64,21 @@ func NewEnvValidator() *EnvValidator {
 			"HASH_KEY",
 			"SIGNING_KEY",
 
-			// 郵件服務
+			// Email services
 			"SMTP_PASSWORD",
 			"MAIL_PASSWORD",
 			"EMAIL_PASSWORD",
 
-			// 支付相關
+			// Payment related
 			"STRIPE_SECRET",
 			"PAYPAL_SECRET",
 			"PAYMENT_KEY",
 
-			// Session 和 Cookie
+			// Session and Cookie
 			"SESSION_SECRET",
 			"COOKIE_SECRET",
 
-			// AI 服務 (Gemini, OpenAI 等)
+			// AI services (Gemini, OpenAI, etc.)
 			"GEMINI_API_KEY",
 			"OPENAI_API_KEY",
 			"ANTHROPIC_API_KEY",
@@ -87,22 +87,22 @@ func NewEnvValidator() *EnvValidator {
 	}
 }
 
-// ValidateEnvAccess 驗證是否允許訪問指定的環境變數
+// ValidateEnvAccess validates whether access to the specified environment variable is allowed
 func (v *EnvValidator) ValidateEnvAccess(envName string) error {
 	envUpper := strings.ToUpper(envName)
 
-	// 檢查是否匹配敏感模式
+	// Check if it matches sensitive patterns
 	for _, pattern := range v.sensitivePatterns {
 		if strings.Contains(envUpper, pattern) {
-			return fmt.Errorf("拒絕訪問敏感環境變數: %s（匹配模式: %s）", envName, pattern)
+			return fmt.Errorf("access denied to sensitive environment variable: %s (matched pattern: %s)", envName, pattern)
 		}
 	}
 
 	return nil
 }
 
-// IsSensitiveEnv 快速檢查環境變數名稱是否明顯敏感
-// 這是一個額外的保護層
+// IsSensitiveEnv quickly checks if an environment variable name is obviously sensitive
+// This is an additional layer of protection
 func IsSensitiveEnv(envName string) bool {
 	envUpper := strings.ToUpper(envName)
 
@@ -123,11 +123,11 @@ func IsSensitiveEnv(envName string) bool {
 	return false
 }
 
-// GetAllowedEnvNames 獲取明確允許訪問的環境變數列表（白名單）
-// 這些是常見的非敏感環境變數
+// GetAllowedEnvNames retrieves the list of explicitly allowed environment variables (whitelist)
+// These are common non-sensitive environment variables
 func GetAllowedEnvNames() []string {
 	return []string{
-		// 系統信息
+		// System information
 		"PATH",
 		"HOME",
 		"USER",
@@ -137,28 +137,28 @@ func GetAllowedEnvNames() []string {
 		"LC_ALL",
 		"TZ",
 
-		// Go 相關
+		// Go related
 		"GOPATH",
 		"GOROOT",
 		"GOOS",
 		"GOARCH",
 		"GO111MODULE",
 
-		// 一般開發
+		// General development
 		"EDITOR",
 		"VISUAL",
 		"PAGER",
 
-		// 代理設定（不包含認證）
+		// Proxy settings (without authentication)
 		"HTTP_PROXY",
 		"HTTPS_PROXY",
 		"NO_PROXY",
 
-		// 日誌等級
+		// Log levels
 		"LOG_LEVEL",
 		"DEBUG",
 
-		// 應用程序名稱和版本（非敏感）
+		// Application name and version (non-sensitive)
 		"APP_NAME",
 		"APP_VERSION",
 		"NODE_ENV",

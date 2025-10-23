@@ -14,64 +14,64 @@ import (
 	"google.golang.org/genai"
 )
 
-// Agent 封裝 Genkit AI 功能
+// Agent encapsulates Genkit AI functionality
 type Agent struct {
 	genkitInstance *genkit.Genkit
 	config         *config.Config
-	modelRef       ai.ModelRef   // 型別安全的 model reference
-	systemMessage  *ai.Message   // System prompt（從 Dotprompt 載入）
-	messages       []*ai.Message // 對話歷史
-	useTools       bool          // 是否使用工具
-	mcpManager     *MCPManager   // MCP 管理器（可選）
-	useMCP         bool          // 是否使用 MCP 工具
-	memory         interface{}   // Memory 實例（可選，避免循環依賴用 interface{}）
-	currentSession int64         // 當前會話 ID（0 表示未使用）
+	modelRef       ai.ModelRef   // Type-safe model reference
+	systemMessage  *ai.Message   // System prompt (loaded from Dotprompt)
+	messages       []*ai.Message // Conversation history
+	useTools       bool          // Whether to use tools
+	mcpManager     *MCPManager   // MCP manager (optional)
+	useMCP         bool          // Whether to use MCP tools
+	memory         interface{}   // Memory instance (optional, using interface{} to avoid circular dependency)
+	currentSession int64         // Current session ID (0 means not in use)
 }
 
-// New 創建新的 Agent 實例
+// New creates a new Agent instance
 func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Genkit 的 GoogleAI 插件需要從環境變數讀取 API key
-	// 確保環境變數已設置（支援 KOOPA_GEMINI_API_KEY）
+	// Genkit's GoogleAI plugin requires API key from environment variable
+	// Ensure environment variable is set (supports KOOPA_GEMINI_API_KEY)
 	if cfg.GeminiAPIKey != "" {
 		_ = os.Setenv("GEMINI_API_KEY", cfg.GeminiAPIKey)
 	}
 
-	// 初始化 Genkit（啟用 Dotprompt 支援）
+	// Initialize Genkit (enable Dotprompt support)
 	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
 		genkit.WithPromptDir("./prompts"),
 	)
 
-	// 註冊工具
+	// Register tools
 	registerTools(g)
 
-	// 載入 system prompt（從 Dotprompt 檔案）
+	// Load system prompt (from Dotprompt file)
 	systemPrompt := genkit.LookupPrompt(g, "koopa")
 	if systemPrompt == nil {
-		return nil, fmt.Errorf("找不到 system prompt")
+		return nil, fmt.Errorf("system prompt not found")
 	}
 
-	// 渲染 prompt 以獲取 messages（不需要 input，因為 koopa.prompt 沒有輸入參數）
+	// Render prompt to get messages (no input needed as koopa.prompt has no input parameters)
 	actionOpts, err := systemPrompt.Render(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("渲染 system prompt 失敗: %w", err)
+		return nil, fmt.Errorf("failed to render system prompt: %w", err)
 	}
 
-	// 提取 system message
+	// Extract system message
 	var systemMessage *ai.Message
 	if len(actionOpts.Messages) > 0 {
 		systemMessage = actionOpts.Messages[0]
 	} else {
-		return nil, fmt.Errorf("system prompt 沒有包含任何 message")
+		return nil, fmt.Errorf("system prompt contains no messages")
 	}
 
-	// 創建型別安全的 model reference（配對 model 和 config）
-	// 使用配置檔案中的設定覆蓋 prompt 檔案中的設定
-	// 安全轉換 MaxTokens (防止整數溢出)
+	// Create type-safe model reference (pair model with config)
+	// Use config file settings to override prompt file settings
+	// Safely convert MaxTokens (prevent integer overflow)
 	maxTokens := cfg.MaxTokens
 	if maxTokens > math.MaxInt32 {
 		maxTokens = math.MaxInt32
@@ -81,7 +81,7 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 		MaxOutputTokens: int32(maxTokens),
 	})
 
-	// 初始化對話歷史，包含 system message
+	// Initialize conversation history with system message
 	messages := []*ai.Message{systemMessage}
 
 	agent := &Agent{
@@ -91,19 +91,19 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 		systemMessage:  systemMessage,
 		messages:       messages,
 		useTools:       false,
-		mcpManager:     nil, // MCP 默認未啟用
+		mcpManager:     nil, // MCP disabled by default
 		useMCP:         false,
-		memory:         nil, // Memory 默認未啟用
-		currentSession: 0,   // 無當前會話
+		memory:         nil, // Memory disabled by default
+		currentSession: 0,   // No current session
 	}
 
-	// 定義所有 Genkit Flows（在 Agent 完全初始化之後）
+	// Define all Genkit Flows (after Agent is fully initialized)
 	DefineFlows(agent)
 
 	return agent, nil
 }
 
-// Ask 向 AI 提問並獲取回應（不使用工具）
+// Ask asks the AI a question and gets a response (without using tools)
 func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
 	messages := []*ai.Message{
 		a.systemMessage,
@@ -121,9 +121,9 @@ func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
 	return response.Text(), nil
 }
 
-// AskWithTools 向 AI 提問並獲取回應（使用工具）
+// AskWithTools asks the AI a question and gets a response (using tools)
 func (a *Agent) AskWithTools(ctx context.Context, question string) (string, error) {
-	// 查找所有已註冊的工具
+	// Look up all registered tools
 	tools := a.getAllTools(ctx)
 
 	messages := []*ai.Message{
@@ -143,44 +143,44 @@ func (a *Agent) AskWithTools(ctx context.Context, question string) (string, erro
 	return response.Text(), nil
 }
 
-// Chat 多輪對話（保持歷史記錄）
+// Chat multi-turn conversation (maintains history)
 func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
-	// 添加用戶訊息到歷史
+	// Add user message to history
 	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
 
-	// 準備 Generate 選項
+	// Prepare Generate options
 	opts := []ai.GenerateOption{
 		ai.WithModel(a.modelRef),
 		ai.WithMessages(a.messages...),
 	}
 
-	// 如果啟用工具，添加工具
+	// If tools are enabled, add tools
 	if a.useTools {
 		tools := a.getAllTools(ctx)
 		opts = append(opts, ai.WithTools(tools...))
 	}
 
-	// 生成回應
+	// Generate response
 	response, err := genkit.Generate(ctx, a.genkitInstance, opts...)
 	if err != nil {
 		return "", fmt.Errorf("generate failed: %w", err)
 	}
 
-	// 將 AI 回應添加到歷史
+	// Add AI response to history
 	a.messages = append(a.messages, response.Message)
 
-	// 檢查並限制歷史長度
+	// Check and limit history length
 	a.trimHistoryIfNeeded()
 
 	return response.Text(), nil
 }
 
-// ChatStream 多輪對話（streaming 模式）
+// ChatStream multi-turn conversation (streaming mode)
 func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback func(chunk string)) (string, error) {
-	// 添加用戶訊息到歷史
+	// Add user message to history
 	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
 
-	// 準備 Generate 選項
+	// Prepare Generate options
 	opts := []ai.GenerateOption{
 		ai.WithModel(a.modelRef),
 		ai.WithMessages(a.messages...),
@@ -192,51 +192,51 @@ func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback
 		}),
 	}
 
-	// 如果啟用工具，添加工具
+	// If tools are enabled, add tools
 	if a.useTools {
 		tools := a.getAllTools(ctx)
 		opts = append(opts, ai.WithTools(tools...))
 	}
 
-	// 生成回應
+	// Generate response
 	response, err := genkit.Generate(ctx, a.genkitInstance, opts...)
 	if err != nil {
 		return "", fmt.Errorf("generate failed: %w", err)
 	}
 
-	// 將 AI 回應添加到歷史
+	// Add AI response to history
 	a.messages = append(a.messages, response.Message)
 
-	// 檢查並限制歷史長度
+	// Check and limit history length
 	a.trimHistoryIfNeeded()
 
 	return response.Text(), nil
 }
 
-// SetTools 設定是否使用工具
+// SetTools sets whether to use tools
 func (a *Agent) SetTools(enabled bool) {
 	a.useTools = enabled
 }
 
-// GetToolsEnabled 獲取工具啟用狀態
+// GetToolsEnabled retrieves the tool enabled status
 func (a *Agent) GetToolsEnabled() bool {
 	return a.useTools
 }
 
-// ClearHistory 清除對話歷史
+// ClearHistory clears the conversation history
 func (a *Agent) ClearHistory() {
-	// 重置對話歷史，但保留 system message
+	// Reset conversation history but keep system message
 	a.messages = []*ai.Message{a.systemMessage}
 }
 
-// GetHistoryLength 獲取對話歷史長度
+// GetHistoryLength retrieves the conversation history length
 func (a *Agent) GetHistoryLength() int {
 	return len(a.messages)
 }
 
-// AskWithStructuredOutput 向 AI 提問並獲取結構化輸出
-// T 必須是一個可以被 JSON 序列化的結構體類型
-// outputExample 用於推斷輸出類型，通常傳入該類型的零值（如 MyStruct{}）
+// AskWithStructuredOutput asks the AI a question and gets structured output
+// T must be a JSON-serializable struct type
+// outputExample is used to infer the output type, usually pass a zero value of that type (e.g., MyStruct{})
 func (a *Agent) AskWithStructuredOutput(ctx context.Context, question string, outputExample any) (*ai.ModelResponse, error) {
 	messages := []*ai.Message{
 		a.systemMessage,
@@ -255,7 +255,7 @@ func (a *Agent) AskWithStructuredOutput(ctx context.Context, question string, ou
 	return response, nil
 }
 
-// getAllTools 獲取所有已註冊的工具（包含 MCP 工具）
+// getAllTools retrieves all registered tools (including MCP tools)
 func (a *Agent) getAllTools(ctx context.Context) []ai.ToolRef {
 	toolNames := []string{
 		"currentTime",
@@ -271,14 +271,14 @@ func (a *Agent) getAllTools(ctx context.Context) []ai.ToolRef {
 
 	tools := make([]ai.ToolRef, 0, len(toolNames))
 
-	// 添加本地註冊的工具
+	// Add locally registered tools
 	for _, name := range toolNames {
 		if tool := genkit.LookupTool(a.genkitInstance, name); tool != nil {
 			tools = append(tools, tool)
 		}
 	}
 
-	// 如果啟用了 MCP，添加 MCP 工具
+	// If MCP is enabled, add MCP tools
 	if a.useMCP && a.mcpManager != nil {
 		mcpTools, err := a.mcpManager.GetActiveTools(ctx, a.genkitInstance)
 		if err == nil {
@@ -291,10 +291,10 @@ func (a *Agent) getAllTools(ctx context.Context) []ai.ToolRef {
 	return tools
 }
 
-// EnableMCP 啟用 MCP 並配置伺服器（可選）
+// EnableMCP enables MCP and configures servers (optional)
 func (a *Agent) EnableMCP(ctx context.Context, serverConfigs []MCPServerConfig) error {
 	if a.mcpManager == nil {
-		// 使用 mcp 包的類型
+		// Use mcp package types
 		var mcpConfigs []mcp.MCPServerConfig
 		for _, cfg := range serverConfigs {
 			mcpConfigs = append(mcpConfigs, cfg.Config)
@@ -302,7 +302,7 @@ func (a *Agent) EnableMCP(ctx context.Context, serverConfigs []MCPServerConfig) 
 
 		manager, err := NewMCPManager(ctx, a.genkitInstance, mcpConfigs)
 		if err != nil {
-			return fmt.Errorf("無法啟用 MCP: %w", err)
+			return fmt.Errorf("unable to enable MCP: %w", err)
 		}
 		a.mcpManager = manager
 	}
@@ -310,49 +310,49 @@ func (a *Agent) EnableMCP(ctx context.Context, serverConfigs []MCPServerConfig) 
 	return nil
 }
 
-// DisableMCP 禁用 MCP
+// DisableMCP disables MCP
 func (a *Agent) DisableMCP() {
 	a.useMCP = false
 }
 
-// GetMCPManager 獲取 MCP 管理器（如果已啟用）
+// GetMCPManager retrieves the MCP manager (if enabled)
 func (a *Agent) GetMCPManager() *MCPManager {
 	return a.mcpManager
 }
 
-// GetMCPEnabled 獲取 MCP 啟用狀態
+// GetMCPEnabled retrieves the MCP enabled status
 func (a *Agent) GetMCPEnabled() bool {
 	return a.useMCP
 }
 
-// MCPServerConfig 是 MCP 伺服器配置的便利類型
+// MCPServerConfig is a convenience type for MCP server configuration
 type MCPServerConfig struct {
 	Name   string
 	Config mcp.MCPServerConfig
 }
 
-// trimHistoryIfNeeded 檢查並限制對話歷史長度（滑動窗口機制）
-// 策略：保留 system message + 最近的 N 則訊息
+// trimHistoryIfNeeded checks and limits conversation history length (sliding window mechanism)
+// Strategy: keep system message + most recent N messages
 func (a *Agent) trimHistoryIfNeeded() {
 	maxMessages := a.config.MaxHistoryMessages
 
-	// 0 表示無限制
+	// 0 means unlimited
 	if maxMessages <= 0 {
 		return
 	}
 
-	// +1 是因為要算上 system message
+	// +1 because we need to count the system message
 	if len(a.messages) <= maxMessages+1 {
 		return
 	}
 
-	// 保留 system message（第一則）和最近的 maxMessages 則訊息
-	// 計算要保留的起始位置
+	// Keep system message (first one) and most recent maxMessages messages
+	// Calculate starting position to keep
 	keepFromIndex := len(a.messages) - maxMessages
 
-	// 重建 messages：system message + 最近的 N 則
+	// Rebuild messages: system message + most recent N messages
 	newMessages := make([]*ai.Message, 0, maxMessages+1)
-	newMessages = append(newMessages, a.systemMessage) // 保留 system message
+	newMessages = append(newMessages, a.systemMessage) // Keep system message
 	newMessages = append(newMessages, a.messages[keepFromIndex:]...)
 
 	a.messages = newMessages

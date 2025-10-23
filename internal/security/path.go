@@ -7,27 +7,27 @@ import (
 	"strings"
 )
 
-// PathValidator 路徑驗證器
-// 用於防止路徑遍歷攻擊（CWE-22）
+// PathValidator path validator
+// Used to prevent path traversal attacks (CWE-22)
 type PathValidator struct {
 	allowedDirs []string
 	workDir     string
 }
 
-// NewPathValidator 創建路徑驗證器
-// allowedDirs: 允許訪問的目錄列表（空列表表示只允許工作目錄）
+// NewPathValidator creates a path validator
+// allowedDirs: list of allowed directories (empty list means only working directory is allowed)
 func NewPathValidator(allowedDirs []string) (*PathValidator, error) {
 	workDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("無法獲取工作目錄: %w", err)
+		return nil, fmt.Errorf("unable to get working directory: %w", err)
 	}
 
-	// 將所有允許的目錄轉換為絕對路徑
+	// Convert all allowed directories to absolute paths
 	absAllowedDirs := make([]string, 0, len(allowedDirs))
 	for _, dir := range allowedDirs {
 		absDir, err := filepath.Abs(dir)
 		if err != nil {
-			return nil, fmt.Errorf("無法解析目錄 %s: %w", dir, err)
+			return nil, fmt.Errorf("unable to resolve directory %s: %w", dir, err)
 		}
 		absAllowedDirs = append(absAllowedDirs, absDir)
 	}
@@ -38,31 +38,31 @@ func NewPathValidator(allowedDirs []string) (*PathValidator, error) {
 	}, nil
 }
 
-// ValidatePath 驗證並清理文件路徑
-// 返回安全的絕對路徑，或返回錯誤
+// ValidatePath validates and sanitizes a file path
+// Returns a safe absolute path or an error
 func (v *PathValidator) ValidatePath(path string) (string, error) {
-	// 1. 清理路徑（移除 ../ 等）
+	// 1. Clean the path (remove ../ etc.)
 	cleanPath := filepath.Clean(path)
 
-	// 2. 轉換為絕對路徑
+	// 2. Convert to absolute path
 	absPath, err := filepath.Abs(cleanPath)
 	if err != nil {
-		return "", fmt.Errorf("無效的路徑: %w", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
-	// 3. 檢查是否在允許的目錄內
+	// 3. Check if within allowed directories
 	allowed := false
 
-	// 規範化目錄路徑（確保以斜線結尾進行精確比對）
+	// Normalize directory paths (ensure trailing slash for exact matching)
 	workDirNorm := filepath.Clean(v.workDir) + string(filepath.Separator)
 	absPathWithSep := filepath.Clean(absPath) + string(filepath.Separator)
 
-	// 首先檢查工作目錄
+	// First check working directory
 	if strings.HasPrefix(absPathWithSep, workDirNorm) || absPath == v.workDir {
 		allowed = true
 	}
 
-	// 然後檢查額外的允許目錄
+	// Then check additional allowed directories
 	if !allowed {
 		for _, dir := range v.allowedDirs {
 			dirNorm := filepath.Clean(dir) + string(filepath.Separator)
@@ -74,32 +74,32 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 	}
 
 	if !allowed {
-		return "", fmt.Errorf("拒絕訪問: 路徑 '%s' 不在允許的目錄內", absPath)
+		return "", fmt.Errorf("access denied: path '%s' is not within allowed directories", absPath)
 	}
 
-	// 4. 解析符號連結（防止通過符號連結繞過限制）
+	// 4. Resolve symbolic links (prevent bypassing restrictions through symlinks)
 	realPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
-		// 如果文件不存在，EvalSymlinks 會失敗
-		// 這對於創建新文件是可以接受的
+		// If file doesn't exist, EvalSymlinks will fail
+		// This is acceptable for creating new files
 		if !os.IsNotExist(err) {
-			return "", fmt.Errorf("無法解析符號連結: %w", err)
+			return "", fmt.Errorf("unable to resolve symbolic link: %w", err)
 		}
-		// 文件不存在，但路徑是安全的
+		// File doesn't exist, but path is safe
 		return absPath, nil
 	}
 
-	// 5. 再次檢查符號連結解析後的路徑是否在允許的目錄內
+	// 5. Check again if the resolved symlink path is within allowed directories
 	if realPath != absPath {
 		realPathWithSep := filepath.Clean(realPath) + string(filepath.Separator)
 		realAllowed := false
 
-		// 檢查工作目錄
+		// Check working directory
 		if strings.HasPrefix(realPathWithSep, workDirNorm) || realPath == v.workDir {
 			realAllowed = true
 		}
 
-		// 檢查允許的目錄
+		// Check allowed directories
 		if !realAllowed {
 			for _, dir := range v.allowedDirs {
 				dirNorm := filepath.Clean(dir) + string(filepath.Separator)
@@ -111,7 +111,7 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 		}
 
 		if !realAllowed {
-			return "", fmt.Errorf("拒絕訪問: 符號連結指向不允許的位置 '%s'", realPath)
+			return "", fmt.Errorf("access denied: symbolic link points to disallowed location '%s'", realPath)
 		}
 		absPath = realPath
 	}
@@ -119,19 +119,19 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 	return absPath, nil
 }
 
-// IsPathSafe 快速檢查路徑是否包含明顯的危險模式
-// 這是一個額外的保護層，但不應該單獨依賴
+// IsPathSafe quickly checks if a path contains obvious dangerous patterns
+// This is an additional layer of protection but should not be relied upon alone
 func IsPathSafe(path string) bool {
-	// 檢查常見的危險模式
+	// Check for common dangerous patterns
 	dangerousPatterns := []string{
-		"../",      // 向上遍歷
-		"..\\",     // Windows 向上遍歷
-		"/etc/",    // 系統配置
-		"/dev/",    // 設備文件
-		"/proc/",   // 進程信息
-		"/sys/",    // 系統信息
-		"c:\\",     // Windows 系統根目錄
-		"c:/",      // Windows 系統根目錄
+		"../",      // Upward traversal
+		"..\\",     // Windows upward traversal
+		"/etc/",    // System configuration
+		"/dev/",    // Device files
+		"/proc/",   // Process information
+		"/sys/",    // System information
+		"c:\\",     // Windows system root directory
+		"c:/",      // Windows system root directory
 	}
 
 	lowerPath := strings.ToLower(path)
@@ -144,11 +144,11 @@ func IsPathSafe(path string) bool {
 	return true
 }
 
-// GetHomeDir 安全地獲取用戶主目錄
+// GetHomeDir safely retrieves the user's home directory
 func GetHomeDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("無法獲取用戶主目錄: %w", err)
+		return "", fmt.Errorf("unable to get user home directory: %w", err)
 	}
 	return home, nil
 }

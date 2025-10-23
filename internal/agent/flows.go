@@ -13,28 +13,28 @@ import (
 	"github.com/koopa0/koopa/internal/security"
 )
 
-// pathValidator 路徑驗證器（允許工作目錄和用戶主目錄）
+// pathValidator path validator (allows working directory and user home directory)
 var pathValidator *security.PathValidator
 
 func init() {
-	// 初始化路徑驗證器
-	// 允許訪問工作目錄和用戶主目錄
+	// Initialize path validator
+	// Allow access to working directory and user home directory
 	homeDir, _ := security.GetHomeDir()
 	var err error
 	pathValidator, err = security.NewPathValidator([]string{homeDir})
 	if err != nil {
-		// 如果初始化失敗，使用空白名單（只允許工作目錄）
+		// If initialization fails, use empty whitelist (only allow working directory)
 		pathValidator, _ = security.NewPathValidator([]string{})
 	}
 }
 
-// DefineFlows 定義所有 Genkit Flows
-// 這些 Flows 專為 Personal AI Assistant 設計，協助用戶完成各種日常任務
-// 涵蓋：對話、內容創作、研究、生產力、開發輔助等多個領域
+// DefineFlows defines all Genkit Flows
+// These Flows are designed specifically for Personal AI Assistant to help users complete various daily tasks
+// Covers: conversation, content creation, research, productivity, development assistance, and more
 func DefineFlows(a *Agent) {
-	// ==================== 核心通用 Flows ====================
+	// ==================== Core General Flows ====================
 
-	// 1. 流式對話 Flow - 提供即時回應的對話體驗
+	// 1. Streaming chat Flow - provides real-time conversational experience
 	genkit.DefineStreamingFlow(a.genkitInstance, "chat",
 		func(ctx context.Context, userInput string, callback core.StreamCallback[string]) (string, error) {
 			finalResponse, err := a.ChatStream(ctx, userInput, func(chunk string) {
@@ -46,14 +46,14 @@ func DefineFlows(a *Agent) {
 			return finalResponse, nil
 		})
 
-	// 2. 通用分析 Flow - 統一的內容分析入口
-	// 支援分析檔案、日誌、文件、URL 等各種內容類型
+	// 2. General analysis Flow - unified content analysis entry point
+	// Supports analyzing files, logs, documents, URLs and other content types
 	type AnalyzeRequest struct {
-		Content     string `json:"content"`             // 內容（可以是檔案路徑、URL 或直接文字）
-		ContentType string `json:"content_type"`        // 類型: file, log, document, url, text
-		Question    string `json:"question,omitempty"`  // 用戶想問的問題（可選）
-		Format      string `json:"format,omitempty"`    // 輸出格式: summary, analysis, insights, comparison
-		MaxBytes    int    `json:"max_bytes,omitempty"` // 內容大小限制（0 表示無限制）
+		Content     string `json:"content"`             // Content (can be file path, URL or direct text)
+		ContentType string `json:"content_type"`        // Type: file, log, document, url, text
+		Question    string `json:"question,omitempty"`  // Question the user wants to ask (optional)
+		Format      string `json:"format,omitempty"`    // Output format: summary, analysis, insights, comparison
+		MaxBytes    int    `json:"max_bytes,omitempty"` // Content size limit (0 means unlimited)
 	}
 
 	type AnalyzeOutput struct {
@@ -64,7 +64,7 @@ func DefineFlows(a *Agent) {
 		Answer      string   `json:"answer,omitempty"` // 針對 question 的回答
 	}
 
-	// AnalyzePromptInput 對應 analyze.prompt 的輸入參數
+	// AnalyzePromptInput corresponds to the input parameters of analyze.prompt
 	type AnalyzePromptInput struct {
 		Content     string `json:"content"`
 		ContentType string `json:"content_type"`
@@ -76,46 +76,46 @@ func DefineFlows(a *Agent) {
 			var content string
 			var err error
 
-			// 根據 content_type 載入內容
+			// Load content based on content_type
 			switch input.ContentType {
 			case "file", "log", "document":
 				maxBytes := input.MaxBytes
 				if maxBytes == 0 {
-					maxBytes = 10000 // 預設 10KB
+					maxBytes = 10000 // Default 10KB
 				}
 				content, err = readFileWithLimit(ctx, input.Content, maxBytes)
 				if err != nil {
-					return AnalyzeOutput{}, fmt.Errorf("無法讀取檔案: %w", err)
+					return AnalyzeOutput{}, fmt.Errorf("unable to read file: %w", err)
 				}
 			case "url":
-				// TODO: 未來可以加入網頁抓取功能
-				return AnalyzeOutput{}, fmt.Errorf("URL 分析功能尚未實作")
+				// TODO: Can add web scraping functionality in the future
+				return AnalyzeOutput{}, fmt.Errorf("URL analysis functionality not yet implemented")
 			case "text":
 				content = input.Content
 			default:
-				return AnalyzeOutput{}, fmt.Errorf("不支援的內容類型: %s", input.ContentType)
+				return AnalyzeOutput{}, fmt.Errorf("unsupported content type: %s", input.ContentType)
 			}
 
-			// 使用 Dotprompt 模板（含 Prompt Injection 防護）
+			// Use Dotprompt template (includes Prompt Injection protection)
 			analyzePrompt := genkit.LookupPrompt(a.genkitInstance, "analyze")
 			if analyzePrompt == nil {
-				return AnalyzeOutput{}, fmt.Errorf("找不到 analyze prompt")
+				return AnalyzeOutput{}, fmt.Errorf("analyze prompt not found")
 			}
 
-			// 準備輸入資料
+			// Prepare input data
 			promptInput := AnalyzePromptInput{
 				Content:     content,
 				ContentType: input.ContentType,
 				Question:    input.Question,
 			}
 
-			// 渲染 prompt
+			// Render prompt
 			actionOpts, err := analyzePrompt.Render(ctx, promptInput)
 			if err != nil {
-				return AnalyzeOutput{}, fmt.Errorf("渲染 prompt 失敗: %w", err)
+				return AnalyzeOutput{}, fmt.Errorf("failed to render prompt: %w", err)
 			}
 
-			// 使用渲染後的 messages 生成結構化輸出
+			// Use rendered messages to generate structured output
 			response, err := genkit.Generate(ctx, a.genkitInstance,
 				ai.WithModel(a.modelRef),
 				ai.WithMessages(actionOpts.Messages...),
@@ -134,24 +134,24 @@ func DefineFlows(a *Agent) {
 			return output, nil
 		})
 
-	// ==================== 內容創作 Flows ====================
+	// ==================== Content Creation Flows ====================
 
-	// 3. 撰寫郵件 Flow - 根據場景生成專業郵件
+	// 3. Compose email Flow - generates professional emails based on scenarios
 	type EmailRequest struct {
-		Recipient string `json:"recipient"`          // 收件人（稱呼）
-		Purpose   string `json:"purpose"`            // 目的: thanks, request, notification, apology, invitation
-		Context   string `json:"context"`            // 背景資訊和具體內容
-		Tone      string `json:"tone,omitempty"`     // 語氣: formal, casual, friendly（預設 formal）
-		Language  string `json:"language,omitempty"` // 語言（預設繁體中文）
+		Recipient string `json:"recipient"`          // Recipient (salutation)
+		Purpose   string `json:"purpose"`            // Purpose: thanks, request, notification, apology, invitation
+		Context   string `json:"context"`            // Background information and specific content
+		Tone      string `json:"tone,omitempty"`     // Tone: formal, casual, friendly (default formal)
+		Language  string `json:"language,omitempty"` // Language (default Traditional Chinese)
 	}
 
 	type EmailOutput struct {
-		Subject string `json:"subject"` // 郵件主旨
-		Body    string `json:"body"`    // 郵件內容
-		Tips    string `json:"tips"`    // 使用建議
+		Subject string `json:"subject"` // Email subject
+		Body    string `json:"body"`    // Email content
+		Tips    string `json:"tips"`    // Usage tips
 	}
 
-	// EmailPromptInput 對應 email.prompt 的輸入參數
+	// EmailPromptInput corresponds to the input parameters of email.prompt
 	type EmailPromptInput struct {
 		Recipient string `json:"recipient"`
 		Purpose   string `json:"purpose"`
@@ -162,7 +162,7 @@ func DefineFlows(a *Agent) {
 
 	genkit.DefineFlow(a.genkitInstance, "composeEmail",
 		func(ctx context.Context, input EmailRequest) (EmailOutput, error) {
-			// 設定預設值
+			// Set default values
 			tone := input.Tone
 			if tone == "" {
 				tone = "formal"
@@ -172,13 +172,13 @@ func DefineFlows(a *Agent) {
 				language = "繁體中文"
 			}
 
-			// 使用 Dotprompt 模板
+			// Use Dotprompt template
 			emailPrompt := genkit.LookupPrompt(a.genkitInstance, "composeEmail")
 			if emailPrompt == nil {
-				return EmailOutput{}, fmt.Errorf("找不到 composeEmail prompt")
+				return EmailOutput{}, fmt.Errorf("composeEmail prompt not found")
 			}
 
-			// 準備輸入資料
+			// Prepare input data
 			promptInput := EmailPromptInput{
 				Recipient: input.Recipient,
 				Purpose:   input.Purpose,
@@ -187,13 +187,13 @@ func DefineFlows(a *Agent) {
 				Language:  language,
 			}
 
-			// 渲染 prompt
+			// Render prompt
 			actionOpts, err := emailPrompt.Render(ctx, promptInput)
 			if err != nil {
-				return EmailOutput{}, fmt.Errorf("渲染 prompt 失敗: %w", err)
+				return EmailOutput{}, fmt.Errorf("failed to render prompt: %w", err)
 			}
 
-			// 使用渲染後的 messages 生成結構化輸出
+			// Use rendered messages to generate structured output
 			response, err := genkit.Generate(ctx, a.genkitInstance,
 				ai.WithModel(a.modelRef),
 				ai.WithMessages(actionOpts.Messages...),
@@ -211,26 +211,26 @@ func DefineFlows(a *Agent) {
 			return output, nil
 		})
 
-	// ==================== 研究與資訊 Flows ====================
+	// ==================== Research and Information Flows ====================
 
-	// 4. 主題研究 Flow - 深入研究一個主題並產生結構化報告
+	// 4. Topic research Flow - in-depth research on a topic and generates structured report
 	type ResearchRequest struct {
-		Topic    string   `json:"topic"`              // 研究主題
-		Focus    []string `json:"focus,omitempty"`    // 重點關注面向
-		Depth    string   `json:"depth,omitempty"`    // 深度: quick, detailed（預設 detailed）
-		Language string   `json:"language,omitempty"` // 語言（預設繁體中文）
+		Topic    string   `json:"topic"`              // Research topic
+		Focus    []string `json:"focus,omitempty"`    // Focus areas
+		Depth    string   `json:"depth,omitempty"`    // Depth: quick, detailed (default detailed)
+		Language string   `json:"language,omitempty"` // Language (default Traditional Chinese)
 	}
 
 	type ResearchOutput struct {
 		Topic     string   `json:"topic"`
-		Summary   string   `json:"summary"`    // 總結
-		KeyPoints []string `json:"key_points"` // 關鍵要點
-		Insights  []string `json:"insights"`   // 深入見解
-		Questions []string `json:"questions"`  // 延伸問題
-		NextSteps []string `json:"next_steps"` // 建議後續步驟
+		Summary   string   `json:"summary"`    // Summary
+		KeyPoints []string `json:"key_points"` // Key points
+		Insights  []string `json:"insights"`   // Deep insights
+		Questions []string `json:"questions"`  // Extended questions
+		NextSteps []string `json:"next_steps"` // Suggested next steps
 	}
 
-	// ResearchTopicPromptInput 對應 research_topic.prompt 的輸入參數
+	// ResearchTopicPromptInput corresponds to the input parameters of research_topic.prompt
 	type ResearchTopicPromptInput struct {
 		Topic    string   `json:"topic"`
 		Focus    []string `json:"focus"`
@@ -288,34 +288,34 @@ func DefineFlows(a *Agent) {
 			return output, nil
 		})
 
-	// ==================== 生產力 Flows ====================
+	// ==================== Productivity Flows ====================
 
-	// 5. 任務規劃 Flow - 將目標拆解成可執行的任務清單
+	// 5. Task planning Flow - breaks down goals into executable task lists
 	type TaskPlanRequest struct {
-		Goal        string   `json:"goal"`                  // 目標描述
-		Deadline    string   `json:"deadline,omitempty"`    // 截止時間
-		Constraints []string `json:"constraints,omitempty"` // 限制條件
-		Resources   []string `json:"resources,omitempty"`   // 可用資源
+		Goal        string   `json:"goal"`                  // Goal description
+		Deadline    string   `json:"deadline,omitempty"`    // Deadline
+		Constraints []string `json:"constraints,omitempty"` // Constraints
+		Resources   []string `json:"resources,omitempty"`   // Available resources
 	}
 
 	type Task struct {
-		Title        string   `json:"title"`                  // 任務標題
-		Description  string   `json:"description"`            // 詳細說明
-		Priority     string   `json:"priority"`               // 優先級: high, medium, low
-		Duration     string   `json:"duration"`               // 預估時間
-		Dependencies []string `json:"dependencies,omitempty"` // 依賴的任務
+		Title        string   `json:"title"`                  // Task title
+		Description  string   `json:"description"`            // Detailed description
+		Priority     string   `json:"priority"`               // Priority: high, medium, low
+		Duration     string   `json:"duration"`               // Estimated time
+		Dependencies []string `json:"dependencies,omitempty"` // Dependent tasks
 	}
 
 	type TaskPlanOutput struct {
 		Goal        string   `json:"goal"`
-		Strategy    string   `json:"strategy"`    // 整體策略
-		Tasks       []Task   `json:"tasks"`       // 任務清單
-		Timeline    string   `json:"timeline"`    // 時間規劃
-		Risks       []string `json:"risks"`       // 風險提醒
-		Suggestions []string `json:"suggestions"` // 改進建議
+		Strategy    string   `json:"strategy"`    // Overall strategy
+		Tasks       []Task   `json:"tasks"`       // Task list
+		Timeline    string   `json:"timeline"`    // Timeline planning
+		Risks       []string `json:"risks"`       // Risk warnings
+		Suggestions []string `json:"suggestions"` // Improvement suggestions
 	}
 
-	// TaskPlanPromptInput 對應 task_plan.prompt 的輸入參數
+	// TaskPlanPromptInput corresponds to the input parameters of task_plan.prompt
 	type TaskPlanPromptInput struct {
 		Goal        string   `json:"goal"`
 		Deadline    string   `json:"deadline"`
@@ -359,9 +359,9 @@ func DefineFlows(a *Agent) {
 			return output, nil
 		})
 
-	// ==================== 開發輔助 Flows ====================
+	// ==================== Development Assistant Flows ====================
 
-	// 6. 程式碼審查 Flow - 審查程式碼並提供改進建議
+	// 6. Code review Flow - reviews code and provides improvement suggestions
 	type CodeReviewOutput struct {
 		Issues        []string `json:"issues"`
 		Suggestions   []string `json:"suggestions"`
@@ -369,37 +369,37 @@ func DefineFlows(a *Agent) {
 		Rating        string   `json:"rating"`
 	}
 
-	// CodeReviewPromptInput 對應 code_review.prompt 的輸入參數
+	// CodeReviewPromptInput corresponds to the input parameters of code_review.prompt
 	type CodeReviewPromptInput struct {
 		Code string `json:"code"`
 	}
 
 	genkit.DefineFlow(a.genkitInstance, "reviewCode",
 		func(ctx context.Context, filePath string) (CodeReviewOutput, error) {
-			// 讀取程式碼（使用共用函數）
-			code, err := readFileWithLimit(ctx, filePath, 0) // 0 表示無限制
+			// Read code (using shared function)
+			code, err := readFileWithLimit(ctx, filePath, 0) // 0 means unlimited
 			if err != nil {
 				return CodeReviewOutput{}, err
 			}
 
-			// 使用 Dotprompt 模板
+			// Use Dotprompt template
 			reviewPrompt := genkit.LookupPrompt(a.genkitInstance, "reviewCode")
 			if reviewPrompt == nil {
-				return CodeReviewOutput{}, fmt.Errorf("找不到 reviewCode prompt")
+				return CodeReviewOutput{}, fmt.Errorf("reviewCode prompt not found")
 			}
 
-			// 準備輸入資料
+			// Prepare input data
 			promptInput := CodeReviewPromptInput{
 				Code: code,
 			}
 
-			// 渲染 prompt
+			// Render prompt
 			actionOpts, err := reviewPrompt.Render(ctx, promptInput)
 			if err != nil {
-				return CodeReviewOutput{}, fmt.Errorf("渲染 prompt 失敗: %w", err)
+				return CodeReviewOutput{}, fmt.Errorf("failed to render prompt: %w", err)
 			}
 
-			// 使用渲染後的 messages 生成結構化輸出
+			// Use rendered messages to generate structured output
 			response, err := genkit.Generate(ctx, a.genkitInstance,
 				ai.WithModel(a.modelRef),
 				ai.WithMessages(actionOpts.Messages...),
@@ -417,38 +417,38 @@ func DefineFlows(a *Agent) {
 			return output, nil
 		})
 
-	// 7. 終端命令建議 Flow - 根據用戶意圖建議安全的終端命令
+	// 7. Terminal command suggestion Flow - suggests safe terminal commands based on user intent
 	type CommandSuggestion struct {
 		Command     string `json:"command"`
 		Explanation string `json:"explanation"`
 		Safety      string `json:"safety"`
 	}
 
-	// CommandSuggestPromptInput 對應 command_suggest.prompt 的輸入參數
+	// CommandSuggestPromptInput corresponds to the input parameters of command_suggest.prompt
 	type CommandSuggestPromptInput struct {
 		Intent string `json:"intent"`
 	}
 
 	genkit.DefineFlow(a.genkitInstance, "suggestCommand",
 		func(ctx context.Context, intent string) (CommandSuggestion, error) {
-			// 使用 Dotprompt 模板
+			// Use Dotprompt template
 			commandPrompt := genkit.LookupPrompt(a.genkitInstance, "suggestCommand")
 			if commandPrompt == nil {
-				return CommandSuggestion{}, fmt.Errorf("找不到 suggestCommand prompt")
+				return CommandSuggestion{}, fmt.Errorf("suggestCommand prompt not found")
 			}
 
-			// 準備輸入資料
+			// Prepare input data
 			promptInput := CommandSuggestPromptInput{
 				Intent: intent,
 			}
 
-			// 渲染 prompt
+			// Render prompt
 			actionOpts, err := commandPrompt.Render(ctx, promptInput)
 			if err != nil {
-				return CommandSuggestion{}, fmt.Errorf("渲染 prompt 失敗: %w", err)
+				return CommandSuggestion{}, fmt.Errorf("failed to render prompt: %w", err)
 			}
 
-			// 使用渲染後的 messages 生成結構化輸出
+			// Use rendered messages to generate structured output
 			response, err := genkit.Generate(ctx, a.genkitInstance,
 				ai.WithModel(a.modelRef),
 				ai.WithMessages(actionOpts.Messages...),
@@ -466,7 +466,7 @@ func DefineFlows(a *Agent) {
 			return output, nil
 		})
 
-	// 8. Git 提交訊息生成 Flow - 根據 diff 生成符合慣例的提交訊息
+	// 8. Git commit message generation Flow - generates conventional commit messages based on diff
 	type GitCommitMessage struct {
 		Subject string   `json:"subject"`
 		Body    string   `json:"body"`
@@ -474,31 +474,31 @@ func DefineFlows(a *Agent) {
 		Files   []string `json:"files"`
 	}
 
-	// GenerateCommitMessagePromptInput 對應 generate_commit_message.prompt 的輸入參數
+	// GenerateCommitMessagePromptInput corresponds to the input parameters of generate_commit_message.prompt
 	type GenerateCommitMessagePromptInput struct {
 		Diff string `json:"diff"`
 	}
 
 	genkit.DefineFlow(a.genkitInstance, "generateCommitMessage",
 		func(ctx context.Context, diff string) (GitCommitMessage, error) {
-			// 使用 Dotprompt 模板
+			// Use Dotprompt template
 			commitPrompt := genkit.LookupPrompt(a.genkitInstance, "generateCommitMessage")
 			if commitPrompt == nil {
-				return GitCommitMessage{}, fmt.Errorf("找不到 generateCommitMessage prompt")
+				return GitCommitMessage{}, fmt.Errorf("generateCommitMessage prompt not found")
 			}
 
-			// 準備輸入資料
+			// Prepare input data
 			promptInput := GenerateCommitMessagePromptInput{
 				Diff: diff,
 			}
 
-			// 渲染 prompt
+			// Render prompt
 			actionOpts, err := commitPrompt.Render(ctx, promptInput)
 			if err != nil {
-				return GitCommitMessage{}, fmt.Errorf("渲染 prompt 失敗: %w", err)
+				return GitCommitMessage{}, fmt.Errorf("failed to render prompt: %w", err)
 			}
 
-			// 使用渲染後的 messages 生成結構化輸出
+			// Use rendered messages to generate structured output
 			response, err := genkit.Generate(ctx, a.genkitInstance,
 				ai.WithModel(a.modelRef),
 				ai.WithMessages(actionOpts.Messages...),
@@ -516,7 +516,7 @@ func DefineFlows(a *Agent) {
 			return output, nil
 		})
 
-	// 9. 錯誤診斷 Flow - 診斷錯誤訊息並提供完整解決方案
+	// 9. Error diagnosis Flow - diagnoses error messages and provides complete solutions
 	type ErrorDiagnosis struct {
 		ErrorType  string   `json:"error_type"`
 		Causes     []string `json:"causes"`
@@ -525,31 +525,31 @@ func DefineFlows(a *Agent) {
 		References []string `json:"references"`
 	}
 
-	// ErrorDiagnosePromptInput 對應 error_diagnose.prompt 的輸入參數
+	// ErrorDiagnosePromptInput corresponds to the input parameters of error_diagnose.prompt
 	type ErrorDiagnosePromptInput struct {
 		ErrorMessage string `json:"error_message"`
 	}
 
 	genkit.DefineFlow(a.genkitInstance, "diagnoseError",
 		func(ctx context.Context, errorMessage string) (ErrorDiagnosis, error) {
-			// 使用 Dotprompt 模板
+			// Use Dotprompt template
 			errorPrompt := genkit.LookupPrompt(a.genkitInstance, "diagnoseError")
 			if errorPrompt == nil {
-				return ErrorDiagnosis{}, fmt.Errorf("找不到 diagnoseError prompt")
+				return ErrorDiagnosis{}, fmt.Errorf("diagnoseError prompt not found")
 			}
 
-			// 準備輸入資料
+			// Prepare input data
 			promptInput := ErrorDiagnosePromptInput{
 				ErrorMessage: errorMessage,
 			}
 
-			// 渲染 prompt
+			// Render prompt
 			actionOpts, err := errorPrompt.Render(ctx, promptInput)
 			if err != nil {
-				return ErrorDiagnosis{}, fmt.Errorf("渲染 prompt 失敗: %w", err)
+				return ErrorDiagnosis{}, fmt.Errorf("failed to render prompt: %w", err)
 			}
 
-			// 使用渲染後的 messages 生成結構化輸出
+			// Use rendered messages to generate structured output
 			response, err := genkit.Generate(ctx, a.genkitInstance,
 				ai.WithModel(a.modelRef),
 				ai.WithMessages(actionOpts.Messages...),
@@ -568,49 +568,49 @@ func DefineFlows(a *Agent) {
 		})
 }
 
-// GetAllFlows 獲取所有已定義的 Flows
+// GetAllFlows retrieves all defined Flows
 func (a *Agent) GetAllFlows() []api.Action {
 	return genkit.ListFlows(a.genkitInstance)
 }
 
-// readFileWithLimit 讀取檔案內容並限制大小（可組合的輔助函數）
-// maxBytes: 最大字節數，0 表示無限制
-// 對於日誌檔案：返回最後 N 個字節（尾部）
-// 對於一般檔案：返回前 N 個字節（開頭）
+// readFileWithLimit reads file content with size limit (composable helper function)
+// maxBytes: maximum bytes, 0 means unlimited
+// For log files: returns last N bytes (tail)
+// For regular files: returns first N bytes (head)
 func readFileWithLimit(ctx context.Context, filePath string, maxBytes int) (string, error) {
 	return genkit.Run(ctx, fmt.Sprintf("read-file-%s", filePath),
 		func() (string, error) {
-			// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+			// Path security validation (prevent path traversal attacks CWE-22)
 			safePath, err := pathValidator.ValidatePath(filePath)
 			if err != nil {
-				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+				return "", fmt.Errorf("path validation failed: %w", err)
 			}
 
 			data, err := os.ReadFile(safePath)
 			if err != nil {
-				return "", fmt.Errorf("無法讀取檔案 %s: %w", safePath, err)
+				return "", fmt.Errorf("unable to read file %s: %w", safePath, err)
 			}
 
-			// 無限制
+			// Unlimited
 			if maxBytes <= 0 || len(data) <= maxBytes {
 				return string(data), nil
 			}
 
-			// 日誌檔案取尾部（最新的內容）
-			// 通過檔案名判斷：包含 "log" 或 ".log" 的視為日誌
+			// Log files take tail (latest content)
+			// Determined by filename: containing "log" or ".log" is considered a log file
 			isLogFile := containsIgnoreCase(filePath, "log")
 
 			if isLogFile {
-				// 取最後 maxBytes 字節
+				// Take last maxBytes bytes
 				return string(data[len(data)-maxBytes:]), nil
 			} else {
-				// 一般檔案取前 maxBytes 字節
+				// Regular files take first maxBytes bytes
 				return string(data[:maxBytes]) + "...", nil
 			}
 		})
 }
 
-// containsIgnoreCase 不區分大小寫的字串包含檢查
+// containsIgnoreCase case-insensitive string contains check
 func containsIgnoreCase(str, substr string) bool {
 	return strings.Contains(strings.ToLower(str), strings.ToLower(substr))
 }

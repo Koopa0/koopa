@@ -10,14 +10,14 @@ import (
 	"github.com/firebase/genkit/go/plugins/mcp"
 )
 
-// MCPManager 管理 MCP 客戶端連接
+// MCPManager manages MCP client connections
 type MCPManager struct {
 	host *mcp.MCPHost
 }
 
-// NewMCPManager 創建新的 MCP 管理器（可選配置 MCP 伺服器）
+// NewMCPManager creates a new MCP manager (optionally configure MCP servers)
 func NewMCPManager(ctx context.Context, g *genkit.Genkit, serverConfigs []mcp.MCPServerConfig) (*MCPManager, error) {
-	// 如果沒有提供配置，使用空配置（允許之後動態添加）
+	// If no configuration provided, use empty configuration (allows dynamic addition later)
 	if serverConfigs == nil {
 		serverConfigs = make([]mcp.MCPServerConfig, 0)
 	}
@@ -28,7 +28,7 @@ func NewMCPManager(ctx context.Context, g *genkit.Genkit, serverConfigs []mcp.MC
 		MCPServers: serverConfigs,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("無法創建 MCP 主機: %w", err)
+		return nil, fmt.Errorf("unable to create MCP host: %w", err)
 	}
 
 	return &MCPManager{
@@ -36,63 +36,63 @@ func NewMCPManager(ctx context.Context, g *genkit.Genkit, serverConfigs []mcp.MC
 	}, nil
 }
 
-// GetActiveTools 獲取所有活躍 MCP 伺服器的工具
+// GetActiveTools retrieves tools from all active MCP servers
 func (m *MCPManager) GetActiveTools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error) {
 	tools, err := m.host.GetActiveTools(ctx, g)
 	if err != nil {
-		return nil, fmt.Errorf("無法獲取 MCP 工具: %w", err)
+		return nil, fmt.Errorf("unable to get MCP tools: %w", err)
 	}
 	return tools, nil
 }
 
-// GetActiveResources 獲取所有活躍 MCP 伺服器的資源
+// GetActiveResources retrieves resources from all active MCP servers
 func (m *MCPManager) GetActiveResources(ctx context.Context) ([]ai.Resource, error) {
 	resources, err := m.host.GetActiveResources(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("無法獲取 MCP 資源: %w", err)
+		return nil, fmt.Errorf("unable to get MCP resources: %w", err)
 	}
 	return resources, nil
 }
 
-// GetPrompt 從指定的 MCP 伺服器獲取 prompt
+// GetPrompt retrieves a prompt from the specified MCP server
 func (m *MCPManager) GetPrompt(ctx context.Context, g *genkit.Genkit, serverName, promptName string, args map[string]string) (ai.Prompt, error) {
 	prompt, err := m.host.GetPrompt(ctx, g, serverName, promptName, args)
 	if err != nil {
-		return nil, fmt.Errorf("無法獲取 MCP prompt: %w", err)
+		return nil, fmt.Errorf("unable to get MCP prompt: %w", err)
 	}
 	return prompt, nil
 }
 
-// Connect 動態連接到新的 MCP 伺服器
+// Connect dynamically connects to a new MCP server
 func (m *MCPManager) Connect(ctx context.Context, g *genkit.Genkit, serverName string, config mcp.MCPClientOptions) error {
 	err := m.host.Connect(ctx, g, serverName, config)
 	if err != nil {
-		return fmt.Errorf("無法連接到 MCP 伺服器 %s: %w", serverName, err)
+		return fmt.Errorf("unable to connect to MCP server %s: %w", serverName, err)
 	}
 	return nil
 }
 
-// Disconnect 斷開與指定 MCP 伺服器的連接
+// Disconnect disconnects from the specified MCP server
 func (m *MCPManager) Disconnect(ctx context.Context, serverName string) error {
 	err := m.host.Disconnect(ctx, serverName)
 	if err != nil {
-		return fmt.Errorf("無法斷開 MCP 伺服器 %s: %w", serverName, err)
+		return fmt.Errorf("unable to disconnect from MCP server %s: %w", serverName, err)
 	}
 	return nil
 }
 
-// Reconnect 重新連接到指定的 MCP 伺服器
+// Reconnect reconnects to the specified MCP server
 func (m *MCPManager) Reconnect(ctx context.Context, serverName string) error {
 	err := m.host.Reconnect(ctx, serverName)
 	if err != nil {
-		return fmt.Errorf("無法重新連接到 MCP 伺服器 %s: %w", serverName, err)
+		return fmt.Errorf("unable to reconnect to MCP server %s: %w", serverName, err)
 	}
 	return nil
 }
 
-// CreateMCPServer 將 Genkit 工具暴露為 MCP 伺服器
+// CreateMCPServer exposes Genkit tools as an MCP server
 func CreateMCPServer(g *genkit.Genkit) *mcp.GenkitMCPServer {
-	// 創建 MCP 伺服器，自動暴露所有已註冊的工具
+	// Create MCP server, automatically exposing all registered tools
 	server := mcp.NewMCPServer(g, mcp.MCPServerOptions{
 		Name:    "koopa-mcp-server",
 		Version: "1.0.0",
@@ -100,11 +100,11 @@ func CreateMCPServer(g *genkit.Genkit) *mcp.GenkitMCPServer {
 	return server
 }
 
-// StartMCPServer 啟動 MCP 伺服器（stdio 模式）
+// StartMCPServer starts the MCP server (stdio mode)
 func StartMCPServer(server *mcp.GenkitMCPServer) error {
-	log.Println("🔌 啟動 Koopa MCP 伺服器...")
+	log.Println("🔌 Starting Koopa MCP server...")
 	if err := server.ServeStdio(); err != nil {
-		return fmt.Errorf("MCP 伺服器啟動失敗: %w", err)
+		return fmt.Errorf("MCP server startup failed: %w", err)
 	}
 	return nil
 }

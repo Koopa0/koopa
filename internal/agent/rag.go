@@ -12,20 +12,20 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
 
-// VectorDocument 向量化的文檔
+// VectorDocument vectorized document
 type VectorDocument struct {
 	Content   string    `json:"content"`
 	Embedding []float32 `json:"embedding"`
 	Metadata  map[string]any `json:"metadata"`
 }
 
-// docWithScore 用於排序的文檔與分數結構
+// docWithScore document and score structure for sorting
 type docWithScore struct {
 	doc   *VectorDocument
 	score float64
 }
 
-// minHeap 實現最小堆，用於高效的 Top-K 檢索
+// minHeap implements a min-heap for efficient Top-K retrieval
 type minHeap []docWithScore
 
 func (h minHeap) Len() int           { return len(h) }
@@ -44,18 +44,18 @@ func (h *minHeap) Pop() interface{} {
 	return x
 }
 
-// SimpleVectorStore 簡單的記憶體向量存儲
+// SimpleVectorStore simple in-memory vector store
 //
-// 注意：這是一個僅供演示的記憶體實現，不適用於生產環境。
-// 在生產環境中，請使用專門的向量資料庫（如 ChromaDB、Pinecone、Weaviate 等）
-// 的 Genkit 插件來實現高效能和可擴展的向量檢索。
+// Note: This is a demonstration-only in-memory implementation and is not suitable for production use.
+// In production environments, please use Genkit plugins for dedicated vector databases
+// (such as ChromaDB, Pinecone, Weaviate, etc.) to achieve high-performance and scalable vector retrieval.
 type SimpleVectorStore struct {
 	mu        sync.RWMutex
 	documents []*VectorDocument
 	embedder  ai.Embedder
 }
 
-// NewSimpleVectorStore 創建新的簡單向量存儲
+// NewSimpleVectorStore creates a new simple vector store
 func NewSimpleVectorStore(embedder ai.Embedder) *SimpleVectorStore {
 	return &SimpleVectorStore{
 		documents: make([]*VectorDocument, 0),
@@ -63,12 +63,12 @@ func NewSimpleVectorStore(embedder ai.Embedder) *SimpleVectorStore {
 	}
 }
 
-// AddDocument 添加文檔到向量存儲
+// AddDocument adds a document to the vector store
 func (s *SimpleVectorStore) AddDocument(ctx context.Context, content string, metadata map[string]any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 生成 embedding
+	// Generate embedding
 	req := &ai.EmbedRequest{
 		Input: []*ai.Document{
 			ai.DocumentFromText(content, metadata),
@@ -77,14 +77,14 @@ func (s *SimpleVectorStore) AddDocument(ctx context.Context, content string, met
 
 	resp, err := s.embedder.Embed(ctx, req)
 	if err != nil {
-		return fmt.Errorf("無法生成 embedding: %w", err)
+		return fmt.Errorf("unable to generate embedding: %w", err)
 	}
 
 	if len(resp.Embeddings) == 0 {
-		return fmt.Errorf("embedding 結果為空")
+		return fmt.Errorf("embedding result is empty")
 	}
 
-	// 添加到存儲
+	// Add to store
 	s.documents = append(s.documents, &VectorDocument{
 		Content:   content,
 		Embedding: resp.Embeddings[0].Embedding,
@@ -94,16 +94,16 @@ func (s *SimpleVectorStore) AddDocument(ctx context.Context, content string, met
 	return nil
 }
 
-// Search 搜尋最相似的文檔
+// Search searches for the most similar documents
 func (s *SimpleVectorStore) Search(ctx context.Context, query string, topK int) ([]*ai.Document, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if len(s.documents) == 0 {
-		return nil, fmt.Errorf("向量存儲為空")
+		return nil, fmt.Errorf("vector store is empty")
 	}
 
-	// 生成查詢的 embedding
+	// Generate query embedding
 	req := &ai.EmbedRequest{
 		Input: []*ai.Document{
 			ai.DocumentFromText(query, nil),
@@ -112,17 +112,17 @@ func (s *SimpleVectorStore) Search(ctx context.Context, query string, topK int) 
 
 	resp, err := s.embedder.Embed(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("無法生成查詢 embedding: %w", err)
+		return nil, fmt.Errorf("unable to generate query embedding: %w", err)
 	}
 
 	if len(resp.Embeddings) == 0 {
-		return nil, fmt.Errorf("查詢 embedding 結果為空")
+		return nil, fmt.Errorf("query embedding result is empty")
 	}
 
 	queryEmbedding := resp.Embeddings[0].Embedding
 
-	// 使用最小堆來高效地找出 Top-K 最相似的文檔
-	// 時間複雜度：O(N log K)，其中 N 是文檔總數，K 是返回的結果數
+	// Use min-heap to efficiently find Top-K most similar documents
+	// Time complexity: O(N log K), where N is total number of documents, K is number of results returned
 	h := &minHeap{}
 	heap.Init(h)
 
@@ -130,16 +130,16 @@ func (s *SimpleVectorStore) Search(ctx context.Context, query string, topK int) 
 		similarity := cosineSimilarity(queryEmbedding, doc.Embedding)
 
 		if h.Len() < topK {
-			// 堆未滿，直接加入
+			// Heap not full, add directly
 			heap.Push(h, docWithScore{doc: doc, score: similarity})
 		} else if similarity > (*h)[0].score {
-			// 當前文檔比堆頂（最小值）更相似，替換堆頂
+			// Current document is more similar than heap top (minimum), replace heap top
 			heap.Pop(h)
 			heap.Push(h, docWithScore{doc: doc, score: similarity})
 		}
 	}
 
-	// 從堆中提取結果並反轉順序（從最相似到最不相似）
+	// Extract results from heap and reverse order (from most similar to least similar)
 	results := make([]*ai.Document, h.Len())
 	for i := h.Len() - 1; i >= 0; i-- {
 		item := heap.Pop(h).(docWithScore)
@@ -149,21 +149,21 @@ func (s *SimpleVectorStore) Search(ctx context.Context, query string, topK int) 
 	return results, nil
 }
 
-// Clear 清空向量存儲
+// Clear clears the vector store
 func (s *SimpleVectorStore) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.documents = make([]*VectorDocument, 0)
 }
 
-// Size 返回存儲的文檔數量
+// Size returns the number of stored documents
 func (s *SimpleVectorStore) Size() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.documents)
 }
 
-// cosineSimilarity 計算餘弦相似度
+// cosineSimilarity calculates cosine similarity
 func cosineSimilarity(a, b []float32) float64 {
 	if len(a) != len(b) {
 		return 0
@@ -183,15 +183,15 @@ func cosineSimilarity(a, b []float32) float64 {
 	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// RAGManager RAG 管理器
+// RAGManager RAG manager
 type RAGManager struct {
 	vectorStore *SimpleVectorStore
 	embedder    ai.Embedder
 }
 
-// NewRAGManager 創建新的 RAG 管理器
+// NewRAGManager creates a new RAG manager
 func NewRAGManager(ctx context.Context, g *genkit.Genkit) (*RAGManager, error) {
-	// 使用 Google AI 的 text-embedding-004 模型
+	// Use Google AI's text-embedding-004 model
 	embedder := googlegenai.VertexAIEmbedder(g, "text-embedding-004")
 
 	vectorStore := NewSimpleVectorStore(embedder)
@@ -202,46 +202,46 @@ func NewRAGManager(ctx context.Context, g *genkit.Genkit) (*RAGManager, error) {
 	}, nil
 }
 
-// IndexText 索引文本
+// IndexText indexes text
 func (r *RAGManager) IndexText(ctx context.Context, text string, metadata map[string]any) error {
 	return r.vectorStore.AddDocument(ctx, text, metadata)
 }
 
-// IndexTexts 批量索引文本
+// IndexTexts indexes multiple texts in batch
 func (r *RAGManager) IndexTexts(ctx context.Context, texts []string) error {
 	for i, text := range texts {
 		metadata := map[string]any{
 			"index": i,
 		}
 		if err := r.vectorStore.AddDocument(ctx, text, metadata); err != nil {
-			return fmt.Errorf("索引第 %d 個文本失敗: %w", i, err)
+			return fmt.Errorf("failed to index text %d: %w", i, err)
 		}
 	}
 	return nil
 }
 
-// Retrieve 檢索相關文檔
+// Retrieve retrieves relevant documents
 func (r *RAGManager) Retrieve(ctx context.Context, query string, topK int) ([]*ai.Document, error) {
 	return r.vectorStore.Search(ctx, query, topK)
 }
 
-// GetVectorStore 獲取向量存儲
+// GetVectorStore retrieves the vector store
 func (r *RAGManager) GetVectorStore() *SimpleVectorStore {
 	return r.vectorStore
 }
 
-// DefineRetriever 定義一個 Genkit Retriever
+// DefineRetriever defines a Genkit Retriever
 func (r *RAGManager) DefineRetriever(g *genkit.Genkit, name string) ai.Retriever {
 	return genkit.DefineRetriever(
 		g, name, nil,
 		func(ctx context.Context, req *ai.RetrieverRequest) (*ai.RetrieverResponse, error) {
-			// 從 query 中提取文本
+			// Extract text from query
 			queryText := ""
 			if req.Query != nil && len(req.Query.Content) > 0 {
 				queryText = req.Query.Content[0].Text
 			}
 
-			// 默認返回前 3 個結果
+			// Default to returning top 3 results
 			topK := 3
 			if opts, ok := req.Options.(map[string]any); ok {
 				if k, exists := opts["k"]; exists {
@@ -251,7 +251,7 @@ func (r *RAGManager) DefineRetriever(g *genkit.Genkit, name string) ai.Retriever
 				}
 			}
 
-			// 檢索文檔
+			// Retrieve documents
 			docs, err := r.Retrieve(ctx, queryText, topK)
 			if err != nil {
 				return nil, err

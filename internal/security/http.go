@@ -10,14 +10,14 @@ import (
 	"time"
 )
 
-// HTTPValidator HTTP 請求驗證器
-// 用於防止 SSRF (Server-Side Request Forgery) 攻擊
+// HTTPValidator HTTP request validator
+// Used to prevent SSRF (Server-Side Request Forgery) attacks
 type HTTPValidator struct {
 	maxResponseSize int64
 	allowedSchemes  []string
 }
 
-// NewHTTPValidator 創建 HTTP 驗證器
+// NewHTTPValidator creates an HTTP validator
 func NewHTTPValidator() *HTTPValidator {
 	return &HTTPValidator{
 		maxResponseSize: 5 * 1024 * 1024, // 5MB
@@ -25,66 +25,66 @@ func NewHTTPValidator() *HTTPValidator {
 	}
 }
 
-// ValidateURL 驗證 URL 是否安全
-// 檢查協議、主機、IP 地址範圍等
+// ValidateURL validates whether a URL is safe
+// Checks protocol, host, IP address ranges, etc.
 func (v *HTTPValidator) ValidateURL(urlStr string) error {
-	// 1. 解析 URL
+	// 1. Parse URL
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return fmt.Errorf("無效的 URL: %w", err)
+		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// 2. 檢查協議
+	// 2. Check protocol
 	lowercasedScheme := strings.ToLower(parsedURL.Scheme)
 	if !slices.Contains(v.allowedSchemes, lowercasedScheme) {
-		return fmt.Errorf("不允許的協議: %s（僅允許 http/https）", parsedURL.Scheme)
+		return fmt.Errorf("disallowed protocol: %s (only http/https allowed)", parsedURL.Scheme)
 	}
 
-	// 3. 獲取主機名
+	// 3. Get hostname
 	hostname := parsedURL.Hostname()
 	if hostname == "" {
-		return fmt.Errorf("無效的主機名")
+		return fmt.Errorf("invalid hostname")
 	}
 
-	// 4. 檢查是否為危險的主機名
+	// 4. Check if it's a dangerous hostname
 	if isDangerousHostname(hostname) {
-		return fmt.Errorf("拒絕訪問: 不允許訪問內部網絡或元數據服務")
+		return fmt.Errorf("access denied: accessing internal networks or metadata services is not allowed")
 	}
 
-	// 5. 解析主機名為 IP 地址
+	// 5. Resolve hostname to IP addresses
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
-		return fmt.Errorf("無法解析主機名: %w", err)
+		return fmt.Errorf("unable to resolve hostname: %w", err)
 	}
 
-	// 6. 檢查所有解析出的 IP 地址
+	// 6. Check all resolved IP addresses
 	for _, ip := range ips {
 		if isPrivateIP(ip) {
-			return fmt.Errorf("拒絕訪問: 不允許訪問內部網絡 IP (%s)", ip.String())
+			return fmt.Errorf("access denied: accessing internal network IPs is not allowed (%s)", ip.String())
 		}
 	}
 
 	return nil
 }
 
-// GetMaxResponseSize 獲取最大回應大小限制
+// GetMaxResponseSize retrieves the maximum response size limit
 func (v *HTTPValidator) GetMaxResponseSize() int64 {
 	return v.maxResponseSize
 }
 
-// CreateSafeHTTPClient 創建帶有安全配置的 HTTP 客戶端
+// CreateSafeHTTPClient creates an HTTP client with security configuration
 func (v *HTTPValidator) CreateSafeHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// 限制最多 3 次重定向
+			// Limit to maximum 3 redirects
 			if len(via) >= 3 {
-				return fmt.Errorf("停止在 3 次重定向後")
+				return fmt.Errorf("stopped after 3 redirects")
 			}
 
-			// 檢查重定向的 URL 是否安全
+			// Check if the redirect URL is safe
 			if err := v.ValidateURL(req.URL.String()); err != nil {
-				return fmt.Errorf("重定向到不安全的 URL: %w", err)
+				return fmt.Errorf("redirect to unsafe URL: %w", err)
 			}
 
 			return nil
@@ -92,11 +92,11 @@ func (v *HTTPValidator) CreateSafeHTTPClient() *http.Client {
 	}
 }
 
-// isDangerousHostname 檢查是否為危險的主機名
+// isDangerousHostname checks if it's a dangerous hostname
 func isDangerousHostname(hostname string) bool {
 	hostname = strings.ToLower(hostname)
 
-	// 本地主機名稱
+	// Local hostnames
 	localHostnames := []string{
 		"localhost",
 		"127.0.0.1",
@@ -108,7 +108,7 @@ func isDangerousHostname(hostname string) bool {
 		return true
 	}
 
-	// 雲服務元數據端點
+	// Cloud service metadata endpoints
 	metadataEndpoints := []string{
 		"169.254.169.254", // AWS, Azure, GCP
 		"metadata.google.internal",
@@ -124,18 +124,18 @@ func isDangerousHostname(hostname string) bool {
 	return false
 }
 
-// isPrivateIP 檢查 IP 是否為私有 IP 地址
+// isPrivateIP checks if an IP is a private IP address
 func isPrivateIP(ip net.IP) bool {
-	// IPv4 私有網段
+	// IPv4 private ranges
 	privateIPv4Ranges := []string{
-		"10.0.0.0/8",     // Class A 私有網段
-		"172.16.0.0/12",  // Class B 私有網段
-		"192.168.0.0/16", // Class C 私有網段
-		"127.0.0.0/8",    // 本地回環
-		"169.254.0.0/16", // 鏈路本地地址（AWS 元數據等）
-		"0.0.0.0/8",      // 本地網絡
-		"224.0.0.0/4",    // 組播地址
-		"240.0.0.0/4",    // 保留地址
+		"10.0.0.0/8",     // Class A private range
+		"172.16.0.0/12",  // Class B private range
+		"192.168.0.0/16", // Class C private range
+		"127.0.0.0/8",    // Loopback
+		"169.254.0.0/16", // Link-local (AWS metadata, etc.)
+		"0.0.0.0/8",      // Local network
+		"224.0.0.0/4",    // Multicast
+		"240.0.0.0/4",    // Reserved
 	}
 
 	for _, cidr := range privateIPv4Ranges {
@@ -148,12 +148,12 @@ func isPrivateIP(ip net.IP) bool {
 		}
 	}
 
-	// IPv6 私有地址檢查
+	// IPv6 private address checks
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true
 	}
 
-	// IPv6 本地唯一地址 (ULA) fc00::/7
+	// IPv6 Unique Local Address (ULA) fc00::/7
 	if len(ip) == net.IPv6len && ip[0] == 0xfc || ip[0] == 0xfd {
 		return true
 	}
@@ -161,12 +161,12 @@ func isPrivateIP(ip net.IP) bool {
 	return false
 }
 
-// IsURLSafe 快速檢查 URL 是否包含明顯的危險模式
-// 這是一個額外的保護層，但不應該單獨依賴
+// IsURLSafe quickly checks if a URL contains obvious dangerous patterns
+// This is an additional layer of protection but should not be relied upon alone
 func IsURLSafe(urlStr string) bool {
 	urlLower := strings.ToLower(urlStr)
 
-	// 檢查危險的協議
+	// Check for dangerous protocols
 	dangerousSchemes := []string{
 		"file://",
 		"ftp://",
@@ -181,7 +181,7 @@ func IsURLSafe(urlStr string) bool {
 		}
 	}
 
-	// 檢查是否包含內部 IP 模式
+	// Check for internal IP patterns
 	dangerousPatterns := []string{
 		"localhost",
 		"127.0.0.1",
