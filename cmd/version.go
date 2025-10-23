@@ -4,12 +4,13 @@ import (
 	"fmt"
 
 	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "顯示版本資訊和配置狀態",
+	Short: i18n.T("version.description"),
 	RunE:  runVersion,
 }
 
@@ -18,32 +19,32 @@ func init() {
 }
 
 func runVersion(cmd *cobra.Command, args []string) error {
-	fmt.Println("Koopa v0.1.0-alpha (Phase 1 開發中)")
+	fmt.Println("Koopa v0.1.0-alpha (Development)")
 	fmt.Println()
 
-	// 載入配置
+	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("載入配置失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.config"), err)
 	}
 
-	// 顯示配置資訊
-	fmt.Println("配置資訊：")
-	fmt.Printf("  模型: %s\n", cfg.ModelName)
-	fmt.Printf("  Temperature: %.1f\n", cfg.Temperature)
-	fmt.Printf("  Max Tokens: %d\n", cfg.MaxTokens)
-	fmt.Printf("  資料庫: %s\n", cfg.DatabasePath)
+	// Display configuration information
+	fmt.Println("Configuration:")
+	fmt.Println(i18n.Sprintf("config.model", cfg.ModelName))
+	fmt.Println(i18n.Sprintf("config.temperature", cfg.Temperature))
+	fmt.Println(i18n.Sprintf("config.max.tokens", cfg.MaxTokens))
+	fmt.Printf("  Database: %s\n", cfg.DatabasePath)
 
-	// 檢查 API Key（不顯示完整內容）
+	// Check API Key (don't display full content)
 	if cfg.GeminiAPIKey != "" {
-		fmt.Printf("  Gemini API Key: %s...%s (已設定)\n",
+		fmt.Printf("  Gemini API Key: %s...%s (configured)\n",
 			cfg.GeminiAPIKey[:4],
 			cfg.GeminiAPIKey[len(cfg.GeminiAPIKey)-4:])
 	} else {
-		fmt.Println("  Gemini API Key: ⚠️  未設定")
+		fmt.Println("  Gemini API Key: Not set")
 		fmt.Println()
-		fmt.Println("提示：請設定 GEMINI_API_KEY 環境變數")
-		fmt.Println("  export GEMINI_API_KEY=your-api-key")
+		fmt.Println("Hint: Please set KOOPA_GEMINI_API_KEY environment variable")
+		fmt.Println("  export KOOPA_GEMINI_API_KEY=your-api-key")
 	}
 
 	return nil

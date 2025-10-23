@@ -13,21 +13,15 @@ import (
 	"github.com/koopa0/koopa/internal/agent"
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/database"
+	"github.com/koopa0/koopa/internal/i18n"
 	"github.com/koopa0/koopa/internal/memory"
 	"github.com/spf13/cobra"
 )
 
 var chatCmd = &cobra.Command{
 	Use:   "chat",
-	Short: "進入互動式對話模式",
-	Long: `與 Koopa 進行多輪對話。
-
-特殊命令：
-  /help    - 顯示幫助
-  /tools   - 切換工具啟用/禁用
-  /clear   - 清除對話歷史
-  /exit    - 退出（或按 Ctrl+D）`,
-	RunE: runChat,
+	Short: i18n.T("chat.description"),
+	RunE:  runChat,
 }
 
 func init() {
@@ -37,63 +31,63 @@ func init() {
 func runChat(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// 載入配置
+	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("載入配置失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.config"), err)
 	}
 
-	// 檢查 API Key
+	// Check API Key
 	if cfg.GeminiAPIKey == "" {
-		fmt.Fprintln(os.Stderr, "❌ 錯誤：未設定 KOOPA_GEMINI_API_KEY 環境變數")
+		fmt.Fprintln(os.Stderr, "Error: KOOPA_GEMINI_API_KEY environment variable not set")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "請執行：")
+		fmt.Fprintln(os.Stderr, "Please run:")
 		fmt.Fprintln(os.Stderr, "  export KOOPA_GEMINI_API_KEY=your-api-key")
 		return fmt.Errorf("KOOPA_GEMINI_API_KEY not set")
 	}
 
-	// 創建 Agent
+	// Create Agent
 	ag, err := agent.New(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("創建 Agent 失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.agent"), err)
 	}
 
-	// 初始化資料庫
+	// Initialize database
 	dbPath := ".koopa/koopa.db"
 	sqlDB, err := database.Open(dbPath)
 	if err != nil {
-		return fmt.Errorf("開啟資料庫失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.database"), err)
 	}
 	defer sqlDB.Close()
 
 	if err := database.Migrate(sqlDB); err != nil {
-		return fmt.Errorf("資料庫遷移失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.database"), err)
 	}
 
-	// 創建 memory 實例
+	// Create memory instance
 	mem := memory.New(sqlDB)
 
-	// 創建新會話（直接使用 memory）
+	// Create new session
 	session, err := mem.CreateSession(ctx, "Chat Session")
 	if err != nil {
-		return fmt.Errorf("創建會話失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.session"), err)
 	}
 
-	// 顯示歡迎訊息
-	fmt.Println("🐢 Koopa v0.1.0 - 你的終端 AI 個人助理")
-	fmt.Printf("💡 輸入 /help 查看命令，Ctrl+D 或 /exit 退出\n")
-	fmt.Printf("📝 會話 ID: %d\n", session.ID)
+	// Display welcome message
+	fmt.Println(i18n.Sprintf("welcome", "0.1.0"))
+	fmt.Println(i18n.T("welcome.help"))
+	fmt.Printf("Session ID: %d\n", session.ID)
 	fmt.Println()
 
-	// 開始對話循環
+	// Start conversation loop
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		fmt.Print("You> ")
+		fmt.Print(i18n.T("chat.prompt"))
 
-		// 讀取用戶輸入
+		// Read user input
 		if !scanner.Scan() {
 			// EOF (Ctrl+D)
-			fmt.Println("\n👋 再見！")
+			fmt.Println("\n" + i18n.T("goodbye"))
 			break
 		}
 
@@ -102,112 +96,137 @@ func runChat(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// 處理特殊命令
+		// Handle special commands
 		if strings.HasPrefix(input, "/") {
 			if handleCommand(input, ag) {
-				break // 退出命令
+				break // Exit command
 			}
 			continue
 		}
 
-		// 保存用戶訊息到資料庫
+		// Save user message to database
 		if _, err = mem.AddMessage(ctx, session.ID, "user", input); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  保存訊息失敗: %v\n", err)
+			fmt.Fprintf(os.Stderr, i18n.Sprintf("error.message", err))
 		}
 
-		// 發送訊息給 AI（使用 streaming）
-		fmt.Print("Koopa> ")
-		_ = os.Stdout.Sync() // 確保提示符立即顯示
+		// Send message to AI (using streaming)
+		fmt.Print(i18n.T("chat.assistant"))
+		_ = os.Stdout.Sync() // Ensure prompt is displayed immediately
 
 		response, err := ag.ChatStream(ctx, input, func(chunk string) {
-			// 逐字輸出，模擬打字機效果
+			// Print character by character, simulating typing effect
 			printCharByChar(chunk)
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "\n❌ 錯誤: %v\n", err)
+			fmt.Fprintf(os.Stderr, i18n.Sprintf("chat.streaming.error", err)+"\n")
 			continue
 		}
 		fmt.Println()
 
-		// 保存 AI 回應到資料庫
+		// Save AI response to database
 		if _, err = mem.AddMessage(ctx, session.ID, "model", response); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  保存回應失敗: %v\n", err)
+			fmt.Fprintf(os.Stderr, i18n.Sprintf("error.message", err))
 		}
 	}
 
 	if err := scanner.Err(); err != nil && err != io.EOF {
-		return fmt.Errorf("讀取輸入失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.input"), err)
 	}
 
-	// 會話已自動保存，無需額外操作
-	fmt.Printf("💾 會話已保存（ID: %d）\n", session.ID)
+	// Session is automatically saved
+	fmt.Printf("Session saved (ID: %d)\n", session.ID)
 
 	return nil
 }
 
-// handleCommand 處理特殊命令，返回 true 表示應該退出
+// handleCommand handles special commands, returns true if should exit
 func handleCommand(cmd string, ag *agent.Agent) bool {
-	switch cmd {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return false
+	}
+
+	switch parts[0] {
 	case "/help":
-		fmt.Println("可用命令：")
-		fmt.Println("  /help    - 顯示此幫助訊息")
-		fmt.Println("  /tools   - 切換工具啟用/禁用")
-		fmt.Println("  /clear   - 清除對話歷史")
-		fmt.Println("  /exit    - 退出對話")
+		fmt.Println(i18n.T("help.title"))
+		fmt.Println("  " + i18n.T("help.help"))
+		fmt.Println("  " + i18n.T("help.tools"))
+		fmt.Println("  " + i18n.T("help.clear"))
+		fmt.Println("  " + i18n.T("help.exit"))
+		fmt.Println("  " + i18n.T("help.lang"))
+		fmt.Println("  " + i18n.T("help.ctrl_d"))
+		fmt.Println(i18n.Sprintf("help.current.lang", i18n.GetLanguage()))
+		fmt.Println(i18n.Sprintf("help.available.lang", strings.Join(i18n.GetSupportedLanguages(), ", ")))
 		fmt.Println()
 
 	case "/tools":
 		currentState := ag.GetToolsEnabled()
 		ag.SetTools(!currentState)
 		if ag.GetToolsEnabled() {
-			fmt.Println("🔧 工具已啟用")
-			fmt.Println("   可用工具：")
-			fmt.Println("   - currentTime     獲取當前時間")
-			fmt.Println("   - readFile        讀取檔案")
-			fmt.Println("   - writeFile       寫入檔案")
-			fmt.Println("   - listFiles       列出目錄")
-			fmt.Println("   - deleteFile      刪除檔案")
-			fmt.Println("   - executeCommand  執行系統命令")
-			fmt.Println("   - httpGet         HTTP GET 請求")
-			fmt.Println("   - getEnv          讀取環境變數")
-			fmt.Println("   - getFileInfo     獲取檔案資訊")
+			fmt.Println(i18n.T("chat.tools.enabled"))
+			fmt.Println(i18n.T("chat.tools.available"))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.currentTime.name"), i18n.T("tool.currentTime.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.readFile.name"), i18n.T("tool.readFile.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.writeFile.name"), i18n.T("tool.writeFile.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.listFiles.name"), i18n.T("tool.listFiles.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.deleteFile.name"), i18n.T("tool.deleteFile.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.executeCommand.name"), i18n.T("tool.executeCommand.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.httpGet.name"), i18n.T("tool.httpGet.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.getEnv.name"), i18n.T("tool.getEnv.desc")))
+			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.getFileInfo.name"), i18n.T("tool.getFileInfo.desc")))
 		} else {
-			fmt.Println("🔧 工具已禁用")
+			fmt.Println(i18n.T("chat.tools.disabled"))
 		}
 		fmt.Println()
 
 	case "/clear":
 		ag.ClearHistory()
-		fmt.Println("🧹 對話歷史已清除")
+		fmt.Println(i18n.T("chat.cleared"))
+		fmt.Println()
+
+	case "/lang":
+		if len(parts) < 2 {
+			fmt.Println(i18n.Sprintf("lang.current", i18n.GetLanguage()))
+			fmt.Println(i18n.Sprintf("lang.available", strings.Join(i18n.GetSupportedLanguages(), ", ")))
+		} else {
+			lang := parts[1]
+			if i18n.IsLanguageSupported(lang) {
+				i18n.SetLanguage(lang)
+				fmt.Println(i18n.Sprintf("lang.changed", lang))
+			} else {
+				fmt.Println(i18n.Sprintf("lang.unsupported", lang))
+				fmt.Println(i18n.Sprintf("lang.available", strings.Join(i18n.GetSupportedLanguages(), ", ")))
+			}
+		}
 		fmt.Println()
 
 	case "/exit", "/quit":
-		fmt.Println("👋 再見！")
+		fmt.Println(i18n.T("goodbye"))
 		return true
 
 	default:
-		fmt.Printf("❌ 未知命令: %s\n", cmd)
-		fmt.Println("💡 輸入 /help 查看可用命令")
+		fmt.Printf("Unknown command: %s\n", cmd)
+		fmt.Println("Type /help to see available commands")
 		fmt.Println()
 	}
 
 	return false
 }
 
-// printCharByChar 逐字輸出文本，模擬打字機效果
+// printCharByChar prints text character by character, simulating typing effect
 func printCharByChar(text string) {
-	// 遍歷每個 UTF-8 字符（而不是字節）
+	// Iterate through each UTF-8 character (not bytes)
 	for len(text) > 0 {
 		r, size := utf8.DecodeRuneInString(text)
 		fmt.Print(string(r))
-		_ = os.Stdout.Sync() // 立即 flush
+		_ = os.Stdout.Sync() // Flush immediately
 
-		// 添加微小延遲，製造打字機效果
-		// 中文字符稍慢，英文字符稍快
-		if r > 127 { // 非 ASCII 字符（如中文）
+		// Add small delay to create typing effect
+		// Non-ASCII characters (e.g., Chinese) slightly slower, ASCII faster
+		if r > 127 { // Non-ASCII character
 			time.Sleep(30 * time.Millisecond)
 		} else if r == ' ' || r == '\n' {
-			// 空格和換行符不延遲
+			// No delay for spaces and newlines
 			time.Sleep(5 * time.Millisecond)
 		} else {
 			time.Sleep(20 * time.Millisecond)

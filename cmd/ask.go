@@ -8,66 +8,55 @@ import (
 
 	"github.com/koopa0/koopa/internal/agent"
 	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
-var (
-	useTools bool
-)
+var useTools bool
 
 var askCmd = &cobra.Command{
 	Use:   "ask [question]",
-	Short: "向 Koopa 提問",
-	Long: `向 Koopa 提出單一問題並獲得回應。
-
-範例：
-  koopa ask "什麼是 Go 語言？"
-  koopa ask "今天天氣如何？"
-  koopa ask --tools "現在幾點？"
-  koopa ask --tools "讀取 README.md 檔案內容"`,
-	Args: cobra.MinimumNArgs(1),
-	RunE: runAsk,
+	Short: i18n.T("ask.description"),
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runAsk,
 }
 
 func init() {
-	askCmd.Flags().BoolVar(&useTools, "tools", false, "啟用工具調用（currentTime, readFile, executeCommand 等）")
+	askCmd.Flags().BoolVar(&useTools, "tools", false, i18n.T("ask.tools.flag"))
 	rootCmd.AddCommand(askCmd)
 }
 
 func runAsk(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// 載入配置
+	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("載入配置失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.config"), err)
 	}
 
-	// 檢查 API Key
+	// Check API Key
 	if cfg.GeminiAPIKey == "" {
-		fmt.Fprintln(os.Stderr, "❌ 錯誤：未設定 KOOPA_GEMINI_API_KEY 環境變數")
+		fmt.Fprintln(os.Stderr, "Error: KOOPA_GEMINI_API_KEY environment variable not set")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "請執行：")
+		fmt.Fprintln(os.Stderr, "Please run:")
 		fmt.Fprintln(os.Stderr, "  export KOOPA_GEMINI_API_KEY=your-api-key")
 		return fmt.Errorf("KOOPA_GEMINI_API_KEY not set")
 	}
 
-	// 創建 Agent
+	// Create Agent
 	ag, err := agent.New(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("創建 Agent 失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.agent"), err)
 	}
 
-	// 合併所有參數作為問題
+	// Merge all arguments as question
 	question := strings.Join(args, " ")
-
-	fmt.Printf("正在思考：%s\n", question)
-	if useTools {
-		fmt.Println("已啟用 9 個工具（currentTime, readFile, writeFile, listFiles, deleteFile, executeCommand, httpGet, getEnv, getFileInfo）")
+	if question == "" {
+		return fmt.Errorf(i18n.T("error.question.empty"))
 	}
-	fmt.Println()
 
-	// 向 AI 提問
+	// Ask AI
 	var answer string
 	if useTools {
 		answer, err = ag.AskWithTools(ctx, question)
@@ -75,10 +64,10 @@ func runAsk(cmd *cobra.Command, args []string) error {
 		answer, err = ag.Ask(ctx, question)
 	}
 	if err != nil {
-		return fmt.Errorf("提問失敗: %w", err)
+		return fmt.Errorf(i18n.T("error.generate"), err)
 	}
 
-	// 顯示回應
+	// Display response
 	fmt.Println(answer)
 
 	return nil
