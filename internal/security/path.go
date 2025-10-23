@@ -53,15 +53,20 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 	// 3. 檢查是否在允許的目錄內
 	allowed := false
 
+	// 規範化目錄路徑（確保以斜線結尾進行精確比對）
+	workDirNorm := filepath.Clean(v.workDir) + string(filepath.Separator)
+	absPathWithSep := filepath.Clean(absPath) + string(filepath.Separator)
+
 	// 首先檢查工作目錄
-	if strings.HasPrefix(absPath, v.workDir) {
+	if strings.HasPrefix(absPathWithSep, workDirNorm) || absPath == v.workDir {
 		allowed = true
 	}
 
 	// 然後檢查額外的允許目錄
 	if !allowed {
 		for _, dir := range v.allowedDirs {
-			if strings.HasPrefix(absPath, dir) {
+			dirNorm := filepath.Clean(dir) + string(filepath.Separator)
+			if strings.HasPrefix(absPathWithSep, dirNorm) || absPath == dir {
 				allowed = true
 				break
 			}
@@ -86,17 +91,27 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 
 	// 5. 再次檢查符號連結解析後的路徑是否在允許的目錄內
 	if realPath != absPath {
-		if !strings.HasPrefix(realPath, v.workDir) {
-			inAllowedDir := false
+		realPathWithSep := filepath.Clean(realPath) + string(filepath.Separator)
+		realAllowed := false
+
+		// 檢查工作目錄
+		if strings.HasPrefix(realPathWithSep, workDirNorm) || realPath == v.workDir {
+			realAllowed = true
+		}
+
+		// 檢查允許的目錄
+		if !realAllowed {
 			for _, dir := range v.allowedDirs {
-				if strings.HasPrefix(realPath, dir) {
-					inAllowedDir = true
+				dirNorm := filepath.Clean(dir) + string(filepath.Separator)
+				if strings.HasPrefix(realPathWithSep, dirNorm) || realPath == dir {
+					realAllowed = true
 					break
 				}
 			}
-			if !inAllowedDir {
-				return "", fmt.Errorf("拒絕訪問: 符號連結指向不允許的位置 '%s'", realPath)
-			}
+		}
+
+		if !realAllowed {
+			return "", fmt.Errorf("拒絕訪問: 符號連結指向不允許的位置 '%s'", realPath)
 		}
 		absPath = realPath
 	}

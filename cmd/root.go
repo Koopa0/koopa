@@ -1,27 +1,34 @@
 package cmd
 
 import (
+	"github.com/koopa0/koopa/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "koopa",
-	Short: "Koopa - 你的終端 AI 個人助理",
-	Long: `Koopa 是一個基於 Genkit 的終端 AI 個人助理。
-它能夠理解你的需求，記住對話內容，並透過工具幫助你完成各種任務。
-
-直接執行 koopa 將進入互動式對話模式。`,
+	Short: i18n.T("app.description"),
+	Long:  i18n.T("root.description"),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// 無參數時進入 chat 模式
+		// Default to chat mode when no arguments
 		return runChat(cmd, args)
 	},
 }
 
-// Execute 執行根命令
+// Execute executes the root command
 func Execute() error {
 	return rootCmd.Execute()
 }
 
 func init() {
-	// 子命令已在各自的檔案中註冊
+	// Add global --lang flag
+	rootCmd.PersistentFlags().StringP("lang", "l", "", i18n.T("root.lang.flag"))
+
+	// Handle language flag before command execution
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if lang, _ := cmd.Flags().GetString("lang"); lang != "" {
+			i18n.SetLanguage(lang)
+		}
+		return nil
+	}
 }

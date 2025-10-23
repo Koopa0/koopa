@@ -1,203 +1,329 @@
-# Koopa
+# Koopa - Terminal AI Personal Assistant
 
-> 終端 AI 個人助理
+![Koopa Assistant](docs/assets/koopa.png)
 
-Koopa 是一個基於 [Genkit](https://github.com/firebase/genkit) 的終端 AI 助手，讓你在命令列就能直接跟 AI 對話，處理各種任務
+[Koopa](https://github.com/koopa0/koopa) is a powerful terminal-based AI assistant built on [Genkit](https://github.com/firebase/genkit), enabling you to interact with AI directly from your command line for various tasks.
 
-## 核心特色
+## Why Koopa?
 
-### 部署優勢
+Koopa brings professional AI capabilities to your terminal with a focus on simplicity, performance, and developer experience.
 
-- **100% 純 Go** - 無 CGO 依賴，單一靜態二進制文件
-- **輕鬆跨平台** - 一條命令編譯 Linux/Windows/macOS/ARM
-- **零環境要求** - 無需安裝 C 編譯器或任何依賴
-- **即下即用** - 下載即可執行，完美符合 Go 哲學
+## Key Features
 
-### AI 能力
+<table>
+  <tr>
+    <td><strong>Pure Go Architecture</strong></td>
+    <td>100% pure Go implementation with zero CGO dependencies. Single static binary for easy distribution and deployment. No need for C compilers or external dependencies. Cross-compile to Linux/Windows/macOS/ARM with one command.</td>
+  </tr>
+  <tr>
+    <td><strong>AI-Powered Conversations</strong></td>
+    <td>Streaming responses with typewriter effect for enhanced interactive experience. Structured JSON output with schema validation. Multi-modal input support for image analysis, OCR, and UI/UX evaluation (JPEG/PNG/GIF/WebP). Persistent conversation history with multi-session support using pure Go SQLite.</td>
+  </tr>
+  <tr>
+    <td><strong>Genkit Integration</strong></td>
+    <td>Full integration with Firebase Genkit framework including 9 AI Flows for personal assistance workflows: chat, analysis, email composition, topic research, task planning, code review, and more. MCP (Model Context Protocol) support for connecting external tool servers. Built-in RAG (Retrieval-Augmented Generation) with vector embeddings and semantic search.</td>
+  </tr>
+  <tr>
+    <td><strong>Powerful Tool System</strong></td>
+    <td>9 local tools with security validation: file operations, system commands, HTTP requests, environment variables, and more. Dotprompt support for flexible prompt management. OpenTelemetry integration for observability with tracing and metrics.</td>
+  </tr>
+  <tr>
+    <td><strong>Multi-Language Support</strong></td>
+    <td>Built-in i18n system supporting English and Traditional Chinese (繁體中文), with Japanese (日本語) reserved for future releases. Switch languages via <code>--lang</code> flag or <code>KOOPA_LANG</code> environment variable. Runtime language switching with <code>/lang</code> command in chat mode.</td>
+  </tr>
+  <tr>
+    <td><strong>Developer-Friendly</strong></td>
+    <td>Clean command-line interface with Cobra framework. Comprehensive error handling and security validation. Environment variable support with <code>KOOPA_*</code> prefix. Optional YAML configuration file for persistent settings.</td>
+  </tr>
+</table>
 
-- **Streaming 即時回應** - 逐字顯示 AI 回應，打字機效果，提升互動體驗
-- **結構化輸出** - 支援 JSON 結構化資料輸出（Zod schema 驗證）
-- **多模態輸入** - 支援圖片分析、OCR、UI/UX 評估（JPEG/PNG/GIF/WebP）
-- **會話管理** - 持久化對話歷史，支援多會話（純 Go SQLite）
+## How Does It Work?
 
-### Genkit 完整整合
+Koopa leverages the Genkit framework to provide a seamless AI experience directly in your terminal. It manages conversation context, executes tool calls securely, and maintains persistent session history.
 
-- **MCP 協議** - 連接外部工具伺服器，暴露為 MCP server（client & server）
-- **9 個 AI Flows** - Personal AI Assistant 工作流程：對話、分析、郵件撰寫、主題研究、任務規劃、程式碼審查等
-- **RAG 檢索** - 向量嵌入（text-embedding-004）與語義搜尋（餘弦相似度）
-- **9 個本地工具** - 檔案操作、系統命令（含安全檢查）、HTTP 請求、環境變數等
-- **Dotprompt** - 靈活的 prompt 管理系統（koopa.prompt）
-- **Observability** - 內建 OpenTelemetry tracing 和 metrics
+Key capabilities:
 
-## 快速開始
+- **Streaming Chat**: Real-time typewriter effect for AI responses
+- **Tool Execution**: Securely execute file operations, system commands, and HTTP requests
+- **Session Management**: Persistent conversation history across sessions
+- **Flow Execution**: Run predefined AI workflows for common tasks
+- **Multi-Modal**: Analyze images and documents with AI
+- **Extensible**: Add custom tools and flows using Genkit's framework
 
-### 安裝需求
+## Implementation Path
 
-- Go 1.25+
-- Gemini API Key（[申請連結](https://ai.google.dev/)）
+<table>
+<tr>
+  <td><span>1</span></td>
+  <td>Install Go and get Gemini API Key</td>
+  <td>Ensure you have Go 1.25+ installed. Get your free Gemini API key from <a href="https://ai.google.dev/">ai.google.dev</a>.</td>
+</tr>
+<tr>
+  <td><span>2</span></td>
+  <td>Clone and build Koopa</td>
+  <td>Clone the repository and build the single static binary using <code>go build</code>. No CGO or external dependencies required.</td>
+</tr>
+<tr>
+  <td><span>3</span></td>
+  <td>Configure API key</td>
+  <td>Set your Gemini API key using the <code>KOOPA_GEMINI_API_KEY</code> environment variable or configuration file.</td>
+</tr>
+<tr>
+  <td><span>4</span></td>
+  <td>Start chatting</td>
+  <td>Run <code>./koopa</code> to enter interactive chat mode, or use <code>./koopa ask "your question"</code> for one-off queries. Enable tools with <code>/tools</code> or <code>--tools</code> flag for enhanced capabilities.</td>
+</tr>
+</table>
 
-### 編譯執行
+## Get Started
+
+### Prerequisites
+
+- Go 1.25 or higher
+- Gemini API Key ([Get one free](https://ai.google.dev/))
+
+### Quick Start
 
 ```bash
-# 1. Clone 專案
+# 1. Clone the repository
 git clone https://github.com/koopa0/koopa.git
 cd koopa
 
-# 2. 編譯（100% 純 Go，無 CGO）
+# 2. Build (100% pure Go, no CGO)
 go build -o koopa
 
-# 3. 設定 API Key
+# 3. Set your API key
 export KOOPA_GEMINI_API_KEY=your-api-key-here
 
-# 4. 開始使用
+# 4. Start using Koopa
 ./koopa
 ```
 
-## 使用方式
+## Usage
 
-### 互動對話（最常用）
+### Interactive Chat Mode (Most Common)
 
-直接執行 `koopa` 進入對話模式：
+Simply run `koopa` to enter chat mode:
 
 ```bash
 $ ./koopa
-Koopa v0.1.0 - 你的終端 AI 個人助理
-輸入 /help 查看命令，Ctrl+D 或 /exit 退出
+Welcome to Koopa v0.1.0 - Your terminal AI personal assistant
+Type /help for commands, Ctrl+D or /exit to quit
+Session ID: 1
 
-You> 你好
-Koopa> 你好！有什麼我可以幫忙的嗎？
+You> Hello
+Koopa> Hello! How can I help you today?
 
 You> /tools
-🔧 工具已啟用
-   可用工具：
-   - currentTime     獲取當前時間
-   - readFile        讀取檔案
-   - writeFile       寫入檔案
-   - listFiles       列出目錄
-   - deleteFile      刪除檔案
-   - executeCommand  執行系統命令
-   - httpGet         HTTP GET 請求
-   - getEnv          讀取環境變數
-   - getFileInfo     獲取檔案資訊
+🔧 Tools enabled
+   Available tools:
+   - currentTime      Get current time
+   - readFile         Read file contents
+   - writeFile        Write content to file
+   - listFiles        List directory contents
+   - deleteFile       Delete a file
+   - executeCommand   Execute system command
+   - httpGet          HTTP GET request
+   - getEnv           Read environment variable
+   - getFileInfo      Get file information
 
-You> 現在幾點？
-Koopa> 現在是 2025 年 10 月 16 日下午 12 點 30 分。
+You> What time is it now?
+Koopa> It's currently October 23, 2025, 12:30 PM.
 
 You> /exit
-再見！
+Goodbye!
 ```
 
-#### 對話模式特殊命令
+#### Chat Mode Special Commands
 
-- `/help` - 顯示幫助訊息
-- `/tools` - 切換工具啟用/禁用
-- `/clear` - 清除對話歷史
-- `/exit` 或 `/quit` - 退出對話
-- `Ctrl+D` - 退出
+- `/help` - Show help message
+- `/tools` - Toggle tools on/off
+- `/clear` - Clear chat history
+- `/lang <code>` - Change language (en, zh-TW)
+- `/exit` or `/quit` - Exit chat
+- `Ctrl+D` - Exit chat
 
-### 單次問答
+### Single Question Mode
 
-不進入對話模式，直接提問：
+Ask a question without entering chat mode:
 
 ```bash
-# 基本問答
-./koopa ask "用一句話解釋什麼是 Go 語言"
+# Basic question
+./koopa ask "Explain what Go language is in one sentence"
 
-# 使用工具
-./koopa ask --tools "讀取 README.md 並總結重點"
-./koopa ask --tools "現在幾點？"
+# With tools enabled
+./koopa ask --tools "Read README.md and summarize key points"
+./koopa ask --tools "What time is it now?"
 ```
 
-### 使用 Genkit Flows
+### Language Support
 
-Koopa 提供 9 個預定義的 AI 工作流程，涵蓋對話、內容創作、研究、生產力、開發輔助等領域：
+Koopa supports multiple languages with easy switching:
 
 ```bash
-# 啟動 Genkit Developer UI
+# Use English (default)
+./koopa
+
+# Use Traditional Chinese
+./koopa --lang zh-TW
+# or
+export KOOPA_LANG=zh-TW
+./koopa
+
+# Switch language in chat
+You> /lang zh-TW
+Language changed to: zh-TW
+
+You> /lang en
+Language changed to: en
+```
+
+### Using Genkit Flows
+
+Koopa provides 9 predefined AI workflows covering conversation, content creation, research, productivity, and development assistance:
+
+```bash
+# Start Genkit Developer UI
 genkit start -- go run main.go
 
-# 核心通用
-genkit flow:run chat '"你好"' -s                                              # 流式對話
+# Core conversations
+genkit flow:run chat '"Hello"' -s                                             # Streaming chat
 
-# 分析類（統一入口，支援 file/log/document/text）
-genkit flow:run analyze '{"content":"main.go","content_type":"file"}'        # 檔案分析
-genkit flow:run analyze '{"content":"app.log","content_type":"log"}'         # 日誌分析
-genkit flow:run analyze '{"content":"README.md","content_type":"document"}'  # 文件分析
+# Analysis (unified entry point, supports file/log/document/text)
+genkit flow:run analyze '{"content":"main.go","content_type":"file"}'        # File analysis
+genkit flow:run analyze '{"content":"app.log","content_type":"log"}'         # Log analysis
+genkit flow:run analyze '{"content":"README.md","content_type":"document"}'  # Document analysis
 
-# 內容創作
-genkit flow:run composeEmail '{"recipient":"同事","purpose":"thanks","context":"協助專案開發"}'
+# Content creation
+genkit flow:run composeEmail '{"recipient":"colleague","purpose":"thanks","context":"help with project"}'
 
-# 研究與資訊
-genkit flow:run researchTopic '{"topic":"Genkit 框架最佳實踐"}'
+# Research & information
+genkit flow:run researchTopic '{"topic":"Genkit framework best practices"}'
 
-# 生產力
-genkit flow:run planTasks '{"goal":"完成 API 開發","deadline":"本週五"}'
+# Productivity
+genkit flow:run planTasks '{"goal":"Complete API development","deadline":"Friday"}'
 
-# 開發輔助
+# Development assistance
 genkit flow:run reviewCode '"internal/agent/agent.go"'
-genkit flow:run suggestCommand '"列出所有Go檔案"'
-genkit flow:run generateCommitMessage '"git diff內容"'
+genkit flow:run suggestCommand '"list all Go files"'
+genkit flow:run generateCommitMessage '"git diff output"'
 genkit flow:run diagnoseError '"error: not found"'
 ```
 
-### 查看資訊
+### View Information
 
 ```bash
-# 查看版本和配置
+# View version and configuration
 ./koopa version
 
-# 查看所有 Flows
+# List all available flows
 genkit flow:list
 ```
 
-## 配置
+## Configuration
 
-### 環境變數（推薦）
+### Environment Variables (Recommended)
 
-使用 `KOOPA_` 前綴避免命名衝突：
+Use `KOOPA_` prefix to avoid naming conflicts:
 
 ```bash
 export KOOPA_GEMINI_API_KEY=your-api-key-here
-export KOOPA_MODEL_NAME=gemini-2.5-pro      # 可選
-export KOOPA_TEMPERATURE=0.8                 # 可選
-export KOOPA_MAX_TOKENS=4096                 # 可選
-export KOOPA_MAX_HISTORY_MESSAGES=100        # 可選
+export KOOPA_MODEL_NAME=gemini-2.5-pro      # Optional
+export KOOPA_TEMPERATURE=0.8                 # Optional
+export KOOPA_MAX_TOKENS=4096                 # Optional
+export KOOPA_MAX_HISTORY_MESSAGES=100        # Optional
+export KOOPA_LANG=en                         # Optional (en, zh-TW)
 ```
 
-**環境變數優先級**：`KOOPA_*` > 配置檔案 > 預設值
+**Environment Variable Priority**: `KOOPA_*` > Configuration file > Default values
 
-### 配置檔案（選用）
+### Configuration File (Optional)
 
-建立 `~/.koopa/config.yaml`：
+Create `~/.koopa/config.yaml`:
 
 ```yaml
-# AI 模型設定
+# AI model settings
 model_name: "gemini-2.5-flash"
 temperature: 0.7
 max_tokens: 2048
 
-# 對話歷史配置（預設 50 則，約 25 輪對話）
-# 啟用滑動窗口機制，防止 token 消耗過高
+# Conversation history configuration (default 50 messages, ~25 conversation turns)
+# Sliding window mechanism enabled to prevent excessive token consumption
 max_history_messages: 50
-
-# 資料庫路徑（預設為 ~/.koopa/koopa.db）
+# Database path (defaults to ~/.koopa/koopa.db)
 # database_path: "/path/to/koopa.db"
 
-# API Key（建議用環境變數）
+# API Key (recommended to use environment variable instead)
 # gemini_api_key: "your-api-key-here"
 ```
 
-## 參考文檔
+## Available Tools
 
-- [Genkit Go 官方文檔](https://firebase.google.com/docs/genkit/go)
-- [MCP 協議規範](https://modelcontextprotocol.io/)
+Koopa comes with 9 built-in tools with security validation:
 
-## 授權
+1. **currentTime** - Get current system time
+2. **readFile** - Read file contents with path validation
+3. **writeFile** - Write content to file with safety checks
+4. **listFiles** - List directory contents
+5. **deleteFile** - Delete files with confirmation
+6. **executeCommand** - Execute system commands (with dangerous command blocking)
+7. **httpGet** - Make HTTP GET requests (with internal network protection)
+8. **getEnv** - Read environment variables (with sensitive variable protection)
+9. **getFileInfo** - Get file metadata and information
 
-MIT
+All tools include comprehensive security validation to protect your system.
 
-## 聯絡
+## Documentation
 
-有問題或建議歡迎開 Issue。
+For detailed documentation about the Genkit framework and Koopa's architecture:
+
+- [Genkit Official Documentation](https://docs/README.md) - Index of all technical documentation
+- [Genkit Go Documentation](https://firebase.google.com/docs/genkit/go)
+- [MCP Protocol Specification](https://modelcontextprotocol.io/)
+
+## Development
+
+### Building from Source
+
+```bash
+# Build for current platform
+go build -o koopa
+
+# Build for Linux AMD64
+GOOS=linux GOARCH=amd64 go build -o koopa-linux-amd64
+
+# Build for Windows
+GOOS=windows GOARCH=amd64 go build -o koopa-windows.exe
+
+# Build for macOS ARM64 (Apple Silicon)
+GOOS=darwin GOARCH=arm64 go build -o koopa-darwin-arm64
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run specific package tests
+go test ./internal/agent/
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues and pull requests.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Contact
+
+Have questions or suggestions? Feel free to open an issue on GitHub.
 
 ---
+
+**Made with [Genkit](https://github.com/firebase/genkit)**

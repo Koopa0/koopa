@@ -202,13 +202,31 @@ func (m *Memory) GetRecentMessages(ctx context.Context, sessionID int64, limit i
 
 	// 反轉順序，使其按時間正序
 	result := make([]*Message, len(messages))
-	for i, j := 0, len(messages)-1; i < len(messages); i, j = i+1, j-1 {
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		result[i] = &Message{
 			ID:        messages[j].ID,
 			SessionID: messages[j].SessionID,
 			Role:      messages[j].Role,
 			Content:   messages[j].Content,
 			CreatedAt: messages[j].CreatedAt,
+		}
+		result[j] = &Message{
+			ID:        messages[i].ID,
+			SessionID: messages[i].SessionID,
+			Role:      messages[i].Role,
+			Content:   messages[i].Content,
+			CreatedAt: messages[i].CreatedAt,
+		}
+	}
+	// 處理中間元素（當切片長度為奇數時）
+	if len(messages)%2 != 0 {
+		mid := len(messages) / 2
+		result[mid] = &Message{
+			ID:        messages[mid].ID,
+			SessionID: messages[mid].SessionID,
+			Role:      messages[mid].Role,
+			Content:   messages[mid].Content,
+			CreatedAt: messages[mid].CreatedAt,
 		}
 	}
 
