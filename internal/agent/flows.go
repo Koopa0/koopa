@@ -102,7 +102,7 @@ func DefineFlows(a *Agent) {
 				return AnalyzeOutput{}, fmt.Errorf("找不到 analyze prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := AnalyzePromptInput{
 				Content:     content,
 				ContentType: input.ContentType,
@@ -178,7 +178,7 @@ func DefineFlows(a *Agent) {
 				return EmailOutput{}, fmt.Errorf("找不到 composeEmail prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := EmailPromptInput{
 				Recipient: input.Recipient,
 				Purpose:   input.Purpose,
@@ -255,7 +255,7 @@ func DefineFlows(a *Agent) {
 				return ResearchOutput{}, fmt.Errorf("找不到 researchTopic prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := ResearchTopicPromptInput{
 				Topic:    input.Topic,
 				Focus:    input.Focus,
@@ -331,7 +331,7 @@ func DefineFlows(a *Agent) {
 				return TaskPlanOutput{}, fmt.Errorf("找不到 planTasks prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := TaskPlanPromptInput(input)
 
 			// 渲染 prompt
@@ -388,7 +388,7 @@ func DefineFlows(a *Agent) {
 				return CodeReviewOutput{}, fmt.Errorf("找不到 reviewCode prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := CodeReviewPromptInput{
 				Code: code,
 			}
@@ -437,7 +437,7 @@ func DefineFlows(a *Agent) {
 				return CommandSuggestion{}, fmt.Errorf("找不到 suggestCommand prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := CommandSuggestPromptInput{
 				Intent: intent,
 			}
@@ -487,7 +487,7 @@ func DefineFlows(a *Agent) {
 				return GitCommitMessage{}, fmt.Errorf("找不到 generateCommitMessage prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := GenerateCommitMessagePromptInput{
 				Diff: diff,
 			}
@@ -538,7 +538,7 @@ func DefineFlows(a *Agent) {
 				return ErrorDiagnosis{}, fmt.Errorf("找不到 diagnoseError prompt")
 			}
 
-			// 準備輸入資料（強型別）
+			// 準備輸入資料
 			promptInput := ErrorDiagnosePromptInput{
 				ErrorMessage: errorMessage,
 			}
