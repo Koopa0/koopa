@@ -37,8 +37,8 @@ func Load() (*Config, error) {
 
 	configDir := filepath.Join(home, ".koopa")
 
-	// 確保目錄存在
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	// 確保目錄存在（使用 0750 權限提高安全性）
+	if err := os.MkdirAll(configDir, 0750); err != nil {
 		return nil, err
 	}
 
@@ -66,12 +66,12 @@ func Load() (*Config, error) {
 	// 環境變數設定（使用 KOOPA_ 前綴）
 	// 明確綁定每個配置鍵到對應的環境變數
 	viper.SetEnvPrefix("KOOPA")
-	viper.BindEnv("model_name")
-	viper.BindEnv("temperature")
-	viper.BindEnv("max_tokens")
-	viper.BindEnv("max_history_messages")
-	viper.BindEnv("database_path")
-	viper.BindEnv("gemini_api_key")
+	_ = viper.BindEnv("model_name")
+	_ = viper.BindEnv("temperature")
+	_ = viper.BindEnv("max_tokens")
+	_ = viper.BindEnv("max_history_messages")
+	_ = viper.BindEnv("database_path")
+	_ = viper.BindEnv("gemini_api_key")
 
 	// 使用 Unmarshal 自動映射到結構體（類型安全）
 	var cfg Config

@@ -23,10 +23,10 @@ Koopa 是一個基於 [Genkit](https://github.com/firebase/genkit) 的終端 AI 
 ### Genkit 完整整合
 
 - **MCP 協議** - 連接外部工具伺服器，暴露為 MCP server（client & server）
-- **8 個 AI Flows** - 預定義工作流程：程式碼審查、日誌分析、檔案分析、錯誤診斷等
+- **9 個 AI Flows** - Personal AI Assistant 工作流程：對話、分析、郵件撰寫、主題研究、任務規劃、程式碼審查等
 - **RAG 檢索** - 向量嵌入（text-embedding-004）與語義搜尋（餘弦相似度）
 - **9 個本地工具** - 檔案操作、系統命令（含安全檢查）、HTTP 請求、環境變數等
-- **Dotprompt** - 靈活的 prompt 管理系統（koopa_system.prompt）
+- **Dotprompt** - 靈活的 prompt 管理系統（koopa.prompt）
 - **Observability** - 內建 OpenTelemetry tracing 和 metrics
 
 ## 快速開始
@@ -128,21 +128,34 @@ You> /exit
 
 ### 使用 Genkit Flows
 
-Koopa 提供 8 個預定義的 AI 工作流程，使用 Genkit CLI 執行：
+Koopa 提供 9 個預定義的 AI 工作流程，涵蓋對話、內容創作、研究、生產力、開發輔助等領域：
 
 ```bash
 # 啟動 Genkit Developer UI
 genkit start -- go run main.go
 
-# 執行 Flow（互動模式）
-genkit flow:run chat '"你好"' -s                    # 流式對話
-genkit flow:run analyzeFile '{"file_path": "main.go"}'  # 檔案分析
-genkit flow:run reviewCode '"internal/agent/agent.go"'  # 程式碼審查
-genkit flow:run analyzeLogs '"app.log"'                  # 日誌分析
-genkit flow:run summarizeDocument '"README.md"'          # 文件摘要
-genkit flow:run suggestCommand '"列出所有Go檔案"'       # 命令建議
-genkit flow:run generateCommitMessage '"git diff內容"'  # Git提交訊息
-genkit flow:run diagnoseError '"error: not found"'       # 錯誤診斷
+# 核心通用
+genkit flow:run chat '"你好"' -s                                              # 流式對話
+
+# 分析類（統一入口，支援 file/log/document/text）
+genkit flow:run analyze '{"content":"main.go","content_type":"file"}'        # 檔案分析
+genkit flow:run analyze '{"content":"app.log","content_type":"log"}'         # 日誌分析
+genkit flow:run analyze '{"content":"README.md","content_type":"document"}'  # 文件分析
+
+# 內容創作
+genkit flow:run composeEmail '{"recipient":"同事","purpose":"thanks","context":"協助專案開發"}'
+
+# 研究與資訊
+genkit flow:run researchTopic '{"topic":"Genkit 框架最佳實踐"}'
+
+# 生產力
+genkit flow:run planTasks '{"goal":"完成 API 開發","deadline":"本週五"}'
+
+# 開發輔助
+genkit flow:run reviewCode '"internal/agent/agent.go"'                       # 程式碼審查
+genkit flow:run suggestCommand '"列出所有Go檔案"'                            # 命令建議
+genkit flow:run generateCommitMessage '"git diff內容"'                       # Git提交訊息
+genkit flow:run diagnoseError '"error: not found"'                           # 錯誤診斷
 ```
 
 ### 查看資訊
@@ -205,14 +218,14 @@ koopa/
 │   ├── agent/             # AI Agent 核心
 │   │   ├── agent.go       # 主要邏輯與 Genkit 初始化
 │   │   ├── tools.go       # 工具定義（9個工具）
-│   │   ├── flows.go       # Genkit Flows（8個flows）
+│   │   ├── flows.go       # Genkit Flows（9個flows）
 │   │   ├── mcp.go         # MCP 整合（client & server）
 │   │   ├── session.go     # 會話管理與持久化
 │   │   ├── rag.go         # RAG（Embedders & Retrievers）
 │   │   └── multimodal.go  # 多模態輸入（圖片分析）
 │   └── config/            # 配置管理
 ├── prompts/               # Dotprompt 檔案
-│   └── koopa_system.prompt # System prompt 定義
+│   └── koopa.prompt # System prompt 定義
 ├── main.go                # 程式進入點
 ├── DESIGN.md              # 設計文檔
 ├── GENKIT_FEATURES.md     # Genkit 功能整合詳解
@@ -255,66 +268,5 @@ MIT
 ## 聯絡
 
 有問題或建議歡迎開 Issue。
-
----
-
-## 更新日誌
-
-### Phase 1.7 (2025-10-16)
-
-**配置系統重構**：
-
-1. **類型安全的配置載入**
-   - 使用 `viper.Unmarshal` 替代手動賦值
-   - 為 Config 結構體添加 `mapstructure` 標籤
-   - 自動映射配置值到結構體，減少維護負擔
-
-2. **環境變數命名空間**
-   - 引入 `KOOPA_` 前綴避免全局環境變數衝突
-   - 優先級：`KOOPA_*` > 配置檔案 > 預設值
-   - 所有環境變數統一使用前綴
-
-3. **明確的環境變數綁定**
-   - 移除 `BindEnv` 歧義，採用顯式綁定策略
-   - 支援所有配置項的環境變數覆蓋
-   - 完整的環境變數列表文檔化
-
-### Phase 1.6 (2025-10-16)
-
-**重大改進 - 移除 CGO 依賴**：
-
-1. **100% 純 Go 實現**
-   - 將 `github.com/mattn/go-sqlite3` 替換為 `modernc.org/sqlite`
-   - 完全移除 CGO 依賴，恢復 Go 的跨平台編譯優勢
-   - 驗證通過：`CGO_ENABLED=0 go build` 編譯成功
-
-2. **跨平台編譯簡化**
-   - 無需 C 編譯器或交叉編譯工具鏈
-   - 一條命令即可為任何平台編譯
-   - 支援 Linux/Windows/macOS/ARM 等所有 Go 支援的平台
-
-3. **部署體驗提升**
-   - 單一靜態二進制文件，無依賴
-   - 使用者無需安裝任何環境
-   - 完美符合 Go 語言的設計哲學
-
-### Phase 1.5 (2025-10-16)
-
-**優化與改進**：
-
-1. **對話歷史滑動窗口機制**
-   - 預設保留最近 50 則訊息（約 25 輪對話）
-   - 自動清理舊訊息，防止 token 消耗過高
-   - 可透過 `max_history_messages` 配置調整
-
-2. **executeCommand 安全檢查**
-   - 自動檢測 13 種危險命令（rm, mkfs, dd, reboot 等）
-   - 檢測 5 種高風險參數模式（-rf, --force 等）
-   - 危險命令自動阻止，並提示用戶手動執行
-
-3. **Flows 可組合性重構**
-   - 提取共用檔案讀取邏輯 (`readFileWithLimit`)
-   - 統一錯誤處理和大小限制
-   - 日誌檔案智能取尾部，一般檔案取開頭
 
 ---
