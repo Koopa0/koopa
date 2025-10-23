@@ -12,6 +12,8 @@ import (
 
 	"github.com/koopa0/koopa/internal/agent"
 	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/database"
+	"github.com/koopa0/koopa/internal/memory"
 	"github.com/spf13/cobra"
 )
 
@@ -56,9 +58,31 @@ func runChat(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("創建 Agent 失敗: %w", err)
 	}
 
+	// 初始化資料庫
+	dbPath := ".koopa/koopa.db"
+	sqlDB, err := database.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("開啟資料庫失敗: %w", err)
+	}
+	defer sqlDB.Close()
+
+	if err := database.Migrate(sqlDB); err != nil {
+		return fmt.Errorf("資料庫遷移失敗: %w", err)
+	}
+
+	// 創建 memory 實例
+	mem := memory.New(sqlDB)
+
+	// 創建新會話（直接使用 memory）
+	session, err := mem.CreateSession(ctx, "Chat Session")
+	if err != nil {
+		return fmt.Errorf("創建會話失敗: %w", err)
+	}
+
 	// 顯示歡迎訊息
 	fmt.Println("🐢 Koopa v0.1.0 - 你的終端 AI 個人助理")
-	fmt.Println("💡 輸入 /help 查看命令，Ctrl+D 或 /exit 退出")
+	fmt.Printf("💡 輸入 /help 查看命令，Ctrl+D 或 /exit 退出\n")
+	fmt.Printf("📝 會話 ID: %d\n", session.ID)
 	fmt.Println()
 
 	// 開始對話循環
@@ -86,11 +110,16 @@ func runChat(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
+		// 保存用戶訊息到資料庫
+		if _, err = mem.AddMessage(ctx, session.ID, "user", input); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  保存訊息失敗: %v\n", err)
+		}
+
 		// 發送訊息給 AI（使用 streaming）
 		fmt.Print("Koopa> ")
 		_ = os.Stdout.Sync() // 確保提示符立即顯示
 
-		_, err := ag.ChatStream(ctx, input, func(chunk string) {
+		response, err := ag.ChatStream(ctx, input, func(chunk string) {
 			// 逐字輸出，模擬打字機效果
 			printCharByChar(chunk)
 		})
@@ -99,11 +128,19 @@ func runChat(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		fmt.Println()
+
+		// 保存 AI 回應到資料庫
+		if _, err = mem.AddMessage(ctx, session.ID, "model", response); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  保存回應失敗: %v\n", err)
+		}
 	}
 
 	if err := scanner.Err(); err != nil && err != io.EOF {
 		return fmt.Errorf("讀取輸入失敗: %w", err)
 	}
+
+	// 會話已自動保存，無需額外操作
+	fmt.Printf("💾 會話已保存（ID: %d）\n", session.ID)
 
 	return nil
 }

@@ -10,7 +10,23 @@ import (
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/core/api"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/koopa0/koopa/internal/security"
 )
+
+// pathValidator 路徑驗證器（允許工作目錄和用戶主目錄）
+var pathValidator *security.PathValidator
+
+func init() {
+	// 初始化路徑驗證器
+	// 允許訪問工作目錄和用戶主目錄
+	homeDir, _ := security.GetHomeDir()
+	var err error
+	pathValidator, err = security.NewPathValidator([]string{homeDir})
+	if err != nil {
+		// 如果初始化失敗，使用空白名單（只允許工作目錄）
+		pathValidator, _ = security.NewPathValidator([]string{})
+	}
+}
 
 // DefineFlows 定義所有 Genkit Flows
 // 這些 Flows 專為 Personal AI Assistant 設計，協助用戶完成各種日常任務
@@ -564,9 +580,15 @@ func (a *Agent) GetAllFlows() []api.Action {
 func readFileWithLimit(ctx context.Context, filePath string, maxBytes int) (string, error) {
 	return genkit.Run(ctx, fmt.Sprintf("read-file-%s", filePath),
 		func() (string, error) {
-			data, err := os.ReadFile(filePath)
+			// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+			safePath, err := pathValidator.ValidatePath(filePath)
 			if err != nil {
-				return "", fmt.Errorf("無法讀取檔案 %s: %w", filePath, err)
+				return "", fmt.Errorf("路徑驗證失敗: %w", err)
+			}
+
+			data, err := os.ReadFile(safePath)
+			if err != nil {
+				return "", fmt.Errorf("無法讀取檔案 %s: %w", safePath, err)
 			}
 
 			// 無限制

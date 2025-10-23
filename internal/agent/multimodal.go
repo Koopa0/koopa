@@ -21,14 +21,20 @@ type ImageInput struct {
 // createImagePart 讀取圖片檔案並創建 ai.Part
 // 這個輔助函式封裝了「讀取檔案 -> 判斷 media type -> base64 編碼」的通用邏輯
 func createImagePart(imagePath string) (*ai.Part, error) {
-	// 讀取圖片檔案
-	imageData, err := os.ReadFile(imagePath)
+	// 路徑安全驗證（防止路徑遍歷攻擊 CWE-22）
+	safePath, err := pathValidator.ValidatePath(imagePath)
 	if err != nil {
-		return nil, fmt.Errorf("無法讀取圖片 %s: %w", imagePath, err)
+		return nil, fmt.Errorf("路徑驗證失敗: %w", err)
 	}
 
-	// 判斷圖片類型
-	ext := strings.ToLower(filepath.Ext(imagePath))
+	// 讀取圖片檔案
+	imageData, err := os.ReadFile(safePath)
+	if err != nil {
+		return nil, fmt.Errorf("無法讀取圖片 %s: %w", safePath, err)
+	}
+
+	// 判斷圖片類型（使用驗證後的安全路徑）
+	ext := strings.ToLower(filepath.Ext(safePath))
 	var mediaType string
 	switch ext {
 	case ".jpg", ".jpeg":
