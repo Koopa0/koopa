@@ -2,7 +2,7 @@
 
 > 終端 AI 個人助理
 
-Koopa 是一個基於 [Genkit](https://github.com/firebase/genkit) 的終端 AI 助手，讓你在命令列就能直接跟 AI 對話，處理各種任務。
+Koopa 是一個基於 [Genkit](https://github.com/firebase/genkit) 的終端 AI 助手，讓你在命令列就能直接跟 AI 對話，處理各種任務
 
 ## 核心特色
 
@@ -51,24 +51,6 @@ export KOOPA_GEMINI_API_KEY=your-api-key-here
 
 # 4. 開始使用
 ./koopa
-```
-
-### 跨平台編譯
-
-無需任何交叉編譯工具，一條命令即可：
-
-```bash
-# Linux AMD64
-GOOS=linux GOARCH=amd64 go build -o koopa-linux-amd64
-
-# Windows AMD64
-GOOS=windows GOARCH=amd64 go build -o koopa-windows-amd64.exe
-
-# Linux ARM64 (Raspberry Pi 等)
-GOOS=linux GOARCH=arm64 go build -o koopa-linux-arm64
-
-# macOS ARM64 (M1/M2/M3)
-GOOS=darwin GOARCH=arm64 go build -o koopa-darwin-arm64
 ```
 
 ## 使用方式
@@ -152,10 +134,10 @@ genkit flow:run researchTopic '{"topic":"Genkit 框架最佳實踐"}'
 genkit flow:run planTasks '{"goal":"完成 API 開發","deadline":"本週五"}'
 
 # 開發輔助
-genkit flow:run reviewCode '"internal/agent/agent.go"'                       # 程式碼審查
-genkit flow:run suggestCommand '"列出所有Go檔案"'                            # 命令建議
-genkit flow:run generateCommitMessage '"git diff內容"'                       # Git提交訊息
-genkit flow:run diagnoseError '"error: not found"'                           # 錯誤診斷
+genkit flow:run reviewCode '"internal/agent/agent.go"'
+genkit flow:run suggestCommand '"列出所有Go檔案"'
+genkit flow:run generateCommitMessage '"git diff內容"'
+genkit flow:run diagnoseError '"error: not found"'
 ```
 
 ### 查看資訊
@@ -203,57 +185,6 @@ max_history_messages: 50
 
 # API Key（建議用環境變數）
 # gemini_api_key: "your-api-key-here"
-```
-
-## 專案架構
-
-```
-koopa/
-├── cmd/                    # CLI 命令
-│   ├── root.go            # 主命令
-│   ├── chat.go            # 對話模式（含逐字 streaming）
-│   ├── ask.go             # 單次問答
-│   └── version.go         # 版本資訊
-├── internal/
-│   ├── agent/             # AI Agent 核心
-│   │   ├── agent.go       # 主要邏輯與 Genkit 初始化
-│   │   ├── tools.go       # 工具定義（9個工具）
-│   │   ├── flows.go       # Genkit Flows（9個flows）
-│   │   ├── mcp.go         # MCP 整合（client & server）
-│   │   ├── session.go     # 會話管理與持久化
-│   │   ├── rag.go         # RAG（Embedders & Retrievers）
-│   │   └── multimodal.go  # 多模態輸入（圖片分析）
-│   └── config/            # 配置管理
-├── prompts/               # Dotprompt 檔案
-│   └── koopa.prompt # System prompt 定義
-├── main.go                # 程式進入點
-├── DESIGN.md              # 設計文檔
-├── GENKIT_FEATURES.md     # Genkit 功能整合詳解
-└── config.example.yaml    # 配置範例
-```
-
-## 技術棧
-
-- **語言**：Go 1.25+ (100% 純 Go，無 CGO)
-- **AI 框架**：Genkit Go 1.1.0
-- **CLI 框架**：Cobra
-- **配置管理**：Viper
-- **資料庫**：modernc.org/sqlite (純 Go SQLite)
-- **AI 模型**：Google Gemini 2.5 Flash
-
-## 開發
-
-```bash
-# 執行代碼檢查
-go vet ./...
-staticcheck ./...
-golangci-lint run
-
-# 編譯
-go build -o koopa
-
-# 執行
-./koopa
 ```
 
 ## 參考文檔
