@@ -73,13 +73,13 @@ func registerTools(g *genkit.Genkit) {
 			Path    string `json:"path" jsonschema_description:"要寫入的檔案路徑"`
 			Content string `json:"content" jsonschema_description:"要寫入的內容"`
 		}) (string, error) {
-			// 確保目錄存在
+			// 確保目錄存在（使用 0750 權限提高安全性）
 			dir := filepath.Dir(input.Path)
-			if err := os.MkdirAll(dir, 0755); err != nil {
+			if err := os.MkdirAll(dir, 0750); err != nil {
 				return "", fmt.Errorf("無法創建目錄: %w", err)
 			}
 
-			err := os.WriteFile(input.Path, []byte(input.Content), 0644)
+			err := os.WriteFile(input.Path, []byte(input.Content), 0600)
 			if err != nil {
 				return "", fmt.Errorf("無法寫入檔案: %w", err)
 			}

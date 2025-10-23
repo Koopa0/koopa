@@ -203,8 +203,8 @@ type FileSessionStore struct {
 
 // NewFileSessionStore 創建新的檔案會話存儲
 func NewFileSessionStore(basePath string) (*FileSessionStore, error) {
-	// 確保目錄存在
-	if err := os.MkdirAll(basePath, 0755); err != nil {
+	// 確保目錄存在（使用 0750 權限提高安全性）
+	if err := os.MkdirAll(basePath, 0750); err != nil {
 		return nil, fmt.Errorf("無法創建會話目錄: %w", err)
 	}
 
@@ -223,7 +223,7 @@ func (s *FileSessionStore) Save(ctx context.Context, session *SessionData) error
 	}
 
 	filePath := filepath.Join(s.basePath, session.ID+".json")
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
 		return fmt.Errorf("無法寫入會話檔案: %w", err)
 	}
 

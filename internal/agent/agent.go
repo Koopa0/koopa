@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/firebase/genkit/go/ai"
@@ -36,7 +37,7 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 	// Genkit 的 GoogleAI 插件需要從環境變數讀取 API key
 	// 確保環境變數已設置（支援 KOOPA_GEMINI_API_KEY）
 	if cfg.GeminiAPIKey != "" {
-		os.Setenv("GEMINI_API_KEY", cfg.GeminiAPIKey)
+		_ = os.Setenv("GEMINI_API_KEY", cfg.GeminiAPIKey)
 	}
 
 	// 初始化 Genkit（啟用 Dotprompt 支援）
@@ -49,12 +50,12 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 	registerTools(g)
 
 	// 載入 system prompt（從 Dotprompt 檔案）
-	systemPrompt := genkit.LookupPrompt(g, "koopa_system")
+	systemPrompt := genkit.LookupPrompt(g, "koopa")
 	if systemPrompt == nil {
-		return nil, fmt.Errorf("找不到 koopa_system prompt，請確認 prompts/koopa_system.prompt 檔案存在")
+		return nil, fmt.Errorf("找不到 system prompt")
 	}
 
-	// 渲染 prompt 以獲取 messages（不需要 input，因為 koopa_system 沒有輸入參數）
+	// 渲染 prompt 以獲取 messages（不需要 input，因為 koopa.prompt 沒有輸入參數）
 	actionOpts, err := systemPrompt.Render(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("渲染 system prompt 失敗: %w", err)
@@ -70,9 +71,14 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 
 	// 創建型別安全的 model reference（配對 model 和 config）
 	// 使用配置檔案中的設定覆蓋 prompt 檔案中的設定
+	// 安全轉換 MaxTokens (防止整數溢出)
+	maxTokens := cfg.MaxTokens
+	if maxTokens > math.MaxInt32 {
+		maxTokens = math.MaxInt32
+	}
 	modelRef := googlegenai.GoogleAIModelRef(cfg.ModelName, &genai.GenerateContentConfig{
 		Temperature:     genai.Ptr(cfg.Temperature),
-		MaxOutputTokens: int32(cfg.MaxTokens),
+		MaxOutputTokens: int32(maxTokens),
 	})
 
 	// 初始化對話歷史，包含 system message
@@ -118,7 +124,7 @@ func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
 // AskWithTools 向 AI 提問並獲取回應（使用工具）
 func (a *Agent) AskWithTools(ctx context.Context, question string) (string, error) {
 	// 查找所有已註冊的工具
-	tools := a.getAllTools()
+	tools := a.getAllTools(ctx)
 
 	messages := []*ai.Message{
 		a.systemMessage,
@@ -150,7 +156,7 @@ func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
 
 	// 如果啟用工具，添加工具
 	if a.useTools {
-		tools := a.getAllTools()
+		tools := a.getAllTools(ctx)
 		opts = append(opts, ai.WithTools(tools...))
 	}
 
@@ -188,7 +194,7 @@ func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback
 
 	// 如果啟用工具，添加工具
 	if a.useTools {
-		tools := a.getAllTools()
+		tools := a.getAllTools(ctx)
 		opts = append(opts, ai.WithTools(tools...))
 	}
 
@@ -250,7 +256,7 @@ func (a *Agent) AskWithStructuredOutput(ctx context.Context, question string, ou
 }
 
 // getAllTools 獲取所有已註冊的工具（包含 MCP 工具）
-func (a *Agent) getAllTools() []ai.ToolRef {
+func (a *Agent) getAllTools(ctx context.Context) []ai.ToolRef {
 	toolNames := []string{
 		"currentTime",
 		"readFile",
@@ -274,7 +280,7 @@ func (a *Agent) getAllTools() []ai.ToolRef {
 
 	// 如果啟用了 MCP，添加 MCP 工具
 	if a.useMCP && a.mcpManager != nil {
-		mcpTools, err := a.mcpManager.GetActiveTools(context.Background(), a.genkitInstance)
+		mcpTools, err := a.mcpManager.GetActiveTools(ctx, a.genkitInstance)
 		if err == nil {
 			for _, mcpTool := range mcpTools {
 				tools = append(tools, mcpTool)

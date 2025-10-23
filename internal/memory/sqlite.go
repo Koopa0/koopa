@@ -23,13 +23,13 @@ func NewSQLiteMemory(dbPath string) (*SQLiteMemory, error) {
 
 	// 啟用外鍵約束
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
 	// 初始化資料庫結構
 	if _, err := db.Exec(schema); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 

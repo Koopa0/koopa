@@ -88,7 +88,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 		// 發送訊息給 AI（使用 streaming）
 		fmt.Print("Koopa> ")
-		os.Stdout.Sync() // 確保提示符立即顯示
+		_ = os.Stdout.Sync() // 確保提示符立即顯示
 
 		_, err := ag.ChatStream(ctx, input, func(chunk string) {
 			// 逐字輸出，模擬打字機效果
@@ -163,7 +163,7 @@ func printCharByChar(text string) {
 	for len(text) > 0 {
 		r, size := utf8.DecodeRuneInString(text)
 		fmt.Print(string(r))
-		os.Stdout.Sync() // 立即 flush
+		_ = os.Stdout.Sync() // 立即 flush
 
 		// 添加微小延遲，製造打字機效果
 		// 中文字符稍慢，英文字符稍快

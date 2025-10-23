@@ -61,9 +61,9 @@ func runAsk(cmd *cobra.Command, args []string) error {
 	// 合併所有參數作為問題
 	question := strings.Join(args, " ")
 
-	fmt.Printf("🤔 正在思考：%s\n", question)
+	fmt.Printf("正在思考：%s\n", question)
 	if useTools {
-		fmt.Println("🔧 已啟用 9 個工具（currentTime, readFile, writeFile, listFiles, deleteFile, executeCommand, httpGet, getEnv, getFileInfo）")
+		fmt.Println("已啟用 9 個工具（currentTime, readFile, writeFile, listFiles, deleteFile, executeCommand, httpGet, getEnv, getFileInfo）")
 	}
 	fmt.Println()
 
