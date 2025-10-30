@@ -2,66 +2,72 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/koopa0/koopa/internal/database"
 	"github.com/koopa0/koopa/internal/i18n"
 	"github.com/koopa0/koopa/internal/memory"
 	"github.com/spf13/cobra"
 )
 
-var sessionsCmd = &cobra.Command{
-	Use:   "sessions",
-	Short: i18n.T("sessions.description"),
-}
-
-var sessionsListCmd = &cobra.Command{
-	Use:   "list",
-	Short: i18n.T("sessions.list.description"),
-	RunE:  runSessionsList,
-}
-
-var sessionsShowCmd = &cobra.Command{
-	Use:   "show <session-id>",
-	Short: "Show specific session messages",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSessionsShow,
-}
-
-var sessionsDeleteCmd = &cobra.Command{
-	Use:   "delete <session-id>",
-	Short: i18n.T("sessions.delete.description"),
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSessionsDelete,
-}
-
-func init() {
-	rootCmd.AddCommand(sessionsCmd)
-	sessionsCmd.AddCommand(sessionsListCmd)
-	sessionsCmd.AddCommand(sessionsShowCmd)
-	sessionsCmd.AddCommand(sessionsDeleteCmd)
-}
-
-func runSessionsList(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-
-	// Open database
-	dbPath := ".koopa/koopa.db"
-	sqlDB, err := database.Open(dbPath)
-	if err != nil {
-		return fmt.Errorf(i18n.T("error.database"), err)
+// NewSessionsCmd creates the sessions command (factory pattern)
+func NewSessionsCmd(db *sql.DB) *cobra.Command {
+	sessionsCmd := &cobra.Command{
+		Use:   "sessions",
+		Short: i18n.T("sessions.description"),
 	}
-	defer sqlDB.Close()
 
+	// Add subcommands
+	sessionsCmd.AddCommand(newSessionsListCmd(db))
+	sessionsCmd.AddCommand(newSessionsShowCmd(db))
+	sessionsCmd.AddCommand(newSessionsDeleteCmd(db))
+
+	return sessionsCmd
+}
+
+func newSessionsListCmd(db *sql.DB) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: i18n.T("sessions.list.description"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSessionsList(cmd.Context(), db)
+		},
+	}
+}
+
+func newSessionsShowCmd(db *sql.DB) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <session-id>",
+		Short: "Show specific session messages",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSessionsShow(cmd.Context(), db, args)
+		},
+	}
+}
+
+func newSessionsDeleteCmd(db *sql.DB) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <session-id>",
+		Short: i18n.T("sessions.delete.description"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSessionsDelete(cmd.Context(), db, args)
+		},
+	}
+}
+
+func runSessionsList(ctx context.Context, db *sql.DB) error {
 	// Create memory instance
-	mem := memory.New(sqlDB)
+	mem := memory.New(db)
 
 	// List all sessions
 	sessions, err := mem.ListSessions(ctx, 100) // Max 100
 	if err != nil {
-		return fmt.Errorf("Failed to list sessions: %w", err)
+		return fmt.Errorf("failed to list sessions: %w", err)
 	}
 
 	if len(sessions) == 0 {
@@ -83,36 +89,26 @@ func runSessionsList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runSessionsShow(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-
+func runSessionsShow(ctx context.Context, db *sql.DB, args []string) error {
 	// Parse session ID
 	sessionID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("Invalid session ID: %s", args[0])
+		return fmt.Errorf("invalid session ID: %s", args[0])
 	}
-
-	// Open database
-	dbPath := ".koopa/koopa.db"
-	sqlDB, err := database.Open(dbPath)
-	if err != nil {
-		return fmt.Errorf(i18n.T("error.database"), err)
-	}
-	defer sqlDB.Close()
 
 	// Create memory instance
-	mem := memory.New(sqlDB)
+	mem := memory.New(db)
 
 	// Get session information
 	session, err := mem.GetSession(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("Failed to get session: %w", err)
+		return fmt.Errorf("failed to get session: %w", err)
 	}
 
 	// Get all messages for session
 	messages, err := mem.GetMessages(ctx, sessionID, 0) // 0 = all messages
 	if err != nil {
-		return fmt.Errorf("Failed to get messages: %w", err)
+		return fmt.Errorf("failed to get messages: %w", err)
 	}
 
 	// Display session information
@@ -138,29 +134,19 @@ func runSessionsShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runSessionsDelete(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-
+func runSessionsDelete(ctx context.Context, db *sql.DB, args []string) error {
 	// Parse session ID
 	sessionID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("Invalid session ID: %s", args[0])
+		return fmt.Errorf("invalid session ID: %s", args[0])
 	}
-
-	// Open database
-	dbPath := ".koopa/koopa.db"
-	sqlDB, err := database.Open(dbPath)
-	if err != nil {
-		return fmt.Errorf(i18n.T("error.database"), err)
-	}
-	defer sqlDB.Close()
 
 	// Create memory instance
-	mem := memory.New(sqlDB)
+	mem := memory.New(db)
 
 	// Delete session
 	if err := mem.DeleteSession(ctx, sessionID); err != nil {
-		return fmt.Errorf(i18n.Sprintf("session.delete.fail", err))
+		return errors.New(i18n.Sprintf("session.delete.fail", err))
 	}
 
 	fmt.Println(i18n.Sprintf("session.delete.ok", sessionID))
