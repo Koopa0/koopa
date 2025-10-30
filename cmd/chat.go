@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -12,39 +13,27 @@ import (
 
 	"github.com/koopa0/koopa/internal/agent"
 	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/database"
 	"github.com/koopa0/koopa/internal/i18n"
 	"github.com/koopa0/koopa/internal/memory"
 	"github.com/spf13/cobra"
 )
 
-var chatCmd = &cobra.Command{
-	Use:   "chat",
-	Short: i18n.T("chat.description"),
-	RunE:  runChat,
+// NewChatCmd creates the chat command (factory pattern)
+func NewChatCmd(db *sql.DB, cfg *config.Config, appVersion string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "chat",
+		Short: i18n.T("chat.description"),
+		Annotations: map[string]string{
+			"requiresAPIKey": "true", // Declarative: this command requires API Key
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runChat(cmd.Context(), db, cfg, appVersion)
+		},
+	}
 }
 
-func init() {
-	rootCmd.AddCommand(chatCmd)
-}
-
-func runChat(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-
-	// Load configuration
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf(i18n.T("error.config"), err)
-	}
-
-	// Check API Key
-	if cfg.GeminiAPIKey == "" {
-		fmt.Fprintln(os.Stderr, "Error: KOOPA_GEMINI_API_KEY environment variable not set")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Please run:")
-		fmt.Fprintln(os.Stderr, "  export KOOPA_GEMINI_API_KEY=your-api-key")
-		return fmt.Errorf("KOOPA_GEMINI_API_KEY not set")
-	}
+func runChat(ctx context.Context, db *sql.DB, cfg *config.Config, appVersion string) error {
+	// API Key already checked in PersistentPreRunE
 
 	// Create Agent
 	ag, err := agent.New(ctx, cfg)
@@ -52,20 +41,8 @@ func runChat(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf(i18n.T("error.agent"), err)
 	}
 
-	// Initialize database
-	dbPath := ".koopa/koopa.db"
-	sqlDB, err := database.Open(dbPath)
-	if err != nil {
-		return fmt.Errorf(i18n.T("error.database"), err)
-	}
-	defer sqlDB.Close()
-
-	if err := database.Migrate(sqlDB); err != nil {
-		return fmt.Errorf(i18n.T("error.database"), err)
-	}
-
 	// Create memory instance
-	mem := memory.New(sqlDB)
+	mem := memory.New(db)
 
 	// Create new session
 	session, err := mem.CreateSession(ctx, "Chat Session")
@@ -73,8 +50,8 @@ func runChat(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf(i18n.T("error.session"), err)
 	}
 
-	// Display welcome message
-	fmt.Println(i18n.Sprintf("welcome", "0.1.0"))
+	// Display welcome message (use version passed as parameter)
+	fmt.Println(i18n.Sprintf("welcome", appVersion))
 	fmt.Println(i18n.T("welcome.help"))
 	fmt.Printf("Session ID: %d\n", session.ID)
 	fmt.Println()
@@ -106,7 +83,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 		// Save user message to database
 		if _, err = mem.AddMessage(ctx, session.ID, "user", input); err != nil {
-			fmt.Fprintf(os.Stderr, i18n.Sprintf("error.message", err))
+			fmt.Fprint(os.Stderr, i18n.Sprintf("error.message", err))
 		}
 
 		// Send message to AI (using streaming)
@@ -118,14 +95,14 @@ func runChat(cmd *cobra.Command, args []string) error {
 			printCharByChar(chunk)
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, i18n.Sprintf("chat.streaming.error", err)+"\n")
+			fmt.Fprint(os.Stderr, i18n.Sprintf("chat.streaming.error", err)+"\n")
 			continue
 		}
 		fmt.Println()
 
 		// Save AI response to database
 		if _, err = mem.AddMessage(ctx, session.ID, "model", response); err != nil {
-			fmt.Fprintf(os.Stderr, i18n.Sprintf("error.message", err))
+			fmt.Fprint(os.Stderr, i18n.Sprintf("error.message", err))
 		}
 	}
 
@@ -160,23 +137,18 @@ func handleCommand(cmd string, ag *agent.Agent) bool {
 		fmt.Println()
 
 	case "/tools":
-		currentState := ag.GetToolsEnabled()
-		ag.SetTools(!currentState)
-		if ag.GetToolsEnabled() {
-			fmt.Println(i18n.T("chat.tools.enabled"))
-			fmt.Println(i18n.T("chat.tools.available"))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.currentTime.name"), i18n.T("tool.currentTime.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.readFile.name"), i18n.T("tool.readFile.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.writeFile.name"), i18n.T("tool.writeFile.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.listFiles.name"), i18n.T("tool.listFiles.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.deleteFile.name"), i18n.T("tool.deleteFile.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.executeCommand.name"), i18n.T("tool.executeCommand.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.httpGet.name"), i18n.T("tool.httpGet.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.getEnv.name"), i18n.T("tool.getEnv.desc")))
-			fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.getFileInfo.name"), i18n.T("tool.getFileInfo.desc")))
-		} else {
-			fmt.Println(i18n.T("chat.tools.disabled"))
-		}
+		// Tools are always enabled, display available tools
+		fmt.Println(i18n.T("chat.tools.enabled"))
+		fmt.Println(i18n.T("chat.tools.available"))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.currentTime.name"), i18n.T("tool.currentTime.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.readFile.name"), i18n.T("tool.readFile.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.writeFile.name"), i18n.T("tool.writeFile.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.listFiles.name"), i18n.T("tool.listFiles.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.deleteFile.name"), i18n.T("tool.deleteFile.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.executeCommand.name"), i18n.T("tool.executeCommand.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.httpGet.name"), i18n.T("tool.httpGet.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.getEnv.name"), i18n.T("tool.getEnv.desc")))
+		fmt.Println(i18n.Sprintf("chat.tool.item", i18n.T("tool.getFileInfo.name"), i18n.T("tool.getFileInfo.desc")))
 		fmt.Println()
 
 	case "/clear":

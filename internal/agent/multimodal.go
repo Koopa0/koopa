@@ -10,6 +10,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 // ImageInput image input structure
@@ -19,8 +20,9 @@ type ImageInput struct {
 }
 
 // createImagePart reads an image file and creates an ai.Part
-// This helper function encapsulates the common logic of "read file -> determine media type -> base64 encode"
-func createImagePart(imagePath string) (*ai.Part, error) {
+// This is a standalone helper function following Go best practices
+// pathValidator is passed as parameter for explicit dependency and better testability
+func createImagePart(pathValidator *security.PathValidator, imagePath string) (*ai.Part, error) {
 	// Path security validation (prevent path traversal attacks CWE-22)
 	safePath, err := pathValidator.ValidatePath(imagePath)
 	if err != nil {
@@ -28,7 +30,7 @@ func createImagePart(imagePath string) (*ai.Part, error) {
 	}
 
 	// Read image file
-	imageData, err := os.ReadFile(safePath)
+	imageData, err := os.ReadFile(safePath) // #nosec G304 -- path validated by pathValidator above
 	if err != nil {
 		return nil, fmt.Errorf("unable to read image %s: %w", safePath, err)
 	}
@@ -58,7 +60,7 @@ func createImagePart(imagePath string) (*ai.Part, error) {
 // AnalyzeImage analyzes image content
 func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt string) (string, error) {
 	// Use helper function to create image Part
-	imagePart, err := createImagePart(imagePath)
+	imagePart, err := createImagePart(a.pathValidator, imagePath)
 	if err != nil {
 		return "", err
 	}
@@ -72,10 +74,8 @@ func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt strin
 	// Generate response
 	response, err := genkit.Generate(ctx, a.genkitInstance,
 		ai.WithModel(a.modelRef),
-		ai.WithMessages(
-			a.systemMessage,
-			userMessage,
-		),
+		ai.WithSystem(a.systemPrompt),
+		ai.WithMessages(userMessage),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate response: %w", err)
@@ -95,7 +95,7 @@ func (a *Agent) AnalyzeMultipleImages(ctx context.Context, imagePaths []string, 
 
 	// Add all images using helper function
 	for i, imagePath := range imagePaths {
-		imagePart, err := createImagePart(imagePath)
+		imagePart, err := createImagePart(a.pathValidator, imagePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to process image %d: %w", i+1, err)
 		}
@@ -111,10 +111,8 @@ func (a *Agent) AnalyzeMultipleImages(ctx context.Context, imagePaths []string, 
 	// Generate response
 	response, err := genkit.Generate(ctx, a.genkitInstance,
 		ai.WithModel(a.modelRef),
-		ai.WithMessages(
-			a.systemMessage,
-			userMessage,
-		),
+		ai.WithSystem(a.systemPrompt),
+		ai.WithMessages(userMessage),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate response: %w", err)
@@ -152,7 +150,7 @@ type ScreenshotAnalysis struct {
 
 func (a *Agent) AnalyzeScreenshot(ctx context.Context, screenshotPath string) (*ScreenshotAnalysis, error) {
 	// Use helper function to create image Part
-	imagePart, err := createImagePart(screenshotPath)
+	imagePart, err := createImagePart(a.pathValidator, screenshotPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process screenshot: %w", err)
 	}
@@ -165,10 +163,8 @@ func (a *Agent) AnalyzeScreenshot(ctx context.Context, screenshotPath string) (*
 	// Use Generate and pass image
 	resp, err := genkit.Generate(ctx, a.genkitInstance,
 		ai.WithModel(a.modelRef),
-		ai.WithMessages(
-			a.systemMessage,
-			userMessage,
-		),
+		ai.WithSystem(a.systemPrompt),
+		ai.WithMessages(userMessage),
 		ai.WithOutputType(ScreenshotAnalysis{}),
 	)
 	if err != nil {

@@ -8,25 +8,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: i18n.T("version.description"),
-	RunE:  runVersion,
-}
+// Version information (injected at build time via ldflags)
+var (
+	AppVersion = "development"
+	BuildTime  = "unknown"
+	GitCommit  = "unknown"
+)
 
-func init() {
-	rootCmd.AddCommand(versionCmd)
-}
-
-func runVersion(cmd *cobra.Command, args []string) error {
-	fmt.Println("Koopa v0.1.0-alpha (Development)")
-	fmt.Println()
-
-	// Load configuration
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf(i18n.T("error.config"), err)
+// NewVersionCmd creates the version command (factory pattern)
+func NewVersionCmd(cfg *config.Config) *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: i18n.T("version.description"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runVersion(cfg)
+		},
 	}
+}
+
+func runVersion(cfg *config.Config) error {
+	// Display version information (from ldflags)
+	fmt.Printf("Koopa %s\n", AppVersion)
+	fmt.Printf("Build Time: %s\n", BuildTime)
+	fmt.Printf("Git Commit: %s\n", GitCommit)
+	fmt.Println()
 
 	// Display configuration information
 	fmt.Println("Configuration:")
