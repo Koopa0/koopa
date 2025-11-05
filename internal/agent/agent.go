@@ -3,15 +3,16 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
-	"github.com/firebase/genkit/go/plugins/mcp"
 	"github.com/koopa0/koopa/internal/agent/flows"
-	agenttools "github.com/koopa0/koopa/internal/agent/tools"
+	"github.com/koopa0/koopa/internal/agent/mcp"
+	"github.com/koopa0/koopa/internal/agent/tools"
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/security"
 	"google.golang.org/genai"
@@ -65,14 +66,16 @@ import (
 //   - Tools and Flows are registered once during Agent.New() and are safe to call concurrently
 //
 // Best Practice:
-//   Treat Agent as a per-session or per-request object, not a singleton.
+//
+//	Treat Agent as a per-session or per-request object, not a singleton.
 type Agent struct {
-	genkitInstance *genkit.Genkit
-	config         *config.Config
-	modelRef       ai.ModelRef   // Type-safe model reference
-	systemPrompt   string        // System prompt text
-	messages       []*ai.Message // Conversation history (transient, in-memory only)
-	mcpManager     *MCPManager   // MCP manager (nil = not connected)
+	Genkit       *genkit.Genkit // Exported for external use (e.g., creating embedders)
+	config       *config.Config
+	modelRef     ai.ModelRef   // Type-safe model reference
+	systemPrompt string        // System prompt text
+	messages     []*ai.Message // Conversation history (transient, in-memory only)
+	mcp          *mcp.Server   // MCP server connection (nil = not connected)
+	retriever    ai.Retriever  // RAG retriever (required, always available)
 
 	// Security validators (immutable after creation, safe for concurrent reads)
 	pathValidator *security.PathValidator
@@ -81,10 +84,31 @@ type Agent struct {
 	envValidator  *security.EnvValidator
 }
 
-// New creates a new Agent instance
-func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
+// New creates a new Agent instance with RAG support.
+//
+// Parameters:
+//   - ctx: Context for initialization
+//   - cfg: Configuration (must be validated)
+//   - g: Genkit instance (must be initialized with required plugins)
+//   - retriever: RAG retriever (required, must not be nil)
+//
+// This function no longer initializes Genkit internally. Instead, it accepts
+// a pre-initialized Genkit instance and retriever. This design:
+//   - Resolves circular dependency (embedder needs Genkit, retriever needs embedder)
+//   - Follows dependency injection principle
+//   - Makes testing easier (can inject mocks)
+//   - Ensures RAG is always available as a core capability
+func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai.Retriever) (*Agent, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
+	}
+
+	if g == nil {
+		return nil, fmt.Errorf("genkit instance is required")
+	}
+
+	if retriever == nil {
+		return nil, fmt.Errorf("retriever is required for RAG functionality")
 	}
 
 	// Genkit's GoogleAI plugin requires API key from environment variable
@@ -110,14 +134,8 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 	httpValidator := security.NewHTTPValidator()
 	envValidator := security.NewEnvValidator()
 
-	// Initialize Genkit (enable Dotprompt support)
-	g := genkit.Init(ctx,
-		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithPromptDir("./prompts"),
-	)
-
-	// Register tools (pass validators via dependency injection)
-	agenttools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator)
+	// Register tools using the provided Genkit instance
+	tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator)
 
 	// Load system prompt (from Dotprompt file)
 	systemPrompt := genkit.LookupPrompt(g, "koopa")
@@ -158,12 +176,13 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 	messages := []*ai.Message{}
 
 	agent := &Agent{
-		genkitInstance: g,
-		config:         cfg,
-		modelRef:       modelRef,
-		systemPrompt:   systemPromptText,
-		messages:       messages,
-		mcpManager:     nil, // MCP not connected by default
+		Genkit:       g,
+		config:       cfg,
+		modelRef:     modelRef,
+		systemPrompt: systemPromptText,
+		messages:     messages,
+		mcp:          nil,       // MCP not connected by default
+		retriever:    retriever, // RAG retriever (always available)
 		// Store validators for use by Agent methods
 		pathValidator: pathValidator,
 		cmdValidator:  cmdValidator,
@@ -171,20 +190,52 @@ func New(ctx context.Context, cfg *config.Config) (*Agent, error) {
 		envValidator:  envValidator,
 	}
 
+	slog.Info("agent initialized with RAG support",
+		"model", cfg.ModelName,
+		"rag_top_k", cfg.RAGTopK,
+		"embedder", cfg.EmbedderModel)
+
 	return agent, nil
 }
 
-// Ask asks the AI a question and gets a response (always uses tools)
+// Ask asks the AI a question and gets a response (always uses tools and RAG)
 func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
-	// Get all registered tools (including MCP tools if enabled)
+	// Step 1: Retrieve relevant documents using RAG
+	ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
+		Query: ai.DocumentFromText(question, nil),
+		Options: map[string]interface{}{"k": a.config.RAGTopK},
+	})
+	if err != nil {
+		// Log warning but continue without RAG context
+		slog.Warn("RAG retrieval failed, continuing without context",
+			"error", err,
+			"question_preview", truncateString(question, 50))
+	}
+
+	// Step 2: Get all registered tools
 	tools := a.getAllTools(ctx)
 
-	response, err := genkit.Generate(ctx, a.genkitInstance,
+	// Step 3: Prepare generation options
+	opts := []ai.GenerateOption{
 		ai.WithModel(a.modelRef),
 		ai.WithSystem(a.systemPrompt),
 		ai.WithPrompt(question),
 		ai.WithTools(tools...),
-	)
+	}
+
+	// Step 4: Add retrieved documents if available
+	if err == nil && len(ragResp.Documents) > 0 {
+		opts = append(opts, ai.WithDocs(ragResp.Documents...))
+		slog.Info("RAG: using retrieved documents",
+			"count", len(ragResp.Documents),
+			"question_preview", truncateString(question, 50))
+	} else if err == nil {
+		slog.Info("RAG: no documents found for question",
+			"question_preview", truncateString(question, 50))
+	}
+
+	// Step 5: Generate response
+	response, err := genkit.Generate(ctx, a.Genkit, opts...)
 	if err != nil {
 		return "", fmt.Errorf("generate failed: %w", err)
 	}
@@ -192,15 +243,26 @@ func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
 	return response.Text(), nil
 }
 
-// Chat multi-turn conversation (maintains history, always uses tools)
+// Chat multi-turn conversation (maintains history, always uses tools and RAG)
 func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
 	// Add user message to history
 	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
 
-	// Get all registered tools (including MCP tools if enabled)
+	// Step 1: Retrieve relevant documents using RAG
+	ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
+		Query: ai.DocumentFromText(userInput, nil),
+		Options: map[string]interface{}{"k": a.config.RAGTopK},
+	})
+	if err != nil {
+		slog.Warn("RAG retrieval failed, continuing without context",
+			"error", err,
+			"input_preview", truncateString(userInput, 50))
+	}
+
+	// Step 2: Get all registered tools
 	tools := a.getAllTools(ctx)
 
-	// Prepare Generate options
+	// Step 3: Prepare Generate options
 	opts := []ai.GenerateOption{
 		ai.WithModel(a.modelRef),
 		ai.WithSystem(a.systemPrompt),
@@ -208,8 +270,16 @@ func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
 		ai.WithTools(tools...),
 	}
 
-	// Generate response
-	response, err := genkit.Generate(ctx, a.genkitInstance, opts...)
+	// Step 4: Add retrieved documents if available
+	if err == nil && len(ragResp.Documents) > 0 {
+		opts = append(opts, ai.WithDocs(ragResp.Documents...))
+		slog.Info("RAG: using retrieved documents",
+			"count", len(ragResp.Documents),
+			"input_preview", truncateString(userInput, 50))
+	}
+
+	// Step 5: Generate response
+	response, err := genkit.Generate(ctx, a.Genkit, opts...)
 	if err != nil {
 		return "", fmt.Errorf("generate failed: %w", err)
 	}
@@ -223,15 +293,26 @@ func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
 	return response.Text(), nil
 }
 
-// ChatStream multi-turn conversation (streaming mode, always uses tools)
+// ChatStream multi-turn conversation (streaming mode, always uses tools and RAG)
 func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback func(chunk string)) (string, error) {
 	// Add user message to history
 	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
 
-	// Get all registered tools (including MCP tools if enabled)
+	// Step 1: Retrieve relevant documents using RAG
+	ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
+		Query: ai.DocumentFromText(userInput, nil),
+		Options: map[string]interface{}{"k": a.config.RAGTopK},
+	})
+	if err != nil {
+		slog.Warn("RAG retrieval failed, continuing without context",
+			"error", err,
+			"input_preview", truncateString(userInput, 50))
+	}
+
+	// Step 2: Get all registered tools
 	tools := a.getAllTools(ctx)
 
-	// Prepare Generate options
+	// Step 3: Prepare Generate options
 	opts := []ai.GenerateOption{
 		ai.WithModel(a.modelRef),
 		ai.WithSystem(a.systemPrompt),
@@ -245,8 +326,16 @@ func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback
 		ai.WithTools(tools...),
 	}
 
-	// Generate response
-	response, err := genkit.Generate(ctx, a.genkitInstance, opts...)
+	// Step 4: Add retrieved documents if available
+	if err == nil && len(ragResp.Documents) > 0 {
+		opts = append(opts, ai.WithDocs(ragResp.Documents...))
+		slog.Info("RAG: using retrieved documents (streaming)",
+			"count", len(ragResp.Documents),
+			"input_preview", truncateString(userInput, 50))
+	}
+
+	// Step 5: Generate response
+	response, err := genkit.Generate(ctx, a.Genkit, opts...)
 	if err != nil {
 		return "", fmt.Errorf("generate failed: %w", err)
 	}
@@ -275,7 +364,7 @@ func (a *Agent) GetHistoryLength() int {
 // T must be a JSON-serializable struct type
 // outputExample is used to infer the output type, usually pass a zero value of that type (e.g., MyStruct{})
 func (a *Agent) AskWithStructuredOutput(ctx context.Context, question string, outputExample any) (*ai.ModelResponse, error) {
-	response, err := genkit.Generate(ctx, a.genkitInstance,
+	response, err := genkit.Generate(ctx, a.Genkit,
 		ai.WithModel(a.modelRef),
 		ai.WithSystem(a.systemPrompt),
 		ai.WithPrompt(question),
@@ -291,57 +380,48 @@ func (a *Agent) AskWithStructuredOutput(ctx context.Context, question string, ou
 // getAllTools retrieves all registered tools (including MCP tools)
 func (a *Agent) getAllTools(ctx context.Context) []ai.ToolRef {
 	// Get tool names from central registry (single source of truth)
-	toolNames := agenttools.GetToolNames()
+	toolNames := tools.GetToolNames()
 
-	tools := make([]ai.ToolRef, 0, len(toolNames))
+	toolRefs := make([]ai.ToolRef, 0, len(toolNames))
 
 	// Add locally registered tools
 	for _, name := range toolNames {
-		if tool := genkit.LookupTool(a.genkitInstance, name); tool != nil {
-			tools = append(tools, tool)
+		if tool := genkit.LookupTool(a.Genkit, name); tool != nil {
+			toolRefs = append(toolRefs, tool)
 		}
 	}
 
 	// If MCP is connected, add MCP tools
-	if a.mcpManager != nil {
-		mcpTools, err := a.mcpManager.GetActiveTools(ctx, a.genkitInstance)
-		if err == nil {
+	if a.mcp != nil {
+		mcpTools, err := a.mcp.GetTools(ctx, a.Genkit)
+		if err != nil {
+			slog.Warn("failed to get MCP tools, using local tools only", "error", err)
+		} else {
 			for _, mcpTool := range mcpTools {
-				tools = append(tools, mcpTool)
+				toolRefs = append(toolRefs, mcpTool)
 			}
 		}
 	}
 
-	return tools
+	return toolRefs
 }
 
 // ConnectMCP connects to MCP servers
-func (a *Agent) ConnectMCP(ctx context.Context, serverConfigs []MCPServerConfig) error {
-	if a.mcpManager == nil {
-		// Use mcp package types
-		var mcpConfigs []mcp.MCPServerConfig
-		for _, cfg := range serverConfigs {
-			mcpConfigs = append(mcpConfigs, cfg.Config)
-		}
-
-		manager, err := NewMCPManager(ctx, a.genkitInstance, mcpConfigs)
+func (a *Agent) ConnectMCP(ctx context.Context, serverConfigs []mcp.Config) error {
+	if a.mcp == nil {
+		server, err := mcp.New(ctx, a.Genkit, serverConfigs)
 		if err != nil {
 			return fmt.Errorf("unable to connect MCP: %w", err)
 		}
-		a.mcpManager = manager
+		a.mcp = server
+		slog.Info("MCP connected successfully", "server_count", len(serverConfigs))
 	}
 	return nil
 }
 
-// GetMCPManager retrieves the MCP manager (if connected)
-func (a *Agent) GetMCPManager() *MCPManager {
-	return a.mcpManager
-}
-
-// MCPServerConfig is a convenience type for MCP server configuration
-type MCPServerConfig struct {
-	Name   string
-	Config mcp.MCPServerConfig
+// GetMCP retrieves the MCP server (if connected)
+func (a *Agent) GetMCP() *mcp.Server {
+	return a.mcp
 }
 
 // trimHistoryIfNeeded checks and limits conversation history length (sliding window mechanism)
@@ -359,4 +439,12 @@ func (a *Agent) trimHistoryIfNeeded() {
 		// Keep most recent maxMessages messages
 		a.messages = a.messages[len(a.messages)-maxMessages:]
 	}
+}
+
+// truncateString truncates a string to maxLen characters for logging
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

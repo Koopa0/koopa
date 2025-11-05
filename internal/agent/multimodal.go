@@ -72,7 +72,7 @@ func (a *Agent) AnalyzeImage(ctx context.Context, imagePath string, prompt strin
 	)
 
 	// Generate response
-	response, err := genkit.Generate(ctx, a.genkitInstance,
+	response, err := genkit.Generate(ctx, a.Genkit,
 		ai.WithModel(a.modelRef),
 		ai.WithSystem(a.systemPrompt),
 		ai.WithMessages(userMessage),
@@ -109,7 +109,7 @@ func (a *Agent) AnalyzeMultipleImages(ctx context.Context, imagePaths []string, 
 	userMessage := ai.NewUserMessage(parts...)
 
 	// Generate response
-	response, err := genkit.Generate(ctx, a.genkitInstance,
+	response, err := genkit.Generate(ctx, a.Genkit,
 		ai.WithModel(a.modelRef),
 		ai.WithSystem(a.systemPrompt),
 		ai.WithMessages(userMessage),
@@ -141,10 +141,10 @@ func (a *Agent) DescribeImage(ctx context.Context, imagePath string) (string, er
 
 // AnalyzeScreenshot analyzes a screenshot (suitable for UI/UX analysis)
 type ScreenshotAnalysis struct {
-	UIElements   []string `json:"ui_elements"`
-	Layout       string   `json:"layout"`
-	ColorScheme  string   `json:"color_scheme"`
-	Suggestions  []string `json:"suggestions"`
+	UIElements    []string `json:"ui_elements"`
+	Layout        string   `json:"layout"`
+	ColorScheme   string   `json:"color_scheme"`
+	Suggestions   []string `json:"suggestions"`
 	Accessibility []string `json:"accessibility"`
 }
 
@@ -161,7 +161,7 @@ func (a *Agent) AnalyzeScreenshot(ctx context.Context, screenshotPath string) (*
 	)
 
 	// Use Generate and pass image
-	resp, err := genkit.Generate(ctx, a.genkitInstance,
+	resp, err := genkit.Generate(ctx, a.Genkit,
 		ai.WithModel(a.modelRef),
 		ai.WithSystem(a.systemPrompt),
 		ai.WithMessages(userMessage),

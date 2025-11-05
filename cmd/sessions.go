@@ -62,7 +62,7 @@ func newSessionsDeleteCmd(db *sql.DB) *cobra.Command {
 
 func runSessionsList(ctx context.Context, db *sql.DB) error {
 	// Create memory instance
-	mem := memory.New(db)
+	mem := memory.New(db, nil)
 
 	// List all sessions
 	sessions, err := mem.ListSessions(ctx, 100) // Max 100
@@ -97,7 +97,7 @@ func runSessionsShow(ctx context.Context, db *sql.DB, args []string) error {
 	}
 
 	// Create memory instance
-	mem := memory.New(db)
+	mem := memory.New(db, nil)
 
 	// Get session information
 	session, err := mem.GetSession(ctx, sessionID)
@@ -142,7 +142,7 @@ func runSessionsDelete(ctx context.Context, db *sql.DB, args []string) error {
 	}
 
 	// Create memory instance
-	mem := memory.New(db)
+	mem := memory.New(db, nil)
 
 	// Delete session
 	if err := mem.DeleteSession(ctx, sessionID); err != nil {

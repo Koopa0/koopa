@@ -124,14 +124,14 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 func IsPathSafe(path string) bool {
 	// Check for common dangerous patterns
 	dangerousPatterns := []string{
-		"../",      // Upward traversal
-		"..\\",     // Windows upward traversal
-		"/etc/",    // System configuration
-		"/dev/",    // Device files
-		"/proc/",   // Process information
-		"/sys/",    // System information
-		"c:\\",     // Windows system root directory
-		"c:/",      // Windows system root directory
+		"../",    // Upward traversal
+		"..\\",   // Windows upward traversal
+		"/etc/",  // System configuration
+		"/dev/",  // Device files
+		"/proc/", // Process information
+		"/sys/",  // System information
+		"c:\\",   // Windows system root directory
+		"c:/",    // Windows system root directory
 	}
 
 	lowerPath := strings.ToLower(path)

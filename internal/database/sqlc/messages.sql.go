@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -77,6 +78,25 @@ func (q *Queries) GetAllMessages(ctx context.Context, sessionID int64) ([]Messag
 	return items, nil
 }
 
+const getMessage = `-- name: GetMessage :one
+SELECT id, session_id, role, content, created_at
+FROM messages
+WHERE id = ?
+`
+
+func (q *Queries) GetMessage(ctx context.Context, id int64) (Message, error) {
+	row := q.db.QueryRowContext(ctx, getMessage, id)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.Role,
+		&i.Content,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getMessages = `-- name: GetMessages :many
 SELECT id, session_id, role, content, created_at
 FROM messages
@@ -92,6 +112,52 @@ type GetMessagesParams struct {
 
 func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Message, error) {
 	rows, err := q.db.QueryContext(ctx, getMessages, arg.SessionID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Content,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMessagesByIDs = `-- name: GetMessagesByIDs :many
+SELECT id, session_id, role, content, created_at
+FROM messages
+WHERE id IN (/*SLICE:ids*/?)
+ORDER BY created_at ASC
+`
+
+func (q *Queries) GetMessagesByIDs(ctx context.Context, ids []int64) ([]Message, error) {
+	query := getMessagesByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

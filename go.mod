@@ -5,10 +5,11 @@ go 1.25.1
 require (
 	github.com/firebase/genkit/go v1.1.0
 	github.com/golang-migrate/migrate/v4 v4.19.0
+	github.com/philippgille/chromem-go v0.7.0
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	google.golang.org/genai v1.32.0
-	modernc.org/sqlite v1.39.1
+	google.golang.org/genai v1.33.0
+	modernc.org/sqlite v1.40.0
 )
 
 require (
@@ -24,7 +25,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
-	github.com/google/dotprompt/go v0.0.0-20251029001020-4b02bdcd4e7a // indirect
+	github.com/google/dotprompt/go v0.0.0-20251102061536-321ecdd48a7a // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -36,7 +37,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
-	github.com/mark3labs/mcp-go v0.42.0 // indirect
+	github.com/mark3labs/mcp-go v0.43.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
@@ -64,7 +65,7 @@ require (
 	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251022142026-3a174f9686a8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251103181224-f26f9409b101 // indirect
 	google.golang.org/grpc v1.76.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
