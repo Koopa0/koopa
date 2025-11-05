@@ -12,18 +12,18 @@ import (
 
 // EmailInput represents input for email composition
 type EmailInput struct {
-	Recipient string `json:"recipient"`          
-	Purpose   string `json:"purpose"`            
-	Context   string `json:"context"`            
-	Tone      string `json:"tone,omitempty"`     
-	Language  string `json:"language,omitempty"` 
+	Recipient string `json:"recipient"`
+	Purpose   string `json:"purpose"`
+	Context   string `json:"context"`
+	Tone      string `json:"tone,omitempty"`
+	Language  string `json:"language,omitempty"`
 }
 
 // EmailOutput represents email composition output
 type EmailOutput struct {
 	Subject string `json:"subject"`
-	Body    string `json:"body"`   
-	Tips    string `json:"tips"`   
+	Body    string `json:"body"`
+	Tips    string `json:"tips"`
 }
 
 type emailPromptInput struct {
@@ -36,20 +36,20 @@ type emailPromptInput struct {
 
 // ResearchInput represents input for topic research
 type ResearchInput struct {
-	Topic    string   `json:"topic"`              
-	Focus    []string `json:"focus,omitempty"`    
-	Depth    string   `json:"depth,omitempty"`    
-	Language string   `json:"language,omitempty"` 
+	Topic    string   `json:"topic"`
+	Focus    []string `json:"focus,omitempty"`
+	Depth    string   `json:"depth,omitempty"`
+	Language string   `json:"language,omitempty"`
 }
 
 // ResearchOutput represents research output
 type ResearchOutput struct {
 	Topic     string   `json:"topic"`
-	Summary   string   `json:"summary"`    
-	KeyPoints []string `json:"key_points"` 
-	Insights  []string `json:"insights"`   
-	Questions []string `json:"questions"`  
-	NextSteps []string `json:"next_steps"` 
+	Summary   string   `json:"summary"`
+	KeyPoints []string `json:"key_points"`
+	Insights  []string `json:"insights"`
+	Questions []string `json:"questions"`
+	NextSteps []string `json:"next_steps"`
 }
 
 type researchTopicPromptInput struct {

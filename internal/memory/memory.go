@@ -4,9 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/koopa0/koopa/internal/database/sqlc"
+	"github.com/koopa0/koopa/internal/knowledge"
 )
 
 // Message represents a conversation message
@@ -32,17 +35,23 @@ type Preference struct {
 	Value string
 }
 
-// Memory implements a SQLite-based memory system
+// Memory implements a hybrid memory system with SQL storage and vector search.
+// It stores conversation messages in SQLite and maintains vector embeddings
+// in a knowledge store for semantic search capabilities.
 type Memory struct {
 	db      *sql.DB
 	queries *sqlc.Queries
+	store   knowledge.VectorStore // Vector store for semantic search (optional)
 }
 
-// New creates a new Memory instance (dependency injection)
-func New(sqlDB *sql.DB) *Memory {
+// New creates a new Memory instance with SQL storage.
+// The vectorStore parameter is optional - pass nil to disable semantic search.
+// This follows Go best practice: "Accept interfaces, return structs".
+func New(db *sql.DB, vectorStore knowledge.VectorStore) *Memory {
 	return &Memory{
-		db:      sqlDB,
-		queries: sqlc.New(sqlDB),
+		db:      db,
+		queries: sqlc.New(db),
+		store:   vectorStore,
 	}
 }
 
@@ -128,7 +137,8 @@ func (m *Memory) DeleteSession(ctx context.Context, sessionID int64) error {
 	return nil
 }
 
-// AddMessage adds a message to the session
+// AddMessage adds a message to the session.
+// If a knowledge store is configured, the message is also indexed for semantic search.
 func (m *Memory) AddMessage(ctx context.Context, sessionID int64, role, content string) (*Message, error) {
 	now := time.Now()
 	message, err := m.queries.AddMessage(ctx, sqlc.AddMessageParams{
@@ -147,6 +157,28 @@ func (m *Memory) AddMessage(ctx context.Context, sessionID int64, role, content 
 		ID:        sessionID,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to update session timestamp: %w", err)
+	}
+
+	// Index in vector store for semantic search (if available)
+	if m.store != nil {
+		doc := knowledge.Document{
+			ID:      strconv.FormatInt(message.ID, 10),
+			Content: content,
+			Metadata: map[string]string{
+				"source_type": "conversation", // Mark as conversation for filtering
+				"session_id":  strconv.FormatInt(sessionID, 10),
+				"role":        role,
+			},
+			CreateAt: now,
+		}
+		if err := m.store.Add(ctx, doc); err != nil {
+			// Log error but don't fail the operation
+			// Vector search is a nice-to-have feature, not critical
+			slog.Warn("failed to index message in vector store",
+				"message_id", message.ID,
+				"session_id", sessionID,
+				"error", err)
+		}
 	}
 
 	return &Message{
@@ -274,6 +306,72 @@ func (m *Memory) ListPreferences(ctx context.Context) ([]*Preference, error) {
 	}
 
 	return result, nil
+}
+
+// SearchMessages performs semantic search on conversation history.
+// Returns messages most similar to the query, ranked by similarity score.
+// Only searches messages (not documents or other knowledge sources).
+// Requires a knowledge store to be configured; returns error if not available.
+func (m *Memory) SearchMessages(ctx context.Context, query string, topK int) ([]*Message, error) {
+	if m.store == nil {
+		return nil, fmt.Errorf("semantic search not available: knowledge store not configured")
+	}
+
+	if topK <= 0 {
+		topK = 5 // Default
+	}
+
+	// Search in vector store, filtered to conversations only (using functional options)
+	results, err := m.store.Search(ctx, query,
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", "conversation"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("vector search failed: %w", err)
+	}
+
+	// Step 1: Collect all message IDs (maintain order from vector search)
+	messageIDs := make([]int64, 0, len(results))
+	for _, result := range results {
+		messageID, err := strconv.ParseInt(result.Document.ID, 10, 64)
+		if err != nil {
+			continue // Skip invalid IDs
+		}
+		messageIDs = append(messageIDs, messageID)
+	}
+
+	if len(messageIDs) == 0 {
+		return []*Message{}, nil
+	}
+
+	// Step 2: Batch query all messages at once (solves N+1 query problem)
+	dbMessages, err := m.queries.GetMessagesByIDs(ctx, messageIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve messages: %w", err)
+	}
+
+	// Step 3: Build messageID → Message map for quick lookup
+	messageMap := make(map[int64]*Message, len(dbMessages))
+	for _, msg := range dbMessages {
+		messageMap[msg.ID] = &Message{
+			ID:        msg.ID,
+			SessionID: msg.SessionID,
+			Role:      msg.Role,
+			Content:   msg.Content,
+			CreatedAt: msg.CreatedAt,
+		}
+	}
+
+	// Step 4: Reconstruct result in original similarity order
+	messages := make([]*Message, 0, len(dbMessages))
+	for _, id := range messageIDs {
+		if msg, exists := messageMap[id]; exists {
+			messages = append(messages, msg)
+		}
+		// If message was deleted, skip it (already handled by map lookup)
+	}
+
+	return messages, nil
 }
 
 // Close closes the database connection

@@ -6,15 +6,24 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/koopa0/koopa/internal/agent"
+	// "github.com/koopa0/koopa/internal/agent/mcp" // TEMPORARILY DISABLED FOR TESTING
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/i18n"
+	"github.com/koopa0/koopa/internal/knowledge"
 	"github.com/koopa0/koopa/internal/memory"
+	"github.com/koopa0/koopa/internal/notion"
+	"github.com/koopa0/koopa/internal/retriever"
+	"github.com/koopa0/koopa/internal/security"
 	"github.com/spf13/cobra"
 )
 
@@ -35,20 +44,109 @@ func NewChatCmd(db *sql.DB, cfg *config.Config, appVersion string) *cobra.Comman
 func runChat(ctx context.Context, db *sql.DB, cfg *config.Config, appVersion string) error {
 	// API Key already checked in PersistentPreRunE
 
-	// Create Agent
-	ag, err := agent.New(ctx, cfg)
+	// Step 1: Initialize Genkit (moved to cmd layer to resolve circular dependency)
+	g := genkit.Init(ctx,
+		genkit.WithPlugins(&googlegenai.GoogleAI{}),
+		genkit.WithPromptDir("./prompts"),
+	)
+
+	// Step 2: Create embedder (uses configured model from config)
+	embedder := googlegenai.GoogleAIEmbedder(g, cfg.EmbedderModel)
+
+	// Step 3: Initialize knowledge store for semantic search
+	knowledgeStore, err := knowledge.New(cfg.VectorPath, "koopa-knowledge", embedder, nil)
 	if err != nil {
-		return fmt.Errorf(i18n.T("error.agent"), err)
+		return fmt.Errorf("failed to initialize knowledge store: %w", err)
 	}
+	defer knowledgeStore.Close()
 
-	// Create memory instance
-	mem := memory.New(db)
+	// Step 4: Create memory instance (needed to create session)
+	mem := memory.New(db, knowledgeStore)
 
-	// Create new session
+	// Step 5: Create new session (to get session ID for retriever filtering)
 	session, err := mem.CreateSession(ctx, "Chat Session")
 	if err != nil {
 		return fmt.Errorf(i18n.T("error.session"), err)
 	}
+
+	// Step 6: Create retriever with session filtering
+	// Convert session.ID (int64) to string for metadata filtering
+	sessionIDStr := strconv.FormatInt(session.ID, 10)
+	ret := retriever.NewWithSession(knowledgeStore, sessionIDStr)
+	retrieverRef := ret.DefineConversation(g, "conversation")
+
+	// Step 7: Create Agent with RAG support
+	ag, err := agent.New(ctx, cfg, g, retrieverRef)
+	if err != nil {
+		return fmt.Errorf(i18n.T("error.agent"), err)
+	}
+
+	// Step 8: Notion sync (optional, first-time auto-sync)
+	// NOTE: Notion sync is performed BEFORE MCP connection to avoid blocking
+	var notionClient *notion.Client
+	if notionToken := os.Getenv("NOTION_API_KEY"); notionToken != "" {
+		// Create Notion client (uses security validator from agent)
+		httpValidator := security.NewHTTPValidator()
+		notionClient, err = notion.New(notionToken, httpValidator)
+		if err != nil {
+			slog.Warn("failed to create Notion client",
+				"error", err)
+		} else {
+			// Check if first-time sync is needed
+			shouldSync, err := notion.ShouldSyncOnInit(ctx, knowledgeStore)
+			if err != nil {
+				slog.Warn("failed to check Notion sync status",
+					"error", err)
+			} else if shouldSync {
+				fmt.Println("\nℹ️  Performing first-time Notion sync...")
+				fmt.Println("   (Syncing first 10 pages for testing)")
+
+				syncResult, err := notion.SyncToKnowledgeStore(ctx, notionClient, knowledgeStore, 10)
+				if err != nil {
+					slog.Warn("Notion sync failed",
+						"error", err)
+					fmt.Println("⚠️  Notion sync failed. You can retry with /sync command.")
+				} else {
+					fmt.Printf("✅ Notion sync completed: %d pages synced, %d skipped, %d failed\n",
+						syncResult.PagesSynced, syncResult.PagesSkipped, syncResult.PagesFailed)
+				}
+			} else {
+				// Get sync stats to display
+				stats, err := notion.GetSyncStats(ctx, knowledgeStore)
+				if err == nil {
+					if totalPages, ok := stats["total_pages"]; ok && totalPages != "0" {
+						fmt.Printf("\nℹ️  Notion: %s pages available for RAG (use /sync to update)\n", totalPages)
+					}
+				}
+			}
+		}
+	}
+
+	// Step 9: Connect to MCP servers (optional, graceful degradation)
+	// NOTE: MCP connection is performed AFTER Notion sync to avoid blocking
+	// TEMPORARILY DISABLED FOR TESTING - MCP connection can block startup
+	/*
+	mcpConfigs := config.LoadMCPConfigs()
+	if len(mcpConfigs) > 0 {
+		// Convert config.MCPConfig to mcp.Config (they have identical structure)
+		agentMCPConfigs := make([]mcp.Config, len(mcpConfigs))
+		for i, cfg := range mcpConfigs {
+			agentMCPConfigs[i] = mcp.Config{
+				Name:          cfg.Name,
+				ClientOptions: cfg.ClientOptions,
+			}
+		}
+
+		if err := ag.ConnectMCP(ctx, agentMCPConfigs); err != nil {
+			slog.Warn("failed to connect MCP servers, continuing without MCP",
+				"error", err,
+				"server_count", len(mcpConfigs))
+		} else {
+			slog.Info("MCP servers connected successfully",
+				"server_count", len(mcpConfigs))
+		}
+	}
+	*/
 
 	// Display welcome message (use version passed as parameter)
 	fmt.Println(i18n.Sprintf("welcome", appVersion))
@@ -75,7 +173,7 @@ func runChat(ctx context.Context, db *sql.DB, cfg *config.Config, appVersion str
 
 		// Handle special commands
 		if strings.HasPrefix(input, "/") {
-			if handleCommand(input, ag) {
+			if handleCommand(ctx, input, ag, notionClient, knowledgeStore) {
 				break // Exit command
 			}
 			continue
@@ -117,7 +215,7 @@ func runChat(ctx context.Context, db *sql.DB, cfg *config.Config, appVersion str
 }
 
 // handleCommand handles special commands, returns true if should exit
-func handleCommand(cmd string, ag *agent.Agent) bool {
+func handleCommand(ctx context.Context, cmd string, ag *agent.Agent, notionClient *notion.Client, knowledgeStore knowledge.VectorStore) bool {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return false
@@ -129,6 +227,7 @@ func handleCommand(cmd string, ag *agent.Agent) bool {
 		fmt.Println("  " + i18n.T("help.help"))
 		fmt.Println("  " + i18n.T("help.tools"))
 		fmt.Println("  " + i18n.T("help.clear"))
+		fmt.Println("  /sync           - Sync Notion content to knowledge store (requires NOTION_API_KEY)")
 		fmt.Println("  " + i18n.T("help.exit"))
 		fmt.Println("  " + i18n.T("help.lang"))
 		fmt.Println("  " + i18n.T("help.ctrl_d"))
@@ -171,6 +270,24 @@ func handleCommand(cmd string, ag *agent.Agent) bool {
 			}
 		}
 		fmt.Println()
+
+	case "/sync":
+		if notionClient == nil {
+			fmt.Println("⚠️  Notion sync is not available.")
+			fmt.Println("   Set NOTION_API_KEY environment variable to enable Notion integration.")
+			fmt.Println()
+			return false
+		}
+
+		fmt.Println("\n🔄 Syncing Notion content (first 10 pages for testing)...")
+		syncResult, err := notion.SyncToKnowledgeStore(ctx, notionClient, knowledgeStore, 10)
+		if err != nil {
+			fmt.Printf("❌ Sync failed: %v\n\n", err)
+			return false
+		}
+
+		fmt.Printf("✅ Sync completed: %d pages synced, %d skipped, %d failed (took %s)\n\n",
+			syncResult.PagesSynced, syncResult.PagesSkipped, syncResult.PagesFailed, syncResult.TotalDuration)
 
 	case "/exit", "/quit":
 		fmt.Println(i18n.T("goodbye"))

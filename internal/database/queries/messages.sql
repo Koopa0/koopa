@@ -22,3 +22,14 @@ FROM messages
 WHERE session_id = ?
 ORDER BY created_at DESC
 LIMIT ?;
+
+-- name: GetMessage :one
+SELECT id, session_id, role, content, created_at
+FROM messages
+WHERE id = ?;
+
+-- name: GetMessagesByIDs :many
+SELECT id, session_id, role, content, created_at
+FROM messages
+WHERE id IN (sqlc.slice('ids'))
+ORDER BY created_at ASC;

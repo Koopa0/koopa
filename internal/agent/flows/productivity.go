@@ -12,11 +12,11 @@ import (
 
 // TaskPlanInput represents input for task planning
 type TaskPlanInput struct {
-	Goal        string   `json:"goal"`                    
-	Context     string   `json:"context,omitempty"`       
-	Constraints []string `json:"constraints,omitempty"`   
-	Preferences string   `json:"preferences,omitempty"`   
-	Language    string   `json:"language,omitempty"`      
+	Goal        string   `json:"goal"`
+	Context     string   `json:"context,omitempty"`
+	Constraints []string `json:"constraints,omitempty"`
+	Preferences string   `json:"preferences,omitempty"`
+	Language    string   `json:"language,omitempty"`
 }
 
 // TaskPlanOutput represents task planning output

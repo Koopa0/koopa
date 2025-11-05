@@ -20,7 +20,12 @@ type Config struct {
 	MaxHistoryMessages int `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
 
 	// Storage configuration
-	DatabasePath string `mapstructure:"database_path"`
+	DatabasePath string `mapstructure:"database_path"` // SQLite database path
+	VectorPath   string `mapstructure:"vector_path"`   // Vector database (chromem-go) path
+
+	// RAG (Retrieval-Augmented Generation) configuration
+	RAGTopK       int    `mapstructure:"rag_top_k"`      // Number of documents to retrieve for RAG (default: 3)
+	EmbedderModel string `mapstructure:"embedder_model"` // Embedding model name
 
 	// API Keys
 	GeminiAPIKey string `mapstructure:"gemini_api_key"`
@@ -54,6 +59,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("max_tokens", 2048)
 	viper.SetDefault("max_history_messages", 50) // Default: keep recent 50 messages (~25 conversation turns)
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
+	viper.SetDefault("vector_path", filepath.Join(configDir, "chromem"))
+	viper.SetDefault("rag_top_k", 3)                         // Default: retrieve top 3 documents
+	viper.SetDefault("embedder_model", "text-embedding-004") // Default Google AI embedder
 
 	// Read configuration file (if exists)
 	if err := viper.ReadInConfig(); err != nil {
@@ -71,6 +79,9 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("max_tokens")
 	_ = viper.BindEnv("max_history_messages")
 	_ = viper.BindEnv("database_path")
+	_ = viper.BindEnv("vector_path")
+	_ = viper.BindEnv("rag_top_k")
+	_ = viper.BindEnv("embedder_model")
 	_ = viper.BindEnv("gemini_api_key")
 
 	// Use Unmarshal to automatically map to struct (type-safe)
@@ -95,6 +106,19 @@ func (c *Config) Validate() error {
 			Message: "Gemini API key is required. Set GEMINI_API_KEY environment variable or add it to config file.",
 		}
 	}
+
+	// Validate RAG configuration
+	if c.RAGTopK <= 0 {
+		c.RAGTopK = 3 // Default to 3 if invalid
+	}
+	if c.RAGTopK > 10 {
+		c.RAGTopK = 10 // Cap at 10 to avoid token overflow
+	}
+
+	if c.EmbedderModel == "" {
+		c.EmbedderModel = "text-embedding-004" // Default embedder
+	}
+
 	return nil
 }
 
