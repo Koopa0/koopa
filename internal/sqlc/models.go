@@ -17,18 +17,3 @@ type Document struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
-
-type Message struct {
-	ID        int64              `json:"id"`
-	SessionID string             `json:"session_id"`
-	Role      string             `json:"role"`
-	Content   string             `json:"content"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-type Session struct {
-	ID        string             `json:"id"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}

@@ -207,10 +207,18 @@ func handleRAGAdd(ctx context.Context, args []string, application *app.App) {
 
 	path := args[0]
 
-	// Check if path exists
-	info, err := os.Stat(path)
+	// Validate path using PathValidator (deep defense)
+	safePath, err := application.PathValidator.ValidatePath(path)
 	if err != nil {
-		fmt.Printf("Error: Path not found: %s\n", path)
+		fmt.Printf("Error: Invalid path: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	// Check if path exists
+	info, err := os.Stat(safePath)
+	if err != nil {
+		fmt.Printf("Error: Path not found: %s\n", safePath)
 		fmt.Println()
 		return
 	}
@@ -219,10 +227,10 @@ func handleRAGAdd(ctx context.Context, args []string, application *app.App) {
 
 	if info.IsDir() {
 		// Index directory
-		fmt.Printf("Indexing directory: %s\n", path)
+		fmt.Printf("Indexing directory: %s\n", safePath)
 		fmt.Println()
 
-		result, err := indexer.AddDirectory(ctx, path)
+		result, err := indexer.AddDirectory(ctx, safePath)
 		if err != nil {
 			fmt.Printf("Error: Failed to index directory: %v\n", err)
 			fmt.Println()
@@ -242,9 +250,9 @@ func handleRAGAdd(ctx context.Context, args []string, application *app.App) {
 		fmt.Println()
 	} else {
 		// Index single file
-		fmt.Printf("Indexing file: %s\n", path)
+		fmt.Printf("Indexing file: %s\n", safePath)
 
-		err := indexer.AddFile(ctx, path)
+		err := indexer.AddFile(ctx, safePath)
 		if err != nil {
 			fmt.Printf("Error: Failed to index file: %v\n", err)
 			fmt.Println()
@@ -312,10 +320,7 @@ func handleRAGRemove(ctx context.Context, args []string, application *app.App) {
 
 	err := indexer.RemoveDocument(ctx, docID)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println()
-		fmt.Println("Note: Document removal is not yet fully implemented")
-		fmt.Println("This requires adding a Delete method to knowledge.Store")
+		fmt.Printf("Error: Failed to remove document: %v\n", err)
 		fmt.Println()
 		return
 	}

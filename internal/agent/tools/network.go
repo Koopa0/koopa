@@ -19,7 +19,7 @@ import (
 
 // registerNetworkTools registers network-related tools
 // httpValidator is passed as parameter and captured by closures (Go best practice)
-func registerNetworkTools(g *genkit.Genkit, httpValidator *security.HTTPValidator) {
+func registerNetworkTools(g *genkit.Genkit, httpValidator *security.HTTP) {
 	// 1. HTTP GET request (with SSRF protection)
 	genkit.DefineTool(
 		g,

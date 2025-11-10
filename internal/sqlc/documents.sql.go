@@ -124,6 +124,7 @@ func (q *Queries) ListDocumentsBySourceType(ctx context.Context, arg ListDocumen
 }
 
 const searchBySourceType = `-- name: SearchBySourceType :many
+
 SELECT id, content, metadata, created_at,
        (1 - (embedding <=> $1::vector))::float AS similarity
 FROM documents
@@ -146,6 +147,7 @@ type SearchBySourceTypeRow struct {
 	Similarity float64            `json:"similarity"`
 }
 
+// ===== Optimized RAG Queries (SQL-level filtering) =====
 // Generic search by source_type (flexible for future source types)
 func (q *Queries) SearchBySourceType(ctx context.Context, arg SearchBySourceTypeParams) ([]SearchBySourceTypeRow, error) {
 	rows, err := q.db.Query(ctx, searchBySourceType, arg.QueryEmbedding, arg.SourceType, arg.ResultLimit)
@@ -269,176 +271,23 @@ func (q *Queries) SearchDocumentsAll(ctx context.Context, arg SearchDocumentsAll
 	return items, nil
 }
 
-const searchExceptConversations = `-- name: SearchExceptConversations :many
-SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> $1::vector))::float AS similarity
-FROM documents
-WHERE metadata->>'source_type' != 'conversation'
-ORDER BY similarity DESC
-LIMIT $2
-`
-
-type SearchExceptConversationsParams struct {
-	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	ResultLimit    int              `json:"result_limit"`
-}
-
-type SearchExceptConversationsRow struct {
-	ID         string             `json:"id"`
-	Content    string             `json:"content"`
-	Metadata   []byte             `json:"metadata"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
-}
-
-// Search all documents except conversations (primarily for Notion-only RAG)
-// This is more efficient than fetching all and filtering in memory
-func (q *Queries) SearchExceptConversations(ctx context.Context, arg SearchExceptConversationsParams) ([]SearchExceptConversationsRow, error) {
-	rows, err := q.db.Query(ctx, searchExceptConversations, arg.QueryEmbedding, arg.ResultLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SearchExceptConversationsRow{}
-	for rows.Next() {
-		var i SearchExceptConversationsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Content,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.Similarity,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const searchOnlyConversations = `-- name: SearchOnlyConversations :many
-
-SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> $1::vector))::float AS similarity
-FROM documents
-WHERE metadata->>'source_type' = 'conversation'
-  AND ($2::text IS NULL OR metadata->>'session_id' = $2::text)
-ORDER BY similarity DESC
-LIMIT $3
-`
-
-type SearchOnlyConversationsParams struct {
-	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	SessionID      *string          `json:"session_id"`
-	ResultLimit    int              `json:"result_limit"`
-}
-
-type SearchOnlyConversationsRow struct {
-	ID         string             `json:"id"`
-	Content    string             `json:"content"`
-	Metadata   []byte             `json:"metadata"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
-}
-
-// ===== Optimized RAG Queries (SQL-level filtering) =====
-// Search only conversation documents (excludes Notion pages)
-// Uses SQL-level filtering to avoid over-fetching and memory filtering
-func (q *Queries) SearchOnlyConversations(ctx context.Context, arg SearchOnlyConversationsParams) ([]SearchOnlyConversationsRow, error) {
-	rows, err := q.db.Query(ctx, searchOnlyConversations, arg.QueryEmbedding, arg.SessionID, arg.ResultLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SearchOnlyConversationsRow{}
-	for rows.Next() {
-		var i SearchOnlyConversationsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Content,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.Similarity,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const searchOnlyNotionPages = `-- name: SearchOnlyNotionPages :many
-SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> $1::vector))::float AS similarity
-FROM documents
-WHERE metadata->>'source_type' = 'notion'
-ORDER BY similarity DESC
-LIMIT $2
-`
-
-type SearchOnlyNotionPagesParams struct {
-	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	ResultLimit    int              `json:"result_limit"`
-}
-
-type SearchOnlyNotionPagesRow struct {
-	ID         string             `json:"id"`
-	Content    string             `json:"content"`
-	Metadata   []byte             `json:"metadata"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
-}
-
-// Search only Notion pages (excludes conversation documents)
-// Uses SQL-level filtering for better performance
-func (q *Queries) SearchOnlyNotionPages(ctx context.Context, arg SearchOnlyNotionPagesParams) ([]SearchOnlyNotionPagesRow, error) {
-	rows, err := q.db.Query(ctx, searchOnlyNotionPages, arg.QueryEmbedding, arg.ResultLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SearchOnlyNotionPagesRow{}
-	for rows.Next() {
-		var i SearchOnlyNotionPagesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Content,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.Similarity,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const upsertDocument = `-- name: UpsertDocument :exec
 
 INSERT INTO documents (id, content, embedding, metadata, created_at, updated_at)
-VALUES ($1, $2, $3, $4, NOW(), NOW())
+VALUES ($1, $2, $3, $4, $5, NOW())
 ON CONFLICT (id) DO UPDATE SET
     content = EXCLUDED.content,
     embedding = EXCLUDED.embedding,
     metadata = EXCLUDED.metadata,
-    updated_at = EXCLUDED.updated_at
+    updated_at = NOW()
 `
 
 type UpsertDocumentParams struct {
-	ID        string           `json:"id"`
-	Content   string           `json:"content"`
-	Embedding *pgvector.Vector `json:"embedding"`
-	Metadata  []byte           `json:"metadata"`
+	ID        string             `json:"id"`
+	Content   string             `json:"content"`
+	Embedding *pgvector.Vector   `json:"embedding"`
+	Metadata  []byte             `json:"metadata"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // Documents queries for sqlc
@@ -449,6 +298,7 @@ func (q *Queries) UpsertDocument(ctx context.Context, arg UpsertDocumentParams) 
 		arg.Content,
 		arg.Embedding,
 		arg.Metadata,
+		arg.CreatedAt,
 	)
 	return err
 }

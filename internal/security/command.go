@@ -6,16 +6,16 @@ import (
 	"strings"
 )
 
-// CommandValidator command validator
-// Used to prevent command injection attacks (CWE-78)
-type CommandValidator struct {
+// Command validates commands to prevent injection attacks.
+// Used to prevent command injection attacks (CWE-78).
+type Command struct {
 	blacklist []string
 	whitelist []string // If non-empty, only allow commands in the whitelist
 }
 
-// NewCommandValidator creates a command validator
-func NewCommandValidator() *CommandValidator {
-	return &CommandValidator{
+// NewCommand creates a new Command validator.
+func NewCommand() *Command {
+	return &Command{
 		blacklist: []string{
 			// Dangerous deletion commands
 			"rm -rf /",
@@ -55,10 +55,10 @@ func NewCommandValidator() *CommandValidator {
 	}
 }
 
-// NewStrictCommandValidator creates a strict command validator (whitelist mode)
-// Only allows common safe commands
-func NewStrictCommandValidator() *CommandValidator {
-	return &CommandValidator{
+// NewStrictCommand creates a strict Command validator (whitelist mode).
+// Only allows common safe commands.
+func NewStrictCommand() *Command {
+	return &Command{
 		blacklist: []string{}, // Whitelist mode doesn't need blacklist
 		whitelist: []string{
 			// File operations
@@ -87,7 +87,7 @@ func NewStrictCommandValidator() *CommandValidator {
 // ValidateCommand validates whether a command is safe
 // cmd: command name
 // args: command arguments
-func (v *CommandValidator) ValidateCommand(cmd string, args []string) error {
+func (v *Command) ValidateCommand(cmd string, args []string) error {
 	// 1. Check for empty command
 	if strings.TrimSpace(cmd) == "" {
 		return fmt.Errorf("command cannot be empty")
@@ -109,7 +109,7 @@ func (v *CommandValidator) ValidateCommand(cmd string, args []string) error {
 }
 
 // checkWhitelist checks if the command is in the whitelist
-func (v *CommandValidator) checkWhitelist(cmd string, fullCmd string) error {
+func (v *Command) checkWhitelist(cmd string, fullCmd string) error {
 	// Check if command is in the whitelist
 	for _, allowed := range v.whitelist {
 		if cmd == allowed || strings.HasPrefix(fullCmd, allowed) {
@@ -126,7 +126,7 @@ func (v *CommandValidator) checkWhitelist(cmd string, fullCmd string) error {
 }
 
 // checkBlacklist checks if the command contains dangerous patterns
-func (v *CommandValidator) checkBlacklist(fullCmd string) error {
+func (v *Command) checkBlacklist(fullCmd string) error {
 	// Check blacklist
 	for _, pattern := range v.blacklist {
 		if strings.Contains(fullCmd, pattern) {

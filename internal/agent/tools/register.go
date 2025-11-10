@@ -58,10 +58,10 @@ func ToolNames() []string {
 // This follows Go best practices: no package-level state, dependencies are explicit
 func RegisterTools(
 	g *genkit.Genkit,
-	pathVal *security.PathValidator,
-	cmdVal *security.CommandValidator,
-	httpVal *security.HTTPValidator,
-	envVal *security.EnvValidator,
+	pathVal *security.Path,
+	cmdVal *security.Command,
+	httpVal *security.HTTP,
+	envVal *security.Env,
 ) {
 	// Register filesystem tools (5 tools)
 	// Pass validators as parameters, closures will capture them

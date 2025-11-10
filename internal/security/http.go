@@ -11,16 +11,16 @@ import (
 	"time"
 )
 
-// HTTPValidator HTTP request validator
-// Used to prevent SSRF (Server-Side Request Forgery) attacks
-type HTTPValidator struct {
+// HTTP validates HTTP requests to prevent SSRF attacks.
+// Used to prevent SSRF (Server-Side Request Forgery) attacks.
+type HTTP struct {
 	maxResponseSize int64
 	allowedSchemes  []string
 }
 
-// NewHTTPValidator creates an HTTP validator
-func NewHTTPValidator() *HTTPValidator {
-	return &HTTPValidator{
+// NewHTTP creates a new HTTP validator.
+func NewHTTP() *HTTP {
+	return &HTTP{
 		maxResponseSize: 5 * 1024 * 1024, // 5MB
 		allowedSchemes:  []string{"http", "https"},
 	}
@@ -28,7 +28,7 @@ func NewHTTPValidator() *HTTPValidator {
 
 // ValidateURL validates whether a URL is safe
 // Checks protocol, host, IP address ranges, etc.
-func (v *HTTPValidator) ValidateURL(urlStr string) error {
+func (v *HTTP) ValidateURL(urlStr string) error {
 	// 1. Parse URL
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
@@ -78,12 +78,12 @@ func (v *HTTPValidator) ValidateURL(urlStr string) error {
 }
 
 // MaxResponseSize returns the maximum response size limit
-func (v *HTTPValidator) MaxResponseSize() int64 {
+func (v *HTTP) MaxResponseSize() int64 {
 	return v.maxResponseSize
 }
 
 // CreateSafeHTTPClient creates an HTTP client with security configuration
-func (v *HTTPValidator) CreateSafeHTTPClient() *http.Client {
+func (v *HTTP) CreateSafeHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
