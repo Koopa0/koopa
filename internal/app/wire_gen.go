@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/knowledge"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 // Injectors from wire.go:
@@ -29,7 +30,12 @@ func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error
 		return nil, nil, err
 	}
 	store := provideKnowledgeStore(pool, embedder)
-	app, err := newApp(cfg, ctx, genkit, embedder, pool, store)
+	path, err := providePathValidator()
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	app, err := newApp(cfg, ctx, genkit, embedder, pool, store, path)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -48,6 +54,7 @@ var providerSet = wire.NewSet(
 	provideEmbedder,
 	provideDBPool,
 	provideKnowledgeStore,
+	providePathValidator,
 
 	newApp,
 )
@@ -81,6 +88,12 @@ func provideKnowledgeStore(pool *pgxpool.Pool, embedder ai.Embedder) *knowledge.
 	return knowledge.New(pool, embedder, nil)
 }
 
+// providePathValidator creates a path validator instance.
+func providePathValidator() (*security.Path, error) {
+
+	return security.NewPath([]string{"."})
+}
+
 // newApp constructs an App instance.
 // Wire automatically injects all dependencies.
 func newApp(
@@ -89,18 +102,20 @@ func newApp(
 	g *genkit.Genkit,
 	embedder ai.Embedder,
 	pool *pgxpool.Pool, knowledge2 *knowledge.Store,
+	pathValidator *security.Path,
 ) (*App, error) {
 
 	appCtx, cancel := context.WithCancel(ctx)
 
 	app := &App{
-		Config:    cfg,
-		ctx:       appCtx,
-		cancel:    cancel,
-		Genkit:    g,
-		Embedder:  embedder,
-		DBPool:    pool,
-		Knowledge: knowledge2,
+		Config:        cfg,
+		ctx:           appCtx,
+		cancel:        cancel,
+		Genkit:        g,
+		Embedder:      embedder,
+		DBPool:        pool,
+		Knowledge:     knowledge2,
+		PathValidator: pathValidator,
 	}
 
 	return app, nil

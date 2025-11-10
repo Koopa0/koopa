@@ -6,15 +6,15 @@ import (
 	"strings"
 )
 
-// EnvValidator environment variable validator
-// Used to prevent sensitive information leakage
-type EnvValidator struct {
+// Env validates environment variable access to prevent information leakage.
+// Used to prevent sensitive information leakage.
+type Env struct {
 	sensitivePatterns []string
 }
 
-// NewEnvValidator creates an environment variable validator
-func NewEnvValidator() *EnvValidator {
-	return &EnvValidator{
+// NewEnv creates a new Env validator.
+func NewEnv() *Env {
+	return &Env{
 		sensitivePatterns: []string{
 			// API keys and authentication credentials
 			"API_KEY",
@@ -89,7 +89,7 @@ func NewEnvValidator() *EnvValidator {
 }
 
 // ValidateEnvAccess validates whether access to the specified environment variable is allowed
-func (v *EnvValidator) ValidateEnvAccess(envName string) error {
+func (v *Env) ValidateEnvAccess(envName string) error {
 	envUpper := strings.ToUpper(envName)
 
 	// Check if it matches sensitive patterns

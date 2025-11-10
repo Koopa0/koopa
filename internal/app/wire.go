@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/knowledge"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 // InitializeApp is the Wire injector function.
@@ -32,6 +33,7 @@ var providerSet = wire.NewSet(
 	provideEmbedder,
 	provideDBPool,
 	provideKnowledgeStore,
+	providePathValidator,
 
 	// App constructor
 	newApp,
@@ -71,6 +73,12 @@ func provideKnowledgeStore(pool *pgxpool.Pool, embedder ai.Embedder) *knowledge.
 	return knowledge.New(pool, embedder, nil)
 }
 
+// providePathValidator creates a path validator instance.
+func providePathValidator() (*security.Path, error) {
+	// Allow current directory and common paths
+	return security.NewPath([]string{"."})
+}
+
 // ========== App Constructor ==========
 
 // newApp constructs an App instance.
@@ -82,18 +90,20 @@ func newApp(
 	embedder ai.Embedder,
 	pool *pgxpool.Pool,
 	knowledge *knowledge.Store,
+	pathValidator *security.Path,
 ) (*App, error) {
 	// Create context with cancel
 	appCtx, cancel := context.WithCancel(ctx)
 
 	app := &App{
-		Config:    cfg,
-		ctx:       appCtx,
-		cancel:    cancel,
-		Genkit:    g,
-		Embedder:  embedder,
-		DBPool:    pool,
-		Knowledge: knowledge,
+		Config:        cfg,
+		ctx:           appCtx,
+		cancel:        cancel,
+		Genkit:        g,
+		Embedder:      embedder,
+		DBPool:        pool,
+		Knowledge:     knowledge,
+		PathValidator: pathValidator,
 	}
 
 	return app, nil

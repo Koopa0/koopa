@@ -15,6 +15,7 @@ import (
 	"github.com/koopa0/koopa/internal/agent"
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/knowledge"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 // App is the core application container.
@@ -23,10 +24,11 @@ type App struct {
 	Config *config.Config
 
 	// Core services
-	Genkit    *genkit.Genkit
-	Embedder  ai.Embedder // Explicitly exported for Wire
-	DBPool    *pgxpool.Pool
-	Knowledge *knowledge.Store
+	Genkit        *genkit.Genkit
+	Embedder      ai.Embedder // Explicitly exported for Wire
+	DBPool        *pgxpool.Pool
+	Knowledge     *knowledge.Store
+	PathValidator *security.Path
 
 	// Lifecycle management
 	ctx    context.Context

@@ -43,10 +43,10 @@ type Agent struct {
 	retriever    ai.Retriever  // RAG retriever (required, always available)
 
 	// Security validators (immutable after creation, safe for concurrent reads)
-	pathValidator *security.PathValidator
-	cmdValidator  *security.CommandValidator
-	httpValidator *security.HTTPValidator
-	envValidator  *security.EnvValidator
+	pathValidator *security.Path
+	cmdValidator  *security.Command
+	httpValidator *security.HTTP
+	envValidator  *security.Env
 }
 
 // New creates a new Agent instance with RAG support.
@@ -76,15 +76,15 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 		homeDir = ""
 	}
 
-	pathValidator, err := security.NewPathValidator([]string{homeDir})
+	pathValidator, err := security.NewPath([]string{homeDir})
 	if err != nil {
 		// If initialization fails, use empty whitelist (only allow working directory)
-		pathValidator, _ = security.NewPathValidator([]string{})
+		pathValidator, _ = security.NewPath([]string{})
 	}
 
-	cmdValidator := security.NewCommandValidator()
-	httpValidator := security.NewHTTPValidator()
-	envValidator := security.NewEnvValidator()
+	cmdValidator := security.NewCommand()
+	httpValidator := security.NewHTTP()
+	envValidator := security.NewEnv()
 
 	// Register core tools (file, system, network)
 	tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator)

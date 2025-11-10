@@ -23,7 +23,7 @@ import (
 
 // registerSystemTools registers system-related tools
 // Validators are passed as parameters and captured by closures (Go best practice)
-func registerSystemTools(g *genkit.Genkit, cmdValidator *security.CommandValidator, envValidator *security.EnvValidator) {
+func registerSystemTools(g *genkit.Genkit, cmdValidator *security.Command, envValidator *security.Env) {
 	// 1. Get current time
 	genkit.DefineTool(
 		g,

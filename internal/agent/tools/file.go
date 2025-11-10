@@ -19,7 +19,7 @@ import (
 
 // registerFileTools registers filesystem-related tools
 // pathValidator is passed as parameter and captured by closures (Go best practice)
-func registerFileTools(g *genkit.Genkit, pathValidator *security.PathValidator) {
+func registerFileTools(g *genkit.Genkit, pathValidator *security.Path) {
 	// 1. Read file
 	genkit.DefineTool(
 		g,

@@ -20,6 +20,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+
 	"github.com/koopa0/koopa/internal/security"
 )
 
@@ -32,7 +33,7 @@ type ImageInput struct {
 // createImagePart reads an image file and creates an ai.Part
 // This is a standalone helper function following Go best practices
 // pathValidator is passed as parameter for explicit dependency and better testability
-func createImagePart(pathValidator *security.PathValidator, imagePath string) (*ai.Part, error) {
+func createImagePart(pathValidator *security.Path, imagePath string) (*ai.Part, error) {
 	// Path security validation (prevent path traversal attacks CWE-22)
 	safePath, err := pathValidator.ValidatePath(imagePath)
 	if err != nil {

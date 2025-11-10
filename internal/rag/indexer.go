@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	ignore "github.com/sabhiram/go-gitignore"
+
 	"github.com/koopa0/koopa/internal/knowledge"
 )
 
@@ -69,8 +71,25 @@ func NewIndexer(store *knowledge.Store) *Indexer {
 
 // AddFile adds a single file to the knowledge store
 func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
-	// Check if file exists
-	info, err := os.Stat(filePath)
+	// Get absolute path for consistency
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// Open filesystem root at the file's parent directory
+	// This prevents path traversal attacks using os.Root API (Go 1.24+)
+	parentDir := filepath.Dir(absPath)
+	fileName := filepath.Base(absPath)
+
+	root, err := os.OpenRoot(parentDir)
+	if err != nil {
+		return fmt.Errorf("failed to open root directory: %w", err)
+	}
+	defer root.Close()
+
+	// Stat the file through the restricted root
+	info, err := root.Stat(fileName)
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)
 	}
@@ -80,20 +99,20 @@ func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
 	}
 
 	// Check file extension
-	ext := strings.ToLower(filepath.Ext(filePath))
+	ext := strings.ToLower(filepath.Ext(fileName))
 	if !SupportedExtensions[ext] {
 		return fmt.Errorf("unsupported file type: %s", ext)
 	}
 
-	// Read file content
-	// #nosec G304 -- filePath is validated via os.Stat and extension check above
-	content, err := os.ReadFile(filePath)
+	// Read file content through the restricted root
+	// This is secure - os.Root prevents path traversal and symlink escapes
+	content, err := root.ReadFile(fileName)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Generate document ID from file path
-	docID := generateDocID(filePath)
+	// Generate document ID from absolute path
+	docID := generateDocID(absPath)
 
 	// Create knowledge document
 	doc := knowledge.Document{
@@ -101,8 +120,8 @@ func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
 		Content: string(content),
 		Metadata: map[string]string{
 			"source_type": "file",
-			"file_path":   filePath,
-			"file_name":   filepath.Base(filePath),
+			"file_path":   absPath,
+			"file_name":   fileName,
 			"file_ext":    ext,
 			"file_size":   fmt.Sprintf("%d", info.Size()),
 			"indexed_at":  time.Now().Format(time.RFC3339),
@@ -123,13 +142,57 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 	startTime := time.Now()
 	result := &IndexResult{}
 
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	// Get absolute path for the directory
+	absDirPath, err := filepath.Abs(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute directory path: %w", err)
+	}
+
+	// Open filesystem root for the directory
+	// This prevents path traversal attacks using os.Root API (Go 1.24+)
+	root, err := os.OpenRoot(absDirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open root directory: %w", err)
+	}
+	defer root.Close()
+
+	// Load .gitignore file if it exists
+	var gitIgnore *ignore.GitIgnore
+	gitignorePath := filepath.Join(absDirPath, ".gitignore")
+	if _, err := os.Stat(gitignorePath); err == nil {
+		gitIgnore, err = ignore.CompileIgnoreFile(gitignorePath)
+		if err != nil {
+			// If .gitignore is malformed, log and continue without it
+			// Don't fail the entire operation
+			gitIgnore = nil
+		}
+	}
+
+	// Walk the directory tree using filepath.Walk
+	// Files are read through os.Root for security
+	if err = filepath.Walk(absDirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			result.FilesFailed++
 			return nil // Continue walking even if one file fails
 		}
 
-		// Skip directories
+		// Get relative path from the root directory (for gitignore matching)
+		relPath, err := filepath.Rel(absDirPath, path)
+		if err != nil {
+			result.FilesFailed++
+			return nil // Continue walking
+		}
+
+		// Check if should be ignored by .gitignore (for both files and directories)
+		if gitIgnore != nil && gitIgnore.MatchesPath(relPath) {
+			if info.IsDir() {
+				return filepath.SkipDir // Skip entire directory tree
+			}
+			result.FilesSkipped++
+			return nil
+		}
+
+		// Skip other directories (that are not ignored)
 		if info.IsDir() {
 			return nil
 		}
@@ -141,8 +204,33 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 			return nil
 		}
 
-		// Try to add the file
-		if err := idx.AddFile(ctx, path); err != nil {
+		// Read file through the secure root (prevents path traversal)
+		content, err := root.ReadFile(relPath)
+		if err != nil {
+			result.FilesFailed++
+			return nil // Continue walking
+		}
+
+		// Generate document ID
+		docID := generateDocID(path)
+
+		// Create knowledge document
+		doc := knowledge.Document{
+			ID:      docID,
+			Content: string(content),
+			Metadata: map[string]string{
+				"source_type": "file",
+				"file_path":   path,
+				"file_name":   filepath.Base(path),
+				"file_ext":    ext,
+				"file_size":   fmt.Sprintf("%d", info.Size()),
+				"indexed_at":  time.Now().Format(time.RFC3339),
+			},
+			CreateAt: time.Now(),
+		}
+
+		// Add to knowledge store
+		if err := idx.store.Add(ctx, doc); err != nil {
 			result.FilesFailed++
 			return nil // Continue walking
 		}
@@ -150,8 +238,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		result.FilesAdded++
 		result.TotalSize += info.Size()
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 

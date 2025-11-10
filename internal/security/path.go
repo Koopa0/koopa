@@ -8,16 +8,16 @@ import (
 	"strings"
 )
 
-// PathValidator path validator
-// Used to prevent path traversal attacks (CWE-22)
-type PathValidator struct {
+// Path validates and sanitizes file paths to prevent traversal attacks.
+// Used to prevent path traversal attacks (CWE-22).
+type Path struct {
 	allowedDirs []string
 	workDir     string
 }
 
-// NewPathValidator creates a path validator
+// NewPath creates a new Path validator.
 // allowedDirs: list of allowed directories (empty list means only working directory is allowed)
-func NewPathValidator(allowedDirs []string) (*PathValidator, error) {
+func NewPath(allowedDirs []string) (*Path, error) {
 	workDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get working directory: %w", err)
@@ -33,7 +33,7 @@ func NewPathValidator(allowedDirs []string) (*PathValidator, error) {
 		absAllowedDirs = append(absAllowedDirs, absDir)
 	}
 
-	return &PathValidator{
+	return &Path{
 		allowedDirs: absAllowedDirs,
 		workDir:     workDir,
 	}, nil
@@ -41,7 +41,7 @@ func NewPathValidator(allowedDirs []string) (*PathValidator, error) {
 
 // isPathInAllowedDirs checks if a path is within allowed directories
 // Returns true if path is in working directory or any allowed directory
-func (v *PathValidator) isPathInAllowedDirs(absPath string) bool {
+func (v *Path) isPathInAllowedDirs(absPath string) bool {
 	// Normalize for exact matching (add trailing separator)
 	absPathWithSep := filepath.Clean(absPath) + string(filepath.Separator)
 	workDirNorm := filepath.Clean(v.workDir) + string(filepath.Separator)
@@ -64,7 +64,7 @@ func (v *PathValidator) isPathInAllowedDirs(absPath string) bool {
 
 // ValidatePath validates and sanitizes a file path
 // Returns a safe absolute path or an error
-func (v *PathValidator) ValidatePath(path string) (string, error) {
+func (v *Path) ValidatePath(path string) (string, error) {
 	// 1. Clean the path (remove ../ etc.)
 	cleanPath := filepath.Clean(path)
 
