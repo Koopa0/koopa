@@ -1,3 +1,13 @@
+// Package mcp provides Model Context Protocol (MCP) integration for the agent system.
+//
+// MCP enables AI agents to connect to external tools and services (like "plugins for AI agents").
+// This package provides Server type for managing multiple MCP server connections with:
+//   - Graceful degradation: Optional, doesn't block Agent if servers fail
+//   - State tracking: Per-server connection states (Disconnected → Connecting → Connected/Failed)
+//   - Thread safety: sync.RWMutex for concurrent access
+//   - Explicit configuration: Loaded from config.yaml via LoadConfigs()
+//
+// Component files: server.go (connection management), state.go (state tracking), config.go (configuration).
 package mcp
 
 import (
@@ -77,7 +87,6 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 		Version:    "1.0.0",
 		MCPServers: serverConfigs,
 	})
-
 	if err != nil {
 		// Mark all servers as failed
 		for _, state := range states {
@@ -106,7 +115,7 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 	}, nil
 }
 
-// GetTools retrieves all tools from all connected MCP servers.
+// Tools retrieves all tools from all connected MCP servers.
 //
 // This method aggregates tools from all MCP servers managed by the MCPHost.
 // The tools are automatically converted to Genkit ai.Tool format and are
@@ -124,7 +133,7 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 //   - If tool retrieval fails, all servers are marked as Failed
 //   - The error is logged and returned to the caller
 //   - Caller should handle gracefully (e.g., fall back to local tools only)
-func (s *Server) GetTools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error) {
+func (s *Server) Tools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error) {
 	tools, err := s.host.GetActiveTools(ctx, g)
 	if err != nil {
 		// Mark all servers as failed (we don't know which one failed)
@@ -155,7 +164,7 @@ func (s *Server) GetTools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, err
 	return tools, nil
 }
 
-// GetState returns the connection state of a specific MCP server.
+// State returns the connection state of a specific MCP server.
 //
 // Parameters:
 //   - name: Name of the MCP server (e.g., "github", "notion")
@@ -165,7 +174,7 @@ func (s *Server) GetTools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, err
 //   - bool: true if server exists, false otherwise
 //
 // Note: Returns a copy of the state to prevent external modifications.
-func (s *Server) GetState(name string) (State, bool) {
+func (s *Server) State(name string) (State, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -178,13 +187,13 @@ func (s *Server) GetState(name string) (State, bool) {
 	return *state, true
 }
 
-// GetStates returns the connection states of all MCP servers.
+// States returns the connection states of all MCP servers.
 //
 // Returns:
 //   - map[string]State: Map of server name to state (copies)
 //
 // Note: Returns copies of states to prevent external modifications.
-func (s *Server) GetStates() map[string]State {
+func (s *Server) States() map[string]State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -197,10 +206,10 @@ func (s *Server) GetStates() map[string]State {
 	return result
 }
 
-// GetServerNames returns the names of all configured MCP servers.
+// ServerNames returns the names of all configured MCP servers.
 //
 // This is useful for iteration or validation purposes.
-func (s *Server) GetServerNames() []string {
+func (s *Server) ServerNames() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -212,8 +221,8 @@ func (s *Server) GetServerNames() []string {
 	return names
 }
 
-// GetConnectedCount returns the number of currently connected MCP servers.
-func (s *Server) GetConnectedCount() int {
+// ConnectedCount returns the number of currently connected MCP servers.
+func (s *Server) ConnectedCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

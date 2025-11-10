@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -87,7 +88,12 @@ func NewStrictCommandValidator() *CommandValidator {
 // cmd: command name
 // args: command arguments
 func (v *CommandValidator) ValidateCommand(cmd string, args []string) error {
-	// Build full command
+	// 1. Check for empty command
+	if strings.TrimSpace(cmd) == "" {
+		return fmt.Errorf("command cannot be empty")
+	}
+
+	// 2. Build full command
 	fullCmd := cmd
 	if len(args) > 0 {
 		fullCmd = cmd + " " + strings.Join(args, " ")
@@ -111,6 +117,11 @@ func (v *CommandValidator) checkWhitelist(cmd string, fullCmd string) error {
 		}
 	}
 
+	slog.Warn("command not in whitelist",
+		"command", cmd,
+		"full_command", fullCmd,
+		"whitelist", v.whitelist,
+		"security_event", "command_whitelist_violation")
 	return fmt.Errorf("command '%s' is not in whitelist", cmd)
 }
 
@@ -119,6 +130,10 @@ func (v *CommandValidator) checkBlacklist(fullCmd string) error {
 	// Check blacklist
 	for _, pattern := range v.blacklist {
 		if strings.Contains(fullCmd, pattern) {
+			slog.Warn("command contains blacklisted pattern",
+				"full_command", fullCmd,
+				"dangerous_pattern", pattern,
+				"security_event", "command_blacklist_violation")
 			return fmt.Errorf("command contains dangerous pattern: '%s'", pattern)
 		}
 	}
@@ -140,6 +155,11 @@ func (v *CommandValidator) checkBlacklist(fullCmd string) error {
 
 	for char, desc := range dangerousChars {
 		if strings.Contains(fullCmd, char) {
+			slog.Warn("command contains dangerous character",
+				"full_command", fullCmd,
+				"character", char,
+				"description", desc,
+				"security_event", "command_injection_attempt")
 			return fmt.Errorf("command contains dangerous character '%s' (%s)", char, desc)
 		}
 	}
@@ -152,6 +172,9 @@ func (v *CommandValidator) checkBlacklist(fullCmd string) error {
 			strings.Contains(lowerCmd, "sh") ||
 			strings.Contains(lowerCmd, "python") ||
 			strings.Contains(lowerCmd, "perl") {
+			slog.Warn("curl/wget script execution attempt detected",
+				"full_command", fullCmd,
+				"security_event", "remote_script_execution_attempt")
 			return fmt.Errorf("direct script execution with curl/wget is prohibited")
 		}
 	}
@@ -185,10 +208,11 @@ func IsCommandSafe(cmd string) bool {
 	return true
 }
 
-// SanitizeCommandArgs sanitizes command arguments, removing potentially dangerous characters
-// Note: This cannot replace complete validation, it's just an additional layer of protection
-func SanitizeCommandArgs(args []string) []string {
-	sanitized := make([]string, 0, len(args))
+// QuoteCommandArgs quotes command arguments containing dangerous characters
+// This wraps arguments in single quotes for shell safety
+// Note: This cannot replace complete validation via ValidateCommand()
+func QuoteCommandArgs(args []string) []string {
+	quoted := make([]string, 0, len(args))
 
 	for _, arg := range args {
 		// Trim leading and trailing whitespace
@@ -199,15 +223,15 @@ func SanitizeCommandArgs(args []string) []string {
 			continue
 		}
 
-		// Check for dangerous characters
+		// Check for dangerous characters that need quoting
 		if strings.ContainsAny(arg, ";|&`$()<>\\") {
-			// If it contains dangerous characters, wrap in quotes
-			// But this still isn't safe enough, should be caught by ValidateCommand
+			// Wrap in single quotes using POSIX shell escaping
+			// This escapes embedded single quotes: 'it'\''s' → it's
 			arg = "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
 		}
 
-		sanitized = append(sanitized, arg)
+		quoted = append(quoted, arg)
 	}
 
-	return sanitized
+	return quoted
 }

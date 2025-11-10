@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -94,6 +95,10 @@ func (v *EnvValidator) ValidateEnvAccess(envName string) error {
 	// Check if it matches sensitive patterns
 	for _, pattern := range v.sensitivePatterns {
 		if strings.Contains(envUpper, pattern) {
+			slog.Warn("sensitive environment variable access attempt",
+				"env_name", envName,
+				"matched_pattern", pattern,
+				"security_event", "sensitive_env_access")
 			return fmt.Errorf("access denied to sensitive environment variable: %s (matched pattern: %s)", envName, pattern)
 		}
 	}
@@ -101,12 +106,13 @@ func (v *EnvValidator) ValidateEnvAccess(envName string) error {
 	return nil
 }
 
-// IsSensitiveEnv quickly checks if an environment variable name is obviously sensitive
-// This is an additional layer of protection
-func IsSensitiveEnv(envName string) bool {
+// IsEnvSafe quickly checks if an environment variable name is safe to access
+// Returns true if safe, false if sensitive
+func IsEnvSafe(envName string) bool {
 	envUpper := strings.ToUpper(envName)
 
-	quickPatterns := []string{
+	// Patterns that indicate sensitive data
+	sensitivePatterns := []string{
 		"SECRET",
 		"PASSWORD",
 		"TOKEN",
@@ -114,13 +120,13 @@ func IsSensitiveEnv(envName string) bool {
 		"CREDENTIALS",
 	}
 
-	for _, pattern := range quickPatterns {
+	for _, pattern := range sensitivePatterns {
 		if strings.Contains(envUpper, pattern) {
-			return true
+			return false // Sensitive = NOT safe
 		}
 	}
 
-	return false
+	return true // No sensitive patterns = safe
 }
 
 // GetAllowedEnvNames retrieves the list of explicitly allowed environment variables (whitelist)

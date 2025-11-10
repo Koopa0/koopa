@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -48,6 +49,10 @@ func (v *HTTPValidator) ValidateURL(urlStr string) error {
 
 	// 4. Check if it's a dangerous hostname
 	if isDangerousHostname(hostname) {
+		slog.Warn("SSRF attempt - dangerous hostname detected",
+			"url", urlStr,
+			"hostname", hostname,
+			"security_event", "ssrf_dangerous_hostname")
 		return fmt.Errorf("access denied: accessing internal networks or metadata services is not allowed")
 	}
 
@@ -60,6 +65,11 @@ func (v *HTTPValidator) ValidateURL(urlStr string) error {
 	// 6. Check all resolved IP addresses
 	for _, ip := range ips {
 		if isPrivateIP(ip) {
+			slog.Warn("SSRF attempt - private IP detected",
+				"url", urlStr,
+				"hostname", hostname,
+				"resolved_ip", ip.String(),
+				"security_event", "ssrf_private_ip")
 			return fmt.Errorf("access denied: accessing internal network IPs is not allowed (%s)", ip.String())
 		}
 	}
@@ -67,8 +77,8 @@ func (v *HTTPValidator) ValidateURL(urlStr string) error {
 	return nil
 }
 
-// GetMaxResponseSize retrieves the maximum response size limit
-func (v *HTTPValidator) GetMaxResponseSize() int64 {
+// MaxResponseSize returns the maximum response size limit
+func (v *HTTPValidator) MaxResponseSize() int64 {
 	return v.maxResponseSize
 }
 
@@ -79,11 +89,20 @@ func (v *HTTPValidator) CreateSafeHTTPClient() *http.Client {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			// Limit to maximum 3 redirects
 			if len(via) >= 3 {
+				slog.Warn("excessive redirects detected",
+					"url", req.URL.String(),
+					"redirect_count", len(via),
+					"security_event", "excessive_redirects")
 				return fmt.Errorf("stopped after 3 redirects")
 			}
 
 			// Check if the redirect URL is safe
 			if err := v.ValidateURL(req.URL.String()); err != nil {
+				slog.Warn("SSRF attempt - unsafe redirect detected",
+					"redirect_url", req.URL.String(),
+					"original_url", via[0].URL.String(),
+					"redirect_chain_length", len(via),
+					"security_event", "ssrf_unsafe_redirect")
 				return fmt.Errorf("redirect to unsafe URL: %w", err)
 			}
 

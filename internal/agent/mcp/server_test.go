@@ -15,7 +15,7 @@ func TestServerGetServerNames(t *testing.T) {
 		},
 	}
 
-	names := server.GetServerNames()
+	names := server.ServerNames()
 
 	if len(names) != 3 {
 		t.Errorf("expected 3 server names, got %d", len(names))
@@ -88,7 +88,7 @@ func TestServerGetConnectedCount(t *testing.T) {
 				states: tt.states,
 			}
 
-			count := server.GetConnectedCount()
+			count := server.ConnectedCount()
 
 			if count != tt.expected {
 				t.Errorf("expected %d connected servers, got %d", tt.expected, count)
@@ -111,7 +111,7 @@ func TestServerGetState(t *testing.T) {
 	}
 
 	// Test existing server
-	state, exists := server.GetState("github")
+	state, exists := server.State("github")
 	if !exists {
 		t.Error("expected github server to exist")
 	}
@@ -126,14 +126,14 @@ func TestServerGetState(t *testing.T) {
 	}
 
 	// Test non-existing server
-	_, exists = server.GetState("nonexistent")
+	_, exists = server.State("nonexistent")
 	if exists {
 		t.Error("expected nonexistent server to not exist")
 	}
 
 	// Test that returned state is a copy (not a reference)
 	state.SuccessCount = 100
-	originalState, _ := server.GetState("github")
+	originalState, _ := server.State("github")
 	if originalState.SuccessCount == 100 {
 		t.Error("GetState should return a copy, not a reference")
 	}
@@ -148,7 +148,7 @@ func TestServerGetStates(t *testing.T) {
 		},
 	}
 
-	states := server.GetStates()
+	states := server.States()
 
 	if len(states) != 2 {
 		t.Errorf("expected 2 states, got %d", len(states))
@@ -174,7 +174,7 @@ func TestServerGetStates(t *testing.T) {
 
 	// Test that returned states are copies
 	githubState.SuccessCount = 100
-	originalStates := server.GetStates()
+	originalStates := server.States()
 	if originalStates["github"].SuccessCount == 100 {
 		t.Error("GetStates should return copies, not references")
 	}

@@ -1,5 +1,12 @@
 package tools
 
+// network.go defines HTTP request tools with SSRF protection.
+//
+// Provides httpGet tool for sending HTTP GET requests with comprehensive security:
+//   - SSRF protection: Blocks private IPs (127.0.0.1, 192.168.x.x, 10.x.x.x), localhost, cloud metadata endpoints (169.254.169.254)
+//   - Resource limits: Response size limits (10MB default), request timeout (30s), redirect limits (10)
+//   - Structured output: Returns JSON with status code and body for programmatic processing
+
 import (
 	"encoding/json"
 	"fmt"
@@ -29,19 +36,19 @@ func registerNetworkTools(g *genkit.Genkit, httpValidator *security.HTTPValidato
 		) (string, error) {
 			// URL security validation (prevent SSRF attacks)
 			if err := httpValidator.ValidateURL(input.URL); err != nil {
-				return "", fmt.Errorf("security warning: URL validation failed\nReason: %w\nThis may be an attempt to access internal network or metadata services", err)
+				return "", fmt.Errorf("security warning: url validation failed (possible SSRF attempt): %w", err)
 			}
 
 			// Use securely configured HTTP client (with timeout and redirect limits)
 			client := httpValidator.CreateSafeHTTPClient()
 			resp, err := client.Get(input.URL)
 			if err != nil {
-				return "", fmt.Errorf("HTTP request failed: %w", err)
+				return "", fmt.Errorf("http request failed: %w", err)
 			}
 			defer resp.Body.Close()
 
 			// Limit response size (prevent resource exhaustion)
-			maxSize := httpValidator.GetMaxResponseSize()
+			maxSize := httpValidator.MaxResponseSize()
 			limitedReader := io.LimitReader(resp.Body, maxSize)
 
 			body, err := io.ReadAll(limitedReader)
