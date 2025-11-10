@@ -1,7 +1,24 @@
 package config
 
+// config.go provides application configuration management with multi-source priority.
+//
+// Configuration sources (highest to lowest priority):
+//   1. Environment variables (runtime override)
+//   2. Config file (~/.koopa/config.yaml)
+//   3. Default values (sensible defaults for quick start)
+//
+// Main configuration categories:
+//   - AI: Model selection, temperature, max tokens, embedder
+//   - Storage: SQLite database path, PostgreSQL connection (for pgvector)
+//   - RAG: Number of documents to retrieve (RAGTopK)
+//   - MCP: Model Context Protocol server management
+//
+// Security: Sensitive data (passwords) are never logged; config directory uses 0750 permissions.
+// Validation: Comprehensive range checks (temperature, tokens, ports) with clear error messages.
+
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -21,14 +38,39 @@ type Config struct {
 
 	// Storage configuration
 	DatabasePath string `mapstructure:"database_path"` // SQLite database path
-	VectorPath   string `mapstructure:"vector_path"`   // Vector database (chromem-go) path
+
+	// PostgreSQL configuration (for pgvector)
+	PostgresHost     string `mapstructure:"postgres_host"`
+	PostgresPort     int    `mapstructure:"postgres_port"`
+	PostgresUser     string `mapstructure:"postgres_user"`
+	PostgresPassword string `mapstructure:"postgres_password"`
+	PostgresDBName   string `mapstructure:"postgres_db_name"`
+	PostgresSSLMode  string `mapstructure:"postgres_ssl_mode"`
 
 	// RAG (Retrieval-Augmented Generation) configuration
 	RAGTopK       int    `mapstructure:"rag_top_k"`      // Number of documents to retrieve for RAG (default: 3)
 	EmbedderModel string `mapstructure:"embedder_model"` // Embedding model name
 
-	// API Keys
-	GeminiAPIKey string `mapstructure:"gemini_api_key"`
+	// MCP (Model Context Protocol) configuration
+	MCP        MCPConfig            `mapstructure:"mcp"`         // Global MCP settings
+	MCPServers map[string]MCPServer `mapstructure:"mcp_servers"` // MCP server definitions
+}
+
+// MCPConfig controls global MCP behavior
+type MCPConfig struct {
+	Allowed  []string `mapstructure:"allowed"`  // Whitelist of server names (empty = all configured servers)
+	Excluded []string `mapstructure:"excluded"` // Blacklist of server names (higher priority than Allowed)
+	Timeout  int      `mapstructure:"timeout"`  // Connection timeout in seconds (default: 5)
+}
+
+// MCPServer defines a single MCP server configuration
+type MCPServer struct {
+	Command      string            `mapstructure:"command"`       // Required: executable path (e.g., "npx")
+	Args         []string          `mapstructure:"args"`          // Optional: command arguments
+	Env          map[string]string `mapstructure:"env"`           // Optional: environment variables (supports $VAR_NAME syntax)
+	Timeout      int               `mapstructure:"timeout"`       // Optional: per-server timeout (overrides global)
+	IncludeTools []string          `mapstructure:"include_tools"` // Optional: tool whitelist
+	ExcludeTools []string          `mapstructure:"exclude_tools"` // Optional: tool blacklist
 }
 
 // Load loads configuration
@@ -43,7 +85,7 @@ func Load() (*Config, error) {
 	configDir := filepath.Join(home, ".koopa")
 
 	// Ensure directory exists (use 0750 permission for better security)
-	if err := os.MkdirAll(configDir, 0750); err != nil {
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
 		return nil, err
 	}
 
@@ -59,30 +101,42 @@ func Load() (*Config, error) {
 	viper.SetDefault("max_tokens", 2048)
 	viper.SetDefault("max_history_messages", 50) // Default: keep recent 50 messages (~25 conversation turns)
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
-	viper.SetDefault("vector_path", filepath.Join(configDir, "chromem"))
+
+	// PostgreSQL defaults (matching docker-compose.yml)
+	viper.SetDefault("postgres_host", "localhost")
+	viper.SetDefault("postgres_port", 5432)
+	viper.SetDefault("postgres_user", "koopa")
+	viper.SetDefault("postgres_password", "koopa_dev_password")
+	viper.SetDefault("postgres_db_name", "koopa")
+	viper.SetDefault("postgres_ssl_mode", "disable")
+
 	viper.SetDefault("rag_top_k", 3)                         // Default: retrieve top 3 documents
 	viper.SetDefault("embedder_model", "text-embedding-004") // Default Google AI embedder
 
+	// MCP defaults
+	viper.SetDefault("mcp.timeout", 5) // Default: 5 seconds connection timeout
+	// Note: mcp_servers has no default - must be explicitly configured
+
 	// Read configuration file (if exists)
+	configFileUsed := false
 	if err := viper.ReadInConfig(); err != nil {
 		// Configuration file not found is not an error, use default values
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			slog.Debug("configuration file not found, using default values",
+				"search_paths", []string{configDir, "."},
+				"config_name", "config.yaml")
+		} else {
 			return nil, err
 		}
+	} else {
+		configFileUsed = true
+		slog.Info("loaded configuration from file",
+			"config_file", viper.ConfigFileUsed())
 	}
 
-	// Environment variable settings (using KOOPA_ prefix)
-	// Explicitly bind each configuration key to corresponding environment variable
-	viper.SetEnvPrefix("KOOPA")
-	_ = viper.BindEnv("model_name")
-	_ = viper.BindEnv("temperature")
-	_ = viper.BindEnv("max_tokens")
-	_ = viper.BindEnv("max_history_messages")
-	_ = viper.BindEnv("database_path")
-	_ = viper.BindEnv("vector_path")
-	_ = viper.BindEnv("rag_top_k")
-	_ = viper.BindEnv("embedder_model")
-	_ = viper.BindEnv("gemini_api_key")
+	// Environment variable settings (no prefix needed)
+	// Configuration can be set via environment variables without KOOPA_ prefix
+	viper.AutomaticEnv()
 
 	// Use Unmarshal to automatically map to struct (type-safe)
 	var cfg Config
@@ -90,33 +144,110 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
+	// Log final configuration (with sensitive data redacted)
+	slog.Info("configuration loaded successfully",
+		"config_file_used", configFileUsed,
+		"model", cfg.ModelName,
+		"temperature", cfg.Temperature,
+		"max_tokens", cfg.MaxTokens,
+		"postgres_host", cfg.PostgresHost,
+		"postgres_port", cfg.PostgresPort,
+		"postgres_db", cfg.PostgresDBName,
+		"rag_top_k", cfg.RAGTopK,
+		"embedder_model", cfg.EmbedderModel,
+		"mcp_servers_count", len(cfg.MCPServers))
+
 	return &cfg, nil
 }
 
-// GetPlugins returns Genkit plugins
-func (c *Config) GetPlugins() []any {
+// Plugins returns Genkit plugins for this configuration.
+func (c *Config) Plugins() []any {
 	return []any{&googlegenai.GoogleAI{}}
 }
 
-// Validate validates configuration
+// PostgresConnectionString returns the PostgreSQL DSN
+func (c *Config) PostgresConnectionString() string {
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		c.PostgresHost,
+		c.PostgresPort,
+		c.PostgresUser,
+		c.PostgresPassword,
+		c.PostgresDBName,
+		c.PostgresSSLMode,
+	)
+}
+
+// Validate validates configuration values
 func (c *Config) Validate() error {
-	if c.GeminiAPIKey == "" {
+	// 1. API Key validation (required for all AI operations)
+	if os.Getenv("GEMINI_API_KEY") == "" {
 		return &ConfigError{
 			Field:   "GEMINI_API_KEY",
-			Message: "Gemini API key is required. Set GEMINI_API_KEY environment variable or add it to config file.",
+			Message: "Gemini API key is required. Set GEMINI_API_KEY environment variable.",
 		}
 	}
 
-	// Validate RAG configuration
-	if c.RAGTopK <= 0 {
-		c.RAGTopK = 3 // Default to 3 if invalid
+	// 2. Model configuration validation
+	if c.ModelName == "" {
+		return &ConfigError{
+			Field:   "model_name",
+			Message: "Model name cannot be empty. Set model_name in config file or MODEL_NAME environment variable.",
+		}
 	}
-	if c.RAGTopK > 10 {
-		c.RAGTopK = 10 // Cap at 10 to avoid token overflow
+
+	// Temperature range: 0.0 (deterministic) to 2.0 (maximum creativity)
+	// Reference: Gemini API documentation
+	if c.Temperature < 0.0 || c.Temperature > 2.0 {
+		return &ConfigError{
+			Field:   "temperature",
+			Message: fmt.Sprintf("Temperature must be between 0.0 and 2.0, got %.2f", c.Temperature),
+		}
+	}
+
+	// MaxTokens range: 1 to 2097152 (Gemini 2.5 max context window)
+	// Reference: https://ai.google.dev/gemini-api/docs/models
+	if c.MaxTokens < 1 || c.MaxTokens > 2097152 {
+		return &ConfigError{
+			Field:   "max_tokens",
+			Message: fmt.Sprintf("MaxTokens must be between 1 and 2,097,152, got %d", c.MaxTokens),
+		}
+	}
+
+	// 3. RAG configuration validation
+	if c.RAGTopK <= 0 || c.RAGTopK > 10 {
+		return &ConfigError{
+			Field:   "rag_top_k",
+			Message: fmt.Sprintf("RAGTopK must be between 1 and 10, got %d", c.RAGTopK),
+		}
 	}
 
 	if c.EmbedderModel == "" {
-		c.EmbedderModel = "text-embedding-004" // Default embedder
+		return &ConfigError{
+			Field:   "embedder_model",
+			Message: "Embedder model cannot be empty. Set embedder_model in config file.",
+		}
+	}
+
+	// 4. PostgreSQL configuration validation
+	if c.PostgresHost == "" {
+		return &ConfigError{
+			Field:   "postgres_host",
+			Message: "PostgreSQL host cannot be empty.",
+		}
+	}
+
+	if c.PostgresPort < 1 || c.PostgresPort > 65535 {
+		return &ConfigError{
+			Field:   "postgres_port",
+			Message: fmt.Sprintf("PostgreSQL port must be between 1 and 65535, got %d", c.PostgresPort),
+		}
+	}
+
+	if c.PostgresDBName == "" {
+		return &ConfigError{
+			Field:   "postgres_db_name",
+			Message: "PostgreSQL database name cannot be empty.",
+		}
 	}
 
 	return nil

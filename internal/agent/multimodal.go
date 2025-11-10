@@ -1,9 +1,19 @@
 package agent
 
+// multimodal.go implements vision and multimodal capabilities for the Agent.
+//
+// Provides image analysis methods:
+//   - Base: AnalyzeImage (single), AnalyzeMultipleImages (multiple with custom prompts)
+//   - Specialized: OCRImage, CompareImages, DescribeImage, AnalyzeScreenshot (structured UI/UX output)
+//
+// Security: All paths validated via pathValidator (CWE-22). Content type detected via http.DetectContentType
+// (magic bytes, not extension). Supports: jpg/jpeg, png, gif, webp. Uses Genkit's ai.Part for multimodal.
+
 import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,20 +45,26 @@ func createImagePart(pathValidator *security.PathValidator, imagePath string) (*
 		return nil, fmt.Errorf("unable to read image %s: %w", safePath, err)
 	}
 
-	// Determine image type (using validated safe path)
-	ext := strings.ToLower(filepath.Ext(safePath))
-	var mediaType string
-	switch ext {
-	case ".jpg", ".jpeg":
-		mediaType = "image/jpeg"
-	case ".png":
-		mediaType = "image/png"
-	case ".gif":
-		mediaType = "image/gif"
-	case ".webp":
-		mediaType = "image/webp"
-	default:
-		return nil, fmt.Errorf("unsupported image format: %s", ext)
+	// Determine image type using http.DetectContentType (more robust, checks actual content)
+	// This is safer than relying solely on file extension which can be spoofed
+	mediaType := http.DetectContentType(imageData)
+
+	// Verify it's actually an image MIME type
+	if !strings.HasPrefix(mediaType, "image/") {
+		// Fallback: check file extension as a secondary validation
+		ext := strings.ToLower(filepath.Ext(safePath))
+		switch ext {
+		case ".jpg", ".jpeg":
+			mediaType = "image/jpeg"
+		case ".png":
+			mediaType = "image/png"
+		case ".gif":
+			mediaType = "image/gif"
+		case ".webp":
+			mediaType = "image/webp"
+		default:
+			return nil, fmt.Errorf("file is not a valid image (detected: %s, extension: %s)", mediaType, ext)
+		}
 	}
 
 	// Convert image to base64

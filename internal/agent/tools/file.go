@@ -1,5 +1,11 @@
 package tools
 
+// file.go defines file operation tools with security validation.
+//
+// Provides 5 file tools: readFile, writeFile, listFiles, deleteFile, getFileInfo.
+// All operations use security.PathValidator to prevent path traversal attacks (CWE-22).
+// File permissions: 0600 for created files, 0750 for directories.
+
 import (
 	"fmt"
 	"os"
@@ -91,7 +97,7 @@ func registerFileTools(g *genkit.Genkit, pathValidator *security.PathValidator) 
 			if err = os.WriteFile(safePath, []byte(input.Content), 0o600); err != nil {
 				return "", fmt.Errorf("unable to write file: %w", err)
 			}
-			return fmt.Sprintf("Successfully wrote file: %s", safePath), nil
+			return fmt.Sprintf("successfully wrote file: %s", safePath), nil
 		},
 	)
 
@@ -154,7 +160,7 @@ func registerFileTools(g *genkit.Genkit, pathValidator *security.PathValidator) 
 			if err = os.Remove(safePath); err != nil {
 				return "", fmt.Errorf("unable to delete file: %w", err)
 			}
-			return fmt.Sprintf("Successfully deleted file: %s", safePath), nil
+			return fmt.Sprintf("successfully deleted file: %s", safePath), nil
 		},
 	)
 

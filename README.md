@@ -1,10 +1,10 @@
 ![Koopa Assistant](docs/assets/koopa.png)
 
-[Koopa](https://github.com/koopa0/koopa) is a powerful terminal-based AI assistant built on [Genkit](https://github.com/firebase/genkit), enabling you to interact with AI directly from your command line for various tasks.
+[Koopa](https://github.com/koopa0/koopa) is a powerful terminal-based AI assistant built on [Genkit](https://github.com/firebase/genkit), enabling you to interact with AI directly from your command line with RAG (Retrieval-Augmented Generation) support.
 
 ## Why Koopa?
 
-Koopa brings professional AI capabilities to your terminal with a focus on simplicity, performance, and developer experience.
+Koopa brings professional AI capabilities to your terminal with a focus on simplicity, performance, and developer experience. Built with a streamlined architecture featuring PostgreSQL-backed RAG, Wire dependency injection, and a clean interactive mode.
 
 ## Key Features
 
@@ -14,226 +14,176 @@ Koopa brings professional AI capabilities to your terminal with a focus on simpl
     <td>100% pure Go implementation with zero CGO dependencies. Single static binary for easy distribution and deployment. No need for C compilers or external dependencies. Cross-compile to Linux/Windows/macOS/ARM with one command.</td>
   </tr>
   <tr>
-    <td><strong>AI-Powered Conversations</strong></td>
-    <td>Streaming responses with typewriter effect for enhanced interactive experience. Structured JSON output with schema validation. Multi-modal input support for image analysis, OCR, and UI/UX evaluation (JPEG/PNG/GIF/WebP). Persistent conversation history with multi-session support using pure Go SQLite.</td>
+    <td><strong>Interactive Chat Mode</strong></td>
+    <td>Default interactive mode - just run <code>./koopa</code> to start chatting. Streaming responses with real-time typewriter effect. Persistent session management with PostgreSQL. Built-in slash commands for system control (<code>/help</code>, <code>/version</code>, <code>/clear</code>, <code>/exit</code>).</td>
+  </tr>
+  <tr>
+    <td><strong>RAG-Powered Knowledge</strong></td>
+    <td>PostgreSQL + pgvector for stable vector storage. Local file indexing with 20+ supported file types. Semantic search with Google's text-embedding-004. Manual control via <code>/rag</code> commands for transparency.</td>
   </tr>
   <tr>
     <td><strong>Genkit Integration</strong></td>
-    <td>Full integration with Firebase Genkit framework including 9 AI Flows for personal assistance workflows: chat, analysis, email composition, topic research, task planning, code review, and more. MCP (Model Context Protocol) support for connecting external tool servers. Built-in RAG (Retrieval-Augmented Generation) with vector embeddings and semantic search.</td>
+    <td>Full integration with Firebase Genkit framework. 9 built-in tools with security validation (file, system, network operations). MCP (Model Context Protocol) support for connecting external tool servers. OpenTelemetry integration for observability.</td>
   </tr>
   <tr>
-    <td><strong>Powerful Tool System</strong></td>
-    <td>9 local tools with security validation: file operations, system commands, HTTP requests, environment variables, and more. Dotprompt support for flexible prompt management. OpenTelemetry integration for observability with tracing and metrics.</td>
-  </tr>
-  <tr>
-    <td><strong>Multi-Language Support</strong></td>
-    <td>Built-in i18n system supporting English and Traditional Chinese (繁體中文), with Japanese (日本語) reserved for future releases. Switch languages via <code>--lang</code> flag or <code>KOOPA_LANG</code> environment variable. Runtime language switching with <code>/lang</code> command in chat mode.</td>
+    <td><strong>Clean Architecture</strong></td>
+    <td>Wire dependency injection for compile-time safety. Modular design with clear separation of concerns. No global state, thread-safe components. Security-first with comprehensive validation.</td>
   </tr>
   <tr>
     <td><strong>Developer-Friendly</strong></td>
-    <td>Clean command-line interface with Cobra framework. Comprehensive error handling and security validation. Environment variable support with <code>KOOPA_*</code> prefix. Optional YAML configuration file for persistent settings.</td>
+    <td>Simple command-line interface without subcommands. Environment variable configuration (<code>GEMINI_API_KEY</code>). Optional YAML configuration for persistent settings. Pure English UI with AI auto-detecting response language.</td>
   </tr>
 </table>
 
 ## How Does It Work?
 
-Koopa leverages the Genkit framework to provide a seamless AI experience directly in your terminal. It manages conversation context, executes tool calls securely, and maintains persistent session history.
+Koopa leverages the Genkit framework with PostgreSQL-backed RAG to provide an intelligent AI experience directly in your terminal. It manages conversation context, retrieves relevant knowledge from your indexed files, and executes tool calls securely.
 
 Key capabilities:
 
-- **Streaming Chat**: Real-time typewriter effect for AI responses
+- **Streaming Chat**: Real-time typewriter effect with smart punctuation pauses
+- **RAG Retrieval**: Semantic search over indexed local files (20+ file types supported)
 - **Tool Execution**: Securely execute file operations, system commands, and HTTP requests
-- **Session Management**: Persistent conversation history across sessions
-- **Flow Execution**: Run predefined AI workflows for common tasks
-- **Multi-Modal**: Analyze images and documents with AI
-- **Extensible**: Add custom tools and flows using Genkit's framework
+- **Session Management**: Persistent conversation history in PostgreSQL
+- **Local File Indexing**: Index and search your documents, code, and notes
+- **Extensible**: Add custom tools using Genkit's framework and connect external tool servers via MCP
 
-## Implementation Path
-
-<table>
-<tr>
-  <td><span>1</span></td>
-  <td>Install Go and get Gemini API Key</td>
-  <td>Ensure you have Go 1.25+ installed. Get your free Gemini API key from <a href="https://ai.google.dev/">ai.google.dev</a>.</td>
-</tr>
-<tr>
-  <td><span>2</span></td>
-  <td>Clone and build Koopa</td>
-  <td>Clone the repository and build the single static binary using <code>go build</code>. No CGO or external dependencies required.</td>
-</tr>
-<tr>
-  <td><span>3</span></td>
-  <td>Configure API key</td>
-  <td>Set your Gemini API key using the <code>KOOPA_GEMINI_API_KEY</code> environment variable or configuration file.</td>
-</tr>
-<tr>
-  <td><span>4</span></td>
-  <td>Start chatting</td>
-  <td>Run <code>./koopa</code> to enter interactive chat mode, or use <code>./koopa ask "your question"</code> for one-off queries. Enable tools with <code>/tools</code> or <code>--tools</code> flag for enhanced capabilities.</td>
-</tr>
-</table>
-
-## Get Started
+## Quick Start
 
 ### Prerequisites
 
-- Go 1.25 or higher
+- Go 1.23 or higher
+- PostgreSQL 14+ with pgvector extension
 - Gemini API Key ([Get one free](https://ai.google.dev/))
 
-### Quick Start
+### Installation
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/koopa0/koopa.git
 cd koopa
 
-# 2. Build (100% pure Go, no CGO)
+# 2. Set up PostgreSQL with pgvector
+createdb koopa
+psql koopa -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 3. Build (100% pure Go, no CGO)
 go build -o koopa
 
-# 3. Set your API key
-export KOOPA_GEMINI_API_KEY=your-api-key-here
+# 4. Set your API key
+export GEMINI_API_KEY=your-gemini-api-key
 
-# 4. Start using Koopa
+# 5. Start chatting!
 ./koopa
 ```
 
 ## Usage
 
-### Interactive Chat Mode (Most Common)
+### Interactive Mode (Default)
 
-Simply run `koopa` to enter chat mode:
+Simply run `koopa` to enter interactive mode:
 
 ```bash
 $ ./koopa
-Welcome to Koopa v0.1.0 - Your terminal AI personal assistant
-Type /help for commands, Ctrl+D or /exit to quit
-Session ID: 1
 
-You> Hello
-Koopa> Hello! How can I help you today?
+╔══════════════════════════════════════════════════════════╗
+║  Koopa v1.0                                               ║
+║  AI Personal Assistant powered by Gemini                 ║
+║                                                          ║
+║  Type /help for commands, Ctrl+D to exit                 ║
+╚══════════════════════════════════════════════════════════╝
 
-You> /tools
-🔧 Tools enabled
-   Available tools:
-   - currentTime      Get current time
-   - readFile         Read file contents
-   - writeFile        Write content to file
-   - listFiles        List directory contents
-   - deleteFile       Delete a file
-   - executeCommand   Execute system command
-   - httpGet          HTTP GET request
-   - getEnv           Read environment variable
-   - getFileInfo      Get file information
+Session ID: abc123...
 
-You> What time is it now?
-Koopa> It's currently October 23, 2025, 12:30 PM.
+You> Hello! What can you help me with?
+Koopa> Hello! I'm Koopa, your AI assistant. I can help you with...
+
+You> /rag status
+╔══════════════════════════════════════════════════════════╗
+║  RAG Status                                              ║
+╚══════════════════════════════════════════════════════════╝
+
+  Database:       Connected ✓
+  Embedder:       text-embedding-004 ✓
+  Indexed Docs:   15 files
 
 You> /exit
 Goodbye!
 ```
 
-#### Chat Mode Special Commands
+### Slash Commands
 
-- `/help` - Show help message
-- `/tools` - Toggle tools on/off
-- `/clear` - Clear chat history
-- `/lang <code>` - Change language (en, zh-TW)
-- `/exit` or `/quit` - Exit chat
-- `Ctrl+D` - Exit chat
+Available commands in interactive mode:
 
-### Single Question Mode
+**System:**
 
-Ask a question without entering chat mode:
+- `/help` - Show all available commands
+- `/version` - Show version information
+- `/clear` - Clear conversation history
+- `/exit`, `/quit` - Exit Koopa
+
+**RAG (Knowledge Management):**
+
+- `/rag add <path>` - Index a file or directory
+- `/rag list` - List all indexed documents
+- `/rag remove <doc_id>` - Remove a document from index
+- `/rag status` - Show RAG system status
+
+**Shortcuts:**
+
+- `Ctrl+C` - Cancel current input
+- `Ctrl+D` - Exit (same as `/exit`)
+
+### RAG (Retrieval-Augmented Generation)
+
+Koopa includes powerful RAG capabilities backed by PostgreSQL + pgvector:
 
 ```bash
-# Basic question
-./koopa ask "Explain what Go language is in one sentence"
+# Check RAG system status
+You> /rag status
 
-# With tools enabled
-./koopa ask --tools "Read README.md and summarize key points"
-./koopa ask --tools "What time is it now?"
+# Index a single file
+You> /rag add /tmp/notes.md
+
+# Index a directory (recursive)
+You> /rag add ~/Documents/notes/
+
+# List all indexed documents
+You> /rag list
+
+# Ask questions about indexed content
+You> What are my Muay Thai training routines?
+Koopa> [AI retrieves relevant documents and answers based on your knowledge base]
 ```
 
-### Language Support
+**Supported File Types (20+):**
+.txt, .md, .go, .py, .js, .ts, .java, .c, .cpp, .h, .hpp, .rs, .rb, .php, .sh, .yaml, .yml, .json, .xml, .html, .css, .sql
 
-Koopa supports multiple languages with easy switching:
+### Using Genkit Developer UI
 
-```bash
-# Use English (default)
-./koopa
-
-# Use Traditional Chinese
-./koopa --lang zh-TW
-# or
-export KOOPA_LANG=zh-TW
-./koopa
-
-# Switch language in chat
-You> /lang zh-TW
-Language changed to: zh-TW
-
-You> /lang en
-Language changed to: en
-```
-
-### Using Genkit Flows
-
-Koopa provides 9 predefined AI workflows covering conversation, content creation, research, productivity, and development assistance:
+You can inspect and debug Koopa using the Genkit Developer UI:
 
 ```bash
 # Start Genkit Developer UI
 genkit start -- go run main.go
 
-# Core conversations
-genkit flow:run chat '"Hello"' -s                                             # Streaming chat
-
-# Analysis (unified entry point, supports file/log/document/text)
-genkit flow:run analyze '{"content":"main.go","content_type":"file"}'        # File analysis
-genkit flow:run analyze '{"content":"app.log","content_type":"log"}'         # Log analysis
-genkit flow:run analyze '{"content":"README.md","content_type":"document"}'  # Document analysis
-
-# Content creation
-genkit flow:run composeEmail '{"recipient":"colleague","purpose":"thanks","context":"help with project"}'
-
-# Research & information
-genkit flow:run researchTopic '{"topic":"Genkit framework best practices"}'
-
-# Productivity
-genkit flow:run planTasks '{"goal":"Complete API development","deadline":"Friday"}'
-
-# Development assistance
-genkit flow:run reviewCode '"internal/agent/agent.go"'
-genkit flow:run suggestCommand '"list all Go files"'
-genkit flow:run generateCommitMessage '"git diff output"'
-genkit flow:run diagnoseError '"error: not found"'
-```
-
-### View Information
-
-```bash
-# View version and configuration
-./koopa version
-
-# List all available flows
-genkit flow:list
+# Access the UI at http://localhost:4000
+# View tool executions, traces, and model interactions
 ```
 
 ## Configuration
 
 ### Environment Variables (Recommended)
 
-Use `KOOPA_` prefix to avoid naming conflicts:
-
 ```bash
-export KOOPA_GEMINI_API_KEY=your-api-key-here
-export KOOPA_MODEL_NAME=gemini-2.5-pro      # Optional
-export KOOPA_TEMPERATURE=0.8                 # Optional
-export KOOPA_MAX_TOKENS=4096                 # Optional
-export KOOPA_MAX_HISTORY_MESSAGES=100        # Optional
-export KOOPA_LANG=en                         # Optional (en, zh-TW)
-```
+# Required
+export GEMINI_API_KEY=your-api-key-here
 
-**Environment Variable Priority**: `KOOPA_*` > Configuration file > Default values
+# Optional
+export KOOPA_MODEL_NAME=gemini-2.5-flash    # Default model
+export KOOPA_TEMPERATURE=0.7                # Response creativity
+export KOOPA_MAX_TOKENS=2048                # Max response length
+```
 
 ### Configuration File (Optional)
 
@@ -245,38 +195,103 @@ model_name: "gemini-2.5-flash"
 temperature: 0.7
 max_tokens: 2048
 
-# Conversation history configuration (default 50 messages, ~25 conversation turns)
-# Sliding window mechanism enabled to prevent excessive token consumption
+# Conversation history
 max_history_messages: 50
-# Database path (defaults to ~/.koopa/koopa.db)
-# database_path: "/path/to/koopa.db"
 
-# API Key (recommended to use environment variable instead)
-# gemini_api_key: "your-api-key-here"
+# PostgreSQL configuration
+postgres_host: "localhost"
+postgres_port: 5432
+postgres_user: "postgres"
+postgres_db_name: "koopa"
+postgres_ssl_mode: "disable"
+
+# RAG configuration
+rag_top_k: 3 # Number of documents to retrieve
+embedder_model: "text-embedding-004" # Google embedding model
+```
+
+### Database Setup
+
+Koopa requires PostgreSQL with pgvector:
+
+```bash
+# Install PostgreSQL (example for macOS)
+brew install postgresql@14
+brew services start postgresql@14
+
+# Install pgvector
+brew install pgvector
+
+# Create database and enable extension
+createdb koopa
+psql koopa -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
 ## Available Tools
 
 Koopa comes with 9 built-in tools with security validation:
 
-1. **currentTime** - Get current system time
-2. **readFile** - Read file contents with path validation
-3. **writeFile** - Write content to file with safety checks
-4. **listFiles** - List directory contents
-5. **deleteFile** - Delete files with confirmation
-6. **executeCommand** - Execute system commands (with dangerous command blocking)
-7. **httpGet** - Make HTTP GET requests (with internal network protection)
-8. **getEnv** - Read environment variables (with sensitive variable protection)
-9. **getFileInfo** - Get file metadata and information
+**File Operations:**
 
-All tools include comprehensive security validation to protect your system.
+1. **readFile** - Read file contents with path validation
+2. **writeFile** - Write content to file with safety checks
+3. **listFiles** - List directory contents
+4. **deleteFile** - Delete files with confirmation
+5. **getFileInfo** - Get file metadata
+
+**System Operations:**
+
+6. **currentTime** - Get current system time
+7. **executeCommand** - Execute system commands (with dangerous command blocking)
+8. **getEnv** - Read environment variables (with sensitive variable protection)
+
+**Network Operations:**
+
+9. **httpGet** - Make HTTP GET requests (with SSRF protection)
+
+All tools include comprehensive security validation to protect your system. You can extend Koopa with custom tools via MCP (Model Context Protocol).
+
+## Architecture
+
+Koopa uses a clean, modular architecture:
+
+```
+koopa/
+├── cmd/                    # CLI commands
+│   ├── interactive.go      # Interactive chat mode
+│   ├── ask.go             # One-shot ask mode
+│   └── ...                # Other commands
+├── internal/
+│   ├── app/               # Application container (Wire DI)
+│   ├── agent/             # AI agent with Genkit
+│   │   ├── tools/         # Genkit tools (file, system, network)
+│   │   └── mcp/           # MCP server integration
+│   ├── config/            # Configuration management
+│   ├── knowledge/         # RAG knowledge store (pgvector)
+│   ├── rag/               # RAG indexer & retriever
+│   ├── security/          # Security validators
+│   ├── session/           # Session management
+│   └── sqlc/              # Generated database code
+├── db/                    # Database schema & queries
+│   ├── migrations/        # SQL migrations
+│   └── queries/           # SQL queries (sqlc)
+├── prompts/               # Genkit Dotprompt files
+└── main.go               # Entry point
+```
+
+Key design principles:
+
+- **Wire DI**: Compile-time dependency injection
+- **No Global State**: All dependencies explicitly passed
+- **Security First**: Comprehensive validation on all operations
+- **RAG-First**: Knowledge retrieval always enabled
+- **Session Isolation**: Each session has isolated context
 
 ## Documentation
 
-For detailed documentation about the Genkit framework and Koopa's architecture:
+For detailed documentation:
 
-- [Genkit Official Documentation](https://docs/README.md) - Index of all technical documentation
-- [Genkit Go Documentation](https://firebase.google.com/docs/genkit/go)
+- [Genkit Official Documentation](https://firebase.google.com/docs/genkit/go)
 - [MCP Protocol Specification](https://modelcontextprotocol.io/)
 
 ## Development
@@ -308,6 +323,15 @@ go test -cover ./...
 
 # Run specific package tests
 go test ./internal/agent/
+```
+
+### Regenerating Wire Code
+
+If you modify dependency injection:
+
+```bash
+cd internal/app
+wire
 ```
 
 ## Contributing

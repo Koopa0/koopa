@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,29 @@ func NewPathValidator(allowedDirs []string) (*PathValidator, error) {
 	}, nil
 }
 
+// isPathInAllowedDirs checks if a path is within allowed directories
+// Returns true if path is in working directory or any allowed directory
+func (v *PathValidator) isPathInAllowedDirs(absPath string) bool {
+	// Normalize for exact matching (add trailing separator)
+	absPathWithSep := filepath.Clean(absPath) + string(filepath.Separator)
+	workDirNorm := filepath.Clean(v.workDir) + string(filepath.Separator)
+
+	// Check working directory first
+	if strings.HasPrefix(absPathWithSep, workDirNorm) || absPath == v.workDir {
+		return true
+	}
+
+	// Check additional allowed directories
+	for _, dir := range v.allowedDirs {
+		dirNorm := filepath.Clean(dir) + string(filepath.Separator)
+		if strings.HasPrefix(absPathWithSep, dirNorm) || absPath == dir {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ValidatePath validates and sanitizes a file path
 // Returns a safe absolute path or an error
 func (v *PathValidator) ValidatePath(path string) (string, error) {
@@ -51,29 +75,12 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 	}
 
 	// 3. Check if within allowed directories
-	allowed := false
-
-	// Normalize directory paths (ensure trailing slash for exact matching)
-	workDirNorm := filepath.Clean(v.workDir) + string(filepath.Separator)
-	absPathWithSep := filepath.Clean(absPath) + string(filepath.Separator)
-
-	// First check working directory
-	if strings.HasPrefix(absPathWithSep, workDirNorm) || absPath == v.workDir {
-		allowed = true
-	}
-
-	// Then check additional allowed directories
-	if !allowed {
-		for _, dir := range v.allowedDirs {
-			dirNorm := filepath.Clean(dir) + string(filepath.Separator)
-			if strings.HasPrefix(absPathWithSep, dirNorm) || absPath == dir {
-				allowed = true
-				break
-			}
-		}
-	}
-
-	if !allowed {
+	if !v.isPathInAllowedDirs(absPath) {
+		slog.Warn("path access denied",
+			"path", absPath,
+			"working_dir", v.workDir,
+			"allowed_dirs", v.allowedDirs,
+			"security_event", "path_traversal_attempt")
 		return "", fmt.Errorf("access denied: path '%s' is not within allowed directories", absPath)
 	}
 
@@ -91,26 +98,13 @@ func (v *PathValidator) ValidatePath(path string) (string, error) {
 
 	// 5. Check again if the resolved symlink path is within allowed directories
 	if realPath != absPath {
-		realPathWithSep := filepath.Clean(realPath) + string(filepath.Separator)
-		realAllowed := false
-
-		// Check working directory
-		if strings.HasPrefix(realPathWithSep, workDirNorm) || realPath == v.workDir {
-			realAllowed = true
-		}
-
-		// Check allowed directories
-		if !realAllowed {
-			for _, dir := range v.allowedDirs {
-				dirNorm := filepath.Clean(dir) + string(filepath.Separator)
-				if strings.HasPrefix(realPathWithSep, dirNorm) || realPath == dir {
-					realAllowed = true
-					break
-				}
-			}
-		}
-
-		if !realAllowed {
+		if !v.isPathInAllowedDirs(realPath) {
+			slog.Warn("symlink bypass attempt detected",
+				"original_path", absPath,
+				"symlink_target", realPath,
+				"working_dir", v.workDir,
+				"allowed_dirs", v.allowedDirs,
+				"security_event", "symlink_traversal_attempt")
 			return "", fmt.Errorf("access denied: symbolic link points to disallowed location '%s'", realPath)
 		}
 		absPath = realPath

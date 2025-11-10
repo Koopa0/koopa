@@ -1,5 +1,14 @@
 package tools
 
+// system.go defines system-related tools with security validation.
+//
+// Provides 3 system tools:
+//   - currentTime: Returns formatted timestamp (2006-01-02 15:04:05 Monday)
+//   - executeCommand: Executes commands with validation (blocks rm -rf, sudo, shutdown, etc.)
+//   - getEnv: Reads environment variables with protection (blocks *KEY*, *SECRET*, *TOKEN*, etc.)
+//
+// All operations use security validators to prevent command injection (CWE-78) and information leakage.
+
 import (
 	"fmt"
 	"os"
@@ -46,14 +55,14 @@ func registerSystemTools(g *genkit.Genkit, cmdValidator *security.CommandValidat
 		) (string, error) {
 			// Command security validation (prevent command injection attacks CWE-78)
 			if err := cmdValidator.ValidateCommand(input.Command, input.Args); err != nil {
-				return "", fmt.Errorf("security warning: Dangerous command rejected\nCommand: %s %s\nReason: %w\nIf you need to execute this, please run it manually in the terminal",
+				return "", fmt.Errorf("security warning: dangerous command rejected (%s %s): %w",
 					input.Command, strings.Join(input.Args, " "), err)
 			}
 
 			cmd := exec.Command(input.Command, input.Args...) // #nosec G204 -- validated by cmdValidator above
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				return "", fmt.Errorf("command execution failed: %w\nOutput: %s", err, string(output))
+				return "", fmt.Errorf("command execution failed: %w (output: %s)", err, string(output))
 			}
 			return string(output), nil
 		},
@@ -75,12 +84,12 @@ func registerSystemTools(g *genkit.Genkit, cmdValidator *security.CommandValidat
 		) (string, error) {
 			// Environment variable security validation (prevent sensitive information leakage)
 			if err := envValidator.ValidateEnvAccess(input.Name); err != nil {
-				return "", fmt.Errorf("security warning: %w\nNote: This environment variable may contain sensitive information and is protected.\nIf you need to access it, please check it directly in the terminal", err)
+				return "", fmt.Errorf("security warning: %w (protected environment variable)", err)
 			}
 
 			value := os.Getenv(input.Name)
 			if value == "" {
-				return fmt.Sprintf("Environment variable %s is not set or is empty", input.Name), nil
+				return fmt.Sprintf("environment variable %s is not set or is empty", input.Name), nil
 			}
 			return value, nil
 		},

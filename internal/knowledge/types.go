@@ -1,3 +1,8 @@
+// Package knowledge provides document storage and vector-based semantic search.
+//
+// Store manages documents with embedding vectors using PostgreSQL + pgvector.
+// It supports metadata filtering, similarity search, and multiple specialized search methods
+// (conversations, Notion pages, etc).
 package knowledge
 
 import "time"

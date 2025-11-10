@@ -1,5 +1,13 @@
 package mcp
 
+// state.go defines state tracking types for MCP server connections.
+//
+// Provides type-safe state management for monitoring MCP server health:
+//   - Status: Type-safe enum (Disconnected → Connecting → Connected/Failed)
+//   - State: Tracks connection status, success/failure counts, last error, timestamps
+//
+// Used by Server for observability and graceful degradation. Thread-safe via sync.RWMutex.
+
 import "time"
 
 // Status represents the connection status of an MCP server.

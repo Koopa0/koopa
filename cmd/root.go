@@ -1,3 +1,7 @@
+// Package cmd implements command-line interface using Cobra.
+//
+// Provides commands: ask (single question), chat (interactive), sessions (list/delete),
+// and version. All commands use dependency injection via App container and avoid global state.
 package cmd
 
 import (
@@ -5,7 +9,6 @@ import (
 	"os"
 
 	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -13,30 +16,23 @@ import (
 func NewRootCmd(cfg *config.Config) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "koopa",
-		Short: i18n.T("app.description"),
-		Long:  i18n.T("root.description"),
+		Short: "Your terminal AI personal assistant",
+		Long:  "Koopa - Your terminal AI personal assistant powered by Genkit",
 		// No default RunE - subcommands must be specified explicitly
 	}
 
-	// Add global --lang flag
-	rootCmd.PersistentFlags().StringP("lang", "l", "", i18n.T("root.lang.flag"))
-
 	// PersistentPreRunE: runs before any command
-	// Handles language flag and API Key validation (declarative via annotations)
+	// Handles API Key validation (declarative via annotations)
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		// Handle language flag
-		if lang, _ := cmd.Flags().GetString("lang"); lang != "" {
-			i18n.SetLanguage(lang)
-		}
-
 		// Check if this command requires API Key (declarative via annotations)
 		if cmd.Annotations["requiresAPIKey"] == "true" {
-			if cfg.GeminiAPIKey == "" {
-				fmt.Fprintln(os.Stderr, "Error: KOOPA_GEMINI_API_KEY environment variable not set")
+			// Check for GEMINI_API_KEY
+			if os.Getenv("GEMINI_API_KEY") == "" {
+				fmt.Fprintln(os.Stderr, "Error: GEMINI_API_KEY environment variable not set")
 				fmt.Fprintln(os.Stderr, "")
 				fmt.Fprintln(os.Stderr, "Please run:")
-				fmt.Fprintln(os.Stderr, "  export KOOPA_GEMINI_API_KEY=your-api-key")
-				return fmt.Errorf("KOOPA_GEMINI_API_KEY not set")
+				fmt.Fprintln(os.Stderr, "  export GEMINI_API_KEY=your-api-key")
+				return fmt.Errorf("GEMINI_API_KEY not set")
 			}
 		}
 
