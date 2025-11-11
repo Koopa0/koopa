@@ -10,6 +10,7 @@ import (
 
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/app"
+	"github.com/koopa0/koopa-cli/internal/banner"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/rag"
 )
@@ -40,7 +41,7 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 	// Start conversation loop
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		fmt.Print("You> ")
+		fmt.Print("> ")
 
 		// Read user input
 		if !scanner.Scan() {
@@ -85,15 +86,17 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 	return nil
 }
 
-// printWelcome displays the welcome message
+// printWelcome displays the welcome message with KOOPA banner
 func printWelcome(version string) {
+	banner.Print()
+
+	fmt.Printf("v%s\n", version)
 	fmt.Println()
-	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Printf("║  Koopa v%-49s║\n", version)
-	fmt.Println("║  AI Personal Assistant powered by Gemini                 ║")
-	fmt.Println("║                                                          ║")
-	fmt.Println("║  Type /help for commands, Ctrl+D to exit                 ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════╝")
+
+	fmt.Println("Tips for getting started:")
+	fmt.Println("1. Ask questions, edit files, or run commands.")
+	fmt.Println("2. Be specific for the best results.")
+	fmt.Println("3. /help for more information.")
 	fmt.Println()
 }
 
