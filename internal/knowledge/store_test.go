@@ -21,13 +21,13 @@ import (
 
 // mockEmbedder implements ai.Embedder for testing
 type mockEmbedder struct {
-	delay          time.Duration // Simulate processing delay
-	embedErr       error         // Error to return
-	returnEmpty    bool          // Return empty embeddings
-	returnNil      bool          // Return nil embeddings array
-	embeddings     []float32     // Custom embeddings to return
-	callCount      int           // Track number of calls
-	lastInputText  string        // Track last input for verification
+	delay         time.Duration // Simulate processing delay
+	embedErr      error         // Error to return
+	returnEmpty   bool          // Return empty embeddings
+	returnNil     bool          // Return nil embeddings array
+	embeddings    []float32     // Custom embeddings to return
+	callCount     int           // Track number of calls
+	lastInputText string        // Track last input for verification
 }
 
 func (m *mockEmbedder) Name() string {
@@ -99,13 +99,13 @@ func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.Emb
 // mockKnowledgeQuerier implements KnowledgeQuerier for testing
 type mockKnowledgeQuerier struct {
 	// Error configuration
-	upsertErr              error
-	searchErr              error
-	searchAllErr           error
-	countErr               error
-	countAllErr            error
-	deleteErr              error
-	listBySourceTypeErr    error
+	upsertErr           error
+	searchErr           error
+	searchAllErr        error
+	countErr            error
+	countAllErr         error
+	deleteErr           error
+	listBySourceTypeErr error
 
 	// Return values
 	searchResults          []sqlc.SearchDocumentsRow
@@ -115,18 +115,18 @@ type mockKnowledgeQuerier struct {
 	listBySourceTypeResult []sqlc.ListDocumentsBySourceTypeRow
 
 	// Call tracking
-	upsertCalls            int
-	searchCalls            int
-	searchAllCalls         int
-	countCalls             int
-	countAllCalls          int
-	deleteCalls            int
-	listBySourceTypeCalls  int
-	lastDeletedID          string
-	lastUpsertParams       sqlc.UpsertDocumentParams
-	lastSearchParams       sqlc.SearchDocumentsParams
-	lastSearchAllParams    sqlc.SearchDocumentsAllParams
-	lastListSourceType     string
+	upsertCalls           int
+	searchCalls           int
+	searchAllCalls        int
+	countCalls            int
+	countAllCalls         int
+	deleteCalls           int
+	listBySourceTypeCalls int
+	lastDeletedID         string
+	lastUpsertParams      sqlc.UpsertDocumentParams
+	lastSearchParams      sqlc.SearchDocumentsParams
+	lastSearchAllParams   sqlc.SearchDocumentsAllParams
+	lastListSourceType    string
 }
 
 func (m *mockKnowledgeQuerier) UpsertDocument(ctx context.Context, arg sqlc.UpsertDocumentParams) error {
@@ -184,9 +184,9 @@ func (m *mockKnowledgeQuerier) ListDocumentsBySourceType(ctx context.Context, ar
 
 func TestNewWithQuerier(t *testing.T) {
 	tests := []struct {
-		name           string
-		logger         *slog.Logger
-		expectNilLog   bool
+		name         string
+		logger       *slog.Logger
+		expectNilLog bool
 	}{
 		{
 			name:         "with custom logger",
@@ -209,6 +209,7 @@ func TestNewWithQuerier(t *testing.T) {
 
 			if store == nil {
 				t.Fatal("NewWithQuerier returned nil")
+				return
 			}
 
 			if store.queries != mockQuerier {
@@ -427,7 +428,6 @@ func TestStore_Search_Success_WithFilter(t *testing.T) {
 		WithFilter("source_type", "test"),
 		WithFilter("status", "active"),
 	)
-
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -487,7 +487,6 @@ func TestStore_Search_Success_WithoutFilter(t *testing.T) {
 	store := NewWithQuerier(mockQuerier, mockEmbed, nil)
 
 	results, err := store.Search(context.Background(), "test query")
-
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -639,9 +638,9 @@ func TestStore_Search_MetadataParseError(t *testing.T) {
 	mockQuerier := &mockKnowledgeQuerier{
 		searchAllResults: []sqlc.SearchDocumentsAllRow{
 			{
-				ID:       "doc1",
-				Content:  "Test",
-				Metadata: []byte(`{invalid json}`), // Invalid JSON
+				ID:         "doc1",
+				Content:    "Test",
+				Metadata:   []byte(`{invalid json}`), // Invalid JSON
 				Similarity: 0.9,
 			},
 		},
@@ -739,10 +738,10 @@ func TestStore_Count_Success(t *testing.T) {
 
 func TestStore_Count_Error(t *testing.T) {
 	tests := []struct {
-		name       string
-		filter     map[string]string
-		countErr   error
-		expectErr  string
+		name      string
+		filter    map[string]string
+		countErr  error
+		expectErr string
 	}{
 		{
 			name:      "count with filter error",
@@ -1018,7 +1017,6 @@ func TestDocumentOperations(t *testing.T) {
 			"source_type": "test",
 			"author":      "test-user",
 		},
-		CreateAt: time.Now(),
 	}
 
 	if doc.ID == "" {
@@ -1042,13 +1040,13 @@ func TestResultStruct(t *testing.T) {
 		Metadata: map[string]string{
 			"source_type": "test",
 		},
-		CreateAt: time.Now(),
 	}
 
 	result := Result{
-		Document:   doc,
 		Similarity: 0.95,
 	}
+	// Use the document ID to verify structure
+	_ = doc.ID
 
 	// Verify similarity is float64
 	var _ float64 = result.Similarity
@@ -1158,7 +1156,7 @@ func BenchmarkSearchConfigBuild(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_ = buildSearchConfig(options)
 	}
 }

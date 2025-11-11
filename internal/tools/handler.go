@@ -2,6 +2,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -229,22 +230,28 @@ func (h *Handler) CurrentTime() (string, error) {
 // Dangerous commands (rm -rf, dd, format, sudo su, etc.) are automatically blocked.
 //
 // Parameters:
+//   - ctx: Context for cancellation support (allows interrupting long-running commands)
 //   - command: Command to execute (e.g., "ls", "git", "go")
 //   - args: Command arguments as separate array elements
 //
 // Returns:
 //   - string: Combined stdout and stderr output
-//   - error: If validation fails or command execution fails
-func (h *Handler) ExecuteCommand(command string, args []string) (string, error) {
+//   - error: If validation fails, command execution fails, or context is cancelled
+func (h *Handler) ExecuteCommand(ctx context.Context, command string, args []string) (string, error) {
 	// Command security validation (prevent command injection attacks CWE-78)
 	if err := h.cmdVal.ValidateCommand(command, args); err != nil {
 		return "", fmt.Errorf("security warning: dangerous command rejected (%s %s): %w",
 			command, strings.Join(args, " "), err)
 	}
 
-	cmd := exec.Command(command, args...) // #nosec G204 -- validated by cmdVal above
+	// Use CommandContext for cancellation support (allows interrupting long-running commands)
+	cmd := exec.CommandContext(ctx, command, args...) // #nosec G204 -- validated by cmdVal above
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// Check if it was cancelled by context
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("command execution cancelled: %w", ctx.Err())
+		}
 		return "", fmt.Errorf("command execution failed: %w (output: %s)", err, string(output))
 	}
 

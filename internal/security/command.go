@@ -13,169 +13,195 @@ type Command struct {
 	whitelist []string // If non-empty, only allow commands in the whitelist
 }
 
-// NewCommand creates a new Command validator.
+// NewCommand creates a new Command validator with whitelist mode (secure by default).
+// Only allows explicitly whitelisted safe commands to prevent command injection attacks.
+//
+// Allowed commands include:
+//   - File operations: ls, cat, head, tail, grep, find, etc.
+//   - Directory operations: pwd, cd, mkdir, tree
+//   - System info: date, whoami, hostname, uname, df, du, ps
+//   - Network (read-only): ping, traceroute, nslookup, dig
+//   - Version control: git
+//
+// Dangerous commands like rm, chmod, mv, python, etc. are blocked by default.
 func NewCommand() *Command {
-	return &Command{
-		blacklist: []string{
-			// Dangerous deletion commands
-			"rm -rf /",
-			"rm -rf ~",
-			"rm -rf /*",
-			"rm -rf $HOME",
-
-			// Disk operations
-			"dd if=/dev/zero",
-			"dd if=/dev/urandom",
-			"mkfs",
-			"format",
-			"fdisk",
-
-			// Device access
-			"> /dev/",
-			"< /dev/",
-
-			// Remote script execution
-			"curl", // Needs special handling
-			"wget", // Needs special handling
-
-			// Fork bombs
-			":()",
-			"fork",
-
-			// System shutdown
-			"shutdown",
-			"reboot",
-			"halt",
-			"poweroff",
-
-			// Privilege escalation
-			"sudo su",
-			"su -",
-		},
-	}
-}
-
-// NewStrictCommand creates a strict Command validator (whitelist mode).
-// Only allows common safe commands.
-func NewStrictCommand() *Command {
 	return &Command{
 		blacklist: []string{}, // Whitelist mode doesn't need blacklist
 		whitelist: []string{
-			// File operations
+			// File operations (read-only and safe writes)
 			"ls", "cat", "head", "tail", "less", "more",
 			"grep", "find", "wc", "sort", "uniq",
 
 			// Directory operations
 			"pwd", "cd", "mkdir", "tree",
 
-			// System information
+			// System information (read-only)
 			"date", "whoami", "hostname", "uname",
 			"df", "du", "free", "top", "ps",
 
 			// Network (read-only)
 			"ping", "traceroute", "nslookup", "dig",
 
-			// Git
-			"git status", "git log", "git diff", "git branch",
+			// Version control
+			"git",
 
-			// Other
+			// Build tools (commonly needed for development)
+			"go", "npm", "yarn", "make",
+
+			// Other utilities
 			"echo", "printf", "which", "whereis",
 		},
 	}
 }
 
-// ValidateCommand validates whether a command is safe
-// cmd: command name
-// args: command arguments
+// ValidateCommand validates whether a command is safe.
+//
+// SECURITY NOTE: This validator is designed for use with exec.Command(cmd, args...),
+// which does NOT pass arguments through a shell. Therefore:
+// - Special characters ($, |, >, <, etc.) in args[] are SAFE (treated as literals)
+// - We only validate the command name (cmd) strictly
+// - Args are checked for obviously malicious patterns but not for shell metacharacters
+//
+// Parameters:
+//   - cmd: command name (executable)
+//   - args: command arguments (passed directly to exec.Command, not shell-interpreted)
 func (v *Command) ValidateCommand(cmd string, args []string) error {
 	// 1. Check for empty command
 	if strings.TrimSpace(cmd) == "" {
 		return fmt.Errorf("command cannot be empty")
 	}
 
-	// 2. Build full command
-	fullCmd := cmd
-	if len(args) > 0 {
-		fullCmd = cmd + " " + strings.Join(args, " ")
+	// 2. Validate command name only (no args yet)
+	if err := v.validateCommandName(cmd); err != nil {
+		return err
 	}
 
-	// If there's a whitelist, only check the whitelist
+	// 3. If whitelist mode, check if command is allowed
 	if len(v.whitelist) > 0 {
-		return v.checkWhitelist(cmd, fullCmd)
-	}
-
-	// Otherwise check the blacklist
-	return v.checkBlacklist(fullCmd)
-}
-
-// checkWhitelist checks if the command is in the whitelist
-func (v *Command) checkWhitelist(cmd string, fullCmd string) error {
-	// Check if command is in the whitelist
-	for _, allowed := range v.whitelist {
-		if cmd == allowed || strings.HasPrefix(fullCmd, allowed) {
-			return nil
+		// In whitelist mode, only check the command name
+		if !v.isCommandInWhitelist(cmd) {
+			slog.Warn("command not in whitelist",
+				"command", cmd,
+				"whitelist", v.whitelist,
+				"security_event", "command_whitelist_violation")
+			return fmt.Errorf("command '%s' is not in whitelist", cmd)
 		}
 	}
 
-	slog.Warn("command not in whitelist",
-		"command", cmd,
-		"full_command", fullCmd,
-		"whitelist", v.whitelist,
-		"security_event", "command_whitelist_violation")
-	return fmt.Errorf("command '%s' is not in whitelist", cmd)
+	// 4. Check args for obviously malicious patterns
+	// NOTE: We do NOT check for shell metacharacters (|, $, >, etc.) because
+	// exec.Command treats them as literal strings, not shell operators
+	for i, arg := range args {
+		if err := v.validateArgument(arg); err != nil {
+			slog.Warn("dangerous argument detected",
+				"command", cmd,
+				"arg_index", i,
+				"arg_value", arg,
+				"error", err,
+				"security_event", "dangerous_argument")
+			return fmt.Errorf("argument %d is unsafe: %w", i, err)
+		}
+	}
+
+	// 5. Check full command string (cmd + args) for dangerous patterns
+	// Some dangerous patterns span command and arguments (e.g., "rm -rf /")
+	fullCmd := strings.ToLower(cmd + " " + strings.Join(args, " "))
+	for _, pattern := range v.blacklist {
+		if strings.Contains(fullCmd, strings.ToLower(pattern)) {
+			slog.Warn("command+args match dangerous pattern",
+				"command", cmd,
+				"args", args,
+				"full_command", fullCmd,
+				"dangerous_pattern", pattern,
+				"security_event", "dangerous_command_combination")
+			return fmt.Errorf("command contains dangerous pattern: '%s'", pattern)
+		}
+	}
+
+	return nil
 }
 
-// checkBlacklist checks if the command contains dangerous patterns
-func (v *Command) checkBlacklist(fullCmd string) error {
-	// Check blacklist
+// validateCommandName validates the command name (executable) only.
+// Checks blacklist patterns and shell injection attempts in the command name itself.
+func (v *Command) validateCommandName(cmd string) error {
+	// Normalize command name
+	cmd = strings.TrimSpace(strings.ToLower(cmd))
+
+	// Check blacklisted command patterns
 	for _, pattern := range v.blacklist {
-		if strings.Contains(fullCmd, pattern) {
-			slog.Warn("command contains blacklisted pattern",
-				"full_command", fullCmd,
+		if strings.Contains(cmd, strings.ToLower(pattern)) {
+			slog.Warn("command matches blacklisted pattern",
+				"command", cmd,
 				"dangerous_pattern", pattern,
 				"security_event", "command_blacklist_violation")
 			return fmt.Errorf("command contains dangerous pattern: '%s'", pattern)
 		}
 	}
 
-	// Check dangerous characters (possible command injection)
-	dangerousChars := map[string]string{
-		";":  "command separator",
-		"|":  "pipe",
-		"&":  "background execution",
-		"`":  "command substitution",
-		"$":  "variable substitution",
-		"(":  "subshell",
-		")":  "subshell",
-		"<":  "input redirection",
-		">":  "output redirection",
-		"\\": "escape character",
-		"\n": "newline",
-	}
-
-	for char, desc := range dangerousChars {
-		if strings.Contains(fullCmd, char) {
-			slog.Warn("command contains dangerous character",
-				"full_command", fullCmd,
+	// Check for shell metacharacters in command name itself
+	// (These would indicate shell injection attempt)
+	shellMetachars := []string{";", "|", "&", "`", "\n", ">", "<", "$", "(", ")"}
+	for _, char := range shellMetachars {
+		if strings.Contains(cmd, char) {
+			slog.Warn("command name contains shell metacharacter",
+				"command", cmd,
 				"character", char,
-				"description", desc,
-				"security_event", "command_injection_attempt")
-			return fmt.Errorf("command contains dangerous character '%s' (%s)", char, desc)
+				"security_event", "shell_injection_in_command_name")
+			return fmt.Errorf("command name contains shell metacharacter: '%s'", char)
 		}
 	}
 
-	// Special check for curl and wget (often used to download malicious scripts)
-	lowerCmd := strings.ToLower(fullCmd)
-	if strings.Contains(lowerCmd, "curl") || strings.Contains(lowerCmd, "wget") {
-		// Check for pipe or script execution
-		if strings.Contains(lowerCmd, "bash") ||
-			strings.Contains(lowerCmd, "sh") ||
-			strings.Contains(lowerCmd, "python") ||
-			strings.Contains(lowerCmd, "perl") {
-			slog.Warn("curl/wget script execution attempt detected",
-				"full_command", fullCmd,
-				"security_event", "remote_script_execution_attempt")
-			return fmt.Errorf("direct script execution with curl/wget is prohibited")
+	return nil
+}
+
+// isCommandInWhitelist checks if command name is in the whitelist.
+func (v *Command) isCommandInWhitelist(cmd string) bool {
+	cmdLower := strings.ToLower(strings.TrimSpace(cmd))
+	for _, allowed := range v.whitelist {
+		if cmdLower == strings.ToLower(allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateArgument checks if an argument contains obviously malicious patterns.
+//
+// IMPORTANT: This function does NOT check for shell metacharacters like $, |, >, <
+// because when using exec.Command(cmd, args...), these are treated as literal strings
+// and are safe. We only check for truly dangerous patterns like:
+// - Embedded dangerous commands (e.g., "rm -rf /")
+// - Null bytes
+// - Extremely long arguments (possible buffer overflow)
+func (v *Command) validateArgument(arg string) error {
+	// Check for null bytes (often used in injection attacks)
+	if strings.Contains(arg, "\x00") {
+		return fmt.Errorf("argument contains null byte")
+	}
+
+	// Check for unreasonably long arguments (possible DoS or buffer overflow)
+	if len(arg) > 10000 {
+		return fmt.Errorf("argument too long (%d bytes, max 10000)", len(arg))
+	}
+
+	// Check for embedded dangerous command patterns
+	// These are suspicious even in arguments
+	argLower := strings.ToLower(arg)
+	dangerousPatterns := []string{
+		"rm -rf /",
+		"rm -rf /*",
+		"rm -rf ~",
+		"mkfs",
+		"dd if=/dev/zero",
+		"dd if=/dev/urandom",
+		"shutdown",
+		"reboot",
+		"sudo su",
+	}
+
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(argLower, pattern) {
+			return fmt.Errorf("argument contains dangerous pattern: %s", pattern)
 		}
 	}
 

@@ -16,6 +16,7 @@ func TestRetriever_New(t *testing.T) {
 	retriever := New(nil)
 	if retriever == nil {
 		t.Fatal("New returned nil")
+		return
 	}
 
 	if retriever.store != nil {

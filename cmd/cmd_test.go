@@ -76,7 +76,7 @@ func TestPrintWelcome(t *testing.T) {
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected strings are present
@@ -208,7 +208,7 @@ func TestHandleSlashCommand(t *testing.T) {
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify exit behavior
@@ -277,7 +277,7 @@ func TestHandleSlashCommand_EdgeCases(t *testing.T) {
 
 			w.Close()
 			os.Stdout = oldStdout
-			io.Copy(io.Discard, r)
+			_, _ = io.Copy(io.Discard, r)
 
 			if shouldExit != tt.expectedExit {
 				t.Errorf("expected exit=%v, got exit=%v", tt.expectedExit, shouldExit)
@@ -303,7 +303,7 @@ func TestPrintInteractiveHelp(t *testing.T) {
 
 	// Read captured output
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	// Expected strings in help output
@@ -407,7 +407,7 @@ func TestHandleRAGCommand(t *testing.T) {
 
 			// Read output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected strings
@@ -476,7 +476,7 @@ func TestHandleRAGAdd(t *testing.T) {
 
 			// Read output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected strings
@@ -547,7 +547,7 @@ func TestHandleRAGRemove(t *testing.T) {
 
 			// Read output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify expected strings

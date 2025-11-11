@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,12 +16,9 @@ import (
 // mockHTTPValidator is a mock implementation of HTTPValidator for testing.
 // Follows Go testing best practices: simple, explicit mocks without external libraries.
 type mockHTTPValidator struct {
-	validateErr     error
-	client          *http.Client
-	maxSize         int64
-	shouldFailRead  bool
-	mockStatusCode  int
-	mockBody        string
+	validateErr error
+	client      *http.Client
+	maxSize     int64
 }
 
 func (m *mockHTTPValidator) ValidateURL(url string) error {
@@ -69,6 +67,7 @@ func TestNewHandler(t *testing.T) {
 	handler := NewHandler(pathVal, cmdVal, httpVal, envVal)
 	if handler == nil {
 		t.Fatal("NewHandler returned nil")
+		return
 	}
 
 	if handler.pathVal == nil || handler.cmdVal == nil ||
@@ -205,9 +204,9 @@ func TestHandler_ListFiles(t *testing.T) {
 	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv())
 
 	// Create test files and directories
-	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("test"), 0o600)
-	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("test"), 0o600)
-	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o750)
+	_ = os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("test"), 0o600)
+	_ = os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("test"), 0o600)
+	_ = os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o750)
 
 	tests := []struct {
 		name      string
@@ -268,7 +267,7 @@ func TestHandler_DeleteFile(t *testing.T) {
 			name: "delete existing file",
 			setup: func() string {
 				path := filepath.Join(tmpDir, "delete_me.txt")
-				os.WriteFile(path, []byte("test"), 0o600)
+				_ = os.WriteFile(path, []byte("test"), 0o600)
 				return path
 			},
 			shouldErr: false,
@@ -322,11 +321,11 @@ func TestHandler_GetFileInfo(t *testing.T) {
 	// Create test file
 	testFile := filepath.Join(tmpDir, "info.txt")
 	testContent := "test content for info"
-	os.WriteFile(testFile, []byte(testContent), 0o600)
+	_ = os.WriteFile(testFile, []byte(testContent), 0o600)
 
 	// Create test directory
 	testDir := filepath.Join(tmpDir, "testdir")
-	os.Mkdir(testDir, 0o750)
+	_ = os.Mkdir(testDir, 0o750)
 
 	tests := []struct {
 		name      string
@@ -441,7 +440,7 @@ func TestHandler_ExecuteCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := handler.ExecuteCommand(tt.command, tt.args)
+			result, err := handler.ExecuteCommand(context.Background(), tt.command, tt.args)
 			if tt.shouldErr {
 				if err == nil {
 					t.Error("expected error, got none")
@@ -612,7 +611,7 @@ func TestHandler_HTTPGet_Success(t *testing.T) {
 					t.Errorf("expected GET request, got %s", r.Method)
 				}
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -646,7 +645,7 @@ func TestHandler_HTTPGet_ResponseSizeLimit(t *testing.T) {
 	largeContent := strings.Repeat("A", 10*1024*1024) // 10MB
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, largeContent)
+		_, _ = io.WriteString(w, largeContent)
 	}))
 	defer server.Close()
 
@@ -699,7 +698,7 @@ func BenchmarkHandler_ReadFile(b *testing.B) {
 	handler := NewHandler(pathVal, nil, nil, nil)
 
 	testFile := filepath.Join(tmpDir, "bench.txt")
-	os.WriteFile(testFile, []byte("benchmark test content"), 0o600)
+	_ = os.WriteFile(testFile, []byte("benchmark test content"), 0o600)
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -722,6 +721,6 @@ func BenchmarkHandler_ExecuteCommand(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = handler.ExecuteCommand("echo", []string{"test"})
+		_, _ = handler.ExecuteCommand(context.Background(), "echo", []string{"test"})
 	}
 }

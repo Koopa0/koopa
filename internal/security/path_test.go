@@ -20,7 +20,7 @@ func TestPathValidation(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to change to temp directory: %v", err)
 	}
-	defer os.Chdir(workDir) // Restore original directory
+	defer func() { _ = os.Chdir(workDir) }() // Restore original directory
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
@@ -129,7 +129,7 @@ func TestSymlinkValidation(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to change to temp directory: %v", err)
 	}
-	defer os.Chdir(workDir) // Restore original directory
+	defer func() { _ = os.Chdir(workDir) }() // Restore original directory
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
@@ -175,7 +175,7 @@ func TestPathValidationWithNonExistentFile(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to change to temp directory: %v", err)
 	}
-	defer os.Chdir(workDir)
+	defer func() { _ = os.Chdir(workDir) }()
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
@@ -211,7 +211,7 @@ func TestSymlinkBypassAttempt(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to change to temp directory: %v", err)
 	}
-	defer os.Chdir(workDir)
+	defer func() { _ = os.Chdir(workDir) }()
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
@@ -246,7 +246,7 @@ func TestPathValidationErrors(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to change to temp directory: %v", err)
 	}
-	defer os.Chdir(workDir)
+	defer func() { _ = os.Chdir(workDir) }()
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {

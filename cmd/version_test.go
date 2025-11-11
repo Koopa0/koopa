@@ -171,7 +171,7 @@ func TestRunVersion(t *testing.T) {
 
 			// Read captured output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Check error
@@ -240,7 +240,7 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 			os.Stdout = oldStdout
 
 			// Discard output
-			io.Copy(io.Discard, r)
+			_, _ = io.Copy(io.Discard, r)
 
 			// Should not error
 			if err != nil {
@@ -264,6 +264,7 @@ func TestNewVersionCmd(t *testing.T) {
 	// Verify command properties
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
+		return
 	}
 
 	if cmd.Use != "version" {
@@ -342,11 +343,9 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			// Wrap in recover to catch panics for very short keys
 			func() {
 				defer func() {
-					if r := recover(); r != nil {
-						// Expected for very short keys
-					}
+					_ = recover() // Ignore panics - expected for very short keys
 				}()
-				runVersion(cfg)
+				_ = runVersion(cfg)
 			}()
 
 			w.Close()
@@ -354,7 +353,7 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 
 			// Read output
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
 			// Verify masking or hint
