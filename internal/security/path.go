@@ -64,7 +64,7 @@ func (v *Path) isPathInAllowedDirs(absPath string) bool {
 
 // ValidatePath validates and sanitizes a file path
 // Returns a safe absolute path or an error
-func (v *Path) ValidatePath(path string) (string, error) {
+func (v *Path) Validate(path string) (string, error) {
 	// 1. Clean the path (remove ../ etc.)
 	cleanPath := filepath.Clean(path)
 
@@ -81,7 +81,8 @@ func (v *Path) ValidatePath(path string) (string, error) {
 			"working_dir", v.workDir,
 			"allowed_dirs", v.allowedDirs,
 			"security_event", "path_traversal_attempt")
-		return "", fmt.Errorf("access denied: path '%s' is not within allowed directories", absPath)
+		// Return generic error to user (detailed path logged above)
+		return "", fmt.Errorf("access denied: path is outside allowed directories")
 	}
 
 	// 4. Resolve symbolic links (prevent bypassing restrictions through symlinks)
@@ -105,7 +106,8 @@ func (v *Path) ValidatePath(path string) (string, error) {
 				"working_dir", v.workDir,
 				"allowed_dirs", v.allowedDirs,
 				"security_event", "symlink_traversal_attempt")
-			return "", fmt.Errorf("access denied: symbolic link points to disallowed location '%s'", realPath)
+			// Return generic error to user (detailed paths logged above)
+			return "", fmt.Errorf("access denied: symbolic link points outside allowed directories")
 		}
 		absPath = realPath
 	}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 

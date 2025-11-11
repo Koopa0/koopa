@@ -12,7 +12,7 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- name: SearchDocuments :many
 SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float AS similarity
+       (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float8 AS similarity
 FROM documents
 WHERE metadata @> sqlc.arg(filter_metadata)::jsonb
 ORDER BY similarity DESC
@@ -20,7 +20,7 @@ LIMIT sqlc.arg(result_limit);
 
 -- name: SearchDocumentsAll :many
 SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float AS similarity
+       (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float8 AS similarity
 FROM documents
 ORDER BY similarity DESC
 LIMIT sqlc.arg(result_limit);
@@ -48,7 +48,7 @@ WHERE id = $1;
 -- name: SearchBySourceType :many
 -- Generic search by source_type (flexible for future source types)
 SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float AS similarity
+       (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float8 AS similarity
 FROM documents
 WHERE metadata->>'source_type' = sqlc.arg(source_type)::text
 ORDER BY similarity DESC

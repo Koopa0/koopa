@@ -21,8 +21,8 @@ Koopa brings AI conversations directly to your command line with the ability to 
 
 ```bash
 # Clone and setup
-git clone https://github.com/koopa0/koopa.git
-cd koopa
+git clone https://github.com/koopa0/koopa-cli.git
+cd koopa-cli
 
 # Start database (auto-runs migrations)
 docker-compose up -d

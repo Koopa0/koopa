@@ -14,16 +14,51 @@ import (
 // HTTP validates HTTP requests to prevent SSRF attacks.
 // Used to prevent SSRF (Server-Side Request Forgery) attacks.
 type HTTP struct {
+	client          *http.Client // Reusable HTTP client (singleton pattern)
 	maxResponseSize int64
 	allowedSchemes  []string
 }
 
-// NewHTTP creates a new HTTP validator.
+// NewHTTP creates a new HTTP validator with a reusable HTTP client.
 func NewHTTP() *HTTP {
-	return &HTTP{
+	v := &HTTP{
 		maxResponseSize: 5 * 1024 * 1024, // 5MB
 		allowedSchemes:  []string{"http", "https"},
 	}
+
+	// Create HTTP client once (singleton pattern for connection pooling)
+	v.client = &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Limit to maximum 3 redirects
+			if len(via) >= 3 {
+				slog.Warn("excessive redirects detected",
+					"url", req.URL.String(),
+					"redirect_count", len(via),
+					"security_event", "excessive_redirects")
+				return fmt.Errorf("stopped after 3 redirects")
+			}
+
+			// Check if the redirect URL is safe
+			if err := v.ValidateURL(req.URL.String()); err != nil {
+				slog.Warn("SSRF attempt - unsafe redirect detected",
+					"redirect_url", req.URL.String(),
+					"original_url", via[0].URL.String(),
+					"redirect_chain_length", len(via),
+					"security_event", "ssrf_unsafe_redirect")
+				return fmt.Errorf("redirect to unsafe URL: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	return v
 }
 
 // ValidateURL validates whether a URL is safe
@@ -82,33 +117,9 @@ func (v *HTTP) MaxResponseSize() int64 {
 	return v.maxResponseSize
 }
 
-// CreateSafeHTTPClient creates an HTTP client with security configuration
-func (v *HTTP) CreateSafeHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: 10 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Limit to maximum 3 redirects
-			if len(via) >= 3 {
-				slog.Warn("excessive redirects detected",
-					"url", req.URL.String(),
-					"redirect_count", len(via),
-					"security_event", "excessive_redirects")
-				return fmt.Errorf("stopped after 3 redirects")
-			}
-
-			// Check if the redirect URL is safe
-			if err := v.ValidateURL(req.URL.String()); err != nil {
-				slog.Warn("SSRF attempt - unsafe redirect detected",
-					"redirect_url", req.URL.String(),
-					"original_url", via[0].URL.String(),
-					"redirect_chain_length", len(via),
-					"security_event", "ssrf_unsafe_redirect")
-				return fmt.Errorf("redirect to unsafe URL: %w", err)
-			}
-
-			return nil
-		},
-	}
+// Client returns the reusable HTTP client (thread-safe, singleton pattern)
+func (v *HTTP) Client() *http.Client {
+	return v.client
 }
 
 // isDangerousHostname checks if it's a dangerous hostname

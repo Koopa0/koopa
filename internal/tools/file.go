@@ -5,21 +5,18 @@ package tools
 // Provides 5 file tools: readFile, writeFile, listFiles, deleteFile, getFileInfo.
 // All operations use security.PathValidator to prevent path traversal attacks (CWE-22).
 // File permissions: 0600 for created files, 0750 for directories.
+//
+// Architecture: Genkit closures act as thin adapters that convert JSON input
+// to Handler method calls. Business logic lives in testable Handler methods.
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa/internal/security"
 )
 
 // registerFileTools registers filesystem-related tools
-// pathValidator is passed as parameter and captured by closures (Go best practice)
-func registerFileTools(g *genkit.Genkit, pathValidator *security.Path) {
+// handler contains all business logic for file operations
+func registerFileTools(g *genkit.Genkit, handler *Handler) {
 	// 1. Read file
 	genkit.DefineTool(
 		g,
@@ -43,17 +40,7 @@ func registerFileTools(g *genkit.Genkit, pathValidator *security.Path) {
 			Path string `json:"path" jsonschema_description:"File path to read (absolute or relative to current directory). Supports any text file format including Dockerfile, Makefile, and files without extensions. Examples: 'README.md', './src/main.go', 'Dockerfile', 'Makefile', '.gitignore', 'docker-compose.yml'"`
 		},
 		) (string, error) {
-			// Path security validation (prevent path traversal attacks CWE-22)
-			safePath, err := pathValidator.ValidatePath(input.Path)
-			if err != nil {
-				return "", fmt.Errorf("path validation failed: %w", err)
-			}
-
-			content, err := os.ReadFile(safePath) // #nosec G304 -- path validated by pathValidator above
-			if err != nil {
-				return "", fmt.Errorf("unable to read file: %w", err)
-			}
-			return string(content), nil
+			return handler.ReadFile(input.Path)
 		},
 	)
 
@@ -82,22 +69,7 @@ func registerFileTools(g *genkit.Genkit, pathValidator *security.Path) {
 			Content string `json:"content" jsonschema_description:"The complete text content to write. Will overwrite existing file content if file exists. Supports any UTF-8 text including source code, markup, config, Dockerfiles, Makefiles, etc."`
 		},
 		) (string, error) {
-			// Path security validation (prevent path traversal attacks CWE-22)
-			safePath, err := pathValidator.ValidatePath(input.Path)
-			if err != nil {
-				return "", fmt.Errorf("path validation failed: %w", err)
-			}
-
-			// Ensure directory exists (use 0750 permission for better security)
-			dir := filepath.Dir(safePath)
-			if err := os.MkdirAll(dir, 0o750); err != nil {
-				return "", fmt.Errorf("unable to create directory: %w", err)
-			}
-
-			if err = os.WriteFile(safePath, []byte(input.Content), 0o600); err != nil {
-				return "", fmt.Errorf("unable to write file: %w", err)
-			}
-			return fmt.Sprintf("successfully wrote file: %s", safePath), nil
+			return handler.WriteFile(input.Path, input.Content)
 		},
 	)
 
@@ -114,27 +86,7 @@ func registerFileTools(g *genkit.Genkit, pathValidator *security.Path) {
 			Path string `json:"path" jsonschema_description:"Directory path to list (absolute or relative). Use '.' for current directory. Examples: '.', './src', '/home/user/project'"`
 		},
 		) (string, error) {
-			// Path security validation
-			safePath, err := pathValidator.ValidatePath(input.Path)
-			if err != nil {
-				return "", fmt.Errorf("path validation failed: %w", err)
-			}
-
-			entries, err := os.ReadDir(safePath)
-			if err != nil {
-				return "", fmt.Errorf("unable to read directory: %w", err)
-			}
-
-			var result []string
-			for _, entry := range entries {
-				prefix := "[File]"
-				if entry.IsDir() {
-					prefix = "[Directory]"
-				}
-				result = append(result, fmt.Sprintf("%s %s", prefix, entry.Name()))
-			}
-
-			return strings.Join(result, "\n"), nil
+			return handler.ListFiles(input.Path)
 		},
 	)
 
@@ -151,16 +103,7 @@ func registerFileTools(g *genkit.Genkit, pathValidator *security.Path) {
 			Path string `json:"path" jsonschema_description:"File path to delete (absolute or relative). This will permanently delete the file! Examples: 'temp.txt', './logs/old.log'"`
 		},
 		) (string, error) {
-			// Path security validation
-			safePath, err := pathValidator.ValidatePath(input.Path)
-			if err != nil {
-				return "", fmt.Errorf("path validation failed: %w", err)
-			}
-
-			if err = os.Remove(safePath); err != nil {
-				return "", fmt.Errorf("unable to delete file: %w", err)
-			}
-			return fmt.Sprintf("successfully deleted file: %s", safePath), nil
+			return handler.DeleteFile(input.Path)
 		},
 	)
 
@@ -176,24 +119,7 @@ func registerFileTools(g *genkit.Genkit, pathValidator *security.Path) {
 			Path string `json:"path" jsonschema_description:"File or directory path to inspect (absolute or relative). Examples: 'README.md', './src', '/var/log/app.log'"`
 		},
 		) (string, error) {
-			// Path security validation
-			safePath, err := pathValidator.ValidatePath(input.Path)
-			if err != nil {
-				return "", fmt.Errorf("path validation failed: %w", err)
-			}
-
-			info, err := os.Stat(safePath)
-			if err != nil {
-				return "", fmt.Errorf("unable to get file information: %w", err)
-			}
-
-			result := fmt.Sprintf("Name: %s\n", info.Name())
-			result += fmt.Sprintf("Size: %d bytes\n", info.Size())
-			result += fmt.Sprintf("Is directory: %v\n", info.IsDir())
-			result += fmt.Sprintf("Modified time: %s\n", info.ModTime().Format("2006-01-02 15:04:05"))
-			result += fmt.Sprintf("Permissions: %s\n", info.Mode().String())
-
-			return result, nil
+			return handler.GetFileInfo(input.Path)
 		},
 	)
 }

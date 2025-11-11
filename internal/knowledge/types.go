@@ -20,7 +20,7 @@ type Document struct {
 // Result represents a single search result with similarity score.
 type Result struct {
 	Document   Document
-	Similarity float32 // Cosine similarity score (0-1)
+	Similarity float64 // Cosine similarity score (0-1)
 }
 
 // SearchOption configures search behavior using the functional options pattern.

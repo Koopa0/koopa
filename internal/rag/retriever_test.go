@@ -4,12 +4,28 @@ import (
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/koopa0/koopa/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
 )
 
-// TestNew removed - it was testing constructor with mock interface
-// Since we removed VectorStore interface, this test is no longer needed
-// Integration tests with real PostgreSQL should be used instead (via testcontainers)
+// ============================================================================
+// Retriever Constructor Tests
+// ============================================================================
+
+func TestRetriever_New(t *testing.T) {
+	// Test with nil store (should not panic, just store the nil)
+	retriever := New(nil)
+	if retriever == nil {
+		t.Fatal("New returned nil")
+	}
+
+	if retriever.store != nil {
+		t.Error("expected nil store to be preserved")
+	}
+}
+
+// ============================================================================
+// Helper Function Tests
+// ============================================================================
 
 func TestExtractQueryText(t *testing.T) {
 	tests := []struct {
@@ -150,8 +166,8 @@ func TestConvertToGenkitDocuments(t *testing.T) {
 		t.Error("metadata not preserved correctly")
 	}
 
-	// Check similarity score in metadata
-	if similarity, ok := docs[0].Metadata["similarity"].(float32); !ok || similarity != 0.95 {
+	// Check similarity score in metadata (float64 from knowledge.Result)
+	if similarity, ok := docs[0].Metadata["similarity"].(float64); !ok || similarity != 0.95 {
 		t.Errorf("similarity = %v, want 0.95", docs[0].Metadata["similarity"])
 	}
 
