@@ -5,7 +5,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
 )
 
 // Retriever bridges knowledge.Store to Genkit ai.Retriever interface.

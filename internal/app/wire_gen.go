@@ -13,9 +13,9 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/knowledge"
-	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/security"
 )
 
 // Injectors from wire.go:

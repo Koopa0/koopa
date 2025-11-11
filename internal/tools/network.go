@@ -6,20 +6,18 @@ package tools
 //   - SSRF protection: Blocks private IPs (127.0.0.1, 192.168.x.x, 10.x.x.x), localhost, cloud metadata endpoints (169.254.169.254)
 //   - Resource limits: Response size limits (10MB default), request timeout (30s), redirect limits (10)
 //   - Structured output: Returns JSON with status code and body for programmatic processing
+//
+// Architecture: Genkit closures act as thin adapters that convert JSON input
+// to Handler method calls. Business logic lives in testable Handler methods.
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa/internal/security"
 )
 
 // registerNetworkTools registers network-related tools
-// httpValidator is passed as parameter and captured by closures (Go best practice)
-func registerNetworkTools(g *genkit.Genkit, httpValidator *security.HTTP) {
+// handler contains all business logic for network operations
+func registerNetworkTools(g *genkit.Genkit, handler *Handler) {
 	// 1. HTTP GET request (with SSRF protection)
 	genkit.DefineTool(
 		g,
@@ -34,40 +32,7 @@ func registerNetworkTools(g *genkit.Genkit, httpValidator *security.HTTP) {
 			URL string `json:"url" jsonschema_description:"Full URL to request (must start with http:// or https://). Examples: 'https://api.github.com/repos/firebase/genkit', 'https://example.com'. Private IPs and localhost are blocked."`
 		},
 		) (string, error) {
-			// URL security validation (prevent SSRF attacks)
-			if err := httpValidator.ValidateURL(input.URL); err != nil {
-				return "", fmt.Errorf("security warning: url validation failed (possible SSRF attempt): %w", err)
-			}
-
-			// Use securely configured HTTP client (with timeout and redirect limits)
-			client := httpValidator.CreateSafeHTTPClient()
-			resp, err := client.Get(input.URL)
-			if err != nil {
-				return "", fmt.Errorf("http request failed: %w", err)
-			}
-			defer resp.Body.Close()
-
-			// Limit response size (prevent resource exhaustion)
-			maxSize := httpValidator.MaxResponseSize()
-			limitedReader := io.LimitReader(resp.Body, maxSize)
-
-			body, err := io.ReadAll(limitedReader)
-			if err != nil {
-				return "", fmt.Errorf("failed to read response: %w", err)
-			}
-
-			// Check if size limit exceeded
-			if int64(len(body)) >= maxSize {
-				return "", fmt.Errorf("response size exceeds limit (max %d MB)", maxSize/(1024*1024))
-			}
-
-			result := map[string]any{
-				"status": resp.StatusCode,
-				"body":   string(body),
-			}
-
-			jsonResult, _ := json.Marshal(result)
-			return string(jsonResult), nil
+			return handler.HTTPGet(input.URL)
 		},
 	)
 }

@@ -8,22 +8,18 @@ package tools
 //   - getEnv: Reads environment variables with protection (blocks *KEY*, *SECRET*, *TOKEN*, etc.)
 //
 // All operations use security validators to prevent command injection (CWE-78) and information leakage.
+//
+// Architecture: Genkit closures act as thin adapters that convert JSON input
+// to Handler method calls. Business logic lives in testable Handler methods.
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-	"time"
-
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa/internal/security"
 )
 
 // registerSystemTools registers system-related tools
-// Validators are passed as parameters and captured by closures (Go best practice)
-func registerSystemTools(g *genkit.Genkit, cmdValidator *security.Command, envValidator *security.Env) {
+// handler contains all business logic for system operations
+func registerSystemTools(g *genkit.Genkit, handler *Handler) {
 	// 1. Get current time
 	genkit.DefineTool(
 		g,
@@ -33,8 +29,7 @@ func registerSystemTools(g *genkit.Genkit, cmdValidator *security.Command, envVa
 			"Use this when you need to know the current time, date calculations, or timestamp information. "+
 			"Useful for: time-based operations, logging timestamps, scheduling tasks, date-aware responses.",
 		func(ctx *ai.ToolContext, input struct{}) (string, error) {
-			now := time.Now()
-			return now.Format("2006-01-02 15:04:05 (Monday)"), nil
+			return handler.CurrentTime()
 		},
 	)
 
@@ -53,18 +48,7 @@ func registerSystemTools(g *genkit.Genkit, cmdValidator *security.Command, envVa
 			Args    []string `json:"args,omitempty" jsonschema_description:"Command arguments as separate array elements. Examples: ['status'], ['-la', '/home'], ['build', './...']"`
 		},
 		) (string, error) {
-			// Command security validation (prevent command injection attacks CWE-78)
-			if err := cmdValidator.ValidateCommand(input.Command, input.Args); err != nil {
-				return "", fmt.Errorf("security warning: dangerous command rejected (%s %s): %w",
-					input.Command, strings.Join(input.Args, " "), err)
-			}
-
-			cmd := exec.Command(input.Command, input.Args...) // #nosec G204 -- validated by cmdValidator above
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				return "", fmt.Errorf("command execution failed: %w (output: %s)", err, string(output))
-			}
-			return string(output), nil
+			return handler.ExecuteCommand(input.Command, input.Args)
 		},
 	)
 
@@ -82,16 +66,7 @@ func registerSystemTools(g *genkit.Genkit, cmdValidator *security.Command, envVa
 			Name string `json:"name" jsonschema_description:"Environment variable name to read (e.g., 'PATH', 'HOME', 'SHELL'). Sensitive variables like API_KEY are automatically blocked."`
 		},
 		) (string, error) {
-			// Environment variable security validation (prevent sensitive information leakage)
-			if err := envValidator.ValidateEnvAccess(input.Name); err != nil {
-				return "", fmt.Errorf("security warning: %w (protected environment variable)", err)
-			}
-
-			value := os.Getenv(input.Name)
-			if value == "" {
-				return fmt.Sprintf("environment variable %s is not set or is empty", input.Name), nil
-			}
-			return value, nil
+			return handler.GetEnv(input.Name)
 		},
 	)
 }

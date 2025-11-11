@@ -21,8 +21,25 @@ import (
 
 	ignore "github.com/sabhiram/go-gitignore"
 
-	"github.com/koopa0/koopa/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
 )
+
+// IndexerStore defines the interface for storage operations needed by Indexer.
+// Following Go best practices: interfaces are defined by the consumer, not the provider
+// (similar to io.Reader, http.RoundTripper, sql.Driver).
+//
+// This interface allows Indexer to depend on abstraction rather than concrete implementation,
+// improving testability and flexibility.
+type IndexerStore interface {
+	// Add adds a document to the store
+	Add(ctx context.Context, doc knowledge.Document) error
+
+	// ListBySourceType lists documents by source type
+	ListBySourceType(ctx context.Context, sourceType string, limit int) ([]knowledge.Document, error)
+
+	// Delete removes a document by ID
+	Delete(ctx context.Context, docID string) error
+}
 
 // SupportedExtensions are file types we can index
 var SupportedExtensions = map[string]bool{
@@ -61,11 +78,15 @@ type IndexResult struct {
 
 // Indexer handles local file indexing
 type Indexer struct {
-	store *knowledge.Store
+	store IndexerStore // Depends on interface for testability
 }
 
 // NewIndexer creates a new file indexer
-func NewIndexer(store *knowledge.Store) *Indexer {
+//
+// Design: Accepts IndexerStore interface following "Accept interfaces, return structs"
+// principle for better testability. knowledge.Store automatically satisfies this interface
+// through duck typing.
+func NewIndexer(store IndexerStore) *Indexer {
 	return &Indexer{store: store}
 }
 

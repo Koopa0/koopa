@@ -3,10 +3,11 @@
 // Provides Agent type for orchestrating AI interactions with:
 //   - Genkit AI model interactions with RAG-first design (retriever required, always enabled)
 //   - Conversation history management (transient, in-memory - NOT persistent)
-//   - Tool registration (file, system, network, MCP)
+//   - Tool registration via internal/tools (file, system, network) and internal/mcp packages
 //   - Security validation (path traversal, command injection, SSRF prevention)
 //
-// Agent is NOT thread-safe - create one per session/request. Sub-packages: tools/, mcp/.
+// Agent is thread-safe for concurrent access (messages protected by RWMutex).
+// Related packages: internal/tools, internal/mcp.
 package agent
 
 import (
@@ -14,15 +15,17 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
-	"github.com/koopa0/koopa/internal/agent/mcp"
-	"github.com/koopa0/koopa/internal/agent/tools"
-	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/mcp"
+	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa-cli/internal/tools"
 	"google.golang.org/genai"
 )
 
@@ -31,7 +34,7 @@ import (
 // Responsibilities: AI interactions, tool registration, conversation history (in-memory only).
 // NOT responsible for: Database persistence (session/knowledge packages), session management, user interaction.
 //
-// Thread Safety: NOT thread-safe (maintains mutable messages field). Create one per session/request.
+// Thread Safety: Thread-safe for concurrent access (messages protected by RWMutex).
 // Security validators are immutable (safe to share). Tools safe to call concurrently.
 type Agent struct {
 	Genkit       *genkit.Genkit // Exported for external use (e.g., creating embedders)
@@ -39,7 +42,10 @@ type Agent struct {
 	modelRef     ai.ModelRef   // Type-safe model reference
 	systemPrompt string        // System prompt text
 	messages     []*ai.Message // Conversation history (transient, in-memory only)
+	messagesMu   sync.RWMutex  // Protects messages field for concurrent access
 	mcp          *mcp.Server   // MCP server connection (nil = not connected)
+	mcpOnce      sync.Once     // Ensures MCP is initialized only once
+	mcpErr       error         // Stores MCP initialization error
 	retriever    ai.Retriever  // RAG retriever (required, always available)
 
 	// Security validators (immutable after creation, safe for concurrent reads)
@@ -70,16 +76,12 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 	// (validated in config.Validate() and cmd/root.go)
 
 	// Initialize security validators (no global init, created per-agent)
-	homeDir, err := security.GetHomeDir()
+	// SECURITY: Only allow access to current working directory (principle of least privilege)
+	// Follows security constraint from koopa.prompt:115 -
+	// "NEVER: Access files outside the current working directory without explicit permission"
+	pathValidator, err := security.NewPath([]string{"."})
 	if err != nil {
-		// If GetHomeDir fails, use empty whitelist (only allow working directory)
-		homeDir = ""
-	}
-
-	pathValidator, err := security.NewPath([]string{homeDir})
-	if err != nil {
-		// If initialization fails, use empty whitelist (only allow working directory)
-		pathValidator, _ = security.NewPath([]string{})
+		return nil, fmt.Errorf("failed to initialize path validator: %w", err)
 	}
 
 	cmdValidator := security.NewCommand()
@@ -151,7 +153,17 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 }
 
 // Ask asks the AI a question and gets a response (always uses tools and RAG)
-func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
+func (a *Agent) Ask(ctx context.Context, question string) (result string, err error) {
+	// Panic recovery for stability
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic recovered in Ask: %v", r)
+			slog.Error("panic in Ask",
+				"error", r,
+				"stack", string(debug.Stack()))
+		}
+	}()
+
 	// Use core generation logic with prompt option
 	response, err := a.generate(ctx, question, ai.WithPrompt(question))
 	if err != nil {
@@ -162,21 +174,36 @@ func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
 }
 
 // Chat multi-turn conversation (maintains history, always uses tools and RAG)
-func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
-	// Add user message to history
-	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
+func (a *Agent) Chat(ctx context.Context, userInput string) (result string, err error) {
+	// Panic recovery for stability
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic recovered in Chat: %v", r)
+			slog.Error("panic in Chat",
+				"error", r,
+				"stack", string(debug.Stack()))
+		}
+	}()
 
-	// Use core generation logic with message history
-	response, err := a.generate(ctx, userInput, ai.WithMessages(a.messages...))
+	// Add user message to history (write lock)
+	a.messagesMu.Lock()
+	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
+	// Create a copy of messages for generate() to avoid holding lock during generation
+	messagesCopy := make([]*ai.Message, len(a.messages))
+	copy(messagesCopy, a.messages)
+	a.messagesMu.Unlock()
+
+	// Use core generation logic with message history (no lock needed)
+	response, err := a.generate(ctx, userInput, ai.WithMessages(messagesCopy...))
 	if err != nil {
 		return "", err
 	}
 
-	// Add AI response to history
+	// Add AI response to history (write lock)
+	a.messagesMu.Lock()
 	a.messages = append(a.messages, response.Message)
-
-	// Check and limit history length
 	a.trimHistoryIfNeeded()
+	a.messagesMu.Unlock()
 
 	return response.Text(), nil
 }
@@ -184,9 +211,24 @@ func (a *Agent) Chat(ctx context.Context, userInput string) (string, error) {
 // ChatStream multi-turn conversation with simulated streaming.
 // Since Genkit doesn't support real streaming when tools are used, we implement
 // simulated streaming by outputting the response word-by-word after generation.
-func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback func(chunk string)) (string, error) {
-	// Add user message to history
+func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback func(chunk string)) (result string, err error) {
+	// Panic recovery for stability
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic recovered in ChatStream: %v", r)
+			slog.Error("panic in ChatStream",
+				"error", r,
+				"stack", string(debug.Stack()))
+		}
+	}()
+
+	// Add user message to history (write lock)
+	a.messagesMu.Lock()
 	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
+	// Create a copy of messages for generate() to avoid holding lock during generation
+	messagesCopy := make([]*ai.Message, len(a.messages))
+	copy(messagesCopy, a.messages)
+	a.messagesMu.Unlock()
 
 	// Track if real streaming happened
 	realStreamHappened := false
@@ -200,8 +242,8 @@ func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback
 		return nil
 	})
 
-	// Generate response (with or without streaming depending on tool usage)
-	response, err := a.generate(ctx, userInput, ai.WithMessages(a.messages...), streamOpt)
+	// Generate response (with or without streaming depending on tool usage, no lock needed)
+	response, err := a.generate(ctx, userInput, ai.WithMessages(messagesCopy...), streamOpt)
 	if err != nil {
 		return "", err
 	}
@@ -216,23 +258,26 @@ func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback
 		slog.Debug("real streaming occurred")
 	}
 
-	// Add AI response to history
+	// Add AI response to history (write lock)
+	a.messagesMu.Lock()
 	a.messages = append(a.messages, response.Message)
-
-	// Check and limit history length
 	a.trimHistoryIfNeeded()
+	a.messagesMu.Unlock()
 
 	return finalText, nil
 }
 
 // ClearHistory clears the conversation history
 func (a *Agent) ClearHistory() {
-	// Reset conversation history
+	a.messagesMu.Lock()
+	defer a.messagesMu.Unlock()
 	a.messages = []*ai.Message{}
 }
 
 // HistoryLength retrieves the conversation history length
 func (a *Agent) HistoryLength() int {
+	a.messagesMu.RLock()
+	defer a.messagesMu.RUnlock()
 	return len(a.messages)
 }
 
@@ -256,7 +301,17 @@ func (a *Agent) AskWithStructuredOutput(ctx context.Context, question string, ou
 // generate is the core generation logic shared by Ask, Chat, and ChatStream.
 // Handles: RAG retrieval, tool collection, option preparation, and generation.
 // Eliminates code duplication while maintaining distinct behaviors via extraOpts.
-func (a *Agent) generate(ctx context.Context, userInput string, extraOpts ...ai.GenerateOption) (*ai.ModelResponse, error) {
+func (a *Agent) generate(ctx context.Context, userInput string, extraOpts ...ai.GenerateOption) (response *ai.ModelResponse, err error) {
+	// Panic recovery for core generation logic
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic recovered in generate: %v", r)
+			slog.Error("panic in generate",
+				"error", r,
+				"stack", string(debug.Stack()))
+		}
+	}()
+
 	// Step 1: Retrieve relevant documents using RAG
 	ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
 		Query:   ai.DocumentFromText(userInput, nil),
@@ -276,7 +331,7 @@ func (a *Agent) generate(ctx context.Context, userInput string, extraOpts ...ai.
 	opts := a.prepareGenerateOptions(toolRefs, ragResp, err, userInput, extraOpts...)
 
 	// Step 4: Generate response
-	response, err := genkit.Generate(ctx, a.Genkit, opts...)
+	response, err = genkit.Generate(ctx, a.Genkit, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("generate failed: %w", err)
 	}
@@ -314,17 +369,18 @@ func (a *Agent) tools(ctx context.Context) []ai.ToolRef {
 	return toolRefs
 }
 
-// ConnectMCP connects to MCP servers
+// ConnectMCP connects to MCP servers (thread-safe, ensures single initialization)
 func (a *Agent) ConnectMCP(ctx context.Context, serverConfigs []mcp.Config) error {
-	if a.mcp == nil {
+	a.mcpOnce.Do(func() {
 		server, err := mcp.New(ctx, a.Genkit, serverConfigs)
 		if err != nil {
-			return fmt.Errorf("unable to connect MCP: %w", err)
+			a.mcpErr = fmt.Errorf("unable to connect MCP: %w", err)
+			return
 		}
 		a.mcp = server
 		slog.Info("MCP connected successfully", "server_count", len(serverConfigs))
-	}
-	return nil
+	})
+	return a.mcpErr
 }
 
 // MCP retrieves the MCP server (if connected)
@@ -354,7 +410,7 @@ func (a *Agent) trimHistoryIfNeeded() {
 func (a *Agent) prepareGenerateOptions(
 	tools []ai.ToolRef,
 	ragResp *ai.RetrieverResponse,
-	ragErr error,
+	err error,
 	userInput string,
 	extraOpts ...ai.GenerateOption,
 ) []ai.GenerateOption {
@@ -369,7 +425,7 @@ func (a *Agent) prepareGenerateOptions(
 	opts = append(opts, extraOpts...)
 
 	// Add retrieved documents if RAG retrieval succeeded and returned documents
-	if ragErr == nil && ragResp != nil && len(ragResp.Documents) > 0 {
+	if err == nil && ragResp != nil && len(ragResp.Documents) > 0 {
 		opts = append(opts, ai.WithDocs(ragResp.Documents...))
 		slog.Debug("RAG: using retrieved documents",
 			"count", len(ragResp.Documents),
@@ -394,8 +450,8 @@ func simulateStreaming(text string, callback func(chunk string)) {
 	// Optimized for readability: slower than real streaming but feels more interactive
 
 	runes := []rune(text)
-	const charsPerChunk = 1  // Output 1 char at a time for clear typing effect
-	const delayMs = 30       // 30ms between chars (visible typing speed, ~33 chars/sec)
+	const charsPerChunk = 1 // Output 1 char at a time for clear typing effect
+	const delayMs = 30      // 30ms between chars (visible typing speed, ~33 chars/sec)
 
 	for i := 0; i < len(runes); i += charsPerChunk {
 		end := i + charsPerChunk
@@ -408,7 +464,7 @@ func simulateStreaming(text string, callback func(chunk string)) {
 
 		// Slightly longer pause after punctuation for natural rhythm
 		if chunk == "。" || chunk == "，" || chunk == "！" || chunk == "？" ||
-		   chunk == "." || chunk == "," || chunk == "!" || chunk == "?" {
+			chunk == "." || chunk == "," || chunk == "!" || chunk == "?" {
 			time.Sleep(delayMs * 2 * time.Millisecond) // 60ms after punctuation
 		} else if chunk == "\n" {
 			time.Sleep(delayMs * 3 * time.Millisecond) // 90ms after newline

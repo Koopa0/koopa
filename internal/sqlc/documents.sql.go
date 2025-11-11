@@ -126,7 +126,7 @@ func (q *Queries) ListDocumentsBySourceType(ctx context.Context, arg ListDocumen
 const searchBySourceType = `-- name: SearchBySourceType :many
 
 SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> $1::vector))::float AS similarity
+       (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM documents
 WHERE metadata->>'source_type' = $2::text
 ORDER BY similarity DESC
@@ -177,7 +177,7 @@ func (q *Queries) SearchBySourceType(ctx context.Context, arg SearchBySourceType
 
 const searchDocuments = `-- name: SearchDocuments :many
 SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> $1::vector))::float AS similarity
+       (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM documents
 WHERE metadata @> $2::jsonb
 ORDER BY similarity DESC
@@ -226,7 +226,7 @@ func (q *Queries) SearchDocuments(ctx context.Context, arg SearchDocumentsParams
 
 const searchDocumentsAll = `-- name: SearchDocumentsAll :many
 SELECT id, content, metadata, created_at,
-       (1 - (embedding <=> $1::vector))::float AS similarity
+       (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM documents
 ORDER BY similarity DESC
 LIMIT $2

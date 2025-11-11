@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,15 +13,44 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 
-	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
+
+// KnowledgeQuerier defines the interface for database operations on knowledge documents.
+// Following Go best practices: interfaces are defined by the consumer, not the provider
+// (similar to http.RoundTripper, sql.Driver, io.Reader).
+//
+// This interface allows Store to depend on abstraction rather than concrete implementation,
+// improving testability and flexibility.
+type KnowledgeQuerier interface {
+	// UpsertDocument inserts or updates a document
+	UpsertDocument(ctx context.Context, arg sqlc.UpsertDocumentParams) error
+
+	// SearchDocuments performs filtered vector search
+	SearchDocuments(ctx context.Context, arg sqlc.SearchDocumentsParams) ([]sqlc.SearchDocumentsRow, error)
+
+	// SearchDocumentsAll performs unfiltered vector search
+	SearchDocumentsAll(ctx context.Context, arg sqlc.SearchDocumentsAllParams) ([]sqlc.SearchDocumentsAllRow, error)
+
+	// CountDocuments counts documents matching filter
+	CountDocuments(ctx context.Context, filterMetadata []byte) (int64, error)
+
+	// CountDocumentsAll counts all documents
+	CountDocumentsAll(ctx context.Context) (int64, error)
+
+	// DeleteDocument deletes a document by ID
+	DeleteDocument(ctx context.Context, id string) error
+
+	// ListDocumentsBySourceType lists documents by source type
+	ListDocumentsBySourceType(ctx context.Context, arg sqlc.ListDocumentsBySourceTypeParams) ([]sqlc.ListDocumentsBySourceTypeRow, error)
+}
 
 // Store manages knowledge documents with vector search capabilities.
 // It handles embedding generation and vector similarity search using PostgreSQL + pgvector.
 //
 // Store is safe for concurrent use by multiple goroutines.
 type Store struct {
-	queries  *sqlc.Queries
+	queries  KnowledgeQuerier // Depends on interface for testability
 	embedder ai.Embedder
 	logger   *slog.Logger
 }
@@ -35,13 +65,29 @@ type Store struct {
 // Example:
 //
 //	store := knowledge.New(dbPool, embedder, slog.Default())
+//
+// Design: Accepts dbPool and converts to KnowledgeQuerier interface internally.
+// For testing, use NewWithQuerier to inject mock querier directly.
 func New(dbPool *pgxpool.Pool, embedder ai.Embedder, logger *slog.Logger) *Store {
+	return NewWithQuerier(sqlc.New(dbPool), embedder, logger)
+}
+
+// NewWithQuerier creates a new Store instance with custom querier (useful for testing).
+//
+// Parameters:
+//   - querier: Database querier implementing KnowledgeQuerier interface
+//   - embedder: AI embedder for generating vector embeddings
+//   - logger: Logger for debugging (nil = use default)
+//
+// Design: Accepts KnowledgeQuerier interface following "Accept interfaces, return structs"
+// principle for better testability.
+func NewWithQuerier(querier KnowledgeQuerier, embedder ai.Embedder, logger *slog.Logger) *Store {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &Store{
-		queries:  sqlc.New(dbPool),
+		queries:  querier,
 		embedder: embedder,
 		logger:   logger,
 	}
@@ -99,6 +145,7 @@ func (s *Store) Add(ctx context.Context, doc Document) error {
 
 // Search performs semantic search on the knowledge store using functional options.
 // It returns the most similar documents to the query, ordered by similarity score.
+// Automatically applies 10-second timeout for vector search queries to prevent blocking.
 //
 // Example usage:
 //
@@ -106,10 +153,14 @@ func (s *Store) Add(ctx context.Context, doc Document) error {
 //	    knowledge.WithTopK(10),
 //	    knowledge.WithFilter("source_type", "conversation"))
 func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) ([]Result, error) {
+	// Add query timeout to prevent long-running vector searches from blocking
+	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	cfg := buildSearchConfig(opts)
 
 	// 1. Generate query embedding
-	embeddingResp, err := s.embedder.Embed(ctx, &ai.EmbedRequest{
+	embeddingResp, err := s.embedder.Embed(queryCtx, &ai.EmbedRequest{
 		Input: []*ai.Document{
 			{
 				Content: []*ai.Part{ai.NewTextPart(query)},
@@ -117,6 +168,9 @@ func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) 
 		},
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("embedding generation timeout: %w", err)
+		}
 		return nil, fmt.Errorf("failed to generate query embedding: %w", err)
 	}
 
@@ -126,24 +180,30 @@ func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) 
 
 	queryEmbedding := pgvector.NewVector(embeddingResp.Embeddings[0].Embedding)
 
-	// 2. Execute search using sqlc generated methods
+	// 2. Execute search using sqlc generated methods (with timeout context)
 	if len(cfg.filter) > 0 {
 		filterJSON, _ := json.Marshal(cfg.filter)
-		rows, err := s.queries.SearchDocuments(ctx, sqlc.SearchDocumentsParams{
+		rows, err := s.queries.SearchDocuments(queryCtx, sqlc.SearchDocumentsParams{
 			QueryEmbedding: &queryEmbedding,
 			FilterMetadata: filterJSON,
 			ResultLimit:    cfg.topK,
 		})
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, fmt.Errorf("search query timeout: %w", err)
+			}
 			return nil, fmt.Errorf("search failed: %w", err)
 		}
 		return s.rowsToResults(rows), nil
 	} else {
-		rows, err := s.queries.SearchDocumentsAll(ctx, sqlc.SearchDocumentsAllParams{
+		rows, err := s.queries.SearchDocumentsAll(queryCtx, sqlc.SearchDocumentsAllParams{
 			QueryEmbedding: &queryEmbedding,
 			ResultLimit:    cfg.topK,
 		})
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, fmt.Errorf("search query timeout: %w", err)
+			}
 			return nil, fmt.Errorf("search failed: %w", err)
 		}
 		return s.rowsToResultsAll(rows), nil
@@ -226,7 +286,7 @@ func (s *Store) rowsToResults(rows []sqlc.SearchDocumentsRow) []Result {
 				Metadata: metadata,
 				CreateAt: createAt,
 			},
-			Similarity: float32(row.Similarity),
+			Similarity: row.Similarity,
 		})
 	}
 
@@ -258,7 +318,7 @@ func (s *Store) rowsToResultsAll(rows []sqlc.SearchDocumentsAllRow) []Result {
 				Metadata: metadata,
 				CreateAt: createAt,
 			},
-			Similarity: float32(row.Similarity),
+			Similarity: row.Similarity,
 		})
 	}
 

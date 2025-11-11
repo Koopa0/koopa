@@ -12,10 +12,10 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/koopa0/koopa/internal/agent"
-	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/knowledge"
-	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/security"
 )
 
 // App is the core application container.

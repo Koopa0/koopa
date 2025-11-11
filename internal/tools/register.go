@@ -29,7 +29,7 @@ package tools
 
 import (
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa-cli/internal/security"
 )
 
 // toolNames contains all registered tool names
@@ -54,8 +54,11 @@ func ToolNames() []string {
 }
 
 // RegisterTools registers core tools with Genkit (file, system, network)
-// Validators are passed as parameters and captured by closures (dependency injection pattern)
-// This follows Go best practices: no package-level state, dependencies are explicit
+// Validators are passed as parameters to create a Handler instance.
+// This follows Go best practices (like http.Server, mcp.Server):
+//   - Explicit dependencies via Handler struct
+//   - Testable business logic in Handler methods
+//   - Genkit closures as thin adapters for parameter conversion
 func RegisterTools(
 	g *genkit.Genkit,
 	pathVal *security.Path,
@@ -63,13 +66,15 @@ func RegisterTools(
 	httpVal *security.HTTP,
 	envVal *security.Env,
 ) {
+	// Create handler with all validators (follows http.Server pattern)
+	handler := NewHandler(pathVal, cmdVal, httpVal, envVal)
+
 	// Register filesystem tools (5 tools)
-	// Pass validators as parameters, closures will capture them
-	registerFileTools(g, pathVal)
+	registerFileTools(g, handler)
 
 	// Register system tools (3 tools)
-	registerSystemTools(g, cmdVal, envVal)
+	registerSystemTools(g, handler)
 
 	// Register network tools (1 tool)
-	registerNetworkTools(g, httpVal)
+	registerNetworkTools(g, handler)
 }

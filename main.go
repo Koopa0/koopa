@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/koopa0/koopa/cmd"
-	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa-cli/cmd"
+	"github.com/koopa0/koopa-cli/internal/config"
 )
 
 const version = "1.0.0"
@@ -78,5 +78,5 @@ func printHelp() {
 	fmt.Println("Environment Variables:")
 	fmt.Println("  GEMINI_API_KEY     Required: Gemini API key")
 	fmt.Println()
-	fmt.Println("Learn more: https://github.com/koopa0/koopa")
+	fmt.Println("Learn more: https://github.com/koopa0/koopa-cli")
 }

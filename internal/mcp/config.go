@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/firebase/genkit/go/plugins/mcp"
-	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa-cli/internal/config"
 )
 
 // LoadConfigs loads MCP server configurations from config file.

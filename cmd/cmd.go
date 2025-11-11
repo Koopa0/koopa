@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/koopa0/koopa/internal/agent"
-	"github.com/koopa0/koopa/internal/app"
-	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/rag"
+	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/app"
+	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/rag"
 )
 
 // Run starts the interactive chat mode (default behavior of Koopa v2.0)
@@ -162,7 +162,7 @@ func printInteractiveHelp() {
 	fmt.Println("  Ctrl+C             Cancel current input")
 	fmt.Println("  Ctrl+D             Exit (same as /exit)")
 	fmt.Println()
-	fmt.Println("Learn more: https://github.com/koopa0/koopa")
+	fmt.Println("Learn more: https://github.com/koopa0/koopa-cli")
 	fmt.Println()
 }
 
@@ -208,7 +208,7 @@ func handleRAGAdd(ctx context.Context, args []string, application *app.App) {
 	path := args[0]
 
 	// Validate path using PathValidator (deep defense)
-	safePath, err := application.PathValidator.ValidatePath(path)
+	safePath, err := application.PathValidator.Validate(path)
 	if err != nil {
 		fmt.Printf("Error: Invalid path: %v\n", err)
 		fmt.Println()
