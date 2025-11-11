@@ -42,6 +42,7 @@ func TestHTTPClientConcurrentAccess(t *testing.T) {
 			client := httpValidator.Client()
 			if client == nil {
 				t.Error("got nil client")
+				return
 			}
 			// Access client properties
 			_ = client.Timeout

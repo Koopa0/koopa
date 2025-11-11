@@ -62,8 +62,26 @@ func (v *Path) isPathInAllowedDirs(absPath string) bool {
 	return false
 }
 
-// ValidatePath validates and sanitizes a file path
-// Returns a safe absolute path or an error
+// Validate validates and sanitizes a file path.
+// Returns a safe absolute path or an error.
+//
+// SECURITY NOTE - TOCTOU (Time-Of-Check to Time-Of-Use) Limitation:
+// This validation checks the path at a specific point in time, but the filesystem
+// state can change between validation and actual file access. This is an inherent
+// limitation of all filesystem-based security checks and cannot be fully eliminated.
+//
+// Mitigation strategies in place:
+//   - Minimize time window between check and use (caller should use path immediately)
+//   - Use atomic operations where possible (os.OpenFile with O_EXCL for creation)
+//   - Symlink resolution to prevent link-based attacks
+//   - Directory access control (working directory + explicit allow list)
+//
+// Callers should:
+//   - Use the returned path immediately after validation
+//   - Avoid storing validated paths for later use
+//   - Consider using file descriptors (once opened) for multiple operations
+//
+// Reference: CWE-367 (Time-of-check Time-of-use Race Condition)
 func (v *Path) Validate(path string) (string, error) {
 	// 1. Clean the path (remove ../ etc.)
 	cleanPath := filepath.Clean(path)

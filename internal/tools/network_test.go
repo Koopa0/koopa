@@ -133,6 +133,7 @@ func TestHTTPClient(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("HTTP client is nil")
+	return
 	}
 
 	// Verify timeout is set

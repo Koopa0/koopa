@@ -64,6 +64,7 @@ func TestNewIndexer(t *testing.T) {
 
 	if indexer == nil {
 		t.Fatal("NewIndexer returned nil")
+		return
 	}
 
 	if indexer.store != mockStore {

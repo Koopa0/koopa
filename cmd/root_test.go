@@ -22,6 +22,7 @@ func TestNewRootCmd(t *testing.T) {
 	// Verify command properties
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
+		return
 	}
 
 	if cmd.Use != "koopa" {

@@ -48,7 +48,8 @@ func registerSystemTools(g *genkit.Genkit, handler *Handler) {
 			Args    []string `json:"args,omitempty" jsonschema_description:"Command arguments as separate array elements. Examples: ['status'], ['-la', '/home'], ['build', './...']"`
 		},
 		) (string, error) {
-			return handler.ExecuteCommand(input.Command, input.Args)
+			// Pass context to ExecuteCommand for cancellation support
+			return handler.ExecuteCommand(ctx.Context, input.Command, input.Args)
 		},
 	)
 

@@ -143,7 +143,7 @@ func TestServerGetState(t *testing.T) {
 func TestServerGetStates(t *testing.T) {
 	server := &Server{
 		states: map[string]*State{
-			"github": {Name: "github", Status: Connected, SuccessCount: 5},
+			"github": {Name: "github", Status: Connected},
 			"notion": {Name: "notion", Status: Failed, FailureCount: 2},
 		},
 	}

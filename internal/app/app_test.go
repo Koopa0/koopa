@@ -179,10 +179,7 @@ func TestApp_CreateAgent(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Error("expected error but got none")
-				} else if tt.errorMsg != "" {
-					// Check if error message contains expected substring
-					// Note: actual error messages may be wrapped
-				}
+			}
 				if ag != nil {
 					t.Error("expected nil agent on error")
 				}

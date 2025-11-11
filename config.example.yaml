@@ -1,28 +1,104 @@
-# Koopa 配置範例
-# 將此文件複製到 ~/.koopa/config.yaml 並修改
+# Koopa Configuration Example
+# Copy this file to ~/.koopa/config.yaml and modify as needed
 
-# AI 模型配置
+# ==========================================
+# AI Model Configuration
+# ==========================================
 model_name: "gemini-2.5-flash"
 temperature: 0.7
 max_tokens: 2048
 
-# 對話歷史配置
-# 最大保留的對話訊息數（預設 50，約 25 輪對話）
-# 0 表示無限制（不建議，會導致 token 消耗增加）
+# Conversation history configuration
+# Maximum number of conversation messages to retain (default: 50, ~25 turns)
+# Set to 0 for unlimited (not recommended, increases token usage and memory)
 max_history_messages: 50
 
-# 資料庫路徑（可選，預設為 ~/.koopa/koopa.db）
-# database_path: "/path/to/koopa.db"
+# ==========================================
+# Database Configuration
+# ==========================================
+# SQLite database path (used for session storage)
+# Default: ~/.koopa/koopa.db
+# database_path: "~/.koopa/koopa.db"
 
-# API Key（建議使用環境變數）
+# PostgreSQL configuration (required for pgvector RAG functionality)
+postgres_host: "localhost"
+postgres_port: 5432
+postgres_user: "koopa"
+postgres_password: "" # Recommended: use POSTGRES_PASSWORD environment variable
+postgres_db_name: "koopa"
+postgres_ssl_mode: "disable" # Options: disable, require, verify-ca, verify-full
+
+# ==========================================
+# RAG (Retrieval-Augmented Generation) Configuration
+# ==========================================
+# Number of documents to retrieve for RAG context
+rag_top_k: 3
+
+# Embedding model for document vectorization
+embedder_model: "text-embedding-004"
+
+# ==========================================
+# MCP (Model Context Protocol) Configuration
+# ==========================================
+# MCP servers enable Koopa to integrate with external tools
+
+# Global MCP settings
+mcp:
+  # Connection timeout in seconds (default: 5)
+  timeout: 5
+
+  # Whitelist of server names to enable (empty = all configured servers)
+  # allowed:
+  #   - "fetch"
+  #   - "filesystem"
+
+  # Blacklist of server names to disable (higher priority than allowed)
+  # excluded:
+  #   - "dangerous-server"
+# MCP server definitions
+# Example configurations:
+# mcp_servers:
+#   fetch:
+#     command: "npx"
+#     args:
+#       - "-y"
+#       - "@modelcontextprotocol/server-fetch"
+#     env:
+#       NODE_OPTIONS: "--max-old-space-size=4096"
+#
+#   filesystem:
+#     command: "npx"
+#     args:
+#       - "-y"
+#       - "@modelcontextprotocol/server-filesystem"
+#       - "/path/to/allowed/directory"
+#     timeout: 10  # Per-server timeout override
+#     include_tools:  # Tool whitelist
+#       - "read_file"
+#       - "write_file"
+#     exclude_tools:  # Tool blacklist (higher priority)
+#       - "delete_file"
+
+# ==========================================
+# API Key (Recommended: use environment variable)
+# ==========================================
+# Gemini API key for Google AI services
 # gemini_api_key: "your-api-key-here"
 
 # ==========================================
-# 環境變數支援（優先級高於配置檔案）
-# ==========================================
-# 使用 KOOPA_ 前綴避免命名衝突：
-#   export KOOPA_GEMINI_API_KEY=your-api-key
-#   export KOOPA_MODEL_NAME=gemini-2.5-pro
-#   export KOOPA_TEMPERATURE=0.8
-#   export KOOPA_MAX_TOKENS=4096
-#   export KOOPA_MAX_HISTORY_MESSAGES=100
+# Environment Variable Support (Higher priority than config file)
+#
+# Supported environment variables:
+#   GEMINI_API_KEY=your-api-key             # API key (required)
+#   MODEL_NAME=gemini-2.5-pro               # Model name
+#   TEMPERATURE=0.8                         # Temperature parameter
+#   MAX_TOKENS=4096                         # Maximum tokens
+#   MAX_HISTORY_MESSAGES=100                # Maximum history messages
+#   RAG_TOP_K=5                             # RAG document count
+#   EMBEDDER_MODEL=text-embedding-004       # Embedder model
+#   POSTGRES_HOST=localhost                 # PostgreSQL host
+#   POSTGRES_PORT=5432                      # PostgreSQL port
+#   POSTGRES_USER=koopa                     # PostgreSQL username
+#   POSTGRES_PASSWORD=your-password         # PostgreSQL password
+#   POSTGRES_DB_NAME=koopa                  # PostgreSQL database name
+#   POSTGRES_SSL_MODE=disable               # PostgreSQL SSL mode

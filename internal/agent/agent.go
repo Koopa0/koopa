@@ -116,14 +116,22 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 
 	// Create type-safe model reference (pair model with config)
 	// Use config file settings to override prompt file settings
-	// Safely convert MaxTokens (prevent integer overflow)
+	// Safely convert MaxTokens (prevent integer overflow and underflow)
 	maxTokens := cfg.MaxTokens
-	if maxTokens > math.MaxInt32 {
+	if maxTokens < 0 {
+		slog.Warn("negative MaxTokens detected, using default value",
+			"invalid_value", maxTokens,
+			"default_value", 2048)
+		maxTokens = 2048 // Use safe default
+	} else if maxTokens > math.MaxInt32 {
+		slog.Warn("MaxTokens exceeds int32 limit, clamping to maximum",
+			"invalid_value", maxTokens,
+			"clamped_value", math.MaxInt32)
 		maxTokens = math.MaxInt32
 	}
 	modelRef := googlegenai.GoogleAIModelRef(cfg.ModelName, &genai.GenerateContentConfig{
 		Temperature:     genai.Ptr(cfg.Temperature),
-		MaxOutputTokens: int32(maxTokens), // #nosec G115 -- overflow check on lines 75-78
+		MaxOutputTokens: int32(maxTokens), // #nosec G115 -- overflow/underflow checks above
 	})
 
 	// Initialize conversation history (empty, will be managed by Agent methods)
@@ -395,14 +403,22 @@ func (a *Agent) trimHistoryIfNeeded() {
 
 	// 0 means unlimited
 	if maxMessages <= 0 {
+		// MEMORY WARNING: Monitor for potential memory leaks when unlimited
+		if len(a.messages) > 1000 {
+			// Estimate memory usage (rough estimate: ~1KB per message)
+			estimatedMB := len(a.messages) / 1024
+			slog.Warn("conversation history growing large with unlimited mode",
+				"message_count", len(a.messages),
+				"estimated_memory_mb", estimatedMB,
+				"max_history_messages", maxMessages,
+				"suggestion", "consider setting max_history_messages to limit memory usage")
+		}
 		return
 	}
 
 	// If history exceeds limit, keep only most recent maxMessages
-	if len(a.messages) > maxMessages {
-		// Keep most recent maxMessages messages
-		a.messages = a.messages[len(a.messages)-maxMessages:]
-	}
+	// Use max() to ensure non-negative start index
+	a.messages = a.messages[max(0, len(a.messages)-maxMessages):]
 }
 
 // prepareGenerateOptions prepares common generation options for AI requests.
@@ -463,12 +479,12 @@ func simulateStreaming(text string, callback func(chunk string)) {
 		callback(chunk)
 
 		// Slightly longer pause after punctuation for natural rhythm
-		if chunk == "。" || chunk == "，" || chunk == "！" || chunk == "？" ||
-			chunk == "." || chunk == "," || chunk == "!" || chunk == "?" {
+		switch chunk {
+		case "。", "，", "！", "？", ".", ",", "!", "?":
 			time.Sleep(delayMs * 2 * time.Millisecond) // 60ms after punctuation
-		} else if chunk == "\n" {
+		case "\n":
 			time.Sleep(delayMs * 3 * time.Millisecond) // 90ms after newline
-		} else {
+		default:
 			time.Sleep(delayMs * time.Millisecond)
 		}
 	}
