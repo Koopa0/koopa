@@ -118,7 +118,6 @@ func Load() (*Config, error) {
 	// Note: mcp_servers has no default - must be explicitly configured
 
 	// Read configuration file (if exists)
-	configFileUsed := false
 	if err := viper.ReadInConfig(); err != nil {
 		// Configuration file not found is not an error, use default values
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -128,10 +127,6 @@ func Load() (*Config, error) {
 		} else {
 			return nil, err
 		}
-	} else {
-		configFileUsed = true
-		slog.Info("loaded configuration from file",
-			"config_file", viper.ConfigFileUsed())
 	}
 
 	// Environment variable settings (no prefix needed)
@@ -143,19 +138,6 @@ func Load() (*Config, error) {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
-
-	// Log final configuration (with sensitive data redacted)
-	slog.Info("configuration loaded successfully",
-		"config_file_used", configFileUsed,
-		"model", cfg.ModelName,
-		"temperature", cfg.Temperature,
-		"max_tokens", cfg.MaxTokens,
-		"postgres_host", cfg.PostgresHost,
-		"postgres_port", cfg.PostgresPort,
-		"postgres_db", cfg.PostgresDBName,
-		"rag_top_k", cfg.RAGTopK,
-		"embedder_model", cfg.EmbedderModel,
-		"mcp_servers_count", len(cfg.MCPServers))
 
 	return &cfg, nil
 }

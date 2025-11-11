@@ -152,11 +152,6 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 		envValidator:  envValidator,
 	}
 
-	slog.Info("agent initialized with RAG support",
-		"model", cfg.ModelName,
-		"rag_top_k", cfg.RAGTopK,
-		"embedder", cfg.EmbedderModel)
-
 	return agent, nil
 }
 
