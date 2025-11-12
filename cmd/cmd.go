@@ -10,12 +10,12 @@ import (
 
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/app"
-	"github.com/koopa0/koopa-cli/internal/banner"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/rag"
+	"github.com/koopa0/koopa-cli/internal/ui"
 )
 
-// Run starts the interactive chat mode (default behavior of Koopa v2.0)
+// Run starts the interactive chat mode
 func Run(ctx context.Context, cfg *config.Config, version string) error {
 	// Initialize application using Wire DI
 	application, cleanup, err := app.InitializeApp(ctx, cfg)
@@ -88,7 +88,7 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 
 // printWelcome displays the welcome message with KOOPA banner
 func printWelcome(version string) {
-	banner.Print()
+	ui.Print()
 
 	fmt.Printf("v%s\n", version)
 	fmt.Println()
@@ -114,8 +114,6 @@ func handleSlashCommand(ctx context.Context, cmd string, ag *agent.Agent, applic
 
 	case "/version":
 		fmt.Printf("Koopa v%s\n", version)
-		fmt.Printf("Build: %s\n", BuildTime)
-		fmt.Printf("Commit: %s\n", GitCommit)
 		fmt.Println()
 		return false
 

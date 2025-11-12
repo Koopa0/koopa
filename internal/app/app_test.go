@@ -138,9 +138,9 @@ func TestApp_CreateAgent(t *testing.T) {
 				g := genkit.Init(ctx)
 
 				return &App{
-					Config:  nil,
-					Genkit:  g,
-					ctx:     ctx,
+					Config: nil,
+					Genkit: g,
+					ctx:    ctx,
 				}
 			},
 			retriever:   &mockRetriever{},
@@ -179,7 +179,7 @@ func TestApp_CreateAgent(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Error("expected error but got none")
-			}
+				}
 				if ag != nil {
 					t.Error("expected nil agent on error")
 				}

@@ -1,8 +1,8 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg17
     container_name: koopa-postgres
     environment:
       POSTGRES_USER: koopa
@@ -17,7 +17,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U koopa"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 5s
 
 volumes:
   postgres_data:

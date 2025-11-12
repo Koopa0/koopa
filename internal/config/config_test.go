@@ -154,15 +154,15 @@ func TestValidateSuccess(t *testing.T) {
 	os.Setenv("GEMINI_API_KEY", "test-api-key")
 
 	cfg := &Config{
-		ModelName:        "gemini-2.5-flash",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresDBName:   "koopa",
-		PostgresSSLMode:  "disable",
+		ModelName:       "gemini-2.5-flash",
+		Temperature:     0.7,
+		MaxTokens:       2048,
+		RAGTopK:         3,
+		EmbedderModel:   "text-embedding-004",
+		PostgresHost:    "localhost",
+		PostgresPort:    5432,
+		PostgresDBName:  "koopa",
+		PostgresSSLMode: "disable",
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -184,14 +184,14 @@ func TestValidateMissingAPIKey(t *testing.T) {
 	os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := &Config{
-		ModelName:        "gemini-2.5-flash",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresDBName:   "koopa",
+		ModelName:      "gemini-2.5-flash",
+		Temperature:    0.7,
+		MaxTokens:      2048,
+		RAGTopK:        3,
+		EmbedderModel:  "text-embedding-004",
+		PostgresHost:   "localhost",
+		PostgresPort:   5432,
+		PostgresDBName: "koopa",
 	}
 
 	err := cfg.Validate()
@@ -210,14 +210,14 @@ func TestValidateModelName(t *testing.T) {
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := &Config{
-		ModelName:        "",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresDBName:   "koopa",
+		ModelName:      "",
+		Temperature:    0.7,
+		MaxTokens:      2048,
+		RAGTopK:        3,
+		EmbedderModel:  "text-embedding-004",
+		PostgresHost:   "localhost",
+		PostgresPort:   5432,
+		PostgresDBName: "koopa",
 	}
 
 	err := cfg.Validate()
@@ -252,14 +252,14 @@ func TestValidateTemperature(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      tt.temperature,
-				MaxTokens:        2048,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresDBName:   "koopa",
+				ModelName:      "gemini-2.5-flash",
+				Temperature:    tt.temperature,
+				MaxTokens:      2048,
+				RAGTopK:        3,
+				EmbedderModel:  "text-embedding-004",
+				PostgresHost:   "localhost",
+				PostgresPort:   5432,
+				PostgresDBName: "koopa",
 			}
 
 			err := cfg.Validate()
@@ -298,14 +298,14 @@ func TestValidateMaxTokens(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        tt.maxTokens,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresDBName:   "koopa",
+				ModelName:      "gemini-2.5-flash",
+				Temperature:    0.7,
+				MaxTokens:      tt.maxTokens,
+				RAGTopK:        3,
+				EmbedderModel:  "text-embedding-004",
+				PostgresHost:   "localhost",
+				PostgresPort:   5432,
+				PostgresDBName: "koopa",
 			}
 
 			err := cfg.Validate()
@@ -344,14 +344,14 @@ func TestValidateRAGTopK(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        2048,
-				RAGTopK:          tt.ragTopK,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresDBName:   "koopa",
+				ModelName:      "gemini-2.5-flash",
+				Temperature:    0.7,
+				MaxTokens:      2048,
+				RAGTopK:        tt.ragTopK,
+				EmbedderModel:  "text-embedding-004",
+				PostgresHost:   "localhost",
+				PostgresPort:   5432,
+				PostgresDBName: "koopa",
 			}
 
 			err := cfg.Validate()
@@ -374,14 +374,14 @@ func TestValidateEmbedderModel(t *testing.T) {
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := &Config{
-		ModelName:        "gemini-2.5-flash",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "",
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresDBName:   "koopa",
+		ModelName:      "gemini-2.5-flash",
+		Temperature:    0.7,
+		MaxTokens:      2048,
+		RAGTopK:        3,
+		EmbedderModel:  "",
+		PostgresHost:   "localhost",
+		PostgresPort:   5432,
+		PostgresDBName: "koopa",
 	}
 
 	err := cfg.Validate()
@@ -400,14 +400,14 @@ func TestValidatePostgresHost(t *testing.T) {
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := &Config{
-		ModelName:        "gemini-2.5-flash",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
-		PostgresHost:     "",
-		PostgresPort:     5432,
-		PostgresDBName:   "koopa",
+		ModelName:      "gemini-2.5-flash",
+		Temperature:    0.7,
+		MaxTokens:      2048,
+		RAGTopK:        3,
+		EmbedderModel:  "text-embedding-004",
+		PostgresHost:   "",
+		PostgresPort:   5432,
+		PostgresDBName: "koopa",
 	}
 
 	err := cfg.Validate()
@@ -442,14 +442,14 @@ func TestValidatePostgresPort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        2048,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     tt.port,
-				PostgresDBName:   "koopa",
+				ModelName:      "gemini-2.5-flash",
+				Temperature:    0.7,
+				MaxTokens:      2048,
+				RAGTopK:        3,
+				EmbedderModel:  "text-embedding-004",
+				PostgresHost:   "localhost",
+				PostgresPort:   tt.port,
+				PostgresDBName: "koopa",
 			}
 
 			err := cfg.Validate()
@@ -472,14 +472,14 @@ func TestValidatePostgresDBName(t *testing.T) {
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := &Config{
-		ModelName:        "gemini-2.5-flash",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresDBName:   "",
+		ModelName:      "gemini-2.5-flash",
+		Temperature:    0.7,
+		MaxTokens:      2048,
+		RAGTopK:        3,
+		EmbedderModel:  "text-embedding-004",
+		PostgresHost:   "localhost",
+		PostgresPort:   5432,
+		PostgresDBName: "",
 	}
 
 	err := cfg.Validate()
@@ -717,14 +717,14 @@ func BenchmarkValidate(b *testing.B) {
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := &Config{
-		ModelName:        "gemini-2.5-flash",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresDBName:   "koopa",
+		ModelName:      "gemini-2.5-flash",
+		Temperature:    0.7,
+		MaxTokens:      2048,
+		RAGTopK:        3,
+		EmbedderModel:  "text-embedding-004",
+		PostgresHost:   "localhost",
+		PostgresPort:   5432,
+		PostgresDBName: "koopa",
 	}
 
 	b.ResetTimer()

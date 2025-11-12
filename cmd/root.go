@@ -1,7 +1,4 @@
 // Package cmd implements command-line interface using Cobra.
-//
-// Provides commands: ask (single question), chat (interactive), sessions (list/delete),
-// and version. All commands use dependency injection via App container and avoid global state.
 package cmd
 
 import (
