@@ -1,4 +1,4 @@
-package banner
+package ui
 
 import (
 	"fmt"
@@ -7,11 +7,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var googleColors = []string{
-	"#4285F4", // Google Blue
-	"#EA4335", // Google Red
-	"#FBBC04", // Google Yellow
-	"#34A853", // Google Green
+var colors = []string{
+	"#4285F4", //  Blue
+	"#EA4335", //  Red
+	"#FBBC04", //  Yellow
+	"#34A853", //  Green
 }
 
 // KOOPA ASCII art (filled block style - larger and bolder)
@@ -40,11 +40,11 @@ func Print() {
 
 	// Unified style with Google Blue
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(googleColors[0])). // Google Blue
+		Foreground(lipgloss.Color(colors[0])). // Google Blue
 		Bold(true)
 
 	// Render arrow and text side by side
-	for i := 0; i < len(koopaArt); i++ {
+	for i := range len(koopaArt) {
 		arrow := style.Render(arrowArt[i])
 		text := style.Render(koopaArt[i])
 		fmt.Println(arrow + text)

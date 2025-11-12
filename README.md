@@ -1,10 +1,10 @@
-# Koopa
+# Koopa CLI
+
+![Koopa Assistant](docs/assets/Koopa-CLI.jpg)
 
 **A terminal-based AI assistant with knowledge base capabilities, built on [Genkit](https://github.com/firebase/genkit).**
 
 Koopa brings AI conversations directly to your command line with the ability to index and search your local documents for context-aware responses.
-
-![Koopa Assistant](docs/assets/koopa.png)
 
 ## Features
 

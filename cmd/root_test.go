@@ -69,12 +69,12 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 	}
 
 	tests := []struct {
-		name             string
-		requiresAPIKey   bool
-		setupEnv         func()
-		cleanupEnv       func()
-		expectError      bool
-		errorContains    string
+		name           string
+		requiresAPIKey bool
+		setupEnv       func()
+		cleanupEnv     func()
+		expectError    bool
+		errorContains  string
 	}{
 		{
 			name:           "command requires API key - key is set",
@@ -93,7 +93,7 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			setupEnv: func() {
 				os.Unsetenv("GEMINI_API_KEY")
 			},
-			cleanupEnv: func() {},
+			cleanupEnv:    func() {},
 			expectError:   true,
 			errorContains: "GEMINI_API_KEY not set",
 		},

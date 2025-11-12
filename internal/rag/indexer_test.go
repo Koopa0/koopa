@@ -289,7 +289,7 @@ func TestIndexer_AddDirectory_WithGitignore(t *testing.T) {
 		shouldBeAdded bool
 	}{
 		{"file1.txt", "content 1", true},
-		{"debug.log", "log content", false}, // Ignored by .gitignore
+		{"debug.log", "log content", false},      // Ignored by .gitignore
 		{"node_modules/lib.js", "module", false}, // Ignored directory
 	}
 
@@ -328,11 +328,11 @@ func TestIndexer_AddDirectory_SkipsUnsupportedFiles(t *testing.T) {
 
 	// Create files with various extensions
 	files := map[string]bool{
-		"code.go":     true,  // Supported
-		"readme.md":   true,  // Supported
-		"binary.exe":  false, // Unsupported
-		"image.png":   false, // Unsupported
-		"data.csv":    false, // Unsupported
+		"code.go":    true,  // Supported
+		"readme.md":  true,  // Supported
+		"binary.exe": false, // Unsupported
+		"image.png":  false, // Unsupported
+		"data.csv":   false, // Unsupported
 	}
 
 	for name := range files {
