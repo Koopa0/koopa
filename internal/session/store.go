@@ -39,6 +39,7 @@ type SessionQuerier interface {
 // Store is safe for concurrent use by multiple goroutines.
 type Store struct {
 	querier SessionQuerier // Depends on interface for testability
+	pool    *pgxpool.Pool  // Database pool for transaction support
 	logger  *slog.Logger
 }
 
@@ -55,7 +56,14 @@ type Store struct {
 // Design: Accepts dbPool and converts to SessionQuerier interface internally.
 // For testing, use NewWithQuerier to inject mock querier directly.
 func New(dbPool *pgxpool.Pool, logger *slog.Logger) *Store {
-	return NewWithQuerier(sqlc.New(dbPool), logger)
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Store{
+		querier: sqlc.New(dbPool),
+		pool:    dbPool,
+		logger:  logger,
+	}
 }
 
 // NewWithQuerier creates a new Store instance with custom querier (useful for testing).
@@ -181,6 +189,9 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
 // AddMessages adds multiple messages to a session in batch.
 // This is more efficient than adding messages one by one.
 //
+// All operations are wrapped in a database transaction to ensure atomicity.
+// If any operation fails, all changes are rolled back.
+//
 // Parameters:
 //   - ctx: Context for the operation
 //   - sessionID: UUID of the session to add messages to
@@ -195,12 +206,99 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 		return nil
 	}
 
+	// If pool is nil (testing with mock), use non-transactional mode
+	if s.pool == nil {
+		return s.addMessagesNonTransactional(ctx, sessionID, messages)
+	}
+
+	// Begin transaction for atomicity
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // Rollback if not committed
+
+	// Create querier for this transaction
+	txQuerier := sqlc.New(tx)
+
+	// 1. Get current max sequence number within transaction
+	maxSeqRaw, err := txQuerier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
+	if err != nil {
+		// If session doesn't exist yet or no messages, start from 0
+		s.logger.Debug("no existing messages, starting from sequence 0",
+			"session_id", sessionID)
+		maxSeqRaw = int64(0)
+	}
+
+	// Convert interface{} to int64
+	var maxSeq int64
+	switch v := maxSeqRaw.(type) {
+	case int64:
+		maxSeq = v
+	case int32:
+		maxSeq = int64(v)
+	case int:
+		maxSeq = int64(v)
+	default:
+		maxSeq = 0
+	}
+
+	// 2. Insert messages in batch within transaction
+	for i, msg := range messages {
+		// Validate Content slice for nil pointers (P2 quality improvement)
+		for j, part := range msg.Content {
+			if part == nil {
+				return fmt.Errorf("message %d has nil content at index %d", i, j)
+			}
+		}
+
+		// Marshal ai.Part slice to JSON
+		contentJSON, err := json.Marshal(msg.Content)
+		if err != nil {
+			// Transaction will be rolled back by defer
+			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
+		}
+
+		seqNum := int32(maxSeq) + int32(i) + 1
+
+		if err = txQuerier.AddMessage(ctx, sqlc.AddMessageParams{
+			SessionID:      uuidToPgUUID(sessionID),
+			Role:           msg.Role,
+			Content:        contentJSON,
+			SequenceNumber: seqNum,
+		}); err != nil {
+			// Transaction will be rolled back by defer
+			return fmt.Errorf("failed to insert message %d: %w", i, err)
+		}
+	}
+
+	// 3. Update session's updated_at and message_count within transaction
+	newCount := int32(maxSeq) + int32(len(messages))
+	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
+		MessageCount: &newCount,
+		SessionID:    uuidToPgUUID(sessionID),
+	}); err != nil {
+		// Transaction will be rolled back by defer
+		return fmt.Errorf("failed to update session metadata: %w", err)
+	}
+
+	// 4. Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	s.logger.Debug("added messages", "session_id", sessionID, "count", len(messages))
+	return nil
+}
+
+// addMessagesNonTransactional adds messages without transaction (for testing with mocks).
+// This is a fallback for when pool is nil.
+func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.UUID, messages []*Message) error {
 	// 1. Get current max sequence number
 	maxSeqRaw, err := s.querier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
 	if err != nil {
-		s.logger.Warn("failed to get max sequence number, starting from 0",
-			"session_id", sessionID,
-			"error", err)
+		s.logger.Debug("no existing messages, starting from sequence 0",
+			"session_id", sessionID)
 		maxSeqRaw = int64(0)
 	}
 
@@ -219,6 +317,13 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 
 	// 2. Insert messages in batch
 	for i, msg := range messages {
+		// Validate Content slice for nil pointers (P2 quality improvement)
+		for j, part := range msg.Content {
+			if part == nil {
+				return fmt.Errorf("message %d has nil content at index %d", i, j)
+			}
+		}
+
 		// Marshal ai.Part slice to JSON
 		contentJSON, err := json.Marshal(msg.Content)
 		if err != nil {
@@ -227,31 +332,26 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 
 		seqNum := int32(maxSeq) + int32(i) + 1
 
-		err = s.querier.AddMessage(ctx, sqlc.AddMessageParams{
+		if err = s.querier.AddMessage(ctx, sqlc.AddMessageParams{
 			SessionID:      uuidToPgUUID(sessionID),
 			Role:           msg.Role,
 			Content:        contentJSON,
 			SequenceNumber: seqNum,
-		})
-		if err != nil {
+		}); err != nil {
 			return fmt.Errorf("failed to insert message %d: %w", i, err)
 		}
 	}
 
 	// 3. Update session's updated_at and message_count
 	newCount := int32(maxSeq) + int32(len(messages))
-	err = s.querier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
+	if err = s.querier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
 		MessageCount: &newCount,
 		SessionID:    uuidToPgUUID(sessionID),
-	})
-	if err != nil {
-		s.logger.Warn("failed to update session metadata",
-			"session_id", sessionID,
-			"error", err)
-		// Don't return error - messages were successfully added
+	}); err != nil {
+		return fmt.Errorf("failed to update session metadata: %w", err)
 	}
 
-	s.logger.Debug("added messages", "session_id", sessionID, "count", len(messages))
+	s.logger.Debug("added messages (non-transactional)", "session_id", sessionID, "count", len(messages))
 	return nil
 }
 
