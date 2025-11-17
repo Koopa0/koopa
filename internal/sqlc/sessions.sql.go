@@ -190,6 +190,18 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]S
 	return items, nil
 }
 
+const lockSession = `-- name: LockSession :one
+SELECT id FROM sessions WHERE id = $1 FOR UPDATE
+`
+
+// Locks the session row to prevent concurrent modifications (P1-2 fix)
+// Must be called within a transaction before GetMaxSequenceNumber
+func (q *Queries) LockSession(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockSession, id)
+	err := row.Scan(&id)
+	return id, err
+}
+
 const updateSessionUpdatedAt = `-- name: UpdateSessionUpdatedAt :exec
 UPDATE sessions
 SET updated_at = NOW(),

@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -28,8 +29,9 @@ func TestGetStateFilePath(t *testing.T) {
 	}
 
 	// Verify path uses temp directory
-	if !filepath.HasPrefix(path, tempDir) {
-		t.Errorf("GetStateFilePath() = %s, expected to start with %s", path, tempDir)
+	rel, err := filepath.Rel(tempDir, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		t.Errorf("GetStateFilePath() = %s, expected to be within %s", path, tempDir)
 	}
 
 	// Verify directory was created
@@ -188,6 +190,12 @@ func TestLoadCurrentSessionID_InvalidContent(t *testing.T) {
 			name:    "malformed UUID returns error",
 			content: "12345678-1234-1234-1234",
 			wantErr: true,
+		},
+		{
+			name:    "valid UUID returns success",
+			content: "550e8400-e29b-41d4-a716-446655440000",
+			wantNil: false,
+			wantErr: false,
 		},
 	}
 

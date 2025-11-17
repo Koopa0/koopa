@@ -163,6 +163,14 @@ func (c *Config) PostgresConnectionString() string {
 
 // Validate validates configuration values
 func (c *Config) Validate() error {
+	// 0. Check for nil config (defensive programming)
+	if c == nil {
+		return &ConfigError{
+			Field:   "config",
+			Message: "Configuration is nil",
+		}
+	}
+
 	// 1. API Key validation (required for all AI operations)
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		return &ConfigError{

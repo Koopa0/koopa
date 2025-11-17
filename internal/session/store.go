@@ -26,6 +26,7 @@ type SessionQuerier interface {
 	ListSessions(ctx context.Context, arg sqlc.ListSessionsParams) ([]sqlc.Session, error)
 	UpdateSessionUpdatedAt(ctx context.Context, arg sqlc.UpdateSessionUpdatedAtParams) error
 	DeleteSession(ctx context.Context, id pgtype.UUID) error
+	LockSession(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) // P1-2: Lock session for concurrent safety
 
 	// Message operations
 	AddMessage(ctx context.Context, arg sqlc.AddMessageParams) error
@@ -221,6 +222,14 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	// Create querier for this transaction
 	txQuerier := sqlc.New(tx)
 
+	// 0. Lock session row to prevent concurrent modifications (P1-2 fix)
+	// This SELECT ... FOR UPDATE ensures that only one transaction can modify
+	// this session at a time, preventing race conditions on sequence numbers
+	_, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID))
+	if err != nil {
+		return fmt.Errorf("failed to lock session: %w", err)
+	}
+
 	// 1. Get current max sequence number within transaction
 	maxSeqRaw, err := txQuerier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
 	if err != nil {
@@ -293,6 +302,13 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 
 // addMessagesNonTransactional adds messages without transaction (for testing with mocks).
 // This is a fallback for when pool is nil.
+//
+// This function should ONLY be used in:
+//   - Unit tests with mock queriers
+//   - Single-threaded test scenarios
+//   - Contexts where external synchronization is guaranteed
+//
+// For production use with concurrent access, always use AddMessages with a real database pool.
 func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.UUID, messages []*Message) error {
 	// 1. Get current max sequence number
 	maxSeqRaw, err := s.querier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))

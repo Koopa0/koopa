@@ -159,12 +159,16 @@ func TestRunVersion(t *testing.T) {
 
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Run function
-			err := runVersion(tt.config)
+			err = runVersion(tt.config)
 
 			// Restore stdout
 			w.Close()
@@ -232,11 +236,15 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
-			err := runVersion(tt.config)
+			err = runVersion(tt.config)
 
 			w.Close()
 			os.Stdout = oldStdout
@@ -339,7 +347,11 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
