@@ -99,7 +99,11 @@ func TestPrintWelcome(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -232,7 +236,11 @@ func TestHandleSlashCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -307,7 +315,11 @@ func TestHandleSlashCommand_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout to prevent test output pollution
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -331,7 +343,11 @@ func TestHandleSlashCommand_EdgeCases(t *testing.T) {
 func TestPrintInteractiveHelp(t *testing.T) {
 	// Capture stdout
 	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 	os.Stdout = w
 
@@ -436,7 +452,11 @@ func TestHandleRAGCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -506,7 +526,11 @@ func TestHandleRAGAdd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -578,7 +602,11 @@ func TestHandleRAGRemove(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -680,7 +708,11 @@ func TestHandleSessionCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -737,7 +769,11 @@ func TestHandleSessionNew_ErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -794,7 +830,11 @@ func TestHandleSessionSwitch_InvalidID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
@@ -856,7 +896,11 @@ func TestHandleSessionDelete_InvalidID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
+			r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
 		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 

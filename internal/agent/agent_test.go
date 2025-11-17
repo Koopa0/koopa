@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
@@ -534,7 +535,7 @@ func TestExecute_FinishReasonBlocked(t *testing.T) {
 // context cancellation during an interrupt, preventing goroutine leaks (P1-2 fix).
 func TestExecute_ContextCancellation(t *testing.T) {
 	// 1. Arrange
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 	// Use GenerateFunc to return an interrupt on the first call
 	callCount := 0

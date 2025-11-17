@@ -44,3 +44,8 @@ OFFSET sqlc.arg(result_offset);
 SELECT COALESCE(MAX(sequence_number), 0) AS max_seq
 FROM session_messages
 WHERE session_id = $1;
+
+-- name: LockSession :one
+-- Locks the session row to prevent concurrent modifications (P1-2 fix)
+-- Must be called within a transaction before GetMaxSequenceNumber
+SELECT id FROM sessions WHERE id = $1 FOR UPDATE;

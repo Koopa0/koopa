@@ -21,6 +21,11 @@ import (
 
 // Run starts the interactive chat mode
 func Run(ctx context.Context, cfg *config.Config, version string) error {
+	// Create cancellable context for this session
+	// This allows us to properly clean up resources on timeout or cancellation
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Initialize application using Wire DI
 	application, cleanup, err := app.InitializeApp(ctx, cfg)
 	if err != nil {
@@ -112,11 +117,25 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 							}
 						} else {
 							// Scanner error or EOF, default to reject for safety
+							if err := scanner.Err(); err != nil {
+								fmt.Fprintf(os.Stderr, "Scanner error: %v\n", err)
+							}
 							break
 						}
 					}
 
-					event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}
+					// Send confirmation with timeout protection (P3-1 optional)
+					// This prevents hanging if the agent's channel is blocked
+					select {
+					case event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}:
+						// Successfully sent confirmation
+					case <-ctx.Done():
+						fmt.Fprintf(os.Stderr, "\nContext canceled while sending confirmation\n")
+						break event_loop
+					case <-time.After(5 * time.Second):
+						fmt.Fprintf(os.Stderr, "\nTimeout sending confirmation to agent\n")
+						break event_loop
+					}
 
 					fmt.Print("Koopa> ")
 					_ = os.Stdout.Sync()
@@ -136,6 +155,7 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 
 			case <-time.After(5 * time.Minute):
 				// Timeout after 5 minutes to prevent indefinite hanging
+			cancel() // Cancel context to stop agent goroutines (P1-1 fix)
 				fmt.Fprintf(os.Stderr, "\nAgent response timed out after 5 minutes.\n")
 				break event_loop
 			}
@@ -176,7 +196,10 @@ func handleSlashCommand(ctx context.Context, cmd string, ag *agent.Agent, applic
 		return false
 
 	case "/version":
+		// Show full version information (matching cobra version command)
 		fmt.Printf("Koopa v%s\n", version)
+		fmt.Printf("Build: %s\n", BuildTime)
+		fmt.Printf("Commit: %s\n", GitCommit)
 		fmt.Println()
 		return false
 
