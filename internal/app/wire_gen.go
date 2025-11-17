@@ -16,6 +16,7 @@ import (
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa-cli/internal/session"
 )
 
 // Injectors from wire.go:
@@ -30,12 +31,13 @@ func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error
 		return nil, nil, err
 	}
 	store := provideKnowledgeStore(pool, embedder)
+	sessionStore := provideSessionStore(pool)
 	path, err := providePathValidator()
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	app, err := newApp(cfg, ctx, genkit, embedder, pool, store, path)
+	app, err := newApp(cfg, ctx, genkit, embedder, pool, store, sessionStore, path)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -54,7 +56,7 @@ var providerSet = wire.NewSet(
 	provideEmbedder,
 	provideDBPool,
 	provideKnowledgeStore,
-	providePathValidator,
+	provideSessionStore, wire.Bind(new(SessionStore), new(*session.Store)), providePathValidator,
 
 	newApp,
 )
@@ -88,6 +90,12 @@ func provideKnowledgeStore(pool *pgxpool.Pool, embedder ai.Embedder) *knowledge.
 	return knowledge.New(pool, embedder, nil)
 }
 
+// provideSessionStore creates a session store instance.
+// This provides real session persistence using PostgreSQL backend.
+func provideSessionStore(pool *pgxpool.Pool) *session.Store {
+	return session.New(pool, nil)
+}
+
 // providePathValidator creates a path validator instance.
 func providePathValidator() (*security.Path, error) {
 
@@ -102,6 +110,7 @@ func newApp(
 	g *genkit.Genkit,
 	embedder ai.Embedder,
 	pool *pgxpool.Pool, knowledge2 *knowledge.Store,
+	sessionStore SessionStore,
 	pathValidator *security.Path,
 ) (*App, error) {
 
@@ -115,6 +124,7 @@ func newApp(
 		Embedder:      embedder,
 		DBPool:        pool,
 		Knowledge:     knowledge2,
+		SessionStore:  sessionStore,
 		PathValidator: pathValidator,
 	}
 

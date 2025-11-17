@@ -9,11 +9,46 @@ import (
 	"testing"
 
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/app"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa-cli/internal/session"
 )
+
+// ============================================================================
+// Mock Session Store for Testing
+// ============================================================================
+
+type mockSessionStore struct{}
+
+func (m *mockSessionStore) CreateSession(ctx context.Context, title, modelName, systemPrompt string) (*session.Session, error) {
+	return &session.Session{
+		ID:    uuid.New(),
+		Title: title,
+	}, nil
+}
+
+func (m *mockSessionStore) GetSession(ctx context.Context, sessionID uuid.UUID) (*session.Session, error) {
+	return nil, nil
+}
+
+func (m *mockSessionStore) ListSessions(ctx context.Context, limit, offset int) ([]*session.Session, error) {
+	return []*session.Session{}, nil
+}
+
+func (m *mockSessionStore) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
+	return nil
+}
+
+func (m *mockSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+	return []*session.Message{}, nil
+}
+
+func (m *mockSessionStore) AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error {
+	return nil
+}
 
 // ============================================================================
 // printWelcome Tests
@@ -555,6 +590,369 @@ func TestHandleRAGRemove(t *testing.T) {
 				if !strings.Contains(output, expected) {
 					t.Errorf("expected output to contain %q\nGot: %s", expected, output)
 				}
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Session Command Tests
+// ============================================================================
+
+func TestHandleSessionCommand(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	// Create mock agent (will use for basic tests)
+	mockAgent := &agent.Agent{}
+
+	// Create mock app with mock session store
+	mockApp := &app.App{
+		Config:       &config.Config{ModelName: "gemini-2.0-flash-exp"},
+		Genkit:       g,
+		SessionStore: &mockSessionStore{},
+	}
+
+	tests := []struct {
+		name           string
+		args           []string
+		expectedOutput []string
+	}{
+		{
+			name: "session without args shows current session (no active)",
+			args: []string{},
+			expectedOutput: []string{
+				"No active session",
+				"/session new",
+				"/session switch",
+				"/session list",
+			},
+		},
+		{
+			name: "session list without args",
+			args: []string{"list"},
+			expectedOutput: []string{
+				// Will show "No sessions found" since mock store is empty
+			},
+		},
+		{
+			name: "session new without title",
+			args: []string{"new"},
+			expectedOutput: []string{
+				"Error: Please provide a session title",
+				"Usage: /session new <title>",
+			},
+		},
+		{
+			name: "session switch without id",
+			args: []string{"switch"},
+			expectedOutput: []string{
+				"Error: Please provide a session ID",
+				"Usage: /session switch <id>",
+			},
+		},
+		{
+			name: "session delete without id",
+			args: []string{"delete"},
+			expectedOutput: []string{
+				"Error: Please provide a session ID",
+				"Usage: /session delete <id>",
+			},
+		},
+		{
+			name: "session with unknown subcommand",
+			args: []string{"unknown"},
+			expectedOutput: []string{
+				"Unknown /session subcommand: unknown",
+				"Type /session to see usage",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			// Call function
+			handleSessionCommand(ctx, tt.args, mockAgent, mockApp)
+
+			// Restore stdout
+			w.Close()
+			os.Stdout = oldStdout
+
+			// Read captured output
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			output := buf.String()
+
+			// Verify expected output strings
+			for _, expected := range tt.expectedOutput {
+				if !strings.Contains(output, expected) {
+					t.Errorf("expected output to contain %q\nGot: %s", expected, output)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleSessionNew_ErrorCases(t *testing.T) {
+	ctx := context.Background()
+	mockAgent := &agent.Agent{}
+
+	tests := []struct {
+		name           string
+		args           []string
+		expectedOutput []string
+	}{
+		{
+			name: "no arguments",
+			args: []string{},
+			expectedOutput: []string{
+				"Error: Please provide a session title",
+				"Usage: /session new <title>",
+			},
+		},
+		{
+			name: "empty string after trim",
+			args: []string{"   "},
+			expectedOutput: []string{
+				"Error: Session title cannot be empty",
+				"Usage: /session new <title>",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			// Call function
+			handleSessionNew(ctx, tt.args, mockAgent)
+
+			// Restore stdout
+			w.Close()
+			os.Stdout = oldStdout
+
+			// Read captured output
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			output := buf.String()
+
+			// Verify expected output strings
+			for _, expected := range tt.expectedOutput {
+				if !strings.Contains(output, expected) {
+					t.Errorf("expected output to contain %q\nGot: %s", expected, output)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleSessionSwitch_InvalidID(t *testing.T) {
+	ctx := context.Background()
+	mockAgent := &agent.Agent{}
+
+	tests := []struct {
+		name           string
+		args           []string
+		expectedOutput []string
+	}{
+		{
+			name: "no arguments",
+			args: []string{},
+			expectedOutput: []string{
+				"Error: Please provide a session ID",
+				"Usage: /session switch <id>",
+			},
+		},
+		{
+			name: "invalid UUID format",
+			args: []string{"invalid-id"},
+			expectedOutput: []string{
+				"Error: Invalid session ID format",
+				"Usage: /session switch <id>",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			// Call function
+			handleSessionSwitch(ctx, tt.args, mockAgent)
+
+			// Restore stdout
+			w.Close()
+			os.Stdout = oldStdout
+
+			// Read captured output
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			output := buf.String()
+
+			// Verify expected output strings
+			for _, expected := range tt.expectedOutput {
+				if !strings.Contains(output, expected) {
+					t.Errorf("expected output to contain %q\nGot: %s", expected, output)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleSessionDelete_InvalidID(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+	mockAgent := &agent.Agent{}
+	mockApp := &app.App{
+		Config: &config.Config{ModelName: "gemini-2.0-flash-exp"},
+		Genkit: g,
+	}
+
+	tests := []struct {
+		name           string
+		args           []string
+		expectedOutput []string
+	}{
+		{
+			name: "no arguments",
+			args: []string{},
+			expectedOutput: []string{
+				"Error: Please provide a session ID",
+				"Usage: /session delete <id>",
+			},
+		},
+		{
+			name: "invalid UUID format",
+			args: []string{"not-a-uuid"},
+			expectedOutput: []string{
+				"Error: Invalid session ID format",
+				"Usage: /session delete <id>",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			// Call function
+			handleSessionDelete(ctx, tt.args, mockAgent, mockApp)
+
+			// Restore stdout
+			w.Close()
+			os.Stdout = oldStdout
+
+			// Read captured output
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			output := buf.String()
+
+			// Verify expected output strings
+			for _, expected := range tt.expectedOutput {
+				if !strings.Contains(output, expected) {
+					t.Errorf("expected output to contain %q\nGot: %s", expected, output)
+				}
+			}
+		})
+	}
+}
+
+func TestParseSessionID(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{
+			name:    "valid UUID",
+			input:   "123e4567-e89b-12d3-a456-426614174000",
+			wantErr: false,
+		},
+		{
+			name:    "invalid UUID - not enough segments",
+			input:   "123e4567",
+			wantErr: true,
+		},
+		{
+			name:    "invalid UUID - wrong format",
+			input:   "not-a-uuid",
+			wantErr: true,
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseSessionID(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSessionID() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestMin(t *testing.T) {
+	tests := []struct {
+		name string
+		a    int
+		b    int
+		want int
+	}{
+		{
+			name: "a is smaller",
+			a:    5,
+			b:    10,
+			want: 5,
+		},
+		{
+			name: "b is smaller",
+			a:    10,
+			b:    5,
+			want: 5,
+		},
+		{
+			name: "equal values",
+			a:    7,
+			b:    7,
+			want: 7,
+		},
+		{
+			name: "negative values",
+			a:    -5,
+			b:    -10,
+			want: -10,
+		},
+		{
+			name: "zero and positive",
+			a:    0,
+			b:    5,
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := min(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("min(%d, %d) = %d, want %d", tt.a, tt.b, got, tt.want)
 			}
 		})
 	}

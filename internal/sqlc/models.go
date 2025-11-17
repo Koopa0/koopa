@@ -17,3 +17,22 @@ type Document struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
+
+type Session struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        *string            `json:"title"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ModelName    *string            `json:"model_name"`
+	SystemPrompt *string            `json:"system_prompt"`
+	MessageCount *int32             `json:"message_count"`
+}
+
+type SessionMessage struct {
+	ID             pgtype.UUID        `json:"id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	Role           string             `json:"role"`
+	Content        []byte             `json:"content"`
+	SequenceNumber int32              `json:"sequence_number"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}

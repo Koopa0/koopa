@@ -8,6 +8,7 @@ Koopa brings AI conversations directly to your command line with the ability to 
 
 ## Why Koopa?
 
+- **Persistent Sessions** - Save and resume conversations anytime, organized by topic
 - **Smart Knowledge Base** - Index your documents and let Koopa remember them for you
 - **Private & Local** - Your data stays on your machine, stored in local PostgreSQL
 - **Extensible Tools** - Built-in file operations, system commands, and HTTP requests
@@ -67,6 +68,42 @@ Based on your meeting notes, the action items were:
 3. Review the budget proposal
 ```
 
+### Session Management
+
+Organize conversations by topic and resume them anytime:
+
+```bash
+> /session new "Project Brainstorming"
+✓ Created new session: Project Brainstorming
+  Session ID: 8551638c-ba89-43c6-8fbf-e323c026bab9
+
+> Let's brainstorm ideas for our Q2 product launch
+[AI responds with ideas...]
+
+> /session new "Bug Investigation"
+✓ Created new session: Bug Investigation
+
+> /session list
+╔══════════════════════════════════════════════════════════╗
+║  Sessions (2 most recent)                               ║
+╚══════════════════════════════════════════════════════════╝
+
+ ▶ 1. Bug Investigation  [ACTIVE]
+    ID: c7a7f88d-a916-4cbb-8f7d-7f33d748ecec
+    Messages: 0  |  Updated: 2025-11-17 14:33:51
+
+   2. Project Brainstorming
+    ID: 8551638c-ba89-43c6-8fbf-e323c026bab9
+    Messages: 5  |  Updated: 2025-11-17 14:30:15
+
+> /session switch 8551638c-ba89-43c6-8fbf-e323c026bab9
+✓ Switched to session: Project Brainstorming
+  Conversation history loaded (5 messages)
+
+> Continue with the brainstorming ideas
+[AI continues from where you left off...]
+```
+
 ## Features
 
 ### Interactive Chat
@@ -90,6 +127,24 @@ Index your local documents and have Koopa reference them in conversations:
 > /rag status                   # Check system status
 ```
 
+### Session Management
+
+Save and restore your conversations across sessions:
+
+```bash
+> /session new "My Project Planning"  # Create a new session
+> /session list                       # View all your sessions
+> /session switch <id>                # Switch between sessions
+> /session                            # Show current session details
+> /session delete <id>                # Delete a session
+```
+
+Your conversation history is automatically saved to PostgreSQL, allowing you to:
+- **Resume conversations** - Pick up exactly where you left off
+- **Organize by topic** - Create separate sessions for different projects
+- **Search history** - Access past conversations anytime
+- **Never lose context** - All messages are persisted to the database
+
 ### Built-in Tools
 
 Koopa can help you with:
@@ -104,16 +159,24 @@ Add custom tools using the [Model Context Protocol](https://modelcontextprotocol
 
 ## Commands
 
-| Command            | Description                         |
-| ------------------ | ----------------------------------- |
-| `/help`            | Show available commands             |
-| `/version`         | Show version information            |
-| `/rag add <path>`  | Index files or directories          |
-| `/rag list`        | List indexed documents              |
-| `/rag remove <id>` | Remove document from knowledge base |
-| `/rag status`      | Show RAG status and statistics      |
-| `/clear`           | Clear current conversation          |
-| `/exit` or `/quit` | Exit Koopa                          |
+| Command                     | Description                             |
+| --------------------------- | --------------------------------------- |
+| `/help`                     | Show available commands                 |
+| `/version`                  | Show version information                |
+| **Session Management**      |                                         |
+| `/session`                  | Show current session details            |
+| `/session list [limit]`     | List all sessions (default: 10)         |
+| `/session new <title>`      | Create a new session with a title       |
+| `/session switch <id>`      | Switch to a different session           |
+| `/session delete <id>`      | Delete a session and all its messages   |
+| **Knowledge Base (RAG)**    |                                         |
+| `/rag add <path>`           | Index files or directories              |
+| `/rag list`                 | List indexed documents                  |
+| `/rag remove <id>`          | Remove document from knowledge base     |
+| `/rag status`               | Show RAG status and statistics          |
+| **Conversation**            |                                         |
+| `/clear`                    | Clear current conversation              |
+| `/exit` or `/quit`          | Exit Koopa                              |
 
 **Shortcuts:**
 

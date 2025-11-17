@@ -78,10 +78,12 @@ func registerFileTools(g *genkit.Genkit, handler *Handler) {
 		g,
 		"listFiles",
 		"List all files and subdirectories in a directory. "+
-			"Use this to explore directory structure, find files, or understand project organization. "+
+			"Use this to explore directory structure, find files of specific types (e.g., .md, .go, .ts, .py files), or understand project organization. "+
+			"This tool shows ALL files in the directory - you can filter by extension or pattern in your response to the user. "+
 			"Returns a formatted list with [File] and [Directory] prefixes. "+
 			"Does not recursively list subdirectories (only shows immediate children). "+
-			"Useful for: exploring project structure, finding specific files, understanding codebase layout.",
+			"Useful for: exploring project structure, finding .md/.go/.ts files, understanding codebase layout. "+
+			"IMPORTANT: Always use this tool (not executeCommand with 'ls') for listing directory contents.",
 		func(ctx *ai.ToolContext, input struct {
 			Path string `json:"path" jsonschema_description:"Directory path to list (absolute or relative). Use '.' for current directory. Examples: '.', './src', '/home/user/project'"`
 		},
