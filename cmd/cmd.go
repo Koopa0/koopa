@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/agent"
@@ -74,36 +75,69 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 
 		eventCh := ag.Execute(ctx, input)
 	event_loop:
-		for event := range eventCh {
-			switch event.Type {
-			case agent.EventTypeText:
-				fmt.Print(event.TextChunk)
-				_ = os.Stdout.Sync()
-			case agent.EventTypeInterrupt:
-				fmt.Println() // Newline for cleaner prompt
-				fmt.Printf("[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
-				fmt.Printf("Reason: %s\n", event.Interrupt.Reason)
-				fmt.Print("Approve? [y/n]: ")
-				_ = os.Stdout.Sync()
-
-				// Use the same scanner to avoid input reader conflicts
-				approved := false // Default to reject for safety
-				if scanner.Scan() {
-					confirmationInput := strings.ToLower(strings.TrimSpace(scanner.Text()))
-					approved = confirmationInput == "y"
+		for {
+			select {
+			case event, ok := <-eventCh:
+				if !ok {
+					// Channel closed, exit loop
+					break event_loop
 				}
 
-				event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}
+				switch event.Type {
+				case agent.EventTypeText:
+					fmt.Print(event.TextChunk)
+					_ = os.Stdout.Sync()
+				case agent.EventTypeInterrupt:
+					fmt.Println() // Newline for cleaner prompt
+					fmt.Printf("[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
+					fmt.Printf("Reason: %s\n", event.Interrupt.Reason)
 
-				fmt.Print("Koopa> ")
-				_ = os.Stdout.Sync()
+					// Improved input validation with retry loop
+					approved := false
+					for {
+						fmt.Print("Approve? [y/n]: ")
+						_ = os.Stdout.Sync()
 
-			case agent.EventTypeError:
-				fmt.Fprintf(os.Stderr, "\nError: %v\n", event.Error)
-				break event_loop // Break inner loop on error
-			case agent.EventTypeComplete:
-				fmt.Println()
-				break event_loop // Exit inner loop on completion
+						if scanner.Scan() {
+							input := strings.ToLower(strings.TrimSpace(scanner.Text()))
+							if input == "y" {
+								approved = true
+								break
+							} else if input == "n" {
+								approved = false
+								break
+							} else {
+								fmt.Println("Invalid input. Please enter 'y' or 'n'.")
+								continue
+							}
+						} else {
+							// Scanner error or EOF, default to reject for safety
+							break
+						}
+					}
+
+					event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}
+
+					fmt.Print("Koopa> ")
+					_ = os.Stdout.Sync()
+
+				case agent.EventTypeError:
+					fmt.Fprintf(os.Stderr, "\nError: %v\n", event.Error)
+					break event_loop // Break inner loop on error
+				case agent.EventTypeComplete:
+					fmt.Println()
+					break event_loop // Exit inner loop on completion
+				}
+
+			case <-ctx.Done():
+				// Context cancelled, exit gracefully
+				fmt.Println("\nOperation cancelled.")
+				break event_loop
+
+			case <-time.After(5 * time.Minute):
+				// Timeout after 5 minutes to prevent indefinite hanging
+				fmt.Fprintf(os.Stderr, "\nAgent response timed out after 5 minutes.\n")
+				break event_loop
 			}
 		}
 	}

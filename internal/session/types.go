@@ -11,6 +11,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// Role constants define valid message roles for type safety.
+const (
+	RoleUser  = "user"
+	RoleModel = "model"
+	RoleTool  = "tool"
+)
+
 // Session represents a conversation session (application-level type).
 type Session struct {
 	ID           uuid.UUID

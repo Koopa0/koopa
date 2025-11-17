@@ -529,3 +529,109 @@ func TestExecute_FinishReasonBlocked(t *testing.T) {
 
 	t.Log("Test passed: Agent correctly handled FinishReasonBlocked")
 }
+
+// TestExecute_ContextCancellation verifies that the Execute method correctly handles
+// context cancellation during an interrupt, preventing goroutine leaks (P1-2 fix).
+func TestExecute_ContextCancellation(t *testing.T) {
+	// 1. Arrange
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Use GenerateFunc to return an interrupt on the first call
+	callCount := 0
+	mockGen := &mockGenerator{
+		GenerateFunc: func(ctx context.Context, opts ...ai.GenerateOption) (*ai.ModelResponse, error) {
+			callCount++
+			t.Logf("GenerateFunc called, count=%d", callCount)
+
+			if callCount == 1 {
+				// First call: return interruption
+				toolReq := &ai.ToolRequest{
+					Name: "requestConfirmation",
+					Input: map[string]any{
+						"toolToConfirm": "executeCommand",
+						"params":        map[string]any{"cmd": "rm -rf /"},
+						"reason":        "Dangerous command",
+					},
+				}
+				// Create a Part with interrupt metadata
+				part := ai.NewToolRequestPart(toolReq)
+				part.Metadata = map[string]any{"interrupt": true}
+
+				resp := &ai.ModelResponse{
+					Message: &ai.Message{
+						Role:    ai.RoleModel,
+						Content: []*ai.Part{part},
+					},
+					FinishReason: ai.FinishReasonInterrupted,
+				}
+				t.Logf("Returning interrupt response")
+				return resp, nil
+			}
+
+			// Should not reach here in this test
+			t.Error("Unexpected second call to Generate - context should have been cancelled")
+			return nil, errors.New("unexpected call")
+		},
+	}
+
+	agent := createTestAgent(t, mockGen)
+
+	// 2. Act
+	eventCh := agent.Execute(ctx, "delete all files")
+
+	// 3. Assert
+	// First, we expect to receive an interrupt event.
+	event, ok := <-eventCh
+	if !ok {
+		t.Fatal("Event channel closed unexpectedly")
+	}
+
+	if event.Type != EventTypeInterrupt {
+		if event.Type == EventTypeError {
+			t.Fatalf("Received error event before cancellation: %v", event.Error)
+		}
+		t.Fatalf("Expected event type %v (Interrupt), but got %v", EventTypeInterrupt, event.Type)
+	}
+
+	if event.Interrupt == nil {
+		t.Fatal("Expected interrupt event to have a non-nil Interrupt field")
+	}
+
+	// 4. Cancel the context while waiting for user confirmation
+	// This simulates the user interrupting the operation (Ctrl+C, timeout, etc.)
+	t.Log("Cancelling context to simulate user interrupt")
+	cancel()
+
+	// 5. The agent should detect the cancellation and send an error event
+	event, ok = <-eventCh
+	if !ok {
+		t.Fatal("Event channel closed unexpectedly after cancellation")
+	}
+
+	if event.Type != EventTypeError {
+		t.Fatalf("Expected event type %v (Error) after cancellation, but got %v", EventTypeError, event.Type)
+	}
+
+	if event.Error == nil {
+		t.Fatal("Expected error event to have a non-nil Error field")
+	}
+
+	// Verify error message indicates cancellation
+	expectedMsg := "operation cancelled by user"
+	if event.Error.Error() != expectedMsg {
+		t.Errorf("Expected error message '%s', but got '%s'", expectedMsg, event.Error.Error())
+	}
+
+	// The channel should close after the error
+	_, ok = <-eventCh
+	if ok {
+		t.Fatal("Expected event channel to be closed after cancellation error")
+	}
+
+	// Verify Generate was called exactly once (no second call due to cancellation)
+	if callCount != 1 {
+		t.Errorf("Expected Generate to be called 1 time, but was called %d times", callCount)
+	}
+
+	t.Log("Test passed: Agent correctly handled context cancellation during interrupt")
+}
