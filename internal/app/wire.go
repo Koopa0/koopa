@@ -14,6 +14,7 @@ import (
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa-cli/internal/session"
 )
 
 // InitializeApp is the Wire injector function.
@@ -33,6 +34,8 @@ var providerSet = wire.NewSet(
 	provideEmbedder,
 	provideDBPool,
 	provideKnowledgeStore,
+	provideSessionStore, // Phase 3: Real session persistence
+	wire.Bind(new(SessionStore), new(*session.Store)), // Bind concrete to interface for testability
 	providePathValidator,
 
 	// App constructor
@@ -73,6 +76,12 @@ func provideKnowledgeStore(pool *pgxpool.Pool, embedder ai.Embedder) *knowledge.
 	return knowledge.New(pool, embedder, nil)
 }
 
+// provideSessionStore creates a session store instance.
+// This provides real session persistence using PostgreSQL backend.
+func provideSessionStore(pool *pgxpool.Pool) *session.Store {
+	return session.New(pool, nil) // nil = use slog.Default()
+}
+
 // providePathValidator creates a path validator instance.
 func providePathValidator() (*security.Path, error) {
 	// Allow current directory and common paths
@@ -90,6 +99,7 @@ func newApp(
 	embedder ai.Embedder,
 	pool *pgxpool.Pool,
 	knowledge *knowledge.Store,
+	sessionStore SessionStore, // Phase 3: Session persistence (interface for testability)
 	pathValidator *security.Path,
 ) (*App, error) {
 	// Create context with cancel
@@ -103,6 +113,7 @@ func newApp(
 		Embedder:      embedder,
 		DBPool:        pool,
 		Knowledge:     knowledge,
+		SessionStore:  sessionStore, // Phase 3: Session persistence (interface for testability)
 		PathValidator: pathValidator,
 	}
 

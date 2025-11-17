@@ -11,12 +11,29 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa-cli/internal/session"
 )
+
+// SessionStore defines the interface for session persistence operations.
+// This interface is consumed by both the agent package and cmd package.
+// Following Go best practices: interfaces are defined by the consumer.
+type SessionStore interface {
+	// Agent methods
+	CreateSession(ctx context.Context, title, modelName, systemPrompt string) (*session.Session, error)
+	GetSession(ctx context.Context, sessionID uuid.UUID) (*session.Session, error)
+	GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error)
+	AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error
+
+	// CLI command methods
+	ListSessions(ctx context.Context, limit, offset int) ([]*session.Session, error)
+	DeleteSession(ctx context.Context, sessionID uuid.UUID) error
+}
 
 // App is the core application container.
 type App struct {
@@ -28,6 +45,7 @@ type App struct {
 	Embedder      ai.Embedder // Explicitly exported for Wire
 	DBPool        *pgxpool.Pool
 	Knowledge     *knowledge.Store
+	SessionStore  SessionStore // Phase 3: Session persistence (interface for testability)
 	PathValidator *security.Path
 
 	// Lifecycle management
@@ -54,6 +72,7 @@ func (a *App) Close() error {
 }
 
 // CreateAgent creates an Agent for a specific use case.
+// Session persistence is now fully wired via Wire DI (P1-Phase3 complete).
 func (a *App) CreateAgent(ctx context.Context, retriever ai.Retriever) (*agent.Agent, error) {
-	return agent.New(ctx, a.Config, a.Genkit, retriever)
+	return agent.New(ctx, a.Config, a.Genkit, retriever, a.SessionStore, slog.Default())
 }

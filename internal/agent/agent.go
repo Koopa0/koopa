@@ -2,12 +2,12 @@
 //
 // Provides Agent type for orchestrating AI interactions with:
 //   - Genkit AI model interactions with RAG-first design (retriever required, always enabled)
-//   - Conversation history management (transient, in-memory - NOT persistent)
+//   - Conversation history management (in-memory with optional database persistence)
 //   - Tool registration via internal/tools (file, system, network) and internal/mcp packages
 //   - Security validation (path traversal, command injection, SSRF prevention)
 //
 // Agent is thread-safe for concurrent access (messages protected by RWMutex).
-// Related packages: internal/tools, internal/mcp.
+// Related packages: internal/tools, internal/mcp, internal/session.
 package agent
 
 import (
@@ -22,43 +22,89 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/mcp"
 	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/tools"
 	"google.golang.org/genai"
 )
 
+// Generator defines an interface for generating model responses,
+// allowing for mocking in tests.
+type Generator interface {
+	Generate(ctx context.Context, opts ...ai.GenerateOption) (*ai.ModelResponse, error)
+}
+
+// SessionStore defines the interface for session persistence operations.
+// Following Go best practices: interfaces are defined by the consumer (agent), not the provider (session package).
+// This allows Agent to depend on abstraction rather than concrete implementation, improving testability.
+type SessionStore interface {
+	// CreateSession creates a new conversation session
+	CreateSession(ctx context.Context, title, modelName, systemPrompt string) (*session.Session, error)
+
+	// GetSession retrieves a session by ID
+	GetSession(ctx context.Context, sessionID uuid.UUID) (*session.Session, error)
+
+	// GetMessages retrieves messages for a session with pagination
+	GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error)
+
+	// AddMessages adds multiple messages to a session in batch
+	AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error
+}
+
+// genkitGenerator is the production implementation of the Generator interface.
+type genkitGenerator struct {
+	g *genkit.Genkit
+}
+
+// Generate calls the underlying genkit.Generate function.
+func (gg *genkitGenerator) Generate(ctx context.Context, opts ...ai.GenerateOption) (*ai.ModelResponse, error) {
+	return genkit.Generate(ctx, gg.g, opts...)
+}
+
 // Agent encapsulates Genkit AI functionality.
 //
-// Responsibilities: AI interactions, tool registration, conversation history (in-memory only).
-// NOT responsible for: Database persistence (session/knowledge packages), session management, user interaction.
+// Responsibilities: AI interactions, tool registration, conversation history (in-memory and optional persistence).
+// NOT responsible for: User interaction (cmd package handles CLI).
 //
 // Thread Safety: Thread-safe for concurrent access (messages protected by RWMutex).
-// Security validators are immutable (safe to share). Tools safe to call concurrently.
+// Tools (registered via tools.RegisterTools) are thread-safe and hold their own validators.
 type Agent struct {
-	Genkit       *genkit.Genkit // Exported for external use (e.g., creating embedders)
+	g            *genkit.Genkit // Raw genkit instance for non-generative tasks (tool lookup, MCP, prompt loading)
+	generator    Generator      // Interface for generating responses (enables mocking in tests)
 	config       *config.Config
 	modelRef     ai.ModelRef   // Type-safe model reference
 	systemPrompt string        // System prompt text
-	messages     []*ai.Message // Conversation history (transient, in-memory only)
+	messages     []*ai.Message // Conversation history (in-memory, optionally persisted to database)
 	messagesMu   sync.RWMutex  // Protects messages field for concurrent access
 	mcp          *mcp.Server   // MCP server connection (nil = not connected)
 	mcpOnce      sync.Once     // Ensures MCP is initialized only once
 	mcpErr       error         // Stores MCP initialization error
 	retriever    ai.Retriever  // RAG retriever (required, always available)
 
-	// Security validators (immutable after creation, safe for concurrent reads)
-	pathValidator *security.Path
-	cmdValidator  *security.Command
-	httpValidator *security.HTTP
-	envValidator  *security.Env
+	// Session persistence (P1 - optional)
+	sessionStore     SessionStore // Session data access layer (nil = persistence disabled)
+	currentSessionID *uuid.UUID   // Current session ID (nil = no active session)
+	logger           *slog.Logger // Structured logger
 }
 
-// New creates a new Agent instance with RAG support.
+// New creates a new Agent instance with RAG support and session persistence.
 // Accepts pre-initialized Genkit instance and retriever (resolves circular dependency, enables DI and testing).
 // Registers tools and loads system prompt from Dotprompt file.
-func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai.Retriever) (*Agent, error) {
+//
+// Parameters:
+//   - sessionStore: Session persistence layer (required, use NewNoopSessionStore() for stub)
+//   - logger: Structured logger (required, use slog.Default() if unsure)
+func New(
+	ctx context.Context,
+	cfg *config.Config,
+	g *genkit.Genkit,
+	retriever ai.Retriever,
+	sessionStore SessionStore,
+	logger *slog.Logger,
+) (*Agent, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -69,6 +115,14 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 
 	if retriever == nil {
 		return nil, fmt.Errorf("retriever is required for RAG functionality")
+	}
+
+	if sessionStore == nil {
+		return nil, fmt.Errorf("sessionStore is required (use NewNoopSessionStore() for stub)")
+	}
+
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required (use slog.Default())")
 	}
 
 	// Genkit's GoogleAI plugin requires GEMINI_API_KEY environment variable
@@ -89,7 +143,11 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 	envValidator := security.NewEnv()
 
 	// Register core tools (file, system, network)
+	// Note: Tools internally hold references to validators; Agent doesn't need to retain them
 	tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator)
+
+	// Register confirmation tool (interrupt mechanism, agent-specific)
+	RegisterConfirmationTool(g)
 
 	// Load system prompt (from Dotprompt file)
 	systemPrompt := genkit.LookupPrompt(g, "koopa")
@@ -97,9 +155,14 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 		return nil, fmt.Errorf("system prompt not found")
 	}
 
-	// Render prompt without language parameter (pure English UI, AI auto-detects response language)
+	// Render prompt with language parameter from config
+	// "auto" means AI will auto-detect and match user's language
+	language := cfg.Language
+	if language == "" || language == "auto" {
+		language = "the same language as the user's input (auto-detect)"
+	}
 	promptInput := map[string]any{
-		"language": "English",
+		"language": language,
 	}
 	actionOpts, err := systemPrompt.Render(ctx, promptInput)
 	if err != nil {
@@ -138,136 +201,26 @@ func New(ctx context.Context, cfg *config.Config, g *genkit.Genkit, retriever ai
 	messages := []*ai.Message{}
 
 	agent := &Agent{
-		Genkit:       g,
+		g:            g,
+		generator:    &genkitGenerator{g: g},
 		config:       cfg,
 		modelRef:     modelRef,
 		systemPrompt: systemPromptText,
 		messages:     messages,
 		mcp:          nil,       // MCP not connected by default
 		retriever:    retriever, // RAG retriever (always available)
-		// Store validators for use by Agent methods
-		pathValidator: pathValidator,
-		cmdValidator:  cmdValidator,
-		httpValidator: httpValidator,
-		envValidator:  envValidator,
+		sessionStore: sessionStore,
+		logger:       logger,
+	}
+
+	// Load current session (attempt to restore from local state)
+	if err := agent.loadCurrentSession(ctx); err != nil {
+		logger.Warn("failed to load current session, starting with empty history",
+			"error", err)
+		// Loading failure is not fatal - Agent continues with empty history
 	}
 
 	return agent, nil
-}
-
-// Ask asks the AI a question and gets a response (always uses tools and RAG)
-func (a *Agent) Ask(ctx context.Context, question string) (result string, err error) {
-	// Panic recovery for stability
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("panic recovered in Ask: %v", r)
-			slog.Error("panic in Ask",
-				"error", r,
-				"stack", string(debug.Stack()))
-		}
-	}()
-
-	// Use core generation logic with prompt option
-	response, err := a.generate(ctx, question, ai.WithPrompt(question))
-	if err != nil {
-		return "", err
-	}
-
-	return response.Text(), nil
-}
-
-// Chat multi-turn conversation (maintains history, always uses tools and RAG)
-func (a *Agent) Chat(ctx context.Context, userInput string) (result string, err error) {
-	// Panic recovery for stability
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("panic recovered in Chat: %v", r)
-			slog.Error("panic in Chat",
-				"error", r,
-				"stack", string(debug.Stack()))
-		}
-	}()
-
-	// Add user message to history (write lock)
-	a.messagesMu.Lock()
-	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
-	// Create a copy of messages for generate() to avoid holding lock during generation
-	messagesCopy := make([]*ai.Message, len(a.messages))
-	copy(messagesCopy, a.messages)
-	a.messagesMu.Unlock()
-
-	// Use core generation logic with message history (no lock needed)
-	response, err := a.generate(ctx, userInput, ai.WithMessages(messagesCopy...))
-	if err != nil {
-		return "", err
-	}
-
-	// Add AI response to history (write lock)
-	a.messagesMu.Lock()
-	a.messages = append(a.messages, response.Message)
-	a.trimHistoryIfNeeded()
-	a.messagesMu.Unlock()
-
-	return response.Text(), nil
-}
-
-// ChatStream multi-turn conversation with simulated streaming.
-// Since Genkit doesn't support real streaming when tools are used, we implement
-// simulated streaming by outputting the response word-by-word after generation.
-func (a *Agent) ChatStream(ctx context.Context, userInput string, streamCallback func(chunk string)) (result string, err error) {
-	// Panic recovery for stability
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("panic recovered in ChatStream: %v", r)
-			slog.Error("panic in ChatStream",
-				"error", r,
-				"stack", string(debug.Stack()))
-		}
-	}()
-
-	// Add user message to history (write lock)
-	a.messagesMu.Lock()
-	a.messages = append(a.messages, ai.NewUserMessage(ai.NewTextPart(userInput)))
-	// Create a copy of messages for generate() to avoid holding lock during generation
-	messagesCopy := make([]*ai.Message, len(a.messages))
-	copy(messagesCopy, a.messages)
-	a.messagesMu.Unlock()
-
-	// Track if real streaming happened
-	realStreamHappened := false
-
-	// Try real streaming first (only works if no tools are called)
-	streamOpt := ai.WithStreaming(func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
-		if streamCallback != nil && chunk.Text() != "" {
-			streamCallback(chunk.Text())
-			realStreamHappened = true
-		}
-		return nil
-	})
-
-	// Generate response (with or without streaming depending on tool usage, no lock needed)
-	response, err := a.generate(ctx, userInput, ai.WithMessages(messagesCopy...), streamOpt)
-	if err != nil {
-		return "", err
-	}
-
-	finalText := response.Text()
-
-	// If real streaming didn't happen (tool calls blocked it), simulate streaming
-	if !realStreamHappened && streamCallback != nil && finalText != "" {
-		slog.Debug("using simulated streaming", "text_length", len(finalText))
-		simulateStreaming(finalText, streamCallback)
-	} else if realStreamHappened {
-		slog.Debug("real streaming occurred")
-	}
-
-	// Add AI response to history (write lock)
-	a.messagesMu.Lock()
-	a.messages = append(a.messages, response.Message)
-	a.trimHistoryIfNeeded()
-	a.messagesMu.Unlock()
-
-	return finalText, nil
 }
 
 // ClearHistory clears the conversation history
@@ -282,23 +235,6 @@ func (a *Agent) HistoryLength() int {
 	a.messagesMu.RLock()
 	defer a.messagesMu.RUnlock()
 	return len(a.messages)
-}
-
-// AskWithStructuredOutput asks the AI a question and gets structured output
-// T must be a JSON-serializable struct type
-// outputExample is used to infer the output type, usually pass a zero value of that type (e.g., MyStruct{})
-func (a *Agent) AskWithStructuredOutput(ctx context.Context, question string, outputExample any) (*ai.ModelResponse, error) {
-	response, err := genkit.Generate(ctx, a.Genkit,
-		ai.WithModel(a.modelRef),
-		ai.WithSystem(a.systemPrompt),
-		ai.WithPrompt(question),
-		ai.WithOutputType(outputExample),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("generate failed: %w", err)
-	}
-
-	return response, nil
 }
 
 // generate is the core generation logic shared by Ask, Chat, and ChatStream.
@@ -334,7 +270,7 @@ func (a *Agent) generate(ctx context.Context, userInput string, extraOpts ...ai.
 	opts := a.prepareGenerateOptions(toolRefs, ragResp, err, userInput, extraOpts...)
 
 	// Step 4: Generate response
-	response, err = genkit.Generate(ctx, a.Genkit, opts...)
+	response, err = a.generator.Generate(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("generate failed: %w", err)
 	}
@@ -352,14 +288,14 @@ func (a *Agent) tools(ctx context.Context) []ai.ToolRef {
 
 	// Add locally registered tools
 	for _, name := range toolNames {
-		if tool := genkit.LookupTool(a.Genkit, name); tool != nil {
+		if tool := genkit.LookupTool(a.g, name); tool != nil {
 			toolRefs = append(toolRefs, tool)
 		}
 	}
 
 	// If MCP is connected, add MCP tools
 	if a.mcp != nil {
-		mcpTools, err := a.mcp.Tools(ctx, a.Genkit)
+		mcpTools, err := a.mcp.Tools(ctx, a.g)
 		if err != nil {
 			slog.Warn("failed to get MCP tools, using local tools only", "error", err)
 		} else {
@@ -375,7 +311,7 @@ func (a *Agent) tools(ctx context.Context) []ai.ToolRef {
 // ConnectMCP connects to MCP servers (thread-safe, ensures single initialization)
 func (a *Agent) ConnectMCP(ctx context.Context, serverConfigs []mcp.Config) error {
 	a.mcpOnce.Do(func() {
-		server, err := mcp.New(ctx, a.Genkit, serverConfigs)
+		server, err := mcp.New(ctx, a.g, serverConfigs)
 		if err != nil {
 			a.mcpErr = fmt.Errorf("unable to connect MCP: %w", err)
 			return
@@ -483,4 +419,334 @@ func simulateStreaming(text string, callback func(chunk string)) {
 			time.Sleep(delayMs * time.Millisecond)
 		}
 	}
+}
+
+// Execute runs the agent with interrupt mechanism support.
+// Returns an event channel for UI layer to consume agent events (text, interrupts, errors).
+// This is the new primary interaction method that supports human-in-the-loop confirmations.
+func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
+	eventCh := make(chan Event, 10)
+
+	go func() {
+		defer close(eventCh)
+
+		// Step 1: Prepare message history (Agent is the sole owner of history)
+		a.messagesMu.Lock()
+		userMessage := ai.NewUserMessage(ai.NewTextPart(input))
+		a.messages = append(a.messages, userMessage)
+		messagesCopy := make([]*ai.Message, len(a.messages))
+		copy(messagesCopy, a.messages)
+		a.messagesMu.Unlock()
+
+		// Track new messages for batch persistence (P1)
+		var newMessages []*session.Message
+		if a.currentSessionID != nil {
+			newMessages = append(newMessages, &session.Message{
+				Role:    "user",
+				Content: userMessage.Content,
+			})
+		}
+
+		// Step 2: Automatic RAG (only on first request)
+		ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
+			Query:   ai.DocumentFromText(input, nil),
+			Options: map[string]any{"k": a.config.RAGTopK},
+		})
+		if err != nil {
+			slog.Warn("RAG retrieval failed in Execute, continuing without context",
+				"error", err,
+				"input_preview", truncateString(input, 50))
+		}
+
+		// Step 3: Prepare streaming callback
+		streamingOpt := ai.WithStreaming(func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
+			if chunk.Text() != "" {
+				eventCh <- Event{Type: EventTypeText, TextChunk: chunk.Text()}
+			}
+			return nil
+		})
+
+		// Main loop: Handle potential multi-turn interactions
+		for {
+			// Step 4: Prepare current turn request options
+			toolRefs := a.tools(ctx)
+			opts := []ai.GenerateOption{
+				ai.WithModel(a.modelRef),
+				ai.WithSystem(a.systemPrompt),
+				ai.WithMessages(messagesCopy...),
+				ai.WithTools(toolRefs...),
+				streamingOpt,
+			}
+			if ragResp != nil && len(ragResp.Documents) > 0 {
+				opts = append(opts, ai.WithDocs(ragResp.Documents...))
+				ragResp = nil // RAG only in first round
+			}
+
+			// Step 5: Call Genkit generate
+			response, err := a.generator.Generate(ctx, opts...)
+			if err != nil {
+				eventCh <- Event{Type: EventTypeError, Error: err}
+				return
+			}
+
+			// Step 6: Add model's thought/action to current turn history
+			messagesCopy = append(messagesCopy, response.Message)
+
+			// Step 6.5: Log tool calls for debugging and monitoring
+			for _, part := range response.Message.Content {
+				if part.ToolRequest != nil {
+					a.logger.Debug("tool called",
+						"tool_name", part.ToolRequest.Name,
+						"finish_reason", response.FinishReason)
+				}
+				if part.ToolResponse != nil {
+					a.logger.Debug("tool response received",
+						"tool_name", part.ToolResponse.Name)
+				}
+			}
+
+			// Step 7: Check finish reason
+			switch response.FinishReason {
+			case ai.FinishReasonInterrupted:
+				// Defensive check: Ensure interrupts array is not empty
+				interrupts := response.Interrupts()
+				if len(interrupts) == 0 {
+					a.logger.Warn("FinishReasonInterrupted but no interrupts found",
+						"response_text", truncateString(response.Text(), 100))
+					// Treat as normal completion to avoid crash
+					eventCh <- Event{Type: EventTypeComplete, IsComplete: true}
+					return
+				}
+
+				var toolResponses []*ai.Part
+				for _, interrupt := range interrupts {
+					// 7.1. Construct and send interrupt event
+					resumeCh := make(chan ConfirmationResponse)
+					eventCh <- Event{
+						Type: EventTypeInterrupt,
+						Interrupt: &InterruptEvent{
+							ToolName:      extractToolName(interrupt),
+							Parameters:    extractParams(interrupt),
+							Reason:        extractReason(interrupt),
+							rawInterrupt:  interrupt,
+							ResumeChannel: resumeCh,
+						},
+					}
+
+					// 7.2. Block and wait for UI layer's decision
+					decision := <-resumeCh
+
+					// 7.3. Construct tool response
+					toolResponses = append(toolResponses, buildToolResponse(interrupt, decision))
+				}
+
+				// 7.4. Add tool responses to history, prepare for next round
+				messagesCopy = append(messagesCopy, ai.NewMessage(ai.RoleTool, nil, toolResponses...))
+				continue // Loop back, call Generate with updated history
+
+			case ai.FinishReasonStop, ai.FinishReasonUnknown:
+				// Step 8: Normal completion, update Agent's main history
+				// Note: FinishReasonUnknown can occur with streaming, treat as normal completion
+				a.messagesMu.Lock()
+				a.messages = messagesCopy
+				a.trimHistoryIfNeeded()
+				a.messagesMu.Unlock()
+
+				// Batch save all new messages to database (P1)
+				if a.currentSessionID != nil {
+					newMessages = append(newMessages, &session.Message{
+						Role:    "model",
+						Content: response.Message.Content,
+					})
+
+					if err := a.sessionStore.AddMessages(ctx, *a.currentSessionID, newMessages); err != nil {
+						a.logger.Warn("failed to save messages to database",
+							"session_id", *a.currentSessionID,
+							"message_count", len(newMessages),
+							"error", err)
+						// Continue execution - persistence failure is not fatal
+					}
+				}
+
+				eventCh <- Event{Type: EventTypeComplete, IsComplete: true}
+				return
+
+			case ai.FinishReasonLength:
+				// Max tokens reached
+				eventCh <- Event{
+					Type:  EventTypeError,
+					Error: fmt.Errorf("response truncated: maximum token limit reached"),
+				}
+				return
+
+			case ai.FinishReasonBlocked:
+				// Content blocked by safety filter
+				eventCh <- Event{
+					Type:  EventTypeError,
+					Error: fmt.Errorf("response blocked by safety filter"),
+				}
+				return
+
+			default:
+				// Other unexpected reasons
+				eventCh <- Event{
+					Type:  EventTypeError,
+					Error: fmt.Errorf("unexpected finish reason: %s", response.FinishReason),
+				}
+				return
+			}
+		}
+	}()
+
+	return eventCh
+}
+
+// ============================================================================
+// Session Management Methods (P1)
+// ============================================================================
+
+// loadCurrentSession loads the session specified in local state file.
+// Called automatically by New().
+// Loading failure is not fatal - Agent continues with empty history.
+func (a *Agent) loadCurrentSession(ctx context.Context) error {
+	// Read local state file
+	sessionID, err := session.LoadCurrentSessionID()
+	if err != nil {
+		return fmt.Errorf("failed to load current session ID: %w", err)
+	}
+
+	if sessionID == nil {
+		// No current session - this is normal
+		return nil
+	}
+
+	// Load session messages from database
+	messages, err := a.sessionStore.GetMessages(ctx, *sessionID, a.config.MaxHistoryMessages, 0)
+	if err != nil {
+		return fmt.Errorf("failed to load session messages: %w", err)
+	}
+
+	// Convert session.Message to ai.Message
+	var aiMessages []*ai.Message
+	for _, msg := range messages {
+		aiMsg := &ai.Message{
+			Role:    ai.Role(msg.Role),
+			Content: msg.Content,
+		}
+		aiMessages = append(aiMessages, aiMsg)
+	}
+
+	// Update Agent state
+	a.messagesMu.Lock()
+	a.messages = aiMessages
+	a.currentSessionID = sessionID
+	a.messagesMu.Unlock()
+
+	a.logger.Info("loaded session",
+		"session_id", *sessionID,
+		"message_count", len(aiMessages))
+
+	return nil
+}
+
+// NewSession creates a new conversation session and switches to it.
+// Clears current conversation history and starts fresh.
+//
+// Parameters:
+//   - title: Session title (can be empty)
+//
+// Returns:
+//   - *session.Session: Created session
+//   - error: If creation fails
+func (a *Agent) NewSession(ctx context.Context, title string) (*session.Session, error) {
+	// Create new session in database
+	newSession, err := a.sessionStore.CreateSession(ctx, title, a.config.ModelName, a.systemPrompt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Save to local state file
+	if err := session.SaveCurrentSessionID(newSession.ID); err != nil {
+		return nil, fmt.Errorf("failed to save current session: %w", err)
+	}
+
+	// Clear current history
+	a.messagesMu.Lock()
+	a.messages = []*ai.Message{}
+	a.currentSessionID = &newSession.ID
+	a.messagesMu.Unlock()
+
+	a.logger.Info("created new session",
+		"session_id", newSession.ID,
+		"title", newSession.Title)
+
+	return newSession, nil
+}
+
+// SwitchSession switches to an existing session.
+// Loads the session's conversation history from database.
+//
+// Parameters:
+//   - sessionID: UUID of the session to switch to
+//
+// Returns:
+//   - error: If switching fails
+func (a *Agent) SwitchSession(ctx context.Context, sessionID uuid.UUID) error {
+	// Save to local state file
+	if err := session.SaveCurrentSessionID(sessionID); err != nil {
+		return fmt.Errorf("failed to save current session: %w", err)
+	}
+
+	// Load session (same logic as loadCurrentSession)
+	return a.loadCurrentSession(ctx)
+}
+
+// GetCurrentSession retrieves the current session information.
+//
+// Returns:
+//   - *session.Session: Current session
+//   - error: If no active session or retrieval fails
+func (a *Agent) GetCurrentSession(ctx context.Context) (*session.Session, error) {
+	if a.currentSessionID == nil {
+		return nil, fmt.Errorf("no active session")
+	}
+
+	return a.sessionStore.GetSession(ctx, *a.currentSessionID)
+}
+
+// ============================================================================
+// No-op Session Store - For testing and Phase 2-3 transition
+// ============================================================================
+
+// noopSessionStore is a no-op implementation of SessionStore.
+// It provides no-op implementations for all methods, returning nil or empty values.
+// This is used when session persistence is not required (e.g., in tests or before Phase 3).
+//
+// This follows the Go standard library pattern (similar to io.NopCloser).
+// All operations are no-ops (do nothing) without causing errors.
+type noopSessionStore struct{}
+
+func (n *noopSessionStore) CreateSession(ctx context.Context, title, modelName, systemPrompt string) (*session.Session, error) {
+	return nil, fmt.Errorf("session persistence not yet enabled (noopSessionStore)")
+}
+
+func (n *noopSessionStore) GetSession(ctx context.Context, sessionID uuid.UUID) (*session.Session, error) {
+	return nil, fmt.Errorf("session persistence not yet enabled (noopSessionStore)")
+}
+
+func (n *noopSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+	return nil, nil // Return empty messages, not an error
+}
+
+func (n *noopSessionStore) AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error {
+	// Silently succeed - no-op
+	return nil
+}
+
+// NewNoopSessionStore creates a new noopSessionStore.
+// Use this when session persistence is not required (e.g., in tests).
+//
+// This follows the Go standard library naming pattern (e.g., io.NopCloser).
+func NewNoopSessionStore() SessionStore {
+	return &noopSessionStore{}
 }
