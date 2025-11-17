@@ -32,6 +32,7 @@ type Config struct {
 	ModelName   string  `mapstructure:"model_name"`
 	Temperature float32 `mapstructure:"temperature"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
+	Language    string  `mapstructure:"language"` // Response language: "auto", "English", "Traditional Chinese (繁體中文)"
 
 	// Conversation history configuration
 	MaxHistoryMessages int `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
@@ -99,6 +100,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("model_name", "gemini-2.5-flash")
 	viper.SetDefault("temperature", 0.7)
 	viper.SetDefault("max_tokens", 2048)
+	viper.SetDefault("language", "auto") // Default: auto-detect language from user input
 	viper.SetDefault("max_history_messages", 50) // Default: keep recent 50 messages (~25 conversation turns)
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
 

@@ -13,13 +13,6 @@ max_tokens: 2048
 # Set to 0 for unlimited (not recommended, increases token usage and memory)
 max_history_messages: 50
 
-# ==========================================
-# Database Configuration
-# ==========================================
-# SQLite database path (used for session storage)
-# Default: ~/.koopa/koopa.db
-# database_path: "~/.koopa/koopa.db"
-
 # PostgreSQL configuration (required for pgvector RAG functionality)
 postgres_host: "localhost"
 postgres_port: 5432

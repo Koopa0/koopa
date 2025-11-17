@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/app"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/rag"
+	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/ui"
 )
 
@@ -65,18 +68,44 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 
 		// TODO: Handle @file syntax here (future enhancement)
 
-		// Send message to AI (streaming)
+		// Send message to AI (new event-driven execution)
 		fmt.Print("Koopa> ")
 		_ = os.Stdout.Sync()
 
-		if _, err := ag.ChatStream(ctx, input, func(chunk string) {
-			fmt.Print(chunk)
-			_ = os.Stdout.Sync()
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "\nError: %v\n", err)
-			continue
+		eventCh := ag.Execute(ctx, input)
+	event_loop:
+		for event := range eventCh {
+			switch event.Type {
+			case agent.EventTypeText:
+				fmt.Print(event.TextChunk)
+				_ = os.Stdout.Sync()
+			case agent.EventTypeInterrupt:
+				fmt.Println() // Newline for cleaner prompt
+				fmt.Printf("[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
+				fmt.Printf("Reason: %s\n", event.Interrupt.Reason)
+				fmt.Print("Approve? [y/n]: ")
+				_ = os.Stdout.Sync()
+
+				// Use the same scanner to avoid input reader conflicts
+				approved := false // Default to reject for safety
+				if scanner.Scan() {
+					confirmationInput := strings.ToLower(strings.TrimSpace(scanner.Text()))
+					approved = confirmationInput == "y"
+				}
+
+				event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}
+
+				fmt.Print("Koopa> ")
+				_ = os.Stdout.Sync()
+
+			case agent.EventTypeError:
+				fmt.Fprintf(os.Stderr, "\nError: %v\n", event.Error)
+				break event_loop // Break inner loop on error
+			case agent.EventTypeComplete:
+				fmt.Println()
+				break event_loop // Exit inner loop on completion
+			}
 		}
-		fmt.Println()
 	}
 
 	if err := scanner.Err(); err != nil && err != io.EOF {
@@ -131,6 +160,10 @@ func handleSlashCommand(ctx context.Context, cmd string, ag *agent.Agent, applic
 		handleRAGCommand(ctx, parts[1:], application)
 		return false
 
+	case "/session":
+		handleSessionCommand(ctx, parts[1:], ag, application)
+		return false
+
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		fmt.Println("Type /help to see available commands")
@@ -158,6 +191,13 @@ func printInteractiveHelp() {
 	fmt.Println("  /rag list              List all indexed documents")
 	fmt.Println("  /rag remove <id>       Remove document from knowledge base")
 	fmt.Println("  /rag status            Show RAG status and statistics")
+	fmt.Println()
+	fmt.Println("Session Management:")
+	fmt.Println("  /session               Show current session")
+	fmt.Println("  /session list [N]      List sessions (default: 10)")
+	fmt.Println("  /session new <title>   Create new session")
+	fmt.Println("  /session switch <id>   Switch to session")
+	fmt.Println("  /session delete <id>   Delete session")
 	fmt.Println()
 	fmt.Println("Shortcuts:")
 	fmt.Println("  Ctrl+C             Cancel current input")
@@ -381,4 +421,285 @@ func handleRAGStatus(ctx context.Context, application *app.App) {
 	fmt.Println()
 	fmt.Println("Use '/rag add <file>' to add documents to knowledge base")
 	fmt.Println()
+}
+// ============================================================================
+// Session Management Commands
+// ============================================================================
+
+// handleSessionCommand processes /session subcommands
+func handleSessionCommand(ctx context.Context, args []string, ag *agent.Agent, application *app.App) {
+	if len(args) == 0 {
+		handleSessionShow(ctx, ag)
+		return
+	}
+
+	switch args[0] {
+	case "list":
+		handleSessionList(ctx, args[1:], application)
+	case "new":
+		handleSessionNew(ctx, args[1:], ag)
+	case "switch":
+		handleSessionSwitch(ctx, args[1:], ag)
+	case "delete":
+		handleSessionDelete(ctx, args[1:], ag, application)
+	default:
+		fmt.Printf("Unknown /session subcommand: %s\n", args[0])
+		fmt.Println("Type /session to see usage")
+		fmt.Println()
+	}
+}
+
+// handleSessionShow displays the current active session
+func handleSessionShow(ctx context.Context, ag *agent.Agent) {
+	currentSession, err := ag.GetCurrentSession(ctx)
+	if err != nil || currentSession == nil {
+		fmt.Println("No active session")
+		fmt.Println()
+		fmt.Println("Create a new session:  /session new <title>")
+		fmt.Println("Switch to a session:   /session switch <id>")
+		fmt.Println("List all sessions:     /session list")
+		fmt.Println()
+		return
+	}
+
+	fmt.Println()
+	fmt.Println("╔══════════════════════════════════════════════════════════╗")
+	fmt.Println("║  Current Session                                         ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════╝")
+	fmt.Println()
+	fmt.Printf("  Session ID:      %s\n", currentSession.ID)
+	fmt.Printf("  Title:           %s\n", currentSession.Title)
+	if currentSession.ModelName != "" {
+		fmt.Printf("  Model:           %s\n", currentSession.ModelName)
+	}
+	fmt.Printf("  Messages:        %d\n", currentSession.MessageCount)
+	fmt.Printf("  Created:         %s\n", currentSession.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("  Last Updated:    %s\n", currentSession.UpdatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Println()
+	fmt.Println("Use '/session list' to see all sessions")
+	fmt.Println("Use '/session switch <id>' to switch sessions")
+	fmt.Println()
+}
+
+// handleSessionList lists all sessions with pagination
+func handleSessionList(ctx context.Context, args []string, application *app.App) {
+	// Parse limit (default 10)
+	limit := 10
+	if len(args) > 0 {
+		if parsedLimit, err := strconv.Atoi(args[0]); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	sessions, err := application.SessionStore.ListSessions(ctx, limit, 0)
+	if err != nil {
+		fmt.Printf("Error: Failed to list sessions: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	if len(sessions) == 0 {
+		fmt.Println("No sessions found")
+		fmt.Println()
+		fmt.Println("Create your first session with: /session new <title>")
+		fmt.Println()
+		return
+	}
+
+	// Get current session ID for highlighting
+	var currentID uuid.UUID
+	currentSessionIDPtr, err := session.LoadCurrentSessionID()
+	if err == nil && currentSessionIDPtr != nil {
+		currentID = *currentSessionIDPtr
+	}
+
+	fmt.Println()
+	fmt.Printf("╔══════════════════════════════════════════════════════════╗\n")
+	fmt.Printf("║  Sessions (%d most recent)                               ║\n", min(limit, len(sessions)))
+	fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
+	fmt.Println()
+
+	for i, sess := range sessions {
+		isActive := sess.ID == currentID
+		activeMarker := " "
+		activeLabel := ""
+		if isActive {
+			activeMarker = "▶"
+			activeLabel = "  [ACTIVE]"
+		}
+
+		fmt.Printf(" %s %d. %s%s\n", activeMarker, i+1, sess.Title, activeLabel)
+		fmt.Printf("    ID: %s\n", sess.ID)
+		fmt.Printf("    Messages: %d  |  Updated: %s\n",
+			sess.MessageCount,
+			sess.UpdatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Println()
+	}
+
+	fmt.Printf("Total: %d sessions\n", len(sessions))
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  /session switch <id>    Switch to a session")
+	fmt.Println("  /session new <title>    Create new session")
+	fmt.Println("  /session delete <id>    Delete a session")
+	fmt.Println()
+}
+
+// handleSessionNew creates a new session
+func handleSessionNew(ctx context.Context, args []string, ag *agent.Agent) {
+	if len(args) == 0 {
+		fmt.Println("Error: Please provide a session title")
+		fmt.Println("Usage: /session new <title>")
+		fmt.Println()
+		return
+	}
+
+	title := strings.Join(args, " ")
+	title = strings.TrimSpace(title)
+
+	if title == "" {
+		fmt.Println("Error: Session title cannot be empty")
+		fmt.Println("Usage: /session new <title>")
+		fmt.Println()
+		return
+	}
+
+	newSession, err := ag.NewSession(ctx, title)
+	if err != nil {
+		fmt.Printf("Error: Failed to create session: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("✓ Created new session: %s\n", newSession.Title)
+	fmt.Printf("  Session ID: %s\n", newSession.ID)
+	fmt.Println()
+	fmt.Println("Conversation history cleared. You can now start a fresh conversation.")
+	fmt.Println()
+}
+
+// handleSessionSwitch switches to a different session
+func handleSessionSwitch(ctx context.Context, args []string, ag *agent.Agent) {
+	if len(args) == 0 {
+		fmt.Println("Error: Please provide a session ID")
+		fmt.Println("Usage: /session switch <id>")
+		fmt.Println()
+		return
+	}
+
+	idStr := args[0]
+
+	// Parse UUID
+	sessionID, err := parseSessionID(idStr)
+	if err != nil {
+		fmt.Printf("Error: Invalid session ID format: %s\n", idStr)
+		fmt.Println("Usage: /session switch <id>")
+		fmt.Println()
+		return
+	}
+
+	// Attempt to switch
+	err = ag.SwitchSession(ctx, sessionID)
+	if err != nil {
+		fmt.Printf("Error: Failed to switch session: %v\n", err)
+		fmt.Println("Use '/session list' to see available sessions")
+		fmt.Println()
+		return
+	}
+
+	// Get session details for confirmation
+	currentSession, err := ag.GetCurrentSession(ctx)
+	if err != nil || currentSession == nil {
+		fmt.Println("✓ Switched to session")
+		fmt.Println()
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("✓ Switched to session: %s\n", currentSession.Title)
+	fmt.Printf("  Session ID: %s\n", currentSession.ID)
+	fmt.Printf("  Messages: %d\n", currentSession.MessageCount)
+	fmt.Println()
+	fmt.Printf("Conversation history loaded (%d messages)\n", currentSession.MessageCount)
+	fmt.Println()
+}
+
+// handleSessionDelete deletes a session
+func handleSessionDelete(ctx context.Context, args []string, ag *agent.Agent, application *app.App) {
+	if len(args) == 0 {
+		fmt.Println("Error: Please provide a session ID")
+		fmt.Println("Usage: /session delete <id>")
+		fmt.Println()
+		return
+	}
+
+	idStr := args[0]
+
+	sessionID, err := parseSessionID(idStr)
+	if err != nil {
+		fmt.Printf("Error: Invalid session ID format: %s\n", idStr)
+		fmt.Println("Usage: /session delete <id>")
+		fmt.Println()
+		return
+	}
+
+	// Check if deleting current session
+	currentSession, _ := ag.GetCurrentSession(ctx)
+	isDeletingCurrent := currentSession != nil && currentSession.ID == sessionID
+
+	// Get session details before deletion
+	sessionToDelete, err := application.SessionStore.GetSession(ctx, sessionID)
+	if err != nil {
+		fmt.Printf("Error: Session not found: %s\n", sessionID)
+		fmt.Println("Use '/session list' to see available sessions")
+		fmt.Println()
+		return
+	}
+
+	// Delete session
+	err = application.SessionStore.DeleteSession(ctx, sessionID)
+	if err != nil {
+		fmt.Printf("Error: Failed to delete session: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("✓ Deleted session: %s\n", sessionToDelete.Title)
+	fmt.Printf("  Session ID: %s\n", sessionID)
+	fmt.Println()
+	fmt.Println("Session and all its messages have been permanently deleted.")
+
+	if isDeletingCurrent {
+		// Clear current session reference
+		_ = session.ClearCurrentSessionID()
+		ag.ClearHistory()
+		fmt.Println()
+		fmt.Println("Conversation history cleared. Create a new session with '/session new <title>'")
+	}
+
+	fmt.Println()
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+// parseSessionID parses a full UUID string
+func parseSessionID(idStr string) (uuid.UUID, error) {
+	// Try to parse as UUID
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("invalid UUID: %s", idStr)
+	}
+	return id, nil
+}
+
+// min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
