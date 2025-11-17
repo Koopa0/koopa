@@ -160,6 +160,7 @@ func TestRunVersion(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Run function
@@ -232,6 +233,7 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			err := runVersion(tt.config)
@@ -338,6 +340,7 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Wrap in recover to catch panics for very short keys

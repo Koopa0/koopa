@@ -533,8 +533,20 @@ func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
 						},
 					}
 
-					// 7.2. Block and wait for UI layer's decision
-					decision := <-resumeCh
+					// 7.2. Block and wait for UI layer's decision (with context cancellation support)
+					var decision ConfirmationResponse
+					select {
+					case decision = <-resumeCh:
+						// Normal path: received user decision
+					case <-ctx.Done():
+						// Context cancelled: abort gracefully
+						a.logger.Debug("context cancelled while waiting for user confirmation")
+						eventCh <- Event{
+							Type:  EventTypeError,
+							Error: fmt.Errorf("operation cancelled by user"),
+						}
+						return
+					}
 
 					// 7.3. Construct tool response
 					toolResponses = append(toolResponses, buildToolResponse(interrupt, decision))

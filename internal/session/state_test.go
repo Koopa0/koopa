@@ -9,6 +9,10 @@ import (
 )
 
 func TestGetStateFilePath(t *testing.T) {
+	// Use isolated temp directory for this test
+	tempDir := t.TempDir()
+	t.Setenv("KOOPA_STATE_DIR", tempDir)
+
 	path, err := GetStateFilePath()
 	if err != nil {
 		t.Fatalf("GetStateFilePath() error = %v", err)
@@ -23,6 +27,11 @@ func TestGetStateFilePath(t *testing.T) {
 		t.Errorf("GetStateFilePath() returned relative path: %s", path)
 	}
 
+	// Verify path uses temp directory
+	if !filepath.HasPrefix(path, tempDir) {
+		t.Errorf("GetStateFilePath() = %s, expected to start with %s", path, tempDir)
+	}
+
 	// Verify directory was created
 	dir := filepath.Dir(path)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -31,9 +40,9 @@ func TestGetStateFilePath(t *testing.T) {
 }
 
 func TestSaveAndLoadCurrentSessionID(t *testing.T) {
-	// Clean up before test
-	_ = ClearCurrentSessionID()
-	defer ClearCurrentSessionID()
+	// Use isolated temp directory for all sub-tests
+	tempDir := t.TempDir()
+	t.Setenv("KOOPA_STATE_DIR", tempDir)
 
 	t.Run("save and load session ID", func(t *testing.T) {
 		testID := uuid.New()
@@ -106,6 +115,10 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 }
 
 func TestClearCurrentSessionID(t *testing.T) {
+	// Use isolated temp directory for all sub-tests
+	tempDir := t.TempDir()
+	t.Setenv("KOOPA_STATE_DIR", tempDir)
+
 	t.Run("clear existing session ID", func(t *testing.T) {
 		// Set up - save a session ID first
 		testID := uuid.New()
@@ -144,9 +157,9 @@ func TestClearCurrentSessionID(t *testing.T) {
 }
 
 func TestLoadCurrentSessionID_InvalidContent(t *testing.T) {
-	// Clean up before and after test
-	_ = ClearCurrentSessionID()
-	defer ClearCurrentSessionID()
+	// Use isolated temp directory for all sub-tests
+	tempDir := t.TempDir()
+	t.Setenv("KOOPA_STATE_DIR", tempDir)
 
 	tests := []struct {
 		name    string

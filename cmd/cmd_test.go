@@ -64,33 +64,33 @@ func TestPrintWelcome(t *testing.T) {
 			name:    "standard version",
 			version: "1.0.0",
 			expectedStrings: []string{
-				"Koopa v1.0.0",
-				"AI Personal Assistant powered by Gemini",
-				"Type /help for commands",
-				"Ctrl+D to exit",
+				"v1.0.0",
+				"Tips for getting started:",
+				"/help for more information",
 			},
 		},
 		{
 			name:    "development version",
 			version: "development",
 			expectedStrings: []string{
-				"Koopa vdevelopment",
-				"AI Personal Assistant",
+				"vdevelopment",
+				"Tips for getting started:",
 			},
 		},
 		{
 			name:    "empty version",
 			version: "",
 			expectedStrings: []string{
-				"Koopa v",
-				"AI Personal Assistant",
+				"v",
+				"Tips for getting started:",
 			},
 		},
 		{
 			name:    "long version string",
 			version: "2.0.0-beta.1+build.12345",
 			expectedStrings: []string{
-				"Koopa v2.0.0-beta.1+build.12345",
+				"v2.0.0-beta.1+build.12345",
+				"Tips for getting started:",
 			},
 		},
 	}
@@ -100,6 +100,7 @@ func TestPrintWelcome(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Call function
@@ -232,6 +233,7 @@ func TestHandleSlashCommand(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Call function
@@ -306,6 +308,7 @@ func TestHandleSlashCommand_EdgeCases(t *testing.T) {
 			// Capture stdout to prevent test output pollution
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			shouldExit := handleSlashCommand(ctx, tt.command, mockAgent, mockApp, "test")
@@ -329,6 +332,7 @@ func TestPrintInteractiveHelp(t *testing.T) {
 	// Capture stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 	os.Stdout = w
 
 	printInteractiveHelp()
@@ -433,6 +437,7 @@ func TestHandleRAGCommand(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			handleRAGCommand(ctx, tt.args, mockApp)
@@ -502,6 +507,7 @@ func TestHandleRAGAdd(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			handleRAGAdd(ctx, tt.args, mockApp)
@@ -573,6 +579,7 @@ func TestHandleRAGRemove(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			handleRAGRemove(ctx, tt.args, mockApp)
@@ -674,6 +681,7 @@ func TestHandleSessionCommand(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Call function
@@ -730,6 +738,7 @@ func TestHandleSessionNew_ErrorCases(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Call function
@@ -786,6 +795,7 @@ func TestHandleSessionSwitch_InvalidID(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Call function
@@ -847,6 +857,7 @@ func TestHandleSessionDelete_InvalidID(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, _ := os.Pipe()
+		defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Call function
