@@ -33,32 +33,32 @@ type mockSessionQuerier struct {
 	getMaxSequenceNumberErr   error
 
 	// Return values
-	createSessionResult      sqlc.Session
-	getSessionResult         sqlc.Session
-	listSessionsResult       []sqlc.Session
-	getMessagesResult        []sqlc.SessionMessage
+	createSessionResult        sqlc.Session
+	getSessionResult           sqlc.Session
+	listSessionsResult         []sqlc.Session
+	getMessagesResult          []sqlc.SessionMessage
 	getMaxSequenceNumberResult interface{}
 
 	// Call tracking
-	createSessionCalls       int
-	getSessionCalls          int
-	listSessionsCalls        int
+	createSessionCalls          int
+	getSessionCalls             int
+	listSessionsCalls           int
 	updateSessionUpdatedAtCalls int
-	deleteSessionCalls       int
-	lockSessionCalls         int // P1-2: LockSession call tracking
-	addMessageCalls          int
-	getMessagesCalls         int
-	getMaxSequenceNumberCalls int
+	deleteSessionCalls          int
+	lockSessionCalls            int // P1-2: LockSession call tracking
+	addMessageCalls             int
+	getMessagesCalls            int
+	getMaxSequenceNumberCalls   int
 
-	lastCreateParams         sqlc.CreateSessionParams
-	lastGetSessionID         pgtype.UUID
-	lastListParams           sqlc.ListSessionsParams
-	lastUpdateParams         sqlc.UpdateSessionUpdatedAtParams
-	lastDeleteSessionID      pgtype.UUID
-	lastLockSessionID        pgtype.UUID // P1-2: Last locked session ID
-	lastAddMessageParams     []sqlc.AddMessageParams
-	lastGetMessagesParams    sqlc.GetMessagesParams
-	lastMaxSeqSessionID      pgtype.UUID
+	lastCreateParams      sqlc.CreateSessionParams
+	lastGetSessionID      pgtype.UUID
+	lastListParams        sqlc.ListSessionsParams
+	lastUpdateParams      sqlc.UpdateSessionUpdatedAtParams
+	lastDeleteSessionID   pgtype.UUID
+	lastLockSessionID     pgtype.UUID // P1-2: Last locked session ID
+	lastAddMessageParams  []sqlc.AddMessageParams
+	lastGetMessagesParams sqlc.GetMessagesParams
+	lastMaxSeqSessionID   pgtype.UUID
 }
 
 func (m *mockSessionQuerier) CreateSession(ctx context.Context, arg sqlc.CreateSessionParams) (sqlc.Session, error) {
@@ -149,6 +149,7 @@ func TestNewWithQuerier(t *testing.T) {
 
 		if store == nil {
 			t.Fatal("expected non-nil store")
+			return
 		}
 		if store.querier != querier {
 			t.Error("expected querier to be set")
@@ -165,6 +166,7 @@ func TestNewWithQuerier(t *testing.T) {
 
 		if store == nil {
 			t.Fatal("expected non-nil store")
+			return
 		}
 		if store.logger == nil {
 			t.Error("expected default logger to be set")
@@ -184,9 +186,9 @@ func TestStore_CreateSession(t *testing.T) {
 		wantCallCount int
 	}{
 		{
-			name:      "successful creation with all fields",
-			title:     "Test Session",
-			modelName: "gemini-2.5-pro",
+			name:         "successful creation with all fields",
+			title:        "Test Session",
+			modelName:    "gemini-2.5-pro",
 			systemPrompt: "You are a helpful assistant",
 			mockResult: sqlc.Session{
 				ID:           uuidToPgUUID(uuid.New()),
@@ -200,9 +202,9 @@ func TestStore_CreateSession(t *testing.T) {
 			wantCallCount: 1,
 		},
 		{
-			name:      "successful creation with empty optional fields",
-			title:     "",
-			modelName: "",
+			name:         "successful creation with empty optional fields",
+			title:        "",
+			modelName:    "",
 			systemPrompt: "",
 			mockResult: sqlc.Session{
 				ID:           uuidToPgUUID(uuid.New()),
@@ -496,6 +498,283 @@ func TestStore_DeleteSession(t *testing.T) {
 
 			if querier.deleteSessionCalls != 1 {
 				t.Errorf("DeleteSession() calls = %d, want 1", querier.deleteSessionCalls)
+			}
+		})
+	}
+}
+
+func TestStore_GetSession(t *testing.T) {
+	sessionID := uuid.New()
+	now := time.Now()
+
+	tests := []struct {
+		name           string
+		sessionID      uuid.UUID
+		mockResult     sqlc.Session
+		mockErr        error
+		wantErr        bool
+		validateResult func(*testing.T, *Session)
+	}{
+		{
+			name:      "successfully retrieves session",
+			sessionID: sessionID,
+			mockResult: sqlc.Session{
+				ID:           uuidToPgUUID(sessionID),
+				Title:        strPtr("Test Session"),
+				ModelName:    strPtr("gemini-2.5-pro"),
+				SystemPrompt: strPtr("You are a helpful assistant"),
+				CreatedAt:    timestamptz(now),
+				UpdatedAt:    timestamptz(now),
+				MessageCount: int32Ptr(5),
+			},
+			wantErr: false,
+			validateResult: func(t *testing.T, s *Session) {
+				if s.ID != sessionID {
+					t.Errorf("expected ID %s, got %s", sessionID, s.ID)
+				}
+				if s.Title != "Test Session" {
+					t.Errorf("expected title 'Test Session', got '%s'", s.Title)
+				}
+				if s.ModelName != "gemini-2.5-pro" {
+					t.Errorf("expected model 'gemini-2.5-pro', got '%s'", s.ModelName)
+				}
+				if s.SystemPrompt != "You are a helpful assistant" {
+					t.Errorf("expected system prompt, got '%s'", s.SystemPrompt)
+				}
+				if s.MessageCount != 5 {
+					t.Errorf("expected message count 5, got %d", s.MessageCount)
+				}
+			},
+		},
+		{
+			name:      "session not found",
+			sessionID: sessionID,
+			mockErr:   errors.New("session not found"),
+			wantErr:   true,
+		},
+		{
+			name:      "database error",
+			sessionID: sessionID,
+			mockErr:   errors.New("database connection failed"),
+			wantErr:   true,
+		},
+		{
+			name:      "session with minimal fields",
+			sessionID: sessionID,
+			mockResult: sqlc.Session{
+				ID:           uuidToPgUUID(sessionID),
+				CreatedAt:    timestamptz(now),
+				UpdatedAt:    timestamptz(now),
+				MessageCount: int32Ptr(0),
+			},
+			wantErr: false,
+			validateResult: func(t *testing.T, s *Session) {
+				if s.ID != sessionID {
+					t.Errorf("expected ID %s, got %s", sessionID, s.ID)
+				}
+				if s.Title != "" {
+					t.Errorf("expected empty title, got '%s'", s.Title)
+				}
+				if s.MessageCount != 0 {
+					t.Errorf("expected message count 0, got %d", s.MessageCount)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			querier := &mockSessionQuerier{
+				getSessionResult: tt.mockResult,
+				getSessionErr:    tt.mockErr,
+			}
+			store := NewWithQuerier(querier, slog.Default())
+
+			result, err := store.GetSession(context.Background(), tt.sessionID)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetSession() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if querier.getSessionCalls != 1 {
+				t.Errorf("GetSession() calls = %d, want 1", querier.getSessionCalls)
+			}
+
+			if !tt.wantErr && tt.validateResult != nil {
+				tt.validateResult(t, result)
+			}
+		})
+	}
+}
+
+func TestStore_ListSessions(t *testing.T) {
+	now := time.Now()
+	session1ID := uuid.New()
+	session2ID := uuid.New()
+
+	tests := []struct {
+		name           string
+		limit          int
+		offset         int
+		mockResult     []sqlc.Session
+		mockErr        error
+		wantErr        bool
+		expectedCount  int
+		validateResult func(*testing.T, []*Session)
+	}{
+		{
+			name:   "successfully lists multiple sessions",
+			limit:  10,
+			offset: 0,
+			mockResult: []sqlc.Session{
+				{
+					ID:           uuidToPgUUID(session1ID),
+					Title:        strPtr("Session 1"),
+					ModelName:    strPtr("gemini-2.5-pro"),
+					CreatedAt:    timestamptz(now),
+					UpdatedAt:    timestamptz(now),
+					MessageCount: int32Ptr(5),
+				},
+				{
+					ID:           uuidToPgUUID(session2ID),
+					Title:        strPtr("Session 2"),
+					ModelName:    strPtr("gemini-2.5-flash"),
+					CreatedAt:    timestamptz(now.Add(-time.Hour)),
+					UpdatedAt:    timestamptz(now.Add(-time.Hour)),
+					MessageCount: int32Ptr(3),
+				},
+			},
+			wantErr:       false,
+			expectedCount: 2,
+			validateResult: func(t *testing.T, sessions []*Session) {
+				if len(sessions) != 2 {
+					t.Fatalf("expected 2 sessions, got %d", len(sessions))
+				}
+				if sessions[0].ID != session1ID {
+					t.Errorf("expected first session ID %s, got %s", session1ID, sessions[0].ID)
+				}
+				if sessions[0].Title != "Session 1" {
+					t.Errorf("expected first session title 'Session 1', got '%s'", sessions[0].Title)
+				}
+				if sessions[1].ID != session2ID {
+					t.Errorf("expected second session ID %s, got %s", session2ID, sessions[1].ID)
+				}
+				if sessions[1].MessageCount != 3 {
+					t.Errorf("expected second session message count 3, got %d", sessions[1].MessageCount)
+				}
+			},
+		},
+		{
+			name:          "returns empty list when no sessions",
+			limit:         10,
+			offset:        0,
+			mockResult:    []sqlc.Session{},
+			wantErr:       false,
+			expectedCount: 0,
+			validateResult: func(t *testing.T, sessions []*Session) {
+				if len(sessions) != 0 {
+					t.Errorf("expected empty list, got %d sessions", len(sessions))
+				}
+			},
+		},
+		{
+			name:    "database error",
+			limit:   10,
+			offset:  0,
+			mockErr: errors.New("database connection failed"),
+			wantErr: true,
+		},
+		{
+			name:   "pagination with limit and offset",
+			limit:  5,
+			offset: 10,
+			mockResult: []sqlc.Session{
+				{
+					ID:           uuidToPgUUID(session1ID),
+					Title:        strPtr("Session Page 2"),
+					CreatedAt:    timestamptz(now),
+					UpdatedAt:    timestamptz(now),
+					MessageCount: int32Ptr(0),
+				},
+			},
+			wantErr:       false,
+			expectedCount: 1,
+			validateResult: func(t *testing.T, sessions []*Session) {
+				if len(sessions) != 1 {
+					t.Fatalf("expected 1 session, got %d", len(sessions))
+				}
+				if sessions[0].Title != "Session Page 2" {
+					t.Errorf("expected title 'Session Page 2', got '%s'", sessions[0].Title)
+				}
+			},
+		},
+		{
+			name:   "sessions with nil optional fields",
+			limit:  10,
+			offset: 0,
+			mockResult: []sqlc.Session{
+				{
+					ID:           uuidToPgUUID(session1ID),
+					Title:        nil,
+					ModelName:    nil,
+					SystemPrompt: nil,
+					CreatedAt:    timestamptz(now),
+					UpdatedAt:    timestamptz(now),
+					MessageCount: int32Ptr(0),
+				},
+			},
+			wantErr:       false,
+			expectedCount: 1,
+			validateResult: func(t *testing.T, sessions []*Session) {
+				if len(sessions) != 1 {
+					t.Fatalf("expected 1 session, got %d", len(sessions))
+				}
+				if sessions[0].Title != "" {
+					t.Errorf("expected empty title, got '%s'", sessions[0].Title)
+				}
+				if sessions[0].ModelName != "" {
+					t.Errorf("expected empty model name, got '%s'", sessions[0].ModelName)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			querier := &mockSessionQuerier{
+				listSessionsResult: tt.mockResult,
+				listSessionsErr:    tt.mockErr,
+			}
+			store := NewWithQuerier(querier, slog.Default())
+
+			result, err := store.ListSessions(context.Background(), tt.limit, tt.offset)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListSessions() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if querier.listSessionsCalls != 1 {
+				t.Errorf("ListSessions() calls = %d, want 1", querier.listSessionsCalls)
+			}
+
+			// Verify parameters were passed correctly
+			if !tt.wantErr {
+				if querier.lastListParams.ResultLimit != tt.limit {
+					t.Errorf("expected limit %d, got %d", tt.limit, querier.lastListParams.ResultLimit)
+				}
+				if querier.lastListParams.ResultOffset != tt.offset {
+					t.Errorf("expected offset %d, got %d", tt.offset, querier.lastListParams.ResultOffset)
+				}
+
+				if len(result) != tt.expectedCount {
+					t.Errorf("expected %d sessions, got %d", tt.expectedCount, len(result))
+				}
+
+				if tt.validateResult != nil {
+					tt.validateResult(t, result)
+				}
 			}
 		})
 	}

@@ -13,10 +13,13 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
+	"log/slog"
+	"time"
 )
 
 // Injectors from wire.go:
@@ -37,7 +40,9 @@ func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error
 		cleanup()
 		return nil, nil, err
 	}
-	app, err := newApp(cfg, ctx, genkit, embedder, pool, store, sessionStore, path)
+	logger := provideLogger()
+	systemKnowledgeIndexer := knowledge.NewSystemKnowledgeIndexer(store, logger)
+	app, err := newApp(cfg, ctx, genkit, embedder, pool, store, sessionStore, path, systemKnowledgeIndexer)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -55,10 +60,8 @@ var providerSet = wire.NewSet(
 	provideGenkit,
 	provideEmbedder,
 	provideDBPool,
-	provideKnowledgeStore,
-	provideSessionStore, wire.Bind(new(SessionStore), new(*session.Store)), providePathValidator,
-
-	newApp,
+	provideKnowledgeStore, wire.Bind(new(agent.KnowledgeStore), new(*knowledge.Store)), provideSessionStore, wire.Bind(new(SessionStore), new(*session.Store)), providePathValidator,
+	provideLogger, knowledge.NewSystemKnowledgeIndexer, newApp,
 )
 
 // provideGenkit initializes Genkit with Google AI plugin.
@@ -102,6 +105,12 @@ func providePathValidator() (*security.Path, error) {
 	return security.NewPath([]string{"."})
 }
 
+// provideLogger creates a logger instance.
+// Returns slog.Default() for consistent logging across the application.
+func provideLogger() *slog.Logger {
+	return slog.Default()
+}
+
 // newApp constructs an App instance.
 // Wire automatically injects all dependencies.
 func newApp(
@@ -109,9 +118,11 @@ func newApp(
 	ctx context.Context,
 	g *genkit.Genkit,
 	embedder ai.Embedder,
-	pool *pgxpool.Pool, knowledge2 *knowledge.Store,
+	pool *pgxpool.Pool,
+	knowledgeStore *knowledge.Store,
 	sessionStore SessionStore,
 	pathValidator *security.Path,
+	systemIndexer *knowledge.SystemKnowledgeIndexer,
 ) (*App, error) {
 
 	appCtx, cancel := context.WithCancel(ctx)
@@ -123,10 +134,23 @@ func newApp(
 		Genkit:        g,
 		Embedder:      embedder,
 		DBPool:        pool,
-		Knowledge:     knowledge2,
+		Knowledge:     knowledgeStore,
 		SessionStore:  sessionStore,
 		PathValidator: pathValidator,
+		SystemIndexer: systemIndexer,
 	}
+
+	go func() {
+		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer indexCancel()
+
+		count, err := systemIndexer.IndexAll(indexCtx)
+		if err != nil {
+			slog.Warn("system knowledge indexing failed (non-critical)", "error", err)
+		} else {
+			slog.Info("system knowledge indexed successfully", "count", count)
+		}
+	}()
 
 	return app, nil
 }

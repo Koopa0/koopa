@@ -64,7 +64,7 @@ func TestNewHandler(t *testing.T) {
 	httpVal := security.NewHTTP()
 	envVal := security.NewEnv()
 
-	handler := NewHandler(pathVal, cmdVal, httpVal, envVal)
+	handler := NewHandler(pathVal, cmdVal, httpVal, envVal, nil)
 	if handler == nil {
 		t.Fatal("NewHandler returned nil")
 		return
@@ -81,7 +81,7 @@ func TestNewHandler(t *testing.T) {
 func TestHandler_ReadFile(t *testing.T) {
 	tmpDir := resolveSymlinks(t, t.TempDir())
 	pathVal, _ := security.NewPath([]string{tmpDir})
-	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv())
+	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv(), nil)
 
 	// Create test file
 	testFile := filepath.Join(tmpDir, "test.txt")
@@ -136,7 +136,7 @@ func TestHandler_ReadFile(t *testing.T) {
 func TestHandler_WriteFile(t *testing.T) {
 	tmpDir := resolveSymlinks(t, t.TempDir())
 	pathVal, _ := security.NewPath([]string{tmpDir})
-	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv())
+	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv(), nil)
 
 	tests := []struct {
 		name      string
@@ -201,7 +201,7 @@ func TestHandler_WriteFile(t *testing.T) {
 func TestHandler_ListFiles(t *testing.T) {
 	tmpDir := resolveSymlinks(t, t.TempDir())
 	pathVal, _ := security.NewPath([]string{tmpDir})
-	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv())
+	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv(), nil)
 
 	// Create test files and directories
 	_ = os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("test"), 0o600)
@@ -256,7 +256,7 @@ func TestHandler_ListFiles(t *testing.T) {
 func TestHandler_DeleteFile(t *testing.T) {
 	tmpDir := resolveSymlinks(t, t.TempDir())
 	pathVal, _ := security.NewPath([]string{tmpDir})
-	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv())
+	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv(), nil)
 
 	tests := []struct {
 		name      string
@@ -316,7 +316,7 @@ func TestHandler_DeleteFile(t *testing.T) {
 func TestHandler_GetFileInfo(t *testing.T) {
 	tmpDir := resolveSymlinks(t, t.TempDir())
 	pathVal, _ := security.NewPath([]string{tmpDir})
-	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv())
+	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv(), nil)
 
 	// Create test file
 	testFile := filepath.Join(tmpDir, "info.txt")
@@ -381,7 +381,7 @@ func TestHandler_GetFileInfo(t *testing.T) {
 // System Operations Tests
 
 func TestHandler_CurrentTime(t *testing.T) {
-	handler := NewHandler(nil, nil, nil, nil)
+	handler := NewHandler(nil, nil, nil, nil, nil)
 
 	result, err := handler.CurrentTime()
 	if err != nil {
@@ -402,7 +402,7 @@ func TestHandler_CurrentTime(t *testing.T) {
 
 func TestHandler_ExecuteCommand(t *testing.T) {
 	cmdVal := security.NewCommand()
-	handler := NewHandler(nil, cmdVal, nil, nil)
+	handler := NewHandler(nil, cmdVal, nil, nil, nil)
 
 	tests := []struct {
 		name      string
@@ -459,7 +459,7 @@ func TestHandler_ExecuteCommand(t *testing.T) {
 
 func TestHandler_GetEnv(t *testing.T) {
 	envVal := security.NewEnv()
-	handler := NewHandler(nil, nil, nil, envVal)
+	handler := NewHandler(nil, nil, nil, envVal, nil)
 
 	// Set test environment variable
 	testKey := "TEST_SAFE_VAR"
@@ -526,7 +526,7 @@ func TestHandler_GetEnv(t *testing.T) {
 func TestHandler_HTTPGet_SSRF_Protection(t *testing.T) {
 	// Use real security.HTTP to test SSRF protection
 	httpVal := security.NewHTTP()
-	handler := NewHandler(nil, nil, httpVal, nil)
+	handler := NewHandler(nil, nil, httpVal, nil, nil)
 
 	tests := []struct {
 		name   string
@@ -622,7 +622,7 @@ func TestHandler_HTTPGet_Success(t *testing.T) {
 				maxSize:     tt.maxSize,
 			}
 
-			handler := NewHandler(nil, nil, mockVal, nil)
+			handler := NewHandler(nil, nil, mockVal, nil, nil)
 
 			result, err := handler.HTTPGet(server.URL)
 			if err != nil {
@@ -656,7 +656,7 @@ func TestHandler_HTTPGet_ResponseSizeLimit(t *testing.T) {
 		maxSize:     1 * 1024 * 1024, // 1MB limit
 	}
 
-	handler := NewHandler(nil, nil, mockVal, nil)
+	handler := NewHandler(nil, nil, mockVal, nil, nil)
 
 	_, err := handler.HTTPGet(server.URL)
 	if err == nil {
@@ -679,7 +679,7 @@ func TestHandler_HTTPGet_ValidationFailure(t *testing.T) {
 		client:      server.Client(),
 	}
 
-	handler := NewHandler(nil, nil, mockVal, nil)
+	handler := NewHandler(nil, nil, mockVal, nil, nil)
 
 	_, err := handler.HTTPGet(server.URL)
 	if err == nil {
@@ -695,7 +695,7 @@ func TestHandler_HTTPGet_ValidationFailure(t *testing.T) {
 func BenchmarkHandler_ReadFile(b *testing.B) {
 	tmpDir := b.TempDir()
 	pathVal, _ := security.NewPath([]string{tmpDir})
-	handler := NewHandler(pathVal, nil, nil, nil)
+	handler := NewHandler(pathVal, nil, nil, nil, nil)
 
 	testFile := filepath.Join(tmpDir, "bench.txt")
 	_ = os.WriteFile(testFile, []byte("benchmark test content"), 0o600)
@@ -707,7 +707,7 @@ func BenchmarkHandler_ReadFile(b *testing.B) {
 }
 
 func BenchmarkHandler_CurrentTime(b *testing.B) {
-	handler := NewHandler(nil, nil, nil, nil)
+	handler := NewHandler(nil, nil, nil, nil, nil)
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -717,7 +717,7 @@ func BenchmarkHandler_CurrentTime(b *testing.B) {
 
 func BenchmarkHandler_ExecuteCommand(b *testing.B) {
 	cmdVal := security.NewCommand()
-	handler := NewHandler(nil, cmdVal, nil, nil)
+	handler := NewHandler(nil, cmdVal, nil, nil, nil)
 
 	b.ResetTimer()
 	for b.Loop() {

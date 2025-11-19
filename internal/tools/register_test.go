@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/stretchr/testify/mock"
 )
 
 // TestToolNames tests that ToolNames returns the correct list
@@ -22,6 +24,9 @@ func TestToolNames(t *testing.T) {
 		"httpGet",
 		"getEnv",
 		"getFileInfo",
+		"searchHistory",
+		"searchDocuments",
+		"searchSystemKnowledge",
 	}
 
 	if len(names) != len(expectedTools) {
@@ -41,6 +46,19 @@ func TestToolNames(t *testing.T) {
 	}
 }
 
+// mockKnowledgeStore is a simple mock for testing
+type mockKnowledgeStore struct {
+	mock.Mock
+}
+
+func (m *mockKnowledgeStore) Search(ctx context.Context, query string, opts ...knowledge.SearchOption) ([]knowledge.Result, error) {
+	args := m.Called(ctx, query, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]knowledge.Result), args.Error(1)
+}
+
 // TestRegisterTools tests that all tools are registered successfully
 func TestRegisterTools(t *testing.T) {
 	ctx := context.Background()
@@ -56,6 +74,9 @@ func TestRegisterTools(t *testing.T) {
 	httpVal := security.NewHTTP()
 	envVal := security.NewEnv()
 
+	// Create mock knowledge store
+	mockStore := new(mockKnowledgeStore)
+
 	// Register tools should not panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -63,7 +84,7 @@ func TestRegisterTools(t *testing.T) {
 		}
 	}()
 
-	RegisterTools(g, pathVal, cmdVal, httpVal, envVal)
+	RegisterTools(g, pathVal, cmdVal, httpVal, envVal, mockStore)
 }
 
 // TestToolNamesImmutable tests that ToolNames returns a copy (not modifiable)

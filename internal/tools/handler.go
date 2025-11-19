@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/firebase/genkit/go/ai"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
 )
 
@@ -33,20 +35,32 @@ type HTTPValidator interface {
 	MaxResponseSize() int64
 }
 
+// KnowledgeSearcher defines the interface for knowledge search operations.
+// Following Go best practices: interfaces are defined by the consumer,
+// not the provider (similar to http.RoundTripper, sql.Driver).
+//
+// This interface allows Handler to depend on abstraction rather than
+// concrete implementation, improving testability and flexibility.
+type KnowledgeSearcher interface {
+	// Search performs semantic search on knowledge documents
+	Search(ctx context.Context, query string, opts ...knowledge.SearchOption) ([]knowledge.Result, error)
+}
+
 // Handler manages tool operations with security validation.
 // Follows Go naming conventions (like http.Server, mcp.Server, sql.DB).
 //
 // This type encapsulates all tool logic with proper dependency injection,
 // making methods independently testable without Genkit's closure overhead.
 //
-// Design: Handler depends on interfaces (HTTPValidator) rather than concrete
-// types where testability is critical, following the "Accept interfaces,
+// Design: Handler depends on interfaces (HTTPValidator, KnowledgeSearcher) rather
+// than concrete types where testability is critical, following the "Accept interfaces,
 // return structs" principle.
 type Handler struct {
-	pathVal *security.Path
-	cmdVal  *security.Command
-	httpVal HTTPValidator // Depends on interface for testability
-	envVal  *security.Env
+	pathVal        *security.Path
+	cmdVal         *security.Command
+	httpVal        HTTPValidator // Depends on interface for testability
+	envVal         *security.Env
+	knowledgeStore KnowledgeSearcher // Depends on interface for testability
 }
 
 // NewHandler creates a new tool handler with security validators.
@@ -56,23 +70,26 @@ type Handler struct {
 //   - cmdVal: Command validator for system operations (prevents CWE-78 command injection)
 //   - httpVal: HTTP validator for network operations (prevents SSRF)
 //   - envVal: Environment validator (prevents sensitive information leakage)
+//   - knowledgeStore: Knowledge searcher for semantic search operations
 //
 // Returns:
 //   - *Handler: Handler instance ready to process tool operations
 //
-// Design: Accepts HTTPValidator interface (not *security.HTTP) following
+// Design: Accepts HTTPValidator and KnowledgeSearcher interfaces following
 // "Accept interfaces, return structs" principle for better testability.
 func NewHandler(
 	pathVal *security.Path,
 	cmdVal *security.Command,
 	httpVal HTTPValidator,
 	envVal *security.Env,
+	knowledgeStore KnowledgeSearcher,
 ) *Handler {
 	return &Handler{
-		pathVal: pathVal,
-		cmdVal:  cmdVal,
-		httpVal: httpVal,
-		envVal:  envVal,
+		pathVal:        pathVal,
+		cmdVal:         cmdVal,
+		httpVal:        httpVal,
+		envVal:         envVal,
+		knowledgeStore: knowledgeStore,
 	}
 }
 
@@ -327,4 +344,135 @@ func (h *Handler) HTTPGet(url string) (string, error) {
 
 	jsonResult, _ := json.Marshal(result)
 	return string(jsonResult), nil
+}
+
+// Knowledge Operations
+
+// SearchHistory searches conversation history using semantic similarity.
+// Searches only conversations (source_type="conversation").
+// Returns formatted results with similarity scores and metadata.
+//
+// Parameters:
+//   - ctx: Tool execution context
+//   - query: Search query string
+//   - topK: Maximum results to return (1-10, default: 3)
+//
+// Returns:
+//   - string: Formatted search results
+//   - error: If search fails
+func (h *Handler) SearchHistory(ctx *ai.ToolContext, query string, topK int) (string, error) {
+	// No nil check needed - RegisterTools guarantees non-nil knowledgeStore
+
+	// Validate and set defaults for topK
+	if topK <= 0 {
+		topK = 3
+	} else if topK > 10 {
+		topK = 10
+	}
+
+	// Build search options with conversation filter
+	opts := []knowledge.SearchOption{
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", "conversation"),
+	}
+
+	// Execute search
+	results, err := h.knowledgeStore.Search(ctx.Context, query, opts...)
+	if err != nil {
+		return "", fmt.Errorf("history search failed: %w", err)
+	}
+
+	return formatHistoryResults(results), nil
+}
+
+// SearchDocuments searches indexed documents using semantic similarity.
+// Searches only documents (source_type="file").
+// Returns formatted results with similarity scores and metadata.
+//
+// Parameters:
+//   - ctx: Tool execution context
+//   - query: Search query string
+//   - topK: Maximum results to return (1-10, default: 3)
+//
+// Returns:
+//   - string: Formatted search results
+//   - error: If search fails
+func (h *Handler) SearchDocuments(ctx *ai.ToolContext, query string, topK int) (string, error) {
+	// No nil check needed - RegisterTools guarantees non-nil knowledgeStore
+
+	// Validate and set defaults for topK
+	if topK <= 0 {
+		topK = 3
+	} else if topK > 10 {
+		topK = 10
+	}
+
+	// Build search options with file filter
+	opts := []knowledge.SearchOption{
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", "file"),
+	}
+
+	// Execute search
+	results, err := h.knowledgeStore.Search(ctx.Context, query, opts...)
+	if err != nil {
+		return "", fmt.Errorf("document search failed: %w", err)
+	}
+
+	formatted := formatDocumentResults(results)
+	return formatted, nil
+}
+
+// SearchSystemKnowledge searches system knowledge base using semantic similarity.
+// Searches only system knowledge (source_type="system").
+// Returns formatted results with similarity scores and metadata.
+//
+// Parameters:
+//   - ctx: Tool execution context
+//   - query: Search query string
+//   - topK: Maximum results to return (1-10, default: 3)
+//
+// Returns:
+//   - string: Formatted search results
+//   - error: If search fails
+func (h *Handler) SearchSystemKnowledge(ctx *ai.ToolContext, query string, topK int) (string, error) {
+	// No nil check needed - RegisterTools guarantees non-nil knowledgeStore
+
+	// Validate and set defaults for topK
+	if topK <= 0 {
+		topK = 3
+	} else if topK > 10 {
+		topK = 10
+	}
+
+	// Build search options with system filter
+	opts := []knowledge.SearchOption{
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", "system"),
+	}
+
+	// Execute search
+	results, err := h.knowledgeStore.Search(ctx.Context, query, opts...)
+	if err != nil {
+		return "", fmt.Errorf("system knowledge search failed: %w", err)
+	}
+
+	// UX Improvement (P2-Phase3): Check if system knowledge is indexed when results are empty
+	if len(results) == 0 {
+		// Use larger TopK to check if ANY system knowledge exists
+		checkOpts := []knowledge.SearchOption{
+			knowledge.WithTopK(10),
+			knowledge.WithFilter("source_type", "system"),
+		}
+		allSystemDocs, checkErr := h.knowledgeStore.Search(ctx.Context, "system", checkOpts...)
+
+		// If no system documents found at all, warn the user
+		if checkErr == nil && len(allSystemDocs) == 0 {
+			return "⚠️ No system knowledge found. System knowledge may not be indexed yet. " +
+				"This could happen if the application just started or if indexing failed. " +
+				"You can manually reindex using `/rag reindex-system` command.", nil
+		}
+	}
+
+	return formatSystemResults(results), nil
 }

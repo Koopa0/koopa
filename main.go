@@ -44,7 +44,7 @@ func main() {
 
 	// Enter interactive mode (default behavior)
 	ctx := context.Background()
-	if err := cmd.Run(ctx, cfg, version); err != nil {
+	if err := cmd.Run(ctx, cfg, version, os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

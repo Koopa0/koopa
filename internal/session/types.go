@@ -34,8 +34,8 @@ type Session struct {
 type Message struct {
 	ID             uuid.UUID
 	SessionID      uuid.UUID
-	Role           string      // "user" | "model" | "tool"
-	Content        []*ai.Part  // Genkit Part slice (stored as JSONB)
+	Role           string     // "user" | "model" | "tool"
+	Content        []*ai.Part // Genkit Part slice (stored as JSONB)
 	SequenceNumber int
 	CreatedAt      time.Time
 }

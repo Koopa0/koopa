@@ -26,7 +26,7 @@ func TestSystemToolsRegistration(t *testing.T) {
 		}
 	}()
 
-	handler := NewHandler(nil, cmdVal, nil, envVal)
+	handler := NewHandler(nil, cmdVal, nil, envVal, nil)
 	registerSystemTools(g, handler)
 }
 

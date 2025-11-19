@@ -100,7 +100,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("model_name", "gemini-2.5-flash")
 	viper.SetDefault("temperature", 0.7)
 	viper.SetDefault("max_tokens", 2048)
-	viper.SetDefault("language", "auto") // Default: auto-detect language from user input
+	viper.SetDefault("language", "auto")         // Default: auto-detect language from user input
 	viper.SetDefault("max_history_messages", 50) // Default: keep recent 50 messages (~25 conversation turns)
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
 
