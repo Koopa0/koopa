@@ -76,5 +76,9 @@ func (a *App) Close() error {
 // Session persistence is now fully wired via Wire DI (P1-Phase3 complete).
 // Knowledge store support added in P2-Phase1.
 func (a *App) CreateAgent(ctx context.Context, retriever ai.Retriever) (*agent.Agent, error) {
-	return agent.New(ctx, a.Config, a.Genkit, retriever, a.SessionStore, a.Knowledge, slog.Default())
+	return agent.New(ctx, a.Config, a.Genkit, retriever,
+		agent.WithSessionStore(a.SessionStore),
+		agent.WithKnowledgeStore(a.Knowledge),
+		agent.WithLogger(slog.Default()),
+	)
 }

@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
@@ -52,9 +53,17 @@ var providerSet = wire.NewSet(
 
 // provideGenkit initializes Genkit with Google AI plugin.
 func provideGenkit(ctx context.Context) *genkit.Genkit {
+	promptDir := "./prompts"
+	if _, err := os.Stat(promptDir); os.IsNotExist(err) {
+		// Try parent directory (useful for tests running in subdirectories)
+		if _, err := os.Stat("../prompts"); err == nil {
+			promptDir = "../prompts"
+		}
+	}
+
 	return genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithPromptDir("./prompts"),
+		genkit.WithPromptDir(promptDir),
 	)
 }
 

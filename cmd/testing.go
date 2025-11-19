@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -29,12 +28,12 @@ type CLISession struct {
 func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISession {
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &CLISession{
-		stdin:      stdin,
-		stdout:     stdout,
-		stderr:     stderr,
-		done:       make(chan struct{}),
-		ctx:        ctx,
-		cancel:     cancel,
+		stdin:  stdin,
+		stdout: stdout,
+		stderr: stderr,
+		done:   make(chan struct{}),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	// Start output capture goroutines
@@ -46,14 +45,24 @@ func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISessi
 
 // captureOutput continuously reads from a reader and stores in buffer
 func (s *CLISession) captureOutput(reader io.Reader, label string) {
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := scanner.Text()
+	if reader == nil {
+		return
+	}
+	buf := make([]byte, 1024)
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			s.outputMutex.Lock()
+			s.outputBuffer.Write(buf[:n])
+			s.outputMutex.Unlock()
+		}
 
-		s.outputMutex.Lock()
-		s.outputBuffer.WriteString(line)
-		s.outputBuffer.WriteString("\n")
-		s.outputMutex.Unlock()
+		if err != nil {
+			if err != io.EOF {
+				// Log error if needed, or just exit loop
+			}
+			return
+		}
 
 		// Check for context cancellation
 		select {

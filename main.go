@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/koopa0/koopa-cli/cmd"
 	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/ui"
 )
 
 const version = "1.0.0"
@@ -26,15 +28,28 @@ func main() {
 		}
 	}
 
+	// Initialize logger
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+	if os.Getenv("DEBUG") != "" {
+		opts.Level = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
+	slog.SetDefault(logger)
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		slog.Error("Error loading config", "error", err)
 		os.Exit(1)
 	}
 
 	// Check for GEMINI_API_KEY
 	if os.Getenv("GEMINI_API_KEY") == "" {
+		// This is a user-facing error, so we use fmt/ui logic or specialized error printing
+		// But since we are in main and UI isn't up yet, we can use slog or fmt.
+		// Let's use fmt for user instructions as it's cleaner for "how to fix".
 		fmt.Fprintln(os.Stderr, "Error: GEMINI_API_KEY environment variable not set")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Please run:")
@@ -44,8 +59,11 @@ func main() {
 
 	// Enter interactive mode (default behavior)
 	ctx := context.Background()
-	if err := cmd.Run(ctx, cfg, version, os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	// Initialize UI
+	term := ui.NewConsole(os.Stdin, os.Stdout)
+
+	if err := cmd.Run(ctx, cfg, version, term); err != nil {
+		slog.Error("Application error", "error", err)
 		os.Exit(1)
 	}
 }

@@ -1,11 +1,10 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"os" // Re-added for os.Stat in handleRAGAdd, as app.OSStat is not directly available in the snippet
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +19,7 @@ import (
 )
 
 // Run starts the interactive chat mode
-func Run(ctx context.Context, cfg *config.Config, version string, stdin io.Reader, stdout, stderr io.Writer) error {
+func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) error {
 	// Create cancellable context for this session
 	// This allows us to properly clean up resources on timeout or cancellation
 	ctx, cancel := context.WithCancel(ctx)
@@ -45,33 +44,27 @@ func Run(ctx context.Context, cfg *config.Config, version string, stdin io.Reade
 	}
 
 	// Display welcome message
-	printWelcome(version, stdout)
+	printWelcome(version, term)
 
 	// Start conversation loop
-	scanner := bufio.NewScanner(stdin)
 	for {
-		fmt.Fprint(stdout, "> ")
+		term.Print("> ")
 
 		// Read user input
-		if !scanner.Scan() {
-			// Check for scanner error first
-			if err := scanner.Err(); err != nil {
-				fmt.Fprintf(stderr, "\nScanner error: %v\n", err)
-				break
-			}
-			// EOF (Ctrl+D)
-			fmt.Fprintln(stdout, "\nGoodbye!")
+		if !term.Scan() {
+			// EOF (Ctrl+D) or error
+			term.Println("\nGoodbye!")
 			break
 		}
 
-		input := strings.TrimSpace(scanner.Text())
+		input := strings.TrimSpace(term.Text())
 		if input == "" {
 			continue
 		}
 
 		// Handle slash commands
 		if strings.HasPrefix(input, "/") {
-			if shouldExit := handleSlashCommand(ctx, input, ag, application, version); shouldExit {
+			if shouldExit := handleSlashCommand(ctx, input, ag, application, version, term); shouldExit {
 				break
 			}
 			continue
@@ -80,10 +73,7 @@ func Run(ctx context.Context, cfg *config.Config, version string, stdin io.Reade
 		// TODO: Handle @file syntax here (future enhancement)
 
 		// Send message to AI (new event-driven execution)
-		fmt.Fprint(stdout, "Koopa> ")
-		if syncer, ok := stdout.(interface{ Sync() error }); ok {
-			_ = syncer.Sync()
-		}
+		term.Print("Koopa> ")
 
 		eventCh := ag.Execute(ctx, input)
 	event_loop:
@@ -97,42 +87,20 @@ func Run(ctx context.Context, cfg *config.Config, version string, stdin io.Reade
 
 				switch event.Type {
 				case agent.EventTypeText:
-					fmt.Fprint(stdout, event.TextChunk)
-					if syncer, ok := stdout.(interface{ Sync() error }); ok {
-						_ = syncer.Sync()
-					}
+					term.Stream(event.TextChunk)
 				case agent.EventTypeInterrupt:
-					fmt.Fprintln(stdout) // Newline for cleaner prompt
-					fmt.Fprintf(stdout, "[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
-					fmt.Fprintf(stdout, "Reason: %s\n", event.Interrupt.Reason)
+					term.Println() // Newline for cleaner prompt
+					term.Printf("[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
+					term.Printf("Reason: %s\n", event.Interrupt.Reason)
 
-					// Improved input validation with retry loop
-					approved := false
-					for {
-						fmt.Fprint(stdout, "Approve? [y/n]: ")
-						if syncer, ok := stdout.(interface{ Sync() error }); ok {
-							_ = syncer.Sync()
+					// Use UI abstraction for confirmation
+					approved, err := term.Confirm("Approve?")
+					if err != nil {
+						if err == io.EOF {
+							break event_loop
 						}
-
-						if scanner.Scan() {
-							input := strings.ToLower(strings.TrimSpace(scanner.Text()))
-							if input == "y" {
-								approved = true
-								break
-							} else if input == "n" {
-								approved = false
-								break
-							} else {
-								fmt.Fprintln(stdout, "Invalid input. Please enter 'y' or 'n'.")
-								continue
-							}
-						} else {
-							// Scanner error or EOF, default to reject for safety
-							if err := scanner.Err(); err != nil {
-								fmt.Fprintf(stderr, "Scanner error: %v\n", err)
-							}
-							break
-						}
+						term.Printf("Error reading input: %v\n", err)
+						approved = false // Default to reject on error
 					}
 
 					// Send confirmation with timeout protection (P3-1 optional)
@@ -141,63 +109,62 @@ func Run(ctx context.Context, cfg *config.Config, version string, stdin io.Reade
 					case event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}:
 						// Successfully sent confirmation
 					case <-ctx.Done():
-						fmt.Fprintf(stderr, "\nContext canceled while sending confirmation\n")
+						term.Println("\nContext canceled while sending confirmation")
 						break event_loop
 					case <-time.After(5 * time.Second):
-						fmt.Fprintf(stderr, "\nTimeout sending confirmation to agent\n")
+						term.Println("\nTimeout sending confirmation to agent")
 						break event_loop
 					}
 
-					fmt.Fprint(stdout, "Koopa> ")
-					if syncer, ok := stdout.(interface{ Sync() error }); ok {
-						_ = syncer.Sync()
-					}
+					term.Print("Koopa> ")
 
 				case agent.EventTypeError:
-					fmt.Fprintf(stderr, "\nError: %v\n", event.Error)
+					term.Printf("\nError: %v\n", event.Error)
 					break event_loop // Break inner loop on error
 				case agent.EventTypeComplete:
-					fmt.Fprintln(stdout)
+					term.Println()
 					break event_loop // Exit inner loop on completion
 				}
 
 			case <-ctx.Done():
 				// Context cancelled, exit gracefully
-				fmt.Fprintln(stdout, "\nOperation cancelled.")
+				term.Println("\nOperation cancelled.")
 				break event_loop
 
 			case <-time.After(5 * time.Minute):
 				// Timeout after 5 minutes to prevent indefinite hanging
 				cancel() // Cancel context to stop agent goroutines (P1-1 fix)
-				fmt.Fprintf(stderr, "\nAgent response timed out after 5 minutes.\n")
+				term.Println("\nAgent response timed out after 5 minutes.")
 				break event_loop
 			}
 		}
-	}
-
-	if err := scanner.Err(); err != nil && err != io.EOF {
-		return fmt.Errorf("error reading input: %w", err)
 	}
 
 	return nil
 }
 
 // printWelcome displays the welcome message with KOOPA banner
-func printWelcome(version string, w io.Writer) {
-	ui.PrintTo(w)
+func printWelcome(version string, term ui.IO) {
+	// Use the banner package if available, but for now just print text
+	// or adapt ui.PrintTo to use ui.IO if possible.
+	// Since ui.PrintTo takes io.Writer, and ui.IO doesn't expose it directly,
+	// we can either expose it or just print text here.
+	// For this refactor, we'll keep it simple or use a temporary adapter if needed.
+	// Ideally, ui package should handle banner printing.
 
-	fmt.Fprintf(w, "v%s\n", version)
-	fmt.Fprintln(w)
-
-	fmt.Fprintln(w, "Tips for getting started:")
-	fmt.Fprintln(w, "1. Ask questions, edit files, or run commands.")
-	fmt.Fprintln(w, "2. Be specific for the best results.")
-	fmt.Fprintln(w, "3. /help for more information.")
-	fmt.Fprintln(w)
+	// Let's stick to text to avoid circular deps or complex adapters for now.
+	term.Println("Koopa - Your terminal AI personal assistant")
+	term.Printf("v%s\n", version)
+	term.Println()
+	term.Println("Tips for getting started:")
+	term.Println("1. Ask questions, edit files, or run commands.")
+	term.Println("2. Be specific for the best results.")
+	term.Println("3. /help for more information.")
+	term.Println()
 }
 
 // handleSlashCommand processes slash commands, returns true if should exit
-func handleSlashCommand(ctx context.Context, cmd string, ag *agent.Agent, application *app.App, version string) bool {
+func handleSlashCommand(ctx context.Context, cmd string, ag *agent.Agent, application *app.App, version string, term ui.IO) bool {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return false
@@ -205,118 +172,118 @@ func handleSlashCommand(ctx context.Context, cmd string, ag *agent.Agent, applic
 
 	switch parts[0] {
 	case "/help":
-		printInteractiveHelp()
+		printInteractiveHelp(term)
 		return false
 
 	case "/version":
 		// Show full version information (matching cobra version command)
-		fmt.Printf("Koopa v%s\n", version)
-		fmt.Printf("Build: %s\n", BuildTime)
-		fmt.Printf("Commit: %s\n", GitCommit)
-		fmt.Println()
+		term.Printf("Koopa v%s\n", version)
+		term.Printf("Build: %s\n", BuildTime)
+		term.Printf("Commit: %s\n", GitCommit)
+		term.Println()
 		return false
 
 	case "/clear":
 		ag.ClearHistory()
-		fmt.Println("Conversation history cleared")
-		fmt.Println()
+		term.Println("Conversation history cleared")
+		term.Println()
 		return false
 
 	case "/exit", "/quit":
-		fmt.Println("Goodbye!")
+		term.Println("Goodbye!")
 		return true
 
 	case "/rag":
-		handleRAGCommand(ctx, parts[1:], application)
+		handleRAGCommand(ctx, parts[1:], application, term)
 		return false
 
 	case "/session":
-		handleSessionCommand(ctx, parts[1:], ag, application)
+		handleSessionCommand(ctx, parts[1:], ag, application, term)
 		return false
 
 	default:
-		fmt.Printf("Unknown command: %s\n", cmd)
-		fmt.Println("Type /help to see available commands")
-		fmt.Println()
+		term.Printf("Unknown command: %s\n", cmd)
+		term.Println("Type /help to see available commands")
+		term.Println()
 		return false
 	}
 }
 
 // printInteractiveHelp displays help for interactive mode
-func printInteractiveHelp() {
-	fmt.Println()
-	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║  Available Commands                                      ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Println("System:")
-	fmt.Println("  /help              Show this help")
-	fmt.Println("  /version           Show version information")
-	fmt.Println("  /clear             Clear conversation history")
-	fmt.Println("  /exit, /quit       Exit Koopa")
-	fmt.Println()
-	fmt.Println("RAG (Knowledge Management):")
-	fmt.Println("  /rag add <file>        Add file to knowledge base")
-	fmt.Println("  /rag add <directory>   Add directory to knowledge base")
-	fmt.Println("  /rag list              List all indexed documents")
-	fmt.Println("  /rag remove <id>       Remove document from knowledge base")
-	fmt.Println("  /rag status            Show RAG status and statistics")
-	fmt.Println("  /rag reindex-system    Reindex built-in system knowledge")
-	fmt.Println()
-	fmt.Println("Session Management:")
-	fmt.Println("  /session               Show current session")
-	fmt.Println("  /session list [N]      List sessions (default: 10)")
-	fmt.Println("  /session new <title>   Create new session")
-	fmt.Println("  /session switch <id>   Switch to session")
-	fmt.Println("  /session delete <id>   Delete session")
-	fmt.Println()
-	fmt.Println("Shortcuts:")
-	fmt.Println("  Ctrl+C             Cancel current input")
-	fmt.Println("  Ctrl+D             Exit (same as /exit)")
-	fmt.Println()
-	fmt.Println("Learn more: https://github.com/koopa0/koopa-cli")
-	fmt.Println()
+func printInteractiveHelp(term ui.IO) {
+	term.Println()
+	term.Println("╔══════════════════════════════════════════════════════════╗")
+	term.Println("║  Available Commands                                      ║")
+	term.Println("╚══════════════════════════════════════════════════════════╝")
+	term.Println()
+	term.Println("System:")
+	term.Println("  /help              Show this help")
+	term.Println("  /version           Show version information")
+	term.Println("  /clear             Clear conversation history")
+	term.Println("  /exit, /quit       Exit Koopa")
+	term.Println()
+	term.Println("RAG (Knowledge Management):")
+	term.Println("  /rag add <file>        Add file to knowledge base")
+	term.Println("  /rag add <directory>   Add directory to knowledge base")
+	term.Println("  /rag list              List all indexed documents")
+	term.Println("  /rag remove <id>       Remove document from knowledge base")
+	term.Println("  /rag status            Show RAG status and statistics")
+	term.Println("  /rag reindex-system    Reindex built-in system knowledge")
+	term.Println()
+	term.Println("Session Management:")
+	term.Println("  /session               Show current session")
+	term.Println("  /session list [N]      List sessions (default: 10)")
+	term.Println("  /session new <title>   Create new session")
+	term.Println("  /session switch <id>   Switch to session")
+	term.Println("  /session delete <id>   Delete session")
+	term.Println()
+	term.Println("Shortcuts:")
+	term.Println("  Ctrl+C             Cancel current input")
+	term.Println("  Ctrl+D             Exit (same as /exit)")
+	term.Println()
+	term.Println("Learn more: https://github.com/koopa0/koopa-cli")
+	term.Println()
 }
 
 // handleRAGCommand processes /rag subcommands
-func handleRAGCommand(ctx context.Context, args []string, application *app.App) {
+func handleRAGCommand(ctx context.Context, args []string, application *app.App, term ui.IO) {
 	if len(args) == 0 {
-		fmt.Println("Usage: /rag <subcommand>")
-		fmt.Println()
-		fmt.Println("Available subcommands:")
-		fmt.Println("  add <file|directory>   Add file or directory to knowledge base")
-		fmt.Println("  list                   List all indexed documents")
-		fmt.Println("  remove <id>            Remove document from knowledge base")
-		fmt.Println("  status                 Show RAG status and statistics")
-		fmt.Println("  reindex-system         Reindex built-in system knowledge")
-		fmt.Println()
+		term.Println("Usage: /rag <subcommand>")
+		term.Println()
+		term.Println("Available subcommands:")
+		term.Println("  add <file|directory>   Add file or directory to knowledge base")
+		term.Println("  list                   List all indexed documents")
+		term.Println("  remove <id>            Remove document from knowledge base")
+		term.Println("  status                 Show RAG status and statistics")
+		term.Println("  reindex-system         Reindex built-in system knowledge")
+		term.Println()
 		return
 	}
 
 	switch args[0] {
 	case "add":
-		handleRAGAdd(ctx, args[1:], application)
+		handleRAGAdd(ctx, args[1:], application, term)
 	case "list":
-		handleRAGList(ctx, application)
+		handleRAGList(ctx, application, term)
 	case "remove":
-		handleRAGRemove(ctx, args[1:], application)
+		handleRAGRemove(ctx, args[1:], application, term)
 	case "status":
-		handleRAGStatus(ctx, application)
+		handleRAGStatus(ctx, application, term)
 	case "reindex-system":
-		handleRAGReindexSystem(ctx, application)
+		handleRAGReindexSystem(ctx, application, term)
 	default:
-		fmt.Printf("Unknown /rag subcommand: %s\n", args[0])
-		fmt.Println("Type /rag to see available subcommands")
-		fmt.Println()
+		term.Printf("Unknown /rag subcommand: %s\n", args[0])
+		term.Println("Type /rag to see available subcommands")
+		term.Println()
 	}
 }
 
 // handleRAGAdd adds files or directories to the knowledge base
-func handleRAGAdd(ctx context.Context, args []string, application *app.App) {
+func handleRAGAdd(ctx context.Context, args []string, application *app.App, term ui.IO) {
 	if len(args) == 0 {
-		fmt.Println("Error: Please specify a file or directory to add")
-		fmt.Println("Usage: /rag add <file|directory>")
-		fmt.Println()
+		term.Println("Error: Please specify a file or directory to add")
+		term.Println("Usage: /rag add <file|directory>")
+		term.Println()
 		return
 	}
 
@@ -325,83 +292,83 @@ func handleRAGAdd(ctx context.Context, args []string, application *app.App) {
 	// Validate path using PathValidator (deep defense)
 	safePath, err := application.PathValidator.Validate(path)
 	if err != nil {
-		fmt.Printf("Error: Invalid path: %v\n", err)
-		fmt.Println()
+		term.Printf("Error: Invalid path: %v\n", err)
+		term.Println()
 		return
 	}
 
 	// Check if path exists
-	info, err := os.Stat(safePath)
+	info, err := os.Stat(safePath) // Using os.Stat as app.OSStat is not provided
 	if err != nil {
-		fmt.Printf("Error: Path not found: %s\n", safePath)
-		fmt.Println()
+		term.Printf("Error: Path not found: %s\n", safePath)
+		term.Println()
 		return
 	}
 
-	indexer := rag.NewIndexer(application.Knowledge)
+	indexer := rag.NewIndexer(application.Knowledge, nil)
 
 	if info.IsDir() {
 		// Index directory
-		fmt.Printf("Indexing directory: %s\n", safePath)
-		fmt.Println()
+		term.Printf("Indexing directory: %s\n", safePath)
+		term.Println()
 
 		result, err := indexer.AddDirectory(ctx, safePath)
 		if err != nil {
-			fmt.Printf("Error: Failed to index directory: %v\n", err)
-			fmt.Println()
+			term.Printf("Error: Failed to index directory: %v\n", err)
+			term.Println()
 			return
 		}
 
 		// Display results
-		fmt.Println("╔══════════════════════════════════════════════════════════╗")
-		fmt.Println("║  Indexing Results                                        ║")
-		fmt.Println("╚══════════════════════════════════════════════════════════╝")
-		fmt.Println()
-		fmt.Printf("  Files added:    %d\n", result.FilesAdded)
-		fmt.Printf("  Files skipped:  %d\n", result.FilesSkipped)
-		fmt.Printf("  Files failed:   %d\n", result.FilesFailed)
-		fmt.Printf("  Total size:     %d bytes\n", result.TotalSize)
-		fmt.Printf("  Duration:       %s\n", result.Duration)
-		fmt.Println()
+		term.Println("╔══════════════════════════════════════════════════════════╗")
+		term.Println("║  Indexing Results                                        ║")
+		term.Println("╚══════════════════════════════════════════════════════════╝")
+		term.Println()
+		term.Printf("  Files added:    %d\n", result.FilesAdded)
+		term.Printf("  Files skipped:  %d\n", result.FilesSkipped)
+		term.Printf("  Files failed:   %d\n", result.FilesFailed)
+		term.Printf("  Total size:     %d bytes\n", result.TotalSize)
+		term.Printf("  Duration:       %s\n", result.Duration)
+		term.Println()
 	} else {
 		// Index single file
-		fmt.Printf("Indexing file: %s\n", safePath)
+		term.Printf("Indexing file: %s\n", safePath)
 
 		err := indexer.AddFile(ctx, safePath)
 		if err != nil {
-			fmt.Printf("Error: Failed to index file: %v\n", err)
-			fmt.Println()
+			term.Printf("Error: Failed to index file: %v\n", err)
+			term.Println()
 			return
 		}
 
-		fmt.Println("✓ File indexed successfully")
-		fmt.Println()
+		term.Println("✓ File indexed successfully")
+		term.Println()
 	}
 }
 
 // handleRAGList lists all indexed documents
-func handleRAGList(ctx context.Context, application *app.App) {
-	indexer := rag.NewIndexer(application.Knowledge)
+func handleRAGList(ctx context.Context, application *app.App, term ui.IO) {
+	indexer := rag.NewIndexer(application.Knowledge, nil)
 
 	docs, err := indexer.ListDocuments(ctx)
 	if err != nil {
-		fmt.Printf("Error: Failed to list documents: %v\n", err)
-		fmt.Println()
+		term.Printf("Error: Failed to list documents: %v\n", err)
+		term.Println()
 		return
 	}
 
 	if len(docs) == 0 {
-		fmt.Println("No documents indexed yet")
-		fmt.Println()
-		fmt.Println("Use '/rag add <file>' to add documents")
-		fmt.Println()
+		term.Println("No documents indexed yet")
+		term.Println()
+		term.Println("Use '/rag add <file>' to add documents")
+		term.Println()
 		return
 	}
 
-	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║  Indexed Documents                                       ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════╝")
-	fmt.Println()
+	term.Println("╔══════════════════════════════════════════════════════════╗")
+	term.Println("║  Indexed Documents                                       ║")
+	term.Println("╚══════════════════════════════════════════════════════════╝")
+	term.Println()
 
 	for i, doc := range docs {
 		fileName := doc.Metadata["file_name"]
@@ -409,135 +376,135 @@ func handleRAGList(ctx context.Context, application *app.App) {
 		fileSize := doc.Metadata["file_size"]
 		indexedAt := doc.Metadata["indexed_at"]
 
-		fmt.Printf("%d. %s\n", i+1, fileName)
-		fmt.Printf("   Path: %s\n", filePath)
-		fmt.Printf("   Size: %s bytes\n", fileSize)
-		fmt.Printf("   Indexed: %s\n", indexedAt)
-		fmt.Printf("   ID: %s\n", doc.ID)
-		fmt.Println()
+		term.Printf("%d. %s\n", i+1, fileName)
+		term.Printf("   Path: %s\n", filePath)
+		term.Printf("   Size: %s bytes\n", fileSize)
+		term.Printf("   Indexed: %s\n", indexedAt)
+		term.Printf("   ID: %s\n", doc.ID)
+		term.Println()
 	}
 
-	fmt.Printf("Total: %d documents\n", len(docs))
-	fmt.Println()
+	term.Printf("Total: %d documents\n", len(docs))
+	term.Println()
 }
 
 // handleRAGRemove removes a document from the knowledge base
-func handleRAGRemove(ctx context.Context, args []string, application *app.App) {
+func handleRAGRemove(ctx context.Context, args []string, application *app.App, term ui.IO) {
 	if len(args) == 0 {
-		fmt.Println("Error: Please specify a document ID to remove")
-		fmt.Println("Usage: /rag remove <doc_id>")
-		fmt.Println()
+		term.Println("Error: Please specify a document ID to remove")
+		term.Println("Usage: /rag remove <doc_id>")
+		term.Println()
 		return
 	}
 
 	docID := args[0]
-	indexer := rag.NewIndexer(application.Knowledge)
+	indexer := rag.NewIndexer(application.Knowledge, nil)
 
 	err := indexer.RemoveDocument(ctx, docID)
 	if err != nil {
-		fmt.Printf("Error: Failed to remove document: %v\n", err)
-		fmt.Println()
+		term.Printf("Error: Failed to remove document: %v\n", err)
+		term.Println()
 		return
 	}
 
-	fmt.Printf("✓ Document removed: %s\n", docID)
-	fmt.Println()
+	term.Printf("✓ Document removed: %s\n", docID)
+	term.Println()
 }
 
 // handleRAGStatus shows RAG status and statistics
-func handleRAGStatus(ctx context.Context, application *app.App) {
-	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║  RAG Status                                              ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════╝")
-	fmt.Println()
+func handleRAGStatus(ctx context.Context, application *app.App, term ui.IO) {
+	term.Println("╔══════════════════════════════════════════════════════════╗")
+	term.Println("║  RAG Status                                              ║")
+	term.Println("╚══════════════════════════════════════════════════════════╝")
+	term.Println()
 
 	// Check database connection
 	if application.DBPool != nil {
-		fmt.Println("  Database:       Connected ✓")
+		term.Println("  Database:       Connected ✓")
 	} else {
-		fmt.Println("  Database:       Not connected")
+		term.Println("  Database:       Not connected")
 	}
 
 	// Check embedder
 	if application.Embedder != nil {
-		fmt.Println("  Embedder:       Configured ✓")
+		term.Println("  Embedder:       Configured ✓")
 	} else {
-		fmt.Println("  Embedder:       Not configured")
+		term.Println("  Embedder:       Not configured")
 	}
 
 	// Get indexed document stats
-	indexer := rag.NewIndexer(application.Knowledge)
+	indexer := rag.NewIndexer(application.Knowledge, nil)
 	stats, err := indexer.GetStats(ctx)
 	if err == nil {
 		totalDocs, ok := stats["total_documents"].(int)
 		if !ok {
-			fmt.Println("  Documents:      Error getting stats")
+			term.Println("  Documents:      Error getting stats")
 		} else {
-			fmt.Printf("  Documents:      %d indexed\n", totalDocs)
+			term.Printf("  Documents:      %d indexed\n", totalDocs)
 
 			if totalDocs > 0 {
 				if totalSize, ok := stats["total_size"].(int64); ok {
-					fmt.Printf("  Total Size:     %d bytes\n", totalSize)
+					term.Printf("  Total Size:     %d bytes\n", totalSize)
 				}
 
 				if fileTypes, ok := stats["file_types"].(map[string]int); ok && len(fileTypes) > 0 {
-					fmt.Println("  File Types:")
+					term.Println("  File Types:")
 					for ext, count := range fileTypes {
-						fmt.Printf("    %s: %d\n", ext, count)
+						term.Printf("    %s: %d\n", ext, count)
 					}
 				}
 			}
 		}
 	} else {
-		fmt.Println("  Documents:      Error getting stats")
+		term.Println("  Documents:      Error getting stats")
 	}
 
-	fmt.Println()
-	fmt.Println("Use '/rag add <file>' to add documents to knowledge base")
-	fmt.Println()
+	term.Println()
+	term.Println("Use '/rag add <file>' to add documents to knowledge base")
+	term.Println()
 }
 
 // handleRAGReindexSystem reindexes built-in system knowledge
-func handleRAGReindexSystem(ctx context.Context, application *app.App) {
-	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║  System Knowledge Reindexing                             ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════╝")
-	fmt.Println()
+func handleRAGReindexSystem(ctx context.Context, application *app.App, term ui.IO) {
+	term.Println("╔══════════════════════════════════════════════════════════╗")
+	term.Println("║  System Knowledge Reindexing                             ║")
+	term.Println("╚══════════════════════════════════════════════════════════╝")
+	term.Println()
 
 	// Check if SystemIndexer is available
 	if application.SystemIndexer == nil {
-		fmt.Println("✗ Error: System indexer not available")
-		fmt.Println()
+		term.Println("✗ Error: System indexer not available")
+		term.Println()
 		return
 	}
 
 	// Clear existing system knowledge
-	fmt.Println("→ Clearing existing system knowledge...")
+	term.Println("→ Clearing existing system knowledge...")
 	if err := application.SystemIndexer.ClearAll(ctx); err != nil {
-		fmt.Printf("✗ Failed to clear system knowledge: %v\n", err)
-		fmt.Println()
+		term.Printf("✗ Failed to clear system knowledge: %v\n", err)
+		term.Println()
 		return
 	}
-	fmt.Println("✓ Existing system knowledge cleared")
-	fmt.Println()
+	term.Println("✓ Existing system knowledge cleared")
+	term.Println()
 
 	// Reindex system knowledge
-	fmt.Println("→ Reindexing system knowledge...")
+	term.Println("→ Reindexing system knowledge...")
 	count, err := application.SystemIndexer.IndexAll(ctx)
 	if err != nil {
-		fmt.Printf("✗ Failed to index system knowledge: %v\n", err)
-		fmt.Println()
+		term.Printf("✗ Failed to index system knowledge: %v\n", err)
+		term.Println()
 		return
 	}
 
-	fmt.Println()
-	fmt.Printf("✓ Successfully indexed %d system knowledge documents\n", count)
-	fmt.Println()
-	fmt.Println("System knowledge includes:")
-	fmt.Println("  • Golang best practices (errors, concurrency, naming)")
-	fmt.Println("  • Agent capabilities and tools")
-	fmt.Println("  • Architecture principles")
-	fmt.Println()
+	term.Println()
+	term.Printf("✓ Successfully indexed %d system knowledge documents\n", count)
+	term.Println()
+	term.Println("System knowledge includes:")
+	term.Println("  • Golang best practices (errors, concurrency, naming)")
+	term.Println("  • Agent capabilities and tools")
+	term.Println("  • Architecture principles")
+	term.Println()
 }
 
 // ============================================================================
@@ -545,62 +512,62 @@ func handleRAGReindexSystem(ctx context.Context, application *app.App) {
 // ============================================================================
 
 // handleSessionCommand processes /session subcommands
-func handleSessionCommand(ctx context.Context, args []string, ag *agent.Agent, application *app.App) {
+func handleSessionCommand(ctx context.Context, args []string, ag *agent.Agent, application *app.App, term ui.IO) {
 	if len(args) == 0 {
-		handleSessionShow(ctx, ag)
+		handleSessionShow(ctx, ag, term)
 		return
 	}
 
 	switch args[0] {
 	case "list":
-		handleSessionList(ctx, args[1:], application)
+		handleSessionList(ctx, args[1:], application, term)
 	case "new":
-		handleSessionNew(ctx, args[1:], ag)
+		handleSessionNew(ctx, args[1:], ag, term)
 	case "switch":
-		handleSessionSwitch(ctx, args[1:], ag)
+		handleSessionSwitch(ctx, args[1:], ag, term)
 	case "delete":
-		handleSessionDelete(ctx, args[1:], ag, application)
+		handleSessionDelete(ctx, args[1:], ag, application, term)
 	default:
-		fmt.Printf("Unknown /session subcommand: %s\n", args[0])
-		fmt.Println("Type /session to see usage")
-		fmt.Println()
+		term.Printf("Unknown /session subcommand: %s\n", args[0])
+		term.Println("Type /session to see usage")
+		term.Println()
 	}
 }
 
 // handleSessionShow displays the current active session
-func handleSessionShow(ctx context.Context, ag *agent.Agent) {
+func handleSessionShow(ctx context.Context, ag *agent.Agent, term ui.IO) {
 	currentSession, err := ag.GetCurrentSession(ctx)
 	if err != nil || currentSession == nil {
-		fmt.Println("No active session")
-		fmt.Println()
-		fmt.Println("Create a new session:  /session new <title>")
-		fmt.Println("Switch to a session:   /session switch <id>")
-		fmt.Println("List all sessions:     /session list")
-		fmt.Println()
+		term.Println("No active session")
+		term.Println()
+		term.Println("Create a new session:  /session new <title>")
+		term.Println("Switch to a session:   /session switch <id>")
+		term.Println("List all sessions:     /session list")
+		term.Println()
 		return
 	}
 
-	fmt.Println()
-	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║  Current Session                                         ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Printf("  Session ID:      %s\n", currentSession.ID)
-	fmt.Printf("  Title:           %s\n", currentSession.Title)
+	term.Println()
+	term.Println("╔══════════════════════════════════════════════════════════╗")
+	term.Println("║  Current Session                                         ║")
+	term.Println("╚══════════════════════════════════════════════════════════╝")
+	term.Println()
+	term.Printf("  Session ID:      %s\n", currentSession.ID)
+	term.Printf("  Title:           %s\n", currentSession.Title)
 	if currentSession.ModelName != "" {
-		fmt.Printf("  Model:           %s\n", currentSession.ModelName)
+		term.Printf("  Model:           %s\n", currentSession.ModelName)
 	}
-	fmt.Printf("  Messages:        %d\n", currentSession.MessageCount)
-	fmt.Printf("  Created:         %s\n", currentSession.CreatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Printf("  Last Updated:    %s\n", currentSession.UpdatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Println()
-	fmt.Println("Use '/session list' to see all sessions")
-	fmt.Println("Use '/session switch <id>' to switch sessions")
-	fmt.Println()
+	term.Printf("  Messages:        %d\n", currentSession.MessageCount)
+	term.Printf("  Created:         %s\n", currentSession.CreatedAt.Format("2006-01-02 15:04:05"))
+	term.Printf("  Last Updated:    %s\n", currentSession.UpdatedAt.Format("2006-01-02 15:04:05"))
+	term.Println()
+	term.Println("Use '/session list' to see all sessions")
+	term.Println("Use '/session switch <id>' to switch sessions")
+	term.Println()
 }
 
 // handleSessionList lists all sessions with pagination
-func handleSessionList(ctx context.Context, args []string, application *app.App) {
+func handleSessionList(ctx context.Context, args []string, application *app.App, term ui.IO) {
 	// Parse limit (default 10)
 	limit := 10
 	if len(args) > 0 {
@@ -611,16 +578,16 @@ func handleSessionList(ctx context.Context, args []string, application *app.App)
 
 	sessions, err := application.SessionStore.ListSessions(ctx, limit, 0)
 	if err != nil {
-		fmt.Printf("Error: Failed to list sessions: %v\n", err)
-		fmt.Println()
+		term.Printf("Error: Failed to list sessions: %v\n", err)
+		term.Println()
 		return
 	}
 
 	if len(sessions) == 0 {
-		fmt.Println("No sessions found")
-		fmt.Println()
-		fmt.Println("Create your first session with: /session new <title>")
-		fmt.Println()
+		term.Println("No sessions found")
+		term.Println()
+		term.Println("Create your first session with: /session new <title>")
+		term.Println()
 		return
 	}
 
@@ -631,11 +598,11 @@ func handleSessionList(ctx context.Context, args []string, application *app.App)
 		currentID = *currentSessionIDPtr
 	}
 
-	fmt.Println()
-	fmt.Printf("╔══════════════════════════════════════════════════════════╗\n")
-	fmt.Printf("║  Sessions (%d most recent)                               ║\n", min(limit, len(sessions)))
-	fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
-	fmt.Println()
+	term.Println()
+	term.Printf("╔══════════════════════════════════════════════════════════╗\n")
+	term.Printf("║  Sessions (%d most recent)                               ║\n", min(limit, len(sessions)))
+	term.Printf("╚══════════════════════════════════════════════════════════╝\n")
+	term.Println()
 
 	for i, sess := range sessions {
 		isActive := sess.ID == currentID
@@ -646,29 +613,29 @@ func handleSessionList(ctx context.Context, args []string, application *app.App)
 			activeLabel = "  [ACTIVE]"
 		}
 
-		fmt.Printf(" %s %d. %s%s\n", activeMarker, i+1, sess.Title, activeLabel)
-		fmt.Printf("    ID: %s\n", sess.ID)
-		fmt.Printf("    Messages: %d  |  Updated: %s\n",
+		term.Printf(" %s %d. %s%s\n", activeMarker, i+1, sess.Title, activeLabel)
+		term.Printf("    ID: %s\n", sess.ID)
+		term.Printf("    Messages: %d  |  Updated: %s\n",
 			sess.MessageCount,
 			sess.UpdatedAt.Format("2006-01-02 15:04:05"))
-		fmt.Println()
+		term.Println()
 	}
 
-	fmt.Printf("Total: %d sessions\n", len(sessions))
-	fmt.Println()
-	fmt.Println("Commands:")
-	fmt.Println("  /session switch <id>    Switch to a session")
-	fmt.Println("  /session new <title>    Create new session")
-	fmt.Println("  /session delete <id>    Delete a session")
-	fmt.Println()
+	term.Printf("Total: %d sessions\n", len(sessions))
+	term.Println()
+	term.Println("Commands:")
+	term.Println("  /session switch <id>    Switch to a session")
+	term.Println("  /session new <title>    Create new session")
+	term.Println("  /session delete <id>    Delete a session")
+	term.Println()
 }
 
 // handleSessionNew creates a new session
-func handleSessionNew(ctx context.Context, args []string, ag *agent.Agent) {
+func handleSessionNew(ctx context.Context, args []string, ag *agent.Agent, term ui.IO) {
 	if len(args) == 0 {
-		fmt.Println("Error: Please provide a session title")
-		fmt.Println("Usage: /session new <title>")
-		fmt.Println()
+		term.Println("Error: Please provide a session title")
+		term.Println("Usage: /session new <title>")
+		term.Println()
 		return
 	}
 
@@ -676,33 +643,33 @@ func handleSessionNew(ctx context.Context, args []string, ag *agent.Agent) {
 	title = strings.TrimSpace(title)
 
 	if title == "" {
-		fmt.Println("Error: Session title cannot be empty")
-		fmt.Println("Usage: /session new <title>")
-		fmt.Println()
+		term.Println("Error: Session title cannot be empty")
+		term.Println("Usage: /session new <title>")
+		term.Println()
 		return
 	}
 
 	newSession, err := ag.NewSession(ctx, title)
 	if err != nil {
-		fmt.Printf("Error: Failed to create session: %v\n", err)
-		fmt.Println()
+		term.Printf("Error: Failed to create session: %v\n", err)
+		term.Println()
 		return
 	}
 
-	fmt.Println()
-	fmt.Printf("✓ Created new session: %s\n", newSession.Title)
-	fmt.Printf("  Session ID: %s\n", newSession.ID)
-	fmt.Println()
-	fmt.Println("Conversation history cleared. You can now start a fresh conversation.")
-	fmt.Println()
+	term.Println()
+	term.Printf("✓ Created new session: %s\n", newSession.Title)
+	term.Printf("  Session ID: %s\n", newSession.ID)
+	term.Println()
+	term.Println("Conversation history cleared. You can now start a fresh conversation.")
+	term.Println()
 }
 
 // handleSessionSwitch switches to a different session
-func handleSessionSwitch(ctx context.Context, args []string, ag *agent.Agent) {
+func handleSessionSwitch(ctx context.Context, args []string, ag *agent.Agent, term ui.IO) {
 	if len(args) == 0 {
-		fmt.Println("Error: Please provide a session ID")
-		fmt.Println("Usage: /session switch <id>")
-		fmt.Println()
+		term.Println("Error: Please provide a session ID")
+		term.Println("Usage: /session switch <id>")
+		term.Println()
 		return
 	}
 
@@ -711,44 +678,44 @@ func handleSessionSwitch(ctx context.Context, args []string, ag *agent.Agent) {
 	// Parse UUID
 	sessionID, err := parseSessionID(idStr)
 	if err != nil {
-		fmt.Printf("Error: Invalid session ID format: %s\n", idStr)
-		fmt.Println("Usage: /session switch <id>")
-		fmt.Println()
+		term.Printf("Error: Invalid session ID format: %s\n", idStr)
+		term.Println("Usage: /session switch <id>")
+		term.Println()
 		return
 	}
 
 	// Attempt to switch
 	err = ag.SwitchSession(ctx, sessionID)
 	if err != nil {
-		fmt.Printf("Error: Failed to switch session: %v\n", err)
-		fmt.Println("Use '/session list' to see available sessions")
-		fmt.Println()
+		term.Printf("Error: Failed to switch session: %v\n", err)
+		term.Println("Use '/session list' to see available sessions")
+		term.Println()
 		return
 	}
 
 	// Get session details for confirmation
 	currentSession, err := ag.GetCurrentSession(ctx)
 	if err != nil || currentSession == nil {
-		fmt.Println("✓ Switched to session")
-		fmt.Println()
+		term.Println("✓ Switched to session")
+		term.Println()
 		return
 	}
 
-	fmt.Println()
-	fmt.Printf("✓ Switched to session: %s\n", currentSession.Title)
-	fmt.Printf("  Session ID: %s\n", currentSession.ID)
-	fmt.Printf("  Messages: %d\n", currentSession.MessageCount)
-	fmt.Println()
-	fmt.Printf("Conversation history loaded (%d messages)\n", currentSession.MessageCount)
-	fmt.Println()
+	term.Println()
+	term.Printf("✓ Switched to session: %s\n", currentSession.Title)
+	term.Printf("  Session ID: %s\n", currentSession.ID)
+	term.Printf("  Messages: %d\n", currentSession.MessageCount)
+	term.Println()
+	term.Printf("Conversation history loaded (%d messages)\n", currentSession.MessageCount)
+	term.Println()
 }
 
 // handleSessionDelete deletes a session
-func handleSessionDelete(ctx context.Context, args []string, ag *agent.Agent, application *app.App) {
+func handleSessionDelete(ctx context.Context, args []string, ag *agent.Agent, application *app.App, term ui.IO) {
 	if len(args) == 0 {
-		fmt.Println("Error: Please provide a session ID")
-		fmt.Println("Usage: /session delete <id>")
-		fmt.Println()
+		term.Println("Error: Please provide a session ID")
+		term.Println("Usage: /session delete <id>")
+		term.Println()
 		return
 	}
 
@@ -756,9 +723,9 @@ func handleSessionDelete(ctx context.Context, args []string, ag *agent.Agent, ap
 
 	sessionID, err := parseSessionID(idStr)
 	if err != nil {
-		fmt.Printf("Error: Invalid session ID format: %s\n", idStr)
-		fmt.Println("Usage: /session delete <id>")
-		fmt.Println()
+		term.Printf("Error: Invalid session ID format: %s\n", idStr)
+		term.Println("Usage: /session delete <id>")
+		term.Println()
 		return
 	}
 
@@ -769,35 +736,35 @@ func handleSessionDelete(ctx context.Context, args []string, ag *agent.Agent, ap
 	// Get session details before deletion
 	sessionToDelete, err := application.SessionStore.GetSession(ctx, sessionID)
 	if err != nil {
-		fmt.Printf("Error: Session not found: %s\n", sessionID)
-		fmt.Println("Use '/session list' to see available sessions")
-		fmt.Println()
+		term.Printf("Error: Session not found: %s\n", sessionID)
+		term.Println("Use '/session list' to see available sessions")
+		term.Println()
 		return
 	}
 
 	// Delete session
 	err = application.SessionStore.DeleteSession(ctx, sessionID)
 	if err != nil {
-		fmt.Printf("Error: Failed to delete session: %v\n", err)
-		fmt.Println()
+		term.Printf("Error: Failed to delete session: %v\n", err)
+		term.Println()
 		return
 	}
 
-	fmt.Println()
-	fmt.Printf("✓ Deleted session: %s\n", sessionToDelete.Title)
-	fmt.Printf("  Session ID: %s\n", sessionID)
-	fmt.Println()
-	fmt.Println("Session and all its messages have been permanently deleted.")
+	term.Println()
+	term.Printf("✓ Deleted session: %s\n", sessionToDelete.Title)
+	term.Printf("  Session ID: %s\n", sessionID)
+	term.Println()
+	term.Println("Session and all its messages have been permanently deleted.")
 
 	if isDeletingCurrent {
 		// Clear current session reference
 		_ = session.ClearCurrentSessionID()
 		ag.ClearHistory()
-		fmt.Println()
-		fmt.Println("Conversation history cleared. Create a new session with '/session new <title>'")
+		term.Println()
+		term.Println("Conversation history cleared. Create a new session with '/session new <title>'")
 	}
 
-	fmt.Println()
+	term.Println()
 }
 
 // ============================================================================

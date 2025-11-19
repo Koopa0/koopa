@@ -60,7 +60,7 @@ func (m *mockIndexerStore) Delete(ctx context.Context, docID string) error {
 
 func TestNewIndexer(t *testing.T) {
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	if indexer == nil {
 		t.Fatal("NewIndexer returned nil")
@@ -87,7 +87,7 @@ func TestIndexer_AddFile_Success(t *testing.T) {
 	}
 
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	err := indexer.AddFile(context.Background(), testFile)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestIndexer_AddFile_DirectoryError(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	err := indexer.AddFile(context.Background(), tmpDir)
 	if err == nil {
@@ -158,7 +158,7 @@ func TestIndexer_AddFile_UnsupportedExtension(t *testing.T) {
 	}
 
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	err := indexer.AddFile(context.Background(), testFile)
 	if err == nil {
@@ -177,7 +177,7 @@ func TestIndexer_AddFile_UnsupportedExtension(t *testing.T) {
 
 func TestIndexer_AddFile_NonExistentFile(t *testing.T) {
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	err := indexer.AddFile(context.Background(), "/nonexistent/file.txt")
 	if err == nil {
@@ -201,7 +201,7 @@ func TestIndexer_AddFile_StoreError(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		addErr: errors.New("database connection lost"),
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	err := indexer.AddFile(context.Background(), testFile)
 	if err == nil {
@@ -246,7 +246,7 @@ func TestIndexer_AddDirectory_Success(t *testing.T) {
 	}
 
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	result, err := indexer.AddDirectory(context.Background(), tmpDir)
 	if err != nil {
@@ -304,7 +304,7 @@ func TestIndexer_AddDirectory_WithGitignore(t *testing.T) {
 	}
 
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	result, err := indexer.AddDirectory(context.Background(), tmpDir)
 	if err != nil {
@@ -343,7 +343,7 @@ func TestIndexer_AddDirectory_SkipsUnsupportedFiles(t *testing.T) {
 	}
 
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	result, err := indexer.AddDirectory(context.Background(), tmpDir)
 	if err != nil {
@@ -371,7 +371,7 @@ func TestIndexer_AddDirectory_StoreError(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		addErr: errors.New("database error"),
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	result, err := indexer.AddDirectory(context.Background(), tmpDir)
 	if err != nil {
@@ -390,7 +390,7 @@ func TestIndexer_AddDirectory_StoreError(t *testing.T) {
 
 func TestIndexer_AddDirectory_NonExistent(t *testing.T) {
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	_, err := indexer.AddDirectory(context.Background(), "/nonexistent/directory")
 	if err == nil {
@@ -425,7 +425,7 @@ func TestIndexer_ListDocuments_Success(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		listBySourceTypeResult: mockDocs,
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	docs, err := indexer.ListDocuments(context.Background())
 	if err != nil {
@@ -451,7 +451,7 @@ func TestIndexer_ListDocuments_Error(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		listBySourceTypeErr: errors.New("database connection lost"),
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	_, err := indexer.ListDocuments(context.Background())
 	if err == nil {
@@ -467,7 +467,7 @@ func TestIndexer_ListDocuments_Empty(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		listBySourceTypeResult: []knowledge.Document{},
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	docs, err := indexer.ListDocuments(context.Background())
 	if err != nil {
@@ -485,7 +485,7 @@ func TestIndexer_ListDocuments_Empty(t *testing.T) {
 
 func TestIndexer_RemoveDocument_Success(t *testing.T) {
 	mockStore := &mockIndexerStore{}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	err := indexer.RemoveDocument(context.Background(), "doc-123")
 	if err != nil {
@@ -505,7 +505,7 @@ func TestIndexer_RemoveDocument_Error(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		deleteErr: errors.New("document not found"),
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	err := indexer.RemoveDocument(context.Background(), "missing-doc")
 	if err == nil {
@@ -552,7 +552,7 @@ func TestIndexer_GetStats_Success(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		listBySourceTypeResult: mockDocs,
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	stats, err := indexer.GetStats(context.Background())
 	if err != nil {
@@ -583,7 +583,7 @@ func TestIndexer_GetStats_Empty(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		listBySourceTypeResult: []knowledge.Document{},
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	stats, err := indexer.GetStats(context.Background())
 	if err != nil {
@@ -599,7 +599,7 @@ func TestIndexer_GetStats_ListError(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		listBySourceTypeErr: errors.New("database error"),
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	stats, err := indexer.GetStats(context.Background())
 	if err != nil {
@@ -627,7 +627,7 @@ func TestIndexer_GetStats_InvalidFileSize(t *testing.T) {
 	mockStore := &mockIndexerStore{
 		listBySourceTypeResult: mockDocs,
 	}
-	indexer := NewIndexer(mockStore)
+	indexer := NewIndexer(mockStore, nil)
 
 	stats, err := indexer.GetStats(context.Background())
 	if err != nil {
@@ -698,6 +698,10 @@ func TestGenerateDocID(t *testing.T) {
 // ============================================================================
 
 func TestSupportedExtensions(t *testing.T) {
+	mockStore := &mockIndexerStore{}
+	// Initialize with defaults
+	indexer := NewIndexer(mockStore, nil)
+
 	// Verify common extensions are supported
 	expectedSupported := []string{
 		".txt", ".md", ".go", ".py", ".js", ".ts",
@@ -706,7 +710,7 @@ func TestSupportedExtensions(t *testing.T) {
 	}
 
 	for _, ext := range expectedSupported {
-		if !SupportedExtensions[ext] {
+		if !indexer.supportedExtensions[ext] {
 			t.Errorf("extension %s should be supported", ext)
 		}
 	}
@@ -714,9 +718,29 @@ func TestSupportedExtensions(t *testing.T) {
 	// Verify unsupported extensions
 	unsupported := []string{".exe", ".bin", ".pdf", ".docx", ".zip"}
 	for _, ext := range unsupported {
-		if SupportedExtensions[ext] {
+		if indexer.supportedExtensions[ext] {
 			t.Errorf("extension %s should not be supported", ext)
 		}
+	}
+}
+
+func TestCustomSupportedExtensions(t *testing.T) {
+	mockStore := &mockIndexerStore{}
+	// Initialize with custom extensions
+	customExts := []string{".custom", ".log"}
+	indexer := NewIndexer(mockStore, customExts)
+
+	// Verify custom extensions are supported
+	if !indexer.supportedExtensions[".custom"] {
+		t.Error("extension .custom should be supported")
+	}
+	if !indexer.supportedExtensions[".log"] {
+		t.Error("extension .log should be supported")
+	}
+
+	// Verify defaults are NOT supported (unless explicitly added)
+	if indexer.supportedExtensions[".go"] {
+		t.Error("extension .go should not be supported in custom mode")
 	}
 }
 

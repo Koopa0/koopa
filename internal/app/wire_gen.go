@@ -19,6 +19,7 @@ import (
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"log/slog"
+	"os"
 	"time"
 )
 
@@ -66,7 +67,15 @@ var providerSet = wire.NewSet(
 
 // provideGenkit initializes Genkit with Google AI plugin.
 func provideGenkit(ctx context.Context) *genkit.Genkit {
-	return genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithPromptDir("./prompts"))
+	promptDir := "./prompts"
+	if _, err := os.Stat(promptDir); os.IsNotExist(err) {
+		// Try parent directory (useful for tests running in subdirectories)
+		if _, err := os.Stat("../prompts"); err == nil {
+			promptDir = "../prompts"
+		}
+	}
+
+	return genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithPromptDir(promptDir))
 }
 
 // provideEmbedder creates an embedder instance.
