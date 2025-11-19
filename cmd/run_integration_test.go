@@ -118,8 +118,9 @@ func TestCLISession_HelpCommand(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	errChan := make(chan error, 1)
 	go func() {
-		_ = Run(ctx, cfg, "1.0.0", stdinR, stdoutW, stderrW)
+		errChan <- Run(ctx, cfg, "1.0.0", stdinR, stdoutW, stderrW)
 	}()
 
 	// Wait for initial prompt
@@ -145,5 +146,15 @@ func TestCLISession_HelpCommand(t *testing.T) {
 	// Send /exit
 	if err := session.SendLine("/exit"); err != nil {
 		t.Fatalf("Failed to send /exit: %v", err)
+	}
+
+	// Wait for CLI to exit and check for errors
+	select {
+	case err := <-errChan:
+		if err != nil && err != context.DeadlineExceeded {
+			t.Fatalf("CLI exited with unexpected error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for CLI to exit")
 	}
 }

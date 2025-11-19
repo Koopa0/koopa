@@ -133,7 +133,8 @@ func newApp(
 
 	// P2-Phase3: Index system knowledge on startup (async, non-blocking)
 	go func() {
-		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Use app context for proper lifecycle management
+		indexCtx, indexCancel := context.WithTimeout(appCtx, 5*time.Second)
 		defer indexCancel()
 
 		count, err := systemIndexer.IndexAll(indexCtx)

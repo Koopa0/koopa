@@ -141,7 +141,8 @@ func newApp(
 	}
 
 	go func() {
-		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Use app context for proper lifecycle management
+		indexCtx, indexCancel := context.WithTimeout(appCtx, 5*time.Second)
 		defer indexCancel()
 
 		count, err := systemIndexer.IndexAll(indexCtx)
