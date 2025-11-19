@@ -11,6 +11,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// waitForCondition polls until condition is met or timeout.
+// This replaces brittle time.Sleep calls with robust polling.
+func waitForCondition(t *testing.T, timeout time.Duration, check func() bool, msg string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Timeout waiting for: %s", msg)
+		case <-ticker.C:
+			if check() {
+				return
+			}
+		}
+	}
+}
+
 // TestAgent_SimpleConversation_Integration tests basic conversation flow
 func TestAgent_SimpleConversation_Integration(t *testing.T) {
 	if testing.Short() {
@@ -216,8 +238,11 @@ func TestAgent_SessionPersistence_Integration(t *testing.T) {
 		}
 	}
 
-	// Wait a bit for async persistence
-	time.Sleep(500 * time.Millisecond)
+	// Wait for async persistence using polling
+	waitForCondition(t, 2*time.Second, func() bool {
+		messages, err := framework.SessionStore.GetMessages(ctx, sessionID, 10, 0)
+		return err == nil && len(messages) >= 2
+	}, "message persistence")
 
 	// Verify messages were persisted to database
 	messages, err := framework.SessionStore.GetMessages(ctx, sessionID, 10, 0)

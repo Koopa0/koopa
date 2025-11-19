@@ -226,6 +226,7 @@ func TestHandleSlashCommand(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			// Call function
 			shouldExit := handleSlashCommand(ctx, tt.command, mockAgent, mockApp, "test-version")
@@ -305,6 +306,7 @@ func TestHandleSlashCommand_EdgeCases(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			shouldExit := handleSlashCommand(ctx, tt.command, mockAgent, mockApp, "test")
 
@@ -333,6 +335,7 @@ func TestPrintInteractiveHelp(t *testing.T) {
 	defer w.Close()
 	defer r.Close() // Ensure pipe reader is closed
 	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
 
 	printInteractiveHelp()
 
@@ -442,6 +445,7 @@ func TestHandleRAGCommand(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			handleRAGCommand(ctx, tt.args, mockApp)
 
@@ -516,6 +520,7 @@ func TestHandleRAGAdd(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			handleRAGAdd(ctx, tt.args, mockApp)
 
@@ -591,6 +596,7 @@ func TestHandleRAGReindexSystem(t *testing.T) {
 			defer w.Close()
 			defer r.Close()
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			handleRAGReindexSystem(ctx, mockApp)
 
@@ -651,6 +657,7 @@ func TestHandleRAGRemove(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			handleRAGRemove(ctx, tt.args, mockApp)
 
@@ -757,6 +764,7 @@ func TestHandleSessionCommand(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			// Call function
 			handleSessionCommand(ctx, tt.args, mockAgent, mockApp)
@@ -818,6 +826,7 @@ func TestHandleSessionNew_ErrorCases(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			// Call function
 			handleSessionNew(ctx, tt.args, mockAgent)
@@ -879,6 +888,7 @@ func TestHandleSessionSwitch_InvalidID(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			// Call function
 			handleSessionSwitch(ctx, tt.args, mockAgent)
@@ -945,6 +955,7 @@ func TestHandleSessionDelete_InvalidID(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			// Call function
 			handleSessionDelete(ctx, tt.args, mockAgent, mockApp)
@@ -1121,6 +1132,7 @@ func TestHandleSessionList_WithSessions(t *testing.T) {
 			defer w.Close()
 			defer r.Close()
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			handleSessionList(ctx, tt.args, mockApp)
 
@@ -1167,7 +1179,15 @@ func (m *mockSessionStoreWithData) ListSessions(ctx context.Context, limit, offs
 	if len(m.sessions) == 0 {
 		return []*session.Session{}, nil
 	}
-	return m.sessions, nil
+
+	// Implement proper pagination
+	start := offset
+	if start > len(m.sessions) {
+		return []*session.Session{}, nil
+	}
+
+	end := min(len(m.sessions), offset+limit)
+	return m.sessions[start:end], nil
 }
 
 func (m *mockSessionStoreWithData) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {

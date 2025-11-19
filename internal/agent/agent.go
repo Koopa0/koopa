@@ -517,18 +517,22 @@ func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
 
 				// Step 8.1: P2 Phase 2 - Async vectorize conversation turn
 				// Use independent context (original ctx may be cancelled)
-				go func() {
+				// BUGFIX: Copy messages before goroutine to avoid data race
+				a.messagesMu.RLock()
+				messagesCopyForVector := make([]*ai.Message, len(a.messages))
+				copy(messagesCopyForVector, a.messages)
+				a.messagesMu.RUnlock()
+
+				go func(msgs []*ai.Message) {
 					vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
 
 					// DEBUG: Log message state before vectorization
-					a.messagesMu.RLock()
-					messageCount := len(a.messages)
+					messageCount := len(msgs)
 					var lastRoles []string
-					for i := max(0, len(a.messages)-4); i < len(a.messages); i++ {
-						lastRoles = append(lastRoles, string(a.messages[i].Role))
+					for i := max(0, len(msgs)-4); i < len(msgs); i++ {
+						lastRoles = append(lastRoles, string(msgs[i].Role))
 					}
-					a.messagesMu.RUnlock()
 					a.logger.Info("vectorization debug",
 						"total_messages", messageCount,
 						"last_4_roles", lastRoles)
@@ -538,7 +542,7 @@ func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
 							"error", err)
 						// Vectorization failure doesn't affect conversation flow
 					}
-				}()
+				}(messagesCopyForVector)
 
 				eventCh <- Event{Type: EventTypeComplete, IsComplete: true}
 				return
