@@ -12,10 +12,13 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
-	"runtime/debug"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +27,7 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/mcp"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
@@ -52,6 +56,25 @@ type SessionStore interface {
 
 	// AddMessages adds multiple messages to a session in batch
 	AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error
+}
+
+// KnowledgeStore defines the minimal interface for knowledge operations needed by Agent.
+// Following Go best practices: interfaces are defined by the consumer (agent), not the provider (knowledge package).
+// This allows Agent to depend on abstraction rather than concrete implementation, improving testability.
+//
+// Design: Only includes methods actually used by Agent (Count, Add, Search), not the full knowledge.Store API.
+// This follows the Interface Segregation Principle - clients should not depend on methods they don't use.
+//
+// Note: Search is needed by tools.KnowledgeSearcher interface (used in tools.RegisterTools).
+type KnowledgeStore interface {
+	// Count returns the number of documents matching the filter
+	Count(ctx context.Context, filter map[string]string) (int, error)
+
+	// Add adds a document to the knowledge store with automatic embedding generation
+	Add(ctx context.Context, doc knowledge.Document) error
+
+	// Search performs semantic search on knowledge documents
+	Search(ctx context.Context, query string, opts ...knowledge.SearchOption) ([]knowledge.Result, error)
 }
 
 // genkitGenerator is the production implementation of the Generator interface.
@@ -85,9 +108,10 @@ type Agent struct {
 	retriever    ai.Retriever  // RAG retriever (required, always available)
 
 	// Session persistence (P1 - optional)
-	sessionStore     SessionStore // Session data access layer (nil = persistence disabled)
-	currentSessionID *uuid.UUID   // Current session ID (nil = no active session)
-	logger           *slog.Logger // Structured logger
+	sessionStore     SessionStore   // Session data access layer (nil = persistence disabled)
+	currentSessionID *uuid.UUID     // Current session ID (nil = no active session)
+	knowledgeStore   KnowledgeStore // Knowledge store for semantic search (P2 - required, interface for testability)
+	logger           *slog.Logger   // Structured logger
 }
 
 // New creates a new Agent instance with RAG support and session persistence.
@@ -96,6 +120,7 @@ type Agent struct {
 //
 // Parameters:
 //   - sessionStore: Session persistence layer (required, use NewNoopSessionStore() for stub)
+//   - knowledgeStore: Knowledge store for semantic search (required)
 //   - logger: Structured logger (required, use slog.Default() if unsure)
 func New(
 	ctx context.Context,
@@ -103,6 +128,7 @@ func New(
 	g *genkit.Genkit,
 	retriever ai.Retriever,
 	sessionStore SessionStore,
+	knowledgeStore KnowledgeStore,
 	logger *slog.Logger,
 ) (*Agent, error) {
 	if err := cfg.Validate(); err != nil {
@@ -119,6 +145,10 @@ func New(
 
 	if sessionStore == nil {
 		return nil, fmt.Errorf("sessionStore is required (use NewNoopSessionStore() for stub)")
+	}
+
+	if knowledgeStore == nil {
+		return nil, fmt.Errorf("knowledgeStore is required")
 	}
 
 	if logger == nil {
@@ -142,9 +172,10 @@ func New(
 	httpValidator := security.NewHTTP()
 	envValidator := security.NewEnv()
 
-	// Register core tools (file, system, network)
+	// Register core tools (file, system, network, knowledge)
 	// Note: Tools internally hold references to validators; Agent doesn't need to retain them
-	tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator)
+	// knowledgeStore is guaranteed non-nil by validation above
+	tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator, knowledgeStore)
 
 	// Register confirmation tool (interrupt mechanism, agent-specific)
 	RegisterConfirmationTool(g)
@@ -201,16 +232,17 @@ func New(
 	messages := []*ai.Message{}
 
 	agent := &Agent{
-		g:            g,
-		generator:    &genkitGenerator{g: g},
-		config:       cfg,
-		modelRef:     modelRef,
-		systemPrompt: systemPromptText,
-		messages:     messages,
-		mcp:          nil,       // MCP not connected by default
-		retriever:    retriever, // RAG retriever (always available)
-		sessionStore: sessionStore,
-		logger:       logger,
+		g:              g,
+		generator:      &genkitGenerator{g: g},
+		config:         cfg,
+		modelRef:       modelRef,
+		systemPrompt:   systemPromptText,
+		messages:       messages,
+		mcp:            nil,            // MCP not connected by default
+		retriever:      retriever,      // RAG retriever (always available)
+		sessionStore:   sessionStore,   // Session persistence (P1)
+		knowledgeStore: knowledgeStore, // Knowledge store (P2 - required)
+		logger:         logger,
 	}
 
 	// Load current session (attempt to restore from local state)
@@ -235,47 +267,6 @@ func (a *Agent) HistoryLength() int {
 	a.messagesMu.RLock()
 	defer a.messagesMu.RUnlock()
 	return len(a.messages)
-}
-
-// generate is the core generation logic shared by Ask, Chat, and ChatStream.
-// Handles: RAG retrieval, tool collection, option preparation, and generation.
-// Eliminates code duplication while maintaining distinct behaviors via extraOpts.
-func (a *Agent) generate(ctx context.Context, userInput string, extraOpts ...ai.GenerateOption) (response *ai.ModelResponse, err error) {
-	// Panic recovery for core generation logic
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("panic recovered in generate: %v", r)
-			slog.Error("panic in generate",
-				"error", r,
-				"stack", string(debug.Stack()))
-		}
-	}()
-
-	// Step 1: Retrieve relevant documents using RAG
-	ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
-		Query:   ai.DocumentFromText(userInput, nil),
-		Options: map[string]any{"k": a.config.RAGTopK},
-	})
-	if err != nil {
-		// Log warning but continue without RAG context
-		slog.Warn("RAG retrieval failed, continuing without context",
-			"error", err,
-			"input_preview", truncateString(userInput, 50))
-	}
-
-	// Step 2: Get all registered tools (local + MCP)
-	toolRefs := a.tools(ctx)
-
-	// Step 3: Prepare generation options (base options + caller-specific options + RAG docs)
-	opts := a.prepareGenerateOptions(toolRefs, ragResp, err, userInput, extraOpts...)
-
-	// Step 4: Generate response
-	response, err = a.generator.Generate(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("generate failed: %w", err)
-	}
-
-	return response, nil
 }
 
 // tools retrieves all registered tools (including MCP tools)
@@ -352,73 +343,12 @@ func (a *Agent) trimHistoryIfNeeded() {
 	a.messages = a.messages[max(0, len(a.messages)-maxMessages):]
 }
 
-// prepareGenerateOptions prepares common generation options for AI requests.
-// Returns base options (model, system, tools) + extraOpts + RAG documents (if available).
-func (a *Agent) prepareGenerateOptions(
-	tools []ai.ToolRef,
-	ragResp *ai.RetrieverResponse,
-	err error,
-	userInput string,
-	extraOpts ...ai.GenerateOption,
-) []ai.GenerateOption {
-	// Start with base options (model, system, tools)
-	opts := []ai.GenerateOption{
-		ai.WithModel(a.modelRef),
-		ai.WithSystem(a.systemPrompt),
-		ai.WithTools(tools...),
-	}
-
-	// Append caller-specific options (e.g., WithPrompt, WithMessages, WithStreaming)
-	opts = append(opts, extraOpts...)
-
-	// Add retrieved documents if RAG retrieval succeeded and returned documents
-	if err == nil && ragResp != nil && len(ragResp.Documents) > 0 {
-		opts = append(opts, ai.WithDocs(ragResp.Documents...))
-		slog.Debug("RAG: using retrieved documents",
-			"count", len(ragResp.Documents),
-			"input_preview", truncateString(userInput, 50))
-	}
-
-	return opts
-}
-
 // truncateString truncates a string to maxLen characters for logging
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
 	return s[:maxLen] + "..."
-}
-
-// simulateStreaming simulates character-by-character streaming output for better UX
-// when real streaming is blocked (e.g., during tool execution)
-func simulateStreaming(text string, callback func(chunk string)) {
-	// Stream character by character with delay to create visible typing effect
-	// Optimized for readability: slower than real streaming but feels more interactive
-
-	runes := []rune(text)
-	const charsPerChunk = 1 // Output 1 char at a time for clear typing effect
-	const delayMs = 30      // 30ms between chars (visible typing speed, ~33 chars/sec)
-
-	for i := 0; i < len(runes); i += charsPerChunk {
-		end := i + charsPerChunk
-		if end > len(runes) {
-			end = len(runes)
-		}
-
-		chunk := string(runes[i:end])
-		callback(chunk)
-
-		// Slightly longer pause after punctuation for natural rhythm
-		switch chunk {
-		case "。", "，", "！", "？", ".", ",", "!", "?":
-			time.Sleep(delayMs * 2 * time.Millisecond) // 60ms after punctuation
-		case "\n":
-			time.Sleep(delayMs * 3 * time.Millisecond) // 90ms after newline
-		default:
-			time.Sleep(delayMs * time.Millisecond)
-		}
-	}
 }
 
 // Execute runs the agent with interrupt mechanism support.
@@ -490,6 +420,10 @@ func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
 			}
 
 			// Step 6: Add model's thought/action to current turn history
+			// BUGFIX: Ensure Role is set correctly (Genkit may not set it automatically)
+			if response.Message.Role == "" {
+				response.Message.Role = ai.RoleModel
+			}
 			messagesCopy = append(messagesCopy, response.Message)
 
 			// Step 6.5: Log tool calls for debugging and monitoring
@@ -553,7 +487,8 @@ func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
 				}
 
 				// 7.4. Add tool responses to history, prepare for next round
-				messagesCopy = append(messagesCopy, ai.NewMessage(ai.RoleTool, nil, toolResponses...))
+				// Add metadata for observability: marks that interrupts were handled in this message
+				messagesCopy = append(messagesCopy, ai.NewMessage(ai.RoleTool, map[string]any{"interruptHandled": true}, toolResponses...))
 				continue // Loop back, call Generate with updated history
 
 			case ai.FinishReasonStop, ai.FinishReasonUnknown:
@@ -579,6 +514,31 @@ func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
 						// Continue execution - persistence failure is not fatal
 					}
 				}
+
+				// Step 8.1: P2 Phase 2 - Async vectorize conversation turn
+				// Use independent context (original ctx may be cancelled)
+				go func() {
+					vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+
+					// DEBUG: Log message state before vectorization
+					a.messagesMu.RLock()
+					messageCount := len(a.messages)
+					var lastRoles []string
+					for i := max(0, len(a.messages)-4); i < len(a.messages); i++ {
+						lastRoles = append(lastRoles, string(a.messages[i].Role))
+					}
+					a.messagesMu.RUnlock()
+					a.logger.Info("vectorization debug",
+						"total_messages", messageCount,
+						"last_4_roles", lastRoles)
+
+					if err := a.vectorizeConversationTurn(vectorCtx); err != nil {
+						a.logger.Warn("conversation vectorization failed (non-critical)",
+							"error", err)
+						// Vectorization failure doesn't affect conversation flow
+					}
+				}()
 
 				eventCh <- Event{Type: EventTypeComplete, IsComplete: true}
 				return
@@ -761,4 +721,263 @@ func (n *noopSessionStore) AddMessages(ctx context.Context, sessionID uuid.UUID,
 // This follows the Go standard library naming pattern (e.g., io.NopCloser).
 func NewNoopSessionStore() SessionStore {
 	return &noopSessionStore{}
+}
+
+// ============================================================================
+// P2 Phase 2: Conversation History Vectorization Helper Functions
+// ============================================================================
+
+// extractTextFromMessage extracts plain text content from an ai.Message.
+// Used to build conversation turn content for vectorization.
+func (a *Agent) extractTextFromMessage(msg *ai.Message) string {
+	var sb strings.Builder
+	for _, part := range msg.Content {
+		if part.IsText() {
+			sb.WriteString(part.Text)
+		}
+	}
+	return sb.String()
+}
+
+// extractToolInfo extracts tool name and result from a tool response message.
+// Returns empty strings if no tool response is found.
+// Handles multiple output types: string, nil, map, array, etc.
+func (a *Agent) extractToolInfo(msg *ai.Message) (toolName string, result string) {
+	for _, part := range msg.Content {
+		if part.ToolResponse != nil {
+			toolName = part.ToolResponse.Name
+
+			// Handle different output types
+			switch output := part.ToolResponse.Output.(type) {
+			case string:
+				result = output
+			case nil:
+				result = ""
+			default:
+				// For non-string types, marshal to JSON
+				if jsonBytes, err := json.Marshal(output); err == nil {
+					result = string(jsonBytes)
+				}
+			}
+			return
+		}
+	}
+	return "", ""
+}
+
+// getCurrentSessionID returns the current session ID for vectorization.
+// Returns "ephemeral-session" for single-command conversations (koopa ask).
+// This ensures all conversations are vectorizable and searchable via searchHistory.
+func (a *Agent) getCurrentSessionID() string {
+	if a.sessionStore == nil {
+		return "ephemeral-session"
+	}
+
+	if a.currentSessionID == nil {
+		return "ephemeral-session"
+	}
+
+	return a.currentSessionID.String()
+}
+
+// buildTurnContent constructs the text content for a conversation turn.
+// Returns: (content, toolCount, error)
+// Boundary cases: returns error for incomplete turns (no assistant or no user).
+func (a *Agent) buildTurnContent(messages []*ai.Message) (string, int, error) {
+	if len(messages) < 2 {
+		return "", 0, fmt.Errorf("not enough messages for a turn (need 2+, have %d)", len(messages))
+	}
+
+	// From back to front, find complete User → ... → Assistant sequence
+	var currentTurn []*ai.Message
+	foundAssistant := false
+	foundUser := false
+
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		currentTurn = append([]*ai.Message{msg}, currentTurn...)
+
+		if msg.Role == ai.RoleModel {
+			foundAssistant = true
+		}
+
+		if foundAssistant && msg.Role == ai.RoleUser {
+			foundUser = true
+			break
+		}
+	}
+
+	if !foundAssistant || !foundUser {
+		return "", 0, fmt.Errorf("incomplete turn: foundAssistant=%v, foundUser=%v",
+			foundAssistant, foundUser)
+	}
+
+	// Build content string
+	var sb strings.Builder
+	toolCount := 0
+	var userMsg, assistantMsg *ai.Message
+	var toolMessages []*ai.Message
+
+	// Identify message types in current turn
+	for _, msg := range currentTurn {
+		switch msg.Role {
+		case ai.RoleUser:
+			userMsg = msg
+		case ai.RoleModel:
+			assistantMsg = msg
+		case ai.RoleTool:
+			toolMessages = append(toolMessages, msg)
+		}
+	}
+
+	// User query
+	if userMsg != nil {
+		sb.WriteString("User: ")
+		sb.WriteString(a.extractTextFromMessage(userMsg))
+		sb.WriteString("\n\n")
+	}
+
+	// Tool actions (if any)
+	if len(toolMessages) > 0 {
+		sb.WriteString("Actions taken:\n")
+		for _, toolMsg := range toolMessages {
+			toolName, result := a.extractToolInfo(toolMsg)
+			if toolName != "" {
+				sb.WriteString(fmt.Sprintf("- Used %s\n", toolName))
+				sb.WriteString(fmt.Sprintf("  Result: %s\n", truncateString(result, 200)))
+				toolCount++
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	// Assistant response
+	if assistantMsg != nil {
+		sb.WriteString("Assistant: ")
+		sb.WriteString(a.extractTextFromMessage(assistantMsg))
+	}
+
+	return sb.String(), toolCount, nil
+}
+
+// calculateTurnNumber calculates the turn number for the current session.
+// Uses knowledge.Store.Count() to dynamically calculate turn number, avoiding concurrent state management.
+// Returns 0 on error (first turn as fallback).
+func (a *Agent) calculateTurnNumber(ctx context.Context, sessionID string) int {
+	// Query knowledge store for existing conversation turns in this session
+	count, err := a.knowledgeStore.Count(ctx, map[string]string{
+		"source_type": "conversation",
+		"session_id":  sessionID,
+	})
+
+	if err != nil {
+		a.logger.Warn("failed to calculate turn number, using 0 as fallback",
+			"session_id", sessionID,
+			"error", err)
+		return 0
+	}
+
+	// Next turn number is count + 1
+	return count + 1
+}
+
+// isRetriableError determines if an error is transient and should be retried.
+// Uses Go best practices: type assertion via errors.As and errors.Is.
+func isRetriableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for context deadline exceeded (timeout)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	// Check for context cancelled (not retriable - user cancelled)
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+
+	// For other errors, consider non-retriable by default
+	// Can be extended later if specific error types need retry
+	return false
+}
+
+// vectorizeConversationTurn vectorizes the latest conversation turn and stores it in knowledge store.
+// This method is called after each complete turn (User → Assistant) in Execute().
+// Features: 3-retry mechanism with exponential backoff, complete boundary checking.
+func (a *Agent) vectorizeConversationTurn(ctx context.Context) error {
+	// Step 1: Build turn content (with boundary checks)
+	a.messagesMu.RLock()
+	messages := a.messages
+	a.messagesMu.RUnlock()
+
+	content, toolCount, err := a.buildTurnContent(messages)
+	if err != nil {
+		return fmt.Errorf("buildTurnContent failed: %w", err)
+	}
+
+	// Step 2: Get session ID (supports ephemeral-session)
+	sessionID := a.getCurrentSessionID()
+
+	// Step 3: Calculate turn number
+	turnNumber := a.calculateTurnNumber(ctx, sessionID)
+
+	// Step 4: Build metadata
+	metadata := map[string]string{
+		"source_type": "conversation",
+		"session_id":  sessionID,
+		"timestamp":   time.Now().Format(time.RFC3339),
+		"turn_number": strconv.Itoa(turnNumber),
+		"tool_count":  strconv.Itoa(toolCount),
+	}
+
+	// Step 5: Create document
+	doc := knowledge.Document{
+		Content:  content,
+		Metadata: metadata,
+	}
+
+	// Step 6: Store with 3-retry mechanism
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		// Create timeout context for this attempt
+		storeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err = a.knowledgeStore.Add(storeCtx, doc)
+		cancel()
+
+		if err == nil {
+			// Success
+			a.logger.Info("conversation turn vectorized",
+				"session_id", sessionID,
+				"turn_number", turnNumber,
+				"tool_count", toolCount,
+				"content_length", len(content))
+			return nil
+		}
+
+		lastErr = err
+
+		// Check if error is retriable
+		if !isRetriableError(err) {
+			// Non-retriable error, fail immediately
+			a.logger.Error("non-retriable error in vectorization",
+				"attempt", attempt+1,
+				"error", err)
+			break
+		}
+
+		// Retriable error: log and retry with exponential backoff
+		a.logger.Warn("vectorization failed, retrying",
+			"attempt", attempt+1,
+			"error", err)
+
+		if attempt < 2 { // Don't sleep after last attempt
+			backoff := time.Duration(1<<uint(attempt)) * 100 * time.Millisecond
+			time.Sleep(backoff)
+		}
+	}
+
+	// All retries failed
+	return fmt.Errorf("knowledge store add failed after 3 attempts: %w", lastErr)
 }

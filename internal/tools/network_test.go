@@ -25,7 +25,7 @@ func TestNetworkToolsRegistration(t *testing.T) {
 		}
 	}()
 
-	handler := NewHandler(nil, nil, httpVal, nil)
+	handler := NewHandler(nil, nil, httpVal, nil, nil)
 	registerNetworkTools(g, handler)
 }
 

@@ -140,6 +140,7 @@ Save and restore your conversations across sessions:
 ```
 
 Your conversation history is automatically saved to PostgreSQL, allowing you to:
+
 - **Resume conversations** - Pick up exactly where you left off
 - **Organize by topic** - Create separate sessions for different projects
 - **Search history** - Access past conversations anytime
@@ -153,30 +154,60 @@ Koopa can help you with:
 - **System Commands** - Execute shell commands
 - **Network Requests** - Make HTTP requests and fetch web content
 
+### Human-in-the-Loop Safety
+
+Koopa automatically asks for your confirmation before executing potentially dangerous operations:
+
+```bash
+> Delete all node_modules directories
+
+Analyzing request...
+
+[CONFIRMATION REQUIRED]
+Tool: executeCommand
+Command: find . -name 'node_modules' -type d -exec rm -rf {} +
+Reason: This command will delete all node_modules directories recursively.
+        This operation cannot be undone.
+
+Approve? [y/n]: y
+
+✓ Executing command...
+✓ Deleted 3 directories, freed 450MB
+```
+
+**Safety features:**
+
+- **Automatic danger detection** - Operations like file deletion, `rm -rf`, `DROP DATABASE`, or writing to system paths (`/etc/`, `/usr/`) automatically trigger confirmation prompts
+- **Clear explanations** - See exactly what will happen and why it needs approval before execution
+- **Dynamic escalation** - Even normally safe operations become dangerous based on context (e.g., writing to `/etc/hosts`)
+- **User control** - You have final say on all destructive operations; rejected actions are gracefully handled
+
+This safety mechanism is built on Genkit's interrupt system and ensures you never accidentally execute dangerous commands.
+
 ### Extensible via MCP
 
 Add custom tools using the [Model Context Protocol](https://modelcontextprotocol.io/) to extend Koopa's capabilities.
 
 ## Commands
 
-| Command                     | Description                             |
-| --------------------------- | --------------------------------------- |
-| `/help`                     | Show available commands                 |
-| `/version`                  | Show version information                |
-| **Session Management**      |                                         |
-| `/session`                  | Show current session details            |
-| `/session list [limit]`     | List all sessions (default: 10)         |
-| `/session new <title>`      | Create a new session with a title       |
-| `/session switch <id>`      | Switch to a different session           |
-| `/session delete <id>`      | Delete a session and all its messages   |
-| **Knowledge Base (RAG)**    |                                         |
-| `/rag add <path>`           | Index files or directories              |
-| `/rag list`                 | List indexed documents                  |
-| `/rag remove <id>`          | Remove document from knowledge base     |
-| `/rag status`               | Show RAG status and statistics          |
-| **Conversation**            |                                         |
-| `/clear`                    | Clear current conversation              |
-| `/exit` or `/quit`          | Exit Koopa                              |
+| Command                  | Description                           |
+| ------------------------ | ------------------------------------- |
+| `/help`                  | Show available commands               |
+| `/version`               | Show version information              |
+| **Session Management**   |                                       |
+| `/session`               | Show current session details          |
+| `/session list [limit]`  | List all sessions (default: 10)       |
+| `/session new <title>`   | Create a new session with a title     |
+| `/session switch <id>`   | Switch to a different session         |
+| `/session delete <id>`   | Delete a session and all its messages |
+| **Knowledge Base (RAG)** |                                       |
+| `/rag add <path>`        | Index files or directories            |
+| `/rag list`              | List indexed documents                |
+| `/rag remove <id>`       | Remove document from knowledge base   |
+| `/rag status`            | Show RAG status and statistics        |
+| **Conversation**         |                                       |
+| `/clear`                 | Clear current conversation            |
+| `/exit` or `/quit`       | Exit Koopa                            |
 
 **Shortcuts:**
 

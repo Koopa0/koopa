@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -36,7 +38,12 @@ var arrowArt = []string{
 
 // Print displays the KOOPA banner with unified color
 func Print() {
-	fmt.Println()
+	PrintTo(os.Stdout)
+}
+
+// PrintTo displays the KOOPA banner to a custom writer
+func PrintTo(w io.Writer) {
+	fmt.Fprintln(w)
 
 	// Unified style with Google Blue
 	style := lipgloss.NewStyle().
@@ -47,10 +54,10 @@ func Print() {
 	for i := range len(koopaArt) {
 		arrow := style.Render(arrowArt[i])
 		text := style.Render(koopaArt[i])
-		fmt.Println(arrow + text)
+		fmt.Fprintln(w, arrow+text)
 	}
 
-	fmt.Println()
+	fmt.Fprintln(w)
 }
 
 // PrintWithInfo displays the banner with version and model info

@@ -44,6 +44,9 @@ var toolNames = []string{
 	"httpGet",
 	"getEnv",
 	"getFileInfo",
+	"searchHistory",
+	"searchDocuments",
+	"searchSystemKnowledge",
 }
 
 // ToolNames returns all registered tool names
@@ -53,21 +56,36 @@ func ToolNames() []string {
 	return toolNames
 }
 
-// RegisterTools registers core tools with Genkit (file, system, network)
+// RegisterTools registers core tools with Genkit (file, system, network, knowledge)
 // Validators are passed as parameters to create a Handler instance.
 // This follows Go best practices (like http.Server, mcp.Server):
 //   - Explicit dependencies via Handler struct
 //   - Testable business logic in Handler methods
 //   - Genkit closures as thin adapters for parameter conversion
+//
+// CRITICAL: knowledgeStore is required (cannot be nil).
+// This function panics if knowledgeStore is nil, following Go's fail-fast pattern
+// for critical dependencies (similar to http.Server panicking on nil Handler).
+//
+// Design: Accepts KnowledgeSearcher interface (not *knowledge.Store) following
+// "Accept interfaces, return structs" principle for better testability.
 func RegisterTools(
 	g *genkit.Genkit,
 	pathVal *security.Path,
 	cmdVal *security.Command,
 	httpVal *security.HTTP,
 	envVal *security.Env,
+	knowledgeStore KnowledgeSearcher,
 ) {
+	// CRITICAL: Fail-fast if knowledgeStore is nil
+	// Knowledge tools are core P2 functionality and cannot work without the store.
+	// This is the standard Go pattern for required dependencies (fail at startup, not runtime).
+	if knowledgeStore == nil {
+		panic("RegisterTools: knowledgeStore is required (cannot be nil)")
+	}
+
 	// Create handler with all validators (follows http.Server pattern)
-	handler := NewHandler(pathVal, cmdVal, httpVal, envVal)
+	handler := NewHandler(pathVal, cmdVal, httpVal, envVal, knowledgeStore)
 
 	// Register filesystem tools (5 tools)
 	registerFileTools(g, handler)
@@ -77,4 +95,7 @@ func RegisterTools(
 
 	// Register network tools (1 tool)
 	registerNetworkTools(g, handler)
+
+	// Register knowledge tools (3 tools)
+	registerKnowledgeTools(g, handler)
 }

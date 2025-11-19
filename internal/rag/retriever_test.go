@@ -1,10 +1,16 @@
 package rag
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core/api"
+	"github.com/firebase/genkit/go/genkit"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
 
 // ============================================================================
@@ -176,4 +182,319 @@ func TestConvertToGenkitDocuments(t *testing.T) {
 	if docs[1].Content[0].Text != "test content 2" {
 		t.Errorf("doc[1] content = %q, want %q", docs[1].Content[0].Text, "test content 2")
 	}
+}
+
+// ============================================================================
+// Mock Knowledge Querier for Retriever Tests
+// ============================================================================
+
+type mockSearchQuerier struct {
+	searchDocumentsFunc    func(ctx context.Context, arg sqlc.SearchDocumentsParams) ([]sqlc.SearchDocumentsRow, error)
+	searchDocumentsAllFunc func(ctx context.Context, arg sqlc.SearchDocumentsAllParams) ([]sqlc.SearchDocumentsAllRow, error)
+	searchError            error
+}
+
+func (m *mockSearchQuerier) UpsertDocument(ctx context.Context, arg sqlc.UpsertDocumentParams) error {
+	return nil
+}
+
+func (m *mockSearchQuerier) SearchDocuments(ctx context.Context, arg sqlc.SearchDocumentsParams) ([]sqlc.SearchDocumentsRow, error) {
+	if m.searchDocumentsFunc != nil {
+		return m.searchDocumentsFunc(ctx, arg)
+	}
+	if m.searchError != nil {
+		return nil, m.searchError
+	}
+	return []sqlc.SearchDocumentsRow{}, nil
+}
+
+func (m *mockSearchQuerier) SearchDocumentsAll(ctx context.Context, arg sqlc.SearchDocumentsAllParams) ([]sqlc.SearchDocumentsAllRow, error) {
+	if m.searchDocumentsAllFunc != nil {
+		return m.searchDocumentsAllFunc(ctx, arg)
+	}
+	if m.searchError != nil {
+		return nil, m.searchError
+	}
+	return []sqlc.SearchDocumentsAllRow{}, nil
+}
+
+func (m *mockSearchQuerier) CountDocuments(ctx context.Context, filterMetadata []byte) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockSearchQuerier) CountDocumentsAll(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockSearchQuerier) DeleteDocument(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *mockSearchQuerier) ListDocumentsBySourceType(ctx context.Context, arg sqlc.ListDocumentsBySourceTypeParams) ([]sqlc.ListDocumentsBySourceTypeRow, error) {
+	return nil, nil
+}
+
+// mockEmbedder is a simple embedder that returns fixed-size embeddings for testing
+type mockEmbedder struct{}
+
+func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
+	// Return a simple 3-dimensional vector
+	embedding := &ai.Embedding{Embedding: []float32{0.1, 0.2, 0.3}}
+	return &ai.EmbedResponse{Embeddings: []*ai.Embedding{embedding}}, nil
+}
+
+func (m *mockEmbedder) Name() string {
+	return "mockEmbedder"
+}
+
+func (m *mockEmbedder) Register(r api.Registry) {
+	// No-op for testing
+}
+
+// createTestKnowledgeStore creates a knowledge.Store with a mock querier for testing
+func createTestKnowledgeStore(querier knowledge.KnowledgeQuerier) *knowledge.Store {
+	return knowledge.NewWithQuerier(querier, &mockEmbedder{}, slog.Default())
+}
+
+// ============================================================================
+// DefineConversation Tests
+// ============================================================================
+
+// TestDefineConversation_Success verifies that DefineConversation creates a working retriever.
+// Note: Since helper functions (extractQueryText, extractTopK, convertToGenkitDocuments) are
+// already tested at 100%, this test focuses on verifying the retriever can be created and invoked.
+func TestDefineConversation_Success(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	// Create a simple mock that returns empty results
+	mockQuerier := &mockSearchQuerier{}
+	store := createTestKnowledgeStore(mockQuerier)
+
+	retriever := New(store)
+	conversationRetriever := retriever.DefineConversation(g, "test-conversation-retriever")
+
+	if conversationRetriever == nil {
+		t.Fatal("DefineConversation returned nil retriever")
+	}
+
+	// Create a retriever request
+	req := &ai.RetrieverRequest{
+		Query: &ai.Document{
+			Content: []*ai.Part{ai.NewTextPart("test query")},
+		},
+	}
+
+	// Execute retrieval - should not error even with empty results
+	resp, err := conversationRetriever.Retrieve(ctx, req)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+		return
+	}
+
+	// Empty results are okay - we're testing the plumbing works
+	if resp.Documents == nil {
+		t.Error("expected non-nil Documents slice")
+	}
+}
+
+// TestDefineConversation_WithTopK verifies that retriever works with custom topK option.
+func TestDefineConversation_WithTopK(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	mockQuerier := &mockSearchQuerier{}
+	store := createTestKnowledgeStore(mockQuerier)
+
+	retriever := New(store)
+	conversationRetriever := retriever.DefineConversation(g, "test-topk-retriever")
+
+	// Create request with custom topK
+	req := &ai.RetrieverRequest{
+		Query: &ai.Document{
+			Content: []*ai.Part{ai.NewTextPart("test query")},
+		},
+		Options: map[string]any{
+			"k": 10,
+		},
+	}
+
+	resp, err := conversationRetriever.Retrieve(ctx, req)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+}
+
+// TestDefineConversation_SearchError verifies error handling when Search fails.
+func TestDefineConversation_SearchError(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	expectedErr := errors.New("database connection failed")
+	mockQuerier := &mockSearchQuerier{
+		searchError: expectedErr,
+	}
+	store := createTestKnowledgeStore(mockQuerier)
+
+	retriever := New(store)
+	conversationRetriever := retriever.DefineConversation(g, "test-error-retriever")
+
+	req := &ai.RetrieverRequest{
+		Query: &ai.Document{
+			Content: []*ai.Part{ai.NewTextPart("test query")},
+		},
+	}
+
+	_, err := conversationRetriever.Retrieve(ctx, req)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Error should be returned from the retriever
+}
+
+// TestDefineConversation_EmptyQuery verifies handling of empty query.
+func TestDefineConversation_EmptyQuery(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	mockQuerier := &mockSearchQuerier{}
+	store := createTestKnowledgeStore(mockQuerier)
+
+	retriever := New(store)
+	conversationRetriever := retriever.DefineConversation(g, "test-empty-query")
+
+	// Request with nil query
+	req := &ai.RetrieverRequest{
+		Query: nil,
+	}
+
+	resp, err := conversationRetriever.Retrieve(ctx, req)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+		return
+	}
+
+	// Empty query is handled gracefully
+	if resp.Documents == nil {
+		t.Error("expected non-nil Documents slice")
+	}
+}
+
+// ============================================================================
+// DefineDocument Tests
+// ============================================================================
+
+// TestDefineDocument_Success verifies that DefineDocument creates a working retriever.
+// Like DefineConversation tests, this focuses on verifying the retriever works correctly.
+func TestDefineDocument_Success(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	mockQuerier := &mockSearchQuerier{}
+	store := createTestKnowledgeStore(mockQuerier)
+
+	retriever := New(store)
+	documentRetriever := retriever.DefineDocument(g, "test-document-retriever")
+
+	if documentRetriever == nil {
+		t.Fatal("DefineDocument returned nil retriever")
+	}
+
+	req := &ai.RetrieverRequest{
+		Query: &ai.Document{
+			Content: []*ai.Part{ai.NewTextPart("search query")},
+		},
+	}
+
+	resp, err := documentRetriever.Retrieve(ctx, req)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+		return
+	}
+
+	if resp.Documents == nil {
+		t.Error("expected non-nil Documents slice")
+	}
+}
+
+// TestDefineDocument_WithCustomTopK verifies custom topK in document retriever.
+func TestDefineDocument_WithCustomTopK(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	mockQuerier := &mockSearchQuerier{}
+	store := createTestKnowledgeStore(mockQuerier)
+
+	retriever := New(store)
+	documentRetriever := retriever.DefineDocument(g, "test-custom-topk")
+
+	req := &ai.RetrieverRequest{
+		Query: &ai.Document{
+			Content: []*ai.Part{ai.NewTextPart("query")},
+		},
+		Options: map[string]any{
+			"k": 20,
+		},
+	}
+
+	resp, err := documentRetriever.Retrieve(ctx, req)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+}
+
+// TestDefineDocument_SearchError verifies error handling in document retriever.
+func TestDefineDocument_SearchError(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	expectedErr := errors.New("vector search timeout")
+	mockQuerier := &mockSearchQuerier{
+		searchError: expectedErr,
+	}
+	store := createTestKnowledgeStore(mockQuerier)
+
+	retriever := New(store)
+	documentRetriever := retriever.DefineDocument(g, "test-doc-error")
+
+	req := &ai.RetrieverRequest{
+		Query: &ai.Document{
+			Content: []*ai.Part{ai.NewTextPart("query")},
+		},
+	}
+
+	_, err := documentRetriever.Retrieve(ctx, req)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Error is properly propagated from the search layer
 }

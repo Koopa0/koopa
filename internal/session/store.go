@@ -217,7 +217,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) // Rollback if not committed
+	defer func() { _ = tx.Rollback(ctx) }() // Rollback if not committed
 
 	// Create querier for this transaction
 	txQuerier := sqlc.New(tx)

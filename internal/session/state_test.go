@@ -10,34 +10,35 @@ import (
 )
 
 func TestGetStateFilePath(t *testing.T) {
+	// Note: Testing private function getStateFilePath (accessible within same package)
 	// Use isolated temp directory for this test
 	tempDir := t.TempDir()
 	t.Setenv("KOOPA_STATE_DIR", tempDir)
 
-	path, err := GetStateFilePath()
+	path, err := getStateFilePath()
 	if err != nil {
-		t.Fatalf("GetStateFilePath() error = %v", err)
+		t.Fatalf("getStateFilePath() error = %v", err)
 	}
 
 	if path == "" {
-		t.Error("GetStateFilePath() returned empty path")
+		t.Error("getStateFilePath() returned empty path")
 	}
 
 	// Verify path is absolute
 	if !filepath.IsAbs(path) {
-		t.Errorf("GetStateFilePath() returned relative path: %s", path)
+		t.Errorf("getStateFilePath() returned relative path: %s", path)
 	}
 
 	// Verify path uses temp directory
 	rel, err := filepath.Rel(tempDir, path)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		t.Errorf("GetStateFilePath() = %s, expected to be within %s", path, tempDir)
+		t.Errorf("getStateFilePath() = %s, expected to be within %s", path, tempDir)
 	}
 
 	// Verify directory was created
 	dir := filepath.Dir(path)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Errorf("GetStateFilePath() did not create directory: %s", dir)
+		t.Errorf("getStateFilePath() did not create directory: %s", dir)
 	}
 }
 
@@ -63,6 +64,7 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 
 		if loadedID == nil {
 			t.Fatal("LoadCurrentSessionID() returned nil")
+			return
 		}
 
 		if *loadedID != testID {
@@ -108,6 +110,7 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 
 		if loadedID == nil {
 			t.Fatal("LoadCurrentSessionID() returned nil")
+			return
 		}
 
 		if *loadedID != secondID {
@@ -202,9 +205,9 @@ func TestLoadCurrentSessionID_InvalidContent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write test content directly to state file
-			filePath, err := GetStateFilePath()
+			filePath, err := getStateFilePath()
 			if err != nil {
-				t.Fatalf("GetStateFilePath() error = %v", err)
+				t.Fatalf("getStateFilePath() error = %v", err)
 			}
 
 			err = os.WriteFile(filePath, []byte(tt.content), 0644)

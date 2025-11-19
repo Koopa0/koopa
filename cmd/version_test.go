@@ -160,11 +160,11 @@ func TestRunVersion(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
-	}
-	defer w.Close()
-		defer r.Close() // Ensure pipe reader is closed
+			if err != nil {
+				t.Fatalf("failed to create pipe: %v", err)
+			}
+			defer w.Close()
+			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Run function
@@ -237,11 +237,11 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
-	}
-	defer w.Close()
-		defer r.Close() // Ensure pipe reader is closed
+			if err != nil {
+				t.Fatalf("failed to create pipe: %v", err)
+			}
+			defer w.Close()
+			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			err = runVersion(tt.config)
@@ -287,6 +287,61 @@ func TestNewVersionCmd(t *testing.T) {
 
 	if cmd.RunE == nil {
 		t.Error("expected non-nil RunE function")
+	}
+}
+
+func TestNewVersionCmd_RunE(t *testing.T) {
+	cfg := &config.Config{
+		ModelName:    "gemini-2.0-flash-exp",
+		Temperature:  0.7,
+		MaxTokens:    8192,
+		DatabasePath: "/tmp/test.db",
+	}
+
+	// Set version variables
+	originalAppVersion := AppVersion
+	AppVersion = "test-version"
+	defer func() { AppVersion = originalAppVersion }()
+
+	cmd := NewVersionCmd(cfg)
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	defer w.Close()
+	defer r.Close()
+	os.Stdout = w
+
+	// Run the command
+	err = cmd.RunE(cmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Read output
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify no error
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Verify output contains expected strings
+	expectedStrings := []string{
+		"Koopa test-version",
+		"Configuration:",
+		"Model: gemini-2.0-flash-exp",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(output, expected) {
+			t.Errorf("expected output to contain %q", expected)
+		}
 	}
 }
 
@@ -348,11 +403,11 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
-	}
-	defer w.Close()
-		defer r.Close() // Ensure pipe reader is closed
+			if err != nil {
+				t.Fatalf("failed to create pipe: %v", err)
+			}
+			defer w.Close()
+			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
 
 			// Wrap in recover to catch panics for very short keys
