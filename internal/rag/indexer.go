@@ -41,8 +41,8 @@ type IndexerStore interface {
 	Delete(ctx context.Context, docID string) error
 }
 
-// SupportedExtensions are file types we can index
-var SupportedExtensions = map[string]bool{
+// defaultSupportedExtensions are the default file types we can index
+var defaultSupportedExtensions = map[string]bool{
 	".txt":  true,
 	".md":   true,
 	".go":   true,
@@ -77,8 +77,10 @@ type IndexResult struct {
 }
 
 // Indexer handles local file indexing
+// Indexer handles local file indexing
 type Indexer struct {
-	store IndexerStore // Depends on interface for testability
+	store               IndexerStore    // Depends on interface for testability
+	supportedExtensions map[string]bool // Configurable supported extensions
 }
 
 // NewIndexer creates a new file indexer
@@ -86,8 +88,25 @@ type Indexer struct {
 // Design: Accepts IndexerStore interface following "Accept interfaces, return structs"
 // principle for better testability. knowledge.Store automatically satisfies this interface
 // through duck typing.
-func NewIndexer(store IndexerStore) *Indexer {
-	return &Indexer{store: store}
+//
+// extensions: Optional list of supported file extensions (e.g. [".txt", ".md"]).
+// If empty/nil, uses defaultSupportedExtensions.
+func NewIndexer(store IndexerStore, extensions []string) *Indexer {
+	extMap := make(map[string]bool)
+
+	if len(extensions) > 0 {
+		for _, ext := range extensions {
+			extMap[strings.ToLower(ext)] = true
+		}
+	} else {
+		// Use defaults
+		extMap = defaultSupportedExtensions
+	}
+
+	return &Indexer{
+		store:               store,
+		supportedExtensions: extMap,
+	}
 }
 
 // AddFile adds a single file to the knowledge store
@@ -121,7 +140,7 @@ func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
 
 	// Check file extension
 	ext := strings.ToLower(filepath.Ext(fileName))
-	if !SupportedExtensions[ext] {
+	if !idx.supportedExtensions[ext] {
 		return fmt.Errorf("unsupported file type: %s", ext)
 	}
 
@@ -220,7 +239,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 
 		// Check if file type is supported
 		ext := strings.ToLower(filepath.Ext(path))
-		if !SupportedExtensions[ext] {
+		if !idx.supportedExtensions[ext] {
 			result.FilesSkipped++
 			return nil
 		}

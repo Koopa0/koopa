@@ -122,14 +122,47 @@ type Agent struct {
 //   - sessionStore: Session persistence layer (required, use NewNoopSessionStore() for stub)
 //   - knowledgeStore: Knowledge store for semantic search (required)
 //   - logger: Structured logger (required, use slog.Default() if unsure)
+//
+// Option defines a functional option for configuring the Agent.
+type Option func(*Agent)
+
+// WithSessionStore sets the session store for the agent.
+func WithSessionStore(store SessionStore) Option {
+	return func(a *Agent) {
+		a.sessionStore = store
+	}
+}
+
+// WithKnowledgeStore sets the knowledge store for the agent.
+func WithKnowledgeStore(store KnowledgeStore) Option {
+	return func(a *Agent) {
+		a.knowledgeStore = store
+	}
+}
+
+// WithLogger sets the logger for the agent.
+func WithLogger(logger *slog.Logger) Option {
+	return func(a *Agent) {
+		a.logger = logger
+	}
+}
+
+// New creates a new Agent instance with RAG support and session persistence.
+// Accepts pre-initialized Genkit instance and retriever (resolves circular dependency, enables DI and testing).
+// Registers tools and loads system prompt from Dotprompt file.
+//
+// Parameters:
+//   - ctx: Context
+//   - cfg: Configuration
+//   - g: Genkit instance
+//   - retriever: RAG retriever
+//   - opts: Functional options for configuration
 func New(
 	ctx context.Context,
 	cfg *config.Config,
 	g *genkit.Genkit,
 	retriever ai.Retriever,
-	sessionStore SessionStore,
-	knowledgeStore KnowledgeStore,
-	logger *slog.Logger,
+	opts ...Option,
 ) (*Agent, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -143,15 +176,32 @@ func New(
 		return nil, fmt.Errorf("retriever is required for RAG functionality")
 	}
 
-	if sessionStore == nil {
+	// Default values
+	agent := &Agent{
+		g:            g,
+		generator:    &genkitGenerator{g: g},
+		config:       cfg,
+		mcp:          nil,       // MCP not connected by default
+		retriever:    retriever, // RAG retriever (always available)
+		sessionStore: NewNoopSessionStore(),
+		logger:       slog.Default(),
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(agent)
+	}
+
+	// Validate required dependencies after options
+	if agent.sessionStore == nil {
 		return nil, fmt.Errorf("sessionStore is required (use NewNoopSessionStore() for stub)")
 	}
 
-	if knowledgeStore == nil {
+	if agent.knowledgeStore == nil {
 		return nil, fmt.Errorf("knowledgeStore is required")
 	}
 
-	if logger == nil {
+	if agent.logger == nil {
 		return nil, fmt.Errorf("logger is required (use slog.Default())")
 	}
 
@@ -175,7 +225,9 @@ func New(
 	// Register core tools (file, system, network, knowledge)
 	// Note: Tools internally hold references to validators; Agent doesn't need to retain them
 	// knowledgeStore is guaranteed non-nil by validation above
-	tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator, knowledgeStore)
+	if err := tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator, agent.knowledgeStore); err != nil {
+		return nil, fmt.Errorf("failed to register tools: %w", err)
+	}
 
 	// Register confirmation tool (interrupt mechanism, agent-specific)
 	RegisterConfirmationTool(g)
@@ -231,23 +283,14 @@ func New(
 	// Initialize conversation history (empty, will be managed by Agent methods)
 	messages := []*ai.Message{}
 
-	agent := &Agent{
-		g:              g,
-		generator:      &genkitGenerator{g: g},
-		config:         cfg,
-		modelRef:       modelRef,
-		systemPrompt:   systemPromptText,
-		messages:       messages,
-		mcp:            nil,            // MCP not connected by default
-		retriever:      retriever,      // RAG retriever (always available)
-		sessionStore:   sessionStore,   // Session persistence (P1)
-		knowledgeStore: knowledgeStore, // Knowledge store (P2 - required)
-		logger:         logger,
-	}
+	// Initialize type-safe model reference
+	agent.modelRef = modelRef
+	agent.systemPrompt = systemPromptText
+	agent.messages = messages
 
 	// Load current session (attempt to restore from local state)
 	if err := agent.loadCurrentSession(ctx); err != nil {
-		logger.Warn("failed to load current session, starting with empty history",
+		agent.logger.Warn("failed to load current session, starting with empty history",
 			"error", err)
 		// Loading failure is not fatal - Agent continues with empty history
 	}

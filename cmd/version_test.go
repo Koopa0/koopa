@@ -43,7 +43,7 @@ func TestRunVersion(t *testing.T) {
 				os.Setenv("GEMINI_API_KEY", "test-key-1234567890")
 			},
 			cleanupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				// No-op
 			},
 			config: &config.Config{
 				ModelName:    "gemini-2.0-flash-exp",
@@ -67,10 +67,12 @@ func TestRunVersion(t *testing.T) {
 			},
 		},
 		{
-			name:     "without API key",
-			setupEnv: func() {},
-			cleanupEnv: func() {
+			name: "without API key",
+			setupEnv: func() {
 				os.Unsetenv("GEMINI_API_KEY")
+			},
+			cleanupEnv: func() {
+				// No-op
 			},
 			config: &config.Config{
 				ModelName:    "gemini-2.0-flash-exp",
@@ -101,7 +103,7 @@ func TestRunVersion(t *testing.T) {
 				os.Setenv("GEMINI_API_KEY", "short")
 			},
 			cleanupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				// No-op
 			},
 			config: &config.Config{
 				ModelName:    "gemini-1.5-pro",
@@ -128,7 +130,7 @@ func TestRunVersion(t *testing.T) {
 				os.Setenv("GEMINI_API_KEY", "very-long-api-key-with-many-characters-1234567890")
 			},
 			cleanupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				// No-op
 			},
 			config: &config.Config{
 				ModelName:    "gemini-2.5-pro",
@@ -148,9 +150,13 @@ func TestRunVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Save original env
+			originalKey := os.Getenv("GEMINI_API_KEY")
+			defer os.Setenv("GEMINI_API_KEY", originalKey)
+
 			// Setup environment
 			tt.setupEnv()
-			defer tt.cleanupEnv()
+			// defer tt.cleanupEnv()
 
 			// Set version variables
 			AppVersion = tt.appVersion
@@ -391,9 +397,12 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Save original env
+			originalKey := os.Getenv("GEMINI_API_KEY")
+			defer os.Setenv("GEMINI_API_KEY", originalKey)
+
 			if tt.apiKey != "" {
 				os.Setenv("GEMINI_API_KEY", tt.apiKey)
-				defer os.Unsetenv("GEMINI_API_KEY")
 			} else {
 				os.Unsetenv("GEMINI_API_KEY")
 			}

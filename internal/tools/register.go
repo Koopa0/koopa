@@ -28,6 +28,8 @@
 package tools
 
 import (
+	"fmt"
+
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/koopa0/koopa-cli/internal/security"
 )
@@ -76,12 +78,11 @@ func RegisterTools(
 	httpVal *security.HTTP,
 	envVal *security.Env,
 	knowledgeStore KnowledgeSearcher,
-) {
+) error {
 	// CRITICAL: Fail-fast if knowledgeStore is nil
 	// Knowledge tools are core P2 functionality and cannot work without the store.
-	// This is the standard Go pattern for required dependencies (fail at startup, not runtime).
 	if knowledgeStore == nil {
-		panic("RegisterTools: knowledgeStore is required (cannot be nil)")
+		return fmt.Errorf("RegisterTools: knowledgeStore is required (cannot be nil)")
 	}
 
 	// Create handler with all validators (follows http.Server pattern)
@@ -98,4 +99,6 @@ func RegisterTools(
 
 	// Register knowledge tools (3 tools)
 	registerKnowledgeTools(g, handler)
+
+	return nil
 }
