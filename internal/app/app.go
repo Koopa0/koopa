@@ -47,6 +47,7 @@ type App struct {
 	Knowledge     *knowledge.Store
 	SessionStore  SessionStore // Phase 3: Session persistence (interface for testability)
 	PathValidator *security.Path
+	SystemIndexer *knowledge.SystemKnowledgeIndexer // P2-Phase3: System knowledge indexer (for CLI commands)
 
 	// Lifecycle management
 	ctx    context.Context
@@ -73,6 +74,7 @@ func (a *App) Close() error {
 
 // CreateAgent creates an Agent for a specific use case.
 // Session persistence is now fully wired via Wire DI (P1-Phase3 complete).
+// Knowledge store support added in P2-Phase1.
 func (a *App) CreateAgent(ctx context.Context, retriever ai.Retriever) (*agent.Agent, error) {
-	return agent.New(ctx, a.Config, a.Genkit, retriever, a.SessionStore, slog.Default())
+	return agent.New(ctx, a.Config, a.Genkit, retriever, a.SessionStore, a.Knowledge, slog.Default())
 }

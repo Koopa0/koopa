@@ -5,12 +5,15 @@ package app
 
 import (
 	"context"
+	"log/slog"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
@@ -34,9 +37,12 @@ var providerSet = wire.NewSet(
 	provideEmbedder,
 	provideDBPool,
 	provideKnowledgeStore,
+	wire.Bind(new(agent.KnowledgeStore), new(*knowledge.Store)), // Bind concrete to interface for testability
 	provideSessionStore, // Phase 3: Real session persistence
 	wire.Bind(new(SessionStore), new(*session.Store)), // Bind concrete to interface for testability
 	providePathValidator,
+	provideLogger,                       // P2-Phase3: Logger for system indexer
+	knowledge.NewSystemKnowledgeIndexer, // P2-Phase3: System knowledge indexer
 
 	// App constructor
 	newApp,
@@ -88,6 +94,12 @@ func providePathValidator() (*security.Path, error) {
 	return security.NewPath([]string{"."})
 }
 
+// provideLogger creates a logger instance.
+// Returns slog.Default() for consistent logging across the application.
+func provideLogger() *slog.Logger {
+	return slog.Default()
+}
+
 // ========== App Constructor ==========
 
 // newApp constructs an App instance.
@@ -98,9 +110,10 @@ func newApp(
 	g *genkit.Genkit,
 	embedder ai.Embedder,
 	pool *pgxpool.Pool,
-	knowledge *knowledge.Store,
+	knowledgeStore *knowledge.Store,
 	sessionStore SessionStore, // Phase 3: Session persistence (interface for testability)
 	pathValidator *security.Path,
+	systemIndexer *knowledge.SystemKnowledgeIndexer, // P2-Phase3: System knowledge indexer
 ) (*App, error) {
 	// Create context with cancel
 	appCtx, cancel := context.WithCancel(ctx)
@@ -112,10 +125,24 @@ func newApp(
 		Genkit:        g,
 		Embedder:      embedder,
 		DBPool:        pool,
-		Knowledge:     knowledge,
+		Knowledge:     knowledgeStore,
 		SessionStore:  sessionStore, // Phase 3: Session persistence (interface for testability)
 		PathValidator: pathValidator,
+		SystemIndexer: systemIndexer, // P2-Phase3: System knowledge indexer
 	}
+
+	// P2-Phase3: Index system knowledge on startup (async, non-blocking)
+	go func() {
+		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer indexCancel()
+
+		count, err := systemIndexer.IndexAll(indexCtx)
+		if err != nil {
+			slog.Warn("system knowledge indexing failed (non-critical)", "error", err)
+		} else {
+			slog.Info("system knowledge indexed successfully", "count", count)
+		}
+	}()
 
 	return app, nil
 }

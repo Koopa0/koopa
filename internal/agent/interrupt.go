@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/koopa0/koopa-cli/internal/tools"
 )
 
 // InterruptEvent represents a tool execution that requires user confirmation.
@@ -11,7 +12,7 @@ type InterruptEvent struct {
 	ToolName    string
 	Parameters  map[string]any
 	Reason      string
-	DangerLevel DangerLevel
+	DangerLevel tools.DangerLevel
 
 	IsRestartable bool   // Whether parameters can be modified and retried
 	Question      string // If restartable, the question to ask the user
@@ -82,8 +83,18 @@ func extractReason(interrupt *ai.Part) string {
 
 // buildToolResponse constructs a tool response to resume Genkit's execution flow.
 // When the user approves/rejects, we need to tell Genkit the result.
+//
+// This function implements the same behavior as Genkit's tool.Respond():
+// - Copies the Ref field from ToolRequest to ToolResponse for request/response correlation
+// - Adds interruptResponse metadata to signal this is resuming an interrupt
 func buildToolResponse(interrupt *ai.Part, decision ConfirmationResponse) *ai.Part {
+	// Defensive nil checks
+	if interrupt == nil || interrupt.ToolRequest == nil {
+		return nil
+	}
+
 	toolName := interrupt.ToolRequest.Name // "requestConfirmation"
+	toolRef := interrupt.ToolRequest.Ref   // Extract Ref for correlation
 
 	var output any
 	if decision.Approved {
@@ -98,8 +109,17 @@ func buildToolResponse(interrupt *ai.Part, decision ConfirmationResponse) *ai.Pa
 		}
 	}
 
-	return ai.NewToolResponsePart(&ai.ToolResponse{
+	// Create tool response with Ref field copied
+	resp := ai.NewToolResponsePart(&ai.ToolResponse{
 		Name:   toolName,
+		Ref:    toolRef, // Copy Ref for request/response correlation
 		Output: output,
 	})
+
+	// Add Genkit-expected metadata (matches tool.Respond() behavior)
+	resp.Metadata = map[string]any{
+		"interruptResponse": true,
+	}
+
+	return resp
 }

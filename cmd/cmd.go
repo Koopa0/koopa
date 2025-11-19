@@ -20,7 +20,7 @@ import (
 )
 
 // Run starts the interactive chat mode
-func Run(ctx context.Context, cfg *config.Config, version string) error {
+func Run(ctx context.Context, cfg *config.Config, version string, stdin io.Reader, stdout, stderr io.Writer) error {
 	// Create cancellable context for this session
 	// This allows us to properly clean up resources on timeout or cancellation
 	ctx, cancel := context.WithCancel(ctx)
@@ -45,17 +45,17 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 	}
 
 	// Display welcome message
-	printWelcome(version)
+	printWelcome(version, stdout)
 
 	// Start conversation loop
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := bufio.NewScanner(stdin)
 	for {
-		fmt.Print("> ")
+		fmt.Fprint(stdout, "> ")
 
 		// Read user input
 		if !scanner.Scan() {
 			// EOF (Ctrl+D)
-			fmt.Println("\nGoodbye!")
+			fmt.Fprintln(stdout, "\nGoodbye!")
 			break
 		}
 
@@ -75,8 +75,10 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 		// TODO: Handle @file syntax here (future enhancement)
 
 		// Send message to AI (new event-driven execution)
-		fmt.Print("Koopa> ")
-		_ = os.Stdout.Sync()
+		fmt.Fprint(stdout, "Koopa> ")
+		if syncer, ok := stdout.(interface{ Sync() error }); ok {
+			_ = syncer.Sync()
+		}
 
 		eventCh := ag.Execute(ctx, input)
 	event_loop:
@@ -90,18 +92,22 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 
 				switch event.Type {
 				case agent.EventTypeText:
-					fmt.Print(event.TextChunk)
-					_ = os.Stdout.Sync()
+					fmt.Fprint(stdout, event.TextChunk)
+					if syncer, ok := stdout.(interface{ Sync() error }); ok {
+						_ = syncer.Sync()
+					}
 				case agent.EventTypeInterrupt:
-					fmt.Println() // Newline for cleaner prompt
-					fmt.Printf("[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
-					fmt.Printf("Reason: %s\n", event.Interrupt.Reason)
+					fmt.Fprintln(stdout) // Newline for cleaner prompt
+					fmt.Fprintf(stdout, "[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
+					fmt.Fprintf(stdout, "Reason: %s\n", event.Interrupt.Reason)
 
 					// Improved input validation with retry loop
 					approved := false
 					for {
-						fmt.Print("Approve? [y/n]: ")
-						_ = os.Stdout.Sync()
+						fmt.Fprint(stdout, "Approve? [y/n]: ")
+						if syncer, ok := stdout.(interface{ Sync() error }); ok {
+							_ = syncer.Sync()
+						}
 
 						if scanner.Scan() {
 							input := strings.ToLower(strings.TrimSpace(scanner.Text()))
@@ -112,13 +118,13 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 								approved = false
 								break
 							} else {
-								fmt.Println("Invalid input. Please enter 'y' or 'n'.")
+								fmt.Fprintln(stdout, "Invalid input. Please enter 'y' or 'n'.")
 								continue
 							}
 						} else {
 							// Scanner error or EOF, default to reject for safety
 							if err := scanner.Err(); err != nil {
-								fmt.Fprintf(os.Stderr, "Scanner error: %v\n", err)
+								fmt.Fprintf(stderr, "Scanner error: %v\n", err)
 							}
 							break
 						}
@@ -130,33 +136,35 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 					case event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}:
 						// Successfully sent confirmation
 					case <-ctx.Done():
-						fmt.Fprintf(os.Stderr, "\nContext canceled while sending confirmation\n")
+						fmt.Fprintf(stderr, "\nContext canceled while sending confirmation\n")
 						break event_loop
 					case <-time.After(5 * time.Second):
-						fmt.Fprintf(os.Stderr, "\nTimeout sending confirmation to agent\n")
+						fmt.Fprintf(stderr, "\nTimeout sending confirmation to agent\n")
 						break event_loop
 					}
 
-					fmt.Print("Koopa> ")
-					_ = os.Stdout.Sync()
+					fmt.Fprint(stdout, "Koopa> ")
+					if syncer, ok := stdout.(interface{ Sync() error }); ok {
+						_ = syncer.Sync()
+					}
 
 				case agent.EventTypeError:
-					fmt.Fprintf(os.Stderr, "\nError: %v\n", event.Error)
+					fmt.Fprintf(stderr, "\nError: %v\n", event.Error)
 					break event_loop // Break inner loop on error
 				case agent.EventTypeComplete:
-					fmt.Println()
+					fmt.Fprintln(stdout)
 					break event_loop // Exit inner loop on completion
 				}
 
 			case <-ctx.Done():
 				// Context cancelled, exit gracefully
-				fmt.Println("\nOperation cancelled.")
+				fmt.Fprintln(stdout, "\nOperation cancelled.")
 				break event_loop
 
 			case <-time.After(5 * time.Minute):
 				// Timeout after 5 minutes to prevent indefinite hanging
-			cancel() // Cancel context to stop agent goroutines (P1-1 fix)
-				fmt.Fprintf(os.Stderr, "\nAgent response timed out after 5 minutes.\n")
+				cancel() // Cancel context to stop agent goroutines (P1-1 fix)
+				fmt.Fprintf(stderr, "\nAgent response timed out after 5 minutes.\n")
 				break event_loop
 			}
 		}
@@ -170,17 +178,17 @@ func Run(ctx context.Context, cfg *config.Config, version string) error {
 }
 
 // printWelcome displays the welcome message with KOOPA banner
-func printWelcome(version string) {
-	ui.Print()
+func printWelcome(version string, w io.Writer) {
+	ui.PrintTo(w)
 
-	fmt.Printf("v%s\n", version)
-	fmt.Println()
+	fmt.Fprintf(w, "v%s\n", version)
+	fmt.Fprintln(w)
 
-	fmt.Println("Tips for getting started:")
-	fmt.Println("1. Ask questions, edit files, or run commands.")
-	fmt.Println("2. Be specific for the best results.")
-	fmt.Println("3. /help for more information.")
-	fmt.Println()
+	fmt.Fprintln(w, "Tips for getting started:")
+	fmt.Fprintln(w, "1. Ask questions, edit files, or run commands.")
+	fmt.Fprintln(w, "2. Be specific for the best results.")
+	fmt.Fprintln(w, "3. /help for more information.")
+	fmt.Fprintln(w)
 }
 
 // handleSlashCommand processes slash commands, returns true if should exit
@@ -248,6 +256,7 @@ func printInteractiveHelp() {
 	fmt.Println("  /rag list              List all indexed documents")
 	fmt.Println("  /rag remove <id>       Remove document from knowledge base")
 	fmt.Println("  /rag status            Show RAG status and statistics")
+	fmt.Println("  /rag reindex-system    Reindex built-in system knowledge")
 	fmt.Println()
 	fmt.Println("Session Management:")
 	fmt.Println("  /session               Show current session")
@@ -274,6 +283,7 @@ func handleRAGCommand(ctx context.Context, args []string, application *app.App) 
 		fmt.Println("  list                   List all indexed documents")
 		fmt.Println("  remove <id>            Remove document from knowledge base")
 		fmt.Println("  status                 Show RAG status and statistics")
+		fmt.Println("  reindex-system         Reindex built-in system knowledge")
 		fmt.Println()
 		return
 	}
@@ -287,6 +297,8 @@ func handleRAGCommand(ctx context.Context, args []string, application *app.App) 
 		handleRAGRemove(ctx, args[1:], application)
 	case "status":
 		handleRAGStatus(ctx, application)
+	case "reindex-system":
+		handleRAGReindexSystem(ctx, application)
 	default:
 		fmt.Printf("Unknown /rag subcommand: %s\n", args[0])
 		fmt.Println("Type /rag to see available subcommands")
@@ -479,6 +491,50 @@ func handleRAGStatus(ctx context.Context, application *app.App) {
 	fmt.Println("Use '/rag add <file>' to add documents to knowledge base")
 	fmt.Println()
 }
+
+// handleRAGReindexSystem reindexes built-in system knowledge
+func handleRAGReindexSystem(ctx context.Context, application *app.App) {
+	fmt.Println("╔══════════════════════════════════════════════════════════╗")
+	fmt.Println("║  System Knowledge Reindexing                             ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════╝")
+	fmt.Println()
+
+	// Check if SystemIndexer is available
+	if application.SystemIndexer == nil {
+		fmt.Println("✗ Error: System indexer not available")
+		fmt.Println()
+		return
+	}
+
+	// Clear existing system knowledge
+	fmt.Println("→ Clearing existing system knowledge...")
+	if err := application.SystemIndexer.ClearAll(ctx); err != nil {
+		fmt.Printf("✗ Failed to clear system knowledge: %v\n", err)
+		fmt.Println()
+		return
+	}
+	fmt.Println("✓ Existing system knowledge cleared")
+	fmt.Println()
+
+	// Reindex system knowledge
+	fmt.Println("→ Reindexing system knowledge...")
+	count, err := application.SystemIndexer.IndexAll(ctx)
+	if err != nil {
+		fmt.Printf("✗ Failed to index system knowledge: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("✓ Successfully indexed %d system knowledge documents\n", count)
+	fmt.Println()
+	fmt.Println("System knowledge includes:")
+	fmt.Println("  • Golang best practices (errors, concurrency, naming)")
+	fmt.Println("  • Agent capabilities and tools")
+	fmt.Println("  • Architecture principles")
+	fmt.Println()
+}
+
 // ============================================================================
 // Session Management Commands
 // ============================================================================

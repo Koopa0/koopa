@@ -37,7 +37,7 @@ func getStateDirPath() (string, error) {
 	return filepath.Join(homeDir, stateDir), nil
 }
 
-// GetStateFilePath returns the full path to the current session state file.
+// getStateFilePath returns the full path to the current session state file.
 // Creates the state directory (~/.koopa) if it doesn't exist.
 //
 // For testing, you can override the state directory by setting KOOPA_STATE_DIR
@@ -46,14 +46,16 @@ func getStateDirPath() (string, error) {
 // Returns:
 //   - string: Path to ~/.koopa/current_session (or $KOOPA_STATE_DIR/current_session if set)
 //   - error: If unable to determine home directory or create state directory
-func GetStateFilePath() (string, error) {
+//
+// Note: This is a private function as it's only used within the session package.
+func getStateFilePath() (string, error) {
 	stateDirPath, err := getStateDirPath()
 	if err != nil {
 		return "", err
 	}
 
 	// Ensure state directory exists
-	if err := os.MkdirAll(stateDirPath, 0755); err != nil {
+	if err := os.MkdirAll(stateDirPath, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create state directory: %w", err)
 	}
 
@@ -70,7 +72,7 @@ func GetStateFilePath() (string, error) {
 //
 // Note: Returns (nil, nil) if state file doesn't exist - this is not an error.
 func LoadCurrentSessionID() (*uuid.UUID, error) {
-	filePath, err := GetStateFilePath()
+	filePath, err := getStateFilePath()
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +82,7 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	defer lock.Unlock()
+	defer func() { _ = lock.Unlock() }()
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -114,7 +116,7 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 // Returns:
 //   - error: If unable to write state file
 func SaveCurrentSessionID(sessionID uuid.UUID) error {
-	filePath, err := GetStateFilePath()
+	filePath, err := getStateFilePath()
 	if err != nil {
 		return err
 	}
@@ -124,11 +126,11 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	defer lock.Unlock()
+	defer func() { _ = lock.Unlock() }()
 
 	// Write to temporary file first (atomic write pattern)
 	tmpFile := filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, []byte(sessionID.String()), 0644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(sessionID.String()), 0o644); err != nil {
 		return fmt.Errorf("failed to write temp state file: %w", err)
 	}
 
@@ -149,7 +151,7 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 //
 // Note: This is idempotent - calling it when no current session exists is not an error.
 func ClearCurrentSessionID() error {
-	filePath, err := GetStateFilePath()
+	filePath, err := getStateFilePath()
 	if err != nil {
 		return err
 	}
@@ -159,7 +161,7 @@ func ClearCurrentSessionID() error {
 	if err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	defer lock.Unlock()
+	defer func() { _ = lock.Unlock() }()
 
 	err = os.Remove(filePath)
 	if err != nil && !os.IsNotExist(err) {
@@ -177,7 +179,7 @@ func acquireStateLock() (*flock.Flock, error) {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(stateDirPath, 0755); err != nil {
+	if err := os.MkdirAll(stateDirPath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create state directory: %w", err)
 	}
 

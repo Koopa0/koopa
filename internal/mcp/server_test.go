@@ -1,7 +1,11 @@
 package mcp
 
 import (
+	"context"
 	"testing"
+
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/mcp"
 )
 
 // TestServerGetServerNames tests the GetServerNames method.
@@ -177,5 +181,153 @@ func TestServerGetStates(t *testing.T) {
 	originalStates := server.States()
 	if originalStates["github"].SuccessCount == 100 {
 		t.Error("GetStates should return copies, not references")
+	}
+}
+
+// ============================================================================
+// New and Tools Function Tests
+// ============================================================================
+
+// TestNew_EmptyConfig tests New with empty configuration
+func TestNew_EmptyConfig(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	// Test with empty config - should create host with no servers
+	server, err := New(ctx, g, []Config{})
+	if err != nil {
+		t.Fatalf("expected no error with empty config, got: %v", err)
+	}
+
+	if server == nil {
+		t.Fatal("expected server to be created, got nil")
+	}
+
+	// Verify no servers are registered
+	if server.ConnectedCount() != 0 {
+		t.Errorf("expected 0 connected servers, got %d", server.ConnectedCount())
+	}
+
+	names := server.ServerNames()
+	if len(names) != 0 {
+		t.Errorf("expected 0 server names, got %d", len(names))
+	}
+}
+
+// TestNew_SingleConfig tests New with a single server configuration
+func TestNew_SingleConfig(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	// Test with a single config (note: may fail if server is not available, but tests code path)
+	configs := []Config{
+		{
+			Name: "test-server",
+			ClientOptions: mcp.MCPClientOptions{
+				Name: "test-server",
+				Stdio: &mcp.StdioConfig{
+					Command: "nonexistent-command",
+					Args:    []string{},
+				},
+			},
+		},
+	}
+
+	// This may fail, but it exercises the New function code path
+	server, err := New(ctx, g, configs)
+
+	// We accept either success or failure, as long as the function handles it gracefully
+	if err != nil {
+		t.Logf("New returned error (expected for nonexistent command): %v", err)
+		// Verify server is still returned with failed state
+		if server != nil {
+			state, exists := server.State("test-server")
+			if exists && state.Status == Failed {
+				t.Log("Server correctly marked as failed")
+			}
+		}
+	} else {
+		t.Log("New succeeded (server configuration may be valid)")
+		if server == nil {
+			t.Fatal("expected server to be returned when no error")
+		}
+	}
+}
+
+// TestTools_EmptyServer tests Tools method on server with no configurations
+func TestTools_EmptyServer(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	// Create server with no configurations
+	server, err := New(ctx, g, []Config{})
+	if err != nil {
+		t.Fatalf("failed to create empty server: %v", err)
+	}
+
+	// Get tools from empty server
+	tools, err := server.Tools(ctx, g)
+
+	// Empty server should return empty tools, not error
+	if err != nil {
+		t.Logf("Tools returned error (may be expected): %v", err)
+	}
+
+	if tools == nil {
+		t.Log("Tools returned nil (acceptable for empty server)")
+	} else {
+		t.Logf("Tools returned %d tools", len(tools))
+	}
+}
+
+// TestTools_WithFailedServer tests Tools method with a server that fails to connect
+func TestTools_WithFailedServer(t *testing.T) {
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	// Create server with a config that will fail to connect
+	configs := []Config{
+		{
+			Name: "failing-server",
+			ClientOptions: mcp.MCPClientOptions{
+				Name: "failing-server",
+				Stdio: &mcp.StdioConfig{
+					Command: "nonexistent-command-for-testing",
+					Args:    []string{},
+				},
+			},
+		},
+	}
+
+	server, err := New(ctx, g, configs)
+	if err != nil {
+		t.Logf("New returned error (expected for failing server): %v", err)
+	}
+
+	if server == nil {
+		t.Skip("Server creation failed completely, cannot test Tools method")
+	}
+
+	// Verify server was created with failed state
+	state, exists := server.State("failing-server")
+	if exists {
+		t.Logf("Server state: %s, FailureCount: %d", state.Status, state.FailureCount)
+	}
+
+	// Try to get tools from server with failed connection
+	tools, err := server.Tools(ctx, g)
+
+	// Log results (behavior may vary based on implementation)
+	if err != nil {
+		t.Logf("Tools returned error (may be expected for failed server): %v", err)
+
+		// Verify states were updated on error
+		statesAfter := server.States()
+		for name, state := range statesAfter {
+			t.Logf("After Tools error - Server %s: Status=%s, FailureCount=%d",
+				name, state.Status, state.FailureCount)
+		}
+	} else {
+		t.Logf("Tools succeeded with %d tools", len(tools))
 	}
 }

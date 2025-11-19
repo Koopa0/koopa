@@ -28,7 +28,7 @@ func TestFileToolsRegistration(t *testing.T) {
 		}
 	}()
 
-	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv())
+	handler := NewHandler(pathVal, security.NewCommand(), security.NewHTTP(), security.NewEnv(), nil)
 	registerFileTools(g, handler)
 }
 
