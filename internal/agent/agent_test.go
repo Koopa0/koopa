@@ -156,7 +156,10 @@ func createTestAgent(t *testing.T, mockGen Generator) *Agent {
 		Language:           "English",
 	}
 
-	agent, err := New(ctx, cfg, g, &mockRetriever{}, NewNoopSessionStore(), createMockKnowledgeStore(), slog.Default())
+	agent, err := New(ctx, cfg, g, &mockRetriever{},
+		WithSessionStore(NewNoopSessionStore()),
+		WithKnowledgeStore(createMockKnowledgeStore()),
+		WithLogger(slog.Default()))
 	if err != nil {
 		t.Fatalf("Failed to create agent: %v", err)
 	}
@@ -1929,7 +1932,7 @@ func TestNew_ConfigValidationFails(t *testing.T) {
 		MaxHistoryMessages: 10,
 	}
 
-	_, err := New(ctx, cfg, g, &mockRetriever{}, NewNoopSessionStore(), &mockKnowledgeStore{}, slog.Default())
+	_, err := New(ctx, cfg, g, &mockRetriever{}, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(slog.Default()))
 
 	if err == nil {
 		t.Fatal("expected error when config validation fails, got nil")
@@ -1957,7 +1960,7 @@ func TestNew_NilGenkit(t *testing.T) {
 		PostgresDBName:     "test_db",
 	}
 
-	_, err := New(ctx, cfg, nil, &mockRetriever{}, NewNoopSessionStore(), &mockKnowledgeStore{}, slog.Default())
+	_, err := New(ctx, cfg, nil, &mockRetriever{}, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(slog.Default()))
 
 	if err == nil {
 		t.Fatal("expected error when genkit is nil, got nil")
@@ -1986,7 +1989,7 @@ func TestNew_NilRetriever(t *testing.T) {
 		PostgresDBName:     "test_db",
 	}
 
-	_, err := New(ctx, cfg, g, nil, NewNoopSessionStore(), &mockKnowledgeStore{}, slog.Default())
+	_, err := New(ctx, cfg, g, nil, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(slog.Default()))
 
 	if err == nil {
 		t.Fatal("expected error when retriever is nil, got nil")
@@ -2015,7 +2018,7 @@ func TestNew_NilSessionStore(t *testing.T) {
 		PostgresDBName:     "test_db",
 	}
 
-	_, err := New(ctx, cfg, g, &mockRetriever{}, nil, &mockKnowledgeStore{}, slog.Default())
+	_, err := New(ctx, cfg, g, &mockRetriever{}, WithSessionStore(nil), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(slog.Default()))
 
 	if err == nil {
 		t.Fatal("expected error when sessionStore is nil, got nil")
@@ -2044,7 +2047,7 @@ func TestNew_NilKnowledgeStore(t *testing.T) {
 		PostgresDBName:     "test_db",
 	}
 
-	_, err := New(ctx, cfg, g, &mockRetriever{}, NewNoopSessionStore(), nil, slog.Default())
+	_, err := New(ctx, cfg, g, &mockRetriever{}, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(nil), WithLogger(slog.Default()))
 
 	if err == nil {
 		t.Fatal("expected error when knowledgeStore is nil, got nil")
@@ -2073,7 +2076,7 @@ func TestNew_NilLogger(t *testing.T) {
 		PostgresDBName:     "test_db",
 	}
 
-	_, err := New(ctx, cfg, g, &mockRetriever{}, NewNoopSessionStore(), &mockKnowledgeStore{}, nil)
+	_, err := New(ctx, cfg, g, &mockRetriever{}, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(nil))
 
 	if err == nil {
 		t.Fatal("expected error when logger is nil, got nil")
@@ -2104,7 +2107,7 @@ func TestNew_Success(t *testing.T) {
 		Language:           "English",
 	}
 
-	agent, err := New(ctx, cfg, g, &mockRetriever{}, NewNoopSessionStore(), &mockKnowledgeStore{}, slog.Default())
+	agent, err := New(ctx, cfg, g, &mockRetriever{}, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(slog.Default()))
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2157,7 +2160,7 @@ func TestNew_NegativeMaxTokens(t *testing.T) {
 	}
 
 	// This should fail during config validation
-	_, err := New(ctx, cfg, g, &mockRetriever{}, NewNoopSessionStore(), &mockKnowledgeStore{}, slog.Default())
+	_, err := New(ctx, cfg, g, &mockRetriever{}, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(slog.Default()))
 
 	if err == nil {
 		t.Fatal("expected error for negative MaxTokens, got nil")
@@ -2193,7 +2196,7 @@ func TestNew_SystemPromptNotFound(t *testing.T) {
 		Language:           "English",
 	}
 
-	_, err := New(ctx, cfg, g, &mockRetriever{}, NewNoopSessionStore(), &mockKnowledgeStore{}, slog.Default())
+	_, err := New(ctx, cfg, g, &mockRetriever{}, WithSessionStore(NewNoopSessionStore()), WithKnowledgeStore(&mockKnowledgeStore{}), WithLogger(slog.Default()))
 
 	if err == nil {
 		t.Fatal("expected error when system prompt not found, got nil")

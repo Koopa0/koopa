@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/ui"
 )
 
 // TestCLISession_Example demonstrates how to use CLISession for E2E testing
@@ -20,10 +21,9 @@ func TestCLISession_Example(t *testing.T) {
 	// Create pipes for I/O
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
-	stderrR, stderrW := io.Pipe()
 
 	// Create CLISession
-	session := NewCLISession(stdinW, stdoutR, stderrR)
+	session := NewCLISession(stdinW, stdoutR, nil)
 	defer session.Close()
 
 	// Load config
@@ -38,7 +38,8 @@ func TestCLISession_Example(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- Run(ctx, cfg, "test-version", stdinR, stdoutW, stderrW)
+		term := ui.NewConsole(stdinR, stdoutW)
+		errChan <- Run(ctx, cfg, "test-version", term)
 	}()
 
 	// Test scenario: Send /version command and verify output
@@ -105,9 +106,8 @@ func TestCLISession_HelpCommand(t *testing.T) {
 	// Create pipes
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
-	stderrR, stderrW := io.Pipe()
 
-	session := NewCLISession(stdinW, stdoutR, stderrR)
+	session := NewCLISession(stdinW, stdoutR, nil)
 	defer session.Close()
 
 	cfg, err := config.Load()
@@ -120,7 +120,8 @@ func TestCLISession_HelpCommand(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- Run(ctx, cfg, "1.0.0", stdinR, stdoutW, stderrW)
+		term := ui.NewConsole(stdinR, stdoutW)
+		errChan <- Run(ctx, cfg, "1.0.0", term)
 	}()
 
 	// Wait for initial prompt

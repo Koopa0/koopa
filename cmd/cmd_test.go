@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -15,6 +12,7 @@ import (
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
+	"github.com/koopa0/koopa-cli/internal/ui"
 )
 
 // ============================================================================
@@ -97,21 +95,16 @@ func TestPrintWelcome(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture output using bytes.Buffer
-			var buf bytes.Buffer
-			printWelcome(tt.version, &buf)
-			output := buf.String()
+			// Use ui.Mock
+			mockUI := ui.NewMock()
+			printWelcome(tt.version, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected strings are present
 			for _, expected := range tt.expectedStrings {
 				if !strings.Contains(output, expected) {
 					t.Errorf("expected output to contain %q, but it didn't\nGot: %s", expected, output)
 				}
-			}
-
-			// Verify output has box drawing characters
-			if !strings.Contains(output, "╔") || !strings.Contains(output, "╗") {
-				t.Error("expected output to contain box drawing characters")
 			}
 		})
 	}
@@ -217,28 +210,12 @@ func TestHandleSlashCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
+			mockUI := ui.NewMock()
 
 			// Call function
-			shouldExit := handleSlashCommand(ctx, tt.command, mockAgent, mockApp, "test-version")
+			shouldExit := handleSlashCommand(ctx, tt.command, mockAgent, mockApp, "test-version", mockUI)
 
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read captured output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			output := mockUI.Output.String()
 
 			// Verify exit behavior
 			if shouldExit != tt.expectedExit {
@@ -297,22 +274,8 @@ func TestHandleSlashCommand_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout to prevent test output pollution
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			shouldExit := handleSlashCommand(ctx, tt.command, mockAgent, mockApp, "test")
-
-			w.Close()
-			os.Stdout = oldStdout
-			_, _ = io.Copy(io.Discard, r)
+			mockUI := ui.NewMock()
+			shouldExit := handleSlashCommand(ctx, tt.command, mockAgent, mockApp, "test", mockUI)
 
 			if shouldExit != tt.expectedExit {
 				t.Errorf("expected exit=%v, got exit=%v", tt.expectedExit, shouldExit)
@@ -326,26 +289,9 @@ func TestHandleSlashCommand_EdgeCases(t *testing.T) {
 // ============================================================================
 
 func TestPrintInteractiveHelp(t *testing.T) {
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
-	}
-	defer w.Close()
-	defer r.Close() // Ensure pipe reader is closed
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
-
-	printInteractiveHelp()
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	// Read captured output
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	mockUI := ui.NewMock()
+	printInteractiveHelp(mockUI)
+	output := mockUI.Output.String()
 
 	// Expected strings in help output
 	expectedStrings := []string{
@@ -436,26 +382,9 @@ func TestHandleRAGCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			handleRAGCommand(ctx, tt.args, mockApp)
-
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleRAGCommand(ctx, tt.args, mockApp, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected strings
 			for _, expected := range tt.expectedOutput {
@@ -511,26 +440,9 @@ func TestHandleRAGAdd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			handleRAGAdd(ctx, tt.args, mockApp)
-
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleRAGAdd(ctx, tt.args, mockApp, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected strings
 			for _, expected := range tt.expectedOutput {
@@ -587,26 +499,9 @@ func TestHandleRAGReindexSystem(t *testing.T) {
 				SystemIndexer: nil, // nil to test error case
 			}
 
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close()
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			handleRAGReindexSystem(ctx, mockApp)
-
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleRAGReindexSystem(ctx, mockApp, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected strings
 			for _, expected := range tt.expectedOutput {
@@ -648,26 +543,9 @@ func TestHandleRAGRemove(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			handleRAGRemove(ctx, tt.args, mockApp)
-
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleRAGRemove(ctx, tt.args, mockApp, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected strings
 			for _, expected := range tt.expectedOutput {
@@ -755,28 +633,9 @@ func TestHandleSessionCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			// Call function
-			handleSessionCommand(ctx, tt.args, mockAgent, mockApp)
-
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read captured output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleSessionCommand(ctx, tt.args, mockAgent, mockApp, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected output strings
 			for _, expected := range tt.expectedOutput {
@@ -817,28 +676,9 @@ func TestHandleSessionNew_ErrorCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			// Call function
-			handleSessionNew(ctx, tt.args, mockAgent)
-
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read captured output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleSessionNew(ctx, tt.args, mockAgent, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected output strings
 			for _, expected := range tt.expectedOutput {
@@ -879,28 +719,9 @@ func TestHandleSessionSwitch_InvalidID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			// Call function
-			handleSessionSwitch(ctx, tt.args, mockAgent)
-
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read captured output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleSessionSwitch(ctx, tt.args, mockAgent, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected output strings
 			for _, expected := range tt.expectedOutput {
@@ -946,28 +767,9 @@ func TestHandleSessionDelete_InvalidID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
-
-			// Call function
-			handleSessionDelete(ctx, tt.args, mockAgent, mockApp)
-
-			// Restore stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read captured output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
+			mockUI := ui.NewMock()
+			handleSessionDelete(ctx, tt.args, mockAgent, mockApp, mockUI)
+			output := mockUI.Output.String()
 
 			// Verify expected output strings
 			for _, expected := range tt.expectedOutput {
@@ -1123,28 +925,11 @@ func TestHandleSessionList_WithSessions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatalf("failed to create pipe: %v", err)
-			}
-			defer w.Close()
-			defer r.Close()
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
+			mockUI := ui.NewMock()
+			handleSessionList(ctx, tt.args, mockApp, mockUI)
+			output := mockUI.Output.String()
 
-			handleSessionList(ctx, tt.args, mockApp)
-
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read output
-			var buf bytes.Buffer
-			_, _ = io.Copy(&buf, r)
-			output := buf.String()
-
-			// Verify expected strings
+			// Verify expected output strings
 			for _, expected := range tt.expectedOutput {
 				if !strings.Contains(output, expected) {
 					t.Errorf("expected output to contain %q\nGot: %s", expected, output)

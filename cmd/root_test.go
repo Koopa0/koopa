@@ -83,7 +83,7 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 				os.Setenv("GEMINI_API_KEY", "test-key-123")
 			},
 			cleanupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				// No-op, restoration handled by test wrapper
 			},
 			expectError: false,
 		},
@@ -113,7 +113,7 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 				os.Setenv("GEMINI_API_KEY", "test-key-456")
 			},
 			cleanupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				// No-op
 			},
 			expectError: false,
 		},
@@ -121,9 +121,13 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Save original env
+			originalKey := os.Getenv("GEMINI_API_KEY")
+			defer os.Setenv("GEMINI_API_KEY", originalKey)
+
 			// Setup environment
 			tt.setupEnv()
-			defer tt.cleanupEnv()
+			// defer tt.cleanupEnv() // Removed as restoration is handled above
 
 			// Create root command
 			rootCmd := NewRootCmd(cfg)
@@ -258,8 +262,12 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Save original env
+			originalKey := os.Getenv("GEMINI_API_KEY")
+			defer os.Setenv("GEMINI_API_KEY", originalKey)
+
 			tt.setupEnv()
-			defer tt.cleanupEnv()
+			// defer tt.cleanupEnv()
 
 			rootCmd := NewRootCmd(cfg)
 			mockCmd := tt.setupCmd()

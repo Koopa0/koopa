@@ -203,7 +203,11 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 	retriever := retrieverBuilder.DefineConversation(g, "integration-test-retriever")
 
 	// 10. Create Agent
-	agent, err := New(ctx, cfg, g, retriever, sessionStore, knowledgeStore, slog.Default())
+	agent, err := New(ctx, cfg, g, retriever,
+		WithSessionStore(sessionStore),
+		WithKnowledgeStore(knowledgeStore),
+		WithLogger(slog.Default()),
+	)
 	if err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to create agent: %v", err)
