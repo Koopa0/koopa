@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"log/slog"
 	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
@@ -88,8 +89,13 @@ func extractReason(interrupt *ai.Part) string {
 // - Copies the Ref field from ToolRequest to ToolResponse for request/response correlation
 // - Adds interruptResponse metadata to signal this is resuming an interrupt
 func buildToolResponse(interrupt *ai.Part, decision ConfirmationResponse) *ai.Part {
-	// Defensive nil checks
-	if interrupt == nil || interrupt.ToolRequest == nil {
+	// Defensive nil checks with logging
+	if interrupt == nil {
+		slog.Warn("buildToolResponse called with nil interrupt")
+		return nil
+	}
+	if interrupt.ToolRequest == nil {
+		slog.Warn("buildToolResponse called with nil ToolRequest")
 		return nil
 	}
 

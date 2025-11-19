@@ -205,23 +205,19 @@ func (f *E2ETestFramework) WaitForVectorization(t *testing.T, maxWait time.Durat
 	t.Helper()
 
 	ctx := context.Background()
-	deadline := time.Now().Add(maxWait)
 
-	for time.Now().Before(deadline) {
-		// Try to search for recent conversations
+	// Use polling instead of fixed sleep
+	waitForCondition(t, maxWait, func() bool {
 		results, err := f.KnowledgeStore.Search(ctx, "test",
 			knowledge.WithTopK(10),
 			knowledge.WithFilter("source_type", "conversation"))
 
 		if err == nil && len(results) > 0 {
 			t.Logf("Vectorization completed - found %d conversation documents", len(results))
-			return
+			return true
 		}
-
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	t.Logf("Warning: Vectorization may not have completed within %v", maxWait)
+		return false
+	}, "conversation vectorization")
 }
 
 // VerifyToolCalled checks if the answer suggests a tool was likely used.
@@ -289,6 +285,28 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// waitForCondition polls until condition is met or timeout.
+// This replaces brittle time.Sleep calls with robust polling.
+func waitForCondition(t *testing.T, timeout time.Duration, check func() bool, msg string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Timeout waiting for: %s", msg)
+		case <-ticker.C:
+			if check() {
+				return
+			}
+		}
+	}
 }
 
 // ============================================================================
@@ -418,19 +436,25 @@ result = %s("user-123")
 		"file_ext":    ".md",
 	})
 
-	// Wait for indexing to complete (longer wait for embedding generation)
-	time.Sleep(5 * time.Second)
+	// Wait for indexing to complete using polling
+	ctx := context.Background()
+	waitForCondition(t, 10*time.Second, func() bool {
+		searchResults, err := framework.KnowledgeStore.Search(ctx, uniqueFunctionName,
+			knowledge.WithTopK(5),
+			knowledge.WithFilter("source_type", "file"))
+		if err == nil && len(searchResults) > 0 {
+			t.Logf("Document indexing completed - found %d documents for '%s'", len(searchResults), uniqueFunctionName)
+			return true
+		}
+		return false
+	}, "document indexing")
 
 	// Verify document is searchable (using same filter as SearchDocuments tool)
-	ctx := context.Background()
 	searchResults, err := framework.KnowledgeStore.Search(ctx, uniqueFunctionName,
 		knowledge.WithTopK(5),
 		knowledge.WithFilter("source_type", "file")) // FIXED: Must match SearchDocuments filter
 	require.NoError(t, err, "search verification failed")
 	t.Logf("Search verification: found %d documents for '%s'", len(searchResults), uniqueFunctionName)
-	if len(searchResults) == 0 {
-		t.Logf("Warning: Indexed document may not be immediately searchable")
-	}
 
 	// Step 2: Ask about the function (explicitly mentioning "my notes")
 	result := framework.RunConversation(t,

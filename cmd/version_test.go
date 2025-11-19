@@ -166,6 +166,7 @@ func TestRunVersion(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			// Run function
 			err = runVersion(tt.config)
@@ -243,6 +244,7 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			err = runVersion(tt.config)
 
@@ -314,6 +316,7 @@ func TestNewVersionCmd_RunE(t *testing.T) {
 	defer w.Close()
 	defer r.Close()
 	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
 
 	// Run the command
 	err = cmd.RunE(cmd, []string{})
@@ -409,6 +412,7 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			defer w.Close()
 			defer r.Close() // Ensure pipe reader is closed
 			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
 
 			// Wrap in recover to catch panics for very short keys
 			func() {

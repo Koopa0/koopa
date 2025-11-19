@@ -19,7 +19,6 @@ type CLISession struct {
 	stderr       io.ReadCloser
 	outputBuffer strings.Builder
 	outputMutex  sync.RWMutex
-	outputChan   chan string
 	done         chan struct{}
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -33,7 +32,6 @@ func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISessi
 		stdin:      stdin,
 		stdout:     stdout,
 		stderr:     stderr,
-		outputChan: make(chan string, 100),
 		done:       make(chan struct{}),
 		ctx:        ctx,
 		cancel:     cancel,
@@ -55,16 +53,14 @@ func (s *CLISession) captureOutput(reader io.Reader, label string) {
 		s.outputMutex.Lock()
 		s.outputBuffer.WriteString(line)
 		s.outputBuffer.WriteString("\n")
-		output := s.outputBuffer.String()
 		s.outputMutex.Unlock()
 
-		// Send to channel for ExpectString waiters
+		// Check for context cancellation
 		select {
-		case s.outputChan <- output:
 		case <-s.ctx.Done():
 			return
 		default:
-			// Channel full, continue
+			// Continue capturing
 		}
 	}
 }

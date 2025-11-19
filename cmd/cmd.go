@@ -54,6 +54,11 @@ func Run(ctx context.Context, cfg *config.Config, version string, stdin io.Reade
 
 		// Read user input
 		if !scanner.Scan() {
+			// Check for scanner error first
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(stderr, "\nScanner error: %v\n", err)
+				break
+			}
 			// EOF (Ctrl+D)
 			fmt.Fprintln(stdout, "\nGoodbye!")
 			break
