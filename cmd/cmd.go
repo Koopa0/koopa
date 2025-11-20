@@ -571,9 +571,20 @@ func handleSessionList(ctx context.Context, args []string, application *app.App,
 	// Parse limit (default 10)
 	var limit int32 = 10
 	if len(args) > 0 {
-		if parsedLimit, err := strconv.Atoi(args[0]); err == nil && parsedLimit > 0 && parsedLimit <= 1000 {
-			limit = int32(parsedLimit) // #nosec G109,G115 -- validated range 1-1000, safe conversion
+		parsedLimit, err := strconv.Atoi(args[0])
+		if err != nil {
+			term.Printf("Error: Invalid limit '%s' - must be a number\n", args[0])
+			term.Println("Usage: /session list [limit]")
+			term.Println()
+			return
 		}
+		if parsedLimit <= 0 || parsedLimit > 1000 {
+			term.Println("Error: Limit must be between 1 and 1000")
+			term.Println("Usage: /session list [limit]")
+			term.Println()
+			return
+		}
+		limit = int32(parsedLimit) // #nosec G109,G115 -- validated range 1-1000, safe conversion
 	}
 
 	sessions, err := application.SessionStore.ListSessions(ctx, limit, 0)
@@ -598,13 +609,19 @@ func handleSessionList(ctx context.Context, args []string, application *app.App,
 		currentID = *currentSessionIDPtr
 	}
 
+	// Limit displayed sessions to match header count
+	displaySessions := sessions
+	if len(sessions) > int(limit) {
+		displaySessions = sessions[:limit]
+	}
+
 	term.Println()
 	term.Printf("╔══════════════════════════════════════════════════════════╗\n")
-	term.Printf("║  Sessions (%d most recent)                               ║\n", min(int(limit), len(sessions)))
+	term.Printf("║  Sessions (%d most recent)                               ║\n", len(displaySessions))
 	term.Printf("╚══════════════════════════════════════════════════════════╝\n")
 	term.Println()
 
-	for i, sess := range sessions {
+	for i, sess := range displaySessions {
 		isActive := sess.ID == currentID
 		activeMarker := " "
 		activeLabel := ""

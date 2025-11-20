@@ -35,8 +35,13 @@ type searchConfig struct {
 
 // WithTopK sets the maximum number of results to return.
 // Default is 5 if not specified.
+// If k < 1, it will be clamped to 1 to ensure valid search configuration.
 func WithTopK(k int32) SearchOption {
 	return func(c *searchConfig) {
+		// Input validation: ensure topK is at least 1
+		if k < 1 {
+			k = 1
+		}
 		c.topK = k
 	}
 }
