@@ -124,16 +124,26 @@ func (m *mockSessionQuerier) GetMessages(ctx context.Context, arg sqlc.GetMessag
 	return m.getMessagesResult, nil
 }
 
-func (m *mockSessionQuerier) GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (interface{}, error) {
+func (m *mockSessionQuerier) GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (int32, error) {
 	m.getMaxSequenceNumberCalls++
 	m.lastMaxSeqSessionID = sessionID
 	if m.getMaxSequenceNumberErr != nil {
-		return nil, m.getMaxSequenceNumberErr
+		return 0, m.getMaxSequenceNumberErr
 	}
 	if m.getMaxSequenceNumberResult == nil {
-		return int64(0), nil
+		return 0, nil
 	}
-	return m.getMaxSequenceNumberResult, nil
+	// Convert stored result to int32
+	switch v := m.getMaxSequenceNumberResult.(type) {
+	case int32:
+		return v, nil
+	case int:
+		return int32(v), nil
+	case int64:
+		return int32(v), nil
+	default:
+		return 0, nil
+	}
 }
 
 // ============================================================================
@@ -360,8 +370,8 @@ func TestStore_GetMessages(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		limit        int
-		offset       int
+		limit        int32
+		offset       int32
 		mockMessages []sqlc.SessionMessage
 		mockErr      error
 		wantCount    int
@@ -615,8 +625,8 @@ func TestStore_ListSessions(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		limit          int
-		offset         int
+		limit          int32
+		offset         int32
 		mockResult     []sqlc.Session
 		mockErr        error
 		wantErr        bool

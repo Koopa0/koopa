@@ -52,7 +52,7 @@ type SessionStore interface {
 	GetSession(ctx context.Context, sessionID uuid.UUID) (*session.Session, error)
 
 	// GetMessages retrieves messages for a session with pagination
-	GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error)
+	GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error)
 
 	// AddMessages adds multiple messages to a session in batch
 	AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error
@@ -383,7 +383,7 @@ func (a *Agent) trimHistoryIfNeeded() {
 
 	// If history exceeds limit, keep only most recent maxMessages
 	// Use max() to ensure non-negative start index
-	a.messages = a.messages[max(0, len(a.messages)-maxMessages):]
+	a.messages = a.messages[max(0, len(a.messages)-int(maxMessages)):]
 }
 
 // truncateString truncates a string to maxLen characters for logging
@@ -753,7 +753,7 @@ func (n *noopSessionStore) GetSession(ctx context.Context, sessionID uuid.UUID) 
 	return nil, fmt.Errorf("session persistence not yet enabled (noopSessionStore)")
 }
 
-func (n *noopSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+func (n *noopSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error) {
 	return nil, nil // Return empty messages, not an error
 }
 

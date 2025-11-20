@@ -35,7 +35,7 @@ type IndexerStore interface {
 	Add(ctx context.Context, doc knowledge.Document) error
 
 	// ListBySourceType lists documents by source type
-	ListBySourceType(ctx context.Context, sourceType string, limit int) ([]knowledge.Document, error)
+	ListBySourceType(ctx context.Context, sourceType string, limit int32) ([]knowledge.Document, error)
 
 	// Delete removes a document by ID
 	Delete(ctx context.Context, docID string) error
@@ -104,7 +104,9 @@ func NewIndexer(store IndexerStore, extensions []string) *Indexer {
 		// would share the same map, causing concurrent modification issues
 		extMap = make(map[string]bool, len(defaultSupportedExtensions))
 		for k, v := range defaultSupportedExtensions {
-			extMap[k] = v
+			// Normalize to lowercase for case-insensitive matching
+			// This ensures consistency with custom extension handling (line 99)
+			extMap[strings.ToLower(k)] = v
 		}
 	}
 

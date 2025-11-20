@@ -341,7 +341,7 @@ func (s *Store) rowsToResultsAll(rows []sqlc.SearchDocumentsAllRow) []Result {
 // Returns:
 //   - []Document: List of documents ordered by creation time (newest first)
 //   - error: If listing fails
-func (s *Store) ListBySourceType(ctx context.Context, sourceType string, limit int) ([]Document, error) {
+func (s *Store) ListBySourceType(ctx context.Context, sourceType string, limit int32) ([]Document, error) {
 	rows, err := s.queries.ListDocumentsBySourceType(ctx, sqlc.ListDocumentsBySourceTypeParams{
 		SourceType:  sourceType,
 		ResultLimit: limit,

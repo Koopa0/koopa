@@ -81,17 +81,17 @@ mcp:
 # ==========================================
 # Environment Variable Support (Higher priority than config file)
 #
-# Supported environment variables:
-#   GEMINI_API_KEY=your-api-key             # API key (required)
-#   MODEL_NAME=gemini-2.5-pro               # Model name
-#   TEMPERATURE=0.8                         # Temperature parameter
-#   MAX_TOKENS=4096                         # Maximum tokens
-#   MAX_HISTORY_MESSAGES=100                # Maximum history messages
-#   RAG_TOP_K=5                             # RAG document count
-#   EMBEDDER_MODEL=text-embedding-004       # Embedder model
-#   POSTGRES_HOST=localhost                 # PostgreSQL host
-#   POSTGRES_PORT=5432                      # PostgreSQL port
-#   POSTGRES_USER=koopa                     # PostgreSQL username
-#   POSTGRES_PASSWORD=your-password         # PostgreSQL password
-#   POSTGRES_DB_NAME=koopa                  # PostgreSQL database name
-#   POSTGRES_SSL_MODE=disable               # PostgreSQL SSL mode
+# Supported environment variables (note KOOPA_ prefix for Viper-managed variables):
+#   GEMINI_API_KEY=your-api-key                   # API key (required, no prefix)
+#   KOOPA_MODEL_NAME=gemini-2.5-pro               # Model name
+#   KOOPA_TEMPERATURE=0.8                         # Temperature parameter
+#   KOOPA_MAX_TOKENS=4096                         # Maximum tokens
+#   KOOPA_MAX_HISTORY_MESSAGES=100                # Maximum history messages
+#   KOOPA_RAG_TOP_K=5                             # RAG document count
+#   KOOPA_EMBEDDER_MODEL=text-embedding-004       # Embedder model
+#   KOOPA_POSTGRES_HOST=localhost                 # PostgreSQL host
+#   KOOPA_POSTGRES_PORT=5432                      # PostgreSQL port
+#   KOOPA_POSTGRES_USER=koopa                     # PostgreSQL username
+#   KOOPA_POSTGRES_PASSWORD=your-password         # PostgreSQL password
+#   KOOPA_POSTGRES_DB_NAME=koopa                  # PostgreSQL database name
+#   KOOPA_POSTGRES_SSL_MODE=disable               # PostgreSQL SSL mode

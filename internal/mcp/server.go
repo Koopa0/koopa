@@ -33,8 +33,8 @@ type Server struct {
 
 	// states tracks the state of each MCP server connection.
 	// Key: server name (e.g., "github", "filesystem")
-	// Value: connection state
-	states map[string]*State
+	// Value: connection state (stored by value to prevent external mutation)
+	states map[string]State
 
 	// mu protects concurrent access to states map.
 	mu sync.RWMutex
@@ -70,10 +70,10 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 		}
 	}
 
-	// Initialize state map
-	states := make(map[string]*State)
+	// Initialize state map (storing values instead of pointers)
+	states := make(map[string]State)
 	for _, cfg := range configs {
-		states[cfg.Name] = &State{
+		states[cfg.Name] = State{
 			Name:        cfg.Name,
 			Status:      Connecting,
 			LastAttempt: time.Now(),
@@ -89,10 +89,11 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 	})
 	if err != nil {
 		// Mark all servers as failed
-		for _, state := range states {
+		for name, state := range states {
 			state.Status = Failed
 			state.LastError = err
 			state.FailureCount++
+			states[name] = state // Must reassign when using value map
 		}
 		slog.Error("failed to create MCP host",
 			"error", err,
@@ -102,9 +103,10 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 
 	// Optimistically mark all servers as connected
 	// (MCPHost doesn't provide per-server status, so we track optimistically)
-	for _, state := range states {
+	for name, state := range states {
 		state.Status = Connected
 		state.SuccessCount++
+		states[name] = state // Must reassign when using value map
 	}
 
 	slog.Info("MCP host created successfully", "server_count", len(configs))
@@ -138,11 +140,12 @@ func (s *Server) Tools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error)
 	if err != nil {
 		// Mark all servers as failed (we don't know which one failed)
 		s.mu.Lock()
-		for _, state := range s.states {
+		for name, state := range s.states {
 			state.Status = Failed
 			state.LastError = err
 			state.FailureCount++
 			state.LastAttempt = time.Now()
+			s.states[name] = state // Must reassign when using value map
 		}
 		s.mu.Unlock()
 
@@ -152,11 +155,12 @@ func (s *Server) Tools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error)
 
 	// Success: update all server states
 	s.mu.Lock()
-	for _, state := range s.states {
+	for name, state := range s.states {
 		state.Status = Connected
 		state.LastError = nil
 		state.SuccessCount++
 		state.LastAttempt = time.Now()
+		s.states[name] = state // Must reassign when using value map
 	}
 	s.mu.Unlock()
 
@@ -173,7 +177,7 @@ func (s *Server) Tools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error)
 //   - State: Copy of the server's state
 //   - bool: true if server exists, false otherwise
 //
-// Note: Returns a copy of the state to prevent external modifications.
+// Note: Returns a copy of the state (map access returns a copy for value types).
 func (s *Server) State(name string) (State, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -183,8 +187,8 @@ func (s *Server) State(name string) (State, bool) {
 		return State{}, false
 	}
 
-	// Return a copy to prevent external modification
-	return *state, true
+	// Map access returns a copy when value is stored by value
+	return state, true
 }
 
 // States returns the connection states of all MCP servers.
@@ -192,7 +196,7 @@ func (s *Server) State(name string) (State, bool) {
 // Returns:
 //   - map[string]State: Map of server name to state (copies)
 //
-// Note: Returns copies of states to prevent external modifications.
+// Note: Returns copies of states (map iteration returns copies for value types).
 func (s *Server) States() map[string]State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -200,7 +204,7 @@ func (s *Server) States() map[string]State {
 	// Create a copy of the states map
 	result := make(map[string]State, len(s.states))
 	for name, state := range s.states {
-		result[name] = *state // Copy the state
+		result[name] = state // Iteration already returns a copy for value types
 	}
 
 	return result
