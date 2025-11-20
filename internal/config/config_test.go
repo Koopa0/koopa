@@ -558,9 +558,9 @@ func TestConfigError(t *testing.T) {
 func TestConfigDirectoryCreation(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
 
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 	_ = os.Setenv("GEMINI_API_KEY", "test-key")
 	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
@@ -592,9 +592,9 @@ func TestConfigDirectoryCreation(t *testing.T) {
 func TestEnvironmentVariableOverride(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
 
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 	_ = os.Setenv("GEMINI_API_KEY", "test-key")
 	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
@@ -615,10 +615,10 @@ max_tokens: 1024
 
 	// Set environment variables (should override config file)
 	// Note: config uses KOOPA_ prefix for environment variables
-	os.Setenv("KOOPA_MODEL_NAME", "gemini-1.5-flash")
-	os.Setenv("KOOPA_TEMPERATURE", "0.9")
-	defer os.Unsetenv("KOOPA_MODEL_NAME")
-	defer os.Unsetenv("KOOPA_TEMPERATURE")
+	_ = os.Setenv("KOOPA_MODEL_NAME", "gemini-1.5-flash")
+	_ = os.Setenv("KOOPA_TEMPERATURE", "0.9")
+	defer func() { _ = os.Unsetenv("KOOPA_MODEL_NAME") }()
+	defer func() { _ = os.Unsetenv("KOOPA_TEMPERATURE") }()
 
 	cfg, err := Load()
 	if err != nil {

@@ -91,7 +91,7 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			name:           "command requires API key - key not set",
 			requiresAPIKey: true,
 			setupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				_ = os.Unsetenv("GEMINI_API_KEY")
 			},
 			cleanupEnv:    func() {},
 			expectError:   true,
