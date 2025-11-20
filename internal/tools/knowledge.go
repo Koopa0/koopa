@@ -157,7 +157,7 @@ func formatDocumentResults(results []knowledge.Result) string {
 		output.WriteString("\n────── Content End ──────\n\n")
 	}
 
-	output.WriteString("💡 Tip: The above content is from your indexed documents. Use this information to answer the question.\n")
+	output.WriteString("Tip: The above content is from your indexed documents. Use this information to answer the question.\n")
 
 	return output.String()
 }

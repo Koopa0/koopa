@@ -468,7 +468,7 @@ func (h *Handler) SearchSystemKnowledge(ctx *ai.ToolContext, query string, topK 
 
 		// If no system documents found at all, warn the user
 		if checkErr == nil && len(allSystemDocs) == 0 {
-			return "⚠️ No system knowledge found. System knowledge may not be indexed yet. " +
+			return "No system knowledge found. System knowledge may not be indexed yet. " +
 				"This could happen if the application just started or if indexing failed. " +
 				"You can manually reindex using `/rag reindex-system` command.", nil
 		}

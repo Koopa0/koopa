@@ -123,7 +123,7 @@ type Agent struct {
 //   - knowledgeStore: Knowledge store for semantic search (required)
 //   - logger: Structured logger (required, use slog.Default() if unsure)
 //
-// Option defines a functional option for configuring the Agent.
+// Option is a functional option for configuring the Agent.
 type Option func(*Agent)
 
 // WithSessionStore sets the session store for the agent.

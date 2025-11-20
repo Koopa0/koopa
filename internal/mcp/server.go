@@ -32,7 +32,7 @@ type Server struct {
 	host *mcp.MCPHost
 
 	// states tracks the state of each MCP server connection.
-	// Key: server name (e.g., "github", "notion")
+	// Key: server name (e.g., "github", "filesystem")
 	// Value: connection state
 	states map[string]*State
 
@@ -167,7 +167,7 @@ func (s *Server) Tools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error)
 // State returns the connection state of a specific MCP server.
 //
 // Parameters:
-//   - name: Name of the MCP server (e.g., "github", "notion")
+//   - name: Name of the MCP server (e.g., "github", "filesystem")
 //
 // Returns:
 //   - State: Copy of the server's state

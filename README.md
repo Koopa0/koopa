@@ -74,14 +74,14 @@ Organize conversations by topic and resume them anytime:
 
 ```bash
 > /session new "Project Brainstorming"
-✓ Created new session: Project Brainstorming
+Created new session: Project Brainstorming
   Session ID: 8551638c-ba89-43c6-8fbf-e323c026bab9
 
 > Let's brainstorm ideas for our Q2 product launch
 [AI responds with ideas...]
 
 > /session new "Bug Investigation"
-✓ Created new session: Bug Investigation
+Created new session: Bug Investigation
 
 > /session list
 ╔══════════════════════════════════════════════════════════╗
@@ -97,7 +97,7 @@ Organize conversations by topic and resume them anytime:
     Messages: 5  |  Updated: 2025-11-17 14:30:15
 
 > /session switch 8551638c-ba89-43c6-8fbf-e323c026bab9
-✓ Switched to session: Project Brainstorming
+Switched to session: Project Brainstorming
   Conversation history loaded (5 messages)
 
 > Continue with the brainstorming ideas
@@ -171,8 +171,8 @@ Reason: This command will delete all node_modules directories recursively.
 
 Approve? [y/n]: y
 
-✓ Executing command...
-✓ Deleted 3 directories, freed 450MB
+Executing command...
+Deleted 3 directories, freed 450MB
 ```
 
 **Safety features:**

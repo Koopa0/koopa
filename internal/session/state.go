@@ -55,7 +55,7 @@ func getStateFilePath() (string, error) {
 	}
 
 	// Ensure state directory exists
-	if err := os.MkdirAll(stateDirPath, 0o755); err != nil {
+	if err := os.MkdirAll(stateDirPath, 0o750); err != nil {
 		return "", fmt.Errorf("failed to create state directory: %w", err)
 	}
 
@@ -130,14 +130,14 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 
 	// Write to temporary file first (atomic write pattern)
 	tmpFile := filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, []byte(sessionID.String()), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(sessionID.String()), 0o600); err != nil {
 		return fmt.Errorf("failed to write temp state file: %w", err)
 	}
 
 	// Atomically rename temp file to final file
 	if err := os.Rename(tmpFile, filePath); err != nil {
 		// Clean up temp file on error
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to atomically update state file: %w", err)
 	}
 
@@ -179,7 +179,7 @@ func acquireStateLock() (*flock.Flock, error) {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(stateDirPath, 0o755); err != nil {
+	if err := os.MkdirAll(stateDirPath, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create state directory: %w", err)
 	}
 

@@ -472,7 +472,10 @@ func TestInitializeApp_CleanupFunction(t *testing.T) {
 
 func TestProvideGenkit(t *testing.T) {
 	ctx := context.Background()
-	g := provideGenkit(ctx)
+	g, err := provideGenkit(ctx)
+	if err != nil {
+		t.Fatalf("Failed to initialize Genkit: %v", err)
+	}
 
 	if g == nil {
 		t.Fatal("expected non-nil Genkit instance")
@@ -485,7 +488,10 @@ func TestProvideEmbedder(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	g := provideGenkit(ctx)
+	g, err := provideGenkit(ctx)
+	if err != nil {
+		t.Fatalf("Failed to initialize Genkit: %v", err)
+	}
 	cfg := &config.Config{
 		EmbedderModel: "text-embedding-004",
 	}

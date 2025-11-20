@@ -8,6 +8,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
@@ -28,7 +29,10 @@ import (
 // InitializeApp is the Wire injector function.
 // Wire will automatically generate the implementation of this function.
 func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error) {
-	genkit := provideGenkit(ctx)
+	genkit, err := provideGenkit(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	embedder := provideEmbedder(genkit, cfg)
 	pool, cleanup, err := provideDBPool(ctx, cfg)
 	if err != nil {
@@ -66,16 +70,24 @@ var providerSet = wire.NewSet(
 )
 
 // provideGenkit initializes Genkit with Google AI plugin.
-func provideGenkit(ctx context.Context) *genkit.Genkit {
+// Returns error if initialization fails (follows Wire provider pattern).
+func provideGenkit(ctx context.Context) (*genkit.Genkit, error) {
 	promptDir := "./prompts"
 	if _, err := os.Stat(promptDir); os.IsNotExist(err) {
-		// Try parent directory (useful for tests running in subdirectories)
+
 		if _, err := os.Stat("../prompts"); err == nil {
 			promptDir = "../prompts"
 		}
+
 	}
 
-	return genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithPromptDir(promptDir))
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithPromptDir(promptDir))
+
+	if g == nil {
+		return nil, fmt.Errorf("failed to initialize Genkit")
+	}
+
+	return g, nil
 }
 
 // provideEmbedder creates an embedder instance.
@@ -150,7 +162,7 @@ func newApp(
 	}
 
 	go func() {
-		// Use app context for proper lifecycle management
+
 		indexCtx, indexCancel := context.WithTimeout(appCtx, 5*time.Second)
 		defer indexCancel()
 

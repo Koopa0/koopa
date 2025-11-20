@@ -79,8 +79,24 @@ func RegisterTools(
 	envVal *security.Env,
 	knowledgeStore KnowledgeSearcher,
 ) error {
-	// CRITICAL: Fail-fast if knowledgeStore is nil
-	// Knowledge tools are core P2 functionality and cannot work without the store.
+	// Defensive: Validate all required dependencies
+	// While normally guaranteed by caller (Agent.New), explicit checks prevent
+	// runtime panics and provide clear error messages for debugging
+	if g == nil {
+		return fmt.Errorf("RegisterTools: genkit instance is required (cannot be nil)")
+	}
+	if pathVal == nil {
+		return fmt.Errorf("RegisterTools: path validator is required (cannot be nil)")
+	}
+	if cmdVal == nil {
+		return fmt.Errorf("RegisterTools: command validator is required (cannot be nil)")
+	}
+	if httpVal == nil {
+		return fmt.Errorf("RegisterTools: HTTP validator is required (cannot be nil)")
+	}
+	if envVal == nil {
+		return fmt.Errorf("RegisterTools: environment validator is required (cannot be nil)")
+	}
 	if knowledgeStore == nil {
 		return fmt.Errorf("RegisterTools: knowledgeStore is required (cannot be nil)")
 	}

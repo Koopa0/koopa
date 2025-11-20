@@ -29,18 +29,22 @@ func (m *Mock) SetConfirmResponse(promptSubstring string, response bool) {
 	m.confirmResp[promptSubstring] = response
 }
 
+// Print outputs values to the mock output buffer
 func (m *Mock) Print(a ...any) {
 	fmt.Fprint(&m.Output, a...)
 }
 
+// Println outputs values with newline to the mock output buffer
 func (m *Mock) Println(a ...any) {
 	fmt.Fprintln(&m.Output, a...)
 }
 
+// Printf outputs formatted string to the mock output buffer
 func (m *Mock) Printf(format string, a ...any) {
 	fmt.Fprintf(&m.Output, format, a...)
 }
 
+// Scan advances to next input and returns true if available
 func (m *Mock) Scan() bool {
 	if m.inputIndex >= len(m.inputs) {
 		return false
@@ -49,6 +53,7 @@ func (m *Mock) Scan() bool {
 	return true
 }
 
+// Text returns the current input text
 func (m *Mock) Text() string {
 	if m.inputIndex-1 < 0 || m.inputIndex-1 >= len(m.inputs) {
 		return ""
@@ -56,6 +61,7 @@ func (m *Mock) Text() string {
 	return m.inputs[m.inputIndex-1]
 }
 
+// Confirm returns a predefined confirmation response
 func (m *Mock) Confirm(prompt string) (bool, error) {
 	m.Print(prompt + " [y/n]: ")
 
@@ -65,10 +71,9 @@ func (m *Mock) Confirm(prompt string) (bool, error) {
 			if v {
 				m.Println("y")
 				return true, nil
-			} else {
-				m.Println("n")
-				return false, nil
 			}
+			m.Println("n")
+			return false, nil
 		}
 	}
 
@@ -77,6 +82,7 @@ func (m *Mock) Confirm(prompt string) (bool, error) {
 	return true, nil
 }
 
+// Stream outputs content to the mock output buffer
 func (m *Mock) Stream(content string) {
 	m.Print(content)
 }
