@@ -58,9 +58,7 @@ func (s *CLISession) captureOutput(reader io.Reader, label string) {
 		}
 
 		if err != nil {
-			if err != io.EOF {
-				// Log error if needed, or just exit loop
-			}
+			// Exit loop on any error (including EOF)
 			return
 		}
 
@@ -161,13 +159,37 @@ func (s *CLISession) GetOutput() string {
 
 // Close closes the session and cleans up resources
 func (s *CLISession) Close() error {
+	// Cancel context first to signal goroutines
 	s.cancel()
 	close(s.done)
 
-	if err := s.stdin.Close(); err != nil {
-		return err
+	// IMPORTANT: Close all pipes to unblock captureOutput goroutines
+	// Closing stdout/stderr will cause Read() to return io.EOF,
+	// allowing the goroutines to exit and preventing goroutine leaks
+	var errs []error
+
+	if s.stdin != nil {
+		if err := s.stdin.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("closing stdin: %w", err))
+		}
 	}
 
+	if s.stdout != nil {
+		if err := s.stdout.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("closing stdout: %w", err))
+		}
+	}
+
+	if s.stderr != nil {
+		if err := s.stderr.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("closing stderr: %w", err))
+		}
+	}
+
+	// Return first error if any
+	if len(errs) > 0 {
+		return errs[0]
+	}
 	return nil
 }
 

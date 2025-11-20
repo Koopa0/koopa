@@ -29,8 +29,8 @@ func TestRunVersion(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		setupEnv        func()
-		cleanupEnv      func()
+		apiKey          string // Use t.Setenv for isolation
+		apiKeyUnset     bool   // If true, unset the API key
 		config          *config.Config
 		appVersion      string
 		buildTime       string
@@ -38,13 +38,8 @@ func TestRunVersion(t *testing.T) {
 		expectedStrings []string
 	}{
 		{
-			name: "with API key set",
-			setupEnv: func() {
-				os.Setenv("GEMINI_API_KEY", "test-key-1234567890")
-			},
-			cleanupEnv: func() {
-				// No-op
-			},
+			name:   "with API key set",
+			apiKey: "test-key-1234567890",
 			config: &config.Config{
 				ModelName:    "gemini-2.0-flash-exp",
 				Temperature:  0.7,
@@ -67,13 +62,8 @@ func TestRunVersion(t *testing.T) {
 			},
 		},
 		{
-			name: "without API key",
-			setupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
-			},
-			cleanupEnv: func() {
-				// No-op
-			},
+			name:        "without API key",
+			apiKeyUnset: true,
 			config: &config.Config{
 				ModelName:    "gemini-2.0-flash-exp",
 				Temperature:  1.0,
@@ -98,13 +88,8 @@ func TestRunVersion(t *testing.T) {
 			},
 		},
 		{
-			name: "with minimal config",
-			setupEnv: func() {
-				os.Setenv("GEMINI_API_KEY", "short")
-			},
-			cleanupEnv: func() {
-				// No-op
-			},
+			name:   "with minimal config",
+			apiKey: "short",
 			config: &config.Config{
 				ModelName:    "gemini-1.5-pro",
 				Temperature:  0.0,
@@ -125,13 +110,8 @@ func TestRunVersion(t *testing.T) {
 			},
 		},
 		{
-			name: "with long API key",
-			setupEnv: func() {
-				os.Setenv("GEMINI_API_KEY", "very-long-api-key-with-many-characters-1234567890")
-			},
-			cleanupEnv: func() {
-				// No-op
-			},
+			name:   "with long API key",
+			apiKey: "very-long-api-key-with-many-characters-1234567890",
 			config: &config.Config{
 				ModelName:    "gemini-2.5-pro",
 				Temperature:  0.5,
@@ -150,13 +130,14 @@ func TestRunVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save original env
-			originalKey := os.Getenv("GEMINI_API_KEY")
-			defer os.Setenv("GEMINI_API_KEY", originalKey)
-
-			// Setup environment
-			tt.setupEnv()
-			// defer tt.cleanupEnv()
+			// IMPORTANT: Use t.Setenv for proper test isolation
+			// This automatically restores the environment variable after the test
+			// and is safe for parallel test execution (Go 1.17+)
+			if tt.apiKeyUnset {
+				t.Setenv("GEMINI_API_KEY", "")
+			} else if tt.apiKey != "" {
+				t.Setenv("GEMINI_API_KEY", tt.apiKey)
+			}
 
 			// Set version variables
 			AppVersion = tt.appVersion
@@ -397,14 +378,12 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save original env
-			originalKey := os.Getenv("GEMINI_API_KEY")
-			defer os.Setenv("GEMINI_API_KEY", originalKey)
-
+			// Use t.Setenv for automatic isolation and cleanup
+			// This is consistent with TestRunVersion and follows Go best practices
 			if tt.apiKey != "" {
-				os.Setenv("GEMINI_API_KEY", tt.apiKey)
+				t.Setenv("GEMINI_API_KEY", tt.apiKey)
 			} else {
-				os.Unsetenv("GEMINI_API_KEY")
+				t.Setenv("GEMINI_API_KEY", "")
 			}
 
 			AppVersion = "test"

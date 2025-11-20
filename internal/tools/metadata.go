@@ -6,34 +6,26 @@ package tools
 // - Clear categorization of tool safety characteristics
 // - Runtime validation of dangerous operations
 // - Enhanced system prompt guidance for LLM behavior
-//
-// Design Principles (from Koopa_Agent_Framework_Design_v3.0.md):
-// - Single Source of Truth: All tool metadata defined in one place
-// - Type Safety: Enum-based danger levels prevent invalid values
-// - Extensibility: Easy to add new tools or metadata fields
-//
-// Reference: Koopa_Agent_Framework_Design_v3.0.md lines 213-229, 549-605
 
 // DangerLevel indicates the risk level of a tool operation.
-// Follows design document specification (lines 549-555).
 type DangerLevel int
 
 const (
-	// DangerLevelSafe: Read-only operations with no state modification
+	// DangerLevelSafe represents read-only operations with no state modification.
 	// Examples: readFile, listFiles, getFileInfo, currentTime, httpGet, getEnv
 	DangerLevelSafe DangerLevel = iota
 
-	// DangerLevelWarning: Operations that modify state but are generally reversible
+	// DangerLevelWarning represents operations that modify state but are generally reversible.
 	// Examples: writeFile (can be overwritten)
 	// These operations may require caution but don't typically cause data loss
 	DangerLevelWarning
 
-	// DangerLevelDangerous: Irreversible or destructive operations
+	// DangerLevelDangerous represents irreversible or destructive operations.
 	// Examples: deleteFile, executeCommand (with rm, DROP DATABASE, etc.)
 	// These operations MUST trigger requestConfirmation before execution
 	DangerLevelDangerous
 
-	// DangerLevelCritical: System-level destructive operations
+	// DangerLevelCritical represents system-level destructive operations.
 	// Examples: Format disk, shutdown system, delete entire directories
 	// Reserved for future use - not currently assigned to any tool
 	DangerLevelCritical

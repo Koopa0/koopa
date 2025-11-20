@@ -53,9 +53,10 @@ func (c *Console) Confirm(prompt string) (bool, error) {
 	for {
 		c.Print(prompt + " [y/n]: ")
 
-		// Ensure output is flushed if it's a buffered writer (like stdout often is)
-		if syncer, ok := c.out.(interface{ Sync() error }); ok {
-			_ = syncer.Sync()
+		// Ensure output is flushed if it's a buffered writer
+		// IMPORTANT: Use Flush() not Sync() - bufio.Writer implements Flush()
+		if flusher, ok := c.out.(interface{ Flush() error }); ok {
+			_ = flusher.Flush()
 		}
 
 		if !c.Scan() {
@@ -80,7 +81,8 @@ func (c *Console) Confirm(prompt string) (bool, error) {
 func (c *Console) Stream(content string) {
 	c.Print(content)
 	// Ensure output is flushed immediately for smooth streaming
-	if syncer, ok := c.out.(interface{ Sync() error }); ok {
-		_ = syncer.Sync()
+	// IMPORTANT: Use Flush() not Sync() - bufio.Writer implements Flush()
+	if flusher, ok := c.out.(interface{ Flush() error }); ok {
+		_ = flusher.Flush()
 	}
 }

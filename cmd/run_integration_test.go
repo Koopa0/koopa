@@ -22,6 +22,12 @@ func TestCLISession_Example(t *testing.T) {
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
 
+	// IMPORTANT: Ensure all pipe ends are closed to prevent resource leaks
+	defer stdinR.Close()
+	defer stdinW.Close()
+	defer stdoutR.Close()
+	defer stdoutW.Close()
+
 	// Create CLISession
 	session := NewCLISession(stdinW, stdoutR, nil)
 	defer session.Close()
@@ -43,7 +49,7 @@ func TestCLISession_Example(t *testing.T) {
 	}()
 
 	// Test scenario: Send /version command and verify output
-	// ✅ Using ExpectString instead of time.Sleep
+	// Using ExpectString instead of time.Sleep
 	if err := session.ExpectPrompt(5 * time.Second); err != nil {
 		t.Fatalf("Failed to wait for initial prompt: %v", err)
 	}
@@ -106,6 +112,12 @@ func TestCLISession_HelpCommand(t *testing.T) {
 	// Create pipes
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
+
+	// IMPORTANT: Ensure all pipe ends are closed to prevent resource leaks
+	defer stdinR.Close()
+	defer stdinW.Close()
+	defer stdoutR.Close()
+	defer stdoutW.Close()
 
 	session := NewCLISession(stdinW, stdoutR, nil)
 	defer session.Close()

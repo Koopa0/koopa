@@ -84,7 +84,7 @@ func TestRegisterTools(t *testing.T) {
 		}
 	}()
 
-	RegisterTools(g, pathVal, cmdVal, httpVal, envVal, mockStore)
+	_ = RegisterTools(g, pathVal, cmdVal, httpVal, envVal, mockStore)
 }
 
 // TestToolNamesImmutable tests that ToolNames returns a copy (not modifiable)

@@ -1,8 +1,8 @@
 package agent
 
 import (
-	"log/slog"
 	"fmt"
+	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/koopa0/koopa-cli/internal/tools"
