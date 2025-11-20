@@ -125,15 +125,24 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, err)
 		}
 
+		// Ensure transaction is always closed (rollback unless committed)
+		// This protects against panics and ensures proper resource cleanup
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback(ctx)
+			}
+		}()
+
 		_, err = tx.Exec(ctx, string(migrationSQL))
 		if err != nil {
-			_ = tx.Rollback(ctx) // Rollback on error
 			return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
 		}
 
 		if err = tx.Commit(ctx); err != nil {
 			return fmt.Errorf("failed to commit migration %s: %w", migrationPath, err)
 		}
+		committed = true
 	}
 
 	return nil
