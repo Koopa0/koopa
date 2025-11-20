@@ -28,11 +28,11 @@ type SessionStore interface {
 	// Agent methods
 	CreateSession(ctx context.Context, title, modelName, systemPrompt string) (*session.Session, error)
 	GetSession(ctx context.Context, sessionID uuid.UUID) (*session.Session, error)
-	GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error)
+	GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error)
 	AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error
 
 	// CLI command methods
-	ListSessions(ctx context.Context, limit, offset int) ([]*session.Session, error)
+	ListSessions(ctx context.Context, limit, offset int32) ([]*session.Session, error)
 	DeleteSession(ctx context.Context, sessionID uuid.UUID) error
 }
 

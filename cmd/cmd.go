@@ -569,10 +569,10 @@ func handleSessionShow(ctx context.Context, ag *agent.Agent, term ui.IO) {
 // handleSessionList lists all sessions with pagination
 func handleSessionList(ctx context.Context, args []string, application *app.App, term ui.IO) {
 	// Parse limit (default 10)
-	limit := 10
+	var limit int32 = 10
 	if len(args) > 0 {
-		if parsedLimit, err := strconv.Atoi(args[0]); err == nil && parsedLimit > 0 {
-			limit = parsedLimit
+		if parsedLimit, err := strconv.Atoi(args[0]); err == nil && parsedLimit > 0 && parsedLimit <= 1000 {
+			limit = int32(parsedLimit) // #nosec G109,G115 -- validated range 1-1000, safe conversion
 		}
 	}
 
@@ -600,7 +600,7 @@ func handleSessionList(ctx context.Context, args []string, application *app.App,
 
 	term.Println()
 	term.Printf("╔══════════════════════════════════════════════════════════╗\n")
-	term.Printf("║  Sessions (%d most recent)                               ║\n", min(limit, len(sessions)))
+	term.Printf("║  Sessions (%d most recent)                               ║\n", min(int(limit), len(sessions)))
 	term.Printf("╚══════════════════════════════════════════════════════════╝\n")
 	term.Println()
 

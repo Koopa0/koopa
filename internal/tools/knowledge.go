@@ -40,7 +40,7 @@ func defineSearchHistory(g *genkit.Genkit, handler *Handler) {
 			"Example queries: 'what programming languages did the user mention?', 'what did I say about error handling?', 'previous discussion about databases'",
 		func(ctx *ai.ToolContext, input struct {
 			Query string `json:"query" jsonschema_description:"Search query to find relevant conversations. Use natural language to describe what you're looking for. Examples: 'user's favorite programming language', 'discussion about testing', 'what frameworks were mentioned'"`
-			TopK  int    `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for broad exploration, lower values (1-3) for focused queries."`
+			TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for broad exploration, lower values (1-3) for focused queries."`
 		}) (string, error) {
 			return handler.SearchHistory(ctx, input.Query, input.TopK)
 		},
@@ -60,7 +60,7 @@ func defineSearchDocuments(g *genkit.Genkit, handler *Handler) {
 			"Example queries: 'how to configure database connection?', 'API endpoint for user authentication', 'error handling best practices in this project'",
 		func(ctx *ai.ToolContext, input struct {
 			Query string `json:"query" jsonschema_description:"Search query to find relevant documents. Use natural language or technical terms. Examples: 'database configuration', 'authentication implementation', 'error handling patterns', 'API documentation'"`
-			TopK  int    `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for comprehensive search, lower values (1-3) for specific lookups."`
+			TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for comprehensive search, lower values (1-3) for specific lookups."`
 		}) (string, error) {
 			return handler.SearchDocuments(ctx, input.Query, input.TopK)
 		},
@@ -80,7 +80,7 @@ func defineSearchSystemKnowledge(g *genkit.Genkit, handler *Handler) {
 			"Example queries: 'error handling style guide', 'how to structure Go packages?', 'testing best practices', 'what tools are available?'",
 		func(ctx *ai.ToolContext, input struct {
 			Query string `json:"query" jsonschema_description:"Search query to find relevant system knowledge. Use natural language to describe what guidance you need. Examples: 'error handling conventions', 'package structure guidelines', 'testing patterns', 'available capabilities'"`
-			TopK  int    `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for comprehensive guidance, lower values (1-3) for specific rules."`
+			TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for comprehensive guidance, lower values (1-3) for specific rules."`
 		}) (string, error) {
 			return handler.SearchSystemKnowledge(ctx, input.Query, input.TopK)
 		},
@@ -169,10 +169,24 @@ func formatSystemResults(results []knowledge.Result) string {
 		return "No relevant system knowledge found."
 	}
 
-	var output strings.Builder
-	output.WriteString(fmt.Sprintf("Found %d relevant system knowledge item(s):\n\n", len(results)))
+	const maxResults = 10 // Limit to prevent excessively long output
 
-	for i, result := range results {
+	var output strings.Builder
+	resultCount := len(results)
+	displayCount := resultCount
+	if displayCount > maxResults {
+		displayCount = maxResults
+	}
+
+	output.WriteString(fmt.Sprintf("Found %d relevant system knowledge item(s)", resultCount))
+	if resultCount > maxResults {
+		output.WriteString(fmt.Sprintf(" (showing top %d):\n\n", maxResults))
+	} else {
+		output.WriteString(":\n\n")
+	}
+
+	for i := 0; i < displayCount; i++ {
+		result := results[i]
 		// Header with similarity score
 		output.WriteString(fmt.Sprintf("=== Knowledge %d (%.1f%% match) ===\n", i+1, result.Similarity*100))
 
@@ -189,6 +203,10 @@ func formatSystemResults(results []knowledge.Result) string {
 
 		// Content (no length limit for system knowledge - usually concise and important)
 		output.WriteString(fmt.Sprintf("\nContent:\n%s\n\n", result.Document.Content))
+	}
+
+	if resultCount > maxResults {
+		output.WriteString(fmt.Sprintf("...%d more results not shown (use more specific query to narrow results)\n", resultCount-maxResults))
 	}
 
 	return output.String()

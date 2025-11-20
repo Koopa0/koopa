@@ -29,13 +29,13 @@ type SearchOption func(*searchConfig)
 
 // searchConfig holds internal search configuration.
 type searchConfig struct {
-	topK   int
+	topK   int32
 	filter map[string]string
 }
 
 // WithTopK sets the maximum number of results to return.
 // Default is 5 if not specified.
-func WithTopK(k int) SearchOption {
+func WithTopK(k int32) SearchOption {
 	return func(c *searchConfig) {
 		c.topK = k
 	}

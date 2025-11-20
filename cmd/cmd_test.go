@@ -32,7 +32,7 @@ func (m *mockSessionStore) GetSession(ctx context.Context, sessionID uuid.UUID) 
 	return nil, nil
 }
 
-func (m *mockSessionStore) ListSessions(ctx context.Context, limit, offset int) ([]*session.Session, error) {
+func (m *mockSessionStore) ListSessions(ctx context.Context, limit, offset int32) ([]*session.Session, error) {
 	return []*session.Session{}, nil
 }
 
@@ -40,7 +40,7 @@ func (m *mockSessionStore) DeleteSession(ctx context.Context, sessionID uuid.UUI
 	return nil
 }
 
-func (m *mockSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+func (m *mockSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error) {
 	return []*session.Message{}, nil
 }
 
@@ -960,18 +960,18 @@ func (m *mockSessionStoreWithData) GetSession(ctx context.Context, sessionID uui
 	return nil, nil
 }
 
-func (m *mockSessionStoreWithData) ListSessions(ctx context.Context, limit, offset int) ([]*session.Session, error) {
+func (m *mockSessionStoreWithData) ListSessions(ctx context.Context, limit, offset int32) ([]*session.Session, error) {
 	if len(m.sessions) == 0 {
 		return []*session.Session{}, nil
 	}
 
 	// Implement proper pagination
-	start := offset
+	start := int(offset)
 	if start > len(m.sessions) {
 		return []*session.Session{}, nil
 	}
 
-	end := min(len(m.sessions), offset+limit)
+	end := min(len(m.sessions), int(offset)+int(limit))
 	return m.sessions[start:end], nil
 }
 
@@ -979,7 +979,7 @@ func (m *mockSessionStoreWithData) DeleteSession(ctx context.Context, sessionID 
 	return nil
 }
 
-func (m *mockSessionStoreWithData) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+func (m *mockSessionStoreWithData) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error) {
 	return []*session.Message{}, nil
 }
 

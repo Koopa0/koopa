@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"regexp"
 	"strings"
 	"sync"
@@ -21,6 +23,7 @@ type CLISession struct {
 	done         chan struct{}
 	ctx          context.Context
 	cancel       context.CancelFunc
+	wg           sync.WaitGroup // Ensures goroutines exit before Close() returns
 }
 
 // NewCLISession creates a new CLI test session
@@ -37,6 +40,8 @@ func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISessi
 	}
 
 	// Start output capture goroutines
+	// WaitGroup ensures Close() will wait for these to exit
+	session.wg.Add(2)
 	go session.captureOutput(stdout, "stdout")
 	go session.captureOutput(stderr, "stderr")
 
@@ -45,6 +50,8 @@ func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISessi
 
 // captureOutput continuously reads from a reader and stores in buffer
 func (s *CLISession) captureOutput(reader io.Reader, label string) {
+	defer s.wg.Done() // Signal completion when goroutine exits
+
 	if reader == nil {
 		return
 	}
@@ -58,6 +65,10 @@ func (s *CLISession) captureOutput(reader io.Reader, label string) {
 		}
 
 		if err != nil {
+			// Log non-EOF errors for debugging
+			if err != io.EOF {
+				log.Printf("captureOutput[%s]: read error: %v", label, err)
+			}
 			// Exit loop on any error (including EOF)
 			return
 		}
@@ -186,9 +197,15 @@ func (s *CLISession) Close() error {
 		}
 	}
 
-	// Return first error if any
+	// Wait for all captureOutput goroutines to exit
+	// This MUST be after closing pipes, because goroutines are blocked on Read()
+	// and will only exit after pipes are closed (Read() returns EOF)
+	s.wg.Wait()
+
+	// Return combined errors using errors.Join (Go 1.20+)
+	// This ensures all cleanup failures are reported, not just the first one
 	if len(errs) > 0 {
-		return errs[0]
+		return errors.Join(errs...)
 	}
 	return nil
 }

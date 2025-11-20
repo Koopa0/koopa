@@ -360,7 +360,7 @@ func (h *Handler) HTTPGet(url string) (string, error) {
 // Returns:
 //   - string: Formatted search results
 //   - error: If search fails
-func (h *Handler) SearchHistory(ctx *ai.ToolContext, query string, topK int) (string, error) {
+func (h *Handler) SearchHistory(ctx *ai.ToolContext, query string, topK int32) (string, error) {
 	// No nil check needed - RegisterTools guarantees non-nil knowledgeStore
 
 	// Validate and set defaults for topK
@@ -397,7 +397,7 @@ func (h *Handler) SearchHistory(ctx *ai.ToolContext, query string, topK int) (st
 // Returns:
 //   - string: Formatted search results
 //   - error: If search fails
-func (h *Handler) SearchDocuments(ctx *ai.ToolContext, query string, topK int) (string, error) {
+func (h *Handler) SearchDocuments(ctx *ai.ToolContext, query string, topK int32) (string, error) {
 	// No nil check needed - RegisterTools guarantees non-nil knowledgeStore
 
 	// Validate and set defaults for topK
@@ -435,7 +435,7 @@ func (h *Handler) SearchDocuments(ctx *ai.ToolContext, query string, topK int) (
 // Returns:
 //   - string: Formatted search results
 //   - error: If search fails
-func (h *Handler) SearchSystemKnowledge(ctx *ai.ToolContext, query string, topK int) (string, error) {
+func (h *Handler) SearchSystemKnowledge(ctx *ai.ToolContext, query string, topK int32) (string, error) {
 	// No nil check needed - RegisterTools guarantees non-nil knowledgeStore
 
 	// Validate and set defaults for topK
@@ -466,8 +466,15 @@ func (h *Handler) SearchSystemKnowledge(ctx *ai.ToolContext, query string, topK 
 		}
 		allSystemDocs, checkErr := h.knowledgeStore.Search(ctx.Context, "system", checkOpts...)
 
+		// Provide feedback if the check itself failed
+		if checkErr != nil {
+			return "Unable to check system knowledge status: " + checkErr.Error() + ". " +
+				"System knowledge search may be experiencing issues. " +
+				"You can try reindexing using `/rag reindex-system` command.", nil
+		}
+
 		// If no system documents found at all, warn the user
-		if checkErr == nil && len(allSystemDocs) == 0 {
+		if len(allSystemDocs) == 0 {
 			return "No system knowledge found. System knowledge may not be indexed yet. " +
 				"This could happen if the application just started or if indexing failed. " +
 				"You can manually reindex using `/rag reindex-system` command.", nil
