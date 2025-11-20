@@ -15,14 +15,20 @@ func TestLoadDefaults(t *testing.T) {
 	originalAPIKey := os.Getenv("GEMINI_API_KEY")
 	defer func() {
 		if originalAPIKey != "" {
-			_ = os.Setenv("GEMINI_API_KEY", originalAPIKey)
+			if err := os.Setenv("GEMINI_API_KEY", originalAPIKey); err != nil {
+				t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
+			}
 		} else {
-			_ = os.Unsetenv("GEMINI_API_KEY")
+			if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+				t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			}
 		}
 	}()
 
 	// Set API key for validation
-	_ = os.Setenv("GEMINI_API_KEY", "test-api-key")
+	if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
 
 	cfg, err := Load()
 	if err != nil {
@@ -83,12 +89,24 @@ func TestLoadConfigFile(t *testing.T) {
 	// Create temporary config directory
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer func() { _ = os.Setenv("HOME", originalHome) }()
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
 	// Set HOME to temp directory
-	_ = os.Setenv("HOME", tmpDir)
-	_ = os.Setenv("GEMINI_API_KEY", "test-api-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -150,13 +168,19 @@ func TestValidateSuccess(t *testing.T) {
 	originalAPIKey := os.Getenv("GEMINI_API_KEY")
 	defer func() {
 		if originalAPIKey != "" {
-			_ = os.Setenv("GEMINI_API_KEY", originalAPIKey)
+			if err := os.Setenv("GEMINI_API_KEY", originalAPIKey); err != nil {
+				t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
+			}
 		} else {
-			_ = os.Unsetenv("GEMINI_API_KEY")
+			if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+				t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			}
 		}
 	}()
 
-	_ = os.Setenv("GEMINI_API_KEY", "test-api-key")
+	if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
 
 	cfg := &Config{
 		ModelName:       "gemini-2.5-flash",
@@ -180,13 +204,19 @@ func TestValidateMissingAPIKey(t *testing.T) {
 	originalAPIKey := os.Getenv("GEMINI_API_KEY")
 	defer func() {
 		if originalAPIKey != "" {
-			_ = os.Setenv("GEMINI_API_KEY", originalAPIKey)
+			if err := os.Setenv("GEMINI_API_KEY", originalAPIKey); err != nil {
+				t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
+			}
 		} else {
-			_ = os.Unsetenv("GEMINI_API_KEY")
+			if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+				t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			}
 		}
 	}()
 
-	_ = os.Unsetenv("GEMINI_API_KEY")
+	if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+		t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
+	}
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -211,8 +241,14 @@ func TestValidateMissingAPIKey(t *testing.T) {
 
 // TestValidateModelName tests model name validation
 func TestValidateModelName(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	cfg := &Config{
 		ModelName:      "",
@@ -237,8 +273,14 @@ func TestValidateModelName(t *testing.T) {
 
 // TestValidateTemperature tests temperature range validation
 func TestValidateTemperature(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name        string
@@ -283,8 +325,14 @@ func TestValidateTemperature(t *testing.T) {
 
 // TestValidateMaxTokens tests max tokens range validation
 func TestValidateMaxTokens(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name      string
@@ -329,8 +377,14 @@ func TestValidateMaxTokens(t *testing.T) {
 
 // TestValidateRAGTopK tests RAG top K validation
 func TestValidateRAGTopK(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name      string
@@ -375,8 +429,14 @@ func TestValidateRAGTopK(t *testing.T) {
 
 // TestValidateEmbedderModel tests embedder model validation
 func TestValidateEmbedderModel(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -401,8 +461,14 @@ func TestValidateEmbedderModel(t *testing.T) {
 
 // TestValidatePostgresHost tests PostgreSQL host validation
 func TestValidatePostgresHost(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -427,8 +493,14 @@ func TestValidatePostgresHost(t *testing.T) {
 
 // TestValidatePostgresPort tests PostgreSQL port validation
 func TestValidatePostgresPort(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name      string
@@ -473,8 +545,14 @@ func TestValidatePostgresPort(t *testing.T) {
 
 // TestValidatePostgresDBName tests PostgreSQL database name validation
 func TestValidatePostgresDBName(t *testing.T) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -558,11 +636,23 @@ func TestConfigError(t *testing.T) {
 func TestConfigDirectoryCreation(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tmpDir)
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	_, err := Load()
 	if err != nil {
@@ -592,11 +682,23 @@ func TestConfigDirectoryCreation(t *testing.T) {
 func TestEnvironmentVariableOverride(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tmpDir)
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	// Create .koopa directory and config file
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -615,10 +717,22 @@ max_tokens: 1024
 
 	// Set environment variables (should override config file)
 	// Note: config uses KOOPA_ prefix for environment variables
-	os.Setenv("KOOPA_MODEL_NAME", "gemini-1.5-flash")
-	os.Setenv("KOOPA_TEMPERATURE", "0.9")
-	defer os.Unsetenv("KOOPA_MODEL_NAME")
-	defer os.Unsetenv("KOOPA_TEMPERATURE")
+	if err := os.Setenv("KOOPA_MODEL_NAME", "gemini-1.5-flash"); err != nil {
+		t.Fatalf("Failed to set KOOPA_MODEL_NAME: %v", err)
+	}
+	if err := os.Setenv("KOOPA_TEMPERATURE", "0.9"); err != nil {
+		t.Fatalf("Failed to set KOOPA_TEMPERATURE: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("KOOPA_MODEL_NAME"); err != nil {
+			t.Errorf("Failed to unset KOOPA_MODEL_NAME: %v", err)
+		}
+	}()
+	defer func() {
+		if err := os.Unsetenv("KOOPA_TEMPERATURE"); err != nil {
+			t.Errorf("Failed to unset KOOPA_TEMPERATURE: %v", err)
+		}
+	}()
 
 	cfg, err := Load()
 	if err != nil {
@@ -644,11 +758,23 @@ max_tokens: 1024
 func TestLoadInvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tmpDir)
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -677,11 +803,23 @@ max_tokens: not_a_number
 func TestLoadUnmarshalError(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tmpDir)
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -708,8 +846,14 @@ max_tokens: "this should also be a number"
 
 // BenchmarkLoad benchmarks configuration loading
 func BenchmarkLoad(b *testing.B) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		b.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			b.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -719,8 +863,14 @@ func BenchmarkLoad(b *testing.B) {
 
 // BenchmarkValidate benchmarks configuration validation
 func BenchmarkValidate(b *testing.B) {
-	_ = os.Setenv("GEMINI_API_KEY", "test-key")
-	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		b.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+			b.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",

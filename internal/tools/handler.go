@@ -107,12 +107,18 @@ func NewHandler(
 func (h *Handler) ReadFile(path string) (string, error) {
 	safePath, err := h.pathVal.Validate(path)
 	if err != nil {
-		return "", fmt.Errorf("path validation failed: %w", err)
+		return "", ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
 
 	content, err := os.ReadFile(safePath) // #nosec G304 -- path validated by pathVal above
 	if err != nil {
-		return "", fmt.Errorf("unable to read file: %w", err)
+		if os.IsNotExist(err) {
+			return "", ToolError{ErrorType: "FileNotFound", Message: fmt.Sprintf("file not found: %s", path)}
+		}
+		if os.IsPermission(err) {
+			return "", ToolError{ErrorType: "PermissionDenied", Message: fmt.Sprintf("permission denied: %s", path)}
+		}
+		return "", ToolError{ErrorType: "ReadError", Message: fmt.Sprintf("unable to read file: %v", err)}
 	}
 
 	return string(content), nil
@@ -131,17 +137,20 @@ func (h *Handler) ReadFile(path string) (string, error) {
 func (h *Handler) WriteFile(path, content string) (string, error) {
 	safePath, err := h.pathVal.Validate(path)
 	if err != nil {
-		return "", fmt.Errorf("path validation failed: %w", err)
+		return "", ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
 
 	// Ensure directory exists (use 0750 permission for better security)
 	dir := filepath.Dir(safePath)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", fmt.Errorf("unable to create directory: %w", err)
+		return "", ToolError{ErrorType: "WriteError", Message: fmt.Sprintf("unable to create directory: %v", err)}
 	}
 
 	if err := os.WriteFile(safePath, []byte(content), 0o600); err != nil {
-		return "", fmt.Errorf("unable to write file: %w", err)
+		if os.IsPermission(err) {
+			return "", ToolError{ErrorType: "PermissionDenied", Message: fmt.Sprintf("permission denied: %s", path)}
+		}
+		return "", ToolError{ErrorType: "WriteError", Message: fmt.Sprintf("unable to write file: %v", err)}
 	}
 
 	return fmt.Sprintf("successfully wrote file: %s", safePath), nil
@@ -159,12 +168,18 @@ func (h *Handler) WriteFile(path, content string) (string, error) {
 func (h *Handler) ListFiles(path string) (string, error) {
 	safePath, err := h.pathVal.Validate(path)
 	if err != nil {
-		return "", fmt.Errorf("path validation failed: %w", err)
+		return "", ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
 
 	entries, err := os.ReadDir(safePath)
 	if err != nil {
-		return "", fmt.Errorf("unable to read directory: %w", err)
+		if os.IsNotExist(err) {
+			return "", ToolError{ErrorType: "FileNotFound", Message: fmt.Sprintf("directory not found: %s", path)}
+		}
+		if os.IsPermission(err) {
+			return "", ToolError{ErrorType: "PermissionDenied", Message: fmt.Sprintf("permission denied: %s", path)}
+		}
+		return "", ToolError{ErrorType: "ReadError", Message: fmt.Sprintf("unable to read directory: %v", err)}
 	}
 
 	var result []string
@@ -191,11 +206,17 @@ func (h *Handler) ListFiles(path string) (string, error) {
 func (h *Handler) DeleteFile(path string) (string, error) {
 	safePath, err := h.pathVal.Validate(path)
 	if err != nil {
-		return "", fmt.Errorf("path validation failed: %w", err)
+		return "", ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
 
 	if err := os.Remove(safePath); err != nil {
-		return "", fmt.Errorf("unable to delete file: %w", err)
+		if os.IsNotExist(err) {
+			return "", ToolError{ErrorType: "FileNotFound", Message: fmt.Sprintf("file not found: %s", path)}
+		}
+		if os.IsPermission(err) {
+			return "", ToolError{ErrorType: "PermissionDenied", Message: fmt.Sprintf("permission denied: %s", path)}
+		}
+		return "", ToolError{ErrorType: "DeleteError", Message: fmt.Sprintf("unable to delete file: %v", err)}
 	}
 
 	return fmt.Sprintf("successfully deleted file: %s", safePath), nil
@@ -213,12 +234,18 @@ func (h *Handler) DeleteFile(path string) (string, error) {
 func (h *Handler) GetFileInfo(path string) (string, error) {
 	safePath, err := h.pathVal.Validate(path)
 	if err != nil {
-		return "", fmt.Errorf("path validation failed: %w", err)
+		return "", ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
 
 	info, err := os.Stat(safePath)
 	if err != nil {
-		return "", fmt.Errorf("unable to get file information: %w", err)
+		if os.IsNotExist(err) {
+			return "", ToolError{ErrorType: "FileNotFound", Message: fmt.Sprintf("file not found: %s", path)}
+		}
+		if os.IsPermission(err) {
+			return "", ToolError{ErrorType: "PermissionDenied", Message: fmt.Sprintf("permission denied: %s", path)}
+		}
+		return "", ToolError{ErrorType: "ReadError", Message: fmt.Sprintf("unable to get file information: %v", err)}
 	}
 
 	result := fmt.Sprintf("Name: %s\n", info.Name())
@@ -267,9 +294,9 @@ func (h *Handler) ExecuteCommand(ctx context.Context, command string, args []str
 	if err != nil {
 		// Check if it was cancelled by context
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("command execution cancelled: %w", ctx.Err())
+			return "", ToolError{ErrorType: "TimeoutError", Message: fmt.Sprintf("command execution cancelled: %v", ctx.Err())}
 		}
-		return "", fmt.Errorf("command execution failed: %w (output: %s)", err, string(output))
+		return "", ToolError{ErrorType: "CommandError", Message: fmt.Sprintf("command execution failed: %v (output: %s)", err, string(output))}
 	}
 
 	return string(output), nil
@@ -287,7 +314,7 @@ func (h *Handler) ExecuteCommand(ctx context.Context, command string, args []str
 func (h *Handler) GetEnv(name string) (string, error) {
 	// Environment variable security validation (prevent sensitive information leakage)
 	if err := h.envVal.ValidateEnvAccess(name); err != nil {
-		return "", fmt.Errorf("security warning: %w (protected environment variable)", err)
+		return "", ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("security warning: %v (protected environment variable)", err)}
 	}
 
 	value := os.Getenv(name)
@@ -319,7 +346,7 @@ func (h *Handler) HTTPGet(url string) (string, error) {
 	client := h.httpVal.Client()
 	resp, err := client.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("http request failed: %w", err)
+		return "", ToolError{ErrorType: "NetworkError", Message: fmt.Sprintf("http request failed: %v", err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -329,12 +356,12 @@ func (h *Handler) HTTPGet(url string) (string, error) {
 
 	body, err := io.ReadAll(limitedReader)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return "", ToolError{ErrorType: "ReadError", Message: fmt.Sprintf("failed to read response: %v", err)}
 	}
 
 	// Check if size limit exceeded
 	if int64(len(body)) >= maxSize {
-		return "", fmt.Errorf("response size exceeds limit (max %d MB)", maxSize/(1024*1024))
+		return "", ToolError{ErrorType: "ResponseTooLarge", Message: fmt.Sprintf("response size exceeds limit (max %d MB)", maxSize/(1024*1024))}
 	}
 
 	result := map[string]any{

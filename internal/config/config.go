@@ -36,6 +36,7 @@ type Config struct {
 
 	// Conversation history configuration
 	MaxHistoryMessages int32 `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
+	MaxTurns           int   `mapstructure:"max_turns"`            // Maximum number of autonomous execution turns
 
 	// Storage configuration
 	DatabasePath string `mapstructure:"database_path"` // SQLite database path
@@ -102,6 +103,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("max_tokens", 2048)
 	viper.SetDefault("language", "auto")         // Default: auto-detect language from user input
 	viper.SetDefault("max_history_messages", 50) // Default: keep recent 50 messages (~25 conversation turns)
+	viper.SetDefault("max_turns", 5)             // Default: 5 autonomous turns
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
 
 	// PostgreSQL defaults (matching docker-compose.yml)

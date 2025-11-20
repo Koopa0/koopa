@@ -80,7 +80,7 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			name:           "command requires API key - key is set",
 			requiresAPIKey: true,
 			setupEnv: func() {
-				os.Setenv("GEMINI_API_KEY", "test-key-123")
+				_ = os.Setenv("GEMINI_API_KEY", "test-key-123")
 			},
 			cleanupEnv: func() {
 				// No-op, restoration handled by test wrapper
@@ -91,7 +91,7 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			name:           "command requires API key - key not set",
 			requiresAPIKey: true,
 			setupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				_ = os.Unsetenv("GEMINI_API_KEY")
 			},
 			cleanupEnv:    func() {},
 			expectError:   true,
@@ -101,7 +101,9 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			name:           "command does not require API key - key not set",
 			requiresAPIKey: false,
 			setupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+					t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
+				}
 			},
 			cleanupEnv:  func() {},
 			expectError: false,
@@ -110,7 +112,7 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			name:           "command does not require API key - key is set",
 			requiresAPIKey: false,
 			setupEnv: func() {
-				os.Setenv("GEMINI_API_KEY", "test-key-456")
+				_ = os.Setenv("GEMINI_API_KEY", "test-key-456")
 			},
 			cleanupEnv: func() {
 				// No-op
@@ -123,7 +125,11 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Save original env
 			originalKey := os.Getenv("GEMINI_API_KEY")
-			defer os.Setenv("GEMINI_API_KEY", originalKey)
+			defer func() {
+				if err := os.Setenv("GEMINI_API_KEY", originalKey); err != nil {
+					t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
+				}
+			}()
 
 			// Setup environment
 			tt.setupEnv()
@@ -233,10 +239,14 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 				}
 			},
 			setupEnv: func() {
-				os.Setenv("GEMINI_API_KEY", "")
+				if err := os.Setenv("GEMINI_API_KEY", ""); err != nil {
+					t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+				}
 			},
 			cleanupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+					t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
+				}
 			},
 			expectError: true,
 		},
@@ -251,10 +261,14 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 				}
 			},
 			setupEnv: func() {
-				os.Setenv("GEMINI_API_KEY", "   ")
+				if err := os.Setenv("GEMINI_API_KEY", "   "); err != nil {
+					t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+				}
 			},
 			cleanupEnv: func() {
-				os.Unsetenv("GEMINI_API_KEY")
+				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+					t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
+				}
 			},
 			expectError: false, // os.Getenv doesn't trim, treats as non-empty
 		},
@@ -264,7 +278,11 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Save original env
 			originalKey := os.Getenv("GEMINI_API_KEY")
-			defer os.Setenv("GEMINI_API_KEY", originalKey)
+			defer func() {
+				if err := os.Setenv("GEMINI_API_KEY", originalKey); err != nil {
+					t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
+				}
+			}()
 
 			tt.setupEnv()
 			// defer tt.cleanupEnv()

@@ -41,6 +41,13 @@ type Generator interface {
 	Generate(ctx context.Context, opts ...ai.GenerateOption) (*ai.ModelResponse, error)
 }
 
+// Response represents the complete result of an agent execution.
+// Designed for synchronous, blocking execution following 建議.md architecture.
+type Response struct {
+	FinalText string        // Model's final text output
+	History   []*ai.Message // Complete conversation history including all tool calls
+}
+
 // SessionStore defines the interface for session persistence operations.
 // Following Go best practices: interfaces are defined by the consumer (agent), not the provider (session package).
 // This allows Agent to depend on abstraction rather than concrete implementation, improving testability.
@@ -229,9 +236,6 @@ func New(
 		return nil, fmt.Errorf("failed to register tools: %w", err)
 	}
 
-	// Register confirmation tool (interrupt mechanism, agent-specific)
-	RegisterConfirmationTool(g)
-
 	// Load system prompt (from Dotprompt file)
 	systemPrompt := genkit.LookupPrompt(g, "koopa")
 	if systemPrompt == nil {
@@ -394,230 +398,148 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// Execute runs the agent with interrupt mechanism support.
-// Returns an event channel for UI layer to consume agent events (text, interrupts, errors).
-// This is the new primary interaction method that supports human-in-the-loop confirmations.
-func (a *Agent) Execute(ctx context.Context, input string) <-chan Event {
-	eventCh := make(chan Event, 10)
+// Execute runs the agent with the given input and returns the complete response.
+// This is a synchronous, blocking operation that uses Genkit's native ReAct engine.
+// Following 建議.md architecture: single Generate call with WithMaxTurns.
+//
+// Architecture decisions (v4 consensus):
+//   - Trust Genkit framework to handle multi-turn tool calling
+//   - Sacrifice interrupt/human-in-the-loop for simplicity and elegance
+//   - Sacrifice real-time streaming feedback
+//   - Use Genkit's built-in OpenTelemetry for observability (no custom metrics)
+func (a *Agent) Execute(ctx context.Context, input string) (*Response, error) {
+	// Step 1: Prepare context with timeout (default 5 minutes for complex multi-turn operations)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 
-	go func() {
-		defer close(eventCh)
+	// Step 2: Prepare message history
+	a.messagesMu.Lock()
+	userMessage := ai.NewUserMessage(ai.NewTextPart(input))
+	messagesCopy := make([]*ai.Message, len(a.messages))
+	copy(messagesCopy, a.messages)
+	messagesCopy = append(messagesCopy, userMessage)
+	a.messagesMu.Unlock()
 
-		// Step 1: Prepare message history (Agent is the sole owner of history)
-		a.messagesMu.Lock()
-		userMessage := ai.NewUserMessage(ai.NewTextPart(input))
+	// Step 3: RAG retrieval
+	ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
+		Query:   ai.DocumentFromText(input, nil),
+		Options: map[string]any{"k": a.config.RAGTopK},
+	})
+	if err != nil {
+		a.logger.Warn("RAG retrieval failed, continuing without context",
+			"error", err,
+			"input_preview", truncateString(input, 50))
+	}
+
+	// Step 4: Prepare Genkit options
+	toolRefs := a.tools(ctx)
+	opts := []ai.GenerateOption{
+		ai.WithModel(a.modelRef),
+		ai.WithSystem(a.systemPrompt),
+		ai.WithMessages(messagesCopy...),
+		ai.WithTools(toolRefs...),
+		ai.WithMaxTurns(a.config.MaxTurns), // KEY: Let Genkit handle ReAct loop
+	}
+
+	if ragResp != nil && len(ragResp.Documents) > 0 {
+		opts = append(opts, ai.WithDocs(ragResp.Documents...))
+	}
+
+	// Step 5: Single synchronous Generate call - Genkit handles everything
+	response, err := a.generator.Generate(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("agent execution failed: %w", err)
+	}
+
+	// Step 6: Update agent's message history with all new messages
+	// Use defer/recover to handle cases where History() might panic (e.g., in mock scenarios)
+	var responseHistory []*ai.Message
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// History() panicked - likely a mock response without proper internal state
+				a.logger.Debug("response.History() panicked (likely mock), using fallback", "panic", r)
+				responseHistory = nil
+			}
+		}()
+		responseHistory = response.History()
+	}()
+
+	a.messagesMu.Lock()
+	if responseHistory != nil {
+		// Genkit's response.History() returns the complete conversation history.
+		// Filter to keep only user and model messages (exclude system, tool, etc.)
+		a.messages = nil
+		for _, msg := range responseHistory {
+			if msg.Role == ai.RoleUser || msg.Role == ai.RoleModel {
+				a.messages = append(a.messages, msg)
+			}
+		}
+	} else {
+		// Fallback: If history is not available (e.g., in mock scenarios),
+		// manually add the user message and model response
 		a.messages = append(a.messages, userMessage)
-		messagesCopy := make([]*ai.Message, len(a.messages))
-		copy(messagesCopy, a.messages)
-		a.messagesMu.Unlock()
+		if response.Message != nil {
+			a.messages = append(a.messages, response.Message)
+		}
+	}
 
-		// Track new messages for batch persistence (P1)
+	a.trimHistoryIfNeeded()
+	a.messagesMu.Unlock()
+
+	// Step 7: Session persistence (batch save)
+	if a.currentSessionID != nil {
 		var newMessages []*session.Message
-		if a.currentSessionID != nil {
+
+		// Save only user and model messages (exclude system, tool, etc.)
+		if responseHistory != nil {
+			for _, msg := range responseHistory {
+				if msg.Role == ai.RoleUser || msg.Role == ai.RoleModel {
+					newMessages = append(newMessages, &session.Message{
+						Role:    string(msg.Role),
+						Content: msg.Content,
+					})
+				}
+			}
+		} else {
+			// Fallback for mock scenarios
 			newMessages = append(newMessages, &session.Message{
 				Role:    "user",
 				Content: userMessage.Content,
 			})
+			if response.Message != nil {
+				newMessages = append(newMessages, &session.Message{
+					Role:    string(ai.RoleModel),
+					Content: response.Message.Content,
+				})
+			}
 		}
 
-		// Step 2: Automatic RAG (only on first request)
-		ragResp, err := a.retriever.Retrieve(ctx, &ai.RetrieverRequest{
-			Query:   ai.DocumentFromText(input, nil),
-			Options: map[string]any{"k": a.config.RAGTopK},
-		})
-		if err != nil {
-			slog.Warn("RAG retrieval failed in Execute, continuing without context",
-				"error", err,
-				"input_preview", truncateString(input, 50))
+		if err := a.sessionStore.AddMessages(ctx, *a.currentSessionID, newMessages); err != nil {
+			a.logger.Warn("failed to save messages to database",
+				"session_id", *a.currentSessionID,
+				"message_count", len(newMessages),
+				"error", err)
+			// Continue execution - persistence failure is not fatal
 		}
+	}
 
-		// Step 3: Prepare streaming callback
-		streamingOpt := ai.WithStreaming(func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
-			if chunk.Text() != "" {
-				eventCh <- Event{Type: EventTypeText, TextChunk: chunk.Text()}
-			}
-			return nil
-		})
+	// Step 8: Async vectorization
+	go func() {
+		vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-		// Main loop: Handle potential multi-turn interactions
-		for {
-			// Step 4: Prepare current turn request options
-			toolRefs := a.tools(ctx)
-			opts := []ai.GenerateOption{
-				ai.WithModel(a.modelRef),
-				ai.WithSystem(a.systemPrompt),
-				ai.WithMessages(messagesCopy...),
-				ai.WithTools(toolRefs...),
-				streamingOpt,
-			}
-			if ragResp != nil && len(ragResp.Documents) > 0 {
-				opts = append(opts, ai.WithDocs(ragResp.Documents...))
-				ragResp = nil // RAG only in first round
-			}
-
-			// Step 5: Call Genkit generate
-			response, err := a.generator.Generate(ctx, opts...)
-			if err != nil {
-				eventCh <- Event{Type: EventTypeError, Error: err}
-				return
-			}
-
-			// Step 6: Add model's thought/action to current turn history
-			// BUGFIX: Ensure Role is set correctly (Genkit may not set it automatically)
-			if response.Message.Role == "" {
-				response.Message.Role = ai.RoleModel
-			}
-			messagesCopy = append(messagesCopy, response.Message)
-
-			// Step 6.5: Log tool calls for debugging and monitoring
-			for _, part := range response.Message.Content {
-				if part.ToolRequest != nil {
-					a.logger.Debug("tool called",
-						"tool_name", part.ToolRequest.Name,
-						"finish_reason", response.FinishReason)
-				}
-				if part.ToolResponse != nil {
-					a.logger.Debug("tool response received",
-						"tool_name", part.ToolResponse.Name)
-				}
-			}
-
-			// Step 7: Check finish reason
-			switch response.FinishReason {
-			case ai.FinishReasonInterrupted:
-				// Defensive check: Ensure interrupts array is not empty
-				interrupts := response.Interrupts()
-				if len(interrupts) == 0 {
-					a.logger.Warn("FinishReasonInterrupted but no interrupts found",
-						"response_text", truncateString(response.Text(), 100))
-					// Treat as normal completion to avoid crash
-					eventCh <- Event{Type: EventTypeComplete, IsComplete: true}
-					return
-				}
-
-				var toolResponses []*ai.Part
-				for _, interrupt := range interrupts {
-					// 7.1. Construct and send interrupt event
-					resumeCh := make(chan ConfirmationResponse)
-					eventCh <- Event{
-						Type: EventTypeInterrupt,
-						Interrupt: &InterruptEvent{
-							ToolName:      extractToolName(interrupt),
-							Parameters:    extractParams(interrupt),
-							Reason:        extractReason(interrupt),
-							rawInterrupt:  interrupt,
-							ResumeChannel: resumeCh,
-						},
-					}
-
-					// 7.2. Block and wait for UI layer's decision (with context cancellation support)
-					var decision ConfirmationResponse
-					select {
-					case decision = <-resumeCh:
-						// Normal path: received user decision
-					case <-ctx.Done():
-						// Context cancelled: abort gracefully
-						a.logger.Debug("context cancelled while waiting for user confirmation")
-						eventCh <- Event{
-							Type:  EventTypeError,
-							Error: fmt.Errorf("operation cancelled by user"),
-						}
-						return
-					}
-
-					// 7.3. Construct tool response
-					toolResponses = append(toolResponses, buildToolResponse(interrupt, decision))
-				}
-
-				// 7.4. Add tool responses to history, prepare for next round
-				// Add metadata for observability: marks that interrupts were handled in this message
-				messagesCopy = append(messagesCopy, ai.NewMessage(ai.RoleTool, map[string]any{"interruptHandled": true}, toolResponses...))
-				continue // Loop back, call Generate with updated history
-
-			case ai.FinishReasonStop, ai.FinishReasonUnknown:
-				// Step 8: Normal completion, update Agent's main history
-				// Note: FinishReasonUnknown can occur with streaming, treat as normal completion
-				a.messagesMu.Lock()
-				a.messages = messagesCopy
-				a.trimHistoryIfNeeded()
-				a.messagesMu.Unlock()
-
-				// Batch save all new messages to database (P1)
-				if a.currentSessionID != nil {
-					newMessages = append(newMessages, &session.Message{
-						Role:    "model",
-						Content: response.Message.Content,
-					})
-
-					if err := a.sessionStore.AddMessages(ctx, *a.currentSessionID, newMessages); err != nil {
-						a.logger.Warn("failed to save messages to database",
-							"session_id", *a.currentSessionID,
-							"message_count", len(newMessages),
-							"error", err)
-						// Continue execution - persistence failure is not fatal
-					}
-				}
-
-				// Step 8.1: P2 Phase 2 - Async vectorize conversation turn
-				// Use independent context (original ctx may be cancelled)
-				// BUGFIX: Copy messages before goroutine to avoid data race
-				a.messagesMu.RLock()
-				messagesCopyForVector := make([]*ai.Message, len(a.messages))
-				copy(messagesCopyForVector, a.messages)
-				a.messagesMu.RUnlock()
-
-				go func(msgs []*ai.Message) {
-					vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					// DEBUG: Log message state before vectorization
-					messageCount := len(msgs)
-					var lastRoles []string
-					for i := max(0, len(msgs)-4); i < len(msgs); i++ {
-						lastRoles = append(lastRoles, string(msgs[i].Role))
-					}
-					a.logger.Info("vectorization debug",
-						"total_messages", messageCount,
-						"last_4_roles", lastRoles)
-
-					if err := a.vectorizeConversationTurn(vectorCtx); err != nil {
-						a.logger.Warn("conversation vectorization failed (non-critical)",
-							"error", err)
-						// Vectorization failure doesn't affect conversation flow
-					}
-				}(messagesCopyForVector)
-
-				eventCh <- Event{Type: EventTypeComplete, IsComplete: true}
-				return
-
-			case ai.FinishReasonLength:
-				// Max tokens reached
-				eventCh <- Event{
-					Type:  EventTypeError,
-					Error: fmt.Errorf("response truncated: maximum token limit reached"),
-				}
-				return
-
-			case ai.FinishReasonBlocked:
-				// Content blocked by safety filter
-				eventCh <- Event{
-					Type:  EventTypeError,
-					Error: fmt.Errorf("response blocked by safety filter"),
-				}
-				return
-
-			default:
-				// Other unexpected reasons
-				eventCh <- Event{
-					Type:  EventTypeError,
-					Error: fmt.Errorf("unexpected finish reason: %s", response.FinishReason),
-				}
-				return
-			}
+		if err := a.vectorizeConversationTurn(vectorCtx); err != nil {
+			a.logger.Warn("conversation vectorization failed (non-critical)", "error", err)
 		}
 	}()
 
-	return eventCh
+	// Step 9: Return complete response
+	// Reuse responseHistory to avoid calling History() again
+	return &Response{
+		FinalText: response.Text(),
+		History:   responseHistory,
+	}, nil
 }
 
 // ============================================================================
