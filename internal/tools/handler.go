@@ -321,7 +321,7 @@ func (h *Handler) HTTPGet(url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("http request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Limit response size (prevent resource exhaustion)
 	maxSize := h.httpVal.MaxResponseSize()

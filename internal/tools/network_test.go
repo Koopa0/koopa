@@ -53,7 +53,7 @@ func TestHTTPGetWithMockServer(t *testing.T) {
 		t.Logf("request blocked (expected for localhost): %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)

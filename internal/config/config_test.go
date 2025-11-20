@@ -22,7 +22,7 @@ func TestLoadDefaults(t *testing.T) {
 	}()
 
 	// Set API key for validation
-	os.Setenv("GEMINI_API_KEY", "test-api-key")
+	_ = os.Setenv("GEMINI_API_KEY", "test-api-key")
 
 	cfg, err := Load()
 	if err != nil {
@@ -156,7 +156,7 @@ func TestValidateSuccess(t *testing.T) {
 		}
 	}()
 
-	os.Setenv("GEMINI_API_KEY", "test-api-key")
+	_ = os.Setenv("GEMINI_API_KEY", "test-api-key")
 
 	cfg := &Config{
 		ModelName:       "gemini-2.5-flash",

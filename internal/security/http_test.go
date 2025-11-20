@@ -238,7 +238,7 @@ func TestHTTPRedirectExcessive(t *testing.T) {
 			} else {
 				// Final destination
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprintln(w, "OK")
+				_, _ = fmt.Fprintln(w, "OK")
 			}
 		}))
 		servers = append(servers, server)
@@ -295,7 +295,7 @@ func TestHTTPRedirectSafe(t *testing.T) {
 	// Create server that redirects once to safe URL
 	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "Redirected successfully")
+		_, _ = fmt.Fprintln(w, "Redirected successfully")
 	}))
 	defer server2.Close()
 
