@@ -1862,7 +1862,7 @@ type mockSessionStore struct {
 	// Function fields for custom behavior injection
 	createSessionFunc func(ctx context.Context, title, modelName, systemPrompt string) (*session.Session, error)
 	getSessionFunc    func(ctx context.Context, sessionID uuid.UUID) (*session.Session, error)
-	getMessagesFunc   func(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error)
+	getMessagesFunc   func(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error)
 	addMessagesFunc   func(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error
 
 	// Tracking fields for verification
@@ -1896,7 +1896,7 @@ func (m *mockSessionStore) GetSession(ctx context.Context, sessionID uuid.UUID) 
 	}, nil
 }
 
-func (m *mockSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+func (m *mockSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error) {
 	m.getMessagesCalled = true
 	if m.getMessagesFunc != nil {
 		return m.getMessagesFunc(ctx, sessionID, limit, offset)
@@ -2361,7 +2361,7 @@ func TestSwitchSession_Success(t *testing.T) {
 	}
 
 	mockStore := &mockSessionStore{
-		getMessagesFunc: func(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+		getMessagesFunc: func(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error) {
 			if sessionID != testSessionID {
 				t.Errorf("expected session ID %v, got %v", testSessionID, sessionID)
 			}
@@ -2416,7 +2416,7 @@ func TestSwitchSession_GetMessagesFails(t *testing.T) {
 	testSessionID := uuid.New()
 
 	mockStore := &mockSessionStore{
-		getMessagesFunc: func(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*session.Message, error) {
+		getMessagesFunc: func(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error) {
 			return nil, errors.New("database connection failed")
 		},
 	}

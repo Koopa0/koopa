@@ -334,7 +334,7 @@ func TestValidateRAGTopK(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		ragTopK   int
+		ragTopK   int32
 		shouldErr bool
 	}{
 		{"valid min", 1, false},
@@ -614,10 +614,11 @@ max_tokens: 1024
 	}
 
 	// Set environment variables (should override config file)
-	os.Setenv("MODEL_NAME", "gemini-1.5-flash")
-	os.Setenv("TEMPERATURE", "0.9")
-	defer os.Unsetenv("MODEL_NAME")
-	defer os.Unsetenv("TEMPERATURE")
+	// Note: config uses KOOPA_ prefix for environment variables
+	os.Setenv("KOOPA_MODEL_NAME", "gemini-1.5-flash")
+	os.Setenv("KOOPA_TEMPERATURE", "0.9")
+	defer os.Unsetenv("KOOPA_MODEL_NAME")
+	defer os.Unsetenv("KOOPA_TEMPERATURE")
 
 	cfg, err := Load()
 	if err != nil {

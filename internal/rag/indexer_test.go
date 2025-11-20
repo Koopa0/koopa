@@ -39,7 +39,7 @@ func (m *mockIndexerStore) Add(ctx context.Context, doc knowledge.Document) erro
 	return m.addErr
 }
 
-func (m *mockIndexerStore) ListBySourceType(ctx context.Context, sourceType string, limit int) ([]knowledge.Document, error) {
+func (m *mockIndexerStore) ListBySourceType(ctx context.Context, sourceType string, limit int32) ([]knowledge.Document, error) {
 	m.listBySourceTypeCalls++
 	m.lastListSourceType = sourceType
 	if m.listBySourceTypeErr != nil {

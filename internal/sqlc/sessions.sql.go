@@ -74,14 +74,14 @@ func (q *Queries) DeleteSession(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getMaxSequenceNumber = `-- name: GetMaxSequenceNumber :one
-SELECT COALESCE(MAX(sequence_number), 0) AS max_seq
+SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
 FROM session_messages
 WHERE session_id = $1
 `
 
-func (q *Queries) GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (interface{}, error) {
+func (q *Queries) GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, getMaxSequenceNumber, sessionID)
-	var max_seq interface{}
+	var max_seq int32
 	err := row.Scan(&max_seq)
 	return max_seq, err
 }
@@ -97,8 +97,8 @@ OFFSET $2
 
 type GetMessagesParams struct {
 	SessionID    pgtype.UUID `json:"session_id"`
-	ResultOffset int         `json:"result_offset"`
-	ResultLimit  int         `json:"result_limit"`
+	ResultOffset int32       `json:"result_offset"`
+	ResultLimit  int32       `json:"result_limit"`
 }
 
 func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]SessionMessage, error) {
@@ -158,8 +158,8 @@ OFFSET $1
 `
 
 type ListSessionsParams struct {
-	ResultOffset int `json:"result_offset"`
-	ResultLimit  int `json:"result_limit"`
+	ResultOffset int32 `json:"result_offset"`
+	ResultLimit  int32 `json:"result_limit"`
 }
 
 func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error) {

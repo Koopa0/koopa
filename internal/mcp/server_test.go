@@ -12,7 +12,7 @@ import (
 func TestServerGetServerNames(t *testing.T) {
 	// Create a server with mock states
 	server := &Server{
-		states: map[string]*State{
+		states: map[string]State{
 			"github": {Name: "github", Status: Connected},
 			"notion": {Name: "notion", Status: Connected},
 			"slack":  {Name: "slack", Status: Failed},
@@ -51,17 +51,17 @@ func TestServerGetServerNames(t *testing.T) {
 func TestServerGetConnectedCount(t *testing.T) {
 	tests := []struct {
 		name     string
-		states   map[string]*State
+		states   map[string]State
 		expected int
 	}{
 		{
 			name:     "no servers",
-			states:   map[string]*State{},
+			states:   map[string]State{},
 			expected: 0,
 		},
 		{
 			name: "all connected",
-			states: map[string]*State{
+			states: map[string]State{
 				"github": {Name: "github", Status: Connected},
 				"notion": {Name: "notion", Status: Connected},
 			},
@@ -69,7 +69,7 @@ func TestServerGetConnectedCount(t *testing.T) {
 		},
 		{
 			name: "mixed states",
-			states: map[string]*State{
+			states: map[string]State{
 				"github": {Name: "github", Status: Connected},
 				"notion": {Name: "notion", Status: Failed},
 				"slack":  {Name: "slack", Status: Connecting},
@@ -78,7 +78,7 @@ func TestServerGetConnectedCount(t *testing.T) {
 		},
 		{
 			name: "none connected",
-			states: map[string]*State{
+			states: map[string]State{
 				"github": {Name: "github", Status: Failed},
 				"notion": {Name: "notion", Status: Disconnected},
 			},
@@ -104,7 +104,7 @@ func TestServerGetConnectedCount(t *testing.T) {
 // TestServerGetState tests the GetState method.
 func TestServerGetState(t *testing.T) {
 	server := &Server{
-		states: map[string]*State{
+		states: map[string]State{
 			"github": {
 				Name:         "github",
 				Status:       Connected,
@@ -146,7 +146,7 @@ func TestServerGetState(t *testing.T) {
 // TestServerGetStates tests the GetStates method.
 func TestServerGetStates(t *testing.T) {
 	server := &Server{
-		states: map[string]*State{
+		states: map[string]State{
 			"github": {Name: "github", Status: Connected},
 			"notion": {Name: "notion", Status: Failed, FailureCount: 2},
 		},

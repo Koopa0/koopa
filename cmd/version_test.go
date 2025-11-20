@@ -15,18 +15,6 @@ import (
 // ============================================================================
 
 func TestRunVersion(t *testing.T) {
-	// Save original values
-	originalAppVersion := AppVersion
-	originalBuildTime := BuildTime
-	originalGitCommit := GitCommit
-
-	// Restore after test
-	defer func() {
-		AppVersion = originalAppVersion
-		BuildTime = originalBuildTime
-		GitCommit = originalGitCommit
-	}()
-
 	tests := []struct {
 		name            string
 		apiKey          string // Use t.Setenv for isolation
@@ -139,11 +127,6 @@ func TestRunVersion(t *testing.T) {
 				t.Setenv("GEMINI_API_KEY", tt.apiKey)
 			}
 
-			// Set version variables
-			AppVersion = tt.appVersion
-			BuildTime = tt.buildTime
-			GitCommit = tt.gitCommit
-
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, err := os.Pipe()
@@ -155,8 +138,8 @@ func TestRunVersion(t *testing.T) {
 			os.Stdout = w
 			defer func() { os.Stdout = oldStdout }()
 
-			// Run function
-			err = runVersion(tt.config)
+			// Run function with version parameters (no global mutation!)
+			err = runVersion(tt.config, tt.appVersion, tt.buildTime, tt.gitCommit)
 
 			// Restore stdout
 			w.Close()
@@ -187,10 +170,6 @@ func TestRunVersion(t *testing.T) {
 // ============================================================================
 
 func TestRunVersion_EdgeCases(t *testing.T) {
-	// Save and restore
-	originalAppVersion := AppVersion
-	defer func() { AppVersion = originalAppVersion }()
-
 	tests := []struct {
 		name       string
 		config     *config.Config
@@ -220,8 +199,6 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			AppVersion = tt.appVersion
-
 			// Capture stdout
 			oldStdout := os.Stdout
 			r, w, err := os.Pipe()
@@ -233,7 +210,8 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 			os.Stdout = w
 			defer func() { os.Stdout = oldStdout }()
 
-			err = runVersion(tt.config)
+			// Pass version parameters instead of mutating globals
+			err = runVersion(tt.config, tt.appVersion, "test-time", "test-commit")
 
 			w.Close()
 			os.Stdout = oldStdout
@@ -287,7 +265,7 @@ func TestNewVersionCmd_RunE(t *testing.T) {
 		DatabasePath: "/tmp/test.db",
 	}
 
-	// Set version variables
+	// Set global version for this test (NewVersionCmd reads globals)
 	originalAppVersion := AppVersion
 	AppVersion = "test-version"
 	defer func() { AppVersion = originalAppVersion }()
@@ -340,10 +318,6 @@ func TestNewVersionCmd_RunE(t *testing.T) {
 // ============================================================================
 
 func TestRunVersion_APIKeyMasking(t *testing.T) {
-	// Save and restore
-	originalAppVersion := AppVersion
-	defer func() { AppVersion = originalAppVersion }()
-
 	tests := []struct {
 		name           string
 		apiKey         string
@@ -359,7 +333,7 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 		{
 			name:           "very short key",
 			apiKey:         "test",
-			expectedMask:   "", // Will panic or show different output
+			expectedMask:   "****", // Now shows asterisks instead of panicking
 			shouldShowHint: false,
 		},
 		{
@@ -386,7 +360,6 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 				t.Setenv("GEMINI_API_KEY", "")
 			}
 
-			AppVersion = "test"
 			cfg := &config.Config{
 				ModelName: "test-model",
 			}
@@ -402,13 +375,9 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			os.Stdout = w
 			defer func() { os.Stdout = oldStdout }()
 
-			// Wrap in recover to catch panics for very short keys
-			func() {
-				defer func() {
-					_ = recover() // Ignore panics - expected for very short keys
-				}()
-				_ = runVersion(cfg)
-			}()
+			// Pass version parameters instead of mutating globals
+			// No need for panic recovery - masking is now safe for all key lengths
+			err = runVersion(cfg, "test", "test-time", "test-commit")
 
 			w.Close()
 			os.Stdout = oldStdout
@@ -418,14 +387,19 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			_, _ = io.Copy(&buf, r)
 			output := buf.String()
 
+			// Check error
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+
 			// Verify masking or hint
 			if tt.shouldShowHint {
 				if !strings.Contains(output, "Not set") {
 					t.Error("expected 'Not set' message")
 				}
-			} else if tt.expectedMask != "" && len(tt.apiKey) >= 8 {
+			} else if tt.expectedMask != "" {
 				if !strings.Contains(output, tt.expectedMask) {
-					t.Errorf("expected masked key %q in output", tt.expectedMask)
+					t.Errorf("expected masked key %q in output, got:\n%s", tt.expectedMask, output)
 				}
 			}
 		})

@@ -31,7 +31,7 @@ type SessionQuerier interface {
 	// Message operations
 	AddMessage(ctx context.Context, arg sqlc.AddMessageParams) error
 	GetMessages(ctx context.Context, arg sqlc.GetMessagesParams) ([]sqlc.SessionMessage, error)
-	GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (interface{}, error)
+	GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (int32, error)
 }
 
 // Store manages session persistence with PostgreSQL backend.
@@ -152,7 +152,7 @@ func (s *Store) GetSession(ctx context.Context, sessionID uuid.UUID) (*Session, 
 // Returns:
 //   - []*Session: List of sessions
 //   - error: If listing fails
-func (s *Store) ListSessions(ctx context.Context, limit, offset int) ([]*Session, error) {
+func (s *Store) ListSessions(ctx context.Context, limit, offset int32) ([]*Session, error) {
 	sqlcSessions, err := s.querier.ListSessions(ctx, sqlc.ListSessionsParams{
 		ResultLimit:  limit,
 		ResultOffset: offset,
@@ -231,24 +231,11 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	}
 
 	// 1. Get current max sequence number within transaction
-	maxSeqRaw, err := txQuerier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
+	maxSeq, err := txQuerier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
 	if err != nil {
 		// If session doesn't exist yet or no messages, start from 0
 		s.logger.Debug("no existing messages, starting from sequence 0",
 			"session_id", sessionID)
-		maxSeqRaw = int64(0)
-	}
-
-	// Convert interface{} to int64
-	var maxSeq int64
-	switch v := maxSeqRaw.(type) {
-	case int64:
-		maxSeq = v
-	case int32:
-		maxSeq = int64(v)
-	case int:
-		maxSeq = int64(v)
-	default:
 		maxSeq = 0
 	}
 
@@ -268,7 +255,9 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
 		}
 
-		seqNum := int32(maxSeq) + int32(i) + 1
+		// Calculate sequence number (maxSeq is now int32 from sqlc)
+		// Safe conversion: loop index i is bounded by len(messages) which is checked by database constraints
+		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
 
 		if err = txQuerier.AddMessage(ctx, sqlc.AddMessageParams{
 			SessionID:      uuidToPgUUID(sessionID),
@@ -282,7 +271,8 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	}
 
 	// 3. Update session's updated_at and message_count within transaction
-	newCount := int32(maxSeq) + int32(len(messages))
+	// Safe conversion: len(messages) is bounded by practical limits (< millions)
+	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
 	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
 		MessageCount: &newCount,
 		SessionID:    uuidToPgUUID(sessionID),
@@ -311,23 +301,10 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 // For production use with concurrent access, always use AddMessages with a real database pool.
 func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.UUID, messages []*Message) error {
 	// 1. Get current max sequence number
-	maxSeqRaw, err := s.querier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
+	maxSeq, err := s.querier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
 	if err != nil {
 		s.logger.Debug("no existing messages, starting from sequence 0",
 			"session_id", sessionID)
-		maxSeqRaw = int64(0)
-	}
-
-	// Convert interface{} to int64
-	var maxSeq int64
-	switch v := maxSeqRaw.(type) {
-	case int64:
-		maxSeq = v
-	case int32:
-		maxSeq = int64(v)
-	case int:
-		maxSeq = int64(v)
-	default:
 		maxSeq = 0
 	}
 
@@ -346,7 +323,9 @@ func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.
 			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
 		}
 
-		seqNum := int32(maxSeq) + int32(i) + 1
+		// Calculate sequence number (maxSeq is now int32 from sqlc)
+		// Safe conversion: loop index i is bounded by len(messages) which is checked by database constraints
+		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
 
 		if err = s.querier.AddMessage(ctx, sqlc.AddMessageParams{
 			SessionID:      uuidToPgUUID(sessionID),
@@ -359,7 +338,7 @@ func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.
 	}
 
 	// 3. Update session's updated_at and message_count
-	newCount := int32(maxSeq) + int32(len(messages))
+	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
 	if err = s.querier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
 		MessageCount: &newCount,
 		SessionID:    uuidToPgUUID(sessionID),
@@ -382,7 +361,7 @@ func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.
 // Returns:
 //   - []*Message: List of messages ordered by sequence number ascending
 //   - error: If retrieval fails
-func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*Message, error) {
+func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*Message, error) {
 	sqlcMessages, err := s.querier.GetMessages(ctx, sqlc.GetMessagesParams{
 		SessionID:    uuidToPgUUID(sessionID),
 		ResultLimit:  limit,

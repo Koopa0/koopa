@@ -84,6 +84,7 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 	}
 	defer func() { _ = lock.Unlock() }()
 
+	// #nosec G304 -- filePath is constructed internally via getStateFilePath() to ~/.koopa/current_session, not from user input
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -105,6 +106,30 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 	return &sessionID, nil
 }
 
+// cleanupOrphanedTempFiles removes any stale .tmp files from previous crashed sessions.
+// This prevents accumulation of temporary files when the process crashes after writing
+// the temp file but before renaming it.
+func cleanupOrphanedTempFiles() error {
+	stateDirPath, err := getStateDirPath()
+	if err != nil {
+		return err
+	}
+
+	// Find all .tmp files in state directory
+	pattern := filepath.Join(stateDirPath, "*.tmp")
+	tmpFiles, err := filepath.Glob(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to find temp files: %w", err)
+	}
+
+	// Remove each temp file (ignore errors as they may not exist)
+	for _, tmpFile := range tmpFiles {
+		_ = os.Remove(tmpFile)
+	}
+
+	return nil
+}
+
 // SaveCurrentSessionID saves the current session ID to local state file.
 //
 // Uses atomic write (temp file + rename) to ensure file is never partially written.
@@ -120,6 +145,9 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
+
+	// Clean up any orphaned temp files from previous crashed sessions
+	_ = cleanupOrphanedTempFiles()
 
 	// Acquire file lock to prevent concurrent access
 	lock, err := acquireStateLock()

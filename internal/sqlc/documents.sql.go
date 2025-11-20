@@ -84,7 +84,7 @@ LIMIT $2
 
 type ListDocumentsBySourceTypeParams struct {
 	SourceType  string `json:"source_type"`
-	ResultLimit int    `json:"result_limit"`
+	ResultLimit int32  `json:"result_limit"`
 }
 
 type ListDocumentsBySourceTypeRow struct {
@@ -136,7 +136,7 @@ LIMIT $3
 type SearchBySourceTypeParams struct {
 	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
 	SourceType     string           `json:"source_type"`
-	ResultLimit    int              `json:"result_limit"`
+	ResultLimit    int32            `json:"result_limit"`
 }
 
 type SearchBySourceTypeRow struct {
@@ -187,7 +187,7 @@ LIMIT $3
 type SearchDocumentsParams struct {
 	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
 	FilterMetadata []byte           `json:"filter_metadata"`
-	ResultLimit    int              `json:"result_limit"`
+	ResultLimit    int32            `json:"result_limit"`
 }
 
 type SearchDocumentsRow struct {
@@ -234,7 +234,7 @@ LIMIT $2
 
 type SearchDocumentsAllParams struct {
 	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	ResultLimit    int              `json:"result_limit"`
+	ResultLimit    int32            `json:"result_limit"`
 }
 
 type SearchDocumentsAllRow struct {

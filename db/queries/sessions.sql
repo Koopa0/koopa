@@ -41,7 +41,7 @@ LIMIT sqlc.arg(result_limit)
 OFFSET sqlc.arg(result_offset);
 
 -- name: GetMaxSequenceNumber :one
-SELECT COALESCE(MAX(sequence_number), 0) AS max_seq
+SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
 FROM session_messages
 WHERE session_id = $1;
 

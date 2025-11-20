@@ -35,7 +35,7 @@ type Config struct {
 	Language    string  `mapstructure:"language"` // Response language: "auto", "English", "Traditional Chinese (繁體中文)"
 
 	// Conversation history configuration
-	MaxHistoryMessages int `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
+	MaxHistoryMessages int32 `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
 
 	// Storage configuration
 	DatabasePath string `mapstructure:"database_path"` // SQLite database path
@@ -49,7 +49,7 @@ type Config struct {
 	PostgresSSLMode  string `mapstructure:"postgres_ssl_mode"`
 
 	// RAG (Retrieval-Augmented Generation) configuration
-	RAGTopK       int    `mapstructure:"rag_top_k"`      // Number of documents to retrieve for RAG (default: 3)
+	RAGTopK       int32  `mapstructure:"rag_top_k"`      // Number of documents to retrieve for RAG (default: 3)
 	EmbedderModel string `mapstructure:"embedder_model"` // Embedding model name
 
 	// MCP (Model Context Protocol) configuration
@@ -131,7 +131,9 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Environment variable settings (no prefix needed)
+	// Environment variable settings with KOOPA_ prefix to avoid collisions
+	// e.g., KOOPA_MODEL_NAME, KOOPA_DATABASE_PATH
+	viper.SetEnvPrefix("KOOPA")
 	viper.AutomaticEnv()
 
 	// Use Unmarshal to automatically map to struct (type-safe)

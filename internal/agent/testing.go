@@ -107,6 +107,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	for _, migrationPath := range migrationFiles {
+		// #nosec G304 -- migration paths are hardcoded constants, not from user input
 		migrationSQL, err := os.ReadFile(migrationPath)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %s: %w", migrationPath, err)

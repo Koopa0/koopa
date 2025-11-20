@@ -83,8 +83,8 @@ func TestExtractTopK(t *testing.T) {
 	tests := []struct {
 		name     string
 		req      *ai.RetrieverRequest
-		defaultK int
-		expected int
+		defaultK int32
+		expected int32
 	}{
 		{
 			name: "with k option",
