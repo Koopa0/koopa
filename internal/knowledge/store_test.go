@@ -838,13 +838,13 @@ func TestStore_Close(t *testing.T) {
 // ============================================================================
 
 func TestStore_ListBySourceType_Success(t *testing.T) {
-	metadataJSON := []byte(`{"source_type":"notion","page_id":"123"}`)
+	metadataJSON := []byte(`{"source_type":"file","page_id":"123"}`)
 
 	mockQuerier := &mockKnowledgeQuerier{
 		listBySourceTypeResult: []sqlc.ListDocumentsBySourceTypeRow{
 			{
 				ID:       "doc1",
-				Content:  "Notion page 1",
+				Content:  "File page 1",
 				Metadata: metadataJSON,
 				CreatedAt: pgtype.Timestamptz{
 					Time:  time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
@@ -853,7 +853,7 @@ func TestStore_ListBySourceType_Success(t *testing.T) {
 			},
 			{
 				ID:       "doc2",
-				Content:  "Notion page 2",
+				Content:  "File page 2",
 				Metadata: metadataJSON,
 				CreatedAt: pgtype.Timestamptz{
 					Time:  time.Date(2025, 1, 2, 12, 0, 0, 0, time.UTC),
@@ -865,7 +865,7 @@ func TestStore_ListBySourceType_Success(t *testing.T) {
 
 	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
 
-	docs, err := store.ListBySourceType(context.Background(), "notion", 10)
+	docs, err := store.ListBySourceType(context.Background(), "file", 10)
 	if err != nil {
 		t.Fatalf("ListBySourceType failed: %v", err)
 	}
@@ -879,7 +879,7 @@ func TestStore_ListBySourceType_Success(t *testing.T) {
 		t.Errorf("first doc ID mismatch: got %q", docs[0].ID)
 	}
 
-	if docs[0].Metadata["source_type"] != "notion" {
+	if docs[0].Metadata["source_type"] != "file" {
 		t.Error("metadata not parsed correctly")
 	}
 
@@ -888,7 +888,7 @@ func TestStore_ListBySourceType_Success(t *testing.T) {
 		t.Errorf("expected 1 call, got %d", mockQuerier.listBySourceTypeCalls)
 	}
 
-	if mockQuerier.lastListSourceType != "notion" {
+	if mockQuerier.lastListSourceType != "file" {
 		t.Errorf("wrong source type passed: got %q", mockQuerier.lastListSourceType)
 	}
 }
@@ -900,7 +900,7 @@ func TestStore_ListBySourceType_Error(t *testing.T) {
 
 	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
 
-	_, err := store.ListBySourceType(context.Background(), "notion", 10)
+	_, err := store.ListBySourceType(context.Background(), "file", 10)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -923,7 +923,7 @@ func TestStore_ListBySourceType_MetadataParseError(t *testing.T) {
 
 	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
 
-	docs, err := store.ListBySourceType(context.Background(), "test", 10)
+	docs, err := store.ListBySourceType(context.Background(), "file", 10)
 	if err != nil {
 		t.Fatalf("ListBySourceType should not fail on metadata parse error: %v", err)
 	}
