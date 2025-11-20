@@ -70,9 +70,14 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 		}
 	}
 
-	// Check for duplicate server names to prevent silent overwrites
+	// Validate server names and check for duplicates
 	nameSet := make(map[string]struct{})
 	for _, cfg := range configs {
+		// Validate that server name is non-empty
+		if cfg.Name == "" {
+			return nil, fmt.Errorf("MCP server name cannot be empty")
+		}
+		// Check for duplicate names
 		if _, exists := nameSet[cfg.Name]; exists {
 			return nil, fmt.Errorf("duplicate MCP server name: %s", cfg.Name)
 		}

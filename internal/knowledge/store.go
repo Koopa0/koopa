@@ -342,9 +342,10 @@ func (s *Store) rowsToResultsAll(rows []sqlc.SearchDocumentsAllRow) []Result {
 //   - []Document: List of documents ordered by creation time (newest first)
 //   - error: If listing fails
 func (s *Store) ListBySourceType(ctx context.Context, sourceType string, limit int32) ([]Document, error) {
-	// Input validation to prevent invalid queries
-	if limit <= 0 {
-		return nil, fmt.Errorf("limit must be positive, got %d", limit)
+	// Input validation to prevent invalid queries and resource exhaustion
+	const maxListLimit = 1000
+	if limit <= 0 || limit > maxListLimit {
+		return nil, fmt.Errorf("limit must be between 1 and %d, got %d", maxListLimit, limit)
 	}
 	if sourceType == "" {
 		return nil, fmt.Errorf("sourceType must not be empty")

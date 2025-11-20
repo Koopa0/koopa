@@ -100,18 +100,58 @@ func extractQueryText(req *ai.RetrieverRequest) string {
 
 // extractTopK extracts topK from request options, returns defaultK if not found.
 // Validates that k is within the range [1, 10] to ensure valid search configuration.
+// Supports multiple numeric types (int, int32, float64) and string for flexibility.
 func extractTopK(req *ai.RetrieverRequest, defaultK int32) int32 {
 	if opts, ok := req.Options.(map[string]any); ok {
 		if k, exists := opts["k"]; exists {
-			if kInt, ok := k.(int); ok {
-				// Validate range to ensure robustness regardless of caller behavior
-				if kInt >= 1 && kInt <= 10 {
-					return int32(kInt) // #nosec G115 -- validated range 1-10
+			var kInt int
+
+			// Handle multiple numeric types and string
+			switch v := k.(type) {
+			case int:
+				kInt = v
+			case int32:
+				kInt = int(v)
+			case int64:
+				kInt = int(v)
+			case float64:
+				kInt = int(v)
+			case float32:
+				kInt = int(v)
+			case string:
+				// Try to parse string as int
+				if parsed := parseIntSafe(v); parsed > 0 {
+					kInt = parsed
+				} else {
+					return defaultK
 				}
+			default:
+				// Unsupported type, use default
+				return defaultK
+			}
+
+			// Validate range to ensure robustness regardless of caller behavior
+			if kInt >= 1 && kInt <= 10 {
+				return int32(kInt) // #nosec G115 -- validated range 1-10
 			}
 		}
 	}
 	return defaultK
+}
+
+// parseIntSafe safely parses a string to int, returns 0 if parse fails
+func parseIntSafe(s string) int {
+	var result int
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return 0
+		}
+		result = result*10 + int(ch-'0')
+		if result > 10 {
+			return 0 // Early exit for values > 10
+		}
+	}
+	return result
 }
 
 // convertToGenkitDocuments converts knowledge.Result to Genkit ai.Document

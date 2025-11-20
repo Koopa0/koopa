@@ -29,6 +29,11 @@ type CLISession struct {
 // NewCLISession creates a new CLI test session
 // It starts goroutines to capture stdout and stderr
 func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISession {
+	// Input validation: stdin is required, stdout/stderr are optional
+	if stdin == nil {
+		panic("stdin cannot be nil")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &CLISession{
 		stdin:  stdin,
