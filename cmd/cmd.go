@@ -3,12 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os" // Re-added for os.Stat in handleRAGAdd, as app.OSStat is not directly available in the snippet
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/agent"
@@ -77,72 +75,20 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 
 		// TODO: Handle @file syntax here (future enhancement)
 
-		// Send message to AI (new event-driven execution)
+		// Send message to AI (synchronous execution)
 		term.Print("Koopa> ")
 
-		eventCh := ag.Execute(ctx, input)
-	event_loop:
-		for {
-			select {
-			case event, ok := <-eventCh:
-				if !ok {
-					// Channel closed, exit loop
-					break event_loop
-				}
-
-				switch event.Type {
-				case agent.EventTypeText:
-					term.Stream(event.TextChunk)
-				case agent.EventTypeInterrupt:
-					term.Println() // Newline for cleaner prompt
-					term.Printf("[ACTION REQUIRED] Agent wants to run: %s\n", event.Interrupt.ToolName)
-					term.Printf("Reason: %s\n", event.Interrupt.Reason)
-
-					// Use UI abstraction for confirmation
-					approved, err := term.Confirm("Approve?")
-					if err != nil {
-						if err == io.EOF {
-							break event_loop
-						}
-						term.Printf("Error reading input: %v\n", err)
-						approved = false // Default to reject on error
-					}
-
-					// Send confirmation with timeout protection (P3-1 optional)
-					// This prevents hanging if the agent's channel is blocked
-					select {
-					case event.Interrupt.ResumeChannel <- agent.ConfirmationResponse{Approved: approved}:
-						// Successfully sent confirmation
-					case <-ctx.Done():
-						term.Println("\nContext canceled while sending confirmation")
-						break event_loop
-					case <-time.After(5 * time.Second):
-						term.Println("\nTimeout sending confirmation to agent")
-						break event_loop
-					}
-
-					term.Print("Koopa> ")
-
-				case agent.EventTypeError:
-					term.Printf("\nError: %v\n", event.Error)
-					break event_loop // Break inner loop on error
-				case agent.EventTypeComplete:
-					term.Println()
-					break event_loop // Exit inner loop on completion
-				}
-
-			case <-ctx.Done():
-				// Context cancelled, exit gracefully
-				term.Println("\nOperation cancelled.")
-				break event_loop
-
-			case <-time.After(5 * time.Minute):
-				// Timeout after 5 minutes to prevent indefinite hanging
-				cancel() // Cancel context to stop agent goroutines (P1-1 fix)
-				term.Println("\nAgent response timed out after 5 minutes.")
-				break event_loop
-			}
+		// Execute agent synchronously
+		resp, err := ag.Execute(ctx, input)
+		if err != nil {
+			term.Printf("Error: %v\n", err)
+			term.Println()
+			continue
 		}
+
+		// Display response
+		term.Println(resp.FinalText)
+		term.Println()
 	}
 
 	return nil

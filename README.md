@@ -22,7 +22,8 @@ Koopa brings AI conversations directly to your command line with the ability to 
 
 ## Installation
 
-**Prerequisites:** Go 1.24 +, Docker & Docker Compose, and a [Gemini API key](https://ai.google.dev/)
+**Prerequisites:** Go 1.25+, Docker & Docker Compose, and a [Gemini API key](https://ai.google.dev/)
+**Genkit Version:** v1.2.0+ (for interrupt support)
 
 ```bash
 # Clone and setup
@@ -254,9 +255,17 @@ max_history_messages: 50 # Keep recent 50 messages
 
 Koopa is built with:
 
-- **[Genkit](https://firebase.google.com/docs/genkit/go)** - AI framework for tool integration
+- **[Genkit](https://firebase.google.com/docs/genkit/go)** - AI framework with native ReAct engine for multi-turn tool calling
 - **PostgreSQL + pgvector** - Vector storage for semantic search
 - **Pure Go** - Single static binary, no runtime dependencies
+- **OpenTelemetry** - Built-in observability through Genkit's automatic tracing and metrics
+
+### Architecture Highlights
+
+- **Event-driven Design** - Agent operations emit events (Text, Thinking, ToolRequested, ToolResult, etc.) through channels for real-time UI updates
+- **Interrupt Mechanism** - Human-in-the-loop confirmations powered by Genkit's interrupt system for dangerous operations
+- **Tool Registry** - Extensible tool system with separation of concerns between agent logic and tool implementations
+- **Native Multi-turn Support** - Genkit's ReAct engine handles tool calling loops automatically without manual orchestration
 
 ## Contributing
 

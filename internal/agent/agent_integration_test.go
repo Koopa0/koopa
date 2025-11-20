@@ -45,33 +45,15 @@ func TestAgent_SimpleConversation_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Execute simple query
-	eventCh := framework.Agent.Execute(ctx, "What is 2+2? Answer in one word.")
-
-	var textChunks []string
-	var isComplete bool
-	var finalError error
-
-	for event := range eventCh {
-		switch event.Type {
-		case EventTypeText:
-			textChunks = append(textChunks, event.TextChunk)
-		case EventTypeComplete:
-			isComplete = event.IsComplete
-		case EventTypeError:
-			finalError = event.Error
-		}
-	}
+	// Execute simple query (synchronous)
+	resp, err := framework.Agent.Execute(ctx, "What is 2+2? Answer in one word.")
 
 	// Assertions
-	require.NoError(t, finalError, "Should not have error")
-	assert.True(t, isComplete, "Conversation should complete")
-	assert.Greater(t, len(textChunks), 0, "Should receive text chunks")
+	require.NoError(t, err, "Should not have error")
+	require.NotNil(t, resp, "Response should not be nil")
 
-	// Verify response contains answer
-	fullResponse := strings.Join(textChunks, "")
-	t.Logf("Agent response: %s", fullResponse)
-	assert.NotEmpty(t, fullResponse, "Response should not be empty")
+	t.Logf("Agent response: %s", resp.FinalText)
+	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 
 	// Verify history was updated
 	assert.Equal(t, 2, framework.Agent.HistoryLength(), "Should have user + model messages")
@@ -89,32 +71,20 @@ func TestAgent_MultiTurnConversation_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Turn 1: Ask about a topic
-	eventCh1 := framework.Agent.Execute(ctx, "My favorite color is blue.")
-	for event := range eventCh1 {
-		if event.Type == EventTypeError {
-			require.NoError(t, event.Error)
-		}
-	}
+	// Turn 1: Ask about a topic (synchronous)
+	resp1, err := framework.Agent.Execute(ctx, "My favorite color is blue.")
+	require.NoError(t, err)
+	require.NotNil(t, resp1)
 
-	// Turn 2: Ask follow-up question
-	eventCh2 := framework.Agent.Execute(ctx, "What is my favorite color?")
+	// Turn 2: Ask follow-up question (synchronous)
+	resp2, err := framework.Agent.Execute(ctx, "What is my favorite color?")
+	require.NoError(t, err)
+	require.NotNil(t, resp2)
 
-	var responseText []string
-	for event := range eventCh2 {
-		switch event.Type {
-		case EventTypeText:
-			responseText = append(responseText, event.TextChunk)
-		case EventTypeError:
-			require.NoError(t, event.Error)
-		}
-	}
-
-	fullResponse := strings.Join(responseText, "")
-	t.Logf("Agent response to follow-up: %s", fullResponse)
+	t.Logf("Agent response to follow-up: %s", resp2.FinalText)
 
 	// Verify agent remembered previous context
-	assert.Contains(t, strings.ToLower(fullResponse), "blue", "Agent should remember favorite color")
+	assert.Contains(t, strings.ToLower(resp2.FinalText), "blue", "Agent should remember favorite color")
 
 	// Verify history length (2 turns = 4 messages: user1, model1, user2, model2)
 	assert.Equal(t, 4, framework.Agent.HistoryLength(), "Should have 4 messages after 2 turns")
@@ -132,29 +102,13 @@ func TestAgent_StreamingResponse_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Ask for a longer response to test streaming
-	eventCh := framework.Agent.Execute(ctx, "Count from 1 to 5.")
+	// Ask for a longer response (synchronous execution, no streaming)
+	resp, err := framework.Agent.Execute(ctx, "Count from 1 to 5.")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 
-	var textChunks []string
-	var chunkCount int
-
-	for event := range eventCh {
-		switch event.Type {
-		case EventTypeText:
-			textChunks = append(textChunks, event.TextChunk)
-			chunkCount++
-			t.Logf("Received chunk %d: %q", chunkCount, event.TextChunk)
-		case EventTypeError:
-			require.NoError(t, event.Error)
-		}
-	}
-
-	// Streaming should produce multiple chunks for longer responses
-	// Note: Exact chunk count varies, but should be > 1 for a longer response
-	assert.Greater(t, chunkCount, 0, "Should receive at least one text chunk")
-
-	fullResponse := strings.Join(textChunks, "")
-	assert.NotEmpty(t, fullResponse, "Full response should not be empty")
+	t.Logf("Response: %s", resp.FinalText)
+	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 }
 
 // TestAgent_RAGRetrieval_Integration tests RAG knowledge retrieval
@@ -184,25 +138,16 @@ func TestAgent_RAGRetrieval_Integration(t *testing.T) {
 	err := framework.KnowledgeStore.Add(ctx, customDoc)
 	require.NoError(t, err, "Should index custom document")
 
-	// Query about Koopa (should trigger RAG)
-	eventCh := framework.Agent.Execute(ctx, "What is Koopa?")
+	// Query about Koopa (should trigger RAG, synchronous)
+	resp, err := framework.Agent.Execute(ctx, "What is Koopa?")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 
-	var responseText []string
-	for event := range eventCh {
-		switch event.Type {
-		case EventTypeText:
-			responseText = append(responseText, event.TextChunk)
-		case EventTypeError:
-			require.NoError(t, event.Error)
-		}
-	}
-
-	fullResponse := strings.Join(responseText, "")
-	t.Logf("RAG-enhanced response: %s", fullResponse)
+	t.Logf("RAG-enhanced response: %s", resp.FinalText)
 
 	// Verify response contains information from our indexed document
 	// The response should mention key terms from the indexed content
-	responseLower := strings.ToLower(fullResponse)
+	responseLower := strings.ToLower(resp.FinalText)
 	assert.True(t,
 		strings.Contains(responseLower, "assistant") ||
 			strings.Contains(responseLower, "terminal") ||
@@ -231,12 +176,9 @@ func TestAgent_SessionPersistence_Integration(t *testing.T) {
 	err = framework.Agent.SwitchSession(ctx, sessionID)
 	require.NoError(t, err)
 
-	eventCh := framework.Agent.Execute(ctx, "Hello, my name is Alice.")
-	for event := range eventCh {
-		if event.Type == EventTypeError {
-			require.NoError(t, event.Error)
-		}
-	}
+	resp, err := framework.Agent.Execute(ctx, "Hello, my name is Alice.")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 
 	// Wait for async persistence using polling
 	waitForCondition(t, 2*time.Second, func() bool {
@@ -271,20 +213,11 @@ func TestAgent_ErrorHandling_Integration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	eventCh := framework.Agent.Execute(ctx, "This should fail due to cancelled context")
+	_, err := framework.Agent.Execute(ctx, "This should fail due to cancelled context")
 
-	var hasError bool
-	for event := range eventCh {
-		if event.Type == EventTypeError {
-			hasError = true
-			t.Logf("Received expected error: %v", event.Error)
-		}
-	}
-
-	// Note: Depending on timing, we may or may not receive an error event
-	// The goroutine might exit before sending the error
-	// So we just log the result rather than assert
-	t.Logf("Error received: %v", hasError)
+	// Should receive an error due to cancelled context
+	assert.Error(t, err, "Should receive error for cancelled context")
+	t.Logf("Received expected error: %v", err)
 }
 
 // TestAgent_ClearHistory_Integration tests history clearing
@@ -300,12 +233,9 @@ func TestAgent_ClearHistory_Integration(t *testing.T) {
 	defer cancel()
 
 	// Build up some history
-	eventCh := framework.Agent.Execute(ctx, "Remember this: my lucky number is 7")
-	for event := range eventCh {
-		if event.Type == EventTypeError {
-			require.NoError(t, event.Error)
-		}
-	}
+	resp1, err := framework.Agent.Execute(ctx, "Remember this: my lucky number is 7")
+	require.NoError(t, err)
+	require.NotNil(t, resp1)
 
 	assert.Equal(t, 2, framework.Agent.HistoryLength(), "Should have 2 messages")
 
@@ -314,22 +244,13 @@ func TestAgent_ClearHistory_Integration(t *testing.T) {
 	assert.Equal(t, 0, framework.Agent.HistoryLength(), "History should be cleared")
 
 	// Verify agent doesn't remember previous context
-	eventCh2 := framework.Agent.Execute(ctx, "What is my lucky number?")
+	resp2, err := framework.Agent.Execute(ctx, "What is my lucky number?")
+	require.NoError(t, err)
+	require.NotNil(t, resp2)
 
-	var responseText []string
-	for event := range eventCh2 {
-		switch event.Type {
-		case EventTypeText:
-			responseText = append(responseText, event.TextChunk)
-		case EventTypeError:
-			require.NoError(t, event.Error)
-		}
-	}
-
-	fullResponse := strings.Join(responseText, "")
-	t.Logf("Response after clearing history: %s", fullResponse)
+	t.Logf("Response after clearing history: %s", resp2.FinalText)
 
 	// Agent should not know the lucky number anymore
 	// (exact assertion is tricky since it might say "I don't know" or similar)
-	assert.NotEmpty(t, fullResponse, "Should receive a response")
+	assert.NotEmpty(t, resp2.FinalText, "Should receive a response")
 }
