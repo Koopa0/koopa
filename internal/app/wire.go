@@ -5,6 +5,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -52,19 +53,29 @@ var providerSet = wire.NewSet(
 // ========== Core Providers ==========
 
 // provideGenkit initializes Genkit with Google AI plugin.
-func provideGenkit(ctx context.Context) *genkit.Genkit {
+// Returns error if initialization fails (follows Wire provider pattern).
+func provideGenkit(ctx context.Context) (*genkit.Genkit, error) {
 	promptDir := "./prompts"
 	if _, err := os.Stat(promptDir); os.IsNotExist(err) {
 		// Try parent directory (useful for tests running in subdirectories)
 		if _, err := os.Stat("../prompts"); err == nil {
 			promptDir = "../prompts"
 		}
+		// If neither exists, genkit.Init will fail with clear error
 	}
 
-	return genkit.Init(ctx,
+	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
 		genkit.WithPromptDir(promptDir),
 	)
+
+	// genkit.Init doesn't return error, but we return this signature
+	// for consistency with Wire provider pattern and future error handling
+	if g == nil {
+		return nil, fmt.Errorf("failed to initialize Genkit")
+	}
+
+	return g, nil
 }
 
 // provideEmbedder creates an embedder instance.

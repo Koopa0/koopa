@@ -99,8 +99,13 @@ func NewIndexer(store IndexerStore, extensions []string) *Indexer {
 			extMap[strings.ToLower(ext)] = true
 		}
 	} else {
-		// Use defaults
-		extMap = defaultSupportedExtensions
+		// Use defaults - IMPORTANT: Copy the map to avoid data races
+		// If we assign the reference directly, multiple Indexer instances
+		// would share the same map, causing concurrent modification issues
+		extMap = make(map[string]bool, len(defaultSupportedExtensions))
+		for k, v := range defaultSupportedExtensions {
+			extMap[k] = v
+		}
 	}
 
 	return &Indexer{

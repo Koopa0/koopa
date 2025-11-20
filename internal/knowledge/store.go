@@ -200,19 +200,19 @@ func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) 
 			return nil, fmt.Errorf("search failed: %w", err)
 		}
 		return s.rowsToResults(rows), nil
-	} else {
-		rows, err := s.queries.SearchDocumentsAll(queryCtx, sqlc.SearchDocumentsAllParams{
-			QueryEmbedding: &queryEmbedding,
-			ResultLimit:    cfg.topK,
-		})
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("search query timeout: %w", err)
-			}
-			return nil, fmt.Errorf("search failed: %w", err)
-		}
-		return s.rowsToResultsAll(rows), nil
 	}
+
+	rows, err := s.queries.SearchDocumentsAll(queryCtx, sqlc.SearchDocumentsAllParams{
+		QueryEmbedding: &queryEmbedding,
+		ResultLimit:    cfg.topK,
+	})
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("search query timeout: %w", err)
+		}
+		return nil, fmt.Errorf("search failed: %w", err)
+	}
+	return s.rowsToResultsAll(rows), nil
 }
 
 // Count returns the number of documents matching the given filter.
@@ -220,7 +220,7 @@ func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) 
 //
 // Parameters:
 //   - ctx: Context for the operation
-//   - filter: Metadata filter (e.g., map[string]string{"source_type": "notion"})
+//   - filter: Metadata filter (e.g., map[string]string{"source_type": "conversation"})
 //
 // Returns:
 //   - int: Number of documents matching the filter
@@ -335,7 +335,7 @@ func (s *Store) rowsToResultsAll(rows []sqlc.SearchDocumentsAllRow) []Result {
 //
 // Parameters:
 //   - ctx: Context for the operation
-//   - sourceType: Source type to filter by (e.g., "file", "notion", "conversation")
+//   - sourceType: Source type to filter by (e.g., "file", "conversation")
 //   - limit: Maximum number of documents to return
 //
 // Returns:

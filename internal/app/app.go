@@ -7,6 +7,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
@@ -76,9 +77,33 @@ func (a *App) Close() error {
 // Session persistence is now fully wired via Wire DI (P1-Phase3 complete).
 // Knowledge store support added in P2-Phase1.
 func (a *App) CreateAgent(ctx context.Context, retriever ai.Retriever) (*agent.Agent, error) {
-	return agent.New(ctx, a.Config, a.Genkit, retriever,
+	// Defensive: Validate required dependencies
+	// While Wire DI guarantees these are non-nil, explicit checks improve debuggability
+	// and provide clear error messages if App is manually constructed incorrectly
+	if a.Config == nil {
+		return nil, fmt.Errorf("CreateAgent: Config is nil - App not properly initialized")
+	}
+	if a.Genkit == nil {
+		return nil, fmt.Errorf("CreateAgent: Genkit is nil - App not properly initialized")
+	}
+	if a.SessionStore == nil {
+		return nil, fmt.Errorf("CreateAgent: SessionStore is nil - App not properly initialized")
+	}
+	if a.Knowledge == nil {
+		return nil, fmt.Errorf("CreateAgent: Knowledge store is nil - App not properly initialized")
+	}
+	if retriever == nil {
+		return nil, fmt.Errorf("CreateAgent: retriever parameter is nil")
+	}
+
+	agent, err := agent.New(ctx, a.Config, a.Genkit, retriever,
 		agent.WithSessionStore(a.SessionStore),
 		agent.WithKnowledgeStore(a.Knowledge),
 		agent.WithLogger(slog.Default()),
 	)
+	if err != nil {
+		return nil, fmt.Errorf("CreateAgent: agent.New failed: %w", err)
+	}
+
+	return agent, nil
 }

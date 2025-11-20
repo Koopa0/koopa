@@ -132,7 +132,6 @@ func Load() (*Config, error) {
 	}
 
 	// Environment variable settings (no prefix needed)
-	// Configuration can be set via environment variables without KOOPA_ prefix
 	viper.AutomaticEnv()
 
 	// Use Unmarshal to automatically map to struct (type-safe)
