@@ -29,7 +29,10 @@ func TestCLISession_Example(t *testing.T) {
 	defer stdoutW.Close()
 
 	// Create CLISession
-	session := NewCLISession(stdinW, stdoutR, nil)
+	session, err := NewCLISession(stdinW, stdoutR, nil)
+	if err != nil {
+		t.Fatalf("Failed to create CLI session: %v", err)
+	}
 	defer session.Close()
 
 	// Load config
@@ -119,7 +122,10 @@ func TestCLISession_HelpCommand(t *testing.T) {
 	defer stdoutR.Close()
 	defer stdoutW.Close()
 
-	session := NewCLISession(stdinW, stdoutR, nil)
+	session, err := NewCLISession(stdinW, stdoutR, nil)
+	if err != nil {
+		t.Fatalf("Failed to create CLI session: %v", err)
+	}
 	defer session.Close()
 
 	cfg, err := config.Load()

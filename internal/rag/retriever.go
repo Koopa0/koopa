@@ -139,7 +139,14 @@ func extractTopK(req *ai.RetrieverRequest, defaultK int32) int32 {
 	return defaultK
 }
 
-// parseIntSafe safely parses a string to int, returns 0 if parse fails
+// parseIntSafe safely parses a string to int, returns 0 if parse fails or value > 10.
+//
+// IMPORTANT: This function is specifically designed for parsing topK values and
+// intentionally rejects integers > 10 as invalid. This aligns with the [1, 10]
+// range validation in extractTopK. If parsing needs change, both functions must
+// be updated together.
+//
+// Returns 0 for: non-numeric strings, negative numbers, or values > 10
 func parseIntSafe(s string) int {
 	var result int
 	for _, ch := range s {
@@ -148,7 +155,7 @@ func parseIntSafe(s string) int {
 		}
 		result = result*10 + int(ch-'0')
 		if result > 10 {
-			return 0 // Early exit for values > 10
+			return 0 // Early exit for values > 10 (intentional limitation for topK)
 		}
 	}
 	return result

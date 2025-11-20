@@ -28,10 +28,11 @@ type CLISession struct {
 
 // NewCLISession creates a new CLI test session
 // It starts goroutines to capture stdout and stderr
-func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISession {
+// Returns error if stdin is nil (required parameter)
+func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) (*CLISession, error) {
 	// Input validation: stdin is required, stdout/stderr are optional
 	if stdin == nil {
-		panic("stdin cannot be nil")
+		return nil, errors.New("stdin cannot be nil")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,7 +56,7 @@ func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISessi
 		go session.captureOutput(stderr, "stderr")
 	}
 
-	return session
+	return session, nil
 }
 
 // captureOutput continuously reads from a reader and stores in buffer
