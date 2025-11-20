@@ -167,7 +167,7 @@ func TestResolveEnvVars(t *testing.T) {
 			// Setup environment variables
 			if tt.envSetup != nil {
 				for key, value := range tt.envSetup {
-					os.Setenv(key, value)
+					_ = os.Setenv(key, value)
 				}
 			}
 
@@ -175,7 +175,7 @@ func TestResolveEnvVars(t *testing.T) {
 			defer func() {
 				if tt.envSetup != nil {
 					for key := range tt.envSetup {
-						os.Unsetenv(key)
+						_ = os.Unsetenv(key)
 					}
 				}
 			}()
@@ -500,7 +500,7 @@ func TestLoadConfigs(t *testing.T) {
 			// Setup environment variables
 			if tt.envSetup != nil {
 				for key, value := range tt.envSetup {
-					os.Setenv(key, value)
+					_ = os.Setenv(key, value)
 				}
 			}
 
@@ -508,7 +508,7 @@ func TestLoadConfigs(t *testing.T) {
 			defer func() {
 				if tt.envSetup != nil {
 					for key := range tt.envSetup {
-						os.Unsetenv(key)
+						_ = os.Unsetenv(key)
 					}
 				}
 			}()

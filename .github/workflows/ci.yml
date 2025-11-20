@@ -87,6 +87,32 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          until pg_isready -h localhost -p 5432 -U koopa; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+        env:
+          PGPASSWORD: koopa_dev_password
+
+      - name: Run database migrations
+        run: |
+          # Create pgvector extension (already in migration but explicit for clarity)
+          PGPASSWORD=koopa_dev_password psql -h localhost -U koopa -d koopa_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+          # Run migrations in order (sorted by filename)
+          for migration in $(ls db/migrations/*up.sql | sort); do
+            echo "Running migration: $migration"
+            PGPASSWORD=koopa_dev_password psql -h localhost -U koopa -d koopa_test -f "$migration"
+          done
+
+          # Verify tables were created
+          echo "Verifying database schema..."
+          PGPASSWORD=koopa_dev_password psql -h localhost -U koopa -d koopa_test -c "\dt"
+        env:
+          PGPASSWORD: koopa_dev_password
+
       - name: Run unit tests
         run: go test -short -race -coverprofile=coverage.txt -covermode=atomic ./...
 
