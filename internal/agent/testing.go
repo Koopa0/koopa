@@ -113,9 +113,26 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("failed to read migration %s: %w", migrationPath, err)
 		}
 
-		_, err = pool.Exec(ctx, string(migrationSQL))
+		// Skip empty migration files to avoid unnecessary execution
+		if len(migrationSQL) == 0 {
+			continue
+		}
+
+		// Wrap migration execution in a transaction for atomicity
+		// This ensures that if a migration fails, changes are rolled back
+		tx, err := pool.Begin(ctx)
 		if err != nil {
+			return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, err)
+		}
+
+		_, err = tx.Exec(ctx, string(migrationSQL))
+		if err != nil {
+			_ = tx.Rollback(ctx) // Rollback on error
 			return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
+		}
+
+		if err = tx.Commit(ctx); err != nil {
+			return fmt.Errorf("failed to commit migration %s: %w", migrationPath, err)
 		}
 	}
 
