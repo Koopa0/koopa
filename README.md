@@ -89,7 +89,7 @@ Created new session: Bug Investigation
 
 > /session list
 ╔══════════════════════════════════════════════════════════╗
-║  Sessions (2 most recent)                               ║
+║  Sessions (2 most recent)                                ║
 ╚══════════════════════════════════════════════════════════╝
 
  ▶ 1. Bug Investigation  [ACTIVE]

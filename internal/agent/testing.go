@@ -118,31 +118,40 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 
-		// Wrap migration execution in a transaction for atomicity
-		// This ensures that if a migration fails, changes are rolled back
-		tx, err := pool.Begin(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, err)
-		}
-
-		// Ensure transaction is always closed (rollback unless committed)
-		// This protects against panics and ensures proper resource cleanup
-		committed := false
-		defer func() {
-			if !committed {
-				_ = tx.Rollback(ctx)
+		// Execute each migration in its own transaction using an anonymous function
+		// This ensures defer executes at the end of each iteration, not at function end
+		err = func() error {
+			// Wrap migration execution in a transaction for atomicity
+			// This ensures that if a migration fails, changes are rolled back
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, err)
 			}
+
+			// Ensure transaction is always closed (rollback unless committed)
+			// This protects against panics and ensures proper resource cleanup
+			committed := false
+			defer func() {
+				if !committed {
+					_ = tx.Rollback(ctx)
+				}
+			}()
+
+			_, err = tx.Exec(ctx, string(migrationSQL))
+			if err != nil {
+				return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
+			}
+
+			if err = tx.Commit(ctx); err != nil {
+				return fmt.Errorf("failed to commit migration %s: %w", migrationPath, err)
+			}
+			committed = true
+			return nil
 		}()
 
-		_, err = tx.Exec(ctx, string(migrationSQL))
 		if err != nil {
-			return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
+			return err
 		}
-
-		if err = tx.Commit(ctx); err != nil {
-			return fmt.Errorf("failed to commit migration %s: %w", migrationPath, err)
-		}
-		committed = true
 	}
 
 	return nil

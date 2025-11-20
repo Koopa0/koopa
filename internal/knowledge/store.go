@@ -345,10 +345,23 @@ func (s *Store) ListBySourceType(ctx context.Context, sourceType string, limit i
 	// Input validation to prevent invalid queries and resource exhaustion
 	const maxListLimit = 1000
 	if limit <= 0 || limit > maxListLimit {
+		s.logger.Warn("invalid list limit", "limit", limit, "max", maxListLimit)
 		return nil, fmt.Errorf("limit must be between 1 and %d, got %d", maxListLimit, limit)
 	}
 	if sourceType == "" {
 		return nil, fmt.Errorf("sourceType must not be empty")
+	}
+
+	// Validate sourceType against known production values to prevent misuse
+	// Known source types: "conversation" (chat messages), "file" (indexed files), "system" (system knowledge)
+	validSourceTypes := map[string]struct{}{
+		"conversation": {},
+		"file":         {},
+		"system":       {},
+	}
+	if _, ok := validSourceTypes[sourceType]; !ok {
+		s.logger.Warn("invalid sourceType requested", "sourceType", sourceType)
+		return nil, fmt.Errorf("invalid sourceType: %q, must be one of: conversation, file, system", sourceType)
 	}
 
 	rows, err := s.queries.ListDocumentsBySourceType(ctx, sqlc.ListDocumentsBySourceTypeParams{

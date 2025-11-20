@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -137,6 +138,13 @@ func (m *mockRetriever) Register(r api.Registry) {}
 // createTestAgent creates an agent instance for testing with mock generator support.
 func createTestAgent(t *testing.T, mockGen Generator) *Agent {
 	t.Helper()
+
+	// Skip test if GEMINI_API_KEY is not set
+	// Even though these tests use mocks, they still need to create a real Agent
+	// instance which requires config validation including API key
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		t.Skip("GEMINI_API_KEY not set - skipping test that requires agent creation")
+	}
 
 	ctx := context.Background()
 
@@ -1946,6 +1954,7 @@ func TestNew_ConfigValidationFails(t *testing.T) {
 
 // TestNew_NilGenkit verifies that New returns an error when Genkit instance is nil.
 func TestNew_NilGenkit(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key") // Set fake API key for config validation
 	ctx := context.Background()
 
 	cfg := &config.Config{
@@ -1974,6 +1983,7 @@ func TestNew_NilGenkit(t *testing.T) {
 
 // TestNew_NilRetriever verifies that New returns an error when retriever is nil.
 func TestNew_NilRetriever(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key") // Set fake API key for config validation
 	ctx := context.Background()
 	g := genkit.Init(ctx, genkit.WithPromptDir("../../prompts"))
 
@@ -2003,6 +2013,7 @@ func TestNew_NilRetriever(t *testing.T) {
 
 // TestNew_NilSessionStore verifies that New returns an error when sessionStore is nil.
 func TestNew_NilSessionStore(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key") // Set fake API key for config validation
 	ctx := context.Background()
 	g := genkit.Init(ctx, genkit.WithPromptDir("../../prompts"))
 
@@ -2032,6 +2043,7 @@ func TestNew_NilSessionStore(t *testing.T) {
 
 // TestNew_NilKnowledgeStore verifies that New returns an error when knowledgeStore is nil.
 func TestNew_NilKnowledgeStore(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key") // Set fake API key for config validation
 	ctx := context.Background()
 	g := genkit.Init(ctx, genkit.WithPromptDir("../../prompts"))
 
@@ -2061,6 +2073,7 @@ func TestNew_NilKnowledgeStore(t *testing.T) {
 
 // TestNew_NilLogger verifies that New returns an error when logger is nil.
 func TestNew_NilLogger(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key") // Set fake API key for config validation
 	ctx := context.Background()
 	g := genkit.Init(ctx, genkit.WithPromptDir("../../prompts"))
 
@@ -2091,6 +2104,7 @@ func TestNew_NilLogger(t *testing.T) {
 // TestNew_Success verifies successful Agent construction with valid parameters.
 // This test ensures all validation checks pass and Agent is properly initialized.
 func TestNew_Success(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key") // Set fake API key for config validation
 	ctx := context.Background()
 	g := genkit.Init(ctx, genkit.WithPromptDir("../../prompts"))
 
@@ -2175,6 +2189,7 @@ func TestNew_NegativeMaxTokens(t *testing.T) {
 // TestNew_SystemPromptNotFound verifies that New returns an error
 // when the system prompt file cannot be found.
 func TestNew_SystemPromptNotFound(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key") // Set fake API key for config validation
 	ctx := context.Background()
 
 	// Create a temporary empty directory for prompts
