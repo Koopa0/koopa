@@ -193,8 +193,8 @@ func TestEnvironmentVariableAccess(t *testing.T) {
 	testKey := "TEST_SAFE_VAR"
 	testValue := "test value 123"
 
-	os.Setenv(testKey, testValue)
-	defer os.Unsetenv(testKey)
+	_ = os.Setenv(testKey, testValue)
+	defer func() { _ = os.Unsetenv(testKey) }()
 
 	// Read environment variable
 	value := os.Getenv(testKey)
