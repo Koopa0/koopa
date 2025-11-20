@@ -2623,9 +2623,12 @@ func TestNoopSessionStore_GetMessages(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	// Verify empty messages
-	if messages != nil {
-		t.Errorf("expected nil messages, got %v", messages)
+	// Verify empty slice (not nil) - following Go best practice
+	if messages == nil {
+		t.Error("expected non-nil empty slice, got nil")
+	}
+	if len(messages) != 0 {
+		t.Errorf("expected empty messages slice, got %d messages", len(messages))
 	}
 }
 

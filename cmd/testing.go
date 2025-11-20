@@ -39,11 +39,16 @@ func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) *CLISessi
 		cancel: cancel,
 	}
 
-	// Start output capture goroutines
+	// Start output capture goroutines only if readers are non-nil
 	// WaitGroup ensures Close() will wait for these to exit
-	session.wg.Add(2)
-	go session.captureOutput(stdout, "stdout")
-	go session.captureOutput(stderr, "stderr")
+	if stdout != nil {
+		session.wg.Add(1)
+		go session.captureOutput(stdout, "stdout")
+	}
+	if stderr != nil {
+		session.wg.Add(1)
+		go session.captureOutput(stderr, "stderr")
+	}
 
 	return session
 }

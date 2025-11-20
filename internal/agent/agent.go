@@ -754,7 +754,9 @@ func (n *noopSessionStore) GetSession(ctx context.Context, sessionID uuid.UUID) 
 }
 
 func (n *noopSessionStore) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*session.Message, error) {
-	return nil, nil // Return empty messages, not an error
+	// Return empty slice instead of nil to prevent nil dereference in range loops
+	// Following Go best practice: prefer empty slice over nil for zero-length collections
+	return []*session.Message{}, nil
 }
 
 func (n *noopSessionStore) AddMessages(ctx context.Context, sessionID uuid.UUID, messages []*session.Message) error {

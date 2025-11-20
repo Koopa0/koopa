@@ -46,7 +46,7 @@ func TestRunVersion(t *testing.T) {
 				"Temperature: 0.70",
 				"Max tokens: 8192",
 				"Database: /tmp/test.db",
-				"GEMINI_API_KEY: test...7890 (configured)",
+				"GEMINI_API_KEY: te...90 (configured)", // Masked: first 2 + last 2 chars
 			},
 		},
 		{
@@ -111,7 +111,7 @@ func TestRunVersion(t *testing.T) {
 			gitCommit:  "gh1234",
 			expectedStrings: []string{
 				"Koopa 1.2.3",
-				"very...7890 (configured)",
+				"ve...90 (configured)", // Masked: first 2 + last 2 chars
 			},
 		},
 	}
@@ -141,9 +141,9 @@ func TestRunVersion(t *testing.T) {
 			// Run function with version parameters (no global mutation!)
 			err = runVersion(tt.config, tt.appVersion, tt.buildTime, tt.gitCommit)
 
-			// Restore stdout
-			w.Close()
+			// Restore stdout before closing write end to ensure all output is flushed
 			os.Stdout = oldStdout
+			w.Close()
 
 			// Read captured output
 			var buf bytes.Buffer
@@ -213,8 +213,9 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 			// Pass version parameters instead of mutating globals
 			err = runVersion(tt.config, tt.appVersion, "test-time", "test-commit")
 
-			w.Close()
+			// Restore stdout before closing write end to ensure all output is flushed
 			os.Stdout = oldStdout
+			w.Close()
 
 			// Discard output
 			_, _ = io.Copy(io.Discard, r)
@@ -286,8 +287,9 @@ func TestNewVersionCmd_RunE(t *testing.T) {
 	// Run the command
 	err = cmd.RunE(cmd, []string{})
 
-	w.Close()
+	// Restore stdout before closing write end to ensure all output is flushed
 	os.Stdout = oldStdout
+	w.Close()
 
 	// Read output
 	var buf bytes.Buffer
@@ -327,7 +329,7 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 		{
 			name:           "standard key",
 			apiKey:         "AIzaSyAbCdEfGh1234567890",
-			expectedMask:   "AIza...7890",
+			expectedMask:   "AI...90", // Masked: first 2 + last 2 chars
 			shouldShowHint: false,
 		},
 		{
@@ -345,7 +347,7 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 		{
 			name:           "exactly 8 chars",
 			apiKey:         "12345678",
-			expectedMask:   "1234...5678",
+			expectedMask:   "12...78", // Masked: first 2 + last 2 chars
 			shouldShowHint: false,
 		},
 	}
@@ -379,8 +381,9 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			// No need for panic recovery - masking is now safe for all key lengths
 			err = runVersion(cfg, "test", "test-time", "test-commit")
 
-			w.Close()
+			// Restore stdout before closing write end to ensure all output is flushed
 			os.Stdout = oldStdout
+			w.Close()
 
 			// Read output
 			var buf bytes.Buffer

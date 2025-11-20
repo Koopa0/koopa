@@ -961,6 +961,11 @@ func (m *mockSessionStoreWithData) GetSession(ctx context.Context, sessionID uui
 }
 
 func (m *mockSessionStoreWithData) ListSessions(ctx context.Context, limit, offset int32) ([]*session.Session, error) {
+	// Guard against invalid parameters to prevent slice panic
+	if offset < 0 || limit <= 0 {
+		return []*session.Session{}, nil
+	}
+
 	if len(m.sessions) == 0 {
 		return []*session.Session{}, nil
 	}

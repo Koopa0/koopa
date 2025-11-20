@@ -70,6 +70,15 @@ func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, erro
 		}
 	}
 
+	// Check for duplicate server names to prevent silent overwrites
+	nameSet := make(map[string]struct{})
+	for _, cfg := range configs {
+		if _, exists := nameSet[cfg.Name]; exists {
+			return nil, fmt.Errorf("duplicate MCP server name: %s", cfg.Name)
+		}
+		nameSet[cfg.Name] = struct{}{}
+	}
+
 	// Initialize state map (storing values instead of pointers)
 	states := make(map[string]State)
 	for _, cfg := range configs {

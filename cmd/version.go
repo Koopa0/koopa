@@ -47,13 +47,13 @@ func runVersion(cfg *config.Config, appVersion, buildTime, gitCommit string) err
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 
 	if geminiKey != "" {
-		// Mask API key safely, handling short keys without panic
+		// Mask API key safely with minimal information disclosure
 		var masked string
 		if len(geminiKey) >= 8 {
-			// Standard masking: show first 4 and last 4 chars
-			masked = fmt.Sprintf("%s...%s", geminiKey[:4], geminiKey[len(geminiKey)-4:])
+			// Show only first 2 and last 2 chars for better security
+			masked = fmt.Sprintf("%s...%s", geminiKey[:2], geminiKey[len(geminiKey)-2:])
 		} else if len(geminiKey) > 0 {
-			// For very short keys, just show asterisks
+			// For very short keys, show only asterisks
 			masked = "****"
 		}
 		fmt.Printf("  GEMINI_API_KEY: %s (configured)\n", masked)

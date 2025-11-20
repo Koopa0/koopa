@@ -98,13 +98,16 @@ func extractQueryText(req *ai.RetrieverRequest) string {
 	return ""
 }
 
-// extractTopK extracts topK from request options, returns defaultK if not found
+// extractTopK extracts topK from request options, returns defaultK if not found.
+// Validates that k is within the range [1, 10] to ensure valid search configuration.
 func extractTopK(req *ai.RetrieverRequest, defaultK int32) int32 {
 	if opts, ok := req.Options.(map[string]any); ok {
 		if k, exists := opts["k"]; exists {
 			if kInt, ok := k.(int); ok {
-				// Safe conversion: topK values are validated to be 1-10 by callers
-				return int32(kInt) // #nosec G115 -- topK validated to be 1-10 by callers
+				// Validate range to ensure robustness regardless of caller behavior
+				if kInt >= 1 && kInt <= 10 {
+					return int32(kInt) // #nosec G115 -- validated range 1-10
+				}
 			}
 		}
 	}
