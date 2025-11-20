@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os" // Re-added for os.Stat in handleRAGAdd, as app.OSStat is not directly available in the snippet
 	"strconv"
 	"strings"
@@ -31,7 +32,11 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 		return fmt.Errorf("failed to initialize application: %w", err)
 	}
 	defer cleanup()
-	defer application.Close()
+	defer func() {
+		if err := application.Close(); err != nil {
+			slog.Warn("failed to close application", "error", err)
+		}
+	}()
 
 	// Create retriever for documents (files, not conversations)
 	ret := rag.New(application.Knowledge)

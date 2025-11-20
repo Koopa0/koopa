@@ -251,7 +251,7 @@ func TestHTTPRedirectExcessive(t *testing.T) {
 
 	// Should fail due to excessive redirects
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Error("expected error for excessive redirects, but got none")
 	}
 
@@ -279,7 +279,7 @@ func TestHTTPRedirectToUnsafeURL(t *testing.T) {
 
 	// Should fail due to unsafe redirect
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Error("expected error for unsafe redirect, but got none")
 	}
 
@@ -314,7 +314,7 @@ func TestHTTPRedirectSafe(t *testing.T) {
 		// which our validator blocks. This is actually correct behavior.
 		t.Logf("redirect blocked (may be due to localhost in httptest): %v", err)
 	} else {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected status 200, got %d", resp.StatusCode)
 		}

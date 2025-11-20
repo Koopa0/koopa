@@ -43,7 +43,7 @@ func Print() {
 
 // PrintTo displays the KOOPA banner to a custom writer
 func PrintTo(w io.Writer) {
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 
 	// Unified style with Google Blue
 	style := lipgloss.NewStyle().
@@ -54,10 +54,10 @@ func PrintTo(w io.Writer) {
 	for i := range len(koopaArt) {
 		arrow := style.Render(arrowArt[i])
 		text := style.Render(koopaArt[i])
-		fmt.Fprintln(w, arrow+text)
+		_, _ = fmt.Fprintln(w, arrow+text)
 	}
 
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 }
 
 // PrintWithInfo displays the banner with version and model info

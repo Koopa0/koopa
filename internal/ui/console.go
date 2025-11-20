@@ -25,17 +25,17 @@ func NewConsole(in io.Reader, out io.Writer) *Console {
 
 // Print prints arguments to the output.
 func (c *Console) Print(a ...any) {
-	fmt.Fprint(c.out, a...)
+	_, _ = fmt.Fprint(c.out, a...)
 }
 
 // Println prints arguments to the output ending with a newline.
 func (c *Console) Println(a ...any) {
-	fmt.Fprintln(c.out, a...)
+	_, _ = fmt.Fprintln(c.out, a...)
 }
 
 // Printf prints formatted output.
 func (c *Console) Printf(format string, a ...any) {
-	fmt.Fprintf(c.out, format, a...)
+	_, _ = fmt.Fprintf(c.out, format, a...)
 }
 
 // Scan advances the scanner to the next token.
@@ -67,11 +67,12 @@ func (c *Console) Confirm(prompt string) (bool, error) {
 		}
 
 		input := strings.ToLower(strings.TrimSpace(c.Text()))
-		if input == "y" || input == "yes" {
+		switch input {
+		case "y", "yes":
 			return true, nil
-		} else if input == "n" || input == "no" {
+		case "n", "no":
 			return false, nil
-		} else {
+		default:
 			c.Println("Invalid input. Please enter 'y' or 'n'.")
 		}
 	}

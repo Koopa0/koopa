@@ -15,9 +15,9 @@ func TestLoadDefaults(t *testing.T) {
 	originalAPIKey := os.Getenv("GEMINI_API_KEY")
 	defer func() {
 		if originalAPIKey != "" {
-			os.Setenv("GEMINI_API_KEY", originalAPIKey)
+			_ = os.Setenv("GEMINI_API_KEY", originalAPIKey)
 		} else {
-			os.Unsetenv("GEMINI_API_KEY")
+			_ = os.Unsetenv("GEMINI_API_KEY")
 		}
 	}()
 
@@ -83,12 +83,12 @@ func TestLoadConfigFile(t *testing.T) {
 	// Create temporary config directory
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
 
 	// Set HOME to temp directory
-	os.Setenv("HOME", tmpDir)
-	os.Setenv("GEMINI_API_KEY", "test-api-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("GEMINI_API_KEY", "test-api-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -150,9 +150,9 @@ func TestValidateSuccess(t *testing.T) {
 	originalAPIKey := os.Getenv("GEMINI_API_KEY")
 	defer func() {
 		if originalAPIKey != "" {
-			os.Setenv("GEMINI_API_KEY", originalAPIKey)
+			_ = os.Setenv("GEMINI_API_KEY", originalAPIKey)
 		} else {
-			os.Unsetenv("GEMINI_API_KEY")
+			_ = os.Unsetenv("GEMINI_API_KEY")
 		}
 	}()
 
@@ -180,13 +180,13 @@ func TestValidateMissingAPIKey(t *testing.T) {
 	originalAPIKey := os.Getenv("GEMINI_API_KEY")
 	defer func() {
 		if originalAPIKey != "" {
-			os.Setenv("GEMINI_API_KEY", originalAPIKey)
+			_ = os.Setenv("GEMINI_API_KEY", originalAPIKey)
 		} else {
-			os.Unsetenv("GEMINI_API_KEY")
+			_ = os.Unsetenv("GEMINI_API_KEY")
 		}
 	}()
 
-	os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -211,8 +211,8 @@ func TestValidateMissingAPIKey(t *testing.T) {
 
 // TestValidateModelName tests model name validation
 func TestValidateModelName(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	cfg := &Config{
 		ModelName:      "",
@@ -237,8 +237,8 @@ func TestValidateModelName(t *testing.T) {
 
 // TestValidateTemperature tests temperature range validation
 func TestValidateTemperature(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	tests := []struct {
 		name        string
@@ -283,8 +283,8 @@ func TestValidateTemperature(t *testing.T) {
 
 // TestValidateMaxTokens tests max tokens range validation
 func TestValidateMaxTokens(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	tests := []struct {
 		name      string
@@ -329,8 +329,8 @@ func TestValidateMaxTokens(t *testing.T) {
 
 // TestValidateRAGTopK tests RAG top K validation
 func TestValidateRAGTopK(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	tests := []struct {
 		name      string
@@ -375,8 +375,8 @@ func TestValidateRAGTopK(t *testing.T) {
 
 // TestValidateEmbedderModel tests embedder model validation
 func TestValidateEmbedderModel(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -401,8 +401,8 @@ func TestValidateEmbedderModel(t *testing.T) {
 
 // TestValidatePostgresHost tests PostgreSQL host validation
 func TestValidatePostgresHost(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -427,8 +427,8 @@ func TestValidatePostgresHost(t *testing.T) {
 
 // TestValidatePostgresPort tests PostgreSQL port validation
 func TestValidatePostgresPort(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	tests := []struct {
 		name      string
@@ -473,8 +473,8 @@ func TestValidatePostgresPort(t *testing.T) {
 
 // TestValidatePostgresDBName tests PostgreSQL database name validation
 func TestValidatePostgresDBName(t *testing.T) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",
@@ -561,8 +561,8 @@ func TestConfigDirectoryCreation(t *testing.T) {
 	defer os.Setenv("HOME", originalHome)
 
 	os.Setenv("HOME", tmpDir)
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	_, err := Load()
 	if err != nil {
@@ -595,8 +595,8 @@ func TestEnvironmentVariableOverride(t *testing.T) {
 	defer os.Setenv("HOME", originalHome)
 
 	os.Setenv("HOME", tmpDir)
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	// Create .koopa directory and config file
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -647,8 +647,8 @@ func TestLoadInvalidYAML(t *testing.T) {
 	defer os.Setenv("HOME", originalHome)
 
 	os.Setenv("HOME", tmpDir)
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -680,8 +680,8 @@ func TestLoadUnmarshalError(t *testing.T) {
 	defer os.Setenv("HOME", originalHome)
 
 	os.Setenv("HOME", tmpDir)
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
@@ -708,8 +708,8 @@ max_tokens: "this should also be a number"
 
 // BenchmarkLoad benchmarks configuration loading
 func BenchmarkLoad(b *testing.B) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -719,8 +719,8 @@ func BenchmarkLoad(b *testing.B) {
 
 // BenchmarkValidate benchmarks configuration validation
 func BenchmarkValidate(b *testing.B) {
-	os.Setenv("GEMINI_API_KEY", "test-key")
-	defer os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Setenv("GEMINI_API_KEY", "test-key")
+	defer func() { _ = os.Unsetenv("GEMINI_API_KEY") }()
 
 	cfg := &Config{
 		ModelName:      "gemini-2.5-flash",

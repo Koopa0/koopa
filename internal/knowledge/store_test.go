@@ -1049,7 +1049,7 @@ func TestResultStruct(t *testing.T) {
 	_ = doc.ID
 
 	// Verify similarity is float64
-	var _ float64 = result.Similarity
+	_ = result.Similarity
 
 	if result.Similarity < 0.0 || result.Similarity > 1.0 {
 		t.Errorf("similarity should be between 0 and 1, got %f", result.Similarity)
@@ -1129,7 +1129,7 @@ func TestFloat64Precision(t *testing.T) {
 			}
 
 			// Verify type is float64
-			var _ float64 = result.Similarity
+			_ = result.Similarity
 
 			// Verify value is preserved
 			if result.Similarity != tt.value {
