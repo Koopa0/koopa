@@ -338,7 +338,7 @@ func TestInitializeApp_Success(t *testing.T) {
 		t.Fatalf("InitializeApp failed: %v", err)
 	}
 	defer cleanup()
-	defer app.Close()
+	defer func() { _ = app.Close() }()
 
 	// Verify all components are initialized
 	if app == nil {
@@ -414,7 +414,7 @@ func TestInitializeApp_DatabaseConnectionFailure(t *testing.T) {
 			cleanup()
 		}
 		if app != nil {
-			app.Close()
+			_ = app.Close()
 		}
 		t.Fatal("expected error for invalid database connection")
 	}
@@ -471,6 +471,10 @@ func TestInitializeApp_CleanupFunction(t *testing.T) {
 // ============================================================================
 
 func TestProvideGenkit(t *testing.T) {
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		t.Skip("GEMINI_API_KEY not set - skipping test")
+	}
+
 	ctx := context.Background()
 	g, err := provideGenkit(ctx)
 	if err != nil {

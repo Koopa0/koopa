@@ -133,7 +133,9 @@ func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open root directory: %w", err)
 	}
-	defer root.Close()
+	defer func() {
+		_ = root.Close()
+	}()
 
 	// Stat the file through the restricted root
 	info, err := root.Stat(fileName)
@@ -201,7 +203,9 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 	if err != nil {
 		return nil, fmt.Errorf("failed to open root directory: %w", err)
 	}
-	defer root.Close()
+	defer func() {
+		_ = root.Close()
+	}()
 
 	// Load .gitignore file if it exists
 	var gitIgnore *ignore.GitIgnore

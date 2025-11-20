@@ -37,7 +37,7 @@ func TestHTTPGetWithMockServer(t *testing.T) {
 			t.Errorf("expected GET request, got %s", r.Method)
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "Hello, World!")
+		_, _ = fmt.Fprint(w, "Hello, World!")
 	}))
 	defer server.Close()
 
@@ -95,7 +95,7 @@ func TestHTTPResponseParsing(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"message":"success","code":200}`)
+		_, _ = fmt.Fprint(w, `{"message":"success","code":200}`)
 	}))
 	defer server.Close()
 

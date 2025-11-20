@@ -464,8 +464,8 @@ func TestHandler_GetEnv(t *testing.T) {
 	// Set test environment variable
 	testKey := "TEST_SAFE_VAR"
 	testValue := "test value"
-	os.Setenv(testKey, testValue)
-	defer os.Unsetenv(testKey)
+	_ = os.Setenv(testKey, testValue)
+	defer func() { _ = os.Unsetenv(testKey) }()
 
 	tests := []struct {
 		name      string

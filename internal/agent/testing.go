@@ -133,7 +133,10 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			committed := false
 			defer func() {
 				if !committed {
-					_ = tx.Rollback(ctx)
+					if err := tx.Rollback(ctx); err != nil {
+						slog.Default().Debug("migration transaction rollback (may be already committed)",
+							"migration", migrationPath, "error", err)
+					}
 				}
 			}()
 

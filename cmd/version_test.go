@@ -133,8 +133,8 @@ func TestRunVersion(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create pipe: %v", err)
 			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
+			defer func() { _ = w.Close() }()
+			defer func() { _ = r.Close() }() // Ensure pipe reader is closed
 			os.Stdout = w
 			defer func() { os.Stdout = oldStdout }()
 
@@ -143,7 +143,7 @@ func TestRunVersion(t *testing.T) {
 
 			// Restore stdout before closing write end to ensure all output is flushed
 			os.Stdout = oldStdout
-			w.Close()
+			_ = w.Close()
 
 			// Read captured output
 			var buf bytes.Buffer
@@ -205,8 +205,8 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create pipe: %v", err)
 			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
+			defer func() { _ = w.Close() }()
+			defer func() { _ = r.Close() }() // Ensure pipe reader is closed
 			os.Stdout = w
 			defer func() { os.Stdout = oldStdout }()
 
@@ -215,7 +215,7 @@ func TestRunVersion_EdgeCases(t *testing.T) {
 
 			// Restore stdout before closing write end to ensure all output is flushed
 			os.Stdout = oldStdout
-			w.Close()
+			_ = w.Close()
 
 			// Discard output
 			_, _ = io.Copy(io.Discard, r)
@@ -279,8 +279,8 @@ func TestNewVersionCmd_RunE(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pipe: %v", err)
 	}
-	defer w.Close()
-	defer r.Close()
+	defer func() { _ = w.Close() }()
+	defer func() { _ = r.Close() }()
 	os.Stdout = w
 	defer func() { os.Stdout = oldStdout }()
 
@@ -289,7 +289,7 @@ func TestNewVersionCmd_RunE(t *testing.T) {
 
 	// Restore stdout before closing write end to ensure all output is flushed
 	os.Stdout = oldStdout
-	w.Close()
+	_ = w.Close()
 
 	// Read output
 	var buf bytes.Buffer
@@ -372,8 +372,8 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create pipe: %v", err)
 			}
-			defer w.Close()
-			defer r.Close() // Ensure pipe reader is closed
+			defer func() { _ = w.Close() }()
+			defer func() { _ = r.Close() }() // Ensure pipe reader is closed
 			os.Stdout = w
 			defer func() { os.Stdout = oldStdout }()
 
@@ -383,7 +383,7 @@ func TestRunVersion_APIKeyMasking(t *testing.T) {
 
 			// Restore stdout before closing write end to ensure all output is flushed
 			os.Stdout = oldStdout
-			w.Close()
+			_ = w.Close()
 
 			// Read output
 			var buf bytes.Buffer

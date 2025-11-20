@@ -35,7 +35,7 @@ func TestSetupTestDB_Integration(t *testing.T) {
 	}
 
 	// Verify tables exist
-	tables := []string{"documents", "sessions", "messages"}
+	tables := []string{"documents", "sessions", "session_messages"}
 	for _, table := range tables {
 		var exists bool
 		err = dbContainer.Pool.QueryRow(ctx,

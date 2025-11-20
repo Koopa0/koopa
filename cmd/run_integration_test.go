@@ -18,22 +18,26 @@ func TestCLISession_Example(t *testing.T) {
 		t.Skip("skipping E2E test in short mode")
 	}
 
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		t.Skip("GEMINI_API_KEY not set - skipping integration test")
+	}
+
 	// Create pipes for I/O
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
 
 	// IMPORTANT: Ensure all pipe ends are closed to prevent resource leaks
-	defer stdinR.Close()
-	defer stdinW.Close()
-	defer stdoutR.Close()
-	defer stdoutW.Close()
+	defer func() { _ = stdinR.Close() }()
+	defer func() { _ = stdinW.Close() }()
+	defer func() { _ = stdoutR.Close() }()
+	defer func() { _ = stdoutW.Close() }()
 
 	// Create CLISession
 	session, err := NewCLISession(stdinW, stdoutR, nil)
 	if err != nil {
 		t.Fatalf("Failed to create CLI session: %v", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	// Load config
 	cfg, err := config.Load()
@@ -117,16 +121,16 @@ func TestCLISession_HelpCommand(t *testing.T) {
 	stdoutR, stdoutW := io.Pipe()
 
 	// IMPORTANT: Ensure all pipe ends are closed to prevent resource leaks
-	defer stdinR.Close()
-	defer stdinW.Close()
-	defer stdoutR.Close()
-	defer stdoutW.Close()
+	defer func() { _ = stdinR.Close() }()
+	defer func() { _ = stdinW.Close() }()
+	defer func() { _ = stdoutR.Close() }()
+	defer func() { _ = stdoutW.Close() }()
 
 	session, err := NewCLISession(stdinW, stdoutR, nil)
 	if err != nil {
 		t.Fatalf("Failed to create CLI session: %v", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	cfg, err := config.Load()
 	if err != nil {

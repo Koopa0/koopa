@@ -35,6 +35,12 @@ func NewCLISession(stdin io.WriteCloser, stdout, stderr io.ReadCloser) (*CLISess
 		return nil, errors.New("stdin cannot be nil")
 	}
 
+	// Prevent data race: stdout and stderr must not be the same pipe
+	// Two goroutines reading from the same pipe can cause unpredictable behavior
+	if stdout != nil && stderr != nil && stdout == stderr {
+		return nil, errors.New("stdout and stderr must be distinct objects to avoid data races")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &CLISession{
 		stdin:  stdin,
