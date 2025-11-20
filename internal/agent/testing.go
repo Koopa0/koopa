@@ -224,6 +224,8 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 		PostgresPassword: "test_password",
 		PostgresDBName:   "koopa_test",
 		PostgresSSLMode:  "disable",
+		MaxTurns:         10,
+		Language:         "English",
 	}
 
 	// 7. Create session store
@@ -250,6 +252,12 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 	if err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to create agent: %v", err)
+	}
+
+	// 11. Switch to test session to ensure Agent state is synced
+	if err := agent.SwitchSession(ctx, sessionID); err != nil {
+		dbCleanup()
+		t.Fatalf("Failed to switch to test session: %v", err)
 	}
 
 	framework := &TestAgentFramework{
