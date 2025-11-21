@@ -855,6 +855,11 @@ func BenchmarkLoad(b *testing.B) {
 		}
 	}()
 
+	// Verify Load() works before starting benchmark
+	if _, err := Load(); err != nil {
+		b.Fatalf("Load() failed: %v", err)
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = Load()
@@ -881,6 +886,11 @@ func BenchmarkValidate(b *testing.B) {
 		PostgresHost:   "localhost",
 		PostgresPort:   5432,
 		PostgresDBName: "koopa",
+	}
+
+	// Verify Validate() works before starting benchmark
+	if err := cfg.Validate(); err != nil {
+		b.Fatalf("Validate() failed: %v", err)
 	}
 
 	b.ResetTimer()

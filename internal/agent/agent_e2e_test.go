@@ -241,7 +241,7 @@ func (f *E2ETestFramework) VerifyAnswerContains(t *testing.T, result *Conversati
 
 	for _, keyword := range keywords {
 		if strings.Contains(answerLower, strings.ToLower(keyword)) {
-			t.Logf("✓ Answer contains keyword: '%s'", keyword)
+			t.Logf("Answer contains keyword: '%s'", keyword)
 			foundCount++
 		} else {
 			t.Logf("✗ Answer missing keyword: '%s'", keyword)
@@ -331,7 +331,7 @@ func TestE2E_SearchSystemKnowledge(t *testing.T) {
 	assert.True(t, framework.VerifyAnswerContains(t, result, keywords),
 		"answer should contain error handling best practices")
 
-	t.Logf("✓ E2E Test Passed: searchSystemKnowledge works correctly")
+	t.Logf("E2E Test Passed: searchSystemKnowledge works correctly")
 }
 
 // TestE2E_ConversationVectorization verifies that conversation history is
@@ -366,13 +366,13 @@ func TestE2E_ConversationVectorization(t *testing.T) {
 	for _, result := range results {
 		if strings.Contains(result.Document.Content, uniqueTopic) {
 			found = true
-			t.Logf("✓ Found vectorized conversation: %s", truncate(result.Document.Content, 100))
+			t.Logf("Found vectorized conversation: %s", truncate(result.Document.Content, 100))
 			break
 		}
 	}
 
 	assert.True(t, found, "vectorized conversation should contain the unique topic")
-	t.Logf("✓ E2E Test Passed: Conversation vectorization works correctly")
+	t.Logf("E2E Test Passed: Conversation vectorization works correctly")
 }
 
 // TestE2E_SearchHistory verifies that Agent can use searchHistory to recall
@@ -403,7 +403,7 @@ func TestE2E_SearchHistory(t *testing.T) {
 	assert.True(t, framework.VerifyAnswerContains(t, result2, []string{uniqueDetail}),
 		"answer should recall the tool name from history")
 
-	t.Logf("✓ E2E Test Passed: searchHistory works correctly")
+	t.Logf("E2E Test Passed: searchHistory works correctly")
 }
 
 // TestE2E_SearchDocuments verifies that Agent can use searchDocuments to find
@@ -468,7 +468,7 @@ result = %s("user-123")
 	assert.True(t, framework.VerifyAnswerContains(t, result, []string{uniqueFunctionName}),
 		"answer should mention the function from indexed document")
 
-	t.Logf("✓ E2E Test Passed: searchDocuments works correctly")
+	t.Logf("E2E Test Passed: searchDocuments works correctly")
 }
 
 // TestE2E_MultiToolUsage verifies that Agent can use multiple knowledge tools
@@ -502,5 +502,5 @@ func TestE2E_MultiToolUsage(t *testing.T) {
 	assert.True(t, framework.VerifyAnswerContains(t, result2, keywords),
 		"answer should address naming conventions")
 
-	t.Logf("✓ E2E Test Passed: Multi-tool usage works correctly")
+	t.Logf("E2E Test Passed: Multi-tool usage works correctly")
 }

@@ -23,7 +23,6 @@ Koopa brings AI conversations directly to your command line with the ability to 
 ## Installation
 
 **Prerequisites:** Go 1.25+, Docker & Docker Compose, and a [Gemini API key](https://ai.google.dev/)
-**Genkit Version:** v1.2.0+ (for interrupt support)
 
 ```bash
 # Clone and setup
@@ -159,36 +158,6 @@ Koopa can help you with:
 - **System Commands** - Execute shell commands
 - **Network Requests** - Make HTTP requests and fetch web content
 
-### Human-in-the-Loop Safety
-
-Koopa automatically asks for your confirmation before executing potentially dangerous operations:
-
-```bash
-> Delete all node_modules directories
-
-Analyzing request...
-
-[CONFIRMATION REQUIRED]
-Tool: executeCommand
-Command: find . -name 'node_modules' -type d -exec rm -rf {} +
-Reason: This command will delete all node_modules directories recursively.
-        This operation cannot be undone.
-
-Approve? [y/n]: y
-
-Executing command...
-Deleted 3 directories, freed 450MB
-```
-
-**Safety features:**
-
-- **Automatic danger detection** - Operations like file deletion, `rm -rf`, `DROP DATABASE`, or writing to system paths (`/etc/`, `/usr/`) automatically trigger confirmation prompts
-- **Clear explanations** - See exactly what will happen and why it needs approval before execution
-- **Dynamic escalation** - Even normally safe operations become dangerous based on context (e.g., writing to `/etc/hosts`)
-- **User control** - You have final say on all destructive operations; rejected actions are gracefully handled
-
-This safety mechanism is built on Genkit's interrupt system and ensures you never accidentally execute dangerous commands.
-
 ### Extensible via MCP
 
 Add custom tools using the [Model Context Protocol](https://modelcontextprotocol.io/) to extend Koopa's capabilities.
@@ -262,8 +231,8 @@ Koopa is built with:
 
 ### Architecture Highlights
 
-- **Event-driven Design** - Agent operations emit events (Text, Thinking, ToolRequested, ToolResult, etc.) through channels for real-time UI updates
-- **Interrupt Mechanism** - Human-in-the-loop confirmations powered by Genkit's interrupt system for dangerous operations
+- **Synchronous Execution** - Simple, blocking operation using Genkit's native ReAct engine with automatic multi-turn tool calling
+- **RAG-First Design** - Knowledge base retrieval automatically integrated into every conversation turn
 - **Tool Registry** - Extensible tool system with separation of concerns between agent logic and tool implementations
 - **Native Multi-turn Support** - Genkit's ReAct engine handles tool calling loops automatically without manual orchestration
 

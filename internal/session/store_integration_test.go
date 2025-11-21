@@ -1,121 +1,31 @@
+//go:build integration
+// +build integration
+
 package session
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/koopa0/koopa-cli/internal/testutil"
 )
-
-// setupTestDB creates a PostgreSQL testcontainer for session store tests
-func setupTestDB(t *testing.T) (*pgxpool.Pool, func()) {
-	t.Helper()
-
-	ctx := context.Background()
-
-	// Create PostgreSQL container with pgvector support
-	pgContainer, err := postgres.Run(ctx,
-		"pgvector/pgvector:pg16",
-		postgres.WithDatabase("koopa_test"),
-		postgres.WithUsername("koopa_test"),
-		postgres.WithPassword("test_password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("Failed to start PostgreSQL container: %v", err)
-	}
-
-	// Get connection string
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to get connection string: %v", err)
-	}
-
-	// Create connection pool
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to create connection pool: %v", err)
-	}
-
-	// Verify connection
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
-	// Run migrations
-	if err := runMigrations(ctx, pool); err != nil {
-		pool.Close()
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
-
-	cleanup := func() {
-		if pool != nil {
-			pool.Close()
-		}
-		if pgContainer != nil {
-			_ = pgContainer.Terminate(context.Background())
-		}
-	}
-
-	return pool, cleanup
-}
-
-// runMigrations runs database migrations for testing
-func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
-	// Read and execute migration files in order
-	migrationFiles := []string{
-		"../../db/migrations/000001_init_schema.up.sql",
-		"../../db/migrations/000002_create_sessions.up.sql",
-	}
-
-	for _, migrationPath := range migrationFiles {
-		migrationSQL, err := os.ReadFile(migrationPath)
-		if err != nil {
-			return fmt.Errorf("failed to read migration %s: %w", migrationPath, err)
-		}
-
-		_, err = pool.Exec(ctx, string(migrationSQL))
-		if err != nil {
-			return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
-		}
-	}
-
-	return nil
-}
 
 // TestSessionStore_CreateAndGet_Integration tests creating and retrieving a session
 func TestSessionStore_CreateAndGet_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	// Setup test database
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create a session
@@ -141,14 +51,10 @@ func TestSessionStore_CreateAndGet_Integration(t *testing.T) {
 
 // TestSessionStore_CreateWithEmptyFields_Integration tests creating session with empty optional fields
 func TestSessionStore_CreateWithEmptyFields_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create session with empty title and system prompt
@@ -168,14 +74,10 @@ func TestSessionStore_CreateWithEmptyFields_Integration(t *testing.T) {
 
 // TestSessionStore_ListSessions_Integration tests listing sessions with pagination
 func TestSessionStore_ListSessions_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create multiple sessions
@@ -207,14 +109,10 @@ func TestSessionStore_ListSessions_Integration(t *testing.T) {
 
 // TestSessionStore_DeleteSession_Integration tests deleting a session
 func TestSessionStore_DeleteSession_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create a session
@@ -236,14 +134,10 @@ func TestSessionStore_DeleteSession_Integration(t *testing.T) {
 
 // TestSessionStore_AddMessage_Integration tests adding messages to a session
 func TestSessionStore_AddMessage_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create a session
@@ -286,14 +180,10 @@ func TestSessionStore_AddMessage_Integration(t *testing.T) {
 
 // TestSessionStore_GetMessages_Integration tests retrieving messages with pagination
 func TestSessionStore_GetMessages_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create a session
@@ -329,14 +219,10 @@ func TestSessionStore_GetMessages_Integration(t *testing.T) {
 
 // TestSessionStore_MessageOrdering_Integration tests that messages maintain chronological order
 func TestSessionStore_MessageOrdering_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create a session
@@ -383,14 +269,10 @@ func TestSessionStore_MessageOrdering_Integration(t *testing.T) {
 
 // TestSessionStore_LargeMessageContent_Integration tests handling large message content
 func TestSessionStore_LargeMessageContent_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create a session
@@ -419,14 +301,10 @@ func TestSessionStore_LargeMessageContent_Integration(t *testing.T) {
 
 // TestSessionStore_DeleteSessionWithMessages_Integration tests that deleting a session also deletes messages
 func TestSessionStore_DeleteSessionWithMessages_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create a session with messages
@@ -460,14 +338,10 @@ func TestSessionStore_DeleteSessionWithMessages_Integration(t *testing.T) {
 
 // TestSessionStore_ConcurrentWrites_Integration tests concurrent writes to different sessions
 func TestSessionStore_ConcurrentWrites_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	pool, cleanup := setupTestDB(t)
+	dbContainer, cleanup := testutil.SetupTestDB(t)
 	defer cleanup()
 
-	store := New(pool, slog.Default())
+	store := New(dbContainer.Pool, slog.Default())
 	ctx := context.Background()
 
 	// Create multiple sessions

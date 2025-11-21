@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package knowledge
 
 import (
@@ -13,10 +16,6 @@ import (
 
 // TestKnowledgeStore_IndexDocument_Integration tests indexing a single document
 func TestKnowledgeStore_IndexDocument_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
@@ -54,10 +53,6 @@ func TestKnowledgeStore_IndexDocument_Integration(t *testing.T) {
 
 // TestKnowledgeStore_IndexMultipleDocuments_Integration tests batch indexing
 func TestKnowledgeStore_IndexMultipleDocuments_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
@@ -111,10 +106,6 @@ func TestKnowledgeStore_IndexMultipleDocuments_Integration(t *testing.T) {
 
 // TestKnowledgeStore_SimilaritySearch_Integration tests semantic similarity search
 func TestKnowledgeStore_SimilaritySearch_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
@@ -174,10 +165,6 @@ func TestKnowledgeStore_SimilaritySearch_Integration(t *testing.T) {
 
 // TestKnowledgeStore_SearchTopK_Integration tests TopK parameter
 func TestKnowledgeStore_SearchTopK_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
@@ -211,10 +198,6 @@ func TestKnowledgeStore_SearchTopK_Integration(t *testing.T) {
 
 // TestKnowledgeStore_SearchWithMetadata_Integration tests metadata filtering
 func TestKnowledgeStore_SearchWithMetadata_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
@@ -265,10 +248,6 @@ func TestKnowledgeStore_SearchWithMetadata_Integration(t *testing.T) {
 
 // TestKnowledgeStore_DeleteDocument_Integration tests deleting a document
 func TestKnowledgeStore_DeleteDocument_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
@@ -314,10 +293,6 @@ func TestKnowledgeStore_DeleteDocument_Integration(t *testing.T) {
 
 // TestSystemKnowledgeIndexer_IndexAll_Integration tests system knowledge indexing
 func TestSystemKnowledgeIndexer_IndexAll_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
@@ -360,10 +335,6 @@ func TestSystemKnowledgeIndexer_IndexAll_Integration(t *testing.T) {
 
 // TestKnowledgeStore_ExactMatch_Integration tests that exact matches rank first
 func TestKnowledgeStore_ExactMatch_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
