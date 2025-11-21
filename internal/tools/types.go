@@ -8,6 +8,7 @@ type ToolError struct {
 }
 
 // Error implements the error interface.
-func (e ToolError) Error() string {
+// Uses pointer receiver to avoid unnecessary copying and ensure consistency.
+func (e *ToolError) Error() string {
 	return e.ErrorType + ": " + e.Message
 }

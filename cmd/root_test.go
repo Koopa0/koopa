@@ -72,7 +72,6 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 		name           string
 		requiresAPIKey bool
 		setupEnv       func()
-		cleanupEnv     func()
 		expectError    bool
 		errorContains  string
 	}{
@@ -80,10 +79,9 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			name:           "command requires API key - key is set",
 			requiresAPIKey: true,
 			setupEnv: func() {
-				_ = os.Setenv("GEMINI_API_KEY", "test-key-123")
-			},
-			cleanupEnv: func() {
-				// No-op, restoration handled by test wrapper
+				if err := os.Setenv("GEMINI_API_KEY", "test-key-123"); err != nil {
+					t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+				}
 			},
 			expectError: false,
 		},
@@ -91,9 +89,10 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 			name:           "command requires API key - key not set",
 			requiresAPIKey: true,
 			setupEnv: func() {
-				_ = os.Unsetenv("GEMINI_API_KEY")
+				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
+					t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
+				}
 			},
-			cleanupEnv:    func() {},
 			expectError:   true,
 			errorContains: "GEMINI_API_KEY not set",
 		},
@@ -105,17 +104,15 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 					t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
 				}
 			},
-			cleanupEnv:  func() {},
 			expectError: false,
 		},
 		{
 			name:           "command does not require API key - key is set",
 			requiresAPIKey: false,
 			setupEnv: func() {
-				_ = os.Setenv("GEMINI_API_KEY", "test-key-456")
-			},
-			cleanupEnv: func() {
-				// No-op
+				if err := os.Setenv("GEMINI_API_KEY", "test-key-456"); err != nil {
+					t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+				}
 			},
 			expectError: false,
 		},
@@ -131,9 +128,8 @@ func TestRootCmd_PersistentPreRunE_APIKeyValidation(t *testing.T) {
 				}
 			}()
 
-			// Setup environment
+			// Setup environment (cleanup handled by defer above)
 			tt.setupEnv()
-			// defer tt.cleanupEnv() // Removed as restoration is handled above
 
 			// Create root command
 			rootCmd := NewRootCmd(cfg)
@@ -187,7 +183,6 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 		name        string
 		setupCmd    func() *cobra.Command
 		setupEnv    func()
-		cleanupEnv  func()
 		expectError bool
 	}{
 		{
@@ -199,7 +194,6 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 				}
 			},
 			setupEnv:    func() {},
-			cleanupEnv:  func() {},
 			expectError: false,
 		},
 		{
@@ -211,7 +205,6 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 				}
 			},
 			setupEnv:    func() {},
-			cleanupEnv:  func() {},
 			expectError: false,
 		},
 		{
@@ -225,7 +218,6 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 				}
 			},
 			setupEnv:    func() {},
-			cleanupEnv:  func() {},
 			expectError: false,
 		},
 		{
@@ -241,11 +233,6 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 			setupEnv: func() {
 				if err := os.Setenv("GEMINI_API_KEY", ""); err != nil {
 					t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-				}
-			},
-			cleanupEnv: func() {
-				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-					t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
 				}
 			},
 			expectError: true,
@@ -265,12 +252,7 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 					t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
 				}
 			},
-			cleanupEnv: func() {
-				if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-					t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
-				}
-			},
-			expectError: false, // os.Getenv doesn't trim, treats as non-empty
+			expectError: true, // Whitespace-only keys are invalid (trimmed and treated as empty)
 		},
 	}
 
@@ -284,8 +266,8 @@ func TestRootCmd_PersistentPreRunE_EdgeCases(t *testing.T) {
 				}
 			}()
 
+			// Setup environment (cleanup handled by defer above)
 			tt.setupEnv()
-			// defer tt.cleanupEnv()
 
 			rootCmd := NewRootCmd(cfg)
 			mockCmd := tt.setupCmd()

@@ -181,10 +181,26 @@ func TestAgent_SessionPersistence_Integration(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Wait for async persistence using polling
+	// Enhanced: Check for specific roles, not just count
 	waitForCondition(t, 2*time.Second, func() bool {
 		messages, err := framework.SessionStore.GetMessages(ctx, sessionID, 10, 0)
-		return err == nil && len(messages) >= 2
-	}, "message persistence")
+		if err != nil {
+			t.Logf("Polling: GetMessages failed: %v", err)
+			return false
+		}
+		if len(messages) < 2 {
+			t.Logf("Polling: Expected >= 2 messages, got %d", len(messages))
+			return false
+		}
+		// Verify roles to ensure correct persistence
+		hasUser := messages[0].Role == "user"
+		hasModel := messages[1].Role == "model"
+		if !hasUser || !hasModel {
+			t.Logf("Polling: Incorrect roles - msg[0]=%s, msg[1]=%s", messages[0].Role, messages[1].Role)
+			return false
+		}
+		return true
+	}, "message persistence with correct roles")
 
 	// Verify messages were persisted to database
 	messages, err := framework.SessionStore.GetMessages(ctx, sessionID, 10, 0)
@@ -251,6 +267,7 @@ func TestAgent_ClearHistory_Integration(t *testing.T) {
 	t.Logf("Response after clearing history: %s", resp2.FinalText)
 
 	// Agent should not know the lucky number anymore
-	// (exact assertion is tricky since it might say "I don't know" or similar)
 	assert.NotEmpty(t, resp2.FinalText, "Should receive a response")
+	// Verify agent forgot the number (enhanced verification)
+	assert.NotContains(t, resp2.FinalText, "7", "Agent should not remember the lucky number after history is cleared")
 }
