@@ -75,9 +75,7 @@ minio-data/
 docs/_build/
 *.pdf
 
-CLAUDE.md
-DESIGN.md
 .claude/
 .gemini/
 .genkit/
-GENKIT_FEATURES.md
+.vscode/

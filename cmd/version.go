@@ -8,14 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version information (injected at build time via ldflags)
-var (
-	AppVersion = "development"
-	BuildTime  = "unknown"
-	GitCommit  = "unknown"
-)
-
-// NewVersionCmd creates the version command (factory pattern)
+// NewVersionCmd creates the version command for Cobra.
+//
+// Note: This is for Cobra command structure. The version variables
+// are defined in execute.go and shared across the cmd package.
 func NewVersionCmd(cfg *config.Config) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",

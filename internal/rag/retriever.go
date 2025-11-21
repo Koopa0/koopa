@@ -8,6 +8,34 @@ import (
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 )
 
+// TopK retrieval limits define the valid range and defaults for document retrieval.
+// These limits balance result quality with query performance and resource usage.
+//
+// Design rationale:
+//   - MaxTopK=10: Vector similarity search performance degrades significantly beyond
+//     10 results. Most RAG applications achieve optimal context quality within this range.
+//   - MinTopK=1: Minimum valid value for a meaningful search.
+//   - DefaultConversationTopK=3: Conversations need fewer, more recent messages for context.
+//   - DefaultDocumentTopK=5: Document searches benefit from slightly more context for
+//     comprehensive answers while maintaining manageable context window size.
+const (
+	// MaxTopK is the maximum number of documents retrievable in a single query.
+	// This hard limit prevents expensive queries and maintains reasonable performance.
+	MaxTopK = 10
+
+	// MinTopK is the minimum valid topK value.
+	// Requests below this threshold will use the default value instead.
+	MinTopK = 1
+
+	// DefaultConversationTopK is the default number of conversation messages to retrieve.
+	// Optimized for conversation context where recent messages are most relevant.
+	DefaultConversationTopK = 3
+
+	// DefaultDocumentTopK is the default number of documents to retrieve.
+	// Optimized for document search where more context improves answer quality.
+	DefaultDocumentTopK = 5
+)
+
 // Retriever bridges knowledge.Store to Genkit ai.Retriever interface.
 // It provides different types of retrievers for various knowledge sources.
 type Retriever struct {
@@ -35,8 +63,8 @@ func (r *Retriever) DefineConversation(g *genkit.Genkit, name string) ai.Retriev
 			// Extract query text from request
 			queryText := extractQueryText(req)
 
-			// Extract topK from options (default: 3)
-			topK := extractTopK(req, 3)
+			// Extract topK from options (use conversation-optimized default)
+			topK := extractTopK(req, DefaultConversationTopK)
 
 			// Build search options using functional options pattern
 			searchOpts := []knowledge.SearchOption{
@@ -67,7 +95,8 @@ func (r *Retriever) DefineDocument(g *genkit.Genkit, name string) ai.Retriever {
 		g, name, nil,
 		func(ctx context.Context, req *ai.RetrieverRequest) (*ai.RetrieverResponse, error) {
 			queryText := extractQueryText(req)
-			topK := extractTopK(req, 5)
+			// Extract topK from options (use document-optimized default)
+			topK := extractTopK(req, DefaultDocumentTopK)
 
 			// Search documents (primarily files) by filtering out conversations
 			// We search for source_type="file" to exclude conversations
@@ -98,9 +127,16 @@ func extractQueryText(req *ai.RetrieverRequest) string {
 	return ""
 }
 
-// extractTopK extracts topK from request options, returns defaultK if not found.
-// Validates that k is within the range [1, 10] to ensure valid search configuration.
-// Supports multiple numeric types (int, int32, float64) and string for flexibility.
+// extractTopK extracts topK from request options with validation.
+//
+// It validates that k is within [MinTopK, MaxTopK] range. If the requested
+// value is invalid or missing, it returns defaultK.
+//
+// Supports multiple numeric types (int, int32, int64, float32, float64) and
+// string for flexibility in client calls.
+//
+// Design: Uses package-level constants for range validation, making the
+// business logic explicit and maintainable.
 func extractTopK(req *ai.RetrieverRequest, defaultK int32) int32 {
 	if opts, ok := req.Options.(map[string]any); ok {
 		if k, exists := opts["k"]; exists {
@@ -130,32 +166,38 @@ func extractTopK(req *ai.RetrieverRequest, defaultK int32) int32 {
 				return defaultK
 			}
 
-			// Validate range to ensure robustness regardless of caller behavior
-			if kInt >= 1 && kInt <= 10 {
-				return int32(kInt) // #nosec G115 -- validated range 1-10
+			// Validate range using package constants
+			if kInt >= MinTopK && kInt <= MaxTopK {
+				return int32(kInt) // #nosec G115 -- validated range [MinTopK, MaxTopK]
 			}
 		}
 	}
 	return defaultK
 }
 
-// parseIntSafe safely parses a string to int, returns 0 if parse fails or value > 10.
+// parseIntSafe safely parses a string to int with topK-specific validation.
 //
-// IMPORTANT: This function is specifically designed for parsing topK values and
-// intentionally rejects integers > 10 as invalid. This aligns with the [1, 10]
-// range validation in extractTopK. If parsing needs change, both functions must
-// be updated together.
+// This function is designed specifically for parsing topK values and enforces
+// the [MinTopK, MaxTopK] range. It rejects:
+//   - Non-numeric strings
+//   - Negative numbers
+//   - Values exceeding MaxTopK
 //
-// Returns 0 for: non-numeric strings, negative numbers, or values > 10
+// Returns 0 for invalid input, which extractTopK treats as "use default".
+//
+// Design: Uses MaxTopK constant to align with extractTopK's range validation.
+// If topK limits change, only the constants need updating.
 func parseIntSafe(s string) int {
 	var result int
 	for _, ch := range s {
 		if ch < '0' || ch > '9' {
-			return 0
+			return 0 // Non-digit character
 		}
 		result = result*10 + int(ch-'0')
-		if result > 10 {
-			return 0 // Early exit for values > 10 (intentional limitation for topK)
+
+		// Early exit for values exceeding limit (using constant)
+		if result > MaxTopK {
+			return 0
 		}
 	}
 	return result

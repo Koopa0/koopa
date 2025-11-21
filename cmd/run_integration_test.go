@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package cmd
 
 import (
@@ -14,10 +17,6 @@ import (
 // TestCLISession_Example demonstrates how to use CLISession for E2E testing
 // This replaces time.Sleep() with ExpectString() for reliable testing
 func TestCLISession_Example(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping E2E test in short mode")
-	}
-
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
 	}
@@ -107,10 +106,6 @@ func TestCLISession_Example(t *testing.T) {
 
 // TestCLISession_HelpCommand demonstrates testing /help command
 func TestCLISession_HelpCommand(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping E2E test in short mode")
-	}
-
 	// This test requires GEMINI_API_KEY to be set
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set, skipping E2E test")
