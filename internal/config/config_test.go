@@ -856,7 +856,7 @@ func BenchmarkLoad(b *testing.B) {
 	}()
 
 	b.ResetTimer()
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, _ = Load()
 	}
 }
@@ -884,7 +884,7 @@ func BenchmarkValidate(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_ = cfg.Validate()
 	}
 }

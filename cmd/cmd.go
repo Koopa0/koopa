@@ -85,6 +85,11 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			term.Println()
 			continue
 		}
+		if resp == nil {
+			term.Printf("Error: Agent returned no response\n")
+			term.Println()
+			continue
+		}
 
 		// Display response
 		term.Println(resp.FinalText)
