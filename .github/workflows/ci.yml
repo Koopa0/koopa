@@ -118,8 +118,6 @@ jobs:
 
       # Integration tests (using build tags)
       - name: Run integration tests
-        # Only run if API key is available
-        if: secrets.GEMINI_API_KEY != ''
         # Allow failures without blocking CI (API quota/network issues)
         continue-on-error: true
         env:
