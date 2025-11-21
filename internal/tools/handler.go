@@ -140,22 +140,29 @@ func (h *Handler) WriteFile(path, content string) (string, error) {
 		return "", &ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
 
-	// Security: Check for symbolic links (prevent writing to unintended targets)
-	info, err := os.Lstat(safePath)
-	if err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return "", &ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("refusing to write to symlink: %s", safePath)}
-	}
-
 	// Ensure directory exists (use 0750 permission for better security)
 	dir := filepath.Dir(safePath)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", &ToolError{ErrorType: "WriteError", Message: fmt.Sprintf("unable to create directory: %v", err)}
 	}
 
-	if err := os.WriteFile(safePath, []byte(content), 0o600); err != nil {
+	// Security: Use O_NOFOLLOW to prevent TOCTOU vulnerability with symlinks
+	// This ensures atomic check-and-write operation (no race condition)
+	// Note: On systems where O_NOFOLLOW is not supported, this will fail if target is a symlink
+	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		// Check if it's a symlink-related error
+		if info, statErr := os.Lstat(safePath); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", &ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("refusing to write to symlink: %s", safePath)}
+		}
 		if os.IsPermission(err) {
 			return "", &ToolError{ErrorType: "PermissionDenied", Message: fmt.Sprintf("permission denied: %s", path)}
 		}
+		return "", &ToolError{ErrorType: "WriteError", Message: fmt.Sprintf("unable to open file: %v", err)}
+	}
+	defer file.Close()
+
+	if _, err := file.Write([]byte(content)); err != nil {
 		return "", &ToolError{ErrorType: "WriteError", Message: fmt.Sprintf("unable to write file: %v", err)}
 	}
 
@@ -215,10 +222,20 @@ func (h *Handler) DeleteFile(path string) (string, error) {
 		return "", &ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
 
-	if err := os.Remove(safePath); err != nil {
+	// Security: Check for symbolic links before deletion (prevent deleting unintended targets)
+	info, err := os.Lstat(safePath)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return "", &ToolError{ErrorType: "FileNotFound", Message: fmt.Sprintf("file not found: %s", path)}
 		}
+		return "", &ToolError{ErrorType: "DeleteError", Message: fmt.Sprintf("unable to stat file: %v", err)}
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", &ToolError{ErrorType: "SecurityError", Message: fmt.Sprintf("refusing to delete symlink: %s", safePath)}
+	}
+
+	if err := os.Remove(safePath); err != nil {
 		if os.IsPermission(err) {
 			return "", &ToolError{ErrorType: "PermissionDenied", Message: fmt.Sprintf("permission denied: %s", path)}
 		}

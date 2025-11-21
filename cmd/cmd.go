@@ -91,8 +91,12 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			continue
 		}
 
-		// Display response
-		term.Println(resp.FinalText)
+		// Display response (check for empty response)
+		if strings.TrimSpace(resp.FinalText) == "" {
+			term.Printf("Warning: Agent response is empty\n")
+		} else {
+			term.Println(resp.FinalText)
+		}
 		term.Println()
 	}
 
@@ -132,8 +136,8 @@ func handleSlashCommand(ctx context.Context, cmd string, ag *agent.Agent, applic
 		return false
 
 	case "/version":
-		// Show full version information (matching cobra version command)
-		term.Printf("Koopa v%s\n", version)
+		// Show full version information (use execute.go variables)
+		term.Printf("Koopa v%s\n", AppVersion)
 		term.Printf("Build: %s\n", BuildTime)
 		term.Printf("Commit: %s\n", GitCommit)
 		term.Println()
@@ -297,7 +301,7 @@ func handleRAGAdd(ctx context.Context, args []string, application *app.App, term
 			return
 		}
 
-		term.Println("✓ File indexed successfully")
+		term.Println("File indexed successfully")
 		term.Println()
 	}
 }
@@ -363,7 +367,7 @@ func handleRAGRemove(ctx context.Context, args []string, application *app.App, t
 		return
 	}
 
-	term.Printf("✓ Document removed: %s\n", docID)
+	term.Printf("Document removed: %s\n", docID)
 	term.Println()
 }
 
@@ -376,14 +380,14 @@ func handleRAGStatus(ctx context.Context, application *app.App, term ui.IO) {
 
 	// Check database connection
 	if application.DBPool != nil {
-		term.Println("  Database:       Connected ✓")
+		term.Println("  Database:       Connected")
 	} else {
 		term.Println("  Database:       Not connected")
 	}
 
 	// Check embedder
 	if application.Embedder != nil {
-		term.Println("  Embedder:       Configured ✓")
+		term.Println("  Embedder:       Configured")
 	} else {
 		term.Println("  Embedder:       Not configured")
 	}
@@ -441,7 +445,7 @@ func handleRAGReindexSystem(ctx context.Context, application *app.App, term ui.I
 		term.Println()
 		return
 	}
-	term.Println("✓ Existing system knowledge cleared")
+	term.Println("  Existing system knowledge cleared")
 	term.Println()
 
 	// Reindex system knowledge
@@ -454,7 +458,7 @@ func handleRAGReindexSystem(ctx context.Context, application *app.App, term ui.I
 	}
 
 	term.Println()
-	term.Printf("✓ Successfully indexed %d system knowledge documents\n", count)
+	term.Printf("  Successfully indexed %d system knowledge documents\n", count)
 	term.Println()
 	term.Println("System knowledge includes:")
 	term.Println("  • Golang best practices (errors, concurrency, naming)")
@@ -630,7 +634,7 @@ func handleSessionNew(ctx context.Context, args []string, ag *agent.Agent, term 
 	}
 
 	term.Println()
-	term.Printf("✓ Created new session: %s\n", newSession.Title)
+	term.Printf("  Created new session: %s\n", newSession.Title)
 	term.Printf("  Session ID: %s\n", newSession.ID)
 	term.Println()
 	term.Println("Conversation history cleared. You can now start a fresh conversation.")
@@ -669,13 +673,13 @@ func handleSessionSwitch(ctx context.Context, args []string, ag *agent.Agent, te
 	// Get session details for confirmation
 	currentSession, err := ag.GetCurrentSession(ctx)
 	if err != nil || currentSession == nil {
-		term.Println("✓ Switched to session")
+		term.Println("  Switched to session")
 		term.Println()
 		return
 	}
 
 	term.Println()
-	term.Printf("✓ Switched to session: %s\n", currentSession.Title)
+	term.Printf("  Switched to session: %s\n", currentSession.Title)
 	term.Printf("  Session ID: %s\n", currentSession.ID)
 	term.Printf("  Messages: %d\n", currentSession.MessageCount)
 	term.Println()
@@ -724,7 +728,7 @@ func handleSessionDelete(ctx context.Context, args []string, ag *agent.Agent, ap
 	}
 
 	term.Println()
-	term.Printf("✓ Deleted session: %s\n", sessionToDelete.Title)
+	term.Printf("  Deleted session: %s\n", sessionToDelete.Title)
 	term.Printf("  Session ID: %s\n", sessionID)
 	term.Println()
 	term.Println("Session and all its messages have been permanently deleted.")

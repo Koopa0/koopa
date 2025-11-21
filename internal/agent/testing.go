@@ -2,168 +2,37 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/rag"
 	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/koopa0/koopa-cli/internal/testutil"
 )
 
-// TestDBContainer wraps a PostgreSQL test container
-type TestDBContainer struct {
-	Container *postgres.PostgresContainer
-	Pool      *pgxpool.Pool
-	ConnStr   string
-}
-
-// SetupTestDB creates a PostgreSQL container for testing
-// Returns a TestDBContainer and a cleanup function
-func SetupTestDB(t *testing.T) (*TestDBContainer, func()) {
-	t.Helper()
-
-	ctx := context.Background()
-
-	// Create PostgreSQL container with pgvector support
-	pgContainer, err := postgres.Run(ctx,
-		"pgvector/pgvector:pg16",
-		postgres.WithDatabase("koopa_test"),
-		postgres.WithUsername("koopa_test"),
-		postgres.WithPassword("test_password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("Failed to start PostgreSQL container: %v", err)
-	}
-
-	// Get connection string
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to get connection string: %v", err)
-	}
-
-	// Create connection pool
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to create connection pool: %v", err)
-	}
-
-	// Verify connection
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
-	// Run migrations
-	if err := runMigrations(ctx, pool); err != nil {
-		pool.Close()
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
-
-	container := &TestDBContainer{
-		Container: pgContainer,
-		Pool:      pool,
-		ConnStr:   connStr,
-	}
-
-	cleanup := func() {
-		if pool != nil {
-			pool.Close()
-		}
-		if pgContainer != nil {
-			_ = pgContainer.Terminate(context.Background())
-		}
-	}
-
-	return container, cleanup
-}
-
-// runMigrations runs database migrations
-// This is a simplified version - in production, you'd use a migration tool
-func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
-	// Read and execute migration files in order
-	migrationFiles := []string{
-		"../../db/migrations/000001_init_schema.up.sql",
-		"../../db/migrations/000002_create_sessions.up.sql",
-	}
-
-	for _, migrationPath := range migrationFiles {
-		// #nosec G304 -- migration paths are hardcoded constants, not from user input
-		migrationSQL, err := os.ReadFile(migrationPath)
-		if err != nil {
-			return fmt.Errorf("failed to read migration %s: %w", migrationPath, err)
-		}
-
-		// Skip empty migration files to avoid unnecessary execution
-		if len(migrationSQL) == 0 {
-			continue
-		}
-
-		// Execute each migration in its own transaction using an anonymous function
-		// This ensures defer executes at the end of each iteration, not at function end
-		err = func() error {
-			// Wrap migration execution in a transaction for atomicity
-			// This ensures that if a migration fails, changes are rolled back
-			tx, err := pool.Begin(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, err)
-			}
-
-			// Ensure transaction is always closed (rollback unless committed)
-			// This protects against panics and ensures proper resource cleanup
-			committed := false
-			defer func() {
-				if !committed {
-					if err := tx.Rollback(ctx); err != nil {
-						slog.Default().Debug("migration transaction rollback (may be already committed)",
-							"migration", migrationPath, "error", err)
-					}
-				}
-			}()
-
-			_, err = tx.Exec(ctx, string(migrationSQL))
-			if err != nil {
-				return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
-			}
-
-			if err = tx.Commit(ctx); err != nil {
-				return fmt.Errorf("failed to commit migration %s: %w", migrationPath, err)
-			}
-			committed = true
-			return nil
-		}()
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// TestAgentFramework provides a complete test environment for Agent integration tests
+// TestAgentFramework provides a complete test environment for Agent integration tests.
+//
+// Includes all components needed for full-stack agent testing:
+//   - PostgreSQL database with test data
+//   - Genkit AI framework
+//   - Knowledge store with embeddings
+//   - Session management
+//   - Configured Agent instance
+//
+// Usage:
+//
+//	framework, cleanup := SetupTestAgent(t)
+//	defer cleanup()
+//	resp, err := framework.Agent.Execute(ctx, "test query")
 type TestAgentFramework struct {
 	// Database
-	DBContainer *TestDBContainer
+	DBContainer *testutil.TestDBContainer
 
 	// Core components
 	Agent          *Agent
@@ -182,7 +51,34 @@ type TestAgentFramework struct {
 	cleanup func()
 }
 
-// SetupTestAgent creates a complete Agent test environment with testcontainers
+// SetupTestAgent creates a complete Agent test environment with testcontainers.
+//
+// Requirements:
+//   - GEMINI_API_KEY environment variable must be set
+//   - Docker daemon must be running (for testcontainers)
+//
+// Creates:
+//  1. PostgreSQL container with pgvector
+//  2. Genkit instance with Google AI plugin
+//  3. Embedder for vector operations
+//  4. Knowledge store for RAG
+//  5. Session store for conversation persistence
+//  6. Fully configured Agent instance
+//
+// Returns:
+//   - TestAgentFramework: Complete test environment
+//   - cleanup function: Must be called to terminate containers
+//
+// Example:
+//
+//	func TestAgentFeature(t *testing.T) {
+//	    framework, cleanup := SetupTestAgent(t)
+//	    defer cleanup()
+//
+//	    resp, err := framework.Agent.Execute(ctx, "What is Go?")
+//	    require.NoError(t, err)
+//	    assert.NotEmpty(t, resp.FinalText)
+//	}
 func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 	t.Helper()
 
@@ -194,24 +90,19 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 
 	ctx := context.Background()
 
-	// 1. Setup test database
-	dbContainer, dbCleanup := SetupTestDB(t)
+	// 1. Setup test database using testutil
+	dbContainer, dbCleanup := testutil.SetupTestDB(t)
 
-	// 2. Initialize Genkit with Google AI plugin
-	g := genkit.Init(ctx,
-		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithPromptDir("../../prompts"))
+	// 2. Setup embedder using testutil
+	embedder, g := testutil.SetupEmbedder(t)
 
-	// 3. Create embedder
-	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")
-
-	// 4. Create knowledge store
+	// 3. Create knowledge store
 	knowledgeStore := knowledge.New(dbContainer.Pool, embedder, slog.Default())
 
-	// 5. Create system knowledge indexer
+	// 4. Create system knowledge indexer
 	systemIndexer := knowledge.NewSystemKnowledgeIndexer(knowledgeStore, slog.Default())
 
-	// 6. Create config
+	// 5. Create config
 	cfg := &config.Config{
 		ModelName:        "gemini-2.5-flash",
 		EmbedderModel:    "text-embedding-004",
@@ -228,10 +119,10 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 		Language:         "English",
 	}
 
-	// 7. Create session store
+	// 6. Create session store
 	sessionStore := session.New(dbContainer.Pool, slog.Default())
 
-	// 8. Create test session
+	// 7. Create test session
 	testSession, err := sessionStore.CreateSession(ctx, "Integration Test Session", cfg.ModelName, "")
 	if err != nil {
 		dbCleanup()
@@ -239,11 +130,11 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 	}
 	sessionID := testSession.ID
 
-	// 9. Create retriever for RAG
+	// 8. Create retriever for RAG
 	retrieverBuilder := rag.New(knowledgeStore)
 	retriever := retrieverBuilder.DefineConversation(g, "integration-test-retriever")
 
-	// 10. Create Agent
+	// 9. Create Agent
 	agent, err := New(ctx, cfg, g, retriever,
 		WithSessionStore(sessionStore),
 		WithKnowledgeStore(knowledgeStore),
@@ -254,7 +145,7 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 		t.Fatalf("Failed to create agent: %v", err)
 	}
 
-	// 11. Switch to test session to ensure Agent state is synced
+	// 10. Switch to test session to ensure Agent state is synced
 	if err := agent.SwitchSession(ctx, sessionID); err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to switch to test session: %v", err)
@@ -281,7 +172,17 @@ func SetupTestAgent(t *testing.T) (*TestAgentFramework, func()) {
 	return framework, cleanup
 }
 
-// IndexSystemKnowledge indexes system knowledge for testing
+// IndexSystemKnowledge indexes system knowledge for testing.
+//
+// Indexes all 6 system knowledge documents (coding standards, error handling, etc.)
+// into the knowledge store for RAG testing.
+//
+// Example:
+//
+//	framework, cleanup := SetupTestAgent(t)
+//	defer cleanup()
+//	framework.IndexSystemKnowledge(t)
+//	// Now system knowledge is available for RAG queries
 func (f *TestAgentFramework) IndexSystemKnowledge(t *testing.T) {
 	t.Helper()
 

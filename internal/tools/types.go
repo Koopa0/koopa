@@ -10,5 +10,17 @@ type ToolError struct {
 // Error implements the error interface.
 // Uses pointer receiver to avoid unnecessary copying and ensure consistency.
 func (e *ToolError) Error() string {
+	if e == nil {
+		return "<nil ToolError>"
+	}
+	if e.ErrorType == "" && e.Message == "" {
+		return "<empty ToolError>"
+	}
+	if e.ErrorType == "" {
+		return e.Message
+	}
+	if e.Message == "" {
+		return e.ErrorType
+	}
 	return e.ErrorType + ": " + e.Message
 }

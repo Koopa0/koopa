@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package agent
 
 import (
@@ -35,10 +38,6 @@ func waitForCondition(t *testing.T, timeout time.Duration, check func() bool, ms
 
 // TestAgent_SimpleConversation_Integration tests basic conversation flow
 func TestAgent_SimpleConversation_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	framework, cleanup := SetupTestAgent(t)
 	defer cleanup()
 
@@ -61,10 +60,6 @@ func TestAgent_SimpleConversation_Integration(t *testing.T) {
 
 // TestAgent_MultiTurnConversation_Integration tests multi-turn conversation
 func TestAgent_MultiTurnConversation_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	framework, cleanup := SetupTestAgent(t)
 	defer cleanup()
 
@@ -92,10 +87,6 @@ func TestAgent_MultiTurnConversation_Integration(t *testing.T) {
 
 // TestAgent_StreamingResponse_Integration tests streaming text chunks
 func TestAgent_StreamingResponse_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	framework, cleanup := SetupTestAgent(t)
 	defer cleanup()
 
@@ -113,10 +104,6 @@ func TestAgent_StreamingResponse_Integration(t *testing.T) {
 
 // TestAgent_RAGRetrieval_Integration tests RAG knowledge retrieval
 func TestAgent_RAGRetrieval_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	framework, cleanup := SetupTestAgent(t)
 	defer cleanup()
 
@@ -157,10 +144,6 @@ func TestAgent_RAGRetrieval_Integration(t *testing.T) {
 
 // TestAgent_SessionPersistence_Integration tests session message persistence
 func TestAgent_SessionPersistence_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	framework, cleanup := SetupTestAgent(t)
 	defer cleanup()
 
@@ -218,10 +201,6 @@ func TestAgent_SessionPersistence_Integration(t *testing.T) {
 
 // TestAgent_ErrorHandling_Integration tests error scenarios
 func TestAgent_ErrorHandling_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	framework, cleanup := SetupTestAgent(t)
 	defer cleanup()
 
@@ -238,10 +217,6 @@ func TestAgent_ErrorHandling_Integration(t *testing.T) {
 
 // TestAgent_ClearHistory_Integration tests history clearing
 func TestAgent_ClearHistory_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
 	framework, cleanup := SetupTestAgent(t)
 	defer cleanup()
 

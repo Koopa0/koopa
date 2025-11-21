@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package knowledge
 
 import (
@@ -17,10 +20,6 @@ import (
 
 // TestSystemKnowledgeIndexer_IndexAll tests the IndexAll method.
 func TestSystemKnowledgeIndexer_IndexAll(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	// Check for required API key (this test needs real embedder)
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
@@ -54,10 +53,6 @@ func TestSystemKnowledgeIndexer_IndexAll(t *testing.T) {
 
 // TestSystemKnowledgeIndexer_ClearAll tests the ClearAll method.
 func TestSystemKnowledgeIndexer_ClearAll(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	// Check for required API key
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
@@ -154,10 +149,6 @@ func TestDocumentIDs_Unique(t *testing.T) {
 
 // TestSystemKnowledge_E2E tests the full index and search workflow.
 func TestSystemKnowledge_E2E(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	// Check for required API key
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
@@ -213,10 +204,6 @@ func TestSystemKnowledge_E2E(t *testing.T) {
 
 // TestIndexAll_AllFailures tests error handling when all documents fail to index.
 func TestIndexAll_AllFailures(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	// Check for required API key
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
@@ -244,10 +231,6 @@ func TestIndexAll_AllFailures(t *testing.T) {
 
 // TestIndexAll_Concurrency tests that IndexAll is safe for concurrent calls.
 func TestIndexAll_Concurrency(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	// Check for required API key
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")

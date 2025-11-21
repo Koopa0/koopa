@@ -77,7 +77,6 @@ type IndexResult struct {
 }
 
 // Indexer handles local file indexing
-// Indexer handles local file indexing
 type Indexer struct {
 	store               IndexerStore    // Depends on interface for testability
 	supportedExtensions map[string]bool // Configurable supported extensions
