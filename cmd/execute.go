@@ -37,6 +37,9 @@ func Execute() error {
 		case "help", "--help", "-h":
 			printHelp()
 			return nil
+		case "mcp":
+			// MCP server mode requires full initialization
+			return executeMCP()
 		}
 	}
 
@@ -69,6 +72,7 @@ func Execute() error {
 //   - DEBUG not set: info level logging
 //
 // Design: Follows the standard library's slog package patterns.
+// Note: Logs to stderr for MCP protocol compatibility (stdout reserved for JSON-RPC).
 func initLogger() *slog.Logger {
 	opts := &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -79,7 +83,9 @@ func initLogger() *slog.Logger {
 		opts.Level = slog.LevelDebug
 	}
 
-	return slog.New(slog.NewTextHandler(os.Stdout, opts))
+	// IMPORTANT: MCP protocol requires logging to stderr, not stdout
+	// stdout is reserved for JSON-RPC messages only
+	return slog.New(slog.NewTextHandler(os.Stderr, opts))
 }
 
 // checkRequiredEnv verifies that all required environment variables are set.
@@ -114,6 +120,29 @@ func printVersionInfo() error {
 	return nil
 }
 
+// executeMCP initializes and starts the MCP server.
+// This is called when the user runs `koopa mcp`.
+func executeMCP() error {
+	// Initialize structured logger
+	logger := initLogger()
+	slog.SetDefault(logger)
+
+	// Load application configuration
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Verify required environment variables
+	if err := checkRequiredEnv(); err != nil {
+		return err
+	}
+
+	// Start MCP server
+	ctx := context.Background()
+	return RunMCP(ctx, cfg, AppVersion)
+}
+
 // printHelp displays the help message for the Koopa CLI.
 // This is called for --help flags or when run without arguments.
 func printHelp() {
@@ -121,6 +150,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  koopa              Start interactive chat mode (default)")
+	fmt.Println("  koopa mcp          Start MCP server (for Claude Desktop/Cursor)")
 	fmt.Println("  koopa --version    Show version information")
 	fmt.Println("  koopa --help       Show this help")
 	fmt.Println()

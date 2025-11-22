@@ -1,26 +1,39 @@
 package tools
 
-// ToolError defines a structured error format for model consumption.
-// It allows tools to return specific error types and messages that the model can understand and correct.
-type ToolError struct {
-	ErrorType string `json:"error_type"` // e.g., "FileNotFound", "PermissionDenied", "InvalidArguments"
-	Message   string `json:"message"`
+// Status represents the execution status of a tool.
+type Status string
+
+const (
+	StatusSuccess Status = "success"
+	StatusError   Status = "error"
+	StatusPartial Status = "partial"
+)
+
+// ErrorCode represents standardized error codes.
+type ErrorCode string
+
+const (
+	ErrCodeSecurity   ErrorCode = "SecurityError"
+	ErrCodeNotFound   ErrorCode = "NotFound"
+	ErrCodePermission ErrorCode = "PermissionDenied"
+	ErrCodeIO         ErrorCode = "IOError"
+	ErrCodeExecution  ErrorCode = "ExecutionError"
+	ErrCodeTimeout    ErrorCode = "TimeoutError"
+	ErrCodeNetwork    ErrorCode = "NetworkError"
+	ErrCodeValidation ErrorCode = "ValidationError"
+)
+
+// Result is the standard return format for all tools.
+type Result struct {
+	Status  Status `json:"status" jsonschema_description:"The execution status"`
+	Message string `json:"message,omitempty" jsonschema_description:"Human-readable message"`
+	Data    any    `json:"data,omitempty" jsonschema_description:"The tool's output data"`
+	Error   *Error `json:"error,omitempty" jsonschema_description:"Error information if failed"`
 }
 
-// Error implements the error interface.
-// Uses pointer receiver to avoid unnecessary copying and ensure consistency.
-func (e *ToolError) Error() string {
-	if e == nil {
-		return "<nil ToolError>"
-	}
-	if e.ErrorType == "" && e.Message == "" {
-		return "<empty ToolError>"
-	}
-	if e.ErrorType == "" {
-		return e.Message
-	}
-	if e.Message == "" {
-		return e.ErrorType
-	}
-	return e.ErrorType + ": " + e.Message
+// Error provides structured error information.
+type Error struct {
+	Code    ErrorCode `json:"code" jsonschema_description:"Error code"`
+	Message string    `json:"message" jsonschema_description:"Detailed error message"`
+	Details any       `json:"details,omitempty" jsonschema_description:"Additional error context"`
 }
