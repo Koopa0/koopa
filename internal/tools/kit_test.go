@@ -985,8 +985,14 @@ func TestKit_GetEnv(t *testing.T) {
 	// Set test environment variable
 	testKey := "TEST_ENV_VAR_KOOPA"
 	testValue := "test_value"
-	os.Setenv(testKey, testValue)
-	defer os.Unsetenv(testKey)
+	if err := os.Setenv(testKey, testValue); err != nil {
+		t.Fatalf("Failed to set test environment variable: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv(testKey); err != nil {
+			t.Errorf("Failed to unset test environment variable: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name       string
