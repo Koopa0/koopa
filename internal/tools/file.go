@@ -132,8 +132,12 @@ func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, erro
 		}, nil
 	}
 
-	// Security: Use O_NOFOLLOW to prevent TOCTOU vulnerability with symlinks
-	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	// Security: safePath is validated by security.Path.Validate() which:
+	// - Prevents directory traversal (CWE-22)
+	// - Resolves and validates symlinks
+	// - Enforces allowed directory restrictions
+	// gosec G304 is suppressed as path validation is performed above
+	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304
 	if err != nil {
 		// Check if it's a symlink-related error
 		if info, statErr := os.Lstat(safePath); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
