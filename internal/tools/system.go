@@ -9,65 +9,147 @@ package tools
 //
 // All operations use security validators to prevent command injection (CWE-78) and information leakage.
 //
-// Architecture: Genkit closures act as thin adapters that convert JSON input
-// to Handler method calls. Business logic lives in testable Handler methods.
+// Architecture: Kit methods implement all business logic with security validation.
+// Tools are registered to Genkit via Kit.Register() for use by the Agent.
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 )
 
-// registerSystemTools registers system-related tools
-// handler contains all business logic for system operations
-func registerSystemTools(g *genkit.Genkit, handler *Handler) {
-	// 1. Get current time
-	genkit.DefineTool(
-		g,
-		"currentTime",
-		"Get the current system date and time. "+
-			"Returns the current timestamp in human-readable format with date, time, and day of week. "+
-			"Use this when you need to know the current time, date calculations, or timestamp information. "+
-			"Useful for: time-based operations, logging timestamps, scheduling tasks, date-aware responses.",
-		func(ctx *ai.ToolContext, input struct{}) (string, error) {
-			return handler.CurrentTime()
-		},
-	)
+// ============================================================================
+// Kit Methods (Phase 1 - New Architecture)
+// ============================================================================
 
-	// 2. Execute system command
-	genkit.DefineTool(
-		g,
-		"executeCommand",
-		"Execute a system shell command with security validation. "+
-			"WARNING: Dangerous commands (rm -rf, dd, format, etc.) are automatically blocked for safety. "+
-			"Use this to run system utilities, git commands, build tools, or other safe operations. "+
-			"Security features: command validation, argument sanitization, prevents command injection (CWE-78). "+
-			"Returns the combined stdout and stderr output. "+
-			"Use for: running git commands, executing build scripts, checking system status, running test suites.",
-		func(ctx *ai.ToolContext, input struct {
-			Command string   `json:"command" jsonschema_description:"Command to execute (e.g., 'ls', 'git', 'go'). Dangerous commands are automatically blocked."`
-			Args    []string `json:"args,omitempty" jsonschema_description:"Command arguments as separate array elements. Examples: ['status'], ['-la', '/home'], ['build', './...']"`
-		},
-		) (string, error) {
-			// Pass context to ExecuteCommand for cancellation support
-			return handler.ExecuteCommand(ctx.Context, input.Command, input.Args)
-		},
-	)
+// CurrentTime returns the current system date and time.
+//
+// Error handling:
+//   - Never returns error (always succeeds)
+func (k *Kit) CurrentTime(ctx *ai.ToolContext, input CurrentTimeInput) (Result, error) {
+	k.log("info", "CurrentTime called")
 
-	// 3. Read environment variable (restricted access)
-	genkit.DefineTool(
-		g,
-		"getEnv",
-		"Read an environment variable value with security protection. "+
-			"Sensitive variables (API keys, passwords, tokens) are automatically blocked to prevent information leakage. "+
-			"Use this to check system configuration, paths, or non-sensitive environment settings. "+
-			"Returns the variable value or an empty message if not set. "+
-			"Blocked patterns: *KEY*, *SECRET*, *TOKEN*, *PASSWORD*, *CREDENTIAL*. "+
-			"Use for: checking PATH, HOME, SHELL, or other non-sensitive configuration variables.",
-		func(ctx *ai.ToolContext, input struct {
-			Name string `json:"name" jsonschema_description:"Environment variable name to read (e.g., 'PATH', 'HOME', 'SHELL'). Sensitive variables like API_KEY are automatically blocked."`
+	now := time.Now()
+	formatted := now.Format("2006-01-02 15:04:05 (Monday)")
+
+	k.log("info", "CurrentTime succeeded")
+	return Result{
+		Status:  StatusSuccess,
+		Message: "Successfully retrieved current time",
+		Data: map[string]any{
+			"time":      formatted,
+			"timestamp": now.Unix(),
+			"iso8601":   now.Format(time.RFC3339),
 		},
-		) (string, error) {
-			return handler.GetEnv(input.Name)
+	}, nil
+}
+
+// ExecuteCommand executes a system shell command with security validation.
+//
+// Error handling:
+//   - Agent Error (dangerous command, execution failed, timeout): Return Result{Error: ...}, nil
+//   - System Error (internal failure): Return Result{}, error (rare)
+func (k *Kit) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) (Result, error) {
+	k.log("info", "ExecuteCommand called", "command", input.Command, "args", input.Args)
+
+	// Command security validation (prevent command injection attacks CWE-78)
+	if err := k.cmdVal.ValidateCommand(input.Command, input.Args); err != nil {
+		k.log("error", "ExecuteCommand dangerous command rejected", "command", input.Command, "args", input.Args, "error", err)
+		return Result{
+			Status:  StatusError,
+			Message: "Dangerous command rejected",
+			Error: &Error{
+				Code: ErrCodeSecurity,
+				Message: fmt.Sprintf("security warning: dangerous command rejected (%s %s): %v",
+					input.Command, strings.Join(input.Args, " "), err),
+			},
+		}, nil
+	}
+
+	// Use CommandContext for cancellation support
+	execCtx := ctx.Context
+	if execCtx == nil {
+		execCtx = context.Background()
+	}
+
+	cmd := exec.CommandContext(execCtx, input.Command, input.Args...) // #nosec G204 -- validated by cmdVal above
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		// Check if it was cancelled by context
+		if execCtx.Err() != nil {
+			k.log("error", "ExecuteCommand cancelled", "command", input.Command, "error", execCtx.Err())
+			return Result{
+				Status:  StatusError,
+				Message: "Command execution cancelled",
+				Error: &Error{
+					Code:    ErrCodeTimeout,
+					Message: fmt.Sprintf("command execution cancelled: %v", execCtx.Err()),
+				},
+			}, nil
+		}
+
+		k.log("error", "ExecuteCommand failed", "command", input.Command, "error", err, "output", string(output))
+		return Result{
+			Status:  StatusError,
+			Message: "Command execution failed",
+			Error: &Error{
+				Code:    ErrCodeExecution,
+				Message: fmt.Sprintf("command execution failed: %v (output: %s)", err, string(output)),
+			},
+		}, nil
+	}
+
+	// Success
+	k.log("info", "ExecuteCommand succeeded", "command", input.Command, "output_length", len(output))
+	return Result{
+		Status:  StatusSuccess,
+		Message: fmt.Sprintf("Successfully executed: %s %s", input.Command, strings.Join(input.Args, " ")),
+		Data: map[string]any{
+			"command": input.Command,
+			"args":    input.Args,
+			"output":  string(output),
 		},
-	)
+	}, nil
+}
+
+// GetEnv reads an environment variable value with security protection.
+//
+// Error handling:
+//   - Agent Error (sensitive variable blocked): Return Result{Error: ...}, nil
+//   - Success (variable not set): Return Result{Status: success, Data: {value: ""}}
+func (k *Kit) GetEnv(ctx *ai.ToolContext, input GetEnvInput) (Result, error) {
+	k.log("info", "GetEnv called", "key", input.Key)
+
+	// Environment variable security validation (prevent sensitive information leakage)
+	if err := k.envVal.ValidateEnvAccess(input.Key); err != nil {
+		k.log("error", "GetEnv sensitive variable blocked", "key", input.Key, "error", err)
+		return Result{
+			Status:  StatusError,
+			Message: "Sensitive environment variable blocked",
+			Error: &Error{
+				Code:    ErrCodeSecurity,
+				Message: fmt.Sprintf("security warning: %v (protected environment variable)", err),
+			},
+		}, nil
+	}
+
+	value := os.Getenv(input.Key)
+	isSet := value != ""
+
+	k.log("info", "GetEnv succeeded", "key", input.Key, "is_set", isSet)
+	return Result{
+		Status:  StatusSuccess,
+		Message: fmt.Sprintf("Successfully retrieved environment variable: %s", input.Key),
+		Data: map[string]any{
+			"key":    input.Key,
+			"value":  value,
+			"is_set": isSet,
+		},
+	}, nil
 }

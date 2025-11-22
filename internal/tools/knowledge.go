@@ -5,8 +5,8 @@ package tools
 // Provides 3 knowledge tools: searchHistory, searchDocuments, searchSystemKnowledge.
 // Each tool searches a specific knowledge source with metadata filtering.
 //
-// Architecture: Genkit closures act as thin adapters that convert JSON input
-// to Handler method calls. Business logic lives in testable Handler methods.
+// Architecture: Kit methods implement all business logic with knowledge store integration.
+// Tools are registered to Genkit via Kit.Register() for use by the Agent.
 // Formatting logic uses package-level pure functions for better testability.
 
 import (
@@ -15,77 +15,8 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 )
-
-// registerKnowledgeTools registers knowledge search tools with Genkit.
-// handler contains all business logic for knowledge operations.
-func registerKnowledgeTools(g *genkit.Genkit, handler *Handler) {
-	defineSearchHistory(g, handler)
-	defineSearchDocuments(g, handler)
-	defineSearchSystemKnowledge(g, handler)
-}
-
-// defineSearchHistory defines the searchHistory tool for conversation search.
-func defineSearchHistory(g *genkit.Genkit, handler *Handler) {
-	genkit.DefineTool(
-		g,
-		"searchHistory",
-		"Search conversation history to find previous discussions, topics, or context from past interactions. "+
-			"Use this to recall what the user said before, find previous answers you gave, or understand context from earlier in the conversation. "+
-			"This searches ONLY conversation history (user messages, assistant responses, and tool calls). "+
-			"Returns relevant conversation snippets with similarity scores and metadata (session ID, timestamp, turn number). "+
-			"Useful for: recalling user preferences, finding previous answers, understanding conversation context, tracking topic evolution. "+
-			"Example queries: 'what programming languages did the user mention?', 'what did I say about error handling?', 'previous discussion about databases'",
-		func(ctx *ai.ToolContext, input struct {
-			Query string `json:"query" jsonschema_description:"Search query to find relevant conversations. Use natural language to describe what you're looking for. Examples: 'user's favorite programming language', 'discussion about testing', 'what frameworks were mentioned'"`
-			TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for broad exploration, lower values (1-3) for focused queries."`
-		}) (string, error) {
-			return handler.SearchHistory(ctx, input.Query, input.TopK)
-		},
-	)
-}
-
-// defineSearchDocuments defines the searchDocuments tool for document search.
-func defineSearchDocuments(g *genkit.Genkit, handler *Handler) {
-	genkit.DefineTool(
-		g,
-		"searchDocuments",
-		"Search indexed documents and files to find relevant information from the user's knowledge base. "+
-			"Use this to find information from documentation, source code, notes, or any files the user has indexed. "+
-			"This searches ONLY indexed documents (files added via /rag commands). "+
-			"Returns relevant document snippets with similarity scores and metadata (file path, file name, file type). "+
-			"Useful for: answering questions about the codebase, finding API documentation, locating configuration details, searching project notes. "+
-			"Example queries: 'how to configure database connection?', 'API endpoint for user authentication', 'error handling best practices in this project'",
-		func(ctx *ai.ToolContext, input struct {
-			Query string `json:"query" jsonschema_description:"Search query to find relevant documents. Use natural language or technical terms. Examples: 'database configuration', 'authentication implementation', 'error handling patterns', 'API documentation'"`
-			TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for comprehensive search, lower values (1-3) for specific lookups."`
-		}) (string, error) {
-			return handler.SearchDocuments(ctx, input.Query, input.TopK)
-		},
-	)
-}
-
-// defineSearchSystemKnowledge defines the searchSystemKnowledge tool for system knowledge search.
-func defineSearchSystemKnowledge(g *genkit.Genkit, handler *Handler) {
-	genkit.DefineTool(
-		g,
-		"searchSystemKnowledge",
-		"Search system knowledge base to find best practices, style guides, coding standards, and framework-specific guidance. "+
-			"Use this to understand how to write code correctly in this project, follow established patterns, or look up system capabilities. "+
-			"This searches ONLY system knowledge (style guides, best practices, capability documentation, framework guides). "+
-			"Returns relevant guidance with similarity scores and metadata (knowledge type, topic, version). "+
-			"Useful for: following code style conventions, understanding project architecture patterns, learning framework best practices, checking system capabilities. "+
-			"Example queries: 'error handling style guide', 'how to structure Go packages?', 'testing best practices', 'what tools are available?'",
-		func(ctx *ai.ToolContext, input struct {
-			Query string `json:"query" jsonschema_description:"Search query to find relevant system knowledge. Use natural language to describe what guidance you need. Examples: 'error handling conventions', 'package structure guidelines', 'testing patterns', 'available capabilities'"`
-			TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum number of results to return (1-10). Default: 3. Use higher values (5-10) for comprehensive guidance, lower values (1-3) for specific rules."`
-		}) (string, error) {
-			return handler.SearchSystemKnowledge(ctx, input.Query, input.TopK)
-		},
-	)
-}
 
 // formatHistoryResults formats conversation search results into a readable string.
 // This is a pure function (no side effects) for easier testing.
@@ -219,4 +150,208 @@ func truncateContent(content string, maxLength int) string {
 		return content
 	}
 	return content[:maxLength] + "...\n[Content truncated for length - key information should be in the excerpt above]"
+}
+
+// ============================================================================
+// Kit Methods (Phase 1 - New Architecture)
+// ============================================================================
+
+// SearchHistory searches conversation history using semantic similarity.
+//
+// Error handling:
+//   - Agent Error (search failed): Return Result{Error: ...}, nil
+//   - Success (no results): Return Result{Status: success, Data: {results: []}}
+func (k *Kit) SearchHistory(ctx *ai.ToolContext, input SearchHistoryInput) (Result, error) {
+	k.log("info", "SearchHistory called", "query", input.Query, "topK", input.TopK)
+
+	// Validate and set defaults for topK
+	topK := input.TopK
+	if topK <= 0 {
+		topK = 3
+	} else if topK > 10 {
+		topK = 10
+	}
+
+	// Build search options with conversation filter
+	opts := []knowledge.SearchOption{
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", "conversation"),
+	}
+
+	// Execute search
+	results, err := k.knowledgeStore.Search(ctx.Context, input.Query, opts...)
+	if err != nil {
+		k.log("error", "SearchHistory failed", "query", input.Query, "error", err)
+		return Result{
+			Status:  StatusError,
+			Message: "History search failed",
+			Error: &Error{
+				Code:    ErrCodeExecution,
+				Message: fmt.Sprintf("history search failed: %v", err),
+			},
+		}, nil
+	}
+
+	// Format results
+	formatted := formatHistoryResults(results)
+
+	k.log("info", "SearchHistory succeeded", "query", input.Query, "result_count", len(results))
+	return Result{
+		Status:  StatusSuccess,
+		Message: fmt.Sprintf("Successfully searched history for: %s", input.Query),
+		Data: map[string]any{
+			"query":        input.Query,
+			"result_count": len(results),
+			"results":      results,
+			"formatted":    formatted,
+		},
+	}, nil
+}
+
+// SearchDocuments searches indexed documents using semantic similarity.
+//
+// Error handling:
+//   - Agent Error (search failed): Return Result{Error: ...}, nil
+//   - Success (no results): Return Result{Status: success, Data: {results: []}}
+func (k *Kit) SearchDocuments(ctx *ai.ToolContext, input SearchDocumentsInput) (Result, error) {
+	k.log("info", "SearchDocuments called", "query", input.Query, "topK", input.TopK)
+
+	// Validate and set defaults for topK
+	topK := input.TopK
+	if topK <= 0 {
+		topK = 3
+	} else if topK > 10 {
+		topK = 10
+	}
+
+	// Build search options with file filter
+	opts := []knowledge.SearchOption{
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", "file"),
+	}
+
+	// Execute search
+	results, err := k.knowledgeStore.Search(ctx.Context, input.Query, opts...)
+	if err != nil {
+		k.log("error", "SearchDocuments failed", "query", input.Query, "error", err)
+		return Result{
+			Status:  StatusError,
+			Message: "Document search failed",
+			Error: &Error{
+				Code:    ErrCodeExecution,
+				Message: fmt.Sprintf("document search failed: %v", err),
+			},
+		}, nil
+	}
+
+	// Format results
+	formatted := formatDocumentResults(results)
+
+	k.log("info", "SearchDocuments succeeded", "query", input.Query, "result_count", len(results))
+	return Result{
+		Status:  StatusSuccess,
+		Message: fmt.Sprintf("Successfully searched documents for: %s", input.Query),
+		Data: map[string]any{
+			"query":        input.Query,
+			"result_count": len(results),
+			"results":      results,
+			"formatted":    formatted,
+		},
+	}, nil
+}
+
+// SearchSystemKnowledge searches system knowledge base using semantic similarity.
+//
+// Error handling:
+//   - Agent Error (search failed): Return Result{Error: ...}, nil
+//   - Success (no results): Return Result{Status: success, Data: {results: []}}
+func (k *Kit) SearchSystemKnowledge(ctx *ai.ToolContext, input SearchSystemKnowledgeInput) (Result, error) {
+	k.log("info", "SearchSystemKnowledge called", "query", input.Query, "topK", input.TopK)
+
+	// Validate and set defaults for topK
+	topK := input.TopK
+	if topK <= 0 {
+		topK = 3
+	} else if topK > 10 {
+		topK = 10
+	}
+
+	// Build search options with system filter
+	opts := []knowledge.SearchOption{
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", "system"),
+	}
+
+	// Execute search
+	results, err := k.knowledgeStore.Search(ctx.Context, input.Query, opts...)
+	if err != nil {
+		k.log("error", "SearchSystemKnowledge failed", "query", input.Query, "error", err)
+		return Result{
+			Status:  StatusError,
+			Message: "System knowledge search failed",
+			Error: &Error{
+				Code:    ErrCodeExecution,
+				Message: fmt.Sprintf("system knowledge search failed: %v", err),
+			},
+		}, nil
+	}
+
+	// UX Improvement: Check if system knowledge is indexed when results are empty
+	if len(results) == 0 {
+		// Use larger TopK to check if ANY system knowledge exists
+		checkOpts := []knowledge.SearchOption{
+			knowledge.WithTopK(10),
+			knowledge.WithFilter("source_type", "system"),
+		}
+		allSystemDocs, checkErr := k.knowledgeStore.Search(ctx.Context, "system", checkOpts...)
+
+		// Provide feedback if the check itself failed
+		if checkErr != nil {
+			k.log("warn", "SearchSystemKnowledge check failed", "error", checkErr)
+			return Result{
+				Status:  StatusSuccess,
+				Message: "No system knowledge found (check failed)",
+				Data: map[string]any{
+					"query":        input.Query,
+					"result_count": 0,
+					"results":      []knowledge.Result{},
+					"formatted": "Unable to check system knowledge status: " + checkErr.Error() + ". " +
+						"System knowledge search may be experiencing issues. " +
+						"You can try reindexing using `/rag reindex-system` command.",
+				},
+			}, nil
+		}
+
+		// If no system documents found at all, warn the user
+		if len(allSystemDocs) == 0 {
+			k.log("warn", "SearchSystemKnowledge no system knowledge indexed")
+			return Result{
+				Status:  StatusSuccess,
+				Message: "No system knowledge found (not indexed)",
+				Data: map[string]any{
+					"query":        input.Query,
+					"result_count": 0,
+					"results":      []knowledge.Result{},
+					"formatted": "No system knowledge found. System knowledge may not be indexed yet. " +
+						"This could happen if the application just started or if indexing failed. " +
+						"You can manually reindex using `/rag reindex-system` command.",
+				},
+			}, nil
+		}
+	}
+
+	// Format results
+	formatted := formatSystemResults(results)
+
+	k.log("info", "SearchSystemKnowledge succeeded", "query", input.Query, "result_count", len(results))
+	return Result{
+		Status:  StatusSuccess,
+		Message: fmt.Sprintf("Successfully searched system knowledge for: %s", input.Query),
+		Data: map[string]any{
+			"query":        input.Query,
+			"result_count": len(results),
+			"results":      results,
+			"formatted":    formatted,
+		},
+	}, nil
 }

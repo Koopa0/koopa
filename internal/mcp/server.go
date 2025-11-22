@@ -1,255 +1,151 @@
-// Package mcp provides Model Context Protocol (MCP) integration for the agent system.
-//
-// MCP enables AI agents to connect to external tools and services (like "plugins for AI agents").
-// This package provides Server type for managing multiple MCP server connections with:
-//   - Graceful degradation: Optional, doesn't block Agent if servers fail
-//   - State tracking: Per-server connection states (Disconnected → Connecting → Connected/Failed)
-//   - Thread safety: sync.RWMutex for concurrent access
-//   - Explicit configuration: Loaded from config.yaml via LoadConfigs()
-//
-// Component files: server.go (connection management), state.go (state tracking), config.go (configuration).
 package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log/slog"
-	"sync"
-	"time"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/mcp"
+	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server manages connections to multiple MCP servers and provides
-// a unified interface for retrieving tools and monitoring connection states.
-//
-// This type follows Go naming conventions (like http.Server, sql.DB)
-// where the package provides context and the type name is concise.
+// Server wraps the MCP SDK server and Koopa's Kit
 type Server struct {
-	// host is the Genkit MCPHost that manages actual MCP server connections.
-	host *mcp.MCPHost
-
-	// states tracks the state of each MCP server connection.
-	// Key: server name (e.g., "github", "filesystem")
-	// Value: connection state (stored by value to prevent external mutation)
-	states map[string]State
-
-	// mu protects concurrent access to states map.
-	mu sync.RWMutex
+	mcpServer *mcp.Server
+	kit       *tools.Kit
+	name      string
+	version   string
 }
 
-// Config represents configuration for a single MCP server.
+// Config holds MCP server configuration
 type Config struct {
-	Name          string
-	ClientOptions mcp.MCPClientOptions
+	Name      string
+	Version   string
+	KitConfig tools.KitConfig
 }
 
-// New creates a new MCP Server instance with the provided configurations.
-//
-// Parameters:
-//   - ctx: Context for the initialization (passed to Genkit)
-//   - g: Genkit instance (required for MCPHost creation)
-//   - configs: Slice of MCP server configurations to connect to
-//
-// Returns:
-//   - *Server: Successfully created server instance
-//   - error: If MCPHost creation fails
-//
-// The function will attempt to connect to all configured MCP servers.
-// If some servers fail to connect, they will be marked as Failed in state,
-// but the Server instance will still be created successfully (graceful degradation).
-func New(ctx context.Context, g *genkit.Genkit, configs []Config) (*Server, error) {
-	// Convert Config slice to MCPServerConfig slice for Genkit
-	serverConfigs := make([]mcp.MCPServerConfig, len(configs))
-	for i, cfg := range configs {
-		serverConfigs[i] = mcp.MCPServerConfig{
-			Name:   cfg.Name,
-			Config: cfg.ClientOptions,
-		}
+// NewServer creates a new MCP server
+func NewServer(cfg Config) (*Server, error) {
+	// Validate config
+	if cfg.Name == "" {
+		return nil, fmt.Errorf("server name is required")
+	}
+	if cfg.Version == "" {
+		return nil, fmt.Errorf("server version is required")
 	}
 
-	// Validate server names and check for duplicates
-	nameSet := make(map[string]struct{})
-	for i, cfg := range configs {
-		// Validate that server name is non-empty
-		if cfg.Name == "" {
-			return nil, fmt.Errorf("MCP server name cannot be empty (config index %d)", i)
-		}
-		// Check for duplicate names
-		if _, exists := nameSet[cfg.Name]; exists {
-			return nil, fmt.Errorf("duplicate MCP server name: %s (config index %d)", cfg.Name, i)
-		}
-		nameSet[cfg.Name] = struct{}{}
+	// Create Kit
+	kit, err := tools.NewKit(cfg.KitConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kit: %w", err)
 	}
 
-	// Initialize state map (storing values instead of pointers)
-	states := make(map[string]State)
-	for _, cfg := range configs {
-		states[cfg.Name] = State{
-			Name:        cfg.Name,
-			Status:      Connecting,
-			LastAttempt: time.Now(),
-		}
+	// Create MCP server (using official SDK)
+	mcpServer := mcp.NewServer(&mcp.Implementation{
+		Name:    cfg.Name,
+		Version: cfg.Version,
+	}, nil)
+
+	s := &Server{
+		mcpServer: mcpServer,
+		kit:       kit,
+		name:      cfg.Name,
+		version:   cfg.Version,
 	}
 
-	// Create MCPHost
-	slog.Info("creating MCP host", "server_count", len(configs))
-	host, err := mcp.NewMCPHost(g, mcp.MCPHostOptions{
-		Name:       "koopa-mcp",
-		Version:    "1.0.0",
-		MCPServers: serverConfigs,
+	// Register tools
+	if err := s.registerTools(); err != nil {
+		return nil, fmt.Errorf("failed to register tools: %w", err)
+	}
+
+	return s, nil
+}
+
+// Run starts the MCP server on the given transport
+// This is a blocking call that handles all MCP protocol communication
+func (s *Server) Run(ctx context.Context, transport mcp.Transport) error {
+	return s.mcpServer.Run(ctx, transport)
+}
+
+// registerTools registers all Kit tools to the MCP server
+func (s *Server) registerTools() error {
+	// Register file tools
+	if err := s.registerReadFile(); err != nil {
+		return fmt.Errorf("failed to register readFile: %w", err)
+	}
+
+	// TODO: Register other tools in future iterations
+
+	return nil
+}
+
+// ReadFileInput defines the input schema for readFile tool
+type ReadFileInput struct {
+	Path string `json:"path" jsonschema:"The file path to read (absolute or relative)"`
+}
+
+// registerReadFile registers the readFile tool
+// Following PHASE2-DESIGN-RATIONALE.md:
+// Direct handling in the handler (like net/http.Handler)
+// NO conversion layer - build MCP response inline
+// NO adaptResult(), toResponse(), NewToolResult() functions
+func (s *Server) registerReadFile() error {
+	// Infer input schema from struct
+	inputSchema, err := jsonschema.For[ReadFileInput](nil)
+	if err != nil {
+		return fmt.Errorf("failed to create input schema: %w", err)
+	}
+
+	// Define tool
+	tool := &mcp.Tool{
+		Name:        "readFile",
+		Description: "Read the complete content of any text-based file. Supports absolute and relative paths. Validates paths for security.",
+		InputSchema: inputSchema,
+	}
+
+	// Register tool with handler
+	// Following Go convention: direct inline handling (NO conversion functions)
+	mcp.AddTool(s.mcpServer, tool, func(ctx context.Context, req *mcp.CallToolRequest, in ReadFileInput) (*mcp.CallToolResult, any, error) {
+		// Call Kit method
+		result, err := s.kit.ReadFile(nil, tools.ReadFileInput{Path: in.Path})
+		if err != nil {
+			// System error - propagate to MCP
+			return nil, nil, fmt.Errorf("system error: %w", err)
+		}
+
+		// Direct inline handling (NO conversion function)
+		// Build MCP response directly here, like net/http.Handler
+		if result.Status == tools.StatusError {
+			// Agent error - return as error result
+			errorText := fmt.Sprintf("Error [%s]: %s", result.Error.Code, result.Error.Message)
+			if result.Error.Details != nil {
+				detailsJSON, _ := json.Marshal(result.Error.Details)
+				errorText += fmt.Sprintf("\nDetails: %s", string(detailsJSON))
+			}
+
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: errorText}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		// Success - extract content from result.Data
+		data, ok := result.Data.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("unexpected data format")
+		}
+
+		content, ok := data["content"].(string)
+		if !ok {
+			return nil, nil, fmt.Errorf("content field not found or not string")
+		}
+
+		// Return file content as text
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: content}},
+		}, nil, nil
 	})
-	if err != nil {
-		// Mark all servers as failed
-		for name, state := range states {
-			state.Status = Failed
-			state.LastError = err
-			state.FailureCount++
-			states[name] = state // Must reassign when using value map
-		}
-		slog.Error("failed to create MCP host",
-			"error", err,
-			"server_count", len(configs))
-		return nil, fmt.Errorf("failed to create MCP host: %w", err)
-	}
 
-	// Optimistically mark all servers as connected
-	// (MCPHost doesn't provide per-server status, so we track optimistically)
-	for name, state := range states {
-		state.Status = Connected
-		state.SuccessCount++
-		states[name] = state // Must reassign when using value map
-	}
-
-	slog.Info("MCP host created successfully", "server_count", len(configs))
-
-	return &Server{
-		host:   host,
-		states: states,
-	}, nil
-}
-
-// Tools retrieves all tools from all connected MCP servers.
-//
-// This method aggregates tools from all MCP servers managed by the MCPHost.
-// The tools are automatically converted to Genkit ai.Tool format and are
-// ready to be used in Generate() calls.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - g: Genkit instance (required by MCPHost.GetActiveTools)
-//
-// Returns:
-//   - []ai.Tool: Slice of all available tools from all connected servers
-//   - error: If tool retrieval fails
-//
-// Error Handling:
-//   - If tool retrieval fails, all servers are marked as Failed
-//   - The error is logged and returned to the caller
-//   - Caller should handle gracefully (e.g., fall back to local tools only)
-func (s *Server) Tools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error) {
-	tools, err := s.host.GetActiveTools(ctx, g)
-	if err != nil {
-		// Mark all servers as failed (we don't know which one failed)
-		s.mu.Lock()
-		for name, state := range s.states {
-			state.Status = Failed
-			state.LastError = err
-			state.FailureCount++
-			state.LastAttempt = time.Now()
-			s.states[name] = state // Must reassign when using value map
-		}
-		s.mu.Unlock()
-
-		slog.Error("failed to get MCP tools", "error", err)
-		return nil, fmt.Errorf("failed to get MCP tools: %w", err)
-	}
-
-	// Success: update all server states
-	s.mu.Lock()
-	for name, state := range s.states {
-		state.Status = Connected
-		state.LastError = nil
-		state.SuccessCount++
-		state.LastAttempt = time.Now()
-		s.states[name] = state // Must reassign when using value map
-	}
-	s.mu.Unlock()
-
-	slog.Info("retrieved MCP tools successfully", "tool_count", len(tools))
-	return tools, nil
-}
-
-// State returns the connection state of a specific MCP server.
-//
-// Parameters:
-//   - name: Name of the MCP server (e.g., "github", "filesystem")
-//
-// Returns:
-//   - State: Copy of the server's state
-//   - bool: true if server exists, false otherwise
-//
-// Note: Returns a copy of the state (map access returns a copy for value types).
-func (s *Server) State(name string) (State, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	state, exists := s.states[name]
-	if !exists {
-		return State{}, false
-	}
-
-	// Map access returns a copy when value is stored by value
-	return state, true
-}
-
-// States returns the connection states of all MCP servers.
-//
-// Returns:
-//   - map[string]State: Map of server name to state (copies)
-//
-// Note: Returns copies of states (map iteration returns copies for value types).
-func (s *Server) States() map[string]State {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Create a copy of the states map
-	result := make(map[string]State, len(s.states))
-	for name, state := range s.states {
-		result[name] = state // Iteration already returns a copy for value types
-	}
-
-	return result
-}
-
-// ServerNames returns the names of all configured MCP servers.
-//
-// This is useful for iteration or validation purposes.
-func (s *Server) ServerNames() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	names := make([]string, 0, len(s.states))
-	for name := range s.states {
-		names = append(names, name)
-	}
-
-	return names
-}
-
-// ConnectedCount returns the number of currently connected MCP servers.
-func (s *Server) ConnectedCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	count := 0
-	for _, state := range s.states {
-		if state.Status == Connected {
-			count++
-		}
-	}
-
-	return count
+	return nil
 }

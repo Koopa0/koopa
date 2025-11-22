@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/koopa0/koopa-cli/internal/mcp"
+	// "github.com/koopa0/koopa-cli/internal/mcp" // Removed: Old MCP client
 )
 
 // ============================================================================
@@ -115,51 +115,53 @@ func TestExecute_MultiTurnHistory(t *testing.T) {
 // ============================================================================
 // ConnectMCP and MCP Tests
 // ============================================================================
+// NOTE: Removed during Phase 2 refactoring (old MCP Client code removed)
+// Phase 2 implements MCP Server (not client). Tests may be re-added if needed.
 
-func TestConnectMCP_NotConnected(t *testing.T) {
-	agent := createTestAgent(t, nil)
-
-	// Before connecting, MCP should be nil
-	if agent.MCP() != nil {
-		t.Error("expected MCP() to return nil before connection")
-	}
-}
-
-func TestConnectMCP_EmptyConfig(t *testing.T) {
-	ctx := context.Background()
-	agent := createTestAgent(t, nil)
-
-	// Connect with empty config should not error (or return expected error)
-	err := agent.ConnectMCP(ctx, []mcp.Config{})
-	// Empty config will likely error, which is expected behavior
-	if err != nil {
-		t.Logf("ConnectMCP with empty config returned error (expected): %v", err)
-	}
-}
-
-func TestConnectMCP_MultipleCallsIdempotent(t *testing.T) {
-	ctx := context.Background()
-	agent := createTestAgent(t, nil)
-
-	// Call ConnectMCP multiple times - should only execute once due to sync.Once
-	err1 := agent.ConnectMCP(ctx, []mcp.Config{})
-	err2 := agent.ConnectMCP(ctx, []mcp.Config{})
-
-	// Both calls should return the same error (if any) due to sync.Once
-	if (err1 == nil) != (err2 == nil) {
-		t.Errorf("multiple ConnectMCP calls returned different error states: err1=%v, err2=%v", err1, err2)
-	}
-}
-
-func TestMCP_Getter(t *testing.T) {
-	agent := createTestAgent(t, nil)
-
-	// Test getter returns nil initially (before connection)
-	mcpServer := agent.MCP()
-	if mcpServer != nil {
-		t.Error("expected MCP() to return nil initially")
-	}
-}
+// func TestConnectMCP_NotConnected(t *testing.T) {
+// 	agent := createTestAgent(t, nil)
+//
+// 	// Before connecting, MCP should be nil
+// 	if agent.MCP() != nil {
+// 		t.Error("expected MCP() to return nil before connection")
+// 	}
+// }
+//
+// func TestConnectMCP_EmptyConfig(t *testing.T) {
+// 	ctx := context.Background()
+// 	agent := createTestAgent(t, nil)
+//
+// 	// Connect with empty config should not error (or return expected error)
+// 	err := agent.ConnectMCP(ctx, []mcp.Config{})
+// 	// Empty config will likely error, which is expected behavior
+// 	if err != nil {
+// 		t.Logf("ConnectMCP with empty config returned error (expected): %v", err)
+// 	}
+// }
+//
+// func TestConnectMCP_MultipleCallsIdempotent(t *testing.T) {
+// 	ctx := context.Background()
+// 	agent := createTestAgent(t, nil)
+//
+// 	// Call ConnectMCP multiple times - should only execute once due to sync.Once
+// 	err1 := agent.ConnectMCP(ctx, []mcp.Config{})
+// 	err2 := agent.ConnectMCP(ctx, []mcp.Config{})
+//
+// 	// Both calls should return the same error (if any) due to sync.Once
+// 	if (err1 == nil) != (err2 == nil) {
+// 		t.Errorf("multiple ConnectMCP calls returned different error states: err1=%v, err2=%v", err1, err2)
+// 	}
+// }
+//
+// func TestMCP_Getter(t *testing.T) {
+// 	agent := createTestAgent(t, nil)
+//
+// 	// Test getter returns nil initially (before connection)
+// 	mcpServer := agent.MCP()
+// 	if mcpServer != nil {
+// 		t.Error("expected MCP() to return nil initially")
+// 	}
+// }
 
 // ============================================================================
 // tools Function Tests
@@ -180,23 +182,24 @@ func TestTools_WithoutMCP(t *testing.T) {
 	t.Logf("tools() returned %d tool(s) without MCP", len(toolRefs))
 }
 
-func TestTools_WithMCP(t *testing.T) {
-	ctx := context.Background()
-	agent := createTestAgent(t, nil)
-
-	// Attempt to connect MCP (will likely fail with empty config, but that's ok)
-	_ = agent.ConnectMCP(ctx, []mcp.Config{})
-
-	// Get tools - should handle both success and failure of MCP connection gracefully
-	toolRefs := agent.tools(ctx)
-
-	// Should return local tools at minimum (even if MCP connection failed)
-	if len(toolRefs) == 0 {
-		t.Error("expected tools() to return at least local tools")
-	}
-
-	t.Logf("tools() returned %d tool(s) with MCP connection attempt", len(toolRefs))
-}
+// NOTE: Removed during Phase 2 refactoring (old MCP Client code removed)
+// func TestTools_WithMCP(t *testing.T) {
+// 	ctx := context.Background()
+// 	agent := createTestAgent(t, nil)
+//
+// 	// Attempt to connect MCP (will likely fail with empty config, but that's ok)
+// 	_ = agent.ConnectMCP(ctx, []mcp.Config{})
+//
+// 	// Get tools - should handle both success and failure of MCP connection gracefully
+// 	toolRefs := agent.tools(ctx)
+//
+// 	// Should return local tools at minimum (even if MCP connection failed)
+// 	if len(toolRefs) == 0 {
+// 		t.Error("expected tools() to return at least local tools")
+// 	}
+//
+// 	t.Logf("tools() returned %d tool(s) with MCP connection attempt", len(toolRefs))
+// }
 
 // ============================================================================
 // Phase 3: Tool Registry Separation Tests
@@ -218,78 +221,77 @@ func TestAgent_Tools_LocalOnly(t *testing.T) {
 	t.Logf("tools() returned %d local tools", len(localTools))
 }
 
-// TestAgent_MCPTools_NotConnected tests mcpTools() when MCP is not connected
-func TestAgent_MCPTools_NotConnected(t *testing.T) {
-	ctx := context.Background()
-	agent := createTestAgent(t, nil)
+// NOTE: Removed during Phase 2 refactoring (old MCP Client code removed)
+// Phase 2 no longer has mcpTools() method (MCP Server doesn't use this pattern)
+// func TestAgent_MCPTools_NotConnected(t *testing.T) {
+// 	ctx := context.Background()
+// 	agent := createTestAgent(t, nil)
+//
+// 	// Get MCP tools (should be nil/empty when not connected)
+// 	mcpTools := agent.mcpTools(ctx)
+//
+// 	if len(mcpTools) != 0 {
+// 		t.Errorf("expected 0 MCP tools when not connected, got %d", len(mcpTools))
+// 	}
+//
+// 	t.Log("mcpTools() correctly returned empty slice when not connected")
+// }
 
-	// Get MCP tools (should be nil/empty when not connected)
-	mcpTools := agent.mcpTools(ctx)
-
-	if len(mcpTools) != 0 {
-		t.Errorf("expected 0 MCP tools when not connected, got %d", len(mcpTools))
-	}
-
-	t.Log("mcpTools() correctly returned empty slice when not connected")
-}
-
-// TestAgent_AllTools_Aggregation tests that allTools() combines both sources
+// TestAgent_AllTools_Aggregation tests that allTools() returns local tools only
+// NOTE: Modified for Phase 2 - no longer aggregates MCP tools (MCP Client removed)
 func TestAgent_AllTools_Aggregation(t *testing.T) {
 	ctx := context.Background()
 	agent := createTestAgent(t, nil)
 
 	// Get counts
 	localCount := len(agent.tools(ctx))
-	mcpCount := len(agent.mcpTools(ctx))
 	allCount := len(agent.allTools(ctx))
 
-	// allTools should equal sum of local + MCP
-	expectedCount := localCount + mcpCount
-	if allCount != expectedCount {
-		t.Errorf("allTools() = %d, expected %d (local:%d + mcp:%d)",
-			allCount, expectedCount, localCount, mcpCount)
+	// allTools should equal local tools only (no MCP client)
+	if allCount != localCount {
+		t.Errorf("allTools() = %d, expected %d (local tools only)",
+			allCount, localCount)
 	}
 
-	t.Logf("allTools() correctly aggregated: local=%d, mcp=%d, total=%d",
-		localCount, mcpCount, allCount)
+	t.Logf("allTools() correctly returned local tools: total=%d", allCount)
 }
 
-// TestAgent_MCPConnection_ToolsUpdate tests that connecting MCP updates tools
-func TestAgent_MCPConnection_ToolsUpdate(t *testing.T) {
-	ctx := context.Background()
+// NOTE: Removed during Phase 2 refactoring (old MCP Client code removed)
+// func TestAgent_MCPConnection_ToolsUpdate(t *testing.T) {
+// 	ctx := context.Background()
+// 	agent := createTestAgent(t, nil)
+//
+// 	// Before MCP connection
+// 	beforeLocal := len(agent.tools(ctx))
+// 	beforeMCP := len(agent.mcpTools(ctx))
+// 	beforeAll := len(agent.allTools(ctx))
+//
+// 	// Connect MCP (will likely fail with empty config, but that's ok for this test)
+// 	_ = agent.ConnectMCP(ctx, []mcp.Config{})
+//
+// 	// After MCP connection attempt
+// 	afterLocal := len(agent.tools(ctx))
+// 	afterMCP := len(agent.mcpTools(ctx))
+// 	afterAll := len(agent.allTools(ctx))
+//
+// 	// Local tools should not change
+// 	if afterLocal != beforeLocal {
+// 		t.Errorf("local tools changed after MCP connection: before=%d, after=%d",
+// 			beforeLocal, afterLocal)
+// 	}
+//
+// 	t.Logf("Local tools: %d (unchanged)", afterLocal)
+// 	t.Logf("MCP tools: before=%d, after=%d", beforeMCP, afterMCP)
+// 	t.Logf("All tools: before=%d, after=%d", beforeAll, afterAll)
+// }
+
+// TestAgent_Kit_NotNil tests that kit is initialized (Phase 1: Kit replaces Registry)
+func TestAgent_Kit_NotNil(t *testing.T) {
 	agent := createTestAgent(t, nil)
 
-	// Before MCP connection
-	beforeLocal := len(agent.tools(ctx))
-	beforeMCP := len(agent.mcpTools(ctx))
-	beforeAll := len(agent.allTools(ctx))
-
-	// Connect MCP (will likely fail with empty config, but that's ok for this test)
-	_ = agent.ConnectMCP(ctx, []mcp.Config{})
-
-	// After MCP connection attempt
-	afterLocal := len(agent.tools(ctx))
-	afterMCP := len(agent.mcpTools(ctx))
-	afterAll := len(agent.allTools(ctx))
-
-	// Local tools should not change
-	if afterLocal != beforeLocal {
-		t.Errorf("local tools changed after MCP connection: before=%d, after=%d",
-			beforeLocal, afterLocal)
+	if agent.kit == nil {
+		t.Fatal("kit should be initialized")
 	}
 
-	t.Logf("Local tools: %d (unchanged)", afterLocal)
-	t.Logf("MCP tools: before=%d, after=%d", beforeMCP, afterMCP)
-	t.Logf("All tools: before=%d, after=%d", beforeAll, afterAll)
-}
-
-// TestAgent_ToolRegistry_NotNil tests that toolRegistry is initialized
-func TestAgent_ToolRegistry_NotNil(t *testing.T) {
-	agent := createTestAgent(t, nil)
-
-	if agent.toolRegistry == nil {
-		t.Fatal("toolRegistry should be initialized")
-	}
-
-	t.Log("toolRegistry correctly initialized")
+	t.Log("kit correctly initialized")
 }
