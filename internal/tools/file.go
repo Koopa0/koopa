@@ -174,7 +174,11 @@ func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, erro
 			},
 		}, nil
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			k.log("error", "WriteFile failed to close file", "path", safePath, "error", closeErr)
+		}
+	}()
 
 	// Write content
 	if _, err := file.Write([]byte(input.Content)); err != nil {
