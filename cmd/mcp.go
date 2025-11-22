@@ -1,0 +1,100 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"runtime/debug"
+	"syscall"
+
+	"github.com/koopa0/koopa-cli/internal/app"
+	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/mcp"
+	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa-cli/internal/tools"
+	mcpSdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// RunMCP starts the MCP server on stdio transport
+//
+// Architecture:
+//   - Creates Kit with all tool dependencies
+//   - Creates MCP Server wrapping the Kit
+//   - Connects to stdio transport for Claude Desktop/Cursor
+//   - Handles graceful shutdown on SIGINT/SIGTERM
+//
+// Error handling:
+//   - Returns error if initialization fails (App, Kit, Server)
+//   - Returns error if server connection fails
+//   - Graceful shutdown on context cancellation
+func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
+	// Add panic recovery to capture any crashes
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("PANIC in RunMCP", "error", r, "stack", string(debug.Stack()))
+			panic(r) // re-panic after logging
+		}
+	}()
+
+	slog.Info("starting MCP server", "version", version)
+
+	// Create cancellable context for signal handling
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Set up signal handler for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		slog.Info("received shutdown signal", "signal", sig)
+		cancel()
+	}()
+
+	// Initialize application using Wire DI
+	application, cleanup, err := app.InitializeApp(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to initialize application: %w", err)
+	}
+	defer cleanup()
+	defer func() {
+		if err := application.Close(); err != nil {
+			slog.Warn("failed to close application", "error", err)
+		}
+	}()
+
+	// Create Kit configuration with all dependencies
+	kitConfig := tools.KitConfig{
+		PathVal:        application.PathValidator,
+		CmdVal:         security.NewCommand(),
+		EnvVal:         security.NewEnv(),
+		HTTPVal:        security.NewHTTP(),
+		KnowledgeStore: application.Knowledge,
+	}
+
+	// Create MCP Server with Kit
+	mcpServer, err := mcp.NewServer(mcp.Config{
+		Name:      "koopa",
+		Version:   version,
+		KitConfig: kitConfig,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create MCP server: %w", err)
+	}
+
+	slog.Info("MCP server initialized", "name", "koopa", "version", version)
+	slog.Info("starting MCP server on stdio transport")
+
+	// Run server on stdio transport
+	// This is a blocking call that handles all MCP protocol communication
+	// The server will run until ctx is cancelled or an error occurs
+	if err := mcpServer.Run(ctx, &mcpSdk.StdioTransport{}); err != nil {
+		return fmt.Errorf("MCP server error: %w", err)
+	}
+
+	slog.Info("MCP server shut down gracefully")
+	return nil
+}

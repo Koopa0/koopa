@@ -55,24 +55,9 @@ var providerSet = wire.NewSet(
 // provideGenkit initializes Genkit with Google AI plugin.
 // Returns error if initialization fails (follows Wire provider pattern).
 func provideGenkit(ctx context.Context) (*genkit.Genkit, error) {
-	promptDir := "./prompts"
-	if _, err := os.Stat(promptDir); os.IsNotExist(err) {
-		// Try parent directory (useful for tests running in subdirectories)
-		if _, err := os.Stat("../prompts"); err == nil {
-			promptDir = "../prompts"
-		}
-	}
-
-	// Validate that prompt directory exists before initializing Genkit
-	// This provides a clear error message instead of letting Genkit fail later
-	if _, err := os.Stat(promptDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("prompt directory not found: %s (also checked: ./prompts, ../prompts)", promptDir)
-	}
-
-	g := genkit.Init(ctx,
-		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithPromptDir(promptDir),
-	)
+	// For MCP server mode, prompts are not needed, so we make them optional
+	// Initialize Genkit without prompts - they're only needed for interactive chat mode
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
 	// genkit.Init doesn't return error, but we return this signature
 	// for consistency with Wire provider pattern and future error handling

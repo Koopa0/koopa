@@ -3,11 +3,14 @@
 // Provides Agent type for orchestrating AI interactions with:
 //   - Genkit AI model interactions with RAG-first design (retriever required, always enabled)
 //   - Conversation history management (in-memory with optional database persistence)
-//   - Tool registration via internal/tools (file, system, network) and internal/mcp packages
+//   - Tool registration via internal/tools (file, system, network)
 //   - Security validation (path traversal, command injection, SSRF prevention)
 //
 // Agent is thread-safe for concurrent access (messages protected by RWMutex).
-// Related packages: internal/tools, internal/mcp, internal/session.
+// Related packages: internal/tools, internal/session.
+//
+// NOTE: MCP Client support temporarily removed during Phase 2 refactoring.
+// Phase 2 implements MCP Server (not client). MCP Client may be re-added in future if needed.
 package agent
 
 import (
@@ -23,7 +26,7 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/mcp"
+	// "github.com/koopa0/koopa-cli/internal/mcp" // Removed: Old MCP client, Phase 2 implements MCP server
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/tools"
@@ -45,11 +48,11 @@ type Agent struct {
 	systemPrompt string        // System prompt text
 	messages     []*ai.Message // Conversation history (in-memory, optionally persisted to database)
 	messagesMu   sync.RWMutex  // Protects messages field for concurrent access
-	toolRegistry *tools.Registry // Local tool registry (Phase 3: Tool Registry separation)
-	mcp          *mcp.Server     // MCP server connection (nil = not connected)
-	mcpOnce      sync.Once       // Ensures MCP is initialized only once
-	mcpErr       error           // Stores MCP initialization error
-	retriever    ai.Retriever    // RAG retriever (required, always available)
+	kit          *tools.Kit    // Tool kit (Phase 1: Kit replaces Handler and Registry)
+	// mcp          *mcp.Server     // Removed: Old MCP client (Phase 2 implements MCP server)
+	// mcpOnce      sync.Once       // Removed: Old MCP client
+	// mcpErr       error           // Removed: Old MCP client
+	retriever ai.Retriever // RAG retriever (required, always available)
 
 	// Session persistence (P1 - optional)
 	sessionStore     SessionStore   // Session data access layer (nil = persistence disabled)
@@ -92,7 +95,7 @@ func New(
 		g:         g,
 		generator: &genkitGenerator{g: g},
 		config:    cfg,
-		mcp:       nil,       // MCP not connected by default
+		// mcp:       nil,       // Removed: Old MCP client
 		retriever: retriever, // RAG retriever (always available)
 		logger:    slog.Default(),
 	}
@@ -132,16 +135,26 @@ func New(
 	httpValidator := security.NewHTTP()
 	envValidator := security.NewEnv()
 
-	// Register core tools (file, system, network, knowledge)
-	// Note: Tools internally hold references to validators; Agent doesn't need to retain them
-	// knowledgeStore is guaranteed non-nil by validation above
-	if err := tools.RegisterTools(g, pathValidator, cmdValidator, httpValidator, envValidator, agent.knowledgeStore); err != nil {
-		return nil, fmt.Errorf("failed to register tools: %w", err)
+	// Create Kit with all required dependencies (Phase 1: Kit replaces Handler and Registry)
+	kitCfg := tools.KitConfig{
+		PathVal:        pathValidator,
+		CmdVal:         cmdValidator,
+		EnvVal:         envValidator,
+		HTTPVal:        httpValidator,
+		KnowledgeStore: agent.knowledgeStore,
 	}
 
-	// Initialize tool registry (Phase 3: Tool Registry separation)
-	// Registry manages local tool lookup; MCP tools are handled separately
-	agent.toolRegistry = tools.NewRegistry(g)
+	kit, err := tools.NewKit(kitCfg, tools.WithLogger(agent.logger))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kit: %w", err)
+	}
+
+	// Register Kit tools to Genkit
+	if err := kit.Register(g); err != nil {
+		return nil, fmt.Errorf("failed to register kit tools: %w", err)
+	}
+
+	agent.kit = kit
 
 	// Load system prompt (from Dotprompt file)
 	systemPrompt := genkit.LookupPrompt(g, "koopa")
@@ -210,75 +223,28 @@ func New(
 }
 
 // tools returns locally registered tools only.
-// Separated from MCP tools for clear responsibility boundary (Phase 3: Tool Registry separation).
+// Separated from MCP tools for clear responsibility boundary (Phase 1: Kit provides tools).
 //
 // Design: Single responsibility - only handles local tools.
 func (a *Agent) tools(ctx context.Context) []ai.ToolRef {
-	return a.toolRegistry.All(ctx)
+	return a.kit.All(ctx, a.g)
 }
 
-// mcpTools returns MCP tools if connected, empty slice otherwise.
-// Separated from local tools for clear responsibility boundary (Phase 3: Tool Registry separation).
+// Removed: Old MCP Client methods
+// Phase 2 implements MCP Server (not client). These methods may be re-added in future if needed.
 //
-// Error Handling: MCP failures are logged but don't prevent execution.
-// Returns empty slice on error (graceful degradation).
+// Previously:
+// - mcpTools(): returned MCP tools if connected
+// - allTools(): aggregated local + MCP tools
+// - ConnectMCP(): connected to MCP servers
+// - MCP(): retrieved MCP server instance
+
+// allTools returns all available tools (currently only local tools).
+// Previously aggregated local + MCP tools, now simplified during Phase 2.
 //
-// Design: Single responsibility - only handles MCP tools.
-func (a *Agent) mcpTools(ctx context.Context) []ai.ToolRef {
-	if a.mcp == nil {
-		return nil
-	}
-
-	mcpTools, err := a.mcp.Tools(ctx, a.g)
-	if err != nil {
-		a.logger.Warn("failed to get MCP tools",
-			"error", err)
-		return nil
-	}
-
-	// Convert []ai.Tool to []ai.ToolRef
-	// ai.Tool implements ai.ToolRef interface (both have Name() method)
-	toolRefs := make([]ai.ToolRef, len(mcpTools))
-	for i, tool := range mcpTools {
-		toolRefs[i] = tool
-	}
-
-	return toolRefs
-}
-
-// allTools aggregates tools from all sources (local + MCP).
-// This is the method used by generateResponse (Phase 3: Tool Registry separation).
-//
-// Design: Composition of tools() and mcpTools().
-// Clear separation allows independent testing and evolution.
+// TODO: If MCP Client is re-added in future, restore aggregation logic.
 func (a *Agent) allTools(ctx context.Context) []ai.ToolRef {
-	local := a.tools(ctx)
-	mcp := a.mcpTools(ctx)
-
-	result := make([]ai.ToolRef, 0, len(local)+len(mcp))
-	result = append(result, local...)
-	result = append(result, mcp...)
-
-	return result
-}
-
-// ConnectMCP connects to MCP servers (thread-safe, ensures single initialization)
-func (a *Agent) ConnectMCP(ctx context.Context, serverConfigs []mcp.Config) error {
-	a.mcpOnce.Do(func() {
-		server, err := mcp.New(ctx, a.g, serverConfigs)
-		if err != nil {
-			a.mcpErr = fmt.Errorf("unable to connect MCP: %w", err)
-			return
-		}
-		a.mcp = server
-		slog.Info("MCP connected successfully", "server_count", len(serverConfigs))
-	})
-	return a.mcpErr
-}
-
-// MCP retrieves the MCP server (if connected)
-func (a *Agent) MCP() *mcp.Server {
-	return a.mcp
+	return a.tools(ctx)
 }
 
 // truncateString truncates a string to maxLen characters for logging
