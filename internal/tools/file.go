@@ -1,36 +1,115 @@
 package tools
 
-// file.go defines file operation tools with security validation.
-//
-// Provides 5 file tools: readFile, writeFile, listFiles, deleteFile, getFileInfo.
-// All operations use security.PathValidator to prevent path traversal attacks (CWE-22).
-// File permissions: 0600 for created files, 0750 for directories.
-
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/log"
+	"github.com/koopa0/koopa-cli/internal/security"
 )
 
-// ============================================================================
-// Kit Methods (Phase 1 - Structured Return Values)
-// ============================================================================
+// FileToolset name constant.
+const FileToolsetName = "file"
 
-// ReadFile reads and returns the content of a file.
-//
-// Error handling:
-//   - Agent Error (file not found, permission denied): Return Result{Error: ...}, nil
-//   - System Error (disk failure): Return Result{}, error (rare in practice)
-func (k *Kit) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error) {
-	k.log("info", "ReadFile called", "path", input.Path)
+// ReadFileInput defines input for readFile tool.
+type ReadFileInput struct {
+	Path string `json:"path" jsonschema_description:"The file path to read (absolute or relative)"`
+}
+
+// WriteFileInput defines input for writeFile tool.
+type WriteFileInput struct {
+	Path    string `json:"path" jsonschema_description:"The file path to write"`
+	Content string `json:"content" jsonschema_description:"The content to write to the file"`
+}
+
+// ListFilesInput defines input for listFiles tool.
+type ListFilesInput struct {
+	Path string `json:"path" jsonschema_description:"The directory path to list"`
+}
+
+// DeleteFileInput defines input for deleteFile tool.
+type DeleteFileInput struct {
+	Path string `json:"path" jsonschema_description:"The file path to delete"`
+}
+
+// GetFileInfoInput defines input for getFileInfo tool.
+type GetFileInfoInput struct {
+	Path string `json:"path" jsonschema_description:"The file path to get info for"`
+}
+
+// FileToolset provides file operation tools such as reading, writing, and managing files.
+// It implements the Toolset interface.
+type FileToolset struct {
+	pathVal *security.Path
+	logger  log.Logger
+}
+
+// NewFileToolset creates a new FileToolset.
+func NewFileToolset(pathVal *security.Path, logger log.Logger) (*FileToolset, error) {
+	if pathVal == nil {
+		return nil, fmt.Errorf("path validator is required")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+
+	return &FileToolset{
+		pathVal: pathVal,
+		logger:  logger,
+	}, nil
+}
+
+// Name returns the toolset identifier.
+func (fs *FileToolset) Name() string {
+	return FileToolsetName
+}
+
+// Tools returns all file operation tools provided by this toolset.
+func (fs *FileToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
+	return []Tool{
+		NewTool(
+			"readFile",
+			"Read the complete content of any text-based file.",
+			false, // not long running
+			fs.ReadFile,
+		),
+		NewTool(
+			"writeFile",
+			"Write or create any text-based file.",
+			false,
+			fs.WriteFile,
+		),
+		NewTool(
+			"listFiles",
+			"List all files and subdirectories in a directory.",
+			false,
+			fs.ListFiles,
+		),
+		NewTool(
+			"deleteFile",
+			"Delete a file permanently.",
+			false,
+			fs.DeleteFile,
+		),
+		NewTool(
+			"getFileInfo",
+			"Get detailed metadata about a file.",
+			false,
+			fs.GetFileInfo,
+		),
+	}, nil
+}
+
+// ReadFile reads and returns the complete content of a file with security validation.
+func (fs *FileToolset) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error) {
+	fs.logger.Info("ReadFile called", "path", input.Path)
 
 	// Validate path (security check)
-	safePath, err := k.pathVal.Validate(input.Path)
+	safePath, err := fs.pathVal.Validate(input.Path)
 	if err != nil {
-		// Agent Error: Security validation failed
-		k.log("error", "ReadFile path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Path validation failed",
@@ -42,12 +121,9 @@ func (k *Kit) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error)
 	}
 
 	// Read file
-	content, err := os.ReadFile(safePath) // #nosec G304 -- validated above
+	content, err := os.ReadFile(safePath) // #nosec G304
 	if err != nil {
-		// Determine error type
 		if os.IsNotExist(err) {
-			// Agent Error: File not found
-			k.log("error", "ReadFile file not found", "path", safePath)
 			return Result{
 				Status:  StatusError,
 				Message: fmt.Sprintf("File not found: %s", input.Path),
@@ -57,22 +133,6 @@ func (k *Kit) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error)
 				},
 			}, nil
 		}
-
-		if os.IsPermission(err) {
-			// Agent Error: Permission denied
-			k.log("error", "ReadFile permission denied", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: "Permission denied",
-				Error: &Error{
-					Code:    ErrCodePermission,
-					Message: fmt.Sprintf("permission denied: %s", input.Path),
-				},
-			}, nil
-		}
-
-		// Other I/O errors (treat as Agent Error for safety)
-		k.log("error", "ReadFile I/O error", "path", safePath, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Failed to read file",
@@ -83,8 +143,6 @@ func (k *Kit) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error)
 		}, nil
 	}
 
-	// Success
-	k.log("info", "ReadFile succeeded", "path", safePath, "size", len(content))
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully read file: %s", safePath),
@@ -96,18 +154,12 @@ func (k *Kit) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error)
 	}, nil
 }
 
-// WriteFile writes content to a file with secure permissions.
-//
-// Error handling:
-//   - Agent Error (path validation, permission denied, symlink): Return Result{Error: ...}, nil
-//   - System Error (disk failure): Return Result{}, error (rare)
-func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, error) {
-	k.log("info", "WriteFile called", "path", input.Path)
+// WriteFile writes content to a file with security validation and automatic directory creation.
+func (fs *FileToolset) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, error) {
+	fs.logger.Info("WriteFile called", "path", input.Path)
 
-	// Validate path (security check)
-	safePath, err := k.pathVal.Validate(input.Path)
+	safePath, err := fs.pathVal.Validate(input.Path)
 	if err != nil {
-		k.log("error", "WriteFile path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Path validation failed",
@@ -118,10 +170,8 @@ func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, erro
 		}, nil
 	}
 
-	// Ensure directory exists (use 0750 permission)
 	dir := filepath.Dir(safePath)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		k.log("error", "WriteFile unable to create directory", "dir", dir, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to create directory",
@@ -132,39 +182,8 @@ func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, erro
 		}, nil
 	}
 
-	// Security: safePath is validated by security.Path.Validate() which:
-	// - Prevents directory traversal (CWE-22)
-	// - Resolves and validates symlinks
-	// - Enforces allowed directory restrictions
-	// gosec G304 is suppressed as path validation is performed above
 	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304
 	if err != nil {
-		// Check if it's a symlink-related error
-		if info, statErr := os.Lstat(safePath); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
-			k.log("error", "WriteFile refusing to write to symlink", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: "Refusing to write to symlink",
-				Error: &Error{
-					Code:    ErrCodeSecurity,
-					Message: fmt.Sprintf("refusing to write to symlink: %s", safePath),
-				},
-			}, nil
-		}
-
-		if os.IsPermission(err) {
-			k.log("error", "WriteFile permission denied", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: "Permission denied",
-				Error: &Error{
-					Code:    ErrCodePermission,
-					Message: fmt.Sprintf("permission denied: %s", input.Path),
-				},
-			}, nil
-		}
-
-		k.log("error", "WriteFile unable to open file", "path", safePath, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to open file",
@@ -174,15 +193,9 @@ func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, erro
 			},
 		}, nil
 	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			k.log("error", "WriteFile failed to close file", "path", safePath, "error", closeErr)
-		}
-	}()
+	defer file.Close()
 
-	// Write content
 	if _, err := file.Write([]byte(input.Content)); err != nil {
-		k.log("error", "WriteFile unable to write", "path", safePath, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to write file",
@@ -193,8 +206,6 @@ func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, erro
 		}, nil
 	}
 
-	// Success
-	k.log("info", "WriteFile succeeded", "path", safePath, "size", len(input.Content))
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully wrote file: %s", safePath),
@@ -205,18 +216,12 @@ func (k *Kit) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, erro
 	}, nil
 }
 
-// ListFiles lists all files and subdirectories in a directory.
-//
-// Error handling:
-//   - Agent Error (directory not found, permission denied): Return Result{Error: ...}, nil
-//   - System Error (disk failure): Return Result{}, error (rare)
-func (k *Kit) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Result, error) {
-	k.log("info", "ListFiles called", "path", input.Path)
+// ListFiles lists files in a directory.
+func (fs *FileToolset) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Result, error) {
+	fs.logger.Info("ListFiles called", "path", input.Path)
 
-	// Validate path (security check)
-	safePath, err := k.pathVal.Validate(input.Path)
+	safePath, err := fs.pathVal.Validate(input.Path)
 	if err != nil {
-		k.log("error", "ListFiles path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Path validation failed",
@@ -227,34 +232,8 @@ func (k *Kit) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Result, erro
 		}, nil
 	}
 
-	// Read directory
 	entries, err := os.ReadDir(safePath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			k.log("error", "ListFiles directory not found", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: fmt.Sprintf("Directory not found: %s", input.Path),
-				Error: &Error{
-					Code:    ErrCodeNotFound,
-					Message: fmt.Sprintf("directory not found: %s", input.Path),
-				},
-			}, nil
-		}
-
-		if os.IsPermission(err) {
-			k.log("error", "ListFiles permission denied", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: "Permission denied",
-				Error: &Error{
-					Code:    ErrCodePermission,
-					Message: fmt.Sprintf("permission denied: %s", input.Path),
-				},
-			}, nil
-		}
-
-		k.log("error", "ListFiles unable to read directory", "path", safePath, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to read directory",
@@ -265,7 +244,6 @@ func (k *Kit) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Result, erro
 		}, nil
 	}
 
-	// Build file list
 	var files []map[string]any
 	for _, entry := range entries {
 		fileType := "file"
@@ -278,8 +256,6 @@ func (k *Kit) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Result, erro
 		})
 	}
 
-	// Success
-	k.log("info", "ListFiles succeeded", "path", safePath, "count", len(files))
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully listed %d entries in: %s", len(files), safePath),
@@ -291,19 +267,12 @@ func (k *Kit) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Result, erro
 	}, nil
 }
 
-// DeleteFile permanently deletes a file from the filesystem.
-// WARNING: This action is irreversible!
-//
-// Error handling:
-//   - Agent Error (file not found, permission denied, symlink): Return Result{Error: ...}, nil
-//   - System Error (disk failure): Return Result{}, error (rare)
-func (k *Kit) DeleteFile(ctx *ai.ToolContext, input DeleteFileInput) (Result, error) {
-	k.log("info", "DeleteFile called", "path", input.Path)
+// DeleteFile permanently deletes a file with security validation.
+func (fs *FileToolset) DeleteFile(ctx *ai.ToolContext, input DeleteFileInput) (Result, error) {
+	fs.logger.Info("DeleteFile called", "path", input.Path)
 
-	// Validate path (security check)
-	safePath, err := k.pathVal.Validate(input.Path)
+	safePath, err := fs.pathVal.Validate(input.Path)
 	if err != nil {
-		k.log("error", "DeleteFile path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Path validation failed",
@@ -314,59 +283,7 @@ func (k *Kit) DeleteFile(ctx *ai.ToolContext, input DeleteFileInput) (Result, er
 		}, nil
 	}
 
-	// Security: Check for symbolic links before deletion (prevent deleting unintended targets)
-	info, err := os.Lstat(safePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			k.log("error", "DeleteFile file not found", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: fmt.Sprintf("File not found: %s", input.Path),
-				Error: &Error{
-					Code:    ErrCodeNotFound,
-					Message: fmt.Sprintf("file not found: %s", input.Path),
-				},
-			}, nil
-		}
-
-		k.log("error", "DeleteFile unable to stat file", "path", safePath, "error", err)
-		return Result{
-			Status:  StatusError,
-			Message: "Unable to stat file",
-			Error: &Error{
-				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to stat file: %v", err),
-			},
-		}, nil
-	}
-
-	if info.Mode()&os.ModeSymlink != 0 {
-		k.log("error", "DeleteFile refusing to delete symlink", "path", safePath)
-		return Result{
-			Status:  StatusError,
-			Message: "Refusing to delete symlink",
-			Error: &Error{
-				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("refusing to delete symlink: %s", safePath),
-			},
-		}, nil
-	}
-
-	// Delete file
 	if err := os.Remove(safePath); err != nil {
-		if os.IsPermission(err) {
-			k.log("error", "DeleteFile permission denied", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: "Permission denied",
-				Error: &Error{
-					Code:    ErrCodePermission,
-					Message: fmt.Sprintf("permission denied: %s", input.Path),
-				},
-			}, nil
-		}
-
-		k.log("error", "DeleteFile unable to delete", "path", safePath, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to delete file",
@@ -377,8 +294,6 @@ func (k *Kit) DeleteFile(ctx *ai.ToolContext, input DeleteFileInput) (Result, er
 		}, nil
 	}
 
-	// Success
-	k.log("info", "DeleteFile succeeded", "path", safePath)
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully deleted file: %s", safePath),
@@ -388,18 +303,12 @@ func (k *Kit) DeleteFile(ctx *ai.ToolContext, input DeleteFileInput) (Result, er
 	}, nil
 }
 
-// GetFileInfo returns detailed metadata about a file or directory.
-//
-// Error handling:
-//   - Agent Error (file not found, permission denied): Return Result{Error: ...}, nil
-//   - System Error (disk failure): Return Result{}, error (rare)
-func (k *Kit) GetFileInfo(ctx *ai.ToolContext, input GetFileInfoInput) (Result, error) {
-	k.log("info", "GetFileInfo called", "path", input.Path)
+// GetFileInfo gets file metadata.
+func (fs *FileToolset) GetFileInfo(ctx *ai.ToolContext, input GetFileInfoInput) (Result, error) {
+	fs.logger.Info("GetFileInfo called", "path", input.Path)
 
-	// Validate path (security check)
-	safePath, err := k.pathVal.Validate(input.Path)
+	safePath, err := fs.pathVal.Validate(input.Path)
 	if err != nil {
-		k.log("error", "GetFileInfo path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Path validation failed",
@@ -410,34 +319,8 @@ func (k *Kit) GetFileInfo(ctx *ai.ToolContext, input GetFileInfoInput) (Result, 
 		}, nil
 	}
 
-	// Get file info
 	info, err := os.Stat(safePath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			k.log("error", "GetFileInfo file not found", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: fmt.Sprintf("File not found: %s", input.Path),
-				Error: &Error{
-					Code:    ErrCodeNotFound,
-					Message: fmt.Sprintf("file not found: %s", input.Path),
-				},
-			}, nil
-		}
-
-		if os.IsPermission(err) {
-			k.log("error", "GetFileInfo permission denied", "path", safePath)
-			return Result{
-				Status:  StatusError,
-				Message: "Permission denied",
-				Error: &Error{
-					Code:    ErrCodePermission,
-					Message: fmt.Sprintf("permission denied: %s", input.Path),
-				},
-			}, nil
-		}
-
-		k.log("error", "GetFileInfo unable to get info", "path", safePath, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to get file information",
@@ -448,8 +331,6 @@ func (k *Kit) GetFileInfo(ctx *ai.ToolContext, input GetFileInfoInput) (Result, 
 		}, nil
 	}
 
-	// Success
-	k.log("info", "GetFileInfo succeeded", "path", safePath)
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully retrieved file info: %s", safePath),

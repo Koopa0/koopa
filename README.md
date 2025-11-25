@@ -4,241 +4,240 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/koopa0/koopa-cli)](https://goreportcard.com/report/github.com/koopa0/koopa-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![Koopa Assistant](docs/assets/Koopa-CLI.jpg)
+A terminal-based AI assistant with local knowledge management and MCP integration. Built with [Firebase Genkit](https://github.com/firebase/genkit).
 
-**A terminal-based AI assistant with knowledge base capabilities, built on [Genkit](https://github.com/firebase/genkit).**
+**Version**: 0.1.0 (Alpha)
 
-Koopa brings AI conversations directly to your command line with the ability to index and search your local documents for context-aware responses.
+## What is Koopa?
 
-## Why Koopa?
+Koopa is a personal AI assistant designed for developers who want:
 
-- **Persistent Sessions** - Save and resume conversations anytime, organized by topic
-- **Smart Knowledge Base** - Index your documents and let Koopa remember them for you
-- **Private & Local** - Your data stays on your machine, stored in local PostgreSQL
-- **Extensible Tools** - Built-in file operations, system commands, and HTTP requests
-- **MCP Compatible** - Add custom tools via [Model Context Protocol](https://modelcontextprotocol.io/)
-- **Single Binary** - Pure Go implementation, no runtime dependencies
-- **Powered by Genkit** - Built on Firebase's [Genkit framework](https://github.com/firebase/genkit)
+- **Local Knowledge**: Index your documents, code, and notes for context-aware conversations
+- **Privacy Control**: All data stays on your machine
+- **MCP Integration**: Connect with Gemini CLI, Cursor, Claude Code via Model Context Protocol
+- **Extensible Tools**: File operations, system commands, HTTP requests, knowledge search
+- **Session Management**: Persistent conversations organized by topic
 
-## Installation
+Unlike generic AI assistants, Koopa learns from your local documents and integrates seamlessly into your development workflow.
 
-**Prerequisites:** Go 1.25+, Docker & Docker Compose, and a [Gemini API key](https://ai.google.dev/)
+## Quick Start
+
+**Prerequisites**: Go 1.25+, Docker, PostgreSQL, [Gemini API key](https://ai.google.dev/)
 
 ```bash
-# Clone and setup
+# Clone and build
 git clone https://github.com/koopa0/koopa-cli.git
 cd koopa-cli
+go build -o koopa
 
-# Start database (auto-runs migrations)
+# Start database
 docker-compose up -d
 
-# Build and run
-go build -o koopa
+# Set API key and run
 export GEMINI_API_KEY=your-api-key
 ./koopa
-```
-
-## Getting Started
-
-### Basic Chat
-
-```bash
-$ ./koopa
-Version: 1.0
-
-> What is the capital of France?
-Paris is the capital of France.
-
-> /exit
-```
-
-### Knowledge Base (RAG)
-
-Index your documents and ask questions about them:
-
-```bash
-> /rag add ~/Documents/notes/
-
-> /rag list
-Indexed Documents (3):
-- meeting-notes.md (2KB)
-- project-ideas.txt (1KB)
-- research.md (5KB)
-
-> What were the action items from my last meeting?
-Based on your meeting notes, the action items were:
-1. Follow up with the design team
-2. Schedule Q2 planning session
-3. Review the budget proposal
-```
-
-### Session Management
-
-Organize conversations by topic and resume them anytime:
-
-```bash
-> /session new "Project Brainstorming"
-Created new session: Project Brainstorming
-  Session ID: 8551638c-ba89-43c6-8fbf-e323c026bab9
-
-> Let's brainstorm ideas for our Q2 product launch
-[AI responds with ideas...]
-
-> /session new "Bug Investigation"
-Created new session: Bug Investigation
-
-> /session list
-╔══════════════════════════════════════════════════════════╗
-║  Sessions (2 most recent)                                ║
-╚══════════════════════════════════════════════════════════╝
-
- ▶ 1. Bug Investigation  [ACTIVE]
-    ID: c7a7f88d-a916-4cbb-8f7d-7f33d748ecec
-    Messages: 0  |  Updated: 2025-11-17 14:33:51
-
-   2. Project Brainstorming
-    ID: 8551638c-ba89-43c6-8fbf-e323c026bab9
-    Messages: 5  |  Updated: 2025-11-17 14:30:15
-
-> /session switch 8551638c-ba89-43c6-8fbf-e323c026bab9
-Switched to session: Project Brainstorming
-  Conversation history loaded (5 messages)
-
-> Continue with the brainstorming ideas
-[AI continues from where you left off...]
 ```
 
 ## Features
 
-### Interactive Chat
-
-Start conversations with Gemini right from your terminal:
-
+### Local Knowledge Base
+Index your documents for semantic search:
 ```bash
-> Tell me a joke about programming
-> Explain how binary search works
-> Help me debug this error message
+> /rag add ~/Documents/notes/
+> /rag add ~/projects/myapp/docs/
+> What did I write about microservices?
 ```
 
-### Knowledge Base (RAG)
-
-Index your local documents and have Koopa reference them in conversations:
-
+### MCP Server
+Run Koopa as an MCP server to integrate with other tools:
 ```bash
-> /rag add ~/Documents/         # Index a directory
-> /rag add ./project/README.md  # Index a single file
-> /rag list                     # View all indexed content
-> /rag status                   # Check system status
+$ ./koopa mcp
+```
+
+Configure in `~/.gemini/settings.json`:
+```json
+{
+  "mcpServers": {
+    "koopa": {
+      "command": "koopa",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Use from Gemini CLI:
+```bash
+$ gemini
+> @koopa search my notes for "deployment strategies"
 ```
 
 ### Session Management
-
-Save and restore your conversations across sessions:
-
+Organize conversations by topic:
 ```bash
-> /session new "My Project Planning"  # Create a new session
-> /session list                       # View all your sessions
-> /session switch <id>                # Switch between sessions
-> /session                            # Show current session details
-> /session delete <id>                # Delete a session
+> /session new "Project Planning"
+> /session list
+> /session switch <session-id>
 ```
 
-Your conversation history is automatically saved to PostgreSQL, allowing you to:
-
-- **Resume conversations** - Pick up exactly where you left off
-- **Organize by topic** - Create separate sessions for different projects
-- **Search history** - Access past conversations anytime
-- **Never lose context** - All messages are persisted to the database
-
 ### Built-in Tools
+- **File Operations**: Read, write, list, delete files with path validation
+- **System Commands**: Execute shell commands with security whitelist
+- **HTTP Requests**: Make web requests with SSRF protection
+- **Knowledge Search**: Semantic search over indexed documents
 
-Koopa can help you with:
+## Architecture
 
-- **File Operations** - Read, write, and manipulate files
-- **System Commands** - Execute shell commands
-- **Network Requests** - Make HTTP requests and fetch web content
+```
+┌─────────────────────────────────────────────────────────┐
+│                     CLI Interface                       │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│                    Chat Agent (Genkit)                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │   Tools     │  │   Sessions   │  │   Knowledge    │  │
+│  │  Registry   │  │   (Postgres) │  │   (pgvector)   │  │
+│  └─────────────┘  └──────────────┘  └────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                            │
+                ┌───────────┴───────────┐
+                ▼                       ▼
+        ┌──────────────┐        ┌──────────────┐
+        │  MCP Server  │        │   RAG        │
+        │  (Stdio)     │        │  Retriever   │
+        └──────────────┘        └──────────────┘
+```
 
-### Extensible via MCP
+### Core Components
 
-Add custom tools using the [Model Context Protocol](https://modelcontextprotocol.io/) to extend Koopa's capabilities.
+- **Agent**: Stateless agent with tool calling and RAG
+- **Tools**: Modular toolsets (file, system, network, knowledge)
+- **MCP**: Model Context Protocol server for external integration
+- **Knowledge**: Vector-based semantic search with pgvector
+- **Session**: PostgreSQL-backed conversation persistence
+- **RAG**: Document indexing and retrieval
+- **Security**: Path validation, command whitelist, SSRF protection
 
 ## Commands
 
-| Command                  | Description                           |
-| ------------------------ | ------------------------------------- |
-| `/help`                  | Show available commands               |
-| `/version`               | Show version information              |
-| **Session Management**   |                                       |
-| `/session`               | Show current session details          |
-| `/session list [limit]`  | List all sessions (default: 10)       |
-| `/session new <title>`   | Create a new session with a title     |
-| `/session switch <id>`   | Switch to a different session         |
-| `/session delete <id>`   | Delete a session and all its messages |
-| **Knowledge Base (RAG)** |                                       |
-| `/rag add <path>`        | Index files or directories            |
-| `/rag list`              | List indexed documents                |
-| `/rag remove <id>`       | Remove document from knowledge base   |
-| `/rag status`            | Show RAG status and statistics        |
-| **Conversation**         |                                       |
-| `/clear`                 | Clear current conversation            |
-| `/exit` or `/quit`       | Exit Koopa                            |
-
-**Shortcuts:**
-
-- `Ctrl+D` - Exit Koopa
-- `Ctrl+C` - Cancel current input
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/session new <title>` | Create new session |
+| `/session list` | List all sessions |
+| `/session switch <id>` | Switch to session |
+| `/rag add <path>` | Index documents |
+| `/rag list` | List indexed documents |
+| `/rag status` | Show RAG statistics |
+| `/exit` | Exit Koopa |
 
 ## Configuration
 
-Koopa works with minimal configuration. Set your API key and you're ready to go:
-
-```bash
-export GEMINI_API_KEY=your-api-key
-./koopa
-```
-
-For advanced settings, create `~/.koopa/config.yaml`:
+Create `~/.koopa/config.yaml`:
 
 ```yaml
-# AI model
-model_name: "gemini-2.5-flash" # or "gemini-2.5-pro"
+# Model settings
+model_name: "gemini-2.5-flash"
 temperature: 0.7
 max_tokens: 2048
 
-# Database (using docker-compose defaults)
-postgres_host: "localhost"
-postgres_port: 5432
-postgres_user: "koopa"
-postgres_password: "koopa_dev_password"
-postgres_db_name: "koopa"
+# RAG settings
+rag_top_k: 3
+embedder_model: "text-embedding-004"
 
-# Knowledge base
-rag_top_k: 3 # Number of relevant documents to retrieve
-embedder_model: "text-embedding-004" # Google AI embedder
-
-# Conversation
-max_history_messages: 50 # Keep recent 50 messages
+# Session settings
+max_history_messages: 50
 ```
 
-## Technology
+## Development
 
-Koopa is built with:
+```bash
+# Run tests
+go test ./...
 
-- **[Genkit](https://firebase.google.com/docs/genkit/go)** - AI framework with native ReAct engine for multi-turn tool calling
-- **PostgreSQL + pgvector** - Vector storage for semantic search
-- **Pure Go** - Single static binary, no runtime dependencies
-- **OpenTelemetry** - Built-in observability through Genkit's automatic tracing and metrics
+# Run integration tests
+go test -tags=integration ./...
 
-### Architecture Highlights
+# Run linter
+golangci-lint run
 
-- **Synchronous Execution** - Simple, blocking operation using Genkit's native ReAct engine with automatic multi-turn tool calling
-- **RAG-First Design** - Knowledge base retrieval automatically integrated into every conversation turn
-- **Tool Registry** - Extensible tool system with separation of concerns between agent logic and tool implementations
-- **Native Multi-turn Support** - Genkit's ReAct engine handles tool calling loops automatically without manual orchestration
+# Build
+go build -o koopa
+```
+
+## Roadmap
+
+### Current (v0.1.0)
+- CLI interface
+- Local knowledge base (RAG)
+- MCP server integration
+- Session management
+- Built-in security
+
+### Planned (v0.2.0)
+- HTTP API server
+- Genkit flows for programmatic access
+- Enhanced tool system
+- Multi-agent support
+
+### Future
+- Deep research engine (inspired by Perplexity/NotebookLM)
+- Knowledge graph
+- Web UI
+- Cloud deployment support
+
+See [KOOPA_EVOLUTION_PROPOSAL.md](KOOPA_EVOLUTION_PROPOSAL.md) for detailed roadmap.
+
+## Integration
+
+### Gemini CLI
+```bash
+# In ~/.gemini/settings.json
+{
+  "mcpServers": {
+    "koopa": {
+      "command": "koopa",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Cursor IDE
+```json
+// In .cursor/mcp.json
+{
+  "mcpServers": {
+    "koopa": {
+      "command": "koopa",
+      "args": ["mcp"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
+### Claude Code
+Add Koopa as an MCP server in Claude Code settings.
+
+## Documentation
+
+- [Architecture](docs/architecture/) - System design and patterns
+- [Testing Strategy](TESTING_STRATEGY_PROPOSAL.md) - Test plan and coverage
+- [Evolution Roadmap](KOOPA_EVOLUTION_PROPOSAL.md) - Future development plans
+- [API Reference](https://pkg.go.dev/github.com/koopa0/koopa-cli) - Package documentation
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request or open an issue on [GitHub](https://github.com/koopa0/koopa-cli).
+Contributions welcome! Please:
+
+1. Read the [contributing guidelines](CONTRIBUTING.md)
+2. Fork and create a feature branch
+3. Write tests for new functionality
+4. Ensure `go test ./...` and `golangci-lint run` pass
+5. Submit a pull request
 
 ## License
 
@@ -246,4 +245,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Built using [Genkit](https://github.com/firebase/genkit)**
+**Built with [Firebase Genkit](https://github.com/firebase/genkit) • Powered by Gemini • Open Source**

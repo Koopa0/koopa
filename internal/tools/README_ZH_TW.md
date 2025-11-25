@@ -8,7 +8,7 @@
 
 ## 設計理念
 
-Tools 套件體現 **V3.0 架構原則**，用於構建可維護、可測試、LLM 友好的代理工具。
+Tools 用於構建可維護、可測試、LLM 友好的代理工具。
 
 ### 核心原則
 
@@ -56,31 +56,11 @@ graph TD
     KnowledgeTools --> SearchHistory[searchHistory]
     KnowledgeTools --> SearchDocuments[searchDocuments]
     KnowledgeTools --> SearchSystemKnowledge[searchSystemKnowledge]
-
-    style Kit fill:#e1f5ff
-    style FileTools fill:#fff4e1
-    style SystemTools fill:#fff4e1
-    style NetworkTools fill:#fff4e1
-    style KnowledgeTools fill:#fff4e1
 ```
 
 **4 大類別 12 個工具**：檔案（5）• 系統（3）• 網路（1）• 知識（3）
 
 ---
-
-## 設計決策
-
-### 為什麼用 Config Struct 而非個別參數？
-
-**問題**：不斷增長的參數列表變得難以管理，添加依賴時會破壞 API。
-
-**解決方案**：單一 `KitConfig` 結構包含所有必需依賴。
-
-**優點**：
-- 隨新依賴優雅擴展
-- 通過欄位名稱自文檔化
-- IDE 自動完成支援
-- 擴展時零破壞性變更
 
 ### 為什麼用結構化 Result 而非原始返回值？
 

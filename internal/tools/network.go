@@ -1,34 +1,92 @@
 package tools
 
-// network.go defines HTTP request tools with SSRF protection.
-//
-// Provides httpGet tool for sending HTTP GET requests with comprehensive security:
-//   - SSRF protection: Blocks private IPs (127.0.0.1, 192.168.x.x, 10.x.x.x), localhost, cloud metadata endpoints (169.254.169.254)
-//   - Resource limits: Response size limits (10MB default), request timeout (30s), redirect limits (10)
-//   - Structured output: Returns JSON with status code and body for programmatic processing
-
 import (
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/log"
 )
 
-// ============================================================================
-// Kit Methods (Phase 1 - New Architecture)
-// ============================================================================
+// NetworkToolsetName is the toolset identifier constant.
+const NetworkToolsetName = "network"
+
+// HTTPGetInput defines input for httpGet tool.
+type HTTPGetInput struct {
+	URL string `json:"url" jsonschema_description:"The URL to fetch"`
+}
+
+// httpValidator defines the HTTP validation behavior required by NetworkToolset.
+// This is an unexported internal interface following Go best practices.
+type httpValidator interface {
+	ValidateURL(url string) error
+	Client() *http.Client
+	MaxResponseSize() int64
+}
+
+// NetworkToolset provides network operation tools with built-in security protections.
+// It implements the Toolset interface and offers the following tools:
+//   - httpGet: Sends HTTP GET requests with SSRF protection
+//
+// Security features:
+//   - SSRF protection: Blocks private IPs (127.0.0.1, 192.168.x.x, 10.x.x.x), localhost, and cloud metadata endpoints
+//   - Resource limits: Response size limit (10MB default), request timeout (30s), redirect limit (10)
+type NetworkToolset struct {
+	httpVal httpValidator
+	logger  log.Logger
+}
+
+// NewNetworkToolset creates a new NetworkToolset with HTTP validation.
+func NewNetworkToolset(httpVal httpValidator, logger log.Logger) (*NetworkToolset, error) {
+	if httpVal == nil {
+		return nil, fmt.Errorf("http validator is required")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+
+	return &NetworkToolset{
+		httpVal: httpVal,
+		logger:  logger,
+	}, nil
+}
+
+// Name returns the toolset identifier.
+func (nt *NetworkToolset) Name() string {
+	return NetworkToolsetName
+}
+
+// Tools returns all network operation tools provided by this toolset.
+func (nt *NetworkToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
+	return []Tool{
+		NewTool(
+			"httpGet",
+			"Send an HTTP GET request to a URL. Includes SSRF protection (blocks private IPs, localhost, cloud metadata).",
+			true, // long running
+			nt.HTTPGet,
+		),
+	}, nil
+}
+
+// Output type definitions follow.
+
+// HTTPGetOutput is the output for httpGet tool
+type HTTPGetOutput struct {
+	URL    string `json:"url" jsonschema:"description=The requested URL"`
+	Status int    `json:"status" jsonschema:"description=HTTP status code"`
+	Body   string `json:"body" jsonschema:"description=Response body"`
+}
 
 // HTTPGet sends an HTTP GET request to a URL with SSRF protection.
-//
-// Error handling:
-//   - Agent Error (SSRF blocked, network failed, response too large): Return Result{Error: ...}, nil
-//   - System Error (internal failure): Return Result{}, error (rare)
-func (k *Kit) HTTPGet(ctx *ai.ToolContext, input HTTPGetInput) (Result, error) {
-	k.log("info", "HTTPGet called", "url", input.URL)
+// Blocks requests to private IPs, localhost, and cloud metadata endpoints.
+func (nt *NetworkToolset) HTTPGet(ctx *ai.ToolContext, input HTTPGetInput) (Result, error) {
+	nt.logger.Info("HTTPGet called", "url", input.URL)
 
 	// URL security validation (prevent SSRF attacks)
-	if err := k.httpVal.ValidateURL(input.URL); err != nil {
-		k.log("error", "HTTPGet URL validation failed", "url", input.URL, "error", err)
+	if err := nt.httpVal.ValidateURL(input.URL); err != nil {
+		nt.logger.Error("HTTPGet URL validation failed", "url", input.URL, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "URL validation failed",
@@ -40,10 +98,10 @@ func (k *Kit) HTTPGet(ctx *ai.ToolContext, input HTTPGetInput) (Result, error) {
 	}
 
 	// Use reusable HTTP client (with connection pooling and security config)
-	client := k.httpVal.Client()
+	client := nt.httpVal.Client()
 	resp, err := client.Get(input.URL)
 	if err != nil {
-		k.log("error", "HTTPGet request failed", "url", input.URL, "error", err)
+		nt.logger.Error("HTTPGet request failed", "url", input.URL, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "HTTP request failed",
@@ -56,12 +114,12 @@ func (k *Kit) HTTPGet(ctx *ai.ToolContext, input HTTPGetInput) (Result, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	// Limit response size (prevent resource exhaustion)
-	maxSize := k.httpVal.MaxResponseSize()
+	maxSize := nt.httpVal.MaxResponseSize()
 	limitedReader := io.LimitReader(resp.Body, maxSize)
 
 	body, err := io.ReadAll(limitedReader)
 	if err != nil {
-		k.log("error", "HTTPGet read failed", "url", input.URL, "error", err)
+		nt.logger.Error("HTTPGet read failed", "url", input.URL, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Failed to read response",
@@ -77,7 +135,7 @@ func (k *Kit) HTTPGet(ctx *ai.ToolContext, input HTTPGetInput) (Result, error) {
 		extra := make([]byte, 1)
 		n, _ := resp.Body.Read(extra)
 		if n > 0 {
-			k.log("error", "HTTPGet response too large", "url", input.URL, "max_size", maxSize)
+			nt.logger.Error("HTTPGet response too large", "url", input.URL, "max_size", maxSize)
 			return Result{
 				Status:  StatusError,
 				Message: "Response size exceeds limit",
@@ -90,7 +148,7 @@ func (k *Kit) HTTPGet(ctx *ai.ToolContext, input HTTPGetInput) (Result, error) {
 	}
 
 	// Success
-	k.log("info", "HTTPGet succeeded", "url", input.URL, "status_code", resp.StatusCode, "body_size", len(body))
+	nt.logger.Info("HTTPGet succeeded", "url", input.URL, "status_code", resp.StatusCode, "body_size", len(body))
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully fetched: %s (status %d)", input.URL, resp.StatusCode),

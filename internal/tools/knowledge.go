@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/log"
 )
 
 // formatHistoryResults formats conversation search results into a readable string.
@@ -67,11 +69,11 @@ func formatDocumentResults(results []knowledge.Result) string {
 	}
 
 	var output strings.Builder
-	output.WriteString(fmt.Sprintf("📚 Found %d relevant document(s) from your knowledge base:\n\n", len(results)))
+	output.WriteString(fmt.Sprintf("Found %d relevant document(s) from your knowledge base:\n\n", len(results)))
 
 	for i, result := range results {
-		// Clear header emphasizing this is FROM USER'S KNOWLEDGE BASE
-		output.WriteString(fmt.Sprintf("━━━ 📄 Retrieved Document %d (%.1f%% relevance) ━━━\n", i+1, result.Similarity*100))
+		// Clear header with document information
+		output.WriteString(fmt.Sprintf("--- Retrieved Document %d (%.1f%% relevance) ---\n", i+1, result.Similarity*100))
 
 		// Essential metadata only (file name and path for reference)
 		if fileName, ok := result.Document.Metadata["file_name"]; ok {
@@ -153,16 +155,112 @@ func truncateContent(content string, maxLength int) string {
 }
 
 // ============================================================================
-// Kit Methods (Phase 1 - New Architecture)
+// Tool Metadata Implementations
 // ============================================================================
 
+type searchHistoryTool struct{}
+
+func (t *searchHistoryTool) Name() string { return "searchHistory" }
+func (t *searchHistoryTool) Description() string {
+	return "Search conversation history using semantic similarity."
+}
+func (t *searchHistoryTool) IsLongRunning() bool { return false }
+
+type searchDocumentsTool struct{}
+
+func (t *searchDocumentsTool) Name() string { return "searchDocuments" }
+func (t *searchDocumentsTool) Description() string {
+	return "Search indexed documents using semantic similarity."
+}
+func (t *searchDocumentsTool) IsLongRunning() bool { return false }
+
+type searchSystemKnowledgeTool struct{}
+
+func (t *searchSystemKnowledgeTool) Name() string { return "searchSystemKnowledge" }
+func (t *searchSystemKnowledgeTool) Description() string {
+	return "Search system knowledge base using semantic similarity."
+}
+func (t *searchSystemKnowledgeTool) IsLongRunning() bool { return false }
+
+// ============================================================================
+// KnowledgeToolset Implementation
+// ============================================================================
+
+// KnowledgeToolsetName is the toolset identifier constant.
+const KnowledgeToolsetName = "knowledge"
+
+// SearchHistoryInput defines input for searchHistory tool.
+type SearchHistoryInput struct {
+	Query string `json:"query" jsonschema_description:"The search query string"`
+	TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum results to return (1-10, default: 3)"`
+}
+
+// SearchDocumentsInput defines input for searchDocuments tool.
+type SearchDocumentsInput struct {
+	Query string `json:"query" jsonschema_description:"The search query string"`
+	TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum results to return (1-10, default: 5)"`
+}
+
+// SearchSystemKnowledgeInput defines input for searchSystemKnowledge tool.
+type SearchSystemKnowledgeInput struct {
+	Query string `json:"query" jsonschema_description:"The search query string"`
+	TopK  int32  `json:"topK,omitempty" jsonschema_description:"Maximum results to return (1-10, default: 3)"`
+}
+
+// KnowledgeToolset implements the Toolset interface for knowledge retrieval tools.
+type KnowledgeToolset struct {
+	store  *knowledge.Store
+	logger log.Logger
+}
+
+// NewKnowledgeToolset creates a new KnowledgeToolset.
+// Logger is required for debugging and troubleshooting
+func NewKnowledgeToolset(store *knowledge.Store, logger log.Logger) (*KnowledgeToolset, error) {
+	if store == nil {
+		return nil, fmt.Errorf("knowledge store is required")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+
+	return &KnowledgeToolset{
+		store:  store,
+		logger: logger,
+	}, nil
+}
+
+// Name returns the name of the toolset.
+func (k *KnowledgeToolset) Name() string {
+	return KnowledgeToolsetName
+}
+
+// Tools returns the tool definitions for the KnowledgeToolset.
+func (k *KnowledgeToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
+	return []Tool{
+		NewTool(
+			"searchHistory",
+			"Search conversation history using semantic similarity.",
+			false,
+			k.SearchHistory,
+		),
+		NewTool(
+			"searchDocuments",
+			"Search indexed documents using semantic similarity.",
+			false,
+			k.SearchDocuments,
+		),
+		NewTool(
+			"searchSystemKnowledge",
+			"Search system knowledge base using semantic similarity.",
+			false,
+			k.SearchSystemKnowledge,
+		),
+	}, nil
+}
+
 // SearchHistory searches conversation history using semantic similarity.
-//
-// Error handling:
-//   - Agent Error (search failed): Return Result{Error: ...}, nil
-//   - Success (no results): Return Result{Status: success, Data: {results: []}}
-func (k *Kit) SearchHistory(ctx *ai.ToolContext, input SearchHistoryInput) (Result, error) {
-	k.log("info", "SearchHistory called", "query", input.Query, "topK", input.TopK)
+func (k *KnowledgeToolset) SearchHistory(ctx *ai.ToolContext, input SearchHistoryInput) (Result, error) {
+	k.logger.Info("SearchHistory called", "query", input.Query, "topK", input.TopK)
 
 	// Validate and set defaults for topK
 	topK := input.TopK
@@ -175,13 +273,13 @@ func (k *Kit) SearchHistory(ctx *ai.ToolContext, input SearchHistoryInput) (Resu
 	// Build search options with conversation filter
 	opts := []knowledge.SearchOption{
 		knowledge.WithTopK(topK),
-		knowledge.WithFilter("source_type", "conversation"),
+		knowledge.WithFilter("source_type", knowledge.SourceTypeConversation),
 	}
 
 	// Execute search
-	results, err := k.knowledgeStore.Search(ctx.Context, input.Query, opts...)
+	results, err := k.store.Search(ctx, input.Query, opts...)
 	if err != nil {
-		k.log("error", "SearchHistory failed", "query", input.Query, "error", err)
+		k.logger.Error("SearchHistory failed", "query", input.Query, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "History search failed",
@@ -195,7 +293,7 @@ func (k *Kit) SearchHistory(ctx *ai.ToolContext, input SearchHistoryInput) (Resu
 	// Format results
 	formatted := formatHistoryResults(results)
 
-	k.log("info", "SearchHistory succeeded", "query", input.Query, "result_count", len(results))
+	k.logger.Info("SearchHistory succeeded", "query", input.Query, "result_count", len(results))
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully searched history for: %s", input.Query),
@@ -209,12 +307,8 @@ func (k *Kit) SearchHistory(ctx *ai.ToolContext, input SearchHistoryInput) (Resu
 }
 
 // SearchDocuments searches indexed documents using semantic similarity.
-//
-// Error handling:
-//   - Agent Error (search failed): Return Result{Error: ...}, nil
-//   - Success (no results): Return Result{Status: success, Data: {results: []}}
-func (k *Kit) SearchDocuments(ctx *ai.ToolContext, input SearchDocumentsInput) (Result, error) {
-	k.log("info", "SearchDocuments called", "query", input.Query, "topK", input.TopK)
+func (k *KnowledgeToolset) SearchDocuments(ctx *ai.ToolContext, input SearchDocumentsInput) (Result, error) {
+	k.logger.Info("SearchDocuments called", "query", input.Query, "topK", input.TopK)
 
 	// Validate and set defaults for topK
 	topK := input.TopK
@@ -227,13 +321,13 @@ func (k *Kit) SearchDocuments(ctx *ai.ToolContext, input SearchDocumentsInput) (
 	// Build search options with file filter
 	opts := []knowledge.SearchOption{
 		knowledge.WithTopK(topK),
-		knowledge.WithFilter("source_type", "file"),
+		knowledge.WithFilter("source_type", knowledge.SourceTypeFile),
 	}
 
 	// Execute search
-	results, err := k.knowledgeStore.Search(ctx.Context, input.Query, opts...)
+	results, err := k.store.Search(ctx, input.Query, opts...)
 	if err != nil {
-		k.log("error", "SearchDocuments failed", "query", input.Query, "error", err)
+		k.logger.Error("SearchDocuments failed", "query", input.Query, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "Document search failed",
@@ -247,7 +341,7 @@ func (k *Kit) SearchDocuments(ctx *ai.ToolContext, input SearchDocumentsInput) (
 	// Format results
 	formatted := formatDocumentResults(results)
 
-	k.log("info", "SearchDocuments succeeded", "query", input.Query, "result_count", len(results))
+	k.logger.Info("SearchDocuments succeeded", "query", input.Query, "result_count", len(results))
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully searched documents for: %s", input.Query),
@@ -261,12 +355,8 @@ func (k *Kit) SearchDocuments(ctx *ai.ToolContext, input SearchDocumentsInput) (
 }
 
 // SearchSystemKnowledge searches system knowledge base using semantic similarity.
-//
-// Error handling:
-//   - Agent Error (search failed): Return Result{Error: ...}, nil
-//   - Success (no results): Return Result{Status: success, Data: {results: []}}
-func (k *Kit) SearchSystemKnowledge(ctx *ai.ToolContext, input SearchSystemKnowledgeInput) (Result, error) {
-	k.log("info", "SearchSystemKnowledge called", "query", input.Query, "topK", input.TopK)
+func (k *KnowledgeToolset) SearchSystemKnowledge(ctx *ai.ToolContext, input SearchSystemKnowledgeInput) (Result, error) {
+	k.logger.Info("SearchSystemKnowledge called", "query", input.Query, "topK", input.TopK)
 
 	// Validate and set defaults for topK
 	topK := input.TopK
@@ -279,13 +369,13 @@ func (k *Kit) SearchSystemKnowledge(ctx *ai.ToolContext, input SearchSystemKnowl
 	// Build search options with system filter
 	opts := []knowledge.SearchOption{
 		knowledge.WithTopK(topK),
-		knowledge.WithFilter("source_type", "system"),
+		knowledge.WithFilter("source_type", knowledge.SourceTypeSystem),
 	}
 
 	// Execute search
-	results, err := k.knowledgeStore.Search(ctx.Context, input.Query, opts...)
+	results, err := k.store.Search(ctx, input.Query, opts...)
 	if err != nil {
-		k.log("error", "SearchSystemKnowledge failed", "query", input.Query, "error", err)
+		k.logger.Error("SearchSystemKnowledge failed", "query", input.Query, "error", err)
 		return Result{
 			Status:  StatusError,
 			Message: "System knowledge search failed",
@@ -301,13 +391,13 @@ func (k *Kit) SearchSystemKnowledge(ctx *ai.ToolContext, input SearchSystemKnowl
 		// Use larger TopK to check if ANY system knowledge exists
 		checkOpts := []knowledge.SearchOption{
 			knowledge.WithTopK(10),
-			knowledge.WithFilter("source_type", "system"),
+			knowledge.WithFilter("source_type", knowledge.SourceTypeSystem),
 		}
-		allSystemDocs, checkErr := k.knowledgeStore.Search(ctx.Context, "system", checkOpts...)
+		allSystemDocs, checkErr := k.store.Search(ctx, knowledge.SourceTypeSystem, checkOpts...)
 
 		// Provide feedback if the check itself failed
 		if checkErr != nil {
-			k.log("warn", "SearchSystemKnowledge check failed", "error", checkErr)
+			k.logger.Warn("SearchSystemKnowledge check failed", "error", checkErr)
 			return Result{
 				Status:  StatusSuccess,
 				Message: "No system knowledge found (check failed)",
@@ -324,7 +414,7 @@ func (k *Kit) SearchSystemKnowledge(ctx *ai.ToolContext, input SearchSystemKnowl
 
 		// If no system documents found at all, warn the user
 		if len(allSystemDocs) == 0 {
-			k.log("warn", "SearchSystemKnowledge no system knowledge indexed")
+			k.logger.Warn("SearchSystemKnowledge no system knowledge indexed")
 			return Result{
 				Status:  StatusSuccess,
 				Message: "No system knowledge found (not indexed)",
@@ -343,7 +433,7 @@ func (k *Kit) SearchSystemKnowledge(ctx *ai.ToolContext, input SearchSystemKnowl
 	// Format results
 	formatted := formatSystemResults(results)
 
-	k.log("info", "SearchSystemKnowledge succeeded", "query", input.Query, "result_count", len(results))
+	k.logger.Info("SearchSystemKnowledge succeeded", "query", input.Query, "result_count", len(results))
 	return Result{
 		Status:  StatusSuccess,
 		Message: fmt.Sprintf("Successfully searched system knowledge for: %s", input.Query),

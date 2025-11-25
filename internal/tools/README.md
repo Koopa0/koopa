@@ -8,7 +8,7 @@ Secure AI agent toolkit with structured error handling and zero-global-state des
 
 ## Design Philosophy
 
-The Tools package embodies **V3.0 architecture principles** for building maintainable, testable, and LLM-friendly agent tools.
+The Tools building maintainable, testable, and LLM-friendly agent tools.
 
 ### Core Principles
 
@@ -56,12 +56,6 @@ graph TD
     KnowledgeTools --> SearchHistory[searchHistory]
     KnowledgeTools --> SearchDocuments[searchDocuments]
     KnowledgeTools --> SearchSystemKnowledge[searchSystemKnowledge]
-
-    style Kit fill:#e1f5ff
-    style FileTools fill:#fff4e1
-    style SystemTools fill:#fff4e1
-    style NetworkTools fill:#fff4e1
-    style KnowledgeTools fill:#fff4e1
 ```
 
 **12 tools across 4 categories**: File (5) • System (3) • Network (1) • Knowledge (3)
@@ -69,18 +63,6 @@ graph TD
 ---
 
 ## Design Decisions
-
-### Why Config Struct over Individual Parameters?
-
-**Problem**: Growing parameter lists become unwieldy and break APIs when adding dependencies.
-
-**Solution**: Single `KitConfig` struct with all required dependencies.
-
-**Benefits**:
-- Scales gracefully with new dependencies
-- Self-documenting through field names
-- IDE autocomplete support
-- Zero breaking changes when extending
 
 ### Why Structured Result over Raw Returns?
 
