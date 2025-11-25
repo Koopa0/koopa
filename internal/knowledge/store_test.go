@@ -182,7 +182,7 @@ func (m *mockKnowledgeQuerier) ListDocumentsBySourceType(ctx context.Context, ar
 // Constructor Tests
 // ============================================================================
 
-func TestNewWithQuerier(t *testing.T) {
+func TestNew(t *testing.T) {
 	tests := []struct {
 		name         string
 		logger       *slog.Logger
@@ -205,10 +205,10 @@ func TestNewWithQuerier(t *testing.T) {
 			mockQuerier := &mockKnowledgeQuerier{}
 			mockEmbed := &mockEmbedder{}
 
-			store := NewWithQuerier(mockQuerier, mockEmbed, tt.logger)
+			store := New(mockQuerier, mockEmbed, tt.logger)
 
 			if store == nil {
-				t.Fatal("NewWithQuerier returned nil")
+				t.Fatal("New returned nil")
 				return
 			}
 
@@ -239,7 +239,7 @@ func TestStore_Add_Success(t *testing.T) {
 		embeddings: []float32{0.5, 0.6, 0.7},
 	}
 
-	store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+	store := New(mockQuerier, mockEmbed, nil)
 	ctx := context.Background()
 
 	doc := Document{
@@ -335,7 +335,7 @@ func TestStore_Add_EmbeddingError(t *testing.T) {
 				returnNil:   tt.returnNil,
 			}
 
-			store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+			store := New(mockQuerier, mockEmbed, nil)
 
 			doc := Document{
 				ID:      "test-doc",
@@ -365,7 +365,7 @@ func TestStore_Add_UpsertError(t *testing.T) {
 	}
 	mockEmbed := &mockEmbedder{}
 
-	store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+	store := New(mockQuerier, mockEmbed, nil)
 
 	doc := Document{
 		ID:      "test-doc",
@@ -419,7 +419,7 @@ func TestStore_Search_Success_WithFilter(t *testing.T) {
 	}
 	mockEmbed := &mockEmbedder{}
 
-	store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+	store := New(mockQuerier, mockEmbed, nil)
 
 	results, err := store.Search(
 		context.Background(),
@@ -484,7 +484,7 @@ func TestStore_Search_Success_WithoutFilter(t *testing.T) {
 	}
 	mockEmbed := &mockEmbedder{}
 
-	store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+	store := New(mockQuerier, mockEmbed, nil)
 
 	results, err := store.Search(context.Background(), "test query")
 	if err != nil {
@@ -535,7 +535,7 @@ func TestStore_Search_EmbeddingError(t *testing.T) {
 				embedErr: tt.embedErr,
 			}
 
-			store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+			store := New(mockQuerier, mockEmbed, nil)
 
 			_, err := store.Search(context.Background(), "test query")
 			if err == nil {
@@ -560,7 +560,7 @@ func TestStore_Search_EmptyEmbedding(t *testing.T) {
 		returnEmpty: true,
 	}
 
-	store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+	store := New(mockQuerier, mockEmbed, nil)
 
 	_, err := store.Search(context.Background(), "test query")
 	if err == nil {
@@ -614,7 +614,7 @@ func TestStore_Search_QueryError(t *testing.T) {
 			}
 			mockEmbed := &mockEmbedder{}
 
-			store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+			store := New(mockQuerier, mockEmbed, nil)
 
 			var opts []SearchOption
 			if tt.useFilter {
@@ -647,7 +647,7 @@ func TestStore_Search_MetadataParseError(t *testing.T) {
 	}
 	mockEmbed := &mockEmbedder{}
 
-	store := NewWithQuerier(mockQuerier, mockEmbed, nil)
+	store := New(mockQuerier, mockEmbed, nil)
 
 	results, err := store.Search(context.Background(), "test")
 	if err != nil {
@@ -705,7 +705,7 @@ func TestStore_Count_Success(t *testing.T) {
 				countAllResult: tt.mockCount,
 			}
 
-			store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
+			store := New(mockQuerier, &mockEmbedder{}, nil)
 
 			count, err := store.Count(context.Background(), tt.filter)
 			if err != nil {
@@ -764,7 +764,7 @@ func TestStore_Count_Error(t *testing.T) {
 				countAllErr: tt.countErr,
 			}
 
-			store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
+			store := New(mockQuerier, &mockEmbedder{}, nil)
 
 			_, err := store.Count(context.Background(), tt.filter)
 			if err == nil {
@@ -784,7 +784,7 @@ func TestStore_Count_Error(t *testing.T) {
 
 func TestStore_Delete_Success(t *testing.T) {
 	mockQuerier := &mockKnowledgeQuerier{}
-	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
+	store := New(mockQuerier, &mockEmbedder{}, nil)
 
 	err := store.Delete(context.Background(), "test-doc-123")
 	if err != nil {
@@ -804,7 +804,7 @@ func TestStore_Delete_Error(t *testing.T) {
 	mockQuerier := &mockKnowledgeQuerier{
 		deleteErr: errors.New("document not found"),
 	}
-	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
+	store := New(mockQuerier, &mockEmbedder{}, nil)
 
 	err := store.Delete(context.Background(), "missing-doc")
 	if err == nil {
@@ -825,7 +825,7 @@ func TestStore_Delete_Error(t *testing.T) {
 // ============================================================================
 
 func TestStore_Close(t *testing.T) {
-	store := NewWithQuerier(&mockKnowledgeQuerier{}, &mockEmbedder{}, nil)
+	store := New(&mockKnowledgeQuerier{}, &mockEmbedder{}, nil)
 
 	err := store.Close()
 	if err != nil {
@@ -838,7 +838,7 @@ func TestStore_Close(t *testing.T) {
 // ============================================================================
 
 func TestStore_ListBySourceType_Success(t *testing.T) {
-	metadataJSON := []byte(`{"source_type":"file","page_id":"123"}`)
+	metadataJSON := []byte(`{"source_type":"` + SourceTypeFile + `","page_id":"123"}`)
 
 	mockQuerier := &mockKnowledgeQuerier{
 		listBySourceTypeResult: []sqlc.ListDocumentsBySourceTypeRow{
@@ -863,9 +863,9 @@ func TestStore_ListBySourceType_Success(t *testing.T) {
 		},
 	}
 
-	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
+	store := New(mockQuerier, &mockEmbedder{}, nil)
 
-	docs, err := store.ListBySourceType(context.Background(), "file", 10)
+	docs, err := store.ListBySourceType(context.Background(), SourceTypeFile, 10)
 	if err != nil {
 		t.Fatalf("ListBySourceType failed: %v", err)
 	}
@@ -879,7 +879,7 @@ func TestStore_ListBySourceType_Success(t *testing.T) {
 		t.Errorf("first doc ID mismatch: got %q", docs[0].ID)
 	}
 
-	if docs[0].Metadata["source_type"] != "file" {
+	if docs[0].Metadata["source_type"] != SourceTypeFile {
 		t.Error("metadata not parsed correctly")
 	}
 
@@ -888,7 +888,7 @@ func TestStore_ListBySourceType_Success(t *testing.T) {
 		t.Errorf("expected 1 call, got %d", mockQuerier.listBySourceTypeCalls)
 	}
 
-	if mockQuerier.lastListSourceType != "file" {
+	if mockQuerier.lastListSourceType != SourceTypeFile {
 		t.Errorf("wrong source type passed: got %q", mockQuerier.lastListSourceType)
 	}
 }
@@ -898,9 +898,9 @@ func TestStore_ListBySourceType_Error(t *testing.T) {
 		listBySourceTypeErr: errors.New("table does not exist"),
 	}
 
-	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
+	store := New(mockQuerier, &mockEmbedder{}, nil)
 
-	_, err := store.ListBySourceType(context.Background(), "file", 10)
+	_, err := store.ListBySourceType(context.Background(), SourceTypeFile, 10)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -921,9 +921,9 @@ func TestStore_ListBySourceType_MetadataParseError(t *testing.T) {
 		},
 	}
 
-	store := NewWithQuerier(mockQuerier, &mockEmbedder{}, nil)
+	store := New(mockQuerier, &mockEmbedder{}, nil)
 
-	docs, err := store.ListBySourceType(context.Background(), "file", 10)
+	docs, err := store.ListBySourceType(context.Background(), SourceTypeFile, 10)
 	if err != nil {
 		t.Fatalf("ListBySourceType should not fail on metadata parse error: %v", err)
 	}
@@ -1084,10 +1084,10 @@ func TestSearchOptions(t *testing.T) {
 
 	// Test WithFilter option
 	cfg = buildSearchConfig([]SearchOption{
-		WithFilter("source_type", "conversation"),
+		WithFilter("source_type", SourceTypeConversation),
 	})
-	if cfg.filter["source_type"] != "conversation" {
-		t.Errorf("expected filter source_type=conversation, got %v", cfg.filter)
+	if cfg.filter["source_type"] != SourceTypeConversation {
+		t.Errorf("expected filter source_type=%s, got %v", SourceTypeConversation, cfg.filter)
 	}
 
 	// Test multiple options

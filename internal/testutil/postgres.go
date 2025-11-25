@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -125,6 +127,33 @@ func SetupTestDB(t *testing.T) (*TestDBContainer, func()) {
 	return container, cleanup
 }
 
+// findProjectRoot finds the project root directory by looking for go.mod.
+// This allows tests to run from any subdirectory and still find migration files.
+func findProjectRoot() (string, error) {
+	// Start from the current file's directory
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("failed to get current file path")
+	}
+
+	dir := filepath.Dir(filename)
+
+	// Walk up the directory tree until we find go.mod
+	for {
+		goModPath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root without finding go.mod
+			return "", fmt.Errorf("could not find project root (go.mod)")
+		}
+		dir = parent
+	}
+}
+
 // runMigrations runs database migrations from db/migrations directory.
 //
 // Executes migrations in order:
@@ -134,10 +163,16 @@ func SetupTestDB(t *testing.T) (*TestDBContainer, func()) {
 // Each migration runs in its own transaction for atomicity.
 // This is a simplified version - production should use a migration tool like golang-migrate.
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+	// Find project root to build absolute paths to migrations
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find project root: %w", err)
+	}
+
 	// Read and execute migration files in order
 	migrationFiles := []string{
-		"../../db/migrations/000001_init_schema.up.sql",
-		"../../db/migrations/000002_create_sessions.up.sql",
+		filepath.Join(projectRoot, "db/migrations/000001_init_schema.up.sql"),
+		filepath.Join(projectRoot, "db/migrations/000002_create_sessions.up.sql"),
 	}
 
 	for _, migrationPath := range migrationFiles {

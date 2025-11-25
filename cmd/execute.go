@@ -13,7 +13,7 @@ import (
 // Version information (injected at build time via ldflags).
 // These variables are set by the build system and should not be modified directly.
 var (
-	AppVersion = "development"
+	AppVersion = "0.0.1"
 	BuildTime  = "unknown"
 	GitCommit  = "unknown"
 )

@@ -10,10 +10,22 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/koopa0/koopa-cli/internal/sqlc"
+)
+
+// Source type constants for knowledge documents.
+// These define the categories of knowledge stored in the system.
+const (
+	// SourceTypeConversation represents chat message history.
+	SourceTypeConversation = "conversation"
+
+	// SourceTypeFile represents indexed file content.
+	SourceTypeFile = "file"
+
+	// SourceTypeSystem represents system knowledge (best practices, coding standards).
+	SourceTypeSystem = "system"
 )
 
 // KnowledgeQuerier defines the interface for database operations on knowledge documents.
@@ -50,38 +62,26 @@ type KnowledgeQuerier interface {
 //
 // Store is safe for concurrent use by multiple goroutines.
 type Store struct {
-	queries  KnowledgeQuerier // Depends on interface for testability
+	queries  KnowledgeQuerier
 	embedder ai.Embedder
 	logger   *slog.Logger
 }
 
-// New creates a new Store instance
-//
-// Parameters:
-//   - dbPool: PostgreSQL connection pool (pgxpool)
-//   - embedder: AI embedder for generating vector embeddings
-//   - logger: Logger for debugging (nil = use default)
-//
-// Example:
-//
-//	store := knowledge.New(dbPool, embedder, slog.Default())
-//
-// Design: Accepts dbPool and converts to KnowledgeQuerier interface internally.
-// For testing, use NewWithQuerier to inject mock querier directly.
-func New(dbPool *pgxpool.Pool, embedder ai.Embedder, logger *slog.Logger) *Store {
-	return NewWithQuerier(sqlc.New(dbPool), embedder, logger)
-}
-
-// NewWithQuerier creates a new Store instance with custom querier (useful for testing).
+// New creates a new Store instance.
 //
 // Parameters:
 //   - querier: Database querier implementing KnowledgeQuerier interface
 //   - embedder: AI embedder for generating vector embeddings
 //   - logger: Logger for debugging (nil = use default)
 //
-// Design: Accepts KnowledgeQuerier interface following "Accept interfaces, return structs"
-// principle for better testability.
-func NewWithQuerier(querier KnowledgeQuerier, embedder ai.Embedder, logger *slog.Logger) *Store {
+// Example (production with Wire):
+//
+//	store := knowledge.New(sqlc.New(dbPool), embedder, slog.Default())
+//
+// Example (testing with mock):
+//
+//	store := knowledge.New(mockQuerier, mockEmbedder, slog.Default())
+func New(querier KnowledgeQuerier, embedder ai.Embedder, logger *slog.Logger) *Store {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -353,11 +353,11 @@ func (s *Store) ListBySourceType(ctx context.Context, sourceType string, limit i
 	}
 
 	// Validate sourceType against known production values to prevent misuse
-	// Known source types: "conversation" (chat messages), "file" (indexed files), "system" (system knowledge)
+	// Known source types defined as constants at package level
 	validSourceTypes := map[string]struct{}{
-		"conversation": {},
-		"file":         {},
-		"system":       {},
+		SourceTypeConversation: {},
+		SourceTypeFile:         {},
+		SourceTypeSystem:       {},
 	}
 	if _, ok := validSourceTypes[sourceType]; !ok {
 		s.logger.Warn("invalid sourceType requested", "sourceType", sourceType)

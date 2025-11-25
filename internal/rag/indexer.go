@@ -167,7 +167,7 @@ func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
 		ID:      docID,
 		Content: string(content),
 		Metadata: map[string]string{
-			"source_type": "file",
+			"source_type": knowledge.SourceTypeFile,
 			"file_path":   absPath,
 			"file_name":   fileName,
 			"file_ext":    ext,
@@ -269,7 +269,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 			ID:      docID,
 			Content: string(content),
 			Metadata: map[string]string{
-				"source_type": "file",
+				"source_type": knowledge.SourceTypeFile,
 				"file_path":   path,
 				"file_name":   filepath.Base(path),
 				"file_ext":    ext,
@@ -299,7 +299,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 // ListDocuments returns all indexed documents
 func (idx *Indexer) ListDocuments(ctx context.Context) ([]knowledge.Document, error) {
 	// Use ListBySourceType to get all file documents without needing embeddings
-	docs, err := idx.store.ListBySourceType(ctx, "file", 1000)
+	docs, err := idx.store.ListBySourceType(ctx, knowledge.SourceTypeFile, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}

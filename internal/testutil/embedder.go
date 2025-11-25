@@ -2,7 +2,10 @@ package testutil
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
@@ -10,23 +13,30 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
 
-// SetupEmbedder creates a Google AI embedder for testing.
+// EmbedderSetup contains all resources needed for embedder-based tests.
+type EmbedderSetup struct {
+	Embedder ai.Embedder
+	Genkit   *genkit.Genkit
+	Logger   *slog.Logger
+}
+
+// SetupEmbedder creates a Google AI embedder with logger for testing.
+//
+// This is the preferred setup function for integration tests that need
+// both embedder and logger.
 //
 // Requirements:
 //   - GEMINI_API_KEY environment variable must be set
 //   - Skips test if API key is not available
 //
-// Returns:
-//   - ai.Embedder: Google AI embedder using text-embedding-004 model
-//   - *genkit.Genkit: Genkit instance (needed for retriever creation)
-//
 // Example:
 //
-//	func TestEmbedding(t *testing.T) {
-//	    embedder, g := testutil.SetupEmbedder(t)
-//	    // Use embedder for embedding operations
+//	func TestKnowledge(t *testing.T) {
+//	    setup := testutil.SetupEmbedder(t)
+//	    store := knowledge.NewStore(pool, setup.Logger)
+//	    // Use setup.Embedder, setup.Genkit, setup.Logger
 //	}
-func SetupEmbedder(t *testing.T) (ai.Embedder, *genkit.Genkit) {
+func SetupEmbedder(t *testing.T) *EmbedderSetup {
 	t.Helper()
 
 	// Check for required API key
@@ -37,13 +47,27 @@ func SetupEmbedder(t *testing.T) (ai.Embedder, *genkit.Genkit) {
 
 	ctx := context.Background()
 
+	// Find project root to get absolute path to prompts directory
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		t.Fatalf("Failed to find project root: %v", err)
+	}
+	promptsDir := filepath.Join(projectRoot, "prompts")
+
 	// Initialize Genkit with Google AI plugin
 	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithPromptDir("../../prompts"))
+		genkit.WithPromptDir(promptsDir))
 
 	// Create embedder
 	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")
 
-	return embedder, g
+	// Create quiet logger for tests (only warn and above)
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	return &EmbedderSetup{
+		Embedder: embedder,
+		Genkit:   g,
+		Logger:   logger,
+	}
 }

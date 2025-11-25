@@ -1,11 +1,9 @@
-package config
-
-// config.go provides application configuration management with multi-source priority.
+// Package config provides application configuration management with multi-source priority.
 //
 // Configuration sources (highest to lowest priority):
-//   1. Environment variables (runtime override)
-//   2. Config file (~/.koopa/config.yaml)
-//   3. Default values (sensible defaults for quick start)
+//  1. Environment variables (runtime override)
+//  2. Config file (~/.koopa/config.yaml)
+//  3. Default values (sensible defaults for quick start)
 //
 // Main configuration categories:
 //   - AI: Model selection, temperature, max tokens, embedder
@@ -15,6 +13,7 @@ package config
 //
 // Security: Sensitive data (passwords) are never logged; config directory uses 0750 permissions.
 // Validation: Comprehensive range checks (temperature, tokens, ports) with clear error messages.
+package config
 
 import (
 	"fmt"
@@ -26,13 +25,19 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Default configuration constants.
+const (
+	// DefaultEmbedderModel is the default embedder model for vector embeddings.
+	DefaultEmbedderModel = "text-embedding-004"
+)
+
 // Config stores application configuration
 type Config struct {
 	// AI configuration
 	ModelName   string  `mapstructure:"model_name"`
 	Temperature float32 `mapstructure:"temperature"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
-	Language    string  `mapstructure:"language"` // Response language: "auto", "English", "Traditional Chinese (繁體中文)"
+	Language    string  `mapstructure:"language"` // Response language: "auto", "English", "zh-TW"
 
 	// Conversation history configuration
 	MaxHistoryMessages int32 `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
@@ -115,7 +120,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("postgres_ssl_mode", "disable")
 
 	viper.SetDefault("rag_top_k", 3)                         // Default: retrieve top 3 documents
-	viper.SetDefault("embedder_model", "text-embedding-004") // Default Google AI embedder
+	viper.SetDefault("embedder_model", DefaultEmbedderModel) // Default Google AI embedder
 
 	// MCP defaults
 	viper.SetDefault("mcp.timeout", 5) // Default: 5 seconds connection timeout

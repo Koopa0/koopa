@@ -11,15 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
 
-// SessionQuerier defines the interface for database operations on sessions and messages.
+// Querier defines the interface for database operations on sessions and messages.
 // Following Go best practices: interfaces are defined by the consumer, not the provider.
 //
 // This interface allows Store to depend on abstraction rather than concrete implementation,
 // improving testability and flexibility.
-type SessionQuerier interface {
+type Querier interface {
 	// Session operations
 	CreateSession(ctx context.Context, arg sqlc.CreateSessionParams) (sqlc.Session, error)
 	GetSession(ctx context.Context, id pgtype.UUID) (sqlc.Session, error)
@@ -39,49 +40,33 @@ type SessionQuerier interface {
 //
 // Store is safe for concurrent use by multiple goroutines.
 type Store struct {
-	querier SessionQuerier // Depends on interface for testability
-	pool    *pgxpool.Pool  // Database pool for transaction support
+	querier Querier
+	pool    *pgxpool.Pool // Database pool for transaction support
 	logger  *slog.Logger
 }
 
 // New creates a new Store instance.
 //
 // Parameters:
-//   - dbPool: PostgreSQL connection pool (pgxpool)
+//   - querier: Database querier implementing Querier interface
+//   - pool: PostgreSQL connection pool (for transaction support, can be nil for tests)
 //   - logger: Logger for debugging (nil = use default)
 //
-// Example:
+// Example (production with Wire):
 //
-//	store := session.New(dbPool, slog.Default())
+//	store := session.New(sqlc.New(dbPool), dbPool, slog.Default())
 //
-// Design: Accepts dbPool and converts to SessionQuerier interface internally.
-// For testing, use NewWithQuerier to inject mock querier directly.
-func New(dbPool *pgxpool.Pool, logger *slog.Logger) *Store {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Store{
-		querier: sqlc.New(dbPool),
-		pool:    dbPool,
-		logger:  logger,
-	}
-}
-
-// NewWithQuerier creates a new Store instance with custom querier (useful for testing).
+// Example (testing with mock):
 //
-// Parameters:
-//   - querier: Database querier implementing SessionQuerier interface
-//   - logger: Logger for debugging (nil = use default)
-//
-// Design: Accepts SessionQuerier interface following "Accept interfaces, return structs"
-// principle for better testability.
-func NewWithQuerier(querier SessionQuerier, logger *slog.Logger) *Store {
+//	store := session.New(mockQuerier, nil, slog.Default())
+func New(querier Querier, pool *pgxpool.Pool, logger *slog.Logger) *Store {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &Store{
 		querier: querier,
+		pool:    pool,
 		logger:  logger,
 	}
 }
@@ -390,6 +375,156 @@ func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, off
 
 	s.logger.Debug("retrieved messages", "session_id", sessionID, "count", len(messages))
 	return messages, nil
+}
+
+// LoadHistory retrieves the conversation history for a session.
+// Used by chat.Chat agent for session management.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: agent.SessionID (UUID string)
+//   - branch: Branch name (currently ignored, defaults to main)
+//
+// Returns:
+//   - *agent.History: Conversation history
+//   - error: If retrieval fails
+func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, branch string) (*agent.History, error) {
+	// Parse SessionID to UUID
+	id, err := uuid.Parse(string(sessionID))
+	if err != nil {
+		return nil, fmt.Errorf("invalid session ID: %w", err)
+	}
+
+	// Retrieve all messages (up to a reasonable limit, e.g., 1000)
+	// TODO: Implement proper pagination or sliding window if history is too long
+	messages, err := s.GetMessages(ctx, id, 1000, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load history: %w", err)
+	}
+
+	// Convert to ai.Message
+	aiMessages := make([]*ai.Message, len(messages))
+	for i, msg := range messages {
+		aiMessages[i] = &ai.Message{
+			Content: msg.Content,
+			Role:    ai.Role(msg.Role),
+		}
+	}
+
+	// Create History from messages
+	return agent.NewHistoryFromMessages(aiMessages), nil
+}
+
+// SaveHistory saves the conversation history for a session.
+// Used by chat.Chat agent for session management.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: agent.SessionID (UUID string)
+//   - branch: Branch name (currently ignored)
+//   - history: Conversation history
+//
+// Returns:
+//   - error: If saving fails
+func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, branch string, history *agent.History) error {
+	// In the current architecture, we append new messages rather than replacing history.
+	// However, the interface implies saving the *state*.
+	// Since we are stateless, we should only be adding *new* messages.
+	// But SaveHistory is called with the *full* history or *new* messages?
+	// The agent.History object contains ALL messages.
+	// We need to identify which ones are new.
+	//
+	// OPTIMIZATION: For now, we assume the caller (Agent) is responsible for
+	// managing what to save, or we only save the *last* message if we are tracking state.
+	//
+	// BUT, the Agent is stateless. It receives history, generates response, and returns.
+	// The *Caller* (CLI) is responsible for saving the *new* user message and the *new* model response.
+	//
+	// Wait, if the Agent is stateless, why does it need SaveHistory?
+	// Ah, the SessionStore interface is used by the Agent to *load* history for context.
+	// Does the Agent *save* history?
+	// In `agent.Execute`, we might want to save the response?
+	//
+	// If the Agent is truly stateless and the CLI handles persistence, then Agent shouldn't call SaveHistory.
+	// The CLI calls `session.AddMessages`.
+	//
+	// However, to satisfy the interface, we implement it.
+	// We will assume for now that we don't need to save anything here if the CLI handles it.
+	// OR, if the Agent *does* call it, we need to handle it.
+	//
+	// Let's implement it by checking if messages exist? No, that's expensive.
+	//
+	// Actually, looking at `cmd/cmd.go`, the CLI handles `AddMessages`.
+	// The `SessionStore` interface in `agent` might be for *internal* agent use (e.g. if agent manages memory).
+	// But we moved memory out.
+	//
+	// So `SaveHistory` might be unused by `Chat` agent?
+	// Let's check `agent.go`.
+	// `Chat` agent DOES NOT call `SaveHistory`.
+	// It only calls `LoadHistory` in `Execute` (via `buildMessages`? No, `Execute` takes `InvocationContext` which has `SessionID`).
+	//
+	// Wait, `Chat.Execute` implementation:
+	// It loads history using `a.sessions.LoadHistory`.
+	// It does NOT save history.
+	//
+	// So `SaveHistory` is technically not used by `Chat` agent logic, but required by interface.
+	// We can leave it as a no-op or implement it for completeness.
+	//
+	// Implementation:
+	// If we wanted to support saving from Agent, we'd need to know which messages are new.
+	// Since we don't, and `Chat` doesn't call it, we can just return nil.
+	//
+	// BUT, `agent_test.go` or other tests might use it.
+	// Let's implement a simple version that appends *all* messages? No, that duplicates.
+	//
+	// Let's return nil for now, as `Chat` agent delegates persistence to the caller (CLI).
+	// The CLI uses `session.AddMessages`.
+
+	// Parse SessionID to UUID
+	id, err := uuid.Parse(string(sessionID))
+	if err != nil {
+		return fmt.Errorf("invalid session ID: %w", err)
+	}
+
+	// Get current messages from history
+	aiMessages := history.Messages()
+	if len(aiMessages) == 0 {
+		return nil
+	}
+
+	// Load existing messages to determine which are new
+	existingMessages, err := s.GetMessages(ctx, id, 1000, 0)
+	if err != nil {
+		// If session has no messages yet, that's fine
+		s.logger.Debug("no existing messages found", "session_id", sessionID)
+		existingMessages = nil
+	}
+
+	// Only save messages that don't already exist (compare by count)
+	existingCount := len(existingMessages)
+	if len(aiMessages) <= existingCount {
+		// No new messages to save
+		return nil
+	}
+
+	// Convert new ai.Messages to session.Messages
+	newMessages := make([]*Message, 0, len(aiMessages)-existingCount)
+	for i := existingCount; i < len(aiMessages); i++ {
+		msg := aiMessages[i]
+		newMessages = append(newMessages, &Message{
+			Role:    string(msg.Role),
+			Content: msg.Content,
+		})
+	}
+
+	// Add new messages
+	if len(newMessages) > 0 {
+		if err := s.AddMessages(ctx, id, newMessages); err != nil {
+			return fmt.Errorf("failed to add messages: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // sqlcSessionToSession converts sqlc.Session to Session (application type).
