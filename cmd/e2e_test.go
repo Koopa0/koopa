@@ -229,10 +229,10 @@ func TestE2E_MCPServer(t *testing.T) {
 		t.Fatal("MCP server did not respond within timeout")
 	}
 
-	// Cleanup
-	stdin.Close()
-	cmd.Process.Kill()
-	cmd.Wait()
+	// Cleanup - errors are expected when killing the process
+	_ = stdin.Close()
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
 }
 
 // TestE2E_MCPToolsAvailable tests that MCP exposes expected tools
@@ -257,9 +257,10 @@ func TestE2E_MCPToolsAvailable(t *testing.T) {
 	err = cmd.Start()
 	require.NoError(t, err)
 	defer func() {
-		stdin.Close()
-		cmd.Process.Kill()
-		cmd.Wait()
+		// Errors are expected when killing the process
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 	}()
 
 	// Initialize MCP

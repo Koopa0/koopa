@@ -121,7 +121,7 @@ func TestLogger_LevelFiltering(t *testing.T) {
 
 func TestLoggerTypeAlias(t *testing.T) {
 	// Verify that Logger is compatible with *slog.Logger
-	var logger Logger = slog.Default()
+	logger := slog.Default()
 	if logger == nil {
 		t.Fatal("Logger type alias should be compatible with *slog.Logger")
 	}

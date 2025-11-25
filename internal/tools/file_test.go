@@ -131,7 +131,7 @@ func TestFileToolset_ReadFile(t *testing.T) {
 		require.NoError(t, err)
 
 		relFile := filepath.Join(workDir, "test_relative.txt")
-		defer os.Remove(relFile)
+		defer func() { _ = os.Remove(relFile) }()
 
 		err = os.WriteFile(relFile, []byte("relative content"), 0600)
 		require.NoError(t, err)
@@ -299,9 +299,10 @@ func TestFileToolset_ListFiles(t *testing.T) {
 		for _, entry := range entries {
 			entryType, ok := entry["type"].(string)
 			require.True(t, ok)
-			if entryType == "file" {
+			switch entryType {
+			case "file":
 				fileCount++
-			} else if entryType == "directory" {
+			case "directory":
 				dirCount++
 			}
 		}

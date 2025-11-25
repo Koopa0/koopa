@@ -1,7 +1,10 @@
 // Package agent provides the Agent interface and implementations.
 package agent
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // InvocationContext provides complete context for Agent execution
 // Fully aligned with ADK-Go design principles, simplified for personal AI
@@ -48,15 +51,22 @@ type ReadonlyContext interface {
 // SessionID is a dedicated type for session identifiers
 type SessionID string
 
+// ErrEmptySessionID is returned when session ID is empty
+var ErrEmptySessionID = errors.New("session ID cannot be empty")
+
+// ErrSessionIDTooLong is returned when session ID exceeds max length
+var ErrSessionIDTooLong = errors.New("session ID too long (max 255)")
+
 // NewSessionID creates a new SessionID with validation
-func NewSessionID(id string) SessionID {
+// Returns error if the session ID is empty or exceeds max length (255 characters)
+func NewSessionID(id string) (SessionID, error) {
 	if id == "" {
-		panic("session ID cannot be empty")
+		return "", ErrEmptySessionID
 	}
 	if len(id) > 255 {
-		panic("session ID too long (max 255)")
+		return "", ErrSessionIDTooLong
 	}
-	return SessionID(id)
+	return SessionID(id), nil
 }
 
 // String returns the string representation of SessionID

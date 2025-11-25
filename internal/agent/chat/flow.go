@@ -39,6 +39,18 @@ type FlowError struct {
 func (a *Chat) DefineFlow(g *genkit.Genkit) {
 	genkit.DefineFlow(g, "koopa/chat",
 		func(ctx context.Context, input Input) (Output, error) {
+			// Validate session ID from input
+			sessionID, err := agent.NewSessionID(input.SessionID)
+			if err != nil {
+				return Output{
+					SessionID: input.SessionID,
+					Error: &FlowError{
+						Code:    "INVALID_SESSION_ID",
+						Message: err.Error(),
+					},
+				}, nil
+			}
+
 			// Generate InvocationID for tracking this call
 			invocationID := uuid.New().String()
 
@@ -47,7 +59,7 @@ func (a *Chat) DefineFlow(g *genkit.Genkit) {
 				ctx,
 				invocationID,
 				Name, // branch: top-level Agent
-				agent.NewSessionID(input.SessionID),
+				sessionID,
 				Name, // agentName
 			)
 

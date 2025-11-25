@@ -6,7 +6,7 @@
 
 A terminal-based AI assistant with local knowledge management and MCP integration. Built with [Firebase Genkit](https://github.com/firebase/genkit).
 
-**Version**: 0.1.0 (Alpha)
+**Version**: 0.0.1 (Alpha)
 
 ## What is Koopa?
 
@@ -86,30 +86,6 @@ Organize conversations by topic:
 - **HTTP Requests**: Make web requests with SSRF protection
 - **Knowledge Search**: Semantic search over indexed documents
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     CLI Interface                       │
-└─────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Chat Agent (Genkit)                  │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│  │   Tools     │  │   Sessions   │  │   Knowledge    │  │
-│  │  Registry   │  │   (Postgres) │  │   (pgvector)   │  │
-│  └─────────────┘  └──────────────┘  └────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-                            │
-                ┌───────────┴───────────┐
-                ▼                       ▼
-        ┌──────────────┐        ┌──────────────┐
-        │  MCP Server  │        │   RAG        │
-        │  (Stdio)     │        │  Retriever   │
-        └──────────────┘        └──────────────┘
-```
-
 ### Core Components
 
 - **Agent**: Stateless agent with tool calling and RAG
@@ -119,19 +95,6 @@ Organize conversations by topic:
 - **Session**: PostgreSQL-backed conversation persistence
 - **RAG**: Document indexing and retrieval
 - **Security**: Path validation, command whitelist, SSRF protection
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show available commands |
-| `/session new <title>` | Create new session |
-| `/session list` | List all sessions |
-| `/session switch <id>` | Switch to session |
-| `/rag add <path>` | Index documents |
-| `/rag list` | List indexed documents |
-| `/rag status` | Show RAG statistics |
-| `/exit` | Exit Koopa |
 
 ## Configuration
 
@@ -150,18 +113,6 @@ embedder_model: "text-embedding-004"
 # Session settings
 max_history_messages: 50
 ```
-
-## Development
-
-```bash
-# Run tests
-go test ./...
-
-# Run integration tests
-go test -tags=integration ./...
-
-# Run linter
-golangci-lint run
 
 # Build
 go build -o koopa
