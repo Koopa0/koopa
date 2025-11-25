@@ -10,13 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testSessionID is a helper for tests to create SessionID without error handling boilerplate
+func testSessionID(t *testing.T, id string) SessionID {
+	t.Helper()
+	s, err := NewSessionID(id)
+	require.NoError(t, err)
+	return s
+}
+
 // TestSessionID_EdgeCases tests SessionID boundary conditions
 func TestSessionID_EdgeCases(t *testing.T) {
 	t.Parallel()
 
 	t.Run("single character session ID", func(t *testing.T) {
 		t.Parallel()
-		id := NewSessionID("x")
+		id, err := NewSessionID("x")
+		require.NoError(t, err)
 		assert.Equal(t, "x", id.String())
 		assert.False(t, id.IsEmpty())
 	})
@@ -24,25 +33,24 @@ func TestSessionID_EdgeCases(t *testing.T) {
 	t.Run("exactly 255 characters", func(t *testing.T) {
 		t.Parallel()
 		longID := strings.Repeat("a", 255)
-		assert.NotPanics(t, func() {
-			id := NewSessionID(longID)
-			assert.Equal(t, 255, len(id.String()))
-		})
+		id, err := NewSessionID(longID)
+		require.NoError(t, err)
+		assert.Equal(t, 255, len(id.String()))
 	})
 
-	t.Run("256 characters panics", func(t *testing.T) {
+	t.Run("256 characters returns error", func(t *testing.T) {
 		t.Parallel()
 		tooLongID := strings.Repeat("a", 256)
-		assert.Panics(t, func() {
-			NewSessionID(tooLongID)
-		}, "should panic on 256 characters")
+		_, err := NewSessionID(tooLongID)
+		assert.ErrorIs(t, err, ErrSessionIDTooLong)
 	})
 
 	t.Run("unicode characters", func(t *testing.T) {
 		t.Parallel()
 		// Unicode characters can be multi-byte, test byte length vs rune length
 		unicodeID := "測試-ID-🔥" // Mixed ASCII, Chinese, emoji
-		id := NewSessionID(unicodeID)
+		id, err := NewSessionID(unicodeID)
+		require.NoError(t, err)
 		assert.Equal(t, unicodeID, id.String())
 		assert.False(t, id.IsEmpty())
 	})
@@ -50,15 +58,15 @@ func TestSessionID_EdgeCases(t *testing.T) {
 	t.Run("special characters", func(t *testing.T) {
 		t.Parallel()
 		specialID := "session-123_test.v2:alpha"
-		id := NewSessionID(specialID)
+		id, err := NewSessionID(specialID)
+		require.NoError(t, err)
 		assert.Equal(t, specialID, id.String())
 	})
 
-	t.Run("empty string panics", func(t *testing.T) {
+	t.Run("empty string returns error", func(t *testing.T) {
 		t.Parallel()
-		assert.Panics(t, func() {
-			NewSessionID("")
-		}, "should panic on empty string")
+		_, err := NewSessionID("")
+		assert.ErrorIs(t, err, ErrEmptySessionID)
 	})
 
 	t.Run("zero value SessionID is empty", func(t *testing.T) {
@@ -67,6 +75,7 @@ func TestSessionID_EdgeCases(t *testing.T) {
 		assert.True(t, zeroID.IsEmpty())
 		assert.Equal(t, "", zeroID.String())
 	})
+
 }
 
 // TestInvocationContext_BranchPathEdgeCases tests branch path boundary conditions
@@ -79,7 +88,7 @@ func TestInvocationContext_BranchPathEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"", // empty branch
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 		assert.Equal(t, "", ctx.Branch())
@@ -91,7 +100,7 @@ func TestInvocationContext_BranchPathEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			".",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 		assert.Equal(t, ".", ctx.Branch())
@@ -110,7 +119,7 @@ func TestInvocationContext_BranchPathEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			longBranch,
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent100",
 		)
 
@@ -128,7 +137,7 @@ func TestInvocationContext_BranchPathEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			specialBranch,
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"web_search:alpha",
 		)
 		assert.Equal(t, specialBranch, ctx.Branch())
@@ -141,7 +150,7 @@ func TestInvocationContext_BranchPathEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			unicodeBranch,
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"網頁搜尋",
 		)
 		assert.Equal(t, unicodeBranch, ctx.Branch())
@@ -158,7 +167,7 @@ func TestInvocationContext_InvocationIDEdgeCases(t *testing.T) {
 			context.Background(),
 			"", // empty invocation ID
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 		assert.Equal(t, "", ctx.InvocationID())
@@ -172,7 +181,7 @@ func TestInvocationContext_InvocationIDEdgeCases(t *testing.T) {
 			context.Background(),
 			longID,
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 		assert.Equal(t, longID, ctx.InvocationID())
@@ -185,7 +194,7 @@ func TestInvocationContext_InvocationIDEdgeCases(t *testing.T) {
 			context.Background(),
 			specialID,
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 		assert.Equal(t, specialID, ctx.InvocationID())
@@ -202,7 +211,7 @@ func TestInvocationContext_AgentNameEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"", // empty agent name
 		)
 		assert.Equal(t, "", ctx.AgentName())
@@ -215,7 +224,7 @@ func TestInvocationContext_AgentNameEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			longName,
 		)
 		assert.Equal(t, longName, ctx.AgentName())
@@ -228,7 +237,7 @@ func TestInvocationContext_AgentNameEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			specialName,
 		)
 		assert.Equal(t, specialName, ctx.AgentName())
@@ -241,7 +250,7 @@ func TestInvocationContext_AgentNameEdgeCases(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			unicodeName,
 		)
 		assert.Equal(t, unicodeName, ctx.AgentName())
@@ -261,7 +270,7 @@ func TestInvocationContext_ContextBehaviorEdgeCases(t *testing.T) {
 			parent,
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 
@@ -280,7 +289,7 @@ func TestInvocationContext_ContextBehaviorEdgeCases(t *testing.T) {
 			parent,
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 
@@ -306,7 +315,7 @@ func TestInvocationContext_ContextBehaviorEdgeCases(t *testing.T) {
 			parent,
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 
@@ -326,7 +335,7 @@ func TestInvocationContext_ContextBehaviorEdgeCases(t *testing.T) {
 			context.TODO(), // Use context.TODO() instead of nil per staticcheck SA1012
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 
@@ -353,7 +362,7 @@ func TestReadonlyContext_Behavior(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main.research",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"research",
 		)
 
@@ -373,7 +382,7 @@ func TestReadonlyContext_Behavior(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 
@@ -388,7 +397,7 @@ func TestReadonlyContext_Behavior(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		).(*invocationContext)
 
@@ -407,7 +416,7 @@ func TestInvocationContext_ConcurrentAccess(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main.research",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"research",
 		)
 
@@ -436,7 +445,7 @@ func TestInvocationContext_ConcurrentAccess(t *testing.T) {
 			parent,
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"agent",
 		)
 
@@ -476,7 +485,7 @@ func TestInvocationContext_ImmutabilitySemantics(t *testing.T) {
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"chat",
 		)
 
@@ -507,8 +516,8 @@ func TestInvocationContext_ImmutabilitySemantics(t *testing.T) {
 		t.Parallel()
 		parent, cancel := context.WithCancel(context.Background())
 
-		ctx1 := NewInvocationContext(parent, "inv-1", "main", NewSessionID("s-1"), "agent1")
-		ctx2 := NewInvocationContext(parent, "inv-2", "main", NewSessionID("s-2"), "agent2")
+		ctx1 := NewInvocationContext(parent, "inv-1", "main", testSessionID(t, "s-1"), "agent1")
+		ctx2 := NewInvocationContext(parent, "inv-2", "main", testSessionID(t, "s-2"), "agent2")
 
 		// Both contexts share parent, but have independent values
 		assert.NotEqual(t, ctx1.InvocationID(), ctx2.InvocationID())

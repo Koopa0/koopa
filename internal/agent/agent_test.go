@@ -109,11 +109,13 @@ func TestAgent_Interface(t *testing.T) {
 			},
 		}
 
+		sessionID, err := NewSessionID("s-123")
+		require.NoError(t, err)
 		ctx := NewInvocationContext(
 			context.Background(),
 			"inv-123",
 			"main",
-			NewSessionID("s-123"),
+			sessionID,
 			"test",
 		)
 
