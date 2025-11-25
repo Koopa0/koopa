@@ -32,12 +32,22 @@ type mockSessionQuerier struct {
 	getMessagesErr            error
 	getMaxSequenceNumberErr   error
 
+	// Branch-related errors
+	addMessageWithBranchErr   error
+	getMessagesByBranchErr    error
+	getMaxSequenceByBranchErr error
+	countMessagesByBranchErr  error
+	deleteMessagesByBranchErr error
+
 	// Return values
-	createSessionResult        sqlc.Session
-	getSessionResult           sqlc.Session
-	listSessionsResult         []sqlc.Session
-	getMessagesResult          []sqlc.SessionMessage
-	getMaxSequenceNumberResult any
+	createSessionResult          sqlc.Session
+	getSessionResult             sqlc.Session
+	listSessionsResult           []sqlc.Session
+	getMessagesResult            []sqlc.SessionMessage
+	getMaxSequenceNumberResult   any
+	getMessagesByBranchResult    []sqlc.SessionMessage
+	getMaxSequenceByBranchResult int32
+	countMessagesByBranchResult  int32
 
 	// Call tracking
 	createSessionCalls          int
@@ -50,6 +60,13 @@ type mockSessionQuerier struct {
 	getMessagesCalls            int
 	getMaxSequenceNumberCalls   int
 
+	// Branch-related call tracking
+	addMessageWithBranchCalls   int
+	getMessagesByBranchCalls    int
+	getMaxSequenceByBranchCalls int
+	countMessagesByBranchCalls  int
+	deleteMessagesByBranchCalls int
+
 	lastCreateParams      sqlc.CreateSessionParams
 	lastGetSessionID      pgtype.UUID
 	lastListParams        sqlc.ListSessionsParams
@@ -59,6 +76,10 @@ type mockSessionQuerier struct {
 	lastAddMessageParams  []sqlc.AddMessageParams
 	lastGetMessagesParams sqlc.GetMessagesParams
 	lastMaxSeqSessionID   pgtype.UUID
+
+	// Branch-related last params
+	lastAddMessageWithBranchParams []sqlc.AddMessageWithBranchParams
+	lastGetMessagesByBranchParams  sqlc.GetMessagesByBranchParams
 }
 
 func (m *mockSessionQuerier) CreateSession(ctx context.Context, arg sqlc.CreateSessionParams) (sqlc.Session, error) {
@@ -144,6 +165,44 @@ func (m *mockSessionQuerier) GetMaxSequenceNumber(ctx context.Context, sessionID
 	default:
 		return 0, nil
 	}
+}
+
+// Branch-related methods
+
+func (m *mockSessionQuerier) AddMessageWithBranch(ctx context.Context, arg sqlc.AddMessageWithBranchParams) error {
+	m.addMessageWithBranchCalls++
+	m.lastAddMessageWithBranchParams = append(m.lastAddMessageWithBranchParams, arg)
+	return m.addMessageWithBranchErr
+}
+
+func (m *mockSessionQuerier) GetMessagesByBranch(ctx context.Context, arg sqlc.GetMessagesByBranchParams) ([]sqlc.SessionMessage, error) {
+	m.getMessagesByBranchCalls++
+	m.lastGetMessagesByBranchParams = arg
+	if m.getMessagesByBranchErr != nil {
+		return nil, m.getMessagesByBranchErr
+	}
+	return m.getMessagesByBranchResult, nil
+}
+
+func (m *mockSessionQuerier) GetMaxSequenceByBranch(ctx context.Context, arg sqlc.GetMaxSequenceByBranchParams) (int32, error) {
+	m.getMaxSequenceByBranchCalls++
+	if m.getMaxSequenceByBranchErr != nil {
+		return 0, m.getMaxSequenceByBranchErr
+	}
+	return m.getMaxSequenceByBranchResult, nil
+}
+
+func (m *mockSessionQuerier) CountMessagesByBranch(ctx context.Context, arg sqlc.CountMessagesByBranchParams) (int32, error) {
+	m.countMessagesByBranchCalls++
+	if m.countMessagesByBranchErr != nil {
+		return 0, m.countMessagesByBranchErr
+	}
+	return m.countMessagesByBranchResult, nil
+}
+
+func (m *mockSessionQuerier) DeleteMessagesByBranch(ctx context.Context, arg sqlc.DeleteMessagesByBranchParams) error {
+	m.deleteMessagesByBranchCalls++
+	return m.deleteMessagesByBranchErr
 }
 
 // ============================================================================

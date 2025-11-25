@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
 
@@ -27,12 +28,19 @@ type Querier interface {
 	ListSessions(ctx context.Context, arg sqlc.ListSessionsParams) ([]sqlc.Session, error)
 	UpdateSessionUpdatedAt(ctx context.Context, arg sqlc.UpdateSessionUpdatedAtParams) error
 	DeleteSession(ctx context.Context, id pgtype.UUID) error
-	LockSession(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) // P1-2: Lock session for concurrent safety
+	LockSession(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 
-	// Message operations
+	// Message operations (legacy - defaults to 'main' branch)
 	AddMessage(ctx context.Context, arg sqlc.AddMessageParams) error
 	GetMessages(ctx context.Context, arg sqlc.GetMessagesParams) ([]sqlc.SessionMessage, error)
 	GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (int32, error)
+
+	// Message operations with branch support
+	AddMessageWithBranch(ctx context.Context, arg sqlc.AddMessageWithBranchParams) error
+	GetMessagesByBranch(ctx context.Context, arg sqlc.GetMessagesByBranchParams) ([]sqlc.SessionMessage, error)
+	GetMaxSequenceByBranch(ctx context.Context, arg sqlc.GetMaxSequenceByBranchParams) (int32, error)
+	CountMessagesByBranch(ctx context.Context, arg sqlc.CountMessagesByBranchParams) (int32, error)
+	DeleteMessagesByBranch(ctx context.Context, arg sqlc.DeleteMessagesByBranchParams) error
 }
 
 // Store manages session persistence with PostgreSQL backend.
@@ -377,17 +385,250 @@ func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, off
 	return messages, nil
 }
 
-// LoadHistory retrieves the conversation history for a session.
+// GetMessagesByBranch retrieves messages for a session filtered by branch.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: UUID of the session
+//   - branch: Branch name to filter by
+//   - limit: Maximum number of messages to return
+//   - offset: Number of messages to skip (for pagination)
+//
+// Returns:
+//   - []*Message: List of messages ordered by sequence number ascending
+//   - error: If retrieval fails
+func (s *Store) GetMessagesByBranch(ctx context.Context, sessionID uuid.UUID, branch string, limit, offset int32) ([]*Message, error) {
+	sqlcMessages, err := s.querier.GetMessagesByBranch(ctx, sqlc.GetMessagesByBranchParams{
+		SessionID:    uuidToPgUUID(sessionID),
+		Branch:       branch,
+		ResultLimit:  limit,
+		ResultOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages for session %s branch %s: %w", sessionID, branch, err)
+	}
+
+	messages := make([]*Message, 0, len(sqlcMessages))
+	for _, sm := range sqlcMessages {
+		msg, err := s.sqlcMessageToMessage(sm)
+		if err != nil {
+			s.logger.Warn("failed to unmarshal message content",
+				"message_id", pgUUIDToUUID(sm.ID),
+				"error", err)
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	s.logger.Debug("retrieved messages by branch",
+		"session_id", sessionID,
+		"branch", branch,
+		"count", len(messages))
+	return messages, nil
+}
+
+// AppendMessages appends new messages to a session branch.
+// This is the preferred method for saving conversation history.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: agent.SessionID (UUID string)
+//   - branch: Branch name (empty defaults to "main")
+//   - messages: Messages to append
+//
+// Returns:
+//   - error: If saving fails or branch is invalid
+func (s *Store) AppendMessages(ctx context.Context, sessionID agent.SessionID, branch string, messages []*ai.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	// Parse SessionID to UUID
+	id, err := uuid.Parse(string(sessionID))
+	if err != nil {
+		return fmt.Errorf("invalid session ID: %w", err)
+	}
+
+	// Validate and normalize branch
+	branch, err = config.NormalizeBranch(branch)
+	if err != nil {
+		return fmt.Errorf("invalid branch: %w", err)
+	}
+
+	// Convert ai.Message to session.Message
+	sessionMessages := make([]*Message, len(messages))
+	for i, msg := range messages {
+		sessionMessages[i] = &Message{
+			Role:    string(msg.Role),
+			Content: msg.Content,
+		}
+	}
+
+	// Use branch-aware AddMessages
+	if err := s.AddMessagesWithBranch(ctx, id, branch, sessionMessages); err != nil {
+		return fmt.Errorf("failed to append messages: %w", err)
+	}
+
+	s.logger.Debug("appended messages",
+		"session_id", sessionID,
+		"branch", branch,
+		"count", len(messages))
+	return nil
+}
+
+// AddMessagesWithBranch adds multiple messages to a session branch in batch.
+// This is more efficient than adding messages one by one.
+//
+// All operations are wrapped in a database transaction to ensure atomicity.
+func (s *Store) AddMessagesWithBranch(ctx context.Context, sessionID uuid.UUID, branch string, messages []*Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	// If pool is nil (testing with mock), use non-transactional mode
+	if s.pool == nil {
+		return s.addMessagesWithBranchNonTransactional(ctx, sessionID, branch, messages)
+	}
+
+	// Begin transaction for atomicity
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil {
+			s.logger.Debug("transaction rollback (may be already committed)", "error", err)
+		}
+	}()
+
+	txQuerier := sqlc.New(tx)
+
+	// Lock session row to prevent concurrent modifications
+	_, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID))
+	if err != nil {
+		return fmt.Errorf("failed to lock session: %w", err)
+	}
+
+	// Get current max sequence number for this branch
+	maxSeq, err := txQuerier.GetMaxSequenceByBranch(ctx, sqlc.GetMaxSequenceByBranchParams{
+		SessionID: uuidToPgUUID(sessionID),
+		Branch:    branch,
+	})
+	if err != nil {
+		s.logger.Debug("no existing messages in branch, starting from sequence 0",
+			"session_id", sessionID, "branch", branch)
+		maxSeq = 0
+	}
+
+	// Insert messages
+	for i, msg := range messages {
+		for j, part := range msg.Content {
+			if part == nil {
+				return fmt.Errorf("message %d has nil content at index %d", i, j)
+			}
+		}
+
+		contentJSON, err := json.Marshal(msg.Content)
+		if err != nil {
+			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
+		}
+
+		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
+
+		if err = txQuerier.AddMessageWithBranch(ctx, sqlc.AddMessageWithBranchParams{
+			SessionID:      uuidToPgUUID(sessionID),
+			Branch:         branch,
+			Role:           msg.Role,
+			Content:        contentJSON,
+			SequenceNumber: seqNum,
+		}); err != nil {
+			return fmt.Errorf("failed to insert message %d: %w", i, err)
+		}
+	}
+
+	// Update session metadata
+	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
+	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
+		MessageCount: &newCount,
+		SessionID:    uuidToPgUUID(sessionID),
+	}); err != nil {
+		return fmt.Errorf("failed to update session metadata: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	s.logger.Debug("added messages with branch",
+		"session_id", sessionID,
+		"branch", branch,
+		"count", len(messages))
+	return nil
+}
+
+// addMessagesWithBranchNonTransactional adds messages without transaction (for testing).
+func (s *Store) addMessagesWithBranchNonTransactional(ctx context.Context, sessionID uuid.UUID, branch string, messages []*Message) error {
+	maxSeq, err := s.querier.GetMaxSequenceByBranch(ctx, sqlc.GetMaxSequenceByBranchParams{
+		SessionID: uuidToPgUUID(sessionID),
+		Branch:    branch,
+	})
+	if err != nil {
+		s.logger.Debug("no existing messages in branch, starting from sequence 0",
+			"session_id", sessionID, "branch", branch)
+		maxSeq = 0
+	}
+
+	for i, msg := range messages {
+		for j, part := range msg.Content {
+			if part == nil {
+				return fmt.Errorf("message %d has nil content at index %d", i, j)
+			}
+		}
+
+		contentJSON, err := json.Marshal(msg.Content)
+		if err != nil {
+			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
+		}
+
+		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
+
+		if err = s.querier.AddMessageWithBranch(ctx, sqlc.AddMessageWithBranchParams{
+			SessionID:      uuidToPgUUID(sessionID),
+			Branch:         branch,
+			Role:           msg.Role,
+			Content:        contentJSON,
+			SequenceNumber: seqNum,
+		}); err != nil {
+			return fmt.Errorf("failed to insert message %d: %w", i, err)
+		}
+	}
+
+	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
+	if err = s.querier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
+		MessageCount: &newCount,
+		SessionID:    uuidToPgUUID(sessionID),
+	}); err != nil {
+		return fmt.Errorf("failed to update session metadata: %w", err)
+	}
+
+	s.logger.Debug("added messages with branch (non-transactional)",
+		"session_id", sessionID,
+		"branch", branch,
+		"count", len(messages))
+	return nil
+}
+
+// LoadHistory retrieves the conversation history for a session and branch.
 // Used by chat.Chat agent for session management.
 //
 // Parameters:
 //   - ctx: Context for the operation
 //   - sessionID: agent.SessionID (UUID string)
-//   - branch: Branch name (currently ignored, defaults to main)
+//   - branch: Branch name (empty defaults to "main")
 //
 // Returns:
-//   - *agent.History: Conversation history
-//   - error: If retrieval fails
+//   - *agent.History: Conversation history for the specified branch
+//   - error: If retrieval fails or branch is invalid
 func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, branch string) (*agent.History, error) {
 	// Parse SessionID to UUID
 	id, err := uuid.Parse(string(sessionID))
@@ -395,9 +636,22 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, bran
 		return nil, fmt.Errorf("invalid session ID: %w", err)
 	}
 
-	// Retrieve all messages (up to a reasonable limit, e.g., 1000)
-	// TODO: Implement proper pagination or sliding window if history is too long
-	messages, err := s.GetMessages(ctx, id, 1000, 0)
+	// Verify session exists before loading history
+	if _, err = s.GetSession(ctx, id); err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+
+	// Validate and normalize branch
+	branch, err = config.NormalizeBranch(branch)
+	if err != nil {
+		return nil, fmt.Errorf("invalid branch: %w", err)
+	}
+
+	// Use configurable limit
+	limit := config.NormalizeMaxHistoryMessages(0) // Use default
+
+	// Retrieve messages for this specific branch
+	messages, err := s.GetMessagesByBranch(ctx, id, branch, limit, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load history: %w", err)
 	}
@@ -411,79 +665,37 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, bran
 		}
 	}
 
-	// Create History from messages
+	s.logger.Debug("loaded history",
+		"session_id", sessionID,
+		"branch", branch,
+		"message_count", len(messages))
+
 	return agent.NewHistoryFromMessages(aiMessages), nil
 }
 
 // SaveHistory saves the conversation history for a session.
-// Used by chat.Chat agent for session management.
+// Deprecated: Use AppendMessages instead for incremental updates.
+// This method has poor performance as it loads all existing messages to determine new ones.
 //
 // Parameters:
 //   - ctx: Context for the operation
 //   - sessionID: agent.SessionID (UUID string)
-//   - branch: Branch name (currently ignored)
+//   - branch: Branch name (empty defaults to "main")
 //   - history: Conversation history
 //
 // Returns:
 //   - error: If saving fails
 func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, branch string, history *agent.History) error {
-	// In the current architecture, we append new messages rather than replacing history.
-	// However, the interface implies saving the *state*.
-	// Since we are stateless, we should only be adding *new* messages.
-	// But SaveHistory is called with the *full* history or *new* messages?
-	// The agent.History object contains ALL messages.
-	// We need to identify which ones are new.
-	//
-	// OPTIMIZATION: For now, we assume the caller (Agent) is responsible for
-	// managing what to save, or we only save the *last* message if we are tracking state.
-	//
-	// BUT, the Agent is stateless. It receives history, generates response, and returns.
-	// The *Caller* (CLI) is responsible for saving the *new* user message and the *new* model response.
-	//
-	// Wait, if the Agent is stateless, why does it need SaveHistory?
-	// Ah, the SessionStore interface is used by the Agent to *load* history for context.
-	// Does the Agent *save* history?
-	// In `agent.Execute`, we might want to save the response?
-	//
-	// If the Agent is truly stateless and the CLI handles persistence, then Agent shouldn't call SaveHistory.
-	// The CLI calls `session.AddMessages`.
-	//
-	// However, to satisfy the interface, we implement it.
-	// We will assume for now that we don't need to save anything here if the CLI handles it.
-	// OR, if the Agent *does* call it, we need to handle it.
-	//
-	// Let's implement it by checking if messages exist? No, that's expensive.
-	//
-	// Actually, looking at `cmd/cmd.go`, the CLI handles `AddMessages`.
-	// The `SessionStore` interface in `agent` might be for *internal* agent use (e.g. if agent manages memory).
-	// But we moved memory out.
-	//
-	// So `SaveHistory` might be unused by `Chat` agent?
-	// Let's check `agent.go`.
-	// `Chat` agent DOES NOT call `SaveHistory`.
-	// It only calls `LoadHistory` in `Execute` (via `buildMessages`? No, `Execute` takes `InvocationContext` which has `SessionID`).
-	//
-	// Wait, `Chat.Execute` implementation:
-	// It loads history using `a.sessions.LoadHistory`.
-	// It does NOT save history.
-	//
-	// So `SaveHistory` is technically not used by `Chat` agent logic, but required by interface.
-	// We can leave it as a no-op or implement it for completeness.
-	//
-	// Implementation:
-	// If we wanted to support saving from Agent, we'd need to know which messages are new.
-	// Since we don't, and `Chat` doesn't call it, we can just return nil.
-	//
-	// BUT, `agent_test.go` or other tests might use it.
-	// Let's implement a simple version that appends *all* messages? No, that duplicates.
-	//
-	// Let's return nil for now, as `Chat` agent delegates persistence to the caller (CLI).
-	// The CLI uses `session.AddMessages`.
-
 	// Parse SessionID to UUID
 	id, err := uuid.Parse(string(sessionID))
 	if err != nil {
 		return fmt.Errorf("invalid session ID: %w", err)
+	}
+
+	// Validate and normalize branch
+	branch, err = config.NormalizeBranch(branch)
+	if err != nil {
+		return fmt.Errorf("invalid branch: %w", err)
 	}
 
 	// Get current messages from history
@@ -492,18 +704,17 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 		return nil
 	}
 
-	// Load existing messages to determine which are new
-	existingMessages, err := s.GetMessages(ctx, id, 1000, 0)
+	// Load existing messages for this branch to determine which are new
+	limit := config.NormalizeMaxHistoryMessages(0)
+	existingMessages, err := s.GetMessagesByBranch(ctx, id, branch, limit, 0)
 	if err != nil {
-		// If session has no messages yet, that's fine
-		s.logger.Debug("no existing messages found", "session_id", sessionID)
+		s.logger.Debug("no existing messages found", "session_id", sessionID, "branch", branch)
 		existingMessages = nil
 	}
 
 	// Only save messages that don't already exist (compare by count)
 	existingCount := len(existingMessages)
 	if len(aiMessages) <= existingCount {
-		// No new messages to save
 		return nil
 	}
 
@@ -517,9 +728,9 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 		})
 	}
 
-	// Add new messages
+	// Add new messages with branch support
 	if len(newMessages) > 0 {
-		if err := s.AddMessages(ctx, id, newMessages); err != nil {
+		if err := s.AddMessagesWithBranch(ctx, id, branch, newMessages); err != nil {
 			return fmt.Errorf("failed to add messages: %w", err)
 		}
 	}

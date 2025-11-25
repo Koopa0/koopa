@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"testing"
 
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/log"
@@ -16,11 +17,12 @@ func testLogger() log.Logger {
 }
 
 // createTestInvocationContext creates a test invocation context for toolset testing.
-// Panics if session ID creation fails (should never happen with hardcoded valid value).
-func createTestInvocationContext() agent.ReadonlyContext {
+// Uses t.Fatalf for proper test failure reporting instead of panic.
+func createTestInvocationContext(t *testing.T) agent.ReadonlyContext {
+	t.Helper()
 	sessionID, err := agent.NewSessionID("test-session")
 	if err != nil {
-		panic("createTestInvocationContext: invalid session ID: " + err.Error())
+		t.Fatalf("createTestInvocationContext: invalid session ID: %v", err)
 	}
 	ctx := agent.NewInvocationContext(
 		context.Background(),

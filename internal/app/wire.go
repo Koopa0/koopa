@@ -14,6 +14,7 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/koopa0/koopa-cli/db"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
@@ -49,12 +50,21 @@ var providerSet = wire.NewSet(
 
 // ========== Core Providers ==========
 
-// provideGenkit initializes Genkit with Google AI plugin.
+// provideGenkit initializes Genkit with Google AI plugin and prompt directory.
 // Returns error if initialization fails (follows Wire provider pattern).
-func provideGenkit(ctx context.Context) (*genkit.Genkit, error) {
-	// For MCP server mode, prompts are not needed, so we make them optional
-	// Initialize Genkit without prompts - they're only needed for interactive chat mode
-	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+func provideGenkit(ctx context.Context, cfg *config.Config) (*genkit.Genkit, error) {
+	// Determine prompt directory from config or use default
+	promptDir := cfg.PromptDir
+	if promptDir == "" {
+		promptDir = "prompts"
+	}
+
+	// Initialize Genkit with Google AI plugin and prompt directory
+	// This automatically loads all .prompt files from the directory
+	g := genkit.Init(ctx,
+		genkit.WithPlugins(&googlegenai.GoogleAI{}),
+		genkit.WithPromptDir(promptDir),
+	)
 
 	// genkit.Init doesn't return error, but we return this signature
 	// for consistency with Wire provider pattern and future error handling
@@ -70,8 +80,14 @@ func provideEmbedder(g *genkit.Genkit, cfg *config.Config) ai.Embedder {
 	return googlegenai.GoogleAIEmbedder(g, cfg.EmbedderModel)
 }
 
-// provideDBPool creates a PostgreSQL connection pool.
+// provideDBPool creates a PostgreSQL connection pool and runs migrations.
 func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func(), error) {
+	// Run database migrations on startup (uses URL format)
+	if err := db.Migrate(cfg.PostgresURL()); err != nil {
+		return nil, nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	// Create connection pool (uses DSN format)
 	pool, err := pgxpool.New(ctx, cfg.PostgresConnectionString())
 	if err != nil {
 		return nil, nil, err

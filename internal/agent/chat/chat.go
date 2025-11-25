@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
@@ -24,7 +25,16 @@ const (
 
 	// DefaultModel is the default LLM model when not configured.
 	DefaultModel = "googleai/gemini-2.5-flash"
+
+	// KoopaPromptName is the name of the Dotprompt file for the Chat agent.
+	// This corresponds to prompts/koopa.prompt.
+	KoopaPromptName = "koopa"
 )
+
+// StreamCallback is called for each chunk of streaming response.
+// The chunk contains partial content that can be immediately displayed to the user.
+// Return an error to abort the stream.
+type StreamCallback func(ctx context.Context, chunk *ai.ModelResponseChunk) error
 
 // Deps contains all required dependencies for Chat agent.
 // These are mandatory and must be provided during construction.
@@ -54,6 +64,7 @@ type Chat struct {
 	logger         log.Logger
 	toolsets       []tools.Toolset
 	toolRefs       []ai.ToolRef // Cached tool references after registration
+	prompt         ai.Prompt    // Cached Dotprompt instance (nil = use fallback Generate)
 }
 
 // New creates a new Chat agent with required dependencies.
@@ -128,6 +139,17 @@ func New(deps Deps) (*Chat, error) {
 		}
 	}
 
+	// Load Dotprompt (koopa.prompt)
+	// This is optional - if prompt is not found, we fall back to direct Generate
+	c.prompt = genkit.LookupPrompt(c.g, KoopaPromptName)
+	if c.prompt == nil {
+		c.logger.Warn("dotprompt not found, using fallback generation",
+			"prompt_name", KoopaPromptName)
+	} else {
+		c.logger.Info("loaded dotprompt successfully",
+			"prompt_name", KoopaPromptName)
+	}
+
 	return c, nil
 }
 
@@ -146,12 +168,23 @@ func (c *Chat) SubAgents() []agent.Agent {
 	return nil
 }
 
-// Execute runs the chat agent with the given input.
+// Execute runs the chat agent with the given input (non-streaming).
+// This is a convenience wrapper around ExecuteStream with nil callback.
 func (c *Chat) Execute(ctx agent.InvocationContext, input string) (*agent.Response, error) {
+	return c.ExecuteStream(ctx, input, nil)
+}
+
+// ExecuteStream runs the chat agent with optional streaming output.
+// If callback is non-nil, it is called for each chunk of the response as it's generated.
+// If callback is nil, the response is generated without streaming (equivalent to Execute).
+// The final response is always returned after generation completes.
+func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback StreamCallback) (*agent.Response, error) {
+	streaming := callback != nil
 	c.logger.Info("executing chat agent",
 		"invocation_id", ctx.InvocationID(),
 		"session_id", ctx.SessionID(),
-		"branch", ctx.Branch())
+		"branch", ctx.Branch(),
+		"streaming", streaming)
 
 	// Load session history
 	history, err := c.sessions.LoadHistory(ctx, ctx.SessionID(), ctx.Branch())
@@ -162,26 +195,10 @@ func (c *Chat) Execute(ctx agent.InvocationContext, input string) (*agent.Respon
 	// Get previous messages from history
 	historyMessages := history.Messages()
 
-	// Build message list with current input
-	messages := c.buildMessages(input, historyMessages)
-
-	// Use configured model or default
-	modelName := c.config.ModelName
-	if modelName == "" {
-		modelName = DefaultModel
-	}
-
-	// Prepare generation options with cached tool references
-	generateOptions := []ai.GenerateOption{
-		ai.WithModelName(modelName),
-		ai.WithMessages(messages...),
-		ai.WithTools(c.toolRefs...),
-	}
-
-	// Generate response using LLM
-	resp, err := genkit.Generate(ctx, c.g, generateOptions...)
+	// Generate response using unified core logic
+	resp, err := c.executeCore(ctx, input, historyMessages, callback)
 	if err != nil {
-		return nil, fmt.Errorf("generation failed: %w", err)
+		return nil, err
 	}
 
 	responseText := resp.Text()
@@ -189,9 +206,14 @@ func (c *Chat) Execute(ctx agent.InvocationContext, input string) (*agent.Respon
 	// Update history with user input and response
 	history.Add(input, responseText)
 
-	// Save updated history to session store
-	if err := c.sessions.SaveHistory(ctx, ctx.SessionID(), ctx.Branch(), history); err != nil {
-		return nil, fmt.Errorf("failed to save history: %w", err)
+	// Save updated history to session store using AppendMessages (preferred)
+	newMessages := []*ai.Message{
+		ai.NewUserMessage(ai.NewTextPart(input)),
+		ai.NewModelMessage(ai.NewTextPart(responseText)),
+	}
+	if err := c.sessions.AppendMessages(ctx, ctx.SessionID(), ctx.Branch(), newMessages); err != nil {
+		c.logger.Error("failed to append messages to history", "error", err)
+		// Don't fail the request, just log the error
 	}
 
 	// Return formatted response
@@ -202,17 +224,135 @@ func (c *Chat) Execute(ctx agent.InvocationContext, input string) (*agent.Respon
 	}, nil
 }
 
-// buildMessages constructs the message list for Genkit generation.
-func (c *Chat) buildMessages(input string, history []*ai.Message) []*ai.Message {
-	messages := []*ai.Message{}
+// executeCore is the unified execution logic for both streaming and non-streaming modes.
+// If callback is non-nil, streaming is enabled; otherwise, standard generation is used.
+func (c *Chat) executeCore(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
+	// Build messages: history + current user input
+	allMessages := append(historyMessages, ai.NewUserMessage(ai.NewTextPart(input)))
 
-	if history != nil {
-		messages = append(messages, history...)
+	// Retrieve relevant documents for RAG context (graceful fallback on error)
+	ragDocs := c.retrieveRAGContext(ctx, input)
+
+	// Route to Dotprompt or fallback based on availability
+	if c.prompt != nil {
+		return c.executeWithPrompt(ctx, allMessages, ragDocs, callback)
+	}
+	return c.executeFallback(ctx, allMessages, ragDocs, callback)
+}
+
+// executeWithPrompt uses Dotprompt for generation with template variables.
+// Supports both streaming (callback != nil) and non-streaming (callback == nil) modes.
+func (c *Chat) executeWithPrompt(ctx context.Context, messages []*ai.Message, ragDocs []*ai.Document, callback StreamCallback) (*ai.ModelResponse, error) {
+	// Resolve language setting
+	language := c.resolveLanguage()
+
+	// Create a MessagesFn that returns the conversation messages
+	messagesFn := func(_ context.Context, _ any) ([]*ai.Message, error) {
+		return messages, nil
 	}
 
-	messages = append(messages, ai.NewUserMessage(ai.NewTextPart(input)))
+	// Build execute options
+	opts := []ai.PromptExecuteOption{
+		ai.WithInput(map[string]any{
+			"language": language,
+		}),
+		ai.WithMessagesFn(messagesFn),
+		ai.WithTools(c.toolRefs...),
+	}
 
-	return messages
+	// Add RAG documents if available
+	if len(ragDocs) > 0 {
+		opts = append(opts, ai.WithDocs(ragDocs...))
+	}
+
+	// Add streaming callback if provided
+	if callback != nil {
+		opts = append(opts, ai.WithStreaming(callback))
+	}
+
+	// Execute prompt
+	resp, err := c.prompt.Execute(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("prompt execution failed: %w", err)
+	}
+
+	return resp, nil
+}
+
+// executeFallback uses direct genkit.Generate when Dotprompt is not available.
+// Supports both streaming (callback != nil) and non-streaming (callback == nil) modes.
+func (c *Chat) executeFallback(ctx context.Context, messages []*ai.Message, ragDocs []*ai.Document, callback StreamCallback) (*ai.ModelResponse, error) {
+	// Resolve model name
+	modelName := c.resolveModelName()
+
+	// Build generation options
+	opts := []ai.GenerateOption{
+		ai.WithModelName(modelName),
+		ai.WithMessages(messages...),
+		ai.WithTools(c.toolRefs...),
+	}
+
+	// Add RAG documents if available
+	if len(ragDocs) > 0 {
+		opts = append(opts, ai.WithDocs(ragDocs...))
+	}
+
+	// Add streaming callback if provided
+	if callback != nil {
+		opts = append(opts, ai.WithStreaming(callback))
+	}
+
+	// Generate response
+	resp, err := genkit.Generate(ctx, c.g, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("generation failed: %w", err)
+	}
+
+	return resp, nil
+}
+
+// resolveLanguage returns the language setting for prompt execution.
+func (c *Chat) resolveLanguage() string {
+	language := c.config.Language
+	if language == "" || language == "auto" {
+		return "the same language as the user's input (auto-detect)"
+	}
+	return language
+}
+
+// resolveModelName returns the model name to use for generation.
+func (c *Chat) resolveModelName() string {
+	if c.config.ModelName != "" {
+		return c.config.ModelName
+	}
+	return DefaultModel
+}
+
+// retrieveRAGContext retrieves relevant documents from the knowledge base.
+// Returns empty slice on error (graceful degradation).
+func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Document {
+	// Skip RAG if topK is not configured or zero
+	topK := c.config.RAGTopK
+	if topK <= 0 {
+		return nil
+	}
+
+	// Retrieve documents
+	docs, err := c.retriever.RetrieveDocuments(ctx, query, topK)
+	if err != nil {
+		c.logger.Warn("RAG retrieval failed (continuing without context)",
+			"error", err,
+			"query_length", len(query))
+		return nil
+	}
+
+	if len(docs) > 0 {
+		c.logger.Debug("retrieved RAG context",
+			"document_count", len(docs),
+			"query_length", len(query))
+	}
+
+	return docs
 }
 
 // emptyReadonlyContext is used for toolset registration.

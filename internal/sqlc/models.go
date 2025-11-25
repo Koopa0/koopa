@@ -35,4 +35,5 @@ type SessionMessage struct {
 	Content        []byte             `json:"content"`
 	SequenceNumber int32              `json:"sequence_number"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	Branch         string             `json:"branch"`
 }

@@ -4,8 +4,10 @@ package chat
 import (
 	"context"
 
+	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/google/uuid"
+
 	"github.com/koopa0/koopa-cli/internal/agent"
 )
 
@@ -29,15 +31,24 @@ type FlowError struct {
 	Message string `json:"message"`
 }
 
-// DefineFlow defines the Genkit Flow for Chat Agent
+// FlowName is the registered name of the Chat Flow in Genkit.
+const FlowName = "koopa/chat"
+
+// Flow is the type alias for Chat Agent's Genkit Flow.
+// Exported for use in api package with genkit.Handler().
+type Flow = core.Flow[Input, Output, struct{}]
+
+// DefineFlow defines the Genkit Flow for Chat Agent and returns the Flow action.
+// The returned action can be used with genkit.Handler() for HTTP exposure.
+//
 // Each Agent has its own dedicated Flow, responsible for:
 // 1. Observability (Genkit DevUI tracing)
 // 2. Type safety (Input/Output schema)
-// 3. HTTP endpoint exposure
+// 3. HTTP endpoint exposure via genkit.Handler()
 //
 // Design: Flow is a lightweight wrapper, Agent.Execute() contains core logic
-func (a *Chat) DefineFlow(g *genkit.Genkit) {
-	genkit.DefineFlow(g, "koopa/chat",
+func (a *Chat) DefineFlow(g *genkit.Genkit) *core.Flow[Input, Output, struct{}] {
+	return genkit.DefineFlow(g, FlowName,
 		func(ctx context.Context, input Input) (Output, error) {
 			// Validate session ID from input
 			sessionID, err := agent.NewSessionID(input.SessionID)

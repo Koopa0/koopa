@@ -1,3 +1,14 @@
+---
+model: googleai/gemini-2.5-flash
+config:
+  temperature: 0.7
+  maxOutputTokens: 4096
+input:
+  schema:
+    language: string
+  default:
+    language: "the same language as the user's input (auto-detect)"
+---
 {{role "system"}}
 
 <system>
