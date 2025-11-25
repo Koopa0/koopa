@@ -1,72 +1,93 @@
 package mcp
 
 import (
-	"context"
-	"net/http"
+	"log/slog"
+	"path/filepath"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/tools"
 )
 
-// mockKnowledgeSearcher is a minimal mock implementation for tests
-type mockKnowledgeSearcher struct{}
-
-func (m *mockKnowledgeSearcher) Search(ctx context.Context, query string, opts ...knowledge.SearchOption) ([]knowledge.Result, error) {
-	return []knowledge.Result{}, nil
+// testHelper provides common test utilities.
+type testHelper struct {
+	t       *testing.T
+	tempDir string
 }
 
-// mockHTTPValidator is a minimal mock implementation for tests
-type mockHTTPValidator struct{}
-
-func (m *mockHTTPValidator) ValidateURL(url string) error {
-	return nil
-}
-
-func (m *mockHTTPValidator) Client() *http.Client {
-	return &http.Client{}
-}
-
-func (m *mockHTTPValidator) MaxResponseSize() int64 {
-	return 5 * 1024 * 1024 // 5MB
-}
-
-// createTestKitConfig creates a valid KitConfig for testing
-func createTestKitConfig(t *testing.T) tools.KitConfig {
+func newTestHelper(t *testing.T) *testHelper {
 	t.Helper()
-	pathVal, err := security.NewPath([]string{t.TempDir()})
+	// Resolve symlinks in temp dir path (macOS /var -> /private/var)
+	tempDir := t.TempDir()
+	realTempDir, err := filepath.EvalSymlinks(tempDir)
 	if err != nil {
-		t.Fatalf("failed to create path validator: %v", err)
+		t.Fatalf("failed to resolve temp dir symlinks: %v", err)
 	}
-
-	return tools.KitConfig{
-		PathVal:        pathVal,
-		CmdVal:         security.NewCommand(),
-		EnvVal:         security.NewEnv(),
-		HTTPVal:        &mockHTTPValidator{},
-		KnowledgeStore: &mockKnowledgeSearcher{},
+	return &testHelper{
+		t:       t,
+		tempDir: realTempDir,
 	}
 }
 
-// TestNewServer_Success tests successful server creation
-func TestNewServer_Success(t *testing.T) {
-	cfg := Config{
-		Name:      "test-server",
-		Version:   "1.0.0",
-		KitConfig: createTestKitConfig(t),
+func (h *testHelper) createFileToolset() *tools.FileToolset {
+	h.t.Helper()
+	pathVal, err := security.NewPath([]string{h.tempDir})
+	if err != nil {
+		h.t.Fatalf("failed to create path validator: %v", err)
 	}
+
+	toolset, err := tools.NewFileToolset(pathVal, slog.Default())
+	if err != nil {
+		h.t.Fatalf("failed to create file toolset: %v", err)
+	}
+	return toolset
+}
+
+func (h *testHelper) createSystemToolset() *tools.SystemToolset {
+	h.t.Helper()
+	cmdVal := security.NewCommand()
+	envVal := security.NewEnv()
+
+	toolset, err := tools.NewSystemToolset(cmdVal, envVal, slog.Default())
+	if err != nil {
+		h.t.Fatalf("failed to create system toolset: %v", err)
+	}
+	return toolset
+}
+
+func (h *testHelper) createNetworkToolset() *tools.NetworkToolset {
+	h.t.Helper()
+	httpVal := security.NewHTTP()
+
+	toolset, err := tools.NewNetworkToolset(httpVal, slog.Default())
+	if err != nil {
+		h.t.Fatalf("failed to create network toolset: %v", err)
+	}
+	return toolset
+}
+
+func (h *testHelper) createValidConfig() Config {
+	h.t.Helper()
+	return Config{
+		Name:           "test-server",
+		Version:        "1.0.0",
+		FileToolset:    h.createFileToolset(),
+		SystemToolset:  h.createSystemToolset(),
+		NetworkToolset: h.createNetworkToolset(),
+	}
+}
+
+// TestNewServer_Success tests successful server creation with all toolsets.
+func TestNewServer_Success(t *testing.T) {
+	h := newTestHelper(t)
+	cfg := h.createValidConfig()
 
 	server, err := NewServer(cfg)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
 
-	if server == nil {
-		t.Fatal("NewServer returned nil server")
-		return
-	}
-
+	// Verify server fields are correctly set
 	if server.name != "test-server" {
 		t.Errorf("server.name = %q, want %q", server.name, "test-server")
 	}
@@ -79,14 +100,25 @@ func TestNewServer_Success(t *testing.T) {
 		t.Error("server.mcpServer is nil")
 	}
 
-	if server.kit == nil {
-		t.Error("server.kit is nil")
+	if server.fileToolset == nil {
+		t.Error("server.fileToolset is nil")
+	}
+
+	if server.systemToolset == nil {
+		t.Error("server.systemToolset is nil")
+	}
+
+	if server.networkToolset == nil {
+		t.Error("server.networkToolset is nil")
 	}
 }
 
-// TestNewServer_ValidationErrors tests config validation
+// TestNewServer_ValidationErrors tests config validation.
 func TestNewServer_ValidationErrors(t *testing.T) {
-	validKitConfig := createTestKitConfig(t)
+	h := newTestHelper(t)
+	validFile := h.createFileToolset()
+	validSystem := h.createSystemToolset()
+	validNetwork := h.createNetworkToolset()
 
 	tests := []struct {
 		name    string
@@ -96,18 +128,52 @@ func TestNewServer_ValidationErrors(t *testing.T) {
 		{
 			name: "missing name",
 			config: Config{
-				Version:   "1.0.0",
-				KitConfig: validKitConfig,
+				Version:        "1.0.0",
+				FileToolset:    validFile,
+				SystemToolset:  validSystem,
+				NetworkToolset: validNetwork,
 			},
 			wantErr: "server name is required",
 		},
 		{
 			name: "missing version",
 			config: Config{
-				Name:      "test",
-				KitConfig: validKitConfig,
+				Name:           "test",
+				FileToolset:    validFile,
+				SystemToolset:  validSystem,
+				NetworkToolset: validNetwork,
 			},
 			wantErr: "server version is required",
+		},
+		{
+			name: "missing file toolset",
+			config: Config{
+				Name:           "test",
+				Version:        "1.0.0",
+				SystemToolset:  validSystem,
+				NetworkToolset: validNetwork,
+			},
+			wantErr: "file toolset is required",
+		},
+		{
+			name: "missing system toolset",
+			config: Config{
+				Name:           "test",
+				Version:        "1.0.0",
+				FileToolset:    validFile,
+				NetworkToolset: validNetwork,
+			},
+			wantErr: "system toolset is required",
+		},
+		{
+			name: "missing network toolset",
+			config: Config{
+				Name:          "test",
+				Version:       "1.0.0",
+				FileToolset:   validFile,
+				SystemToolset: validSystem,
+			},
+			wantErr: "network toolset is required",
 		},
 	}
 
@@ -117,23 +183,17 @@ func TestNewServer_ValidationErrors(t *testing.T) {
 			if err == nil {
 				t.Fatal("NewServer succeeded, want error")
 			}
-			if err.Error() != tt.wantErr {
-				// Check if error contains expected message (for wrapped errors)
-				if !contains(err.Error(), tt.wantErr) {
-					t.Errorf("NewServer error = %q, want %q", err.Error(), tt.wantErr)
-				}
+			if !contains(err.Error(), tt.wantErr) {
+				t.Errorf("NewServer error = %q, want to contain %q", err.Error(), tt.wantErr)
 			}
 		})
 	}
 }
 
-// TestRegisterTools_ReadFile tests that readFile tool is registered
-func TestRegisterTools_ReadFile(t *testing.T) {
-	cfg := Config{
-		Name:      "test-server",
-		Version:   "1.0.0",
-		KitConfig: createTestKitConfig(t),
-	}
+// TestRegisterTools_AllToolsRegistered verifies all 9 tools are registered.
+func TestRegisterTools_AllToolsRegistered(t *testing.T) {
+	h := newTestHelper(t)
+	cfg := h.createValidConfig()
 
 	server, err := NewServer(cfg)
 	if err != nil {
@@ -147,97 +207,14 @@ func TestRegisterTools_ReadFile(t *testing.T) {
 
 	// Note: We can't directly verify tool registration without accessing
 	// internal MCP server state. The fact that NewServer succeeded without
-	// error means registerTools() completed successfully.
-	// Tool functionality will be tested in integration tests.
+	// error means registerTools() completed successfully for all 9 tools:
+	// - File: readFile, writeFile, listFiles, deleteFile, getFileInfo
+	// - System: currentTime, executeCommand, getEnv
+	// - Network: httpGet
 }
 
-// TestRun_NilTransport tests Run with nil transport
-// Note: This test is removed because the MCP SDK panics on nil transport,
-// which is acceptable behavior. In production, we always provide a valid transport.
-
-// TestNewServer_KitCreationFailure tests Kit creation failure
-func TestNewServer_KitCreationFailure(t *testing.T) {
-	cfg := Config{
-		Name:      "test-server",
-		Version:   "1.0.0",
-		KitConfig: tools.KitConfig{
-			// Missing required fields - Kit creation will fail
-		},
-	}
-
-	_, err := NewServer(cfg)
-	if err == nil {
-		t.Fatal("NewServer succeeded with invalid KitConfig, want error")
-	}
-
-	if !contains(err.Error(), "failed to create kit") {
-		t.Errorf("NewServer error = %q, want 'failed to create kit'", err.Error())
-	}
-}
-
-// TestRegisterTools_Coverage tests registerTools function coverage
-func TestRegisterTools_Coverage(t *testing.T) {
-	// This test exists primarily to improve coverage of registerTools
-	cfg := Config{
-		Name:      "test-server",
-		Version:   "1.0.0",
-		KitConfig: createTestKitConfig(t),
-	}
-
-	server, err := NewServer(cfg)
-	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
-	}
-
-	// Verify registerTools was called (indirectly through NewServer)
-	if server.mcpServer == nil {
-		t.Error("mcpServer is nil, registerTools may have failed")
-	}
-}
-
-// TestReadFileInput_SchemaValidation tests ReadFileInput struct
-func TestReadFileInput_SchemaValidation(t *testing.T) {
-	// Test that ReadFileInput struct has the expected fields
-	input := ReadFileInput{
-		Path: "/test/path",
-	}
-
-	if input.Path != "/test/path" {
-		t.Errorf("ReadFileInput.Path = %q, want %q", input.Path, "/test/path")
-	}
-}
-
-// TestRegisterReadFile_SchemaGeneration tests that schema generation works
-func TestRegisterReadFile_SchemaGeneration(t *testing.T) {
-	cfg := Config{
-		Name:      "test-server",
-		Version:   "1.0.0",
-		KitConfig: createTestKitConfig(t),
-	}
-
-	// NewServer calls registerReadFile which generates schema
-	server, err := NewServer(cfg)
-	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
-	}
-
-	// Verify server was created (schema generation succeeded)
-	if server == nil {
-		t.Fatal("NewServer returned nil server")
-		return
-	}
-
-	if server.mcpServer == nil {
-		t.Fatal("mcpServer is nil, registerReadFile may have failed")
-	}
-}
-
-// contains checks if s contains substr
+// contains checks if s contains substr.
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
 			return true

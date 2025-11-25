@@ -19,7 +19,7 @@ import (
 type SystemKnowledgeIndexer struct {
 	store  *Store
 	logger *slog.Logger
-	mu     sync.Mutex // 保護 IndexAll/ClearAll 並發調用
+	mu     sync.Mutex // Protects IndexAll/ClearAll from concurrent calls
 }
 
 // NewSystemKnowledgeIndexer creates a new system knowledge indexer.
@@ -68,7 +68,7 @@ func (s *SystemKnowledgeIndexer) IndexAll(ctx context.Context) (int, error) {
 		"success", successCount,
 		"failed", len(docs)-successCount)
 
-	// 如果所有文檔都失敗，返回錯誤（避免靜默失敗）
+	// Return error if all documents failed to prevent silent failures
 	if successCount == 0 {
 		return 0, fmt.Errorf("failed to index any system knowledge documents")
 	}
@@ -83,16 +83,16 @@ func (s *SystemKnowledgeIndexer) ClearAll(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 使用 Search 配合大 TopK 和 source_type filter 獲取所有系統文檔
-	// 設置 TopK=1000 足夠涵蓋所有系統知識文檔（當前只有 6 個）
+	// Use Search with large TopK and source_type filter to get all system documents
+	// TopK=1000 is sufficient to cover all system knowledge documents (currently 6)
 	results, err := s.store.Search(ctx, "system knowledge",
 		WithTopK(1000),
-		WithFilter("source_type", "system"))
+		WithFilter("source_type", SourceTypeSystem))
 	if err != nil {
 		return fmt.Errorf("failed to search system documents: %w", err)
 	}
 
-	// 刪除所有找到的系統文檔
+	// Delete all found system documents
 	deletedCount := 0
 	for _, result := range results {
 		if err := s.store.Delete(ctx, result.Document.ID); err != nil {
@@ -159,7 +159,7 @@ Bad:
 - Log full errors, return sanitized messages
 `,
 			Metadata: map[string]string{
-				"source_type": "system",
+				"source_type": SourceTypeSystem,
 				"category":    "golang",
 				"topic":       "error-handling",
 				"version":     "1.0",
@@ -193,7 +193,7 @@ Bad:
 - Prefer channels over shared memory when possible
 `,
 			Metadata: map[string]string{
-				"source_type": "system",
+				"source_type": SourceTypeSystem,
 				"category":    "golang",
 				"topic":       "concurrency",
 				"version":     "1.0",
@@ -227,7 +227,7 @@ Bad:
 - Unexported: camelCase (myFunction, myStruct)
 `,
 			Metadata: map[string]string{
-				"source_type": "system",
+				"source_type": SourceTypeSystem,
 				"category":    "golang",
 				"topic":       "naming",
 				"version":     "1.0",
@@ -274,7 +274,7 @@ func (s *SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
 - Cannot access system files (/etc, /sys, etc.)
 `,
 			Metadata: map[string]string{
-				"source_type": "system",
+				"source_type": SourceTypeSystem,
 				"category":    "capabilities",
 				"topic":       "available-tools",
 				"version":     "1.0",
@@ -310,7 +310,7 @@ func (s *SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
 - Sanitize command inputs to prevent injection
 `,
 			Metadata: map[string]string{
-				"source_type": "system",
+				"source_type": SourceTypeSystem,
 				"category":    "capabilities",
 				"topic":       "best-practices",
 				"version":     "1.0",
@@ -363,7 +363,7 @@ func (s *SystemKnowledgeIndexer) buildArchitectureDocs() []Document {
 - Goroutines must have cleanup mechanism
 `,
 			Metadata: map[string]string{
-				"source_type": "system",
+				"source_type": SourceTypeSystem,
 				"category":    "architecture",
 				"topic":       "design-principles",
 				"version":     "1.0",

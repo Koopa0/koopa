@@ -37,7 +37,7 @@ type mockSessionQuerier struct {
 	getSessionResult           sqlc.Session
 	listSessionsResult         []sqlc.Session
 	getMessagesResult          []sqlc.SessionMessage
-	getMaxSequenceNumberResult interface{}
+	getMaxSequenceNumberResult any
 
 	// Call tracking
 	createSessionCalls          int
@@ -150,12 +150,12 @@ func (m *mockSessionQuerier) GetMaxSequenceNumber(ctx context.Context, sessionID
 // Tests
 // ============================================================================
 
-func TestNewWithQuerier(t *testing.T) {
+func TestNew(t *testing.T) {
 	t.Run("creates store with custom logger", func(t *testing.T) {
 		logger := slog.Default()
 		querier := &mockSessionQuerier{}
 
-		store := NewWithQuerier(querier, logger)
+		store := New(querier, nil, logger)
 
 		if store == nil {
 			t.Fatal("expected non-nil store")
@@ -172,7 +172,7 @@ func TestNewWithQuerier(t *testing.T) {
 	t.Run("uses default logger when nil provided", func(t *testing.T) {
 		querier := &mockSessionQuerier{}
 
-		store := NewWithQuerier(querier, nil)
+		store := New(querier, nil, nil)
 
 		if store == nil {
 			t.Fatal("expected non-nil store")
@@ -239,7 +239,7 @@ func TestStore_CreateSession(t *testing.T) {
 				createSessionResult: tt.mockResult,
 				createSessionErr:    tt.mockErr,
 			}
-			store := NewWithQuerier(querier, slog.Default())
+			store := New(querier, nil, slog.Default())
 
 			session, err := store.CreateSession(context.Background(), tt.title, tt.modelName, tt.systemPrompt)
 
@@ -272,7 +272,7 @@ func TestStore_AddMessages(t *testing.T) {
 	tests := []struct {
 		name                string
 		messages            []*Message
-		mockMaxSeq          interface{}
+		mockMaxSeq          any
 		mockMaxSeqErr       error
 		mockAddErr          error
 		wantAddMessageCalls int
@@ -338,7 +338,7 @@ func TestStore_AddMessages(t *testing.T) {
 				getMaxSequenceNumberErr:    tt.mockMaxSeqErr,
 				addMessageErr:              tt.mockAddErr,
 			}
-			store := NewWithQuerier(querier, slog.Default())
+			store := New(querier, nil, slog.Default())
 
 			err := store.AddMessages(context.Background(), sessionID, tt.messages)
 
@@ -450,7 +450,7 @@ func TestStore_GetMessages(t *testing.T) {
 				getMessagesResult: tt.mockMessages,
 				getMessagesErr:    tt.mockErr,
 			}
-			store := NewWithQuerier(querier, slog.Default())
+			store := New(querier, nil, slog.Default())
 
 			messages, err := store.GetMessages(context.Background(), sessionID, tt.limit, tt.offset)
 
@@ -498,7 +498,7 @@ func TestStore_DeleteSession(t *testing.T) {
 			querier := &mockSessionQuerier{
 				deleteSessionErr: tt.mockErr,
 			}
-			store := NewWithQuerier(querier, slog.Default())
+			store := New(querier, nil, slog.Default())
 
 			err := store.DeleteSession(context.Background(), sessionID)
 
@@ -598,7 +598,7 @@ func TestStore_GetSession(t *testing.T) {
 				getSessionResult: tt.mockResult,
 				getSessionErr:    tt.mockErr,
 			}
-			store := NewWithQuerier(querier, slog.Default())
+			store := New(querier, nil, slog.Default())
 
 			result, err := store.GetSession(context.Background(), tt.sessionID)
 
@@ -756,7 +756,7 @@ func TestStore_ListSessions(t *testing.T) {
 				listSessionsResult: tt.mockResult,
 				listSessionsErr:    tt.mockErr,
 			}
-			store := NewWithQuerier(querier, slog.Default())
+			store := New(querier, nil, slog.Default())
 
 			result, err := store.ListSessions(context.Background(), tt.limit, tt.offset)
 

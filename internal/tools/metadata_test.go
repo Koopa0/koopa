@@ -46,7 +46,7 @@ func TestGetToolMetadata(t *testing.T) {
 			if meta.Category == "" {
 				t.Errorf("Tool %s has empty Category", toolName)
 			}
-			if meta.Description == "" {
+			if meta.Description() == "" {
 				t.Errorf("Tool %s has empty Description", toolName)
 			}
 		})
@@ -266,7 +266,7 @@ func TestListToolsByDangerLevel(t *testing.T) {
 				// List what we got for debugging
 				t.Logf("Got tools:")
 				for _, tool := range tools {
-					t.Logf("  - %s (%s)", tool.Category, tool.Description)
+					t.Logf("  - %s (%s)", tool.Category, tool.Description())
 				}
 			}
 

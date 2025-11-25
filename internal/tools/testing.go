@@ -1,46 +1,28 @@
 package tools
 
 import (
-	"net/http"
-	"path/filepath"
-	"testing"
+	"context"
+
+	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/log"
 )
 
-// mockHTTPValidator is a mock implementation of HTTPValidator for testing.
-// Follows Go testing best practices: simple, explicit mocks without external libraries.
-type mockHTTPValidator struct {
-	validateErr error
-	client      *http.Client
-	maxSize     int64
+// This file contains shared test helpers for the tools package.
+
+// testLogger returns a logger for testing that discards all output.
+// Use this instead of defining mockLogger in each test file.
+func testLogger() log.Logger {
+	return log.NewNop()
 }
 
-func (m *mockHTTPValidator) ValidateURL(url string) error {
-	return m.validateErr
-}
-
-func (m *mockHTTPValidator) Client() *http.Client {
-	if m.client != nil {
-		return m.client
-	}
-	// Return a default client if not set
-	return &http.Client{}
-}
-
-func (m *mockHTTPValidator) MaxResponseSize() int64 {
-	if m.maxSize > 0 {
-		return m.maxSize
-	}
-	// Default 5MB
-	return 5 * 1024 * 1024
-}
-
-// resolveSymlinks resolves symlinks for macOS compatibility.
-// macOS t.TempDir() returns /var/folders/... which is actually a symlink to /private/var/folders/...
-func resolveSymlinks(t *testing.T, path string) string {
-	t.Helper()
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		t.Fatalf("failed to resolve symlinks for %s: %v", path, err)
-	}
-	return resolved
+// createTestInvocationContext creates a test invocation context for toolset testing.
+func createTestInvocationContext() agent.ReadonlyContext {
+	ctx := agent.NewInvocationContext(
+		context.Background(),
+		"test-invocation-id",
+		"test-branch",
+		agent.NewSessionID("test-session"),
+		"test-agent",
+	)
+	return ctx
 }

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
@@ -15,11 +14,11 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
+	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
 
 // InitializeApp is the Wire injector function.
@@ -38,13 +37,11 @@ var providerSet = wire.NewSet(
 	provideGenkit,
 	provideEmbedder,
 	provideDBPool,
-	provideKnowledgeStore,
-	wire.Bind(new(agent.KnowledgeStore), new(*knowledge.Store)), // Bind concrete to interface for testability
-	provideSessionStore, // Phase 3: Real session persistence
-	wire.Bind(new(SessionStore), new(*session.Store)), // Bind concrete to interface for testability
+	provideKnowledgeStore, // Returns *knowledge.Store directly (no interface binding needed)
+	provideSessionStore,   // Returns *session.Store directly (no interface binding needed)
 	providePathValidator,
-	provideLogger,                       // P2-Phase3: Logger for system indexer
-	knowledge.NewSystemKnowledgeIndexer, // P2-Phase3: System knowledge indexer
+	provideLogger,                       // Logger for system knowledge indexer
+	knowledge.NewSystemKnowledgeIndexer, // System knowledge indexer for CLI commands
 
 	// App constructor
 	newApp,
@@ -89,13 +86,13 @@ func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func
 
 // provideKnowledgeStore creates a knowledge store instance.
 func provideKnowledgeStore(pool *pgxpool.Pool, embedder ai.Embedder) *knowledge.Store {
-	return knowledge.New(pool, embedder, nil)
+	return knowledge.New(sqlc.New(pool), embedder, nil)
 }
 
 // provideSessionStore creates a session store instance.
 // This provides real session persistence using PostgreSQL backend.
 func provideSessionStore(pool *pgxpool.Pool) *session.Store {
-	return session.New(pool, nil) // nil = use slog.Default()
+	return session.New(sqlc.New(pool), pool, nil) // nil = use slog.Default()
 }
 
 // providePathValidator creates a path validator instance.
@@ -121,9 +118,9 @@ func newApp(
 	embedder ai.Embedder,
 	pool *pgxpool.Pool,
 	knowledgeStore *knowledge.Store,
-	sessionStore SessionStore, // Phase 3: Session persistence (interface for testability)
+	sessionStore *session.Store, // Concrete type, not interface
 	pathValidator *security.Path,
-	systemIndexer *knowledge.SystemKnowledgeIndexer, // P2-Phase3: System knowledge indexer
+	systemIndexer *knowledge.SystemKnowledgeIndexer, // System knowledge indexer for CLI commands
 ) (*App, error) {
 	// Create context with cancel
 	appCtx, cancel := context.WithCancel(ctx)
@@ -136,12 +133,12 @@ func newApp(
 		Embedder:      embedder,
 		DBPool:        pool,
 		Knowledge:     knowledgeStore,
-		SessionStore:  sessionStore, // Phase 3: Session persistence (interface for testability)
+		SessionStore:  sessionStore, // Concrete type, not interface
 		PathValidator: pathValidator,
-		SystemIndexer: systemIndexer, // P2-Phase3: System knowledge indexer
+		SystemIndexer: systemIndexer, // System knowledge indexer for CLI commands
 	}
 
-	// P2-Phase3: Index system knowledge on startup (async, non-blocking)
+	// Index system knowledge on startup (async, non-blocking)
 	go func() {
 		// Use app context for proper lifecycle management
 		indexCtx, indexCancel := context.WithTimeout(appCtx, 5*time.Second)

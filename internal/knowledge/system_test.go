@@ -8,31 +8,22 @@ import (
 	"log/slog"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/koopa0/koopa-cli/internal/sqlc"
+	"github.com/koopa0/koopa-cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // TestSystemKnowledgeIndexer_IndexAll tests the IndexAll method.
 func TestSystemKnowledgeIndexer_IndexAll(t *testing.T) {
-	// Check for required API key (this test needs real embedder)
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
-	}
-
-	// Setup test database
+	// Setup test database and embedder
 	ctx := context.Background()
-	pool, cleanup := setupTestDB(t, ctx)
-	defer cleanup()
+	dbContainer, dbCleanup := testutil.SetupTestDB(t)
+	defer dbCleanup()
 
-	// Setup embedder (required for Store.Add)
-	embedder, logger := setupEmbedder(t, ctx)
-	store := New(pool, embedder, logger)
+	setup := testutil.SetupEmbedder(t)
+	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
 	// Test: IndexAll should index all 6 system documents
@@ -41,7 +32,7 @@ func TestSystemKnowledgeIndexer_IndexAll(t *testing.T) {
 	assert.Equal(t, 6, count, "should index exactly 6 system knowledge documents")
 
 	// Verify documents are searchable
-	results, err := store.Search(ctx, "error handling", WithTopK(5), WithFilter("source_type", "system"))
+	results, err := store.Search(ctx, "error handling", WithTopK(5), WithFilter("source_type", SourceTypeSystem))
 	require.NoError(t, err)
 	assert.Greater(t, len(results), 0, "should find system knowledge documents")
 
@@ -53,19 +44,12 @@ func TestSystemKnowledgeIndexer_IndexAll(t *testing.T) {
 
 // TestSystemKnowledgeIndexer_ClearAll tests the ClearAll method.
 func TestSystemKnowledgeIndexer_ClearAll(t *testing.T) {
-	// Check for required API key
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
-	}
-
-	// Setup test database
 	ctx := context.Background()
-	pool, cleanup := setupTestDB(t, ctx)
-	defer cleanup()
+	dbContainer, dbCleanup := testutil.SetupTestDB(t)
+	defer dbCleanup()
 
-	// Setup embedder
-	embedder, logger := setupEmbedder(t, ctx)
-	store := New(pool, embedder, logger)
+	setup := testutil.SetupEmbedder(t)
+	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
 	// Index system knowledge
@@ -73,7 +57,7 @@ func TestSystemKnowledgeIndexer_ClearAll(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify documents exist
-	results, err := store.Search(ctx, "system", WithTopK(10), WithFilter("source_type", "system"))
+	results, err := store.Search(ctx, SourceTypeSystem, WithTopK(10), WithFilter("source_type", SourceTypeSystem))
 	require.NoError(t, err)
 	assert.Greater(t, len(results), 0, "should have system documents before clearing")
 
@@ -82,7 +66,7 @@ func TestSystemKnowledgeIndexer_ClearAll(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify documents are gone
-	results, err = store.Search(ctx, "system", WithTopK(10), WithFilter("source_type", "system"))
+	results, err = store.Search(ctx, SourceTypeSystem, WithTopK(10), WithFilter("source_type", SourceTypeSystem))
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(results), "should have no system documents after clearing")
 }
@@ -100,7 +84,7 @@ func TestBuildSystemKnowledgeDocs(t *testing.T) {
 		assert.NotEmpty(t, doc.ID, "document %d should have an ID", i)
 		assert.NotEmpty(t, doc.Content, "document %d should have content", i)
 		assert.NotEmpty(t, doc.Metadata, "document %d should have metadata", i)
-		assert.Equal(t, "system", doc.Metadata["source_type"], "document %d should have source_type=system", i)
+		assert.Equal(t, SourceTypeSystem, doc.Metadata["source_type"], "document %d should have source_type=system", i)
 		assert.NotEmpty(t, doc.Metadata["category"], "document %d should have category", i)
 		assert.NotEmpty(t, doc.Metadata["topic"], "document %d should have topic", i)
 		assert.NotEmpty(t, doc.Metadata["version"], "document %d should have version", i)
@@ -149,19 +133,12 @@ func TestDocumentIDs_Unique(t *testing.T) {
 
 // TestSystemKnowledge_E2E tests the full index and search workflow.
 func TestSystemKnowledge_E2E(t *testing.T) {
-	// Check for required API key
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
-	}
-
-	// Setup test database
 	ctx := context.Background()
-	pool, cleanup := setupTestDB(t, ctx)
-	defer cleanup()
+	dbContainer, dbCleanup := testutil.SetupTestDB(t)
+	defer dbCleanup()
 
-	// Setup embedder
-	embedder, logger := setupEmbedder(t, ctx)
-	store := New(pool, embedder, logger)
+	setup := testutil.SetupEmbedder(t)
+	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
 	// Step 1: Index system knowledge
@@ -172,13 +149,13 @@ func TestSystemKnowledge_E2E(t *testing.T) {
 	// Step 2: Search for Golang error handling
 	results, err := store.Search(ctx, "error handling best practices",
 		WithTopK(3),
-		WithFilter("source_type", "system"))
+		WithFilter("source_type", SourceTypeSystem))
 	require.NoError(t, err)
 	assert.Greater(t, len(results), 0, "should find error handling guidance")
 
 	// Verify result metadata
 	for _, result := range results {
-		assert.Equal(t, "system", result.Document.Metadata["source_type"])
+		assert.Equal(t, SourceTypeSystem, result.Document.Metadata["source_type"])
 		assert.NotEmpty(t, result.Document.Metadata["category"])
 		assert.NotEmpty(t, result.Document.Metadata["topic"])
 	}
@@ -186,40 +163,34 @@ func TestSystemKnowledge_E2E(t *testing.T) {
 	// Step 3: Search for Agent capabilities
 	results, err = store.Search(ctx, "what tools are available",
 		WithTopK(3),
-		WithFilter("source_type", "system"))
+		WithFilter("source_type", SourceTypeSystem))
 	require.NoError(t, err)
 	assert.Greater(t, len(results), 0, "should find agent tools documentation")
 
 	// Step 4: Verify metadata filtering works
 	golangResults, err := store.Search(ctx, "golang conventions",
 		WithTopK(10),
-		WithFilter("source_type", "system"))
+		WithFilter("source_type", SourceTypeSystem))
 	require.NoError(t, err)
 
 	// All results should be system knowledge
 	for _, result := range golangResults {
-		assert.Equal(t, "system", result.Document.Metadata["source_type"])
+		assert.Equal(t, SourceTypeSystem, result.Document.Metadata["source_type"])
 	}
 }
 
 // TestIndexAll_AllFailures tests error handling when all documents fail to index.
 func TestIndexAll_AllFailures(t *testing.T) {
-	// Check for required API key
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
-	}
-
-	// Setup test database
 	ctx := context.Background()
-	pool, cleanup := setupTestDB(t, ctx)
-	defer cleanup()
+	dbContainer, dbCleanup := testutil.SetupTestDB(t)
+	defer dbCleanup()
+
+	setup := testutil.SetupEmbedder(t)
 
 	// Close pool to simulate database failure
-	pool.Close()
+	dbContainer.Pool.Close()
 
-	// Setup embedder (needed before it tries to access database)
-	embedder, logger := setupEmbedder(t, ctx)
-	store := New(pool, embedder, logger)
+	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
 	// Test: IndexAll should return error when all documents fail
@@ -231,19 +202,12 @@ func TestIndexAll_AllFailures(t *testing.T) {
 
 // TestIndexAll_Concurrency tests that IndexAll is safe for concurrent calls.
 func TestIndexAll_Concurrency(t *testing.T) {
-	// Check for required API key
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
-	}
-
-	// Setup test database
 	ctx := context.Background()
-	pool, cleanup := setupTestDB(t, ctx)
-	defer cleanup()
+	dbContainer, dbCleanup := testutil.SetupTestDB(t)
+	defer dbCleanup()
 
-	// Setup embedder
-	embedder, logger := setupEmbedder(t, ctx)
-	store := New(pool, embedder, logger)
+	setup := testutil.SetupEmbedder(t)
+	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
 	// Launch multiple concurrent IndexAll calls
@@ -263,57 +227,7 @@ func TestIndexAll_Concurrency(t *testing.T) {
 	}
 
 	// Verify final state - should still have 6 documents (UPSERT behavior)
-	results, err := store.Search(ctx, "system", WithTopK(100), WithFilter("source_type", "system"))
+	results, err := store.Search(ctx, SourceTypeSystem, WithTopK(100), WithFilter("source_type", SourceTypeSystem))
 	require.NoError(t, err)
 	assert.Equal(t, 6, len(results), "should have exactly 6 documents despite concurrent indexing")
-}
-
-// setupTestDB creates a test database connection for integration tests.
-func setupTestDB(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
-	t.Helper()
-
-	// Get database URL from environment
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://localhost/koopa_test?sslmode=disable"
-	}
-
-	// Create connection pool with timeout
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("Failed to connect to test database: %v", err)
-	}
-
-	// Verify connection
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		t.Fatalf("Failed to ping test database: %v", err)
-	}
-
-	// Cleanup function
-	cleanup := func() {
-		pool.Close()
-	}
-
-	return pool, cleanup
-}
-
-// setupEmbedder creates a real embedder for integration tests.
-// Requires GEMINI_API_KEY environment variable.
-func setupEmbedder(t *testing.T, ctx context.Context) (ai.Embedder, *slog.Logger) {
-	t.Helper()
-
-	// Initialize Genkit
-	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
-
-	// Create embedder
-	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")
-
-	// Create logger
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
-	return embedder, logger
 }

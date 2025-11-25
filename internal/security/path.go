@@ -83,6 +83,15 @@ func (v *Path) isPathInAllowedDirs(absPath string) bool {
 //
 // Reference: CWE-367 (Time-of-check Time-of-use Race Condition)
 func (v *Path) Validate(path string) (string, error) {
+	// 0. Reject null bytes (CWE-626: Null Byte Interaction Error)
+	// Null bytes can truncate paths in C-based syscalls, bypassing validation
+	if strings.Contains(path, "\x00") {
+		slog.Warn("null byte detected in path",
+			"path_length", len(path),
+			"security_event", "null_byte_injection_attempt")
+		return "", fmt.Errorf("invalid path: contains null byte")
+	}
+
 	// 1. Clean the path (remove ../ etc.)
 	cleanPath := filepath.Clean(path)
 

@@ -99,10 +99,10 @@ func (r *Retriever) DefineDocument(g *genkit.Genkit, name string) ai.Retriever {
 			topK := extractTopK(req, DefaultDocumentTopK)
 
 			// Search documents (primarily files) by filtering out conversations
-			// We search for source_type="file" to exclude conversations
+			// We search for source_type=SourceTypeFile to exclude conversations
 			searchOpts := []knowledge.SearchOption{
 				knowledge.WithTopK(topK),
-				knowledge.WithFilter("source_type", "file"),
+				knowledge.WithFilter("source_type", knowledge.SourceTypeFile),
 			}
 
 			results, err := r.store.Search(ctx, queryText, searchOpts...)

@@ -64,10 +64,35 @@ func NewHTTP() *HTTP {
 // ValidateURL validates whether a URL is safe
 // Checks protocol, host, IP address ranges, etc.
 func (v *HTTP) ValidateURL(urlStr string) error {
+	// 0. Check raw URL string for suspicious patterns before parsing
+	// This catches URL parsing bypass attempts like http://127.0.0.1%2f@evil.com/
+	lowerURL := strings.ToLower(urlStr)
+	suspiciousPatterns := []string{
+		"127.0.0.1", "localhost", "0.0.0.0", "169.254.169.254",
+		"::1", "[::1]", "metadata",
+	}
+	for _, pattern := range suspiciousPatterns {
+		if strings.Contains(lowerURL, pattern) {
+			slog.Warn("SSRF attempt - suspicious pattern in raw URL",
+				"url", urlStr,
+				"pattern", pattern,
+				"security_event", "ssrf_raw_url_pattern")
+			return fmt.Errorf("access denied: URL contains suspicious pattern")
+		}
+	}
+
 	// 1. Parse URL
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// 1.5. Reject URLs with userinfo (user:pass@host) - often used for SSRF bypass
+	if parsedURL.User != nil {
+		slog.Warn("SSRF attempt - URL contains userinfo",
+			"url", urlStr,
+			"security_event", "ssrf_userinfo")
+		return fmt.Errorf("access denied: URLs with credentials are not allowed")
 	}
 
 	// 2. Check protocol

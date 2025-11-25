@@ -12,7 +12,6 @@ import (
 	"github.com/koopa0/koopa-cli/internal/app"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/mcp"
-	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/tools"
 	mcpSdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -66,20 +65,18 @@ func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 		}
 	}()
 
-	// Create Kit configuration with all dependencies
-	kitConfig := tools.KitConfig{
-		PathVal:        application.PathValidator,
-		CmdVal:         security.NewCommand(),
-		EnvVal:         security.NewEnv(),
-		HTTPVal:        security.NewHTTP(),
-		KnowledgeStore: application.Knowledge,
+	// Create FileToolset with logger
+	logger := slog.Default()
+	fileToolset, err := tools.NewFileToolset(application.PathValidator, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create file toolset: %w", err)
 	}
 
-	// Create MCP Server with Kit
+	// Create MCP Server with FileToolset
 	mcpServer, err := mcp.NewServer(mcp.Config{
-		Name:      "koopa",
-		Version:   version,
-		KitConfig: kitConfig,
+		Name:        "koopa",
+		Version:     version,
+		FileToolset: fileToolset,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)

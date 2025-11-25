@@ -14,11 +14,11 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
+	"github.com/koopa0/koopa-cli/internal/sqlc"
 	"log/slog"
 	"time"
 )
@@ -64,19 +64,18 @@ var providerSet = wire.NewSet(
 	provideGenkit,
 	provideEmbedder,
 	provideDBPool,
-	provideKnowledgeStore, wire.Bind(new(agent.KnowledgeStore), new(*knowledge.Store)), provideSessionStore, wire.Bind(new(SessionStore), new(*session.Store)), providePathValidator,
+	provideKnowledgeStore,
+	provideSessionStore,
+	providePathValidator,
 	provideLogger, knowledge.NewSystemKnowledgeIndexer, newApp,
 )
 
 // provideGenkit initializes Genkit with Google AI plugin.
 // Returns error if initialization fails (follows Wire provider pattern).
 func provideGenkit(ctx context.Context) (*genkit.Genkit, error) {
-	// For MCP server mode, prompts are not needed, so we make them optional
-	// Initialize Genkit without prompts - they're only needed for interactive chat mode
+
 	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
-	// genkit.Init doesn't return error, but we return this signature
-	// for consistency with Wire provider pattern and future error handling
 	if g == nil {
 		return nil, fmt.Errorf("failed to initialize Genkit")
 	}
@@ -105,13 +104,13 @@ func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func
 
 // provideKnowledgeStore creates a knowledge store instance.
 func provideKnowledgeStore(pool *pgxpool.Pool, embedder ai.Embedder) *knowledge.Store {
-	return knowledge.New(pool, embedder, nil)
+	return knowledge.New(sqlc.New(pool), embedder, nil)
 }
 
 // provideSessionStore creates a session store instance.
 // This provides real session persistence using PostgreSQL backend.
 func provideSessionStore(pool *pgxpool.Pool) *session.Store {
-	return session.New(pool, nil)
+	return session.New(sqlc.New(pool), pool, nil)
 }
 
 // providePathValidator creates a path validator instance.
@@ -135,7 +134,7 @@ func newApp(
 	embedder ai.Embedder,
 	pool *pgxpool.Pool,
 	knowledgeStore *knowledge.Store,
-	sessionStore SessionStore,
+	sessionStore *session.Store,
 	pathValidator *security.Path,
 	systemIndexer *knowledge.SystemKnowledgeIndexer,
 ) (*App, error) {
