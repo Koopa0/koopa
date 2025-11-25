@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/ui"
@@ -40,6 +42,9 @@ func Execute() error {
 		case "mcp":
 			// MCP server mode requires full initialization
 			return executeMCP()
+		case "serve":
+			// HTTP API server mode
+			return executeServe()
 		}
 	}
 
@@ -59,7 +64,10 @@ func Execute() error {
 	}
 
 	// Enter interactive mode (default behavior)
-	ctx := context.Background()
+	// Use signal-based context for graceful shutdown on Ctrl+C
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	term := ui.NewConsole(os.Stdin, os.Stdout)
 
 	return Run(ctx, cfg, AppVersion, term)
@@ -138,9 +146,53 @@ func executeMCP() error {
 		return err
 	}
 
-	// Start MCP server
-	ctx := context.Background()
+	// Start MCP server with signal-based context
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	return RunMCP(ctx, cfg, AppVersion)
+}
+
+// executeServe initializes and starts the HTTP API server.
+// This is called when the user runs `koopa serve`.
+func executeServe() error {
+	// Initialize structured logger
+	logger := initLogger()
+	slog.SetDefault(logger)
+
+	// Load application configuration
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Verify required environment variables
+	if err := checkRequiredEnv(); err != nil {
+		return err
+	}
+
+	// Parse address from args or use default
+	addr := "127.0.0.1:3400"
+	for i := 2; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if arg == "--addr" || arg == "-a" {
+			if i+1 < len(os.Args) {
+				addr = os.Args[i+1]
+			}
+			break
+		}
+		// Support --addr=:8080 format
+		if len(arg) > 7 && arg[:7] == "--addr=" {
+			addr = arg[7:]
+			break
+		}
+	}
+
+	// Start HTTP API server
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	return RunServe(ctx, cfg, AppVersion, addr)
 }
 
 // printHelp displays the help message for the Koopa CLI.
@@ -150,6 +202,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  koopa              Start interactive chat mode (default)")
+	fmt.Println("  koopa serve [addr] Start HTTP API server (default: 127.0.0.1:3400)")
 	fmt.Println("  koopa mcp          Start MCP server (for Claude Desktop/Cursor)")
 	fmt.Println("  koopa --version    Show version information")
 	fmt.Println("  koopa --help       Show this help")

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/app"
@@ -81,7 +82,8 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 		var sessionIDStr string
 		currentSessionID, err := session.LoadCurrentSessionID()
 		if err != nil {
-			term.Printf("Error loading session: %v\n", err)
+			slog.Error("failed to load session", "error", err)
+			term.Printf("Error: %v\n", err)
 			continue
 		}
 		if currentSessionID != nil {
@@ -90,11 +92,12 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			// Create a new session if none exists
 			newSess, err := application.SessionStore.CreateSession(ctx, "New Session", cfg.ModelName, "You are a helpful assistant.")
 			if err != nil {
-				term.Printf("Error creating session: %v\n", err)
+				slog.Error("failed to create session", "error", err)
+				term.Printf("Error: %v\n", err)
 				continue
 			}
 			if err := session.SaveCurrentSessionID(newSess.ID); err != nil {
-				term.Printf("Error saving session state: %v\n", err)
+				slog.Warn("failed to save session state", "error", err)
 			}
 			sessionIDStr = newSess.ID.String()
 			term.Printf("(Created new session: %s)\n", newSess.Title)
@@ -104,7 +107,8 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 		invocationID := uuid.New().String()
 		sessionID, err := agent.NewSessionID(sessionIDStr)
 		if err != nil {
-			term.Printf("Error: invalid session ID: %v\n", err)
+			slog.Error("invalid session ID", "session_id", sessionIDStr, "error", err)
+			term.Printf("Error: invalid session ID\n")
 			continue
 		}
 		invCtx := agent.NewInvocationContext(
@@ -116,8 +120,8 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 		)
 
 		output, err := chatAgent.Execute(invCtx, input)
-
 		if err != nil {
+			slog.Error("chat execution failed", "error", err, "invocation_id", invocationID)
 			term.Printf("Error: %v\n", err)
 			term.Println()
 			continue

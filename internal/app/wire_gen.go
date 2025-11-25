@@ -14,6 +14,7 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/koopa0/koopa-cli/db"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
@@ -28,7 +29,7 @@ import (
 // InitializeApp is the Wire injector function.
 // Wire will automatically generate the implementation of this function.
 func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error) {
-	genkit, err := provideGenkit(ctx)
+	genkit, err := provideGenkit(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -70,11 +71,16 @@ var providerSet = wire.NewSet(
 	provideLogger, knowledge.NewSystemKnowledgeIndexer, newApp,
 )
 
-// provideGenkit initializes Genkit with Google AI plugin.
+// provideGenkit initializes Genkit with Google AI plugin and prompt directory.
 // Returns error if initialization fails (follows Wire provider pattern).
-func provideGenkit(ctx context.Context) (*genkit.Genkit, error) {
+func provideGenkit(ctx context.Context, cfg *config.Config) (*genkit.Genkit, error) {
 
-	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+	promptDir := cfg.PromptDir
+	if promptDir == "" {
+		promptDir = "prompts"
+	}
+
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithPromptDir(promptDir))
 
 	if g == nil {
 		return nil, fmt.Errorf("failed to initialize Genkit")
@@ -88,8 +94,13 @@ func provideEmbedder(g *genkit.Genkit, cfg *config.Config) ai.Embedder {
 	return googlegenai.GoogleAIEmbedder(g, cfg.EmbedderModel)
 }
 
-// provideDBPool creates a PostgreSQL connection pool.
+// provideDBPool creates a PostgreSQL connection pool and runs migrations.
 func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func(), error) {
+
+	if err := db.Migrate(cfg.PostgresURL()); err != nil {
+		return nil, nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
 	pool, err := pgxpool.New(ctx, cfg.PostgresConnectionString())
 	if err != nil {
 		return nil, nil, err

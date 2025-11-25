@@ -49,6 +49,39 @@ func New(store *knowledge.Store) *Retriever {
 	}
 }
 
+// RetrieveDocuments retrieves relevant documents for the given query.
+// This is the simplified method for manual RAG integration.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - query: Search query text
+//   - topK: Number of documents to retrieve (0 = use default)
+//
+// Returns:
+//   - []*ai.Document: Retrieved documents with metadata
+//   - error: If retrieval fails
+func (r *Retriever) RetrieveDocuments(ctx context.Context, query string, topK int32) ([]*ai.Document, error) {
+	if topK <= 0 {
+		topK = DefaultDocumentTopK
+	}
+	if topK > MaxTopK {
+		topK = MaxTopK
+	}
+
+	// Search documents (files) by filtering out conversations
+	searchOpts := []knowledge.SearchOption{
+		knowledge.WithTopK(topK),
+		knowledge.WithFilter("source_type", knowledge.SourceTypeFile),
+	}
+
+	results, err := r.store.Search(ctx, query, searchOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return convertToGenkitDocuments(results), nil
+}
+
 // DefineConversation defines a Genkit retriever for conversation history.
 // It searches only messages (source_type="conversation") from the knowledge store.
 //

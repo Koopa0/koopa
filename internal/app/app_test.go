@@ -479,7 +479,10 @@ func TestProvideGenkit(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	g, err := provideGenkit(ctx)
+	cfg := &config.Config{
+		PromptDir: "prompts",
+	}
+	g, err := provideGenkit(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to initialize Genkit: %v", err)
 	}
@@ -495,12 +498,13 @@ func TestProvideEmbedder(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	g, err := provideGenkit(ctx)
+	cfg := &config.Config{
+		PromptDir:     "prompts",
+		EmbedderModel: "text-embedding-004",
+	}
+	g, err := provideGenkit(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to initialize Genkit: %v", err)
-	}
-	cfg := &config.Config{
-		EmbedderModel: "text-embedding-004",
 	}
 
 	embedder := provideEmbedder(g, cfg)
