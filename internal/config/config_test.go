@@ -898,3 +898,138 @@ func BenchmarkValidate(b *testing.B) {
 		_ = cfg.Validate()
 	}
 }
+
+// TestValidateBranch tests branch name validation
+func TestValidateBranch(t *testing.T) {
+	tests := []struct {
+		name      string
+		branch    string
+		want      string
+		wantErr   bool
+		errSubstr string
+	}{
+		{"empty defaults to main", "", DefaultBranch, false, ""},
+		{"simple main", "main", "main", false, ""},
+		{"single segment", "chat", "chat", false, ""},
+		{"two segments", "main.research", "main.research", false, ""},
+		{"three segments", "main.agent1.subtask", "main.agent1.subtask", false, ""},
+		{"with underscore", "main_branch", "main_branch", false, ""},
+		{"segment with number", "agent1", "agent1", false, ""},
+		{"complex valid", "Chat.Agent_1.SubTask2", "Chat.Agent_1.SubTask2", false, ""},
+		{"starts with number", "1agent", "", true, "must start with a letter"},
+		{"starts with underscore", "_main", "", true, "must start with a letter"},
+		{"starts with dot", ".main", "", true, "empty segment"},
+		{"ends with dot", "main.", "", true, "empty segment"},
+		{"consecutive dots", "main..sub", "", true, "empty segment"},
+		{"has space", "main sub", "", true, "alphanumeric"},
+		{"has dash", "main-sub", "", true, "alphanumeric"},
+		{"has special char", "main@sub", "", true, "alphanumeric"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ValidateBranch(tt.branch)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateBranch(%q) expected error, got nil", tt.branch)
+					return
+				}
+				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Errorf("ValidateBranch(%q) error = %v, want error containing %q", tt.branch, err, tt.errSubstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ValidateBranch(%q) unexpected error: %v", tt.branch, err)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ValidateBranch(%q) = %q, want %q", tt.branch, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestValidateBranchLengthLimit tests branch length validation
+func TestValidateBranchLengthLimit(t *testing.T) {
+	longBranch := strings.Repeat("a", MaxBranchLength+1)
+	_, err := ValidateBranch(longBranch)
+	if err == nil {
+		t.Error("ValidateBranch() expected error for branch exceeding max length")
+	}
+	if !strings.Contains(err.Error(), "too long") {
+		t.Errorf("error should mention 'too long', got: %v", err)
+	}
+
+	exactBranch := "a" + strings.Repeat("b", MaxBranchLength-1)
+	_, err = ValidateBranch(exactBranch)
+	if err != nil {
+		t.Errorf("ValidateBranch() unexpected error for branch at max length: %v", err)
+	}
+}
+
+// TestValidateBranchDepthLimit tests branch depth validation
+func TestValidateBranchDepthLimit(t *testing.T) {
+	segments := make([]string, MaxBranchDepth+1)
+	for i := range segments {
+		segments[i] = "a"
+	}
+	deepBranch := strings.Join(segments, ".")
+
+	_, err := ValidateBranch(deepBranch)
+	if err == nil {
+		t.Error("ValidateBranch() expected error for branch exceeding max depth")
+	}
+	if !strings.Contains(err.Error(), "too deep") {
+		t.Errorf("error should mention 'too deep', got: %v", err)
+	}
+
+	exactSegments := make([]string, MaxBranchDepth)
+	for i := range exactSegments {
+		exactSegments[i] = "a"
+	}
+	exactBranch := strings.Join(exactSegments, ".")
+
+	_, err = ValidateBranch(exactBranch)
+	if err != nil {
+		t.Errorf("ValidateBranch() unexpected error for branch at max depth: %v", err)
+	}
+}
+
+// TestNormalizeMaxHistoryMessages tests max history messages normalization
+func TestNormalizeMaxHistoryMessages(t *testing.T) {
+	tests := []struct {
+		name  string
+		input int32
+		want  int32
+	}{
+		{"zero returns default", 0, DefaultMaxHistoryMessages},
+		{"negative returns default", -10, DefaultMaxHistoryMessages},
+		{"below min returns min", MinHistoryMessages - 1, MinHistoryMessages},
+		{"at min", MinHistoryMessages, MinHistoryMessages},
+		{"normal value", 500, 500},
+		{"at max", MaxAllowedHistoryMessages, MaxAllowedHistoryMessages},
+		{"above max returns max", MaxAllowedHistoryMessages + 1, MaxAllowedHistoryMessages},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeMaxHistoryMessages(tt.input)
+			if got != tt.want {
+				t.Errorf("NormalizeMaxHistoryMessages(%d) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBranchError tests BranchError type
+func TestBranchError(t *testing.T) {
+	err := &BranchError{Branch: "invalid..branch", Message: "empty segment"}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "invalid..branch") {
+		t.Errorf("error message should contain branch name, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "empty segment") {
+		t.Errorf("error message should contain message, got: %s", errMsg)
+	}
+}

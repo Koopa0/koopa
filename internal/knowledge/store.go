@@ -28,13 +28,13 @@ const (
 	SourceTypeSystem = "system"
 )
 
-// KnowledgeQuerier defines the interface for database operations on knowledge documents.
+// Querier defines the interface for database operations on knowledge documents.
 // Following Go best practices: interfaces are defined by the consumer, not the provider
 // (similar to http.RoundTripper, sql.Driver, io.Reader).
 //
 // This interface allows Store to depend on abstraction rather than concrete implementation,
 // improving testability and flexibility.
-type KnowledgeQuerier interface {
+type Querier interface {
 	// UpsertDocument inserts or updates a document
 	UpsertDocument(ctx context.Context, arg sqlc.UpsertDocumentParams) error
 
@@ -62,7 +62,7 @@ type KnowledgeQuerier interface {
 //
 // Store is safe for concurrent use by multiple goroutines.
 type Store struct {
-	queries  KnowledgeQuerier
+	queries  Querier
 	embedder ai.Embedder
 	logger   *slog.Logger
 }
@@ -70,7 +70,7 @@ type Store struct {
 // New creates a new Store instance.
 //
 // Parameters:
-//   - querier: Database querier implementing KnowledgeQuerier interface
+//   - querier: Database querier implementing Querier interface
 //   - embedder: AI embedder for generating vector embeddings
 //   - logger: Logger for debugging (nil = use default)
 //
@@ -81,7 +81,7 @@ type Store struct {
 // Example (testing with mock):
 //
 //	store := knowledge.New(mockQuerier, mockEmbedder, slog.Default())
-func New(querier KnowledgeQuerier, embedder ai.Embedder, logger *slog.Logger) *Store {
+func New(querier Querier, embedder ai.Embedder, logger *slog.Logger) *Store {
 	if logger == nil {
 		logger = slog.Default()
 	}

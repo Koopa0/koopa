@@ -12,8 +12,8 @@ import (
 )
 
 const addMessage = `-- name: AddMessage :exec
-INSERT INTO session_messages (session_id, role, content, sequence_number)
-VALUES ($1, $2, $3, $4)
+INSERT INTO session_messages (session_id, role, content, sequence_number, branch)
+VALUES ($1, $2, $3, $4, 'main')
 `
 
 type AddMessageParams struct {
@@ -23,6 +23,7 @@ type AddMessageParams struct {
 	SequenceNumber int32       `json:"sequence_number"`
 }
 
+// Legacy: adds message to 'main' branch
 func (q *Queries) AddMessage(ctx context.Context, arg AddMessageParams) error {
 	_, err := q.db.Exec(ctx, addMessage,
 		arg.SessionID,
@@ -31,6 +32,50 @@ func (q *Queries) AddMessage(ctx context.Context, arg AddMessageParams) error {
 		arg.SequenceNumber,
 	)
 	return err
+}
+
+const addMessageWithBranch = `-- name: AddMessageWithBranch :exec
+INSERT INTO session_messages (session_id, branch, role, content, sequence_number)
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type AddMessageWithBranchParams struct {
+	SessionID      pgtype.UUID `json:"session_id"`
+	Branch         string      `json:"branch"`
+	Role           string      `json:"role"`
+	Content        []byte      `json:"content"`
+	SequenceNumber int32       `json:"sequence_number"`
+}
+
+// Add a message to a specific branch
+func (q *Queries) AddMessageWithBranch(ctx context.Context, arg AddMessageWithBranchParams) error {
+	_, err := q.db.Exec(ctx, addMessageWithBranch,
+		arg.SessionID,
+		arg.Branch,
+		arg.Role,
+		arg.Content,
+		arg.SequenceNumber,
+	)
+	return err
+}
+
+const countMessagesByBranch = `-- name: CountMessagesByBranch :one
+SELECT COUNT(*)::integer AS count
+FROM session_messages
+WHERE session_id = $1 AND branch = $2
+`
+
+type CountMessagesByBranchParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	Branch    string      `json:"branch"`
+}
+
+// Count messages in a specific branch
+func (q *Queries) CountMessagesByBranch(ctx context.Context, arg CountMessagesByBranchParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countMessagesByBranch, arg.SessionID, arg.Branch)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createSession = `-- name: CreateSession :one
@@ -63,6 +108,22 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
+const deleteMessagesByBranch = `-- name: DeleteMessagesByBranch :exec
+DELETE FROM session_messages
+WHERE session_id = $1 AND branch = $2
+`
+
+type DeleteMessagesByBranchParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	Branch    string      `json:"branch"`
+}
+
+// Delete all messages in a specific branch
+func (q *Queries) DeleteMessagesByBranch(ctx context.Context, arg DeleteMessagesByBranchParams) error {
+	_, err := q.db.Exec(ctx, deleteMessagesByBranch, arg.SessionID, arg.Branch)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions
 WHERE id = $1
@@ -73,12 +134,32 @@ func (q *Queries) DeleteSession(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const getMaxSequenceByBranch = `-- name: GetMaxSequenceByBranch :one
+SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
+FROM session_messages
+WHERE session_id = $1 AND branch = $2
+`
+
+type GetMaxSequenceByBranchParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	Branch    string      `json:"branch"`
+}
+
+// Get max sequence number for a specific branch
+func (q *Queries) GetMaxSequenceByBranch(ctx context.Context, arg GetMaxSequenceByBranchParams) (int32, error) {
+	row := q.db.QueryRow(ctx, getMaxSequenceByBranch, arg.SessionID, arg.Branch)
+	var max_seq int32
+	err := row.Scan(&max_seq)
+	return max_seq, err
+}
+
 const getMaxSequenceNumber = `-- name: GetMaxSequenceNumber :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
 FROM session_messages
 WHERE session_id = $1
 `
 
+// Legacy: max sequence across all branches
 func (q *Queries) GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, getMaxSequenceNumber, sessionID)
 	var max_seq int32
@@ -87,7 +168,7 @@ func (q *Queries) GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUI
 }
 
 const getMessages = `-- name: GetMessages :many
-SELECT id, session_id, role, content, sequence_number, created_at
+SELECT id, session_id, role, content, sequence_number, created_at, branch
 FROM session_messages
 WHERE session_id = $1
 ORDER BY sequence_number ASC
@@ -101,6 +182,7 @@ type GetMessagesParams struct {
 	ResultLimit  int32       `json:"result_limit"`
 }
 
+// Legacy: returns all messages regardless of branch
 func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]SessionMessage, error) {
 	rows, err := q.db.Query(ctx, getMessages, arg.SessionID, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
@@ -117,6 +199,57 @@ func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Ses
 			&i.Content,
 			&i.SequenceNumber,
 			&i.CreatedAt,
+			&i.Branch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMessagesByBranch = `-- name: GetMessagesByBranch :many
+SELECT id, session_id, role, content, sequence_number, created_at, branch
+FROM session_messages
+WHERE session_id = $1 AND branch = $2
+ORDER BY sequence_number ASC
+LIMIT $4
+OFFSET $3
+`
+
+type GetMessagesByBranchParams struct {
+	SessionID    pgtype.UUID `json:"session_id"`
+	Branch       string      `json:"branch"`
+	ResultOffset int32       `json:"result_offset"`
+	ResultLimit  int32       `json:"result_limit"`
+}
+
+// Get messages for a specific session and branch
+func (q *Queries) GetMessagesByBranch(ctx context.Context, arg GetMessagesByBranchParams) ([]SessionMessage, error) {
+	rows, err := q.db.Query(ctx, getMessagesByBranch,
+		arg.SessionID,
+		arg.Branch,
+		arg.ResultOffset,
+		arg.ResultLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionMessage{}
+	for rows.Next() {
+		var i SessionMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Content,
+			&i.SequenceNumber,
+			&i.CreatedAt,
+			&i.Branch,
 		); err != nil {
 			return nil, err
 		}
@@ -194,8 +327,7 @@ const lockSession = `-- name: LockSession :one
 SELECT id FROM sessions WHERE id = $1 FOR UPDATE
 `
 
-// Locks the session row to prevent concurrent modifications (P1-2 fix)
-// Must be called within a transaction before GetMaxSequenceNumber
+// Locks the session row to prevent concurrent modifications
 func (q *Queries) LockSession(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, lockSession, id)
 	err := row.Scan(&id)

@@ -252,7 +252,7 @@ func (m *mockEmbedder) Register(r api.Registry) {
 }
 
 // createTestKnowledgeStore creates a knowledge.Store with a mock querier for testing
-func createTestKnowledgeStore(querier knowledge.KnowledgeQuerier) *knowledge.Store {
+func createTestKnowledgeStore(querier knowledge.Querier) *knowledge.Store {
 	return knowledge.New(querier, &mockEmbedder{}, slog.Default())
 }
 

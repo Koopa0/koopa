@@ -57,7 +57,7 @@ func TestFileToolset_Tools(t *testing.T) {
 	fs, err := NewFileToolset(pathVal, testLogger())
 	require.NoError(t, err)
 
-	ctx := createTestInvocationContext()
+	ctx := createTestInvocationContext(t)
 
 	tools, err := fs.Tools(ctx)
 	require.NoError(t, err)
@@ -502,7 +502,7 @@ func TestFileToolset_ToolMetadata_IsLongRunning(t *testing.T) {
 	fs, err := NewFileToolset(pathVal, testLogger())
 	require.NoError(t, err)
 
-	ctx := createTestInvocationContext()
+	ctx := createTestInvocationContext(t)
 	tools, err := fs.Tools(ctx)
 	require.NoError(t, err)
 

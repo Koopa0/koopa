@@ -29,6 +29,24 @@ import (
 const (
 	// DefaultEmbedderModel is the default embedder model for vector embeddings.
 	DefaultEmbedderModel = "text-embedding-004"
+
+	// DefaultMaxHistoryMessages is the default number of messages to load per branch.
+	DefaultMaxHistoryMessages int32 = 100
+
+	// MaxAllowedHistoryMessages is the absolute maximum to prevent OOM.
+	MaxAllowedHistoryMessages int32 = 10000
+
+	// MinHistoryMessages is the minimum allowed value for MaxHistoryMessages.
+	MinHistoryMessages int32 = 10
+
+	// DefaultBranch is the default branch name for conversation history.
+	DefaultBranch = "main"
+
+	// MaxBranchLength is the maximum allowed length for branch names.
+	MaxBranchLength = 256
+
+	// MaxBranchDepth is the maximum nesting depth for branches (e.g., "main.a.b.c" = 4).
+	MaxBranchDepth = 10
 )
 
 // Config stores application configuration
@@ -37,7 +55,8 @@ type Config struct {
 	ModelName   string  `mapstructure:"model_name"`
 	Temperature float32 `mapstructure:"temperature"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
-	Language    string  `mapstructure:"language"` // Response language: "auto", "English", "zh-TW"
+	Language    string  `mapstructure:"language"`   // Response language: "auto", "English", "zh-TW"
+	PromptDir   string  `mapstructure:"prompt_dir"` // Directory containing .prompt files for Dotprompt
 
 	// Conversation history configuration
 	MaxHistoryMessages int32 `mapstructure:"max_history_messages"` // Maximum number of conversation messages to retain (0 = unlimited)
@@ -157,13 +176,25 @@ func (c *Config) Plugins() []any {
 	return []any{&googlegenai.GoogleAI{}}
 }
 
-// PostgresConnectionString returns the PostgreSQL DSN
+// PostgresConnectionString returns the PostgreSQL DSN for pgx driver
 func (c *Config) PostgresConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		c.PostgresHost,
 		c.PostgresPort,
 		c.PostgresUser,
 		c.PostgresPassword,
+		c.PostgresDBName,
+		c.PostgresSSLMode,
+	)
+}
+
+// PostgresURL returns the PostgreSQL URL for golang-migrate
+func (c *Config) PostgresURL() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		c.PostgresUser,
+		c.PostgresPassword,
+		c.PostgresHost,
+		c.PostgresPort,
 		c.PostgresDBName,
 		c.PostgresSSLMode,
 	)
@@ -261,4 +292,119 @@ type ConfigError struct {
 
 func (e *ConfigError) Error() string {
 	return e.Message
+}
+
+// BranchError represents a branch validation error.
+type BranchError struct {
+	Branch  string
+	Message string
+}
+
+func (e *BranchError) Error() string {
+	return fmt.Sprintf("invalid branch %q: %s", e.Branch, e.Message)
+}
+
+// ValidateBranch validates a branch name according to the following rules:
+//   - Branch format: "segment" or "segment1.segment2.segment3"
+//   - Each segment must start with a letter and contain only alphanumeric chars and underscores
+//   - Maximum total length is MaxBranchLength (256)
+//   - Maximum depth is MaxBranchDepth (10 segments)
+//   - Empty branch defaults to DefaultBranch ("main")
+//
+// Examples of valid branches: "main", "main.research", "chat.agent1.subtask"
+// Examples of invalid branches: ".main", "main.", "main..sub", "123abc"
+func ValidateBranch(branch string) (string, error) {
+	if branch == "" {
+		return DefaultBranch, nil
+	}
+
+	if len(branch) > MaxBranchLength {
+		return "", &BranchError{
+			Branch:  branch,
+			Message: fmt.Sprintf("branch name too long (max %d characters)", MaxBranchLength),
+		}
+	}
+
+	segments := splitBranch(branch)
+	if len(segments) > MaxBranchDepth {
+		return "", &BranchError{
+			Branch:  branch,
+			Message: fmt.Sprintf("branch depth too deep (max %d levels)", MaxBranchDepth),
+		}
+	}
+
+	for i, seg := range segments {
+		if seg == "" {
+			return "", &BranchError{
+				Branch:  branch,
+				Message: "empty segment (consecutive dots or leading/trailing dot)",
+			}
+		}
+		if !isValidSegment(seg) {
+			return "", &BranchError{
+				Branch:  branch,
+				Message: fmt.Sprintf("segment %d %q must start with a letter and contain only alphanumeric characters and underscores", i+1, seg),
+			}
+		}
+	}
+
+	return branch, nil
+}
+
+// splitBranch splits a branch name by dots.
+func splitBranch(branch string) []string {
+	if branch == "" {
+		return nil
+	}
+
+	var segments []string
+	start := 0
+	for i := 0; i < len(branch); i++ {
+		if branch[i] == '.' {
+			segments = append(segments, branch[start:i])
+			start = i + 1
+		}
+	}
+	segments = append(segments, branch[start:])
+	return segments
+}
+
+// isValidSegment checks if a branch segment is valid.
+func isValidSegment(seg string) bool {
+	if len(seg) == 0 {
+		return false
+	}
+
+	first := seg[0]
+	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')) {
+		return false
+	}
+
+	for i := 1; i < len(seg); i++ {
+		c := seg[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+
+	return true
+}
+
+// NormalizeBranch normalizes and validates a branch name.
+func NormalizeBranch(branch string) (string, error) {
+	return ValidateBranch(branch)
+}
+
+// NormalizeMaxHistoryMessages normalizes the max history messages value.
+func NormalizeMaxHistoryMessages(limit int32) int32 {
+	if limit <= 0 {
+		return DefaultMaxHistoryMessages
+	}
+	if limit < MinHistoryMessages {
+		return MinHistoryMessages
+	}
+	if limit > MaxAllowedHistoryMessages {
+		return MaxAllowedHistoryMessages
+	}
+	return limit
 }
