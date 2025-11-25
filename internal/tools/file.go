@@ -182,7 +182,8 @@ func (fs *FileToolset) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Res
 		}, nil
 	}
 
-	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304
+	// #nosec G304 - safePath is validated by pathVal.Validate() above
+	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return Result{
 			Status:  StatusError,
@@ -193,7 +194,7 @@ func (fs *FileToolset) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Res
 			},
 		}, nil
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if _, err := file.Write([]byte(input.Content)); err != nil {
 		return Result{

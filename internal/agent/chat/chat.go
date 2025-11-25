@@ -191,7 +191,7 @@ func (c *Chat) Execute(ctx agent.InvocationContext, input string) (*agent.Respon
 
 	// Save updated history to session store
 	if err := c.sessions.SaveHistory(ctx, ctx.SessionID(), ctx.Branch(), history); err != nil {
-		c.logger.Warn("failed to save history", "error", err)
+		return nil, fmt.Errorf("failed to save history: %w", err)
 	}
 
 	// Return formatted response

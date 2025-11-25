@@ -16,12 +16,17 @@ func testLogger() log.Logger {
 }
 
 // createTestInvocationContext creates a test invocation context for toolset testing.
+// Panics if session ID creation fails (should never happen with hardcoded valid value).
 func createTestInvocationContext() agent.ReadonlyContext {
+	sessionID, err := agent.NewSessionID("test-session")
+	if err != nil {
+		panic("createTestInvocationContext: invalid session ID: " + err.Error())
+	}
 	ctx := agent.NewInvocationContext(
 		context.Background(),
 		"test-invocation-id",
 		"test-branch",
-		agent.NewSessionID("test-session"),
+		sessionID,
 		"test-agent",
 	)
 	return ctx

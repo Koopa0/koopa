@@ -14,6 +14,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// networkTestSessionID creates a SessionID for testing in network_test.go
+func networkTestSessionID(t *testing.T, id string) agent.SessionID {
+	t.Helper()
+	s, err := agent.NewSessionID(id)
+	require.NoError(t, err)
+	return s
+}
+
 // ============================================================================
 // Mock HTTP Validator (for testing success scenarios)
 // ============================================================================
@@ -93,7 +101,7 @@ func TestNetworkToolset_Tools(t *testing.T) {
 		context.Background(),
 		"test-inv",
 		"main",
-		agent.NewSessionID("test-session"),
+		networkTestSessionID(t, "test-session"),
 		"test-agent",
 	)
 
@@ -450,7 +458,7 @@ func TestNetworkToolset_ToolMetadata(t *testing.T) {
 		context.Background(),
 		"test-inv",
 		"main",
-		agent.NewSessionID("test-session"),
+		networkTestSessionID(t, "test-session"),
 		"test-agent",
 	)
 

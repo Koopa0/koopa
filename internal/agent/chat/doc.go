@@ -60,10 +60,9 @@
 // Chat manages conversation history through the SessionStore interface:
 //
 //	LoadHistory: Retrieves previous messages for a session
-//	SaveHistory: Persists new messages to the session (currently a no-op)
+//	SaveHistory: Persists new messages to the session (returns error on failure)
 //
 // Sessions are branch-aware, allowing isolated conversation contexts.
-// The CLI application layer is responsible for calling AddMessages for persistence.
 //
 // # RAG Integration
 //

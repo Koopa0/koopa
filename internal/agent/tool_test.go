@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testSessionID is defined in context_test.go and shared across agent package tests
+
 // TestDefineAgentTool_Success tests successful agent-as-tool registration
 func TestDefineAgentTool_Success(t *testing.T) {
 	if os.Getenv("GEMINI_API_KEY") == "" {
@@ -29,7 +31,7 @@ func TestDefineAgentTool_Success(t *testing.T) {
 		ctx,
 		uuid.New().String(),
 		"main",
-		NewSessionID("test-session"),
+		testSessionID(t, "test-session"),
 		"chat",
 	)
 
@@ -72,7 +74,7 @@ func TestDefineAgentTool_ContextPropagation(t *testing.T) {
 	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
 	invocationID := uuid.New().String()
-	sessionID := NewSessionID("test-session")
+	sessionID := testSessionID(t, "test-session")
 
 	parentCtx := NewInvocationContext(ctx, invocationID, "main", sessionID, "chat")
 
@@ -135,7 +137,7 @@ func TestDefineAgentTool_BranchExpansion(t *testing.T) {
 			ctx,
 			uuid.New().String(),
 			"main",
-			NewSessionID("s-123"),
+			testSessionID(t, "s-123"),
 			"chat",
 		)
 
@@ -169,7 +171,7 @@ func TestDefineAgentTool_BranchExpansion(t *testing.T) {
 		g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
 		// Simulate: chat → research → websearch
-		chatCtx := NewInvocationContext(ctx, "inv-123", "main", NewSessionID("s-123"), "chat")
+		chatCtx := NewInvocationContext(ctx, "inv-123", "main", testSessionID(t, "s-123"), "chat")
 
 		researchAgent := &mockAgent{name: "research", description: "Research"}
 		err := DefineAgentTool(chatCtx, g, researchAgent)
@@ -177,7 +179,7 @@ func TestDefineAgentTool_BranchExpansion(t *testing.T) {
 
 		// Research agent creates context for websearch
 		researchBranch := chatCtx.Branch() + ".research"
-		researchCtx := NewInvocationContext(ctx, "inv-123", researchBranch, NewSessionID("s-123"), "research")
+		researchCtx := NewInvocationContext(ctx, "inv-123", researchBranch, testSessionID(t, "s-123"), "research")
 
 		var websearchBranch string
 		websearchAgent := &mockAgent{
@@ -194,7 +196,7 @@ func TestDefineAgentTool_BranchExpansion(t *testing.T) {
 
 		// Simulate websearch invocation
 		newBranch := researchCtx.Branch() + ".websearch"
-		websearchCtx := NewInvocationContext(ctx, "inv-123", newBranch, NewSessionID("s-123"), "websearch")
+		websearchCtx := NewInvocationContext(ctx, "inv-123", newBranch, testSessionID(t, "s-123"), "websearch")
 		_, err = websearchAgent.Execute(websearchCtx, "test")
 		require.NoError(t, err)
 
@@ -215,7 +217,7 @@ func TestDefineAgentTool_ErrorHandling(t *testing.T) {
 
 	t.Run("nil genkit instance", func(t *testing.T) {
 		t.Parallel()
-		parentCtx := NewInvocationContext(ctx, "inv-123", "main", NewSessionID("s-123"), "chat")
+		parentCtx := NewInvocationContext(ctx, "inv-123", "main", testSessionID(t, "s-123"), "chat")
 		agent := &mockAgent{name: "test", description: "test"}
 
 		err := DefineAgentTool(parentCtx, nil, agent)
@@ -225,7 +227,7 @@ func TestDefineAgentTool_ErrorHandling(t *testing.T) {
 
 	t.Run("nil agent", func(t *testing.T) {
 		t.Parallel()
-		parentCtx := NewInvocationContext(ctx, "inv-123", "main", NewSessionID("s-123"), "chat")
+		parentCtx := NewInvocationContext(ctx, "inv-123", "main", testSessionID(t, "s-123"), "chat")
 
 		err := DefineAgentTool(parentCtx, g, nil)
 		assert.Error(t, err)
@@ -244,7 +246,7 @@ func TestDefineAgentTool_ErrorHandling(t *testing.T) {
 	t.Run("agent execution error", func(t *testing.T) {
 		t.Parallel()
 
-		parentCtx := NewInvocationContext(ctx, "inv-123", "main", NewSessionID("s-123"), "chat")
+		parentCtx := NewInvocationContext(ctx, "inv-123", "main", testSessionID(t, "s-123"), "chat")
 		expectedErr := errors.New("agent failed")
 
 		agent := &mockAgent{
@@ -276,12 +278,13 @@ func TestDefineAgentToolWithContext_DynamicExtraction(t *testing.T) {
 	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
 	// Context extractor that creates InvocationContext from ai.ToolContext
+	sessionID := testSessionID(t, "extracted-session")
 	extractor := func(toolCtx *ai.ToolContext) InvocationContext {
 		return NewInvocationContext(
 			toolCtx.Context,
 			"extracted-inv-id",
 			"extracted-branch",
-			NewSessionID("extracted-session"),
+			sessionID,
 			"extracted-agent",
 		)
 	}
@@ -326,8 +329,9 @@ func TestDefineAgentToolWithContext_ErrorHandling(t *testing.T) {
 	t.Run("nil genkit instance", func(t *testing.T) {
 		t.Parallel()
 		agent := &mockAgent{name: "test", description: "test"}
+		sessionID := testSessionID(t, "s")
 		extractor := func(toolCtx *ai.ToolContext) InvocationContext {
-			return NewInvocationContext(ctx, "inv", "main", NewSessionID("s"), "agent")
+			return NewInvocationContext(ctx, "inv", "main", sessionID, "agent")
 		}
 
 		err := DefineAgentToolWithContext(nil, agent, extractor)
@@ -337,8 +341,9 @@ func TestDefineAgentToolWithContext_ErrorHandling(t *testing.T) {
 
 	t.Run("nil agent", func(t *testing.T) {
 		t.Parallel()
+		sessionID := testSessionID(t, "s")
 		extractor := func(toolCtx *ai.ToolContext) InvocationContext {
-			return NewInvocationContext(ctx, "inv", "main", NewSessionID("s"), "agent")
+			return NewInvocationContext(ctx, "inv", "main", sessionID, "agent")
 		}
 
 		err := DefineAgentToolWithContext(g, nil, extractor)
@@ -394,7 +399,8 @@ func TestDefineAgentTool_InvocationIDPreservation(t *testing.T) {
 	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
 	invocationID := uuid.New().String()
-	parentCtx := NewInvocationContext(ctx, invocationID, "main", NewSessionID("s-123"), "chat")
+	sessionID := testSessionID(t, "s-123")
+	parentCtx := NewInvocationContext(ctx, invocationID, "main", sessionID, "chat")
 
 	// Chain of agents: chat → research → analysis
 	var researchInvID, analysisInvID string
@@ -423,17 +429,17 @@ func TestDefineAgentTool_InvocationIDPreservation(t *testing.T) {
 
 	// Research calls analysis
 	researchBranch := parentCtx.Branch() + ".research"
-	researchCtx := NewInvocationContext(ctx, invocationID, researchBranch, NewSessionID("s-123"), "research")
+	researchCtx := NewInvocationContext(ctx, invocationID, researchBranch, sessionID, "research")
 
 	err = DefineAgentTool(researchCtx, g, analysisAgent)
 	require.NoError(t, err)
 
 	// Simulate execution chain
-	researchSubCtx := NewInvocationContext(ctx, invocationID, "main.research", NewSessionID("s-123"), "research")
+	researchSubCtx := NewInvocationContext(ctx, invocationID, "main.research", sessionID, "research")
 	_, err = researchAgent.Execute(researchSubCtx, "test")
 	require.NoError(t, err)
 
-	analysisSubCtx := NewInvocationContext(ctx, invocationID, "main.research.analysis", NewSessionID("s-123"), "analysis")
+	analysisSubCtx := NewInvocationContext(ctx, invocationID, "main.research.analysis", sessionID, "analysis")
 	_, err = analysisAgent.Execute(analysisSubCtx, "test")
 	require.NoError(t, err)
 
@@ -454,7 +460,7 @@ func TestDefineAgentTool_BranchIsolation(t *testing.T) {
 	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
 	invocationID := uuid.New().String()
-	sessionID := NewSessionID("s-123")
+	sessionID := testSessionID(t, "s-123")
 	parentCtx := NewInvocationContext(ctx, invocationID, "main", sessionID, "chat")
 
 	// Track branches seen by each agent

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -150,11 +149,10 @@ func TestGetEnv_Success(t *testing.T) {
 		t.Fatalf("NewServer failed: %v", err)
 	}
 
-	// Set a test environment variable
+	// Set a test environment variable using t.Setenv for automatic cleanup
 	testKey := "MCP_TEST_VAR"
 	testValue := "test_value_123"
-	os.Setenv(testKey, testValue)
-	defer os.Unsetenv(testKey)
+	t.Setenv(testKey, testValue)
 
 	result, _, err := server.GetEnv(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
 		Key: testKey,

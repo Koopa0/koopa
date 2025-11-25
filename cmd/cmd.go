@@ -102,11 +102,16 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 
 		// Execute chat agent
 		invocationID := uuid.New().String()
+		sessionID, err := agent.NewSessionID(sessionIDStr)
+		if err != nil {
+			term.Printf("Error: invalid session ID: %v\n", err)
+			continue
+		}
 		invCtx := agent.NewInvocationContext(
 			ctx,
 			invocationID,
 			chat.Name,
-			agent.NewSessionID(sessionIDStr),
+			sessionID,
 			chat.Name,
 		)
 

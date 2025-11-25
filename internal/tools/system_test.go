@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -205,11 +204,10 @@ func TestSystemToolset_GetEnv(t *testing.T) {
 	}
 
 	t.Run("success with existing variable", func(t *testing.T) {
-		// Set a test environment variable
+		// Set a test environment variable using t.Setenv for automatic cleanup
 		testKey := "TEST_SYSTEM_TOOLSET_VAR"
 		testValue := "test_value_123"
-		os.Setenv(testKey, testValue)
-		defer os.Unsetenv(testKey)
+		t.Setenv(testKey, testValue)
 
 		output, err := st.GetEnv(ctx, GetEnvInput{Key: testKey})
 		if err != nil {
