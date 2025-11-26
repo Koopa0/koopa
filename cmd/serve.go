@@ -18,7 +18,8 @@ import (
 //   - Creates the HTTP server with all routes
 //   - Signal handling is done by caller (executeServe)
 func RunServe(ctx context.Context, cfg *config.Config, version string, addr string) error {
-	slog.Info("starting HTTP API server", "version", version)
+	logger := slog.Default()
+	logger.Info("starting HTTP API server", "version", version)
 
 	// Initialize application using Wire DI
 	application, cleanup, err := app.InitializeApp(ctx, cfg)
@@ -28,7 +29,7 @@ func RunServe(ctx context.Context, cfg *config.Config, version string, addr stri
 	defer cleanup()
 	defer func() {
 		if err := application.Close(); err != nil {
-			slog.Warn("failed to close application", "error", err)
+			logger.Warn("failed to close application", "error", err)
 		}
 	}()
 
@@ -46,8 +47,8 @@ func RunServe(ctx context.Context, cfg *config.Config, version string, addr stri
 	chatFlow := chatAgent.DefineFlow(application.Genkit)
 
 	// Create and run HTTP server with the Chat Flow
-	server := api.NewServer(application.SessionStore, chatFlow)
+	server := api.NewServer(application.DBPool, application.SessionStore, chatFlow, logger)
 
-	slog.Info("HTTP API server ready", "addr", addr)
+	logger.Info("HTTP API server ready", "addr", addr)
 	return server.Run(ctx, addr)
 }

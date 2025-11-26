@@ -4,7 +4,10 @@ package db
 import (
 	"embed"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/url"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5" // pgx v5 driver
@@ -20,7 +23,8 @@ var migrationsFS embed.FS
 // The schema_migrations table is automatically managed by golang-migrate.
 // Only migrations not yet applied are executed.
 //
-// connURL must be in postgres:// URL format (e.g., postgres://user:pass@host:port/db?sslmode=disable)
+// connURL must be in postgres:// or postgresql:// URL format
+// (e.g., postgres://user:pass@host:port/db?sslmode=disable)
 func Migrate(connURL string) error {
 	slog.Info("running database migrations")
 
@@ -31,15 +35,28 @@ func Migrate(connURL string) error {
 		return err
 	}
 
+	// Convert postgres:// or postgresql:// to pgx5:// scheme for golang-migrate pgx v5 driver
+	dbURL, err := convertToMigrateURL(connURL)
+	if err != nil {
+		slog.Error("invalid database URL", "error", err)
+		return err
+	}
+
 	// Create migrate instance with pgx5 driver
-	// Convert postgres:// to pgx5:// scheme for golang-migrate pgx v5 driver
-	dbURL := "pgx5" + connURL[len("postgres"):]
 	m, err := migrate.NewWithSourceInstance("iofs", source, dbURL)
 	if err != nil {
 		slog.Error("failed to connect to database for migrations", "error", err)
 		return err
 	}
-	defer m.Close()
+	defer func() {
+		srcErr, dbErr := m.Close()
+		if srcErr != nil {
+			slog.Warn("failed to close migration source", "error", srcErr)
+		}
+		if dbErr != nil {
+			slog.Warn("failed to close migration database connection", "error", dbErr)
+		}
+	}()
 
 	// Run migrations
 	if err := m.Up(); err != nil {
@@ -59,4 +76,23 @@ func Migrate(connURL string) error {
 	}
 
 	return nil
+}
+
+// convertToMigrateURL converts a postgres:// or postgresql:// URL to pgx5:// for golang-migrate.
+func convertToMigrateURL(connURL string) (string, error) {
+	// Parse URL to validate and extract components
+	u, err := url.Parse(connURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse database URL: %w", err)
+	}
+
+	// Validate scheme
+	switch strings.ToLower(u.Scheme) {
+	case "postgres", "postgresql":
+		// Convert to pgx5 scheme
+		u.Scheme = "pgx5"
+		return u.String(), nil
+	default:
+		return "", fmt.Errorf("unsupported database URL scheme: %s (expected postgres or postgresql)", u.Scheme)
+	}
 }
