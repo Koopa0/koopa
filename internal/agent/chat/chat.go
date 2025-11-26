@@ -196,7 +196,7 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 	historyMessages := history.Messages()
 
 	// Generate response using unified core logic
-	resp, err := c.executeCore(ctx, input, historyMessages, callback)
+	resp, err := c.execute(ctx, input, historyMessages, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -224,9 +224,9 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 	}, nil
 }
 
-// executeCore is the unified execution logic for both streaming and non-streaming modes.
+// execute is the unified execution logic for both streaming and non-streaming modes.
 // If callback is non-nil, streaming is enabled; otherwise, standard generation is used.
-func (c *Chat) executeCore(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
+func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
 	// Build messages: history + current user input
 	allMessages := append(historyMessages, ai.NewUserMessage(ai.NewTextPart(input)))
 

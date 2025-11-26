@@ -3,18 +3,21 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/koopa0/koopa-cli/internal/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestServer_HealthEndpoints(t *testing.T) {
-	// Create server with nil dependencies (health check only needs store for readiness)
-	srv := NewServer(nil, nil)
+	logger := log.NewNop()
+	// Create server with nil dependencies (health check only needs pool for readiness)
+	srv := NewServer(nil, nil, nil, logger)
 	handler := srv.Handler()
 
 	t.Run("GET /health returns 200", func(t *testing.T) {
@@ -27,7 +30,7 @@ func TestServer_HealthEndpoints(t *testing.T) {
 		assert.Equal(t, "ok", w.Body.String())
 	})
 
-	t.Run("GET /ready returns 503 when store is nil", func(t *testing.T) {
+	t.Run("GET /ready returns 503 when pool is nil", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 		w := httptest.NewRecorder()
 
@@ -38,8 +41,9 @@ func TestServer_HealthEndpoints(t *testing.T) {
 }
 
 func TestServer_ChatEndpoint_NoFlow(t *testing.T) {
+	logger := log.NewNop()
 	// When no flow is provided, the chat endpoint should return 404
-	srv := NewServer(nil, nil)
+	srv := NewServer(nil, nil, nil, logger)
 	handler := srv.Handler()
 
 	t.Run("POST /api/chat returns 404 when flow is nil", func(t *testing.T) {
@@ -54,7 +58,8 @@ func TestServer_ChatEndpoint_NoFlow(t *testing.T) {
 }
 
 func TestServer_MiddlewareChain(t *testing.T) {
-	srv := NewServer(nil, nil)
+	logger := log.NewNop()
+	srv := NewServer(nil, nil, nil, logger)
 	handler := srv.Handler()
 
 	t.Run("panic in handler is recovered", func(t *testing.T) {
@@ -70,19 +75,34 @@ func TestServer_MiddlewareChain(t *testing.T) {
 }
 
 func TestServer_Run_GracefulShutdown(t *testing.T) {
-	srv := NewServer(nil, nil)
+	logger := log.NewNop()
+	srv := NewServer(nil, nil, nil, logger)
 
 	// Create a context that will be cancelled
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Find an available port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := listener.Addr().String()
+	listener.Close()
+
 	// Start server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- srv.Run(ctx, "127.0.0.1:0") // Use port 0 to get random available port
+		errCh <- srv.Run(ctx, addr)
 	}()
 
-	// Wait a bit for server to start
-	time.Sleep(50 * time.Millisecond)
+	// Poll for server readiness instead of fixed sleep
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Cancel context to trigger shutdown
 	cancel()
@@ -102,7 +122,8 @@ func TestServer_DefaultAddr(t *testing.T) {
 }
 
 func TestServer_ContentTypeJSON(t *testing.T) {
-	srv := NewServer(nil, nil)
+	logger := log.NewNop()
+	srv := NewServer(nil, nil, nil, logger)
 	handler := srv.Handler()
 
 	t.Run("health endpoint returns plain text", func(t *testing.T) {

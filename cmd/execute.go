@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/koopa0/koopa-cli/internal/config"
@@ -45,6 +47,13 @@ func Execute() error {
 		case "serve":
 			// HTTP API server mode
 			return executeServe()
+		default:
+			// Check if it's an unknown command (starts without -)
+			if !strings.HasPrefix(os.Args[1], "-") {
+				fmt.Fprintf(os.Stderr, "Error: unknown command %q\n", os.Args[1])
+				fmt.Fprintln(os.Stderr, "Run 'koopa --help' for usage.")
+				return fmt.Errorf("unknown command: %s", os.Args[1])
+			}
 		}
 	}
 
@@ -188,11 +197,42 @@ func executeServe() error {
 		}
 	}
 
+	// Validate address format
+	if err := validateAddr(addr); err != nil {
+		return fmt.Errorf("invalid address %q: %w", addr, err)
+	}
+
 	// Start HTTP API server
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	return RunServe(ctx, cfg, AppVersion, addr)
+}
+
+// validateAddr validates the server address format.
+// Accepts formats: "host:port", ":port", or "host:port".
+func validateAddr(addr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("must be in host:port format: %w", err)
+	}
+
+	// Validate host if provided
+	if host != "" && host != "localhost" {
+		if ip := net.ParseIP(host); ip == nil {
+			// Not a valid IP, check if it's a valid hostname
+			if strings.ContainsAny(host, " \t\n") {
+				return fmt.Errorf("invalid host: %s", host)
+			}
+		}
+	}
+
+	// Validate port
+	if port == "" {
+		return fmt.Errorf("port is required")
+	}
+
+	return nil
 }
 
 // printHelp displays the help message for the Koopa CLI.

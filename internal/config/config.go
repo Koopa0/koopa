@@ -375,14 +375,16 @@ func isValidSegment(seg string) bool {
 		return false
 	}
 
+	// First character must be a letter (De Morgan's law applied)
 	first := seg[0]
-	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')) {
+	if (first < 'a' || first > 'z') && (first < 'A' || first > 'Z') {
 		return false
 	}
 
+	// Remaining characters must be alphanumeric or underscore (De Morgan's law applied)
 	for i := 1; i < len(seg); i++ {
 		c := seg[i]
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
 			return false
 		}
 	}

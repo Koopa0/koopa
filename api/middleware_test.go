@@ -1,20 +1,23 @@
 package api
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/koopa0/koopa-cli/internal/log"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestRecoveryMiddleware_NoPanic(t *testing.T) {
+	logger := log.NewNop()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("success"))
 	})
 
-	wrapped := recoveryMiddleware(handler)
+	wrapped := recoveryMiddleware(logger)(handler)
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	w := httptest.NewRecorder()
 
@@ -25,11 +28,12 @@ func TestRecoveryMiddleware_NoPanic(t *testing.T) {
 }
 
 func TestRecoveryMiddleware_WithPanic(t *testing.T) {
+	logger := log.NewNop()
 	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic("test panic")
 	})
 
-	wrapped := recoveryMiddleware(handler)
+	wrapped := recoveryMiddleware(logger)(handler)
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	w := httptest.NewRecorder()
 
@@ -41,17 +45,60 @@ func TestRecoveryMiddleware_WithPanic(t *testing.T) {
 }
 
 func TestLoggingMiddleware(t *testing.T) {
+	logger := log.NewNop()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	wrapped := loggingMiddleware(handler)
+	wrapped := loggingMiddleware(logger)(handler)
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	w := httptest.NewRecorder()
 
 	wrapped.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestLoggingMiddleware_CapturesStatusCode(t *testing.T) {
+	var buf bytes.Buffer
+	// Use debug level (-4 = slog.LevelDebug) to ensure log is written
+	logger := log.NewWithWriter(&buf, log.Config{Level: -4})
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	wrapped := loggingMiddleware(logger)(handler)
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	// Verify that status code is logged (slog text format uses status=404)
+	assert.Contains(t, buf.String(), "status=404")
+}
+
+func TestStatusRecorder(t *testing.T) {
+	t.Run("captures status code", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
+		rec.WriteHeader(http.StatusCreated)
+
+		assert.Equal(t, http.StatusCreated, rec.status)
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
+
+	t.Run("default status is 200", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
+		// Write body without explicit WriteHeader
+		_, _ = rec.Write([]byte("test"))
+
+		assert.Equal(t, http.StatusOK, rec.status)
+	})
 }
 
 func TestChain(t *testing.T) {

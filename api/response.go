@@ -2,17 +2,18 @@ package api
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 )
 
 // writeJSON writes a JSON response with the given status code.
+// Note: If encoding fails after WriteHeader is called, there's no way to
+// notify the client since the status code is already sent. The error is
+// silently ignored as this is a rare edge case (e.g., unencodable types).
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		slog.Error("failed to encode JSON response", "error", err)
-	}
+	// Ignore encoding error - WriteHeader already called, can't change response
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 // ErrorResponse represents a JSON error response.

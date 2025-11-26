@@ -33,11 +33,13 @@ package api
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa-cli/internal/log"
 	"github.com/koopa0/koopa-cli/internal/session"
 )
 
@@ -64,7 +66,8 @@ const (
 
 // Server is the HTTP server for Koopa's REST API.
 type Server struct {
-	mux *http.ServeMux
+	mux    *http.ServeMux
+	logger log.Logger
 
 	// Handlers
 	health  *HealthHandler
@@ -73,15 +76,18 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP server with all routes registered.
+// pool is used for health checks (readiness probe).
 // chatFlow is obtained from chat.DefineFlow() and used for the /api/chat endpoint.
-func NewServer(store *session.Store, chatFlow *chat.Flow) *Server {
+// logger is injected for structured logging (use log.NewNop() in tests).
+func NewServer(pool *pgxpool.Pool, store *session.Store, chatFlow *chat.Flow, logger log.Logger) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
 		mux:     mux,
-		health:  NewHealthHandler(store),
-		session: NewSessionHandler(store),
-		chat:    NewChatHandler(chatFlow),
+		logger:  logger,
+		health:  NewHealthHandler(pool, logger),
+		session: NewSessionHandler(store, logger),
+		chat:    NewChatHandler(chatFlow, logger),
 	}
 
 	// Register all routes
@@ -95,7 +101,10 @@ func NewServer(store *session.Store, chatFlow *chat.Flow) *Server {
 // Handler returns the HTTP handler with middleware applied.
 // Middleware order: recovery → logging → handler
 func (s *Server) Handler() http.Handler {
-	return chain(s.mux, recoveryMiddleware, loggingMiddleware)
+	return chain(s.mux,
+		recoveryMiddleware(s.logger),
+		loggingMiddleware(s.logger),
+	)
 }
 
 // Run starts the HTTP server and blocks until the context is cancelled.
@@ -116,16 +125,21 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("starting HTTP server", "addr", addr)
+		s.logger.Info("starting HTTP server", "addr", addr)
 		errCh <- srv.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
-		slog.Info("shutting down HTTP server")
+		s.logger.Info("shutting down HTTP server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
-		return srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		// Wait for the goroutine to exit to prevent goroutine leak
+		<-errCh
+		return nil
 	case err := <-errCh:
 		if err == http.ErrServerClosed {
 			return nil

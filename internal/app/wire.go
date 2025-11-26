@@ -81,16 +81,36 @@ func provideEmbedder(g *genkit.Genkit, cfg *config.Config) ai.Embedder {
 }
 
 // provideDBPool creates a PostgreSQL connection pool and runs migrations.
+// Pool is configured with sensible defaults for connection management.
 func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func(), error) {
 	// Run database migrations on startup (uses URL format)
 	if err := db.Migrate(cfg.PostgresURL()); err != nil {
 		return nil, nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	// Create connection pool (uses DSN format)
-	pool, err := pgxpool.New(ctx, cfg.PostgresConnectionString())
+	// Parse connection string to get config
+	poolCfg, err := pgxpool.ParseConfig(cfg.PostgresConnectionString())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to parse connection config: %w", err)
+	}
+
+	// Configure connection pool settings
+	poolCfg.MaxConns = 10                      // Maximum number of connections in the pool
+	poolCfg.MinConns = 2                       // Minimum number of connections to keep open
+	poolCfg.MaxConnLifetime = 30 * time.Minute // Maximum lifetime of a connection
+	poolCfg.MaxConnIdleTime = 5 * time.Minute  // Maximum idle time before closing
+	poolCfg.HealthCheckPeriod = 1 * time.Minute
+
+	// Create connection pool with config
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create connection pool: %w", err)
+	}
+
+	// Verify connectivity
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	cleanup := func() {
