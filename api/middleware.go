@@ -19,6 +19,15 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Write writes data and ensures status is set to 200 if WriteHeader wasn't called.
+// This handles the case where Write() is called without explicit WriteHeader().
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(b)
+}
+
 // loggingMiddleware returns a middleware that logs all HTTP requests with method, path, status, and duration.
 func loggingMiddleware(logger log.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

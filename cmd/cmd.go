@@ -6,9 +6,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/google/uuid"
-
-	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/app"
 	"github.com/koopa0/koopa-cli/internal/config"
@@ -45,8 +42,9 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 		return fmt.Errorf("error creating agent: %w", err)
 	}
 
-	// Define Flow for the agent (provides observability and structured I/O)
-	chatAgent.DefineFlow(application.Genkit)
+	// P0: Use GetFlow() singleton to prevent Panic on re-registration
+	// P0.5: Flow now supports streaming for real-time CLI output
+	chatFlow := chat.GetFlow(application.Genkit, chatAgent)
 
 	// Display welcome message
 	printWelcome(version, term)
@@ -75,9 +73,6 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			continue
 		}
 
-		// Send message to AI
-		term.Print("Koopa> ")
-
 		// Get current session ID
 		var sessionIDStr string
 		currentSessionID, err := session.LoadCurrentSessionID()
@@ -103,35 +98,68 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			term.Printf("(Created new session: %s)\n", newSess.Title)
 		}
 
-		// Execute chat agent
-		invocationID := uuid.New().String()
-		sessionID, err := agent.NewSessionID(sessionIDStr)
-		if err != nil {
-			slog.Error("invalid session ID", "session_id", sessionIDStr, "error", err)
-			term.Printf("Error: invalid session ID\n")
-			continue
-		}
-		invCtx := agent.NewInvocationContext(
-			ctx,
-			invocationID,
-			chat.Name,
-			sessionID,
-			chat.Name,
-		)
+		// P0.5: Use Flow.Stream() for real-time output (打字機效果)
+		// This provides immediate feedback to users instead of waiting 5-10 seconds
+		term.Print("Koopa> ")
 
-		output, err := chatAgent.Execute(invCtx, input)
-		if err != nil {
-			slog.Error("chat execution failed", "error", err, "invocation_id", invocationID)
-			term.Printf("Error: %v\n", err)
+		var finalOutput chat.Output
+		var streamErr error
+		hasOutput := false
+
+		for streamValue, err := range chatFlow.Stream(ctx, chat.Input{
+			Query:     input,
+			SessionID: sessionIDStr,
+		}) {
+			if err != nil {
+				streamErr = err
+				break
+			}
+
+			if streamValue.Done {
+				// Final output received
+				finalOutput = streamValue.Output
+				break
+			}
+
+			// Stream partial text immediately (打字機效果)
+			if streamValue.Stream.Text != "" {
+				term.Print(streamValue.Stream.Text)
+				hasOutput = true
+			}
+		}
+
+		// Handle streaming error
+		if streamErr != nil {
+			slog.Error("chat stream failed", "error", streamErr)
+			if hasOutput {
+				term.Println() // New line after partial output
+			}
+			term.Printf("Error: %v\n", streamErr)
 			term.Println()
 			continue
 		}
 
-		// Display response
-		if strings.TrimSpace(output.FinalText) == "" {
+		// Handle FlowError (structured error from agent)
+		if finalOutput.Error != nil {
+			slog.Error("chat execution failed",
+				"code", finalOutput.Error.Code,
+				"message", finalOutput.Error.Message)
+			if hasOutput {
+				term.Println() // New line after partial output
+			}
+			term.Printf("Error: %s\n", finalOutput.Error.Message)
+			term.Println()
+			continue
+		}
+
+		// Ensure we end with a newline after streaming output
+		if hasOutput {
+			term.Println()
+		} else if strings.TrimSpace(finalOutput.Response) == "" {
 			term.Printf("Warning: Agent response is empty\n")
 		} else {
-			term.Println(output.FinalText)
+			// Non-streaming fallback (shouldn't happen normally)
+			term.Println(finalOutput.Response)
 		}
 		term.Println()
 	}

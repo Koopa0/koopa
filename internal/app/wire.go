@@ -107,8 +107,10 @@ func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func
 		return nil, nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
-	// Verify connectivity
-	if err := pool.Ping(ctx); err != nil {
+	// Verify connectivity with timeout to fail fast if database is unreachable
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pingCancel()
+	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()
 		return nil, nil, fmt.Errorf("failed to ping database: %w", err)
 	}

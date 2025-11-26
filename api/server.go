@@ -79,7 +79,18 @@ type Server struct {
 // pool is used for health checks (readiness probe).
 // chatFlow is obtained from chat.DefineFlow() and used for the /api/chat endpoint.
 // logger is injected for structured logging (use log.NewNop() in tests).
+//
+// Note: nil parameters are handled gracefully:
+//   - pool nil: /ready returns 503 (unhealthy)
+//   - store nil: session endpoints return 500
+//   - chatFlow nil: /api/chat not registered (returns 404)
+//   - logger nil: uses log.NewNop() to prevent panics
 func NewServer(pool *pgxpool.Pool, store *session.Store, chatFlow *chat.Flow, logger log.Logger) *Server {
+	// Use nop logger if nil to prevent panics in middleware
+	if logger == nil {
+		logger = log.NewNop()
+	}
+
 	mux := http.NewServeMux()
 
 	s := &Server{

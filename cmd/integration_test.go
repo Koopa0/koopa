@@ -5,8 +5,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +17,26 @@ import (
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/ui"
 )
+
+// findProjectRoot finds the project root directory by looking for go.mod.
+func findProjectRoot() (string, error) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("could not determine caller filename")
+	}
+
+	dir := filepath.Dir(filename)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("project root (go.mod) not found")
+		}
+		dir = parent
+	}
+}
 
 // TestCLISession_Example demonstrates how to use CLISession for E2E testing
 // This replaces time.Sleep() with ExpectString() for reliable testing
@@ -44,6 +67,13 @@ func TestCLISession_Example(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Set absolute path to prompts directory (required for tests running from cmd/ subdirectory)
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		t.Fatalf("Failed to find project root: %v", err)
+	}
+	cfg.PromptDir = filepath.Join(projectRoot, "prompts")
 
 	// Run CLI in a goroutine
 	ctx, cancel := context.WithCancel(context.Background())
@@ -132,6 +162,13 @@ func TestCLISession_HelpCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Set absolute path to prompts directory (required for tests running from cmd/ subdirectory)
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		t.Fatalf("Failed to find project root: %v", err)
+	}
+	cfg.PromptDir = filepath.Join(projectRoot, "prompts")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

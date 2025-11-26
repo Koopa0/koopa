@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -545,7 +546,7 @@ func TestProvidePathValidator_Success(t *testing.T) {
 func findProjectRoot() (string, error) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", nil
+		return "", fmt.Errorf("could not determine caller filename")
 	}
 
 	dir := filepath.Dir(filename)
@@ -555,7 +556,7 @@ func findProjectRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", nil
+			return "", fmt.Errorf("project root (go.mod) not found")
 		}
 		dir = parent
 	}
