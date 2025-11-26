@@ -63,7 +63,8 @@ func (s *SystemKnowledgeIndexer) IndexAll(ctx context.Context) (int, error) {
 		successCount++
 	}
 
-	s.logger.Info("system knowledge indexed",
+	// Use Debug level - this is an internal background operation
+	s.logger.Debug("system knowledge indexed",
 		"total", len(docs),
 		"success", successCount,
 		"failed", len(docs)-successCount)

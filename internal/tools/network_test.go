@@ -2,14 +2,14 @@ package tools
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/koopa0/koopa-cli/internal/agent"
-	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,80 +23,68 @@ func networkTestSessionID(t *testing.T, id string) agent.SessionID {
 }
 
 // ============================================================================
-// Mock HTTP Validator (for testing success scenarios)
+// Constructor Tests
 // ============================================================================
 
-// mockHTTPValidator implements httpValidator interface for testing
-// Follows Go best practices: consumer defines interface, tests use mock implementation
-type mockHTTPValidator struct {
-	validateErr     error
-	client          *http.Client
-	maxSize         int64
-	allowedTestURLs map[string]bool
-}
-
-func (m *mockHTTPValidator) ValidateURL(url string) error {
-	// Whitelist mechanism: allow test URLs
-	if m.allowedTestURLs != nil && m.allowedTestURLs[url] {
-		return nil
-	}
-	return m.validateErr
-}
-
-func (m *mockHTTPValidator) Client() *http.Client {
-	if m.client != nil {
-		return m.client
-	}
-	return &http.Client{}
-}
-
-func (m *mockHTTPValidator) MaxResponseSize() int64 {
-	if m.maxSize > 0 {
-		return m.maxSize
-	}
-	return 5 * 1024 * 1024 // 5MB default
-}
-
-// TestNetworkToolset_NewNetworkToolset tests NetworkToolset constructor
 func TestNetworkToolset_NewNetworkToolset(t *testing.T) {
 	t.Parallel()
 
-	t.Run("successful creation", func(t *testing.T) {
+	t.Run("successful creation with all params", func(t *testing.T) {
 		t.Parallel()
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
+		nt, err := NewNetworkToolset(
+			"http://searxng:8080",
+			&http.Client{Timeout: 10 * time.Second},
+			2,
+			time.Second,
+			30*time.Second,
+			testLogger(),
+		)
 		require.NoError(t, err)
 		assert.NotNil(t, nt)
 		assert.Equal(t, NetworkToolsetName, nt.Name())
 	})
 
-	t.Run("nil http validator fails", func(t *testing.T) {
+	t.Run("successful creation with defaults", func(t *testing.T) {
 		t.Parallel()
-		nt, err := NewNetworkToolset(nil, testLogger())
+		nt, err := NewNetworkToolset(
+			"http://searxng:8080",
+			nil, // use default client
+			0,   // use default parallelism
+			0,   // use default delay
+			0,   // use default timeout
+			testLogger(),
+		)
+		require.NoError(t, err)
+		assert.NotNil(t, nt)
+	})
+
+	t.Run("empty search base URL fails", func(t *testing.T) {
+		t.Parallel()
+		nt, err := NewNetworkToolset("", nil, 0, 0, 0, testLogger())
 		assert.Error(t, err)
 		assert.Nil(t, nt)
-		assert.Contains(t, err.Error(), "http validator is required")
+		assert.Contains(t, err.Error(), "search base URL is required")
 	})
 
 	t.Run("nil logger fails", func(t *testing.T) {
 		t.Parallel()
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, nil)
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, nil)
 		assert.Error(t, err)
 		assert.Nil(t, nt)
 		assert.Contains(t, err.Error(), "logger is required")
 	})
 }
 
-// TestNetworkToolset_Tools tests tool list
+// ============================================================================
+// Tools List Tests
+// ============================================================================
+
 func TestNetworkToolset_Tools(t *testing.T) {
 	t.Parallel()
 
-	httpVal := security.NewHTTP()
-	nt, err := NewNetworkToolset(httpVal, testLogger())
+	nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
 	require.NoError(t, err)
 
-	// Create invocation context
 	ctx := agent.NewInvocationContext(
 		context.Background(),
 		"test-inv",
@@ -107,351 +95,364 @@ func TestNetworkToolset_Tools(t *testing.T) {
 
 	tools, err := nt.Tools(ctx)
 	require.NoError(t, err)
-	require.Len(t, tools, 1, "NetworkToolset should define exactly 1 tool")
+	require.Len(t, tools, 2, "NetworkToolset should define exactly 2 tools")
 
 	// Verify tool names
-	toolNames := []string{"httpGet"}
+	toolNames := make(map[string]bool)
 	for _, tool := range tools {
-		assert.Contains(t, toolNames, tool.Name())
+		toolNames[tool.Name()] = true
 	}
+	assert.True(t, toolNames["web_search"], "should have web_search tool")
+	assert.True(t, toolNames["web_fetch"], "should have web_fetch tool")
 }
 
-// TestNetworkToolset_HTTPGet tests httpGet tool
-func TestNetworkToolset_HTTPGet(t *testing.T) {
-	t.Parallel()
+// ============================================================================
+// web_search Tests
+// ============================================================================
 
-	// Create tool context
-	toolCtx := &ai.ToolContext{Context: context.Background()}
-
-	t.Run("successful GET request", func(t *testing.T) {
-		// Create test server
-		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal(t, http.MethodGet, r.Method)
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("Hello, World!"))
-		}))
-		defer testServer.Close()
-
-		// Create mock validator and allow test URL
-		mockVal := &mockHTTPValidator{
-			allowedTestURLs: map[string]bool{testServer.URL: true},
-			client:          &http.Client{},
-		}
-
-		// Use mock implementation of httpValidator interface
-		nt, err := NewNetworkToolset(mockVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: testServer.URL})
-		require.NoError(t, err)
-		assert.Equal(t, StatusSuccess, result.Status)
-
-		dataMap, ok := result.Data.(map[string]any)
-		require.True(t, ok)
-
-		assert.Equal(t, testServer.URL, dataMap["url"])
-		assert.Equal(t, http.StatusOK, dataMap["status"])
-		assert.Equal(t, "Hello, World!", dataMap["body"])
-	})
-
-	t.Run("successful GET with different status code", func(t *testing.T) {
-		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte("Created"))
-		}))
-		defer testServer.Close()
-
-		mockVal := &mockHTTPValidator{
-			allowedTestURLs: map[string]bool{testServer.URL: true},
-			client:          &http.Client{},
-		}
-
-		nt, err := NewNetworkToolset(mockVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: testServer.URL})
-		require.NoError(t, err)
-		assert.Equal(t, StatusSuccess, result.Status)
-
-		dataMap, ok := result.Data.(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, http.StatusCreated, dataMap["status"])
-		assert.Equal(t, "Created", dataMap["body"])
-	})
-
-	t.Run("empty response body", func(t *testing.T) {
-		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNoContent)
-		}))
-		defer testServer.Close()
-
-		mockVal := &mockHTTPValidator{
-			allowedTestURLs: map[string]bool{testServer.URL: true},
-			client:          &http.Client{},
-		}
-
-		nt, err := NewNetworkToolset(mockVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: testServer.URL})
-		require.NoError(t, err)
-		assert.Equal(t, StatusSuccess, result.Status)
-
-		dataMap, ok := result.Data.(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, http.StatusNoContent, dataMap["status"])
-		assert.Equal(t, "", dataMap["body"])
-	})
-
-	t.Run("SSRF blocked - localhost", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://localhost:8080/test"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-		assert.Contains(t, result.Error.Message, "SSRF")
-	})
-
-	t.Run("SSRF blocked - 127.0.0.1", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://127.0.0.1:8080/test"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-	})
-
-	t.Run("SSRF blocked - AWS metadata endpoint", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://169.254.169.254/latest/meta-data/"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-	})
-
-	t.Run("SSRF blocked - GCP metadata endpoint", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://metadata.google.internal/computeMetadata/v1/"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-	})
-
-	t.Run("SSRF blocked - private IP 192.168.x.x", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://192.168.1.1/"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-	})
-
-	t.Run("SSRF blocked - private IP 10.x.x.x", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://10.0.0.1/"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-	})
-
-	t.Run("SSRF blocked - private IP 172.16.x.x", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://172.16.0.1/"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-	})
-
-	t.Run("invalid URL", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "not-a-valid-url"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-	})
-
-	t.Run("disallowed protocol - ftp", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "ftp://example.com/file.txt"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "security warning")
-	})
-
-	t.Run("disallowed protocol - file", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "file:///etc/passwd"})
-		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeSecurity, result.Error.Code)
-	})
-
-	t.Run("network error - invalid hostname", func(t *testing.T) {
-		httpVal := security.NewHTTP()
-		nt, err := NewNetworkToolset(httpVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: "http://invalid-hostname-that-does-not-exist-12345.com/"})
-		require.NoError(t, err)
-		// This could be either security error (DNS resolution fails during validation)
-		// or network error (if validation passes but connection fails)
-		assert.Equal(t, StatusError, result.Status)
-		assert.True(t,
-			result.Error.Code == ErrCodeSecurity || result.Error.Code == ErrCodeNetwork,
-			"Expected security or network error code",
-		)
-	})
-}
-
-// TestNetworkToolset_HTTPGet_ResponseSizeLimit tests response size limits
-func TestNetworkToolset_HTTPGet_ResponseSizeLimit(t *testing.T) {
+func TestNetworkToolset_Search(t *testing.T) {
 	t.Parallel()
 
 	toolCtx := &ai.ToolContext{Context: context.Background()}
 
-	t.Run("response within size limit", func(t *testing.T) {
-		// Create 1MB response (well within 5MB limit)
-		largeData := make([]byte, 1024*1024) // 1 MB
-		for i := range largeData {
-			largeData[i] = 'A'
-		}
+	t.Run("successful search", func(t *testing.T) {
+		t.Parallel()
 
-		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(largeData)
+		// Create mock SearXNG server
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "/search", r.URL.Path)
+			assert.Equal(t, "golang tutorial", r.URL.Query().Get("q"))
+			assert.Equal(t, "json", r.URL.Query().Get("format"))
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"results": []map[string]any{
+					{
+						"title":   "Go Tutorial",
+						"url":     "https://go.dev/doc/tutorial",
+						"content": "Learn Go programming",
+						"engine":  "google",
+					},
+					{
+						"title":   "Go by Example",
+						"url":     "https://gobyexample.com",
+						"content": "Hands-on introduction to Go",
+						"engine":  "duckduckgo",
+					},
+				},
+			})
 		}))
-		defer testServer.Close()
+		defer server.Close()
 
-		mockVal := &mockHTTPValidator{
-			allowedTestURLs: map[string]bool{testServer.URL: true},
-			client:          &http.Client{},
-		}
-
-		nt, err := NewNetworkToolset(mockVal, testLogger())
+		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: testServer.URL})
+		output, err := nt.search(toolCtx, SearchInput{Query: "golang tutorial"})
 		require.NoError(t, err)
-		assert.Equal(t, StatusSuccess, result.Status)
-
-		dataMap, ok := result.Data.(map[string]any)
-		require.True(t, ok)
-		body := dataMap["body"].(string)
-		assert.Equal(t, 1024*1024, len(body))
+		assert.Empty(t, output.Error)
+		assert.Equal(t, "golang tutorial", output.Query)
+		assert.Len(t, output.Results, 2)
+		assert.Equal(t, "Go Tutorial", output.Results[0].Title)
+		assert.Equal(t, "https://go.dev/doc/tutorial", output.Results[0].URL)
 	})
 
-	t.Run("response exceeds size limit", func(t *testing.T) {
-		// Create 10MB response (exceeds 5MB limit)
-		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", 10*1024*1024))
-			w.WriteHeader(http.StatusOK)
-			// Write 10MB of data
-			chunk := make([]byte, 1024*1024) // 1MB chunks
-			for i := 0; i < 10; i++ {
-				_, _ = w.Write(chunk)
+	t.Run("search with categories and language", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "news,science", r.URL.Query().Get("categories"))
+			assert.Equal(t, "zh-TW", r.URL.Query().Get("language"))
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"results": []map[string]any{
+					{"title": "Result", "url": "https://example.com", "content": "Content"},
+				},
+			})
+		}))
+		defer server.Close()
+
+		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.search(toolCtx, SearchInput{
+			Query:      "test",
+			Categories: []string{"news", "science"},
+			Language:   "zh-TW",
+		})
+		require.NoError(t, err)
+		assert.Empty(t, output.Error)
+	})
+
+	t.Run("search with max results limit", func(t *testing.T) {
+		t.Parallel()
+
+		// Return 20 results
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			results := make([]map[string]any, 20)
+			for i := 0; i < 20; i++ {
+				results[i] = map[string]any{
+					"title":   "Result",
+					"url":     "https://example.com",
+					"content": "Content",
+				}
 			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
 		}))
-		defer testServer.Close()
+		defer server.Close()
 
-		mockVal := &mockHTTPValidator{
-			allowedTestURLs: map[string]bool{testServer.URL: true},
-			client:          &http.Client{},
-		}
-
-		nt, err := NewNetworkToolset(mockVal, testLogger())
+		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: testServer.URL})
+		output, err := nt.search(toolCtx, SearchInput{Query: "test", MaxResults: 5})
 		require.NoError(t, err)
-		assert.Equal(t, StatusError, result.Status)
-		assert.Equal(t, ErrCodeIO, result.Error.Code)
-		assert.Contains(t, result.Error.Message, "exceeds limit")
+		assert.Len(t, output.Results, 5)
+	})
+
+	t.Run("search no results", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"results": []any{}})
+		}))
+		defer server.Close()
+
+		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.search(toolCtx, SearchInput{Query: "nonexistent query xyz"})
+		require.NoError(t, err)
+		assert.Equal(t, "No results found for this query.", output.Error)
+		assert.Empty(t, output.Results)
+	})
+
+	t.Run("search rate limited", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusTooManyRequests)
+		}))
+		defer server.Close()
+
+		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.search(toolCtx, SearchInput{Query: "test"})
+		require.NoError(t, err)
+		assert.Contains(t, output.Error, "rate limited")
+	})
+
+	t.Run("search server error", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.search(toolCtx, SearchInput{Query: "test"})
+		require.NoError(t, err)
+		assert.Contains(t, output.Error, "temporarily unavailable")
 	})
 }
 
-// TestNetworkToolset_HTTPGet_Redirects tests redirect handling
-func TestNetworkToolset_HTTPGet_Redirects(t *testing.T) {
+// ============================================================================
+// web_fetch Tests
+// ============================================================================
+
+func TestNetworkToolset_Fetch(t *testing.T) {
 	t.Parallel()
 
 	toolCtx := &ai.ToolContext{Context: context.Background()}
 
-	t.Run("single redirect - success", func(t *testing.T) {
-		// Create target server
-		targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("Final destination"))
-		}))
-		defer targetServer.Close()
+	t.Run("fetch single HTML page", func(t *testing.T) {
+		t.Parallel()
 
-		// Create redirect server
-		redirectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, targetServer.URL, http.StatusFound)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`
+				<!DOCTYPE html>
+				<html>
+				<head><title>Test Page</title></head>
+				<body>
+					<article>
+						<h1>Test Article</h1>
+						<p>This is test content for the article.</p>
+					</article>
+				</body>
+				</html>
+			`))
 		}))
-		defer redirectServer.Close()
+		defer server.Close()
 
-		mockVal := &mockHTTPValidator{
-			allowedTestURLs: map[string]bool{
-				redirectServer.URL: true,
-				targetServer.URL:   true,
-			},
-			client: &http.Client{},
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL}})
+		require.NoError(t, err)
+		assert.Empty(t, output.FailedURLs)
+		require.Len(t, output.Results, 1)
+		assert.Equal(t, "text/html", output.Results[0].ContentType)
+		assert.NotEmpty(t, output.Results[0].Content)
+	})
+
+	t.Run("fetch JSON API", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":    "test",
+				"value":   123,
+				"nested":  map[string]any{"key": "value"},
+			})
+		}))
+		defer server.Close()
+
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL}})
+		require.NoError(t, err)
+		assert.Empty(t, output.FailedURLs)
+		require.Len(t, output.Results, 1)
+		assert.Contains(t, output.Results[0].ContentType, "application/json")
+		assert.Equal(t, "JSON Response", output.Results[0].Title)
+		// Should be pretty-printed
+		assert.Contains(t, output.Results[0].Content, "\"name\": \"test\"")
+	})
+
+	t.Run("fetch plain text", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("Plain text content\nLine 2"))
+		}))
+		defer server.Close()
+
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL}})
+		require.NoError(t, err)
+		assert.Empty(t, output.FailedURLs)
+		require.Len(t, output.Results, 1)
+		assert.Equal(t, "Text Content", output.Results[0].Title)
+		assert.Equal(t, "Plain text content\nLine 2", output.Results[0].Content)
+	})
+
+	t.Run("fetch multiple URLs", func(t *testing.T) {
+		t.Parallel()
+
+		server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("Content from server 1"))
+		}))
+		defer server1.Close()
+
+		server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("Content from server 2"))
+		}))
+		defer server2.Close()
+
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server1.URL, server2.URL}})
+		require.NoError(t, err)
+		assert.Empty(t, output.FailedURLs)
+		assert.Len(t, output.Results, 2)
+	})
+
+	t.Run("fetch with partial failure", func(t *testing.T) {
+		t.Parallel()
+
+		goodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("Good content"))
+		}))
+		defer goodServer.Close()
+
+		badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer badServer.Close()
+
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{goodServer.URL, badServer.URL}})
+		require.NoError(t, err)
+		assert.Len(t, output.Results, 1)
+		assert.Len(t, output.FailedURLs, 1)
+		// URL may have trailing slash added by Colly
+		assert.Contains(t, output.FailedURLs[0].URL, badServer.URL)
+		assert.Equal(t, 500, output.FailedURLs[0].StatusCode)
+	})
+
+	t.Run("fetch deduplicates URLs", func(t *testing.T) {
+		t.Parallel()
+
+		callCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callCount++
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("Content"))
+		}))
+		defer server.Close()
+
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		require.NoError(t, err)
+
+		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL, server.URL, server.URL}})
+		require.NoError(t, err)
+		assert.Len(t, output.Results, 1, "should deduplicate URLs")
+		assert.Equal(t, 1, callCount, "should only call server once")
+	})
+
+	t.Run("fetch empty URLs fails", func(t *testing.T) {
+		t.Parallel()
+
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
+		require.NoError(t, err)
+
+		_, err = nt.fetch(toolCtx, FetchInput{URLs: []string{}})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "at least one URL is required")
+	})
+
+	t.Run("fetch too many URLs fails", func(t *testing.T) {
+		t.Parallel()
+
+		nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
+		require.NoError(t, err)
+
+		urls := make([]string, MaxURLsPerRequest+1)
+		for i := range urls {
+			urls[i] = "https://example.com"
 		}
 
-		nt, err := NewNetworkToolset(mockVal, testLogger())
-		require.NoError(t, err)
-
-		result, err := nt.HTTPGet(toolCtx, HTTPGetInput{URL: redirectServer.URL})
-		require.NoError(t, err)
-		assert.Equal(t, StatusSuccess, result.Status)
-
-		dataMap, ok := result.Data.(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "Final destination", dataMap["body"])
+		_, err = nt.fetch(toolCtx, FetchInput{URLs: urls})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "maximum")
 	})
 }
 
-// TestNetworkToolset_ToolMetadata tests tool metadata
+// ============================================================================
+// Tool Metadata Tests
+// ============================================================================
+
 func TestNetworkToolset_ToolMetadata(t *testing.T) {
 	t.Parallel()
 
-	httpVal := security.NewHTTP()
-	nt, err := NewNetworkToolset(httpVal, testLogger())
+	nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
 	require.NoError(t, err)
 
 	ctx := agent.NewInvocationContext(
@@ -464,12 +465,31 @@ func TestNetworkToolset_ToolMetadata(t *testing.T) {
 
 	tools, err := nt.Tools(ctx)
 	require.NoError(t, err)
-	require.Len(t, tools, 1)
+	require.Len(t, tools, 2)
 
-	tool := tools[0]
-	assert.Equal(t, "httpGet", tool.Name())
-	assert.NotEmpty(t, tool.Description())
-	assert.Contains(t, tool.Description(), "HTTP GET")
-	assert.Contains(t, tool.Description(), "SSRF")
-	assert.True(t, tool.IsLongRunning())
+	// Find tools by name
+	var searchTool, fetchTool Tool
+	for _, tool := range tools {
+		switch tool.Name() {
+		case "web_search":
+			searchTool = tool
+		case "web_fetch":
+			fetchTool = tool
+		}
+	}
+
+	// web_search metadata
+	require.NotNil(t, searchTool)
+	assert.NotEmpty(t, searchTool.Description())
+	assert.Contains(t, searchTool.Description(), "Search the web")
+	assert.True(t, searchTool.IsLongRunning())
+
+	// web_fetch metadata
+	require.NotNil(t, fetchTool)
+	assert.NotEmpty(t, fetchTool.Description())
+	assert.Contains(t, fetchTool.Description(), "Fetch")
+	assert.Contains(t, fetchTool.Description(), "HTML")
+	assert.Contains(t, fetchTool.Description(), "JSON")
+	assert.Contains(t, fetchTool.Description(), "JavaScript") // SPA warning
+	assert.True(t, fetchTool.IsLongRunning())
 }

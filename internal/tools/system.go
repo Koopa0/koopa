@@ -96,24 +96,24 @@ func (st *SystemToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
 
 // CurrentTimeOutput is the output for currentTime tool
 type CurrentTimeOutput struct {
-	Time      string `json:"time" jsonschema:"description=Formatted time string (2006-01-02 15:04:05)"`
-	Timestamp int64  `json:"timestamp" jsonschema:"description=Unix timestamp"`
-	ISO8601   string `json:"iso8601" jsonschema:"description=ISO 8601 formatted time"`
+	Time      string `json:"time" jsonschema_description:"Formatted time string (2006-01-02 15:04:05)"`
+	Timestamp int64  `json:"timestamp" jsonschema_description:"Unix timestamp"`
+	ISO8601   string `json:"iso8601" jsonschema_description:"ISO 8601 formatted time"`
 }
 
 // ExecuteCommandOutput is the output for executeCommand tool
 type ExecuteCommandOutput struct {
-	Command string `json:"command" jsonschema:"description=Executed command"`
-	Args    string `json:"args" jsonschema:"description=Command arguments"`
-	Output  string `json:"output" jsonschema:"description=Command output (stdout and stderr)"`
-	Success bool   `json:"success" jsonschema:"description=Whether command executed successfully"`
+	Command string `json:"command" jsonschema_description:"Executed command"`
+	Args    string `json:"args" jsonschema_description:"Command arguments"`
+	Output  string `json:"output" jsonschema_description:"Command output (stdout and stderr)"`
+	Success bool   `json:"success" jsonschema_description:"Whether command executed successfully"`
 }
 
 // GetEnvOutput is the output for getEnv tool
 type GetEnvOutput struct {
-	Key   string `json:"key" jsonschema:"description=Environment variable name"`
-	Value string `json:"value" jsonschema:"description=Environment variable value"`
-	IsSet bool   `json:"isSet" jsonschema:"description=Whether the variable is set"`
+	Key   string `json:"key" jsonschema_description:"Environment variable name"`
+	Value string `json:"value" jsonschema_description:"Environment variable value"`
+	IsSet bool   `json:"isSet" jsonschema_description:"Whether the variable is set"`
 }
 
 // CurrentTime returns the current system date and time in multiple formats.

@@ -184,9 +184,11 @@ func newApp(
 
 		count, err := systemIndexer.IndexAll(indexCtx)
 		if err != nil {
-			slog.Warn("system knowledge indexing failed (non-critical)", "error", err)
+			// Use Debug level - this is a non-critical background operation
+			slog.Debug("system knowledge indexing failed (non-critical)", "error", err)
 		} else {
-			slog.Info("system knowledge indexed successfully", "count", count)
+			// Use Debug level - users don't need to see this internal operation
+			slog.Debug("system knowledge indexed successfully", "count", count)
 		}
 	}()
 
