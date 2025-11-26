@@ -201,6 +201,11 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 		return nil, err
 	}
 
+	// Defensive check: execute should never return nil without error
+	if resp == nil {
+		return nil, fmt.Errorf("internal error: execute returned nil response without error")
+	}
+
 	responseText := resp.Text()
 
 	// Update history with user input and response

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/koopa0/koopa-cli/api"
+	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/app"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/rag"
@@ -43,8 +44,9 @@ func RunServe(ctx context.Context, cfg *config.Config, version string, addr stri
 		return fmt.Errorf("error creating agent: %w", err)
 	}
 
-	// Define Flow for the agent and get the Flow for API exposure
-	chatFlow := chatAgent.DefineFlow(application.Genkit)
+	// P0: Use GetFlow() singleton to prevent Panic on re-registration
+	// This ensures the same Flow instance is shared between CLI and HTTP server
+	chatFlow := chat.GetFlow(application.Genkit, chatAgent)
 
 	// Create and run HTTP server with the Chat Flow
 	server := api.NewServer(application.DBPool, application.SessionStore, chatFlow, logger)
