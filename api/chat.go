@@ -33,7 +33,7 @@ func (h *ChatHandler) RegisterRoutes(mux *http.ServeMux) {
 	if h.chatFlow != nil {
 		// Use Genkit's built-in handler for Flow-to-HTTP conversion
 		mux.Handle("POST /api/chat", genkit.Handler(h.chatFlow))
-	} else {
+	} else if h.logger != nil {
 		h.logger.Warn("ChatHandler: chatFlow is nil, /api/chat endpoint not registered")
 	}
 }

@@ -107,6 +107,7 @@ func (h *SessionHandler) create(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Debug("invalid request body", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

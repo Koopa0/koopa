@@ -95,13 +95,21 @@ func TestServer_Run_GracefulShutdown(t *testing.T) {
 
 	// Poll for server readiness instead of fixed sleep
 	deadline := time.Now().Add(2 * time.Second)
+	serverReady := false
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
+			serverReady = true
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Fail fast if server didn't start
+	if !serverReady {
+		cancel()
+		t.Fatal("server did not start in time")
 	}
 
 	// Cancel context to trigger shutdown
