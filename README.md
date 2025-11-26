@@ -58,4 +58,4 @@ Koopa> Hi! How can I help you today?
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+[LICENSE](LICENSE)
