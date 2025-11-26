@@ -3,17 +3,21 @@ package api
 import (
 	"net/http"
 
-	"github.com/koopa0/koopa-cli/internal/session"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/koopa0/koopa-cli/internal/log"
 )
 
 // HealthHandler handles health check endpoints.
 type HealthHandler struct {
-	store *session.Store
+	pool   *pgxpool.Pool
+	logger log.Logger
 }
 
 // NewHealthHandler creates a new health handler.
-func NewHealthHandler(store *session.Store) *HealthHandler {
-	return &HealthHandler{store: store}
+// pool is the database connection pool used for readiness checks.
+func NewHealthHandler(pool *pgxpool.Pool, logger log.Logger) *HealthHandler {
+	return &HealthHandler{pool: pool, logger: logger}
 }
 
 // RegisterRoutes registers health routes on the given mux.
@@ -31,9 +35,15 @@ func (h *HealthHandler) liveness(w http.ResponseWriter, _ *http.Request) {
 
 // readiness is a readiness probe endpoint.
 // Returns 200 OK if all dependencies are ready.
-func (h *HealthHandler) readiness(w http.ResponseWriter, _ *http.Request) {
-	if h.store == nil {
-		http.Error(w, "session store not ready", http.StatusServiceUnavailable)
+// Performs actual health check by pinging the database.
+func (h *HealthHandler) readiness(w http.ResponseWriter, r *http.Request) {
+	if h.pool == nil {
+		http.Error(w, "database pool not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if err := h.pool.Ping(r.Context()); err != nil {
+		h.logger.Error("readiness check failed", "error", err)
+		http.Error(w, "database not ready", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

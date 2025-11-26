@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/firebase/genkit/go/genkit"
@@ -333,6 +335,7 @@ func TestInitializeApp_Success(t *testing.T) {
 		PostgresPassword: "",
 		PostgresDBName:   "koopa_test",
 		PostgresSSLMode:  "disable",
+		PromptDir:        getPromptsDir(t),
 	}
 
 	// Test: InitializeApp should successfully create all components
@@ -453,6 +456,7 @@ func TestInitializeApp_CleanupFunction(t *testing.T) {
 		PostgresPassword: "",
 		PostgresDBName:   "koopa_test",
 		PostgresSSLMode:  "disable",
+		PromptDir:        getPromptsDir(t),
 	}
 
 	app, cleanup, err := InitializeApp(ctx, cfg)
@@ -480,7 +484,7 @@ func TestProvideGenkit(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := &config.Config{
-		PromptDir: "prompts",
+		PromptDir: getPromptsDir(t),
 	}
 	g, err := provideGenkit(ctx, cfg)
 	if err != nil {
@@ -499,7 +503,7 @@ func TestProvideEmbedder(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := &config.Config{
-		PromptDir:     "prompts",
+		PromptDir:     getPromptsDir(t),
 		EmbedderModel: "text-embedding-004",
 	}
 	g, err := provideGenkit(ctx, cfg)
@@ -531,4 +535,38 @@ func TestProvidePathValidator_Success(t *testing.T) {
 	if validator == nil {
 		t.Fatal("expected non-nil path validator")
 	}
+}
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+// findProjectRoot finds the project root directory by looking for go.mod.
+func findProjectRoot() (string, error) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", nil
+	}
+
+	dir := filepath.Dir(filename)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", nil
+		}
+		dir = parent
+	}
+}
+
+// getPromptsDir returns the absolute path to the prompts directory.
+func getPromptsDir(t *testing.T) string {
+	t.Helper()
+	root, err := findProjectRoot()
+	if err != nil || root == "" {
+		t.Skip("Could not find project root")
+	}
+	return filepath.Join(root, "prompts")
 }
