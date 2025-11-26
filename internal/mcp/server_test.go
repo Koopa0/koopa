@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/tools"
@@ -57,9 +58,15 @@ func (h *testHelper) createSystemToolset() *tools.SystemToolset {
 
 func (h *testHelper) createNetworkToolset() *tools.NetworkToolset {
 	h.t.Helper()
-	httpVal := security.NewHTTP()
 
-	toolset, err := tools.NewNetworkToolset(httpVal, slog.Default())
+	toolset, err := tools.NewNetworkToolset(
+		"http://localhost:8080", // test SearXNG URL
+		nil,                     // use default http.Client
+		2,                       // parallelism
+		100*time.Millisecond,    // delay
+		30*time.Second,          // timeout
+		slog.Default(),
+	)
 	if err != nil {
 		h.t.Fatalf("failed to create network toolset: %v", err)
 	}

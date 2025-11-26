@@ -95,15 +95,34 @@ func provideEmbedder(g *genkit.Genkit, cfg *config.Config) ai.Embedder {
 }
 
 // provideDBPool creates a PostgreSQL connection pool and runs migrations.
+// Pool is configured with sensible defaults for connection management.
 func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func(), error) {
 
 	if err := db.Migrate(cfg.PostgresURL()); err != nil {
 		return nil, nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	pool, err := pgxpool.New(ctx, cfg.PostgresConnectionString())
+	poolCfg, err := pgxpool.ParseConfig(cfg.PostgresConnectionString())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to parse connection config: %w", err)
+	}
+
+	poolCfg.MaxConns = 10
+	poolCfg.MinConns = 2
+	poolCfg.MaxConnLifetime = 30 * time.Minute
+	poolCfg.MaxConnIdleTime = 5 * time.Minute
+	poolCfg.HealthCheckPeriod = 1 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create connection pool: %w", err)
+	}
+
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pingCancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	cleanup := func() {
@@ -172,9 +191,9 @@ func newApp(
 
 		count, err := systemIndexer.IndexAll(indexCtx)
 		if err != nil {
-			slog.Warn("system knowledge indexing failed (non-critical)", "error", err)
+			slog.Debug("system knowledge indexing failed (non-critical)", "error", err)
 		} else {
-			slog.Info("system knowledge indexed successfully", "count", count)
+			slog.Debug("system knowledge indexed successfully", "count", count)
 		}
 	}()
 
