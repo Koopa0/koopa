@@ -1,0 +1,64 @@
+# SearXNG settings for Koopa
+# This enables JSON API output format required by web_search tool
+
+use_default_settings: true
+
+server:
+  # Bind to all interfaces for Docker
+  bind_address: "0.0.0.0:8080"
+  secret_key: "koopa-dev-secret-key-change-in-production"
+  # Disable rate limiting for development/testing
+  limiter: false
+  # Private instance for development (no rate limiting)
+  public_instance: false
+  # Allow external access for testing
+  method: "GET"
+
+search:
+  # Safe search setting (0=off, 1=moderate, 2=strict)
+  safe_search: 0
+  # Default language
+  default_lang: "auto"
+  # Autocomplete provider
+  autocomplete: ""
+  # Formats available via API
+  formats:
+    - html
+    - json
+
+# Redis connection for rate limiting and caching
+redis:
+  url: redis://redis:6379/0
+
+# Engine settings - enable popular search engines
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: w
+    disabled: false
+
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+
+# Disable UI features we don't need for API usage
+ui:
+  static_use_hash: true
+  default_theme: simple
+  results_on_new_tab: false

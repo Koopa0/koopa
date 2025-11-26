@@ -143,10 +143,10 @@ func New(deps Deps) (*Chat, error) {
 	// This is optional - if prompt is not found, we fall back to direct Generate
 	c.prompt = genkit.LookupPrompt(c.g, KoopaPromptName)
 	if c.prompt == nil {
-		c.logger.Warn("dotprompt not found, using fallback generation",
+		c.logger.Debug("dotprompt not found, using fallback generation",
 			"prompt_name", KoopaPromptName)
 	} else {
-		c.logger.Info("loaded dotprompt successfully",
+		c.logger.Debug("loaded dotprompt successfully",
 			"prompt_name", KoopaPromptName)
 	}
 
@@ -180,7 +180,7 @@ func (c *Chat) Execute(ctx agent.InvocationContext, input string) (*agent.Respon
 // The final response is always returned after generation completes.
 func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback StreamCallback) (*agent.Response, error) {
 	streaming := callback != nil
-	c.logger.Info("executing chat agent",
+	c.logger.Debug("executing chat agent",
 		"invocation_id", ctx.InvocationID(),
 		"session_id", ctx.SessionID(),
 		"branch", ctx.Branch(),
@@ -345,7 +345,7 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 	// Retrieve documents
 	docs, err := c.retriever.RetrieveDocuments(ctx, query, topK)
 	if err != nil {
-		c.logger.Warn("RAG retrieval failed (continuing without context)",
+		c.logger.Debug("RAG retrieval failed (continuing without context)",
 			"error", err,
 			"query_length", len(query))
 		return nil

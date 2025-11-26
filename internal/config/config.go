@@ -80,6 +80,28 @@ type Config struct {
 	// MCP (Model Context Protocol) configuration
 	MCP        MCPConfig            `mapstructure:"mcp"`         // Global MCP settings
 	MCPServers map[string]MCPServer `mapstructure:"mcp_servers"` // MCP server definitions
+
+	// SearXNG configuration (web search)
+	SearXNG SearXNGConfig `mapstructure:"searxng"`
+
+	// WebScraper configuration (web fetching)
+	WebScraper WebScraperConfig `mapstructure:"web_scraper"`
+}
+
+// SearXNGConfig holds SearXNG service configuration.
+type SearXNGConfig struct {
+	// BaseURL is the SearXNG instance URL (e.g., http://searxng:8080)
+	BaseURL string `mapstructure:"base_url"`
+}
+
+// WebScraperConfig holds web scraper configuration.
+type WebScraperConfig struct {
+	// Parallelism is max concurrent requests per domain (default: 2)
+	Parallelism int `mapstructure:"parallelism"`
+	// DelayMs is delay between requests in milliseconds (default: 1000)
+	DelayMs int `mapstructure:"delay_ms"`
+	// TimeoutMs is request timeout in milliseconds (default: 30000)
+	TimeoutMs int `mapstructure:"timeout_ms"`
 }
 
 // MCPConfig controls global MCP behavior
@@ -144,6 +166,14 @@ func Load() (*Config, error) {
 	// MCP defaults
 	viper.SetDefault("mcp.timeout", 5) // Default: 5 seconds connection timeout
 	// Note: mcp_servers has no default - must be explicitly configured
+
+	// SearXNG defaults (required for web search capability)
+	viper.SetDefault("searxng.base_url", "http://searxng:8080")
+
+	// WebScraper defaults
+	viper.SetDefault("web_scraper.parallelism", 2)
+	viper.SetDefault("web_scraper.delay_ms", 1000)
+	viper.SetDefault("web_scraper.timeout_ms", 30000)
 
 	// Read configuration file (if exists)
 	if err := viper.ReadInConfig(); err != nil {

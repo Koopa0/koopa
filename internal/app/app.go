@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -97,9 +98,15 @@ func (a *App) CreateAgent(ctx context.Context, retriever *rag.Retriever) (*chat.
 		return nil, fmt.Errorf("failed to create system toolset: %w", err)
 	}
 
-	// 3. NetworkToolset
-	httpValidator := security.NewHTTP()
-	networkToolset, err := tools.NewNetworkToolset(httpValidator, logger)
+	// 3. NetworkToolset (web search + fetch)
+	networkToolset, err := tools.NewNetworkToolset(
+		a.Config.SearXNG.BaseURL,
+		nil, // use default http.Client
+		a.Config.WebScraper.Parallelism,
+		time.Duration(a.Config.WebScraper.DelayMs)*time.Millisecond,
+		time.Duration(a.Config.WebScraper.TimeoutMs)*time.Millisecond,
+		logger,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network toolset: %w", err)
 	}

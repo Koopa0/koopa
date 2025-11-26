@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/tools"
@@ -35,8 +36,14 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 	systemToolset, err := tools.NewSystemToolset(cmdVal, envVal, slog.Default())
 	require.NoError(t, err)
 
-	httpVal := security.NewHTTP()
-	networkToolset, err := tools.NewNetworkToolset(httpVal, slog.Default())
+	networkToolset, err := tools.NewNetworkToolset(
+		"http://localhost:8080", // test SearXNG URL
+		nil,                     // use default http.Client
+		2,                       // parallelism
+		100*time.Millisecond,    // delay
+		30*time.Second,          // timeout
+		slog.Default(),
+	)
 	require.NoError(t, err)
 
 	return Config{

@@ -73,7 +73,7 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			continue
 		}
 
-		// Get current session ID
+		// Get or create session
 		var sessionIDStr string
 		currentSessionID, err := session.LoadCurrentSessionID()
 		if err != nil {
@@ -81,10 +81,21 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			term.Printf("Error: %v\n", err)
 			continue
 		}
+
+		// Validate that the session exists in database
+		needNewSession := currentSessionID == nil
 		if currentSessionID != nil {
-			sessionIDStr = currentSessionID.String()
-		} else {
-			// Create a new session if none exists
+			// Check if session exists in database
+			_, err := application.SessionStore.GetSession(ctx, *currentSessionID)
+			if err != nil {
+				// Session ID exists locally but not in database - create new session
+				slog.Debug("stale session ID, creating new session", "old_id", currentSessionID.String())
+				needNewSession = true
+			}
+		}
+
+		if needNewSession {
+			// Create a new session
 			newSess, err := application.SessionStore.CreateSession(ctx, "New Session", cfg.ModelName, "You are a helpful assistant.")
 			if err != nil {
 				slog.Error("failed to create session", "error", err)
@@ -96,6 +107,8 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			}
 			sessionIDStr = newSess.ID.String()
 			term.Printf("(Created new session: %s)\n", newSess.Title)
+		} else {
+			sessionIDStr = currentSessionID.String()
 		}
 
 		// P0.5: Use Flow.Stream() for real-time output (打字機效果)
