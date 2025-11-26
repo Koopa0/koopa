@@ -85,7 +85,7 @@ func TestServer_Run_GracefulShutdown(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := listener.Addr().String()
-	listener.Close()
+	_ = listener.Close()
 
 	// Start server in goroutine
 	errCh := make(chan error, 1)
@@ -98,7 +98,7 @@ func TestServer_Run_GracefulShutdown(t *testing.T) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
