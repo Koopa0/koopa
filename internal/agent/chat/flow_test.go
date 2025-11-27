@@ -1,8 +1,10 @@
 package chat
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -62,12 +64,11 @@ func TestInput_Structure(t *testing.T) {
 func TestOutput_Structure(t *testing.T) {
 	t.Parallel()
 
-	t.Run("zero value has empty fields and nil error", func(t *testing.T) {
+	t.Run("zero value has empty fields", func(t *testing.T) {
 		t.Parallel()
 		var output Output
 		assert.Equal(t, "", output.Response)
 		assert.Equal(t, "", output.SessionID)
-		assert.Nil(t, output.Error)
 	})
 
 	t.Run("can set response and session", func(t *testing.T) {
@@ -78,44 +79,47 @@ func TestOutput_Structure(t *testing.T) {
 		}
 		assert.Equal(t, "The weather is sunny.", output.Response)
 		assert.Equal(t, "test-session-123", output.SessionID)
-		assert.Nil(t, output.Error)
-	})
-
-	t.Run("can set structured error", func(t *testing.T) {
-		t.Parallel()
-		output := Output{
-			SessionID: "test-session-123",
-			Error: &FlowError{
-				Code:    "INVALID_SESSION_ID",
-				Message: "session ID is not valid",
-			},
-		}
-		assert.Equal(t, "", output.Response)
-		assert.NotNil(t, output.Error)
-		assert.Equal(t, "INVALID_SESSION_ID", output.Error.Code)
-		assert.Equal(t, "session ID is not valid", output.Error.Message)
 	})
 }
 
-// TestFlowError_Structure tests the FlowError type
-func TestFlowError_Structure(t *testing.T) {
+// TestSentinelErrors_CanBeChecked tests that sentinel errors work correctly with errors.Is
+func TestSentinelErrors_CanBeChecked(t *testing.T) {
 	t.Parallel()
 
-	t.Run("zero value has empty fields", func(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		sentinel error
+	}{
+		{"ErrInvalidSession", agent.ErrInvalidSession, agent.ErrInvalidSession},
+		{"ErrExecutionFailed", agent.ErrExecutionFailed, agent.ErrExecutionFailed},
+		{"ErrStreamingFailed", agent.ErrStreamingFailed, agent.ErrStreamingFailed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.True(t, errors.Is(tt.err, tt.sentinel))
+		})
+	}
+}
+
+// TestWrappedErrors_PreserveSentinel tests that wrapped errors preserve sentinel checking
+func TestWrappedErrors_PreserveSentinel(t *testing.T) {
+	t.Parallel()
+
+	t.Run("wrapped invalid session error", func(t *testing.T) {
 		t.Parallel()
-		var flowErr FlowError
-		assert.Equal(t, "", flowErr.Code)
-		assert.Equal(t, "", flowErr.Message)
+		err := errors.New("original error")
+		wrapped := errors.Join(agent.ErrInvalidSession, err)
+		assert.True(t, errors.Is(wrapped, agent.ErrInvalidSession))
 	})
 
-	t.Run("can set error details", func(t *testing.T) {
+	t.Run("wrapped execution failed error", func(t *testing.T) {
 		t.Parallel()
-		flowErr := FlowError{
-			Code:    "EXECUTION_FAILED",
-			Message: "failed to execute chat agent",
-		}
-		assert.Equal(t, "EXECUTION_FAILED", flowErr.Code)
-		assert.Equal(t, "failed to execute chat agent", flowErr.Message)
+		err := errors.New("LLM timeout")
+		wrapped := errors.Join(agent.ErrExecutionFailed, err)
+		assert.True(t, errors.Is(wrapped, agent.ErrExecutionFailed))
 	})
 }
 

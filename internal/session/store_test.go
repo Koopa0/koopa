@@ -27,7 +27,7 @@ type mockSessionQuerier struct {
 	listSessionsErr           error
 	updateSessionUpdatedAtErr error
 	deleteSessionErr          error
-	lockSessionErr            error // P1-2: LockSession error
+	lockSessionErr            error
 	addMessageErr             error
 	getMessagesErr            error
 	getMaxSequenceNumberErr   error
@@ -55,7 +55,7 @@ type mockSessionQuerier struct {
 	listSessionsCalls           int
 	updateSessionUpdatedAtCalls int
 	deleteSessionCalls          int
-	lockSessionCalls            int // P1-2: LockSession call tracking
+	lockSessionCalls            int
 	addMessageCalls             int
 	getMessagesCalls            int
 	getMaxSequenceNumberCalls   int
@@ -72,7 +72,7 @@ type mockSessionQuerier struct {
 	lastListParams        sqlc.ListSessionsParams
 	lastUpdateParams      sqlc.UpdateSessionUpdatedAtParams
 	lastDeleteSessionID   pgtype.UUID
-	lastLockSessionID     pgtype.UUID // P1-2: Last locked session ID
+	lastLockSessionID     pgtype.UUID
 	lastAddMessageParams  []sqlc.AddMessageParams
 	lastGetMessagesParams sqlc.GetMessagesParams
 	lastMaxSeqSessionID   pgtype.UUID

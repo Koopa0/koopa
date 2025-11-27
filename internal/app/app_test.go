@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/security"
+	"golang.org/x/sync/errgroup"
 )
 
 // ============================================================================
@@ -487,7 +489,8 @@ func TestProvideGenkit(t *testing.T) {
 	cfg := &config.Config{
 		PromptDir: getPromptsDir(t),
 	}
-	g, err := provideGenkit(ctx, cfg)
+	// Pass nil OtelShutdown - tracing not needed for this test
+	g, err := provideGenkit(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("Failed to initialize Genkit: %v", err)
 	}
@@ -507,7 +510,8 @@ func TestProvideEmbedder(t *testing.T) {
 		PromptDir:     getPromptsDir(t),
 		EmbedderModel: "text-embedding-004",
 	}
-	g, err := provideGenkit(ctx, cfg)
+	// Pass nil OtelShutdown - tracing not needed for this test
+	g, err := provideGenkit(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("Failed to initialize Genkit: %v", err)
 	}
@@ -536,6 +540,181 @@ func TestProvidePathValidator_Success(t *testing.T) {
 	if validator == nil {
 		t.Fatal("expected non-nil path validator")
 	}
+}
+
+// ============================================================================
+// Shutdown and Lifecycle Tests
+// ============================================================================
+
+// TestApp_ShutdownTimeout tests that shutdown completes within reasonable time.
+// Safety: Prevents hang during shutdown if background tasks don't respond to cancellation.
+func TestApp_ShutdownTimeout(t *testing.T) {
+	t.Run("graceful shutdown completes quickly", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		app := &App{
+			ctx:    ctx,
+			cancel: cancel,
+			DBPool: nil,
+		}
+
+		// Shutdown should complete quickly (no background tasks)
+		done := make(chan struct{})
+		go func() {
+			_ = app.Close()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// Success: shutdown completed
+		case <-time.After(5 * time.Second):
+			t.Fatal("shutdown timed out - potential deadlock")
+		}
+	})
+
+	t.Run("shutdown with background goroutine", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		eg, egCtx := errgroup.WithContext(ctx)
+
+		app := &App{
+			ctx:    ctx,
+			cancel: cancel,
+			DBPool: nil,
+			eg:     eg,
+			egCtx:  egCtx,
+		}
+
+		// Start a background task that respects context cancellation
+		taskDone := make(chan struct{})
+		app.Go(func() error {
+			defer close(taskDone)
+			<-egCtx.Done()
+			return nil
+		})
+
+		// Shutdown should complete after background task exits
+		done := make(chan struct{})
+		go func() {
+			_ = app.Close()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// Success: shutdown completed
+		case <-time.After(5 * time.Second):
+			t.Fatal("shutdown timed out with background goroutine")
+		}
+
+		// Verify background task was properly terminated
+		select {
+		case <-taskDone:
+			// Task completed
+		default:
+			t.Error("background task was not properly terminated")
+		}
+	})
+
+	t.Run("shutdown timeout safety", func(t *testing.T) {
+		// This test documents the expected behavior:
+		// If a background task doesn't respond to context cancellation,
+		// shutdown will block. This is intentional to prevent data loss.
+		//
+		// In production, consider adding a hard timeout:
+		// - Use context.WithTimeout for background tasks
+		// - Or implement a watchdog timer in Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		app := &App{
+			ctx:    ctx,
+			cancel: cancel,
+		}
+
+		// Verify cancel is called during Close
+		_ = app.Close()
+
+		select {
+		case <-ctx.Done():
+			// Context was properly cancelled
+		default:
+			t.Error("context was not cancelled during shutdown")
+		}
+	})
+}
+
+// TestApp_Wait tests the Wait() method for background task completion.
+func TestApp_Wait(t *testing.T) {
+	t.Run("wait with nil errgroup returns nil", func(t *testing.T) {
+		app := &App{eg: nil}
+		err := app.Wait()
+		if err != nil {
+			t.Errorf("expected nil error, got: %v", err)
+		}
+	})
+
+	t.Run("wait blocks until tasks complete", func(t *testing.T) {
+		ctx := context.Background()
+		eg, _ := errgroup.WithContext(ctx)
+
+		app := &App{eg: eg}
+
+		taskStarted := make(chan struct{})
+		taskDone := make(chan struct{})
+
+		app.Go(func() error {
+			close(taskStarted)
+			time.Sleep(50 * time.Millisecond)
+			close(taskDone)
+			return nil
+		})
+
+		<-taskStarted // Wait for task to start
+
+		// Wait should block until task completes
+		err := app.Wait()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+
+		select {
+		case <-taskDone:
+			// Task completed before Wait returned
+		default:
+			t.Error("Wait returned before task completed")
+		}
+	})
+}
+
+// TestApp_Go tests the Go() method for starting background tasks.
+func TestApp_Go(t *testing.T) {
+	t.Run("go with nil errgroup does not panic", func(t *testing.T) {
+		app := &App{eg: nil}
+
+		// Should not panic
+		app.Go(func() error {
+			return nil
+		})
+	})
+
+	t.Run("go tracks task in errgroup", func(t *testing.T) {
+		ctx := context.Background()
+		eg, _ := errgroup.WithContext(ctx)
+
+		app := &App{eg: eg}
+
+		executed := false
+		app.Go(func() error {
+			executed = true
+			return nil
+		})
+
+		// Wait for task
+		_ = app.Wait()
+
+		if !executed {
+			t.Error("task was not executed")
+		}
+	})
 }
 
 // ============================================================================

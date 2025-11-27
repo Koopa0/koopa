@@ -17,9 +17,11 @@ import (
 	"github.com/koopa0/koopa-cli/db"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/observability"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
+	"golang.org/x/sync/errgroup"
 )
 
 // InitializeApp is the Wire injector function.
@@ -32,9 +34,14 @@ func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error
 	return nil, nil, nil
 }
 
+// OtelShutdown is a cleanup function for OpenTelemetry resources.
+// Type alias provides clear semantics for Wire dependency ordering.
+type OtelShutdown func()
+
 // providerSet contains all providers.
 var providerSet = wire.NewSet(
-	// Core providers
+	// Core providers (order matters for dependencies)
+	provideOtelShutdown, // Must be first - sets up tracing before Genkit
 	provideGenkit,
 	provideEmbedder,
 	provideDBPool,
@@ -50,9 +57,35 @@ var providerSet = wire.NewSet(
 
 // ========== Core Providers ==========
 
+// provideOtelShutdown sets up Datadog tracing before Genkit initialization.
+// Must be called before provideGenkit to ensure TracerProvider is ready.
+// Returns OtelShutdown (for Wire dependency) and cleanup func (for Wire cleanup chain).
+func provideOtelShutdown(ctx context.Context, cfg *config.Config) (OtelShutdown, func(), error) {
+	shutdown, err := observability.SetupDatadog(ctx, observability.Config{
+		AgentHost:   cfg.Datadog.AgentHost,
+		Environment: cfg.Datadog.Environment,
+		ServiceName: cfg.Datadog.ServiceName,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cleanupFn := func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(shutdownCtx); err != nil {
+			slog.Warn("failed to shutdown tracer provider", "error", err)
+		}
+	}
+
+	// Return OtelShutdown (same as cleanup) for dependency, and cleanup for Wire cleanup chain
+	return OtelShutdown(cleanupFn), cleanupFn, nil
+}
+
 // provideGenkit initializes Genkit with Google AI plugin and prompt directory.
 // Returns error if initialization fails (follows Wire provider pattern).
-func provideGenkit(ctx context.Context, cfg *config.Config) (*genkit.Genkit, error) {
+// Depends on OtelShutdown to ensure tracing is set up first.
+func provideGenkit(ctx context.Context, cfg *config.Config, _ OtelShutdown) (*genkit.Genkit, error) {
 	// Determine prompt directory from config or use default
 	promptDir := cfg.PromptDir
 	if promptDir == "" {
@@ -149,6 +182,8 @@ func provideLogger() *slog.Logger {
 
 // newApp constructs an App instance.
 // Wire automatically injects all dependencies.
+// The app.Wait() method should be called during shutdown to wait for all
+// background tasks to complete.
 func newApp(
 	cfg *config.Config,
 	ctx context.Context,
@@ -163,10 +198,14 @@ func newApp(
 	// Create context with cancel
 	appCtx, cancel := context.WithCancel(ctx)
 
+	eg, egCtx := errgroup.WithContext(appCtx)
+
 	app := &App{
 		Config:        cfg,
 		ctx:           appCtx,
 		cancel:        cancel,
+		eg:            eg,
+		egCtx:         egCtx,
 		Genkit:        g,
 		Embedder:      embedder,
 		DBPool:        pool,
@@ -176,21 +215,21 @@ func newApp(
 		SystemIndexer: systemIndexer, // System knowledge indexer for CLI commands
 	}
 
-	// Index system knowledge on startup (async, non-blocking)
-	go func() {
-		// Use app context for proper lifecycle management
-		indexCtx, indexCancel := context.WithTimeout(appCtx, 5*time.Second)
+	eg.Go(func() error {
+		// Use independent context with timeout (not egCtx) to avoid cancellation
+		// during normal shutdown. This is a fire-and-forget operation.
+		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer indexCancel()
 
 		count, err := systemIndexer.IndexAll(indexCtx)
 		if err != nil {
-			// Use Debug level - this is a non-critical background operation
+			// Non-critical error - log and continue (don't fail the errgroup)
 			slog.Debug("system knowledge indexing failed (non-critical)", "error", err)
-		} else {
-			// Use Debug level - users don't need to see this internal operation
-			slog.Debug("system knowledge indexed successfully", "count", count)
+			return nil // Don't propagate error - this is background/optional
 		}
-	}()
+		slog.Debug("system knowledge indexed successfully", "count", count)
+		return nil
+	})
 
 	return app, nil
 }

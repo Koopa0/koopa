@@ -78,7 +78,7 @@ func TestSystemToolset_Tools(t *testing.T) {
 		t.Errorf("Tools() returned %d tools, want 3", len(tools))
 	}
 
-	expectedNames := []string{"currentTime", "executeCommand", "getEnv"}
+	expectedNames := []string{ToolCurrentTime, ToolExecuteCommand, ToolGetEnv}
 	for i, tool := range tools {
 		if tool.Name() != expectedNames[i] {
 			t.Errorf("Tools()[%d].Name() = %s, want %s", i, tool.Name(), expectedNames[i])
@@ -259,17 +259,17 @@ func TestSystemToolset_ToolMetadata(t *testing.T) {
 		wantLongRunning bool
 	}{
 		{
-			toolName:        "currentTime",
+			toolName:        ToolCurrentTime,
 			wantDescription: "Get the current system date and time in formatted string",
 			wantLongRunning: false,
 		},
 		{
-			toolName:        "executeCommand",
+			toolName:        ToolExecuteCommand,
 			wantDescription: "Execute a shell command with security validation. Dangerous commands (rm -rf, sudo, etc.) are blocked.",
 			wantLongRunning: true,
 		},
 		{
-			toolName:        "getEnv",
+			toolName:        ToolGetEnv,
 			wantDescription: "Read an environment variable value. Sensitive variables (*KEY*, *SECRET*, *TOKEN*) are protected.",
 			wantLongRunning: false,
 		},

@@ -17,6 +17,7 @@ import (
 	"github.com/koopa0/koopa-cli/db"
 	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/knowledge"
+	"github.com/koopa0/koopa-cli/internal/observability"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
@@ -29,19 +30,26 @@ import (
 // InitializeApp is the Wire injector function.
 // Wire will automatically generate the implementation of this function.
 func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error) {
-	genkit, err := provideGenkit(ctx, cfg)
+	otelShutdown, cleanup, err := provideOtelShutdown(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
-	embedder := provideEmbedder(genkit, cfg)
-	pool, cleanup, err := provideDBPool(ctx, cfg)
+	genkit, err := provideGenkit(ctx, cfg, otelShutdown)
 	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	embedder := provideEmbedder(genkit, cfg)
+	pool, cleanup2, err := provideDBPool(ctx, cfg)
+	if err != nil {
+		cleanup()
 		return nil, nil, err
 	}
 	store := provideKnowledgeStore(pool, embedder)
 	sessionStore := provideSessionStore(pool)
 	path, err := providePathValidator()
 	if err != nil {
+		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
@@ -49,19 +57,26 @@ func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error
 	systemKnowledgeIndexer := knowledge.NewSystemKnowledgeIndexer(store, logger)
 	app, err := newApp(cfg, ctx, genkit, embedder, pool, store, sessionStore, path, systemKnowledgeIndexer)
 	if err != nil {
+		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	return app, func() {
+		cleanup2()
 		cleanup()
 	}, nil
 }
 
 // wire.go:
 
+// OtelShutdown is a cleanup function for OpenTelemetry resources.
+// Type alias provides clear semantics for Wire dependency ordering.
+type OtelShutdown func()
+
 // providerSet contains all providers.
 var providerSet = wire.NewSet(
 
+	provideOtelShutdown,
 	provideGenkit,
 	provideEmbedder,
 	provideDBPool,
@@ -71,9 +86,34 @@ var providerSet = wire.NewSet(
 	provideLogger, knowledge.NewSystemKnowledgeIndexer, newApp,
 )
 
+// provideOtelShutdown sets up Datadog tracing before Genkit initialization.
+// Must be called before provideGenkit to ensure TracerProvider is ready.
+// Returns OtelShutdown (for Wire dependency) and cleanup func (for Wire cleanup chain).
+func provideOtelShutdown(ctx context.Context, cfg *config.Config) (OtelShutdown, func(), error) {
+	shutdown, err := observability.SetupDatadog(ctx, observability.Config{
+		AgentHost:   cfg.Datadog.AgentHost,
+		Environment: cfg.Datadog.Environment,
+		ServiceName: cfg.Datadog.ServiceName,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cleanupFn := func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(shutdownCtx); err != nil {
+			slog.Warn("failed to shutdown tracer provider", "error", err)
+		}
+	}
+
+	return OtelShutdown(cleanupFn), cleanupFn, nil
+}
+
 // provideGenkit initializes Genkit with Google AI plugin and prompt directory.
 // Returns error if initialization fails (follows Wire provider pattern).
-func provideGenkit(ctx context.Context, cfg *config.Config) (*genkit.Genkit, error) {
+// Depends on OtelShutdown to ensure tracing is set up first.
+func provideGenkit(ctx context.Context, cfg *config.Config, _ OtelShutdown) (*genkit.Genkit, error) {
 
 	promptDir := cfg.PromptDir
 	if promptDir == "" {

@@ -71,31 +71,31 @@ func (fs *FileToolset) Name() string {
 func (fs *FileToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
 	return []Tool{
 		NewTool(
-			"readFile",
+			ToolReadFile,
 			"Read the complete content of any text-based file.",
 			false, // not long running
 			fs.ReadFile,
 		),
 		NewTool(
-			"writeFile",
+			ToolWriteFile,
 			"Write or create any text-based file.",
 			false,
 			fs.WriteFile,
 		),
 		NewTool(
-			"listFiles",
+			ToolListFiles,
 			"List all files and subdirectories in a directory.",
 			false,
 			fs.ListFiles,
 		),
 		NewTool(
-			"deleteFile",
+			ToolDeleteFile,
 			"Delete a file permanently.",
 			false,
 			fs.DeleteFile,
 		),
 		NewTool(
-			"getFileInfo",
+			ToolGetFileInfo,
 			"Get detailed metadata about a file.",
 			false,
 			fs.GetFileInfo,

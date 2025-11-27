@@ -64,7 +64,7 @@ func TestFileToolset_Tools(t *testing.T) {
 	assert.Len(t, tools, 5, "should define 5 tools")
 
 	// Verify tool names
-	toolNames := []string{"readFile", "writeFile", "listFiles", "deleteFile", "getFileInfo"}
+	toolNames := []string{ToolReadFile, ToolWriteFile, ToolListFiles, ToolDeleteFile, ToolGetFileInfo}
 	for _, tool := range tools {
 		assert.Contains(t, toolNames, tool.Name())
 		assert.NotEmpty(t, tool.Description())

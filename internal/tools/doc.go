@@ -13,72 +13,87 @@
 //
 //	type Toolset interface {
 //	    Name() string
-//	    Definitions(ctx agent.ReadonlyContext, g *genkit.Genkit) ([]ToolDefinition, error)
+//	    Tools(ctx agent.ReadonlyContext) ([]Tool, error)
 //	}
 //
 // Each toolset encapsulates related functionality:
-//   - FileToolset: File operations (read, write, list, delete)
-//   - SystemToolset: System operations (time, commands, environment variables)
-//   - NetworkToolset: Network operations (HTTP requests)
-//   - KnowledgeToolset: Knowledge base operations (search, retrieval)
+//   - FileToolset: File operations (read_file, write_file, list_directory, delete_file, get_file_info)
+//   - SystemToolset: System operations (get_current_time, run_command, get_env)
+//   - NetworkToolset: Network operations (web_search, web_fetch) with SSRF protection
+//   - KnowledgeToolset: Knowledge base operations (knowledge_search)
+//
+// # Available Tools
+//
+// File tools:
+//   - read_file: Read file contents
+//   - write_file: Write content to a file
+//   - list_directory: List directory contents
+//   - delete_file: Delete a file
+//   - get_file_info: Get file metadata
+//
+// System tools:
+//   - get_current_time: Get current timestamp
+//   - run_command: Execute shell commands (with whitelist validation)
+//   - get_env: Get environment variables (with secrets protection)
+//
+// Network tools:
+//   - web_search: Search the web via SearXNG
+//   - web_fetch: Fetch web pages (HTML, JSON, text) with SSRF protection
+//
+// Knowledge tools:
+//   - knowledge_search: Search the knowledge base
 //
 // # Security
 //
 // All toolsets integrate security validators to prevent common vulnerabilities:
 //   - Path validation prevents directory traversal attacks
-//   - Command validation blocks dangerous shell commands
-//   - SSRF protection prevents access to private networks
-//   - Environment variable protection blocks access to secrets
+//   - Command validation blocks dangerous shell commands (rm -rf, etc.)
+//   - SSRF protection prevents access to private networks and cloud metadata
+//   - Environment variable protection blocks access to secrets (API keys, tokens)
 //
 // # Usage Example
 //
 //	// Create toolsets with security validators
-//	pathValidator := security.NewPath()
-//	fileToolset, err := tools.NewFileToolset(pathValidator)
+//	pathValidator, _ := security.NewPath([]string{"/allowed/path"})
+//	fileToolset, err := tools.NewFileToolset(pathValidator, logger)
 //	if err != nil {
 //	    return err
 //	}
 //
 //	cmdValidator := security.NewCommand()
 //	envValidator := security.NewEnv()
-//	systemToolset, err := tools.NewSystemToolset(cmdValidator, envValidator)
+//	systemToolset, err := tools.NewSystemToolset(cmdValidator, envValidator, logger)
 //	if err != nil {
 //	    return err
 //	}
 //
-//	// Register toolsets with an agent
-//	agent, err := chat.New(
-//	    chat.WithToolsets(fileToolset, systemToolset),
-//	)
+//	// Register toolsets with Chat agent
+//	chatAgent, err := chat.New(chat.Deps{
+//	    // ... other deps ...
+//	    Toolsets: []tools.Toolset{fileToolset, systemToolset},
+//	})
 //
-// # Tool Registration
+// # Tool Interface
 //
-// Tools are registered using the MakeDef function, which binds tool metadata
-// to handler functions:
+// Tools implement the Tool interface and are wrapped in ExecutableTool for execution:
 //
-//	func (f *FileToolset) Definitions(ctx agent.ReadonlyContext, g *genkit.Genkit) ([]ToolDefinition, error) {
-//	    return []ToolDefinition{
-//	        MakeDef(g, &readFileTool{}, f.ReadFile),
-//	        MakeDef(g, &writeFileTool{}, f.WriteFile),
-//	    }, nil
+//	type Tool interface {
+//	    Name() string
+//	    Description() string
+//	    IsLongRunning() bool
 //	}
 //
-// This pattern ensures type safety and separates tool metadata from implementation.
+//	type ExecutableTool struct {
+//	    // Contains tool metadata and execution function
+//	}
+//
+// The Chat agent converts ExecutableTools to Genkit tools during initialization.
 //
 // # Error Handling
 //
-// Tool handlers return a Result type that encapsulates success/error states:
-//
-//	type Result struct {
-//	    Status  ResultStatus       // StatusSuccess or StatusError
-//	    Message string             // Human-readable message
-//	    Data    map[string]any     // Result data (on success)
-//	    Error   *Error             // Error details (on failure)
-//	}
-//
-// This design allows tools to report both system errors (returned as Go errors)
-// and operational errors (returned as Error in Result), enabling the LLM to
-// make informed decisions about error recovery.
+// Tool handlers return typed output structs. Errors are returned as Go errors:
+//   - System errors (Go errors): Returned when tool execution fails
+//   - Operational errors (in output): Included in output struct for LLM to handle
 //
 // # Extension
 //
@@ -87,7 +102,7 @@
 //  1. Define a struct implementing the Toolset interface
 //  2. Create tool metadata types implementing the Tool interface
 //  3. Implement handler functions with signature: func(*ai.ToolContext, InputType) (OutputType, error)
-//  4. Register tools using MakeDef in the Definitions method
+//  4. Return ExecutableTool instances from the Tools() method
 //
 // See the existing toolsets for complete examples.
 package tools

@@ -150,7 +150,6 @@ func TestIntegration_NetworkToolset_Search(t *testing.T) {
 
 	nt, err := NewNetworkToolset(
 		searxngURL,
-		nil,
 		2,
 		time.Second,
 		30*time.Second,
@@ -244,7 +243,6 @@ func TestIntegration_NetworkToolset_Fetch(t *testing.T) {
 
 	nt, err := NewNetworkToolset(
 		searxngURL,
-		nil,
 		2,
 		500*time.Millisecond, // reasonable delay
 		30*time.Second,
@@ -356,7 +354,6 @@ func TestIntegration_NetworkToolset_SearchThenFetch(t *testing.T) {
 
 	nt, err := NewNetworkToolset(
 		searxngURL,
-		nil,
 		2,
 		time.Second,
 		30*time.Second,
@@ -420,7 +417,6 @@ func BenchmarkIntegration_NetworkToolset_Search(b *testing.B) {
 
 	nt, err := NewNetworkToolset(
 		searxngURL,
-		nil,
 		2,
 		0, // no delay for benchmark
 		30*time.Second,
@@ -446,7 +442,6 @@ func BenchmarkIntegration_NetworkToolset_Fetch(b *testing.B) {
 
 	nt, err := NewNetworkToolset(
 		searxngURL,
-		nil,
 		2,
 		0,
 		30*time.Second,

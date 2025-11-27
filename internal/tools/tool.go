@@ -8,6 +8,26 @@ import (
 	"github.com/koopa0/koopa-cli/internal/agent"
 )
 
+// Tool name constants.
+// All tool names use snake_case for LLM compatibility.
+const (
+	// FileToolset tools
+	ToolReadFile    = "read_file"
+	ToolWriteFile   = "write_file"
+	ToolListFiles   = "list_files"
+	ToolDeleteFile  = "delete_file"
+	ToolGetFileInfo = "get_file_info"
+
+	// SystemToolset tools
+	ToolCurrentTime    = "current_time"
+	ToolExecuteCommand = "execute_command"
+	ToolGetEnv         = "get_env"
+
+	// NetworkToolset tools
+	ToolWebSearch = "web_search"
+	ToolWebFetch  = "web_fetch"
+)
+
 // Toolset defines the interface for a collection of related tools.
 // A toolset groups related tools together and provides them to the agent.
 //
@@ -82,7 +102,7 @@ func (t *ExecutableTool) Execute(ctx *ai.ToolContext, input any) (any, error) {
 // Example:
 //
 //	readFileTool := NewTool(
-//	    "readFile",
+//	    ToolReadFile,  // "read_file" - use constants for consistency
 //	    "Read the complete content of any text-based file.",
 //	    false,  // not long running
 //	    func(ctx *ai.ToolContext, input ReadFileInput) (ReadFileOutput, error) {

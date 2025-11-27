@@ -3,6 +3,7 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/firebase/genkit/go/ai"
@@ -20,17 +21,9 @@ type Input struct {
 }
 
 // Output is the output for Chat Agent Flow
-// Includes structured error handling
 type Output struct {
-	Response  string     `json:"response"`
-	SessionID string     `json:"sessionId"`
-	Error     *FlowError `json:"error,omitempty"` // Structured error
-}
-
-// FlowError is the structured error type for Flow
-type FlowError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Response  string `json:"response"`
+	SessionID string `json:"sessionId"`
 }
 
 // StreamChunk is the streaming output type for Chat Flow.
@@ -44,11 +37,9 @@ const FlowName = "koopa/chat"
 
 // Flow is the type alias for Chat Agent's Genkit Streaming Flow.
 // Exported for use in api package with genkit.Handler().
-// P0.5: Changed from non-streaming to streaming flow to support real-time output.
 type Flow = core.Flow[Input, Output, StreamChunk]
 
 // Package-level singleton for Flow to prevent Panic on re-registration.
-// P0: DefineFlow registers a global Flow; calling it twice causes Panic.
 // sync.Once ensures the Flow is defined only once, even in tests.
 var (
 	chatFlowOnce sync.Once
@@ -81,22 +72,21 @@ func GetFlow(g *genkit.Genkit, chatAgent *Chat) *Flow {
 // 1. Observability (Genkit DevUI tracing)
 // 2. Type safety (Input/Output schema)
 // 3. HTTP endpoint exposure via genkit.Handler()
-// 4. Streaming support for real-time output (P0.5)
+// 4. Streaming support for real-time output
 //
 // Design: Flow is a lightweight wrapper, Agent.ExecuteStream() contains core logic
+//
+// Error Handling :
+// - Errors are now properly returned using sentinel errors from agent package
+// - Genkit tracing will correctly show error spans
+// - HTTP handlers can use errors.Is() to determine error type and HTTP status
 func (a *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 	return genkit.DefineStreamingFlow(g, FlowName,
 		func(ctx context.Context, input Input, streamCb func(context.Context, StreamChunk) error) (Output, error) {
 			// Validate session ID from input
 			sessionID, err := agent.NewSessionID(input.SessionID)
 			if err != nil {
-				return Output{
-					SessionID: input.SessionID,
-					Error: &FlowError{
-						Code:    "INVALID_SESSION_ID",
-						Message: err.Error(),
-					},
-				}, nil
+				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %v", agent.ErrInvalidSession, err)
 			}
 
 			// Generate InvocationID for tracking this call
@@ -134,14 +124,8 @@ func (a *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 			// Execute with streaming callback (or non-streaming if callback is nil)
 			resp, err := a.ExecuteStream(invCtx, input.Query, agentCallback)
 			if err != nil {
-				// Structured error handling
-				return Output{
-					SessionID: input.SessionID,
-					Error: &FlowError{
-						Code:    "EXECUTION_FAILED",
-						Message: err.Error(),
-					},
-				}, nil // Note: error is nil to allow Genkit to return 200
+				// Genkit will mark this span as failed, enabling proper observability
+				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %v", agent.ErrExecutionFailed, err)
 			}
 
 			return Output{

@@ -44,7 +44,6 @@ func RunServe(ctx context.Context, cfg *config.Config, version string, addr stri
 		return fmt.Errorf("error creating agent: %w", err)
 	}
 
-	// P0: Use GetFlow() singleton to prevent Panic on re-registration
 	// This ensures the same Flow instance is shared between CLI and HTTP server
 	chatFlow := chat.GetFlow(application.Genkit, chatAgent)
 
