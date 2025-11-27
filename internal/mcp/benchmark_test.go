@@ -37,7 +37,6 @@ func BenchmarkServer_Creation(b *testing.B) {
 
 		networkToolset, err := tools.NewNetworkToolset(
 			"http://localhost:8080", // test SearXNG URL
-			nil,                     // use default http.Client
 			2,                       // parallelism
 			100*time.Millisecond,    // delay
 			30*time.Second,          // timeout
@@ -66,7 +65,7 @@ func BenchmarkServer_Creation(b *testing.B) {
 // This tests the raw JSON parsing performance which is critical for MCP.
 func BenchmarkJSONRPC_Parse(b *testing.B) {
 	// Sample JSON-RPC request message
-	requestJSON := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"readFile","arguments":{"path":"/tmp/test.txt"}}}`
+	requestJSON := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"/tmp/test.txt"}}}`
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -186,7 +185,6 @@ func BenchmarkConfig_Validation(b *testing.B) {
 
 	networkToolset, err := tools.NewNetworkToolset(
 		"http://localhost:8080", // test SearXNG URL
-		nil,                     // use default http.Client
 		2,                       // parallelism
 		100*time.Millisecond,    // delay
 		30*time.Second,          // timeout

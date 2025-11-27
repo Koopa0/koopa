@@ -220,7 +220,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	// Create querier for this transaction
 	txQuerier := sqlc.New(tx)
 
-	// 0. Lock session row to prevent concurrent modifications (P1-2 fix)
+	// 0. Lock session row to prevent concurrent modifications
 	// This SELECT ... FOR UPDATE ensures that only one transaction can modify
 	// this session at a time, preventing race conditions on sequence numbers
 	_, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID))
@@ -239,7 +239,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 
 	// 2. Insert messages in batch within transaction
 	for i, msg := range messages {
-		// Validate Content slice for nil pointers (P2 quality improvement)
+		// Validate Content slice for nil pointers
 		for j, part := range msg.Content {
 			if part == nil {
 				return fmt.Errorf("message %d has nil content at index %d", i, j)
@@ -308,7 +308,7 @@ func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.
 
 	// 2. Insert messages in batch
 	for i, msg := range messages {
-		// Validate Content slice for nil pointers (P2 quality improvement)
+		// Validate Content slice for nil pointers
 		for j, part := range msg.Content {
 			if part == nil {
 				return fmt.Errorf("message %d has nil content at index %d", i, j)

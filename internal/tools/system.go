@@ -72,19 +72,19 @@ func (st *SystemToolset) Name() string {
 func (st *SystemToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
 	return []Tool{
 		NewTool(
-			"currentTime",
+			ToolCurrentTime,
 			"Get the current system date and time in formatted string",
 			false,
 			st.CurrentTime,
 		),
 		NewTool(
-			"executeCommand",
+			ToolExecuteCommand,
 			"Execute a shell command with security validation. Dangerous commands (rm -rf, sudo, etc.) are blocked.",
 			true, // long running
 			st.ExecuteCommand,
 		),
 		NewTool(
-			"getEnv",
+			ToolGetEnv,
 			"Read an environment variable value. Sensitive variables (*KEY*, *SECRET*, *TOKEN*) are protected.",
 			false,
 			st.GetEnv,

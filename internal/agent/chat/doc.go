@@ -11,7 +11,7 @@
 //	InvocationContext (input)
 //	     |
 //	     v
-//	Chat.Execute()
+//	Chat.ExecuteStream() or Chat.Execute()
 //	     |
 //	     +-- Load session history from SessionStore
 //	     |
@@ -21,6 +21,7 @@
 //	     |    - LLM model
 //	     |    - Tool references (cached at initialization)
 //	     |    - Message history
+//	     |    - Optional: StreamCallback for real-time output
 //	     |
 //	     +-- Save updated history to SessionStore
 //	     |
@@ -29,108 +30,124 @@
 //
 // # Dependency Injection
 //
-// Chat requires the following dependencies at construction time:
+// Chat requires dependencies via the Deps struct at construction time:
 //
-//   - Genkit instance: For LLM inference and tool orchestration
-//   - Retriever: For knowledge base integration (RAG)
-//   - SessionStore: For loading/saving conversation history
-//   - KnowledgeStore: For semantic search operations
-//   - Config: For model selection and generation parameters
-//   - Logger: For structured logging
-//   - Toolsets: At least one tool provider (File, System, Network, etc.)
+//	type Deps struct {
+//	    Config         *config.Config
+//	    Genkit         *genkit.Genkit
+//	    Retriever      *rag.Retriever
+//	    SessionStore   *session.Store
+//	    KnowledgeStore *knowledge.Store
+//	    Logger         log.Logger
+//	    Toolsets       []tools.Toolset
+//	}
 //
-// All dependencies are provided via functional options (WithXXX methods) following
-// Go's functional options pattern. This makes dependencies explicit and enables
-// easy testing with mock implementations.
+// All fields are required and validated during construction.
+//
+// # Streaming Support
+//
+// Chat supports both streaming and non-streaming execution modes:
+//
+//   - Execute(): Non-streaming, returns complete response
+//   - ExecuteStream(): Streaming with optional callback for real-time output
+//
+// For streaming, provide a StreamCallback function:
+//
+//	type StreamCallback func(ctx context.Context, chunk *ai.ModelResponseChunk) error
+//
+// The callback is invoked for each chunk of the response, enabling real-time
+// display (typewriter effect) in CLI or SSE streaming in HTTP APIs.
+//
+// # Flow (Genkit Integration)
+//
+// The package provides a Genkit Flow for HTTP and observability:
+//
+//   - GetFlow(): Returns singleton streaming Flow (prevents re-registration panic)
+//   - Flow supports both Run() and Stream() methods
+//   - Stream() enables Server-Sent Events (SSE) for real-time responses
+//
+// Example Flow usage:
+//
+//	// Get singleton Flow (call once during initialization)
+//	chatFlow := chat.GetFlow(g, chatAgent)
+//
+//	// Non-streaming
+//	output, err := chatFlow.Run(ctx, chat.Input{Query: "Hello", SessionID: "..."})
+//
+//	// Streaming (for SSE)
+//	for streamValue, err := range chatFlow.Stream(ctx, input) {
+//	    if streamValue.Done {
+//	        // Final output in streamValue.Output
+//	    } else {
+//	        // Partial chunk in streamValue.Stream.Text
+//	    }
+//	}
 //
 // # Tool Registration
 //
 // Tools are registered from toolsets during initialization:
 //
-//  1. For each toolset, get its available tools
-//  2. Convert tools to Genkit format using genkit.DefineTool
+//  1. For each toolset, get its available tools via Tools() method
+//  2. Convert ExecutableTools to Genkit format using genkit.DefineTool
 //  3. Cache tool references for reuse across invocations
 //  4. Validate that all tools were registered successfully
 //
-// Tool references are cached to avoid re-registering on every Execute call,
-// improving performance for high-throughput scenarios.
+// Tool references are cached to avoid re-registering on every Execute call.
 //
 // # Session Management
 //
-// Chat manages conversation history through the SessionStore interface:
+// Chat manages conversation history through the SessionStore:
 //
 //	LoadHistory: Retrieves previous messages for a session
-//	SaveHistory: Persists new messages to the session (returns error on failure)
+//	AppendMessages: Persists new messages incrementally (preferred)
 //
 // Sessions are branch-aware, allowing isolated conversation contexts.
-//
-// # RAG Integration
-//
-// Knowledge base integration is optional but recommended:
-//
-//   - Retriever provides access to semantic search
-//   - Can be used to augment prompts with relevant context
-//   - Supports multiple knowledge sources (conversations, files, system knowledge)
+// History save failures are logged but don't fail the request.
 //
 // # Example Usage
 //
-//	package main
-//
-//	import (
-//	    "context"
-//	    "github.com/firebase/genkit/go/genkit"
-//	    "github.com/firebase/genkit/go/plugins/googlegenai"
-//	    "github.com/koopa0/koopa-cli/internal/agent/chat"
-//	    "github.com/koopa0/koopa-cli/internal/tools"
-//	    "log/slog"
-//	)
-//
-//	func main() {
-//	    ctx := context.Background()
-//
-//	    // Initialize Genkit with Google AI plugin
-//	    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
-//
-//	    // Create Chat agent with dependencies
-//	    agent, err := chat.New(
-//	        chat.WithGenkit(g),
-//	        chat.WithSessionStore(sessionStore),
-//	        chat.WithKnowledgeStore(knowledgeStore),
-//	        chat.WithRetriever(retriever),
-//	        chat.WithToolsets(fileToolset, systemToolset),
-//	        chat.WithLogger(slog.Default()),
-//	    )
-//	    if err != nil {
-//	        panic(err)
-//	    }
-//
-//	    // Execute the chat agent
-//	    resp, err := agent.Execute(invocationContext, "What is the weather?")
-//	    if err != nil {
-//	        panic(err)
-//	    }
-//
-//	    println(resp.FinalText)
+//	// Create Chat agent with required dependencies
+//	chatAgent, err := chat.New(chat.Deps{
+//	    Config:         cfg,
+//	    Genkit:         g,
+//	    Retriever:      retriever,
+//	    SessionStore:   sessionStore,
+//	    KnowledgeStore: knowledgeStore,
+//	    Logger:         slog.Default(),
+//	    Toolsets:       []tools.Toolset{fileToolset, systemToolset},
+//	})
+//	if err != nil {
+//	    return err
 //	}
 //
-// # Flow Definition
+//	// Non-streaming execution
+//	resp, err := chatAgent.Execute(invCtx, "What is the weather?")
 //
-// The DefineFlow method exposes the Chat agent as a Genkit flow with:
+//	// Streaming execution with callback
+//	resp, err := chatAgent.ExecuteStream(invCtx, "What is the weather?",
+//	    func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
+//	        fmt.Print(chunk.Text()) // Real-time output
+//	        return nil
+//	    })
 //
-//   - Input validation and type safety
-//   - Structured error handling
-//   - Observability through Genkit DevUI
-//   - HTTP endpoint exposure
+// # Error Handling
 //
-// The flow acts as a lightweight wrapper delegating to Chat.Execute.
+// The package uses sentinel errors for categorization:
+//
+//   - agent.ErrInvalidSession: Invalid session ID format
+//   - agent.ErrExecutionFailed: LLM or tool execution failed
+//   - agent.ErrRateLimited: API rate limit exceeded
+//   - agent.ErrModelUnavailable: Model temporarily unavailable
+//
+// Empty responses are handled with a fallback message to improve UX.
 //
 // # Testing
 //
 // Chat is designed for testability:
 //
-//   - Dependencies are interfaces, enabling mock implementations
+//   - Dependencies are concrete types with clear interfaces
 //   - Stateless design eliminates test ordering issues
-//   - Functional options allow partial configuration for unit tests
+//   - Deps struct allows partial configuration for unit tests
 //
 // # Thread Safety
 //

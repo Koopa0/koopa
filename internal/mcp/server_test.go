@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -59,12 +61,21 @@ func (h *testHelper) createSystemToolset() *tools.SystemToolset {
 func (h *testHelper) createNetworkToolset() *tools.NetworkToolset {
 	h.t.Helper()
 
-	toolset, err := tools.NewNetworkToolset(
-		"http://localhost:8080", // test SearXNG URL
-		nil,                     // use default http.Client
-		2,                       // parallelism
-		100*time.Millisecond,    // delay
-		30*time.Second,          // timeout
+	// Use httptest.NewServer instead of hardcoded localhost URL
+	// This ensures tests are self-contained and don't depend on external services
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return empty results if called (server_test.go only tests NewServer, not tool execution)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	h.t.Cleanup(func() { mockServer.Close() })
+
+	// Use ForTesting to skip SSRF checks (mock server uses localhost)
+	toolset, err := tools.NewNetworkToolsetForTesting(
+		mockServer.URL,
+		2,                    // parallelism
+		100*time.Millisecond, // delay
+		30*time.Second,       // timeout
 		slog.Default(),
 	)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/gocolly/colly/v2"
 	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/log"
+	"github.com/koopa0/koopa-cli/internal/security"
 )
 
 // NetworkToolsetName is the toolset identifier constant.
@@ -43,6 +44,10 @@ const (
 //   - Capability-oriented naming (not implementation-oriented)
 //   - Multi-source synthesis for unbiased information gathering
 //   - Graceful degradation with partial failure support
+//
+// Security:
+//   - SSRF protection via URL validation
+//   - Blocks private IPs, cloud metadata endpoints, and localhost
 type NetworkToolset struct {
 	// Search configuration (SearXNG)
 	searchBaseURL string
@@ -53,13 +58,18 @@ type NetworkToolset struct {
 	fetchDelay       time.Duration
 	fetchTimeout     time.Duration
 
+	// SSRF protection
+	urlValidator *security.URL
+
+	// Testing only: skip SSRF checks (NEVER use in production)
+	skipSSRFCheck bool
+
 	logger log.Logger
 }
 
 // NewNetworkToolset creates a new NetworkToolset with search and fetch capabilities.
 func NewNetworkToolset(
 	searchBaseURL string,
-	searchClient *http.Client,
 	fetchParallelism int,
 	fetchDelay time.Duration,
 	fetchTimeout time.Duration,
@@ -72,10 +82,6 @@ func NewNetworkToolset(
 		return nil, fmt.Errorf("logger is required")
 	}
 
-	// Apply defaults
-	if searchClient == nil {
-		searchClient = &http.Client{Timeout: 30 * time.Second}
-	}
 	if fetchParallelism <= 0 {
 		fetchParallelism = 2
 	}
@@ -86,12 +92,16 @@ func NewNetworkToolset(
 		fetchTimeout = 30 * time.Second
 	}
 
+	// Create URL validator for SSRF protection
+	urlValidator := security.NewURL()
+
 	return &NetworkToolset{
 		searchBaseURL:    strings.TrimSuffix(searchBaseURL, "/"),
-		searchClient:     searchClient,
+		searchClient:     &http.Client{Timeout: 30 * time.Second},
 		fetchParallelism: fetchParallelism,
 		fetchDelay:       fetchDelay,
 		fetchTimeout:     fetchTimeout,
+		urlValidator:     urlValidator,
 		logger:           logger,
 	}, nil
 }
@@ -101,16 +111,34 @@ func (nt *NetworkToolset) Name() string {
 	return NetworkToolsetName
 }
 
+// NewNetworkToolsetForTesting creates a NetworkToolset with SSRF protection disabled.
+// WARNING: This is for testing ONLY. Never use in production code.
+func NewNetworkToolsetForTesting(
+	searchBaseURL string,
+	fetchParallelism int,
+	fetchDelay time.Duration,
+	fetchTimeout time.Duration,
+	logger log.Logger,
+) (*NetworkToolset, error) {
+	nt, err := NewNetworkToolset(searchBaseURL, fetchParallelism, fetchDelay, fetchTimeout, logger)
+	if err != nil {
+		return nil, err
+	}
+	nt.skipSSRFCheck = true
+	return nt, nil
+}
+
 // Tools returns all network operation tools provided by this toolset.
+// This is used by Genkit for tool registration.
 func (nt *NetworkToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
 	return []Tool{
-		NewTool("web_search",
+		NewTool(ToolWebSearch,
 			"Search the web for information. Returns relevant results with titles, URLs, and content snippets. "+
 				"Use this to find current information, news, or facts from the internet.",
 			true, // long running
 			nt.search,
 		),
-		NewTool("web_fetch",
+		NewTool(ToolWebFetch,
 			"Fetch and extract content from one or more URLs (max 10). "+
 				"Supports HTML pages, JSON APIs, and plain text. "+
 				"For HTML: uses Readability algorithm to extract main content. "+
@@ -123,6 +151,20 @@ func (nt *NetworkToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
 			nt.fetch,
 		),
 	}, nil
+}
+
+// Search performs web search via SearXNG.
+// This is the exported method for direct invocation (e.g., from MCP handlers).
+// Architecture: Consistent with FileToolset.ReadFile() and SystemToolset.ExecuteCommand().
+func (nt *NetworkToolset) Search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
+	return nt.search(ctx, input)
+}
+
+// Fetch retrieves and extracts content from one or more URLs.
+// This is the exported method for direct invocation (e.g., from MCP handlers).
+// Architecture: Consistent with FileToolset.ReadFile() and SystemToolset.ExecuteCommand().
+func (nt *NetworkToolset) Fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
+	return nt.fetch(ctx, input)
 }
 
 // ============================================================================
@@ -300,6 +342,7 @@ type FailedURL struct {
 }
 
 // fetch retrieves and extracts content from one or more URLs.
+// Includes SSRF protection to block private IPs and cloud metadata endpoints.
 func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
 	// Validate input
 	if len(input.URLs) == 0 {
@@ -309,17 +352,39 @@ func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOut
 		return FetchOutput{}, fmt.Errorf("maximum %d URLs allowed per request", MaxURLsPerRequest)
 	}
 
-	// Deduplicate URLs
-	urlSet := make(map[string]struct{})
-	uniqueURLs := make([]string, 0, len(input.URLs))
+	// SSRF protection - validate and filter URLs before fetching
+	var failedURLs []FailedURL
+	var safeURLs []string
+
+	urlSet := make(map[string]struct{}) // For deduplication
 	for _, u := range input.URLs {
-		if _, exists := urlSet[u]; !exists {
-			urlSet[u] = struct{}{}
-			uniqueURLs = append(uniqueURLs, u)
+		// Skip duplicates
+		if _, exists := urlSet[u]; exists {
+			continue
 		}
+		urlSet[u] = struct{}{}
+
+		// Validate URL for SSRF (skip in testing mode)
+		if !nt.skipSSRFCheck {
+			if err := nt.urlValidator.Validate(u); err != nil {
+				nt.logger.Warn("SSRF blocked", "url", u, "reason", err)
+				failedURLs = append(failedURLs, FailedURL{
+					URL:    u,
+					Reason: fmt.Sprintf("blocked: %v", err),
+				})
+				continue
+			}
+		}
+		safeURLs = append(safeURLs, u)
 	}
 
-	nt.logger.Info("web_fetch called", "urls", len(uniqueURLs))
+	// If all URLs were blocked, return early
+	if len(safeURLs) == 0 {
+		nt.logger.Warn("web_fetch: all URLs blocked by SSRF protection", "blocked", len(failedURLs))
+		return FetchOutput{FailedURLs: failedURLs}, nil
+	}
+
+	nt.logger.Info("web_fetch called", "urls", len(safeURLs), "blocked", len(failedURLs))
 
 	// Create Colly collector for this request
 	c := colly.NewCollector(
@@ -328,10 +393,18 @@ func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOut
 		colly.UserAgent("Mozilla/5.0 (compatible; KoopaBot/1.0; +https://github.com/koopa0/koopa)"),
 	)
 
-	// Limit redirect chains to 5
+	// SSRF protection in redirect handler
+	// Validate redirect targets to prevent SSRF via redirects
 	c.SetRedirectHandler(func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
 			return fmt.Errorf("stopped after 5 redirects")
+		}
+		// Check redirect target for SSRF (skip in testing mode)
+		if !nt.skipSSRFCheck {
+			if err := nt.urlValidator.Validate(req.URL.String()); err != nil {
+				nt.logger.Warn("SSRF blocked redirect", "url", req.URL.String(), "reason", err)
+				return fmt.Errorf("redirect blocked: %w", err)
+			}
 		}
 		return nil
 	})
@@ -349,10 +422,10 @@ func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOut
 	}
 
 	// Results collection (thread-safe)
+	// Note: failedURLs already contains SSRF-blocked URLs from earlier
 	var (
-		mu         sync.Mutex
-		results    []FetchResult
-		failedURLs []FailedURL
+		mu      sync.Mutex
+		results []FetchResult
 	)
 
 	// Track which URLs have been processed (to avoid double processing)
@@ -495,8 +568,8 @@ func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOut
 		nt.logger.Warn("fetch failed", "url", r.Request.URL.String(), "status", statusCode, "error", err)
 	})
 
-	// Visit all URLs
-	for _, u := range uniqueURLs {
+	// Visit all safe URLs (already SSRF-validated)
+	for _, u := range safeURLs {
 		if err := c.Visit(u); err != nil {
 			mu.Lock()
 			failedURLs = append(failedURLs, FailedURL{

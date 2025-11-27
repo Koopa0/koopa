@@ -28,10 +28,10 @@ func TestDangerLevel_String(t *testing.T) {
 func TestGetToolMetadata(t *testing.T) {
 	// Verify all expected tools are present
 	expectedTools := []string{
-		"readFile", "writeFile", "listFiles", "deleteFile", "getFileInfo",
-		"currentTime", "executeCommand", "getEnv",
-		"httpGet",
-		"requestConfirmation",
+		ToolReadFile, ToolWriteFile, ToolListFiles, ToolDeleteFile, ToolGetFileInfo,
+		ToolCurrentTime, ToolExecuteCommand, ToolGetEnv,
+		ToolWebSearch, ToolWebFetch,
+		"request_confirmation",
 	}
 
 	for _, toolName := range expectedTools {
@@ -60,20 +60,21 @@ func TestGetToolMetadata_DangerLevels(t *testing.T) {
 		description string
 	}{
 		// Safe tools (read-only)
-		{"readFile", DangerLevelSafe, "read-only file access"},
-		{"listFiles", DangerLevelSafe, "read-only directory listing"},
-		{"getFileInfo", DangerLevelSafe, "read-only file metadata"},
-		{"currentTime", DangerLevelSafe, "read-only system time"},
-		{"httpGet", DangerLevelSafe, "read-only HTTP requests"},
-		{"getEnv", DangerLevelSafe, "read-only environment variables"},
-		{"requestConfirmation", DangerLevelSafe, "safety mechanism"},
+		{ToolReadFile, DangerLevelSafe, "read-only file access"},
+		{ToolListFiles, DangerLevelSafe, "read-only directory listing"},
+		{ToolGetFileInfo, DangerLevelSafe, "read-only file metadata"},
+		{ToolCurrentTime, DangerLevelSafe, "read-only system time"},
+		{ToolWebSearch, DangerLevelSafe, "read-only web search"},
+		{ToolWebFetch, DangerLevelSafe, "read-only HTTP requests"},
+		{ToolGetEnv, DangerLevelSafe, "read-only environment variables"},
+		{"request_confirmation", DangerLevelSafe, "safety mechanism"},
 
 		// Warning tools (modifies state, reversible)
-		{"writeFile", DangerLevelWarning, "file modification"},
+		{ToolWriteFile, DangerLevelWarning, "file modification"},
 
 		// Dangerous tools (irreversible/destructive)
-		{"deleteFile", DangerLevelDangerous, "file deletion"},
-		{"executeCommand", DangerLevelDangerous, "arbitrary command execution"},
+		{ToolDeleteFile, DangerLevelDangerous, "file deletion"},
+		{ToolExecuteCommand, DangerLevelDangerous, "arbitrary command execution"},
 	}
 
 	for _, tt := range tests {
@@ -101,18 +102,19 @@ func TestGetToolMetadata_RequiresConfirmation(t *testing.T) {
 		description      string
 	}{
 		// Safe tools (no confirmation needed)
-		{"readFile", false, "read-only operations don't need confirmation"},
-		{"listFiles", false, "read-only operations don't need confirmation"},
-		{"getFileInfo", false, "read-only operations don't need confirmation"},
-		{"currentTime", false, "read-only operations don't need confirmation"},
-		{"httpGet", false, "read-only operations don't need confirmation"},
-		{"getEnv", false, "read-only operations don't need confirmation"},
-		{"requestConfirmation", false, "requestConfirmation itself doesn't need confirmation"},
+		{ToolReadFile, false, "read-only operations don't need confirmation"},
+		{ToolListFiles, false, "read-only operations don't need confirmation"},
+		{ToolGetFileInfo, false, "read-only operations don't need confirmation"},
+		{ToolCurrentTime, false, "read-only operations don't need confirmation"},
+		{ToolWebSearch, false, "read-only operations don't need confirmation"},
+		{ToolWebFetch, false, "read-only operations don't need confirmation"},
+		{ToolGetEnv, false, "read-only operations don't need confirmation"},
+		{"request_confirmation", false, "request_confirmation itself doesn't need confirmation"},
 
 		// Warning/Dangerous tools (confirmation required)
-		{"writeFile", true, "file modification needs confirmation"},
-		{"deleteFile", true, "file deletion needs confirmation"},
-		{"executeCommand", true, "command execution needs confirmation"},
+		{ToolWriteFile, true, "file modification needs confirmation"},
+		{ToolDeleteFile, true, "file deletion needs confirmation"},
+		{ToolExecuteCommand, true, "command execution needs confirmation"},
 	}
 
 	for _, tt := range tests {
@@ -136,8 +138,8 @@ func TestGetToolMetadata_RequiresConfirmation(t *testing.T) {
 func TestGetAllToolMetadata(t *testing.T) {
 	allMeta := GetAllToolMetadata()
 
-	// Verify we have all 10 tools
-	expectedCount := 10
+	// Verify we have all 11 tools (5 file + 3 system + 2 network + 1 meta)
+	expectedCount := 11
 	if len(allMeta) != expectedCount {
 		t.Errorf("GetAllToolMetadata() returned %d tools, expected %d", len(allMeta), expectedCount)
 	}
@@ -161,20 +163,21 @@ func TestIsDangerous(t *testing.T) {
 		want     bool
 	}{
 		// Dangerous tools
-		{"deleteFile", true},
-		{"executeCommand", true},
+		{ToolDeleteFile, true},
+		{ToolExecuteCommand, true},
 
 		// Safe tools
-		{"readFile", false},
-		{"listFiles", false},
-		{"getFileInfo", false},
-		{"currentTime", false},
-		{"httpGet", false},
-		{"getEnv", false},
-		{"requestConfirmation", false},
+		{ToolReadFile, false},
+		{ToolListFiles, false},
+		{ToolGetFileInfo, false},
+		{ToolCurrentTime, false},
+		{ToolWebSearch, false},
+		{ToolWebFetch, false},
+		{ToolGetEnv, false},
+		{"request_confirmation", false},
 
 		// Warning tools
-		{"writeFile", false},
+		{ToolWriteFile, false},
 
 		// Unknown tools (fail-safe to false)
 		{"unknownTool", false},
@@ -198,15 +201,15 @@ func TestRequiresConfirmation(t *testing.T) {
 		want     bool
 	}{
 		// Static confirmation requirements
-		{"deleteFile always requires confirmation", "deleteFile", nil, true},
-		{"executeCommand always requires confirmation", "executeCommand", nil, true},
-		{"readFile never requires confirmation", "readFile", nil, false},
+		{"delete_file always requires confirmation", ToolDeleteFile, nil, true},
+		{"execute_command always requires confirmation", ToolExecuteCommand, nil, true},
+		{"read_file never requires confirmation", ToolReadFile, nil, false},
 
-		// Dynamic confirmation based on params (writeFile)
-		{"writeFile to /tmp is warning level", "writeFile", map[string]any{"path": "/tmp/test.txt"}, true},
-		{"writeFile to /etc escalates to dangerous", "writeFile", map[string]any{"path": "/etc/passwd"}, true},
-		{"writeFile to /usr escalates to dangerous", "writeFile", map[string]any{"path": "/usr/bin/test"}, true},
-		{"writeFile to current dir is warning level", "writeFile", map[string]any{"path": "./test.txt"}, true},
+		// Dynamic confirmation based on params (write_file)
+		{"write_file to /tmp is warning level", ToolWriteFile, map[string]any{"path": "/tmp/test.txt"}, true},
+		{"write_file to /etc escalates to dangerous", ToolWriteFile, map[string]any{"path": "/etc/passwd"}, true},
+		{"write_file to /usr escalates to dangerous", ToolWriteFile, map[string]any{"path": "/usr/bin/test"}, true},
+		{"write_file to current dir is warning level", ToolWriteFile, map[string]any{"path": "./test.txt"}, true},
 
 		// Unknown tools
 		{"unknown tool returns false", "unknownTool", nil, false},
@@ -227,10 +230,10 @@ func TestGetDangerLevel(t *testing.T) {
 		toolName string
 		want     DangerLevel
 	}{
-		{"deleteFile", DangerLevelDangerous},
-		{"executeCommand", DangerLevelDangerous},
-		{"writeFile", DangerLevelWarning},
-		{"readFile", DangerLevelSafe},
+		{ToolDeleteFile, DangerLevelDangerous},
+		{ToolExecuteCommand, DangerLevelDangerous},
+		{ToolWriteFile, DangerLevelWarning},
+		{ToolReadFile, DangerLevelSafe},
 		{"unknownTool", DangerLevelSafe}, // Fail-safe default
 	}
 
@@ -249,9 +252,9 @@ func TestListToolsByDangerLevel(t *testing.T) {
 		expectedCount int
 		description   string
 	}{
-		{DangerLevelSafe, 7, "safe tools: readFile, listFiles, getFileInfo, currentTime, httpGet, getEnv, requestConfirmation"},
-		{DangerLevelWarning, 1, "warning tools: writeFile"},
-		{DangerLevelDangerous, 2, "dangerous tools: deleteFile, executeCommand"},
+		{DangerLevelSafe, 8, "safe tools: read_file, list_files, get_file_info, current_time, web_search, web_fetch, get_env, request_confirmation"},
+		{DangerLevelWarning, 1, "warning tools: write_file"},
+		{DangerLevelDangerous, 2, "dangerous tools: delete_file, execute_command"},
 		{DangerLevelCritical, 0, "critical tools: none yet"},
 	}
 
@@ -282,10 +285,10 @@ func TestListToolsByDangerLevel(t *testing.T) {
 
 func TestGetToolMetadata_Categories(t *testing.T) {
 	expectedCategories := map[string][]string{
-		"File":    {"readFile", "writeFile", "listFiles", "deleteFile", "getFileInfo"},
-		"System":  {"currentTime", "executeCommand", "getEnv"},
-		"Network": {"httpGet"},
-		"Meta":    {"requestConfirmation"},
+		"File":    {ToolReadFile, ToolWriteFile, ToolListFiles, ToolDeleteFile, ToolGetFileInfo},
+		"System":  {ToolCurrentTime, ToolExecuteCommand, ToolGetEnv},
+		"Network": {ToolWebSearch, ToolWebFetch},
+		"Meta":    {"request_confirmation"},
 	}
 
 	for category, expectedTools := range expectedCategories {
@@ -315,7 +318,7 @@ func TestGetToolMetadata_Categories(t *testing.T) {
 }
 
 func TestWriteFile_IsDangerousFunc(t *testing.T) {
-	meta, ok := GetToolMetadata("writeFile")
+	meta, ok := GetToolMetadata(ToolWriteFile)
 	if !ok {
 		t.Fatal("writeFile metadata not found")
 	}
@@ -353,7 +356,7 @@ func TestWriteFile_IsDangerousFunc(t *testing.T) {
 }
 
 func TestExecuteCommand_IsDangerousFunc(t *testing.T) {
-	meta, ok := GetToolMetadata("executeCommand")
+	meta, ok := GetToolMetadata(ToolExecuteCommand)
 	if !ok {
 		t.Fatal("executeCommand metadata not found")
 	}

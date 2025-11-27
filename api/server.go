@@ -110,10 +110,12 @@ func NewServer(pool *pgxpool.Pool, store *session.Store, chatFlow *chat.Flow, lo
 }
 
 // Handler returns the HTTP handler with middleware applied.
-// Middleware order: recovery → logging → handler
+// Middleware order: recovery → auth → logging → handler
+// Authentication is only enforced when KOOPA_API_KEY environment variable is set.
 func (s *Server) Handler() http.Handler {
 	return chain(s.mux,
 		recoveryMiddleware(s.logger),
+		authMiddleware(s.logger),
 		loggingMiddleware(s.logger),
 	)
 }
