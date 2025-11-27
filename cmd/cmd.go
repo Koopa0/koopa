@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -41,9 +42,6 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 	if err != nil {
 		return fmt.Errorf("error creating agent: %w", err)
 	}
-
-	// P0: Use GetFlow() singleton to prevent Panic on re-registration
-	// P0.5: Flow now supports streaming for real-time CLI output
 	chatFlow := chat.GetFlow(application.Genkit, chatAgent)
 
 	// Display welcome message
@@ -86,8 +84,7 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 		needNewSession := currentSessionID == nil
 		if currentSessionID != nil {
 			// Check if session exists in database
-			_, err := application.SessionStore.GetSession(ctx, *currentSessionID)
-			if err != nil {
+			if _, err := application.SessionStore.GetSession(ctx, *currentSessionID); err != nil {
 				// Session ID exists locally but not in database - create new session
 				slog.Debug("stale session ID, creating new session", "old_id", currentSessionID.String())
 				needNewSession = true
@@ -98,10 +95,16 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			// Create a new session
 			newSess, err := application.SessionStore.CreateSession(ctx, "New Session", cfg.ModelName, "You are a helpful assistant.")
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					term.Println() // Clean line break
+					continue
+				}
 				slog.Error("failed to create session", "error", err)
 				term.Printf("Error: %v\n", err)
 				continue
 			}
+
+			// Save session ID locally (non-critical: session works in memory if this fails)
 			if err := session.SaveCurrentSessionID(newSess.ID); err != nil {
 				slog.Warn("failed to save session state", "error", err)
 			}
@@ -111,7 +114,6 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 			sessionIDStr = currentSessionID.String()
 		}
 
-		// P0.5: Use Flow.Stream() for real-time output (打字機效果)
 		// This provides immediate feedback to users instead of waiting 5-10 seconds
 		term.Print("Koopa> ")
 
@@ -140,27 +142,21 @@ func Run(ctx context.Context, cfg *config.Config, version string, term ui.IO) er
 				hasOutput = true
 			}
 		}
-
-		// Handle streaming error
 		if streamErr != nil {
+			if errors.Is(streamErr, context.Canceled) {
+				if hasOutput {
+					term.Println() // Clean line break after partial output
+				}
+				term.Println("(Cancelled)")
+				term.Println()
+				continue
+			}
+
 			slog.Error("chat stream failed", "error", streamErr)
 			if hasOutput {
 				term.Println() // New line after partial output
 			}
 			term.Printf("Error: %v\n", streamErr)
-			term.Println()
-			continue
-		}
-
-		// Handle FlowError (structured error from agent)
-		if finalOutput.Error != nil {
-			slog.Error("chat execution failed",
-				"code", finalOutput.Error.Code,
-				"message", finalOutput.Error.Message)
-			if hasOutput {
-				term.Println() // New line after partial output
-			}
-			term.Printf("Error: %s\n", finalOutput.Error.Message)
 			term.Println()
 			continue
 		}

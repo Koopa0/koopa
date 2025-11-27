@@ -2,11 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 
 	"github.com/firebase/genkit/go/genkit"
 
+	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/log"
 )
@@ -19,6 +22,11 @@ import (
 //
 // Design: Uses genkit.Handler() for synchronous endpoint, and custom SSE
 // handler for streaming. Both go through the same Flow for consistency.
+//
+// P0 Fixes Applied:
+//   - Panic recovery to prevent server crashes
+//   - JSON marshal error handling
+//   - Proper error handling using sentinel errors
 type ChatHandler struct {
 	chatFlow *chat.Flow
 	logger   log.Logger
@@ -80,6 +88,19 @@ type SSEErrorData struct {
 //   - done:  Final response {"response": "...", "sessionId": "..."}
 //   - error: Error occurred {"code": "...", "message": "..."}
 func (h *ChatHandler) handleStream(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			h.logger.Error("panic in SSE handler",
+				"recover", rec,
+				"stack", string(debug.Stack()))
+
+			// Try to send error event if possible
+			if flusher, ok := w.(http.Flusher); ok {
+				h.writeSSEError(w, flusher, "INTERNAL_ERROR", "internal server error")
+			}
+		}
+	}()
+
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -146,20 +167,22 @@ func (h *ChatHandler) handleStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Handle streaming error
 	if streamErr != nil {
 		h.logger.Error("stream failed", "error", streamErr, "sessionId", input.SessionID)
-		h.writeSSEError(w, flusher, "STREAM_ERROR", streamErr.Error())
-		return
-	}
 
-	// Handle FlowError (structured error from agent)
-	if finalOutput.Error != nil {
-		h.logger.Error("flow error",
-			"code", finalOutput.Error.Code,
-			"message", finalOutput.Error.Message,
-			"sessionId", input.SessionID)
-		h.writeSSEError(w, flusher, finalOutput.Error.Code, finalOutput.Error.Message)
+		// Map sentinel errors to appropriate error codes
+		code := "STREAM_ERROR"
+		if errors.Is(streamErr, agent.ErrInvalidSession) {
+			code = "INVALID_SESSION"
+		} else if errors.Is(streamErr, agent.ErrExecutionFailed) {
+			code = "EXECUTION_FAILED"
+		} else if errors.Is(streamErr, agent.ErrRateLimited) {
+			code = "RATE_LIMITED"
+		} else if errors.Is(streamErr, agent.ErrModelUnavailable) {
+			code = "MODEL_UNAVAILABLE"
+		}
+
+		h.writeSSEError(w, flusher, code, streamErr.Error())
 		return
 	}
 
@@ -173,21 +196,83 @@ func (h *ChatHandler) handleStream(w http.ResponseWriter, r *http.Request) {
 
 // writeSSEChunk writes a chunk event to the SSE stream.
 func (h *ChatHandler) writeSSEChunk(w http.ResponseWriter, flusher http.Flusher, text string) {
-	data, _ := json.Marshal(SSEChunkData{Text: text})
+	data, err := json.Marshal(SSEChunkData{Text: text})
+	if err != nil {
+		h.logger.Error("failed to marshal SSE chunk", "error", err)
+		// Send fallback error event
+		h.writeSSEErrorRaw(w, flusher, "MARSHAL_ERROR", "failed to encode chunk")
+		return
+	}
 	fmt.Fprintf(w, "event: chunk\ndata: %s\n\n", data)
 	flusher.Flush()
 }
 
 // writeSSEDone writes a done event to the SSE stream.
 func (h *ChatHandler) writeSSEDone(w http.ResponseWriter, flusher http.Flusher, response, sessionID string) {
-	data, _ := json.Marshal(SSEDoneData{Response: response, SessionID: sessionID})
+	data, err := json.Marshal(SSEDoneData{Response: response, SessionID: sessionID})
+	if err != nil {
+		h.logger.Error("failed to marshal SSE done", "error", err)
+		// Send fallback error event
+		h.writeSSEErrorRaw(w, flusher, "MARSHAL_ERROR", "failed to encode response")
+		return
+	}
 	fmt.Fprintf(w, "event: done\ndata: %s\n\n", data)
 	flusher.Flush()
 }
 
 // writeSSEError writes an error event to the SSE stream.
 func (h *ChatHandler) writeSSEError(w http.ResponseWriter, flusher http.Flusher, code, message string) {
-	data, _ := json.Marshal(SSEErrorData{Code: code, Message: message})
+	data, err := json.Marshal(SSEErrorData{Code: code, Message: message})
+	if err != nil {
+		h.logger.Error("failed to marshal SSE error", "error", err, "code", code)
+		// Use raw fallback
+		h.writeSSEErrorRaw(w, flusher, code, message)
+		return
+	}
 	fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
 	flusher.Flush()
+}
+
+// writeSSEErrorRaw writes an error event using a pre-formatted string (fallback for marshal errors).
+func (h *ChatHandler) writeSSEErrorRaw(w http.ResponseWriter, flusher http.Flusher, code, message string) {
+	// Escape special characters for JSON safety
+	escapedCode := escapeJSON(code)
+	escapedMsg := escapeJSON(message)
+	fmt.Fprintf(w, "event: error\ndata: {\"code\":\"%s\",\"message\":\"%s\"}\n\n", escapedCode, escapedMsg)
+	flusher.Flush()
+}
+
+// escapeJSON escapes special characters for JSON string values.
+func escapeJSON(s string) string {
+	result := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '"':
+			result = append(result, '\\', '"')
+		case '\\':
+			result = append(result, '\\', '\\')
+		case '\n':
+			result = append(result, '\\', 'n')
+		case '\r':
+			result = append(result, '\\', 'r')
+		case '\t':
+			result = append(result, '\\', 't')
+		default:
+			if c < 0x20 {
+				// Control characters - skip or escape
+				result = append(result, '\\', 'u', '0', '0', hexDigit(c>>4), hexDigit(c&0xf))
+			} else {
+				result = append(result, c)
+			}
+		}
+	}
+	return string(result)
+}
+
+func hexDigit(n byte) byte {
+	if n < 10 {
+		return '0' + n
+	}
+	return 'a' + n - 10
 }

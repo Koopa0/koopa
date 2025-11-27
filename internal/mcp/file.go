@@ -11,59 +11,59 @@ import (
 )
 
 // registerFileTools registers all file operation tools to the MCP server.
-// Tools: readFile, writeFile, listFiles, deleteFile, getFileInfo
+// Tools: read_file, write_file, list_files, delete_file, get_file_info
 func (s *Server) registerFileTools() error {
-	// readFile
+	// read_file
 	readFileSchema, err := jsonschema.For[tools.ReadFileInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for readFile: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolReadFile, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "readFile",
+		Name:        tools.ToolReadFile,
 		Description: "Read the complete content of any text-based file.",
 		InputSchema: readFileSchema,
 	}, s.ReadFile)
 
-	// writeFile
+	// write_file
 	writeFileSchema, err := jsonschema.For[tools.WriteFileInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for writeFile: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolWriteFile, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "writeFile",
+		Name:        tools.ToolWriteFile,
 		Description: "Write or create any text-based file.",
 		InputSchema: writeFileSchema,
 	}, s.WriteFile)
 
-	// listFiles
+	// list_files
 	listFilesSchema, err := jsonschema.For[tools.ListFilesInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for listFiles: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolListFiles, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "listFiles",
+		Name:        tools.ToolListFiles,
 		Description: "List all files and subdirectories in a directory.",
 		InputSchema: listFilesSchema,
 	}, s.ListFiles)
 
-	// deleteFile
+	// delete_file
 	deleteFileSchema, err := jsonschema.For[tools.DeleteFileInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for deleteFile: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolDeleteFile, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "deleteFile",
+		Name:        tools.ToolDeleteFile,
 		Description: "Delete a file permanently.",
 		InputSchema: deleteFileSchema,
 	}, s.DeleteFile)
 
-	// getFileInfo
+	// get_file_info
 	getFileInfoSchema, err := jsonschema.For[tools.GetFileInfoInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for getFileInfo: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolGetFileInfo, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "getFileInfo",
+		Name:        tools.ToolGetFileInfo,
 		Description: "Get detailed metadata about a file.",
 		InputSchema: getFileInfoSchema,
 	}, s.GetFileInfo)

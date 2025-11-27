@@ -12,17 +12,17 @@ type DangerLevel int
 
 const (
 	// DangerLevelSafe represents read-only operations with no state modification.
-	// Examples: readFile, listFiles, getFileInfo, currentTime, httpGet, getEnv
+	// Examples: read_file, list_files, get_file_info, current_time, web_fetch, get_env
 	DangerLevelSafe DangerLevel = iota
 
 	// DangerLevelWarning represents operations that modify state but are generally reversible.
-	// Examples: writeFile (can be overwritten)
+	// Examples: write_file (can be overwritten)
 	// These operations may require caution but don't typically cause data loss
 	DangerLevelWarning
 
 	// DangerLevelDangerous represents irreversible or destructive operations.
-	// Examples: deleteFile, executeCommand (with rm, DROP DATABASE, etc.)
-	// These operations MUST trigger requestConfirmation before execution
+	// Examples: delete_file, execute_command (with rm, DROP DATABASE, etc.)
+	// These operations MUST trigger request_confirmation before execution
 	DangerLevelDangerous
 
 	// DangerLevelCritical represents system-level destructive operations.
@@ -95,16 +95,16 @@ func (t *ToolMetadata) IsLongRunning() bool {
 // This is the single source of truth for tool safety classifications.
 var toolMetadata = map[string]ToolMetadata{
 	// File Operations
-	"readFile": {
-		NameField:            "readFile",
+	ToolReadFile: {
+		NameField:            ToolReadFile,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "File",
 		DescriptionField:     "Read file contents (read-only, no modifications)",
 	},
-	"writeFile": {
-		NameField:            "writeFile",
+	ToolWriteFile: {
+		NameField:            ToolWriteFile,
 		RequiresConfirmation: true,
 		DangerLevel:          DangerLevelWarning,
 		IsDangerousFunc: func(params map[string]any) bool {
@@ -123,24 +123,24 @@ var toolMetadata = map[string]ToolMetadata{
 		Category:         "File",
 		DescriptionField: "Create or overwrite files (modifies state, reversible)",
 	},
-	"listFiles": {
-		NameField:            "listFiles",
+	ToolListFiles: {
+		NameField:            ToolListFiles,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "File",
 		DescriptionField:     "List directory contents (read-only)",
 	},
-	"deleteFile": {
-		NameField:            "deleteFile",
+	ToolDeleteFile: {
+		NameField:            ToolDeleteFile,
 		RequiresConfirmation: true,
 		DangerLevel:          DangerLevelDangerous,
 		IsDangerousFunc:      nil, // Always dangerous
 		Category:             "File",
 		DescriptionField:     "Permanently delete files (irreversible, destructive)",
 	},
-	"getFileInfo": {
-		NameField:            "getFileInfo",
+	ToolGetFileInfo: {
+		NameField:            ToolGetFileInfo,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
@@ -149,16 +149,16 @@ var toolMetadata = map[string]ToolMetadata{
 	},
 
 	// System Operations
-	"currentTime": {
-		NameField:            "currentTime",
+	ToolCurrentTime: {
+		NameField:            ToolCurrentTime,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "System",
 		DescriptionField:     "Get current system time (read-only)",
 	},
-	"executeCommand": {
-		NameField:            "executeCommand",
+	ToolExecuteCommand: {
+		NameField:            ToolExecuteCommand,
 		RequiresConfirmation: true,
 		DangerLevel:          DangerLevelDangerous,
 		IsDangerousFunc: func(params map[string]any) bool {
@@ -169,8 +169,8 @@ var toolMetadata = map[string]ToolMetadata{
 		Category:         "System",
 		DescriptionField: "Execute shell commands (potentially destructive)",
 	},
-	"getEnv": {
-		NameField:            "getEnv",
+	ToolGetEnv: {
+		NameField:            ToolGetEnv,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
@@ -179,8 +179,16 @@ var toolMetadata = map[string]ToolMetadata{
 	},
 
 	// Network Operations
-	"httpGet": {
-		NameField:            "httpGet",
+	ToolWebSearch: {
+		NameField:            ToolWebSearch,
+		RequiresConfirmation: false,
+		DangerLevel:          DangerLevelSafe,
+		IsDangerousFunc:      nil,
+		Category:             "Network",
+		DescriptionField:     "Search the web for information (read-only)",
+	},
+	ToolWebFetch: {
+		NameField:            ToolWebFetch,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
@@ -189,9 +197,9 @@ var toolMetadata = map[string]ToolMetadata{
 	},
 
 	// Meta Tools (Human-in-the-Loop)
-	"requestConfirmation": {
-		NameField:            "requestConfirmation",
-		RequiresConfirmation: false, // requestConfirmation itself doesn't need confirmation
+	"request_confirmation": {
+		NameField:            "request_confirmation",
+		RequiresConfirmation: false, // request_confirmation itself doesn't need confirmation
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "Meta",
@@ -204,9 +212,9 @@ var toolMetadata = map[string]ToolMetadata{
 //
 // Usage:
 //
-//	if meta, ok := tools.GetToolMetadata("deleteFile"); ok {
+//	if meta, ok := tools.GetToolMetadata(tools.ToolDeleteFile); ok {
 //	    if meta.RequiresConfirmation {
-//	        // Must call requestConfirmation first
+//	        // Must call request_confirmation first
 //	    }
 //	}
 func GetToolMetadata(toolName string) (ToolMetadata, bool) {
@@ -230,7 +238,7 @@ func GetAllToolMetadata() map[string]ToolMetadata {
 //
 // Usage:
 //
-//	if tools.IsDangerous("deleteFile") {
+//	if tools.IsDangerous(tools.ToolDeleteFile) {
 //	    // Require confirmation
 //	}
 func IsDangerous(toolName string) bool {
@@ -246,8 +254,8 @@ func IsDangerous(toolName string) bool {
 //
 // Usage:
 //
-//	if tools.RequiresConfirmation("writeFile", params) {
-//	    // Must call requestConfirmation first
+//	if tools.RequiresConfirmation(tools.ToolWriteFile, params) {
+//	    // Must call request_confirmation first
 //	}
 func RequiresConfirmation(toolName string, params map[string]any) bool {
 	meta, ok := toolMetadata[toolName]

@@ -30,8 +30,10 @@ func TestResponse_Structure(t *testing.T) {
 
 	t.Run("response with tool requests", func(t *testing.T) {
 		t.Parallel()
+		// Note: Using literal string "read_file" instead of tools.ToolReadFile
+		// to avoid import cycle (agent -> tools -> agent)
 		toolReq := &ai.ToolRequest{
-			Name:  "readFile",
+			Name:  "read_file",
 			Input: map[string]any{"path": "/tmp/test.txt"},
 		}
 
@@ -42,7 +44,7 @@ func TestResponse_Structure(t *testing.T) {
 		}
 
 		assert.Len(t, resp.ToolRequests, 1)
-		assert.Equal(t, "readFile", resp.ToolRequests[0].Name)
+		assert.Equal(t, "read_file", resp.ToolRequests[0].Name)
 	})
 }
 

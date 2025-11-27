@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -139,16 +140,12 @@ func New(deps Deps) (*Chat, error) {
 		}
 	}
 
-	// Load Dotprompt (koopa.prompt)
-	// This is optional - if prompt is not found, we fall back to direct Generate
+	// Load Dotprompt (koopa.prompt) - REQUIRED
 	c.prompt = genkit.LookupPrompt(c.g, KoopaPromptName)
 	if c.prompt == nil {
-		c.logger.Debug("dotprompt not found, using fallback generation",
-			"prompt_name", KoopaPromptName)
-	} else {
-		c.logger.Debug("loaded dotprompt successfully",
-			"prompt_name", KoopaPromptName)
+		return nil, fmt.Errorf("dotprompt '%s' not found: ensure prompts directory is configured correctly", KoopaPromptName)
 	}
+	c.logger.Debug("loaded dotprompt successfully", "prompt_name", KoopaPromptName)
 
 	return c, nil
 }
@@ -208,6 +205,13 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 
 	responseText := resp.Text()
 
+	if strings.TrimSpace(responseText) == "" {
+		c.logger.Warn("model returned empty response",
+			"invocation_id", ctx.InvocationID(),
+			"session_id", ctx.SessionID())
+		responseText = "I apologize, but I couldn't generate a response. Please try rephrasing your question."
+	}
+
 	// Update history with user input and response
 	history.Add(input, responseText)
 
@@ -233,36 +237,31 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 // If callback is non-nil, streaming is enabled; otherwise, standard generation is used.
 func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
 	// Build messages: history + current user input
-	allMessages := append(historyMessages, ai.NewUserMessage(ai.NewTextPart(input)))
+	messages := append(historyMessages, ai.NewUserMessage(ai.NewTextPart(input)))
 
 	// Retrieve relevant documents for RAG context (graceful fallback on error)
 	ragDocs := c.retrieveRAGContext(ctx, input)
 
-	// Route to Dotprompt or fallback based on availability
-	if c.prompt != nil {
-		return c.executeWithPrompt(ctx, allMessages, ragDocs, callback)
-	}
-	return c.executeFallback(ctx, allMessages, ragDocs, callback)
-}
-
-// executeWithPrompt uses Dotprompt for generation with template variables.
-// Supports both streaming (callback != nil) and non-streaming (callback == nil) modes.
-func (c *Chat) executeWithPrompt(ctx context.Context, messages []*ai.Message, ragDocs []*ai.Document, callback StreamCallback) (*ai.ModelResponse, error) {
-	// Resolve language setting
 	language := c.resolveLanguage()
 
-	// Create a MessagesFn that returns the conversation messages
 	messagesFn := func(_ context.Context, _ any) ([]*ai.Message, error) {
 		return messages, nil
 	}
 
 	// Build execute options
+	// MaxTurns ensures ReAct tool loop executes properly (default: 5)
+	maxTurns := c.config.MaxTurns
+	if maxTurns <= 0 {
+		maxTurns = 5 // Fallback default
+	}
+
 	opts := []ai.PromptExecuteOption{
 		ai.WithInput(map[string]any{
 			"language": language,
 		}),
 		ai.WithMessagesFn(messagesFn),
 		ai.WithTools(c.toolRefs...),
+		ai.WithMaxTurns(maxTurns),
 	}
 
 	// Add RAG documents if available
@@ -279,38 +278,6 @@ func (c *Chat) executeWithPrompt(ctx context.Context, messages []*ai.Message, ra
 	resp, err := c.prompt.Execute(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("prompt execution failed: %w", err)
-	}
-
-	return resp, nil
-}
-
-// executeFallback uses direct genkit.Generate when Dotprompt is not available.
-// Supports both streaming (callback != nil) and non-streaming (callback == nil) modes.
-func (c *Chat) executeFallback(ctx context.Context, messages []*ai.Message, ragDocs []*ai.Document, callback StreamCallback) (*ai.ModelResponse, error) {
-	// Resolve model name
-	modelName := c.resolveModelName()
-
-	// Build generation options
-	opts := []ai.GenerateOption{
-		ai.WithModelName(modelName),
-		ai.WithMessages(messages...),
-		ai.WithTools(c.toolRefs...),
-	}
-
-	// Add RAG documents if available
-	if len(ragDocs) > 0 {
-		opts = append(opts, ai.WithDocs(ragDocs...))
-	}
-
-	// Add streaming callback if provided
-	if callback != nil {
-		opts = append(opts, ai.WithStreaming(callback))
-	}
-
-	// Generate response
-	resp, err := genkit.Generate(ctx, c.g, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("generation failed: %w", err)
 	}
 
 	return resp, nil

@@ -38,7 +38,6 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 
 	networkToolset, err := tools.NewNetworkToolset(
 		"http://localhost:8080", // test SearXNG URL
-		nil,                     // use default http.Client
 		2,                       // parallelism
 		100*time.Millisecond,    // delay
 		30*time.Second,          // timeout

@@ -11,37 +11,37 @@ import (
 )
 
 // registerSystemTools registers all system operation tools to the MCP server.
-// Tools: currentTime, executeCommand, getEnv
+// Tools: current_time, execute_command, get_env
 func (s *Server) registerSystemTools() error {
-	// currentTime
+	// current_time
 	currentTimeSchema, err := jsonschema.For[tools.CurrentTimeInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for currentTime: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolCurrentTime, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "currentTime",
+		Name:        tools.ToolCurrentTime,
 		Description: "Get the current system date and time in formatted string.",
 		InputSchema: currentTimeSchema,
 	}, s.CurrentTime)
 
-	// executeCommand
+	// execute_command
 	executeCommandSchema, err := jsonschema.For[tools.ExecuteCommandInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for executeCommand: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolExecuteCommand, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "executeCommand",
+		Name:        tools.ToolExecuteCommand,
 		Description: "Execute a shell command with security validation. Dangerous commands (rm -rf, sudo, etc.) are blocked.",
 		InputSchema: executeCommandSchema,
 	}, s.ExecuteCommand)
 
-	// getEnv
+	// get_env
 	getEnvSchema, err := jsonschema.For[tools.GetEnvInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for getEnv: %w", err)
+		return fmt.Errorf("schema for %s: %w", tools.ToolGetEnv, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "getEnv",
+		Name:        tools.ToolGetEnv,
 		Description: "Read an environment variable value. Sensitive variables (*KEY*, *SECRET*, *TOKEN*) are protected.",
 		InputSchema: getEnvSchema,
 	}, s.GetEnv)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,7 +34,6 @@ func TestNetworkToolset_NewNetworkToolset(t *testing.T) {
 		t.Parallel()
 		nt, err := NewNetworkToolset(
 			"http://searxng:8080",
-			&http.Client{Timeout: 10 * time.Second},
 			2,
 			time.Second,
 			30*time.Second,
@@ -48,10 +48,9 @@ func TestNetworkToolset_NewNetworkToolset(t *testing.T) {
 		t.Parallel()
 		nt, err := NewNetworkToolset(
 			"http://searxng:8080",
-			nil, // use default client
-			0,   // use default parallelism
-			0,   // use default delay
-			0,   // use default timeout
+			0, // use default parallelism
+			0, // use default delay
+			0, // use default timeout
 			testLogger(),
 		)
 		require.NoError(t, err)
@@ -60,7 +59,7 @@ func TestNetworkToolset_NewNetworkToolset(t *testing.T) {
 
 	t.Run("empty search base URL fails", func(t *testing.T) {
 		t.Parallel()
-		nt, err := NewNetworkToolset("", nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset("", 0, 0, 0, testLogger())
 		assert.Error(t, err)
 		assert.Nil(t, nt)
 		assert.Contains(t, err.Error(), "search base URL is required")
@@ -68,7 +67,7 @@ func TestNetworkToolset_NewNetworkToolset(t *testing.T) {
 
 	t.Run("nil logger fails", func(t *testing.T) {
 		t.Parallel()
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, nil)
+		nt, err := NewNetworkToolset("http://searxng:8080", 0, 0, 0, nil)
 		assert.Error(t, err)
 		assert.Nil(t, nt)
 		assert.Contains(t, err.Error(), "logger is required")
@@ -82,7 +81,7 @@ func TestNetworkToolset_NewNetworkToolset(t *testing.T) {
 func TestNetworkToolset_Tools(t *testing.T) {
 	t.Parallel()
 
-	nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
+	nt, err := NewNetworkToolset("http://searxng:8080", 0, 0, 0, testLogger())
 	require.NoError(t, err)
 
 	ctx := agent.NewInvocationContext(
@@ -102,8 +101,8 @@ func TestNetworkToolset_Tools(t *testing.T) {
 	for _, tool := range tools {
 		toolNames[tool.Name()] = true
 	}
-	assert.True(t, toolNames["web_search"], "should have web_search tool")
-	assert.True(t, toolNames["web_fetch"], "should have web_fetch tool")
+	assert.True(t, toolNames[ToolWebSearch], "should have web_search tool")
+	assert.True(t, toolNames[ToolWebFetch], "should have web_fetch tool")
 }
 
 // ============================================================================
@@ -144,7 +143,7 @@ func TestNetworkToolset_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset(server.URL, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.search(toolCtx, SearchInput{Query: "golang tutorial"})
@@ -172,7 +171,7 @@ func TestNetworkToolset_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset(server.URL, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.search(toolCtx, SearchInput{
@@ -202,7 +201,7 @@ func TestNetworkToolset_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset(server.URL, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.search(toolCtx, SearchInput{Query: "test", MaxResults: 5})
@@ -219,7 +218,7 @@ func TestNetworkToolset_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset(server.URL, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.search(toolCtx, SearchInput{Query: "nonexistent query xyz"})
@@ -236,7 +235,7 @@ func TestNetworkToolset_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset(server.URL, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.search(toolCtx, SearchInput{Query: "test"})
@@ -252,7 +251,7 @@ func TestNetworkToolset_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset(server.URL, nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset(server.URL, 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.search(toolCtx, SearchInput{Query: "test"})
@@ -290,7 +289,8 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		// Use ForTesting to skip SSRF checks for localhost test servers
+		nt, err := NewNetworkToolsetForTesting("http://searxng:8080", 2, 100*time.Millisecond, 10*time.Second, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL}})
@@ -307,14 +307,14 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name":    "test",
-				"value":   123,
-				"nested":  map[string]any{"key": "value"},
+				"name":   "test",
+				"value":  123,
+				"nested": map[string]any{"key": "value"},
 			})
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		nt, err := NewNetworkToolsetForTesting("http://searxng:8080", 2, 100*time.Millisecond, 10*time.Second, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL}})
@@ -336,7 +336,7 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		nt, err := NewNetworkToolsetForTesting("http://searxng:8080", 2, 100*time.Millisecond, 10*time.Second, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL}})
@@ -362,7 +362,7 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 		}))
 		defer server2.Close()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		nt, err := NewNetworkToolsetForTesting("http://searxng:8080", 2, 100*time.Millisecond, 10*time.Second, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server1.URL, server2.URL}})
@@ -385,7 +385,7 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 		}))
 		defer badServer.Close()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		nt, err := NewNetworkToolsetForTesting("http://searxng:8080", 2, 100*time.Millisecond, 10*time.Second, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{goodServer.URL, badServer.URL}})
@@ -400,27 +400,27 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 	t.Run("fetch deduplicates URLs", func(t *testing.T) {
 		t.Parallel()
 
-		callCount := 0
+		var callCount int32
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			callCount++
+			atomic.AddInt32(&callCount, 1)
 			w.Header().Set("Content-Type", "text/plain")
 			_, _ = w.Write([]byte("Content"))
 		}))
 		defer server.Close()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 2, 100*time.Millisecond, 10*time.Second, testLogger())
+		nt, err := NewNetworkToolsetForTesting("http://searxng:8080", 2, 100*time.Millisecond, 10*time.Second, testLogger())
 		require.NoError(t, err)
 
 		output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{server.URL, server.URL, server.URL}})
 		require.NoError(t, err)
 		assert.Len(t, output.Results, 1, "should deduplicate URLs")
-		assert.Equal(t, 1, callCount, "should only call server once")
+		assert.Equal(t, int32(1), atomic.LoadInt32(&callCount), "should only call server once")
 	})
 
 	t.Run("fetch empty URLs fails", func(t *testing.T) {
 		t.Parallel()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset("http://searxng:8080", 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		_, err = nt.fetch(toolCtx, FetchInput{URLs: []string{}})
@@ -431,7 +431,7 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 	t.Run("fetch too many URLs fails", func(t *testing.T) {
 		t.Parallel()
 
-		nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
+		nt, err := NewNetworkToolset("http://searxng:8080", 0, 0, 0, testLogger())
 		require.NoError(t, err)
 
 		urls := make([]string, MaxURLsPerRequest+1)
@@ -452,7 +452,7 @@ func TestNetworkToolset_Fetch(t *testing.T) {
 func TestNetworkToolset_ToolMetadata(t *testing.T) {
 	t.Parallel()
 
-	nt, err := NewNetworkToolset("http://searxng:8080", nil, 0, 0, 0, testLogger())
+	nt, err := NewNetworkToolset("http://searxng:8080", 0, 0, 0, testLogger())
 	require.NoError(t, err)
 
 	ctx := agent.NewInvocationContext(
@@ -471,9 +471,9 @@ func TestNetworkToolset_ToolMetadata(t *testing.T) {
 	var searchTool, fetchTool Tool
 	for _, tool := range tools {
 		switch tool.Name() {
-		case "web_search":
+		case ToolWebSearch:
 			searchTool = tool
-		case "web_fetch":
+		case ToolWebFetch:
 			fetchTool = tool
 		}
 	}
@@ -492,4 +492,105 @@ func TestNetworkToolset_ToolMetadata(t *testing.T) {
 	assert.Contains(t, fetchTool.Description(), "JSON")
 	assert.Contains(t, fetchTool.Description(), "JavaScript") // SPA warning
 	assert.True(t, fetchTool.IsLongRunning())
+}
+
+// ============================================================================
+// SSRF Protection Tests
+// ============================================================================
+
+// TestNetworkToolset_SSRFProtection tests that SSRF bypass attempts are blocked.
+// Security: Ensures the toolset properly validates URLs to prevent SSRF attacks.
+func TestNetworkToolset_SSRFProtection(t *testing.T) {
+	t.Parallel()
+
+	toolCtx := &ai.ToolContext{Context: context.Background()}
+
+	// Use regular NewNetworkToolset (NOT ForTesting) to enable SSRF checks
+	nt, err := NewNetworkToolset("http://searxng:8080", 2, 100*time.Millisecond, 10*time.Second, testLogger())
+	require.NoError(t, err)
+
+	t.Run("blocks localhost", func(t *testing.T) {
+		t.Parallel()
+
+		localURLs := []string{
+			"http://localhost/admin",
+			"http://127.0.0.1/secret",
+			"http://0.0.0.0/",
+		}
+
+		for _, url := range localURLs {
+			output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{url}})
+			// Should either return error or have URL in failed list
+			if err == nil {
+				assert.Len(t, output.FailedURLs, 1, "localhost URL should be blocked: %s", url)
+			}
+		}
+	})
+
+	t.Run("blocks cloud metadata endpoints", func(t *testing.T) {
+		t.Parallel()
+
+		metadataURLs := []string{
+			"http://169.254.169.254/latest/meta-data/",
+			"http://metadata.google.internal/computeMetadata/v1/",
+		}
+
+		for _, url := range metadataURLs {
+			output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{url}})
+			if err == nil {
+				assert.Len(t, output.FailedURLs, 1, "metadata URL should be blocked: %s", url)
+			}
+		}
+	})
+
+	t.Run("blocks private IP ranges", func(t *testing.T) {
+		t.Parallel()
+
+		privateURLs := []string{
+			"http://10.0.0.1/internal",
+			"http://172.16.0.1/admin",
+			"http://192.168.1.1/router",
+		}
+
+		for _, url := range privateURLs {
+			output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{url}})
+			if err == nil {
+				assert.Len(t, output.FailedURLs, 1, "private IP URL should be blocked: %s", url)
+			}
+		}
+	})
+
+	t.Run("blocks dangerous protocols", func(t *testing.T) {
+		t.Parallel()
+
+		dangerousURLs := []string{
+			"file:///etc/passwd",
+			"ftp://internal-server/files",
+			"gopher://localhost:25/",
+		}
+
+		for _, url := range dangerousURLs {
+			output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{url}})
+			if err == nil {
+				assert.Len(t, output.FailedURLs, 1, "dangerous protocol should be blocked: %s", url)
+			}
+		}
+	})
+
+	t.Run("blocks URL with userinfo bypass attempt", func(t *testing.T) {
+		t.Parallel()
+
+		// SSRF bypass attempt: http://evil.com@127.0.0.1/
+		bypassURLs := []string{
+			"http://user:pass@127.0.0.1/",
+			"http://attacker.com@localhost/admin",
+		}
+
+		for _, url := range bypassURLs {
+			output, err := nt.fetch(toolCtx, FetchInput{URLs: []string{url}})
+			if err == nil {
+				assert.Len(t, output.FailedURLs, 1, "userinfo bypass should be blocked: %s", url)
+			}
+		}
+	})
 }
