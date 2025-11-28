@@ -70,9 +70,9 @@ type Server struct {
 	logger log.Logger
 
 	// Handlers
-	health  *HealthHandler
-	session *SessionHandler
-	chat    *ChatHandler
+	health  *Health
+	session *Session
+	chat    *Chat
 }
 
 // NewServer creates a new HTTP server with all routes registered.
@@ -96,9 +96,9 @@ func NewServer(pool *pgxpool.Pool, store *session.Store, chatFlow *chat.Flow, lo
 	s := &Server{
 		mux:     mux,
 		logger:  logger,
-		health:  NewHealthHandler(pool, logger),
-		session: NewSessionHandler(store, logger),
-		chat:    NewChatHandler(chatFlow, logger),
+		health:  NewHealth(pool, logger),
+		session: NewSession(store, logger),
+		chat:    NewChat(chatFlow, logger),
 	}
 
 	// Register all routes
@@ -110,13 +110,13 @@ func NewServer(pool *pgxpool.Pool, store *session.Store, chatFlow *chat.Flow, lo
 }
 
 // Handler returns the HTTP handler with middleware applied.
-// Middleware order: recovery → auth → logging → handler
+// Middleware execution order: Recovery → Logging → Auth → Handler
 // Authentication is only enforced when KOOPA_API_KEY environment variable is set.
 func (s *Server) Handler() http.Handler {
-	return chain(s.mux,
-		recoveryMiddleware(s.logger),
-		authMiddleware(s.logger),
-		loggingMiddleware(s.logger),
+	return Chain(s.mux,
+		RecoveryMiddleware(s.logger),
+		LoggingMiddleware(s.logger),
+		AuthMiddleware(s.logger),
 	)
 }
 

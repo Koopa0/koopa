@@ -212,3 +212,45 @@ func (v *URL) ValidateRedirect(req *http.Request, via []*http.Request) error {
 	// Validate the redirect target
 	return v.Validate(req.URL.String())
 }
+
+// IsURLSafe is a quick check for common SSRF patterns.
+// This is a convenience function for simple validation without creating a validator.
+// For production use, prefer using NewURL().Validate() or SafeTransport().
+//
+// Returns false if the URL contains known dangerous patterns:
+//   - file:// scheme
+//   - javascript: scheme
+//   - data: scheme
+//   - localhost or 127.0.0.1
+//   - Cloud metadata endpoints (169.254.169.254)
+func IsURLSafe(rawURL string) bool {
+	if rawURL == "" {
+		return false
+	}
+
+	lowerURL := strings.ToLower(rawURL)
+
+	// Block dangerous schemes
+	dangerousSchemes := []string{"file://", "javascript:", "data:", "gopher://"}
+	for _, scheme := range dangerousSchemes {
+		if strings.HasPrefix(lowerURL, scheme) {
+			return false
+		}
+	}
+
+	// Block localhost and loopback
+	if strings.Contains(lowerURL, "localhost") ||
+		strings.Contains(lowerURL, "127.0.0.1") ||
+		strings.Contains(lowerURL, "::1") {
+		return false
+	}
+
+	// Block cloud metadata endpoints
+	if strings.Contains(lowerURL, "169.254.169.254") ||
+		strings.Contains(lowerURL, "metadata.google") ||
+		strings.Contains(lowerURL, "metadata.gce") {
+		return false
+	}
+
+	return true
+}

@@ -26,7 +26,7 @@ var migrationsFS embed.FS
 // connURL must be in postgres:// or postgresql:// URL format
 // (e.g., postgres://user:pass@host:port/db?sslmode=disable)
 func Migrate(connURL string) error {
-	slog.Info("running database migrations")
+	slog.Debug("running database migrations")
 
 	// Create source driver from embedded filesystem
 	source, err := iofs.New(migrationsFS, "migrations")
@@ -61,7 +61,7 @@ func Migrate(connURL string) error {
 	// Run migrations
 	if err := m.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
-			slog.Info("no new migrations to apply")
+			slog.Debug("no new migrations to apply")
 			return nil
 		}
 		slog.Error("failed to run migrations", "error", err)

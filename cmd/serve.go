@@ -5,50 +5,35 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/koopa0/koopa-cli/api"
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa-cli/internal/api"
 	"github.com/koopa0/koopa-cli/internal/app"
 	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/rag"
 )
 
 // RunServe starts the HTTP API server.
 //
 // Architecture:
-//   - Initializes the application using Wire DI
+//   - Initializes the application runtime
 //   - Creates the HTTP server with all routes
 //   - Signal handling is done by caller (executeServe)
 func RunServe(ctx context.Context, cfg *config.Config, version string, addr string) error {
 	logger := slog.Default()
 	logger.Info("starting HTTP API server", "version", version)
 
-	// Initialize application using Wire DI
-	application, cleanup, err := app.InitializeApp(ctx, cfg)
+	// Initialize runtime with all components
+	runtime, err := app.NewRuntime(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to initialize application: %w", err)
+		return fmt.Errorf("failed to initialize runtime: %w", err)
 	}
-	defer cleanup()
+	defer runtime.Cleanup()
 	defer func() {
-		if err := application.Close(); err != nil {
-			logger.Warn("failed to close application", "error", err)
+		if err := runtime.Shutdown(); err != nil {
+			logger.Warn("failed to shutdown runtime", "error", err)
 		}
 	}()
 
-	// Create retriever for documents
-	ret := rag.New(application.Knowledge)
-	_ = ret.DefineDocument(application.Genkit, "documents")
-
-	// Create Chat Agent
-	chatAgent, err := application.CreateAgent(ctx, ret)
-	if err != nil {
-		return fmt.Errorf("error creating agent: %w", err)
-	}
-
-	// This ensures the same Flow instance is shared between CLI and HTTP server
-	chatFlow := chat.GetFlow(application.Genkit, chatAgent)
-
 	// Create and run HTTP server with the Chat Flow
-	server := api.NewServer(application.DBPool, application.SessionStore, chatFlow, logger)
+	server := api.NewServer(runtime.App.DBPool, runtime.App.SessionStore, runtime.Flow, logger)
 
 	logger.Info("HTTP API server ready", "addr", addr)
 	return server.Run(ctx, addr)
