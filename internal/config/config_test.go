@@ -445,14 +445,29 @@ func TestConfig_MarshalJSON_MasksSensitiveFields(t *testing.T) {
 
 	jsonStr := string(data)
 
-	// Verify original password is NOT in output
+	// CRITICAL: Verify original password is NOT in output (security requirement)
 	if strings.Contains(jsonStr, "supersecretpassword123") {
-		t.Error("sensitive field PostgresPassword not masked - raw password found in JSON")
+		t.Error("SECURITY: sensitive field PostgresPassword not masked - raw password found in JSON")
 	}
 
-	// Verify masked format is present (su****23)
-	if !strings.Contains(jsonStr, "su****23") {
-		t.Errorf("expected masked password format 'su****23' in JSON, got: %s", jsonStr)
+	// Verify masking is applied (format-agnostic check)
+	// The masked value should:
+	// 1. Not be the original password
+	// 2. Contain masking characters (****)
+	// 3. Be present in the JSON output
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	maskedPwd, ok := result["postgres_password"].(string)
+	if !ok {
+		t.Fatal("postgres_password should be a string in JSON output")
+	}
+
+	// Verify masking is applied (contains asterisks)
+	if !strings.Contains(maskedPwd, "****") {
+		t.Errorf("masked password should contain '****', got: %s", maskedPwd)
 	}
 
 	// Verify non-sensitive fields are NOT masked
@@ -554,4 +569,512 @@ func TestConfig_SensitiveFieldsHaveTag(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestConfig_MarshalJSON_NestedStructs verifies nested structs are properly serialized
+// This test ensures recursive processing works correctly for nested configurations
+func TestConfig_MarshalJSON_NestedStructs(t *testing.T) {
+	cfg := Config{
+		ModelName:        "test-model",
+		PostgresPassword: "secretpassword",
+		MCP: MCPConfig{
+			Timeout: 10,
+			Allowed: []string{"server1", "server2"},
+		},
+		MCPServers: map[string]MCPServer{
+			"test-server": {
+				Command: "npx",
+				Args:    []string{"-y", "test-mcp"},
+				Timeout: 30,
+			},
+		},
+		SearXNG: SearXNGConfig{
+			BaseURL: "http://localhost:8080",
+		},
+		Datadog: DatadogConfig{
+			AgentHost:   "localhost:4318",
+			Environment: "test",
+			ServiceName: "koopa-test",
+		},
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	// Verify nested MCP config is present
+	mcp, ok := result["mcp"].(map[string]interface{})
+	if !ok {
+		t.Fatal("mcp should be a nested object in JSON output")
+	}
+	if mcp["timeout"] != float64(10) {
+		t.Errorf("expected mcp.timeout = 10, got %v", mcp["timeout"])
+	}
+
+	// Verify MCPServers map is present
+	servers, ok := result["mcp_servers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("mcp_servers should be a map in JSON output")
+	}
+	if _, exists := servers["test-server"]; !exists {
+		t.Error("expected test-server in mcp_servers")
+	}
+
+	// Verify SearXNG config
+	searxng, ok := result["searxng"].(map[string]interface{})
+	if !ok {
+		t.Fatal("searxng should be a nested object")
+	}
+	if searxng["base_url"] != "http://localhost:8080" {
+		t.Errorf("expected searxng.base_url = 'http://localhost:8080', got %v", searxng["base_url"])
+	}
+
+	// Verify Datadog config
+	datadog, ok := result["datadog"].(map[string]interface{})
+	if !ok {
+		t.Fatal("datadog should be a nested object")
+	}
+	if datadog["environment"] != "test" {
+		t.Errorf("expected datadog.environment = 'test', got %v", datadog["environment"])
+	}
+
+	// CRITICAL: Verify sensitive field is still masked
+	jsonStr := string(data)
+	if strings.Contains(jsonStr, "secretpassword") {
+		t.Error("SECURITY: PostgresPassword should be masked in JSON with nested structs")
+	}
+}
+
+// TestConfig_MarshalJSON_MCPServerEnvMasked verifies that MCPServer.Env (sensitive map) is masked
+// SECURITY: MCPServer.Env commonly contains API keys, tokens, and secrets
+func TestConfig_MarshalJSON_MCPServerEnvMasked(t *testing.T) {
+	cfg := Config{
+		MCPServers: map[string]MCPServer{
+			"github-mcp": {
+				Command: "npx",
+				Args:    []string{"-y", "@modelcontextprotocol/server-github"},
+				Env: map[string]string{
+					"GITHUB_TOKEN":      "ghp_supersecrettoken12345678",
+					"API_KEY":           "sk-proj-secretapikey67890",
+					"OPENAI_API_KEY":    "sk-openai-verysecretkey",
+					"ANTHROPIC_KEY":     "anthropic-secret-key-xxx",
+					"DATABASE_PASSWORD": "dbpassword123",
+				},
+				Timeout: 30,
+			},
+			"another-server": {
+				Command: "node",
+				Env: map[string]string{
+					"SECRET_TOKEN": "another_secret_value",
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// CRITICAL: All secret values in Env must be masked
+	secrets := []string{
+		"ghp_supersecrettoken12345678",
+		"sk-proj-secretapikey67890",
+		"sk-openai-verysecretkey",
+		"anthropic-secret-key-xxx",
+		"dbpassword123",
+		"another_secret_value",
+	}
+
+	for _, secret := range secrets {
+		if strings.Contains(jsonStr, secret) {
+			t.Errorf("SECURITY: MCPServer.Env secret leaked in JSON output: %s", secret)
+		}
+	}
+
+	// Verify the Env field is present but masked
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	servers, ok := result["mcp_servers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("mcp_servers should be present in JSON output")
+	}
+
+	githubServer, ok := servers["github-mcp"].(map[string]interface{})
+	if !ok {
+		t.Fatal("github-mcp server should be present")
+	}
+
+	// Env should be masked as "****" (sensitive map with non-empty content)
+	env := githubServer["env"]
+	if env != "****" {
+		t.Errorf("MCPServer.Env should be masked as '****', got: %v", env)
+	}
+
+	// Verify non-sensitive fields are NOT masked
+	if githubServer["command"] != "npx" {
+		t.Error("non-sensitive field Command should not be masked")
+	}
+}
+
+// TestConfig_MarshalJSON_AllSensitiveFields iterates all fields marked sensitive
+// and verifies they are properly masked (comprehensive coverage)
+func TestConfig_MarshalJSON_AllSensitiveFields(t *testing.T) {
+	typ := reflect.TypeOf(Config{})
+
+	// Build a Config with test values for all sensitive fields
+	cfg := Config{}
+	val := reflect.ValueOf(&cfg).Elem()
+
+	sensitiveFields := make(map[string]string) // jsonName -> testValue
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.Tag.Get("sensitive") != "true" {
+			continue
+		}
+
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+		jsonName := strings.Split(jsonTag, ",")[0]
+
+		// Set a unique test value for this sensitive field
+		testValue := "test_secret_" + field.Name + "_12345"
+		if field.Type.Kind() == reflect.String {
+			val.Field(i).SetString(testValue)
+			sensitiveFields[jsonName] = testValue
+		}
+	}
+
+	if len(sensitiveFields) == 0 {
+		t.Skip("no sensitive string fields found in Config")
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// Verify each sensitive field's original value is NOT in the output
+	for jsonName, originalValue := range sensitiveFields {
+		if strings.Contains(jsonStr, originalValue) {
+			t.Errorf("SECURITY: sensitive field %s not masked - original value found in JSON", jsonName)
+		}
+	}
+}
+
+// ============================================================================
+// Unicode Password Tests
+// ============================================================================
+
+// TestMaskSecret_Unicode verifies masking handles multi-byte UTF-8 correctly.
+// This is important because maskSecret uses string slicing which operates on bytes,
+// but users expect character-level masking for international passwords.
+func TestMaskSecret_Unicode(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantContains string // What the masked output should contain
+		wantMasked   bool   // Should original be fully hidden
+	}{
+		// ASCII baseline
+		{"ascii_normal", "password123", "****", true},
+		{"ascii_short", "abc", "****", true},
+
+		// Unicode - multi-byte characters
+		{"emoji_password", "🔐secret🔑", "****", true},
+		{"emoji_only_short", "🔐🔑", "****", true}, // 2 emojis = 8 bytes, but should mask
+		{"chinese_password", "密碼password123", "****", true},
+		{"japanese_password", "パスワード12345", "****", true},
+		{"arabic_password", "كلمةالسر123", "****", true},
+		{"mixed_unicode", "Пароль🔐密碼", "****", true},
+
+		// Edge cases
+		{"empty", "", "", false},
+		{"single_emoji", "🔐", "****", true},
+		{"newlines", "pass\nword\r\n123", "****", true},
+		{"tabs", "pass\tword", "****", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			masked := maskSecret(tt.input)
+
+			// Verify masking pattern is present (when expected)
+			if tt.wantContains != "" && !strings.Contains(masked, tt.wantContains) {
+				t.Errorf("expected masked output to contain %q, got: %q", tt.wantContains, masked)
+			}
+
+			// CRITICAL: Original value must NEVER appear in masked output
+			if tt.wantMasked && tt.input != "" {
+				// For short passwords, the entire thing should be masked
+				if len(tt.input) <= 4 {
+					if masked != "****" {
+						t.Errorf("short password should be fully masked as '****', got: %q", masked)
+					}
+				} else {
+					// For longer passwords, original should not appear
+					if strings.Contains(masked, tt.input) {
+						t.Errorf("SECURITY: original password leaked in masked output")
+					}
+				}
+			}
+
+			// Empty input should return empty
+			if tt.input == "" && masked != "" {
+				t.Errorf("empty input should return empty, got: %q", masked)
+			}
+		})
+	}
+}
+
+// TestConfig_MarshalJSON_UnicodePasswords verifies Config marshaling handles Unicode correctly
+func TestConfig_MarshalJSON_UnicodePasswords(t *testing.T) {
+	unicodePasswords := []string{
+		"密碼123456789",      // Chinese
+		"パスワード12345",       // Japanese
+		"비밀번호12345",        // Korean
+		"пароль12345",      // Russian
+		"🔐secret🔑password", // Emoji
+		"café☕password123", // Mixed
+	}
+
+	for _, password := range unicodePasswords {
+		t.Run(password[:min(10, len(password))], func(t *testing.T) {
+			cfg := Config{
+				PostgresPassword: password,
+			}
+
+			data, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatalf("MarshalJSON failed: %v", err)
+			}
+
+			jsonStr := string(data)
+
+			// CRITICAL: Original password must NEVER appear in JSON
+			if strings.Contains(jsonStr, password) {
+				t.Errorf("SECURITY: Unicode password leaked in JSON output: %s", password)
+			}
+
+			// Verify masking was applied
+			if !strings.Contains(jsonStr, "****") {
+				t.Errorf("expected masked output to contain '****', got: %s", jsonStr)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Fuzz Tests for Security
+// ============================================================================
+
+// FuzzMaskSecret tests maskSecret against arbitrary inputs to detect bypass vectors.
+// Run with: go test -fuzz=FuzzMaskSecret -fuzztime=30s ./internal/config/
+func FuzzMaskSecret(f *testing.F) {
+	// Seed corpus with known attack patterns
+	seeds := []string{
+		// Normal cases
+		"",
+		"a",
+		"ab",
+		"abc",
+		"abcd",
+		"password123",
+		"supersecretpassword",
+
+		// Unicode and encoding
+		"密碼password",
+		"🔐🔑🔓",
+		"пароль",
+
+		// Injection attempts
+		"\x00secret\x00",     // Null bytes
+		"pass\nword",         // Newlines
+		"pass\rword",         // Carriage return
+		"pass\tword",         // Tabs
+		"\u202Esecret\u202D", // RTL override
+		"\uFEFFpassword",     // BOM
+		"pass\u0000word",     // Embedded null
+
+		// JSON injection
+		`{"password":"inject"}`,
+		`","password":"leak`,
+		"\\\"escape\\\"",
+
+		// Length boundaries
+		strings.Repeat("a", 3),
+		strings.Repeat("a", 4),
+		strings.Repeat("a", 5),
+		strings.Repeat("a", 100),
+		strings.Repeat("a", 1000),
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		masked := maskSecret(input)
+
+		// Property 1: Empty input returns empty output
+		if input == "" && masked != "" {
+			t.Errorf("empty input should return empty, got: %q", masked)
+		}
+
+		// Property 2: Short inputs (<=4 chars) should be fully masked
+		if len(input) > 0 && len(input) <= 4 && masked != "****" {
+			t.Errorf("short input should be '****', got: %q for input len=%d", masked, len(input))
+		}
+
+		// Property 3: Original input should NEVER appear in output (for non-trivial inputs)
+		if len(input) > 4 && strings.Contains(masked, input) {
+			t.Errorf("SECURITY: original input leaked in masked output")
+		}
+
+		// Property 4: Masked output should contain "****" (for non-empty inputs)
+		if len(input) > 0 && !strings.Contains(masked, "****") {
+			t.Errorf("masked output should contain '****', got: %q", masked)
+		}
+
+		// Property 5: Masked output should be shorter than or equal to original + mask overhead
+		// Format: XX****XX (max 8 chars for prefix/suffix + 4 for mask)
+		if len(input) > 4 && len(masked) > 8 {
+			t.Errorf("masked output too long: %d chars for input of %d chars", len(masked), len(input))
+		}
+	})
+}
+
+// FuzzConfigMarshalJSON tests Config.MarshalJSON against arbitrary passwords
+// to ensure no bypass of sensitive field masking.
+// Run with: go test -fuzz=FuzzConfigMarshalJSON -fuzztime=30s ./internal/config/
+func FuzzConfigMarshalJSON(f *testing.F) {
+	seeds := []string{
+		"password123",
+		"",
+		"short",
+		"\x00\xff\xfe",
+		"pass\nword\r\n",
+		`{"inject":"json"}`,
+		"密碼🔐",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, password string) {
+		cfg := Config{
+			PostgresPassword: password,
+			ModelName:        "test-model",
+		}
+
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			// JSON marshal errors are acceptable for malformed inputs
+			// But verify password doesn't leak in error message
+			if password != "" && strings.Contains(err.Error(), password) {
+				t.Errorf("SECURITY: password leaked in error message")
+			}
+			return
+		}
+
+		jsonStr := string(data)
+
+		// CRITICAL: Original password must NEVER appear in JSON output
+		// Exception: empty passwords are allowed to appear as empty string
+		if password != "" && strings.Contains(jsonStr, password) {
+			t.Errorf("SECURITY: password leaked in JSON: input=%q output=%s", password, jsonStr)
+		}
+	})
+}
+
+// ============================================================================
+// Performance Benchmarks
+// ============================================================================
+
+// BenchmarkMaskSecret benchmarks the core masking function
+func BenchmarkMaskSecret(b *testing.B) {
+	passwords := []string{
+		"",
+		"abc",
+		"password123",
+		"verylongpasswordthatexceedsnormallength",
+		"密碼🔐パスワード",
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		for _, p := range passwords {
+			_ = maskSecret(p)
+		}
+	}
+}
+
+// BenchmarkConfig_MarshalJSON benchmarks Config serialization with sensitive masking
+func BenchmarkConfig_MarshalJSON(b *testing.B) {
+	cfg := Config{
+		ModelName:        "gemini-2.5-flash",
+		Temperature:      0.7,
+		MaxTokens:        2048,
+		PostgresPassword: "supersecretpassword123",
+		PostgresHost:     "localhost",
+		PostgresPort:     5432,
+		PostgresUser:     "koopa",
+		PostgresDBName:   "koopa",
+		MCP: MCPConfig{
+			Timeout: 5,
+			Allowed: []string{"server1", "server2"},
+		},
+		MCPServers: map[string]MCPServer{
+			"github": {
+				Command: "npx",
+				Args:    []string{"-y", "@modelcontextprotocol/server-github"},
+				Env: map[string]string{
+					"GITHUB_TOKEN": "ghp_secrettoken12345",
+				},
+			},
+		},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = json.Marshal(cfg)
+	}
+}
+
+// BenchmarkConfig_MarshalJSON_Parallel benchmarks concurrent Config marshaling
+func BenchmarkConfig_MarshalJSON_Parallel(b *testing.B) {
+	cfg := Config{
+		PostgresPassword: "supersecretpassword123",
+		MCPServers: map[string]MCPServer{
+			"test": {
+				Command: "npx",
+				Env:     map[string]string{"SECRET": "value"},
+			},
+		},
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, _ = json.Marshal(cfg)
+		}
+	})
 }

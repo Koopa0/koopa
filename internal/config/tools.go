@@ -9,12 +9,12 @@ type MCPConfig struct {
 
 // MCPServer defines a single MCP server configuration.
 type MCPServer struct {
-	Command      string            `mapstructure:"command"`       // Required: executable path (e.g., "npx")
-	Args         []string          `mapstructure:"args"`          // Optional: command arguments
-	Env          map[string]string `mapstructure:"env"`           // Optional: environment variables (supports $VAR_NAME syntax)
-	Timeout      int               `mapstructure:"timeout"`       // Optional: per-server timeout (overrides global)
-	IncludeTools []string          `mapstructure:"include_tools"` // Optional: tool whitelist
-	ExcludeTools []string          `mapstructure:"exclude_tools"` // Optional: tool blacklist
+	Command      string            `mapstructure:"command"`                      // Required: executable path (e.g., "npx")
+	Args         []string          `mapstructure:"args"`                         // Optional: command arguments
+	Env          map[string]string `mapstructure:"env" sensitive:"true"`         // Optional: environment variables (supports $VAR_NAME syntax) - SECURITY: May contain API keys/tokens
+	Timeout      int               `mapstructure:"timeout"`                      // Optional: per-server timeout (overrides global)
+	IncludeTools []string          `mapstructure:"include_tools"`                // Optional: tool whitelist
+	ExcludeTools []string          `mapstructure:"exclude_tools"`                // Optional: tool blacklist
 }
 
 // SearXNGConfig holds SearXNG service configuration for web search.
