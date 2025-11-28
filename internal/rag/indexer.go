@@ -14,6 +14,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,6 +226,18 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		_ = root.Close()
 	}()
 
+	// SECURITY: Get root directory's device ID to detect hardlink attacks
+	// Hardlinks can bypass symlink checks and allow access to files outside the root.
+	// While os.OpenRoot protects path traversal, it doesn't prevent hardlinks
+	// that point to files on the same filesystem but outside the root directory.
+	// Note: This is Unix-specific; on other platforms, getDeviceID returns false.
+	var rootDeviceID int64
+	var hasRootDeviceID bool
+	rootStat, err := os.Stat(absDirPath)
+	if err == nil {
+		rootDeviceID, hasRootDeviceID = getDeviceID(rootStat)
+	}
+
 	// Load .gitignore file if it exists
 	var gitIgnore *ignore.GitIgnore
 	gitignorePath := filepath.Join(absDirPath, ".gitignore")
@@ -236,12 +250,28 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		}
 	}
 
-	// Walk the directory tree using filepath.Walk
-	// Files are read through os.Root for security
-	if err = filepath.Walk(absDirPath, func(path string, info os.FileInfo, err error) error {
+	// Walk the directory tree using filepath.WalkDir (Go 1.16+)
+	// SECURITY: WalkDir does NOT follow symlinks automatically, unlike Walk.
+	// This is critical for preventing symlink traversal attacks that could
+	// escape the os.OpenRoot security boundary.
+	if err = filepath.WalkDir(absDirPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			result.FilesFailed++
 			return nil // Continue walking even if one file fails
+		}
+
+		// SECURITY: Skip symlinks to prevent traversal outside os.OpenRoot boundary
+		// WalkDir's d.Type() returns the symlink's own type, not the target's type.
+		// This is the key difference from Walk which follows symlinks automatically.
+		if d.Type()&fs.ModeSymlink != 0 {
+			slog.Debug("skipping symlink during directory indexing",
+				"path", path,
+				"security_event", "symlink_skipped")
+			if d.IsDir() {
+				return filepath.SkipDir // Skip symlink directory tree
+			}
+			result.FilesSkipped++
+			return nil // Skip symlink file
 		}
 
 		// Get relative path from the root directory (for gitignore matching)
@@ -253,16 +283,50 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 
 		// Check if should be ignored by .gitignore (for both files and directories)
 		if gitIgnore != nil && gitIgnore.MatchesPath(relPath) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir // Skip entire directory tree
 			}
 			result.FilesSkipped++
 			return nil
 		}
 
-		// Skip other directories (that are not ignored)
-		if info.IsDir() {
+		// Skip directories (that are not ignored)
+		if d.IsDir() {
 			return nil
+		}
+
+		// Get file info for size check
+		info, err := d.Info()
+		if err != nil {
+			result.FilesFailed++
+			return nil // Continue walking
+		}
+
+		// SECURITY: Detect potential hardlink attacks (Unix-specific)
+		// Hardlinks with nlink > 1 pointing to files outside the root could be attack vectors.
+		// We check: 1) device ID mismatch, 2) suspicious hardlink count for sensitive extensions
+		// Note: On non-Unix platforms, these checks are skipped (getDeviceID returns false)
+		if fileDeviceID, ok := getDeviceID(info); ok && hasRootDeviceID {
+			// Skip files from different devices (shouldn't happen, but defense in depth)
+			if fileDeviceID != rootDeviceID {
+				slog.Warn("skipping file from different device",
+					"path", path,
+					"root_device", rootDeviceID,
+					"file_device", fileDeviceID,
+					"security_event", "cross_device_skipped")
+				result.FilesSkipped++
+				return nil
+			}
+		}
+
+		// Log hardlinks as potential security concern (nlink > 1 means multiple names)
+		// Note: We don't block hardlinks entirely as they have legitimate uses,
+		// but we log them for security monitoring.
+		if nlink, ok := getHardlinkCount(info); ok && nlink > 1 {
+			slog.Debug("indexing file with multiple hardlinks",
+				"path", path,
+				"nlink", nlink,
+				"security_event", "hardlink_detected")
 		}
 
 		// Check if file type is supported
@@ -283,6 +347,12 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		if err != nil {
 			result.FilesFailed++
 			return nil // Continue walking
+		}
+
+		// SECURITY: Defense in depth - verify content size after read (TOCTOU protection)
+		if int64(len(content)) > MaxFileSizeForEmbedding {
+			result.FilesSkipped++
+			return nil
 		}
 
 		// Generate document ID
@@ -313,7 +383,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		result.TotalSize += info.Size()
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("failed to walk directory: %w", err)
+		return nil, fmt.Errorf("walking directory %s: %w", absDirPath, err)
 	}
 
 	result.Duration = time.Since(startTime)

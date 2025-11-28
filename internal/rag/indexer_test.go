@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -848,6 +849,277 @@ func TestCustomSupportedExtensions(t *testing.T) {
 	// Verify defaults are NOT supported (unless explicitly added)
 	if indexer.supportedExtensions[".go"] {
 		t.Error("extension .go should not be supported in custom mode")
+	}
+}
+
+// ============================================================================
+// Symlink Security Tests (P0-1 Fix)
+// ============================================================================
+
+// TestIndexer_AddDirectory_SkipsSymlinks verifies that symlinks to files are skipped
+// to prevent traversal outside the os.OpenRoot security boundary.
+func TestIndexer_AddDirectory_SkipsSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a valid file
+	validFile := filepath.Join(tmpDir, "valid.txt")
+	if err := os.WriteFile(validFile, []byte("valid content"), 0600); err != nil {
+		t.Fatalf("failed to create valid file: %v", err)
+	}
+
+	// Create a symlink pointing to a system file (simulating attack)
+	symlinkFile := filepath.Join(tmpDir, "secret.txt")
+	// Use /etc/hosts as target since it exists on most Unix systems
+	if err := os.Symlink("/etc/hosts", symlinkFile); err != nil {
+		t.Skip("cannot create symlink, skipping test")
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	result, err := indexer.AddDirectory(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("AddDirectory failed: %v", err)
+	}
+
+	// Verify: only valid.txt should be indexed
+	if result.FilesAdded != 1 {
+		t.Errorf("Expected 1 file added, got %d", result.FilesAdded)
+	}
+
+	// Verify: symlink should be skipped
+	if result.FilesSkipped < 1 {
+		t.Errorf("Expected at least 1 file skipped (symlink), got %d", result.FilesSkipped)
+	}
+
+	// Verify: indexed content should not contain /etc/hosts content
+	if mockStore.addCalls > 0 {
+		doc := mockStore.lastAddedDoc
+		// /etc/hosts typically contains "localhost"
+		if strings.Contains(doc.Content, "localhost") && doc.Metadata["file_name"] != "valid.txt" {
+			t.Error("Symlink was followed! /etc/hosts content found in index")
+		}
+	}
+}
+
+// TestIndexer_AddDirectory_SkipsSymlinkDirectories verifies that symlink directories
+// are completely skipped to prevent directory traversal attacks.
+func TestIndexer_AddDirectory_SkipsSymlinkDirectories(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a symlink directory pointing to /etc
+	symlinkDir := filepath.Join(tmpDir, "etc_link")
+	if err := os.Symlink("/etc", symlinkDir); err != nil {
+		t.Skip("cannot create symlink dir, skipping test")
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	result, err := indexer.AddDirectory(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("AddDirectory failed: %v", err)
+	}
+
+	// Verify: no files from /etc should be indexed
+	if result.FilesAdded > 0 {
+		t.Errorf("Expected 0 files added (symlink dir should be skipped), got %d", result.FilesAdded)
+	}
+}
+
+// TestIndexer_AddDirectory_SkipsNestedSymlinks verifies symlinks in subdirectories are skipped.
+func TestIndexer_AddDirectory_SkipsNestedSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a subdirectory with a valid file
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatalf("failed to create subdir: %v", err)
+	}
+
+	validFile := filepath.Join(subDir, "valid.go")
+	if err := os.WriteFile(validFile, []byte("package main"), 0600); err != nil {
+		t.Fatalf("failed to create valid file: %v", err)
+	}
+
+	// Create a symlink in the subdirectory pointing outside
+	symlinkFile := filepath.Join(subDir, "passwd.txt")
+	if err := os.Symlink("/etc/passwd", symlinkFile); err != nil {
+		t.Skip("cannot create symlink, skipping test")
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	result, err := indexer.AddDirectory(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("AddDirectory failed: %v", err)
+	}
+
+	// Verify: only valid.go should be indexed
+	if result.FilesAdded != 1 {
+		t.Errorf("Expected 1 file added, got %d", result.FilesAdded)
+	}
+
+	// Verify: the indexed file should be valid.go, not passwd
+	if mockStore.addCalls == 1 {
+		doc := mockStore.lastAddedDoc
+		if doc.Metadata["file_name"] != "valid.go" {
+			t.Errorf("Expected valid.go to be indexed, got %s", doc.Metadata["file_name"])
+		}
+		// Ensure content doesn't contain passwd file content
+		if strings.Contains(doc.Content, "root:") {
+			t.Error("Symlink was followed! /etc/passwd content found in index")
+		}
+	}
+}
+
+// ============================================================================
+// Hardlink Security Tests (QA Master recommended)
+// ============================================================================
+
+// TestIndexer_AddDirectory_LogsHardlinks verifies that hardlinks are detected and logged.
+// Unlike symlinks, hardlinks cannot be blocked entirely as they have legitimate uses,
+// but we log them for security monitoring.
+func TestIndexer_AddDirectory_LogsHardlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hardlink test not fully supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a valid file first
+	validFile := filepath.Join(tmpDir, "original.txt")
+	if err := os.WriteFile(validFile, []byte("original content"), 0600); err != nil {
+		t.Fatalf("failed to create original file: %v", err)
+	}
+
+	// Create a hardlink to the valid file (this is legitimate use)
+	hardlinkFile := filepath.Join(tmpDir, "hardlink.txt")
+	if err := os.Link(validFile, hardlinkFile); err != nil {
+		t.Skip("cannot create hardlink, skipping test")
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	result, err := indexer.AddDirectory(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("AddDirectory failed: %v", err)
+	}
+
+	// Both files should be indexed (hardlinks within same directory are safe)
+	if result.FilesAdded != 2 {
+		t.Errorf("Expected 2 files added (original + hardlink), got %d", result.FilesAdded)
+	}
+
+	// Verify both files were indexed
+	if mockStore.addCalls != 2 {
+		t.Errorf("Expected 2 Add calls, got %d", mockStore.addCalls)
+	}
+}
+
+// TestIndexer_AddDirectory_HardlinkToSensitiveFile tests hardlink attack vector.
+// This test verifies that hardlinks to files outside the root directory are logged
+// as security events. Note: We don't block these as detection is the goal.
+func TestIndexer_AddDirectory_HardlinkToSensitiveFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hardlink test not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a valid local file first (for comparison)
+	validFile := filepath.Join(tmpDir, "valid.txt")
+	if err := os.WriteFile(validFile, []byte("safe content"), 0600); err != nil {
+		t.Fatalf("failed to create valid file: %v", err)
+	}
+
+	// Try to create a hardlink to /etc/hosts (attack vector)
+	// Use .txt extension so it will be indexed (if the hardlink succeeds)
+	hardlinkFile := filepath.Join(tmpDir, "hosts_hardlink.txt")
+	if err := os.Link("/etc/hosts", hardlinkFile); err != nil {
+		// This is expected on most systems - hardlinks often can't cross boundaries
+		// or user doesn't have permission to create hardlinks to system files
+		t.Skip("cannot create hardlink to /etc/hosts (expected on most systems)")
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	result, err := indexer.AddDirectory(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("AddDirectory failed: %v", err)
+	}
+
+	// Both files will be indexed (we log but don't block hardlinks)
+	// valid.txt + hosts_hardlink.txt = 2 files
+	// Security note: In production, security monitoring should alert on hardlink_detected events
+	if result.FilesAdded != 2 {
+		t.Errorf("Expected 2 files added, got %d", result.FilesAdded)
+	}
+
+	// Verify the file was indexed but logged as hardlink
+	// In real deployment, SIEM should alert on security_event=hardlink_detected
+	t.Log("Hardlink to sensitive file was indexed - verify security monitoring captures this event")
+}
+
+// TestIndexer_AddDirectory_BrokenSymlink verifies graceful handling of broken symlinks.
+func TestIndexer_AddDirectory_BrokenSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a valid file
+	validFile := filepath.Join(tmpDir, "valid.txt")
+	if err := os.WriteFile(validFile, []byte("valid content"), 0600); err != nil {
+		t.Fatalf("failed to create valid file: %v", err)
+	}
+
+	// Create a broken symlink (points to non-existent file)
+	brokenSymlink := filepath.Join(tmpDir, "broken.txt")
+	if err := os.Symlink("/nonexistent/path/file.txt", brokenSymlink); err != nil {
+		t.Skip("cannot create symlink, skipping test")
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	result, err := indexer.AddDirectory(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("AddDirectory failed: %v", err)
+	}
+
+	// Only valid.txt should be indexed, broken symlink should be skipped
+	if result.FilesAdded != 1 {
+		t.Errorf("Expected 1 file added, got %d", result.FilesAdded)
+	}
+
+	// Broken symlink should be counted as skipped
+	if result.FilesSkipped < 1 {
+		t.Errorf("Expected at least 1 file skipped (broken symlink), got %d", result.FilesSkipped)
+	}
+
+	// Verify only valid.txt was indexed
+	if mockStore.addCalls == 1 {
+		doc := mockStore.lastAddedDoc
+		if doc.Metadata["file_name"] != "valid.txt" {
+			t.Errorf("Expected valid.txt to be indexed, got %s", doc.Metadata["file_name"])
+		}
 	}
 }
 

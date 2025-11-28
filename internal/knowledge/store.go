@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
@@ -247,10 +248,9 @@ func (s *Store) Count(ctx context.Context, filter map[string]string) (int, error
 	}
 
 	// Overflow protection for 32-bit systems
-	// On 64-bit systems, int is 64 bits and this check is always false
+	// On 64-bit systems, int is 64 bits and this check is always false (optimized away)
 	// On 32-bit systems, this prevents silent overflow
-	const maxInt = int64(^uint(0) >> 1) // Platform-dependent max int
-	if count > maxInt {
+	if count > math.MaxInt {
 		return 0, fmt.Errorf("document count %d exceeds platform int capacity", count)
 	}
 

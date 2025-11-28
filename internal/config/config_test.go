@@ -1,9 +1,12 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -417,5 +420,138 @@ func BenchmarkLoad(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_, _ = Load()
+	}
+}
+
+// ============================================================================
+// Sensitive Data Masking Tests (P1-2 Fix)
+// ============================================================================
+
+// TestConfig_MarshalJSON_MasksSensitiveFields verifies that sensitive fields are masked
+func TestConfig_MarshalJSON_MasksSensitiveFields(t *testing.T) {
+	cfg := Config{
+		ModelName:        "gemini-2.5-flash",
+		PostgresPassword: "supersecretpassword123",
+		PostgresHost:     "localhost",
+		PostgresPort:     5432,
+		PostgresUser:     "koopa",
+		PostgresDBName:   "koopa",
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// Verify original password is NOT in output
+	if strings.Contains(jsonStr, "supersecretpassword123") {
+		t.Error("sensitive field PostgresPassword not masked - raw password found in JSON")
+	}
+
+	// Verify masked format is present (su****23)
+	if !strings.Contains(jsonStr, "su****23") {
+		t.Errorf("expected masked password format 'su****23' in JSON, got: %s", jsonStr)
+	}
+
+	// Verify non-sensitive fields are NOT masked
+	if !strings.Contains(jsonStr, "localhost") {
+		t.Error("non-sensitive field PostgresHost should not be masked")
+	}
+
+	if !strings.Contains(jsonStr, "gemini-2.5-flash") {
+		t.Error("non-sensitive field ModelName should not be masked")
+	}
+}
+
+// TestConfig_MarshalJSON_EmptyPassword verifies empty passwords are handled
+func TestConfig_MarshalJSON_EmptyPassword(t *testing.T) {
+	cfg := Config{
+		ModelName:        "test-model",
+		PostgresPassword: "",
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	// Empty password should remain empty, not cause panic
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal result: %v", err)
+	}
+
+	if result["postgres_password"] != "" {
+		t.Errorf("expected empty password to remain empty, got %v", result["postgres_password"])
+	}
+}
+
+// TestConfig_MarshalJSON_ShortPassword verifies short passwords are fully masked
+func TestConfig_MarshalJSON_ShortPassword(t *testing.T) {
+	cfg := Config{
+		PostgresPassword: "abc", // 3 chars - should be fully masked
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// Short passwords should be fully masked as "****"
+	if strings.Contains(jsonStr, "abc") {
+		t.Error("short password should be fully masked")
+	}
+
+	if !strings.Contains(jsonStr, `"postgres_password":"****"`) {
+		t.Errorf("expected fully masked password '****', got: %s", jsonStr)
+	}
+}
+
+// TestConfig_String_MasksSensitiveFields verifies String() also masks sensitive fields
+func TestConfig_String_MasksSensitiveFields(t *testing.T) {
+	cfg := Config{
+		PostgresPassword: "topsecretpassword",
+	}
+
+	str := cfg.String()
+
+	if strings.Contains(str, "topsecretpassword") {
+		t.Error("Config.String() should mask sensitive fields")
+	}
+}
+
+// TestConfig_SensitiveFieldsHaveTag verifies all string fields with "password" or "secret"
+// in the name have the sensitive tag (architectural safety net)
+func TestConfig_SensitiveFieldsHaveTag(t *testing.T) {
+	typ := reflect.TypeOf(Config{})
+
+	sensitiveKeywords := []string{"password", "secret", "token", "apikey", "api_key"}
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		// Only check string fields
+		if field.Type.Kind() != reflect.String {
+			continue
+		}
+
+		fieldNameLower := strings.ToLower(field.Name)
+		jsonTagLower := strings.ToLower(field.Tag.Get("json"))
+
+		// Check if field name or json tag contains sensitive keywords
+		for _, keyword := range sensitiveKeywords {
+			if strings.Contains(fieldNameLower, keyword) || strings.Contains(jsonTagLower, keyword) {
+				// This field should have sensitive:"true" tag
+				sensitiveTag := field.Tag.Get("sensitive")
+				if sensitiveTag != "true" {
+					t.Errorf("field %s contains '%s' but missing sensitive:\"true\" tag",
+						field.Name, keyword)
+				}
+			}
+		}
 	}
 }

@@ -27,6 +27,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -111,41 +113,43 @@ const (
 // ============================================================================
 
 // Config stores application configuration.
+// SECURITY: Fields tagged with `sensitive:"true"` are automatically masked in MarshalJSON().
+// When adding new sensitive fields (passwords, API keys, tokens), add the sensitive tag.
 type Config struct {
 	// AI configuration (see ai.go for documentation)
-	ModelName   string  `mapstructure:"model_name"`
-	Temperature float32 `mapstructure:"temperature"`
-	MaxTokens   int     `mapstructure:"max_tokens"`
-	Language    string  `mapstructure:"language"`
-	PromptDir   string  `mapstructure:"prompt_dir"`
+	ModelName   string  `mapstructure:"model_name" json:"model_name"`
+	Temperature float32 `mapstructure:"temperature" json:"temperature"`
+	MaxTokens   int     `mapstructure:"max_tokens" json:"max_tokens"`
+	Language    string  `mapstructure:"language" json:"language"`
+	PromptDir   string  `mapstructure:"prompt_dir" json:"prompt_dir"`
 
 	// Conversation history configuration
-	MaxHistoryMessages int32 `mapstructure:"max_history_messages"`
-	MaxTurns           int   `mapstructure:"max_turns"`
+	MaxHistoryMessages int32 `mapstructure:"max_history_messages" json:"max_history_messages"`
+	MaxTurns           int   `mapstructure:"max_turns" json:"max_turns"`
 
 	// Storage configuration (see storage.go for documentation)
-	DatabasePath     string `mapstructure:"database_path"`
-	PostgresHost     string `mapstructure:"postgres_host"`
-	PostgresPort     int    `mapstructure:"postgres_port"`
-	PostgresUser     string `mapstructure:"postgres_user"`
-	PostgresPassword string `mapstructure:"postgres_password"`
-	PostgresDBName   string `mapstructure:"postgres_db_name"`
-	PostgresSSLMode  string `mapstructure:"postgres_ssl_mode"`
+	DatabasePath     string `mapstructure:"database_path" json:"database_path"`
+	PostgresHost     string `mapstructure:"postgres_host" json:"postgres_host"`
+	PostgresPort     int    `mapstructure:"postgres_port" json:"postgres_port"`
+	PostgresUser     string `mapstructure:"postgres_user" json:"postgres_user"`
+	PostgresPassword string `mapstructure:"postgres_password" json:"postgres_password" sensitive:"true"`
+	PostgresDBName   string `mapstructure:"postgres_db_name" json:"postgres_db_name"`
+	PostgresSSLMode  string `mapstructure:"postgres_ssl_mode" json:"postgres_ssl_mode"`
 
 	// RAG configuration
-	RAGTopK       int32  `mapstructure:"rag_top_k"`
-	EmbedderModel string `mapstructure:"embedder_model"`
+	RAGTopK       int32  `mapstructure:"rag_top_k" json:"rag_top_k"`
+	EmbedderModel string `mapstructure:"embedder_model" json:"embedder_model"`
 
 	// MCP configuration (see tools.go for type definitions)
-	MCP        MCPConfig            `mapstructure:"mcp"`
-	MCPServers map[string]MCPServer `mapstructure:"mcp_servers"`
+	MCP        MCPConfig            `mapstructure:"mcp" json:"mcp"`
+	MCPServers map[string]MCPServer `mapstructure:"mcp_servers" json:"mcp_servers"`
 
 	// Tool configuration (see tools.go for type definitions)
-	SearXNG    SearXNGConfig    `mapstructure:"searxng"`
-	WebScraper WebScraperConfig `mapstructure:"web_scraper"`
+	SearXNG    SearXNGConfig    `mapstructure:"searxng" json:"searxng"`
+	WebScraper WebScraperConfig `mapstructure:"web_scraper" json:"web_scraper"`
 
 	// Observability configuration (see observability.go for type definition)
-	Datadog DatadogConfig `mapstructure:"datadog"`
+	Datadog DatadogConfig `mapstructure:"datadog" json:"datadog"`
 }
 
 // ============================================================================
@@ -271,17 +275,41 @@ func maskSecret(s string) string {
 }
 
 // MarshalJSON implements custom JSON marshaling to mask sensitive fields.
+// Fields tagged with `sensitive:"true"` are automatically masked.
 // This prevents accidental leakage if Config is logged or serialized.
 func (c Config) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion
-	type Alias Config
-	return json.Marshal(&struct {
-		PostgresPassword string `json:"postgres_password"`
-		*Alias
-	}{
-		PostgresPassword: maskSecret(c.PostgresPassword),
-		Alias:            (*Alias)(&c),
-	})
+	return marshalWithSensitiveMasking(c)
+}
+
+// marshalWithSensitiveMasking uses reflection to mask fields tagged with sensitive:"true".
+// This approach ensures new sensitive fields are automatically masked when properly tagged.
+func marshalWithSensitiveMasking(v interface{}) ([]byte, error) {
+	val := reflect.ValueOf(v)
+	typ := val.Type()
+
+	result := make(map[string]interface{})
+
+	for i := 0; i < val.NumField(); i++ {
+		field := typ.Field(i)
+		value := val.Field(i)
+
+		// Get JSON tag for field name
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+		// Handle json:"name,omitempty" format
+		jsonName := strings.Split(jsonTag, ",")[0]
+
+		// Check if field is marked as sensitive and is a string
+		if field.Tag.Get("sensitive") == "true" && value.Kind() == reflect.String {
+			result[jsonName] = maskSecret(value.String())
+		} else {
+			result[jsonName] = value.Interface()
+		}
+	}
+
+	return json.Marshal(result)
 }
 
 // String implements Stringer to prevent accidental printing of secrets.
