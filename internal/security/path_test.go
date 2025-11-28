@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,8 +231,8 @@ func TestSymlinkBypassAttempt(t *testing.T) {
 		t.Error("expected error for symlink pointing outside allowed dirs, but got none")
 	}
 
-	if err != nil && !strings.Contains(err.Error(), "outside allowed directories") {
-		t.Errorf("expected 'outside allowed directories' error, got: %v", err)
+	if err != nil && !errors.Is(err, ErrSymlinkOutsideAllowed) {
+		t.Errorf("expected ErrSymlinkOutsideAllowed, got: %v", err)
 	}
 }
 

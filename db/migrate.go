@@ -58,21 +58,43 @@ func Migrate(connURL string) error {
 		}
 	}()
 
+	// Check for dirty state before running migrations
+	version, dirty, verErr := m.Version()
+	if verErr != nil && !errors.Is(verErr, migrate.ErrNilVersion) {
+		slog.Error("failed to check migration version", "error", verErr)
+		return fmt.Errorf("failed to check migration version: %w", verErr)
+	}
+	if dirty {
+		slog.Error("database is in dirty migration state - manual intervention required",
+			"version", version,
+			"hint", fmt.Sprintf("inspect schema and run: migrate force %d", version))
+		return fmt.Errorf("database in dirty state (version=%d), manual cleanup required", version)
+	}
+
 	// Run migrations
 	if err := m.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
 			slog.Debug("no new migrations to apply")
 			return nil
 		}
+
+		// Check for dirty state after failure
+		postVersion, postDirty, postErr := m.Version()
+		if postErr == nil && postDirty {
+			slog.Error("migration failed - database now in dirty state",
+				"version", postVersion,
+				"hint", fmt.Sprintf("fix the migration and run: migrate force %d", postVersion))
+		}
+
 		slog.Error("failed to run migrations", "error", err)
 		return err
 	}
 
-	version, dirty, err := m.Version()
-	if err != nil {
+	finalVersion, finalDirty, verErr := m.Version()
+	if verErr != nil {
 		slog.Info("migrations completed")
 	} else {
-		slog.Info("migrations completed", "version", version, "dirty", dirty)
+		slog.Info("migrations completed", "version", finalVersion, "dirty", finalDirty)
 	}
 
 	return nil

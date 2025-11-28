@@ -35,7 +35,7 @@ func BenchmarkTUI_View(b *testing.B) {
 		tui := newBenchmarkTUI()
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = tui.View()
 		}
 	})
@@ -48,7 +48,7 @@ func BenchmarkTUI_View(b *testing.B) {
 		}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = tui.View()
 		}
 	})
@@ -61,7 +61,7 @@ func BenchmarkTUI_View(b *testing.B) {
 		}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = tui.View()
 		}
 	})
@@ -73,7 +73,7 @@ func BenchmarkTUI_View(b *testing.B) {
 		}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = tui.View()
 		}
 	})
@@ -88,7 +88,7 @@ func BenchmarkTUI_View(b *testing.B) {
 		}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = tui.View()
 		}
 	})
@@ -98,7 +98,7 @@ func BenchmarkTUI_View(b *testing.B) {
 		tui.state = StateThinking
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = tui.View()
 		}
 	})
@@ -111,7 +111,7 @@ func BenchmarkTUI_View(b *testing.B) {
 		}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = tui.View()
 		}
 	})
@@ -124,7 +124,7 @@ func BenchmarkTUI_AddMessage(b *testing.B) {
 		msg := Message{Role: "user", Text: "Hello"}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			tui.messages = tui.messages[:0] // Reset to avoid bounds trimming
 			tui.addMessage(msg)
 		}
@@ -139,7 +139,7 @@ func BenchmarkTUI_AddMessage(b *testing.B) {
 		msg := Message{Role: "user", Text: "Hello"}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			tui.addMessage(msg)
 			// Remove one to stay near capacity
 			if len(tui.messages) > maxMessages-1 {
@@ -157,7 +157,7 @@ func BenchmarkTUI_AddMessage(b *testing.B) {
 		msg := Message{Role: "user", Text: "Hello"}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			tui.addMessage(msg)
 		}
 	})
@@ -171,7 +171,7 @@ func BenchmarkTUI_Update(b *testing.B) {
 		msg := tea.KeyPressMsg(key)
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			model, _ := tui.Update(msg)
 			tui = model.(*TUI)
 		}
@@ -182,7 +182,7 @@ func BenchmarkTUI_Update(b *testing.B) {
 		msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			model, _ := tui.Update(msg)
 			tui = model.(*TUI)
 		}
@@ -201,7 +201,7 @@ func BenchmarkTUI_Update(b *testing.B) {
 		msg := streamTextMsg{text: "Hello "}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			model, _ := tui.Update(msg)
 			tui = model.(*TUI)
 			tui.output.Reset() // Reset to avoid unbounded growth
@@ -217,7 +217,7 @@ func BenchmarkTUI_NavigateHistory(b *testing.B) {
 		tui.historyIdx = 1
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			model, _ := tui.navigateHistory(-1)
 			tui = model.(*TUI)
 			if tui.historyIdx == 0 {
@@ -234,7 +234,7 @@ func BenchmarkTUI_NavigateHistory(b *testing.B) {
 		tui.historyIdx = maxHistory / 2
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			model, _ := tui.navigateHistory(-1)
 			tui = model.(*TUI)
 			if tui.historyIdx == 0 {
@@ -251,7 +251,7 @@ func BenchmarkMarkdownRenderer(b *testing.B) {
 		text := "Hello **world**!"
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = mr.Render(text)
 		}
 	})
@@ -261,7 +261,7 @@ func BenchmarkMarkdownRenderer(b *testing.B) {
 		text := "```go\nfunc main() {\n\tfmt.Println(\"Hello\")\n}\n```"
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = mr.Render(text)
 		}
 	})
@@ -271,7 +271,7 @@ func BenchmarkMarkdownRenderer(b *testing.B) {
 		text := strings.Repeat("This is a paragraph with **bold** and *italic* text. ", 50)
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = mr.Render(text)
 		}
 	})
@@ -296,7 +296,7 @@ This is a paragraph with **bold** and *italic* text.
 `
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = mr.Render(text)
 		}
 	})
@@ -306,7 +306,7 @@ This is a paragraph with **bold** and *italic* text.
 		widths := []int{80, 120, 40, 100, 60}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			mr.UpdateWidth(widths[i%len(widths)])
 		}
 	})
@@ -321,7 +321,7 @@ func BenchmarkListenForStream(b *testing.B) {
 
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			textCh <- "Hello"
 			cmd := listenForStream(textCh, doneCh, errCh)
 			_ = cmd()
@@ -335,7 +335,7 @@ func BenchmarkListenForStream(b *testing.B) {
 
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			doneCh <- chat.Output{Response: "done"}
 			cmd := listenForStream(textCh, doneCh, errCh)
 			_ = cmd()
@@ -345,7 +345,7 @@ func BenchmarkListenForStream(b *testing.B) {
 	b.Run("nil_channels", func(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			cmd := listenForStream(nil, nil, nil)
 			_ = cmd()
 		}
@@ -358,7 +358,7 @@ func BenchmarkStyles(b *testing.B) {
 		styles := DefaultStyles()
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = styles.RenderBanner()
 		}
 	})
@@ -367,7 +367,7 @@ func BenchmarkStyles(b *testing.B) {
 		styles := DefaultStyles()
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = styles.RenderWelcomeTips()
 		}
 	})
@@ -375,7 +375,7 @@ func BenchmarkStyles(b *testing.B) {
 	b.Run("default_styles", func(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = DefaultStyles()
 		}
 	})
@@ -387,7 +387,7 @@ func BenchmarkTUI_HandleSlashCommand(b *testing.B) {
 		tui := newBenchmarkTUI()
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			tui.messages = tui.messages[:0] // Reset messages
 			model, _ := tui.handleSlashCommand("/help")
 			tui = model.(*TUI)
@@ -401,7 +401,7 @@ func BenchmarkTUI_HandleSlashCommand(b *testing.B) {
 		}
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			tui.messages = []Message{{Role: "user", Text: "test"}}
 			model, _ := tui.handleSlashCommand("/clear")
 			tui = model.(*TUI)
@@ -412,7 +412,7 @@ func BenchmarkTUI_HandleSlashCommand(b *testing.B) {
 		tui := newBenchmarkTUI()
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			tui.messages = tui.messages[:0]
 			model, _ := tui.handleSlashCommand("/unknown")
 			tui = model.(*TUI)

@@ -21,6 +21,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -251,4 +252,43 @@ func bindEnvVariables() {
 	_ = viper.BindEnv("datadog.agent_host", "DD_AGENT_HOST")
 	_ = viper.BindEnv("datadog.environment", "DD_ENV")
 	_ = viper.BindEnv("datadog.service_name", "DD_SERVICE")
+}
+
+// ============================================================================
+// Sensitive Data Masking
+// ============================================================================
+
+// maskSecret masks a secret string for safe logging.
+// Shows first 2 and last 2 characters, masks the rest.
+func maskSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:2] + "****" + s[len(s)-2:]
+}
+
+// MarshalJSON implements custom JSON marshaling to mask sensitive fields.
+// This prevents accidental leakage if Config is logged or serialized.
+func (c Config) MarshalJSON() ([]byte, error) {
+	// Create an alias to avoid infinite recursion
+	type Alias Config
+	return json.Marshal(&struct {
+		PostgresPassword string `json:"postgres_password"`
+		*Alias
+	}{
+		PostgresPassword: maskSecret(c.PostgresPassword),
+		Alias:            (*Alias)(&c),
+	})
+}
+
+// String implements Stringer to prevent accidental printing of secrets.
+func (c Config) String() string {
+	data, err := c.MarshalJSON()
+	if err != nil {
+		return fmt.Sprintf("Config{error: %v}", err)
+	}
+	return string(data)
 }

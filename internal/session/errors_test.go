@@ -61,8 +61,6 @@ func TestNormalizeBranch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			got, err := NormalizeBranch(tt.input)
 
 			if tt.wantErr != nil {
@@ -119,8 +117,6 @@ func TestNormalizeHistoryLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			got := NormalizeHistoryLimit(tt.input)
 			if got != tt.want {
 				t.Errorf("NormalizeHistoryLimit(%d) = %d, want %d", tt.input, got, tt.want)
@@ -148,8 +144,6 @@ func TestSplitBranch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			got := splitBranch(tt.input)
 
 			if len(got) != len(tt.want) {
@@ -196,8 +190,6 @@ func TestIsValidSegment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			got := isValidSegment(tt.input)
 			if got != tt.want {
 				t.Errorf("isValidSegment(%q) = %v, want %v", tt.input, got, tt.want)
@@ -257,7 +249,7 @@ func BenchmarkNormalizeBranch(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, branch := range branches {
 			_, _ = NormalizeBranch(branch)
 		}
@@ -269,9 +261,124 @@ func BenchmarkNormalizeHistoryLimit(b *testing.B) {
 	limits := []int32{0, -1, 50, 100, 10001}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, limit := range limits {
 			_ = NormalizeHistoryLimit(limit)
 		}
 	}
+}
+
+// FuzzNormalizeBranch tests NormalizeBranch against malicious inputs.
+// This is security-critical as branch names may affect SQL queries.
+// Run with: go test -fuzz=FuzzNormalizeBranch -fuzztime=30s ./internal/session/
+func FuzzNormalizeBranch(f *testing.F) {
+	// Seed corpus with known attack vectors
+	seedCorpus := []string{
+		// Valid cases
+		"main",
+		"main.research",
+		"chat.agent1.subtask",
+
+		// Path traversal attempts
+		"../../../etc/passwd",
+		"..\\..\\windows\\system32",
+		"main/../../../etc/passwd",
+
+		// SQL injection attempts
+		"'; DROP TABLE sessions; --",
+		"main' OR '1'='1",
+		"main; DELETE FROM messages;",
+		"main UNION SELECT * FROM users--",
+
+		// Null byte injection
+		"main\x00evil",
+		"\x00",
+
+		// Unicode attacks
+		"main\u202e\u202d",    // Right-to-left override
+		"main\ufeff",          // BOM
+		"ｍａｉｎ",                // Fullwidth characters
+		"main\u0000.research", // Embedded null
+		"main\u3002research",  // Ideographic full stop
+
+		// Length attacks
+		strings.Repeat("a", 300),
+		strings.Repeat("a.b.", 100),
+
+		// Format string attacks
+		"main%s%s%s%n",
+		"main%x%x%x",
+
+		// Shell injection attempts
+		"main; rm -rf /",
+		"main | cat /etc/passwd",
+		"main $(whoami)",
+		"main `id`",
+
+		// Edge cases
+		"",
+		".",
+		"..",
+		"...",
+		"main.",
+		".main",
+		"main..sub",
+		"a.b.c.d.e.f.g.h.i.j.k", // Exceeds max depth
+	}
+
+	for _, seed := range seedCorpus {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		result, err := NormalizeBranch(input)
+
+		// Property 1: Valid results must not exceed MaxBranchLength
+		if err == nil && len(result) > MaxBranchLength {
+			t.Errorf("result exceeds max length: len=%d max=%d", len(result), MaxBranchLength)
+		}
+
+		// Property 2: Valid results must not contain dangerous characters
+		if err == nil {
+			dangerousChars := []string{";", "'", "\"", "--", "/*", "*/", "\x00", "|", "&", "`", "$", "(", ")"}
+			for _, char := range dangerousChars {
+				if strings.Contains(result, char) {
+					t.Errorf("result contains dangerous char: result=%q char=%q", result, char)
+				}
+			}
+		}
+
+		// Property 3: Valid results must match expected pattern (letters, numbers, underscores, dots)
+		if err == nil {
+			for i, c := range result {
+				isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+				isDigit := c >= '0' && c <= '9'
+				isUnderscore := c == '_'
+				isDot := c == '.'
+
+				if !isLetter && !isDigit && !isUnderscore && !isDot {
+					t.Errorf("result contains invalid char at position %d: result=%q char=%q", i, result, string(c))
+				}
+			}
+		}
+
+		// Property 4: Empty input must return DefaultBranch
+		if input == "" && err == nil && result != DefaultBranch {
+			t.Errorf("empty input should return default branch: got=%q want=%q", result, DefaultBranch)
+		}
+
+		// Property 5: Path traversal must ALWAYS be rejected
+		if strings.Contains(input, "..") {
+			if err == nil {
+				t.Errorf("input with '..' should be rejected: input=%q result=%q", input, result)
+			}
+		}
+
+		// Property 6: Null bytes must cause rejection
+		if strings.Contains(input, "\x00") {
+			if err == nil {
+				t.Errorf("null byte should cause rejection: input=%q", input)
+			}
+		}
+	})
 }

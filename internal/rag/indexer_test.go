@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/koopa0/koopa-cli/internal/knowledge"
@@ -399,6 +400,112 @@ func TestIndexer_AddDirectory_NonExistent(t *testing.T) {
 }
 
 // ============================================================================
+// File Size Limit Tests (QA Master recommended)
+// ============================================================================
+
+func TestIndexer_AddFile_ExceedsEmbeddingLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	largeFile := filepath.Join(tmpDir, "large.txt")
+
+	// Create file larger than MaxFileSizeForEmbedding (8KB)
+	largeContent := make([]byte, MaxFileSizeForEmbedding+1)
+	for i := range largeContent {
+		largeContent[i] = 'x'
+	}
+
+	if err := os.WriteFile(largeFile, largeContent, 0600); err != nil {
+		t.Fatalf("failed to create large file: %v", err)
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	err := indexer.AddFile(context.Background(), largeFile)
+	if err == nil {
+		t.Fatal("expected error for file exceeding embedding limit, got nil")
+	}
+
+	if !contains(err.Error(), "exceeds embedding limit") {
+		t.Errorf("error should mention embedding limit: %v", err)
+	}
+
+	// Verify store.Add was not called
+	if mockStore.addCalls > 0 {
+		t.Error("store.Add should not be called for oversized file")
+	}
+}
+
+func TestIndexer_AddFile_ExactlyAtEmbeddingLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	maxFile := filepath.Join(tmpDir, "max.txt")
+
+	// Create file exactly at MaxFileSizeForEmbedding (8KB)
+	maxContent := make([]byte, MaxFileSizeForEmbedding)
+	for i := range maxContent {
+		maxContent[i] = 'x'
+	}
+
+	if err := os.WriteFile(maxFile, maxContent, 0600); err != nil {
+		t.Fatalf("failed to create max file: %v", err)
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	err := indexer.AddFile(context.Background(), maxFile)
+	if err != nil {
+		t.Fatalf("file at exact limit should be accepted: %v", err)
+	}
+
+	// Verify store.Add was called
+	if mockStore.addCalls != 1 {
+		t.Errorf("expected 1 Add call, got %d", mockStore.addCalls)
+	}
+}
+
+func TestIndexer_AddDirectory_SkipsLargeFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create normal size file
+	normalFile := filepath.Join(tmpDir, "normal.txt")
+	if err := os.WriteFile(normalFile, []byte("normal content"), 0600); err != nil {
+		t.Fatalf("failed to create normal file: %v", err)
+	}
+
+	// Create large file (exceeds embedding limit)
+	largeFile := filepath.Join(tmpDir, "large.go")
+	largeContent := make([]byte, MaxFileSizeForEmbedding+100)
+	for i := range largeContent {
+		largeContent[i] = 'x'
+	}
+	if err := os.WriteFile(largeFile, largeContent, 0600); err != nil {
+		t.Fatalf("failed to create large file: %v", err)
+	}
+
+	mockStore := &mockIndexerStore{}
+	indexer := NewIndexer(mockStore, nil)
+
+	result, err := indexer.AddDirectory(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("AddDirectory failed: %v", err)
+	}
+
+	// Should add normal.txt, skip large.go
+	if result.FilesAdded != 1 {
+		t.Errorf("expected 1 file added, got %d", result.FilesAdded)
+	}
+
+	if result.FilesSkipped != 1 {
+		t.Errorf("expected 1 file skipped (large file), got %d", result.FilesSkipped)
+	}
+
+	// Verify only normal file was added
+	if mockStore.addCalls != 1 {
+		t.Errorf("expected 1 Add call, got %d", mockStore.addCalls)
+	}
+}
+
+// ============================================================================
 // Indexer.ListDocuments Tests
 // ============================================================================
 
@@ -750,13 +857,5 @@ func TestCustomSupportedExtensions(t *testing.T) {
 
 // contains checks if a string contains a substring (case-sensitive)
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		func() bool {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-			return false
-		}())
+	return strings.Contains(s, substr)
 }
