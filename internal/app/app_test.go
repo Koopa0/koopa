@@ -83,13 +83,13 @@ func TestApp_Close(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 			}
 
-			// Verify context was cancelled if cancel function existed
+			// Verify context was canceled if cancel function existed
 			if app.cancel != nil && app.ctx != nil {
 				select {
 				case <-app.ctx.Done():
-					// Context was properly cancelled
+					// Context was properly canceled
 				default:
-					t.Error("context was not cancelled")
+					t.Error("context was not canceled")
 				}
 			}
 		})
@@ -635,9 +635,9 @@ func TestApp_ShutdownTimeout(t *testing.T) {
 
 		select {
 		case <-ctx.Done():
-			// Context was properly cancelled
+			// Context was properly canceled
 		default:
-			t.Error("context was not cancelled during shutdown")
+			t.Error("context was not canceled during shutdown")
 		}
 	})
 }

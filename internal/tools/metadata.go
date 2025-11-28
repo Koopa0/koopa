@@ -89,7 +89,7 @@ func (t *ToolMetadata) Description() string {
 
 // IsLongRunning indicates if the tool is long-running.
 // Currently defaults to false for all tools using metadata.
-func (t *ToolMetadata) IsLongRunning() bool {
+func (*ToolMetadata) IsLongRunning() bool {
 	return false
 }
 
@@ -165,7 +165,7 @@ var toolMetadata = map[string]ToolMetadata{
 		NameField:            ToolExecuteCommand,
 		RequiresConfirmation: true,
 		DangerLevel:          DangerLevelDangerous,
-		IsDangerousFunc: func(params map[string]any) bool {
+		IsDangerousFunc: func(_ map[string]any) bool {
 			// All executeCommand calls are dangerous by default
 			// Future: Could parse command and detect destructive operations
 			return true

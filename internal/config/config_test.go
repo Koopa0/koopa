@@ -938,7 +938,7 @@ func FuzzMaskSecret(f *testing.F) {
 		}
 
 		// Property 2: Short inputs (<=4 chars) should be fully masked
-		if len(input) > 0 && len(input) <= 4 && masked != "****" {
+		if input != "" && len(input) <= 4 && masked != "****" {
 			t.Errorf("short input should be '****', got: %q for input len=%d", masked, len(input))
 		}
 
@@ -948,7 +948,7 @@ func FuzzMaskSecret(f *testing.F) {
 		}
 
 		// Property 4: Masked output should contain "****" (for non-empty inputs)
-		if len(input) > 0 && !strings.Contains(masked, "****") {
+		if input != "" && !strings.Contains(masked, "****") {
 			t.Errorf("masked output should contain '****', got: %q", masked)
 		}
 

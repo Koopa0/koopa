@@ -30,6 +30,9 @@ const (
 	// KoopaPromptName is the name of the Dotprompt file for the Chat agent.
 	// This corresponds to prompts/koopa.prompt.
 	KoopaPromptName = "koopa"
+
+	// FallbackResponseMessage is the message returned when the model produces an empty response.
+	FallbackResponseMessage = "I apologize, but I couldn't generate a response. Please try rephrasing your question."
 )
 
 // StreamCallback is called for each chunk of streaming response.
@@ -151,17 +154,17 @@ func New(deps Deps) (*Chat, error) {
 }
 
 // Name returns the agent name.
-func (c *Chat) Name() string {
+func (*Chat) Name() string {
 	return Name
 }
 
 // Description returns a description of the agent's capabilities.
-func (c *Chat) Description() string {
+func (*Chat) Description() string {
 	return Description
 }
 
 // SubAgents returns any sub-agents (none for this agent).
-func (c *Chat) SubAgents() []agent.Agent {
+func (*Chat) SubAgents() []agent.Agent {
 	return nil
 }
 
@@ -209,7 +212,7 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 		c.logger.Warn("model returned empty response",
 			"invocation_id", ctx.InvocationID(),
 			"session_id", ctx.SessionID())
-		responseText = "I apologize, but I couldn't generate a response. Please try rephrasing your question."
+		responseText = FallbackResponseMessage
 	}
 
 	// Update history with user input and response
@@ -236,8 +239,11 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 // execute is the unified execution logic for both streaming and non-streaming modes.
 // If callback is non-nil, streaming is enabled; otherwise, standard generation is used.
 func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
-	// Build messages: history + current user input
-	messages := append(historyMessages, ai.NewUserMessage(ai.NewTextPart(input)))
+	// Build messages: copy history and append current user input
+	// Using make+append pattern to avoid modifying the original historyMessages slice
+	messages := make([]*ai.Message, len(historyMessages), len(historyMessages)+1)
+	copy(messages, historyMessages)
+	messages = append(messages, ai.NewUserMessage(ai.NewTextPart(input)))
 
 	// Retrieve relevant documents for RAG context (graceful fallback on error)
 	ragDocs := c.retrieveRAGContext(ctx, input)
@@ -316,7 +322,7 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 		// Use Debug for expected errors (timeout, cancellation)
 		// Use Warn for unexpected errors (DB issues, etc.) that ops should know about
 		if ctx.Err() != nil {
-			c.logger.Debug("RAG retrieval cancelled (continuing without context)",
+			c.logger.Debug("RAG retrieval canceled (continuing without context)",
 				"error", err,
 				"query_length", len(query))
 		} else {
@@ -336,10 +342,18 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 	return docs
 }
 
-// emptyReadonlyContext is used for toolset registration.
+// emptyReadonlyContext is used for toolset registration when no real context is available.
+// It implements agent.ReadonlyContext with empty values.
 type emptyReadonlyContext struct{}
 
-func (e *emptyReadonlyContext) InvocationID() string       { return "" }
-func (e *emptyReadonlyContext) Branch() string             { return "" }
-func (e *emptyReadonlyContext) SessionID() agent.SessionID { return "" }
-func (e *emptyReadonlyContext) AgentName() string          { return "" }
+// InvocationID returns empty string for toolset registration context.
+func (*emptyReadonlyContext) InvocationID() string { return "" }
+
+// Branch returns empty string for toolset registration context.
+func (*emptyReadonlyContext) Branch() string { return "" }
+
+// SessionID returns empty string for toolset registration context.
+func (*emptyReadonlyContext) SessionID() agent.SessionID { return "" }
+
+// AgentName returns empty string for toolset registration context.
+func (*emptyReadonlyContext) AgentName() string { return "" }

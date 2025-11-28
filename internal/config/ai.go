@@ -14,6 +14,6 @@ import "github.com/firebase/genkit/go/plugins/googlegenai"
 //   - PromptDir: Directory for .prompt files (Dotprompt)
 
 // Plugins returns Genkit plugins for this configuration.
-func (c *Config) Plugins() []any {
+func (*Config) Plugins() []any {
 	return []any{&googlegenai.GoogleAI{}}
 }

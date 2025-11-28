@@ -18,7 +18,7 @@ func TestRecoveryMiddleware_PanicRecovery(t *testing.T) {
 
 	handler := RecoveryMiddleware(logger)(panicHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	w := httptest.NewRecorder()
 
 	// Should not panic
@@ -37,7 +37,7 @@ func TestLoggingMiddleware_CapturesMetrics(t *testing.T) {
 
 	handler := LoggingMiddleware(logger)(innerHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -78,7 +78,7 @@ func TestAuthMiddleware_ExemptPaths(t *testing.T) {
 	exemptPaths := []string{"/health", "/ready", "/health/live", "/health/ready"}
 	for _, path := range exemptPaths {
 		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
 			w := httptest.NewRecorder()
 
 			handler.ServeHTTP(w, req)
@@ -100,7 +100,7 @@ func TestAuthMiddleware_DevMode(t *testing.T) {
 	t.Setenv(APIKeyEnvVar, "")
 	handler := AuthMiddleware(logger)(innerHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", http.NoBody)
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -144,7 +144,7 @@ func TestExtractAPIKey(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 			for k, v := range tc.headers {
 				req.Header.Set(k, v)
 			}
@@ -202,7 +202,7 @@ func TestChain(t *testing.T) {
 
 	chained := Chain(handler, m1, m2)
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	w := httptest.NewRecorder()
 
 	chained.ServeHTTP(w, req)

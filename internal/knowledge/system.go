@@ -130,7 +130,7 @@ func (s *SystemKnowledgeIndexer) buildSystemKnowledgeDocs() []Document {
 }
 
 // buildGolangStyleDocs creates Golang best practices documents.
-func (s *SystemKnowledgeIndexer) buildGolangStyleDocs() []Document {
+func (*SystemKnowledgeIndexer) buildGolangStyleDocs() []Document {
 	now := time.Now()
 
 	return []Document{
@@ -239,7 +239,7 @@ Bad:
 }
 
 // buildCapabilitiesDocs creates Agent capabilities documents.
-func (s *SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
+func (*SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
 	now := time.Now()
 
 	return []Document{
@@ -322,7 +322,7 @@ func (s *SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
 }
 
 // buildArchitectureDocs creates architecture principles documents.
-func (s *SystemKnowledgeIndexer) buildArchitectureDocs() []Document {
+func (*SystemKnowledgeIndexer) buildArchitectureDocs() []Document {
 	now := time.Now()
 
 	return []Document{

@@ -12,8 +12,14 @@ import (
 	"github.com/koopa0/koopa-cli/internal/security"
 )
 
-// FileToolset name constant.
+// FileToolsetName is the registered name of the file toolset.
 const FileToolsetName = "file"
+
+// Entry type constants for ListFiles results.
+const (
+	entryTypeFile      = "file"
+	entryTypeDirectory = "directory"
+)
 
 // MaxReadFileSize is the maximum file size allowed for ReadFile (10 MB).
 // This prevents OOM when reading large files into memory.
@@ -68,12 +74,12 @@ func NewFileToolset(pathVal *security.Path, logger log.Logger) (*FileToolset, er
 }
 
 // Name returns the toolset identifier.
-func (fs *FileToolset) Name() string {
+func (*FileToolset) Name() string {
 	return FileToolsetName
 }
 
 // Tools returns all file operation tools provided by this toolset.
-func (fs *FileToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
+func (fs *FileToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
 	return []Tool{
 		NewTool(
 			ToolReadFile,
@@ -110,7 +116,7 @@ func (fs *FileToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
 
 // ReadFile reads and returns the complete content of a file with security validation.
 // Uses os.Open + io.LimitReader for efficient single-pass I/O with defense-in-depth size limiting.
-func (fs *FileToolset) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error) {
+func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) {
 	fs.logger.Info("ReadFile called", "path", input.Path)
 
 	// Validate path (security check)
@@ -199,7 +205,7 @@ func (fs *FileToolset) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Resul
 }
 
 // WriteFile writes content to a file with security validation and automatic directory creation.
-func (fs *FileToolset) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Result, error) {
+func (fs *FileToolset) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Result, error) {
 	fs.logger.Info("WriteFile called", "path", input.Path)
 
 	safePath, err := fs.pathVal.Validate(input.Path)
@@ -215,13 +221,13 @@ func (fs *FileToolset) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Res
 	}
 
 	dir := filepath.Dir(safePath)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	if mkdirErr := os.MkdirAll(dir, 0o750); mkdirErr != nil {
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to create directory",
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to create directory: %v", err),
+				Message: fmt.Sprintf("unable to create directory: %v", mkdirErr),
 			},
 		}, nil
 	}
@@ -240,7 +246,7 @@ func (fs *FileToolset) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Res
 	}
 	defer func() { _ = file.Close() }()
 
-	if _, err := file.Write([]byte(input.Content)); err != nil {
+	if _, err := file.WriteString(input.Content); err != nil {
 		return Result{
 			Status:  StatusError,
 			Message: "Unable to write file",
@@ -262,7 +268,7 @@ func (fs *FileToolset) WriteFile(ctx *ai.ToolContext, input WriteFileInput) (Res
 }
 
 // ListFiles lists files in a directory.
-func (fs *FileToolset) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Result, error) {
+func (fs *FileToolset) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Result, error) {
 	fs.logger.Info("ListFiles called", "path", input.Path)
 
 	safePath, err := fs.pathVal.Validate(input.Path)
@@ -289,15 +295,15 @@ func (fs *FileToolset) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Res
 		}, nil
 	}
 
-	var files []map[string]any
+	files := make([]map[string]any, 0, len(entries))
 	for _, entry := range entries {
-		fileType := "file"
+		entryType := entryTypeFile
 		if entry.IsDir() {
-			fileType = "directory"
+			entryType = entryTypeDirectory
 		}
 		files = append(files, map[string]any{
 			"name": entry.Name(),
-			"type": fileType,
+			"type": entryType,
 		})
 	}
 
@@ -313,7 +319,7 @@ func (fs *FileToolset) ListFiles(ctx *ai.ToolContext, input ListFilesInput) (Res
 }
 
 // DeleteFile permanently deletes a file with security validation.
-func (fs *FileToolset) DeleteFile(ctx *ai.ToolContext, input DeleteFileInput) (Result, error) {
+func (fs *FileToolset) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Result, error) {
 	fs.logger.Info("DeleteFile called", "path", input.Path)
 
 	safePath, err := fs.pathVal.Validate(input.Path)
@@ -349,7 +355,7 @@ func (fs *FileToolset) DeleteFile(ctx *ai.ToolContext, input DeleteFileInput) (R
 }
 
 // GetFileInfo gets file metadata.
-func (fs *FileToolset) GetFileInfo(ctx *ai.ToolContext, input GetFileInfoInput) (Result, error) {
+func (fs *FileToolset) GetFileInfo(_ *ai.ToolContext, input GetFileInfoInput) (Result, error) {
 	fs.logger.Info("GetFileInfo called", "path", input.Path)
 
 	safePath, err := fs.pathVal.Validate(input.Path)

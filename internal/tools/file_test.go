@@ -78,7 +78,7 @@ func TestFileToolset_ReadFile(t *testing.T) {
 	testDir := setupTestDir(t)
 	testFile := filepath.Join(testDir, "test.txt")
 	testContent := "Hello, World!"
-	err := os.WriteFile(testFile, []byte(testContent), 0600)
+	err := os.WriteFile(testFile, []byte(testContent), 0o600)
 	require.NoError(t, err)
 
 	// Create FileToolset with allowed directory
@@ -133,7 +133,7 @@ func TestFileToolset_ReadFile(t *testing.T) {
 		relFile := filepath.Join(workDir, "test_relative.txt")
 		defer func() { _ = os.Remove(relFile) }()
 
-		err = os.WriteFile(relFile, []byte("relative content"), 0600)
+		err = os.WriteFile(relFile, []byte("relative content"), 0o600)
 		require.NoError(t, err)
 
 		result, err := fs.ReadFile(toolCtx, ReadFileInput{Path: "test_relative.txt"})
@@ -184,7 +184,7 @@ func TestFileToolset_WriteFile(t *testing.T) {
 
 		// Create initial file
 		initialContent := "initial content"
-		err := os.WriteFile(testFile, []byte(initialContent), 0600)
+		err := os.WriteFile(testFile, []byte(initialContent), 0o600)
 		require.NoError(t, err)
 
 		// Overwrite with new content
@@ -261,11 +261,11 @@ func TestFileToolset_ListFiles(t *testing.T) {
 	for i, f := range files {
 		if i == 2 {
 			// Create directory
-			err := os.Mkdir(f, 0750)
+			err := os.Mkdir(f, 0o750)
 			require.NoError(t, err)
 		} else {
 			// Create file
-			err := os.WriteFile(f, []byte("content"), 0600)
+			err := os.WriteFile(f, []byte("content"), 0o600)
 			require.NoError(t, err)
 		}
 	}
@@ -312,7 +312,7 @@ func TestFileToolset_ListFiles(t *testing.T) {
 
 	t.Run("empty directory", func(t *testing.T) {
 		emptyDir := filepath.Join(testDir, "empty")
-		err := os.Mkdir(emptyDir, 0750)
+		err := os.Mkdir(emptyDir, 0o750)
 		require.NoError(t, err)
 
 		result, err := fs.ListFiles(toolCtx, ListFilesInput{Path: emptyDir})
@@ -360,7 +360,7 @@ func TestFileToolset_DeleteFile(t *testing.T) {
 
 	t.Run("successful delete", func(t *testing.T) {
 		testFile := filepath.Join(testDir, "to_delete.txt")
-		err := os.WriteFile(testFile, []byte("content"), 0600)
+		err := os.WriteFile(testFile, []byte("content"), 0o600)
 		require.NoError(t, err)
 
 		result, err := fs.DeleteFile(toolCtx, DeleteFileInput{Path: testFile})
@@ -399,7 +399,7 @@ func TestFileToolset_GetFileInfo(t *testing.T) {
 	testDir := setupTestDir(t)
 	testFile := filepath.Join(testDir, "info.txt")
 	testContent := "test content"
-	err := os.WriteFile(testFile, []byte(testContent), 0600)
+	err := os.WriteFile(testFile, []byte(testContent), 0o600)
 	require.NoError(t, err)
 
 	pathVal, err := security.NewPath([]string{testDir})
@@ -441,7 +441,7 @@ func TestFileToolset_GetFileInfo(t *testing.T) {
 
 	t.Run("directory info", func(t *testing.T) {
 		testSubDir := filepath.Join(testDir, "subdir")
-		err := os.Mkdir(testSubDir, 0750)
+		err := os.Mkdir(testSubDir, 0o750)
 		require.NoError(t, err)
 
 		result, err := fs.GetFileInfo(toolCtx, GetFileInfoInput{Path: testSubDir})

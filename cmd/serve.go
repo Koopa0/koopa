@@ -16,7 +16,7 @@ import (
 //   - Initializes the application runtime
 //   - Creates the HTTP server with all routes
 //   - Signal handling is done by caller (executeServe)
-func RunServe(ctx context.Context, cfg *config.Config, version string, addr string) error {
+func RunServe(ctx context.Context, cfg *config.Config, version, addr string) error {
 	logger := slog.Default()
 	logger.Info("starting HTTP API server", "version", version)
 

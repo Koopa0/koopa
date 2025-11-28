@@ -84,7 +84,7 @@ func TestIndexer_AddFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	testContent := "This is test content for indexing"
 
-	if err := os.WriteFile(testFile, []byte(testContent), 0600); err != nil {
+	if err := os.WriteFile(testFile, []byte(testContent), 0o600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestIndexer_AddFile_UnsupportedExtension(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.exe")
 
-	if err := os.WriteFile(testFile, []byte("binary"), 0600); err != nil {
+	if err := os.WriteFile(testFile, []byte("binary"), 0o600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -196,7 +196,7 @@ func TestIndexer_AddFile_StoreError(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.go")
 
-	if err := os.WriteFile(testFile, []byte("package main"), 0600); err != nil {
+	if err := os.WriteFile(testFile, []byte("package main"), 0o600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -239,10 +239,10 @@ func TestIndexer_AddDirectory_Success(t *testing.T) {
 
 	for _, f := range files {
 		path := filepath.Join(tmpDir, f.name)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatalf("failed to create directory: %v", err)
 		}
-		if err := os.WriteFile(path, []byte(f.content), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(f.content), 0o600); err != nil {
 			t.Fatalf("failed to create file %s: %v", f.name, err)
 		}
 	}
@@ -280,7 +280,7 @@ func TestIndexer_AddDirectory_WithGitignore(t *testing.T) {
 
 	// Create .gitignore
 	gitignoreContent := "*.log\nnode_modules/\n"
-	if err := os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte(gitignoreContent), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte(gitignoreContent), 0o600); err != nil {
 		t.Fatalf("failed to create .gitignore: %v", err)
 	}
 
@@ -297,10 +297,10 @@ func TestIndexer_AddDirectory_WithGitignore(t *testing.T) {
 
 	for _, f := range files {
 		path := filepath.Join(tmpDir, f.name)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatalf("failed to create directory: %v", err)
 		}
-		if err := os.WriteFile(path, []byte(f.content), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(f.content), 0o600); err != nil {
 			t.Fatalf("failed to create file %s: %v", f.name, err)
 		}
 	}
@@ -339,7 +339,7 @@ func TestIndexer_AddDirectory_SkipsUnsupportedFiles(t *testing.T) {
 
 	for name := range files {
 		path := filepath.Join(tmpDir, name)
-		if err := os.WriteFile(path, []byte("content"), 0600); err != nil {
+		if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
 			t.Fatalf("failed to create file %s: %v", name, err)
 		}
 	}
@@ -366,7 +366,7 @@ func TestIndexer_AddDirectory_StoreError(t *testing.T) {
 
 	// Create one file
 	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("content"), 0600); err != nil {
+	if err := os.WriteFile(testFile, []byte("content"), 0o600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -414,7 +414,7 @@ func TestIndexer_AddFile_ExceedsEmbeddingLimit(t *testing.T) {
 		largeContent[i] = 'x'
 	}
 
-	if err := os.WriteFile(largeFile, largeContent, 0600); err != nil {
+	if err := os.WriteFile(largeFile, largeContent, 0o600); err != nil {
 		t.Fatalf("failed to create large file: %v", err)
 	}
 
@@ -446,7 +446,7 @@ func TestIndexer_AddFile_ExactlyAtEmbeddingLimit(t *testing.T) {
 		maxContent[i] = 'x'
 	}
 
-	if err := os.WriteFile(maxFile, maxContent, 0600); err != nil {
+	if err := os.WriteFile(maxFile, maxContent, 0o600); err != nil {
 		t.Fatalf("failed to create max file: %v", err)
 	}
 
@@ -469,7 +469,7 @@ func TestIndexer_AddDirectory_SkipsLargeFiles(t *testing.T) {
 
 	// Create normal size file
 	normalFile := filepath.Join(tmpDir, "normal.txt")
-	if err := os.WriteFile(normalFile, []byte("normal content"), 0600); err != nil {
+	if err := os.WriteFile(normalFile, []byte("normal content"), 0o600); err != nil {
 		t.Fatalf("failed to create normal file: %v", err)
 	}
 
@@ -479,7 +479,7 @@ func TestIndexer_AddDirectory_SkipsLargeFiles(t *testing.T) {
 	for i := range largeContent {
 		largeContent[i] = 'x'
 	}
-	if err := os.WriteFile(largeFile, largeContent, 0600); err != nil {
+	if err := os.WriteFile(largeFile, largeContent, 0o600); err != nil {
 		t.Fatalf("failed to create large file: %v", err)
 	}
 
@@ -867,7 +867,7 @@ func TestIndexer_AddDirectory_SkipsSymlinks(t *testing.T) {
 
 	// Create a valid file
 	validFile := filepath.Join(tmpDir, "valid.txt")
-	if err := os.WriteFile(validFile, []byte("valid content"), 0600); err != nil {
+	if err := os.WriteFile(validFile, []byte("valid content"), 0o600); err != nil {
 		t.Fatalf("failed to create valid file: %v", err)
 	}
 
@@ -945,12 +945,12 @@ func TestIndexer_AddDirectory_SkipsNestedSymlinks(t *testing.T) {
 
 	// Create a subdirectory with a valid file
 	subDir := filepath.Join(tmpDir, "subdir")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
 		t.Fatalf("failed to create subdir: %v", err)
 	}
 
 	validFile := filepath.Join(subDir, "valid.go")
-	if err := os.WriteFile(validFile, []byte("package main"), 0600); err != nil {
+	if err := os.WriteFile(validFile, []byte("package main"), 0o600); err != nil {
 		t.Fatalf("failed to create valid file: %v", err)
 	}
 
@@ -1002,7 +1002,7 @@ func TestIndexer_AddDirectory_LogsHardlinks(t *testing.T) {
 
 	// Create a valid file first
 	validFile := filepath.Join(tmpDir, "original.txt")
-	if err := os.WriteFile(validFile, []byte("original content"), 0600); err != nil {
+	if err := os.WriteFile(validFile, []byte("original content"), 0o600); err != nil {
 		t.Fatalf("failed to create original file: %v", err)
 	}
 
@@ -1043,7 +1043,7 @@ func TestIndexer_AddDirectory_HardlinkToSensitiveFile(t *testing.T) {
 
 	// Create a valid local file first (for comparison)
 	validFile := filepath.Join(tmpDir, "valid.txt")
-	if err := os.WriteFile(validFile, []byte("safe content"), 0600); err != nil {
+	if err := os.WriteFile(validFile, []byte("safe content"), 0o600); err != nil {
 		t.Fatalf("failed to create valid file: %v", err)
 	}
 
@@ -1086,7 +1086,7 @@ func TestIndexer_AddDirectory_BrokenSymlink(t *testing.T) {
 
 	// Create a valid file
 	validFile := filepath.Join(tmpDir, "valid.txt")
-	if err := os.WriteFile(validFile, []byte("valid content"), 0600); err != nil {
+	if err := os.WriteFile(validFile, []byte("valid content"), 0o600); err != nil {
 		t.Fatalf("failed to create valid file: %v", err)
 	}
 

@@ -110,7 +110,7 @@ func splitBranch(branch string) []string {
 // isValidSegment checks if a branch segment is valid.
 // A valid segment starts with a letter and contains only alphanumeric characters and underscores.
 func isValidSegment(seg string) bool {
-	if len(seg) == 0 {
+	if seg == "" {
 		return false
 	}
 

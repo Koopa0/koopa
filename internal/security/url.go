@@ -2,7 +2,6 @@
 //
 // URL validator prevents SSRF (Server-Side Request Forgery) attacks by blocking
 // requests to private networks, cloud metadata endpoints, and other dangerous targets.
-
 package security
 
 import (
@@ -102,7 +101,7 @@ func (v *URL) validateHost(host string) error {
 }
 
 // checkIP validates that an IP address is not in a blocked range.
-func (v *URL) checkIP(ip net.IP) error {
+func (*URL) checkIP(ip net.IP) error {
 	// Normalize IPv6-mapped IPv4 addresses (::ffff:127.0.0.1 -> 127.0.0.1)
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
@@ -169,10 +168,14 @@ func (v *URL) safeDialContext(ctx context.Context, network, addr string) (net.Co
 
 	// Check if host is already an IP
 	if ip := net.ParseIP(host); ip != nil {
-		if err := v.checkIP(ip); err != nil {
-			return nil, fmt.Errorf("SSRF blocked: %w", err)
+		if checkErr := v.checkIP(ip); checkErr != nil {
+			return nil, fmt.Errorf("SSRF blocked: %w", checkErr)
 		}
-		return (&net.Dialer{}).DialContext(ctx, network, addr)
+		conn, dialErr := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if dialErr != nil {
+			return nil, fmt.Errorf("dial failed: %w", dialErr)
+		}
+		return conn, nil
 	}
 
 	// Resolve DNS and check all returned IPs
@@ -195,7 +198,11 @@ func (v *URL) safeDialContext(ctx context.Context, network, addr string) (net.Co
 		if port != "" {
 			targetAddr = net.JoinHostPort(targetAddr, port)
 		}
-		return (&net.Dialer{}).DialContext(ctx, network, targetAddr)
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, targetAddr)
+		if err != nil {
+			return nil, fmt.Errorf("dial to %s failed: %w", targetAddr, err)
+		}
+		return conn, nil
 	}
 
 	return nil, fmt.Errorf("no IP addresses resolved for %s", host)

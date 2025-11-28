@@ -32,7 +32,7 @@ func Migrate(connURL string) error {
 	source, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
 		slog.Error("failed to create migration source", "error", err)
-		return err
+		return fmt.Errorf("failed to create migration source: %w", err)
 	}
 
 	// Convert postgres:// or postgresql:// to pgx5:// scheme for golang-migrate pgx v5 driver
@@ -46,7 +46,7 @@ func Migrate(connURL string) error {
 	m, err := migrate.NewWithSourceInstance("iofs", source, dbURL)
 	if err != nil {
 		slog.Error("failed to connect to database for migrations", "error", err)
-		return err
+		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
 	defer func() {
 		srcErr, dbErr := m.Close()
@@ -87,7 +87,7 @@ func Migrate(connURL string) error {
 		}
 
 		slog.Error("failed to run migrations", "error", err)
-		return err
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	finalVersion, finalDirty, verErr := m.Version()

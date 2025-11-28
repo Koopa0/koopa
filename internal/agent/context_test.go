@@ -75,7 +75,6 @@ func TestSessionID_EdgeCases(t *testing.T) {
 		assert.True(t, zeroID.IsEmpty())
 		assert.Equal(t, "", zeroID.String())
 	})
-
 }
 
 // TestInvocationContext_BranchPathEdgeCases tests branch path boundary conditions

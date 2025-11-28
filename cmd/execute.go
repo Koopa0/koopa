@@ -1,3 +1,12 @@
+// Package cmd provides CLI commands for Koopa.
+//
+// Commands:
+//   - cli: Interactive terminal chat with Bubble Tea TUI
+//   - serve: HTTP API server with SSE streaming
+//   - mcp: Model Context Protocol server for IDE integration
+//
+// Signal handling and graceful shutdown are implemented
+// for all commands via context cancellation.
 package cmd
 
 import (
@@ -83,8 +92,8 @@ func executeCLI() error {
 	}
 
 	// Verify required environment variables
-	if err := checkRequiredEnv(); err != nil {
-		return err
+	if envErr := checkRequiredEnv(); envErr != nil {
+		return envErr
 	}
 
 	// Create context with signal handling
@@ -98,8 +107,8 @@ func executeCLI() error {
 	}
 	defer runtime.Cleanup()
 	defer func() {
-		if err := runtime.Shutdown(); err != nil {
-			slog.Warn("failed to shutdown runtime", "error", err)
+		if shutdownErr := runtime.Shutdown(); shutdownErr != nil {
+			slog.Warn("failed to shutdown runtime", "error", shutdownErr)
 		}
 	}()
 
@@ -111,7 +120,7 @@ func executeCLI() error {
 
 	// Create TUI model (direct dependency on *chat.Flow)
 	// IMPORTANT: ctx MUST match tea.WithContext(ctx) for consistent cancellation
-	model := tui.New(runtime.Flow, sessionID, ctx)
+	model := tui.New(ctx, runtime.Flow, sessionID)
 
 	// Run Bubble Tea program
 	// Note: In v2, AltScreen is controlled via View.AltScreen = true
@@ -121,7 +130,10 @@ func executeCLI() error {
 	)
 
 	_, err = program.Run()
-	return err
+	if err != nil {
+		return fmt.Errorf("TUI exited: %w", err)
+	}
+	return nil
 }
 
 // getOrCreateSessionID returns a valid session ID, creating a new session if needed.
@@ -247,8 +259,8 @@ func executeServe() error {
 	}
 
 	// Verify required environment variables
-	if err := checkRequiredEnv(); err != nil {
-		return err
+	if envErr := checkRequiredEnv(); envErr != nil {
+		return envErr
 	}
 
 	// Parse and validate address from args or use default

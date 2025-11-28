@@ -107,7 +107,7 @@ func NewNetworkToolset(
 }
 
 // Name returns the toolset identifier.
-func (nt *NetworkToolset) Name() string {
+func (*NetworkToolset) Name() string {
 	return NetworkToolsetName
 }
 
@@ -203,6 +203,8 @@ type SearchResult struct {
 }
 
 // search performs web search via SearXNG.
+//
+//nolint:gocyclo // HTTP status handling requires branching for graceful degradation
 func (nt *NetworkToolset) search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
 	// Validate required fields
 	if strings.TrimSpace(input.Query) == "" {
@@ -230,7 +232,7 @@ func (nt *NetworkToolset) search(ctx *ai.ToolContext, input SearchInput) (Search
 	u.RawQuery = q.Encode()
 
 	// Create request with context
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return SearchOutput{}, fmt.Errorf("create request: %w", err)
 	}
@@ -343,6 +345,8 @@ type FailedURL struct {
 
 // fetch retrieves and extracts content from one or more URLs.
 // Includes SSRF protection to block private IPs and cloud metadata endpoints.
+//
+//nolint:gocognit,gocyclo // TODO: Extract Colly callbacks to separate methods for readability
 func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
 	// Validate input
 	if len(input.URLs) == 0 {
@@ -353,8 +357,8 @@ func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOut
 	}
 
 	// SSRF protection - validate and filter URLs before fetching
-	var failedURLs []FailedURL
-	var safeURLs []string
+	failedURLs := make([]FailedURL, 0, len(input.URLs))
+	safeURLs := make([]string, 0, len(input.URLs))
 
 	urlSet := make(map[string]struct{}) // For deduplication
 	for _, u := range input.URLs {
@@ -596,7 +600,7 @@ func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOut
 // extractWithReadability extracts content using go-readability with CSS selector fallback.
 // Returns (title, content).
 // u should be the final URL after redirects (e.Request.URL from Colly).
-func (nt *NetworkToolset) extractWithReadability(u *url.URL, html string, e *colly.HTMLElement, selector string) (string, string) {
+func (nt *NetworkToolset) extractWithReadability(u *url.URL, html string, e *colly.HTMLElement, selector string) (title, content string) {
 	// Try go-readability first (Mozilla Readability algorithm)
 	// u is already parsed and reflects the final URL after any redirects
 	article, err := readability.FromReader(bytes.NewReader([]byte(html)), u)
@@ -621,19 +625,19 @@ func (nt *NetworkToolset) extractWithReadability(u *url.URL, html string, e *col
 
 // extractWithSelector extracts content using CSS selectors (fallback method).
 // Returns (title, content).
-func (nt *NetworkToolset) extractWithSelector(e *colly.HTMLElement, selector string) (string, string) {
+func (*NetworkToolset) extractWithSelector(e *colly.HTMLElement, selector string) (extractedTitle, extractedContent string) {
 	// Extract title
-	title := e.ChildText("title")
-	if title == "" {
-		title = e.ChildText("h1")
+	extractedTitle = e.ChildText("title")
+	if extractedTitle == "" {
+		extractedTitle = e.ChildText("h1")
 	}
 
 	// Try each selector in order
 	selectors := strings.Split(selector, ",")
 	for _, sel := range selectors {
 		sel = strings.TrimSpace(sel)
-		if content := e.ChildText(sel); content != "" {
-			return title, content
+		if text := e.ChildText(sel); text != "" {
+			return extractedTitle, text
 		}
 	}
 
@@ -645,11 +649,11 @@ func (nt *NetworkToolset) extractWithSelector(e *colly.HTMLElement, selector str
 		}
 	})
 
-	return title, strings.Join(contentParts, "\n\n")
+	return extractedTitle, strings.Join(contentParts, "\n\n")
 }
 
 // htmlToText converts HTML content to plain text.
-func (nt *NetworkToolset) htmlToText(html string) string {
+func (*NetworkToolset) htmlToText(html string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
 		return ""

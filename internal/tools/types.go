@@ -51,16 +51,18 @@ var (
 // Status represents the execution status of a tool.
 type Status string
 
+// Tool execution status constants.
 const (
-	StatusSuccess Status = "success"
-	StatusError   Status = "error"
-	StatusPartial Status = "partial"
+	StatusSuccess Status = "success" // Tool completed successfully
+	StatusError   Status = "error"   // Tool failed with an error
+	StatusPartial Status = "partial" // Tool partially completed
 )
 
 // ErrorCode represents standardized error codes for LLM-facing JSON responses.
 // These are kept for backward compatibility and structured LLM responses.
 type ErrorCode string
 
+// Standardized error codes for tool responses.
 const (
 	ErrCodeSecurity   ErrorCode = "SecurityError"
 	ErrCodeNotFound   ErrorCode = "NotFound"

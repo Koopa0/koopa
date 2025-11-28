@@ -57,7 +57,7 @@ func TestSession_NilStore(t *testing.T) {
 	handler.RegisterRoutes(mux)
 
 	t.Run("list sessions with nil store returns 500", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions", http.NoBody)
 		w := httptest.NewRecorder()
 
 		mux.ServeHTTP(w, req)
@@ -105,25 +105,25 @@ func TestSession_InputValidation(t *testing.T) {
 // TestSession_Pagination tests pagination parameter parsing.
 func TestSession_Pagination(t *testing.T) {
 	t.Run("parseIntParam with valid value", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=50", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=50", http.NoBody)
 		val := parseIntParam(req, "limit", 100, 1, 1000)
 		assert.Equal(t, 50, val)
 	})
 
 	t.Run("parseIntParam with invalid value", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=invalid", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=invalid", http.NoBody)
 		val := parseIntParam(req, "limit", 100, 1, 1000)
 		assert.Equal(t, 100, val) // returns default
 	})
 
 	t.Run("parseIntParam below minimum", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=0", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=0", http.NoBody)
 		val := parseIntParam(req, "limit", 100, 1, 1000)
 		assert.Equal(t, 1, val) // returns min
 	})
 
 	t.Run("parseIntParam above maximum", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=9999", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=9999", http.NoBody)
 		val := parseIntParam(req, "limit", 100, 1, 1000)
 		assert.Equal(t, 1000, val) // returns max
 	})

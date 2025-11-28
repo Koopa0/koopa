@@ -28,7 +28,7 @@ func (h *Health) RegisterRoutes(mux *http.ServeMux) {
 
 // liveness is a liveness probe endpoint.
 // Returns 200 OK if the process is alive.
-func (h *Health) liveness(w http.ResponseWriter, _ *http.Request) {
+func (*Health) liveness(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }

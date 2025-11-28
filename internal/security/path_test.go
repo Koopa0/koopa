@@ -139,7 +139,7 @@ func TestSymlinkValidation(t *testing.T) {
 
 	// Create a file
 	targetFile := filepath.Join(tmpDir, "target.txt")
-	if err := os.WriteFile(targetFile, []byte("test"), 0o644); err != nil {
+	if err := os.WriteFile(targetFile, []byte("test"), 0o600); err != nil {
 		t.Fatalf("failed to create target file: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestSymlinkBypassAttempt(t *testing.T) {
 	// Create another temp directory outside the allowed directory
 	outsideDir := t.TempDir()
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
-	if err := os.WriteFile(outsideFile, []byte("secret data"), 0o644); err != nil {
+	if err := os.WriteFile(outsideFile, []byte("secret data"), 0o600); err != nil {
 		t.Fatalf("failed to create outside file: %v", err)
 	}
 

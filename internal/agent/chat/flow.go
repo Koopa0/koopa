@@ -80,13 +80,15 @@ func GetFlow(g *genkit.Genkit, chatAgent *Chat) *Flow {
 // - Errors are now properly returned using sentinel errors from agent package
 // - Genkit tracing will correctly show error spans
 // - HTTP handlers can use errors.Is() to determine error type and HTTP status
-func (a *Chat) DefineFlow(g *genkit.Genkit) *Flow {
+//
+//nolint:gocognit // Genkit Flow requires orchestration logic in single function
+func (c *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 	return genkit.DefineStreamingFlow(g, FlowName,
 		func(ctx context.Context, input Input, streamCb func(context.Context, StreamChunk) error) (Output, error) {
 			// Validate session ID from input
 			sessionID, err := agent.NewSessionID(input.SessionID)
 			if err != nil {
-				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %v", agent.ErrInvalidSession, err)
+				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %w", agent.ErrInvalidSession, err)
 			}
 
 			// Generate InvocationID for tracking this call
@@ -111,8 +113,8 @@ func (a *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 					if chunk != nil && len(chunk.Content) > 0 {
 						for _, part := range chunk.Content {
 							if part.Text != "" {
-								if err := streamCb(ctx, StreamChunk{Text: part.Text}); err != nil {
-									return err
+								if streamErr := streamCb(ctx, StreamChunk{Text: part.Text}); streamErr != nil {
+									return streamErr
 								}
 							}
 						}
@@ -122,10 +124,10 @@ func (a *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 			}
 
 			// Execute with streaming callback (or non-streaming if callback is nil)
-			resp, err := a.ExecuteStream(invCtx, input.Query, agentCallback)
+			resp, err := c.ExecuteStream(invCtx, input.Query, agentCallback)
 			if err != nil {
 				// Genkit will mark this span as failed, enabling proper observability
-				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %v", agent.ErrExecutionFailed, err)
+				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %w", agent.ErrExecutionFailed, err)
 			}
 
 			return Output{

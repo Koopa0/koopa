@@ -41,10 +41,12 @@ type streamErrorMsg struct {
 //
 // Goroutine lifecycle: The spawned goroutine exits when:
 //  1. Stream completes normally (Done=true)
-//  2. Context is cancelled (cancel() called)
+//  2. Context is canceled (cancel() called)
 //  3. Error occurs
 //
 // Channel closure signals completion - no WaitGroup needed.
+//
+//nolint:gocognit // TODO: Refactor goroutine logic to separate method for testability
 func (t *TUI) startStream(query string) tea.Cmd {
 	return func() tea.Msg {
 		textCh := make(chan string, streamBufferSize)
@@ -112,7 +114,7 @@ func (t *TUI) startStream(query string) tea.Cmd {
 			}
 
 			// CRITICAL: Guarantee completion signal if iterator exits without Done
-			// This happens when: context cancelled, zero chunks, or early termination
+			// This happens when: context canceled, zero chunks, or early termination
 			// If we reach here, the iterator exited without sending Done or error
 			{
 				err := ctx.Err()
@@ -144,6 +146,8 @@ func (t *TUI) startStream(query string) tea.Cmd {
 //
 // Design: When textCh closes, we block on doneCh/errCh to get the final result.
 // The goroutine always sends to doneCh OR errCh before exiting, so this is safe.
+//
+//nolint:gocognit,gocyclo // Channel multiplexing requires complex branching for correct closure semantics
 func listenForStream(textCh <-chan string, doneCh <-chan chat.Output, errCh <-chan error) tea.Cmd {
 	return func() tea.Msg {
 		// Nil channel check - if channels are nil, stream has ended

@@ -125,23 +125,24 @@ func FuzzTUI_AddMessage(f *testing.F) {
 // FuzzTUI_KeyPress tests key handling with various key inputs.
 func FuzzTUI_KeyPress(f *testing.F) {
 	// Add seed corpus - various key codes
-	f.Add(int32('a'), int(0))                     // Regular key
+	// Note: f.Add requires exact types matching fuzz func parameters
+	f.Add(int32('a'), 0)                          // Regular key
 	f.Add(int32('c'), int(tea.ModCtrl))           // Ctrl+C
 	f.Add(int32('d'), int(tea.ModCtrl))           // Ctrl+D
-	f.Add(int32(tea.KeyEnter), int(0))            // Enter
-	f.Add(int32(tea.KeyEnter), int(tea.ModShift)) // Shift+Enter
-	f.Add(int32(tea.KeyUp), int(0))               // Up arrow
-	f.Add(int32(tea.KeyDown), int(0))             // Down arrow
-	f.Add(int32(tea.KeyEscape), int(0))           // Escape
-	f.Add(int32(tea.KeyTab), int(0))              // Tab
-	f.Add(int32(tea.KeySpace), int(0))            // Space
+	f.Add(int32(tea.KeyEnter), 0)                 //nolint:unconvert // f.Add requires exact types
+	f.Add(int32(tea.KeyEnter), int(tea.ModShift)) //nolint:unconvert // f.Add requires exact types
+	f.Add(int32(tea.KeyUp), 0)                    //nolint:unconvert // f.Add requires exact types
+	f.Add(int32(tea.KeyDown), 0)                  //nolint:unconvert // f.Add requires exact types
+	f.Add(int32(tea.KeyEscape), 0)                //nolint:unconvert // f.Add requires exact types
+	f.Add(int32(tea.KeyTab), 0)                   //nolint:unconvert // f.Add requires exact types
+	f.Add(int32(tea.KeySpace), 0)                 //nolint:unconvert // f.Add requires exact types
 
 	f.Fuzz(func(t *testing.T, code int32, mod int) {
 		tui := newTestTUI()
 		// Use background context to avoid nil pointer issues
 		tui.ctx = context.Background()
 
-		key := tea.Key{Code: rune(code), Mod: tea.KeyMod(mod)}
+		key := tea.Key{Code: rune(code), Mod: tea.KeyMod(mod)} //nolint:unconvert // explicit type conversion for clarity
 		msg := tea.KeyPressMsg(key)
 
 		// Should never panic with proper context

@@ -214,35 +214,34 @@ func TestExecutableTool_TypeErasure(t *testing.T) {
 
 	t.Run("different types can be stored as Tool interface", func(t *testing.T) {
 		t.Parallel()
-		var tools []Tool
 
-		// Add different tool types
-		tools = append(tools, NewTool(
-			"stringTool",
-			"String tool",
-			false,
-			func(ctx *ai.ToolContext, input string) (string, error) {
-				return input, nil
-			},
-		))
-
-		tools = append(tools, NewTool(
-			"intTool",
-			"Int tool",
-			false,
-			func(ctx *ai.ToolContext, input int) (int, error) {
-				return input, nil
-			},
-		))
-
-		tools = append(tools, NewTool(
-			"structTool",
-			"Struct tool",
-			false,
-			func(ctx *ai.ToolContext, input struct{ Name string }) (struct{ Name string }, error) {
-				return input, nil
-			},
-		))
+		// Add different tool types using combined append
+		tools := []Tool{
+			NewTool(
+				"stringTool",
+				"String tool",
+				false,
+				func(_ *ai.ToolContext, input string) (string, error) {
+					return input, nil
+				},
+			),
+			NewTool(
+				"intTool",
+				"Int tool",
+				false,
+				func(_ *ai.ToolContext, input int) (int, error) {
+					return input, nil
+				},
+			),
+			NewTool(
+				"structTool",
+				"Struct tool",
+				false,
+				func(_ *ai.ToolContext, input struct{ Name string }) (struct{ Name string }, error) {
+					return input, nil
+				},
+			),
+		}
 
 		// Verify all tools implement Tool interface
 		assert.Len(t, tools, 3)

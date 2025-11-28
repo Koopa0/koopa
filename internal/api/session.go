@@ -74,7 +74,7 @@ func (h *Session) list(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseIntParam parses an integer query parameter with bounds checking.
-func parseIntParam(r *http.Request, name string, defaultVal, min, max int) int {
+func parseIntParam(r *http.Request, name string, defaultVal, minVal, maxVal int) int {
 	str := r.URL.Query().Get(name)
 	if str == "" {
 		return defaultVal
@@ -83,11 +83,11 @@ func parseIntParam(r *http.Request, name string, defaultVal, min, max int) int {
 	if err != nil {
 		return defaultVal
 	}
-	if val < min {
-		return min
+	if val < minVal {
+		return minVal
 	}
-	if val > max {
-		return max
+	if val > maxVal {
+		return maxVal
 	}
 	return val
 }
