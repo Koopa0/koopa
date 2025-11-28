@@ -112,7 +112,7 @@ func TestServer_ConcurrentToolsetAccess(t *testing.T) {
 
 	// Create a test file
 	testFile := realTmpDir + "/test.txt"
-	err = os.WriteFile(testFile, []byte("test content"), 0644)
+	err = os.WriteFile(testFile, []byte("test content"), 0600)
 	require.NoError(t, err)
 
 	cfg := createIntegrationTestConfig(t, "concurrent-access-test")

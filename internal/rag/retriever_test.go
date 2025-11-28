@@ -194,7 +194,7 @@ type mockSearchQuerier struct {
 	searchError            error
 }
 
-func (m *mockSearchQuerier) UpsertDocument(ctx context.Context, arg sqlc.UpsertDocumentParams) error {
+func (*mockSearchQuerier) UpsertDocument(_ context.Context, _ sqlc.UpsertDocumentParams) error {
 	return nil
 }
 
@@ -218,36 +218,36 @@ func (m *mockSearchQuerier) SearchDocumentsAll(ctx context.Context, arg sqlc.Sea
 	return []sqlc.SearchDocumentsAllRow{}, nil
 }
 
-func (m *mockSearchQuerier) CountDocuments(ctx context.Context, filterMetadata []byte) (int64, error) {
+func (*mockSearchQuerier) CountDocuments(_ context.Context, _ []byte) (int64, error) {
 	return 0, nil
 }
 
-func (m *mockSearchQuerier) CountDocumentsAll(ctx context.Context) (int64, error) {
+func (*mockSearchQuerier) CountDocumentsAll(_ context.Context) (int64, error) {
 	return 0, nil
 }
 
-func (m *mockSearchQuerier) DeleteDocument(ctx context.Context, id string) error {
+func (*mockSearchQuerier) DeleteDocument(_ context.Context, _ string) error {
 	return nil
 }
 
-func (m *mockSearchQuerier) ListDocumentsBySourceType(ctx context.Context, arg sqlc.ListDocumentsBySourceTypeParams) ([]sqlc.ListDocumentsBySourceTypeRow, error) {
+func (*mockSearchQuerier) ListDocumentsBySourceType(_ context.Context, _ sqlc.ListDocumentsBySourceTypeParams) ([]sqlc.ListDocumentsBySourceTypeRow, error) {
 	return nil, nil
 }
 
 // mockEmbedder is a simple embedder that returns fixed-size embeddings for testing
 type mockEmbedder struct{}
 
-func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
+func (*mockEmbedder) Embed(_ context.Context, _ *ai.EmbedRequest) (*ai.EmbedResponse, error) {
 	// Return a simple 3-dimensional vector
 	embedding := &ai.Embedding{Embedding: []float32{0.1, 0.2, 0.3}}
 	return &ai.EmbedResponse{Embeddings: []*ai.Embedding{embedding}}, nil
 }
 
-func (m *mockEmbedder) Name() string {
+func (*mockEmbedder) Name() string {
 	return "mockEmbedder"
 }
 
-func (m *mockEmbedder) Register(r api.Registry) {
+func (*mockEmbedder) Register(_ api.Registry) {
 	// No-op for testing
 }
 

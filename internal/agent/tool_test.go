@@ -93,7 +93,7 @@ func TestDefineAgentTool_ContextPropagation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Simulate tool invocation
-	handler := func(toolCtx *ai.ToolContext, input AgentToolInput) (string, error) {
+	handler := func(toolCtx *ai.ToolContext, input ToolInput) (string, error) {
 		// Extend branch
 		newBranch := parentCtx.Branch() + "." + agent.Name()
 		subCtx := NewInvocationContext(
@@ -110,7 +110,7 @@ func TestDefineAgentTool_ContextPropagation(t *testing.T) {
 		return resp.FinalText, nil
 	}
 
-	_, err = handler(&ai.ToolContext{Context: ctx}, AgentToolInput{Query: "test query"})
+	_, err = handler(&ai.ToolContext{Context: ctx}, ToolInput{Query: "test query"})
 	require.NoError(t, err)
 
 	// Verify context propagation
@@ -377,11 +377,11 @@ func TestDefineAgentToolWithContext_ErrorHandling(t *testing.T) {
 	})
 }
 
-// TestAgentToolInput_Structure tests AgentToolInput structure
-func TestAgentToolInput_Structure(t *testing.T) {
+// TestToolInput_Structure tests ToolInput structure
+func TestToolInput_Structure(t *testing.T) {
 	t.Parallel()
 
-	input := AgentToolInput{
+	input := ToolInput{
 		Query: "What is quantum computing?",
 	}
 

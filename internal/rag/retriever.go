@@ -189,11 +189,11 @@ func extractTopK(req *ai.RetrieverRequest, defaultK int32) int32 {
 				kInt = int(v)
 			case string:
 				// Try to parse string as int
-				if parsed := parseIntSafe(v); parsed > 0 {
-					kInt = parsed
-				} else {
+				parsed := parseIntSafe(v)
+				if parsed <= 0 {
 					return defaultK
 				}
+				kInt = parsed
 			default:
 				// Unsupported type, use default
 				return defaultK

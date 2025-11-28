@@ -30,11 +30,11 @@ type mockEmbedder struct {
 	lastInputText string        // Track last input for verification
 }
 
-func (m *mockEmbedder) Name() string {
+func (*mockEmbedder) Name() string {
 	return "mock-embedder"
 }
 
-func (m *mockEmbedder) Register(r api.Registry) {
+func (*mockEmbedder) Register(_ api.Registry) {
 	// No-op for testing
 }
 
@@ -1138,9 +1138,7 @@ func TestFloat64Precision(t *testing.T) {
 
 			// If this was float32, we'd lose precision
 			float32Value := float32(tt.value)
-			if float64(float32Value) == tt.value {
-				// OK, this particular value doesn't lose precision in float32
-			} else {
+			if float64(float32Value) != tt.value {
 				t.Logf("float32 would lose precision: %v -> %v", tt.value, float32Value)
 			}
 		})
@@ -1167,7 +1165,7 @@ func BenchmarkSearchConfigBuild(b *testing.B) {
 
 // contains checks if a string contains a substring (case-sensitive)
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+	return len(s) >= len(substr) && (s == substr || substr == "" ||
 		func() bool {
 			for i := 0; i <= len(s)-len(substr); i++ {
 				if s[i:i+len(substr)] == substr {

@@ -184,7 +184,7 @@ func createTestSession(t *testing.T, setup *chatFlowSetup) (string, func()) {
 		t.Fatalf("Failed to create test session: %v", err)
 	}
 	cleanup := func() {
-		// Use background context for cleanup since test context may be cancelled
+		// Use background context for cleanup since test context may be canceled
 		_ = setup.SessionStore.DeleteSession(context.Background(), sess.ID)
 	}
 	return sess.ID.String(), cleanup
@@ -308,7 +308,7 @@ func TestTUI_Integration_StartStream_Cancellation(t *testing.T) {
 
 	// Wait for at least one chunk, then cancel
 	chunksReceived := 0
-	cancelled := false
+	canceled := false
 	timeout := time.After(30 * time.Second)
 
 cancelLoop:
@@ -323,16 +323,16 @@ cancelLoop:
 			switch msg.(type) {
 			case streamTextMsg:
 				chunksReceived++
-				if chunksReceived >= 2 && !cancelled {
+				if chunksReceived >= 2 && !canceled {
 					// Cancel after receiving some chunks
 					startedMsg.cancel()
-					cancelled = true
+					canceled = true
 				}
 			case streamDoneMsg:
 				t.Logf("Stream completed with %d chunks before cancellation took effect", chunksReceived)
 				break cancelLoop
 			case streamErrorMsg:
-				t.Logf("Stream cancelled after %d chunks", chunksReceived)
+				t.Logf("Stream canceled after %d chunks", chunksReceived)
 				break cancelLoop
 			case nil:
 				break cancelLoop

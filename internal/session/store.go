@@ -211,8 +211,8 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	}
 	// Rollback if not committed - log any rollback errors for debugging
 	defer func() {
-		if err := tx.Rollback(ctx); err != nil {
-			s.logger.Debug("transaction rollback (may be already committed)", "error", err)
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			s.logger.Debug("transaction rollback (may be already committed)", "error", rollbackErr)
 		}
 	}()
 
@@ -245,10 +245,10 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 		}
 
 		// Marshal ai.Part slice to JSON
-		contentJSON, err := json.Marshal(msg.Content)
-		if err != nil {
+		contentJSON, marshalErr := json.Marshal(msg.Content)
+		if marshalErr != nil {
 			// Transaction will be rolled back by defer
-			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
+			return fmt.Errorf("failed to marshal message content at index %d: %w", i, marshalErr)
 		}
 
 		// Calculate sequence number (maxSeq is now int32 from sqlc)
@@ -308,11 +308,11 @@ func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, off
 	}
 
 	messages := make([]*Message, 0, len(sqlcMessages))
-	for _, sm := range sqlcMessages {
-		msg, err := s.sqlcMessageToMessage(sm)
+	for i := range sqlcMessages {
+		msg, err := s.sqlcMessageToMessage(sqlcMessages[i])
 		if err != nil {
 			s.logger.Warn("failed to unmarshal message content",
-				"message_id", pgUUIDToUUID(sm.ID),
+				"message_id", pgUUIDToUUID(sqlcMessages[i].ID),
 				"error", err)
 			continue // Skip malformed messages
 		}
@@ -347,11 +347,11 @@ func (s *Store) GetMessagesByBranch(ctx context.Context, sessionID uuid.UUID, br
 	}
 
 	messages := make([]*Message, 0, len(sqlcMessages))
-	for _, sm := range sqlcMessages {
-		msg, err := s.sqlcMessageToMessage(sm)
+	for i := range sqlcMessages {
+		msg, err := s.sqlcMessageToMessage(sqlcMessages[i])
 		if err != nil {
 			s.logger.Warn("failed to unmarshal message content",
-				"message_id", pgUUIDToUUID(sm.ID),
+				"message_id", pgUUIDToUUID(sqlcMessages[i].ID),
 				"error", err)
 			continue
 		}
@@ -434,8 +434,8 @@ func (s *Store) AddMessagesWithBranch(ctx context.Context, sessionID uuid.UUID, 
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
-		if err := tx.Rollback(ctx); err != nil {
-			s.logger.Debug("transaction rollback (may be already committed)", "error", err)
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			s.logger.Debug("transaction rollback (may be already committed)", "error", rollbackErr)
 		}
 	}()
 
@@ -466,9 +466,9 @@ func (s *Store) AddMessagesWithBranch(ctx context.Context, sessionID uuid.UUID, 
 			}
 		}
 
-		contentJSON, err := json.Marshal(msg.Content)
-		if err != nil {
-			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
+		contentJSON, marshalErr := json.Marshal(msg.Content)
+		if marshalErr != nil {
+			return fmt.Errorf("failed to marshal message content at index %d: %w", i, marshalErr)
 		}
 
 		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
@@ -625,7 +625,7 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 }
 
 // sqlcSessionToSession converts sqlc.Session to Session (application type).
-func (s *Store) sqlcSessionToSession(ss sqlc.Session) *Session {
+func (*Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 	session := &Session{
 		ID:        pgUUIDToUUID(ss.ID),
 		CreatedAt: ss.CreatedAt.Time,
@@ -649,7 +649,7 @@ func (s *Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 }
 
 // sqlcMessageToMessage converts sqlc.SessionMessage to Message (application type).
-func (s *Store) sqlcMessageToMessage(sm sqlc.SessionMessage) (*Message, error) {
+func (*Store) sqlcMessageToMessage(sm sqlc.SessionMessage) (*Message, error) {
 	// Unmarshal JSONB content to ai.Part slice
 	var content []*ai.Part
 	if err := json.Unmarshal(sm.Content, &content); err != nil {

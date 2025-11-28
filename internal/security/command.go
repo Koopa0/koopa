@@ -156,9 +156,9 @@ func (v *Command) validateCommandName(cmd string) error {
 
 // isCommandInWhitelist checks if command name is in the whitelist.
 func (v *Command) isCommandInWhitelist(cmd string) bool {
-	cmdLower := strings.ToLower(strings.TrimSpace(cmd))
+	cmdTrimmed := strings.TrimSpace(cmd)
 	for _, allowed := range v.whitelist {
-		if cmdLower == strings.ToLower(allowed) {
+		if strings.EqualFold(cmdTrimmed, allowed) {
 			return true
 		}
 	}
@@ -173,7 +173,7 @@ func (v *Command) isCommandInWhitelist(cmd string) bool {
 // - Embedded dangerous commands (e.g., "rm -rf /")
 // - Null bytes
 // - Extremely long arguments (possible buffer overflow)
-func (v *Command) validateArgument(arg string) error {
+func (*Command) validateArgument(arg string) error {
 	// Check for null bytes (often used in injection attacks)
 	if strings.Contains(arg, "\x00") {
 		return fmt.Errorf("argument contains null byte")

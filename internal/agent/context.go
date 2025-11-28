@@ -112,11 +112,17 @@ func NewInvocationContext(
 	}
 }
 
-// Implementation of InvocationContext interface
+// InvocationID returns the unique identifier for this invocation.
 func (ic *invocationContext) InvocationID() string { return ic.invocationID }
-func (ic *invocationContext) Branch() string       { return ic.branch }
+
+// Branch returns the conversation branch name.
+func (ic *invocationContext) Branch() string { return ic.branch }
+
+// SessionID returns the session identifier.
 func (ic *invocationContext) SessionID() SessionID { return ic.sessionID }
-func (ic *invocationContext) AgentName() string    { return ic.agentName }
+
+// AgentName returns the name of the executing agent.
+func (ic *invocationContext) AgentName() string { return ic.agentName }
 
 // AsReadonly returns a read-only version
 // invocationContext already implements ReadonlyContext, so it can return itself

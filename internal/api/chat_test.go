@@ -139,7 +139,7 @@ func TestChat_RegisterRoutes(t *testing.T) {
 
 		// With nil flow, routes should not be registered
 		// Making a request should return 404
-		req := httptest.NewRequest(http.MethodPost, "/api/chat", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/chat", http.NoBody)
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
 

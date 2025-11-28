@@ -207,8 +207,8 @@ func acquireStateLock() (*flock.Flock, error) {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(stateDirPath, 0o750); err != nil {
-		return nil, fmt.Errorf("failed to create state directory: %w", err)
+	if mkdirErr := os.MkdirAll(stateDirPath, 0o750); mkdirErr != nil {
+		return nil, fmt.Errorf("failed to create state directory: %w", mkdirErr)
 	}
 
 	lockPath := filepath.Join(stateDirPath, lockFileName)

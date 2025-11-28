@@ -1,3 +1,4 @@
+// Package main is the entry point for the Koopa CLI application.
 package main
 
 import (

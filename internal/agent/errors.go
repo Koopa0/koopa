@@ -44,8 +44,8 @@ var (
 // ============================================================================
 
 var (
-	// ErrContextCancelled indicates the operation was cancelled.
-	ErrContextCancelled = errors.New("context cancelled")
+	// ErrContextCanceled indicates the operation was canceled.
+	ErrContextCanceled = errors.New("context canceled")
 
 	// ErrTimeout indicates the operation timed out.
 	ErrTimeout = errors.New("operation timeout")

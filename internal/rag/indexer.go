@@ -206,6 +206,8 @@ func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
 }
 
 // AddDirectory recursively adds all supported files in a directory
+//
+//nolint:gocognit,gocyclo // TODO: Extract security checks to separate directoryWalker type for auditability
 func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexResult, error) {
 	startTime := time.Now()
 	result := &IndexResult{}
@@ -241,9 +243,10 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 	// Load .gitignore file if it exists
 	var gitIgnore *ignore.GitIgnore
 	gitignorePath := filepath.Join(absDirPath, ".gitignore")
-	if _, err := os.Stat(gitignorePath); err == nil {
-		gitIgnore, err = ignore.CompileIgnoreFile(gitignorePath)
-		if err != nil {
+	if _, statErr := os.Stat(gitignorePath); statErr == nil {
+		var compileErr error
+		gitIgnore, compileErr = ignore.CompileIgnoreFile(gitignorePath)
+		if compileErr != nil {
 			// If .gitignore is malformed, log and continue without it
 			// Don't fail the entire operation
 			gitIgnore = nil
@@ -254,6 +257,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 	// SECURITY: WalkDir does NOT follow symlinks automatically, unlike Walk.
 	// This is critical for preventing symlink traversal attacks that could
 	// escape the os.OpenRoot security boundary.
+	//nolint:nilerr // WalkDir callback returns nil to continue walking despite per-file errors
 	if err = filepath.WalkDir(absDirPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			result.FilesFailed++
@@ -278,7 +282,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		relPath, err := filepath.Rel(absDirPath, path)
 		if err != nil {
 			result.FilesFailed++
-			return nil // Continue walking
+			return nil // Continue walking despite individual file errors
 		}
 
 		// Check if should be ignored by .gitignore (for both files and directories)
@@ -349,7 +353,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		content, err := root.ReadFile(relPath)
 		if err != nil {
 			result.FilesFailed++
-			return nil // Continue walking
+			return nil // Continue walking despite individual file errors
 		}
 
 		// SECURITY: Defense in depth - verify content size after read (TOCTOU protection)
@@ -379,7 +383,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		// Add to knowledge store
 		if err := idx.store.Add(ctx, doc); err != nil {
 			result.FilesFailed++
-			return nil // Continue walking
+			return nil // Continue walking despite individual file errors
 		}
 
 		result.FilesAdded++
@@ -413,7 +417,8 @@ func (idx *Indexer) RemoveDocument(ctx context.Context, docID string) error {
 func (idx *Indexer) GetStats(ctx context.Context) (map[string]any, error) {
 	docs, err := idx.ListDocuments(ctx)
 	if err != nil {
-		// If no documents or error, return empty stats
+		// Graceful degradation: return empty stats on error (e.g., DB unavailable)
+		//nolint:nilerr // Intentional graceful degradation - return empty stats on error
 		return map[string]any{
 			"total_documents": 0,
 			"file_types":      make(map[string]int),
