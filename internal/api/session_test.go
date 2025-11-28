@@ -12,22 +12,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Note: For full Session handler testing with mock store, we'd need to
-// refactor SessionHandler to accept an interface instead of concrete *session.Store.
-// For now, we test request parsing and error handling.
+// Note: Full Session handler testing requires integration tests with testcontainer.
+// These unit tests cover request parsing and error handling.
 
-func TestSessionHandler_List_Integration(t *testing.T) {
-	// This is more of an integration test since we need a real store
-	// For unit tests, we'd need to refactor SessionHandler to accept an interface
-	t.Skip("requires mock store interface refactor")
+func TestSession_List_Integration(t *testing.T) {
+	t.Skip("requires integration test with testcontainer")
 }
 
-func TestSessionHandler_Create_Integration(t *testing.T) {
-	t.Skip("requires mock store interface refactor")
+func TestSession_Create_Integration(t *testing.T) {
+	t.Skip("requires integration test with testcontainer")
 }
 
-// TestSessionHandler_RequestParsing tests request body parsing
-func TestSessionHandler_RequestParsing(t *testing.T) {
+// TestSession_RequestParsing tests request body parsing.
+func TestSession_RequestParsing(t *testing.T) {
 	t.Run("create session request parsing", func(t *testing.T) {
 		body := `{"title": "Test", "model_name": "gemini-2.0-flash", "system_prompt": "You are helpful."}`
 		var req CreateSessionRequest
@@ -51,11 +48,11 @@ func TestSessionHandler_RequestParsing(t *testing.T) {
 	})
 }
 
-// TestSessionHandler_NilStore tests behavior when store is nil
-// After refactoring, nil store returns 500 instead of panicking
-func TestSessionHandler_NilStore(t *testing.T) {
+// TestSession_NilStore tests behavior when store is nil.
+// Nil store returns 500 instead of panicking (defensive programming).
+func TestSession_NilStore(t *testing.T) {
 	logger := log.NewNop()
-	handler := NewSessionHandler(nil, logger)
+	handler := NewSession(nil, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
@@ -80,14 +77,11 @@ func TestSessionHandler_NilStore(t *testing.T) {
 	})
 }
 
-// TestSessionHandler_InvalidRequest tests invalid request handling
-// Note: With nil store, requests return 500 before reaching JSON parsing.
-// This test documents that behavior - store check comes before JSON parsing.
-func TestSessionHandler_InvalidRequest(t *testing.T) {
+// TestSession_InvalidRequest tests invalid request handling.
+// With nil store, requests return 500 before reaching JSON parsing (fail-fast).
+func TestSession_InvalidRequest(t *testing.T) {
 	logger := log.NewNop()
-	// With nil store, handler returns 500 before parsing JSON
-	// This is correct defensive programming - fail fast on misconfiguration
-	handler := NewSessionHandler(nil, logger)
+	handler := NewSession(nil, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
@@ -99,20 +93,17 @@ func TestSessionHandler_InvalidRequest(t *testing.T) {
 
 		mux.ServeHTTP(w, req)
 
-		// Store nil check happens before JSON parsing
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
 
-// TestSessionHandler_InputValidation tests input validation
-// Note: These tests would require a mock store to test validation.
-// Skipping for now as they require interface refactoring.
-func TestSessionHandler_InputValidation(t *testing.T) {
-	t.Skip("requires mock store interface to test validation (store nil check happens first)")
+// TestSession_InputValidation tests input validation.
+func TestSession_InputValidation(t *testing.T) {
+	t.Skip("requires integration test with testcontainer")
 }
 
-// TestSessionHandler_Pagination tests pagination parameter parsing
-func TestSessionHandler_Pagination(t *testing.T) {
+// TestSession_Pagination tests pagination parameter parsing.
+func TestSession_Pagination(t *testing.T) {
 	t.Run("parseIntParam with valid value", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=50", nil)
 		val := parseIntParam(req, "limit", 100, 1, 1000)

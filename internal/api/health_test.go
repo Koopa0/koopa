@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHealthHandler_Liveness(t *testing.T) {
+func TestHealth_Liveness(t *testing.T) {
 	logger := log.NewNop()
-	h := NewHealthHandler(nil, logger) // pool not needed for liveness
+	h := NewHealth(nil, logger) // pool not needed for liveness
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -22,9 +22,9 @@ func TestHealthHandler_Liveness(t *testing.T) {
 	assert.Equal(t, "ok", w.Body.String())
 }
 
-func TestHealthHandler_Readiness_PoolNil(t *testing.T) {
+func TestHealth_Readiness_PoolNil(t *testing.T) {
 	logger := log.NewNop()
-	h := NewHealthHandler(nil, logger)
+	h := NewHealth(nil, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	w := httptest.NewRecorder()

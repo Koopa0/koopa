@@ -1,5 +1,7 @@
 package tools
 
+import "strings"
+
 // metadata.go defines tool safety metadata for the Koopa Agent Framework.
 //
 // This module provides a centralized registry of tool danger levels, enabling:
@@ -91,6 +93,10 @@ func (t *ToolMetadata) IsLongRunning() bool {
 	return false
 }
 
+// sensitivePaths are system paths that should never be written to by tools.
+// This is hoisted to package level to avoid repeated allocation in IsDangerousFunc.
+var sensitivePaths = []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/sys/", "/proc/"}
+
 // toolMetadata is the central registry of all tool metadata.
 // This is the single source of truth for tool safety classifications.
 var toolMetadata = map[string]ToolMetadata{
@@ -110,10 +116,8 @@ var toolMetadata = map[string]ToolMetadata{
 		IsDangerousFunc: func(params map[string]any) bool {
 			// Check if writing to sensitive system paths
 			if path, ok := params["path"].(string); ok {
-				// System paths that should never be overwritten
-				sensitivePaths := []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/sys/", "/proc/"}
 				for _, prefix := range sensitivePaths {
-					if len(path) >= len(prefix) && path[:len(prefix)] == prefix {
+					if strings.HasPrefix(path, prefix) {
 						return true // Escalate to dangerous
 					}
 				}

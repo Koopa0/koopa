@@ -5,7 +5,13 @@
 // and document retrieval.
 package knowledge
 
-import "time"
+import (
+	"time"
+)
+
+// DefaultSearchTimeout is the default timeout for Search operations (10 seconds).
+// This prevents long-running vector searches from blocking indefinitely.
+const DefaultSearchTimeout = 10 * time.Second
 
 // Document represents a knowledge document.
 // It contains the textual content and optional metadata.
@@ -29,8 +35,9 @@ type SearchOption func(*searchConfig)
 
 // searchConfig holds internal search configuration.
 type searchConfig struct {
-	topK   int32
-	filter map[string]string
+	topK    int32
+	filter  map[string]string
+	timeout time.Duration
 }
 
 // WithTopK sets the maximum number of results to return.
@@ -58,11 +65,27 @@ func WithFilter(key, value string) SearchOption {
 	}
 }
 
+// WithTimeout sets a custom timeout for the search operation.
+// Default is DefaultSearchTimeout (10 seconds) if not specified.
+// If d <= 0, the default timeout is used.
+//
+// Example:
+//
+//	results, err := store.Search(ctx, "query", knowledge.WithTimeout(5*time.Second))
+func WithTimeout(d time.Duration) SearchOption {
+	return func(c *searchConfig) {
+		if d > 0 {
+			c.timeout = d
+		}
+	}
+}
+
 // buildSearchConfig applies search options and returns the final configuration.
 func buildSearchConfig(opts []SearchOption) *searchConfig {
 	cfg := &searchConfig{
-		topK:   5, // Default
-		filter: nil,
+		topK:    5, // Default
+		filter:  nil,
+		timeout: DefaultSearchTimeout, // Default 10s
 	}
 	for _, opt := range opts {
 		opt(cfg)

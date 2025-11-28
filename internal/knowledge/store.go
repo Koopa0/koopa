@@ -153,11 +153,11 @@ func (s *Store) Add(ctx context.Context, doc Document) error {
 //	    knowledge.WithTopK(10),
 //	    knowledge.WithFilter("source_type", "conversation"))
 func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) ([]Result, error) {
-	// Add query timeout to prevent long-running vector searches from blocking
-	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
 	cfg := buildSearchConfig(opts)
+
+	// Add query timeout to prevent long-running vector searches from blocking
+	queryCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
+	defer cancel()
 
 	// 1. Generate query embedding
 	embeddingResp, err := s.embedder.Embed(queryCtx, &ai.EmbedRequest{
@@ -187,7 +187,10 @@ func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) 
 	// - JSONB @> operator is safe when used with proper parameters
 	// - Future developers: ALWAYS use json.Marshal for filter metadata
 	if len(cfg.filter) > 0 {
-		filterJSON, _ := json.Marshal(cfg.filter)
+		filterJSON, err := json.Marshal(cfg.filter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal filter: %w", err)
+		}
 		rows, err := s.queries.SearchDocuments(queryCtx, sqlc.SearchDocumentsParams{
 			QueryEmbedding: &queryEmbedding,
 			FilterMetadata: filterJSON,
@@ -230,7 +233,10 @@ func (s *Store) Count(ctx context.Context, filter map[string]string) (int, error
 	var err error
 
 	if len(filter) > 0 {
-		filterJSON, _ := json.Marshal(filter)
+		filterJSON, marshalErr := json.Marshal(filter)
+		if marshalErr != nil {
+			return 0, fmt.Errorf("failed to marshal filter: %w", marshalErr)
+		}
 		count, err = s.queries.CountDocuments(ctx, filterJSON)
 	} else {
 		count, err = s.queries.CountDocumentsAll(ctx)

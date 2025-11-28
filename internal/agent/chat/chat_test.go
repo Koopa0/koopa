@@ -95,8 +95,8 @@ func TestNew_ValidationErrors(t *testing.T) {
 	}
 }
 
-// TestResolveLanguage tests language resolution
-func TestResolveLanguage(t *testing.T) {
+// TestGetLanguagePromptVariable tests language prompt variable retrieval
+func TestGetLanguagePromptVariable(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -137,7 +137,7 @@ func TestResolveLanguage(t *testing.T) {
 			c := &Chat{
 				config: &config.Config{Language: tt.language},
 			}
-			result := c.resolveLanguage()
+			result := c.getLanguagePromptVariable()
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -327,15 +327,15 @@ func TestChat_InterfaceCompliance(t *testing.T) {
 	})
 }
 
-// BenchmarkResolveLanguage benchmarks language resolution
-func BenchmarkResolveLanguage(b *testing.B) {
+// BenchmarkGetLanguagePromptVariable benchmarks language prompt variable retrieval
+func BenchmarkGetLanguagePromptVariable(b *testing.B) {
 	c := &Chat{
 		config: &config.Config{Language: "English"},
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = c.resolveLanguage()
+		_ = c.getLanguagePromptVariable()
 	}
 }
 
