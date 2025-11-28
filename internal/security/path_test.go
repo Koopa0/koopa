@@ -230,7 +230,7 @@ func TestSymlinkBypassAttempt(t *testing.T) {
 		t.Error("expected error for symlink pointing outside allowed dirs, but got none")
 	}
 
-	if err != nil && !contains(err.Error(), "outside allowed directories") {
+	if err != nil && !strings.Contains(err.Error(), "outside allowed directories") {
 		t.Errorf("expected 'outside allowed directories' error, got: %v", err)
 	}
 }

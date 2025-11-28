@@ -242,7 +242,7 @@ func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.
 	// Retrieve relevant documents for RAG context (graceful fallback on error)
 	ragDocs := c.retrieveRAGContext(ctx, input)
 
-	language := c.resolveLanguage()
+	language := c.getLanguagePromptVariable()
 
 	messagesFn := func(_ context.Context, _ any) ([]*ai.Message, error) {
 		return messages, nil
@@ -283,8 +283,9 @@ func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.
 	return resp, nil
 }
 
-// resolveLanguage returns the language setting for prompt execution.
-func (c *Chat) resolveLanguage() string {
+// getLanguagePromptVariable returns the value for the {{language}} prompt variable.
+// This is used in the Dotprompt template to instruct the LLM which language to respond in.
+func (c *Chat) getLanguagePromptVariable() string {
 	language := c.config.Language
 	if language == "" || language == "auto" {
 		return "the same language as the user's input (auto-detect)"
@@ -312,9 +313,17 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 	// Retrieve documents
 	docs, err := c.retriever.RetrieveDocuments(ctx, query, topK)
 	if err != nil {
-		c.logger.Debug("RAG retrieval failed (continuing without context)",
-			"error", err,
-			"query_length", len(query))
+		// Use Debug for expected errors (timeout, cancellation)
+		// Use Warn for unexpected errors (DB issues, etc.) that ops should know about
+		if ctx.Err() != nil {
+			c.logger.Debug("RAG retrieval cancelled (continuing without context)",
+				"error", err,
+				"query_length", len(query))
+		} else {
+			c.logger.Warn("RAG retrieval failed (continuing without context)",
+				"error", err,
+				"query_length", len(query))
+		}
 		return nil
 	}
 

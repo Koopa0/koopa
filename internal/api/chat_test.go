@@ -14,14 +14,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestChatHandler_InvalidInput tests SSE handler with invalid input scenarios.
-func TestChatHandler_InvalidInput(t *testing.T) {
+// TestChat_InvalidInput tests SSE handler with invalid input scenarios.
+func TestChat_InvalidInput(t *testing.T) {
 	t.Parallel()
 
 	logger := log.NewNop()
-	// ChatHandler with nil flow - endpoints won't be registered but we can test
+	// Chat with nil flow - endpoints won't be registered but we can test
 	// handler methods directly
-	h := NewChatHandler(nil, logger)
+	h := NewChat(nil, logger)
 
 	t.Run("missing session ID", func(t *testing.T) {
 		t.Parallel()
@@ -35,7 +35,7 @@ func TestChatHandler_InvalidInput(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
-		h.handleStream(w, req)
+		h.Stream(w, req)
 
 		// SSE should return error event
 		assert.Equal(t, http.StatusOK, w.Code) // SSE always returns 200 first
@@ -56,7 +56,7 @@ func TestChatHandler_InvalidInput(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
-		h.handleStream(w, req)
+		h.Stream(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "MISSING_QUERY")
@@ -70,7 +70,7 @@ func TestChatHandler_InvalidInput(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
-		h.handleStream(w, req)
+		h.Stream(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "INVALID_REQUEST")
@@ -78,12 +78,12 @@ func TestChatHandler_InvalidInput(t *testing.T) {
 	})
 }
 
-// TestChatHandler_SSEFormat tests that SSE events are properly formatted.
-func TestChatHandler_SSEFormat(t *testing.T) {
+// TestChat_SSEFormat tests that SSE events are properly formatted.
+func TestChat_SSEFormat(t *testing.T) {
 	t.Parallel()
 
 	logger := log.NewNop()
-	h := NewChatHandler(nil, logger)
+	h := NewChat(nil, logger)
 
 	t.Run("error event format", func(t *testing.T) {
 		t.Parallel()
@@ -96,7 +96,7 @@ func TestChatHandler_SSEFormat(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/chat/stream", bytes.NewReader(body))
 		w := httptest.NewRecorder()
 
-		h.handleStream(w, req)
+		h.Stream(w, req)
 
 		// Verify SSE format: "event: <type>\ndata: <json>\n\n"
 		lines := strings.Split(w.Body.String(), "\n")
@@ -124,8 +124,8 @@ func TestChatHandler_SSEFormat(t *testing.T) {
 	})
 }
 
-// TestChatHandler_RegisterRoutes tests route registration.
-func TestChatHandler_RegisterRoutes(t *testing.T) {
+// TestChat_RegisterRoutes tests route registration.
+func TestChat_RegisterRoutes(t *testing.T) {
 	t.Parallel()
 
 	logger := log.NewNop()
@@ -133,7 +133,7 @@ func TestChatHandler_RegisterRoutes(t *testing.T) {
 	t.Run("nil flow does not register routes", func(t *testing.T) {
 		t.Parallel()
 
-		h := NewChatHandler(nil, logger)
+		h := NewChat(nil, logger)
 		mux := http.NewServeMux()
 		h.RegisterRoutes(mux)
 
@@ -145,32 +145,4 @@ func TestChatHandler_RegisterRoutes(t *testing.T) {
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
-}
-
-// TestEscapeJSON tests the JSON escaping function.
-func TestEscapeJSON(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"simple string", "hello", "hello"},
-		{"with quotes", `say "hello"`, `say \"hello\"`},
-		{"with backslash", `path\to\file`, `path\\to\\file`},
-		{"with newline", "line1\nline2", `line1\nline2`},
-		{"with tab", "col1\tcol2", `col1\tcol2`},
-		{"with carriage return", "text\rmore", `text\rmore`},
-		{"control character", "text\x01here", `text\u0001here`},
-		{"empty string", "", ""},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			result := escapeJSON(tc.input)
-			assert.Equal(t, tc.expected, result)
-		})
-	}
 }

@@ -23,18 +23,3 @@ func TestWriteJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "hello", result["message"])
 }
-
-func TestWriteError(t *testing.T) {
-	w := httptest.NewRecorder()
-
-	writeError(w, 400, "bad_request", "invalid input")
-
-	assert.Equal(t, 400, w.Code)
-	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-
-	var result ErrorResponse
-	err := json.Unmarshal(w.Body.Bytes(), &result)
-	require.NoError(t, err)
-	assert.Equal(t, "bad_request", result.Error)
-	assert.Equal(t, "invalid input", result.Message)
-}

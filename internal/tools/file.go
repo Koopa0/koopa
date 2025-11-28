@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -13,6 +14,10 @@ import (
 
 // FileToolset name constant.
 const FileToolsetName = "file"
+
+// MaxReadFileSize is the maximum file size allowed for ReadFile (10 MB).
+// This prevents OOM when reading large files into memory.
+const MaxReadFileSize = 10 * 1024 * 1024
 
 // ReadFileInput defines input for readFile tool.
 type ReadFileInput struct {
@@ -104,6 +109,7 @@ func (fs *FileToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
 }
 
 // ReadFile reads and returns the complete content of a file with security validation.
+// Uses os.Open + io.LimitReader for efficient single-pass I/O with defense-in-depth size limiting.
 func (fs *FileToolset) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Result, error) {
 	fs.logger.Info("ReadFile called", "path", input.Path)
 
@@ -120,8 +126,8 @@ func (fs *FileToolset) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Resul
 		}, nil
 	}
 
-	// Read file
-	content, err := os.ReadFile(safePath) // #nosec G304
+	// Open file for reading (single operation instead of separate Stat + ReadFile)
+	file, err := os.Open(safePath) // #nosec G304 - path already validated by pathVal.Validate()
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Result{
@@ -133,6 +139,44 @@ func (fs *FileToolset) ReadFile(ctx *ai.ToolContext, input ReadFileInput) (Resul
 				},
 			}, nil
 		}
+		return Result{
+			Status:  StatusError,
+			Message: "Failed to open file",
+			Error: &Error{
+				Code:    ErrCodeIO,
+				Message: fmt.Sprintf("unable to open file: %v", err),
+			},
+		}, nil
+	}
+	defer func() { _ = file.Close() }()
+
+	// Get file info for size check
+	info, err := file.Stat()
+	if err != nil {
+		return Result{
+			Status:  StatusError,
+			Message: "Failed to get file info",
+			Error: &Error{
+				Code:    ErrCodeIO,
+				Message: fmt.Sprintf("unable to stat file: %v", err),
+			},
+		}, nil
+	}
+
+	if info.Size() > MaxReadFileSize {
+		return Result{
+			Status:  StatusError,
+			Message: fmt.Sprintf("File too large: %d bytes (max %d bytes)", info.Size(), MaxReadFileSize),
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("file size %d exceeds maximum allowed size %d bytes", info.Size(), MaxReadFileSize),
+			},
+		}, nil
+	}
+
+	// Read file with LimitReader as defense-in-depth (prevents reading more than MaxReadFileSize)
+	content, err := io.ReadAll(io.LimitReader(file, MaxReadFileSize))
+	if err != nil {
 		return Result{
 			Status:  StatusError,
 			Message: "Failed to read file",

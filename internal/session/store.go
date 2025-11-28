@@ -3,16 +3,17 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/koopa-cli/internal/agent"
-	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
 
@@ -118,17 +119,14 @@ func (s *Store) CreateSession(ctx context.Context, title, modelName, systemPromp
 }
 
 // GetSession retrieves a session by ID.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: UUID of the session to retrieve
-//
-// Returns:
-//   - *Session: Retrieved session
-//   - error: If session not found or retrieval fails
+// Returns ErrSessionNotFound if the session does not exist.
 func (s *Store) GetSession(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
 	sqlcSession, err := s.querier.GetSession(ctx, uuidToPgUUID(sessionID))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Return sentinel error directly (no wrapping per reviewer guidance)
+			return nil, ErrSessionNotFound
+		}
 		return nil, fmt.Errorf("failed to get session %s: %w", sessionID, err)
 	}
 
@@ -223,8 +221,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	// 0. Lock session row to prevent concurrent modifications
 	// This SELECT ... FOR UPDATE ensures that only one transaction can modify
 	// this session at a time, preventing race conditions on sequence numbers
-	_, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID))
-	if err != nil {
+	if _, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID)); err != nil {
 		return fmt.Errorf("failed to lock session: %w", err)
 	}
 
@@ -450,7 +447,7 @@ func (s *Store) AppendMessages(ctx context.Context, sessionID agent.SessionID, b
 	}
 
 	// Validate and normalize branch
-	branch, err = config.NormalizeBranch(branch)
+	branch, err = NormalizeBranch(branch)
 	if err != nil {
 		return fmt.Errorf("invalid branch: %w", err)
 	}
@@ -642,13 +639,13 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, bran
 	}
 
 	// Validate and normalize branch
-	branch, err = config.NormalizeBranch(branch)
+	branch, err = NormalizeBranch(branch)
 	if err != nil {
 		return nil, fmt.Errorf("invalid branch: %w", err)
 	}
 
-	// Use configurable limit
-	limit := config.NormalizeMaxHistoryMessages(0) // Use default
+	// Use default limit for history retrieval
+	limit := DefaultHistoryLimit
 
 	// Retrieve messages for this specific branch
 	messages, err := s.GetMessagesByBranch(ctx, id, branch, limit, 0)
@@ -693,7 +690,7 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 	}
 
 	// Validate and normalize branch
-	branch, err = config.NormalizeBranch(branch)
+	branch, err = NormalizeBranch(branch)
 	if err != nil {
 		return fmt.Errorf("invalid branch: %w", err)
 	}
@@ -705,7 +702,7 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 	}
 
 	// Load existing messages for this branch to determine which are new
-	limit := config.NormalizeMaxHistoryMessages(0)
+	limit := DefaultHistoryLimit
 	existingMessages, err := s.GetMessagesByBranch(ctx, id, branch, limit, 0)
 	if err != nil {
 		s.logger.Debug("no existing messages found", "session_id", sessionID, "branch", branch)

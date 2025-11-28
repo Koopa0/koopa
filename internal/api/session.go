@@ -20,19 +20,19 @@ const (
 	MaxListOffset         = 100000 // Reasonable upper bound for pagination offset
 )
 
-// SessionHandler handles session-related HTTP endpoints.
-type SessionHandler struct {
+// Session handles session-related HTTP endpoints.
+type Session struct {
 	store  *session.Store
 	logger log.Logger
 }
 
-// NewSessionHandler creates a new session handler.
-func NewSessionHandler(store *session.Store, logger log.Logger) *SessionHandler {
-	return &SessionHandler{store: store, logger: logger}
+// NewSession creates a new session handler.
+func NewSession(store *session.Store, logger log.Logger) *Session {
+	return &Session{store: store, logger: logger}
 }
 
 // RegisterRoutes registers session routes on the given mux.
-func (h *SessionHandler) RegisterRoutes(mux *http.ServeMux) {
+func (h *Session) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sessions", h.list)
 	mux.HandleFunc("POST /api/sessions", h.create)
 }
@@ -41,7 +41,7 @@ func (h *SessionHandler) RegisterRoutes(mux *http.ServeMux) {
 // Query parameters:
 //   - limit: Maximum number of sessions to return (default: 100, max: 1000)
 //   - offset: Number of sessions to skip (default: 0)
-func (h *SessionHandler) list(w http.ResponseWriter, r *http.Request) {
+func (h *Session) list(w http.ResponseWriter, r *http.Request) {
 	// Check for nil store
 	if h.store == nil {
 		h.logger.Error("session store is nil")
@@ -61,9 +61,12 @@ func (h *SessionHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Note: "count" is the number of sessions in this page, not the total.
+	// To get total count, a separate COUNT(*) query would be needed.
+	// Clients can check if count < limit to determine if more pages exist.
 	resp := map[string]any{
 		"sessions": sessions,
-		"total":    len(sessions),
+		"count":    len(sessions),
 		"limit":    limit,
 		"offset":   offset,
 	}
@@ -97,7 +100,7 @@ type CreateSessionRequest struct {
 }
 
 // create creates a new session.
-func (h *SessionHandler) create(w http.ResponseWriter, r *http.Request) {
+func (h *Session) create(w http.ResponseWriter, r *http.Request) {
 	// Check for nil store
 	if h.store == nil {
 		h.logger.Error("session store is nil")

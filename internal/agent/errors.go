@@ -17,9 +17,6 @@ var (
 	// ErrInvalidSession indicates the session ID is invalid or malformed.
 	ErrInvalidSession = errors.New("invalid session")
 
-	// ErrSessionNotFound indicates the session does not exist.
-	ErrSessionNotFound = errors.New("session not found")
-
 	// ErrSessionExpired indicates the session has expired.
 	ErrSessionExpired = errors.New("session expired")
 )
