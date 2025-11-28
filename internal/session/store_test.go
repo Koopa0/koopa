@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -328,98 +329,38 @@ func TestStore_AddMessages(t *testing.T) {
 	sessionID := uuid.New()
 	testParts := []*ai.Part{ai.NewTextPart("Hello, world!")}
 
-	tests := []struct {
-		name                string
-		messages            []*Message
-		mockMaxSeq          any
-		mockMaxSeqErr       error
-		mockAddErr          error
-		wantAddMessageCalls int
-		wantErr             bool
-	}{
-		{
-			name: "successfully adds multiple messages",
-			messages: []*Message{
-				{
-					SessionID: sessionID,
-					Role:      "user",
-					Content:   testParts,
-				},
-				{
-					SessionID: sessionID,
-					Role:      "model",
-					Content:   testParts,
-				},
+	t.Run("handles empty message slice", func(t *testing.T) {
+		// Empty messages don't require pool (early return)
+		store := New(&mockSessionQuerier{}, nil, slog.Default())
+		err := store.AddMessages(context.Background(), sessionID, []*Message{})
+		if err != nil {
+			t.Errorf("AddMessages() with empty slice should not error, got: %v", err)
+		}
+	})
+
+	t.Run("requires database pool for non-empty messages", func(t *testing.T) {
+		// AddMessages now requires a pool for transactional operations
+		// This test verifies the error message when pool is nil
+		store := New(&mockSessionQuerier{}, nil, slog.Default())
+		messages := []*Message{
+			{
+				SessionID: sessionID,
+				Role:      "user",
+				Content:   testParts,
 			},
-			mockMaxSeq:          int64(0),
-			wantAddMessageCalls: 2,
-			wantErr:             false,
-		},
-		{
-			name:                "handles empty message slice",
-			messages:            []*Message{},
-			wantAddMessageCalls: 0,
-			wantErr:             false,
-		},
-		{
-			name: "continues with sequence 1 when max seq fails",
-			messages: []*Message{
-				{
-					SessionID: sessionID,
-					Role:      "user",
-					Content:   testParts,
-				},
-			},
-			mockMaxSeqErr:       errors.New("failed to get max seq"),
-			wantAddMessageCalls: 1,
-			wantErr:             false,
-		},
-		{
-			name: "returns error when add message fails",
-			messages: []*Message{
-				{
-					SessionID: sessionID,
-					Role:      "user",
-					Content:   testParts,
-				},
-			},
-			mockMaxSeq:          int64(0),
-			mockAddErr:          errors.New("insert failed"),
-			wantAddMessageCalls: 1,
-			wantErr:             true,
-		},
-	}
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			querier := &mockSessionQuerier{
-				getMaxSequenceNumberResult: tt.mockMaxSeq,
-				getMaxSequenceNumberErr:    tt.mockMaxSeqErr,
-				addMessageErr:              tt.mockAddErr,
-			}
-			store := New(querier, nil, slog.Default())
+		err := store.AddMessages(context.Background(), sessionID, messages)
+		if err == nil {
+			t.Error("AddMessages() should error when pool is nil")
+		}
+		if err != nil && !strings.Contains(err.Error(), "database pool required") {
+			t.Errorf("AddMessages() error should mention 'database pool required', got: %v", err)
+		}
+	})
 
-			err := store.AddMessages(context.Background(), sessionID, tt.messages)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("AddMessages() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if querier.addMessageCalls != tt.wantAddMessageCalls {
-				t.Errorf("AddMessage() calls = %d, want %d", querier.addMessageCalls, tt.wantAddMessageCalls)
-			}
-
-			// Verify sequence numbers are sequential
-			if !tt.wantErr && len(tt.messages) > 0 {
-				for i, param := range querier.lastAddMessageParams {
-					expectedSeq := int32(i + 1)
-					if param.SequenceNumber != expectedSeq {
-						t.Errorf("message %d: sequence = %d, want %d", i, param.SequenceNumber, expectedSeq)
-					}
-				}
-			}
-		})
-	}
+	// Note: Full transactional testing is done in integration_test.go
+	// which uses a real database connection via testutil.SetupTestDB
 }
 
 func TestStore_GetMessages(t *testing.T) {

@@ -83,20 +83,37 @@ func LoggingMiddleware(logger log.Logger) func(http.Handler) http.Handler {
 }
 
 // RecoveryMiddleware recovers from panics to prevent server crashes.
+// It checks if headers have been sent before attempting to write an error response.
 func RecoveryMiddleware(logger log.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Wrap writer to track if headers have been sent
+			wrapper := &loggingWriter{
+				ResponseWriter: w,
+				statusCode:     0, // 0 indicates headers not yet sent
+			}
+
 			defer func() {
 				if err := recover(); err != nil {
 					logger.Error("panic recovered",
 						"error", err,
 						"path", r.URL.Path,
+						"headers_sent", wrapper.statusCode != 0,
 					)
 
-					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					// Only attempt to write error if headers haven't been sent
+					if wrapper.statusCode == 0 {
+						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					} else {
+						// Headers already sent, can only log
+						logger.Warn("cannot send error response, headers already sent",
+							"path", r.URL.Path,
+							"status", wrapper.statusCode,
+						)
+					}
 				}
 			}()
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(wrapper, r)
 		})
 	}
 }

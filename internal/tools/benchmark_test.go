@@ -41,7 +41,7 @@ func BenchmarkFileToolset_ReadFile(b *testing.B) {
 	ctx := &ai.ToolContext{Context: context.Background()}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, err := toolset.ReadFile(ctx, ReadFileInput{Path: testFile})
 		if err != nil {
 			b.Fatalf("ReadFile failed: %v", err)
@@ -76,7 +76,7 @@ func BenchmarkFileToolset_ReadFile_Medium(b *testing.B) {
 	ctx := &ai.ToolContext{Context: context.Background()}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, err := toolset.ReadFile(ctx, ReadFileInput{Path: testFile})
 		if err != nil {
 			b.Fatalf("ReadFile failed: %v", err)
@@ -111,7 +111,7 @@ func BenchmarkFileToolset_ReadFile_Large(b *testing.B) {
 	ctx := &ai.ToolContext{Context: context.Background()}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, err := toolset.ReadFile(ctx, ReadFileInput{Path: testFile})
 		if err != nil {
 			b.Fatalf("ReadFile failed: %v", err)
@@ -144,7 +144,7 @@ func BenchmarkFileToolset_GetFileInfo(b *testing.B) {
 	ctx := &ai.ToolContext{Context: context.Background()}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, err := toolset.GetFileInfo(ctx, GetFileInfoInput{Path: testFile})
 		if err != nil {
 			b.Fatalf("GetFileInfo failed: %v", err)
@@ -166,7 +166,7 @@ func BenchmarkPathValidation(b *testing.B) {
 	testPath := tmpDir + "/test/nested/path/file.txt"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = pathVal.Validate(testPath)
 	}
 }
@@ -187,7 +187,7 @@ func BenchmarkPathValidation_Malicious(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		path := maliciousPaths[i%len(maliciousPaths)]
 		_, _ = pathVal.Validate(path)
 	}

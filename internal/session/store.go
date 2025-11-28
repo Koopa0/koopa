@@ -198,9 +198,10 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 		return nil
 	}
 
-	// If pool is nil (testing with mock), use non-transactional mode
+	// Database pool is required for transactional operations
+	// Tests should use pgxmock or Testcontainers for proper transaction testing
 	if s.pool == nil {
-		return s.addMessagesNonTransactional(ctx, sessionID, messages)
+		return fmt.Errorf("database pool required for AddMessages: use pgxmock or real database for testing")
 	}
 
 	// Begin transaction for atomicity
@@ -282,66 +283,6 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	}
 
 	s.logger.Debug("added messages", "session_id", sessionID, "count", len(messages))
-	return nil
-}
-
-// addMessagesNonTransactional adds messages without transaction (for testing with mocks).
-// This is a fallback for when pool is nil.
-//
-// This function should ONLY be used in:
-//   - Unit tests with mock queriers
-//   - Single-threaded test scenarios
-//   - Contexts where external synchronization is guaranteed
-//
-// For production use with concurrent access, always use AddMessages with a real database pool.
-func (s *Store) addMessagesNonTransactional(ctx context.Context, sessionID uuid.UUID, messages []*Message) error {
-	// 1. Get current max sequence number
-	maxSeq, err := s.querier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
-	if err != nil {
-		s.logger.Debug("no existing messages, starting from sequence 0",
-			"session_id", sessionID)
-		maxSeq = 0
-	}
-
-	// 2. Insert messages in batch
-	for i, msg := range messages {
-		// Validate Content slice for nil pointers
-		for j, part := range msg.Content {
-			if part == nil {
-				return fmt.Errorf("message %d has nil content at index %d", i, j)
-			}
-		}
-
-		// Marshal ai.Part slice to JSON
-		contentJSON, err := json.Marshal(msg.Content)
-		if err != nil {
-			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
-		}
-
-		// Calculate sequence number (maxSeq is now int32 from sqlc)
-		// Safe conversion: loop index i is bounded by len(messages) which is checked by database constraints
-		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
-
-		if err = s.querier.AddMessage(ctx, sqlc.AddMessageParams{
-			SessionID:      uuidToPgUUID(sessionID),
-			Role:           msg.Role,
-			Content:        contentJSON,
-			SequenceNumber: seqNum,
-		}); err != nil {
-			return fmt.Errorf("failed to insert message %d: %w", i, err)
-		}
-	}
-
-	// 3. Update session's updated_at and message_count
-	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
-	if err = s.querier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
-		MessageCount: &newCount,
-		SessionID:    uuidToPgUUID(sessionID),
-	}); err != nil {
-		return fmt.Errorf("failed to update session metadata: %w", err)
-	}
-
-	s.logger.Debug("added messages (non-transactional)", "session_id", sessionID, "count", len(messages))
 	return nil
 }
 
@@ -482,9 +423,9 @@ func (s *Store) AddMessagesWithBranch(ctx context.Context, sessionID uuid.UUID, 
 		return nil
 	}
 
-	// If pool is nil (testing with mock), use non-transactional mode
+	// Database pool is required for transactional operations
 	if s.pool == nil {
-		return s.addMessagesWithBranchNonTransactional(ctx, sessionID, branch, messages)
+		return fmt.Errorf("database pool required for AddMessagesWithBranch: use pgxmock or real database for testing")
 	}
 
 	// Begin transaction for atomicity
@@ -557,58 +498,6 @@ func (s *Store) AddMessagesWithBranch(ctx context.Context, sessionID uuid.UUID, 
 	}
 
 	s.logger.Debug("added messages with branch",
-		"session_id", sessionID,
-		"branch", branch,
-		"count", len(messages))
-	return nil
-}
-
-// addMessagesWithBranchNonTransactional adds messages without transaction (for testing).
-func (s *Store) addMessagesWithBranchNonTransactional(ctx context.Context, sessionID uuid.UUID, branch string, messages []*Message) error {
-	maxSeq, err := s.querier.GetMaxSequenceByBranch(ctx, sqlc.GetMaxSequenceByBranchParams{
-		SessionID: uuidToPgUUID(sessionID),
-		Branch:    branch,
-	})
-	if err != nil {
-		s.logger.Debug("no existing messages in branch, starting from sequence 0",
-			"session_id", sessionID, "branch", branch)
-		maxSeq = 0
-	}
-
-	for i, msg := range messages {
-		for j, part := range msg.Content {
-			if part == nil {
-				return fmt.Errorf("message %d has nil content at index %d", i, j)
-			}
-		}
-
-		contentJSON, err := json.Marshal(msg.Content)
-		if err != nil {
-			return fmt.Errorf("failed to marshal message content at index %d: %w", i, err)
-		}
-
-		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
-
-		if err = s.querier.AddMessageWithBranch(ctx, sqlc.AddMessageWithBranchParams{
-			SessionID:      uuidToPgUUID(sessionID),
-			Branch:         branch,
-			Role:           msg.Role,
-			Content:        contentJSON,
-			SequenceNumber: seqNum,
-		}); err != nil {
-			return fmt.Errorf("failed to insert message %d: %w", i, err)
-		}
-	}
-
-	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
-	if err = s.querier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
-		MessageCount: &newCount,
-		SessionID:    uuidToPgUUID(sessionID),
-	}); err != nil {
-		return fmt.Errorf("failed to update session metadata: %w", err)
-	}
-
-	s.logger.Debug("added messages with branch (non-transactional)",
 		"session_id", sessionID,
 		"branch", branch,
 		"count", len(messages))

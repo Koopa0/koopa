@@ -334,7 +334,7 @@ func BenchmarkGetLanguagePromptVariable(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = c.getLanguagePromptVariable()
 	}
 }
@@ -346,7 +346,7 @@ func BenchmarkResolveModelName(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = c.resolveModelName()
 	}
 }

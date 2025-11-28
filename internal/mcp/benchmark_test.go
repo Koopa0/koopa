@@ -16,7 +16,7 @@ import (
 // BenchmarkServer_Creation benchmarks MCP server creation.
 // Run with: go test -bench=BenchmarkServer_Creation -benchmem ./internal/mcp/...
 func BenchmarkServer_Creation(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tmpDir := b.TempDir()
 		pathVal, err := security.NewPath([]string{tmpDir})
 		if err != nil {
@@ -68,8 +68,8 @@ func BenchmarkJSONRPC_Parse(b *testing.B) {
 	requestJSON := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"/tmp/test.txt"}}}`
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var request map[string]interface{}
+	for b.Loop() {
+		var request map[string]any
 		if err := json.Unmarshal([]byte(requestJSON), &request); err != nil {
 			b.Fatalf("JSON unmarshal failed: %v", err)
 		}
@@ -79,11 +79,11 @@ func BenchmarkJSONRPC_Parse(b *testing.B) {
 // BenchmarkJSONRPC_Parse_LargePayload benchmarks parsing larger JSON-RPC messages.
 func BenchmarkJSONRPC_Parse_LargePayload(b *testing.B) {
 	// Larger JSON-RPC response message (simulating file content return)
-	response := map[string]interface{}{
+	response := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
-		"result": map[string]interface{}{
-			"content": []map[string]interface{}{
+		"result": map[string]any{
+			"content": []map[string]any{
 				{
 					"type": "text",
 					"text": generateLargeContent(10000), // 10KB content
@@ -94,8 +94,8 @@ func BenchmarkJSONRPC_Parse_LargePayload(b *testing.B) {
 	responseJSON, _ := json.Marshal(response)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var parsed map[string]interface{}
+	for b.Loop() {
+		var parsed map[string]any
 		if err := json.Unmarshal(responseJSON, &parsed); err != nil {
 			b.Fatalf("JSON unmarshal failed: %v", err)
 		}
@@ -104,11 +104,11 @@ func BenchmarkJSONRPC_Parse_LargePayload(b *testing.B) {
 
 // BenchmarkJSONRPC_Serialize benchmarks JSON-RPC message serialization.
 func BenchmarkJSONRPC_Serialize(b *testing.B) {
-	response := map[string]interface{}{
+	response := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
-		"result": map[string]interface{}{
-			"content": []map[string]interface{}{
+		"result": map[string]any{
+			"content": []map[string]any{
 				{
 					"type": "text",
 					"text": "File content here",
@@ -118,7 +118,7 @@ func BenchmarkJSONRPC_Serialize(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := json.Marshal(response)
 		if err != nil {
 			b.Fatalf("JSON marshal failed: %v", err)
@@ -128,11 +128,11 @@ func BenchmarkJSONRPC_Serialize(b *testing.B) {
 
 // BenchmarkJSONRPC_Serialize_LargePayload benchmarks serializing larger responses.
 func BenchmarkJSONRPC_Serialize_LargePayload(b *testing.B) {
-	response := map[string]interface{}{
+	response := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
-		"result": map[string]interface{}{
-			"content": []map[string]interface{}{
+		"result": map[string]any{
+			"content": []map[string]any{
 				{
 					"type": "text",
 					"text": generateLargeContent(100000), // 100KB content
@@ -142,7 +142,7 @@ func BenchmarkJSONRPC_Serialize_LargePayload(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := json.Marshal(response)
 		if err != nil {
 			b.Fatalf("JSON marshal failed: %v", err)
@@ -155,7 +155,7 @@ func BenchmarkReadFileInput_Parse(b *testing.B) {
 	inputJSON := `{"path":"/tmp/test/path/to/file.txt"}`
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var input tools.ReadFileInput
 		if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
 			b.Fatalf("JSON unmarshal failed: %v", err)
@@ -203,7 +203,7 @@ func BenchmarkConfig_Validation(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Validate config by attempting to create server
 		// (validation happens in NewServer)
 		_, _ = NewServer(cfg)

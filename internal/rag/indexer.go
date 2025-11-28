@@ -76,6 +76,16 @@ type IndexResult struct {
 	Duration     time.Duration
 }
 
+// MaxFileSizeForEmbedding is the maximum file size that can be reliably embedded.
+// text-embedding-004 has ~2048 token limit, which translates to approximately 8KB of text.
+// Files larger than this will have their content truncated during embedding,
+// causing retrieval failures for content beyond this limit.
+const MaxFileSizeForEmbedding = 8 * 1024 // 8KB conservative limit for 2048 tokens
+
+// DefaultListLimit is the default maximum number of documents returned by ListDocuments.
+// This prevents unbounded queries that could cause memory exhaustion.
+const DefaultListLimit = 1000
+
 // Indexer handles local file indexing
 type Indexer struct {
 	store               IndexerStore    // Depends on interface for testability
@@ -150,6 +160,14 @@ func (idx *Indexer) AddFile(ctx context.Context, filePath string) error {
 	ext := strings.ToLower(filepath.Ext(fileName))
 	if !idx.supportedExtensions[ext] {
 		return fmt.Errorf("unsupported file type: %s", ext)
+	}
+
+	// Check file size against embedding model limit
+	// text-embedding-004 has ~2048 token limit; files larger than MaxFileSizeForEmbedding
+	// will have content truncated during embedding, causing retrieval failures
+	if info.Size() > MaxFileSizeForEmbedding {
+		return fmt.Errorf("file %s (%d bytes) exceeds embedding limit (%d bytes); consider splitting into smaller files",
+			fileName, info.Size(), MaxFileSizeForEmbedding)
 	}
 
 	// Read file content through the restricted root
@@ -254,6 +272,12 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 			return nil
 		}
 
+		// Check file size against embedding model limit
+		if info.Size() > MaxFileSizeForEmbedding {
+			result.FilesSkipped++ // Skip files too large for embedding
+			return nil
+		}
+
 		// Read file through the secure root (prevents path traversal)
 		content, err := root.ReadFile(relPath)
 		if err != nil {
@@ -299,7 +323,7 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 // ListDocuments returns all indexed documents
 func (idx *Indexer) ListDocuments(ctx context.Context) ([]knowledge.Document, error) {
 	// Use ListBySourceType to get all file documents without needing embeddings
-	docs, err := idx.store.ListBySourceType(ctx, knowledge.SourceTypeFile, 1000)
+	docs, err := idx.store.ListBySourceType(ctx, knowledge.SourceTypeFile, DefaultListLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}
