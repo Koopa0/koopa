@@ -21,6 +21,7 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	w.Header().Set("X-Content-Type-Options", "nosniff") // Prevent MIME type sniffing attacks
 	w.WriteHeader(status)
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		// Log at debug level - client disconnects are common and expected

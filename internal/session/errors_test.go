@@ -301,6 +301,16 @@ func FuzzNormalizeBranch(f *testing.F) {
 		"main\u0000.research", // Embedded null
 		"main\u3002research",  // Ideographic full stop
 
+		// Double URL encoding attacks (QA Master P1-3 fix)
+		"%252e%252e",             // Double-encoded ".."
+		"main%252e%252e%252fetc", // Double-encoded path traversal
+		"%25252e%25252e",         // Triple-encoded ".."
+
+		// UTF-8 overlong encoding attacks (QA Master P1-3 fix)
+		"%c0%ae%c0%ae",       // Overlong ".." (2-byte)
+		"%e0%80%ae%e0%80%ae", // Overlong ".." (3-byte)
+		"main%c0%aeetc",      // Overlong "." in path
+
 		// Length attacks
 		strings.Repeat("a", 300),
 		strings.Repeat("a.b.", 100),
@@ -367,10 +377,60 @@ func FuzzNormalizeBranch(f *testing.F) {
 			t.Errorf("empty input should return default branch: got=%q want=%q", result, DefaultBranch)
 		}
 
-		// Property 5: Path traversal must ALWAYS be rejected
+		// Property 5: Path traversal must ALWAYS be rejected (input check)
 		if strings.Contains(input, "..") {
 			if err == nil {
 				t.Errorf("input with '..' should be rejected: input=%q result=%q", input, result)
+			}
+		}
+
+		// Property 5b: Result must NEVER contain path traversal (output check)
+		// Defense in depth - even if input doesn't contain "..", result shouldn't either
+		if err == nil && strings.Contains(result, "..") {
+			t.Errorf("result contains '..': input=%q result=%q", input, result)
+		}
+
+		// Property 5c: Encoded bypass detection (URL encoding attacks)
+		// Check for %2e%2e (URL-encoded "..")
+		if err == nil {
+			decoded := strings.ReplaceAll(result, "%2e", ".")
+			decoded = strings.ReplaceAll(decoded, "%2E", ".")
+			if strings.Contains(decoded, "..") {
+				t.Errorf("result contains encoded '..': input=%q result=%q decoded=%q",
+					input, result, decoded)
+			}
+		}
+
+		// Property 5d: Double URL encoding bypass detection
+		// Check for %252e%252e (double-encoded ".." -> %2e%2e -> ..)
+		if err == nil {
+			// First pass: decode %25 -> %
+			decoded := strings.ReplaceAll(result, "%252e", "%2e")
+			decoded = strings.ReplaceAll(decoded, "%252E", "%2E")
+			// Second pass: decode %2e -> .
+			decoded = strings.ReplaceAll(decoded, "%2e", ".")
+			decoded = strings.ReplaceAll(decoded, "%2E", ".")
+			if strings.Contains(decoded, "..") {
+				t.Errorf("result contains double-encoded '..': input=%q result=%q decoded=%q",
+					input, result, decoded)
+			}
+		}
+
+		// Property 5e: UTF-8 overlong encoding bypass detection
+		// Overlong encodings like %C0%AE could be decoded as "." by some parsers
+		// These are invalid UTF-8 sequences that should never appear in valid output
+		if err == nil {
+			// Check for common overlong dot encodings
+			overlongPatterns := []string{
+				"%c0%ae", "%C0%AE", // 2-byte overlong "."
+				"%e0%80%ae", "%E0%80%AE", // 3-byte overlong "."
+				"%c0%2e", "%C0%2E", // Mixed overlong
+			}
+			for _, pattern := range overlongPatterns {
+				if strings.Contains(strings.ToLower(result), strings.ToLower(pattern)) {
+					t.Errorf("result contains overlong UTF-8 encoding: input=%q result=%q pattern=%q",
+						input, result, pattern)
+				}
 			}
 		}
 

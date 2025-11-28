@@ -92,7 +92,10 @@ func Migrate(connURL string) error {
 
 	finalVersion, finalDirty, verErr := m.Version()
 	if verErr != nil {
-		slog.Info("migrations completed")
+		// Migration succeeded but version check failed - log warning for observability
+		slog.Warn("migrations completed but version check failed",
+			"error", verErr,
+			"hint", "check database manually: SELECT version, dirty FROM schema_migrations")
 	} else {
 		slog.Info("migrations completed", "version", finalVersion, "dirty", finalDirty)
 	}

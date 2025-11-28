@@ -97,7 +97,7 @@ func splitBranch(branch string) []string {
 
 	var segments []string
 	start := 0
-	for i := 0; i < len(branch); i++ {
+	for i := range branch {
 		if branch[i] == '.' {
 			segments = append(segments, branch[start:i])
 			start = i + 1
