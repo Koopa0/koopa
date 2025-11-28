@@ -298,6 +298,9 @@ func (idx *Indexer) AddDirectory(ctx context.Context, dirPath string) (*IndexRes
 		// Get file info for size check
 		info, err := d.Info()
 		if err != nil {
+			slog.Warn("failed to get file info",
+				"path", path,
+				"error", err)
 			result.FilesFailed++
 			return nil // Continue walking
 		}

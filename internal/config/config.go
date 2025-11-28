@@ -283,33 +283,157 @@ func (c Config) MarshalJSON() ([]byte, error) {
 
 // marshalWithSensitiveMasking uses reflection to mask fields tagged with sensitive:"true".
 // This approach ensures new sensitive fields are automatically masked when properly tagged.
+// It recursively processes nested structs and handles various sensitive data types.
 func marshalWithSensitiveMasking(v interface{}) ([]byte, error) {
-	val := reflect.ValueOf(v)
-	typ := val.Type()
+	result := processValue(reflect.ValueOf(v), reflect.TypeOf(v), false)
+	return json.Marshal(result)
+}
 
+// processValue recursively processes a value and masks sensitive fields.
+// isSensitive indicates if the parent field was marked as sensitive.
+func processValue(value reflect.Value, typ reflect.Type, isSensitive bool) interface{} {
+	// Handle pointers by dereferencing
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return nil
+		}
+		return processValue(value.Elem(), value.Elem().Type(), isSensitive)
+	}
+
+	// Handle sensitive fields based on type
+	if isSensitive {
+		return maskSensitiveValue(value)
+	}
+
+	switch value.Kind() {
+	case reflect.Struct:
+		return processStruct(value, typ)
+	case reflect.Map:
+		return processMap(value, isSensitive)
+	case reflect.Slice, reflect.Array:
+		return processSlice(value, isSensitive)
+	default:
+		return value.Interface()
+	}
+}
+
+// processStruct processes a struct and its fields recursively.
+func processStruct(value reflect.Value, typ reflect.Type) map[string]interface{} {
 	result := make(map[string]interface{})
 
-	for i := 0; i < val.NumField(); i++ {
+	for i := 0; i < value.NumField(); i++ {
 		field := typ.Field(i)
-		value := val.Field(i)
+		fieldValue := value.Field(i)
+
+		// Skip unexported fields
+		if !field.IsExported() {
+			continue
+		}
 
 		// Get JSON tag for field name
 		jsonTag := field.Tag.Get("json")
-		if jsonTag == "" || jsonTag == "-" {
+		if jsonTag == "-" {
 			continue
 		}
-		// Handle json:"name,omitempty" format
-		jsonName := strings.Split(jsonTag, ",")[0]
 
-		// Check if field is marked as sensitive and is a string
-		if field.Tag.Get("sensitive") == "true" && value.Kind() == reflect.String {
-			result[jsonName] = maskSecret(value.String())
+		// Determine the output field name using priority:
+		// 1. json tag
+		// 2. mapstructure tag (for nested structs that only have mapstructure)
+		// 3. field name
+		var fieldName string
+		if jsonTag != "" {
+			// Handle json:"name,omitempty" format
+			fieldName = strings.Split(jsonTag, ",")[0]
+		} else if mapTag := field.Tag.Get("mapstructure"); mapTag != "" && mapTag != "-" {
+			fieldName = strings.Split(mapTag, ",")[0]
 		} else {
-			result[jsonName] = value.Interface()
+			fieldName = field.Name
 		}
+
+		// Check if field is marked as sensitive
+		isSensitive := field.Tag.Get("sensitive") == "true"
+
+		// Process the field value
+		result[fieldName] = processValue(fieldValue, field.Type, isSensitive)
 	}
 
-	return json.Marshal(result)
+	return result
+}
+
+// processMap processes a map and its values.
+func processMap(value reflect.Value, isSensitive bool) map[string]interface{} {
+	if value.IsNil() {
+		return nil
+	}
+
+	result := make(map[string]interface{})
+	for _, key := range value.MapKeys() {
+		keyStr := fmt.Sprintf("%v", key.Interface())
+		mapValue := value.MapIndex(key)
+
+		if isSensitive {
+			result[keyStr] = maskSensitiveValue(mapValue)
+		} else {
+			// For non-sensitive maps, recursively process struct values
+			if mapValue.Kind() == reflect.Struct {
+				result[keyStr] = processStruct(mapValue, mapValue.Type())
+			} else {
+				result[keyStr] = mapValue.Interface()
+			}
+		}
+	}
+	return result
+}
+
+// processSlice processes a slice and its elements.
+func processSlice(value reflect.Value, isSensitive bool) []interface{} {
+	if value.IsNil() {
+		return nil
+	}
+
+	result := make([]interface{}, value.Len())
+	for i := 0; i < value.Len(); i++ {
+		elem := value.Index(i)
+		if isSensitive {
+			result[i] = maskSensitiveValue(elem)
+		} else if elem.Kind() == reflect.Struct {
+			result[i] = processStruct(elem, elem.Type())
+		} else {
+			result[i] = elem.Interface()
+		}
+	}
+	return result
+}
+
+// maskSensitiveValue masks a value based on its type.
+// Supports string, []byte, and other types that may contain sensitive data.
+func maskSensitiveValue(value reflect.Value) interface{} {
+	switch value.Kind() {
+	case reflect.String:
+		return maskSecret(value.String())
+	case reflect.Slice:
+		if value.Type().Elem().Kind() == reflect.Uint8 {
+			// []byte - mask like a string
+			return maskSecret(string(value.Bytes()))
+		}
+		// For other slice types, return masked placeholder
+		if value.Len() > 0 {
+			return "****"
+		}
+		return nil
+	case reflect.Map:
+		// For maps, return masked placeholder
+		if value.Len() > 0 {
+			return "****"
+		}
+		return nil
+	default:
+		// For other types (int, bool, etc.), return masked placeholder if non-zero
+		if !value.IsZero() {
+			return "****"
+		}
+		return value.Interface()
+	}
 }
 
 // String implements Stringer to prevent accidental printing of secrets.

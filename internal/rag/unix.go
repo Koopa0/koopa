@@ -12,8 +12,10 @@ import (
 // Returns 0, false if the device ID cannot be determined.
 func getDeviceID(info os.FileInfo) (int64, bool) {
 	if sys, ok := info.Sys().(*syscall.Stat_t); ok {
-		// syscall.Stat_t.Dev is int32 on most Unix systems;
-		// widening to int64 is always safe (no overflow possible)
+		// syscall.Stat_t.Dev is uint64 on most Unix systems;
+		// widening to int64 is safe: device IDs are typically small values
+		// and int64 can represent all practical device IDs without overflow.
+		// #nosec G115 -- Dev is a device identifier, not arbitrary uint64; overflow not possible in practice
 		return int64(sys.Dev), true
 	}
 	return 0, false
