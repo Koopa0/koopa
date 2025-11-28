@@ -74,13 +74,16 @@ func BenchmarkStore_Add(b *testing.B) {
 	store := New(sqlc.New(dbContainer.Pool), embedder, slog.Default())
 
 	// Pre-generate documents
+	// NOTE: time.Now() is called once outside the loop to avoid syscall overhead per iteration
+	baseTime := time.Now().UnixNano()
+	createAt := time.Now()
 	docs := make([]Document, b.N)
 	for i := range b.N {
 		docs[i] = Document{
-			ID:       fmt.Sprintf("bench-add-%d-%d", time.Now().UnixNano(), i),
+			ID:       fmt.Sprintf("bench-add-%d-%d", baseTime, i),
 			Content:  fmt.Sprintf("Benchmark document %d about artificial intelligence and machine learning", i),
 			Metadata: map[string]string{"source_type": SourceTypeSystem, "test": "benchmark"},
-			CreateAt: time.Now(),
+			CreateAt: createAt,
 		}
 	}
 
@@ -125,20 +128,23 @@ func BenchmarkStore_Delete(b *testing.B) {
 	store := New(sqlc.New(dbContainer.Pool), embedder, slog.Default())
 
 	// Pre-create documents to delete
+	// NOTE: time.Now() is called once outside the loop to avoid syscall overhead per iteration
+	baseTime := time.Now().UnixNano()
+	createAt := time.Now()
 	docIDs := make([]string, b.N)
 	for i := range b.N {
-		docID := fmt.Sprintf("bench-delete-%d-%d", time.Now().UnixNano(), i)
+		docID := fmt.Sprintf("bench-delete-%d-%d", baseTime, i)
 		docIDs[i] = docID
 		err := store.Add(ctx, Document{
 			ID:       docID,
 			Content:  "Document to be deleted",
 			Metadata: map[string]string{"source_type": SourceTypeSystem},
-			CreateAt: time.Now(),
+			CreateAt: createAt,
 		})
 		if err != nil {
 			b.Fatalf("Setup failed: %v", err)
 		}
-		time.Sleep(50 * time.Millisecond) // Avoid rate limits
+		time.Sleep(50 * time.Millisecond) // Avoid rate limits - required for Gemini API
 	}
 
 	b.ResetTimer()
@@ -158,17 +164,20 @@ func setupBenchmarkStore(b *testing.B, ctx context.Context, numDocs int) (*Store
 	store := New(sqlc.New(dbContainer.Pool), embedder, slog.Default())
 
 	// Pre-load documents
+	// NOTE: time.Now() is called once outside the loop to avoid syscall overhead per iteration
+	baseTime := time.Now().UnixNano()
+	createAt := time.Now()
 	for i := 0; i < numDocs; i++ {
 		doc := Document{
-			ID:       fmt.Sprintf("bench-doc-%d-%d", time.Now().UnixNano(), i),
+			ID:       fmt.Sprintf("bench-doc-%d-%d", baseTime, i),
 			Content:  fmt.Sprintf("Benchmark test document %d about AI, machine learning, and deep learning systems", i),
 			Metadata: map[string]string{"source_type": SourceTypeSystem, "index": fmt.Sprintf("%d", i)},
-			CreateAt: time.Now(),
+			CreateAt: createAt,
 		}
 		if err := store.Add(ctx, doc); err != nil {
 			b.Fatalf("Failed to add benchmark doc %d: %v", i, err)
 		}
-		// Small delay to avoid rate limits
+		// Small delay to avoid rate limits - required for Gemini API
 		time.Sleep(100 * time.Millisecond)
 	}
 
