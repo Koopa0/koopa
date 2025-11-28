@@ -73,7 +73,10 @@ func NewServer(cfg Config) (*Server, error) {
 // Run starts the MCP server on the given transport.
 // This is a blocking call that handles all MCP protocol communication.
 func (s *Server) Run(ctx context.Context, transport mcp.Transport) error {
-	return s.mcpServer.Run(ctx, transport)
+	if err := s.mcpServer.Run(ctx, transport); err != nil {
+		return fmt.Errorf("MCP server run failed: %w", err)
+	}
+	return nil
 }
 
 // registerTools registers all Toolset tools to the MCP server.

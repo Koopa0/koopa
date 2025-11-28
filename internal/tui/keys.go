@@ -8,6 +8,15 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// Slash command constants.
+const (
+	cmdHelp  = "/help"
+	cmdClear = "/clear"
+	cmdExit  = "/exit"
+	cmdQuit  = "/quit"
+)
+
+//nolint:gocyclo // Keyboard handler requires branching for all key combinations
 func (t *TUI) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.Key()
 
@@ -17,7 +26,8 @@ func (t *TUI) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case 'c':
 			return t.handleCtrlC()
 		case 'd':
-			return t, t.cleanup()
+			cmd := t.cleanup()
+			return t, cmd
 		}
 	}
 
@@ -65,7 +75,8 @@ func (t *TUI) handleCtrlC() (tea.Model, tea.Cmd) {
 
 	// Double Ctrl+C within 1 second = quit
 	if now.Sub(t.lastCtrlC) < time.Second {
-		return t, t.cleanup()
+		cmd := t.cleanup()
+		return t, cmd
 	}
 	t.lastCtrlC = now
 
@@ -78,7 +89,7 @@ func (t *TUI) handleCtrlC() (tea.Model, tea.Cmd) {
 		t.cancelStream()
 		t.state = StateInput
 		t.output.Reset()
-		t.addMessage(Message{Role: "system", Text: "(Cancelled)"})
+		t.addMessage(Message{Role: "system", Text: "(Canceled)"})
 		return t, nil
 	}
 
@@ -121,18 +132,19 @@ func (t *TUI) handleSubmit() (tea.Model, tea.Cmd) {
 
 func (t *TUI) handleSlashCommand(cmd string) (tea.Model, tea.Cmd) {
 	switch cmd {
-	case "/help":
+	case cmdHelp:
 		t.addMessage(Message{
-			Role: "system",
-			Text: "Commands: /help, /clear, /exit\nShortcuts:\n  Enter: send message\n  Shift+Enter: new line\n  Ctrl+C: cancel/clear\n  Ctrl+D: exit\n  Up/Down: history",
+			Role: roleSystem,
+			Text: "Commands: " + cmdHelp + ", " + cmdClear + ", " + cmdExit + "\nShortcuts:\n  Enter: send message\n  Shift+Enter: new line\n  Ctrl+C: cancel/clear\n  Ctrl+D: exit\n  Up/Down: history",
 		})
-	case "/clear":
+	case cmdClear:
 		t.messages = nil
-	case "/exit", "/quit":
-		return t, t.cleanup()
+	case cmdExit, cmdQuit:
+		cleanupCmd := t.cleanup()
+		return t, cleanupCmd
 	default:
 		t.addMessage(Message{
-			Role: "error",
+			Role: roleError,
 			Text: "Unknown command: " + cmd,
 		})
 	}
@@ -181,7 +193,7 @@ func (t *TUI) cleanup() tea.Cmd {
 		t.ctxCancel = nil
 	}
 
-	// Then cancel stream-specific context (may already be cancelled via parent)
+	// Then cancel stream-specific context (may already be canceled via parent)
 	t.cancelStream()
 
 	// Wait for goroutine with timeout (increased for network cleanup)

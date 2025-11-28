@@ -29,7 +29,7 @@ func BenchmarkFileToolset_ReadFile(b *testing.B) {
 
 	// Create a small test file (1KB)
 	content := strings.Repeat("Hello World! ", 100)
-	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(content), 0o600); err != nil {
 		b.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -64,7 +64,7 @@ func BenchmarkFileToolset_ReadFile_Medium(b *testing.B) {
 
 	// Create a 100KB test file
 	content := strings.Repeat("This is a test line for benchmarking file reads. ", 2000)
-	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(content), 0o600); err != nil {
 		b.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -99,7 +99,7 @@ func BenchmarkFileToolset_ReadFile_Large(b *testing.B) {
 
 	// Create a 1MB test file
 	content := strings.Repeat("This is a benchmark test line for measuring large file read performance. ", 13000)
-	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(content), 0o600); err != nil {
 		b.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func BenchmarkFileToolset_GetFileInfo(b *testing.B) {
 
 	testFile := realTmpDir + "/info.txt"
 
-	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content"), 0o600); err != nil {
 		b.Fatalf("Failed to create test file: %v", err)
 	}
 

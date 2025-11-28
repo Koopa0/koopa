@@ -163,6 +163,8 @@ func findProjectRoot() (string, error) {
 //
 // Each migration runs in its own transaction for atomicity.
 // This is a simplified version - production should use a migration tool like golang-migrate.
+//
+//nolint:gocognit // Complex error handling necessary for transaction safety in test utility
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	// Find project root to build absolute paths to migrations
 	projectRoot, err := findProjectRoot()
@@ -173,16 +175,16 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	// Read and execute migration files in order
 	// IMPORTANT: Keep this list in sync with db/migrations/*.up.sql files
 	migrationFiles := []string{
-		filepath.Join(projectRoot, "db/migrations/000001_init_schema.up.sql"),
-		filepath.Join(projectRoot, "db/migrations/000002_create_sessions.up.sql"),
-		filepath.Join(projectRoot, "db/migrations/000003_add_branch_column.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000001_init_schema.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000002_create_sessions.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000003_add_branch_column.up.sql"),
 	}
 
 	for _, migrationPath := range migrationFiles {
 		// #nosec G304 -- migration paths are hardcoded constants, not from user input
-		migrationSQL, err := os.ReadFile(migrationPath)
-		if err != nil {
-			return fmt.Errorf("failed to read migration %s: %w", migrationPath, err)
+		migrationSQL, readErr := os.ReadFile(migrationPath)
+		if readErr != nil {
+			return fmt.Errorf("failed to read migration %s: %w", migrationPath, readErr)
 		}
 
 		// Skip empty migration files to avoid unnecessary execution
@@ -192,12 +194,12 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 
 		// Execute each migration in its own transaction using an anonymous function
 		// This ensures defer executes at the end of each iteration, not at function end
-		err = func() error {
+		migErr := func() error {
 			// Wrap migration execution in a transaction for atomicity
 			// This ensures that if a migration fails, changes are rolled back
-			tx, err := pool.Begin(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, err)
+			tx, beginErr := pool.Begin(ctx)
+			if beginErr != nil {
+				return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, beginErr)
 			}
 
 			// Ensure transaction is always closed (rollback unless committed)
@@ -205,27 +207,27 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			committed := false
 			defer func() {
 				if !committed {
-					if err := tx.Rollback(ctx); err != nil {
+					if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
 						slog.Default().Debug("migration transaction rollback (may be already committed)",
-							"migration", migrationPath, "error", err)
+							"migration", migrationPath, "error", rollbackErr)
 					}
 				}
 			}()
 
-			_, err = tx.Exec(ctx, string(migrationSQL))
-			if err != nil {
-				return fmt.Errorf("failed to execute migration %s: %w", migrationPath, err)
+			_, execErr := tx.Exec(ctx, string(migrationSQL))
+			if execErr != nil {
+				return fmt.Errorf("failed to execute migration %s: %w", migrationPath, execErr)
 			}
 
-			if err = tx.Commit(ctx); err != nil {
-				return fmt.Errorf("failed to commit migration %s: %w", migrationPath, err)
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return fmt.Errorf("failed to commit migration %s: %w", migrationPath, commitErr)
 			}
 			committed = true
 			return nil
 		}()
 
-		if err != nil {
-			return err
+		if migErr != nil {
+			return migErr
 		}
 	}
 

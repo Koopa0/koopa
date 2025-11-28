@@ -33,6 +33,8 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -120,7 +122,7 @@ func (s *Server) Handler() http.Handler {
 	)
 }
 
-// Run starts the HTTP server and blocks until the context is cancelled.
+// Run starts the HTTP server and blocks until the context is canceled.
 // It handles graceful shutdown when the context is done.
 func (s *Server) Run(ctx context.Context, addr string) error {
 	if addr == "" {
@@ -148,13 +150,13 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return err
+			return fmt.Errorf("server shutdown failed: %w", err)
 		}
 		// Wait for the goroutine to exit to prevent goroutine leak
 		<-errCh
 		return nil
 	case err := <-errCh:
-		if err == http.ErrServerClosed {
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err

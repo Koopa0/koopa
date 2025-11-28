@@ -158,29 +158,47 @@ func truncateContent(content string, maxLength int) string {
 // Tool Metadata Implementations
 // ============================================================================
 
+// searchHistoryTool implements ToolMetadata for the searchHistory tool.
 type searchHistoryTool struct{}
 
-func (t *searchHistoryTool) Name() string { return "searchHistory" }
-func (t *searchHistoryTool) Description() string {
+// Name returns the tool name.
+func (*searchHistoryTool) Name() string { return "searchHistory" }
+
+// Description returns the tool description.
+func (*searchHistoryTool) Description() string {
 	return "Search conversation history using semantic similarity."
 }
-func (t *searchHistoryTool) IsLongRunning() bool { return false }
 
+// IsLongRunning indicates this tool completes quickly.
+func (*searchHistoryTool) IsLongRunning() bool { return false }
+
+// searchDocumentsTool implements ToolMetadata for the searchDocuments tool.
 type searchDocumentsTool struct{}
 
-func (t *searchDocumentsTool) Name() string { return "searchDocuments" }
-func (t *searchDocumentsTool) Description() string {
+// Name returns the tool name.
+func (*searchDocumentsTool) Name() string { return "searchDocuments" }
+
+// Description returns the tool description.
+func (*searchDocumentsTool) Description() string {
 	return "Search indexed documents using semantic similarity."
 }
-func (t *searchDocumentsTool) IsLongRunning() bool { return false }
 
+// IsLongRunning indicates this tool completes quickly.
+func (*searchDocumentsTool) IsLongRunning() bool { return false }
+
+// searchSystemKnowledgeTool implements ToolMetadata for the searchSystemKnowledge tool.
 type searchSystemKnowledgeTool struct{}
 
-func (t *searchSystemKnowledgeTool) Name() string { return "searchSystemKnowledge" }
-func (t *searchSystemKnowledgeTool) Description() string {
+// Name returns the tool name.
+func (*searchSystemKnowledgeTool) Name() string { return "searchSystemKnowledge" }
+
+// Description returns the tool description.
+func (*searchSystemKnowledgeTool) Description() string {
 	return "Search system knowledge base using semantic similarity."
 }
-func (t *searchSystemKnowledgeTool) IsLongRunning() bool { return false }
+
+// IsLongRunning indicates this tool completes quickly.
+func (*searchSystemKnowledgeTool) IsLongRunning() bool { return false }
 
 // ============================================================================
 // KnowledgeToolset Implementation
@@ -230,12 +248,12 @@ func NewKnowledgeToolset(store *knowledge.Store, logger log.Logger) (*KnowledgeT
 }
 
 // Name returns the name of the toolset.
-func (k *KnowledgeToolset) Name() string {
+func (*KnowledgeToolset) Name() string {
 	return KnowledgeToolsetName
 }
 
 // Tools returns the tool definitions for the KnowledgeToolset.
-func (k *KnowledgeToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
+func (k *KnowledgeToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
 	return []Tool{
 		NewTool(
 			"searchHistory",

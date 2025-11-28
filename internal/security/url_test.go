@@ -167,10 +167,8 @@ func TestURL_Validate(t *testing.T) {
 				if tt.errMsg != "" && !urlContains(err.Error(), tt.errMsg) {
 					t.Errorf("Validate(%q) error = %q, want error containing %q", tt.url, err.Error(), tt.errMsg)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Validate(%q) unexpected error: %v", tt.url, err)
-				}
+			} else if err != nil {
+				t.Errorf("Validate(%q) unexpected error: %v", tt.url, err)
 			}
 		})
 	}
@@ -236,8 +234,8 @@ func TestURL_SafeTransport(t *testing.T) {
 // Helper functions
 
 func urlContains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && urlContainsSubstring(s, substr)))
+	return len(s) >= len(substr) && (s == substr || substr == "" ||
+		(s != "" && substr != "" && urlContainsSubstring(s, substr)))
 }
 
 func urlContainsSubstring(s, substr string) bool {

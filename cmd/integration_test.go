@@ -38,7 +38,7 @@ func TestTUI_Integration(t *testing.T) {
 	defer runtime.Cleanup()
 
 	// Verify TUI can be created with real Flow
-	tuiModel := tui.New(runtime.Flow, "test-session-id", ctx)
+	tuiModel := tui.New(ctx, runtime.Flow, "test-session-id")
 	if tuiModel == nil {
 		t.Fatal("TUI model should not be nil")
 	}
@@ -70,7 +70,7 @@ func TestTUI_SlashCommands(t *testing.T) {
 	}
 	defer runtime.Cleanup()
 
-	tuiModel := tui.New(runtime.Flow, "test-session-id", ctx)
+	tuiModel := tui.New(ctx, runtime.Flow, "test-session-id")
 
 	// Test /help command by simulating the message flow
 	// Note: Full TUI testing requires teatest or similar framework

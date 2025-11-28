@@ -38,7 +38,7 @@ func (h *History) Messages() []*ai.Message {
 }
 
 // Add appends user message and assistant response
-func (h *History) Add(userInput string, assistantResponse string) {
+func (h *History) Add(userInput, assistantResponse string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.messages = append(h.messages,

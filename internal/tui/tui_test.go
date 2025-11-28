@@ -42,7 +42,7 @@ func TestNew_PanicOnNilFlow(t *testing.T) {
 			t.Error("Expected panic for nil flow")
 		}
 	}()
-	New(nil, "test", context.Background())
+	New(context.Background(), nil, "test")
 }
 
 func TestNew_PanicOnNilContext(t *testing.T) {
@@ -55,7 +55,7 @@ func TestNew_PanicOnNilContext(t *testing.T) {
 	// so we're testing that panic happens before nil check
 	// In reality, flow check comes first so this test validates the pattern
 	var flow *chat.Flow
-	New(flow, "test", nil)
+	New(nil, flow, "test") //nolint:staticcheck // SA1012: intentionally testing nil context handling
 }
 
 func TestTUI_Init(t *testing.T) {
@@ -507,12 +507,12 @@ func TestTUI_CancelStream(t *testing.T) {
 
 	tui := newTestTUI()
 
-	cancelled := false
-	tui.streamCancel = func() { cancelled = true }
+	canceled := false
+	tui.streamCancel = func() { canceled = true }
 
 	tui.cancelStream()
 
-	if !cancelled {
+	if !canceled {
 		t.Error("cancelStream should call cancel function")
 	}
 	if tui.streamCancel != nil {
@@ -526,19 +526,19 @@ func TestTUI_CtrlC_CancelsStream(t *testing.T) {
 	tui := newTestTUI()
 	tui.state = StateStreaming
 
-	cancelled := false
-	tui.streamCancel = func() { cancelled = true }
+	canceled := false
+	tui.streamCancel = func() { canceled = true }
 
 	model, _ := tui.handleCtrlC()
 	result := model.(*TUI)
 
-	if !cancelled {
+	if !canceled {
 		t.Error("Ctrl+C during streaming should cancel")
 	}
 	if result.state != StateInput {
 		t.Error("Should return to StateInput")
 	}
 	if len(result.messages) != 1 || result.messages[0].Role != "system" {
-		t.Error("Should add cancelled system message")
+		t.Error("Should add canceled system message")
 	}
 }

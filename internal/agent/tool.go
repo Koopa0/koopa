@@ -7,9 +7,9 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 )
 
-// AgentToolInput is the input structure for agent-as-tool invocations.
+// ToolInput is the input structure for agent-as-tool invocations.
 // Note: SessionID is not exposed to the LLM and is managed automatically by the wrapper.
-type AgentToolInput struct {
+type ToolInput struct {
 	Query string `json:"query" jsonschema:"description=Query to send to the agent"`
 }
 
@@ -66,7 +66,7 @@ func DefineAgentTool(parentCtx InvocationContext, g *genkit.Genkit, a Agent) err
 		g,
 		a.Name(),
 		a.Description(),
-		func(toolCtx *ai.ToolContext, input AgentToolInput) (string, error) {
+		func(toolCtx *ai.ToolContext, input ToolInput) (string, error) {
 			// Extend the branch path for history isolation
 			parentBranch := parentCtx.Branch()
 			newBranch := parentBranch + "." + a.Name()
@@ -129,7 +129,7 @@ func DefineAgentToolWithContext(
 		g,
 		a.Name(),
 		a.Description(),
-		func(toolCtx *ai.ToolContext, input AgentToolInput) (string, error) {
+		func(toolCtx *ai.ToolContext, input ToolInput) (string, error) {
 			// Extract InvocationContext using the provided extractor
 			parentCtx := ctxExtractor(toolCtx)
 			if parentCtx == nil {

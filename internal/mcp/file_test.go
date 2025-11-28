@@ -22,7 +22,7 @@ func TestReadFile_Success(t *testing.T) {
 	// Create test file
 	testFile := filepath.Join(h.tempDir, "test.txt")
 	testContent := "hello world"
-	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(testContent), 0o600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -169,13 +169,13 @@ func TestListFiles_Success(t *testing.T) {
 
 	// Create some test files
 	for _, name := range []string{"file1.txt", "file2.txt"} {
-		if err := os.WriteFile(filepath.Join(h.tempDir, name), []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(h.tempDir, name), []byte("test"), 0o600); err != nil {
 			t.Fatalf("failed to create test file: %v", err)
 		}
 	}
 
 	// Create a subdirectory
-	if err := os.Mkdir(filepath.Join(h.tempDir, "subdir"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(h.tempDir, "subdir"), 0o750); err != nil {
 		t.Fatalf("failed to create subdirectory: %v", err)
 	}
 
@@ -225,7 +225,7 @@ func TestDeleteFile_Success(t *testing.T) {
 
 	// Create test file
 	testFile := filepath.Join(h.tempDir, "to_delete.txt")
-	if err := os.WriteFile(testFile, []byte("delete me"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("delete me"), 0o600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -281,7 +281,7 @@ func TestGetFileInfo_Success(t *testing.T) {
 	// Create test file
 	testFile := filepath.Join(h.tempDir, "info_test.txt")
 	testContent := "test content for info"
-	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte(testContent), 0o600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 

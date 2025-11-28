@@ -210,7 +210,7 @@ func TestLoadCurrentSessionID_InvalidContent(t *testing.T) {
 				t.Fatalf("getStateFilePath() error = %v", err)
 			}
 
-			err = os.WriteFile(filePath, []byte(tt.content), 0644)
+			err = os.WriteFile(filePath, []byte(tt.content), 0o600)
 			if err != nil {
 				t.Fatalf("WriteFile() error = %v", err)
 			}

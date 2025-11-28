@@ -21,7 +21,7 @@ func TestServer_HealthEndpoints(t *testing.T) {
 	handler := srv.Handler()
 
 	t.Run("GET /health returns 200", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -31,7 +31,7 @@ func TestServer_HealthEndpoints(t *testing.T) {
 	})
 
 	t.Run("GET /ready returns 503 when pool is nil", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+		req := httptest.NewRequest(http.MethodGet, "/ready", http.NoBody)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -47,7 +47,7 @@ func TestServer_ChatEndpoint_NoFlow(t *testing.T) {
 	handler := srv.Handler()
 
 	t.Run("POST /api/chat returns 404 when flow is nil", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/chat", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/chat", http.NoBody)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -64,7 +64,7 @@ func TestServer_MiddlewareChain(t *testing.T) {
 
 	t.Run("panic in handler is recovered", func(t *testing.T) {
 		// This test verifies the recovery middleware is in place
-		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 		w := httptest.NewRecorder()
 
 		// Should not panic
@@ -78,7 +78,7 @@ func TestServer_Run_GracefulShutdown(t *testing.T) {
 	logger := log.NewNop()
 	srv := NewServer(nil, nil, nil, logger)
 
-	// Create a context that will be cancelled
+	// Create a context that will be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Find an available port
@@ -135,7 +135,7 @@ func TestServer_ContentTypeJSON(t *testing.T) {
 	handler := srv.Handler()
 
 	t.Run("health endpoint returns plain text", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)

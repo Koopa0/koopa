@@ -162,14 +162,14 @@ func Load() (*Config, error) {
 	// Configuration directory: ~/.koopa/
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
 	configDir := filepath.Join(home, ".koopa")
 
 	// Ensure directory exists (use 0750 permission for better security)
 	if err := os.MkdirAll(configDir, 0o750); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	// Configure Viper
@@ -187,13 +187,13 @@ func Load() (*Config, error) {
 	// Read configuration file (if exists)
 	if err := viper.ReadInConfig(); err != nil {
 		// Configuration file not found is not an error, use default values
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			slog.Debug("configuration file not found, using default values",
-				"search_paths", []string{configDir, "."},
-				"config_name", "config.yaml")
-		} else {
-			return nil, err
+		var configNotFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &configNotFound) {
+			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
+		slog.Debug("configuration file not found, using default values",
+			"search_paths", []string{configDir, "."},
+			"config_name", "config.yaml")
 	}
 
 	// Environment variable settings with KOOPA_ prefix to avoid collisions
@@ -262,6 +262,14 @@ func bindEnvVariables() {
 // Sensitive Data Masking
 // ============================================================================
 
+// Constants for sensitive data masking
+const (
+	// maskedValue is the placeholder for masked sensitive data.
+	maskedValue = "****"
+	// sensitiveTag is the struct tag value that marks a field as sensitive.
+	sensitiveTag = "true"
+)
+
 // maskSecret masks a secret string for safe logging.
 // Shows first 2 and last 2 characters, masks the rest.
 func maskSecret(s string) string {
@@ -269,9 +277,9 @@ func maskSecret(s string) string {
 		return ""
 	}
 	if len(s) <= 4 {
-		return "****"
+		return maskedValue
 	}
-	return s[:2] + "****" + s[len(s)-2:]
+	return s[:2] + maskedValue + s[len(s)-2:]
 }
 
 // MarshalJSON implements custom JSON marshaling to mask sensitive fields.
@@ -286,7 +294,11 @@ func (c Config) MarshalJSON() ([]byte, error) {
 // It recursively processes nested structs and handles various sensitive data types.
 func marshalWithSensitiveMasking(v interface{}) ([]byte, error) {
 	result := processValue(reflect.ValueOf(v), reflect.TypeOf(v), false)
-	return json.Marshal(result)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	}
+	return data, nil
 }
 
 // processValue recursively processes a value and masks sensitive fields.
@@ -351,7 +363,7 @@ func processStruct(value reflect.Value, typ reflect.Type) map[string]interface{}
 		}
 
 		// Check if field is marked as sensitive
-		isSensitive := field.Tag.Get("sensitive") == "true"
+		isSensitive := field.Tag.Get("sensitive") == sensitiveTag
 
 		// Process the field value
 		result[fieldName] = processValue(fieldValue, field.Type, isSensitive)
@@ -394,11 +406,12 @@ func processSlice(value reflect.Value, isSensitive bool) []interface{} {
 	result := make([]interface{}, value.Len())
 	for i := 0; i < value.Len(); i++ {
 		elem := value.Index(i)
-		if isSensitive {
+		switch {
+		case isSensitive:
 			result[i] = maskSensitiveValue(elem)
-		} else if elem.Kind() == reflect.Struct {
+		case elem.Kind() == reflect.Struct:
 			result[i] = processStruct(elem, elem.Type())
-		} else {
+		default:
 			result[i] = elem.Interface()
 		}
 	}
@@ -418,19 +431,19 @@ func maskSensitiveValue(value reflect.Value) interface{} {
 		}
 		// For other slice types, return masked placeholder
 		if value.Len() > 0 {
-			return "****"
+			return maskedValue
 		}
 		return nil
 	case reflect.Map:
 		// For maps, return masked placeholder
 		if value.Len() > 0 {
-			return "****"
+			return maskedValue
 		}
 		return nil
 	default:
 		// For other types (int, bool, etc.), return masked placeholder if non-zero
 		if !value.IsZero() {
-			return "****"
+			return maskedValue
 		}
 		return value.Interface()
 	}

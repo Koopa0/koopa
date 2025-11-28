@@ -312,7 +312,7 @@ func TestSystemToolset_ToolMetadata(t *testing.T) {
 // emptyReadonlyContext is a helper for testing
 type emptyReadonlyContext struct{}
 
-func (e *emptyReadonlyContext) InvocationID() string       { return "" }
-func (e *emptyReadonlyContext) Branch() string             { return "" }
-func (e *emptyReadonlyContext) SessionID() agent.SessionID { return "" }
-func (e *emptyReadonlyContext) AgentName() string          { return "" }
+func (*emptyReadonlyContext) InvocationID() string       { return "" }
+func (*emptyReadonlyContext) Branch() string             { return "" }
+func (*emptyReadonlyContext) SessionID() agent.SessionID { return "" }
+func (*emptyReadonlyContext) AgentName() string          { return "" }

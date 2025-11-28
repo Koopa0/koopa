@@ -83,7 +83,10 @@ func (a *App) Wait() error {
 	if a.eg == nil {
 		return nil
 	}
-	return a.eg.Wait()
+	if err := a.eg.Wait(); err != nil {
+		return fmt.Errorf("errgroup failed: %w", err)
+	}
+	return nil
 }
 
 // Go starts a new background goroutine tracked by the app's errgroup.
@@ -97,7 +100,7 @@ func (a *App) Go(f func() error) {
 // CreateAgent creates a Chat Agent for a specific use case.
 // Session persistence is fully wired via Wire DI.
 // Knowledge store support includes conversation history and document search.
-func (a *App) CreateAgent(ctx context.Context, retriever *rag.Retriever) (*chat.Chat, error) {
+func (a *App) CreateAgent(_ context.Context, retriever *rag.Retriever) (*chat.Chat, error) {
 	// Defensive: Validate required dependencies
 	if a.Config == nil {
 		return nil, fmt.Errorf("CreateAgent: Config is nil - App not properly initialized")

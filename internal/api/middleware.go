@@ -32,6 +32,8 @@ func (w *loggingWriter) WriteHeader(code int) {
 }
 
 // Write captures the response size and defaults status to 200 if not set.
+//
+//nolint:wrapcheck // http.ResponseWriter wrapper must return unwrapped errors to maintain interface contract
 func (w *loggingWriter) Write(b []byte) (int, error) {
 	if w.statusCode == 0 {
 		w.statusCode = http.StatusOK

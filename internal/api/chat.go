@@ -48,26 +48,32 @@ func (h *Chat) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/stream", h.Stream)
 }
 
+// SSE event types for chat streaming.
 const (
-	EventChunk = "chunk"
-	EventDone  = "done"
-	EventError = "error"
+	EventChunk = "chunk" // Partial response text
+	EventDone  = "done"  // Stream completed successfully
+	EventError = "error" // Error occurred during streaming
 )
 
+// ChunkPayload is the SSE data payload for streaming text chunks.
 type ChunkPayload struct {
 	Text string `json:"text"`
 }
 
+// DonePayload is the SSE data payload when streaming completes successfully.
 type DonePayload struct {
 	Response  string `json:"response"`
 	SessionID string `json:"sessionId"`
 }
 
+// ErrorPayload is the SSE data payload when an error occurs.
 type ErrorPayload struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
+// Stream handles SSE streaming chat requests.
+// It streams partial responses as they become available from the LLM.
 func (h *Chat) Stream(w http.ResponseWriter, r *http.Request) {
 	// 1. Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -117,7 +123,6 @@ func (h *Chat) Stream(w http.ResponseWriter, r *http.Request) {
 		hasChunks   bool
 	)
 
-StreamLoop:
 	for streamValue, err := range h.flow.Stream(ctx, input) {
 		select {
 		case <-ctx.Done():
@@ -128,12 +133,12 @@ StreamLoop:
 
 		if err != nil {
 			streamErr = err
-			break StreamLoop
+			break
 		}
 
 		if streamValue.Done {
 			finalOutput = streamValue.Output
-			break StreamLoop
+			break
 		}
 
 		if streamValue.Stream.Text != "" {
@@ -163,7 +168,7 @@ StreamLoop:
 }
 
 // handleStreamError maps agent errors to SSE error events.
-func (h *Chat) handleStreamError(w io.Writer, f http.Flusher, err error) {
+func (*Chat) handleStreamError(w io.Writer, f http.Flusher, err error) {
 	code := "STREAM_ERROR"
 
 	switch {

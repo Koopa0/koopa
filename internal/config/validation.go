@@ -139,7 +139,7 @@ func splitBranch(branch string) []string {
 
 // isValidSegment checks if a branch segment is valid.
 func isValidSegment(seg string) bool {
-	if len(seg) == 0 {
+	if seg == "" {
 		return false
 	}
 

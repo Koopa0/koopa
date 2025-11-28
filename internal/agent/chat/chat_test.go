@@ -364,7 +364,7 @@ func TestChat_EmptyResponseHandling(t *testing.T) {
 		// Test the logic of empty response detection
 		responseText := ""
 		if strings.TrimSpace(responseText) == "" {
-			responseText = "I apologize, but I couldn't generate a response. Please try rephrasing your question."
+			responseText = FallbackResponseMessage
 		}
 		assert.Contains(t, responseText, "apologize")
 		assert.NotEmpty(t, responseText)
@@ -374,7 +374,7 @@ func TestChat_EmptyResponseHandling(t *testing.T) {
 		t.Parallel()
 		responseText := "   \n\t   "
 		if strings.TrimSpace(responseText) == "" {
-			responseText = "I apologize, but I couldn't generate a response. Please try rephrasing your question."
+			responseText = FallbackResponseMessage
 		}
 		assert.Contains(t, responseText, "apologize")
 	})
@@ -384,7 +384,7 @@ func TestChat_EmptyResponseHandling(t *testing.T) {
 		responseText := "Hello, I'm here to help!"
 		originalText := responseText
 		if strings.TrimSpace(responseText) == "" {
-			responseText = "I apologize, but I couldn't generate a response. Please try rephrasing your question."
+			responseText = FallbackResponseMessage
 		}
 		assert.Equal(t, originalText, responseText)
 	})

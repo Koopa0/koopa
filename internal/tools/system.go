@@ -64,12 +64,12 @@ func NewSystemToolset(cmdVal *security.Command, envVal *security.Env, logger log
 }
 
 // Name returns the toolset identifier.
-func (st *SystemToolset) Name() string {
+func (*SystemToolset) Name() string {
 	return SystemToolsetName
 }
 
 // Tools returns all system operation tools provided by this toolset.
-func (st *SystemToolset) Tools(ctx agent.ReadonlyContext) ([]Tool, error) {
+func (st *SystemToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
 	return []Tool{
 		NewTool(
 			ToolCurrentTime,
@@ -117,7 +117,7 @@ type GetEnvOutput struct {
 }
 
 // CurrentTime returns the current system date and time in multiple formats.
-func (st *SystemToolset) CurrentTime(ctx *ai.ToolContext, input CurrentTimeInput) (CurrentTimeOutput, error) {
+func (st *SystemToolset) CurrentTime(_ *ai.ToolContext, _ CurrentTimeInput) (CurrentTimeOutput, error) {
 	st.logger.Info("CurrentTime called")
 
 	now := time.Now()
@@ -152,10 +152,10 @@ func (st *SystemToolset) ExecuteCommand(ctx *ai.ToolContext, input ExecuteComman
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		// Check if it was cancelled by context
+		// Check if it was canceled by context
 		if execCtx.Err() != nil {
-			st.logger.Error("ExecuteCommand cancelled", "command", input.Command, "error", execCtx.Err())
-			return ExecuteCommandOutput{}, fmt.Errorf("command execution cancelled: %w", execCtx.Err())
+			st.logger.Error("ExecuteCommand canceled", "command", input.Command, "error", execCtx.Err())
+			return ExecuteCommandOutput{}, fmt.Errorf("command execution canceled: %w", execCtx.Err())
 		}
 
 		st.logger.Error("ExecuteCommand failed", "command", input.Command, "error", err, "output", string(output))
@@ -179,7 +179,7 @@ func (st *SystemToolset) ExecuteCommand(ctx *ai.ToolContext, input ExecuteComman
 
 // GetEnv reads an environment variable value with security protection.
 // Sensitive variables containing KEY, SECRET, or TOKEN in the name are blocked.
-func (st *SystemToolset) GetEnv(ctx *ai.ToolContext, input GetEnvInput) (GetEnvOutput, error) {
+func (st *SystemToolset) GetEnv(_ *ai.ToolContext, input GetEnvInput) (GetEnvOutput, error) {
 	st.logger.Info("GetEnv called", "key", input.Key)
 
 	// Environment variable security validation (prevent sensitive information leakage)

@@ -72,7 +72,7 @@ func (s *Server) registerFileTools() error {
 }
 
 // ReadFile handles the readFile MCP tool call.
-func (s *Server) ReadFile(ctx context.Context, req *mcp.CallToolRequest, input tools.ReadFileInput) (*mcp.CallToolResult, any, error) {
+func (s *Server) ReadFile(ctx context.Context, _ *mcp.CallToolRequest, input tools.ReadFileInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
 	result, err := s.fileToolset.ReadFile(toolCtx, input)
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *Server) ReadFile(ctx context.Context, req *mcp.CallToolRequest, input t
 }
 
 // WriteFile handles the writeFile MCP tool call.
-func (s *Server) WriteFile(ctx context.Context, req *mcp.CallToolRequest, input tools.WriteFileInput) (*mcp.CallToolResult, any, error) {
+func (s *Server) WriteFile(ctx context.Context, _ *mcp.CallToolRequest, input tools.WriteFileInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
 	result, err := s.fileToolset.WriteFile(toolCtx, input)
 	if err != nil {
@@ -94,7 +94,7 @@ func (s *Server) WriteFile(ctx context.Context, req *mcp.CallToolRequest, input 
 }
 
 // ListFiles handles the listFiles MCP tool call.
-func (s *Server) ListFiles(ctx context.Context, req *mcp.CallToolRequest, input tools.ListFilesInput) (*mcp.CallToolResult, any, error) {
+func (s *Server) ListFiles(ctx context.Context, _ *mcp.CallToolRequest, input tools.ListFilesInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
 	result, err := s.fileToolset.ListFiles(toolCtx, input)
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *Server) ListFiles(ctx context.Context, req *mcp.CallToolRequest, input 
 }
 
 // DeleteFile handles the deleteFile MCP tool call.
-func (s *Server) DeleteFile(ctx context.Context, req *mcp.CallToolRequest, input tools.DeleteFileInput) (*mcp.CallToolResult, any, error) {
+func (s *Server) DeleteFile(ctx context.Context, _ *mcp.CallToolRequest, input tools.DeleteFileInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
 	result, err := s.fileToolset.DeleteFile(toolCtx, input)
 	if err != nil {
@@ -116,7 +116,7 @@ func (s *Server) DeleteFile(ctx context.Context, req *mcp.CallToolRequest, input
 }
 
 // GetFileInfo handles the getFileInfo MCP tool call.
-func (s *Server) GetFileInfo(ctx context.Context, req *mcp.CallToolRequest, input tools.GetFileInfoInput) (*mcp.CallToolResult, any, error) {
+func (s *Server) GetFileInfo(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetFileInfoInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
 	result, err := s.fileToolset.GetFileInfo(toolCtx, input)
 	if err != nil {

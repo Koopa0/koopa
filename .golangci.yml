@@ -1,0 +1,276 @@
+# Koopa Project - Strict Linter Configuration
+# This configuration enforces high code quality standards.
+#
+# Run: golangci-lint run ./...
+# Run with fixes: golangci-lint run --fix ./...
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true
+
+linters:
+  enable:
+    # Default linters (keep enabled)
+    - errcheck # Check unchecked errors
+    - gosimple # Simplify code
+    - govet # Go vet checks
+    - ineffassign # Detect ineffective assignments
+    - staticcheck # Comprehensive static analysis
+    - unused # Detect unused code
+
+    # Style linters (golint replacements)
+    - revive # golint replacement, configurable
+    - stylecheck # Style mistakes
+
+    # Security linters
+    - gosec # Security issues
+
+    # Bug detection
+    - bodyclose # HTTP response body not closed
+    - durationcheck # Duration multiplication issues
+    - nilerr # nil error returned after checking
+    - noctx # HTTP requests without context
+    - sqlclosecheck # SQL rows/stmt not closed
+
+    # Performance
+    - prealloc # Slice preallocation suggestions
+
+    # Code quality
+    - dogsled # Too many blank identifiers
+    - dupl # Code duplication
+    - gocognit # Cognitive complexity
+    - goconst # Repeated strings as constants
+    - gocritic # Various code issues
+    - gocyclo # Cyclomatic complexity
+    - gofmt # Go fmt check
+    - goimports # Import order
+    - misspell # Spelling mistakes
+    - nakedret # Naked returns in long functions
+    - unconvert # Unnecessary type conversions
+    - unparam # Unused function parameters
+    - whitespace # Whitespace issues
+
+    # Error handling
+    - errorlint # Error wrapping issues
+    - wrapcheck # Errors not wrapped
+
+linters-settings:
+  revive:
+    enable-all-rules: false
+    rules:
+      # Naming
+      - name: var-naming
+        severity: warning
+      - name: package-comments
+        severity: warning
+      - name: exported
+        severity: warning
+        arguments:
+          - checkPrivateReceivers
+          - sayRepetitiveInsteadOfStutters
+      # Style
+      - name: indent-error-flow
+        severity: warning
+      - name: context-as-argument
+        severity: error
+      - name: context-keys-type
+        severity: warning
+      - name: error-return
+        severity: warning
+      - name: error-strings
+        severity: warning
+      - name: error-naming
+        severity: warning
+      - name: receiver-naming
+        severity: warning
+      - name: increment-decrement
+        severity: warning
+      - name: range
+        severity: warning
+      - name: time-naming
+        severity: warning
+      # Best practices
+      - name: blank-imports
+        severity: warning
+      - name: dot-imports
+        severity: warning
+      - name: empty-block
+        severity: warning
+      - name: unnecessary-stmt
+        severity: warning
+      - name: unreachable-code
+        severity: warning
+      - name: unused-parameter
+        severity: warning
+        arguments:
+          - allowRegex: "^_"
+      - name: unused-receiver
+        severity: warning
+      - name: useless-break
+        severity: warning
+      - name: early-return
+        severity: warning
+
+  stylecheck:
+    checks:
+      - "all"
+      - "-ST1000" # Package comments (handled by revive)
+      - "-ST1003" # Naming (handled by revive)
+
+  gosec:
+    excludes:
+      - G115 # We handle this with #nosec annotations where safe
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # Too noisy for general use
+
+  gocyclo:
+    min-complexity: 15
+
+  gocognit:
+    min-complexity: 20
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  dupl:
+    threshold: 150
+
+  misspell:
+    locale: US
+
+  nakedret:
+    max-func-lines: 30
+
+  prealloc:
+    simple: true
+    for-loops: true
+
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+
+  wrapcheck:
+    ignoreSigs:
+      - .Errorf(
+      - errors.New(
+      - errors.Unwrap(
+      - errors.Join(
+      - .Wrap(
+      - .Wrapf(
+      - .WithMessage(
+      - .WithMessagef(
+      - .WithStack(
+    ignorePackageGlobs:
+      - github.com/koopa0/koopa-cli/*
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - whyNoLint # We use nosec annotations
+      - hugeParam # Can be too strict
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Test files - relax some rules
+    - path: _test\.go
+      linters:
+        - dupl
+        - goconst
+        - gocyclo
+        - gocognit
+        - wrapcheck
+        - unparam
+        - gocritic
+
+    # govet unusedwrite is common in test setup where fields are set but only used implicitly
+    - path: _test\.go
+      text: "unusedwrite:"
+      linters:
+        - govet
+
+    # Shadow errors in test files are acceptable (common pattern in table-driven tests)
+    - path: _test\.go
+      text: "shadow:"
+      linters:
+        - govet
+
+    # nilness checks in test files are often tautological for safety assertions
+    - path: _test\.go
+      text: "nilness:"
+      linters:
+        - govet
+
+    # Test helpers and utilities - relax rules
+    - path: testing\.go
+      linters:
+        - gocritic
+        - gocyclo
+        - gocognit
+
+    # testutil package - infrastructure code
+    - path: internal/testutil/
+      linters:
+        - gocritic
+
+    # G304 (file inclusion via variable) is expected in tests - test paths are safe
+    - path: _test\.go
+      text: "G304:"
+      linters:
+        - gosec
+
+    # Unused parameters in test files are common (mock functions, callbacks)
+    - path: _test\.go
+      text: "unused-parameter"
+      linters:
+        - revive
+
+    # Generated files
+    - path: internal/sqlc/
+      linters:
+        - all
+
+    # Fuzz tests can have underscores
+    - path: fuzz_test\.go
+      text: "don't use underscores in Go names"
+
+    # Allow unused parameters in interface implementations
+    - linters:
+        - revive
+      text: "unused-parameter"
+      source: "func \\(.*\\) .* implements"
+
+    # Allow context not being first param in certain cases
+    - linters:
+        - revive
+      text: "context-as-argument"
+      path: _test\.go
+
+    # Knowledge toolset: SearchHistory and SearchDocuments have similar structure
+    # but different semantics. Duplication is acceptable for clarity (Go Proverb: "A little copying is better than a little dependency")
+    - path: internal/tools/knowledge\.go
+      linters:
+        - dupl
+
+  exclude-dirs:
+    - vendor
+    - third_party

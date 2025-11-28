@@ -188,20 +188,20 @@ func (s *Store) Search(ctx context.Context, query string, opts ...SearchOption) 
 	// - JSONB @> operator is safe when used with proper parameters
 	// - Future developers: ALWAYS use json.Marshal for filter metadata
 	if len(cfg.filter) > 0 {
-		filterJSON, err := json.Marshal(cfg.filter)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal filter: %w", err)
+		filterJSON, marshalErr := json.Marshal(cfg.filter)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to marshal filter: %w", marshalErr)
 		}
-		rows, err := s.queries.SearchDocuments(queryCtx, sqlc.SearchDocumentsParams{
+		rows, searchErr := s.queries.SearchDocuments(queryCtx, sqlc.SearchDocumentsParams{
 			QueryEmbedding: &queryEmbedding,
 			FilterMetadata: filterJSON,
 			ResultLimit:    cfg.topK,
 		})
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("search query timeout: %w", err)
+		if searchErr != nil {
+			if errors.Is(searchErr, context.DeadlineExceeded) {
+				return nil, fmt.Errorf("search query timeout: %w", searchErr)
 			}
-			return nil, fmt.Errorf("search failed: %w", err)
+			return nil, fmt.Errorf("search failed: %w", searchErr)
 		}
 		return s.rowsToResults(rows), nil
 	}
@@ -275,7 +275,7 @@ func (s *Store) Delete(ctx context.Context, docID string) error {
 }
 
 // Close closes the Store (no-op, database connection managed externally)
-func (s *Store) Close() error {
+func (*Store) Close() error {
 	// Database connection is managed by the caller, nothing to close here
 	return nil
 }

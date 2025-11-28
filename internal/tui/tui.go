@@ -19,10 +19,11 @@ import (
 // State represents TUI state machine.
 type State int
 
+// TUI state machine states.
 const (
-	StateInput State = iota
-	StateThinking
-	StateStreaming
+	StateInput     State = iota // Awaiting user input
+	StateThinking               // Processing request
+	StateStreaming              // Streaming response
 )
 
 // Memory bounds to prevent unbounded growth.
@@ -38,14 +39,13 @@ const (
 	cleanupTimeout = 100 * time.Millisecond // Maximum wait for goroutine cleanup
 )
 
-// addMessage appends a message and enforces maxMessages bound.
-func (t *TUI) addMessage(msg Message) {
-	t.messages = append(t.messages, msg)
-	if len(t.messages) > maxMessages {
-		// Remove oldest messages to stay within bounds
-		t.messages = t.messages[len(t.messages)-maxMessages:]
-	}
-}
+// Message role constants for consistent display.
+const (
+	roleUser      = "user"
+	roleAssistant = "assistant"
+	roleSystem    = "system"
+	roleError     = "error"
+)
 
 // Message represents a conversation message for display.
 type Message struct {
@@ -83,7 +83,7 @@ type TUI struct {
 	chatFlow  *chat.Flow
 	sessionID string
 	ctx       context.Context
-	ctxCancel context.CancelFunc // For cancelling all operations on exit
+	ctxCancel context.CancelFunc // For canceling all operations on exit
 
 	// Dimensions
 	width  int
@@ -96,13 +96,22 @@ type TUI struct {
 	markdown *markdownRenderer
 }
 
+// addMessage appends a message and enforces maxMessages bound.
+func (t *TUI) addMessage(msg Message) {
+	t.messages = append(t.messages, msg)
+	if len(t.messages) > maxMessages {
+		// Remove oldest messages to stay within bounds
+		t.messages = t.messages[len(t.messages)-maxMessages:]
+	}
+}
+
 // New creates a TUI model for chat interaction.
 // Panics if flow or ctx are nil - these are programmer errors that
 // should be caught during development, not runtime.
 //
 // IMPORTANT: ctx MUST be the same context passed to tea.WithContext()
 // to ensure consistent cancellation behavior.
-func New(flow *chat.Flow, sessionID string, ctx context.Context) *TUI {
+func New(ctx context.Context, flow *chat.Flow, sessionID string) *TUI {
 	if flow == nil {
 		panic("tui.New: flow is required")
 	}
@@ -163,6 +172,8 @@ func (t *TUI) Init() tea.Cmd {
 }
 
 // Update implements tea.Model.
+//
+//nolint:gocognit,gocyclo // Bubble Tea Update requires type switch on all message types
 func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -224,7 +235,7 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		t.addMessage(Message{
-			Role: "assistant",
+			Role: roleAssistant,
 			Text: finalText,
 		})
 		t.output.Reset()
@@ -251,12 +262,13 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.streamDone = nil
 		}
 
-		if msg.err == context.Canceled {
-			t.addMessage(Message{Role: "system", Text: "(Cancelled)"})
-		} else if errors.Is(msg.err, context.DeadlineExceeded) {
-			t.addMessage(Message{Role: "error", Text: "Query timeout (>5 min). Try a simpler query or break it into steps."})
-		} else {
-			t.addMessage(Message{Role: "error", Text: msg.err.Error()})
+		switch {
+		case errors.Is(msg.err, context.Canceled):
+			t.addMessage(Message{Role: roleSystem, Text: "(Canceled)"})
+		case errors.Is(msg.err, context.DeadlineExceeded):
+			t.addMessage(Message{Role: roleError, Text: "Query timeout (>5 min). Try a simpler query or break it into steps."})
+		default:
+			t.addMessage(Message{Role: roleError, Text: msg.err.Error()})
 		}
 		t.output.Reset()
 		// Re-focus textarea after error
@@ -283,16 +295,16 @@ func (t *TUI) View() tea.View {
 	// Messages (already bounded by addMessage)
 	for _, msg := range t.messages {
 		switch msg.Role {
-		case "user":
+		case roleUser:
 			_, _ = t.viewBuf.WriteString(t.styles.User.Render("You> "))
 			_, _ = t.viewBuf.WriteString(msg.Text)
-		case "assistant":
+		case roleAssistant:
 			_, _ = t.viewBuf.WriteString(t.styles.Assistant.Render("Koopa> "))
 			// Render markdown for assistant messages
 			_, _ = t.viewBuf.WriteString(t.markdown.Render(msg.Text))
-		case "system":
+		case roleSystem:
 			_, _ = t.viewBuf.WriteString(t.styles.System.Render(msg.Text))
-		case "error":
+		case roleError:
 			_, _ = t.viewBuf.WriteString(t.styles.Error.Render("Error: " + msg.Text))
 		}
 		_, _ = t.viewBuf.WriteString("\n\n")

@@ -36,8 +36,8 @@ func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 	}
 	defer cleanup()
 	defer func() {
-		if err := application.Close(); err != nil {
-			slog.Warn("failed to close application", "error", err)
+		if closeErr := application.Close(); closeErr != nil {
+			slog.Warn("failed to close application", "error", closeErr)
 		}
 	}()
 
@@ -86,7 +86,7 @@ func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 
 	// Run server on stdio transport
 	// This is a blocking call that handles all MCP protocol communication
-	// The server will run until ctx is cancelled or an error occurs
+	// The server will run until ctx is canceled or an error occurs
 	if err := mcpServer.Run(ctx, &mcpSdk.StdioTransport{}); err != nil {
 		return fmt.Errorf("MCP server error: %w", err)
 	}

@@ -13,7 +13,7 @@ func TestHealth_Liveness(t *testing.T) {
 	logger := log.NewNop()
 	h := NewHealth(nil, logger) // pool not needed for liveness
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 	w := httptest.NewRecorder()
 
 	h.liveness(w, req)
@@ -26,7 +26,7 @@ func TestHealth_Readiness_PoolNil(t *testing.T) {
 	logger := log.NewNop()
 	h := NewHealth(nil, logger)
 
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ready", http.NoBody)
 	w := httptest.NewRecorder()
 
 	h.readiness(w, req)
