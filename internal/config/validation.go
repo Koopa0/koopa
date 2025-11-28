@@ -122,12 +122,12 @@ func NormalizeMaxHistoryMessages(limit int32) int32 {
 // splitBranch splits a branch name by dots.
 func splitBranch(branch string) []string {
 	if branch == "" {
-		return nil
+		return []string{}
 	}
 
 	var segments []string
 	start := 0
-	for i := 0; i < len(branch); i++ {
+	for i := range branch {
 		if branch[i] == '.' {
 			segments = append(segments, branch[start:i])
 			start = i + 1

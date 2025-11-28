@@ -214,8 +214,14 @@ func (v *URL) ValidateRedirect(req *http.Request, via []*http.Request) error {
 }
 
 // IsURLSafe is a quick check for common SSRF patterns.
-// This is a convenience function for simple validation without creating a validator.
-// For production use, prefer using NewURL().Validate() or SafeTransport().
+//
+// Deprecated: This function uses naive substring matching which has known bypass
+// vulnerabilities. For production use, prefer NewURL().Validate() or SafeTransport()
+// which properly parse URLs and validate hostnames.
+//
+// Known issues:
+//   - False positives: "http://notlocalhost.com" is incorrectly blocked
+//   - Bypasses possible via URL encoding, alternate IP representations
 //
 // Returns false if the URL contains known dangerous patterns:
 //   - file:// scheme

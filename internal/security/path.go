@@ -1,11 +1,25 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+)
+
+// Sentinel errors for path validation.
+// Use errors.Is() to check these errors.
+var (
+	// ErrPathOutsideAllowed indicates the path is outside allowed directories.
+	ErrPathOutsideAllowed = errors.New("path is outside allowed directories")
+
+	// ErrSymlinkOutsideAllowed indicates a symbolic link points outside allowed directories.
+	ErrSymlinkOutsideAllowed = errors.New("symbolic link points outside allowed directories")
+
+	// ErrPathNullByte indicates the path contains a null byte (CWE-626).
+	ErrPathNullByte = errors.New("path contains null byte")
 )
 
 // Path validates and sanitizes file paths to prevent traversal attacks.
@@ -89,7 +103,7 @@ func (v *Path) Validate(path string) (string, error) {
 		slog.Warn("null byte detected in path",
 			"path_length", len(path),
 			"security_event", "null_byte_injection_attempt")
-		return "", fmt.Errorf("invalid path: contains null byte")
+		return "", fmt.Errorf("%w: invalid path", ErrPathNullByte)
 	}
 
 	// 1. Clean the path (remove ../ etc.)
@@ -108,8 +122,8 @@ func (v *Path) Validate(path string) (string, error) {
 			"working_dir", v.workDir,
 			"allowed_dirs", v.allowedDirs,
 			"security_event", "path_traversal_attempt")
-		// Return generic error to user (detailed path logged above)
-		return "", fmt.Errorf("access denied: path is outside allowed directories")
+		// Return sentinel error wrapped with generic message
+		return "", fmt.Errorf("%w: access denied", ErrPathOutsideAllowed)
 	}
 
 	// 4. Resolve symbolic links (prevent bypassing restrictions through symlinks)
@@ -133,8 +147,8 @@ func (v *Path) Validate(path string) (string, error) {
 				"working_dir", v.workDir,
 				"allowed_dirs", v.allowedDirs,
 				"security_event", "symlink_traversal_attempt")
-			// Return generic error to user (detailed paths logged above)
-			return "", fmt.Errorf("access denied: symbolic link points outside allowed directories")
+			// Return sentinel error wrapped with generic message
+			return "", fmt.Errorf("%w: access denied", ErrSymlinkOutsideAllowed)
 		}
 		absPath = realPath
 	}

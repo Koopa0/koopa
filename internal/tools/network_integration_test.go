@@ -429,7 +429,7 @@ func BenchmarkIntegration_NetworkToolset_Search(b *testing.B) {
 	toolCtx := &ai.ToolContext{Context: context.Background()}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = nt.search(toolCtx, SearchInput{
 			Query:      "golang",
 			MaxResults: 5,
@@ -454,7 +454,7 @@ func BenchmarkIntegration_NetworkToolset_Fetch(b *testing.B) {
 	toolCtx := &ai.ToolContext{Context: context.Background()}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = nt.fetch(toolCtx, FetchInput{
 			URLs: []string{"https://go.dev/"},
 		})

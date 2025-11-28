@@ -1,4 +1,5 @@
 //go:build integration
+// +build integration
 
 package session
 
@@ -30,7 +31,7 @@ func BenchmarkStore_LoadHistory(b *testing.B) {
 	sessionID := agent.SessionID(session.ID.String())
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := store.LoadHistory(ctx, sessionID, "main")
 		if err != nil {
 			b.Fatalf("LoadHistory failed: %v", err)
@@ -47,9 +48,8 @@ func BenchmarkStore_LoadHistory_SmallSession(b *testing.B) {
 	sessionID := agent.SessionID(session.ID.String())
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := store.LoadHistory(ctx, sessionID, "main")
-		if err != nil {
+	for b.Loop() {
+		if _, err := store.LoadHistory(ctx, sessionID, "main"); err != nil {
 			b.Fatalf("LoadHistory failed: %v", err)
 		}
 	}
@@ -64,9 +64,8 @@ func BenchmarkStore_LoadHistory_LargeSession(b *testing.B) {
 	sessionID := agent.SessionID(session.ID.String())
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := store.LoadHistory(ctx, sessionID, "main")
-		if err != nil {
+	for b.Loop() {
+		if _, err := store.LoadHistory(ctx, sessionID, "main"); err != nil {
 			b.Fatalf("LoadHistory failed: %v", err)
 		}
 	}
@@ -90,7 +89,7 @@ func BenchmarkStore_AddMessages(b *testing.B) {
 
 	// Prepare messages
 	messages := make([][]*Message, b.N)
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		messages[i] = []*Message{
 			{
 				Role:    "user",
@@ -104,7 +103,7 @@ func BenchmarkStore_AddMessages(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		err := store.AddMessages(ctx, session.ID, messages[i])
 		if err != nil {
 			b.Fatalf("AddMessages failed at iteration %d: %v", i, err)
@@ -131,7 +130,7 @@ func BenchmarkStore_CreateSession(b *testing.B) {
 	}()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-Session-%d", i), "test-model", "test-prompt")
 		if err != nil {
 			b.Fatalf("CreateSession failed at iteration %d: %v", i, err)
@@ -157,7 +156,7 @@ func BenchmarkStore_GetSession(b *testing.B) {
 	defer func() { _ = store.DeleteSession(ctx, session.ID) }()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := store.GetSession(ctx, session.ID)
 		if err != nil {
 			b.Fatalf("GetSession failed: %v", err)
@@ -184,7 +183,7 @@ func BenchmarkStore_ListSessions(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := store.ListSessions(ctx, 100, 0)
 		if err != nil {
 			b.Fatalf("ListSessions failed: %v", err)
@@ -199,7 +198,7 @@ func BenchmarkStore_GetMessages(b *testing.B) {
 	defer cleanup()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := store.GetMessages(ctx, session.ID, 100, 0)
 		if err != nil {
 			b.Fatalf("GetMessages failed: %v", err)

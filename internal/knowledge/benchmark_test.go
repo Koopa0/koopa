@@ -33,7 +33,7 @@ func BenchmarkStore_Search(b *testing.B) {
 	defer cleanup()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := store.Search(ctx, "machine learning AI", WithTopK(5))
 		if err != nil {
 			b.Fatalf("Search failed: %v", err)
@@ -53,7 +53,7 @@ func BenchmarkStore_Search_LargeCorpus(b *testing.B) {
 	defer cleanup()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := store.Search(ctx, "artificial intelligence neural networks", WithTopK(10))
 		if err != nil {
 			b.Fatalf("Search failed: %v", err)
@@ -75,7 +75,7 @@ func BenchmarkStore_Add(b *testing.B) {
 
 	// Pre-generate documents
 	docs := make([]Document, b.N)
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		docs[i] = Document{
 			ID:       fmt.Sprintf("bench-add-%d-%d", time.Now().UnixNano(), i),
 			Content:  fmt.Sprintf("Benchmark document %d about artificial intelligence and machine learning", i),
@@ -85,7 +85,7 @@ func BenchmarkStore_Add(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		err := store.Add(ctx, docs[i])
 		if err != nil {
 			b.Fatalf("Add failed at iteration %d: %v", i, err)
@@ -104,7 +104,7 @@ func BenchmarkStore_Count(b *testing.B) {
 	defer cleanup()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := store.Count(ctx, nil)
 		if err != nil {
 			b.Fatalf("Count failed: %v", err)
@@ -126,7 +126,7 @@ func BenchmarkStore_Delete(b *testing.B) {
 
 	// Pre-create documents to delete
 	docIDs := make([]string, b.N)
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		docID := fmt.Sprintf("bench-delete-%d-%d", time.Now().UnixNano(), i)
 		docIDs[i] = docID
 		err := store.Add(ctx, Document{
@@ -142,7 +142,7 @@ func BenchmarkStore_Delete(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		err := store.Delete(ctx, docIDs[i])
 		if err != nil {
 			b.Fatalf("Delete failed: %v", err)
