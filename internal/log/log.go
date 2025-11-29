@@ -105,5 +105,5 @@ func NewWithWriter(w io.Writer, cfg Config) Logger {
 //	    // ... test without log noise
 //	}
 func NewNop() Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }

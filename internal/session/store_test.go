@@ -539,6 +539,7 @@ func TestStore_GetSession(t *testing.T) {
 			},
 			wantErr: false,
 			validateResult: func(t *testing.T, s *Session) {
+				t.Helper()
 				if s.ID != sessionID {
 					t.Errorf("expected ID %s, got %s", sessionID, s.ID)
 				}
@@ -579,6 +580,7 @@ func TestStore_GetSession(t *testing.T) {
 			},
 			wantErr: false,
 			validateResult: func(t *testing.T, s *Session) {
+				t.Helper()
 				if s.ID != sessionID {
 					t.Errorf("expected ID %s, got %s", sessionID, s.ID)
 				}
@@ -658,6 +660,7 @@ func TestStore_ListSessions(t *testing.T) {
 			wantErr:       false,
 			expectedCount: 2,
 			validateResult: func(t *testing.T, sessions []*Session) {
+				t.Helper()
 				if len(sessions) != 2 {
 					t.Fatalf("expected 2 sessions, got %d", len(sessions))
 				}
@@ -683,6 +686,7 @@ func TestStore_ListSessions(t *testing.T) {
 			wantErr:       false,
 			expectedCount: 0,
 			validateResult: func(t *testing.T, sessions []*Session) {
+				t.Helper()
 				if len(sessions) != 0 {
 					t.Errorf("expected empty list, got %d sessions", len(sessions))
 				}
@@ -711,6 +715,7 @@ func TestStore_ListSessions(t *testing.T) {
 			wantErr:       false,
 			expectedCount: 1,
 			validateResult: func(t *testing.T, sessions []*Session) {
+				t.Helper()
 				if len(sessions) != 1 {
 					t.Fatalf("expected 1 session, got %d", len(sessions))
 				}
@@ -737,6 +742,7 @@ func TestStore_ListSessions(t *testing.T) {
 			wantErr:       false,
 			expectedCount: 1,
 			validateResult: func(t *testing.T, sessions []*Session) {
+				t.Helper()
 				if len(sessions) != 1 {
 					t.Fatalf("expected 1 session, got %d", len(sessions))
 				}

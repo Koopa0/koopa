@@ -22,6 +22,9 @@ vendor/
 # Built binaries
 bin/
 main
+koopa
+koopa-cli
+tui.test
 
 # IDE specific files
 .idea/
@@ -75,7 +78,16 @@ minio-data/
 docs/_build/
 *.pdf
 
-.claude/
+# AI/IDE config (keep .claude for project config)
 .gemini/
 .genkit/
-.vscode/
+.claude/
+.task/
+
+# Frontend build artifacts
+node_modules/
+build/frontend/node_modules/
+internal/ui/web/static/css/output.css
+
+# Generated templ files (optional - can be committed)
+# *_templ.go
