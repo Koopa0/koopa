@@ -194,7 +194,7 @@ func setupBenchmarkDeps(b *testing.B) (*testutil.TestDBContainer, ai.Embedder, f
 	// Use testutil for DB setup
 	dbContainer, dbCleanup := testutil.SetupTestDB(&testing.T{})
 
-	// Setup embedder directly (testutil.SetupEmbedder requires *testing.T)
+	// Setup embedder directly (testutil.SetupGoogleAI requires *testing.T)
 	ctx := context.Background()
 	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")

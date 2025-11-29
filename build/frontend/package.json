@@ -1,0 +1,14 @@
+{
+  "name": "koopa-genui",
+  "version": "0.1.0",
+  "description": "Koopa GenUI frontend assets",
+  "private": true,
+  "scripts": {
+    "css:build": "tailwindcss -i ./internal/ui/web/static/css/app.css -o ./internal/ui/web/static/css/output.css --minify",
+    "css:watch": "tailwindcss -i ./internal/ui/web/static/css/app.css -o ./internal/ui/web/static/css/output.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.15",
+    "tailwindcss": "^3.4.17"
+  }
+}
