@@ -1,276 +1,442 @@
-# Koopa Project - Strict Linter Configuration
-# This configuration enforces high code quality standards.
-#
-# Run: golangci-lint run ./...
-# Run with fixes: golangci-lint run --fix ./...
+version: "2"
 
 run:
   timeout: 5m
   tests: true
   modules-download-mode: readonly
-
-output:
-  formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  sort-results: true
+  go: "1.25"
 
 linters:
+  # Use 'standard' as base, then enable additional strict linters
+  default: standard
+
   enable:
-    # Default linters (keep enabled)
-    - errcheck # Check unchecked errors
-    - gosimple # Simplify code
-    - govet # Go vet checks
-    - ineffassign # Detect ineffective assignments
-    - staticcheck # Comprehensive static analysis
-    - unused # Detect unused code
-
-    # Style linters (golint replacements)
-    - revive # golint replacement, configurable
-    - stylecheck # Style mistakes
-
     # Security linters
     - gosec # Security issues
 
     # Bug detection
     - bodyclose # HTTP response body not closed
+    - contextcheck # Ensures functions use passed context correctly
     - durationcheck # Duration multiplication issues
     - nilerr # nil error returned after checking
+    - nilnil # Detects returning (nil, nil) - common bug pattern
     - noctx # HTTP requests without context
+    - rowserrcheck # SQL rows.Err() must be checked
     - sqlclosecheck # SQL rows/stmt not closed
 
     # Performance
-    - prealloc # Slice preallocation suggestions
+    - makezero # Detects incorrect make usage
+    # Note: prealloc disabled - premature optimization (Rob Pike)
+    # Note: perfsprint disabled - too noisy, suggests errors.New over fmt.Errorf
 
     # Code quality
-    - dogsled # Too many blank identifiers
-    - dupl # Code duplication
-    - gocognit # Cognitive complexity
-    - goconst # Repeated strings as constants
-    - gocritic # Various code issues
-    - gocyclo # Cyclomatic complexity
-    - gofmt # Go fmt check
-    - goimports # Import order
-    - misspell # Spelling mistakes
-    - nakedret # Naked returns in long functions
-    - unconvert # Unnecessary type conversions
-    - unparam # Unused function parameters
-    - whitespace # Whitespace issues
+    - dogsled    # Too many blank identifiers
+    - dupl       # Code duplication (with reasonable threshold)
+    - goconst    # Repeated strings as constants
+    - gocritic   # Various code issues
+    - gocyclo    # Cyclomatic complexity
+    - misspell   # Spelling mistakes
+    - nakedret   # Naked returns in long functions
+    - unconvert  # Unnecessary type conversions
+    - unparam    # Unused function parameters
+    # Note: gocognit disabled - redundant with gocyclo (Rob Pike)
+    # Note: dupword disabled - spell-checking, not code quality (Rob Pike)
+    # Note: predeclared disabled - govet handles shadow issues
+    # Note: reassign disabled - too noisy
+    # Note: wastedassign disabled - staticcheck SA4006 covers this
+    # Note: whitespace disabled - gofmt handles this
 
     # Error handling
+    - errchkjson # Checks json.Marshal error (often ignored)
+    - errname # Sentinel errors should be named ErrXxx
     - errorlint # Error wrapping issues
     - wrapcheck # Errors not wrapped
 
-linters-settings:
-  revive:
-    enable-all-rules: false
+    # Type safety
+    - forcetypeassert # Ban non-checked type assertions
+
+    # Struct safety
+    - musttag # Ensures struct tags are present (json, yaml, etc.)
+
+    # Style (golint replacements)
+    - revive # golint replacement, configurable
+    # Note: tagalign disabled - too noisy, pure cosmetic alignment
+
+    # Logging & observability
+    - sloglint # Ensures structured logging best practices
+    - spancheck # OpenTelemetry span handling
+
+    # Testing
+    - thelper          # Validates test helpers call t.Helper()
+    - testableexamples # Ensures examples are testable
+    # Note: testifylint disabled - framework-specific, too noisy (Rob Pike)
+    # Note: usetesting disabled - too noisy for current codebase
+    # Note: tparallel disabled - not all tests should be parallel
+
+    # Module management
+    - gomoddirectives # Detects suspicious go.mod directives
+    - nolintlint # Ensures //nolint directives are properly formatted
+
+    # Architecture
+    - depguard     # Restricts imports for architectural boundaries
+    - containedctx # Detects context stored in struct (anti-pattern)
+    - fatcontext   # Detects nested contexts in loops
+    # Note: interfacebloat disabled - arbitrary limits (Rob Pike)
+    # Note: nestif disabled - sometimes nesting is clearer (Rob Pike)
+    # Note: ireturn disabled - returning interface IS sometimes correct (Rob Pike)
+    # Note: nosprintfhostport disabled - doesn't apply to connection strings
+
+  settings:
+    revive:
+      enable-all-rules: false
+      rules:
+        # Naming
+        - name: var-naming
+          severity: warning
+        - name: package-comments
+          severity: warning
+        - name: exported
+          severity: warning
+          arguments:
+            - checkPrivateReceivers
+            - sayRepetitiveInsteadOfStutters
+        # Style
+        - name: indent-error-flow
+          severity: warning
+        - name: context-as-argument
+          severity: error
+        - name: context-keys-type
+          severity: warning
+        - name: error-return
+          severity: warning
+        - name: error-strings
+          severity: warning
+        - name: error-naming
+          severity: warning
+        - name: receiver-naming
+          severity: warning
+        - name: increment-decrement
+          severity: warning
+        - name: range
+          severity: warning
+        - name: time-naming
+          severity: warning
+        # Best practices
+        - name: blank-imports
+          severity: warning
+        - name: dot-imports
+          severity: warning
+        - name: empty-block
+          severity: warning
+        - name: unnecessary-stmt
+          severity: warning
+        - name: unreachable-code
+          severity: warning
+        - name: unused-parameter
+          severity: warning
+          arguments:
+            - allowRegex: "^_"
+        - name: unused-receiver
+          severity: warning
+        - name: useless-break
+          severity: warning
+        - name: early-return
+          severity: warning
+
+    gosec:
+      excludes:
+        - G115 # We handle this with #nosec annotations where safe
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # Too noisy for general use
+
+    gocyclo:
+      min-complexity: 15
+
+    gocognit:
+      min-complexity: 20
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    dupl:
+      threshold: 150
+
+    misspell:
+      locale: US
+
+    nakedret:
+      max-func-lines: 30
+
+    prealloc:
+      simple: true
+      for-loops: true
+
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithMessagef(
+        - .WithStack(
+      ignore-package-globs:
+        - github.com/koopa0/koopa-cli/*
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - whyNoLint # We use nosec annotations
+        - hugeParam # Can be too strict
+
+    # Structured logging best practices (slog)
+    sloglint:
+      no-mixed-args: true # Prevent mixing attrs with key-values
+      attr-only: false    # Allow key-value pairs
+      no-raw-keys: false  # Allow raw string keys
+      key-naming-case: "" # Don't enforce key naming (allow camelCase)
+
+    # OpenTelemetry span handling
+    spancheck:
+      checks:
+        - end
+        - record-error
+        - set-status
+
+    # testify best practices
+    testifylint:
+      enable-all: true
+      disable:
+        - suite-dont-use-pkg # testify/suite is fine
+
+    # Test helper validation
+    thelper:
+      test:
+        first: true
+        name: true
+        begin: true
+
+    # Struct tag validation
+    musttag:
+      functions:
+        - name: encoding/json.Marshal
+          tag: json
+        - name: encoding/json.Unmarshal
+          tag: json
+
+    # Import restrictions for architectural boundaries
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: "cmd"
+              desc: "cmd package should not be imported by internal packages"
+        security-enforcement:
+          files:
+            - "**/internal/tools/**"
+            - "**/internal/mcp/**"
+          deny:
+            - pkg: "os/exec"
+              desc: "use internal/security.Command validator instead of direct os/exec"
+
+    # go.mod hygiene
+    gomoddirectives:
+      replace-allow-list:
+        - github.com/DataDog/dd-trace-go/v2
+
+    # nolint directive validation
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    # Use presets for common exclusions
+    presets:
+      - comments
+      - std-error-handling
+
+    # Relax rules for test files
     rules:
-      # Naming
-      - name: var-naming
-        severity: warning
-      - name: package-comments
-        severity: warning
-      - name: exported
-        severity: warning
-        arguments:
-          - checkPrivateReceivers
-          - sayRepetitiveInsteadOfStutters
-      # Style
-      - name: indent-error-flow
-        severity: warning
-      - name: context-as-argument
-        severity: error
-      - name: context-keys-type
-        severity: warning
-      - name: error-return
-        severity: warning
-      - name: error-strings
-        severity: warning
-      - name: error-naming
-        severity: warning
-      - name: receiver-naming
-        severity: warning
-      - name: increment-decrement
-        severity: warning
-      - name: range
-        severity: warning
-      - name: time-naming
-        severity: warning
-      # Best practices
-      - name: blank-imports
-        severity: warning
-      - name: dot-imports
-        severity: warning
-      - name: empty-block
-        severity: warning
-      - name: unnecessary-stmt
-        severity: warning
-      - name: unreachable-code
-        severity: warning
-      - name: unused-parameter
-        severity: warning
-        arguments:
-          - allowRegex: "^_"
-      - name: unused-receiver
-        severity: warning
-      - name: useless-break
-        severity: warning
-      - name: early-return
-        severity: warning
+      # Test files - relax some rules
+      - path: _test\.go
+        linters:
+          - dupl
+          - goconst
+          - gocyclo
+          - wrapcheck
+          - unparam
+          - gocritic
+          - goheader
+          - containedctx     # Test helpers may store context
+          - forcetypeassert  # Tests often use type assertions
+          - errchkjson       # Test JSON marshaling errors less critical
 
-  stylecheck:
-    checks:
-      - "all"
-      - "-ST1000" # Package comments (handled by revive)
-      - "-ST1003" # Naming (handled by revive)
+      # govet unusedwrite is common in test setup
+      - path: _test\.go
+        text: "unusedwrite:"
+        linters:
+          - govet
 
-  gosec:
-    excludes:
-      - G115 # We handle this with #nosec annotations where safe
+      # Shadow errors in test files are acceptable
+      - path: _test\.go
+        text: "shadow:"
+        linters:
+          - govet
 
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment # Too noisy for general use
+      # nilness checks in test files are often tautological
+      - path: _test\.go
+        text: "nilness:"
+        linters:
+          - govet
 
-  gocyclo:
-    min-complexity: 15
+      # Test helpers and utilities - relax rules
+      - path: testing\.go
+        linters:
+          - gocritic
+          - gocyclo
 
-  gocognit:
-    min-complexity: 20
+      # testutil package - infrastructure code
+      - path: internal/testutil/
+        linters:
+          - gocritic
 
-  goconst:
-    min-len: 3
-    min-occurrences: 3
+      # G304 (file inclusion via variable) - narrow to test infrastructure only
+      - path: (internal/testutil/|testing\.go$)
+        text: "G304:"
+        linters:
+          - gosec
 
-  dupl:
-    threshold: 150
+      # Unused parameters in test files are common
+      - path: _test\.go
+        text: "unused-parameter"
+        linters:
+          - revive
 
-  misspell:
-    locale: US
+      # Generated files
+      - path: internal/sqlc/
+        linters:
+          - all
 
-  nakedret:
-    max-func-lines: 30
+      # Fuzz tests can have underscores
+      - path: fuzz_test\.go
+        text: "don't use underscores in Go names"
 
-  prealloc:
-    simple: true
-    for-loops: true
+      # Allow unused parameters in interface implementations
+      - path: ".*"
+        text: "unused-parameter"
+        source: "func \\(.*\\) .* implements"
+        linters:
+          - revive
 
-  errorlint:
-    errorf: true
-    asserts: true
-    comparison: true
+      # Allow context not being first param in certain cases
+      - path: _test\.go
+        text: "context-as-argument"
+        linters:
+          - revive
 
-  wrapcheck:
-    ignoreSigs:
-      - .Errorf(
-      - errors.New(
-      - errors.Unwrap(
-      - errors.Join(
-      - .Wrap(
-      - .Wrapf(
-      - .WithMessage(
-      - .WithMessagef(
-      - .WithStack(
-    ignorePackageGlobs:
-      - github.com/koopa0/koopa-cli/*
+      # Knowledge toolset: SearchHistory and SearchDocuments have similar structure
+      # but different semantics (Go Proverb: "A little copying is better than a little dependency")
+      - path: internal/tools/knowledge\.go
+        linters:
+          - dupl
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - whyNoLint # We use nosec annotations
-      - hugeParam # Can be too strict
+      # Wire-generated code - exclude all linters
+      - path: wire_gen\.go
+        linters:
+          - all
+
+      # depguard: allow os/exec in security package (it's the validator itself)
+      - path: internal/security/
+        linters:
+          - depguard
+
+      # containedctx: allow in app lifecycle and TUI (legitimate use cases)
+      - path: (internal/app/|internal/tui/|internal/agent/context\.go|internal/testutil/)
+        linters:
+          - containedctx
+
+      # G304 in test files for fixture loading
+      - path: _test\.go
+        text: "G304:"
+        linters:
+          - gosec
+
+      # contextcheck: session file doesn't need context for local file ops
+      - path: internal/session/file\.go
+        linters:
+          - contextcheck
+
+      # contextcheck: mcp tools use toolCtx which contains context
+      - path: internal/mcp/
+        linters:
+          - contextcheck
+
+      # contextcheck: cmd functions may not need context for some operations
+      - path: cmd/
+        linters:
+          - contextcheck
+
+      # contextcheck: api server shutdown uses its own context
+      - path: internal/api/server\.go
+        text: "Non-inherited new context"
+        linters:
+          - contextcheck
+
+      # contextcheck: flow.go uses InvocationContext which wraps context
+      - path: internal/agent/chat/flow\.go
+        linters:
+          - contextcheck
+
+      # depguard: system tools intentionally use os/exec with security wrapper
+      - path: internal/tools/system\.go
+        linters:
+          - depguard
+
+      # musttag: test config structs don't need json tags
+      - path: _test\.go
+        linters:
+          - musttag
+
+      # nilnil: session state returns (nil, nil) for "no current session" which is valid
+      - path: internal/session/state\.go
+        linters:
+          - nilnil
+
+      # nolintlint: TUI uses nolint for Bubble Tea patterns
+      - path: internal/tui/
+        linters:
+          - nolintlint
+
+    paths:
+      - vendor
+      - third_party
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 
-  exclude-rules:
-    # Test files - relax some rules
-    - path: _test\.go
-      linters:
-        - dupl
-        - goconst
-        - gocyclo
-        - gocognit
-        - wrapcheck
-        - unparam
-        - gocritic
-
-    # govet unusedwrite is common in test setup where fields are set but only used implicitly
-    - path: _test\.go
-      text: "unusedwrite:"
-      linters:
-        - govet
-
-    # Shadow errors in test files are acceptable (common pattern in table-driven tests)
-    - path: _test\.go
-      text: "shadow:"
-      linters:
-        - govet
-
-    # nilness checks in test files are often tautological for safety assertions
-    - path: _test\.go
-      text: "nilness:"
-      linters:
-        - govet
-
-    # Test helpers and utilities - relax rules
-    - path: testing\.go
-      linters:
-        - gocritic
-        - gocyclo
-        - gocognit
-
-    # testutil package - infrastructure code
-    - path: internal/testutil/
-      linters:
-        - gocritic
-
-    # G304 (file inclusion via variable) is expected in tests - test paths are safe
-    - path: _test\.go
-      text: "G304:"
-      linters:
-        - gosec
-
-    # Unused parameters in test files are common (mock functions, callbacks)
-    - path: _test\.go
-      text: "unused-parameter"
-      linters:
-        - revive
-
-    # Generated files
-    - path: internal/sqlc/
-      linters:
-        - all
-
-    # Fuzz tests can have underscores
-    - path: fuzz_test\.go
-      text: "don't use underscores in Go names"
-
-    # Allow unused parameters in interface implementations
-    - linters:
-        - revive
-      text: "unused-parameter"
-      source: "func \\(.*\\) .* implements"
-
-    # Allow context not being first param in certain cases
-    - linters:
-        - revive
-      text: "context-as-argument"
-      path: _test\.go
-
-    # Knowledge toolset: SearchHistory and SearchDocuments have similar structure
-    # but different semantics. Duplication is acceptable for clarity (Go Proverb: "A little copying is better than a little dependency")
-    - path: internal/tools/knowledge\.go
-      linters:
-        - dupl
-
-  exclude-dirs:
-    - vendor
-    - third_party
+output:
+  formats:
+    text:
+      print-linter-name: true
+      print-issued-lines: true
+      colors: true
+  sort-order:
+    - linter
+    - severity
+    - file
+  show-stats: true

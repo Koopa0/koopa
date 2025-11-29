@@ -46,16 +46,16 @@ NOTE: For the sake of brevity, the snippets below use the Google AI plugin, but 
     package main
 
     import (
-        "context"
-        "github.com/firebase/genkit/go/genkit"
-        "github.com/firebase/genkit/go/plugins/googlegenai"
+    	"context"
+    	"github.com/firebase/genkit/go/genkit"
+    	"github.com/firebase/genkit/go/plugins/googlegenai"
     )
 
     func main() {
-        ctx := context.Background()
-        g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
-        // Your flows and logic here
-        <-ctx.Done()
+    	ctx := context.Background()
+    	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+    	// Your flows and logic here
+    	<-ctx.Done()
     }
     ```
 
@@ -75,35 +75,35 @@ NOTE: For the sake of brevity, the snippets below use the Google AI plugin, but 
 package main
 
 import (
-    "context"
+	"context"
 
-    "github.com/firebase/genkit/go/ai"
-    "github.com/firebase/genkit/go/genkit"
-    "github.com/firebase/genkit/go/plugins/googlegenai"
-    "google.golang.org/genai"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"google.golang.org/genai"
 )
 
 func main() {
-    ctx := context.Background()
-    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+	ctx := context.Background()
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
-    genkit.DefineFlow(g, "basicInferenceFlow",
-        func(ctx context.Context, topic string) (string, error) {
-            response, err := genkit.Generate(ctx, g,
-                ai.WithModelName("googleai/gemini-2.5-pro"),
-                ai.WithPrompt("Write a short, creative paragraph about %s.", topic),
-                ai.WithConfig(&genai.GenerateContentConfig{
-                    Temperature: genai.Ptr[float32](0.8),
-                }),
-            )
-            if err != nil {
-                return "", err
-            }
-            return response.Text(), nil
-        },
-    )
+	genkit.DefineFlow(g, "basicInferenceFlow",
+		func(ctx context.Context, topic string) (string, error) {
+			response, err := genkit.Generate(ctx, g,
+				ai.WithModelName("googleai/gemini-2.5-pro"),
+				ai.WithPrompt("Write a short, creative paragraph about %s.", topic),
+				ai.WithConfig(&genai.GenerateContentConfig{
+					Temperature: genai.Ptr[float32](0.8),
+				}),
+			)
+			if err != nil {
+				return "", err
+			}
+			return response.Text(), nil
+		},
+	)
 
-    <-ctx.Done()
+	<-ctx.Done()
 }
 ```
 
@@ -113,53 +113,53 @@ func main() {
 package main
 
 import (
-    "context"
+	"context"
 
-    "github.com/firebase/genkit/go/ai"
-    "github.com/firebase/genkit/go/genkit"
-    "github.com/firebase/genkit/go/plugins/googlegenai"
-    "google.golang.org/genai"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"google.golang.org/genai"
 )
 
 func main() {
-    ctx := context.Background()
-    g := genkit.Init(ctx,
-        genkit.WithPlugins(&googlegenai.GoogleAI{}),
-        genkit.WithDefaultModel("googleai/gemini-2.5-flash-preview-tts"),
-    )
+	ctx := context.Background()
+	g := genkit.Init(ctx,
+		genkit.WithPlugins(&googlegenai.GoogleAI{}),
+		genkit.WithDefaultModel("googleai/gemini-2.5-flash-preview-tts"),
+	)
 
-    genkit.DefineFlow(g, "textToSpeechFlow",
-        func(ctx context.Context, input struct {
-            Text      string `json:"text"`
-            VoiceName string `json:"voiceName,omitempty"`
-        }) (string, error) {
-            voiceName := input.VoiceName
-            if voiceName == "" {
-                voiceName = "Algenib"
-            }
+	genkit.DefineFlow(g, "textToSpeechFlow",
+		func(ctx context.Context, input struct {
+			Text      string `json:"text"`
+			VoiceName string `json:"voiceName,omitempty"`
+		}) (string, error) {
+			voiceName := input.VoiceName
+			if voiceName == "" {
+				voiceName = "Algenib"
+			}
 
-            response, err := genkit.Generate(ctx, g,
-                ai.WithPrompt(input.Text),
-                ai.WithConfig(&genai.GenerateContentConfig{
-                    ResponseModalities: []string{"AUDIO"},
-                    SpeechConfig: &genai.SpeechConfig{
-                        VoiceConfig: &genai.VoiceConfig{
-                            PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{
-                                VoiceName: voiceName,
-                            },
-                        },
-                    },
-                }),
-            )
-            if err != nil {
-                return "", err
-            }
+			response, err := genkit.Generate(ctx, g,
+				ai.WithPrompt(input.Text),
+				ai.WithConfig(&genai.GenerateContentConfig{
+					ResponseModalities: []string{"AUDIO"},
+					SpeechConfig: &genai.SpeechConfig{
+						VoiceConfig: &genai.VoiceConfig{
+							PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{
+								VoiceName: voiceName,
+							},
+						},
+					},
+				}),
+			)
+			if err != nil {
+				return "", err
+			}
 
-            return response.Text(), nil
-        },
-    )
+			return response.Text(), nil
+		},
+	)
 
-    <-ctx.Done()
+	<-ctx.Done()
 }
 ```
 
@@ -169,46 +169,46 @@ func main() {
 package main
 
 import (
-    "context"
+	"context"
 
-    "github.com/firebase/genkit/go/ai"
-    "github.com/firebase/genkit/go/genkit"
-    "github.com/firebase/genkit/go/plugins/googlegenai"
-    "google.golang.org/genai"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"google.golang.org/genai"
 )
 
 func main() {
-    ctx := context.Background()
-    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.VertexAI{}))
+	ctx := context.Background()
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.VertexAI{}))
 
-    genkit.DefineFlow(g, "imageGenerationFlow",
-        func(ctx context.Context, prompt string) ([]string, error) {
-            response, err := genkit.Generate(ctx, g,
-                ai.WithModelName("vertexai/imagen-3.0-generate-001"),
-                ai.WithPrompt("Generate an image of %s", prompt),
-                ai.WithConfig(&genai.GenerateImagesConfig{
-                    NumberOfImages:    2,
-                    AspectRatio:       "9:16",
-                    SafetyFilterLevel: genai.SafetyFilterLevelBlockLowAndAbove,
-                    PersonGeneration:  genai.PersonGenerationAllowAll,
-                    Language:          genai.ImagePromptLanguageEn,
-                    AddWatermark:      true,
-                    OutputMIMEType:    "image/jpeg",
-                }),
-            )
-            if err != nil {
-                return nil, err
-            }
+	genkit.DefineFlow(g, "imageGenerationFlow",
+		func(ctx context.Context, prompt string) ([]string, error) {
+			response, err := genkit.Generate(ctx, g,
+				ai.WithModelName("vertexai/imagen-3.0-generate-001"),
+				ai.WithPrompt("Generate an image of %s", prompt),
+				ai.WithConfig(&genai.GenerateImagesConfig{
+					NumberOfImages:    2,
+					AspectRatio:       "9:16",
+					SafetyFilterLevel: genai.SafetyFilterLevelBlockLowAndAbove,
+					PersonGeneration:  genai.PersonGenerationAllowAll,
+					Language:          genai.ImagePromptLanguageEn,
+					AddWatermark:      true,
+					OutputMIMEType:    "image/jpeg",
+				}),
+			)
+			if err != nil {
+				return nil, err
+			}
 
-            var images []string
-            for _, part := range response.Message.Content {
-                images = append(images, part.Text)
-            }
-            return images, nil
-        },
-    )
+			var images []string
+			for _, part := range response.Message.Content {
+				images = append(images, part.Text)
+			}
+			return images, nil
+		},
+	)
 
-    <-ctx.Done()
+	<-ctx.Done()
 }
 ```
 
@@ -243,10 +243,10 @@ Here are suggested models to use for various task types. This is NOT an exhausti
 ```
 | Plugin                                                     | Recommended Model                  |
 |------------------------------------------------------------|------------------------------------|
-| github.com/firebase/genkit/go/plugins/googlegenai          | gemini-2.5-pro                     |
-| github.com/firebase/genkit/go/plugins/compat_oai/openai    | gpt-4o                             |
-| github.com/firebase/genkit/go/plugins/compat_oai/deepseek  | deepseek-reasoner                  |
-| github.com/firebase/genkit/go/plugins/compat_oai/xai       | grok-4                             |
+| github.com/firebase/genkit/go/plugins/googlegenai         | gemini-2.5-pro                    |
+| github.com/firebase/genkit/go/plugins/compat_oai/openai   | gpt-4o                             |
+| github.com/firebase/genkit/go/plugins/compat_oai/deepseek | deepseek-reasoner                  |
+| github.com/firebase/genkit/go/plugins/compat_oai/xai      | grok-4                             |
 ```
 
 ### Fast Text/Chat
@@ -254,10 +254,10 @@ Here are suggested models to use for various task types. This is NOT an exhausti
 ```
 | Plugin                                                     | Recommended Model                  |
 |------------------------------------------------------------|------------------------------------|
-| github.com/firebase/genkit/go/plugins/googlegenai          | gemini-2.5-flash                   |
-| github.com/firebase/genkit/go/plugins/compat_oai/openai    | gpt-4o-mini                        |
-| github.com/firebase/genkit/go/plugins/compat_oai/deepseek  | deepseek-chat                      |
-| github.com/firebase/genkit/go/plugins/compat_oai/xai       | grok-3-mini                        |
+| github.com/firebase/genkit/go/plugins/googlegenai         | gemini-2.5-flash                  |
+| github.com/firebase/genkit/go/plugins/compat_oai/openai   | gpt-4o-mini                        |
+| github.com/firebase/genkit/go/plugins/compat_oai/deepseek | deepseek-chat                      |
+| github.com/firebase/genkit/go/plugins/compat_oai/xai      | grok-3-mini                        |
 ```
 
 ### Text-to-Speech
@@ -265,8 +265,8 @@ Here are suggested models to use for various task types. This is NOT an exhausti
 ```
 | Plugin                                                     | Recommended Model                  |
 |------------------------------------------------------------|------------------------------------|
-| github.com/firebase/genkit/go/plugins/googlegenai          | gemini-2.5-flash-preview-tts       |
-| github.com/firebase/genkit/go/plugins/compat_oai/openai    | gpt-4o-mini-tts                    |
+| github.com/firebase/genkit/go/plugins/googlegenai         | gemini-2.5-flash-preview-tts       |
+| github.com/firebase/genkit/go/plugins/compat_oai/openai   | gpt-4o-mini-tts                    |
 ```
 
 ### Image Generation
@@ -274,7 +274,7 @@ Here are suggested models to use for various task types. This is NOT an exhausti
 ```
 | Plugin                                                     | Recommended Model                  | Input Modalities  |
 |------------------------------------------------------------|------------------------------------|-------------------|
-| github.com/firebase/genkit/go/plugins/googlegenai          | gemini-2.5-flash-image-preview     | Text, Image       |
-| github.com/firebase/genkit/go/plugins/googlegenai          | imagen-4.0-generate-preview-06-06  | Text              |
-| github.com/firebase/genkit/go/plugins/compat_oai/openai    | gpt-image-1                        | Text              |
+| github.com/firebase/genkit/go/plugins/googlegenai         | gemini-2.5-flash-image-preview     | Text, Image       |
+| github.com/firebase/genkit/go/plugins/googlegenai         | imagen-4.0-generate-preview-06-06  | Text              |
+| github.com/firebase/genkit/go/plugins/compat_oai/openai   | gpt-image-1                        | Text              |
 ```

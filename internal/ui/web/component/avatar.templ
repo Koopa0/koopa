@@ -1,0 +1,28 @@
+package component
+
+// AvatarProps configures the Avatar component.
+type AvatarProps struct {
+	Name     string // Used for aria-label
+	Src      string // Image URL (optional)
+	Fallback string // Fallback text (e.g., initials)
+	Size     string // "sm", "md", "lg"
+}
+
+// Avatar renders a user or assistant avatar with image or fallback initials.
+templ Avatar(props AvatarProps) {
+	<div
+		role="img"
+		aria-label={ props.Name }
+		class={
+			"inline-flex items-center justify-center rounded-full bg-primary-600 text-white font-medium flex-shrink-0",
+			templ.KV("h-8 w-8 text-sm", props.Size == "sm" || props.Size == ""),
+			templ.KV("h-10 w-10 text-base", props.Size == "md"),
+			templ.KV("h-12 w-12 text-lg", props.Size == "lg"),
+		}>
+		if props.Src != "" {
+			<img src={ props.Src } alt={ props.Name } class="h-full w-full rounded-full object-cover"/>
+		} else {
+			<span>{ props.Fallback }</span>
+		}
+	</div>
+}

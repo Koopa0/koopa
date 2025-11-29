@@ -24,7 +24,7 @@ func setupIntegrationTest(t *testing.T) (*Store, func()) {
 	t.Helper()
 
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
-	setup := testutil.SetupEmbedder(t)
+	setup := testutil.SetupGoogleAI(t)
 	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 
 	return store, dbCleanup

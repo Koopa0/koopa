@@ -14,8 +14,12 @@ func resultToMCP(result tools.Result) *mcp.CallToolResult {
 	if result.Status == tools.StatusError {
 		errorText := fmt.Sprintf("[%s] %s", result.Error.Code, result.Error.Message)
 		if result.Error.Details != nil {
-			detailsJSON, _ := json.Marshal(result.Error.Details)
-			errorText += fmt.Sprintf("\nDetails: %s", string(detailsJSON))
+			detailsJSON, err := json.Marshal(result.Error.Details)
+			if err != nil {
+				errorText += fmt.Sprintf("\nDetails: %+v (marshal error: %v)", result.Error.Details, err)
+			} else {
+				errorText += fmt.Sprintf("\nDetails: %s", string(detailsJSON))
+			}
 		}
 
 		return &mcp.CallToolResult{

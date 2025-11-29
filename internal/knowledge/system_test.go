@@ -22,7 +22,7 @@ func TestSystemKnowledgeIndexer_IndexAll(t *testing.T) {
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
 	defer dbCleanup()
 
-	setup := testutil.SetupEmbedder(t)
+	setup := testutil.SetupGoogleAI(t)
 	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
@@ -48,7 +48,7 @@ func TestSystemKnowledgeIndexer_ClearAll(t *testing.T) {
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
 	defer dbCleanup()
 
-	setup := testutil.SetupEmbedder(t)
+	setup := testutil.SetupGoogleAI(t)
 	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
@@ -137,7 +137,7 @@ func TestSystemKnowledge_E2E(t *testing.T) {
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
 	defer dbCleanup()
 
-	setup := testutil.SetupEmbedder(t)
+	setup := testutil.SetupGoogleAI(t)
 	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
@@ -185,7 +185,7 @@ func TestIndexAll_AllFailures(t *testing.T) {
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
 	defer dbCleanup()
 
-	setup := testutil.SetupEmbedder(t)
+	setup := testutil.SetupGoogleAI(t)
 
 	// Close pool to simulate database failure
 	dbContainer.Pool.Close()
@@ -206,7 +206,7 @@ func TestIndexAll_Concurrency(t *testing.T) {
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
 	defer dbCleanup()
 
-	setup := testutil.SetupEmbedder(t)
+	setup := testutil.SetupGoogleAI(t)
 	store := New(sqlc.New(dbContainer.Pool), setup.Embedder, setup.Logger)
 	indexer := NewSystemKnowledgeIndexer(store, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 

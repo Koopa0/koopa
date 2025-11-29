@@ -1,0 +1,53 @@
+package layout
+
+// Base is the root HTML layout for all GenUI pages
+templ Base(title string) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<meta name="description" content="Koopa - AI Assistant"/>
+		<title>{ title } - Koopa</title>
+		<link href="/genui/static/css/output.css" rel="stylesheet"/>
+		<script>
+			// Set theme before render to prevent flash
+			(function() {
+				const theme = localStorage.getItem('theme') ||
+					(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+				document.documentElement.classList.toggle('dark', theme === 'dark');
+			})();
+		</script>
+	</head>
+	<body class="h-full bg-gray-50 text-gray-900 dark:bg-surface-950 dark:text-white antialiased">
+		<!-- Skip navigation for accessibility -->
+		<a href="#main-content"
+		   class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-primary-600 focus:text-white focus:rounded">
+			Skip to main content
+		</a>
+
+		{ children... }
+
+		<script src="/genui/static/js/htmx.min.js"></script>
+		<script src="/genui/static/js/htmx-sse.js"></script>
+	</body>
+	</html>
+}
+
+// DualPanel is a two-column layout for chat + artifact canvas
+templ DualPanel() {
+	<div class="flex h-full">
+		<!-- Main chat panel -->
+		<main id="main-content" class="flex flex-1 flex-col overflow-hidden">
+			{ children... }
+		</main>
+
+		<!-- Artifact canvas (hidden by default, shown via HTMX) -->
+		<aside id="artifact-panel"
+			   class="hidden w-[45%] border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-900 overflow-hidden lg:flex lg:flex-col">
+			<div id="artifact-content" class="flex-1 overflow-auto p-4">
+				<!-- Artifact content injected here -->
+			</div>
+		</aside>
+	</div>
+}

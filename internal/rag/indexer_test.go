@@ -12,10 +12,6 @@ import (
 	"github.com/koopa0/koopa-cli/internal/knowledge"
 )
 
-// ============================================================================
-// Mock Implementation
-// ============================================================================
-
 // mockIndexerStore implements IndexerStore for testing
 type mockIndexerStore struct {
 	// Error configuration
@@ -56,10 +52,6 @@ func (m *mockIndexerStore) Delete(ctx context.Context, docID string) error {
 	return m.deleteErr
 }
 
-// ============================================================================
-// Constructor Tests
-// ============================================================================
-
 func TestNewIndexer(t *testing.T) {
 	mockStore := &mockIndexerStore{}
 	indexer := NewIndexer(mockStore, nil)
@@ -73,10 +65,6 @@ func TestNewIndexer(t *testing.T) {
 		t.Error("store not set correctly")
 	}
 }
-
-// ============================================================================
-// Indexer.AddFile Tests
-// ============================================================================
 
 func TestIndexer_AddFile_Success(t *testing.T) {
 	// Create a temporary test file
@@ -141,7 +129,7 @@ func TestIndexer_AddFile_DirectoryError(t *testing.T) {
 		t.Fatal("expected error for directory, got nil")
 	}
 
-	if !contains(err.Error(), "directory") {
+	if !strings.Contains(err.Error(), "directory") {
 		t.Errorf("error should mention directory: %v", err)
 	}
 
@@ -167,7 +155,7 @@ func TestIndexer_AddFile_UnsupportedExtension(t *testing.T) {
 		t.Fatal("expected error for unsupported extension, got nil")
 	}
 
-	if !contains(err.Error(), "unsupported file type") {
+	if !strings.Contains(err.Error(), "unsupported file type") {
 		t.Errorf("error should mention unsupported file type: %v", err)
 	}
 
@@ -210,11 +198,11 @@ func TestIndexer_AddFile_StoreError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	if !contains(err.Error(), "failed to add document to store") {
+	if !strings.Contains(err.Error(), "failed to add document to store") {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	if !contains(err.Error(), "database connection lost") {
+	if !strings.Contains(err.Error(), "database connection lost") {
 		t.Errorf("error should wrap original error: %v", err)
 	}
 }
@@ -426,7 +414,7 @@ func TestIndexer_AddFile_ExceedsEmbeddingLimit(t *testing.T) {
 		t.Fatal("expected error for file exceeding embedding limit, got nil")
 	}
 
-	if !contains(err.Error(), "exceeds embedding limit") {
+	if !strings.Contains(err.Error(), "exceeds embedding limit") {
 		t.Errorf("error should mention embedding limit: %v", err)
 	}
 
@@ -566,7 +554,7 @@ func TestIndexer_ListDocuments_Error(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	if !contains(err.Error(), "failed to list documents") {
+	if !strings.Contains(err.Error(), "failed to list documents") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -620,7 +608,7 @@ func TestIndexer_RemoveDocument_Error(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	if !contains(err.Error(), "document not found") {
+	if !strings.Contains(err.Error(), "document not found") {
 		t.Errorf("error should wrap original error: %v", err)
 	}
 }
@@ -1121,13 +1109,4 @@ func TestIndexer_AddDirectory_BrokenSymlink(t *testing.T) {
 			t.Errorf("Expected valid.txt to be indexed, got %s", doc.Metadata["file_name"])
 		}
 	}
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-// contains checks if a string contains a substring (case-sensitive)
-func contains(s, substr string) bool {
-	return strings.Contains(s, substr)
 }

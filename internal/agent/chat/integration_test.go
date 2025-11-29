@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package chat
+package chat_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,7 +17,7 @@ import (
 
 // TestChatAgent_BasicExecution tests basic chat agent execution
 func TestChatAgent_BasicExecution(t *testing.T) {
-	framework, cleanup := SetupTestAgent(t)
+	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
 	ctx := agent.NewInvocationContext(
@@ -43,7 +44,7 @@ func TestChatAgent_BasicExecution(t *testing.T) {
 
 // TestChatAgent_SessionPersistence tests conversation history persistence
 func TestChatAgent_SessionPersistence(t *testing.T) {
-	framework, cleanup := SetupTestAgent(t)
+	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
 	ctx := agent.NewInvocationContext(
@@ -80,7 +81,7 @@ func TestChatAgent_SessionPersistence(t *testing.T) {
 
 // TestChatAgent_ToolIntegration tests tool calling capability
 func TestChatAgent_ToolIntegration(t *testing.T) {
-	framework, cleanup := SetupTestAgent(t)
+	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
 	ctx := agent.NewInvocationContext(
@@ -103,7 +104,7 @@ func TestChatAgent_ToolIntegration(t *testing.T) {
 
 // TestChatAgent_ErrorHandling tests error scenarios
 func TestChatAgent_ErrorHandling(t *testing.T) {
-	framework, cleanup := SetupTestAgent(t)
+	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
 	t.Run("handles empty input gracefully", func(t *testing.T) {
@@ -127,11 +128,11 @@ func TestChatAgent_ErrorHandling(t *testing.T) {
 // TestChatAgent_NewChatValidation tests constructor validation
 func TestChatAgent_NewChatValidation(t *testing.T) {
 	// Setup test framework once for all validation tests
-	framework, cleanup := SetupTestAgent(t)
+	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
 	t.Run("requires config", func(t *testing.T) {
-		_, err := New(Deps{
+		_, err := chat.New(chat.Deps{
 			Genkit:         framework.Genkit,
 			Retriever:      framework.Retriever,
 			SessionStore:   framework.SessionStore,
@@ -144,7 +145,7 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 	})
 
 	t.Run("requires genkit", func(t *testing.T) {
-		_, err := New(Deps{
+		_, err := chat.New(chat.Deps{
 			Config:         framework.Config,
 			Retriever:      framework.Retriever,
 			SessionStore:   framework.SessionStore,
@@ -157,7 +158,7 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 	})
 
 	t.Run("requires retriever", func(t *testing.T) {
-		_, err := New(Deps{
+		_, err := chat.New(chat.Deps{
 			Config:         framework.Config,
 			Genkit:         framework.Genkit,
 			SessionStore:   framework.SessionStore,
@@ -170,7 +171,7 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 	})
 
 	t.Run("requires session store", func(t *testing.T) {
-		_, err := New(Deps{
+		_, err := chat.New(chat.Deps{
 			Config:         framework.Config,
 			Genkit:         framework.Genkit,
 			Retriever:      framework.Retriever,
@@ -183,7 +184,7 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 	})
 
 	t.Run("requires knowledge store", func(t *testing.T) {
-		_, err := New(Deps{
+		_, err := chat.New(chat.Deps{
 			Config:       framework.Config,
 			Genkit:       framework.Genkit,
 			Retriever:    framework.Retriever,
@@ -196,7 +197,7 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 	})
 
 	t.Run("requires logger", func(t *testing.T) {
-		_, err := New(Deps{
+		_, err := chat.New(chat.Deps{
 			Config:         framework.Config,
 			Genkit:         framework.Genkit,
 			Retriever:      framework.Retriever,
@@ -209,7 +210,7 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 	})
 
 	t.Run("requires at least one toolset", func(t *testing.T) {
-		_, err := New(Deps{
+		_, err := chat.New(chat.Deps{
 			Config:         framework.Config,
 			Genkit:         framework.Genkit,
 			Retriever:      framework.Retriever,
