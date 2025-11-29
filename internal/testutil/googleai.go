@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,17 +12,17 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
 
-// EmbedderSetup contains all resources needed for embedder-based tests.
-type EmbedderSetup struct {
+// GoogleAISetup contains all resources needed for Google AI-based tests.
+type GoogleAISetup struct {
 	Embedder ai.Embedder
 	Genkit   *genkit.Genkit
 	Logger   *slog.Logger
 }
 
-// SetupEmbedder creates a Google AI embedder with logger for testing.
+// SetupGoogleAI creates a Google AI embedder with logger for testing.
 //
 // This is the preferred setup function for integration tests that need
-// both embedder and logger.
+// both embedder and logger with real Google AI API access.
 //
 // Requirements:
 //   - GEMINI_API_KEY environment variable must be set
@@ -32,11 +31,11 @@ type EmbedderSetup struct {
 // Example:
 //
 //	func TestKnowledge(t *testing.T) {
-//	    setup := testutil.SetupEmbedder(t)
+//	    setup := testutil.SetupGoogleAI(t)
 //	    store := knowledge.NewStore(pool, setup.Logger)
 //	    // Use setup.Embedder, setup.Genkit, setup.Logger
 //	}
-func SetupEmbedder(t *testing.T) *EmbedderSetup {
+func SetupGoogleAI(t *testing.T) *GoogleAISetup {
 	t.Helper()
 
 	// Check for required API key
@@ -62,10 +61,10 @@ func SetupEmbedder(t *testing.T) *EmbedderSetup {
 	// Create embedder
 	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")
 
-	// Create quiet logger for tests (only warn and above)
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	// Create quiet logger for tests (discard all logs)
+	logger := slog.New(slog.DiscardHandler)
 
-	return &EmbedderSetup{
+	return &GoogleAISetup{
 		Embedder: embedder,
 		Genkit:   g,
 		Logger:   logger,

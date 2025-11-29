@@ -200,7 +200,7 @@ func TestTUI_Integration_StartStream_Success(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Flow, sessionID, setup.Ctx)
+	tui := New(setup.Ctx, setup.Flow, sessionID)
 
 	// Start a stream with a simple query
 	cmd := tui.startStream("Say hello in exactly 3 words")
@@ -295,7 +295,7 @@ func TestTUI_Integration_StartStream_Cancellation(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Flow, sessionID, setup.Ctx)
+	tui := New(setup.Ctx, setup.Flow, sessionID)
 
 	// Start a stream with a long query
 	cmd := tui.startStream("Write a very long story about a turtle. Make it at least 500 words.")
@@ -365,7 +365,7 @@ func TestTUI_Integration_HandleSubmit_StateTransition(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Flow, sessionID, setup.Ctx)
+	tui := New(setup.Ctx, setup.Flow, sessionID)
 
 	// Set input value
 	tui.input.SetValue("What is 2+2?")
@@ -523,7 +523,7 @@ func TestTUI_Integration_ViewDuringStreaming(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Flow, sessionID, setup.Ctx)
+	tui := New(setup.Ctx, setup.Flow, sessionID)
 
 	// Start streaming
 	tui.input.SetValue("Tell me about Go programming")
