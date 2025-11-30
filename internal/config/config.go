@@ -79,6 +79,12 @@ var (
 
 	// ErrConfigParse indicates configuration parsing failed.
 	ErrConfigParse = errors.New("failed to parse configuration")
+
+	// ErrInvalidPostgresPassword indicates the PostgreSQL password is invalid.
+	ErrInvalidPostgresPassword = errors.New("invalid PostgreSQL password")
+
+	// ErrInvalidPostgresSSLMode indicates the PostgreSQL SSL mode is invalid.
+	ErrInvalidPostgresSSLMode = errors.New("invalid PostgreSQL SSL mode")
 )
 
 // ============================================================================
@@ -150,6 +156,9 @@ type Config struct {
 
 	// Observability configuration (see observability.go for type definition)
 	Datadog DatadogConfig `mapstructure:"datadog" json:"datadog"`
+
+	// Security configuration (serve mode only)
+	HMACSecret string `mapstructure:"hmac_secret" json:"hmac_secret" sensitive:"true"`
 }
 
 // ============================================================================
@@ -196,15 +205,20 @@ func Load() (*Config, error) {
 			"config_name", "config.yaml")
 	}
 
-	// Environment variable settings with KOOPA_ prefix to avoid collisions
-	// e.g., KOOPA_MODEL_NAME, KOOPA_DATABASE_PATH
-	viper.SetEnvPrefix("KOOPA")
-	viper.AutomaticEnv()
+	// Bind sensitive environment variables explicitly
+	// Only 3 env vars supported: GEMINI_API_KEY (read by Genkit), DD_API_KEY, HMAC_SECRET
+	// All other configuration must be in config.yaml
+	bindEnvVariables()
 
 	// Use Unmarshal to automatically map to struct (type-safe)
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	// CRITICAL: Validate immediately (fail-fast)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
 	return &cfg, nil
@@ -217,7 +231,7 @@ func setDefaults(configDir string) {
 	viper.SetDefault("temperature", 0.7)
 	viper.SetDefault("max_tokens", 2048)
 	viper.SetDefault("language", "auto")
-	viper.SetDefault("max_history_messages", 50)
+	viper.SetDefault("max_history_messages", DefaultMaxHistoryMessages)
 	viper.SetDefault("max_turns", 5)
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
 
@@ -250,12 +264,28 @@ func setDefaults(configDir string) {
 	viper.SetDefault("datadog.service_name", "koopa")
 }
 
-// bindEnvVariables binds specific environment variables.
+// bindEnvVariables binds sensitive environment variables explicitly.
+// Only 3 environment variables for secrets:
+//  1. GEMINI_API_KEY - Read directly by Genkit (not via Viper), validated in cfg.Validate()
+//  2. DD_API_KEY - Datadog API key (optional, for observability)
+//  3. HMAC_SECRET - HMAC secret for CSRF protection (serve mode only)
 func bindEnvVariables() {
-	// Datadog environment variables
-	_ = viper.BindEnv("datadog.agent_host", "DD_AGENT_HOST")
-	_ = viper.BindEnv("datadog.environment", "DD_ENV")
-	_ = viper.BindEnv("datadog.service_name", "DD_SERVICE")
+	// Helper to panic on unexpected bind errors (hardcoded strings can't fail)
+	// If this panics, it's a BUG in our code, not a runtime error
+	mustBind := func(key, envVar string) {
+		if err := viper.BindEnv(key, envVar); err != nil {
+			panic(fmt.Sprintf("BUG: failed to bind %q to %q: %v", key, envVar, err))
+		}
+	}
+
+	// Datadog API key (optional, for observability)
+	mustBind("datadog.api_key", "DD_API_KEY")
+
+	// HMAC secret (serve mode CSRF protection)
+	mustBind("hmac_secret", "HMAC_SECRET")
+
+	// NOTE: GEMINI_API_KEY is read directly by Genkit, not via Viper
+	// Validation checks its presence in cfg.Validate()
 }
 
 // ============================================================================
@@ -265,21 +295,40 @@ func bindEnvVariables() {
 // Constants for sensitive data masking
 const (
 	// maskedValue is the placeholder for masked sensitive data.
-	maskedValue = "****"
+	// Using ████████ (full-width blocks U+2588) to avoid substring matching
+	// Previous attempts:
+	// - "****" failed: passwords with "*" leaked
+	// - "[REDACTED]" failed: passwords with "A", "D", "E", etc. leaked
+	maskedValue = "████████"
 	// sensitiveTag is the struct tag value that marks a field as sensitive.
 	sensitiveTag = "true"
 )
 
 // maskSecret masks a secret string for safe logging.
 // Shows first 2 and last 2 characters, masks the rest.
+// SECURITY: For secrets <=8 chars, fully masks to prevent substring attacks.
+// For longer secrets, shows partial chars with unique separator.
+//
+// THREAT MODEL: This defends against accidental logging of real secrets.
+// It is NOT cryptographically secure - if logs are compromised, rotate secrets.
+// It does NOT defend against adversarially-crafted "passwords" like "\x96"
+// specifically designed to bypass masking (unrealistic attack scenario).
 func maskSecret(s string) string {
 	if s == "" {
 		return ""
 	}
-	if len(s) <= 4 {
+	// Fully mask short secrets to prevent substring matching attacks
+	// Example attack: input "00***" → output "00******" contains "00***"
+	if len(s) <= 8 {
 		return maskedValue
 	}
-	return s[:2] + maskedValue + s[len(s)-2:]
+	// For longer secrets, show first/last 2 chars for debug utility
+	// Example: "my_long_secret_key_123" → "my<████████>23"
+	prefix := make([]byte, 2)
+	suffix := make([]byte, 2)
+	copy(prefix, s[:2])
+	copy(suffix, s[len(s)-2:])
+	return string(prefix) + "<" + maskedValue + ">" + string(suffix)
 }
 
 // MarshalJSON implements custom JSON marshaling to mask sensitive fields.

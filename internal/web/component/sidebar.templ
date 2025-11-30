@@ -1,0 +1,218 @@
+package component
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// SessionItem represents a chat session in the sidebar list.
+//
+// Zero value behavior:
+//   - ID.String() == "00000000-0000-0000-0000-000000000000": INVALID
+//     Callers MUST validate using uuid.Validate() or check .ID != uuid.Nil
+//   - Title == "": VALID for new sessions
+//     UI SHOULD display placeholder like "New Chat" or auto-generate from timestamp
+//   - UpdatedAt.IsZero() == true: VALID, indicates uninitialized timestamp
+//     UI SHOULD skip rendering timestamp or show "Just now"
+type SessionItem struct {
+	ID        uuid.UUID // Session UUID
+	Title     string    // Session title (may be empty for new sessions)
+	UpdatedAt time.Time // Last updated (check .IsZero() for uninitialized)
+}
+
+// SidebarProps configures the Sidebar component.
+//
+// Zero value behavior:
+//   - Sessions == nil: VALID, renders empty state message
+//   - Sessions == []SessionItem{}: VALID (same as nil), shows "No sessions yet"
+//   - ActiveID == uuid.Nil: VALID, no session highlighted
+//     Recommended for "new session" page where no existing session is active
+//   - IsOpen == false: VALID, sidebar closed on mobile
+//     Desktop: Always shown (ignores IsOpen)
+//   - CSRFToken == "": INVALID for delete actions, will fail CSRF check
+type SidebarProps struct {
+	Sessions  []SessionItem // Session list (may be empty)
+	ActiveID  uuid.UUID     // Currently active session ID
+	IsOpen    bool          // Sidebar open state (mobile overlay only)
+	CSRFToken string        // For session deletion (REQUIRED)
+}
+
+// SessionItemProps configures a session list item (helper component).
+//
+// Zero value behavior:
+//   - Session.ID == uuid.Nil: INVALID (see SessionItem docs)
+//   - Active == false: VALID, renders inactive state
+type SessionItemProps struct {
+	Session SessionItem // Session data (ID MUST be valid)
+	Active  bool        // Active state indicator (defaults to false)
+}
+
+// Sidebar renders the left sidebar with session list, collapsible on desktop, overlay on mobile.
+//
+// Features:
+//   - Desktop (≥768px): Static sidebar, always visible
+//   - Mobile (<768px): Fixed overlay with backdrop blur
+//   - Keyboard navigation: Escape key closes overlay
+//   - Focus trap: Contained when overlay is open
+//   - Body scroll lock: Prevents scrolling when overlay is open
+//   - Touch targets: 44px minimum for all interactive elements
+//   - Empty state: Shows "No sessions yet" when list is empty
+//
+// Design reference: pro/sidebar/sidebar_001.templ, pro/sidebar/sidebar_003.templ, pro/chat/chat_001.templ
+templ Sidebar(props SidebarProps) {
+	// Mobile: Backdrop
+	if props.IsOpen {
+		<div
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden"
+			@click="open = false"
+			aria-hidden="true"
+		></div>
+	}
+	// Sidebar
+	<aside
+		id="sidebar"
+		if props.IsOpen {
+			x-data="{ open: true }"
+		} else {
+			x-data="{ open: false }"
+		}
+		@keydown.escape.window="if (open && window.innerWidth < 768) { open = false; }"
+		x-effect="if (open && window.innerWidth < 768) { document.body.classList.add('overflow-hidden'); } else { document.body.classList.remove('overflow-hidden'); }"
+		x-trap="open && window.innerWidth < 768"
+		:aria-expanded="open.toString()"
+		aria-label="Session navigation"
+		class="fixed inset-y-0 left-0 z-40 w-64 flex flex-col transform transition-transform duration-200 ease-in-out -translate-x-full md:translate-x-0 bg-white dark:bg-surface-900 border-r border-gray-200 dark:border-gray-700 md:static md:z-0"
+		x-bind:class="{ 'translate-x-0': open }"
+	>
+		// Header
+		<div class="flex items-center justify-between px-4 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold">Sessions</h2>
+			// Close button (mobile only)
+			<button
+				@click="open = false"
+				class="md:hidden rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-surface-800"
+				aria-label="Close sidebar"
+			>
+				<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+				</svg>
+			</button>
+		</div>
+		// Session List
+		<div
+			id="session-list"
+			role="navigation"
+			aria-live="polite"
+			aria-atomic="false"
+			class="flex-1 overflow-y-auto p-2"
+		>
+			if len(props.Sessions) == 0 {
+				<div class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+					No sessions yet
+				</div>
+			} else {
+				for _, session := range props.Sessions {
+					@SessionListItem(SessionItemProps{
+						Session: session,
+						Active:  session.ID == props.ActiveID,
+					})
+				}
+			}
+		</div>
+		// New Session Button
+		<div class="p-4 border-t border-gray-200 dark:border-gray-700">
+			<form action="/genui/sessions" method="POST" class="w-full">
+				<input type="hidden" name="csrf_token" value={ props.CSRFToken }/>
+				<button
+					type="submit"
+					hx-post="/genui/sessions"
+					hx-push-url="true"
+					hx-target="body"
+					hx-swap="innerHTML"
+					hx-indicator="#new-session-spinner"
+					class="w-full inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-surface-900 bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500 px-4 py-2.5 text-base min-h-[44px]"
+				>
+					<span id="new-session-spinner" class="htmx-indicator mr-2">
+						@Spinner(SpinnerProps{Size: "sm"})
+					</span>
+					<span>New Chat</span>
+				</button>
+			</form>
+		</div>
+	</aside>
+}
+
+// SessionListItem renders a single session in the sidebar list.
+//
+// Features:
+//   - HTMX: Click loads session messages without full page reload
+//   - Loading indicator: Shows spinner during HTMX request
+//   - Active state: Highlighted with primary color
+//   - Delete button: Hidden until hover, 44x44px touch target
+//   - Error handling: Shows alert on delete failure
+//   - Keyboard accessible: Focus-visible rings
+//
+templ SessionListItem(props SessionItemProps) {
+	<a
+		href={ templ.SafeURL("/genui?session=" + props.Session.ID.String()) }
+		hx-boost="true"
+		class={
+			"group flex items-center gap-3 px-4 py-3 min-h-[44px] rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500",
+			templ.KV("bg-primary-100 dark:bg-primary-900/20 border-l-4 border-primary-600", props.Active),
+			templ.KV("hover:bg-gray-100 dark:hover:bg-surface-800", !props.Active),
+		}
+	>
+		// Title
+		<div class="flex-1 min-w-0">
+			<div
+				class={
+					"font-medium truncate",
+					templ.KV("text-gray-900 dark:text-white", props.Active),
+				}
+			>
+				if props.Session.Title == "" {
+					<span
+						class={
+							templ.KV("text-gray-700 dark:text-gray-300", props.Active),
+							templ.KV("text-gray-500 dark:text-gray-400", !props.Active),
+						}
+					>New Chat</span>
+				} else {
+					{ props.Session.Title }
+				}
+			</div>
+			<div
+				class={
+					"text-sm",
+					templ.KV("text-gray-700 dark:text-gray-300", props.Active),
+					templ.KV("text-gray-500 dark:text-gray-400", !props.Active),
+				}
+			>
+				if !props.Session.UpdatedAt.IsZero() {
+					{ props.Session.UpdatedAt.Format("Jan 2, 15:04") }
+				} else {
+					<span>Just now</span>
+				}
+			</div>
+		</div>
+		// Delete button
+		<button
+			type="button"
+			hx-delete={ "/genui/sessions/" + props.Session.ID.String() }
+			hx-confirm="Delete this session?"
+			hx-swap="none"
+			hx-indicator={ "#delete-" + props.Session.ID.String() + "-spinner" }
+			hx-on::error="alert('Failed to delete session')"
+			class="opacity-0 group-hover:opacity-100 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-surface-700 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+			aria-label="Delete session"
+		>
+			<span id={ "delete-" + props.Session.ID.String() + "-spinner" } class="htmx-indicator">
+				@Spinner(SpinnerProps{Size: "xs"})
+			</span>
+			<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+			</svg>
+		</button>
+	</a>
+}

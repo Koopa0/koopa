@@ -840,10 +840,6 @@ func TestCustomSupportedExtensions(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Symlink Security Tests (P0-1 Fix)
-// ============================================================================
-
 // TestIndexer_AddDirectory_SkipsSymlinks verifies that symlinks to files are skipped
 // to prevent traversal outside the os.OpenRoot security boundary.
 func TestIndexer_AddDirectory_SkipsSymlinks(t *testing.T) {

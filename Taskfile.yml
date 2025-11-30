@@ -47,11 +47,11 @@ tasks:
     desc: Generate templ files
     deps: [install:templ]
     sources:
-      - internal/ui/web/**/*.templ
+      - internal/web/**/*.templ
     generates:
-      - internal/ui/web/**/*_templ.go
+      - internal/web/**/*_templ.go
     cmds:
-      - templ generate ./internal/ui/web/...
+      - templ generate ./internal/web/...
 
   sqlc:
     desc: Generate SQL code
@@ -66,16 +66,16 @@ tasks:
     desc: Build Tailwind CSS
     deps: [install:npm]
     sources:
-      - internal/ui/web/static/css/app.css
-      - internal/ui/web/**/*.templ
+      - internal/web/static/css/app.css
+      - internal/web/**/*.templ
       - '{{.FRONTEND_DIR}}/tailwind.config.js'
     generates:
-      - internal/ui/web/static/css/output.css
+      - internal/web/static/css/output.css
     cmds:
       - npx --prefix {{.FRONTEND_DIR}} tailwindcss
           -c {{.FRONTEND_DIR}}/tailwind.config.js
-          -i ./internal/ui/web/static/css/app.css
-          -o ./internal/ui/web/static/css/output.css
+          -i ./internal/web/static/css/app.css
+          -o ./internal/web/static/css/output.css
           --minify
 
   css:watch:
@@ -84,8 +84,8 @@ tasks:
     cmds:
       - npx --prefix {{.FRONTEND_DIR}} tailwindcss
           -c {{.FRONTEND_DIR}}/tailwind.config.js
-          -i ./internal/ui/web/static/css/app.css
-          -o ./internal/ui/web/static/css/output.css
+          -i ./internal/web/static/css/app.css
+          -o ./internal/web/static/css/output.css
           --watch
 
   #----------------------------------------------------------------------------
@@ -108,13 +108,13 @@ tasks:
   #----------------------------------------------------------------------------
   test:
     desc: Run tests
-    deps: [generate]
+    deps: [generate, css]
     cmds:
       - go test ./...
 
   test:race:
     desc: Run tests with race detector
-    deps: [generate]
+    deps: [generate, css]
     cmds:
       - go test -race ./...
 
@@ -122,11 +122,11 @@ tasks:
     desc: Run fuzz tests (30 seconds)
     deps: [generate]
     cmds:
-      - go test -fuzz=FuzzChatInput -fuzztime=30s ./internal/ui/web/handlers/ || true
+      - go test -fuzz=FuzzChatInput -fuzztime=30s ./internal/web/handlers/ || true
 
   test:cover:
     desc: Run tests with coverage
-    deps: [generate]
+    deps: [generate, css]
     cmds:
       - go test -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
@@ -135,7 +135,7 @@ tasks:
     desc: Verify embedded static assets (production build only)
     deps: [generate, css]
     cmds:
-      - go test -v ./internal/ui/web/static/
+      - go test -v ./internal/web/static/
 
   #----------------------------------------------------------------------------
   # Quality
@@ -149,7 +149,7 @@ tasks:
     desc: Format code
     cmds:
       - go fmt ./...
-      - templ fmt ./internal/ui/web/...
+      - templ fmt ./internal/web/...
 
   check:
     desc: Run all checks (lint, test, build)
@@ -174,8 +174,8 @@ tasks:
   clean:
     desc: Remove generated files and binaries
     cmds:
-      - find ./internal/ui/web -name "*_templ.go" -delete 2>/dev/null || true
-      - rm -f ./internal/ui/web/static/css/output.css
+      - find ./internal/web -name "*_templ.go" -delete 2>/dev/null || true
+      - rm -f ./internal/web/static/css/output.css
       - rm -f koopa koopa-cli tui.test
       - rm -f coverage.out coverage.html
 

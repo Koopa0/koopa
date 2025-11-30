@@ -50,7 +50,6 @@ func (d DangerLevel) String() string {
 }
 
 // ToolMetadata defines business properties for tools.
-// Follows design document specification (lines 601-605).
 type ToolMetadata struct {
 	// Name is the unique identifier of the tool.
 	NameField string

@@ -207,7 +207,9 @@ func setupBenchmarkDeps(b *testing.B) (*testutil.TestDBContainer, ai.Embedder, f
 
 	cleanup := func() {
 		// Clean up benchmark documents
-		_, _ = dbContainer.Pool.Exec(context.Background(), "DELETE FROM documents WHERE id LIKE 'bench-%'")
+		if _, err := dbContainer.Pool.Exec(context.Background(), "DELETE FROM documents WHERE id LIKE 'bench-%'"); err != nil {
+			b.Logf("cleanup warning: failed to delete benchmark documents: %v", err)
+		}
 		dbCleanup()
 	}
 

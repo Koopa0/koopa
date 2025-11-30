@@ -91,3 +91,6 @@ internal/ui/web/static/css/output.css
 
 # Generated templ files (optional - can be committed)
 # *_templ.go
+
+internal/web/component/_reference
+*.bak*

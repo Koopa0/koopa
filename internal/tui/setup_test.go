@@ -2,7 +2,6 @@
 
 // Package tui_test provides test fixtures for TUI integration tests.
 //
-// This file implements the package-local test setup pattern from Proposal 007.
 // It uses testutil primitives (Layer 1) to build TUI-specific test fixtures (Layer 2).
 //
 // Benefits over inline setup in integration_test.go:
