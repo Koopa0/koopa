@@ -9,9 +9,9 @@ temperature: 0.7
 max_tokens: 2048
 
 # Conversation history configuration
-# Maximum number of conversation messages to retain (default: 50, ~25 turns)
-# Set to 0 for unlimited (not recommended, increases token usage and memory)
-max_history_messages: 50
+# Maximum number of conversation messages to retain (default: 100)
+# Set to higher value if needed (max: 10000)
+max_history_messages: 100
 
 # PostgreSQL configuration (required for pgvector RAG functionality)
 postgres_host: "localhost"
@@ -79,6 +79,14 @@ mcp:
 # gemini_api_key: "your-api-key-here"
 
 # ==========================================
+# Security Configuration
+# ==========================================
+# HMAC secret for CSRF token generation (required for ./koopa serve)
+# Generate with: openssl rand -base64 32
+# Minimum 32 characters required
+hmac_secret: ""  # REQUIRED for serve mode - set this value
+
+# ==========================================
 # Environment Variable Support (Higher priority than config file)
 #
 # Supported environment variables (note KOOPA_ prefix for Viper-managed variables):
@@ -86,7 +94,7 @@ mcp:
 #   KOOPA_MODEL_NAME=gemini-2.5-pro               # Model name
 #   KOOPA_TEMPERATURE=0.8                         # Temperature parameter
 #   KOOPA_MAX_TOKENS=4096                         # Maximum tokens
-#   KOOPA_MAX_HISTORY_MESSAGES=100                # Maximum history messages
+#   KOOPA_MAX_HISTORY_MESSAGES=200                # Maximum history messages
 #   KOOPA_RAG_TOP_K=5                             # RAG document count
 #   KOOPA_EMBEDDER_MODEL=text-embedding-004       # Embedder model
 #   KOOPA_POSTGRES_HOST=localhost                 # PostgreSQL host
@@ -95,3 +103,7 @@ mcp:
 #   KOOPA_POSTGRES_PASSWORD=your-password         # PostgreSQL password
 #   KOOPA_POSTGRES_DB_NAME=koopa                  # PostgreSQL database name
 #   KOOPA_POSTGRES_SSL_MODE=disable               # PostgreSQL SSL mode
+#   KOOPA_HMAC_SECRET=your-32-char-secret         # HMAC secret (for serve mode)
+#
+# Note: GEMINI_API_KEY is the only variable that MUST be set as environment variable.
+# All other configuration can be in config.yaml or environment variables (env vars take priority).

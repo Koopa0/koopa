@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"slices"
 )
 
 // Validate validates configuration values.
@@ -15,7 +17,9 @@ func (c *Config) Validate() error {
 
 	// 1. API Key validation (required for all AI operations)
 	if os.Getenv("GEMINI_API_KEY") == "" {
-		return fmt.Errorf("%w: GEMINI_API_KEY environment variable is required", ErrMissingAPIKey)
+		return fmt.Errorf("%w: GEMINI_API_KEY environment variable is required\n"+
+			"Get your API key at: https://ai.google.dev/gemini-api/docs/api-key",
+			ErrMissingAPIKey)
 	}
 
 	// 2. Model configuration validation
@@ -55,6 +59,42 @@ func (c *Config) Validate() error {
 
 	if c.PostgresDBName == "" {
 		return fmt.Errorf("%w: database name cannot be empty", ErrInvalidPostgresDBName)
+	}
+
+	// 4. PostgreSQL password validation
+	if c.PostgresPassword == "" {
+		return fmt.Errorf("%w: postgres_password must be set in config.yaml",
+			ErrInvalidPostgresPassword)
+	}
+
+	// CRITICAL: Warn if using default dev password (but don't block - user might be in dev)
+	if c.PostgresPassword == "koopa_dev_password" {
+		slog.Warn("Using default development password for PostgreSQL",
+			"warning", "Change postgres_password in config.yaml for production deployments")
+	}
+
+	// Validate password strength (minimum 8 characters)
+	if len(c.PostgresPassword) < 8 {
+		return fmt.Errorf("%w: postgres_password must be at least 8 characters (got %d)",
+			ErrInvalidPostgresPassword, len(c.PostgresPassword))
+	}
+
+	// 5. PostgreSQL SSL mode validation
+	// DO NOT mutate config in Validate() - just validate
+	// Note: Even with setDefaults(), user can override with empty value in YAML
+	// Modern SSL modes only - exclude deprecated allow/prefer (MITM vulnerable)
+	// Reference: https://www.postgresql.org/docs/current/libpq-ssl.html
+	validSSLModes := []string{"disable", "require", "verify-ca", "verify-full"}
+	if c.PostgresSSLMode == "" {
+		return fmt.Errorf("%w: postgres_ssl_mode is empty (should have default from setDefaults)",
+			ErrInvalidPostgresSSLMode)
+	}
+
+	// Check if SSL mode is one of the valid PostgreSQL modes
+	if !slices.Contains(validSSLModes, c.PostgresSSLMode) {
+		return fmt.Errorf("%w: %q is not valid, must be one of: %v\n"+
+			"Note: 'allow' and 'prefer' modes are deprecated (vulnerable to MITM attacks)",
+			ErrInvalidPostgresSSLMode, c.PostgresSSLMode, validSSLModes)
 	}
 
 	return nil

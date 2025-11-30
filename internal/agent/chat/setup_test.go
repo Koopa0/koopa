@@ -3,7 +3,6 @@
 
 // Package chat_test provides test fixtures for chat agent integration tests.
 //
-// This file implements the package-local test setup pattern from Proposal 007.
 // It uses testutil primitives (Layer 1) to build chat-specific test fixtures (Layer 2).
 //
 // Benefits over testutil.AgentTestFramework:

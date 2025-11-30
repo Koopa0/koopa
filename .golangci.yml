@@ -401,6 +401,11 @@ linters:
         linters:
           - contextcheck
 
+      # contextcheck: templ components internally pass context through Render()
+      - path: internal/web/component/.*_ui_test\.go
+        linters:
+          - contextcheck
+
       # depguard: system tools intentionally use os/exec with security wrapper
       - path: internal/tools/system\.go
         linters:

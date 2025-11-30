@@ -84,6 +84,25 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: ./build/frontend
+        run: npm ci
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ files
+        run: templ generate ./internal/ui/web/...
+
+      - name: Build CSS
+        working-directory: ./build/frontend
+        run: npm run css:build
+
       - name: Wait for PostgreSQL to be ready
         run: |
           until pg_isready -h localhost -p 5432 -U koopa; do

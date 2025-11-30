@@ -27,15 +27,16 @@ func TestValidateSuccess(t *testing.T) {
 	}
 
 	cfg := &Config{
-		ModelName:       "gemini-2.5-flash",
-		Temperature:     0.7,
-		MaxTokens:       2048,
-		RAGTopK:         3,
-		EmbedderModel:   "text-embedding-004",
-		PostgresHost:    "localhost",
-		PostgresPort:    5432,
-		PostgresDBName:  "koopa",
-		PostgresSSLMode: "disable",
+		ModelName:        "gemini-2.5-flash",
+		Temperature:      0.7,
+		MaxTokens:        2048,
+		RAGTopK:          3,
+		EmbedderModel:    "text-embedding-004",
+		PostgresHost:     "localhost",
+		PostgresPort:     5432,
+		PostgresPassword: "test_password",
+		PostgresDBName:   "koopa",
+		PostgresSSLMode:  "disable",
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -143,14 +144,16 @@ func TestValidateTemperature(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:      "gemini-2.5-flash",
-				Temperature:    tt.temperature,
-				MaxTokens:      2048,
-				RAGTopK:        3,
-				EmbedderModel:  "text-embedding-004",
-				PostgresHost:   "localhost",
-				PostgresPort:   5432,
-				PostgresDBName: "koopa",
+				ModelName:        "gemini-2.5-flash",
+				Temperature:      tt.temperature,
+				MaxTokens:        2048,
+				RAGTopK:          3,
+				EmbedderModel:    "text-embedding-004",
+				PostgresHost:     "localhost",
+				PostgresPort:     5432,
+				PostgresPassword: "test_password",
+				PostgresDBName:   "koopa",
+				PostgresSSLMode:  "disable",
 			}
 
 			err := cfg.Validate()
@@ -195,14 +198,16 @@ func TestValidateMaxTokens(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:      "gemini-2.5-flash",
-				Temperature:    0.7,
-				MaxTokens:      tt.maxTokens,
-				RAGTopK:        3,
-				EmbedderModel:  "text-embedding-004",
-				PostgresHost:   "localhost",
-				PostgresPort:   5432,
-				PostgresDBName: "koopa",
+				ModelName:        "gemini-2.5-flash",
+				Temperature:      0.7,
+				MaxTokens:        tt.maxTokens,
+				RAGTopK:          3,
+				EmbedderModel:    "text-embedding-004",
+				PostgresHost:     "localhost",
+				PostgresPort:     5432,
+				PostgresPassword: "test_password",
+				PostgresDBName:   "koopa",
+				PostgresSSLMode:  "disable",
 			}
 
 			err := cfg.Validate()
@@ -247,14 +252,16 @@ func TestValidateRAGTopK(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:      "gemini-2.5-flash",
-				Temperature:    0.7,
-				MaxTokens:      2048,
-				RAGTopK:        tt.ragTopK,
-				EmbedderModel:  "text-embedding-004",
-				PostgresHost:   "localhost",
-				PostgresPort:   5432,
-				PostgresDBName: "koopa",
+				ModelName:        "gemini-2.5-flash",
+				Temperature:      0.7,
+				MaxTokens:        2048,
+				RAGTopK:          tt.ragTopK,
+				EmbedderModel:    "text-embedding-004",
+				PostgresHost:     "localhost",
+				PostgresPort:     5432,
+				PostgresPassword: "test_password",
+				PostgresDBName:   "koopa",
+				PostgresSSLMode:  "disable",
 			}
 
 			err := cfg.Validate()
@@ -363,14 +370,16 @@ func TestValidatePostgresPort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ModelName:      "gemini-2.5-flash",
-				Temperature:    0.7,
-				MaxTokens:      2048,
-				RAGTopK:        3,
-				EmbedderModel:  "text-embedding-004",
-				PostgresHost:   "localhost",
-				PostgresPort:   tt.port,
-				PostgresDBName: "koopa",
+				ModelName:        "gemini-2.5-flash",
+				Temperature:      0.7,
+				MaxTokens:        2048,
+				RAGTopK:          3,
+				EmbedderModel:    "text-embedding-004",
+				PostgresHost:     "localhost",
+				PostgresPort:     tt.port,
+				PostgresPassword: "test_password",
+				PostgresDBName:   "koopa",
+				PostgresSSLMode:  "disable",
 			}
 
 			err := cfg.Validate()
@@ -583,14 +592,16 @@ func BenchmarkValidate(b *testing.B) {
 	}()
 
 	cfg := &Config{
-		ModelName:      "gemini-2.5-flash",
-		Temperature:    0.7,
-		MaxTokens:      2048,
-		RAGTopK:        3,
-		EmbedderModel:  "text-embedding-004",
-		PostgresHost:   "localhost",
-		PostgresPort:   5432,
-		PostgresDBName: "koopa",
+		ModelName:        "gemini-2.5-flash",
+		Temperature:      0.7,
+		MaxTokens:        2048,
+		RAGTopK:          3,
+		EmbedderModel:    "text-embedding-004",
+		PostgresHost:     "localhost",
+		PostgresPort:     5432,
+		PostgresDBName:   "koopa",
+		PostgresPassword: "securepass123",
+		PostgresSSLMode:  "disable",
 	}
 
 	// Verify Validate() works before starting benchmark
@@ -601,5 +612,115 @@ func BenchmarkValidate(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		_ = cfg.Validate()
+	}
+}
+
+// TestValidatePostgresPassword tests PostgreSQL password validation
+func TestValidatePostgresPassword(t *testing.T) {
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	tests := []struct {
+		name      string
+		password  string
+		shouldErr bool
+		errSubstr string
+	}{
+		{"valid password", "securepass123", false, ""},
+		{"valid long password", "very_secure_password_with_many_chars", false, ""},
+		{"empty password", "", true, "must be set"},
+		{"too short 1 char", "a", true, "at least 8 characters"},
+		{"too short 7 chars", "1234567", true, "at least 8 characters"},
+		{"exactly 8 chars", "12345678", false, ""},
+		// Default password should be allowed but warns (tested separately)
+		{"default dev password", "koopa_dev_password", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				ModelName:        "gemini-2.5-flash",
+				Temperature:      0.7,
+				MaxTokens:        2048,
+				RAGTopK:          3,
+				EmbedderModel:    "text-embedding-004",
+				PostgresHost:     "localhost",
+				PostgresPort:     5432,
+				PostgresPassword: tt.password,
+				PostgresDBName:   "koopa",
+				PostgresSSLMode:  "disable",
+			}
+
+			err := cfg.Validate()
+			if tt.shouldErr && err == nil {
+				t.Errorf("expected error for password %q, got none", tt.password)
+			}
+			if !tt.shouldErr && err != nil {
+				t.Errorf("unexpected error for password %q: %v", tt.password, err)
+			}
+			if tt.shouldErr && err != nil {
+				if !errors.Is(err, ErrInvalidPostgresPassword) {
+					t.Errorf("error should be ErrInvalidPostgresPassword, got: %v", err)
+				}
+				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Errorf("error should contain %q, got: %v", tt.errSubstr, err)
+				}
+			}
+		})
+	}
+}
+
+// TestValidatePostgresSSLMode tests PostgreSQL SSL mode validation
+func TestValidatePostgresSSLMode(t *testing.T) {
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	tests := []struct {
+		name      string
+		sslMode   string
+		shouldErr bool
+	}{
+		{"valid disable", "disable", false},
+		{"valid require", "require", false},
+		{"valid verify-ca", "verify-ca", false},
+		{"valid verify-full", "verify-full", false},
+		{"invalid empty", "", true},
+		{"invalid mode", "invalid", true},
+		{"typo disabled", "disabled", true}, // Common mistake
+		{"typo enabled", "enabled", true},
+		{"deprecated allow", "allow", true},   // No longer supported
+		{"deprecated prefer", "prefer", true}, // No longer supported
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				ModelName:        "gemini-2.5-flash",
+				Temperature:      0.7,
+				MaxTokens:        2048,
+				RAGTopK:          3,
+				EmbedderModel:    "text-embedding-004",
+				PostgresHost:     "localhost",
+				PostgresPort:     5432,
+				PostgresPassword: "test_password",
+				PostgresDBName:   "koopa",
+				PostgresSSLMode:  tt.sslMode,
+			}
+
+			err := cfg.Validate()
+			if tt.shouldErr && err == nil {
+				t.Errorf("expected error for SSL mode %q, got none", tt.sslMode)
+			}
+			if !tt.shouldErr && err != nil {
+				t.Errorf("unexpected error for SSL mode %q: %v", tt.sslMode, err)
+			}
+			if tt.shouldErr && err != nil && !errors.Is(err, ErrInvalidPostgresSSLMode) {
+				t.Errorf("error should be ErrInvalidPostgresSSLMode, got: %v", err)
+			}
+		})
 	}
 }

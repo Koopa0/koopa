@@ -86,14 +86,11 @@ func executeCLI() error {
 	slog.SetDefault(logger)
 
 	// Load application configuration
+	// cfg.Validate() is called inside Load() for fail-fast behavior
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Verify required environment variables
-	if envErr := checkRequiredEnv(); envErr != nil {
-		return envErr
+		fmt.Fprintln(os.Stderr, err)
+		return err
 	}
 
 	// Create context with signal handling
@@ -188,29 +185,6 @@ func initLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, opts))
 }
 
-// checkRequiredEnv verifies that all required environment variables are set.
-//
-// Currently checks:
-//   - GEMINI_API_KEY: Required for AI model access
-//
-// Returns a user-friendly error with setup instructions if validation fails.
-func checkRequiredEnv() error {
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		// Print user-friendly error message to stderr
-		fmt.Fprintln(os.Stderr, "Error: GEMINI_API_KEY environment variable not set")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Koopa requires a Gemini API key to function.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "To set your API key:")
-		fmt.Fprintln(os.Stderr, "  export GEMINI_API_KEY=your-api-key")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Get your API key at: https://ai.google.dev/")
-
-		return fmt.Errorf("GEMINI_API_KEY not set")
-	}
-	return nil
-}
-
 // printVersionInfo displays version information and exits.
 // This is called for --version flags.
 func printVersionInfo() error {
@@ -228,13 +202,10 @@ func executeMCP() error {
 	slog.SetDefault(logger)
 
 	// Load application configuration
+	// cfg.Validate() is called inside Load() for fail-fast behavior
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Verify required environment variables
-	if err := checkRequiredEnv(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
 
@@ -253,14 +224,11 @@ func executeServe() error {
 	slog.SetDefault(logger)
 
 	// Load application configuration
+	// cfg.Validate() is called inside Load() for fail-fast behavior
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Verify required environment variables
-	if envErr := checkRequiredEnv(); envErr != nil {
-		return envErr
+		fmt.Fprintln(os.Stderr, err)
+		return err
 	}
 
 	// Parse and validate address from args or use default

@@ -1,0 +1,108 @@
+package component
+
+// CodeBlockProps configures the CodeBlock component.
+type CodeBlockProps struct {
+	Language    string // "go", "javascript", "python", etc. (Prism language identifier)
+	Code        string // Code content to display
+	ShowLines   bool   // Show line numbers (default: false)
+	Copyable    bool   // Show copy button (default: true)
+	MaxHeight   string // Max height before scroll (e.g., "20rem", "400px")
+	IsStreaming bool   // Defer Prism highlighting until streaming complete
+}
+
+// CodeBlock renders a syntax-highlighted code block with Prism.js.
+//
+// Usage:
+//   - Prism.js for syntax highlighting (loaded via base.templ)
+//   - Copy button with Alpine.js state
+//   - Line numbers (optional)
+//   - Streaming support: defer highlighting with data-streaming attribute
+//   - Auto-detect language via Prism classes
+//
+// Behavior:
+//   - Copy: Click button copies code to clipboard
+//   - Scroll: Max height with vertical scroll
+//   - Dark mode: Prism theme adapts automatically
+//   - Streaming: Re-highlight when data-streaming="false" changes
+//
+// Dependencies:
+//   - Prism.js core + language plugins
+//   - Prism line numbers plugin (if ShowLines=true)
+//   - Prism toolbar plugin (for copy button styling)
+templ CodeBlock(props CodeBlockProps) {
+	<div x-data="{ copied: false }"
+	     class="relative group rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-surface-900">
+
+		<!-- Header: Language + Copy button -->
+		<div class="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-surface-800 border-b border-gray-200 dark:border-gray-700">
+			<!-- Language label -->
+			if props.Language != "" {
+				<div class="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase">
+					{ props.Language }
+				</div>
+			} else {
+				<div class="text-xs font-medium text-gray-600 dark:text-gray-400">
+					Code
+				</div>
+			}
+
+			<!-- Copy button (if Copyable) -->
+			if props.Copyable {
+				<button type="button"
+				        @click="navigator.clipboard.writeText($refs.codeContent.textContent); copied = true; setTimeout(() => copied = false, 2000)"
+				        class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300
+				               bg-white dark:bg-surface-700 rounded border border-gray-300 dark:border-gray-600
+				               hover:bg-gray-50 dark:hover:bg-surface-600 transition-colors"
+				        aria-label="Copy code to clipboard">
+					<!-- Copy icon (default state) -->
+					<svg x-show="!copied"
+					     class="h-3.5 w-3.5"
+					     fill="none"
+					     viewBox="0 0 24 24"
+					     stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+					</svg>
+					<!-- Check icon (copied state) -->
+					<svg x-show="copied"
+					     x-cloak
+					     class="h-3.5 w-3.5 text-success-600 dark:text-success-400"
+					     fill="none"
+					     viewBox="0 0 24 24"
+					     stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+					</svg>
+					<span x-text="copied ? 'Copied!' : 'Copy'"></span>
+				</button>
+			}
+		</div>
+
+		<!-- Code content -->
+		<div class={ "overflow-auto " + maxHeightClass(props.MaxHeight) }>
+			<pre if props.ShowLines {
+				class="line-numbers"
+			}><code x-ref="codeContent"
+			        class={ prismLanguageClass(props.Language) }
+			        if props.IsStreaming {
+			            data-streaming="true"
+			        }>{ props.Code }</code></pre>
+		</div>
+	</div>
+}
+
+// prismLanguageClass returns Prism.js language class.
+func prismLanguageClass(language string) string {
+	if language == "" {
+		return "language-plaintext"
+	}
+	return "language-" + language
+}
+
+// maxHeightClass returns Tailwind max-height class.
+func maxHeightClass(maxHeight string) string {
+	if maxHeight == "" {
+		return "max-h-[32rem]" // Default: 512px
+	}
+	// Custom max-height passed as arbitrary value
+	// Example: "20rem" or "400px"
+	return "max-h-[" + maxHeight + "]"
+}
