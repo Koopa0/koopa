@@ -10,6 +10,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/koopa0/koopa-cli/internal/config"
 )
 
 // GoogleAISetup contains all resources needed for Google AI-based tests.
@@ -35,13 +36,16 @@ type GoogleAISetup struct {
 //	    store := knowledge.NewStore(pool, setup.Logger)
 //	    // Use setup.Embedder, setup.Genkit, setup.Logger
 //	}
-func SetupGoogleAI(t *testing.T) *GoogleAISetup {
-	t.Helper()
+//
+// Note: Accepts testing.TB interface to support both *testing.T (tests) and
+// *testing.B (benchmarks). This allows the same setup to be used in both contexts.
+func SetupGoogleAI(tb testing.TB) *GoogleAISetup {
+	tb.Helper()
 
 	// Check for required API key
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		t.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
+		tb.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
 	}
 
 	ctx := context.Background()
@@ -49,7 +53,7 @@ func SetupGoogleAI(t *testing.T) *GoogleAISetup {
 	// Find project root to get absolute path to prompts directory
 	projectRoot, err := findProjectRoot()
 	if err != nil {
-		t.Fatalf("Failed to find project root: %v", err)
+		tb.Fatalf("Failed to find project root: %v", err)
 	}
 	promptsDir := filepath.Join(projectRoot, "prompts")
 
@@ -58,8 +62,18 @@ func SetupGoogleAI(t *testing.T) *GoogleAISetup {
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
 		genkit.WithPromptDir(promptsDir))
 
-	// Create embedder
-	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")
+	// Nil check: genkit.Init returns nil on internal initialization failure
+	if g == nil {
+		tb.Fatal("Failed to initialize Genkit: genkit.Init returned nil")
+	}
+
+	// Create embedder using config constant for maintainability
+	embedder := googlegenai.GoogleAIEmbedder(g, config.DefaultEmbedderModel)
+
+	// Nil check: GoogleAIEmbedder returns nil if model lookup fails
+	if embedder == nil {
+		tb.Fatalf("Failed to create embedder: GoogleAIEmbedder returned nil for model %q", config.DefaultEmbedderModel)
+	}
 
 	// Create quiet logger for tests (discard all logs)
 	logger := slog.New(slog.DiscardHandler)

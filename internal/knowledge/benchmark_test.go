@@ -13,6 +13,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
 	"github.com/koopa0/koopa-cli/internal/testutil"
 )
@@ -185,19 +186,24 @@ func setupBenchmarkStore(b *testing.B, ctx context.Context, numDocs int) (*Store
 }
 
 // setupBenchmarkDeps creates the dependencies for benchmark tests.
-// Note: Benchmarks use direct setup instead of testutil because:
-// 1. testutil.SetupTestDB uses testcontainers which adds significant overhead
-// 2. Benchmarks need predictable, low-overhead setup
+// Uses testutil.SetupTestDB and config.DefaultEmbedderModel for consistency.
 func setupBenchmarkDeps(b *testing.B) (*testutil.TestDBContainer, ai.Embedder, func()) {
 	b.Helper()
 
-	// Use testutil for DB setup
-	dbContainer, dbCleanup := testutil.SetupTestDB(&testing.T{})
+	// Use testutil for DB setup (now accepts testing.TB interface)
+	dbContainer, dbCleanup := testutil.SetupTestDB(b)
 
-	// Setup embedder directly (testutil.SetupGoogleAI requires *testing.T)
+	// Setup embedder using config constant for maintainability
 	ctx := context.Background()
 	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
-	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")
+	if g == nil {
+		b.Fatal("Failed to initialize Genkit: genkit.Init returned nil")
+	}
+
+	embedder := googlegenai.GoogleAIEmbedder(g, config.DefaultEmbedderModel)
+	if embedder == nil {
+		b.Fatalf("Failed to create embedder: GoogleAIEmbedder returned nil for model %q", config.DefaultEmbedderModel)
+	}
 
 	cleanup := func() {
 		// Clean up benchmark documents

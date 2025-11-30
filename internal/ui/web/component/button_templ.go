@@ -14,10 +14,26 @@ type ButtonProps struct {
 	Size     string // "sm", "md", "lg"
 	Disabled bool
 	Loading  bool
-	Type     string // "button", "submit"
+	Type     ButtonType // Type-safe button type (use ButtonTypeButton, ButtonTypeSubmit, ButtonTypeReset)
+}
+
+// mapButtonSizeToSpinner maps button size to appropriate spinner size.
+// Spinner is always one size smaller than button for visual balance.
+func mapButtonSizeToSpinner(size string) string {
+	switch size {
+	case "sm":
+		return "xs" // Small button → Extra small spinner
+	case "md", "":
+		return "sm" // Medium button → Small spinner (default)
+	case "lg":
+		return "md" // Large button → Medium spinner
+	default:
+		return "sm" // Fallback
+	}
 }
 
 // Button renders an accessible button with various variants and states.
+// Type safety is enforced via ButtonType enum.
 func Button(props ButtonProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -56,8 +72,9 @@ func Button(props ButtonProps) templ.Component {
 			templ.KV("px-3 py-2.5 text-sm min-h-[44px]", props.Size == "sm"),
 			templ.KV("px-4 py-2.5 text-base min-h-[44px]", props.Size == "md" || props.Size == ""),
 			templ.KV("px-6 py-3 text-lg min-h-[48px]", props.Size == "lg"),
-			// Disabled state
-			templ.KV("opacity-50 cursor-not-allowed", props.Disabled || props.Loading),
+			// Disabled/Loading state
+			templ.KV("opacity-50 cursor-not-allowed", props.Disabled),
+			templ.KV("cursor-wait opacity-90", props.Loading && !props.Disabled),
 		}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
@@ -68,9 +85,9 @@ func Button(props ButtonProps) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(orDefault(props.Type, "button"))
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(props.Type.String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/web/component/button.templ`, Line: 15, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/web/component/button.templ`, Line: 31, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -108,7 +125,7 @@ func Button(props ButtonProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = Spinner(SpinnerProps{Size: "sm"}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = Spinner(SpinnerProps{Size: mapButtonSizeToSpinner(props.Size)}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

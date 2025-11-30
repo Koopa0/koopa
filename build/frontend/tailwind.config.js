@@ -56,9 +56,14 @@ module.exports = {
         warning: {
           50:  '#fffbeb',
           100: '#fef3c7',
+          200: '#fde68a',
+          300: '#fcd34d',  // Used in border-warning-300
+          400: '#fbbf24',  // Used in text-warning-400
           500: '#f59e0b',
           600: '#d97706',
           700: '#b45309',
+          800: '#92400e',  // Used in text-warning-800
+          900: '#78350f',  // Used in bg-warning-900/20
         },
       },
       // Animation for streaming indicator
