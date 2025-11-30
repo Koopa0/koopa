@@ -76,7 +76,8 @@ func TestResultToMCP_ErrorWithDetails(t *testing.T) {
 		Error: &tools.Error{
 			Code:    tools.ErrCodeValidation,
 			Message: "Validation error",
-			Details: map[string]any{"field": "path", "reason": "invalid"},
+			// Use whitelisted fields to ensure Details: appears in output
+			Details: map[string]any{"error_code": "VALIDATION_ERROR", "user_message": "invalid path"},
 		},
 	}
 
@@ -95,8 +96,72 @@ func TestResultToMCP_ErrorWithDetails(t *testing.T) {
 		t.Fatal("resultToMCP content is not TextContent")
 	}
 
-	// Should contain "Details:"
+	// Should contain "Details:" with whitelisted fields
 	if !contains(textContent.Text, "Details:") {
 		t.Errorf("resultToMCP text should contain 'Details:': %s", textContent.Text)
+	}
+}
+
+func TestSanitizeErrorDetails(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    any
+		wantKeys []string
+		noKeys   []string
+	}{
+		{
+			name: "whitelisted fields only",
+			input: map[string]any{
+				"error_code":   "TOOL_NOT_FOUND",
+				"error_type":   "ValidationError",
+				"user_message": "Tool not found",
+				"request_id":   "req-123",
+			},
+			wantKeys: []string{"error_code", "error_type", "user_message", "request_id"},
+			noKeys:   nil,
+		},
+		{
+			name: "sensitive fields redacted",
+			input: map[string]any{
+				"error_code": "INTERNAL_ERROR",
+				"stack":      "goroutine 1 [running]:\nmain.main()\n\t/path/to/file.go:42",
+				"env":        "GEMINI_API_KEY=sk-secret-key",
+				"api_key":    "sk-secret-key",
+				"password":   "hunter2",
+				"path":       "/home/user/secrets/config.json",
+			},
+			wantKeys: []string{"error_code"},
+			noKeys:   []string{"stack", "env", "api_key", "password", "path"},
+		},
+		{
+			name:     "non-map input returns empty",
+			input:    "string input",
+			wantKeys: nil,
+			noKeys:   nil,
+		},
+		{
+			name:     "nil input returns empty",
+			input:    nil,
+			wantKeys: nil,
+			noKeys:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeErrorDetails(tt.input)
+
+			for _, key := range tt.wantKeys {
+				if _, ok := result[key]; !ok {
+					t.Errorf("sanitizeErrorDetails() missing expected key %q", key)
+				}
+			}
+
+			for _, key := range tt.noKeys {
+				if _, ok := result[key]; ok {
+					t.Errorf("sanitizeErrorDetails() should not contain sensitive key %q", key)
+				}
+			}
+		})
 	}
 }

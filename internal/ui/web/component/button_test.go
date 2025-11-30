@@ -64,14 +64,14 @@ func TestButton_Variants(t *testing.T) {
 			name:  "loading button",
 			props: component.ButtonProps{Loading: true},
 			contains: []string{
-				"opacity-50",
-				"cursor-not-allowed",
+				"cursor-wait",
+				"opacity-90",
 				"animate-spin", // spinner
 			},
 		},
 		{
 			name:  "submit button",
-			props: component.ButtonProps{Type: "submit"},
+			props: component.ButtonProps{Type: component.ButtonTypeSubmit},
 			contains: []string{
 				"type=\"submit\"",
 			},
