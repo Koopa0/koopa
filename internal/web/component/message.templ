@@ -1,0 +1,115 @@
+package component
+
+import (
+	"net/url"
+	"time"
+)
+
+// MessageProps configures the MessageBubble component.
+type MessageProps struct {
+	ID          string
+	Content     string
+	Sender      string // "user", "assistant"
+	Timestamp   time.Time
+	IsStreaming bool
+	OOBSwap     bool // If true, adds hx-swap-oob="outerHTML" for SSE replacement
+}
+
+// MessageBubble renders a chat message with avatar and content.
+templ MessageBubble(props MessageProps) {
+	<article
+		id={ "msg-" + props.ID }
+		if props.OOBSwap {
+			hx-swap-oob="outerHTML"
+		}
+		role="article"
+		aria-label={ props.Sender + " message" }
+		class={
+			"flex gap-3 py-3 px-2",
+			templ.KV("justify-end", props.Sender == "user"),
+		}>
+		if props.Sender == "assistant" {
+			<div class="flex flex-col items-start gap-1">
+				<div class="flex gap-3">
+					@Avatar(AvatarProps{Name: "Koopa", Fallback: "K"})
+					<div class="max-w-[80%] rounded-2xl px-4 py-3 bg-gray-200 text-gray-900 dark:bg-surface-800 dark:text-white">
+						<div
+							id={ "msg-content-" + props.ID }
+							class="prose prose-sm max-w-none dark:prose-invert prose-p:my-2"
+							if props.IsStreaming {
+								aria-live="polite"
+								aria-atomic="false"
+							}>
+							{ props.Content }
+						</div>
+						if props.IsStreaming {
+							<div id={ "msg-status-" + props.ID } class="mt-2" role="status">
+								@StreamingIndicator()
+							</div>
+						}
+					</div>
+				</div>
+				if !props.Timestamp.IsZero() {
+					<time
+						id={ "msg-time-" + props.ID }
+						datetime={ props.Timestamp.Format(time.RFC3339) }
+						class="ml-12 text-xs opacity-50">
+						{ props.Timestamp.Format("15:04") }
+					</time>
+				}
+			</div>
+		}
+		if props.Sender == "user" {
+			<div class="flex flex-col items-end gap-1">
+				<div class="flex gap-3">
+					<div class="max-w-[80%] rounded-2xl px-4 py-3 bg-primary-600 text-white">
+						<div
+							id={ "msg-content-" + props.ID }
+							class="prose prose-sm max-w-none dark:prose-invert prose-p:my-2">
+							{ props.Content }
+						</div>
+					</div>
+					@Avatar(AvatarProps{Name: "User", Fallback: "U"})
+				</div>
+				if !props.Timestamp.IsZero() {
+					<time
+						id={ "msg-time-" + props.ID }
+						datetime={ props.Timestamp.Format(time.RFC3339) }
+						class="mr-12 text-xs opacity-50">
+						{ props.Timestamp.Format("15:04") }
+					</time>
+				}
+			</div>
+		}
+	</article>
+}
+
+// MessageShellProps configures the MessageShell component.
+type MessageShellProps struct {
+	ID        string
+	MsgID     string
+	SessionID string
+	Query     string
+}
+
+// MessageShell renders an assistant message placeholder with SSE connection.
+// This creates a message-scoped SSE connection for streaming.
+// The shell listens for SSE events:
+// - 'chunk' events update content via OOB swap (no explicit target needed - uses hx-swap-oob in response)
+// - 'done' event replaces entire message via OOB swap (closes connection via sse-close)
+templ MessageShell(props MessageShellProps) {
+	<article
+		id={ "msg-" + props.ID }
+		hx-ext="sse"
+		sse-connect={ "/genui/stream?msgId=" + props.MsgID + "&sessionId=" + props.SessionID + "&query=" + url.QueryEscape(props.Query) }
+		sse-swap="chunk,done"
+		sse-close="done,error"
+		class="flex gap-3 py-3 px-2">
+		@Avatar(AvatarProps{Name: "Koopa", Fallback: "K"})
+		<div class="max-w-[80%] rounded-2xl px-4 py-3 bg-gray-200 dark:bg-surface-800">
+			<div id={ "msg-content-" + props.MsgID } class="prose prose-sm dark:prose-invert" aria-live="polite">
+				@StreamingIndicator()
+			</div>
+		</div>
+	</article>
+}

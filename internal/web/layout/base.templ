@@ -1,0 +1,165 @@
+package layout
+
+// Base is the root HTML layout for all GenUI pages
+templ Base(title string) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="description" content="Koopa - AI Assistant"/>
+			<title>{ title } - Koopa</title>
+			<link href="/genui/static/css/output.css" rel="stylesheet"/>
+			<!-- Prism.js for syntax highlighting (bundled locally for CSP compliance) -->
+			<link href="/genui/static/css/prism/prism-tomorrow.min.css" rel="stylesheet"/>
+			<link href="/genui/static/css/prism/prism-line-numbers.css" rel="stylesheet"/>
+			<script>
+			// Set theme before render to prevent flash
+			(function() {
+				const theme = localStorage.getItem('theme') ||
+					(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+				document.documentElement.classList.toggle('dark', theme === 'dark');
+			})();
+		</script>
+			<!-- Alpine.js Component Helpers -->
+			<script>
+			// Alpine.js helper for tabs keyboard navigation
+			// Used by: Tabs component (internal/ui/web/component/tabs.templ)
+			document.addEventListener('alpine:init', () => {
+				Alpine.data('tabsNav', () => ({
+					focusPrev() {
+						const tabs = this.$el.querySelectorAll('[role="tab"]');
+						const index = Array.from(tabs).findIndex(t => t === document.activeElement);
+						if (index > 0) {
+							tabs[index - 1].focus();
+						} else {
+							tabs[tabs.length - 1].focus();  // Wrap to end
+						}
+					},
+					focusNext() {
+						const tabs = this.$el.querySelectorAll('[role="tab"]');
+						const index = Array.from(tabs).findIndex(t => t === document.activeElement);
+						if (index < tabs.length - 1) {
+							tabs[index + 1].focus();
+						} else {
+							tabs[0].focus();  // Wrap to start
+						}
+					},
+					focusFirst() {
+						const tabs = this.$el.querySelectorAll('[role="tab"]');
+						if (tabs.length > 0) tabs[0].focus();
+					},
+					focusLast() {
+						const tabs = this.$el.querySelectorAll('[role="tab"]');
+						if (tabs.length > 0) tabs[tabs.length - 1].focus();
+					}
+				}));
+			});
+		</script>
+		</head>
+		<body class="h-full bg-gray-50 text-gray-900 dark:bg-surface-950 dark:text-white antialiased">
+			<!-- Skip navigation for accessibility -->
+			<a
+				href="#main-content"
+				class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-primary-600 focus:text-white focus:rounded"
+			>
+				Skip to main content
+			</a>
+			{ children... }
+			<!-- Global containers for HTMX OOB swaps -->
+			<div
+				id="toast-container"
+				class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm"
+				aria-live="polite"
+				aria-atomic="false"
+			>
+				<!-- Toast notifications appended here via OOB -->
+			</div>
+			<div
+				id="modal-container"
+				class="fixed inset-0 z-40 hidden"
+				role="dialog"
+				aria-modal="true"
+			>
+				<!-- Modal dialogs rendered here -->
+			</div>
+			<script src="/genui/static/js/htmx.min.js"></script>
+			<script src="/genui/static/js/htmx-sse.js"></script>
+			<!-- Prism.js core + plugins (bundled locally for CSP compliance) -->
+			<script src="/genui/static/js/prism/prism-core.min.js"></script>
+			<script src="/genui/static/js/prism/prism-line-numbers.min.js"></script>
+			<script src="/genui/static/js/prism/prism-autoloader.min.js"></script>
+			<!-- Alpine.js for UI state management (bundled locally for CSP compliance) -->
+			<script defer src="/genui/static/js/alpine.min.js"></script>
+			<script>
+			// Auto-highlight code blocks when streaming completes
+			document.addEventListener('htmx:afterSwap', function(event) {
+				const codeBlocks = event.detail.target.querySelectorAll('[data-streaming="false"]');
+				codeBlocks.forEach(block => {
+					block.removeAttribute('data-streaming');
+					Prism.highlightElement(block);
+				});
+			});
+
+			// Global HTMX CSRF token configuration
+			// Only inject CSRF token for non-form elements (buttons, links with hx-get, etc.)
+			// Forms already serialize hidden inputs, so injecting would create duplicates
+			document.body.addEventListener('htmx:configRequest', function(event) {
+				// Skip forms - they already include csrf_token as hidden input
+				if (event.detail.elt.tagName === 'FORM') {
+					return;
+				}
+
+				// For non-form elements, find nearest form and inject its CSRF token
+				const csrfToken = event.detail.elt.closest('form')?.querySelector('[name="csrf_token"]')?.value;
+				if (csrfToken) {
+					event.detail.parameters['csrf_token'] = csrfToken;
+				}
+			});
+
+			// Global HTMX error handlers
+			document.addEventListener('htmx:responseError', function(evt) {
+				console.error('HTMX Error:', evt.detail);
+
+				// Show toast notification
+				const toast = document.createElement('div');
+				toast.className = 'fixed bottom-4 right-4 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg z-50';
+				toast.textContent = 'Request failed. Please try again.';
+				document.body.appendChild(toast);
+
+				setTimeout(() => toast.remove(), 5000);
+			});
+
+			document.addEventListener('htmx:sendError', function(evt) {
+				console.error('HTMX Network Error:', evt.detail);
+
+				const toast = document.createElement('div');
+				toast.className = 'fixed bottom-4 right-4 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg z-50';
+				toast.textContent = 'Network error. Please check your connection.';
+				document.body.appendChild(toast);
+
+				setTimeout(() => toast.remove(), 5000);
+			});
+		</script>
+		</body>
+	</html>
+}
+
+// DualPanel is a two-column layout for chat + artifact canvas
+templ DualPanel() {
+	<div class="flex h-full">
+		<!-- Main chat panel -->
+		<main id="main-content" class="flex flex-1 flex-col overflow-hidden">
+			{ children... }
+		</main>
+		<!-- Artifact canvas (hidden by default, shown via HTMX) -->
+		<aside
+			id="artifact-panel"
+			class="hidden w-[45%] border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-900 overflow-hidden lg:flex lg:flex-col"
+		>
+			<div id="artifact-content" class="flex-1 overflow-auto p-4">
+				<!-- Artifact content injected here -->
+			</div>
+		</aside>
+	</div>
+}

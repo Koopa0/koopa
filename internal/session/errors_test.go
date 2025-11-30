@@ -301,12 +301,12 @@ func FuzzNormalizeBranch(f *testing.F) {
 		"main\u0000.research", // Embedded null
 		"main\u3002research",  // Ideographic full stop
 
-		// Double URL encoding attacks (QA Master P1-3 fix)
+		// Double URL encoding attacks
 		"%252e%252e",             // Double-encoded ".."
 		"main%252e%252e%252fetc", // Double-encoded path traversal
 		"%25252e%25252e",         // Triple-encoded ".."
 
-		// UTF-8 overlong encoding attacks (QA Master P1-3 fix)
+		// UTF-8 overlong encoding attacks
 		"%c0%ae%c0%ae",       // Overlong ".." (2-byte)
 		"%e0%80%ae%e0%80%ae", // Overlong ".." (3-byte)
 		"main%c0%aeetc",      // Overlong "." in path
