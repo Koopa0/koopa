@@ -151,6 +151,102 @@ func TestFindAllEvents(t *testing.T) {
 	}
 }
 
+// TestParseSSEEvents_IncompleteStream tests lenient mode handling of truncated streams
+func TestParseSSEEvents_IncompleteStream(t *testing.T) {
+	// Stream without trailing empty line - should still parse the event
+	body := `event: chunk
+data: Hello`
+
+	events := ParseSSEEvents(t, body)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event from incomplete stream, got %d", len(events))
+	}
+
+	if events[0].Type != "chunk" {
+		t.Errorf("expected event type 'chunk', got %q", events[0].Type)
+	}
+	if events[0].Data != "Hello" {
+		t.Errorf("expected data 'Hello', got %q", events[0].Data)
+	}
+}
+
+// TestParseSSEEvents_IncompleteStreamMultipleEvents tests partial stream with complete and incomplete events
+func TestParseSSEEvents_IncompleteStreamMultipleEvents(t *testing.T) {
+	// First event complete, second event missing trailing newline
+	body := `event: chunk
+data: First
+
+event: chunk
+data: Second`
+
+	events := ParseSSEEvents(t, body)
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+
+	if events[0].Data != "First" {
+		t.Errorf("expected first data 'First', got %q", events[0].Data)
+	}
+	if events[1].Data != "Second" {
+		t.Errorf("expected second data 'Second', got %q", events[1].Data)
+	}
+}
+
+// TestParseSSEEvents_EventOnlyNoData tests event type without data (allowed per SSE spec)
+func TestParseSSEEvents_EventOnlyNoData(t *testing.T) {
+	body := `event: ping
+
+`
+	events := ParseSSEEvents(t, body)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	if events[0].Type != "ping" {
+		t.Errorf("expected event type 'ping', got %q", events[0].Type)
+	}
+	if events[0].Data != "" {
+		t.Errorf("expected empty data, got %q", events[0].Data)
+	}
+}
+
+// TestParseSSEEvents_EmptyInput tests that empty input returns no events
+func TestParseSSEEvents_EmptyInput(t *testing.T) {
+	events := ParseSSEEvents(t, "")
+
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events for empty input, got %d", len(events))
+	}
+}
+
+// TestParseSSEEvents_CommentsOnly tests that comment-only stream returns no events
+func TestParseSSEEvents_CommentsOnly(t *testing.T) {
+	body := `: this is a comment
+: another comment
+`
+	events := ParseSSEEvents(t, body)
+
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events for comments-only stream, got %d", len(events))
+	}
+}
+
+// TestParseSSEEvents_EmptyLinesOnly tests that empty lines are ignored
+func TestParseSSEEvents_EmptyLinesOnly(t *testing.T) {
+	body := `
+
+
+`
+	events := ParseSSEEvents(t, body)
+
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events for empty-lines-only stream, got %d", len(events))
+	}
+}
+
 func TestDiscardLogger(t *testing.T) {
 	logger := DiscardLogger()
 	if logger == nil {

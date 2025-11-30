@@ -10,10 +10,11 @@ import templruntime "github.com/a-h/templ/runtime"
 
 // SpinnerProps configures the Spinner component.
 type SpinnerProps struct {
-	Size string // "sm", "md", "lg"
+	Size string // "xs", "sm", "md", "lg"
 }
 
 // Spinner renders an animated loading indicator.
+// Size "xs" is used for small buttons (via mapButtonSizeToSpinner).
 func Spinner(props SpinnerProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -36,6 +37,7 @@ func Spinner(props SpinnerProps) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		var templ_7745c5c3_Var2 = []any{"animate-spin",
+			templ.KV("h-3 w-3", props.Size == "xs"),
 			templ.KV("h-4 w-4", props.Size == "sm" || props.Size == ""),
 			templ.KV("h-6 w-6", props.Size == "md"),
 			templ.KV("h-8 w-8", props.Size == "lg"),

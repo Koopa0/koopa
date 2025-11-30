@@ -2,14 +2,16 @@ package component
 
 // SpinnerProps configures the Spinner component.
 type SpinnerProps struct {
-	Size string // "sm", "md", "lg"
+	Size string // "xs", "sm", "md", "lg"
 }
 
 // Spinner renders an animated loading indicator.
+// Size "xs" is used for small buttons (via mapButtonSizeToSpinner).
 templ Spinner(props SpinnerProps) {
 	<svg
 		class={
 			"animate-spin",
+			templ.KV("h-3 w-3", props.Size == "xs"),
 			templ.KV("h-4 w-4", props.Size == "sm" || props.Size == ""),
 			templ.KV("h-6 w-6", props.Size == "md"),
 			templ.KV("h-8 w-8", props.Size == "lg"),

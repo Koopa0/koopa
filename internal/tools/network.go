@@ -203,8 +203,6 @@ type SearchResult struct {
 }
 
 // search performs web search via SearXNG.
-//
-//nolint:gocyclo // HTTP status handling requires branching for graceful degradation
 func (nt *NetworkToolset) search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
 	// Validate required fields
 	if strings.TrimSpace(input.Query) == "" {

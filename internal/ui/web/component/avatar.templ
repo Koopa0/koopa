@@ -2,27 +2,34 @@ package component
 
 // AvatarProps configures the Avatar component.
 type AvatarProps struct {
-	Name     string // Used for aria-label
-	Src      string // Image URL (optional)
-	Fallback string // Fallback text (e.g., initials)
+	Name     string // Used for aria-label and initials fallback
+	Src      string // Image URL (optional, validated for XSS/SSRF)
+	Fallback string // Explicit fallback text (e.g., custom initials)
 	Size     string // "sm", "md", "lg"
 }
 
 // Avatar renders a user or assistant avatar with image or fallback initials.
+// URL validation prevents XSS (javascript:, data:) and SSRF attacks.
+// Fallback chain: Src (if valid) → Fallback → Name initials → "?"
 templ Avatar(props AvatarProps) {
 	<div
 		role="img"
-		aria-label={ props.Name }
+		aria-label={ orDefault(props.Name, "Avatar") }
 		class={
 			"inline-flex items-center justify-center rounded-full bg-primary-600 text-white font-medium flex-shrink-0",
 			templ.KV("h-8 w-8 text-sm", props.Size == "sm" || props.Size == ""),
 			templ.KV("h-10 w-10 text-base", props.Size == "md"),
 			templ.KV("h-12 w-12 text-lg", props.Size == "lg"),
 		}>
-		if props.Src != "" {
+		if props.Src != "" && isValidAvatarURL(props.Src) {
 			<img src={ props.Src } alt={ props.Name } class="h-full w-full rounded-full object-cover"/>
-		} else {
+		} else if props.Fallback != "" {
 			<span>{ props.Fallback }</span>
+		} else if props.Name != "" {
+			<span>{ getInitials(props.Name) }</span>
+		} else {
+			// Default fallback when both Src and Name are empty
+			<span aria-hidden="true">?</span>
 		}
 	</div>
 }

@@ -61,8 +61,11 @@ type TestDBContainer struct {
 //	    err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM documents").Scan(&count)
 //	    require.NoError(t, err)
 //	}
-func SetupTestDB(t *testing.T) (*TestDBContainer, func()) {
-	t.Helper()
+//
+// Note: Accepts testing.TB interface to support both *testing.T (tests) and
+// *testing.B (benchmarks). This allows the same setup to be used in both contexts.
+func SetupTestDB(tb testing.TB) (*TestDBContainer, func()) {
+	tb.Helper()
 
 	ctx := context.Background()
 
@@ -78,35 +81,35 @@ func SetupTestDB(t *testing.T) (*TestDBContainer, func()) {
 				WithStartupTimeout(60*time.Second)),
 	)
 	if err != nil {
-		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+		tb.Fatalf("Failed to start PostgreSQL container: %v", err)
 	}
 
 	// Get connection string
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to get connection string: %v", err)
+		tb.Fatalf("Failed to get connection string: %v", err)
 	}
 
 	// Create connection pool
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to create connection pool: %v", err)
+		tb.Fatalf("Failed to create connection pool: %v", err)
 	}
 
 	// Verify connection
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to ping database: %v", err)
+		tb.Fatalf("Failed to ping database: %v", err)
 	}
 
 	// Run migrations
 	if err := runMigrations(ctx, pool); err != nil {
 		pool.Close()
 		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to run migrations: %v", err)
+		tb.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	container := &TestDBContainer{
