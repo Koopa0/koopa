@@ -2,11 +2,16 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/koopa0/koopa-cli/internal/web/handlers"
 )
 
 // TestLoggingMiddleware_CapturesMetrics verifies that the middleware logs request metrics.
@@ -250,6 +255,265 @@ func TestRecoveryMiddleware_NoPanic(t *testing.T) {
 	}
 }
 
+// TestGetSessionID verifies session ID retrieval from context.
+func TestGetSessionID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		setupCtx  func() context.Context
+		wantOK    bool
+		wantIsNil bool
+	}{
+		{
+			name: "session ID exists in context",
+			setupCtx: func() context.Context {
+				sessionID := uuid.New()
+				return context.WithValue(context.Background(), ctxKeySessionID, sessionID)
+			},
+			wantOK:    true,
+			wantIsNil: false,
+		},
+		{
+			name: "session ID not in context",
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantOK:    false,
+			wantIsNil: true,
+		},
+		{
+			name: "wrong type in context",
+			setupCtx: func() context.Context {
+				return context.WithValue(context.Background(), ctxKeySessionID, "not-a-uuid")
+			},
+			wantOK:    false,
+			wantIsNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := tt.setupCtx()
+			sessionID, ok := GetSessionID(ctx)
+
+			if ok != tt.wantOK {
+				t.Errorf("GetSessionID() ok = %v, want %v", ok, tt.wantOK)
+			}
+
+			if tt.wantIsNil && sessionID != uuid.Nil {
+				t.Errorf("GetSessionID() returned non-nil UUID when not expected")
+			}
+
+			if !tt.wantIsNil && sessionID == uuid.Nil && tt.wantOK {
+				t.Errorf("GetSessionID() returned nil UUID when session should exist")
+			}
+		})
+	}
+}
+
+// TestRequireSession is tested in integration tests (pages_history_test.go)
+// because it requires a real database store to call GetOrCreate().
+// Unit tests focus on GetSessionID and RequireCSRF which don't need database access.
+
+// TestRequireCSRF verifies CSRF validation middleware.
+func TestRequireCSRF(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil))
+	sessions := handlers.NewSessions(nil, []byte("test-secret-key-at-least-32-characters-long"), true)
+
+	t.Run("success: valid CSRF token", func(t *testing.T) {
+		t.Parallel()
+
+		// Create session and CSRF token
+		sessionID := uuid.New()
+		csrfToken := sessions.NewCSRFToken(sessionID)
+
+		// Handler that should be called
+		called := false
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		})
+
+		middleware := RequireCSRF(sessions, logger)
+		wrapped := middleware(handler)
+
+		// Create request with session in context and valid CSRF token
+		form := url.Values{}
+		form.Set("csrf_token", csrfToken)
+		form.Set("content", "test message")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		ctx := context.WithValue(req.Context(), ctxKeySessionID, sessionID)
+		req = req.WithContext(ctx)
+
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		// Verify
+		if rec.Code != http.StatusOK {
+			t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
+		}
+
+		if !called {
+			t.Error("Handler was not called despite valid CSRF token")
+		}
+	})
+
+	t.Run("skip validation for GET request", func(t *testing.T) {
+		t.Parallel()
+
+		called := false
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		})
+
+		middleware := RequireCSRF(sessions, logger)
+		wrapped := middleware(handler)
+
+		// GET request without CSRF token should pass
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
+		}
+
+		if !called {
+			t.Error("Handler was not called for safe GET request")
+		}
+	})
+
+	t.Run("skip validation for HEAD request", func(t *testing.T) {
+		t.Parallel()
+
+		called := false
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		})
+
+		middleware := RequireCSRF(sessions, logger)
+		wrapped := middleware(handler)
+
+		req := httptest.NewRequest(http.MethodHead, "/test", nil)
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
+		}
+
+		if !called {
+			t.Error("Handler was not called for safe HEAD request")
+		}
+	})
+
+	t.Run("fail: session ID not in context", func(t *testing.T) {
+		t.Parallel()
+
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Error("Handler should not be called when session ID missing")
+		})
+
+		middleware := RequireCSRF(sessions, logger)
+		wrapped := middleware(handler)
+
+		form := url.Values{}
+		form.Set("csrf_token", "any-token")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		// No session ID in context
+
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("Status = %d, want %d", rec.Code, http.StatusForbidden)
+		}
+
+		body := strings.TrimSpace(rec.Body.String())
+		if !strings.Contains(body, "session required") {
+			t.Errorf("Body = %q, want session error", body)
+		}
+	})
+
+	t.Run("fail: invalid CSRF token", func(t *testing.T) {
+		t.Parallel()
+
+		sessionID := uuid.New()
+
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Error("Handler should not be called with invalid CSRF token")
+		})
+
+		middleware := RequireCSRF(sessions, logger)
+		wrapped := middleware(handler)
+
+		form := url.Values{}
+		form.Set("csrf_token", "invalid-token-12345")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		ctx := context.WithValue(req.Context(), ctxKeySessionID, sessionID)
+		req = req.WithContext(ctx)
+
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("Status = %d, want %d", rec.Code, http.StatusForbidden)
+		}
+
+		body := strings.TrimSpace(rec.Body.String())
+		if !strings.Contains(body, "CSRF validation failed") {
+			t.Errorf("Body = %q, want CSRF error", body)
+		}
+	})
+
+	t.Run("fail: missing CSRF token", func(t *testing.T) {
+		t.Parallel()
+
+		sessionID := uuid.New()
+
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Error("Handler should not be called without CSRF token")
+		})
+
+		middleware := RequireCSRF(sessions, logger)
+		wrapped := middleware(handler)
+
+		// Form without CSRF token
+		form := url.Values{}
+		form.Set("content", "test message")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		ctx := context.WithValue(req.Context(), ctxKeySessionID, sessionID)
+		req = req.WithContext(ctx)
+
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("Status = %d, want %d", rec.Code, http.StatusForbidden)
+		}
+
+		body := strings.TrimSpace(rec.Body.String())
+		if !strings.Contains(body, "CSRF validation failed") {
+			t.Errorf("Body = %q, want CSRF error", body)
+		}
+	})
+}
+
 // flushableRecorder is a custom ResponseRecorder that implements http.Flusher.
 type flushableRecorder struct {
 	*httptest.ResponseRecorder
@@ -258,4 +522,193 @@ type flushableRecorder struct {
 
 func (f *flushableRecorder) Flush() {
 	f.flushed = true
+}
+
+// TestMethodOverride verifies the _method form field override middleware.
+func TestMethodOverride(t *testing.T) {
+	t.Parallel()
+
+	// Helper to create handler that records the method it sees
+	makeHandler := func(gotMethod *string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*gotMethod = r.Method
+			w.WriteHeader(http.StatusOK)
+		})
+	}
+
+	t.Run("POST with _method=DELETE converts to DELETE", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("_method", "DELETE")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodDelete {
+			t.Errorf("Method = %q, want %q", gotMethod, http.MethodDelete)
+		}
+	})
+
+	t.Run("POST with _method=PUT converts to PUT", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("_method", "PUT")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodPut {
+			t.Errorf("Method = %q, want %q", gotMethod, http.MethodPut)
+		}
+	})
+
+	t.Run("POST with _method=PATCH converts to PATCH", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("_method", "PATCH")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodPatch {
+			t.Errorf("Method = %q, want %q", gotMethod, http.MethodPatch)
+		}
+	})
+
+	t.Run("POST with _method=GET stays POST (security)", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("_method", "GET")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodPost {
+			t.Errorf("Method = %q, want %q (should not allow GET override)", gotMethod, http.MethodPost)
+		}
+	})
+
+	t.Run("POST without _method stays POST", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("content", "test")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodPost {
+			t.Errorf("Method = %q, want %q", gotMethod, http.MethodPost)
+		}
+	})
+
+	t.Run("GET with _method=DELETE stays GET (only POST is overridden)", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		req := httptest.NewRequest(http.MethodGet, "/test?_method=DELETE", nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodGet {
+			t.Errorf("Method = %q, want %q (only POST should be overridable)", gotMethod, http.MethodGet)
+		}
+	})
+
+	t.Run("XSS injection in _method is ignored", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("_method", "<script>alert('xss')</script>")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodPost {
+			t.Errorf("Method = %q, want %q (XSS payload should be ignored)", gotMethod, http.MethodPost)
+		}
+	})
+
+	t.Run("empty _method stays POST", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("_method", "")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodPost {
+			t.Errorf("Method = %q, want %q", gotMethod, http.MethodPost)
+		}
+	})
+
+	t.Run("lowercase _method=delete stays POST (case sensitive)", func(t *testing.T) {
+		t.Parallel()
+
+		var gotMethod string
+		handler := MethodOverride(makeHandler(&gotMethod))
+
+		form := url.Values{}
+		form.Set("_method", "delete")
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if gotMethod != http.MethodPost {
+			t.Errorf("Method = %q, want %q (lowercase should be ignored)", gotMethod, http.MethodPost)
+		}
+	})
 }

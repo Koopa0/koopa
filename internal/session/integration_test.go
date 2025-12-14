@@ -894,6 +894,306 @@ func TestStore_SQLInjectionViaSessionID(t *testing.T) {
 	assert.Equal(t, "Test Session", loaded.Title)
 }
 
+// =============================================================================
+// Canvas Mode Tests
+// =============================================================================
+
+// TestStore_UpdateCanvasMode tests toggling canvas mode for a session.
+func TestStore_UpdateCanvasMode(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create a session
+	session, err := store.CreateSession(ctx, "Canvas Mode Test", "gemini-2.5-flash", "")
+	require.NoError(t, err)
+
+	// Verify initial state (canvas mode defaults to false)
+	retrieved, err := store.GetSession(ctx, session.ID)
+	require.NoError(t, err)
+	assert.False(t, retrieved.CanvasMode, "initial canvas mode should be false")
+
+	// Enable canvas mode
+	err = store.UpdateCanvasMode(ctx, session.ID, true)
+	require.NoError(t, err, "UpdateCanvasMode(true) should not error")
+
+	// Verify canvas mode is enabled
+	retrieved, err = store.GetSession(ctx, session.ID)
+	require.NoError(t, err)
+	assert.True(t, retrieved.CanvasMode, "canvas mode should be true after enabling")
+
+	// Disable canvas mode
+	err = store.UpdateCanvasMode(ctx, session.ID, false)
+	require.NoError(t, err, "UpdateCanvasMode(false) should not error")
+
+	// Verify canvas mode is disabled
+	retrieved, err = store.GetSession(ctx, session.ID)
+	require.NoError(t, err)
+	assert.False(t, retrieved.CanvasMode, "canvas mode should be false after disabling")
+}
+
+// TestStore_UpdateCanvasMode_NonExistentSession tests updating canvas mode for non-existent session.
+func TestStore_UpdateCanvasMode_NonExistentSession(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Try to update canvas mode for non-existent session
+	nonExistentID := uuid.New()
+	err := store.UpdateCanvasMode(ctx, nonExistentID, true)
+	// Note: PostgreSQL UPDATE with WHERE returns no error even if 0 rows affected
+	// This behavior is acceptable - the operation succeeds but affects nothing
+	// However, the session won't have the canvas mode set because it doesn't exist
+	assert.NoError(t, err, "UpdateCanvasMode should not error for non-existent session (0 rows affected)")
+}
+
+// TestStore_SaveAndGetArtifact tests creating and retrieving artifacts.
+func TestStore_SaveAndGetArtifact(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create a session
+	session, err := store.CreateSession(ctx, "Artifact Test", "gemini-2.5-flash", "")
+	require.NoError(t, err)
+
+	// Create an artifact
+	artifact := &Artifact{
+		Type:     "code",
+		Language: "go",
+		Title:    "Hello World",
+		Content:  "package main\n\nfunc main() {\n\tprintln(\"Hello, World!\")\n}",
+	}
+
+	saved, err := store.SaveArtifact(ctx, session.ID, nil, artifact)
+	require.NoError(t, err, "SaveArtifact should not error")
+	require.NotNil(t, saved, "saved artifact should not be nil")
+
+	// Verify saved artifact fields
+	assert.NotEqual(t, uuid.Nil, saved.ID, "artifact ID should be set")
+	assert.Equal(t, session.ID, saved.SessionID, "session ID should match")
+	assert.Equal(t, artifact.Type, saved.Type, "type should match")
+	assert.Equal(t, artifact.Language, saved.Language, "language should match")
+	assert.Equal(t, artifact.Title, saved.Title, "title should match")
+	assert.Equal(t, artifact.Content, saved.Content, "content should match")
+	assert.Equal(t, 1, saved.SequenceNumber, "first artifact should have sequence 1")
+	assert.NotZero(t, saved.CreatedAt, "created_at should be set")
+
+	// Retrieve latest artifact
+	retrieved, err := store.GetLatestArtifact(ctx, session.ID)
+	require.NoError(t, err, "GetLatestArtifact should not error")
+	require.NotNil(t, retrieved, "retrieved artifact should not be nil")
+
+	// Verify retrieved matches saved
+	assert.Equal(t, saved.ID, retrieved.ID, "IDs should match")
+	assert.Equal(t, saved.Type, retrieved.Type, "types should match")
+	assert.Equal(t, saved.Language, retrieved.Language, "languages should match")
+	assert.Equal(t, saved.Title, retrieved.Title, "titles should match")
+	assert.Equal(t, saved.Content, retrieved.Content, "contents should match")
+}
+
+// TestStore_GetLatestArtifact_NoArtifacts tests retrieving artifact when none exist.
+func TestStore_GetLatestArtifact_NoArtifacts(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create a session without any artifacts
+	session, err := store.CreateSession(ctx, "No Artifacts Test", "gemini-2.5-flash", "")
+	require.NoError(t, err)
+
+	// Try to get latest artifact
+	artifact, err := store.GetLatestArtifact(ctx, session.ID)
+
+	// Should return ErrArtifactNotFound
+	assert.ErrorIs(t, err, ErrArtifactNotFound, "should return ErrArtifactNotFound")
+	assert.Nil(t, artifact, "artifact should be nil")
+}
+
+// TestStore_GetLatestArtifact_ReturnsNewest tests that GetLatestArtifact returns the most recent.
+func TestStore_GetLatestArtifact_ReturnsNewest(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create a session
+	session, err := store.CreateSession(ctx, "Multiple Artifacts Test", "gemini-2.5-flash", "")
+	require.NoError(t, err)
+
+	// Save multiple artifacts
+	artifacts := []*Artifact{
+		{Type: "code", Language: "go", Title: "First", Content: "first content"},
+		{Type: "markdown", Title: "Second", Content: "# Second"},
+		{Type: "code", Language: "python", Title: "Third", Content: "print('third')"},
+	}
+
+	for _, a := range artifacts {
+		_, err := store.SaveArtifact(ctx, session.ID, nil, a)
+		require.NoError(t, err)
+	}
+
+	// Get latest artifact
+	latest, err := store.GetLatestArtifact(ctx, session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, latest)
+
+	// Should be the last one saved
+	assert.Equal(t, "Third", latest.Title, "should return most recently saved artifact")
+	assert.Equal(t, "python", latest.Language, "language should match")
+	assert.Equal(t, 3, latest.SequenceNumber, "third artifact should have sequence 3")
+}
+
+// TestStore_SaveArtifact_WithMessageID tests saving artifact linked to a message.
+func TestStore_SaveArtifact_WithMessageID(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create a session
+	session, err := store.CreateSession(ctx, "Artifact with Message Test", "gemini-2.5-flash", "")
+	require.NoError(t, err)
+
+	// Add a message to get a message ID
+	userContent := []*ai.Part{ai.NewTextPart("Generate hello world code")}
+	assistantID := uuid.New()
+
+	msgPair, err := store.CreateMessagePair(ctx, session.ID, "main", userContent, assistantID)
+	require.NoError(t, err)
+
+	// Create artifact linked to the assistant message
+	artifact := &Artifact{
+		Type:    "code",
+		Title:   "Generated Code",
+		Content: "def hello(): print('hello')",
+	}
+
+	saved, err := store.SaveArtifact(ctx, session.ID, &msgPair.AssistantMsgID, artifact)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+
+	// Verify message ID is linked
+	require.NotNil(t, saved.MessageID, "message ID should be set")
+	assert.Equal(t, msgPair.AssistantMsgID, *saved.MessageID, "message ID should match assistant message")
+}
+
+// TestStore_ConcurrentCanvasMode tests concurrent canvas mode updates.
+func TestStore_ConcurrentCanvasMode(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create a session
+	session, err := store.CreateSession(ctx, "Concurrent Canvas Test", "gemini-2.5-flash", "")
+	require.NoError(t, err)
+
+	const numGoroutines = 10
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines*2)
+
+	// Concurrent toggle on/off operations
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(2)
+
+		// Turn on
+		go func() {
+			defer wg.Done()
+			if err := store.UpdateCanvasMode(ctx, session.ID, true); err != nil {
+				errors <- err
+			}
+		}()
+
+		// Turn off
+		go func() {
+			defer wg.Done()
+			if err := store.UpdateCanvasMode(ctx, session.ID, false); err != nil {
+				errors <- err
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for errors
+	for err := range errors {
+		t.Errorf("concurrent canvas mode update error: %v", err)
+	}
+
+	// Final state should be consistent (either true or false, not corrupted)
+	finalSession, err := store.GetSession(ctx, session.ID)
+	require.NoError(t, err)
+	t.Logf("Final canvas mode state: %v", finalSession.CanvasMode)
+}
+
+// TestStore_ConcurrentArtifactCreation tests concurrent artifact creation.
+func TestStore_ConcurrentArtifactCreation(t *testing.T) {
+	store, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create a session
+	session, err := store.CreateSession(ctx, "Concurrent Artifact Test", "gemini-2.5-flash", "")
+	require.NoError(t, err)
+
+	const numGoroutines = 10
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines)
+	artifactIDs := make(chan uuid.UUID, numGoroutines)
+
+	// Concurrent artifact creation
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			artifact := &Artifact{
+				Type:    "code",
+				Title:   fmt.Sprintf("Artifact %d", idx),
+				Content: fmt.Sprintf("content %d", idx),
+			}
+			saved, err := store.SaveArtifact(ctx, session.ID, nil, artifact)
+			if err != nil {
+				errors <- err
+				return
+			}
+			artifactIDs <- saved.ID
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+	close(artifactIDs)
+
+	// Check for errors
+	for err := range errors {
+		t.Errorf("concurrent artifact creation error: %v", err)
+	}
+
+	// Verify all artifacts were created with unique IDs
+	ids := make(map[uuid.UUID]bool)
+	for id := range artifactIDs {
+		if ids[id] {
+			t.Errorf("duplicate artifact ID: %s", id)
+		}
+		ids[id] = true
+	}
+
+	assert.Equal(t, numGoroutines, len(ids), "should have created %d unique artifacts", numGoroutines)
+
+	// Get latest should return one of the artifacts
+	// Note: GetLatestArtifact returns the most recent by timestamp, not sequence number
+	// Due to concurrent inserts, the timing may vary
+	latest, err := store.GetLatestArtifact(ctx, session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, latest)
+	assert.GreaterOrEqual(t, latest.SequenceNumber, 1, "latest should have a valid sequence number")
+	assert.LessOrEqual(t, latest.SequenceNumber, numGoroutines, "latest sequence should not exceed artifact count")
+	t.Logf("Latest artifact has sequence number %d out of %d created", latest.SequenceNumber, numGoroutines)
+}
+
+// =============================================================================
+// SQL Injection Prevention Tests
+// =============================================================================
+
 // TestStore_SQLInjectionViaMessageContent tests injection through message content.
 func TestStore_SQLInjectionViaMessageContent(t *testing.T) {
 	store, cleanup := setupIntegrationTest(t)

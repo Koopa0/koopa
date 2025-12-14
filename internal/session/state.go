@@ -31,7 +31,7 @@ func getStateDirPath() (string, error) {
 	// Production: use ~/.koopa
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+		return "", fmt.Errorf("getting home directory: %w", err)
 	}
 
 	return filepath.Join(homeDir, stateDir), nil
@@ -56,7 +56,7 @@ func getStateFilePath() (string, error) {
 
 	// Ensure state directory exists
 	if err := os.MkdirAll(stateDirPath, 0o750); err != nil {
-		return "", fmt.Errorf("failed to create state directory: %w", err)
+		return "", fmt.Errorf("creating state directory: %w", err)
 	}
 
 	return filepath.Join(stateDirPath, stateFile), nil
@@ -80,7 +80,7 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 	// Acquire file lock to prevent concurrent writes
 	lock, err := acquireStateLock()
 	if err != nil {
-		return nil, fmt.Errorf("failed to acquire lock: %w", err)
+		return nil, fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
@@ -90,7 +90,7 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 		if os.IsNotExist(err) {
 			return nil, nil // No current session is not an error
 		}
-		return nil, fmt.Errorf("failed to read state file: %w", err)
+		return nil, fmt.Errorf("reading state file: %w", err)
 	}
 
 	sessionIDStr := strings.TrimSpace(string(data))
@@ -112,14 +112,14 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 func cleanupOrphanedTempFiles() error {
 	stateDirPath, err := getStateDirPath()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting state directory: %w", err)
 	}
 
 	// Find all .tmp files in state directory
 	pattern := filepath.Join(stateDirPath, "*.tmp")
 	tmpFiles, err := filepath.Glob(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to find temp files: %w", err)
+		return fmt.Errorf("finding temp files: %w", err)
 	}
 
 	// Remove each temp file (ignore errors as they may not exist)
@@ -143,7 +143,7 @@ func cleanupOrphanedTempFiles() error {
 func SaveCurrentSessionID(sessionID uuid.UUID) error {
 	filePath, err := getStateFilePath()
 	if err != nil {
-		return err
+		return fmt.Errorf("saving session: %w", err)
 	}
 
 	// Clean up any orphaned temp files from previous crashed sessions
@@ -152,21 +152,21 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 	// Acquire file lock to prevent concurrent access
 	lock, err := acquireStateLock()
 	if err != nil {
-		return fmt.Errorf("failed to acquire lock: %w", err)
+		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
 	// Write to temporary file first (atomic write pattern)
 	tmpFile := filePath + ".tmp"
 	if err := os.WriteFile(tmpFile, []byte(sessionID.String()), 0o600); err != nil {
-		return fmt.Errorf("failed to write temp state file: %w", err)
+		return fmt.Errorf("writing temp state file: %w", err)
 	}
 
 	// Atomically rename temp file to final file
 	if err := os.Rename(tmpFile, filePath); err != nil {
 		// Clean up temp file on error
 		_ = os.Remove(tmpFile)
-		return fmt.Errorf("failed to atomically update state file: %w", err)
+		return fmt.Errorf("updating state file: %w", err)
 	}
 
 	return nil
@@ -181,19 +181,19 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 func ClearCurrentSessionID() error {
 	filePath, err := getStateFilePath()
 	if err != nil {
-		return err
+		return fmt.Errorf("clearing session: %w", err)
 	}
 
 	// Acquire file lock to prevent concurrent access
 	lock, err := acquireStateLock()
 	if err != nil {
-		return fmt.Errorf("failed to acquire lock: %w", err)
+		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
 	err = os.Remove(filePath)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove state file: %w", err)
+		return fmt.Errorf("removing state file: %w", err)
 	}
 
 	return nil
@@ -208,7 +208,7 @@ func acquireStateLock() (*flock.Flock, error) {
 	}
 
 	if mkdirErr := os.MkdirAll(stateDirPath, 0o750); mkdirErr != nil {
-		return nil, fmt.Errorf("failed to create state directory: %w", mkdirErr)
+		return nil, fmt.Errorf("creating state directory: %w", mkdirErr)
 	}
 
 	lockPath := filepath.Join(stateDirPath, lockFileName)
@@ -219,7 +219,7 @@ func acquireStateLock() (*flock.Flock, error) {
 
 	locked, err := lock.TryLockContext(ctx, 100*time.Millisecond)
 	if err != nil {
-		return nil, fmt.Errorf("failed to acquire lock: %w", err)
+		return nil, fmt.Errorf("acquiring lock: %w", err)
 	}
 	if !locked {
 		return nil, fmt.Errorf("timeout waiting for file lock after %v", lockTimeout)

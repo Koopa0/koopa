@@ -27,7 +27,9 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg sqlc.CreateSessionParams) (sqlc.Session, error)
 	GetSession(ctx context.Context, id pgtype.UUID) (sqlc.Session, error)
 	ListSessions(ctx context.Context, arg sqlc.ListSessionsParams) ([]sqlc.Session, error)
+	ListSessionsWithMessages(ctx context.Context, arg sqlc.ListSessionsWithMessagesParams) ([]sqlc.Session, error)
 	UpdateSessionUpdatedAt(ctx context.Context, arg sqlc.UpdateSessionUpdatedAtParams) error
+	UpdateSessionTitle(ctx context.Context, arg sqlc.UpdateSessionTitleParams) error
 	DeleteSession(ctx context.Context, id pgtype.UUID) error
 	LockSession(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 
@@ -42,6 +44,18 @@ type Querier interface {
 	GetMaxSequenceByBranch(ctx context.Context, arg sqlc.GetMaxSequenceByBranchParams) (int32, error)
 	CountMessagesByBranch(ctx context.Context, arg sqlc.CountMessagesByBranchParams) (int32, error)
 	DeleteMessagesByBranch(ctx context.Context, arg sqlc.DeleteMessagesByBranchParams) error
+
+	// Streaming message operations (for SSE chat flow)
+	AddMessageWithID(ctx context.Context, arg sqlc.AddMessageWithIDParams) (sqlc.SessionMessage, error)
+	UpdateMessageContent(ctx context.Context, arg sqlc.UpdateMessageContentParams) error
+	UpdateMessageStatus(ctx context.Context, arg sqlc.UpdateMessageStatusParams) error
+	GetMessageByID(ctx context.Context, id pgtype.UUID) (sqlc.SessionMessage, error)
+	GetUserMessageBefore(ctx context.Context, arg sqlc.GetUserMessageBeforeParams) ([]byte, error)
+
+	// Canvas mode and artifact operations
+	UpdateCanvasMode(ctx context.Context, arg sqlc.UpdateCanvasModeParams) error
+	CreateArtifact(ctx context.Context, arg sqlc.CreateArtifactParams) (sqlc.SessionArtifact, error)
+	GetLatestArtifact(ctx context.Context, sessionID pgtype.UUID) (sqlc.SessionArtifact, error)
 }
 
 // Store manages session persistence with PostgreSQL backend.
@@ -153,11 +167,40 @@ func (s *Store) ListSessions(ctx context.Context, limit, offset int32) ([]*Sessi
 	}
 
 	sessions := make([]*Session, 0, len(sqlcSessions))
-	for _, ss := range sqlcSessions {
-		sessions = append(sessions, s.sqlcSessionToSession(ss))
+	for i := range sqlcSessions {
+		sessions = append(sessions, s.sqlcSessionToSession(sqlcSessions[i]))
 	}
 
 	s.logger.Debug("listed sessions", "count", len(sessions), "limit", limit, "offset", offset)
+	return sessions, nil
+}
+
+// ListSessionsWithMessages lists sessions that have messages or titles.
+// This is used for sidebar display where empty "New Chat" placeholder sessions should be hidden.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - limit: Maximum number of sessions to return
+//   - offset: Number of sessions to skip (for pagination)
+//
+// Returns:
+//   - []*Session: List of sessions with messages or titles
+//   - error: If listing fails
+func (s *Store) ListSessionsWithMessages(ctx context.Context, limit, offset int32) ([]*Session, error) {
+	sqlcSessions, err := s.querier.ListSessionsWithMessages(ctx, sqlc.ListSessionsWithMessagesParams{
+		ResultLimit:  limit,
+		ResultOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions with messages: %w", err)
+	}
+
+	sessions := make([]*Session, 0, len(sqlcSessions))
+	for i := range sqlcSessions {
+		sessions = append(sessions, s.sqlcSessionToSession(sqlcSessions[i]))
+	}
+
+	s.logger.Debug("listed sessions with messages", "count", len(sessions), "limit", limit, "offset", offset)
 	return sessions, nil
 }
 
@@ -175,6 +218,33 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
 	}
 
 	s.logger.Debug("deleted session", "id", sessionID)
+	return nil
+}
+
+// UpdateSessionTitle updates the display title for a session.
+// Used for auto-generating titles from first message or user edits.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: UUID of the session to update
+//   - title: New title (empty string clears the title)
+//
+// Returns:
+//   - error: If update fails
+func (s *Store) UpdateSessionTitle(ctx context.Context, sessionID uuid.UUID, title string) error {
+	var titlePtr *string
+	if title != "" {
+		titlePtr = &title
+	}
+
+	if err := s.querier.UpdateSessionTitle(ctx, sqlc.UpdateSessionTitleParams{
+		SessionID: uuidToPgUUID(sessionID),
+		Title:     titlePtr,
+	}); err != nil {
+		return fmt.Errorf("failed to update session title %s: %w", sessionID, err)
+	}
+
+	s.logger.Debug("updated session title", "id", sessionID, "title", title)
 	return nil
 }
 
@@ -560,6 +630,7 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, bran
 }
 
 // SaveHistory saves the conversation history for a session.
+//
 // Deprecated: Use AppendMessages instead for incremental updates.
 // This method has poor performance as it loads all existing messages to determine new ones.
 //
@@ -627,9 +698,10 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 // sqlcSessionToSession converts sqlc.Session to Session (application type).
 func (*Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 	session := &Session{
-		ID:        pgUUIDToUUID(ss.ID),
-		CreatedAt: ss.CreatedAt.Time,
-		UpdatedAt: ss.UpdatedAt.Time,
+		ID:         pgUUIDToUUID(ss.ID),
+		CreatedAt:  ss.CreatedAt.Time,
+		UpdatedAt:  ss.UpdatedAt.Time,
+		CanvasMode: ss.CanvasMode,
 	}
 
 	if ss.Title != nil {
@@ -661,6 +733,8 @@ func (*Store) sqlcMessageToMessage(sm sqlc.SessionMessage) (*Message, error) {
 		SessionID:      pgUUIDToUUID(sm.SessionID),
 		Role:           sm.Role,
 		Content:        content,
+		Branch:         sm.Branch,
+		Status:         sm.Status,
 		SequenceNumber: int(sm.SequenceNumber),
 		CreatedAt:      sm.CreatedAt.Time,
 	}, nil
@@ -680,4 +754,371 @@ func pgUUIDToUUID(pgUUID pgtype.UUID) uuid.UUID {
 		return uuid.Nil
 	}
 	return pgUUID.Bytes
+}
+
+// =============================================================================
+// Streaming Message Operations (for SSE chat flow)
+// =============================================================================
+
+// MessagePair represents a user-assistant message pair created for streaming.
+// Used to track both messages atomically for SSE-based chat.
+type MessagePair struct {
+	UserMsgID      uuid.UUID
+	AssistantMsgID uuid.UUID
+	UserSeq        int32
+	AssistantSeq   int32
+}
+
+// CreateMessagePair atomically creates a user message and empty assistant placeholder.
+// The user message is marked as "completed", the assistant message as "streaming".
+// This is used at the start of a chat turn before SSE streaming begins.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: UUID of the session
+//   - branch: Branch name (empty defaults to "main")
+//   - userContent: User message content as ai.Part slice
+//   - assistantID: Pre-generated UUID for the assistant message (used in SSE URL)
+//
+// Returns:
+//   - *MessagePair: Contains both message IDs and sequence numbers
+//   - error: If creation fails or session doesn't exist
+func (s *Store) CreateMessagePair(
+	ctx context.Context,
+	sessionID uuid.UUID,
+	branch string,
+	userContent []*ai.Part,
+	assistantID uuid.UUID,
+) (*MessagePair, error) {
+	// Validate and normalize branch
+	branch, err := NormalizeBranch(branch)
+	if err != nil {
+		return nil, fmt.Errorf("invalid branch: %w", err)
+	}
+
+	// Database pool is required for transactional operations
+	if s.pool == nil {
+		return nil, fmt.Errorf("database pool required for CreateMessagePair")
+	}
+
+	// Begin transaction for atomicity
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			s.logger.Debug("transaction rollback (may be already committed)", "error", rollbackErr)
+		}
+	}()
+
+	txQuerier := sqlc.New(tx)
+
+	// Lock session row to prevent concurrent modifications
+	_, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID))
+	if err != nil {
+		return nil, fmt.Errorf("lock session: %w", err)
+	}
+
+	// Get current max sequence number for this branch
+	maxSeq, err := txQuerier.GetMaxSequenceByBranch(ctx, sqlc.GetMaxSequenceByBranchParams{
+		SessionID: uuidToPgUUID(sessionID),
+		Branch:    branch,
+	})
+	if err != nil {
+		s.logger.Debug("no existing messages in branch, starting from sequence 0",
+			"session_id", sessionID, "branch", branch)
+		maxSeq = 0
+	}
+
+	// Marshal user content to JSON
+	userContentJSON, err := json.Marshal(userContent)
+	if err != nil {
+		return nil, fmt.Errorf("marshal user content: %w", err)
+	}
+
+	// Generate user message ID
+	userMsgID := uuid.New()
+	userSeq := maxSeq + 1
+	assistantSeq := maxSeq + 2
+
+	// Insert user message (status = completed)
+	_, err = txQuerier.AddMessageWithID(ctx, sqlc.AddMessageWithIDParams{
+		ID:             uuidToPgUUID(userMsgID),
+		SessionID:      uuidToPgUUID(sessionID),
+		Role:           "user",
+		Content:        userContentJSON,
+		Status:         StatusCompleted,
+		Branch:         branch,
+		SequenceNumber: userSeq,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("insert user message: %w", err)
+	}
+
+	// Insert empty assistant message placeholder (status = streaming)
+	emptyContent := []byte("[]") // Empty ai.Part slice
+	_, err = txQuerier.AddMessageWithID(ctx, sqlc.AddMessageWithIDParams{
+		ID:             uuidToPgUUID(assistantID),
+		SessionID:      uuidToPgUUID(sessionID),
+		Role:           "assistant",
+		Content:        emptyContent,
+		Status:         StatusStreaming,
+		Branch:         branch,
+		SequenceNumber: assistantSeq,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("insert assistant message: %w", err)
+	}
+
+	// Update session metadata
+	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
+		MessageCount: &assistantSeq,
+		SessionID:    uuidToPgUUID(sessionID),
+	}); err != nil {
+		return nil, fmt.Errorf("update session metadata: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	s.logger.Debug("created message pair",
+		"session_id", sessionID,
+		"branch", branch,
+		"user_msg_id", userMsgID,
+		"assistant_msg_id", assistantID)
+
+	return &MessagePair{
+		UserMsgID:      userMsgID,
+		AssistantMsgID: assistantID,
+		UserSeq:        userSeq,
+		AssistantSeq:   assistantSeq,
+	}, nil
+}
+
+// GetUserMessageBefore retrieves the text content of the user message
+// immediately preceding the specified sequence number.
+// This is used by Stream handler to retrieve query without URL parameter.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: UUID of the session
+//   - branch: Branch name (empty defaults to "main")
+//   - beforeSeq: Sequence number to search before
+//
+// Returns:
+//   - string: The user message text
+//   - error: ErrMessageNotFound if no preceding user message exists
+func (s *Store) GetUserMessageBefore(
+	ctx context.Context,
+	sessionID uuid.UUID,
+	branch string,
+	beforeSeq int32,
+) (string, error) {
+	// Validate and normalize branch
+	branch, err := NormalizeBranch(branch)
+	if err != nil {
+		return "", fmt.Errorf("invalid branch: %w", err)
+	}
+
+	content, err := s.querier.GetUserMessageBefore(ctx, sqlc.GetUserMessageBeforeParams{
+		SessionID:      uuidToPgUUID(sessionID),
+		Branch:         branch,
+		BeforeSequence: beforeSeq,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrMessageNotFound
+		}
+		return "", fmt.Errorf("get user message before %d: %w", beforeSeq, err)
+	}
+
+	// Unmarshal content to extract text
+	var parts []*ai.Part
+	if err := json.Unmarshal(content, &parts); err != nil {
+		return "", fmt.Errorf("unmarshal content: %w", err)
+	}
+
+	// Extract text from parts
+	var text string
+	for _, p := range parts {
+		if p != nil && (p.Kind == ai.PartText || p.Kind == ai.PartMedia) {
+			text += p.Text
+		}
+	}
+
+	if text == "" {
+		return "", ErrMessageNotFound
+	}
+
+	return text, nil
+}
+
+// GetMessageByID retrieves a message by its ID.
+// Used to get assistant message sequence number for user query lookup.
+//
+// Returns:
+//   - *Message: The message if found
+//   - error: ErrMessageNotFound if not found
+func (s *Store) GetMessageByID(ctx context.Context, msgID uuid.UUID) (*Message, error) {
+	sm, err := s.querier.GetMessageByID(ctx, uuidToPgUUID(msgID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMessageNotFound
+		}
+		return nil, fmt.Errorf("get message %s: %w", msgID, err)
+	}
+
+	return s.sqlcMessageToMessage(sm)
+}
+
+// UpdateMessageContent updates the content of a message and marks it as completed.
+// Used after streaming is finished to save the final AI response.
+func (s *Store) UpdateMessageContent(ctx context.Context, msgID uuid.UUID, content []*ai.Part) error {
+	contentJSON, err := json.Marshal(content)
+	if err != nil {
+		return fmt.Errorf("marshal content: %w", err)
+	}
+
+	if err := s.querier.UpdateMessageContent(ctx, sqlc.UpdateMessageContentParams{
+		ID:      uuidToPgUUID(msgID),
+		Content: contentJSON,
+	}); err != nil {
+		return fmt.Errorf("update message content: %w", err)
+	}
+
+	s.logger.Debug("updated message content", "msg_id", msgID)
+	return nil
+}
+
+// UpdateMessageStatus updates the status of a message.
+// Used to mark streaming messages as failed if an error occurs.
+func (s *Store) UpdateMessageStatus(ctx context.Context, msgID uuid.UUID, status string) error {
+	if err := s.querier.UpdateMessageStatus(ctx, sqlc.UpdateMessageStatusParams{
+		ID:     uuidToPgUUID(msgID),
+		Status: status,
+	}); err != nil {
+		return fmt.Errorf("update message status: %w", err)
+	}
+
+	s.logger.Debug("updated message status", "msg_id", msgID, "status", status)
+	return nil
+}
+
+// =============================================================================
+// Canvas Mode and Artifact Operations
+// =============================================================================
+
+// UpdateCanvasMode toggles canvas mode for a session.
+// Per golang-master: Error wrapping with context.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: UUID of the session
+//   - canvasMode: New canvas mode state
+//
+// Returns:
+//   - error: If update fails
+func (s *Store) UpdateCanvasMode(ctx context.Context, sessionID uuid.UUID, canvasMode bool) error {
+	if err := s.querier.UpdateCanvasMode(ctx, sqlc.UpdateCanvasModeParams{
+		SessionID:  uuidToPgUUID(sessionID),
+		CanvasMode: canvasMode,
+	}); err != nil {
+		return fmt.Errorf("update canvas mode for session %s: %w", sessionID, err)
+	}
+
+	s.logger.Debug("updated canvas mode", "session_id", sessionID, "canvas_mode", canvasMode)
+	return nil
+}
+
+// SaveArtifact creates a new artifact for canvas panel (autosave).
+// Per golang-master: Error wrapping with context.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: UUID of the session
+//   - messageID: Optional message ID (nil if not linked to a message)
+//   - artifact: Artifact data to save
+//
+// Returns:
+//   - *Artifact: Created artifact with generated ID and sequence number
+//   - error: If creation fails
+func (s *Store) SaveArtifact(ctx context.Context, sessionID uuid.UUID, messageID *uuid.UUID, artifact *Artifact) (*Artifact, error) {
+	var msgID pgtype.UUID
+	if messageID != nil {
+		msgID = uuidToPgUUID(*messageID)
+	}
+
+	// Convert language to nullable
+	var language *string
+	if artifact.Language != "" {
+		language = &artifact.Language
+	}
+
+	result, err := s.querier.CreateArtifact(ctx, sqlc.CreateArtifactParams{
+		SessionID: uuidToPgUUID(sessionID),
+		MessageID: msgID,
+		Type:      artifact.Type,
+		Language:  language,
+		Title:     artifact.Title,
+		Content:   artifact.Content,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create artifact for session %s: %w", sessionID, err)
+	}
+
+	saved := s.sqlcArtifactToArtifact(result)
+	s.logger.Debug("saved artifact", "session_id", sessionID, "artifact_id", saved.ID, "type", saved.Type)
+	return saved, nil
+}
+
+// GetLatestArtifact retrieves the most recent artifact for a session.
+// Returns (nil, nil) if no artifacts exist for the session.
+// Returns (nil, error) if a database error occurs.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - sessionID: UUID of the session
+//
+// Returns:
+//   - *Artifact: The latest artifact, or nil if none exists
+//   - error: If a database error occurs (not for "not found")
+func (s *Store) GetLatestArtifact(ctx context.Context, sessionID uuid.UUID) (*Artifact, error) {
+	result, err := s.querier.GetLatestArtifact(ctx, uuidToPgUUID(sessionID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrArtifactNotFound // Normal state for new sessions without canvas output
+		}
+		return nil, fmt.Errorf("get latest artifact for session %s: %w", sessionID, err)
+	}
+
+	return s.sqlcArtifactToArtifact(result), nil
+}
+
+// sqlcArtifactToArtifact converts sqlc.SessionArtifact to Artifact (application type).
+func (*Store) sqlcArtifactToArtifact(sa sqlc.SessionArtifact) *Artifact {
+	artifact := &Artifact{
+		ID:             pgUUIDToUUID(sa.ID),
+		SessionID:      pgUUIDToUUID(sa.SessionID),
+		Type:           sa.Type,
+		Title:          sa.Title,
+		Content:        sa.Content,
+		Version:        int(sa.Version),
+		SequenceNumber: int(sa.SequenceNumber),
+		CreatedAt:      sa.CreatedAt.Time,
+		UpdatedAt:      sa.UpdatedAt.Time,
+	}
+
+	// Handle nullable fields
+	if sa.MessageID.Valid {
+		msgID := pgUUIDToUUID(sa.MessageID)
+		artifact.MessageID = &msgID
+	}
+	if sa.Language != nil {
+		artifact.Language = *sa.Language
+	}
+
+	return artifact
 }

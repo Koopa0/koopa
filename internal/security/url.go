@@ -243,10 +243,12 @@ func IsURLSafe(rawURL string) bool {
 
 	lowerURL := strings.ToLower(rawURL)
 
-	// Block dangerous schemes
-	dangerousSchemes := []string{"file://", "javascript:", "data:", "gopher://"}
+	// Block dangerous schemes anywhere in URL (defense in depth).
+	// Some attacks prepend junk characters to bypass HasPrefix checks.
+	// Using Contains catches "0javascript:", "\x00javascript:", etc.
+	dangerousSchemes := []string{"file://", "javascript:", "data:", "gopher://", "vbscript:"}
 	for _, scheme := range dangerousSchemes {
-		if strings.HasPrefix(lowerURL, scheme) {
+		if strings.Contains(lowerURL, scheme) {
 			return false
 		}
 	}

@@ -118,11 +118,49 @@ tasks:
     cmds:
       - go test -race ./...
 
+  test:unit:
+    desc: Run unit tests only (no testcontainers)
+    deps: [generate, css]
+    cmds:
+      - go test -short ./...
+
+  test:integration:
+    desc: Run integration tests with testcontainers (auto-cleanup)
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - go test -race ./internal/web/handlers/... -count=1 -timeout 180s
+
+  test:handlers:
+    desc: Run handler tests with testcontainers (auto-cleanup)
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - go test -v ./internal/web/handlers/... -count=1 -timeout 180s
+
   test:fuzz:
-    desc: Run fuzz tests (30 seconds)
+    desc: Run fuzz tests (30 seconds per test)
     deps: [generate]
     cmds:
-      - go test -fuzz=FuzzChatInput -fuzztime=30s ./internal/web/handlers/ || true
+      - |
+        echo "=== Running FuzzParseArtifact ==="
+        go test -fuzz=FuzzParseArtifact -fuzztime=30s ./internal/web/handlers/ || true
+        echo "=== Running FuzzExtractAttr ==="
+        go test -fuzz=FuzzExtractAttr -fuzztime=30s ./internal/web/handlers/ || true
+        echo "=== Running FuzzHasPartialTag ==="
+        go test -fuzz=FuzzHasPartialTag -fuzztime=30s ./internal/web/handlers/ || true
+        echo "=== Running FuzzSafeSplit ==="
+        go test -fuzz=FuzzSafeSplit -fuzztime=30s ./internal/web/handlers/ || true
+
+  test:fuzz:quick:
+    desc: Run fuzz tests (10 seconds per test - quick validation)
+    deps: [generate]
+    cmds:
+      - |
+        for fuzz in FuzzParseArtifact FuzzExtractAttr FuzzHasPartialTag FuzzSafeSplit FuzzIsValidArtifactType; do
+          echo "=== Running $fuzz ==="
+          go test -fuzz=$fuzz -fuzztime=10s ./internal/web/handlers/ || true
+        done
 
   test:cover:
     desc: Run tests with coverage
@@ -136,6 +174,63 @@ tasks:
     deps: [generate, css]
     cmds:
       - go test -v ./internal/web/static/
+
+  #----------------------------------------------------------------------------
+  # E2E Testing (Playwright-Go)
+  #----------------------------------------------------------------------------
+  test:e2e:
+    desc: Run all E2E tests with Playwright (requires browser)
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - echo "=== E2E Browser Tests ==="
+      - go test -tags=e2e -v ./internal/web/... -count=1 -timeout 300s
+
+  test:e2e:chat:
+    desc: Run E2E chat tests only
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - go test -tags=e2e -v ./internal/web/... -run "TestE2E_Chat" -count=1 -timeout 180s
+
+  test:e2e:components:
+    desc: Run E2E component tests only
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - go test -tags=e2e -v ./internal/web/... -run "TestE2E_Component" -count=1 -timeout 180s
+
+  test:e2e:accessibility:
+    desc: Run E2E accessibility tests only (axe-core)
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - go test -tags=e2e -v ./internal/web/... -run "TestE2E_Accessibility" -count=1 -timeout 180s
+
+  test:e2e:responsive:
+    desc: Run E2E responsive layout tests only
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - go test -tags=e2e -v ./internal/web/... -run "TestE2E_Responsive" -count=1 -timeout 180s
+
+  test:e2e:install:
+    desc: Install Playwright browsers for E2E testing
+    cmds:
+      - go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps chromium
+
+  test:all:
+    desc: Run all tests with cleanup (unit + integration + fuzz)
+    deps: [generate, css, docker:clean]
+    cmds:
+      - defer: task docker:clean
+      - echo "=== Unit Tests ==="
+      - go test -short ./...
+      - echo "=== Integration Tests (with testcontainers) ==="
+      - go test -race ./internal/web/handlers/... -count=1 -timeout 180s
+      - echo "=== Fuzz Tests (quick) ==="
+      - task: test:fuzz:quick
+      - echo "=== All tests completed ==="
 
   #----------------------------------------------------------------------------
   # Quality
@@ -184,3 +279,15 @@ tasks:
     cmds:
       - task: clean
       - rm -rf {{.FRONTEND_DIR}}/node_modules
+
+  docker:clean:
+    desc: Clean up Docker testcontainers and networks
+    cmds:
+      - echo "=== Cleaning Docker testcontainers ==="
+      - docker ps -aq --filter "label=org.testcontainers=true" | xargs -r docker rm -f 2>/dev/null || true
+      - docker ps -aq --filter "ancestor=postgres" --filter "status=exited" | xargs -r docker rm -f 2>/dev/null || true
+      - docker ps -aq --filter "ancestor=postgres" --filter "status=created" | xargs -r docker rm -f 2>/dev/null || true
+      - echo "=== Cleaning Docker networks ==="
+      - docker network ls --filter "name=testcontainers" -q | xargs -r docker network rm 2>/dev/null || true
+      - docker network prune -f 2>/dev/null || true
+      - echo "=== Docker cleanup complete ==="

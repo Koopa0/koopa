@@ -61,7 +61,8 @@ type NetworkToolset struct {
 	// SSRF protection
 	urlValidator *security.URL
 
-	// Testing only: skip SSRF checks (NEVER use in production)
+	// skipSSRFCheck is set ONLY via NewNetworkToolsetForTesting() in network_export_test.go
+	// Production code cannot set this due to build tag isolation
 	skipSSRFCheck bool
 
 	logger log.Logger
@@ -111,22 +112,8 @@ func (*NetworkToolset) Name() string {
 	return NetworkToolsetName
 }
 
-// NewNetworkToolsetForTesting creates a NetworkToolset with SSRF protection disabled.
-// WARNING: This is for testing ONLY. Never use in production code.
-func NewNetworkToolsetForTesting(
-	searchBaseURL string,
-	fetchParallelism int,
-	fetchDelay time.Duration,
-	fetchTimeout time.Duration,
-	logger log.Logger,
-) (*NetworkToolset, error) {
-	nt, err := NewNetworkToolset(searchBaseURL, fetchParallelism, fetchDelay, fetchTimeout, logger)
-	if err != nil {
-		return nil, err
-	}
-	nt.skipSSRFCheck = true
-	return nt, nil
-}
+// NewNetworkToolsetForTesting is defined in network_testing.go.
+// It bypasses SSRF protection and should ONLY be used in tests.
 
 // Tools returns all network operation tools provided by this toolset.
 // This is used by Genkit for tool registration.

@@ -1,109 +1,83 @@
-# Koopa Configuration Example
-# Copy this file to ~/.koopa/config.yaml and modify as needed
+# Koopa Advanced Configuration
+# ==========================================
+# Location: ~/.koopa/config.yaml
+#
+# Setup:
+#   mkdir -p ~/.koopa
+#   cp config.example.yaml ~/.koopa/config.yaml
+#
+# NOTE: For basic settings, use .env instead.
+#       This file is only needed for MCP servers.
+#
+# Priority: Environment variables > config.yaml > defaults
 
 # ==========================================
-# AI Model Configuration
+# MCP Servers (Model Context Protocol)
 # ==========================================
-model_name: "gemini-2.5-flash"
-temperature: 0.7
-max_tokens: 2048
+# Enable external tool integrations for the AI agent.
+# MCP servers provide additional capabilities like
+# file system access, web fetching, database queries, etc.
 
-# Conversation history configuration
-# Maximum number of conversation messages to retain (default: 100)
-# Set to higher value if needed (max: 10000)
-max_history_messages: 100
-
-# PostgreSQL configuration (required for pgvector RAG functionality)
-postgres_host: "localhost"
-postgres_port: 5432
-postgres_user: "koopa"
-postgres_password: "" # Recommended: use POSTGRES_PASSWORD environment variable
-postgres_db_name: "koopa"
-postgres_ssl_mode: "disable" # Options: disable, require, verify-ca, verify-full
-
-# ==========================================
-# RAG (Retrieval-Augmented Generation) Configuration
-# ==========================================
-# Number of documents to retrieve for RAG context
-rag_top_k: 3
-
-# Embedding model for document vectorization
-embedder_model: "text-embedding-004"
-
-# ==========================================
-# MCP (Model Context Protocol) Configuration
-# ==========================================
-# MCP servers enable Koopa to integrate with external tools
-
-# Global MCP settings
 mcp:
   # Connection timeout in seconds (default: 5)
   timeout: 5
 
-  # Whitelist of server names to enable (empty = all configured servers)
+  # Whitelist: only enable these servers (empty = all)
   # allowed:
   #   - "fetch"
   #   - "filesystem"
 
-  # Blacklist of server names to disable (higher priority than allowed)
+  # Blacklist: disable these servers (overrides allowed)
   # excluded:
   #   - "dangerous-server"
+
 # MCP server definitions
-# Example configurations:
+# Uncomment and configure as needed:
+
 # mcp_servers:
+#   # Web fetching server
 #   fetch:
 #     command: "npx"
 #     args:
 #       - "-y"
 #       - "@modelcontextprotocol/server-fetch"
-#     env:
-#       NODE_OPTIONS: "--max-old-space-size=4096"
 #
+#   # File system access server
 #   filesystem:
 #     command: "npx"
 #     args:
 #       - "-y"
 #       - "@modelcontextprotocol/server-filesystem"
 #       - "/path/to/allowed/directory"
-#     timeout: 10  # Per-server timeout override
-#     include_tools:  # Tool whitelist
+#     timeout: 10  # Override global timeout
+#     include_tools:
 #       - "read_file"
 #       - "write_file"
-#     exclude_tools:  # Tool blacklist (higher priority)
+#     exclude_tools:
 #       - "delete_file"
-
-# ==========================================
-# API Key (Recommended: use environment variable)
-# ==========================================
-# Gemini API key for Google AI services
-# gemini_api_key: "your-api-key-here"
-
-# ==========================================
-# Security Configuration
-# ==========================================
-# HMAC secret for CSRF token generation (required for ./koopa serve)
-# Generate with: openssl rand -base64 32
-# Minimum 32 characters required
-hmac_secret: ""  # REQUIRED for serve mode - set this value
-
-# ==========================================
-# Environment Variable Support (Higher priority than config file)
 #
-# Supported environment variables (note KOOPA_ prefix for Viper-managed variables):
-#   GEMINI_API_KEY=your-api-key                   # API key (required, no prefix)
-#   KOOPA_MODEL_NAME=gemini-2.5-pro               # Model name
-#   KOOPA_TEMPERATURE=0.8                         # Temperature parameter
-#   KOOPA_MAX_TOKENS=4096                         # Maximum tokens
-#   KOOPA_MAX_HISTORY_MESSAGES=200                # Maximum history messages
-#   KOOPA_RAG_TOP_K=5                             # RAG document count
-#   KOOPA_EMBEDDER_MODEL=text-embedding-004       # Embedder model
-#   KOOPA_POSTGRES_HOST=localhost                 # PostgreSQL host
-#   KOOPA_POSTGRES_PORT=5432                      # PostgreSQL port
-#   KOOPA_POSTGRES_USER=koopa                     # PostgreSQL username
-#   KOOPA_POSTGRES_PASSWORD=your-password         # PostgreSQL password
-#   KOOPA_POSTGRES_DB_NAME=koopa                  # PostgreSQL database name
-#   KOOPA_POSTGRES_SSL_MODE=disable               # PostgreSQL SSL mode
-#   KOOPA_HMAC_SECRET=your-32-char-secret         # HMAC secret (for serve mode)
-#
-# Note: GEMINI_API_KEY is the only variable that MUST be set as environment variable.
-# All other configuration can be in config.yaml or environment variables (env vars take priority).
+#   # GitHub server
+#   github:
+#     command: "npx"
+#     args:
+#       - "-y"
+#       - "@modelcontextprotocol/server-github"
+#     env:
+#       GITHUB_TOKEN: "your-github-token"
+
+# ==========================================
+# SearXNG Web Search (Optional)
+# ==========================================
+# Self-hosted search engine integration
+
+# searxng:
+#   url: "http://localhost:8888"
+#   enabled: false
+
+# ==========================================
+# Web Scraper (Optional)
+# ==========================================
+
+# web_scraper:
+#   timeout: "10s"
+#   max_content_length: 1000000
