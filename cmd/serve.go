@@ -60,9 +60,11 @@ func RunServe(ctx context.Context, cfg *config.Config, version, addr string) err
 	// Create web server (GenUI + Health checks)
 	webServer, err := web.NewServer(web.ServerDeps{
 		Logger:       logger,
+		Genkit:       runtime.App.Genkit,
 		ChatFlow:     runtime.Flow,
 		SessionStore: runtime.App.SessionStore,
 		CSRFSecret:   []byte(cfg.HMACSecret),
+		Config:       cfg,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create web server: %w", err)

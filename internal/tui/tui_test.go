@@ -55,7 +55,8 @@ func TestNew_PanicOnNilContext(t *testing.T) {
 	// so we're testing that panic happens before nil check
 	// In reality, flow check comes first so this test validates the pattern
 	var flow *chat.Flow
-	New(nil, flow, "test") //nolint:staticcheck // SA1012: intentionally testing nil context handling
+	//lint:ignore SA1012 intentionally testing nil context handling
+	New(nil, flow, "test") //nolint:staticcheck
 }
 
 func TestTUI_Init(t *testing.T) {

@@ -26,6 +26,22 @@ type Session struct {
 	ModelName    *string            `json:"model_name"`
 	SystemPrompt *string            `json:"system_prompt"`
 	MessageCount *int32             `json:"message_count"`
+	// When true, AI outputs artifacts to Canvas panel
+	CanvasMode bool `json:"canvas_mode"`
+}
+
+type SessionArtifact struct {
+	ID             pgtype.UUID        `json:"id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	MessageID      pgtype.UUID        `json:"message_id"`
+	Type           string             `json:"type"`
+	Language       *string            `json:"language"`
+	Title          string             `json:"title"`
+	Content        string             `json:"content"`
+	Version        int32              `json:"version"`
+	SequenceNumber int32              `json:"sequence_number"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SessionMessage struct {
@@ -36,4 +52,6 @@ type SessionMessage struct {
 	SequenceNumber int32              `json:"sequence_number"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	Branch         string             `json:"branch"`
+	Status         string             `json:"status"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }

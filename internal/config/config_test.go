@@ -14,6 +14,23 @@ import (
 
 // TestLoadDefaults tests that default configuration values are loaded correctly
 func TestLoadDefaults(t *testing.T) {
+	// Reset Viper singleton to avoid interference from other tests
+	viper.Reset()
+
+	// Create temporary config directory (no config.yaml = pure defaults)
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
+
+	// Set HOME to temp directory (no existing config.yaml)
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+
 	// Save and restore original environment
 	originalAPIKey := os.Getenv("GEMINI_API_KEY")
 	defer func() {
@@ -25,6 +42,15 @@ func TestLoadDefaults(t *testing.T) {
 			if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
 				t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
 			}
+		}
+	}()
+
+	// Clear DATABASE_URL to test pure defaults
+	originalDBURL := os.Getenv("DATABASE_URL")
+	os.Unsetenv("DATABASE_URL")
+	defer func() {
+		if originalDBURL != "" {
+			_ = os.Setenv("DATABASE_URL", originalDBURL) // restore env in test cleanup
 		}
 	}()
 
@@ -108,6 +134,15 @@ func TestLoadConfigFile(t *testing.T) {
 	defer func() {
 		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
 			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+		}
+	}()
+
+	// Clear DATABASE_URL to test config file loading
+	originalDBURL := os.Getenv("DATABASE_URL")
+	os.Unsetenv("DATABASE_URL")
+	defer func() {
+		if originalDBURL != "" {
+			_ = os.Setenv("DATABASE_URL", originalDBURL) // restore env in test cleanup
 		}
 	}()
 

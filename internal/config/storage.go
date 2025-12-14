@@ -1,6 +1,12 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+)
 
 // StorageConfig documentation.
 // Fields are embedded in the main Config struct for backward compatibility.
@@ -42,4 +48,63 @@ func (c *Config) PostgresURL() string {
 		c.PostgresDBName,
 		c.PostgresSSLMode,
 	)
+}
+
+// parseDatabaseURL parses DATABASE_URL environment variable and sets PostgreSQL config.
+// Format: postgres://user:password@host:port/database?sslmode=disable
+//
+// Priority: DATABASE_URL overrides individual postgres_* settings.
+// This provides a simpler configuration option commonly used in cloud deployments.
+func (c *Config) parseDatabaseURL() error {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil // No DATABASE_URL set, use individual config values
+	}
+
+	parsed, err := url.Parse(dbURL)
+	if err != nil {
+		return fmt.Errorf("invalid DATABASE_URL format: %w", err)
+	}
+
+	// Validate scheme
+	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
+		return fmt.Errorf("DATABASE_URL must start with postgres:// or postgresql://, got %q", parsed.Scheme)
+	}
+
+	// Extract host and port
+	host := parsed.Hostname()
+	if host != "" {
+		c.PostgresHost = host
+	}
+
+	portStr := parsed.Port()
+	if portStr != "" {
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return fmt.Errorf("invalid port in DATABASE_URL: %w", err)
+		}
+		c.PostgresPort = port
+	}
+
+	// Extract user and password
+	if parsed.User != nil {
+		if user := parsed.User.Username(); user != "" {
+			c.PostgresUser = user
+		}
+		if password, ok := parsed.User.Password(); ok {
+			c.PostgresPassword = password
+		}
+	}
+
+	// Extract database name (path without leading /)
+	if parsed.Path != "" {
+		c.PostgresDBName = strings.TrimPrefix(parsed.Path, "/")
+	}
+
+	// Extract sslmode from query params
+	if sslmode := parsed.Query().Get("sslmode"); sslmode != "" {
+		c.PostgresSSLMode = sslmode
+	}
+
+	return nil
 }

@@ -9,30 +9,37 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
-	"github.com/google/uuid"
 	"github.com/koopa0/koopa-cli/internal/web/component"
 	"github.com/koopa0/koopa-cli/internal/web/layout"
 )
 
-// ChatPageProps configures the chat page.
-//
-// Phase 2 modification: Added Sessions field for sidebar integration.
-//
-// Zero value behavior:
-//   - SessionID == "": VALID, represents new session (no active session)
-//     UI should show empty message list or welcome message
-//   - CSRFToken == "": INVALID for form submissions, will fail CSRF check
-//     Callers MUST provide valid token from handler
-//   - Sessions == nil: VALID, sidebar will show empty state
-//   - Sessions == []SessionItem{}: VALID (same as nil)
-type ChatPageProps struct {
-	SessionID string                  // Existing (Phase 0-1): Current session ID
-	CSRFToken string                  // Existing (Phase 0-1): CSRF token for forms (REQUIRED)
-	Sessions  []component.SessionItem // ADDED (Phase 2): for sidebar integration
+type Message struct {
+	ID        string
+	Content   string
+	Role      string // "user" or "assistant"
+	IsLoading bool
 }
 
-// Chat renders the main chat interface page.
-func Chat(props ChatPageProps) templ.Component {
+type ChatPageProps struct {
+	SessionID  string
+	Sessions   []component.Session
+	Messages   []Message
+	CanvasMode bool   // When true, show artifact panel
+	CSRFToken  string // Required for form submissions
+}
+
+// ChatContentProps is used for HTMX partial updates (mode toggle).
+type ChatContentProps struct {
+	SessionID  string
+	Sessions   []component.Session
+	Messages   []Message
+	CanvasMode bool
+	CSRFToken  string // Required for form submissions
+}
+
+// ChatPage renders the complete chat interface with sidebar and message feed.
+// Supports 3-column layout when CanvasMode is enabled (sidebar + chat + artifact).
+func ChatPage(props ChatPageProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -65,45 +72,25 @@ func Chat(props ChatPageProps) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex h-full\"><!-- Sidebar (left panel) -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"page-content\" class=\"flex min-h-screen bg-gray-800\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = component.Sidebar(component.SidebarProps{
-				Sessions:  props.Sessions,
-				ActiveID:  parseUUID(props.SessionID),
-				IsOpen:    false,
-				CSRFToken: props.CSRFToken,
-			}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = chatPageContent(props.SessionID, props.Sessions, props.Messages, props.CanvasMode, props.CSRFToken).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<!-- Main chat panel --><main id=\"main-content\" class=\"flex flex-1 flex-col overflow-hidden\"><!-- Chat header --><header class=\"flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:bg-surface-900 dark:border-gray-700\"><div class=\"flex items-center gap-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = component.Avatar(component.AvatarProps{Name: "Koopa", Fallback: "K", Size: "md"}).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div><h1 class=\"text-lg font-semibold\">Koopa</h1><p class=\"text-sm text-gray-500 dark:text-gray-400\">AI Assistant</p></div></div><div class=\"flex items-center gap-2\"><!-- Theme toggle --><button onclick=\"toggleTheme()\" class=\"rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-surface-800\" aria-label=\"Toggle theme\"><svg class=\"h-5 w-5 dark:hidden\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z\"></path></svg> <svg class=\"hidden h-5 w-5 dark:block\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z\"></path></svg></button></div></header><!-- Message list --><div id=\"message-list\" class=\"flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin\" role=\"log\" aria-label=\"Chat messages\" aria-live=\"polite\"><!-- Messages will be appended here via HTMX --></div><!-- Chat input -->")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = component.ChatInput(component.ChatInputProps{
-				SessionID: props.SessionID,
-				CSRFToken: props.CSRFToken,
-			}).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<!-- Theme toggle script --><script>\n\t\t\t\tfunction toggleTheme() {\n\t\t\t\t\tconst isDark = document.documentElement.classList.toggle('dark');\n\t\t\t\t\tlocalStorage.setItem('theme', isDark ? 'dark' : 'light');\n\t\t\t\t}\n\t\t\t</script></main></div>")
+			templ_7745c5c3_Err = chatStyles().Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = layout.Base("Chat").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = layout.App("Koopa - Chat").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -111,11 +98,197 @@ func Chat(props ChatPageProps) templ.Component {
 	})
 }
 
-// parseUUID is a helper to convert string UUID to uuid.UUID for templ components.
-// Returns uuid.Nil if parsing fails (safe for rendering).
-func parseUUID(s string) uuid.UUID {
-	id, _ := uuid.Parse(s)
-	return id
+// ChatContent renders just the page content for HTMX swaps (mode toggle).
+// Target: #page-content
+func ChatContent(props ChatContentProps) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var3 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var3 == nil {
+			templ_7745c5c3_Var3 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = chatPageContent(props.SessionID, props.Sessions, props.Messages, props.CanvasMode, props.CSRFToken).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// chatPageContent renders the inner page content (shared between full page and HTMX partial).
+func chatPageContent(sessionID string, sessions []component.Session, messages []Message, canvasMode bool, csrfToken string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var4 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var4 == nil {
+			templ_7745c5c3_Var4 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<!-- Sidebar -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = component.Sidebar(component.SidebarProps{
+			Sessions:  sessions,
+			CSRFToken: csrfToken,
+		}).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<!-- Main Content Area --><!-- transition-all duration-300 for smooth layout shift when Canvas panel appears -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 = []any{"flex flex-1 flex-col lg:pl-72",
+			"transition-all duration-300 ease-out motion-reduce:transition-none",
+			templ.KV("xl:pr-96", canvasMode),
+		}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var5...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div id=\"main-content\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var6 string
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var5).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/page/chat.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"><!-- Mobile header with menu button and optional artifact button --><div class=\"sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-white/10 bg-gray-900/80 backdrop-blur-md shadow-sm px-4 lg:hidden\"><!-- Menu button (left) --><button type=\"button\" command=\"show-modal\" commandfor=\"sidebar\" class=\"-m-2.5 p-2.5 text-gray-400 hover:text-white\"><span class=\"sr-only\">Open sidebar</span> <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\" class=\"size-6\"><path d=\"M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></button><!-- Logo (center) --><div class=\"flex flex-1 items-center justify-center gap-x-3\"><div class=\"flex size-8 items-center justify-center rounded-lg bg-indigo-500\"><span class=\"text-sm font-bold text-white\">K</span></div><span class=\"text-lg font-semibold text-white\">Koopa</span></div><!-- Artifact button (right, only in canvas mode) -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if canvasMode {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button type=\"button\" command=\"show-modal\" commandfor=\"artifact-drawer\" class=\"-m-2.5 p-2.5 text-gray-400 hover:text-white\"><span class=\"sr-only\">Open artifacts</span> <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\" class=\"size-6\"><path d=\"M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></button>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<!-- Placeholder to maintain layout balance --> <div class=\"w-10\"></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div><!-- Chat Card Container --><div class=\"flex flex-1 flex-col p-4 lg:p-6\"><!-- Card wrapper for visual definition --><div class=\"flex flex-1 flex-col rounded-2xl bg-gray-900 ring-1 ring-white/10 shadow-xl overflow-hidden\"><!-- Messages Feed (scrollable) --><div id=\"message-container\" class=\"flex-1 overflow-y-auto scrollbar-thin\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(messages) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<!-- Empty State (server-side conditional to avoid FOUC) --> <!-- transition classes for smooth fade out on message submit --> <div id=\"empty-state-wrapper\" class=\"transition-opacity duration-200\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = component.EmptyState(component.EmptyStateProps{}).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<!-- Message List --><div id=\"message-list\" class=\"mx-auto max-w-3xl px-4 py-8 space-y-6\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, msg := range messages {
+			templ_7745c5c3_Err = component.MessageBubble(component.MessageBubbleProps{
+				Content:   msg.Content,
+				Role:      msg.Role,
+				IsLoading: msg.IsLoading,
+			}).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div></div><!-- Chat Input with Mode Toggle -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = component.ChatInput(component.ChatInputProps{
+			SessionID:  sessionID,
+			CanvasMode: canvasMode,
+			CSRFToken:  csrfToken,
+		}).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div></div></div><!-- Artifact Panel (only in canvas mode) -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = component.ArtifactPanel(component.ArtifactPanelProps{
+			SessionID:  sessionID,
+			CanvasMode: canvasMode,
+		}).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// chatStyles renders CSS for the chat page.
+func chatStyles() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var7 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var7 == nil {
+			templ_7745c5c3_Var7 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<style>\n\t\t/* Hide empty state when message list has children */\n\t\t/* Uses :has() selector for reliable parent-based hiding */\n\t\t#message-container:has(#message-list:not(:empty)) #empty-state-wrapper {\n\t\t\tdisplay: none;\n\t\t}\n\n\t\t/* Animation delays for loading dots */\n\t\t.animation-delay-200 {\n\t\t\tanimation-delay: 200ms;\n\t\t}\n\t\t.animation-delay-400 {\n\t\t\tanimation-delay: 400ms;\n\t\t}\n\n\t\t/* Respect reduced motion preference */\n\t\t@media (prefers-reduced-motion: reduce) {\n\t\t\t.animate-pulse {\n\t\t\t\tanimation-duration: 0.01ms !important;\n\t\t\t}\n\t\t}\n\t</style>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
 }
 
 var _ = templruntime.GeneratedTemplate
