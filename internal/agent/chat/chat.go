@@ -119,6 +119,8 @@ func New(deps Deps) (*Chat, error) {
 	}
 
 	// Register tools from all toolsets and cache references
+	// Per Genkit Master: Log tool registration for debugging
+	// Wrap tools for streaming event emission
 	emptyCtx := &emptyReadonlyContext{}
 	for _, ts := range c.toolsets {
 		toolList, err := ts.Tools(emptyCtx)
@@ -126,22 +128,41 @@ func New(deps Deps) (*Chat, error) {
 			return nil, fmt.Errorf("failed to get tools from toolset %s: %w", ts.Name(), err)
 		}
 
+		var toolNamesInSet []string
 		for _, t := range toolList {
 			execTool, ok := t.(*tools.ExecutableTool)
 			if !ok {
 				return nil, fmt.Errorf("tool %s is not an ExecutableTool", t.Name())
 			}
 
+			// Wrap execution function for tool event emission
+			// The wrapper retrieves ToolEventEmitter from context at runtime
+			// If no emitter in context (non-streaming), events are silently skipped
+			wrappedExecute := tools.WithEvents(
+				execTool.Name(),
+				execTool.Execute,
+			)
+
 			genkitTool := genkit.DefineTool(
 				c.g,
 				execTool.Name(),
 				execTool.Description(),
-				execTool.Execute,
+				wrappedExecute,
 			)
 
 			c.toolRefs = append(c.toolRefs, genkitTool)
+			toolNamesInSet = append(toolNamesInSet, execTool.Name())
 		}
+		c.logger.Debug("registered toolset",
+			"toolset", ts.Name(),
+			"toolCount", len(toolList),
+			"tools", toolNamesInSet,
+		)
 	}
+	c.logger.Info("chat agent initialized",
+		"totalTools", len(c.toolRefs),
+		"toolsets", len(c.toolsets),
+	)
 
 	// Load Dotprompt (koopa.prompt) - REQUIRED
 	c.prompt = genkit.LookupPrompt(c.g, KoopaPromptName)
@@ -171,20 +192,22 @@ func (*Chat) SubAgents() []agent.Agent {
 // Execute runs the chat agent with the given input (non-streaming).
 // This is a convenience wrapper around ExecuteStream with nil callback.
 func (c *Chat) Execute(ctx agent.InvocationContext, input string) (*agent.Response, error) {
-	return c.ExecuteStream(ctx, input, nil)
+	return c.ExecuteStream(ctx, input, false, nil)
 }
 
 // ExecuteStream runs the chat agent with optional streaming output.
 // If callback is non-nil, it is called for each chunk of the response as it's generated.
 // If callback is nil, the response is generated without streaming (equivalent to Execute).
+// canvasEnabled tells the AI to output interactive content (code, markdown) for Canvas panel.
 // The final response is always returned after generation completes.
-func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback StreamCallback) (*agent.Response, error) {
+func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, canvasEnabled bool, callback StreamCallback) (*agent.Response, error) {
 	streaming := callback != nil
 	c.logger.Debug("executing chat agent",
 		"invocation_id", ctx.InvocationID(),
 		"session_id", ctx.SessionID(),
 		"branch", ctx.Branch(),
-		"streaming", streaming)
+		"streaming", streaming,
+		"canvasEnabled", canvasEnabled)
 
 	// Load session history
 	history, err := c.sessions.LoadHistory(ctx, ctx.SessionID(), ctx.Branch())
@@ -196,7 +219,7 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 	historyMessages := history.Messages()
 
 	// Generate response using unified core logic
-	resp, err := c.execute(ctx, input, historyMessages, callback)
+	resp, err := c.execute(ctx, input, historyMessages, canvasEnabled, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +261,8 @@ func (c *Chat) ExecuteStream(ctx agent.InvocationContext, input string, callback
 
 // execute is the unified execution logic for both streaming and non-streaming modes.
 // If callback is non-nil, streaming is enabled; otherwise, standard generation is used.
-func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
+// canvasEnabled is passed to the Dotprompt template for Canvas-specific instructions.
+func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.Message, canvasEnabled bool, callback StreamCallback) (*ai.ModelResponse, error) {
 	// Build messages: copy history and append current user input
 	// Using make+append pattern to avoid modifying the original historyMessages slice
 	messages := make([]*ai.Message, len(historyMessages), len(historyMessages)+1)
@@ -261,9 +285,25 @@ func (c *Chat) execute(ctx context.Context, input string, historyMessages []*ai.
 		maxTurns = 5 // Fallback default
 	}
 
+	// Per Genkit Master: Add diagnostic logging before execution
+	// This helps debug when tools are not being invoked by the LLM
+	toolNames := make([]string, len(c.toolRefs))
+	for i, t := range c.toolRefs {
+		toolNames[i] = t.Name()
+	}
+	c.logger.Debug("executing prompt with tools",
+		"toolCount", len(c.toolRefs),
+		"toolNames", toolNames,
+		"maxTurns", maxTurns,
+		"model", c.resolveModelName(),
+		"queryLength", len(input),
+		"canvasEnabled", canvasEnabled,
+	)
+
 	opts := []ai.PromptExecuteOption{
 		ai.WithInput(map[string]any{
-			"language": language,
+			"language":      language,
+			"canvasEnabled": canvasEnabled,
 		}),
 		ai.WithMessagesFn(messagesFn),
 		ai.WithTools(c.toolRefs...),

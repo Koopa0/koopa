@@ -1,99 +1,194 @@
 package component
 
-// ChatInputProps configures the ChatInput component.
 type ChatInputProps struct {
-	SessionID string
-	CSRFToken string
-	ActionURL string // Optional: override form action (default: "/genui/chat/send")
+	SessionID   string
+	CSRFToken   string // Optional. Zero-value "" will not include CSRF token
+	Placeholder string // Optional. Zero-value "" will show "Type a message..."
+	CanvasMode  bool   // When true, Canvas button is active; when false, Chat button is active
 }
 
-// ChatInput renders the message input form with HTMX submission.
-// Uses progressive enhancement: form works without JS via standard POST.
-// CSRF token missing shows warning and disables inputs.
+// ChatInput renders the chat input form with Canvas toggle and HTMX integration.
+// Design reference: Tailwind UI forms/textareas/with-avatar-and-actions.html
+// Progressive enhancement: works with standard form submission, enhanced with HTMX.
+// On submit: POSTs to /genui/send, appends user + AI message shells, clears form.
+//
+// Canvas Toggle: Single button following Gemini's design pattern.
+// Chat is always the default mode; Canvas is an opt-in capability hint to AI.
 templ ChatInput(props ChatInputProps) {
-	<form
-		action={ orDefault(props.ActionURL, "/genui/chat/send") }
-		method="POST"
-		hx-post={ orDefault(props.ActionURL, "/genui/chat/send") }
-		hx-target="#message-list"
-		hx-swap="beforeend scroll:bottom"
-		hx-indicator="#chat-spinner"
-		hx-on::after-request="if(event.detail.successful) { this.reset(); htmx.find('#message-input').focus(); }"
-		aria-label="Send message"
-		class="border-t border-gray-200 bg-white p-4 dark:bg-surface-900 dark:border-gray-700">
-
-		// Warning if CSRF token missing (allows user to see form, can recover by refresh)
-		if props.CSRFToken == "" {
-			<div
-				id="csrf-error"
-				role="alert"
-				aria-live="assertive"
-				class="mb-3 rounded-lg border border-warning-300 bg-warning-50 p-3
-				       dark:border-warning-600 dark:bg-warning-900/20">
-				<div class="flex items-start gap-2">
-					<svg class="h-5 w-5 flex-shrink-0 text-warning-600 dark:text-warning-400"
-						 fill="currentColor" viewBox="0 0 20 20">
-						<path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-					</svg>
-					<div>
-						<h3 class="text-sm font-semibold text-warning-800 dark:text-warning-300">
-							Security Warning
-						</h3>
-						<p class="mt-1 text-sm text-warning-700 dark:text-warning-400">
-							This form cannot submit securely. Please refresh the page.
-						</p>
+	<div class="bg-gray-900 p-4">
+		<div class="mx-auto max-w-3xl">
+			<!-- Canvas Toggle: Single button per Gemini design pattern -->
+			<!-- Chat is always default; Canvas is opt-in capability hint to AI -->
+			<div class="flex items-center gap-3 mb-3">
+				@ModeSelector(props.SessionID, props.CSRFToken, props.CanvasMode)
+			</div>
+			<!-- Chat Form -->
+			<form
+				id="chat-form"
+				action="/genui/send"
+				method="POST"
+				hx-post="/genui/send"
+				hx-target="#message-list"
+				hx-swap="beforeend show:bottom"
+				hx-disabled-elt="#chat-input-textarea, #send-button"
+				hx-indicator="#send-spinner"
+				class="relative"
+			>
+				<!-- Hidden fields (using snake_case per architecture-master) -->
+				<!--  IDs required for HTMX OOB swaps during lazy session creation -->
+				<!-- Always render fields (even if empty) so OOB swap targets exist -->
+				<input type="hidden" name="session_id" value={ props.SessionID } id="session-id-field"/>
+				<input type="hidden" name="csrf_token" value={ props.CSRFToken } id="csrf-token-field"/>
+				<!-- Textarea container with rounded corners -->
+				<div class="rounded-2xl bg-white/5 border border-white/10 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all duration-200">
+					<label for="chat-input-textarea" class="sr-only">Your message</label>
+					<textarea
+						id="chat-input-textarea"
+						name="content"
+						rows="1"
+						placeholder={ getPlaceholder(props.Placeholder) }
+						required
+						class="block w-full resize-none bg-transparent px-6 py-4 text-base text-white placeholder:text-gray-400 focus:outline-none sm:text-sm/6"
+					></textarea>
+					<!-- Spacer for action buttons -->
+					<div aria-hidden="true" class="py-2">
+						<div class="py-px">
+							<div class="h-9"></div>
+						</div>
 					</div>
 				</div>
-			</div>
-		}
-
-		<input type="hidden" name="sessionId" value={ props.SessionID }/>
-		<input type="hidden" name="csrf_token" value={ props.CSRFToken }/>
-
-		<div class="flex gap-3">
-			<div class="flex-1">
-				if props.CSRFToken == "" {
-				<input
-					id="message-input"
-					name="content"
-					type="text"
-					placeholder="Type a message..."
-					required
-					maxlength="4096"
-					autocomplete="off"
-					disabled
-					aria-label="Message content"
-					aria-describedby="csrf-error"
-					class="w-full rounded-lg border border-gray-300 px-4 py-2.5
-						   focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500
-						   dark:bg-surface-800 dark:border-gray-600 dark:text-white
-						   placeholder:text-gray-400 dark:placeholder:text-gray-500
-						   disabled:opacity-50 disabled:cursor-not-allowed"
-				/>
-			} else {
-				<input
-					id="message-input"
-					name="content"
-					type="text"
-					placeholder="Type a message..."
-					required
-					maxlength="4096"
-					autocomplete="off"
-					aria-label="Message content"
-					class="w-full rounded-lg border border-gray-300 px-4 py-2.5
-						   focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500
-						   dark:bg-surface-800 dark:border-gray-600 dark:text-white
-						   placeholder:text-gray-400 dark:placeholder:text-gray-500"
-				/>
-			}
-			</div>
-
-			@Button(ButtonProps{Variant: "primary", Type: ButtonTypeSubmit, Disabled: props.CSRFToken == ""}) {
-				<span id="chat-spinner" class="htmx-indicator mr-2">
-					@Spinner(SpinnerProps{Size: "sm"})
-				</span>
-				<span>Send</span>
-			}
+				<!-- Action buttons (absolute positioned) -->
+				<div class="absolute inset-x-0 bottom-0 flex justify-end py-2 px-4">
+					<div class="shrink-0 flex items-center gap-3">
+						<!-- Keyboard shortcut hint -->
+						<span class="hidden sm:inline text-xs text-gray-500">Enter ↵ send · Shift+Enter newline</span>
+						<!-- Send button with gradient -->
+						<button
+							id="send-button"
+							type="submit"
+							aria-label="Send message"
+							class="inline-flex items-center justify-center p-2 text-gray-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+						>
+							<!-- Send arrow icon (hidden when loading) -->
+							<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="size-5 htmx-hide-on-request">
+								<path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z"></path>
+							</svg>
+							<!-- Loading spinner (shown during request) -->
+							<svg id="send-spinner" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="size-5 animate-spin htmx-indicator">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+							</svg>
+						</button>
+					</div>
+				</div>
+			</form>
 		</div>
-	</form>
+	</div>
+}
+
+func getPlaceholder(placeholder string) string {
+	if placeholder == "" {
+		return "Type a message..."
+	}
+	return placeholder
+}
+
+// getCanvasToggleVals builds the hx-vals JSON for canvas toggle.
+// Per HTMX-Master review: CSRF token moved from URL to form body for security.
+// This prevents CSRF tokens from appearing in browser history and server logs.
+func getCanvasToggleVals(canvasEnabled bool, csrfToken string) string {
+	enabledStr := boolToString(canvasEnabled)
+	if csrfToken == "" {
+		return `{"canvas_enabled": "` + enabledStr + `"}`
+	}
+	return `{"canvas_enabled": "` + enabledStr + `", "csrf_token": "` + csrfToken + `"}`
+}
+
+// ModeSelector is deprecated, kept for backwards compatibility.
+// Use CanvasToggle instead for Gemini-style single toggle button.
+// TODO: Remove after migration complete.
+templ ModeSelector(sessionID string, csrfToken string, canvasMode bool) {
+	@CanvasToggle(sessionID, csrfToken, canvasMode)
+}
+
+// CanvasToggle renders a single toggle button for Canvas mode.
+// Canvas Redesign - Follows Gemini's design pattern:
+// - Single toggle button in prompt bar, clicked BEFORE typing prompt
+// - AI receives context that Canvas is enabled via system prompt modification
+// - Panel appears WHEN AI has rich content (code, markdown), not immediately
+// - It's a capability hint to AI, not a UI mode switch
+//
+// When enabled: AI knows to output interactive content (code blocks, etc.)
+// that will be rendered in a side panel.
+//
+// Per HTMX-Master review: CSRF token moved from URL to hx-vals for security.
+// Per UI-Master review: Added disabled styling and increased indicator dot size.
+templ CanvasToggle(sessionID string, csrfToken string, canvasEnabled bool) {
+	<button
+		type="button"
+		id="canvas-toggle"
+		role="switch"
+		aria-checked={ boolToString(canvasEnabled) }
+		aria-label="Enable Canvas mode for interactive AI output"
+		title="Canvas: AI can output interactive code and documents"
+		hx-post="/genui/canvas-toggle"
+		hx-vals={ getCanvasToggleVals(!canvasEnabled, csrfToken) }
+		hx-swap="outerHTML"
+		hx-target="this"
+		hx-disabled-elt="this"
+		class={
+			"inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200",
+			templ.KV("bg-indigo-500 text-white shadow-sm hover:bg-indigo-400", canvasEnabled),
+			templ.KV("bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white ring-1 ring-inset ring-white/10", !canvasEnabled),
+			"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900",
+			"disabled:opacity-50 disabled:cursor-not-allowed",
+		}
+	>
+		<!-- Code/Canvas icon -->
+		<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+			<path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" stroke-linecap="round" stroke-linejoin="round"></path>
+		</svg>
+		<span>Canvas</span>
+		if canvasEnabled {
+			<!-- Active indicator dot (size-2 per UI-Master review for better visibility) -->
+			<span class="size-2 rounded-full bg-white"></span>
+		}
+	</button>
+	<!-- Screen reader announcement with enhanced context -->
+	<div aria-live="polite" class="sr-only">
+		if canvasEnabled {
+			Canvas mode enabled. AI will format responses for interactive editing.
+		} else {
+			Canvas mode disabled. Standard chat mode.
+		}
+	</div>
+}
+
+// boolToString converts bool to "true"/"false" string for HTML attributes.
+func boolToString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// SessionFieldsOOB renders hidden form fields as OOB swaps.
+// Used for lazy session creation to update the chat form's
+// hidden fields with new session_id and csrf_token after first message.
+// The hx-swap-oob="true" attribute tells HTMX to find elements by ID and replace them.
+templ SessionFieldsOOB(sessionID, csrfToken string) {
+	<input
+		type="hidden"
+		name="session_id"
+		value={ sessionID }
+		id="session-id-field"
+		hx-swap-oob="true"
+	/>
+	<input
+		type="hidden"
+		name="csrf_token"
+		value={ csrfToken }
+		id="csrf-token-field"
+		hx-swap-oob="true"
+	/>
 }

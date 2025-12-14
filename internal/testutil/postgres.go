@@ -163,6 +163,8 @@ func findProjectRoot() (string, error) {
 //  1. 000001_init_schema.up.sql - Creates tables and pgvector extension
 //  2. 000002_create_sessions.up.sql - Creates session tables
 //  3. 000003_add_branch_column.up.sql - Adds branch column for multi-agent support
+//  4. 000004_add_message_status.up.sql - Adds message status column
+//  5. 000005_add_canvas_artifacts.up.sql - Adds canvas_mode and session_artifacts table
 //
 // Each migration runs in its own transaction for atomicity.
 // This is a simplified version - production should use a migration tool like golang-migrate.
@@ -181,6 +183,8 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		filepath.Join(projectRoot, "db", "migrations", "000001_init_schema.up.sql"),
 		filepath.Join(projectRoot, "db", "migrations", "000002_create_sessions.up.sql"),
 		filepath.Join(projectRoot, "db", "migrations", "000003_add_branch_column.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000004_add_message_status.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000005_add_canvas_artifacts.up.sql"),
 	}
 
 	for _, migrationPath := range migrationFiles {

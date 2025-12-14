@@ -1,4 +1,43 @@
 // Package agent provides the Agent interface and implementations.
+//
+// # DESIGN DECISION: Context Embedding
+//
+// This package uses context embedding in InvocationContext, which violates
+// the standard Go guideline (https://go.dev/blog/context-and-structs).
+//
+// ## Rationale for Exception
+//
+// 1. Agent Framework Requirements:
+//   - Multi-agent delegation chains (tracked via InvocationID)
+//   - Session-scoped state (SessionID persists across calls)
+//   - Branch isolation (separate histories per agent path)
+//   - Metadata propagation (AgentName for logging/debugging)
+//
+// 2. These requirements don't map to context.Context's design:
+//
+//   - context.Context is for request-scoped cancellation/deadlines
+//
+//   - Agent metadata is conversation-scoped (longer lifetime)
+//
+//   - Type-unsafe context.WithValue() loses compile-time safety
+//
+//     3. API Clarity:
+//     Execute(ctx InvocationContext, input string)  // Clear
+//     vs
+//     Execute(ctx context.Context, meta Metadata, input string)  // Confusing
+//
+//     4. Precedent:
+//     The Go team acknowledges exceptions for specialized frameworks
+//     (backwards compatibility is one; agent orchestration is another)
+//
+// ## Mitigation
+//
+//   - Unwrap() method extracts context.Context for stdlib integration
+//   - Clear documentation of lifetime semantics
+//   - Explicit typing prevents misuse
+//
+// This is a deliberate, documented trade-off optimizing for agent framework
+// ergonomics over strict adherence to general-purpose Go guidelines.
 package agent
 
 import (
@@ -32,6 +71,14 @@ type InvocationContext interface {
 
 	// AgentName is the name of the current Agent
 	AgentName() string
+
+	// Unwrap returns the underlying context.Context for stdlib integration.
+	// Use this when calling standard library functions that require context.Context:
+	//   - http.NewRequestWithContext(invCtx.Unwrap(), ...)
+	//   - db.QueryContext(invCtx.Unwrap(), ...)
+	//   - cancel, timeout propagation
+	// This provides an "escape hatch" from the embedded context pattern.
+	Unwrap() context.Context
 }
 
 // ReadonlyContext provides read-only Context for Tools
@@ -123,6 +170,9 @@ func (ic *invocationContext) SessionID() SessionID { return ic.sessionID }
 
 // AgentName returns the name of the executing agent.
 func (ic *invocationContext) AgentName() string { return ic.agentName }
+
+// Unwrap returns the underlying context.Context for stdlib integration.
+func (ic *invocationContext) Unwrap() context.Context { return ic.Context }
 
 // AsReadonly returns a read-only version
 // invocationContext already implements ReadonlyContext, so it can return itself

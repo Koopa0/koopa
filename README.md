@@ -2,141 +2,140 @@
 
 [![CI](https://github.com/koopa0/koopa-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/koopa0/koopa-cli/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/koopa0/koopa-cli)](https://goreportcard.com/report/github.com/koopa0/koopa-cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A terminal-based AI assistant with local knowledge management, built with [Firebase Genkit](https://github.com/firebase/genkit).
+Koopa is a local-first AI workspace platform built with Go.
+
+It unifies terminal efficiency with rich web interactions through a hybrid architecture: a keyboard-centric TUI for speed, and a server-driven Web UI for visualization. Powered by Firebase Genkit and PostgreSQL, Koopa enables local knowledge management, autonomous agents, and tool integration via the Model Context Protocol (MCP).
+
+## Core Philosophy
+
+*   **Local Sovereignty**: User data, sessions, and vector embeddings reside in a local PostgreSQL database.
+*   **Hybrid Interface**: Seamless context switching between CLI efficiency and Web UI richness.
+*   **Hypermedia-Driven**: Utilizes a modern Go stack (Templ + HTMX) to deliver high performance with low complexity.
 
 ## Features
 
-- **Local Knowledge Base** - Index your documents for context-aware conversations
-- **Session Persistence** - Conversations are saved and can be resumed
-- **Built-in Tools** - File operations, system commands, and HTTP requests
-- **MCP Integration** - Works with Claude Desktop, Cursor, and Gemini CLI
-- **HTTP API** - Programmatic access for automation
+*   **Generative Web UI**: A server-driven interface supporting streaming responses, rich component rendering, and artifact management without SPA complexity.
+*   **Terminal UI**: A low-latency Bubble Tea application for rapid interaction.
+*   **Local RAG**: Automatic document indexing using `pgvector` for context-aware conversations.
+*   **MCP Integration**: Implements the Model Context Protocol to serve as a backend for compatible clients like Claude Desktop.
+*   **Session Persistence**: Robust conversation history management across all interfaces.
 
-## Installation
+## Technology Stack
 
-**Prerequisites:** Go 1.25+, Node.js 20+, Docker, [Gemini API key](https://ai.google.dev/)
+*   **Language**: Go 1.25+
+*   **AI Framework**: Google Firebase Genkit
+*   **Database**: PostgreSQL + pgvector
+*   **Web**: Templ, HTMX, Alpine.js, Tailwind CSS
+*   **TUI**: Bubble Tea
 
-```bash
-git clone https://github.com/koopa0/koopa-cli.git
-cd koopa-cli
+## Quick Start
 
-# Install Task (build tool)
-go install github.com/go-task/task/v3/cmd/task@latest
+### Prerequisites
 
-# Install dependencies and build
-task install   # Install frontend deps and templ
-task build     # Build binary with all assets
+*   Go 1.25 or higher
+*   Docker (for PostgreSQL)
+*   Node.js 20+ (asset compilation only)
+*   Gemini API Key
 
-# Start database
-docker-compose up -d
+### Installation
 
-# Run
-export GEMINI_API_KEY=your-api-key
-./koopa
-```
+1.  **Clone and setup**
+    ```bash
+    git clone https://github.com/koopa0/koopa-cli.git
+    cd koopa-cli
+    go install github.com/go-task/task/v3/cmd/task@latest
+    task install
+    ```
+
+2.  **Start infrastructure**
+    ```bash
+    docker-compose up -d
+    ```
+
+3.  **Build**
+    ```bash
+    task build
+    ```
+
+4.  **Configure**
+    Create `~/.koopa/config.yaml`:
+    ```yaml
+    postgres_host: "localhost"
+    postgres_port: 5432
+    postgres_user: "koopa"
+    postgres_db_name: "koopa"
+    postgres_ssl_mode: "disable"
+    ```
+
+5.  **Run**
+    ```bash
+    export GEMINI_API_KEY="your-key"
+    ./koopa
+    ```
 
 ## Usage
 
-```
-$ ./koopa
-Koopa - Your terminal AI personal assistant
+Koopa operates in three modes.
 
-> Hello!
-Koopa> Hi! How can I help you today?
-
-> /help
-```
-
-**Other modes:**
-
+**Terminal Mode**
+The default interactive interface.
 ```bash
-./koopa serve   # HTTP API server (requires HMAC_SECRET)
-./koopa mcp     # MCP server for external tools
+./koopa
+```
+
+**Web Server Mode**
+Starts the HTTP server for the web interface.
+```bash
+export HMAC_SECRET=$(openssl rand -base64 32)
+./koopa serve
+```
+Access the UI at `http://localhost:8080/genui`.
+
+**MCP Server Mode**
+Exposes tools and knowledge base to external MCP clients.
+```bash
+./koopa mcp
 ```
 
 ## Configuration
 
-### Required Environment Variables
+Koopa uses a config-first approach. Non-sensitive settings reside in `config.yaml`, while secrets must be passed via environment variables.
 
-| Variable | Required For | Description | Configuration |
-|----------|--------------|-------------|---------------|
-| `GEMINI_API_KEY` | All modes | Google AI API key | Environment variable only |
-| `hmac_secret` | `serve` mode | CSRF token secret (min 32 chars) | Set in `~/.koopa/config.yaml` |
-| `postgres_*` | All modes | Database connection | Set in `~/.koopa/config.yaml` |
+**Environment Variables**
+*   `GEMINI_API_KEY`: Required. Google AI API key.
+*   `HMAC_SECRET`: Required for `serve` mode. Min 32 chars.
+*   `POSTGRES_PASSWORD`: Required if not using default credentials.
 
-**Example config.yaml:**
+**Configuration File**
+Default settings in `~/.koopa/config.yaml`:
 ```yaml
-# ~/.koopa/config.yaml
-postgres_host: "localhost"
-postgres_port: 5432
-postgres_user: "koopa"
-postgres_password: ""  # or set KOOPA_POSTGRES_PASSWORD env var
-postgres_db_name: "koopa"
-postgres_ssl_mode: "disable"
-
-hmac_secret: "your-32-char-secret"  # Generate with: openssl rand -base64 32
+model_name: "gemini-2.5-flash"
+temperature: 0.7
+max_tokens: 4096
+rag_top_k: 5
+embedder_model: "text-embedding-004"
 ```
-
-**Example usage:**
-```bash
-export GEMINI_API_KEY=your-api-key
-./koopa serve
-```
-
-See [config.example.yaml](config.example.yaml) for all configuration options.
 
 ## Development
 
-### Local Development Workflow
+Use `Taskfile` for standard workflows.
 
 ```bash
-# Build frontend assets (required before tests)
-task css
-
-# Generate templ files
-task generate
-
-# Run tests
-task test
-
-# Run tests with race detector
-task test:race
-
-# Development server (auto-reload)
-task dev
-```
-
-### Viewing the Web UI
-
-The web interface is available when running in serve mode:
-
-```bash
-# Set API key (required)
-export GEMINI_API_KEY=your-api-key
-
-# Configure database in ~/.koopa/config.yaml:
-#   postgres_host: localhost
-#   postgres_port: 5432
-#   postgres_user: koopa
-#   postgres_password: ""  # or set KOOPA_POSTGRES_PASSWORD env var
-#   postgres_db_name: koopa
-#   postgres_ssl_mode: disable
-#
-#   hmac_secret: "..."  # Generate with: openssl rand -base64 32
-
-./koopa serve
-# Visit http://localhost:3400/genui
+task generate css   # Build assets
+task test           # Run unit tests
+task test:race      # Run tests with race detector
+task dev            # Start dev server with hot-reload
 ```
 
 ## Contributing
 
-1. Fork and create a feature branch
-2. Build assets: `task generate css`
-3. Ensure tests pass: `task test:race`
-4. Submit a pull request
+1.  Fork the repository.
+2.  Create a feature branch.
+3.  Ensure `task test:race` passes.
+4.  Submit a Pull Request.
 
 ## License
 
-[LICENSE](LICENSE)
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.

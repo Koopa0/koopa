@@ -216,6 +216,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
+	// Parse DATABASE_URL if set (highest priority for PostgreSQL config)
+	if err := cfg.parseDatabaseURL(); err != nil {
+		return nil, fmt.Errorf("failed to parse DATABASE_URL: %w", err)
+	}
+
 	// CRITICAL: Validate immediately (fail-fast)
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)

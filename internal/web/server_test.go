@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/koopa0/koopa-cli/internal/config"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/web"
 )
@@ -24,10 +25,18 @@ func setupTestServer(t *testing.T) *web.Server {
 	// Create a minimal session store (nil pool is OK for non-transactional tests)
 	store := session.New(nil, nil, logger)
 
+	// Create minimal test config
+	testCfg := &config.Config{
+		ModelName:   "gemini-2.5-flash",
+		Temperature: 0.7,
+		MaxTokens:   2048,
+	}
+
 	server, err := web.NewServer(web.ServerDeps{
 		Logger:       logger,
 		SessionStore: store,
 		CSRFSecret:   testSecret,
+		Config:       testCfg,
 	})
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
@@ -49,9 +58,14 @@ func TestNewServer_MissingSessionStore(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
+	testCfg := &config.Config{
+		ModelName:   "gemini-2.5-flash",
+		Temperature: 0.7,
+	}
 	_, err := web.NewServer(web.ServerDeps{
 		Logger:     logger,
 		CSRFSecret: testSecret,
+		Config:     testCfg,
 		// SessionStore is nil
 	})
 
@@ -65,11 +79,16 @@ func TestNewServer_ShortCSRFSecret(t *testing.T) {
 
 	logger := slog.Default()
 	store := session.New(nil, nil, logger)
+	testCfg := &config.Config{
+		ModelName:   "gemini-2.5-flash",
+		Temperature: 0.7,
+	}
 
 	_, err := web.NewServer(web.ServerDeps{
 		Logger:       logger,
 		SessionStore: store,
 		CSRFSecret:   []byte("too-short"), // Less than 32 bytes
+		Config:       testCfg,
 	})
 
 	if err == nil {
@@ -82,6 +101,10 @@ func TestNewServer_WithNilFlow(t *testing.T) {
 
 	logger := slog.Default()
 	store := session.New(nil, nil, logger)
+	testCfg := &config.Config{
+		ModelName:   "gemini-2.5-flash",
+		Temperature: 0.7,
+	}
 
 	// Explicitly passing nil ChatFlow (simulation mode)
 	server, err := web.NewServer(web.ServerDeps{
@@ -89,6 +112,7 @@ func TestNewServer_WithNilFlow(t *testing.T) {
 		ChatFlow:     nil,
 		SessionStore: store,
 		CSRFSecret:   testSecret,
+		Config:       testCfg,
 	})
 
 	if err != nil {
@@ -184,5 +208,95 @@ func TestServer_Handler(t *testing.T) {
 	handler := server.Handler()
 	if handler == nil {
 		t.Fatal("Handler() returned nil")
+	}
+}
+
+// setupTestServerWithDev creates a test server with configurable IsDev mode.
+func setupTestServerWithDev(t *testing.T, isDev bool) *web.Server {
+	t.Helper()
+
+	logger := slog.Default()
+	store := session.New(nil, nil, logger)
+	testCfg := &config.Config{
+		ModelName:   "gemini-2.5-flash",
+		Temperature: 0.7,
+		MaxTokens:   2048,
+	}
+
+	server, err := web.NewServer(web.ServerDeps{
+		Logger:       logger,
+		SessionStore: store,
+		CSRFSecret:   testSecret,
+		Config:       testCfg,
+		IsDev:        isDev,
+	})
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+
+	return server
+}
+
+// TestServer_CSPHeader_DevMode verifies that dev mode CSP includes 'unsafe-eval'.
+// This is required for debugging tools like axe-core in E2E tests.
+func TestServer_CSPHeader_DevMode(t *testing.T) {
+	t.Parallel()
+
+	server := setupTestServerWithDev(t, true)
+
+	req := httptest.NewRequest(http.MethodGet, "/genui/static/css/output.css", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	csp := rec.Header().Get("Content-Security-Policy")
+
+	// Dev mode MUST include 'unsafe-eval' for debugging tools
+	if !strings.Contains(csp, "'unsafe-eval'") {
+		t.Errorf("CSP in dev mode should include 'unsafe-eval', got: %s", csp)
+	}
+
+	// Dev mode must still include security basics
+	if !strings.Contains(csp, "default-src 'self'") {
+		t.Error("CSP missing default-src 'self' in dev mode")
+	}
+
+	// Verify other required directives still present
+	if !strings.Contains(csp, "script-src") {
+		t.Error("CSP missing script-src directive in dev mode")
+	}
+}
+
+// TestServer_CSPHeader_ProdMode verifies that production CSP does NOT include 'unsafe-eval'.
+// This ensures stricter security in production environments.
+func TestServer_CSPHeader_ProdMode(t *testing.T) {
+	t.Parallel()
+
+	server := setupTestServerWithDev(t, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/genui/static/css/output.css", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	csp := rec.Header().Get("Content-Security-Policy")
+
+	// Production MUST NOT include 'unsafe-eval'
+	if strings.Contains(csp, "'unsafe-eval'") {
+		t.Errorf("CSP in production should NOT include 'unsafe-eval', got: %s", csp)
+	}
+
+	// Verify production has all required directives
+	requiredDirectives := []string{
+		"default-src 'self'",
+		"script-src 'self' 'unsafe-inline'",
+		"style-src 'self' 'unsafe-inline'",
+		"connect-src 'self'",
+	}
+
+	for _, directive := range requiredDirectives {
+		if !strings.Contains(csp, directive) {
+			t.Errorf("CSP missing %q in production mode", directive)
+		}
 	}
 }

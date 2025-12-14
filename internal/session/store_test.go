@@ -110,10 +110,23 @@ func (m *mockSessionQuerier) ListSessions(ctx context.Context, arg sqlc.ListSess
 	return m.listSessionsResult, nil
 }
 
+func (m *mockSessionQuerier) ListSessionsWithMessages(_ context.Context, _ sqlc.ListSessionsWithMessagesParams) ([]sqlc.Session, error) {
+	// Reuse same mock data as ListSessions for simplicity
+	if m.listSessionsErr != nil {
+		return nil, m.listSessionsErr
+	}
+	return m.listSessionsResult, nil
+}
+
 func (m *mockSessionQuerier) UpdateSessionUpdatedAt(ctx context.Context, arg sqlc.UpdateSessionUpdatedAtParams) error {
 	m.updateSessionUpdatedAtCalls++
 	m.lastUpdateParams = arg
 	return m.updateSessionUpdatedAtErr
+}
+
+func (*mockSessionQuerier) UpdateSessionTitle(_ context.Context, _ sqlc.UpdateSessionTitleParams) error {
+	// No-op for mock - tests don't currently verify title updates
+	return nil
 }
 
 func (m *mockSessionQuerier) DeleteSession(ctx context.Context, id pgtype.UUID) error {
@@ -204,6 +217,65 @@ func (m *mockSessionQuerier) CountMessagesByBranch(ctx context.Context, arg sqlc
 func (m *mockSessionQuerier) DeleteMessagesByBranch(ctx context.Context, arg sqlc.DeleteMessagesByBranchParams) error {
 	m.deleteMessagesByBranchCalls++
 	return m.deleteMessagesByBranchErr
+}
+
+// Streaming message operations (for SSE chat flow)
+
+func (*mockSessionQuerier) AddMessageWithID(_ context.Context, _ sqlc.AddMessageWithIDParams) (sqlc.SessionMessage, error) {
+	// No-op for mock - tests don't currently verify this
+	return sqlc.SessionMessage{}, nil
+}
+
+func (*mockSessionQuerier) UpdateMessageContent(_ context.Context, _ sqlc.UpdateMessageContentParams) error {
+	// No-op for mock
+	return nil
+}
+
+func (*mockSessionQuerier) UpdateMessageStatus(_ context.Context, _ sqlc.UpdateMessageStatusParams) error {
+	// No-op for mock
+	return nil
+}
+
+func (*mockSessionQuerier) GetMessageByID(_ context.Context, _ pgtype.UUID) (sqlc.SessionMessage, error) {
+	// No-op for mock
+	return sqlc.SessionMessage{}, nil
+}
+
+func (*mockSessionQuerier) GetUserMessageBefore(_ context.Context, _ sqlc.GetUserMessageBeforeParams) ([]byte, error) {
+	// No-op for mock
+	return nil, nil
+}
+
+// Canvas mode and artifact operations
+
+func (*mockSessionQuerier) UpdateCanvasMode(_ context.Context, _ sqlc.UpdateCanvasModeParams) error {
+	// No-op for mock
+	return nil
+}
+
+func (*mockSessionQuerier) CreateArtifact(_ context.Context, _ sqlc.CreateArtifactParams) (sqlc.SessionArtifact, error) {
+	// No-op for mock
+	return sqlc.SessionArtifact{}, nil
+}
+
+func (*mockSessionQuerier) GetLatestArtifact(_ context.Context, _ pgtype.UUID) (sqlc.SessionArtifact, error) {
+	// No-op for mock
+	return sqlc.SessionArtifact{}, nil
+}
+
+func (*mockSessionQuerier) ListArtifactsBySession(_ context.Context, _ pgtype.UUID) ([]sqlc.SessionArtifact, error) {
+	// No-op for mock
+	return nil, nil
+}
+
+func (*mockSessionQuerier) UpdateArtifactContent(_ context.Context, _ sqlc.UpdateArtifactContentParams) error {
+	// No-op for mock
+	return nil
+}
+
+func (*mockSessionQuerier) DeleteArtifact(_ context.Context, _ pgtype.UUID) error {
+	// No-op for mock
+	return nil
 }
 
 // ============================================================================

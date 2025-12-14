@@ -73,7 +73,7 @@ func (v *Command) ValidateCommand(cmd string, args []string) error {
 
 	// 2. Validate command name only (no args yet)
 	if err := v.validateCommandName(cmd); err != nil {
-		return err
+		return fmt.Errorf("validating command name: %w", err)
 	}
 
 	// 3. If whitelist mode, check if command is allowed

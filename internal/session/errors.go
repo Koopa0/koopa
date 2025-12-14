@@ -2,6 +2,18 @@ package session
 
 import "errors"
 
+// Message status constants for streaming lifecycle.
+const (
+	// StatusStreaming indicates the message is being streamed (AI generating).
+	StatusStreaming = "streaming"
+
+	// StatusCompleted indicates the message has been fully generated.
+	StatusCompleted = "completed"
+
+	// StatusFailed indicates the message generation failed.
+	StatusFailed = "failed"
+)
+
 // Branch name constants and constraints.
 // These MUST match internal/config package constants to maintain consistency.
 const (
@@ -41,6 +53,13 @@ const (
 var (
 	// ErrSessionNotFound indicates the requested session does not exist in the database.
 	ErrSessionNotFound = errors.New("session not found")
+
+	// ErrMessageNotFound indicates the requested message does not exist.
+	ErrMessageNotFound = errors.New("message not found")
+
+	// ErrArtifactNotFound indicates no artifact exists for the session.
+	// This is a normal state for new sessions or sessions without canvas output.
+	ErrArtifactNotFound = errors.New("artifact not found")
 
 	// ErrInvalidBranch indicates the branch name format is invalid.
 	ErrInvalidBranch = errors.New("invalid branch name")

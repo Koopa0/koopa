@@ -25,6 +25,7 @@ import (
 
 	"github.com/koopa0/koopa-cli/internal/app"
 	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa-cli/internal/log"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/tui"
 )
@@ -47,6 +48,11 @@ var (
 // standard Go CLI tools, all application logic is contained in
 // the cmd package, leaving main.go as a minimal entry point.
 func Execute() error {
+	// Initialize logger once at entry point.
+	// All subcommands use slog.Default() which references this logger.
+	logger := initLogger()
+	slog.SetDefault(logger)
+
 	// Handle subcommands and flags
 	// This allows --version and --help to work even if config is invalid
 	if len(os.Args) > 1 {
@@ -81,10 +87,6 @@ func Execute() error {
 // executeCLI initializes and starts the interactive CLI with Bubble Tea TUI.
 // This is called when the user runs `koopa cli`.
 func executeCLI() error {
-	// Initialize structured logger
-	logger := initLogger()
-	slog.SetDefault(logger)
-
 	// Load application configuration
 	// cfg.Validate() is called inside Load() for fail-fast behavior
 	cfg, err := config.Load()
@@ -163,26 +165,21 @@ func getOrCreateSessionID(ctx context.Context, store *session.Store, cfg *config
 }
 
 // initLogger initializes the structured logger with appropriate log level.
+// Called once at application entry point (Execute function).
 //
 // Log level is controlled by the DEBUG environment variable:
 //   - DEBUG set (any value): debug level logging
 //   - DEBUG not set: info level logging
 //
-// Design: Follows the standard library's slog package patterns.
+// Design: Uses internal/log package for unified logging infrastructure.
+// All subcommands access this logger via slog.Default().
 // Note: Logs to stderr for MCP protocol compatibility (stdout reserved for JSON-RPC).
-func initLogger() *slog.Logger {
-	opts := &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}
-
-	// Enable debug logging if DEBUG env var is set
+func initLogger() log.Logger {
+	level := slog.LevelInfo
 	if os.Getenv("DEBUG") != "" {
-		opts.Level = slog.LevelDebug
+		level = slog.LevelDebug
 	}
-
-	// IMPORTANT: MCP protocol requires logging to stderr, not stdout
-	// stdout is reserved for JSON-RPC messages only
-	return slog.New(slog.NewTextHandler(os.Stderr, opts))
+	return log.New(log.Config{Level: level})
 }
 
 // printVersionInfo displays version information and exits.
@@ -197,10 +194,6 @@ func printVersionInfo() error {
 // executeMCP initializes and starts the MCP server.
 // This is called when the user runs `koopa mcp`.
 func executeMCP() error {
-	// Initialize structured logger
-	logger := initLogger()
-	slog.SetDefault(logger)
-
 	// Load application configuration
 	// cfg.Validate() is called inside Load() for fail-fast behavior
 	cfg, err := config.Load()
@@ -219,10 +212,6 @@ func executeMCP() error {
 // executeServe initializes and starts the HTTP API server.
 // This is called when the user runs `koopa serve`.
 func executeServe() error {
-	// Initialize structured logger
-	logger := initLogger()
-	slog.SetDefault(logger)
-
 	// Load application configuration
 	// cfg.Validate() is called inside Load() for fail-fast behavior
 	cfg, err := config.Load()

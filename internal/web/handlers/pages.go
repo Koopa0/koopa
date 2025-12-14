@@ -9,6 +9,14 @@ import (
 	"github.com/koopa0/koopa-cli/internal/web/page"
 )
 
+// Pagination limits for the chat page.
+const (
+	// DefaultMessageHistoryLimit is the maximum number of messages to load.
+	DefaultMessageHistoryLimit = 50
+	// DefaultSidebarSessionLimit is the maximum number of sessions shown in sidebar.
+	DefaultSidebarSessionLimit = 20
+)
+
 // PagesDeps contains dependencies for the Pages handler.
 type PagesDeps struct {
 	Logger   *slog.Logger
@@ -22,76 +30,136 @@ type Pages struct {
 }
 
 // NewPages creates a new Pages handler.
+// logger is required (panics if nil).
 func NewPages(deps PagesDeps) *Pages {
+	if deps.Logger == nil {
+		panic("NewPages: logger is required")
+	}
 	return &Pages{
 		logger:   deps.Logger,
 		sessions: deps.Sessions,
 	}
 }
 
-// Chat renders the main chat page.
+// Chat renders the main chat page with message history.
+// Supports lazy session creation (pre-session state for fresh visitors).
+// Session ID is retrieved from cookie if present; if not, page renders in pre-session state.
+//
+// Query Parameters:
+// - session_id: Switch to an existing session (used by sidebar session links)
+// - new: Create a new empty session (used by "New Chat" button)
 func (h *Pages) Chat(w http.ResponseWriter, r *http.Request) {
-	// Check if a specific session is requested via query parameter
-	requestedSessionID := r.URL.Query().Get("session")
-	var sessionID uuid.UUID
-	var err error
+	// Prevent caching to ensure fresh data on session switch
+	// Per HTMX Master: hx-boost may cache responses, causing stale message history
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 
-	// If no session requested, get or create one and redirect with session ID
-	if requestedSessionID == "" {
-		sessionID, err = h.sessions.GetOrCreate(w, r)
-		if err != nil {
-			h.logger.Error("session creation failed", "error", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
+	// Try to get existing session, don't create one
+	// Fresh visitors will see pre-session state (no cookie, no session ID)
+	sessionID, err := h.sessions.ID(r)
+	hasSession := err == nil
+
+	// Handle "New Chat" button: ?new=true creates a fresh session
+	// This allows starting a new conversation without message history
+	if r.URL.Query().Get("new") == "true" {
+		newSession, createErr := h.sessions.Store().CreateSession(r.Context(), "", "", "")
+		if createErr != nil {
+			h.logger.Error("failed to create new session", "error", createErr)
+			// Fall through to use existing session if any
+		} else {
+			sessionID = newSession.ID
+			hasSession = true
+			h.sessions.SetSessionCookie(w, sessionID)
+			h.logger.Debug("created new session via New Chat button", "sessionID", sessionID)
 		}
-
-		// Redirect to include session ID in URL (hypermedia principle: URL contains full state)
-		// This ensures bookmarkability and proper history navigation
-		http.Redirect(w, r, "/genui?session="+sessionID.String(), http.StatusSeeOther)
-		return
+	} else if sessionIDStr := r.URL.Query().Get("session_id"); sessionIDStr != "" {
+		// Handle session switching via query parameter
+		// This allows users to switch sessions via sidebar links
+		// NOTE: Removed "&&hasSession" check - users without cookie should also be able
+		// to switch to an existing session (e.g., fresh visitor clicking sidebar link)
+		if parsedID, parseErr := uuid.Parse(sessionIDStr); parseErr == nil {
+			// Verify session exists in database
+			if _, getErr := h.sessions.Store().GetSession(r.Context(), parsedID); getErr == nil {
+				sessionID = parsedID
+				hasSession = true // Update hasSession flag for subsequent data loading
+				// Update cookie to reflect the switched session
+				h.sessions.SetSessionCookie(w, sessionID)
+			}
+		}
 	}
 
-	// Use requested session if valid
-	sessionID, err = uuid.Parse(requestedSessionID)
-	if err != nil {
-		h.logger.Warn("invalid session ID in query", "sessionID", requestedSessionID)
-		// Fall back to get or create
-		sessionID, err = h.sessions.GetOrCreate(w, r)
-		if err != nil {
-			h.logger.Error("session creation failed", "error", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
+	// Initialize page props with defaults
+	var (
+		pageMessages      []page.Message
+		componentSessions []component.Session
+		canvasMode        bool
+		csrfToken         string
+		sessionIDStr      string
+	)
+
+	// Only load data if we have a session
+	if hasSession {
+		sessionIDStr = sessionID.String()
+
+		// Load message history
+		messages, msgErr := h.sessions.Store().GetMessagesByBranch(
+			r.Context(), sessionID, "main", DefaultMessageHistoryLimit, 0,
+		)
+		if msgErr != nil {
+			h.logger.Error("failed to load message history",
+				"error", msgErr,
+				"sessionID", sessionID,
+			)
+			// Don't fail the page load, just show empty chat
+		} else {
+			pageMessages = messagesToPage(messages)
 		}
+
+		// Get canvas mode from database
+		currentSession, sessionErr := h.sessions.Store().GetSession(r.Context(), sessionID)
+		if sessionErr == nil {
+			canvasMode = currentSession.CanvasMode
+		} else {
+			h.logger.Warn("failed to get session for canvas mode, defaulting to false",
+				"session_id", sessionID, "error", sessionErr)
+		}
+
+		// Generate session-bound CSRF token
+		csrfToken = h.sessions.NewCSRFToken(sessionID)
+	} else {
+		// Pre-session state: Generate pre-session CSRF token
+		// Session will be created on first message (lazy creation)
+		csrfToken = h.sessions.NewPreSessionCSRFToken()
+		h.logger.Debug("pre-session state: fresh visitor without session")
 	}
 
-	csrfToken := h.sessions.NewCSRFToken(sessionID)
-
-	// Load all sessions for sidebar
-	sessions, err := h.sessions.Store().ListSessions(r.Context(), 100, 0)
+	// Load sessions for sidebar (always show, even in pre-session state)
+	allSessions, err := h.sessions.Store().ListSessionsWithMessages(r.Context(), DefaultSidebarSessionLimit, 0)
 	if err != nil {
 		h.logger.Error("failed to load sessions", "error", err)
-		// Don't fail the page, just render without sessions
-		sessions = nil
+	} else {
+		componentSessions = sessionsToComponent(allSessions, sessionID)
 	}
 
-	// Convert to component.SessionItem
-	sessionItems := make([]component.SessionItem, len(sessions))
-	for i, sess := range sessions {
-		sessionItems[i] = component.SessionItem{
-			ID:        sess.ID,
-			Title:     sess.Title,
-			UpdatedAt: sess.UpdatedAt,
-		}
-	}
-
-	props := page.ChatPageProps{
-		SessionID: sessionID.String(),
-		CSRFToken: csrfToken,
-		Sessions:  sessionItems,
-	}
-
-	if err := page.Chat(props).Render(r.Context(), w); err != nil {
+	// Render chat page
+	if err := page.ChatPage(page.ChatPageProps{
+		SessionID:  sessionIDStr, // Empty string in pre-session state
+		Sessions:   componentSessions,
+		Messages:   pageMessages,
+		CanvasMode: canvasMode,
+		CSRFToken:  csrfToken,
+	}).Render(r.Context(), w); err != nil {
 		h.logger.Error("failed to render chat page", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
+}
+
+// Note: extractTextContent is defined in chat.go and shared across handlers package.
+
+// RegisterRoutes registers page routes.
+func (h *Pages) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /genui", h.Chat)
+	mux.HandleFunc("GET /genui/", h.Chat)
+	mux.HandleFunc("GET /genui/chat/{sessionID}", h.Chat)
 }
