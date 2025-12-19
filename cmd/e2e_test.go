@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime" // Alias to avoid confusion with *app.Runtime
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// executableName returns the platform-specific binary name.
+// On Windows, executables require .exe extension.
+func executableName() string {
+	if goruntime.GOOS == "windows" {
+		return "koopa.exe"
+	}
+	return "koopa"
+}
 
 // E2E tests validate complete user workflows against real infrastructure.
 //
@@ -85,7 +95,8 @@ func findOrBuildKoopa(t *testing.T) string {
 
 	// Get project root (parent of cmd/)
 	projectRoot, _ := filepath.Abs("..")
-	koopaBin := filepath.Join(projectRoot, "koopa")
+	binName := executableName()
+	koopaBin := filepath.Join(projectRoot, binName)
 
 	// Try to find existing binary
 	if _, err := os.Stat(koopaBin); err == nil {
@@ -95,7 +106,7 @@ func findOrBuildKoopa(t *testing.T) string {
 
 	// Build binary in project root
 	t.Log("Building koopa binary for E2E tests...")
-	cmd := exec.Command("go", "build", "-o", "koopa", ".")
+	cmd := exec.Command("go", "build", "-o", binName, ".")
 	cmd.Dir = projectRoot
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build koopa: %v\nOutput: %s", err, output)

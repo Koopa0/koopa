@@ -13,11 +13,14 @@ import (
 )
 
 // goleakOptions returns standard goleak options for all TUI tests.
-// Filters out HTTP/2 connection pool goroutines that persist across tests.
+// Filters out persistent goroutines that are expected to exist:
+// - HTTP/2 connection pool goroutines
+// - OpenCensus stats worker (global singleton, can't be stopped)
 func goleakOptions() []goleak.Option {
 	return []goleak.Option{
 		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
 		goleak.IgnoreTopFunction("net/http.(*http2clientConnReadLoop).run"),
+		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
 	}
 }
 

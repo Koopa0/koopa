@@ -35,7 +35,11 @@ func TestTUI_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize runtime: %v", err)
 	}
-	defer runtime.Cleanup()
+	t.Cleanup(func() {
+		if err := runtime.Close(); err != nil {
+			t.Logf("runtime close error: %v", err)
+		}
+	})
 
 	// Verify TUI can be created with real Flow
 	tuiModel := tui.New(ctx, runtime.Flow, "test-session-id")
@@ -68,7 +72,11 @@ func TestTUI_SlashCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize runtime: %v", err)
 	}
-	defer runtime.Cleanup()
+	t.Cleanup(func() {
+		if err := runtime.Close(); err != nil {
+			t.Logf("runtime close error: %v", err)
+		}
+	})
 
 	tuiModel := tui.New(ctx, runtime.Flow, "test-session-id")
 

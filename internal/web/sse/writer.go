@@ -59,18 +59,6 @@ func (w *Writer) writeSSEData(event, content string) error {
 	return nil
 }
 
-// writeEvent sends a named event with rendered component content.
-// Context is passed to templ.Component.Render for cancellation during rendering.
-// Write errors propagate naturally if client disconnects.
-func (w *Writer) writeEvent(ctx context.Context, event string, comp templ.Component) error {
-	var buf bytes.Buffer
-	if err := comp.Render(ctx, &buf); err != nil {
-		return fmt.Errorf("render component: %w", err)
-	}
-
-	return w.writeSSEData(event, buf.String())
-}
-
 // WriteChunk sends a chunk event with a rendered templ component as OOB swap.
 // This is type-safe: templ automatically escapes all content to prevent XSS.
 // Use this when you have a templ.Component to render.

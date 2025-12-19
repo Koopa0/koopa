@@ -12,7 +12,7 @@ import (
 )
 
 const addMessage = `-- name: AddMessage :exec
-INSERT INTO session_messages (session_id, role, content, sequence_number, branch)
+INSERT INTO message (session_id, role, content, sequence_number, branch)
 VALUES ($1, $2, $3, $4, 'main')
 `
 
@@ -35,7 +35,7 @@ func (q *Queries) AddMessage(ctx context.Context, arg AddMessageParams) error {
 }
 
 const addMessageWithBranch = `-- name: AddMessageWithBranch :exec
-INSERT INTO session_messages (session_id, branch, role, content, sequence_number)
+INSERT INTO message (session_id, branch, role, content, sequence_number)
 VALUES ($1, $2, $3, $4, $5)
 `
 
@@ -60,7 +60,7 @@ func (q *Queries) AddMessageWithBranch(ctx context.Context, arg AddMessageWithBr
 }
 
 const addMessageWithID = `-- name: AddMessageWithID :one
-INSERT INTO session_messages (id, session_id, role, content, status, branch, sequence_number)
+INSERT INTO message (id, session_id, role, content, status, branch, sequence_number)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, session_id, role, content, sequence_number, created_at, branch, status, updated_at
 `
@@ -76,7 +76,7 @@ type AddMessageWithIDParams struct {
 }
 
 // Add message with pre-assigned ID and status (for streaming)
-func (q *Queries) AddMessageWithID(ctx context.Context, arg AddMessageWithIDParams) (SessionMessage, error) {
+func (q *Queries) AddMessageWithID(ctx context.Context, arg AddMessageWithIDParams) (Message, error) {
 	row := q.db.QueryRow(ctx, addMessageWithID,
 		arg.ID,
 		arg.SessionID,
@@ -86,7 +86,7 @@ func (q *Queries) AddMessageWithID(ctx context.Context, arg AddMessageWithIDPara
 		arg.Branch,
 		arg.SequenceNumber,
 	)
-	var i SessionMessage
+	var i Message
 	err := row.Scan(
 		&i.ID,
 		&i.SessionID,
@@ -103,7 +103,7 @@ func (q *Queries) AddMessageWithID(ctx context.Context, arg AddMessageWithIDPara
 
 const countMessagesByBranch = `-- name: CountMessagesByBranch :one
 SELECT COUNT(*)::integer AS count
-FROM session_messages
+FROM message
 WHERE session_id = $1 AND branch = $2
 `
 
@@ -152,7 +152,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 }
 
 const deleteMessagesByBranch = `-- name: DeleteMessagesByBranch :exec
-DELETE FROM session_messages
+DELETE FROM message
 WHERE session_id = $1 AND branch = $2
 `
 
@@ -179,7 +179,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id pgtype.UUID) error {
 
 const getMaxSequenceByBranch = `-- name: GetMaxSequenceByBranch :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
-FROM session_messages
+FROM message
 WHERE session_id = $1 AND branch = $2
 `
 
@@ -198,7 +198,7 @@ func (q *Queries) GetMaxSequenceByBranch(ctx context.Context, arg GetMaxSequence
 
 const getMaxSequenceNumber = `-- name: GetMaxSequenceNumber :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
-FROM session_messages
+FROM message
 WHERE session_id = $1
 `
 
@@ -212,14 +212,14 @@ func (q *Queries) GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUI
 
 const getMessageByID = `-- name: GetMessageByID :one
 SELECT id, session_id, role, content, sequence_number, created_at, branch, status, updated_at
-FROM session_messages
+FROM message
 WHERE id = $1
 `
 
 // Get a single message by ID (for streaming lookup).
-func (q *Queries) GetMessageByID(ctx context.Context, id pgtype.UUID) (SessionMessage, error) {
+func (q *Queries) GetMessageByID(ctx context.Context, id pgtype.UUID) (Message, error) {
 	row := q.db.QueryRow(ctx, getMessageByID, id)
-	var i SessionMessage
+	var i Message
 	err := row.Scan(
 		&i.ID,
 		&i.SessionID,
@@ -236,7 +236,7 @@ func (q *Queries) GetMessageByID(ctx context.Context, id pgtype.UUID) (SessionMe
 
 const getMessages = `-- name: GetMessages :many
 SELECT id, session_id, role, content, sequence_number, created_at, branch, status, updated_at
-FROM session_messages
+FROM message
 WHERE session_id = $1
 ORDER BY sequence_number ASC
 LIMIT $3
@@ -250,15 +250,15 @@ type GetMessagesParams struct {
 }
 
 // Legacy: returns all messages regardless of branch
-func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]SessionMessage, error) {
+func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Message, error) {
 	rows, err := q.db.Query(ctx, getMessages, arg.SessionID, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SessionMessage{}
+	items := []Message{}
 	for rows.Next() {
-		var i SessionMessage
+		var i Message
 		if err := rows.Scan(
 			&i.ID,
 			&i.SessionID,
@@ -282,7 +282,7 @@ func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Ses
 
 const getMessagesByBranch = `-- name: GetMessagesByBranch :many
 SELECT id, session_id, role, content, sequence_number, created_at, branch, status, updated_at
-FROM session_messages
+FROM message
 WHERE session_id = $1 AND branch = $2
 ORDER BY sequence_number ASC
 LIMIT $4
@@ -297,7 +297,7 @@ type GetMessagesByBranchParams struct {
 }
 
 // Get messages for a specific session and branch
-func (q *Queries) GetMessagesByBranch(ctx context.Context, arg GetMessagesByBranchParams) ([]SessionMessage, error) {
+func (q *Queries) GetMessagesByBranch(ctx context.Context, arg GetMessagesByBranchParams) ([]Message, error) {
 	rows, err := q.db.Query(ctx, getMessagesByBranch,
 		arg.SessionID,
 		arg.Branch,
@@ -308,9 +308,9 @@ func (q *Queries) GetMessagesByBranch(ctx context.Context, arg GetMessagesByBran
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SessionMessage{}
+	items := []Message{}
 	for rows.Next() {
-		var i SessionMessage
+		var i Message
 		if err := rows.Scan(
 			&i.ID,
 			&i.SessionID,
@@ -356,7 +356,7 @@ func (q *Queries) GetSession(ctx context.Context, id pgtype.UUID) (Session, erro
 
 const getUserMessageBefore = `-- name: GetUserMessageBefore :one
 SELECT content
-FROM session_messages
+FROM message
 WHERE session_id = $1
   AND branch = $2
   AND role = 'user'
@@ -497,7 +497,7 @@ func (q *Queries) UpdateCanvasMode(ctx context.Context, arg UpdateCanvasModePara
 }
 
 const updateMessageContent = `-- name: UpdateMessageContent :exec
-UPDATE session_messages
+UPDATE message
 SET content = $2,
     status = 'completed',
     updated_at = NOW()
@@ -516,7 +516,7 @@ func (q *Queries) UpdateMessageContent(ctx context.Context, arg UpdateMessageCon
 }
 
 const updateMessageStatus = `-- name: UpdateMessageStatus :exec
-UPDATE session_messages
+UPDATE message
 SET status = $2,
     updated_at = NOW()
 WHERE id = $1

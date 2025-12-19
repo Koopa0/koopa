@@ -12,15 +12,18 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/koopa0/koopa-cli/db"
 	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/observability"
+	"github.com/koopa0/koopa-cli/internal/rag"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
+	"github.com/koopa0/koopa-cli/internal/tools"
+	"golang.org/x/sync/errgroup"
 	"log/slog"
 	"time"
 )
@@ -34,28 +37,46 @@ func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error
 	if err != nil {
 		return nil, nil, err
 	}
-	genkit, err := provideGenkit(ctx, cfg, otelShutdown)
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	embedder := provideEmbedder(genkit, cfg)
 	pool, cleanup2, err := provideDBPool(ctx, cfg)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	store := provideKnowledgeStore(pool, embedder)
-	sessionStore := provideSessionStore(pool)
+	postgres, err := providePostgresPlugin(ctx, pool, cfg)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	genkit, err := provideGenkit(ctx, cfg, otelShutdown, postgres)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	embedder := provideEmbedder(genkit, cfg)
+	ragComponents, err := provideRAGComponents(ctx, genkit, postgres, embedder)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	docStore := ragComponents.DocStore
+	retriever := ragComponents.Retriever
+	store := provideSessionStore(pool)
 	path, err := providePathValidator()
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	logger := provideLogger()
-	systemKnowledgeIndexer := knowledge.NewSystemKnowledgeIndexer(store, logger)
-	app, err := newApp(cfg, ctx, genkit, embedder, pool, store, sessionStore, path, systemKnowledgeIndexer)
+	v, err := provideTools(genkit, path, retriever, cfg)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	app, err := newApp(cfg, ctx, genkit, embedder, pool, docStore, retriever, store, path, v)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -77,13 +98,15 @@ type OtelShutdown func()
 var providerSet = wire.NewSet(
 
 	provideOtelShutdown,
+	provideDBPool,
+	providePostgresPlugin,
 	provideGenkit,
 	provideEmbedder,
-	provideDBPool,
-	provideKnowledgeStore,
-	provideSessionStore,
+	provideRAGComponents, wire.FieldsOf(new(*RAGComponents), "DocStore", "Retriever"), provideSessionStore,
 	providePathValidator,
-	provideLogger, knowledge.NewSystemKnowledgeIndexer, newApp,
+	provideTools,
+
+	newApp,
 )
 
 // provideOtelShutdown sets up Datadog tracing before Genkit initialization.
@@ -110,17 +133,29 @@ func provideOtelShutdown(ctx context.Context, cfg *config.Config) (OtelShutdown,
 	return OtelShutdown(cleanupFn), cleanupFn, nil
 }
 
-// provideGenkit initializes Genkit with Google AI plugin and prompt directory.
+// providePostgresPlugin creates the Genkit PostgreSQL plugin.
+// This wraps our existing connection pool for use with Genkit's DocStore.
+func providePostgresPlugin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*postgresql.Postgres, error) {
+
+	pEngine, err := postgresql.NewPostgresEngine(ctx, postgresql.WithPool(pool), postgresql.WithDatabase(cfg.PostgresDBName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create postgres engine: %w", err)
+	}
+
+	return &postgresql.Postgres{Engine: pEngine}, nil
+}
+
+// provideGenkit initializes Genkit with Google AI and PostgreSQL plugins.
 // Returns error if initialization fails (follows Wire provider pattern).
 // Depends on OtelShutdown to ensure tracing is set up first.
-func provideGenkit(ctx context.Context, cfg *config.Config, _ OtelShutdown) (*genkit.Genkit, error) {
+func provideGenkit(ctx context.Context, cfg *config.Config, _ OtelShutdown, postgres *postgresql.Postgres) (*genkit.Genkit, error) {
 
 	promptDir := cfg.PromptDir
 	if promptDir == "" {
 		promptDir = "prompts"
 	}
 
-	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithPromptDir(promptDir))
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}, postgres), genkit.WithPromptDir(promptDir))
 
 	if g == nil {
 		return nil, fmt.Errorf("failed to initialize Genkit")
@@ -172,9 +207,26 @@ func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func
 	return pool, cleanup, nil
 }
 
-// provideKnowledgeStore creates a knowledge store instance.
-func provideKnowledgeStore(pool *pgxpool.Pool, embedder ai.Embedder) *knowledge.Store {
-	return knowledge.New(sqlc.New(pool), embedder, nil)
+// RAGComponents holds DocStore and Retriever created together by Genkit.
+// Wire doesn't support returning multiple values, so we use a struct.
+type RAGComponents struct {
+	DocStore  *postgresql.DocStore
+	Retriever ai.Retriever
+}
+
+// provideRAGComponents creates Genkit PostgreSQL DocStore and Retriever.
+// DocStore is used for indexing documents, Retriever for searching.
+func provideRAGComponents(ctx context.Context, g *genkit.Genkit, postgres *postgresql.Postgres, embedder ai.Embedder) (*RAGComponents, error) {
+	cfg := rag.NewDocStoreConfig(embedder)
+	docStore, retriever, err := postgresql.DefineRetriever(ctx, g, postgres, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to define retriever: %w", err)
+	}
+
+	return &RAGComponents{
+		DocStore:  docStore,
+		Retriever: retriever,
+	}, nil
 }
 
 // provideSessionStore creates a session store instance.
@@ -189,53 +241,111 @@ func providePathValidator() (*security.Path, error) {
 	return security.NewPath([]string{"."})
 }
 
-// provideLogger creates a logger instance.
-// Returns slog.Default() for consistent logging across the application.
-func provideLogger() *slog.Logger {
-	return slog.Default()
+// provideTools registers all tools at construction time.
+// This follows Rob Pike's principle: "Initialization belongs in constructors."
+// Tools are registered once here, not lazily in CreateAgent.
+func provideTools(g *genkit.Genkit, pathValidator *security.Path, retriever ai.Retriever, cfg *config.Config) ([]ai.Tool, error) {
+	logger := slog.Default()
+	var allTools []ai.Tool
+
+	ft, err := tools.NewFileTools(pathValidator, logger)
+	if err != nil {
+		return nil, fmt.Errorf("creating file tools: %w", err)
+	}
+	fileTools, err := tools.RegisterFileTools(g, ft)
+	if err != nil {
+		return nil, fmt.Errorf("registering file tools: %w", err)
+	}
+	allTools = append(allTools, fileTools...)
+
+	cmdValidator := security.NewCommand()
+	envValidator := security.NewEnv()
+	st, err := tools.NewSystemTools(cmdValidator, envValidator, logger)
+	if err != nil {
+		return nil, fmt.Errorf("creating system tools: %w", err)
+	}
+	systemTools, err := tools.RegisterSystemTools(g, st)
+	if err != nil {
+		return nil, fmt.Errorf("registering system tools: %w", err)
+	}
+	allTools = append(allTools, systemTools...)
+
+	nt, err := tools.NewNetworkTools(tools.NetworkConfig{
+		SearchBaseURL:    cfg.SearXNG.BaseURL,
+		FetchParallelism: cfg.WebScraper.Parallelism,
+		FetchDelay:       time.Duration(cfg.WebScraper.DelayMs) * time.Millisecond,
+		FetchTimeout:     time.Duration(cfg.WebScraper.TimeoutMs) * time.Millisecond,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("creating network tools: %w", err)
+	}
+	networkTools, err := tools.RegisterNetworkTools(g, nt)
+	if err != nil {
+		return nil, fmt.Errorf("registering network tools: %w", err)
+	}
+	allTools = append(allTools, networkTools...)
+
+	kt, err := tools.NewKnowledgeTools(retriever, logger)
+	if err != nil {
+		return nil, fmt.Errorf("creating knowledge tools: %w", err)
+	}
+	knowledgeTools, err := tools.RegisterKnowledgeTools(g, kt)
+	if err != nil {
+		return nil, fmt.Errorf("registering knowledge tools: %w", err)
+	}
+	allTools = append(allTools, knowledgeTools...)
+	slog.Info("tools registered at construction", "count", len(allTools))
+	return allTools, nil
 }
 
 // newApp constructs an App instance.
 // Wire automatically injects all dependencies.
+// Tools are pre-registered by provideTools (Rob Pike: "initialization in constructors").
 func newApp(
 	cfg *config.Config,
 	ctx context.Context,
 	g *genkit.Genkit,
 	embedder ai.Embedder,
 	pool *pgxpool.Pool,
-	knowledgeStore *knowledge.Store,
+	docStore *postgresql.DocStore,
+	retriever ai.Retriever,
 	sessionStore *session.Store,
-	pathValidator *security.Path,
-	systemIndexer *knowledge.SystemKnowledgeIndexer,
+	pathValidator *security.Path, tools2 []ai.Tool,
 ) (*App, error) {
 
 	appCtx, cancel := context.WithCancel(ctx)
+
+	eg, egCtx := errgroup.WithContext(appCtx)
 
 	app := &App{
 		Config:        cfg,
 		ctx:           appCtx,
 		cancel:        cancel,
+		eg:            eg,
+		egCtx:         egCtx,
 		Genkit:        g,
 		Embedder:      embedder,
 		DBPool:        pool,
-		Knowledge:     knowledgeStore,
+		DocStore:      docStore,
+		Retriever:     retriever,
 		SessionStore:  sessionStore,
 		PathValidator: pathValidator,
-		SystemIndexer: systemIndexer,
+		Tools:         tools2,
 	}
 
-	go func() {
+	eg.Go(func() error {
 
-		indexCtx, indexCancel := context.WithTimeout(appCtx, 5*time.Second)
+		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer indexCancel()
 
-		count, err := systemIndexer.IndexAll(indexCtx)
+		count, err := rag.IndexSystemKnowledge(indexCtx, docStore, pool)
 		if err != nil {
 			slog.Debug("system knowledge indexing failed (non-critical)", "error", err)
-		} else {
-			slog.Debug("system knowledge indexed successfully", "count", count)
+			return nil
 		}
-	}()
+		slog.Debug("system knowledge indexed successfully", "count", count)
+		return nil
+	})
 
 	return app, nil
 }

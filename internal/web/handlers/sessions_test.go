@@ -336,7 +336,7 @@ func TestSessions_ID_NoCookie(t *testing.T) {
 
 	_, err := sessions.ID(r)
 
-	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ErrorIs(t, err, ErrSessionCookieNotFound)
 }
 
 func TestSessions_ID_InvalidUUID(t *testing.T) {

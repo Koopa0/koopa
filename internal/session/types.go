@@ -5,11 +5,81 @@
 package session
 
 import (
+	"sync"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/uuid"
 )
+
+// History encapsulates conversation history with thread-safe access.
+//
+// Note: The zero value is NOT useful - use NewHistory() to create instances.
+type History struct {
+	mu       sync.RWMutex
+	messages []*ai.Message
+}
+
+// NewHistory creates a new History instance.
+func NewHistory() *History {
+	return &History{
+		messages: make([]*ai.Message, 0),
+	}
+}
+
+// SetMessages replaces all messages in the history.
+// Used by SessionStore when loading history from the database.
+// Makes a defensive copy to prevent external modification.
+func (h *History) SetMessages(messages []*ai.Message) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.messages = make([]*ai.Message, len(messages))
+	copy(h.messages, messages)
+}
+
+// Messages returns a copy of all messages for thread-safe access
+func (h *History) Messages() []*ai.Message {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	result := make([]*ai.Message, len(h.messages))
+	copy(result, h.messages)
+	return result
+}
+
+// Add appends user message and assistant response
+func (h *History) Add(userInput, assistantResponse string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.messages = append(h.messages,
+		ai.NewUserMessage(ai.NewTextPart(userInput)),
+		ai.NewModelMessage(ai.NewTextPart(assistantResponse)),
+	)
+}
+
+// AddMessage appends a single message
+// Returns without effect if msg is nil
+func (h *History) AddMessage(msg *ai.Message) {
+	if msg == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.messages = append(h.messages, msg)
+}
+
+// Count returns the number of messages
+func (h *History) Count() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.messages)
+}
+
+// Clear removes all messages
+func (h *History) Clear() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.messages = make([]*ai.Message, 0)
+}
 
 // Role constants define valid message roles for type safety.
 const (
@@ -28,29 +98,6 @@ type Session struct {
 	SystemPrompt string
 	MessageCount int
 	CanvasMode   bool // Per-session canvas mode preference
-}
-
-// Artifact represents a Canvas panel content item.
-// Zero values:
-//   - ID: uuid.Nil (invalid, must be generated)
-//   - MessageID: nil (artifact not linked to message)
-//   - Type: "" (invalid, validation required)
-//   - Language: "" (no syntax highlighting)
-//   - Title: "" (validation required - must have title)
-//   - Version: 0 (will be set to 1 on create)
-//   - SequenceNumber: 0 (auto-assigned on create)
-type Artifact struct {
-	ID             uuid.UUID
-	SessionID      uuid.UUID
-	MessageID      *uuid.UUID // Nullable - artifact may not be linked to a message
-	Type           string     // "code" | "markdown" | "html"
-	Language       string     // Programming language for code artifacts (optional)
-	Title          string     // Filename or description
-	Content        string     // Artifact content
-	Version        int        // Version number for future editing
-	SequenceNumber int        // Ordering for multiple artifacts
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
 }
 
 // Message represents a single conversation message (application-level type).

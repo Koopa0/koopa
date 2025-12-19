@@ -32,33 +32,33 @@ func newTestHelper(t *testing.T) *testHelper {
 	}
 }
 
-func (h *testHelper) createFileToolset() *tools.FileToolset {
+func (h *testHelper) createFileTools() *tools.FileTools {
 	h.t.Helper()
 	pathVal, err := security.NewPath([]string{h.tempDir})
 	if err != nil {
 		h.t.Fatalf("failed to create path validator: %v", err)
 	}
 
-	toolset, err := tools.NewFileToolset(pathVal, slog.Default())
+	ft, err := tools.NewFileTools(pathVal, slog.Default())
 	if err != nil {
-		h.t.Fatalf("failed to create file toolset: %v", err)
+		h.t.Fatalf("failed to create file tools: %v", err)
 	}
-	return toolset
+	return ft
 }
 
-func (h *testHelper) createSystemToolset() *tools.SystemToolset {
+func (h *testHelper) createSystemTools() *tools.SystemTools {
 	h.t.Helper()
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
 
-	toolset, err := tools.NewSystemToolset(cmdVal, envVal, slog.Default())
+	st, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
 	if err != nil {
-		h.t.Fatalf("failed to create system toolset: %v", err)
+		h.t.Fatalf("failed to create system tools: %v", err)
 	}
-	return toolset
+	return st
 }
 
-func (h *testHelper) createNetworkToolset() *tools.NetworkToolset {
+func (h *testHelper) createNetworkTools() *tools.NetworkTools {
 	h.t.Helper()
 
 	// Use httptest.NewServer instead of hardcoded localhost URL
@@ -71,31 +71,33 @@ func (h *testHelper) createNetworkToolset() *tools.NetworkToolset {
 	h.t.Cleanup(func() { mockServer.Close() })
 
 	// Use ForTesting to skip SSRF checks (mock server uses localhost)
-	toolset, err := tools.NewNetworkToolsetForTesting(
-		mockServer.URL,
-		2,                    // parallelism
-		100*time.Millisecond, // delay
-		30*time.Second,       // timeout
+	nt, err := tools.NewNetworkToolsForTesting(
+		tools.NetworkConfig{
+			SearchBaseURL:    mockServer.URL,
+			FetchParallelism: 2,
+			FetchDelay:       100 * time.Millisecond,
+			FetchTimeout:     30 * time.Second,
+		},
 		slog.Default(),
 	)
 	if err != nil {
-		h.t.Fatalf("failed to create network toolset: %v", err)
+		h.t.Fatalf("failed to create network tools: %v", err)
 	}
-	return toolset
+	return nt
 }
 
 func (h *testHelper) createValidConfig() Config {
 	h.t.Helper()
 	return Config{
-		Name:           "test-server",
-		Version:        "1.0.0",
-		FileToolset:    h.createFileToolset(),
-		SystemToolset:  h.createSystemToolset(),
-		NetworkToolset: h.createNetworkToolset(),
+		Name:         "test-server",
+		Version:      "1.0.0",
+		FileTools:    h.createFileTools(),
+		SystemTools:  h.createSystemTools(),
+		NetworkTools: h.createNetworkTools(),
 	}
 }
 
-// TestNewServer_Success tests successful server creation with all toolsets.
+// TestNewServer_Success tests successful server creation with all tools.
 func TestNewServer_Success(t *testing.T) {
 	h := newTestHelper(t)
 	cfg := h.createValidConfig()
@@ -118,25 +120,25 @@ func TestNewServer_Success(t *testing.T) {
 		t.Error("server.mcpServer is nil")
 	}
 
-	if server.fileToolset == nil {
-		t.Error("server.fileToolset is nil")
+	if server.fileTools == nil {
+		t.Error("server.fileTools is nil")
 	}
 
-	if server.systemToolset == nil {
-		t.Error("server.systemToolset is nil")
+	if server.systemTools == nil {
+		t.Error("server.systemTools is nil")
 	}
 
-	if server.networkToolset == nil {
-		t.Error("server.networkToolset is nil")
+	if server.networkTools == nil {
+		t.Error("server.networkTools is nil")
 	}
 }
 
 // TestNewServer_ValidationErrors tests config validation.
 func TestNewServer_ValidationErrors(t *testing.T) {
 	h := newTestHelper(t)
-	validFile := h.createFileToolset()
-	validSystem := h.createSystemToolset()
-	validNetwork := h.createNetworkToolset()
+	validFile := h.createFileTools()
+	validSystem := h.createSystemTools()
+	validNetwork := h.createNetworkTools()
 
 	tests := []struct {
 		name    string
@@ -146,52 +148,52 @@ func TestNewServer_ValidationErrors(t *testing.T) {
 		{
 			name: "missing name",
 			config: Config{
-				Version:        "1.0.0",
-				FileToolset:    validFile,
-				SystemToolset:  validSystem,
-				NetworkToolset: validNetwork,
+				Version:      "1.0.0",
+				FileTools:    validFile,
+				SystemTools:  validSystem,
+				NetworkTools: validNetwork,
 			},
 			wantErr: "server name is required",
 		},
 		{
 			name: "missing version",
 			config: Config{
-				Name:           "test",
-				FileToolset:    validFile,
-				SystemToolset:  validSystem,
-				NetworkToolset: validNetwork,
+				Name:         "test",
+				FileTools:    validFile,
+				SystemTools:  validSystem,
+				NetworkTools: validNetwork,
 			},
 			wantErr: "server version is required",
 		},
 		{
-			name: "missing file toolset",
+			name: "missing file tools",
 			config: Config{
-				Name:           "test",
-				Version:        "1.0.0",
-				SystemToolset:  validSystem,
-				NetworkToolset: validNetwork,
+				Name:         "test",
+				Version:      "1.0.0",
+				SystemTools:  validSystem,
+				NetworkTools: validNetwork,
 			},
-			wantErr: "file toolset is required",
+			wantErr: "file tools is required",
 		},
 		{
-			name: "missing system toolset",
+			name: "missing system tools",
 			config: Config{
-				Name:           "test",
-				Version:        "1.0.0",
-				FileToolset:    validFile,
-				NetworkToolset: validNetwork,
+				Name:         "test",
+				Version:      "1.0.0",
+				FileTools:    validFile,
+				NetworkTools: validNetwork,
 			},
-			wantErr: "system toolset is required",
+			wantErr: "system tools is required",
 		},
 		{
-			name: "missing network toolset",
+			name: "missing network tools",
 			config: Config{
-				Name:          "test",
-				Version:       "1.0.0",
-				FileToolset:   validFile,
-				SystemToolset: validSystem,
+				Name:        "test",
+				Version:     "1.0.0",
+				FileTools:   validFile,
+				SystemTools: validSystem,
 			},
-			wantErr: "network toolset is required",
+			wantErr: "network tools is required",
 		},
 	}
 
@@ -208,7 +210,7 @@ func TestNewServer_ValidationErrors(t *testing.T) {
 	}
 }
 
-// TestRegisterTools_AllToolsRegistered verifies all 9 tools are registered.
+// TestRegisterTools_AllToolsRegistered verifies all 10 tools are registered.
 func TestRegisterTools_AllToolsRegistered(t *testing.T) {
 	h := newTestHelper(t)
 	cfg := h.createValidConfig()
@@ -225,10 +227,10 @@ func TestRegisterTools_AllToolsRegistered(t *testing.T) {
 
 	// Note: We can't directly verify tool registration without accessing
 	// internal MCP server state. The fact that NewServer succeeded without
-	// error means registerTools() completed successfully for all 9 tools:
-	// - File: readFile, writeFile, listFiles, deleteFile, getFileInfo
-	// - System: currentTime, executeCommand, getEnv
-	// - Network: httpGet
+	// error means registerTools() completed successfully for all 10 tools:
+	// - File: read_file, write_file, list_files, delete_file, get_file_info
+	// - System: current_time, execute_command, get_env
+	// - Network: web_search, web_fetch
 }
 
 // contains checks if s contains substr.

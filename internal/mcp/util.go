@@ -53,9 +53,28 @@ func resultToMCP(result tools.Result) *mcp.CallToolResult {
 		}
 	}
 
-	// Success - return the message
+	// Success - return data as JSON
+	return dataToMCP(result.Data)
+}
+
+// dataToMCP converts arbitrary data to MCP text content via JSON marshaling.
+// This is the simple, unified approach: all data becomes JSON, clients parse it.
+func dataToMCP(data any) *mcp.CallToolResult {
+	if data == nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: ""}},
+		}
+	}
+
+	b, err := json.Marshal(data)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "marshal error"}},
+			IsError: true,
+		}
+	}
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: result.Message}},
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
 	}
 }
 

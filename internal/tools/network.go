@@ -12,15 +12,18 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 	"github.com/go-shiori/go-readability"
 	"github.com/gocolly/colly/v2"
-	"github.com/koopa0/koopa-cli/internal/agent"
+
 	"github.com/koopa0/koopa-cli/internal/log"
 	"github.com/koopa0/koopa-cli/internal/security"
 )
 
-// NetworkToolsetName is the toolset identifier constant.
-const NetworkToolsetName = "network"
+const (
+	ToolWebSearch = "web_search"
+	ToolWebFetch  = "web_fetch"
+)
 
 // Content limits.
 const (
@@ -32,23 +35,15 @@ const (
 	MaxSearchResults = 50
 	// DefaultSearchResults is the default number of search results.
 	DefaultSearchResults = 10
+	// MaxRedirects is the maximum number of HTTP redirects to follow.
+	MaxRedirects = 5
 )
 
-// NetworkToolset provides network operation tools including web search and content fetching.
-//
-// Tools:
-//   - web_search: Search the web via SearXNG
-//   - web_fetch: Fetch and extract content from URLs (HTML, JSON, text)
-//
-// Design principles:
-//   - Capability-oriented naming (not implementation-oriented)
-//   - Multi-source synthesis for unbiased information gathering
-//   - Graceful degradation with partial failure support
-//
-// Security:
-//   - SSRF protection via URL validation
-//   - Blocks private IPs, cloud metadata endpoints, and localhost
-type NetworkToolset struct {
+// NetworkTools holds dependencies for network operation handlers.
+// Use NewNetworkTools to create an instance, then either:
+// - Call methods directly (for MCP)
+// - Use RegisterNetworkTools to register with Genkit
+type NetworkTools struct {
 	// Search configuration (SearXNG)
 	searchBaseURL string
 	searchClient  *http.Client
@@ -61,71 +56,79 @@ type NetworkToolset struct {
 	// SSRF protection
 	urlValidator *security.URL
 
-	// skipSSRFCheck is set ONLY via NewNetworkToolsetForTesting() in network_export_test.go
-	// Production code cannot set this due to build tag isolation
+	// skipSSRFCheck is set ONLY via NewNetworkToolsForTesting()
+	// Production code cannot set this
 	skipSSRFCheck bool
 
 	logger log.Logger
 }
 
-// NewNetworkToolset creates a new NetworkToolset with search and fetch capabilities.
-func NewNetworkToolset(
-	searchBaseURL string,
-	fetchParallelism int,
-	fetchDelay time.Duration,
-	fetchTimeout time.Duration,
-	logger log.Logger,
-) (*NetworkToolset, error) {
-	if searchBaseURL == "" {
+// NetworkConfig holds configuration for network tools.
+type NetworkConfig struct {
+	SearchBaseURL    string
+	FetchParallelism int
+	FetchDelay       time.Duration
+	FetchTimeout     time.Duration
+}
+
+// NewNetworkTools creates a NetworkTools instance.
+func NewNetworkTools(cfg NetworkConfig, logger log.Logger) (*NetworkTools, error) {
+	if cfg.SearchBaseURL == "" {
 		return nil, fmt.Errorf("search base URL is required")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
 
-	if fetchParallelism <= 0 {
-		fetchParallelism = 2
+	// Apply defaults
+	if cfg.FetchParallelism <= 0 {
+		cfg.FetchParallelism = 2
 	}
-	if fetchDelay <= 0 {
-		fetchDelay = 1 * time.Second
+	if cfg.FetchDelay <= 0 {
+		cfg.FetchDelay = 1 * time.Second
 	}
-	if fetchTimeout <= 0 {
-		fetchTimeout = 30 * time.Second
+	if cfg.FetchTimeout <= 0 {
+		cfg.FetchTimeout = 30 * time.Second
 	}
 
-	// Create URL validator for SSRF protection
-	urlValidator := security.NewURL()
-
-	return &NetworkToolset{
-		searchBaseURL:    strings.TrimSuffix(searchBaseURL, "/"),
+	return &NetworkTools{
+		searchBaseURL:    strings.TrimSuffix(cfg.SearchBaseURL, "/"),
 		searchClient:     &http.Client{Timeout: 30 * time.Second},
-		fetchParallelism: fetchParallelism,
-		fetchDelay:       fetchDelay,
-		fetchTimeout:     fetchTimeout,
-		urlValidator:     urlValidator,
+		fetchParallelism: cfg.FetchParallelism,
+		fetchDelay:       cfg.FetchDelay,
+		fetchTimeout:     cfg.FetchTimeout,
+		urlValidator:     security.NewURL(),
 		logger:           logger,
 	}, nil
 }
 
-// Name returns the toolset identifier.
-func (*NetworkToolset) Name() string {
-	return NetworkToolsetName
+// NewNetworkToolsForTesting creates a NetworkTools instance with SSRF protection disabled.
+// This should ONLY be used in tests.
+func NewNetworkToolsForTesting(cfg NetworkConfig, logger log.Logger) (*NetworkTools, error) {
+	nt, err := NewNetworkTools(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	nt.skipSSRFCheck = true
+	return nt, nil
 }
 
-// NewNetworkToolsetForTesting is defined in network_testing.go.
-// It bypasses SSRF protection and should ONLY be used in tests.
+// RegisterNetworkTools registers all network operation tools with Genkit.
+// Tools are registered with event emission wrappers for streaming support.
+func RegisterNetworkTools(g *genkit.Genkit, nt *NetworkTools) ([]ai.Tool, error) {
+	if g == nil {
+		return nil, fmt.Errorf("genkit instance is required")
+	}
+	if nt == nil {
+		return nil, fmt.Errorf("NetworkTools is required")
+	}
 
-// Tools returns all network operation tools provided by this toolset.
-// This is used by Genkit for tool registration.
-func (nt *NetworkToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
-	return []Tool{
-		NewTool(ToolWebSearch,
+	return []ai.Tool{
+		genkit.DefineTool(g, ToolWebSearch,
 			"Search the web for information. Returns relevant results with titles, URLs, and content snippets. "+
 				"Use this to find current information, news, or facts from the internet.",
-			true, // long running
-			nt.search,
-		),
-		NewTool(ToolWebFetch,
+			WithEvents(ToolWebSearch, nt.Search)),
+		genkit.DefineTool(g, ToolWebFetch,
 			"Fetch and extract content from one or more URLs (max 10). "+
 				"Supports HTML pages, JSON APIs, and plain text. "+
 				"For HTML: uses Readability algorithm to extract main content. "+
@@ -134,24 +137,18 @@ func (nt *NetworkToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
 				"Supports parallel fetching with rate limiting. "+
 				"Returns extracted content (max 50KB per URL). "+
 				"Note: Does not render JavaScript - for SPA pages, content may be incomplete.",
-			true, // long running
-			nt.fetch,
-		),
+			WithEvents(ToolWebFetch, nt.Fetch)),
 	}, nil
 }
 
-// Search performs web search via SearXNG.
-// This is the exported method for direct invocation (e.g., from MCP handlers).
-// Architecture: Consistent with FileToolset.ReadFile() and SystemToolset.ExecuteCommand().
-func (nt *NetworkToolset) Search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
-	return nt.search(ctx, input)
-}
-
-// Fetch retrieves and extracts content from one or more URLs.
-// This is the exported method for direct invocation (e.g., from MCP handlers).
-// Architecture: Consistent with FileToolset.ReadFile() and SystemToolset.ExecuteCommand().
-func (nt *NetworkToolset) Fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
-	return nt.fetch(ctx, input)
+// RegisterNetworkToolsForTesting creates network tools with SSRF protection disabled.
+// This should ONLY be used in tests.
+func RegisterNetworkToolsForTesting(g *genkit.Genkit, cfg NetworkConfig, logger log.Logger) ([]ai.Tool, error) {
+	nt, err := NewNetworkToolsForTesting(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	return RegisterNetworkTools(g, nt)
 }
 
 // ============================================================================
@@ -189,17 +186,17 @@ type SearchResult struct {
 	PublishedAt string `json:"published_at,omitempty"`
 }
 
-// search performs web search via SearXNG.
-func (nt *NetworkToolset) search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
+// Search performs web search via SearXNG.
+func (n *NetworkTools) Search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
 	// Validate required fields
 	if strings.TrimSpace(input.Query) == "" {
-		return SearchOutput{}, fmt.Errorf("query is required")
+		return SearchOutput{Error: "Query is required. Please provide a search query."}, nil
 	}
 
-	nt.logger.Info("web_search called", "query", input.Query)
+	n.logger.Info("web_search called", "query", input.Query)
 
 	// Build query URL
-	u, err := url.Parse(nt.searchBaseURL + "/search")
+	u, err := url.Parse(n.searchBaseURL + "/search")
 	if err != nil {
 		return SearchOutput{}, fmt.Errorf("invalid base URL: %w", err)
 	}
@@ -224,9 +221,9 @@ func (nt *NetworkToolset) search(ctx *ai.ToolContext, input SearchInput) (Search
 	req.Header.Set("Accept", "application/json")
 
 	// Execute request
-	resp, err := nt.searchClient.Do(req)
+	resp, err := n.searchClient.Do(req)
 	if err != nil {
-		nt.logger.Error("search request failed", "error", err)
+		n.logger.Error("search request failed", "error", err)
 		return SearchOutput{}, fmt.Errorf("search request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -272,22 +269,31 @@ func (nt *NetworkToolset) search(ctx *ai.ToolContext, input SearchInput) (Search
 	}
 
 	if len(results) == 0 {
-		return SearchOutput{Query: input.Query, Error: "No results found for this query."}, nil
+		return SearchOutput{
+			Query: input.Query,
+			Error: "No results found for this query.",
+		}, nil
 	}
 
-	nt.logger.Info("web_search completed", "query", input.Query, "results", len(results))
-	return SearchOutput{Results: results, Query: input.Query}, nil
+	n.logger.Info("web_search completed", "query", input.Query, "results", len(results))
+	return SearchOutput{
+		Results: results,
+		Query:   input.Query,
+	}, nil
+}
+
+// searxngResult is a single result from the SearXNG API.
+type searxngResult struct {
+	Title         string `json:"title"`
+	URL           string `json:"url"`
+	Content       string `json:"content"`
+	Engine        string `json:"engine"`
+	PublishedDate string `json:"publishedDate"`
 }
 
 // searxngResponse is the internal response structure from SearXNG API.
 type searxngResponse struct {
-	Results []struct {
-		Title         string `json:"title"`
-		URL           string `json:"url"`
-		Content       string `json:"content"`
-		Engine        string `json:"engine"`
-		PublishedDate string `json:"publishedDate"`
-	} `json:"results"`
+	Results []searxngResult `json:"results"`
 }
 
 // ============================================================================
@@ -311,6 +317,9 @@ type FetchOutput struct {
 
 	// FailedURLs lists URLs that failed to fetch with reasons.
 	FailedURLs []FailedURL `json:"failed_urls,omitempty"`
+
+	// Error contains validation error for LLM to understand.
+	Error string `json:"error,omitempty"`
 }
 
 // FetchResult represents successfully fetched content from a single URL.
@@ -328,100 +337,146 @@ type FailedURL struct {
 	StatusCode int    `json:"status_code,omitempty"` // HTTP status code if available
 }
 
-// fetch retrieves and extracts content from one or more URLs.
+// fetchState holds shared state for concurrent fetch operations.
+// Uses a single mutex for simplicity; profiling shows no contention at fetch scale.
+type fetchState struct {
+	mu           sync.Mutex
+	results      []FetchResult
+	failedURLs   []FailedURL
+	processedURL map[string]struct{}
+}
+
+// addResult safely appends a result to the fetch state.
+func (s *fetchState) addResult(r FetchResult) {
+	s.mu.Lock()
+	s.results = append(s.results, r)
+	s.mu.Unlock()
+}
+
+// addFailed safely appends a failed URL to the fetch state.
+func (s *fetchState) addFailed(f FailedURL) {
+	s.mu.Lock()
+	s.failedURLs = append(s.failedURLs, f)
+	s.mu.Unlock()
+}
+
+// markProcessed marks a URL as processed, returns true if it was already processed.
+func (s *fetchState) markProcessed(urlStr string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.processedURL[urlStr]; exists {
+		return true
+	}
+	s.processedURL[urlStr] = struct{}{}
+	return false
+}
+
+// Fetch retrieves and extracts content from one or more URLs.
 // Includes SSRF protection to block private IPs and cloud metadata endpoints.
-//
-//nolint:gocognit,gocyclo // TODO: Extract Colly callbacks to separate methods for readability
-func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
+func (n *NetworkTools) Fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
 	// Validate input
 	if len(input.URLs) == 0 {
-		return FetchOutput{}, fmt.Errorf("at least one URL is required")
+		return FetchOutput{Error: "At least one URL is required. Please provide URLs to fetch."}, nil
 	}
 	if len(input.URLs) > MaxURLsPerRequest {
-		return FetchOutput{}, fmt.Errorf("maximum %d URLs allowed per request", MaxURLsPerRequest)
+		return FetchOutput{Error: fmt.Sprintf("Maximum %d URLs allowed per request. You provided %d URLs.", MaxURLsPerRequest, len(input.URLs))}, nil
 	}
 
-	// SSRF protection - validate and filter URLs before fetching
-	failedURLs := make([]FailedURL, 0, len(input.URLs))
-	safeURLs := make([]string, 0, len(input.URLs))
+	// Filter and validate URLs
+	safeURLs, failedURLs := n.filterURLs(input.URLs)
+	if len(safeURLs) == 0 {
+		n.logger.Warn("web_fetch: all URLs blocked by SSRF protection", "blocked", len(failedURLs))
+		return FetchOutput{FailedURLs: failedURLs}, nil
+	}
 
-	urlSet := make(map[string]struct{}) // For deduplication
-	for _, u := range input.URLs {
-		// Skip duplicates
+	n.logger.Info("web_fetch called", "urls", len(safeURLs), "blocked", len(failedURLs))
+
+	// Create collector and shared state
+	c := n.createCollector()
+	state := &fetchState{
+		failedURLs:   failedURLs,
+		processedURL: make(map[string]struct{}),
+	}
+
+	// Determine content selector
+	selector := input.Selector
+	if selector == "" {
+		selector = "article, main, [role=main], .post-content, .article-content, .entry-content, .content"
+	}
+
+	// Setup callbacks
+	n.setupCallbacks(c, ctx, state, selector)
+
+	// Visit all safe URLs
+	for _, u := range safeURLs {
+		if err := c.Visit(u); err != nil {
+			state.addFailed(FailedURL{URL: u, Reason: err.Error()})
+		}
+	}
+
+	c.Wait()
+
+	n.logger.Info("web_fetch completed", "success", len(state.results), "failed", len(state.failedURLs))
+	return FetchOutput{
+		Results:    state.results,
+		FailedURLs: state.failedURLs,
+	}, nil
+}
+
+// filterURLs validates and deduplicates URLs, returning safe and failed lists.
+func (n *NetworkTools) filterURLs(urls []string) (safe []string, failed []FailedURL) {
+	urlSet := make(map[string]struct{})
+	for _, u := range urls {
 		if _, exists := urlSet[u]; exists {
 			continue
 		}
 		urlSet[u] = struct{}{}
 
-		// Validate URL for SSRF (skip in testing mode)
-		if !nt.skipSSRFCheck {
-			if err := nt.urlValidator.Validate(u); err != nil {
-				nt.logger.Warn("SSRF blocked", "url", u, "reason", err)
-				failedURLs = append(failedURLs, FailedURL{
-					URL:    u,
-					Reason: fmt.Sprintf("blocked: %v", err),
-				})
+		if !n.skipSSRFCheck {
+			if err := n.urlValidator.Validate(u); err != nil {
+				n.logger.Warn("SSRF blocked", "url", u, "reason", err)
+				failed = append(failed, FailedURL{URL: u, Reason: fmt.Sprintf("blocked: %v", err)})
 				continue
 			}
 		}
-		safeURLs = append(safeURLs, u)
+		safe = append(safe, u)
 	}
+	return safe, failed
+}
 
-	// If all URLs were blocked, return early
-	if len(safeURLs) == 0 {
-		nt.logger.Warn("web_fetch: all URLs blocked by SSRF protection", "blocked", len(failedURLs))
-		return FetchOutput{FailedURLs: failedURLs}, nil
-	}
-
-	nt.logger.Info("web_fetch called", "urls", len(safeURLs), "blocked", len(failedURLs))
-
-	// Create Colly collector for this request
+// createCollector creates a configured Colly collector.
+func (n *NetworkTools) createCollector() *colly.Collector {
 	c := colly.NewCollector(
 		colly.Async(true),
-		colly.MaxDepth(1), // Don't follow links
+		colly.MaxDepth(1),
 		colly.UserAgent("Mozilla/5.0 (compatible; KoopaBot/1.0; +https://github.com/koopa0/koopa)"),
 	)
 
-	// SSRF protection in redirect handler
-	// Validate redirect targets to prevent SSRF via redirects
 	c.SetRedirectHandler(func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("stopped after 5 redirects")
+		if len(via) >= MaxRedirects {
+			return fmt.Errorf("stopped after %d redirects", MaxRedirects)
 		}
-		// Check redirect target for SSRF (skip in testing mode)
-		if !nt.skipSSRFCheck {
-			if err := nt.urlValidator.Validate(req.URL.String()); err != nil {
-				nt.logger.Warn("SSRF blocked redirect", "url", req.URL.String(), "reason", err)
+		if !n.skipSSRFCheck {
+			if err := n.urlValidator.Validate(req.URL.String()); err != nil {
+				n.logger.Warn("SSRF blocked redirect", "url", req.URL.String(), "reason", err)
 				return fmt.Errorf("redirect blocked: %w", err)
 			}
 		}
 		return nil
 	})
 
-	// Set timeout
-	c.SetRequestTimeout(nt.fetchTimeout)
-
-	// Rate limiting per domain
-	if err := c.Limit(&colly.LimitRule{
+	c.SetRequestTimeout(n.fetchTimeout)
+	_ = c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: nt.fetchParallelism,
-		Delay:       nt.fetchDelay,
-	}); err != nil {
-		return FetchOutput{}, fmt.Errorf("set rate limit: %w", err)
-	}
+		Parallelism: n.fetchParallelism,
+		Delay:       n.fetchDelay,
+	})
 
-	// Results collection (thread-safe)
-	// Note: failedURLs already contains SSRF-blocked URLs from earlier
-	var (
-		mu      sync.Mutex
-		results []FetchResult
-	)
+	return c
+}
 
-	// Track which URLs have been processed (to avoid double processing)
-	processedURLs := make(map[string]struct{})
-	var processedMu sync.Mutex
-
-	// Context cancellation check
+// setupCallbacks configures all Colly callbacks.
+func (n *NetworkTools) setupCallbacks(c *colly.Collector, ctx *ai.ToolContext, state *fetchState, selector string) {
 	c.OnRequest(func(r *colly.Request) {
 		select {
 		case <-ctx.Done():
@@ -430,187 +485,139 @@ func (nt *NetworkToolset) fetch(ctx *ai.ToolContext, input FetchInput) (FetchOut
 		}
 	})
 
-	// Determine content selector (used as fallback for HTML)
-	selector := input.Selector
-	if selector == "" {
-		selector = "article, main, [role=main], .post-content, .article-content, .entry-content, .content"
-	}
-
-	// OnResponse handles non-HTML content (JSON, Text, XML)
 	c.OnResponse(func(r *colly.Response) {
-		contentType := r.Headers.Get("Content-Type")
-		urlStr := r.Request.URL.String()
-
-		// Skip HTML - will be handled by OnHTML
-		if strings.Contains(contentType, "text/html") {
-			return
-		}
-
-		processedMu.Lock()
-		if _, exists := processedURLs[urlStr]; exists {
-			processedMu.Unlock()
-			return
-		}
-		processedURLs[urlStr] = struct{}{}
-		processedMu.Unlock()
-
-		var content string
-		var title string
-
-		switch {
-		case strings.Contains(contentType, "application/json"):
-			// Pretty-print JSON for better LLM readability
-			var jsonData any
-			if err := json.Unmarshal(r.Body, &jsonData); err == nil {
-				if pretty, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-					content = string(pretty)
-				} else {
-					content = string(r.Body)
-				}
-			} else {
-				content = string(r.Body)
-			}
-			title = "JSON Response"
-
-		case strings.Contains(contentType, "text/plain"),
-			strings.Contains(contentType, "text/xml"),
-			strings.Contains(contentType, "application/xml"):
-			content = string(r.Body)
-			title = "Text Content"
-
-		default:
-			// Unknown content type - try to use as text
-			content = string(r.Body)
-			title = "Content"
-		}
-
-		// Truncate if too long
-		if len(content) > MaxContentLength {
-			content = content[:MaxContentLength] + "\n\n[Content truncated...]"
-		}
-
-		mu.Lock()
-		results = append(results, FetchResult{
-			URL:         urlStr,
-			Title:       title,
-			Content:     strings.TrimSpace(content),
-			ContentType: contentType,
-		})
-		mu.Unlock()
+		n.handleNonHTMLResponse(r, state)
 	})
 
-	// OnHTML handles HTML content with go-readability
 	c.OnHTML("html", func(e *colly.HTMLElement) {
-		urlStr := e.Request.URL.String()
-
-		processedMu.Lock()
-		if _, exists := processedURLs[urlStr]; exists {
-			processedMu.Unlock()
-			return
-		}
-		processedURLs[urlStr] = struct{}{}
-		processedMu.Unlock()
-
-		// Use Response.Body for full HTML (more reliable than DOM.Html())
-		htmlBytes := e.Response.Body
-		if len(htmlBytes) == 0 {
-			nt.logger.Warn("empty response body", "url", urlStr)
-			return
-		}
-
-		// Use go-readability for content extraction
-		// Pass e.Request.URL directly - it's already parsed and reflects final URL after redirects
-		title, content := nt.extractWithReadability(e.Request.URL, string(htmlBytes), e, selector)
-
-		// Truncate if too long
-		if len(content) > MaxContentLength {
-			content = content[:MaxContentLength] + "\n\n[Content truncated...]"
-		}
-
-		mu.Lock()
-		results = append(results, FetchResult{
-			URL:         urlStr,
-			Title:       strings.TrimSpace(title),
-			Content:     strings.TrimSpace(content),
-			ContentType: "text/html",
-		})
-		mu.Unlock()
+		n.handleHTMLResponse(e, state, selector)
 	})
 
-	// On error
 	c.OnError(func(r *colly.Response, err error) {
-		reason := err.Error()
-		statusCode := 0
-		if r.StatusCode > 0 {
-			statusCode = r.StatusCode
-			reason = fmt.Sprintf("HTTP %d: %s", r.StatusCode, reason)
-		}
-
-		mu.Lock()
-		failedURLs = append(failedURLs, FailedURL{
-			URL:        r.Request.URL.String(),
-			Reason:     reason,
-			StatusCode: statusCode,
-		})
-		mu.Unlock()
-
-		nt.logger.Warn("fetch failed", "url", r.Request.URL.String(), "status", statusCode, "error", err)
+		n.handleError(r, err, state)
 	})
+}
 
-	// Visit all safe URLs (already SSRF-validated)
-	for _, u := range safeURLs {
-		if err := c.Visit(u); err != nil {
-			mu.Lock()
-			failedURLs = append(failedURLs, FailedURL{
-				URL:    u,
-				Reason: err.Error(),
-			})
-			mu.Unlock()
-		}
+// handleNonHTMLResponse processes JSON, XML, and text responses.
+func (n *NetworkTools) handleNonHTMLResponse(r *colly.Response, state *fetchState) {
+	contentType := r.Headers.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") {
+		return
 	}
 
-	// Wait for all requests to complete
-	c.Wait()
+	urlStr := r.Request.URL.String()
+	if state.markProcessed(urlStr) {
+		return
+	}
 
-	nt.logger.Info("web_fetch completed",
-		"success", len(results),
-		"failed", len(failedURLs))
+	title, content := n.extractNonHTMLContent(r.Body, contentType)
+	if len(content) > MaxContentLength {
+		content = content[:MaxContentLength] + "\n\n[Content truncated...]"
+	}
 
-	return FetchOutput{
-		Results:    results,
-		FailedURLs: failedURLs,
-	}, nil
+	state.addResult(FetchResult{
+		URL:         urlStr,
+		Title:       title,
+		Content:     strings.TrimSpace(content),
+		ContentType: contentType,
+	})
+}
+
+// extractNonHTMLContent extracts content from non-HTML responses.
+func (*NetworkTools) extractNonHTMLContent(body []byte, contentType string) (title, content string) {
+	switch {
+	case strings.Contains(contentType, "application/json"):
+		var jsonData any
+		if err := json.Unmarshal(body, &jsonData); err == nil {
+			if pretty, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
+				return "JSON Response", string(pretty)
+			}
+		}
+		return "JSON Response", string(body)
+
+	case strings.Contains(contentType, "text/plain"),
+		strings.Contains(contentType, "text/xml"),
+		strings.Contains(contentType, "application/xml"):
+		return "Text Content", string(body)
+
+	default:
+		return "Content", string(body)
+	}
+}
+
+// handleHTMLResponse processes HTML responses using readability.
+func (n *NetworkTools) handleHTMLResponse(e *colly.HTMLElement, state *fetchState, selector string) {
+	urlStr := e.Request.URL.String()
+	if state.markProcessed(urlStr) {
+		return
+	}
+
+	htmlBytes := e.Response.Body
+	if len(htmlBytes) == 0 {
+		n.logger.Warn("empty response body", "url", urlStr)
+		return
+	}
+
+	title, content := n.extractWithReadability(e.Request.URL, string(htmlBytes), e, selector)
+	if len(content) > MaxContentLength {
+		content = content[:MaxContentLength] + "\n\n[Content truncated...]"
+	}
+
+	state.addResult(FetchResult{
+		URL:         urlStr,
+		Title:       strings.TrimSpace(title),
+		Content:     strings.TrimSpace(content),
+		ContentType: "text/html",
+	})
+}
+
+// handleError processes fetch errors.
+func (n *NetworkTools) handleError(r *colly.Response, err error, state *fetchState) {
+	reason := err.Error()
+	statusCode := 0
+	if r.StatusCode > 0 {
+		statusCode = r.StatusCode
+		reason = fmt.Sprintf("HTTP %d: %s", r.StatusCode, reason)
+	}
+
+	state.addFailed(FailedURL{
+		URL:        r.Request.URL.String(),
+		Reason:     reason,
+		StatusCode: statusCode,
+	})
+
+	n.logger.Warn("fetch failed", "url", r.Request.URL.String(), "status", statusCode, "error", err)
 }
 
 // extractWithReadability extracts content using go-readability with CSS selector fallback.
 // Returns (title, content).
 // u should be the final URL after redirects (e.Request.URL from Colly).
-func (nt *NetworkToolset) extractWithReadability(u *url.URL, html string, e *colly.HTMLElement, selector string) (title, content string) {
+func (n *NetworkTools) extractWithReadability(u *url.URL, html string, e *colly.HTMLElement, selector string) (title, content string) {
 	// Try go-readability first (Mozilla Readability algorithm)
 	// u is already parsed and reflects the final URL after any redirects
 	article, err := readability.FromReader(bytes.NewReader([]byte(html)), u)
 	if err == nil && article.Content != "" {
 		// Readability succeeded - return extracted content
-		title := article.Title
+		title = article.Title
 		if title == "" {
 			title = e.ChildText("title")
 		}
 
 		// Convert HTML content to plain text (remove tags)
-		content := nt.htmlToText(article.Content)
+		content = n.htmlToText(article.Content)
 		if content != "" {
 			return title, content
 		}
 	}
 
 	// Readability failed or returned empty - fallback to CSS selector
-	nt.logger.Debug("readability fallback to selector", "url", u.String())
-	return nt.extractWithSelector(e, selector)
+	n.logger.Debug("readability fallback to selector", "url", u.String())
+	return n.extractWithSelector(e, selector)
 }
 
 // extractWithSelector extracts content using CSS selectors (fallback method).
 // Returns (title, content).
-func (*NetworkToolset) extractWithSelector(e *colly.HTMLElement, selector string) (extractedTitle, extractedContent string) {
+func (*NetworkTools) extractWithSelector(e *colly.HTMLElement, selector string) (extractedTitle, extractedContent string) {
 	// Extract title
 	extractedTitle = e.ChildText("title")
 	if extractedTitle == "" {
@@ -638,7 +645,7 @@ func (*NetworkToolset) extractWithSelector(e *colly.HTMLElement, selector string
 }
 
 // htmlToText converts HTML content to plain text.
-func (*NetworkToolset) htmlToText(html string) string {
+func (*NetworkTools) htmlToText(html string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
 		return ""

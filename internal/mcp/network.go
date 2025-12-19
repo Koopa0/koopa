@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
@@ -45,12 +44,12 @@ func (s *Server) WebSearch(ctx context.Context, _ *mcp.CallToolRequest, input to
 	toolCtx := &ai.ToolContext{Context: ctx}
 
 	// Direct method call - O(1), consistent with FileToolset.ReadFile() pattern
-	result, err := s.networkToolset.Search(toolCtx, input)
+	result, err := s.networkTools.Search(toolCtx, input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("web_search failed: %w", err)
 	}
 
-	return outputToMCP(result), nil, nil
+	return dataToMCP(result), nil, nil
 }
 
 // WebFetch handles the web_fetch MCP tool call.
@@ -59,26 +58,10 @@ func (s *Server) WebFetch(ctx context.Context, _ *mcp.CallToolRequest, input too
 	toolCtx := &ai.ToolContext{Context: ctx}
 
 	// Direct method call - O(1), consistent with FileToolset.ReadFile() pattern
-	result, err := s.networkToolset.Fetch(toolCtx, input)
+	result, err := s.networkTools.Fetch(toolCtx, input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("web_fetch failed: %w", err)
 	}
 
-	return outputToMCP(result), nil, nil
-}
-
-// outputToMCP converts tool output to MCP result.
-func outputToMCP(output any) *mcp.CallToolResult {
-	// Convert to JSON for MCP transport
-	jsonBytes, err := json.Marshal(output)
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("error marshaling output: %v", err)}},
-			IsError: true,
-		}
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(jsonBytes)}},
-	}
+	return dataToMCP(result), nil, nil
 }

@@ -10,33 +10,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/koopa0/koopa-cli/internal/agent"
-	"github.com/koopa0/koopa-cli/internal/config"
 )
-
-// TestChat_Name tests the Name method
-func TestChat_Name(t *testing.T) {
-	t.Parallel()
-	c := &Chat{}
-	assert.Equal(t, Name, c.Name())
-	assert.Equal(t, "chat", c.Name())
-}
-
-// TestChat_Description tests the Description method
-func TestChat_Description(t *testing.T) {
-	t.Parallel()
-	c := &Chat{}
-	assert.Equal(t, Description, c.Description())
-	assert.NotEmpty(t, c.Description())
-}
-
-// TestChat_SubAgents tests the SubAgents method
-func TestChat_SubAgents(t *testing.T) {
-	t.Parallel()
-	c := &Chat{}
-	assert.Nil(t, c.SubAgents())
-}
 
 // TestNew_ValidationErrors tests constructor validation
 func TestNew_ValidationErrors(t *testing.T) {
@@ -44,139 +18,43 @@ func TestNew_ValidationErrors(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		deps        Deps
+		cfg         Config
 		errContains string
 	}{
 		{
-			name:        "nil config",
-			deps:        Deps{},
-			errContains: "Config is required",
+			name:        "nil genkit",
+			cfg:         Config{},
+			errContains: "genkit instance is required",
 		},
 		{
-			name: "nil genkit",
-			deps: Deps{
-				Config: &config.Config{},
+			name: "nil retriever",
+			cfg: Config{
+				Genkit: nil, // Still nil, so we'll get Genkit error first
 			},
-			errContains: "Genkit is required",
-		},
-		{
-			name: "nil retriever - requires genkit first",
-			deps: Deps{
-				Config: &config.Config{},
-				// Genkit is nil, so we'll get Genkit error first
-			},
-			errContains: "Genkit is required",
+			errContains: "genkit instance is required",
 		},
 		{
 			name: "nil logger - requires all previous deps",
-			deps: Deps{
-				Config: &config.Config{},
+			cfg:  Config{
 				// Missing Genkit
 			},
-			errContains: "Genkit is required",
+			errContains: "genkit instance is required",
 		},
 		{
-			name: "empty toolsets - requires all previous deps",
-			deps: Deps{
-				Config: &config.Config{},
+			name: "empty tools - requires all previous deps",
+			cfg:  Config{
 				// Missing Genkit
 			},
-			errContains: "Genkit is required",
+			errContains: "genkit instance is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := New(tt.deps)
+			_, err := New(tt.cfg)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
-		})
-	}
-}
-
-// TestGetLanguagePromptVariable tests language prompt variable retrieval
-func TestGetLanguagePromptVariable(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		language string
-		expected string
-	}{
-		{
-			name:     "empty language defaults to auto-detect",
-			language: "",
-			expected: "the same language as the user's input (auto-detect)",
-		},
-		{
-			name:     "auto language defaults to auto-detect",
-			language: "auto",
-			expected: "the same language as the user's input (auto-detect)",
-		},
-		{
-			name:     "specific language is returned",
-			language: "English",
-			expected: "English",
-		},
-		{
-			name:     "chinese language is returned",
-			language: "繁體中文",
-			expected: "繁體中文",
-		},
-		{
-			name:     "japanese language is returned",
-			language: "日本語",
-			expected: "日本語",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			c := &Chat{
-				config: &config.Config{Language: tt.language},
-			}
-			result := c.getLanguagePromptVariable()
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-// TestResolveModelName tests model name resolution
-func TestResolveModelName(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name      string
-		modelName string
-		expected  string
-	}{
-		{
-			name:      "empty model name uses default",
-			modelName: "",
-			expected:  DefaultModel,
-		},
-		{
-			name:      "custom model name is returned",
-			modelName: "gemini-1.5-pro",
-			expected:  "gemini-1.5-pro",
-		},
-		{
-			name:      "another custom model",
-			modelName: "googleai/gemini-2.5-flash",
-			expected:  "googleai/gemini-2.5-flash",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			c := &Chat{
-				config: &config.Config{ModelName: tt.modelName},
-			}
-			result := c.resolveModelName()
-			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -195,42 +73,9 @@ func TestConstants(t *testing.T) {
 		assert.NotEmpty(t, Description)
 	})
 
-	t.Run("DefaultModel is set", func(t *testing.T) {
-		t.Parallel()
-		assert.NotEmpty(t, DefaultModel)
-		assert.Contains(t, DefaultModel, "gemini")
-	})
-
 	t.Run("KoopaPromptName is set", func(t *testing.T) {
 		t.Parallel()
 		assert.Equal(t, "koopa", KoopaPromptName)
-	})
-}
-
-// TestEmptyReadonlyContext tests the emptyReadonlyContext helper
-func TestEmptyReadonlyContext(t *testing.T) {
-	t.Parallel()
-
-	ctx := &emptyReadonlyContext{}
-
-	t.Run("InvocationID returns empty string", func(t *testing.T) {
-		t.Parallel()
-		assert.Equal(t, "", ctx.InvocationID())
-	})
-
-	t.Run("Branch returns empty string", func(t *testing.T) {
-		t.Parallel()
-		assert.Equal(t, "", ctx.Branch())
-	})
-
-	t.Run("SessionID returns empty SessionID", func(t *testing.T) {
-		t.Parallel()
-		assert.Equal(t, agent.SessionID(""), ctx.SessionID())
-	})
-
-	t.Run("AgentName returns empty string", func(t *testing.T) {
-		t.Parallel()
-		assert.Equal(t, "", ctx.AgentName())
 	})
 }
 
@@ -268,27 +113,18 @@ func TestStreamCallback_Type(t *testing.T) {
 	})
 }
 
-// TestDeps_Structure tests the Deps struct
-func TestDeps_Structure(t *testing.T) {
+// TestConfig_Structure tests the Config struct
+func TestConfig_Structure(t *testing.T) {
 	t.Parallel()
 
 	t.Run("zero value has nil fields", func(t *testing.T) {
 		t.Parallel()
-		var deps Deps
-		assert.Nil(t, deps.Config)
-		assert.Nil(t, deps.Genkit)
-		assert.Nil(t, deps.Retriever)
-		assert.Nil(t, deps.SessionStore)
-		assert.Nil(t, deps.KnowledgeStore)
-		assert.Nil(t, deps.Logger)
-		assert.Nil(t, deps.Toolsets)
-	})
-
-	t.Run("can set config", func(t *testing.T) {
-		t.Parallel()
-		cfg := &config.Config{ModelName: "test-model"}
-		deps := Deps{Config: cfg}
-		assert.Equal(t, "test-model", deps.Config.ModelName)
+		var cfg Config
+		assert.Nil(t, cfg.Genkit)
+		assert.Nil(t, cfg.Retriever)
+		assert.Nil(t, cfg.SessionStore)
+		assert.Nil(t, cfg.Logger)
+		assert.Nil(t, cfg.Tools)
 	})
 }
 
@@ -299,8 +135,8 @@ func TestChat_RetrieveRAGContext_SkipsWhenTopKZero(t *testing.T) {
 	t.Run("returns nil when topK is zero", func(t *testing.T) {
 		t.Parallel()
 		c := &Chat{
-			config: &config.Config{RAGTopK: 0},
-			logger: slog.Default(),
+			ragTopK: 0,
+			logger:  slog.Default(),
 		}
 		docs := c.retrieveRAGContext(context.Background(), "test query")
 		assert.Nil(t, docs)
@@ -309,46 +145,12 @@ func TestChat_RetrieveRAGContext_SkipsWhenTopKZero(t *testing.T) {
 	t.Run("returns nil when topK is negative", func(t *testing.T) {
 		t.Parallel()
 		c := &Chat{
-			config: &config.Config{RAGTopK: -1},
-			logger: slog.Default(),
+			ragTopK: -1,
+			logger:  slog.Default(),
 		}
 		docs := c.retrieveRAGContext(context.Background(), "test query")
 		assert.Nil(t, docs)
 	})
-}
-
-// TestChat_InterfaceCompliance tests that Chat implements agent.Agent
-func TestChat_InterfaceCompliance(t *testing.T) {
-	t.Parallel()
-
-	t.Run("Chat implements agent.Agent", func(t *testing.T) {
-		t.Parallel()
-		var _ agent.Agent = (*Chat)(nil)
-	})
-}
-
-// BenchmarkGetLanguagePromptVariable benchmarks language prompt variable retrieval
-func BenchmarkGetLanguagePromptVariable(b *testing.B) {
-	c := &Chat{
-		config: &config.Config{Language: "English"},
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		_ = c.getLanguagePromptVariable()
-	}
-}
-
-// BenchmarkResolveModelName benchmarks model name resolution
-func BenchmarkResolveModelName(b *testing.B) {
-	c := &Chat{
-		config: &config.Config{ModelName: "gemini-2.5-flash"},
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		_ = c.resolveModelName()
-	}
 }
 
 // =============================================================================
@@ -414,22 +216,6 @@ func TestChat_ContextCancellation(t *testing.T) {
 		// DeadlineExceeded is different from Canceled
 		assert.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
 		assert.False(t, errors.Is(ctx.Err(), context.Canceled))
-	})
-}
-
-// TestChat_NilResponseDefense tests defensive check for nil responses.
-// This prevents panics when execute() incorrectly returns nil without error.
-func TestChat_NilResponseDefense(t *testing.T) {
-	t.Parallel()
-
-	t.Run("nil response detection", func(t *testing.T) {
-		t.Parallel()
-		// Simulate the defensive check in ExecuteStream
-		var resp *ai.ModelResponse = nil
-		if resp == nil {
-			err := errors.New("internal error: execute returned nil response without error")
-			assert.Contains(t, err.Error(), "nil response")
-		}
 	})
 }
 

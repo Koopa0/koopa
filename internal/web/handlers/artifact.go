@@ -1,17 +1,11 @@
 // Package handlers provides HTTP handlers for web UI.
 package handlers
 
-import "strings"
+import (
+	"strings"
 
-// Artifact represents a detected code/document artifact from AI output.
-// Per rob-pike v4: Single type, no duplication with chat.Artifact.
-// Per architecture-master: Handler-layer type for text-parsed artifacts.
-type Artifact struct {
-	Type     string // "code", "markdown", "html"
-	Language string // "go", "python", "javascript", etc.
-	Title    string // Filename or description
-	Content  string // The artifact content
-}
+	"github.com/koopa0/koopa-cli/internal/artifact"
+)
 
 const (
 	tagStart      = "<artifact "
@@ -22,7 +16,7 @@ const (
 // parseArtifact extracts a single artifact from text.
 // Returns the artifact (if complete), text before it, and remaining text.
 // Per rob-pike v4: Simple function, no types, no state machine.
-func parseArtifact(text string) (art *Artifact, before, after string) {
+func parseArtifact(text string) (art *artifact.Artifact, before, after string) {
 	startIdx := strings.Index(text, tagStart)
 	if startIdx == -1 {
 		// No complete tag start found - check for partial tag at end
@@ -41,15 +35,17 @@ func parseArtifact(text string) (art *Artifact, before, after string) {
 
 	// Parse attributes (any order - per ai-agent-master)
 	tagBody := text[tagBodyStart:closeIdx]
-	art = &Artifact{
-		Type:     extractAttr(tagBody, "type"),
-		Language: extractAttr(tagBody, "language"),
-		Title:    extractAttr(tagBody, "title"),
-	}
+	artType := extractAttr(tagBody, "type")
 
 	// Validate type (per ai-agent-master)
-	if !isValidArtifactType(art.Type) {
-		art.Type = "code" // Safe default
+	if !isValidArtifactType(artType) {
+		artType = "code" // Safe default
+	}
+
+	art = &artifact.Artifact{
+		Type:     artifact.Type(artType),
+		Language: extractAttr(tagBody, "language"),
+		Title:    extractAttr(tagBody, "title"),
 	}
 
 	// Find closing tag
