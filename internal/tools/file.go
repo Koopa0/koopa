@@ -7,13 +7,11 @@ import (
 	"path/filepath"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/firebase/genkit/go/genkit"
+
 	"github.com/koopa0/koopa-cli/internal/log"
 	"github.com/koopa0/koopa-cli/internal/security"
 )
-
-// FileToolsetName is the registered name of the file toolset.
-const FileToolsetName = "file"
 
 // Entry type constants for ListFiles results.
 const (
@@ -21,110 +19,106 @@ const (
 	entryTypeDirectory = "directory"
 )
 
+// FileEntry represents a single file or directory entry in ListFiles output.
+type FileEntry struct {
+	Name string `json:"name"`
+	Type string `json:"type"` // "file" or "directory"
+}
+
+const (
+	ToolReadFile    = "read_file"
+	ToolWriteFile   = "write_file"
+	ToolListFiles   = "list_files"
+	ToolDeleteFile  = "delete_file"
+	ToolGetFileInfo = "get_file_info"
+)
+
 // MaxReadFileSize is the maximum file size allowed for ReadFile (10 MB).
 // This prevents OOM when reading large files into memory.
 const MaxReadFileSize = 10 * 1024 * 1024
 
-// ReadFileInput defines input for readFile tool.
+// ReadFileInput defines input for read_file tool.
 type ReadFileInput struct {
 	Path string `json:"path" jsonschema_description:"The file path to read (absolute or relative)"`
 }
 
-// WriteFileInput defines input for writeFile tool.
+// WriteFileInput defines input for write_file tool.
 type WriteFileInput struct {
 	Path    string `json:"path" jsonschema_description:"The file path to write"`
 	Content string `json:"content" jsonschema_description:"The content to write to the file"`
 }
 
-// ListFilesInput defines input for listFiles tool.
+// ListFilesInput defines input for list_files tool.
 type ListFilesInput struct {
 	Path string `json:"path" jsonschema_description:"The directory path to list"`
 }
 
-// DeleteFileInput defines input for deleteFile tool.
+// DeleteFileInput defines input for delete_file tool.
 type DeleteFileInput struct {
 	Path string `json:"path" jsonschema_description:"The file path to delete"`
 }
 
-// GetFileInfoInput defines input for getFileInfo tool.
+// GetFileInfoInput defines input for get_file_info tool.
 type GetFileInfoInput struct {
 	Path string `json:"path" jsonschema_description:"The file path to get info for"`
 }
 
-// FileToolset provides file operation tools such as reading, writing, and managing files.
-// It implements the Toolset interface.
-type FileToolset struct {
+// FileTools provides file operation handlers.
+// Use NewFileTools to create an instance, then either:
+// - Call methods directly (for MCP)
+// - Use RegisterFileTools to register with Genkit
+type FileTools struct {
 	pathVal *security.Path
 	logger  log.Logger
 }
 
-// NewFileToolset creates a new FileToolset.
-func NewFileToolset(pathVal *security.Path, logger log.Logger) (*FileToolset, error) {
+// NewFileTools creates a FileTools instance.
+func NewFileTools(pathVal *security.Path, logger log.Logger) (*FileTools, error) {
 	if pathVal == nil {
 		return nil, fmt.Errorf("path validator is required")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-
-	return &FileToolset{
-		pathVal: pathVal,
-		logger:  logger,
-	}, nil
+	return &FileTools{pathVal: pathVal, logger: logger}, nil
 }
 
-// Name returns the toolset identifier.
-func (*FileToolset) Name() string {
-	return FileToolsetName
-}
+// RegisterFileTools registers all file operation tools with Genkit.
+func RegisterFileTools(g *genkit.Genkit, ft *FileTools) ([]ai.Tool, error) {
+	if g == nil {
+		return nil, fmt.Errorf("genkit instance is required")
+	}
+	if ft == nil {
+		return nil, fmt.Errorf("FileTools is required")
+	}
 
-// Tools returns all file operation tools provided by this toolset.
-func (fs *FileToolset) Tools(_ agent.ReadonlyContext) ([]Tool, error) {
-	return []Tool{
-		NewTool(
-			ToolReadFile,
+	return []ai.Tool{
+		genkit.DefineTool(g, ToolReadFile,
 			"Read the complete content of any text-based file.",
-			false, // not long running
-			fs.ReadFile,
-		),
-		NewTool(
-			ToolWriteFile,
+			WithEvents(ToolReadFile, ft.ReadFile)),
+		genkit.DefineTool(g, ToolWriteFile,
 			"Write or create any text-based file.",
-			false,
-			fs.WriteFile,
-		),
-		NewTool(
-			ToolListFiles,
+			WithEvents(ToolWriteFile, ft.WriteFile)),
+		genkit.DefineTool(g, ToolListFiles,
 			"List all files and subdirectories in a directory.",
-			false,
-			fs.ListFiles,
-		),
-		NewTool(
-			ToolDeleteFile,
+			WithEvents(ToolListFiles, ft.ListFiles)),
+		genkit.DefineTool(g, ToolDeleteFile,
 			"Delete a file permanently.",
-			false,
-			fs.DeleteFile,
-		),
-		NewTool(
-			ToolGetFileInfo,
+			WithEvents(ToolDeleteFile, ft.DeleteFile)),
+		genkit.DefineTool(g, ToolGetFileInfo,
 			"Get detailed metadata about a file.",
-			false,
-			fs.GetFileInfo,
-		),
+			WithEvents(ToolGetFileInfo, ft.GetFileInfo)),
 	}, nil
 }
 
 // ReadFile reads and returns the complete content of a file with security validation.
-// Uses os.Open + io.LimitReader for efficient single-pass I/O with defense-in-depth size limiting.
-func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) {
-	fs.logger.Info("ReadFile called", "path", input.Path)
+func (f *FileTools) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) {
+	f.logger.Info("ReadFile called", "path", input.Path)
 
-	// Validate path (security check)
-	safePath, err := fs.pathVal.Validate(input.Path)
+	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Path validation failed",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
 				Message: fmt.Sprintf("path validation failed: %v", err),
@@ -132,13 +126,11 @@ func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result,
 		}, nil
 	}
 
-	// Open file for reading (single operation instead of separate Stat + ReadFile)
-	file, err := os.Open(safePath) // #nosec G304 - path already validated by pathVal.Validate()
+	file, err := os.Open(safePath) // #nosec G304 - path already validated
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Result{
-				Status:  StatusError,
-				Message: fmt.Sprintf("File not found: %s", input.Path),
+				Status: StatusError,
 				Error: &Error{
 					Code:    ErrCodeNotFound,
 					Message: fmt.Sprintf("file not found: %s", input.Path),
@@ -146,8 +138,7 @@ func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result,
 			}, nil
 		}
 		return Result{
-			Status:  StatusError,
-			Message: "Failed to open file",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to open file: %v", err),
@@ -156,12 +147,10 @@ func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result,
 	}
 	defer func() { _ = file.Close() }()
 
-	// Get file info for size check
 	info, err := file.Stat()
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Failed to get file info",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to stat file: %v", err),
@@ -171,21 +160,18 @@ func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result,
 
 	if info.Size() > MaxReadFileSize {
 		return Result{
-			Status:  StatusError,
-			Message: fmt.Sprintf("File too large: %d bytes (max %d bytes)", info.Size(), MaxReadFileSize),
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeValidation,
-				Message: fmt.Sprintf("file size %d exceeds maximum allowed size %d bytes", info.Size(), MaxReadFileSize),
+				Message: fmt.Sprintf("file size %d exceeds maximum %d bytes", info.Size(), MaxReadFileSize),
 			},
 		}, nil
 	}
 
-	// Read file with LimitReader as defense-in-depth (prevents reading more than MaxReadFileSize)
 	content, err := io.ReadAll(io.LimitReader(file, MaxReadFileSize))
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Failed to read file",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to read file: %v", err),
@@ -194,8 +180,7 @@ func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result,
 	}
 
 	return Result{
-		Status:  StatusSuccess,
-		Message: fmt.Sprintf("Successfully read file: %s", safePath),
+		Status: StatusSuccess,
 		Data: map[string]any{
 			"path":    safePath,
 			"content": string(content),
@@ -204,15 +189,14 @@ func (fs *FileToolset) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result,
 	}, nil
 }
 
-// WriteFile writes content to a file with security validation and automatic directory creation.
-func (fs *FileToolset) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Result, error) {
-	fs.logger.Info("WriteFile called", "path", input.Path)
+// WriteFile writes content to a file with security validation.
+func (f *FileTools) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Result, error) {
+	f.logger.Info("WriteFile called", "path", input.Path)
 
-	safePath, err := fs.pathVal.Validate(input.Path)
+	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Path validation failed",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
 				Message: fmt.Sprintf("path validation failed: %v", err),
@@ -223,8 +207,7 @@ func (fs *FileToolset) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Resul
 	dir := filepath.Dir(safePath)
 	if mkdirErr := os.MkdirAll(dir, 0o750); mkdirErr != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Unable to create directory",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to create directory: %v", mkdirErr),
@@ -232,12 +215,11 @@ func (fs *FileToolset) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Resul
 		}, nil
 	}
 
-	// #nosec G304 - safePath is validated by pathVal.Validate() above
+	// #nosec G304 - safePath is validated
 	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Unable to open file",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to open file: %v", err),
@@ -248,8 +230,7 @@ func (fs *FileToolset) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Resul
 
 	if _, err := file.WriteString(input.Content); err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Unable to write file",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to write file: %v", err),
@@ -258,8 +239,7 @@ func (fs *FileToolset) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Resul
 	}
 
 	return Result{
-		Status:  StatusSuccess,
-		Message: fmt.Sprintf("Successfully wrote file: %s", safePath),
+		Status: StatusSuccess,
 		Data: map[string]any{
 			"path": safePath,
 			"size": len(input.Content),
@@ -268,14 +248,13 @@ func (fs *FileToolset) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Resul
 }
 
 // ListFiles lists files in a directory.
-func (fs *FileToolset) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Result, error) {
-	fs.logger.Info("ListFiles called", "path", input.Path)
+func (f *FileTools) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Result, error) {
+	f.logger.Info("ListFiles called", "path", input.Path)
 
-	safePath, err := fs.pathVal.Validate(input.Path)
+	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Path validation failed",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
 				Message: fmt.Sprintf("path validation failed: %v", err),
@@ -286,8 +265,7 @@ func (fs *FileToolset) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Resul
 	entries, err := os.ReadDir(safePath)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Unable to read directory",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to read directory: %v", err),
@@ -295,21 +273,20 @@ func (fs *FileToolset) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Resul
 		}, nil
 	}
 
-	files := make([]map[string]any, 0, len(entries))
+	files := make([]FileEntry, 0, len(entries))
 	for _, entry := range entries {
 		entryType := entryTypeFile
 		if entry.IsDir() {
 			entryType = entryTypeDirectory
 		}
-		files = append(files, map[string]any{
-			"name": entry.Name(),
-			"type": entryType,
+		files = append(files, FileEntry{
+			Name: entry.Name(),
+			Type: entryType,
 		})
 	}
 
 	return Result{
-		Status:  StatusSuccess,
-		Message: fmt.Sprintf("Successfully listed %d entries in: %s", len(files), safePath),
+		Status: StatusSuccess,
 		Data: map[string]any{
 			"path":    safePath,
 			"entries": files,
@@ -319,14 +296,13 @@ func (fs *FileToolset) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Resul
 }
 
 // DeleteFile permanently deletes a file with security validation.
-func (fs *FileToolset) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Result, error) {
-	fs.logger.Info("DeleteFile called", "path", input.Path)
+func (f *FileTools) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Result, error) {
+	f.logger.Info("DeleteFile called", "path", input.Path)
 
-	safePath, err := fs.pathVal.Validate(input.Path)
+	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Path validation failed",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
 				Message: fmt.Sprintf("path validation failed: %v", err),
@@ -336,8 +312,7 @@ func (fs *FileToolset) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Res
 
 	if err := os.Remove(safePath); err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Unable to delete file",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
 				Message: fmt.Sprintf("unable to delete file: %v", err),
@@ -346,8 +321,7 @@ func (fs *FileToolset) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Res
 	}
 
 	return Result{
-		Status:  StatusSuccess,
-		Message: fmt.Sprintf("Successfully deleted file: %s", safePath),
+		Status: StatusSuccess,
 		Data: map[string]any{
 			"path": safePath,
 		},
@@ -355,14 +329,13 @@ func (fs *FileToolset) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Res
 }
 
 // GetFileInfo gets file metadata.
-func (fs *FileToolset) GetFileInfo(_ *ai.ToolContext, input GetFileInfoInput) (Result, error) {
-	fs.logger.Info("GetFileInfo called", "path", input.Path)
+func (f *FileTools) GetFileInfo(_ *ai.ToolContext, input GetFileInfoInput) (Result, error) {
+	f.logger.Info("GetFileInfo called", "path", input.Path)
 
-	safePath, err := fs.pathVal.Validate(input.Path)
+	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Path validation failed",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
 				Message: fmt.Sprintf("path validation failed: %v", err),
@@ -373,18 +346,16 @@ func (fs *FileToolset) GetFileInfo(_ *ai.ToolContext, input GetFileInfoInput) (R
 	info, err := os.Stat(safePath)
 	if err != nil {
 		return Result{
-			Status:  StatusError,
-			Message: "Unable to get file information",
+			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to get file information: %v", err),
+				Message: fmt.Sprintf("unable to get file info: %v", err),
 			},
 		}, nil
 	}
 
 	return Result{
-		Status:  StatusSuccess,
-		Message: fmt.Sprintf("Successfully retrieved file info: %s", safePath),
+		Status: StatusSuccess,
 		Data: map[string]any{
 			"name":        info.Name(),
 			"size":        info.Size(),

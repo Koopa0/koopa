@@ -19,7 +19,7 @@ All dependencies injected via `KitConfig` structure—no global state, explicit 
 Optional features (logging, metrics) configured through functional options, preserving backward compatibility.
 
 **3. Structured Results**
-Standardized `Result{Status, Message, Data, Error}` format enables consistent LLM interaction and rich error context.
+Standardized `Result{Status, Data, Error}` format enables consistent LLM interaction and rich error context.
 
 **4. Error Semantics: Agent vs System**
 - **Agent Errors**: Recoverable failures (file not found, permission denied) returned in `Result` → LLM can retry
@@ -68,7 +68,7 @@ graph TD
 
 **Problem**: Inconsistent error handling across tools makes LLM interaction unpredictable.
 
-**Solution**: Standardized `Result` type with status, message, data, and structured errors.
+**Solution**: Standardized `Result` type with status, data, and structured errors.
 
 **Benefits**:
 - LLM can parse status semantically

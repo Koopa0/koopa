@@ -11,90 +11,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createArtifact = `-- name: CreateArtifact :one
-
-INSERT INTO session_artifacts (
-    session_id,
-    message_id,
-    type,
-    language,
-    title,
-    content,
-    sequence_number
-)
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    COALESCE((SELECT MAX(sequence_number) + 1 FROM session_artifacts WHERE session_id = $1), 1)
-)
-RETURNING id, session_id, message_id, type, language, title, content, version, sequence_number, created_at, updated_at
+const deleteArtifactByFilename = `-- name: DeleteArtifactByFilename :execrows
+DELETE FROM artifact
+WHERE session_id = $1 AND filename = $2
 `
 
-type CreateArtifactParams struct {
+type DeleteArtifactByFilenameParams struct {
 	SessionID pgtype.UUID `json:"session_id"`
-	MessageID pgtype.UUID `json:"message_id"`
-	Type      string      `json:"type"`
-	Language  *string     `json:"language"`
-	Title     string      `json:"title"`
-	Content   string      `json:"content"`
+	Filename  string      `json:"filename"`
 }
 
-// Artifact queries for sqlc
-// Canvas Mode Comprehensive Fixes
-// Create a new artifact for canvas panel (autosave)
-func (q *Queries) CreateArtifact(ctx context.Context, arg CreateArtifactParams) (SessionArtifact, error) {
-	row := q.db.QueryRow(ctx, createArtifact,
-		arg.SessionID,
-		arg.MessageID,
-		arg.Type,
-		arg.Language,
-		arg.Title,
-		arg.Content,
-	)
-	var i SessionArtifact
-	err := row.Scan(
-		&i.ID,
-		&i.SessionID,
-		&i.MessageID,
-		&i.Type,
-		&i.Language,
-		&i.Title,
-		&i.Content,
-		&i.Version,
-		&i.SequenceNumber,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+// Delete artifact by session and filename
+func (q *Queries) DeleteArtifactByFilename(ctx context.Context, arg DeleteArtifactByFilenameParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteArtifactByFilename, arg.SessionID, arg.Filename)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const deleteArtifact = `-- name: DeleteArtifact :exec
-DELETE FROM session_artifacts
-WHERE id = $1
+const deleteArtifactsBySession = `-- name: DeleteArtifactsBySession :exec
+DELETE FROM artifact
+WHERE session_id = $1
 `
 
-// Delete an artifact
-func (q *Queries) DeleteArtifact(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteArtifact, id)
+// Delete all artifacts for a session (called when session is deleted)
+func (q *Queries) DeleteArtifactsBySession(ctx context.Context, sessionID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteArtifactsBySession, sessionID)
 	return err
 }
 
-const getLatestArtifact = `-- name: GetLatestArtifact :one
-SELECT id, session_id, message_id, type, language, title, content, version, sequence_number, created_at, updated_at
-FROM session_artifacts
-WHERE session_id = $1
-ORDER BY created_at DESC
-LIMIT 1
+const getArtifactByFilename = `-- name: GetArtifactByFilename :one
+SELECT id, session_id, message_id, type, language, title, content, version, sequence_number, created_at, updated_at, filename
+FROM artifact
+WHERE session_id = $1 AND filename = $2
 `
 
-// Get the most recent artifact for a session (canvas panel display)
-func (q *Queries) GetLatestArtifact(ctx context.Context, sessionID pgtype.UUID) (SessionArtifact, error) {
-	row := q.db.QueryRow(ctx, getLatestArtifact, sessionID)
-	var i SessionArtifact
+type GetArtifactByFilenameParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	Filename  string      `json:"filename"`
+}
+
+// Get artifact by session and filename
+func (q *Queries) GetArtifactByFilename(ctx context.Context, arg GetArtifactByFilenameParams) (Artifact, error) {
+	row := q.db.QueryRow(ctx, getArtifactByFilename, arg.SessionID, arg.Filename)
+	var i Artifact
 	err := row.Scan(
 		&i.ID,
 		&i.SessionID,
@@ -107,51 +68,32 @@ func (q *Queries) GetLatestArtifact(ctx context.Context, sessionID pgtype.UUID) 
 		&i.SequenceNumber,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Filename,
 	)
 	return i, err
 }
 
-const listArtifactsBySession = `-- name: ListArtifactsBySession :many
-SELECT id, session_id, message_id, type, language, title, content, version, sequence_number, created_at, updated_at
-FROM session_artifacts
+const listArtifactFilenames = `-- name: ListArtifactFilenames :many
+SELECT filename
+FROM artifact
 WHERE session_id = $1
-ORDER BY sequence_number DESC
-LIMIT $3
-OFFSET $2
+ORDER BY sequence_number ASC
 `
 
-type ListArtifactsBySessionParams struct {
-	SessionID    pgtype.UUID `json:"session_id"`
-	ResultOffset int32       `json:"result_offset"`
-	ResultLimit  int32       `json:"result_limit"`
-}
-
-// List artifacts for a session, newest first
-func (q *Queries) ListArtifactsBySession(ctx context.Context, arg ListArtifactsBySessionParams) ([]SessionArtifact, error) {
-	rows, err := q.db.Query(ctx, listArtifactsBySession, arg.SessionID, arg.ResultOffset, arg.ResultLimit)
+// List all artifact filenames for a session
+func (q *Queries) ListArtifactFilenames(ctx context.Context, sessionID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listArtifactFilenames, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SessionArtifact{}
+	items := []string{}
 	for rows.Next() {
-		var i SessionArtifact
-		if err := rows.Scan(
-			&i.ID,
-			&i.SessionID,
-			&i.MessageID,
-			&i.Type,
-			&i.Language,
-			&i.Title,
-			&i.Content,
-			&i.Version,
-			&i.SequenceNumber,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
+		var filename string
+		if err := rows.Scan(&filename); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, filename)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -159,21 +101,73 @@ func (q *Queries) ListArtifactsBySession(ctx context.Context, arg ListArtifactsB
 	return items, nil
 }
 
-const updateArtifactContent = `-- name: UpdateArtifactContent :exec
-UPDATE session_artifacts
-SET content = $2,
-    version = version + 1,
+const saveArtifact = `-- name: SaveArtifact :one
+
+INSERT INTO artifact (
+    session_id,
+    message_id,
+    filename,
+    type,
+    language,
+    title,
+    content,
+    version,
+    sequence_number
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, 1,
+    COALESCE((SELECT MAX(sequence_number) FROM artifact WHERE session_id = $1), 0) + 1
+)
+ON CONFLICT (session_id, filename) DO UPDATE SET
+    message_id = EXCLUDED.message_id,
+    type = EXCLUDED.type,
+    language = EXCLUDED.language,
+    title = EXCLUDED.title,
+    content = EXCLUDED.content,
+    version = artifact.version + 1,
     updated_at = NOW()
-WHERE id = $1
+RETURNING id, session_id, message_id, type, language, title, content, version, sequence_number, created_at, updated_at, filename
 `
 
-type UpdateArtifactContentParams struct {
-	ID      pgtype.UUID `json:"id"`
-	Content string      `json:"content"`
+type SaveArtifactParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	MessageID pgtype.UUID `json:"message_id"`
+	Filename  string      `json:"filename"`
+	Type      string      `json:"type"`
+	Language  *string     `json:"language"`
+	Title     string      `json:"title"`
+	Content   string      `json:"content"`
 }
 
-// Update artifact content (for future interactive editing)
-func (q *Queries) UpdateArtifactContent(ctx context.Context, arg UpdateArtifactContentParams) error {
-	_, err := q.db.Exec(ctx, updateArtifactContent, arg.ID, arg.Content)
-	return err
+// Artifact queries for sqlc
+// Table: artifact (renamed from session_artifacts in migration 000006)
+// Added: filename column (migration 000007)
+// UPSERT artifact by (session_id, filename)
+// If exists, updates content and increments version
+func (q *Queries) SaveArtifact(ctx context.Context, arg SaveArtifactParams) (Artifact, error) {
+	row := q.db.QueryRow(ctx, saveArtifact,
+		arg.SessionID,
+		arg.MessageID,
+		arg.Filename,
+		arg.Type,
+		arg.Language,
+		arg.Title,
+		arg.Content,
+	)
+	var i Artifact
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.MessageID,
+		&i.Type,
+		&i.Language,
+		&i.Title,
+		&i.Content,
+		&i.Version,
+		&i.SequenceNumber,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Filename,
+	)
+	return i, err
 }

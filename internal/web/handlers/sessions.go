@@ -19,13 +19,16 @@ import (
 )
 
 // Sentinel errors for session/CSRF operations.
+// Note: ErrSessionCookieNotFound is distinct from session.ErrSessionNotFound:
+// - ErrSessionCookieNotFound: HTTP cookie missing from request (HTTP layer)
+// - session.ErrSessionNotFound: session not in database (persistence layer)
 var (
-	ErrSessionNotFound = errors.New("session not found")
-	ErrSessionInvalid  = errors.New("session ID invalid")
-	ErrCSRFRequired    = errors.New("CSRF token required")
-	ErrCSRFInvalid     = errors.New("CSRF token invalid")
-	ErrCSRFExpired     = errors.New("CSRF token expired")
-	ErrCSRFMalformed   = errors.New("CSRF token malformed")
+	ErrSessionCookieNotFound = errors.New("session cookie not found")
+	ErrSessionInvalid        = errors.New("session ID invalid")
+	ErrCSRFRequired          = errors.New("CSRF token required")
+	ErrCSRFInvalid           = errors.New("CSRF token invalid")
+	ErrCSRFExpired           = errors.New("CSRF token expired")
+	ErrCSRFMalformed         = errors.New("CSRF token malformed")
 )
 
 // Pre-session CSRF token prefix to distinguish from session-bound tokens.
@@ -37,7 +40,7 @@ const (
 	CSRFTokenTTL      = 24 * time.Hour // Token validity period
 	SessionMaxAge     = 30 * 24 * 3600 // 30 days in seconds
 	CSRFClockSkew     = 5 * time.Minute
-	// NOTE: CanvasModeCookieName removed
+)
 
 // Sessions handles HTTP session cookies and CSRF token operations.
 // Named as plural noun (Go stdlib style: http.Cookies, not CookieManager).
@@ -109,11 +112,11 @@ func (s *Sessions) GetOrCreate(w http.ResponseWriter, r *http.Request) (uuid.UUI
 }
 
 // ID extracts session ID from cookie without creating new session.
-// Returns ErrSessionNotFound if cookie is missing or invalid.
+// Returns ErrSessionCookieNotFound if cookie is missing, ErrSessionInvalid if malformed.
 func (*Sessions) ID(r *http.Request) (uuid.UUID, error) {
 	cookie, err := r.Cookie(SessionCookieName)
 	if err != nil {
-		return uuid.Nil, ErrSessionNotFound
+		return uuid.Nil, ErrSessionCookieNotFound
 	}
 
 	sessionID, err := uuid.Parse(cookie.Value)

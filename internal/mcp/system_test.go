@@ -38,19 +38,19 @@ func TestCurrentTime_Success(t *testing.T) {
 		t.Fatal("CurrentTime content is not TextContent")
 	}
 
-	// Should contain "Current time:"
-	if !strings.Contains(textContent.Text, "Current time:") {
-		t.Errorf("CurrentTime text does not contain 'Current time:': %s", textContent.Text)
+	// Should contain JSON with time data
+	if !strings.Contains(textContent.Text, "time") {
+		t.Errorf("CurrentTime text does not contain 'time' field: %s", textContent.Text)
 	}
 
-	// Should contain Unix timestamp
-	if !strings.Contains(textContent.Text, "Unix:") {
-		t.Errorf("CurrentTime text does not contain 'Unix:': %s", textContent.Text)
+	// Should contain timestamp
+	if !strings.Contains(textContent.Text, "timestamp") {
+		t.Errorf("CurrentTime text does not contain 'timestamp' field: %s", textContent.Text)
 	}
 
-	// Should contain ISO8601
-	if !strings.Contains(textContent.Text, "ISO8601:") {
-		t.Errorf("CurrentTime text does not contain 'ISO8601:': %s", textContent.Text)
+	// Should contain iso8601
+	if !strings.Contains(textContent.Text, "iso8601") {
+		t.Errorf("CurrentTime text does not contain 'iso8601' field: %s", textContent.Text)
 	}
 }
 
@@ -212,8 +212,9 @@ func TestGetEnv_NotSet(t *testing.T) {
 		t.Fatal("GetEnv content is not TextContent")
 	}
 
-	if !strings.Contains(textContent.Text, "not set") {
-		t.Errorf("GetEnv output should indicate variable is not set: %s", textContent.Text)
+	// JSON output should indicate isSet: false
+	if !strings.Contains(textContent.Text, `"isSet":false`) {
+		t.Errorf("GetEnv output should contain isSet:false for unset var: %s", textContent.Text)
 	}
 }
 

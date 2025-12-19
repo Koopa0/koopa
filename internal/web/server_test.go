@@ -32,7 +32,7 @@ func setupTestServer(t *testing.T) *web.Server {
 		MaxTokens:   2048,
 	}
 
-	server, err := web.NewServer(web.ServerDeps{
+	server, err := web.NewServer(web.ServerConfig{
 		Logger:       logger,
 		SessionStore: store,
 		CSRFSecret:   testSecret,
@@ -62,7 +62,7 @@ func TestNewServer_MissingSessionStore(t *testing.T) {
 		ModelName:   "gemini-2.5-flash",
 		Temperature: 0.7,
 	}
-	_, err := web.NewServer(web.ServerDeps{
+	_, err := web.NewServer(web.ServerConfig{
 		Logger:     logger,
 		CSRFSecret: testSecret,
 		Config:     testCfg,
@@ -84,7 +84,7 @@ func TestNewServer_ShortCSRFSecret(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	_, err := web.NewServer(web.ServerDeps{
+	_, err := web.NewServer(web.ServerConfig{
 		Logger:       logger,
 		SessionStore: store,
 		CSRFSecret:   []byte("too-short"), // Less than 32 bytes
@@ -107,7 +107,7 @@ func TestNewServer_WithNilFlow(t *testing.T) {
 	}
 
 	// Explicitly passing nil ChatFlow (simulation mode)
-	server, err := web.NewServer(web.ServerDeps{
+	server, err := web.NewServer(web.ServerConfig{
 		Logger:       logger,
 		ChatFlow:     nil,
 		SessionStore: store,
@@ -223,7 +223,7 @@ func setupTestServerWithDev(t *testing.T, isDev bool) *web.Server {
 		MaxTokens:   2048,
 	}
 
-	server, err := web.NewServer(web.ServerDeps{
+	server, err := web.NewServer(web.ServerConfig{
 		Logger:       logger,
 		SessionStore: store,
 		CSRFSecret:   testSecret,

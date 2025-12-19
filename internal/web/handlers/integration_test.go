@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
 	"github.com/koopa0/koopa-cli/internal/testutil"
@@ -31,7 +30,7 @@ func TestChat_Stream_WithRealFlow(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
@@ -73,7 +72,7 @@ func TestChat_Stream_HTMXCompatibility(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
@@ -134,7 +133,7 @@ func TestChat_Stream_ErrorPropagation(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
@@ -171,7 +170,7 @@ func TestChat_Stream_ConcurrentConnections(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
@@ -224,7 +223,7 @@ func TestChat_Stream_AccessibilityAttributes(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
@@ -256,7 +255,7 @@ func TestChat_Stream_ContentType(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
@@ -288,7 +287,7 @@ func TestChat_Stream_NoHTMXHeader(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
@@ -346,7 +345,7 @@ func TestPages_Chat_LoadsHistoryFromDatabase(t *testing.T) {
 	require.NoError(t, err)
 
 	// SessionID is string not uuid.UUID
-	sessionID := agent.SessionID(sess.ID.String())
+	sessionID := sess.ID
 
 	// Insert test messages
 	messages := []*ai.Message{
@@ -413,7 +412,7 @@ func TestPages_Chat_ConcurrentHistoryLoad(t *testing.T) {
 		{Role: "model", Content: []*ai.Part{ai.NewTextPart("Response 1")}},
 	}
 
-	err = store.AppendMessages(ctx, agent.SessionID(sess.ID.String()), "main", messages)
+	err = store.AppendMessages(ctx, sess.ID, "main", messages)
 	require.NoError(t, err)
 
 	// Concurrent test: 10 goroutines loading same session's history
@@ -464,7 +463,7 @@ func TestChat_Send_ProgressiveEnhancement(t *testing.T) {
 	store := session.New(sqlc.New(dbContainer.Pool), dbContainer.Pool, testutil.DiscardLogger())
 	sessions := handlers.NewSessions(store, []byte("test-secret-at-least-32-bytes-long!!!"), true)
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger:   testutil.DiscardLogger(),
 		Sessions: sessions,
 		Flow:     nil, // Not testing Flow integration here
@@ -591,7 +590,7 @@ func TestChat_Send_CSRFIntegration(t *testing.T) {
 	store := session.New(sqlc.New(dbContainer.Pool), dbContainer.Pool, testutil.DiscardLogger())
 	sessions := handlers.NewSessions(store, []byte("test-secret-at-least-32-bytes-long!!!"), true)
 
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger:   testutil.DiscardLogger(),
 		Sessions: sessions,
 		Flow:     nil,
@@ -675,7 +674,7 @@ func TestChat_Stream_CanvasMode_FromDatabase(t *testing.T) {
 			true,
 		)
 
-		handler := handlers.NewChat(handlers.ChatDeps{
+		handler := handlers.NewChat(handlers.ChatConfig{
 			Logger:   testutil.DiscardLogger(),
 			Flow:     framework.Flow,
 			Sessions: sessions,
@@ -721,7 +720,7 @@ func TestChat_Stream_CanvasMode_FromDatabase(t *testing.T) {
 			true,
 		)
 
-		handler := handlers.NewChat(handlers.ChatDeps{
+		handler := handlers.NewChat(handlers.ChatConfig{
 			Logger:   testutil.DiscardLogger(),
 			Flow:     framework.Flow,
 			Sessions: sessions,
@@ -750,7 +749,7 @@ func TestChat_Stream_CanvasMode_FromDatabase(t *testing.T) {
 
 	t.Run("nil sessions defaults canvas to false", func(t *testing.T) {
 		// Handler without sessions (simulation mode for canvas)
-		handler := handlers.NewChat(handlers.ChatDeps{
+		handler := handlers.NewChat(handlers.ChatConfig{
 			Logger:   testutil.DiscardLogger(),
 			Flow:     framework.Flow,
 			Sessions: nil, // No sessions = can't read canvas from DB
@@ -906,7 +905,7 @@ func TestPages_NewChatButton_CreatesNewSession(t *testing.T) {
 		}
 		err := framework.SessionStore.AppendMessages(
 			context.Background(),
-			agent.SessionID(existingSession.String()),
+			existingSession,
 			"main",
 			testMsgs,
 		)

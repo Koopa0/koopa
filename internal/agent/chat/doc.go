@@ -26,23 +26,28 @@
 //	     +-- Save updated history to SessionStore
 //	     |
 //	     v
-//	Response (final text + tool requests + history)
+//	Response (final text + tool requests)
 //
-// # Dependency Injection
+// # Configuration
 //
-// Chat requires dependencies via the Deps struct at construction time:
+// Chat requires configuration via the Config struct at construction time:
 //
-//	type Deps struct {
-//	    Config         *config.Config
-//	    Genkit         *genkit.Genkit
-//	    Retriever      *rag.Retriever
-//	    SessionStore   *session.Store
-//	    KnowledgeStore *knowledge.Store
-//	    Logger         log.Logger
-//	    Toolsets       []tools.Toolset
+//	type Config struct {
+//	    Genkit        *genkit.Genkit
+//	    Retriever     ai.Retriever
+//	    SessionStore  *session.Store
+//	    ArtifactStore *artifact.Store  // Optional: nil = Canvas disabled
+//	    Logger        log.Logger
+//	    Tools         []ai.Tool
+//
+//	    // Configuration values
+//	    ModelName string  // e.g., "googleai/gemini-2.5-flash"
+//	    MaxTurns  int     // Maximum agentic loop turns
+//	    RAGTopK   int     // Number of RAG documents to retrieve
+//	    Language  string  // Response language preference
 //	}
 //
-// All fields are required and validated during construction.
+// Required fields are validated during construction.
 //
 // # Streaming Support
 //
@@ -62,14 +67,18 @@
 //
 // The package provides a Genkit Flow for HTTP and observability:
 //
-//   - GetFlow(): Returns singleton streaming Flow (prevents re-registration panic)
+//   - InitFlow(): Initializes singleton streaming Flow (must be called once at startup)
+//   - GetFlow(): Returns initialized Flow (panics if InitFlow not called)
 //   - Flow supports both Run() and Stream() methods
 //   - Stream() enables Server-Sent Events (SSE) for real-time responses
 //
 // Example Flow usage:
 //
-//	// Get singleton Flow (call once during initialization)
-//	chatFlow := chat.GetFlow(g, chatAgent)
+//	// Initialize Flow once during application startup
+//	chatFlow, err := chat.InitFlow(g, chatAgent)
+//	if err != nil {
+//	    return err
+//	}
 //
 //	// Non-streaming
 //	output, err := chatFlow.Run(ctx, chat.Input{Query: "Hello", SessionID: "..."})
@@ -106,25 +115,27 @@
 //
 // # Example Usage
 //
-//	// Create Chat agent with required dependencies
-//	chatAgent, err := chat.New(chat.Deps{
-//	    Config:         cfg,
-//	    Genkit:         g,
-//	    Retriever:      retriever,
-//	    SessionStore:   sessionStore,
-//	    KnowledgeStore: knowledgeStore,
-//	    Logger:         slog.Default(),
-//	    Toolsets:       []tools.Toolset{fileToolset, systemToolset},
+//	// Create Chat agent with required configuration
+//	chatAgent, err := chat.New(chat.Config{
+//	    Genkit:       g,
+//	    Retriever:    retriever,
+//	    SessionStore: sessionStore,
+//	    Logger:       slog.Default(),
+//	    Tools:        tools,
+//	    ModelName:    "googleai/gemini-2.5-flash",
+//	    MaxTurns:     10,
+//	    RAGTopK:      5,
+//	    Language:     "auto",
 //	})
 //	if err != nil {
 //	    return err
 //	}
 //
 //	// Non-streaming execution
-//	resp, err := chatAgent.Execute(invCtx, "What is the weather?")
+//	resp, err := chatAgent.Execute(ctx, sessionID, branch, "What is the weather?")
 //
 //	// Streaming execution with callback
-//	resp, err := chatAgent.ExecuteStream(invCtx, "What is the weather?",
+//	resp, err := chatAgent.ExecuteStream(ctx, sessionID, branch, "What is the weather?", false,
 //	    func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
 //	        fmt.Print(chunk.Text()) // Real-time output
 //	        return nil
@@ -136,8 +147,6 @@
 //
 //   - agent.ErrInvalidSession: Invalid session ID format
 //   - agent.ErrExecutionFailed: LLM or tool execution failed
-//   - agent.ErrRateLimited: API rate limit exceeded
-//   - agent.ErrModelUnavailable: Model temporarily unavailable
 //
 // Empty responses are handled with a fallback message to improve UX.
 //
@@ -147,10 +156,10 @@
 //
 //   - Dependencies are concrete types with clear interfaces
 //   - Stateless design eliminates test ordering issues
-//   - Deps struct allows partial configuration for unit tests
+//   - Config struct allows partial configuration for unit tests
 //
 // # Thread Safety
 //
 // Chat is safe for concurrent use. The underlying dependencies (SessionStore,
-// KnowledgeStore, Genkit) must also be thread-safe.
+// Genkit) must also be thread-safe.
 package chat

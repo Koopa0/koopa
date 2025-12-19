@@ -57,15 +57,15 @@ func TestPostgresURL(t *testing.T) {
 // TestParseDatabaseURL tests DATABASE_URL parsing
 func TestParseDatabaseURL(t *testing.T) {
 	tests := []struct {
-		name        string
-		dbURL       string
-		wantHost    string
-		wantPort    int
-		wantUser    string
-		wantPass    string
-		wantDB      string
-		wantSSL     string
-		wantErr     bool
+		name     string
+		dbURL    string
+		wantHost string
+		wantPort int
+		wantUser string
+		wantPass string
+		wantDB   string
+		wantSSL  string
+		wantErr  bool
 	}{
 		{
 			name:     "full URL",
@@ -81,7 +81,7 @@ func TestParseDatabaseURL(t *testing.T) {
 			name:     "minimal URL",
 			dbURL:    "postgres://localhost/testdb?sslmode=disable",
 			wantHost: "localhost",
-			wantPort: 0, // not specified, keeps default
+			wantPort: 0,  // not specified, keeps default
 			wantUser: "", // not specified
 			wantPass: "", // not specified
 			wantDB:   "testdb",

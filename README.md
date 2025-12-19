@@ -10,38 +10,39 @@ It unifies terminal efficiency with rich web interactions through a hybrid archi
 
 ## Core Philosophy
 
-*   **Local Sovereignty**: User data, sessions, and vector embeddings reside in a local PostgreSQL database.
-*   **Hybrid Interface**: Seamless context switching between CLI efficiency and Web UI richness.
-*   **Hypermedia-Driven**: Utilizes a modern Go stack (Templ + HTMX) to deliver high performance with low complexity.
+- **Local Sovereignty**: User data, sessions, and vector embeddings reside in a local PostgreSQL database.
+- **Hybrid Interface**: Seamless context switching between CLI efficiency and Web UI richness.
+- **Hypermedia-Driven**: Utilizes a modern Go stack (Templ + HTMX) to deliver high performance with low complexity.
 
 ## Features
 
-*   **Generative Web UI**: A server-driven interface supporting streaming responses, rich component rendering, and artifact management without SPA complexity.
-*   **Terminal UI**: A low-latency Bubble Tea application for rapid interaction.
-*   **Local RAG**: Automatic document indexing using `pgvector` for context-aware conversations.
-*   **MCP Integration**: Implements the Model Context Protocol to serve as a backend for compatible clients like Claude Desktop.
-*   **Session Persistence**: Robust conversation history management across all interfaces.
+- **Generative Web UI**: A server-driven interface supporting streaming responses, rich component rendering, and artifact management without SPA complexity.
+- **Terminal UI**: A low-latency Bubble Tea application for rapid interaction.
+- **Local RAG**: Automatic document indexing using `pgvector` for context-aware conversations.
+- **MCP Integration**: Implements the Model Context Protocol to serve as a backend for compatible clients like Claude Desktop.
+- **Session Persistence**: Robust conversation history management across all interfaces.
 
 ## Technology Stack
 
-*   **Language**: Go 1.25+
-*   **AI Framework**: Google Firebase Genkit
-*   **Database**: PostgreSQL + pgvector
-*   **Web**: Templ, HTMX, Alpine.js, Tailwind CSS
-*   **TUI**: Bubble Tea
+- **Language**: Go 1.25+
+- **AI Framework**: Google Firebase Genkit
+- **Database**: PostgreSQL + pgvector
+- **Web**: Templ, HTMX, Tailwind CSS
+- **TUI**: Bubble Tea
 
 ## Quick Start
 
 ### Prerequisites
 
-*   Go 1.25 or higher
-*   Docker (for PostgreSQL)
-*   Node.js 20+ (asset compilation only)
-*   Gemini API Key
+- Go 1.25 or higher
+- Docker (for PostgreSQL)
+- Node.js 20+ (asset compilation only)
+- Gemini API Key
 
 ### Installation
 
 1.  **Clone and setup**
+
     ```bash
     git clone https://github.com/koopa0/koopa-cli.git
     cd koopa-cli
@@ -50,17 +51,20 @@ It unifies terminal efficiency with rich web interactions through a hybrid archi
     ```
 
 2.  **Start infrastructure**
+
     ```bash
     docker-compose up -d
     ```
 
 3.  **Build**
+
     ```bash
     task build
     ```
 
 4.  **Configure**
     Create `~/.koopa/config.yaml`:
+
     ```yaml
     postgres_host: "localhost"
     postgres_port: 5432
@@ -81,20 +85,24 @@ Koopa operates in three modes.
 
 **Terminal Mode**
 The default interactive interface.
+
 ```bash
 ./koopa
 ```
 
 **Web Server Mode**
 Starts the HTTP server for the web interface.
+
 ```bash
 export HMAC_SECRET=$(openssl rand -base64 32)
 ./koopa serve
 ```
+
 Access the UI at `http://localhost:8080/genui`.
 
 **MCP Server Mode**
 Exposes tools and knowledge base to external MCP clients.
+
 ```bash
 ./koopa mcp
 ```
@@ -104,12 +112,14 @@ Exposes tools and knowledge base to external MCP clients.
 Koopa uses a config-first approach. Non-sensitive settings reside in `config.yaml`, while secrets must be passed via environment variables.
 
 **Environment Variables**
-*   `GEMINI_API_KEY`: Required. Google AI API key.
-*   `HMAC_SECRET`: Required for `serve` mode. Min 32 chars.
-*   `POSTGRES_PASSWORD`: Required if not using default credentials.
+
+- `GEMINI_API_KEY`: Required. Google AI API key.
+- `HMAC_SECRET`: Required for `serve` mode. Min 32 chars.
+- `POSTGRES_PASSWORD`: Required if not using default credentials.
 
 **Configuration File**
 Default settings in `~/.koopa/config.yaml`:
+
 ```yaml
 model_name: "gemini-2.5-flash"
 temperature: 0.7

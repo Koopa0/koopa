@@ -5,14 +5,16 @@ package chat_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/agent"
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/firebase/genkit/go/ai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/koopa0/koopa-cli/internal/agent/chat"
 )
 
 // TestChatAgent_BasicExecution tests basic chat agent execution
@@ -20,25 +22,13 @@ func TestChatAgent_BasicExecution(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx := agent.NewInvocationContext(
-		context.Background(),
-		"test-inv-1",
-		"main",
-		agent.SessionID(framework.SessionID.String()),
-		"chat",
-	)
+	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
 
 	t.Run("simple question", func(t *testing.T) {
-		resp, err := framework.Agent.Execute(ctx, "Hello, how are you?")
+		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "Hello, how are you?")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 		assert.NotEmpty(t, resp.FinalText, "Agent should provide a non-empty response")
-	})
-
-	t.Run("returns agent metadata", func(t *testing.T) {
-		assert.Equal(t, "chat", framework.Agent.Name())
-		assert.NotEmpty(t, framework.Agent.Description())
-		assert.Nil(t, framework.Agent.SubAgents())
 	})
 }
 
@@ -47,31 +37,17 @@ func TestChatAgent_SessionPersistence(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx := agent.NewInvocationContext(
-		context.Background(),
-		"test-inv-2",
-		"main",
-		agent.SessionID(framework.SessionID.String()),
-		"chat",
-	)
+	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
 
 	t.Run("first message creates history", func(t *testing.T) {
-		resp, err := framework.Agent.Execute(ctx, "My name is Koopa")
+		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "My name is Koopa")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 	})
 
 	t.Run("second message uses history", func(t *testing.T) {
-		// Create new invocation context with same session
-		ctx2 := agent.NewInvocationContext(
-			context.Background(),
-			"test-inv-3",
-			"main",
-			agent.SessionID(framework.SessionID.String()),
-			"chat",
-		)
-
-		resp, err := framework.Agent.Execute(ctx2, "What is my name?")
+		// Use same session for history continuity
+		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "What is my name?")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 		// Session history should allow LLM to remember the name from previous message
@@ -84,17 +60,11 @@ func TestChatAgent_ToolIntegration(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx := agent.NewInvocationContext(
-		context.Background(),
-		"test-inv-4",
-		"main",
-		agent.SessionID(framework.SessionID.String()),
-		"chat",
-	)
+	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
 
 	t.Run("can use file tools", func(t *testing.T) {
 		// Ask agent to list files - LLM decides whether to call tools
-		resp, err := framework.Agent.Execute(ctx, "List the files in /tmp directory")
+		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "List the files in /tmp directory")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 		// Agent should respond (with or without tool calls)
@@ -108,15 +78,9 @@ func TestChatAgent_ErrorHandling(t *testing.T) {
 	defer cleanup()
 
 	t.Run("handles empty input gracefully", func(t *testing.T) {
-		ctx := agent.NewInvocationContext(
-			context.Background(),
-			"test-inv-5",
-			"main",
-			agent.SessionID(framework.SessionID.String()),
-			"chat",
-		)
+		ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
 
-		resp, err := framework.Agent.Execute(ctx, "")
+		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "")
 		// Should handle empty input without crashing
 		// Either returns error or empty response
 		if err == nil {
@@ -131,95 +95,103 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	t.Run("requires config", func(t *testing.T) {
-		_, err := chat.New(chat.Deps{
-			Genkit:         framework.Genkit,
-			Retriever:      framework.Retriever,
-			SessionStore:   framework.SessionStore,
-			KnowledgeStore: framework.KnowledgeStore,
-			Logger:         slog.Default(),
-			Toolsets:       []tools.Toolset{},
-		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Config is required")
-	})
-
 	t.Run("requires genkit", func(t *testing.T) {
-		_, err := chat.New(chat.Deps{
-			Config:         framework.Config,
-			Retriever:      framework.Retriever,
-			SessionStore:   framework.SessionStore,
-			KnowledgeStore: framework.KnowledgeStore,
-			Logger:         slog.Default(),
-			Toolsets:       []tools.Toolset{},
+		_, err := chat.New(chat.Config{
+			Retriever:    framework.Retriever,
+			SessionStore: framework.SessionStore,
+			Logger:       slog.Default(),
+			Tools:        []ai.Tool{},
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Genkit is required")
+		assert.Contains(t, err.Error(), "genkit instance is required")
 	})
 
 	t.Run("requires retriever", func(t *testing.T) {
-		_, err := chat.New(chat.Deps{
-			Config:         framework.Config,
-			Genkit:         framework.Genkit,
-			SessionStore:   framework.SessionStore,
-			KnowledgeStore: framework.KnowledgeStore,
-			Logger:         slog.Default(),
-			Toolsets:       []tools.Toolset{},
+		_, err := chat.New(chat.Config{
+			Genkit:       framework.Genkit,
+			SessionStore: framework.SessionStore,
+			Logger:       slog.Default(),
+			Tools:        []ai.Tool{},
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Retriever is required")
+		assert.Contains(t, err.Error(), "retriever is required")
 	})
 
 	t.Run("requires session store", func(t *testing.T) {
-		_, err := chat.New(chat.Deps{
-			Config:         framework.Config,
-			Genkit:         framework.Genkit,
-			Retriever:      framework.Retriever,
-			KnowledgeStore: framework.KnowledgeStore,
-			Logger:         slog.Default(),
-			Toolsets:       []tools.Toolset{},
+		_, err := chat.New(chat.Config{
+			Genkit:    framework.Genkit,
+			Retriever: framework.Retriever,
+			Logger:    slog.Default(),
+			Tools:     []ai.Tool{},
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "SessionStore is required")
+		assert.Contains(t, err.Error(), "session store is required")
 	})
 
-	t.Run("requires knowledge store", func(t *testing.T) {
-		_, err := chat.New(chat.Deps{
-			Config:       framework.Config,
+	t.Run("requires logger", func(t *testing.T) {
+		_, err := chat.New(chat.Config{
+			Genkit:       framework.Genkit,
+			Retriever:    framework.Retriever,
+			SessionStore: framework.SessionStore,
+			Tools:        []ai.Tool{},
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "logger is required")
+	})
+
+	t.Run("requires at least one tool", func(t *testing.T) {
+		_, err := chat.New(chat.Config{
 			Genkit:       framework.Genkit,
 			Retriever:    framework.Retriever,
 			SessionStore: framework.SessionStore,
 			Logger:       slog.Default(),
-			Toolsets:     []tools.Toolset{},
+			Tools:        []ai.Tool{},
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "KnowledgeStore is required")
+		assert.Contains(t, err.Error(), "at least one tool is required")
 	})
+}
 
-	t.Run("requires logger", func(t *testing.T) {
-		_, err := chat.New(chat.Deps{
-			Config:         framework.Config,
-			Genkit:         framework.Genkit,
-			Retriever:      framework.Retriever,
-			SessionStore:   framework.SessionStore,
-			KnowledgeStore: framework.KnowledgeStore,
-			Toolsets:       []tools.Toolset{},
-		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Logger is required")
-	})
+// TestChatAgent_ConcurrentExecution tests concurrent chat agent execution.
+// Uses mutex-protected error collection instead of assert/require in goroutines
+// to avoid test reliability issues with t.FailNow() from goroutines.
+func TestChatAgent_ConcurrentExecution(t *testing.T) {
+	framework, cleanup := SetupTest(t)
+	defer cleanup()
 
-	t.Run("requires at least one toolset", func(t *testing.T) {
-		_, err := chat.New(chat.Deps{
-			Config:         framework.Config,
-			Genkit:         framework.Genkit,
-			Retriever:      framework.Retriever,
-			SessionStore:   framework.SessionStore,
-			KnowledgeStore: framework.KnowledgeStore,
-			Logger:         slog.Default(),
-			Toolsets:       []tools.Toolset{},
-		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Toolsets is required")
-	})
+	numConcurrentQueries := 5
+	var wg sync.WaitGroup
+	wg.Add(numConcurrentQueries)
+
+	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+
+	// Collect results safely
+	type result struct {
+		queryID int
+		resp    *chat.Response
+		err     error
+	}
+	results := make([]result, numConcurrentQueries)
+	var mu sync.Mutex
+
+	for i := 0; i < numConcurrentQueries; i++ {
+		go func(queryID int) {
+			defer wg.Done()
+			resp, err := framework.Agent.Execute(ctx, sessionID, branch, fmt.Sprintf("What is the capital of France? Query ID: %d", queryID))
+			mu.Lock()
+			results[queryID] = result{queryID: queryID, resp: resp, err: err}
+			mu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	// Assert after all goroutines complete
+	for _, r := range results {
+		require.NoError(t, r.err, "Concurrent query %d should not return an error", r.queryID)
+		assert.NotNil(t, r.resp, "Concurrent query %d response should not be nil", r.queryID)
+		if r.resp != nil {
+			assert.NotEmpty(t, r.resp.FinalText, "Concurrent query %d should provide a non-empty response", r.queryID)
+			assert.Contains(t, r.resp.FinalText, "Paris", "Concurrent query %d should identify Paris as the capital", r.queryID)
+		}
+	}
 }

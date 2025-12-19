@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa-cli/internal/artifact"
 )
 
 // Input is the input for Chat Agent Flow
@@ -29,20 +30,13 @@ type Output struct {
 
 // StreamChunk is the streaming output type for Chat Flow.
 // Each chunk contains partial text that can be immediately displayed to the user.
-// When the AI signals an artifact (code, markdown, etc.), it is included in the Artifact field.
 type StreamChunk struct {
-	Text     string    `json:"text"`               // Partial text chunk
-	Artifact *Artifact `json:"artifact,omitempty"` // AI-signaled artifact content for Canvas panel
-}
-
-// Artifact represents content the AI explicitly wants shown in the Canvas panel.
-// This is used for rich content like code blocks, markdown documents, or HTML.
-// The AI signals artifacts through structured output when canvasEnabled is true.
-type Artifact struct {
-	Type     string `json:"type"`     // Content type: "code", "markdown", "html"
-	Language string `json:"language"` // For code: "go", "python", "javascript", etc. Empty for non-code.
-	Title    string `json:"title"`    // Display title for the artifact (e.g., "main.go", "README")
-	Content  string `json:"content"`  // The artifact content
+	Text string `json:"text"` // Partial text chunk
+	// TODO: Artifact extraction is not yet implemented.
+	// This field is reserved for Canvas feature Phase 2 where AI-signaled artifacts
+	// (code blocks, markdown, etc.) will be extracted from the stream and sent separately.
+	// Until implemented, this field will always be nil.
+	Artifact *artifact.Artifact `json:"artifact,omitempty"`
 }
 
 // FlowName is the registered name of the Chat Flow in Genkit.
@@ -55,24 +49,46 @@ type Flow = core.Flow[Input, Output, StreamChunk]
 // Package-level singleton for Flow to prevent Panic on re-registration.
 // sync.Once ensures the Flow is defined only once, even in tests.
 var (
-	chatFlowOnce sync.Once
-	chatFlow     *Flow // Must be package-level to persist across GetFlow() calls
+	flowOnce     sync.Once
+	flow         *Flow
+	flowInitDone bool
 )
 
-// GetFlow returns the singleton Chat Flow instance.
-// Uses sync.Once to ensure DefineFlow is called only once (preventing Panic).
-// This function should be called during App initialization (Eager Loading)
-// to ensure Genkit DevUI can discover the Flow at startup.
+// InitFlow initializes the Chat Flow singleton.
+// Must be called exactly once during application startup.
+// Returns error if called more than once.
 //
-// IMPORTANT: This is a singleton access point. Parameters (g, chatAgent) are only
-// used on the first call. Subsequent calls will return the cached Flow instance
-// and ignore the provided parameters. This is intentional - the Flow must be
-// registered exactly once with Genkit to avoid Panic.
-func GetFlow(g *genkit.Genkit, chatAgent *Chat) *Flow {
-	chatFlowOnce.Do(func() {
-		chatFlow = chatAgent.DefineFlow(g)
+// This explicit API prevents the dangerous pattern where parameters
+// are silently ignored on subsequent calls (as in the old GetFlow).
+func InitFlow(g *genkit.Genkit, chatAgent *Chat) (*Flow, error) {
+	var initialized bool
+	flowOnce.Do(func() {
+		flow = chatAgent.DefineFlow(g)
+		flowInitDone = true
+		initialized = true
 	})
-	return chatFlow
+	if !initialized && flowInitDone {
+		return nil, fmt.Errorf("InitFlow called more than once")
+	}
+	return flow, nil
+}
+
+// GetFlow returns the initialized Flow singleton.
+// Panics if InitFlow was not called - this indicates a programming error.
+func GetFlow() *Flow {
+	if !flowInitDone {
+		panic("GetFlow called before InitFlow")
+	}
+	return flow
+}
+
+// ResetFlowForTesting resets the Flow singleton for testing.
+// This allows tests to initialize with different configurations.
+// WARNING: Only use in tests. Not safe for concurrent use.
+func ResetFlowForTesting() {
+	flowOnce = sync.Once{}
+	flow = nil
+	flowInitDone = false
 }
 
 // DefineFlow defines the Genkit Streaming Flow for Chat Agent.
@@ -98,23 +114,14 @@ func GetFlow(g *genkit.Genkit, chatAgent *Chat) *Flow {
 func (c *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 	return genkit.DefineStreamingFlow(g, FlowName,
 		func(ctx context.Context, input Input, streamCb func(context.Context, StreamChunk) error) (Output, error) {
-			// Validate session ID from input
-			sessionID, err := agent.NewSessionID(input.SessionID)
+			// Parse session ID from input
+			sessionID, err := uuid.Parse(input.SessionID)
 			if err != nil {
 				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %w", agent.ErrInvalidSession, err)
 			}
 
-			// Generate InvocationID for tracking this call
-			invocationID := uuid.New().String()
-
-			// Create InvocationContext for execution tracking
-			invCtx := agent.NewInvocationContext(
-				ctx,
-				invocationID,
-				Name, // branch: top-level Agent
-				sessionID,
-				Name, // agentName
-			)
+			// Default branch for top-level agent
+			branch := "main"
 
 			// Create StreamCallback wrapper if streaming is enabled
 			// When streamCb is nil (e.g., called via Run() instead of Stream()),
@@ -138,7 +145,7 @@ func (c *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 
 			// Execute with streaming callback (or non-streaming if callback is nil)
 			// Pass canvasEnabled from Flow Input to instruct AI about Canvas mode
-			resp, err := c.ExecuteStream(invCtx, input.Query, input.CanvasEnabled, agentCallback)
+			resp, err := c.ExecuteStream(ctx, sessionID, branch, input.Query, input.CanvasEnabled, agentCallback)
 			if err != nil {
 				// Genkit will mark this span as failed, enabling proper observability
 				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %w", agent.ErrExecutionFailed, err)

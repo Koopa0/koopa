@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/koopa0/koopa-cli/internal/app"
@@ -13,6 +16,21 @@ import (
 	"github.com/koopa0/koopa-cli/internal/tools"
 	mcpSdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// runMCP initializes and starts the MCP server.
+// This is called when the user runs `koopa mcp`.
+func runMCP() error {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	return RunMCP(ctx, cfg, Version)
+}
 
 // RunMCP starts the MCP server on stdio transport
 //
@@ -34,45 +52,49 @@ func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize application: %w", err)
 	}
+	// Cleanup order: App.Close (goroutines) first, then Wire cleanup (DB pool, OTel)
 	defer cleanup()
 	defer func() {
 		if closeErr := application.Close(); closeErr != nil {
-			slog.Warn("failed to close application", "error", closeErr)
+			slog.Warn("app close error", "error", closeErr)
 		}
 	}()
 
-	// Create all required toolsets with logger
+	// Create all required tools with logger
 	logger := slog.Default()
 
-	// 1. FileToolset
-	fileToolset, err := tools.NewFileToolset(application.PathValidator, logger)
+	// 1. FileTools
+	fileTools, err := tools.NewFileTools(application.PathValidator, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create file toolset: %w", err)
-	}
-	cmdValidator := security.NewCommand()
-	envValidator := security.NewEnv()
-	systemToolset, err := tools.NewSystemToolset(cmdValidator, envValidator, logger)
-	if err != nil {
-		return fmt.Errorf("failed to create system toolset: %w", err)
-	}
-	networkToolset, err := tools.NewNetworkToolset(
-		cfg.SearXNG.BaseURL,
-		cfg.WebScraper.Parallelism,
-		time.Duration(cfg.WebScraper.DelayMs)*time.Millisecond,
-		time.Duration(cfg.WebScraper.TimeoutMs)*time.Millisecond,
-		logger,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create network toolset: %w", err)
+		return fmt.Errorf("failed to create file tools: %w", err)
 	}
 
-	// Create MCP Server with all toolsets
+	// 2. SystemTools
+	cmdValidator := security.NewCommand()
+	envValidator := security.NewEnv()
+	systemTools, err := tools.NewSystemTools(cmdValidator, envValidator, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create system tools: %w", err)
+	}
+
+	// 3. NetworkTools
+	networkTools, err := tools.NewNetworkTools(tools.NetworkConfig{
+		SearchBaseURL:    cfg.SearXNG.BaseURL,
+		FetchParallelism: cfg.WebScraper.Parallelism,
+		FetchDelay:       time.Duration(cfg.WebScraper.DelayMs) * time.Millisecond,
+		FetchTimeout:     time.Duration(cfg.WebScraper.TimeoutMs) * time.Millisecond,
+	}, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create network tools: %w", err)
+	}
+
+	// Create MCP Server with all tools
 	mcpServer, err := mcp.NewServer(mcp.Config{
-		Name:           "koopa",
-		Version:        version,
-		FileToolset:    fileToolset,
-		SystemToolset:  systemToolset,
-		NetworkToolset: networkToolset,
+		Name:         "koopa",
+		Version:      version,
+		FileTools:    fileTools,
+		SystemTools:  systemTools,
+		NetworkTools: networkTools,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
@@ -81,7 +103,7 @@ func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 	slog.Info("MCP server initialized",
 		"name", "koopa",
 		"version", version,
-		"toolsets", []string{"file", "system", "network"})
+		"tools", []string{"file", "system", "network"})
 	slog.Info("starting MCP server on stdio transport")
 
 	// Run server on stdio transport

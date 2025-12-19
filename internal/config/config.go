@@ -27,8 +27,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"reflect"
-	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -119,8 +117,8 @@ const (
 // ============================================================================
 
 // Config stores application configuration.
-// SECURITY: Fields tagged with `sensitive:"true"` are automatically masked in MarshalJSON().
-// When adding new sensitive fields (passwords, API keys, tokens), add the sensitive tag.
+// SECURITY: Sensitive fields are explicitly masked in MarshalJSON().
+// When adding new sensitive fields (passwords, API keys, tokens), update MarshalJSON.
 type Config struct {
 	// AI configuration (see ai.go for documentation)
 	ModelName   string  `mapstructure:"model_name" json:"model_name"`
@@ -138,12 +136,12 @@ type Config struct {
 	PostgresHost     string `mapstructure:"postgres_host" json:"postgres_host"`
 	PostgresPort     int    `mapstructure:"postgres_port" json:"postgres_port"`
 	PostgresUser     string `mapstructure:"postgres_user" json:"postgres_user"`
-	PostgresPassword string `mapstructure:"postgres_password" json:"postgres_password" sensitive:"true"`
+	PostgresPassword string `mapstructure:"postgres_password" json:"postgres_password"` // SENSITIVE: masked in MarshalJSON
 	PostgresDBName   string `mapstructure:"postgres_db_name" json:"postgres_db_name"`
 	PostgresSSLMode  string `mapstructure:"postgres_ssl_mode" json:"postgres_ssl_mode"`
 
 	// RAG configuration
-	RAGTopK       int32  `mapstructure:"rag_top_k" json:"rag_top_k"`
+	RAGTopK       int    `mapstructure:"rag_top_k" json:"rag_top_k"`
 	EmbedderModel string `mapstructure:"embedder_model" json:"embedder_model"`
 
 	// MCP configuration (see tools.go for type definitions)
@@ -158,7 +156,7 @@ type Config struct {
 	Datadog DatadogConfig `mapstructure:"datadog" json:"datadog"`
 
 	// Security configuration (serve mode only)
-	HMACSecret string `mapstructure:"hmac_secret" json:"hmac_secret" sensitive:"true"`
+	HMACSecret string `mapstructure:"hmac_secret" json:"hmac_secret"` // SENSITIVE: masked in MarshalJSON
 }
 
 // ============================================================================
@@ -204,11 +202,6 @@ func Load() (*Config, error) {
 			"search_paths", []string{configDir, "."},
 			"config_name", "config.yaml")
 	}
-
-	// Bind sensitive environment variables explicitly
-	// Only 3 env vars supported: GEMINI_API_KEY (read by Genkit), DD_API_KEY, HMAC_SECRET
-	// All other configuration must be in config.yaml
-	bindEnvVariables()
 
 	// Use Unmarshal to automatically map to struct (type-safe)
 	var cfg Config
@@ -297,17 +290,12 @@ func bindEnvVariables() {
 // Sensitive Data Masking
 // ============================================================================
 
-// Constants for sensitive data masking
-const (
-	// maskedValue is the placeholder for masked sensitive data.
-	// Using ████████ (full-width blocks U+2588) to avoid substring matching
-	// Previous attempts:
-	// - "****" failed: passwords with "*" leaked
-	// - "[REDACTED]" failed: passwords with "A", "D", "E", etc. leaked
-	maskedValue = "████████"
-	// sensitiveTag is the struct tag value that marks a field as sensitive.
-	sensitiveTag = "true"
-)
+// maskedValue is the placeholder for masked sensitive data.
+// Using ████████ (full-width blocks U+2588) to avoid substring matching
+// Previous attempts:
+// - "****" failed: passwords with "*" leaked
+// - "[REDACTED]" failed: passwords with "A", "D", "E", etc. leaked
+const maskedValue = "████████"
 
 // maskSecret masks a secret string for safe logging.
 // Shows first 2 and last 2 characters, masks the rest.
@@ -336,171 +324,27 @@ func maskSecret(s string) string {
 	return string(prefix) + "<" + maskedValue + ">" + string(suffix)
 }
 
-// MarshalJSON implements custom JSON marshaling to mask sensitive fields.
-// Fields tagged with `sensitive:"true"` are automatically masked.
-// This prevents accidental leakage if Config is logged or serialized.
+// MarshalJSON implements json.Marshaler with explicit sensitive field masking.
+//
+// Sensitive fields masked:
+//   - PostgresPassword
+//   - HMACSecret
+//   - Datadog.APIKey (via DatadogConfig.MarshalJSON)
+//   - MCPServers[*].Env (via MCPServer.MarshalJSON)
+//
+// When adding new sensitive fields, update this method or the nested struct's MarshalJSON.
+// The compiler will remind you when tests fail.
 func (c Config) MarshalJSON() ([]byte, error) {
-	return marshalWithSensitiveMasking(c)
-}
-
-// marshalWithSensitiveMasking uses reflection to mask fields tagged with sensitive:"true".
-// This approach ensures new sensitive fields are automatically masked when properly tagged.
-// It recursively processes nested structs and handles various sensitive data types.
-func marshalWithSensitiveMasking(v interface{}) ([]byte, error) {
-	result := processValue(reflect.ValueOf(v), reflect.TypeOf(v), false)
-	data, err := json.Marshal(result)
+	type alias Config
+	a := alias(c)
+	a.PostgresPassword = maskSecret(a.PostgresPassword)
+	a.HMACSecret = maskSecret(a.HMACSecret)
+	// Note: Datadog.APIKey and MCPServers[*].Env are handled by their own MarshalJSON
+	data, err := json.Marshal(a)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal config: %w", err)
+		return nil, fmt.Errorf("marshal config: %w", err)
 	}
 	return data, nil
-}
-
-// processValue recursively processes a value and masks sensitive fields.
-// isSensitive indicates if the parent field was marked as sensitive.
-func processValue(value reflect.Value, typ reflect.Type, isSensitive bool) interface{} {
-	// Handle pointers by dereferencing
-	if value.Kind() == reflect.Ptr {
-		if value.IsNil() {
-			return nil
-		}
-		return processValue(value.Elem(), value.Elem().Type(), isSensitive)
-	}
-
-	// Handle sensitive fields based on type
-	if isSensitive {
-		return maskSensitiveValue(value)
-	}
-
-	switch value.Kind() {
-	case reflect.Struct:
-		return processStruct(value, typ)
-	case reflect.Map:
-		return processMap(value, isSensitive)
-	case reflect.Slice, reflect.Array:
-		return processSlice(value, isSensitive)
-	default:
-		return value.Interface()
-	}
-}
-
-// processStruct processes a struct and its fields recursively.
-func processStruct(value reflect.Value, typ reflect.Type) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	for i := 0; i < value.NumField(); i++ {
-		field := typ.Field(i)
-		fieldValue := value.Field(i)
-
-		// Skip unexported fields
-		if !field.IsExported() {
-			continue
-		}
-
-		// Get JSON tag for field name
-		jsonTag := field.Tag.Get("json")
-		if jsonTag == "-" {
-			continue
-		}
-
-		// Determine the output field name using priority:
-		// 1. json tag
-		// 2. mapstructure tag (for nested structs that only have mapstructure)
-		// 3. field name
-		var fieldName string
-		if jsonTag != "" {
-			// Handle json:"name,omitempty" format
-			fieldName = strings.Split(jsonTag, ",")[0]
-		} else if mapTag := field.Tag.Get("mapstructure"); mapTag != "" && mapTag != "-" {
-			fieldName = strings.Split(mapTag, ",")[0]
-		} else {
-			fieldName = field.Name
-		}
-
-		// Check if field is marked as sensitive
-		isSensitive := field.Tag.Get("sensitive") == sensitiveTag
-
-		// Process the field value
-		result[fieldName] = processValue(fieldValue, field.Type, isSensitive)
-	}
-
-	return result
-}
-
-// processMap processes a map and its values.
-func processMap(value reflect.Value, isSensitive bool) map[string]interface{} {
-	if value.IsNil() {
-		return nil
-	}
-
-	result := make(map[string]interface{})
-	for _, key := range value.MapKeys() {
-		keyStr := fmt.Sprintf("%v", key.Interface())
-		mapValue := value.MapIndex(key)
-
-		if isSensitive {
-			result[keyStr] = maskSensitiveValue(mapValue)
-		} else {
-			// For non-sensitive maps, recursively process struct values
-			if mapValue.Kind() == reflect.Struct {
-				result[keyStr] = processStruct(mapValue, mapValue.Type())
-			} else {
-				result[keyStr] = mapValue.Interface()
-			}
-		}
-	}
-	return result
-}
-
-// processSlice processes a slice and its elements.
-func processSlice(value reflect.Value, isSensitive bool) []interface{} {
-	if value.IsNil() {
-		return nil
-	}
-
-	result := make([]interface{}, value.Len())
-	for i := 0; i < value.Len(); i++ {
-		elem := value.Index(i)
-		switch {
-		case isSensitive:
-			result[i] = maskSensitiveValue(elem)
-		case elem.Kind() == reflect.Struct:
-			result[i] = processStruct(elem, elem.Type())
-		default:
-			result[i] = elem.Interface()
-		}
-	}
-	return result
-}
-
-// maskSensitiveValue masks a value based on its type.
-// Supports string, []byte, and other types that may contain sensitive data.
-func maskSensitiveValue(value reflect.Value) interface{} {
-	switch value.Kind() {
-	case reflect.String:
-		return maskSecret(value.String())
-	case reflect.Slice:
-		if value.Type().Elem().Kind() == reflect.Uint8 {
-			// []byte - mask like a string
-			return maskSecret(string(value.Bytes()))
-		}
-		// For other slice types, return masked placeholder
-		if value.Len() > 0 {
-			return maskedValue
-		}
-		return nil
-	case reflect.Map:
-		// For maps, return masked placeholder
-		if value.Len() > 0 {
-			return maskedValue
-		}
-		return nil
-	default:
-		// For other types (int, bool, etc.), return masked placeholder if non-zero
-		if !value.IsZero() {
-			return maskedValue
-		}
-		return value.Interface()
-	}
 }
 
 // String implements Stringer to prevent accidental printing of secrets.

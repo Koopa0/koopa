@@ -21,3 +21,9 @@ sql:
             db_type: "integer"
           - go_type: "int32"
             db_type: "pg_catalog.int4"
+          # Map PostgreSQL UUID to google/uuid.UUID directly
+          # This eliminates manual pgtype.UUID conversion
+          - go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+            db_type: "uuid"

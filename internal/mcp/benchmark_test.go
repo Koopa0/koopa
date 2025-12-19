@@ -23,35 +23,34 @@ func BenchmarkServer_Creation(b *testing.B) {
 			b.Fatalf("Failed to create path validator: %v", err)
 		}
 
-		fileToolset, err := tools.NewFileToolset(pathVal, slog.Default())
+		fileTools, err := tools.NewFileTools(pathVal, slog.Default())
 		if err != nil {
-			b.Fatalf("Failed to create file toolset: %v", err)
+			b.Fatalf("Failed to create file tools: %v", err)
 		}
 
 		cmdVal := security.NewCommand()
 		envVal := security.NewEnv()
-		systemToolset, err := tools.NewSystemToolset(cmdVal, envVal, slog.Default())
+		systemTools, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
 		if err != nil {
-			b.Fatalf("Failed to create system toolset: %v", err)
+			b.Fatalf("Failed to create system tools: %v", err)
 		}
 
-		networkToolset, err := tools.NewNetworkToolset(
-			"http://localhost:8080", // test SearXNG URL
-			2,                       // parallelism
-			100*time.Millisecond,    // delay
-			30*time.Second,          // timeout
-			slog.Default(),
-		)
+		networkTools, err := tools.NewNetworkToolsForTesting(tools.NetworkConfig{
+			SearchBaseURL:    "http://localhost:8080",
+			FetchParallelism: 2,
+			FetchDelay:       100 * time.Millisecond,
+			FetchTimeout:     30 * time.Second,
+		}, slog.Default())
 		if err != nil {
-			b.Fatalf("Failed to create network toolset: %v", err)
+			b.Fatalf("Failed to create network tools: %v", err)
 		}
 
 		cfg := Config{
-			Name:           "benchmark-server",
-			Version:        "1.0.0",
-			FileToolset:    fileToolset,
-			SystemToolset:  systemToolset,
-			NetworkToolset: networkToolset,
+			Name:         "benchmark-server",
+			Version:      "1.0.0",
+			FileTools:    fileTools,
+			SystemTools:  systemTools,
+			NetworkTools: networkTools,
 		}
 
 		_, err = NewServer(cfg)
@@ -171,35 +170,34 @@ func BenchmarkConfig_Validation(b *testing.B) {
 		b.Fatalf("Failed to create path validator: %v", err)
 	}
 
-	fileToolset, err := tools.NewFileToolset(pathVal, slog.Default())
+	fileTools, err := tools.NewFileTools(pathVal, slog.Default())
 	if err != nil {
-		b.Fatalf("Failed to create file toolset: %v", err)
+		b.Fatalf("Failed to create file tools: %v", err)
 	}
 
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
-	systemToolset, err := tools.NewSystemToolset(cmdVal, envVal, slog.Default())
+	systemTools, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
 	if err != nil {
-		b.Fatalf("Failed to create system toolset: %v", err)
+		b.Fatalf("Failed to create system tools: %v", err)
 	}
 
-	networkToolset, err := tools.NewNetworkToolset(
-		"http://localhost:8080", // test SearXNG URL
-		2,                       // parallelism
-		100*time.Millisecond,    // delay
-		30*time.Second,          // timeout
-		slog.Default(),
-	)
+	networkTools, err := tools.NewNetworkToolsForTesting(tools.NetworkConfig{
+		SearchBaseURL:    "http://localhost:8080",
+		FetchParallelism: 2,
+		FetchDelay:       100 * time.Millisecond,
+		FetchTimeout:     30 * time.Second,
+	}, slog.Default())
 	if err != nil {
-		b.Fatalf("Failed to create network toolset: %v", err)
+		b.Fatalf("Failed to create network tools: %v", err)
 	}
 
 	cfg := Config{
-		Name:           "validation-test",
-		Version:        "1.0.0",
-		FileToolset:    fileToolset,
-		SystemToolset:  systemToolset,
-		NetworkToolset: networkToolset,
+		Name:         "validation-test",
+		Version:      "1.0.0",
+		FileTools:    fileTools,
+		SystemTools:  systemTools,
+		NetworkTools: networkTools,
 	}
 
 	b.ResetTimer()

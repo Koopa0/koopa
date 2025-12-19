@@ -28,29 +28,29 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 	pathVal, err := security.NewPath([]string{realTmpDir})
 	require.NoError(t, err)
 
-	fileToolset, err := tools.NewFileToolset(pathVal, slog.Default())
+	fileTools, err := tools.NewFileTools(pathVal, slog.Default())
 	require.NoError(t, err)
 
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
-	systemToolset, err := tools.NewSystemToolset(cmdVal, envVal, slog.Default())
+	systemTools, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
 	require.NoError(t, err)
 
-	networkToolset, err := tools.NewNetworkToolset(
-		"http://localhost:8080", // test SearXNG URL
-		2,                       // parallelism
-		100*time.Millisecond,    // delay
-		30*time.Second,          // timeout
-		slog.Default(),
-	)
+	networkCfg := tools.NetworkConfig{
+		SearchBaseURL:    "http://localhost:8080",
+		FetchParallelism: 2,
+		FetchDelay:       100 * time.Millisecond,
+		FetchTimeout:     30 * time.Second,
+	}
+	networkTools, err := tools.NewNetworkTools(networkCfg, slog.Default())
 	require.NoError(t, err)
 
 	return Config{
-		Name:           name,
-		Version:        "1.0.0",
-		FileToolset:    fileToolset,
-		SystemToolset:  systemToolset,
-		NetworkToolset: networkToolset,
+		Name:         name,
+		Version:      "1.0.0",
+		FileTools:    fileTools,
+		SystemTools:  systemTools,
+		NetworkTools: networkTools,
 	}
 }
 
@@ -128,9 +128,9 @@ func TestServer_ConcurrentToolsetAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			// Access toolset fields (read-only)
-			_ = server.fileToolset
-			_ = server.systemToolset
-			_ = server.networkToolset
+			_ = server.fileTools
+			_ = server.systemTools
+			_ = server.networkTools
 			_ = server.name
 			_ = server.version
 		}()
@@ -168,22 +168,22 @@ func TestServer_RaceDetector(t *testing.T) {
 			_ = server.version
 		}()
 
-		// Read file toolset
+		// Read file tools
 		go func() {
 			defer wg.Done()
-			_ = server.fileToolset
+			_ = server.fileTools
 		}()
 
-		// Read system toolset
+		// Read system tools
 		go func() {
 			defer wg.Done()
-			_ = server.systemToolset
+			_ = server.systemTools
 		}()
 
-		// Read network toolset
+		// Read network tools
 		go func() {
 			defer wg.Done()
-			_ = server.networkToolset
+			_ = server.networkTools
 		}()
 	}
 
@@ -198,14 +198,14 @@ func TestConfig_ConcurrentValidation(t *testing.T) {
 	validCfg := createIntegrationTestConfig(t, "valid")
 
 	configs := []Config{
-		{Name: "server1", Version: "1.0.0", FileToolset: validCfg.FileToolset, SystemToolset: validCfg.SystemToolset, NetworkToolset: validCfg.NetworkToolset},
-		{Name: "server2", Version: "2.0.0", FileToolset: validCfg.FileToolset, SystemToolset: validCfg.SystemToolset, NetworkToolset: validCfg.NetworkToolset},
-		{Name: "", Version: "1.0.0", FileToolset: validCfg.FileToolset, SystemToolset: validCfg.SystemToolset, NetworkToolset: validCfg.NetworkToolset},   // Invalid: no name
-		{Name: "server3", Version: "", FileToolset: validCfg.FileToolset, SystemToolset: validCfg.SystemToolset, NetworkToolset: validCfg.NetworkToolset}, // Invalid: no version
-		{Name: "server4", Version: "1.0.0", FileToolset: nil, SystemToolset: validCfg.SystemToolset, NetworkToolset: validCfg.NetworkToolset},             // Invalid: no file toolset
-		{Name: "server5", Version: "1.0.0", FileToolset: validCfg.FileToolset, SystemToolset: nil, NetworkToolset: validCfg.NetworkToolset},               // Invalid: no system toolset
-		{Name: "server6", Version: "1.0.0", FileToolset: validCfg.FileToolset, SystemToolset: validCfg.SystemToolset, NetworkToolset: nil},                // Invalid: no network toolset
-		{Name: "server7", Version: "3.0.0", FileToolset: validCfg.FileToolset, SystemToolset: validCfg.SystemToolset, NetworkToolset: validCfg.NetworkToolset},
+		{Name: "server1", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},
+		{Name: "server2", Version: "2.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},
+		{Name: "", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},   // Invalid: no name
+		{Name: "server3", Version: "", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools}, // Invalid: no version
+		{Name: "server4", Version: "1.0.0", FileTools: nil, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},           // Invalid: no file tools
+		{Name: "server5", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: nil, NetworkTools: validCfg.NetworkTools},             // Invalid: no system tools
+		{Name: "server6", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: nil},              // Invalid: no network tools
+		{Name: "server7", Version: "3.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},
 	}
 
 	var wg sync.WaitGroup
