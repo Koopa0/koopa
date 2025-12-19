@@ -98,7 +98,7 @@ func StartTestServer(t *testing.T) (*httptest.Server, func()) {
 
 	// Build full web server with real routes
 	// (Following internal/web/server.go API)
-	srv, err := NewServer(ServerDeps{
+	srv, err := NewServer(ServerConfig{
 		Logger:       testutil.DiscardLogger(),
 		ChatFlow:     nil, // ← nil enables simulation mode (deterministic responses)
 		SessionStore: sessionStore,

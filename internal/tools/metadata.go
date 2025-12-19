@@ -52,7 +52,10 @@ func (d DangerLevel) String() string {
 // ToolMetadata defines business properties for tools.
 type ToolMetadata struct {
 	// Name is the unique identifier of the tool.
-	NameField string
+	Name string
+
+	// Description provides a brief explanation of what the tool does.
+	Description string
 
 	// RequiresConfirmation indicates if the tool MUST call requestConfirmation before execution.
 	// This is true for all DangerLevelDangerous and DangerLevelCritical tools.
@@ -68,32 +71,10 @@ type ToolMetadata struct {
 	IsDangerousFunc func(params map[string]any) bool
 
 	// Category organizes tools by domain (File, System, Network, Meta).
-	// This field is not in the original design doc but is useful for documentation.
 	Category string
-
-	// Description provides a brief explanation of what the tool does.
-	// This field is not in the original design doc but is useful for documentation.
-	DescriptionField string
-}
-
-// Name returns the tool's name.
-func (t *ToolMetadata) Name() string {
-	return t.NameField
-}
-
-// Description returns the tool's description.
-func (t *ToolMetadata) Description() string {
-	return t.DescriptionField
-}
-
-// IsLongRunning indicates if the tool is long-running.
-// Currently defaults to false for all tools using metadata.
-func (*ToolMetadata) IsLongRunning() bool {
-	return false
 }
 
 // sensitivePaths are system paths that should never be written to by tools.
-// This is hoisted to package level to avoid repeated allocation in IsDangerousFunc.
 var sensitivePaths = []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/sys/", "/proc/"}
 
 // toolMetadata is the central registry of all tool metadata.
@@ -101,15 +82,15 @@ var sensitivePaths = []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/sys/", "/pr
 var toolMetadata = map[string]ToolMetadata{
 	// File Operations
 	ToolReadFile: {
-		NameField:            ToolReadFile,
+		Name:                 ToolReadFile,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "File",
-		DescriptionField:     "Read file contents (read-only, no modifications)",
+		Description:          "Read file contents (read-only, no modifications)",
 	},
 	ToolWriteFile: {
-		NameField:            ToolWriteFile,
+		Name:                 ToolWriteFile,
 		RequiresConfirmation: true,
 		DangerLevel:          DangerLevelWarning,
 		IsDangerousFunc: func(params map[string]any) bool {
@@ -123,45 +104,45 @@ var toolMetadata = map[string]ToolMetadata{
 			}
 			return false // Normal warning level
 		},
-		Category:         "File",
-		DescriptionField: "Create or overwrite files (modifies state, reversible)",
+		Category:    "File",
+		Description: "Create or overwrite files (modifies state, reversible)",
 	},
 	ToolListFiles: {
-		NameField:            ToolListFiles,
+		Name:                 ToolListFiles,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "File",
-		DescriptionField:     "List directory contents (read-only)",
+		Description:          "List directory contents (read-only)",
 	},
 	ToolDeleteFile: {
-		NameField:            ToolDeleteFile,
+		Name:                 ToolDeleteFile,
 		RequiresConfirmation: true,
 		DangerLevel:          DangerLevelDangerous,
 		IsDangerousFunc:      nil, // Always dangerous
 		Category:             "File",
-		DescriptionField:     "Permanently delete files (irreversible, destructive)",
+		Description:          "Permanently delete files (irreversible, destructive)",
 	},
 	ToolGetFileInfo: {
-		NameField:            ToolGetFileInfo,
+		Name:                 ToolGetFileInfo,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "File",
-		DescriptionField:     "Get file metadata (read-only)",
+		Description:          "Get file metadata (read-only)",
 	},
 
 	// System Operations
 	ToolCurrentTime: {
-		NameField:            ToolCurrentTime,
+		Name:                 ToolCurrentTime,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "System",
-		DescriptionField:     "Get current system time (read-only)",
+		Description:          "Get current system time (read-only)",
 	},
 	ToolExecuteCommand: {
-		NameField:            ToolExecuteCommand,
+		Name:                 ToolExecuteCommand,
 		RequiresConfirmation: true,
 		DangerLevel:          DangerLevelDangerous,
 		IsDangerousFunc: func(_ map[string]any) bool {
@@ -169,44 +150,44 @@ var toolMetadata = map[string]ToolMetadata{
 			// Future: Could parse command and detect destructive operations
 			return true
 		},
-		Category:         "System",
-		DescriptionField: "Execute shell commands (potentially destructive)",
+		Category:    "System",
+		Description: "Execute shell commands (potentially destructive)",
 	},
 	ToolGetEnv: {
-		NameField:            ToolGetEnv,
+		Name:                 ToolGetEnv,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "System",
-		DescriptionField:     "Read environment variables (read-only)",
+		Description:          "Read environment variables (read-only)",
 	},
 
 	// Network Operations
 	ToolWebSearch: {
-		NameField:            ToolWebSearch,
+		Name:                 ToolWebSearch,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "Network",
-		DescriptionField:     "Search the web for information (read-only)",
+		Description:          "Search the web for information (read-only)",
 	},
 	ToolWebFetch: {
-		NameField:            ToolWebFetch,
+		Name:                 ToolWebFetch,
 		RequiresConfirmation: false,
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "Network",
-		DescriptionField:     "Fetch data from HTTP endpoints (read-only)",
+		Description:          "Fetch data from HTTP endpoints (read-only)",
 	},
 
 	// Meta Tools (Human-in-the-Loop)
 	"request_confirmation": {
-		NameField:            "request_confirmation",
+		Name:                 "request_confirmation",
 		RequiresConfirmation: false, // request_confirmation itself doesn't need confirmation
 		DangerLevel:          DangerLevelSafe,
 		IsDangerousFunc:      nil,
 		Category:             "Meta",
-		DescriptionField:     "Request user approval for dangerous operations (safety mechanism)",
+		Description:          "Request user approval for dangerous operations (safety mechanism)",
 	},
 }
 

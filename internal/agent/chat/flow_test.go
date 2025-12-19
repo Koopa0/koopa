@@ -93,7 +93,6 @@ func TestSentinelErrors_CanBeChecked(t *testing.T) {
 	}{
 		{"ErrInvalidSession", agent.ErrInvalidSession, agent.ErrInvalidSession},
 		{"ErrExecutionFailed", agent.ErrExecutionFailed, agent.ErrExecutionFailed},
-		{"ErrStreamingFailed", agent.ErrStreamingFailed, agent.ErrStreamingFailed},
 	}
 
 	for _, tt := range tests {

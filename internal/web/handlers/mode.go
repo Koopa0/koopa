@@ -10,9 +10,9 @@ import (
 	"github.com/koopa0/koopa-cli/internal/web/page"
 )
 
-// ModeDeps contains dependencies for the Mode handler.
-type ModeDeps struct {
-	Logger   *slog.Logger // Per golang-master: Add logger for testability
+// ModeConfig contains configuration for the Mode handler.
+type ModeConfig struct {
+	Logger   *slog.Logger // Optional: nil uses slog.Default()
 	Sessions *Sessions
 }
 
@@ -22,15 +22,15 @@ type Mode struct {
 	sessions *Sessions
 }
 
-// NewMode creates a Mode handler with the given dependencies.
-func NewMode(deps ModeDeps) *Mode {
-	logger := deps.Logger
+// NewMode creates a Mode handler with the given configuration.
+func NewMode(cfg ModeConfig) *Mode {
+	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Mode{
 		logger:   logger,
-		sessions: deps.Sessions,
+		sessions: cfg.Sessions,
 	}
 }
 

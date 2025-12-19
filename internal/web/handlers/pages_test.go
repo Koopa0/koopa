@@ -23,7 +23,7 @@ func TestNewPages(t *testing.T) {
 	// (store methods won't be called in this test)
 	sessions := handlers.NewSessions(nil, []byte("test-secret-32-bytes-minimum!!!!"), true)
 
-	handler := handlers.NewPages(handlers.PagesDeps{
+	handler := handlers.NewPages(handlers.PagesConfig{
 		Logger:   logger,
 		Sessions: sessions,
 	})
@@ -43,7 +43,7 @@ func TestNewPages_NilLoggerPanics(t *testing.T) {
 	}()
 
 	// Should panic with nil logger
-	handlers.NewPages(handlers.PagesDeps{
+	handlers.NewPages(handlers.PagesConfig{
 		Logger:   nil,
 		Sessions: nil,
 	})
@@ -55,7 +55,7 @@ func TestPages_Chat_RequiresSessions(t *testing.T) {
 	logger := slog.Default()
 
 	// Create handler with nil sessions to verify behavior
-	handler := handlers.NewPages(handlers.PagesDeps{
+	handler := handlers.NewPages(handlers.PagesConfig{
 		Logger:   logger,
 		Sessions: nil,
 	})
@@ -75,7 +75,7 @@ func TestPages_Chat_Structure(t *testing.T) {
 
 	logger := slog.Default()
 	sessions := handlers.NewSessions(nil, []byte("test-secret-32-bytes-minimum!!!!"), true)
-	handler := handlers.NewPages(handlers.PagesDeps{
+	handler := handlers.NewPages(handlers.PagesConfig{
 		Logger:   logger,
 		Sessions: sessions,
 	})

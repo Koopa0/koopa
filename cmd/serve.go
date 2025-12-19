@@ -3,9 +3,16 @@ package cmd
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/koopa0/koopa-cli/internal/app"
@@ -22,9 +29,6 @@ const (
 	ShutdownTimeout   = 30 * time.Second
 )
 
-// ErrMissingHMACSecret indicates HMAC_SECRET is not configured for serve mode.
-var ErrMissingHMACSecret = errors.New("HMAC_SECRET environment variable is required for serve mode (min 32 characters)")
-
 // RunServe starts the HTTP web server (GenUI + Health checks).
 //
 // Architecture:
@@ -37,7 +41,7 @@ func RunServe(ctx context.Context, cfg *config.Config, version, addr string) err
 
 	// Validate HMAC_SECRET for serve mode
 	if cfg.HMACSecret == "" {
-		return ErrMissingHMACSecret
+		return errors.New("HMAC_SECRET environment variable is required for serve mode (min 32 characters)")
 	}
 	if len(cfg.HMACSecret) < 32 {
 		return fmt.Errorf("HMAC_SECRET must be at least 32 characters, got %d", len(cfg.HMACSecret))
@@ -50,15 +54,14 @@ func RunServe(ctx context.Context, cfg *config.Config, version, addr string) err
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime: %w", err)
 	}
-	defer runtime.Cleanup()
 	defer func() {
-		if shutdownErr := runtime.Shutdown(); shutdownErr != nil {
-			logger.Warn("failed to shutdown runtime", "error", shutdownErr)
+		if closeErr := runtime.Close(); closeErr != nil {
+			logger.Warn("runtime close error", "error", closeErr)
 		}
 	}()
 
 	// Create web server (GenUI + Health checks)
-	webServer, err := web.NewServer(web.ServerDeps{
+	webServer, err := web.NewServer(web.ServerConfig{
 		Logger:       logger,
 		Genkit:       runtime.App.Genkit,
 		ChatFlow:     runtime.Flow,
@@ -107,4 +110,88 @@ func RunServe(ctx context.Context, cfg *config.Config, version, addr string) err
 		}
 		return err
 	}
+}
+
+// runServe initializes and starts the HTTP API server.
+// This is called when the user runs `koopa serve`.
+func runServe() error {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+
+	addr, err := parseServeAddr()
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	return RunServe(ctx, cfg, Version, addr)
+}
+
+// parseServeAddr parses and validates the server address from command line arguments.
+// Uses flag.FlagSet for standard Go flag parsing, supporting:
+//   - koopa serve :8080           (positional)
+//   - koopa serve --addr :8080    (flag)
+//   - koopa serve -addr :8080     (single dash)
+func parseServeAddr() (string, error) {
+	const defaultAddr = "127.0.0.1:3400"
+
+	serveFlags := flag.NewFlagSet("serve", flag.ContinueOnError)
+	serveFlags.SetOutput(os.Stderr)
+
+	addr := serveFlags.String("addr", defaultAddr, "Server address (host:port)")
+
+	args := []string{}
+	if len(os.Args) > 2 {
+		args = os.Args[2:]
+	}
+
+	// Check for positional argument first (koopa serve :8080)
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		*addr = args[0]
+		args = args[1:]
+	}
+
+	if err := serveFlags.Parse(args); err != nil {
+		return "", fmt.Errorf("failed to parse serve flags: %w", err)
+	}
+
+	if err := validateAddr(*addr); err != nil {
+		return "", fmt.Errorf("invalid address %q: %w", *addr, err)
+	}
+
+	return *addr, nil
+}
+
+// validateAddr validates the server address format.
+func validateAddr(addr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("must be in host:port format: %w", err)
+	}
+
+	if host != "" && host != "localhost" {
+		if ip := net.ParseIP(host); ip == nil {
+			if strings.ContainsAny(host, " \t\n") {
+				return fmt.Errorf("invalid host: %s", host)
+			}
+		}
+	}
+
+	if port == "" {
+		return fmt.Errorf("port is required")
+	}
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("port must be numeric: %w", err)
+	}
+	if portNum < 0 || portNum > 65535 {
+		return fmt.Errorf("port must be 0-65535 (0 = auto-assign), got %d", portNum)
+	}
+
+	return nil
 }

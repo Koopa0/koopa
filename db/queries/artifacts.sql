@@ -1,54 +1,54 @@
 -- Artifact queries for sqlc
--- Canvas Mode Comprehensive Fixes
+-- Table: artifact (renamed from session_artifacts in migration 000006)
+-- Added: filename column (migration 000007)
 
--- name: CreateArtifact :one
--- Create a new artifact for canvas panel (autosave)
-INSERT INTO session_artifacts (
+-- name: SaveArtifact :one
+-- UPSERT artifact by (session_id, filename)
+-- If exists, updates content and increments version
+INSERT INTO artifact (
     session_id,
     message_id,
+    filename,
     type,
     language,
     title,
     content,
+    version,
     sequence_number
 )
 VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    COALESCE((SELECT MAX(sequence_number) + 1 FROM session_artifacts WHERE session_id = $1), 1)
+    $1, $2, $3, $4, $5, $6, $7, 1,
+    COALESCE((SELECT MAX(sequence_number) FROM artifact WHERE session_id = $1), 0) + 1
 )
+ON CONFLICT (session_id, filename) DO UPDATE SET
+    message_id = EXCLUDED.message_id,
+    type = EXCLUDED.type,
+    language = EXCLUDED.language,
+    title = EXCLUDED.title,
+    content = EXCLUDED.content,
+    version = artifact.version + 1,
+    updated_at = NOW()
 RETURNING *;
 
--- name: GetLatestArtifact :one
--- Get the most recent artifact for a session (canvas panel display)
+-- name: GetArtifactByFilename :one
+-- Get artifact by session and filename
 SELECT *
-FROM session_artifacts
+FROM artifact
+WHERE session_id = $1 AND filename = $2;
+
+-- name: ListArtifactFilenames :many
+-- List all artifact filenames for a session
+SELECT filename
+FROM artifact
 WHERE session_id = $1
-ORDER BY created_at DESC
-LIMIT 1;
+ORDER BY sequence_number ASC;
 
--- name: ListArtifactsBySession :many
--- List artifacts for a session, newest first
-SELECT *
-FROM session_artifacts
-WHERE session_id = $1
-ORDER BY sequence_number DESC
-LIMIT sqlc.arg(result_limit)
-OFFSET sqlc.arg(result_offset);
+-- name: DeleteArtifactByFilename :execrows
+-- Delete artifact by session and filename
+DELETE FROM artifact
+WHERE session_id = $1 AND filename = $2;
 
--- name: UpdateArtifactContent :exec
--- Update artifact content (for future interactive editing)
-UPDATE session_artifacts
-SET content = $2,
-    version = version + 1,
-    updated_at = NOW()
-WHERE id = $1;
-
--- name: DeleteArtifact :exec
--- Delete an artifact
-DELETE FROM session_artifacts
-WHERE id = $1;
+-- name: DeleteArtifactsBySession :exec
+-- Delete all artifacts for a session (called when session is deleted)
+DELETE FROM artifact
+WHERE session_id = $1;

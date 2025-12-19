@@ -57,10 +57,6 @@ var (
 	// ErrMessageNotFound indicates the requested message does not exist.
 	ErrMessageNotFound = errors.New("message not found")
 
-	// ErrArtifactNotFound indicates no artifact exists for the session.
-	// This is a normal state for new sessions or sessions without canvas output.
-	ErrArtifactNotFound = errors.New("artifact not found")
-
 	// ErrInvalidBranch indicates the branch name format is invalid.
 	ErrInvalidBranch = errors.New("invalid branch name")
 

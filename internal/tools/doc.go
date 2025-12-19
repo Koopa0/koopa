@@ -1,108 +1,107 @@
-// Package tools provides a modular toolset architecture for AI agents.
+// Package tools provides AI agent tools for file, system, network, and knowledge operations.
 //
 // # Overview
 //
-// This package implements an extensible tool system that allows AI agents to
-// interact with files, system commands, network resources, and knowledge bases.
-// All tools follow a consistent interface pattern and include built-in security
-// validations.
+// This package implements tools that allow AI agents to interact with the system.
+// All tools include built-in security validations and return structured results
+// for consistent LLM handling.
 //
 // # Architecture
 //
-// The package is organized around the Toolset interface:
+// Tools are organized into four categories:
 //
-//	type Toolset interface {
-//	    Name() string
-//	    Tools(ctx agent.ReadonlyContext) ([]Tool, error)
-//	}
+//   - FileTools: File operations (read, write, list, delete, info)
+//   - SystemTools: System operations (time, command execution, environment)
+//   - NetworkTools: Network operations (web search, web fetch)
+//   - knowledgeTools: Knowledge base operations (semantic search)
 //
-// Each toolset encapsulates related functionality:
-//   - FileToolset: File operations (read_file, write_file, list_directory, delete_file, get_file_info)
-//   - SystemToolset: System operations (get_current_time, run_command, get_env)
-//   - NetworkToolset: Network operations (web_search, web_fetch) with SSRF protection
-//   - KnowledgeToolset: Knowledge base operations (knowledge_search)
+// Each tool struct is created with a constructor, then registered with Genkit.
 //
 // # Available Tools
 //
-// File tools:
-//   - read_file: Read file contents
-//   - write_file: Write content to a file
-//   - list_directory: List directory contents
+// File tools (FileTools):
+//   - read_file: Read file contents (max 10MB)
+//   - write_file: Write or create files
+//   - list_files: List directory contents
 //   - delete_file: Delete a file
 //   - get_file_info: Get file metadata
 //
-// System tools:
-//   - get_current_time: Get current timestamp
-//   - run_command: Execute shell commands (with whitelist validation)
-//   - get_env: Get environment variables (with secrets protection)
+// System tools (SystemTools):
+//   - current_time: Get current system time
+//   - execute_command: Execute shell commands (whitelist enforced)
+//   - get_env: Read environment variables (secrets protected)
 //
-// Network tools:
-//   - web_search: Search the web via SearXNG
-//   - web_fetch: Fetch web pages (HTML, JSON, text) with SSRF protection
+// Network tools (NetworkTools):
+//   - web_search: Search via SearXNG
+//   - web_fetch: Fetch web content with SSRF protection
 //
-// Knowledge tools:
-//   - knowledge_search: Search the knowledge base
+// Knowledge tools (knowledgeTools):
+//   - search_history: Search conversation history
+//   - search_documents: Search indexed documents
+//   - search_system_knowledge: Search system knowledge base
 //
 // # Security
 //
-// All toolsets integrate security validators to prevent common vulnerabilities:
-//   - Path validation prevents directory traversal attacks
-//   - Command validation blocks dangerous shell commands (rm -rf, etc.)
-//   - SSRF protection prevents access to private networks and cloud metadata
-//   - Environment variable protection blocks access to secrets (API keys, tokens)
+// All tools integrate security validators from the security package:
+//   - Path validation prevents directory traversal attacks (CWE-22)
+//   - Command validation blocks dangerous commands like rm -rf (CWE-78)
+//   - SSRF protection blocks private IPs and cloud metadata endpoints
+//   - Environment variable protection blocks *KEY*, *SECRET*, *TOKEN* patterns
 //
-// # Usage Example
+// # Result Type
 //
-//	// Create toolsets with security validators
-//	pathValidator, _ := security.NewPath([]string{"/allowed/path"})
-//	fileToolset, err := tools.NewFileToolset(pathValidator, logger)
-//	if err != nil {
-//	    return err
+// All tools return the unified Result type:
+//
+//	type Result struct {
+//	    Status  Status  // StatusSuccess or StatusError
+//	    Data    any     // Tool output data
+//	    Error   *Error  // Structured error (nil on success)
 //	}
 //
-//	cmdValidator := security.NewCommand()
-//	envValidator := security.NewEnv()
-//	systemToolset, err := tools.NewSystemToolset(cmdValidator, envValidator, logger)
-//	if err != nil {
-//	    return err
-//	}
+// Results are constructed using struct literals directly:
 //
-//	// Register toolsets with Chat agent
-//	chatAgent, err := chat.New(chat.Deps{
-//	    // ... other deps ...
-//	    Toolsets: []tools.Toolset{fileToolset, systemToolset},
-//	})
+//	// Success
+//	return Result{Status: StatusSuccess, Data: map[string]any{"path": path}}, nil
 //
-// # Tool Interface
-//
-// Tools implement the Tool interface and are wrapped in ExecutableTool for execution:
-//
-//	type Tool interface {
-//	    Name() string
-//	    Description() string
-//	    IsLongRunning() bool
-//	}
-//
-//	type ExecutableTool struct {
-//	    // Contains tool metadata and execution function
-//	}
-//
-// The Chat agent converts ExecutableTools to Genkit tools during initialization.
+//	// Error
+//	return Result{Status: StatusError, Error: &Error{Code: ErrCodeSecurity, Message: "blocked"}}, nil
 //
 // # Error Handling
 //
-// Tool handlers return typed output structs. Errors are returned as Go errors:
-//   - System errors (Go errors): Returned when tool execution fails
-//   - Operational errors (in output): Included in output struct for LLM to handle
+// Tools distinguish between business errors and infrastructure errors:
 //
-// # Extension
+// Business errors are returned in Result.Error with err = nil:
+//   - Security validation failures (blocked path, dangerous command)
+//   - Resource not found
+//   - Permission denied
+//   - Invalid input
 //
-// To add a new toolset:
+// Infrastructure errors are returned as Go errors:
+//   - Context cancellation
+//   - System failures
 //
-//  1. Define a struct implementing the Toolset interface
-//  2. Create tool metadata types implementing the Tool interface
-//  3. Implement handler functions with signature: func(*ai.ToolContext, InputType) (OutputType, error)
-//  4. Return ExecutableTool instances from the Tools() method
+// This allows the LLM to handle expected error conditions gracefully.
 //
-// See the existing toolsets for complete examples.
+// # Event Emission
+//
+// Tools support lifecycle events for SSE streaming via the WithEvents wrapper:
+//
+//	wrapped := WithEvents("tool_name", handler)
+//
+// Events emitted:
+//   - OnToolStart: Before tool execution begins
+//   - OnToolComplete: After successful execution
+//   - OnToolError: After execution returns Go error
+//
+// # Usage Example
+//
+//	// Create tools with security validators
+//	pathVal, _ := security.NewPath([]string{"/allowed/path"})
+//	fileTools, err := tools.NewFileTools(pathVal, logger)
+//	if err != nil {
+//	    return err
+//	}
+//
+//	// Register with Genkit
+//	fileToolList, _ := tools.RegisterFileTools(g, fileTools)
 package tools

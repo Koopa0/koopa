@@ -237,7 +237,7 @@ func TestValidateRAGTopK(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		ragTopK   int32
+		ragTopK   int
 		shouldErr bool
 	}{
 		{"valid min", 1, false},

@@ -13,57 +13,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
-
-// Querier defines the interface for database operations on sessions and messages.
-// Following Go best practices: interfaces are defined by the consumer, not the provider.
-//
-// This interface allows Store to depend on abstraction rather than concrete implementation,
-// improving testability and flexibility.
-type Querier interface {
-	// Session operations
-	CreateSession(ctx context.Context, arg sqlc.CreateSessionParams) (sqlc.Session, error)
-	GetSession(ctx context.Context, id pgtype.UUID) (sqlc.Session, error)
-	ListSessions(ctx context.Context, arg sqlc.ListSessionsParams) ([]sqlc.Session, error)
-	ListSessionsWithMessages(ctx context.Context, arg sqlc.ListSessionsWithMessagesParams) ([]sqlc.Session, error)
-	UpdateSessionUpdatedAt(ctx context.Context, arg sqlc.UpdateSessionUpdatedAtParams) error
-	UpdateSessionTitle(ctx context.Context, arg sqlc.UpdateSessionTitleParams) error
-	DeleteSession(ctx context.Context, id pgtype.UUID) error
-	LockSession(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
-
-	// Message operations (legacy - defaults to 'main' branch)
-	AddMessage(ctx context.Context, arg sqlc.AddMessageParams) error
-	GetMessages(ctx context.Context, arg sqlc.GetMessagesParams) ([]sqlc.SessionMessage, error)
-	GetMaxSequenceNumber(ctx context.Context, sessionID pgtype.UUID) (int32, error)
-
-	// Message operations with branch support
-	AddMessageWithBranch(ctx context.Context, arg sqlc.AddMessageWithBranchParams) error
-	GetMessagesByBranch(ctx context.Context, arg sqlc.GetMessagesByBranchParams) ([]sqlc.SessionMessage, error)
-	GetMaxSequenceByBranch(ctx context.Context, arg sqlc.GetMaxSequenceByBranchParams) (int32, error)
-	CountMessagesByBranch(ctx context.Context, arg sqlc.CountMessagesByBranchParams) (int32, error)
-	DeleteMessagesByBranch(ctx context.Context, arg sqlc.DeleteMessagesByBranchParams) error
-
-	// Streaming message operations (for SSE chat flow)
-	AddMessageWithID(ctx context.Context, arg sqlc.AddMessageWithIDParams) (sqlc.SessionMessage, error)
-	UpdateMessageContent(ctx context.Context, arg sqlc.UpdateMessageContentParams) error
-	UpdateMessageStatus(ctx context.Context, arg sqlc.UpdateMessageStatusParams) error
-	GetMessageByID(ctx context.Context, id pgtype.UUID) (sqlc.SessionMessage, error)
-	GetUserMessageBefore(ctx context.Context, arg sqlc.GetUserMessageBeforeParams) ([]byte, error)
-
-	// Canvas mode and artifact operations
-	UpdateCanvasMode(ctx context.Context, arg sqlc.UpdateCanvasModeParams) error
-	CreateArtifact(ctx context.Context, arg sqlc.CreateArtifactParams) (sqlc.SessionArtifact, error)
-	GetLatestArtifact(ctx context.Context, sessionID pgtype.UUID) (sqlc.SessionArtifact, error)
-}
 
 // Store manages session persistence with PostgreSQL backend.
 // It handles conversation history storage and retrieval.
 //
 // Store is safe for concurrent use by multiple goroutines.
 type Store struct {
-	querier Querier
+	queries *sqlc.Queries
 	pool    *pgxpool.Pool // Database pool for transaction support
 	logger  *slog.Logger
 }
@@ -71,24 +29,20 @@ type Store struct {
 // New creates a new Store instance.
 //
 // Parameters:
-//   - querier: Database querier implementing Querier interface
-//   - pool: PostgreSQL connection pool (for transaction support, can be nil for tests)
+//   - queries: sqlc generated queries
+//   - pool: PostgreSQL connection pool (for transaction support)
 //   - logger: Logger for debugging (nil = use default)
 //
-// Example (production with Wire):
+// Example:
 //
 //	store := session.New(sqlc.New(dbPool), dbPool, slog.Default())
-//
-// Example (testing with mock):
-//
-//	store := session.New(mockQuerier, nil, slog.Default())
-func New(querier Querier, pool *pgxpool.Pool, logger *slog.Logger) *Store {
+func New(queries *sqlc.Queries, pool *pgxpool.Pool, logger *slog.Logger) *Store {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &Store{
-		querier: querier,
+		queries: queries,
 		pool:    pool,
 		logger:  logger,
 	}
@@ -118,7 +72,7 @@ func (s *Store) CreateSession(ctx context.Context, title, modelName, systemPromp
 		systemPromptPtr = &systemPrompt
 	}
 
-	sqlcSession, err := s.querier.CreateSession(ctx, sqlc.CreateSessionParams{
+	sqlcSession, err := s.queries.CreateSession(ctx, sqlc.CreateSessionParams{
 		Title:        titlePtr,
 		ModelName:    modelNamePtr,
 		SystemPrompt: systemPromptPtr,
@@ -135,7 +89,7 @@ func (s *Store) CreateSession(ctx context.Context, title, modelName, systemPromp
 // GetSession retrieves a session by ID.
 // Returns ErrSessionNotFound if the session does not exist.
 func (s *Store) GetSession(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
-	sqlcSession, err := s.querier.GetSession(ctx, uuidToPgUUID(sessionID))
+	sqlcSession, err := s.queries.GetSession(ctx, uuidToPgUUID(sessionID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Return sentinel error directly (no wrapping per reviewer guidance)
@@ -158,7 +112,7 @@ func (s *Store) GetSession(ctx context.Context, sessionID uuid.UUID) (*Session, 
 //   - []*Session: List of sessions
 //   - error: If listing fails
 func (s *Store) ListSessions(ctx context.Context, limit, offset int32) ([]*Session, error) {
-	sqlcSessions, err := s.querier.ListSessions(ctx, sqlc.ListSessionsParams{
+	sqlcSessions, err := s.queries.ListSessions(ctx, sqlc.ListSessionsParams{
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})
@@ -187,7 +141,7 @@ func (s *Store) ListSessions(ctx context.Context, limit, offset int32) ([]*Sessi
 //   - []*Session: List of sessions with messages or titles
 //   - error: If listing fails
 func (s *Store) ListSessionsWithMessages(ctx context.Context, limit, offset int32) ([]*Session, error) {
-	sqlcSessions, err := s.querier.ListSessionsWithMessages(ctx, sqlc.ListSessionsWithMessagesParams{
+	sqlcSessions, err := s.queries.ListSessionsWithMessages(ctx, sqlc.ListSessionsWithMessagesParams{
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})
@@ -213,7 +167,7 @@ func (s *Store) ListSessionsWithMessages(ctx context.Context, limit, offset int3
 // Returns:
 //   - error: If deletion fails
 func (s *Store) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
-	if err := s.querier.DeleteSession(ctx, uuidToPgUUID(sessionID)); err != nil {
+	if err := s.queries.DeleteSession(ctx, uuidToPgUUID(sessionID)); err != nil {
 		return fmt.Errorf("failed to delete session %s: %w", sessionID, err)
 	}
 
@@ -237,7 +191,7 @@ func (s *Store) UpdateSessionTitle(ctx context.Context, sessionID uuid.UUID, tit
 		titlePtr = &title
 	}
 
-	if err := s.querier.UpdateSessionTitle(ctx, sqlc.UpdateSessionTitleParams{
+	if err := s.queries.UpdateSessionTitle(ctx, sqlc.UpdateSessionTitleParams{
 		SessionID: uuidToPgUUID(sessionID),
 		Title:     titlePtr,
 	}); err != nil {
@@ -368,7 +322,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 //   - []*Message: List of messages ordered by sequence number ascending
 //   - error: If retrieval fails
 func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*Message, error) {
-	sqlcMessages, err := s.querier.GetMessages(ctx, sqlc.GetMessagesParams{
+	sqlcMessages, err := s.queries.GetMessages(ctx, sqlc.GetMessagesParams{
 		SessionID:    uuidToPgUUID(sessionID),
 		ResultLimit:  limit,
 		ResultOffset: offset,
@@ -406,7 +360,7 @@ func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, off
 //   - []*Message: List of messages ordered by sequence number ascending
 //   - error: If retrieval fails
 func (s *Store) GetMessagesByBranch(ctx context.Context, sessionID uuid.UUID, branch string, limit, offset int32) ([]*Message, error) {
-	sqlcMessages, err := s.querier.GetMessagesByBranch(ctx, sqlc.GetMessagesByBranchParams{
+	sqlcMessages, err := s.queries.GetMessagesByBranch(ctx, sqlc.GetMessagesByBranchParams{
 		SessionID:    uuidToPgUUID(sessionID),
 		Branch:       branch,
 		ResultLimit:  limit,
@@ -440,24 +394,19 @@ func (s *Store) GetMessagesByBranch(ctx context.Context, sessionID uuid.UUID, br
 //
 // Parameters:
 //   - ctx: Context for the operation
-//   - sessionID: agent.SessionID (UUID string)
+//   - sessionID: Session UUID
 //   - branch: Branch name (empty defaults to "main")
 //   - messages: Messages to append
 //
 // Returns:
 //   - error: If saving fails or branch is invalid
-func (s *Store) AppendMessages(ctx context.Context, sessionID agent.SessionID, branch string, messages []*ai.Message) error {
+func (s *Store) AppendMessages(ctx context.Context, sessionID uuid.UUID, branch string, messages []*ai.Message) error {
 	if len(messages) == 0 {
 		return nil
 	}
 
-	// Parse SessionID to UUID
-	id, err := uuid.Parse(string(sessionID))
-	if err != nil {
-		return fmt.Errorf("invalid session ID: %w", err)
-	}
-
 	// Validate and normalize branch
+	var err error
 	branch, err = NormalizeBranch(branch)
 	if err != nil {
 		return fmt.Errorf("invalid branch: %w", err)
@@ -473,7 +422,7 @@ func (s *Store) AppendMessages(ctx context.Context, sessionID agent.SessionID, b
 	}
 
 	// Use branch-aware AddMessages
-	if err := s.AddMessagesWithBranch(ctx, id, branch, sessionMessages); err != nil {
+	if err := s.AddMessagesWithBranch(ctx, sessionID, branch, sessionMessages); err != nil {
 		return fmt.Errorf("failed to append messages: %w", err)
 	}
 
@@ -579,25 +528,20 @@ func (s *Store) AddMessagesWithBranch(ctx context.Context, sessionID uuid.UUID, 
 //
 // Parameters:
 //   - ctx: Context for the operation
-//   - sessionID: agent.SessionID (UUID string)
+//   - sessionID: Session UUID
 //   - branch: Branch name (empty defaults to "main")
 //
 // Returns:
-//   - *agent.History: Conversation history for the specified branch
+//   - *History: Conversation history for the specified branch
 //   - error: If retrieval fails or branch is invalid
-func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, branch string) (*agent.History, error) {
-	// Parse SessionID to UUID
-	id, err := uuid.Parse(string(sessionID))
-	if err != nil {
-		return nil, fmt.Errorf("invalid session ID: %w", err)
-	}
-
+func (s *Store) LoadHistory(ctx context.Context, sessionID uuid.UUID, branch string) (*History, error) {
 	// Verify session exists before loading history
-	if _, err = s.GetSession(ctx, id); err != nil {
+	if _, err := s.GetSession(ctx, sessionID); err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
 
 	// Validate and normalize branch
+	var err error
 	branch, err = NormalizeBranch(branch)
 	if err != nil {
 		return nil, fmt.Errorf("invalid branch: %w", err)
@@ -607,7 +551,7 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, bran
 	limit := DefaultHistoryLimit
 
 	// Retrieve messages for this specific branch
-	messages, err := s.GetMessagesByBranch(ctx, id, branch, limit, 0)
+	messages, err := s.GetMessagesByBranch(ctx, sessionID, branch, limit, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load history: %w", err)
 	}
@@ -626,7 +570,9 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, bran
 		"branch", branch,
 		"message_count", len(messages))
 
-	return agent.NewHistoryFromMessages(aiMessages), nil
+	history := NewHistory()
+	history.SetMessages(aiMessages)
+	return history, nil
 }
 
 // SaveHistory saves the conversation history for a session.
@@ -636,20 +582,15 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID agent.SessionID, bran
 //
 // Parameters:
 //   - ctx: Context for the operation
-//   - sessionID: agent.SessionID (UUID string)
+//   - sessionID: Session UUID
 //   - branch: Branch name (empty defaults to "main")
 //   - history: Conversation history
 //
 // Returns:
 //   - error: If saving fails
-func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, branch string, history *agent.History) error {
-	// Parse SessionID to UUID
-	id, err := uuid.Parse(string(sessionID))
-	if err != nil {
-		return fmt.Errorf("invalid session ID: %w", err)
-	}
-
+func (s *Store) SaveHistory(ctx context.Context, sessionID uuid.UUID, branch string, history *History) error {
 	// Validate and normalize branch
+	var err error
 	branch, err = NormalizeBranch(branch)
 	if err != nil {
 		return fmt.Errorf("invalid branch: %w", err)
@@ -663,7 +604,7 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 
 	// Load existing messages for this branch to determine which are new
 	limit := DefaultHistoryLimit
-	existingMessages, err := s.GetMessagesByBranch(ctx, id, branch, limit, 0)
+	existingMessages, err := s.GetMessagesByBranch(ctx, sessionID, branch, limit, 0)
 	if err != nil {
 		s.logger.Debug("no existing messages found", "session_id", sessionID, "branch", branch)
 		existingMessages = nil
@@ -687,7 +628,7 @@ func (s *Store) SaveHistory(ctx context.Context, sessionID agent.SessionID, bran
 
 	// Add new messages with branch support
 	if len(newMessages) > 0 {
-		if err := s.AddMessagesWithBranch(ctx, id, branch, newMessages); err != nil {
+		if err := s.AddMessagesWithBranch(ctx, sessionID, branch, newMessages); err != nil {
 			return fmt.Errorf("failed to add messages: %w", err)
 		}
 	}
@@ -720,8 +661,8 @@ func (*Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 	return session
 }
 
-// sqlcMessageToMessage converts sqlc.SessionMessage to Message (application type).
-func (*Store) sqlcMessageToMessage(sm sqlc.SessionMessage) (*Message, error) {
+// sqlcMessageToMessage converts sqlc.Message to Message (application type).
+func (*Store) sqlcMessageToMessage(sm sqlc.Message) (*Message, error) {
 	// Unmarshal JSONB content to ai.Part slice
 	var content []*ai.Part
 	if err := json.Unmarshal(sm.Content, &content); err != nil {
@@ -923,7 +864,7 @@ func (s *Store) GetUserMessageBefore(
 		return "", fmt.Errorf("invalid branch: %w", err)
 	}
 
-	content, err := s.querier.GetUserMessageBefore(ctx, sqlc.GetUserMessageBeforeParams{
+	content, err := s.queries.GetUserMessageBefore(ctx, sqlc.GetUserMessageBeforeParams{
 		SessionID:      uuidToPgUUID(sessionID),
 		Branch:         branch,
 		BeforeSequence: beforeSeq,
@@ -963,7 +904,7 @@ func (s *Store) GetUserMessageBefore(
 //   - *Message: The message if found
 //   - error: ErrMessageNotFound if not found
 func (s *Store) GetMessageByID(ctx context.Context, msgID uuid.UUID) (*Message, error) {
-	sm, err := s.querier.GetMessageByID(ctx, uuidToPgUUID(msgID))
+	sm, err := s.queries.GetMessageByID(ctx, uuidToPgUUID(msgID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrMessageNotFound
@@ -982,7 +923,7 @@ func (s *Store) UpdateMessageContent(ctx context.Context, msgID uuid.UUID, conte
 		return fmt.Errorf("marshal content: %w", err)
 	}
 
-	if err := s.querier.UpdateMessageContent(ctx, sqlc.UpdateMessageContentParams{
+	if err := s.queries.UpdateMessageContent(ctx, sqlc.UpdateMessageContentParams{
 		ID:      uuidToPgUUID(msgID),
 		Content: contentJSON,
 	}); err != nil {
@@ -996,7 +937,7 @@ func (s *Store) UpdateMessageContent(ctx context.Context, msgID uuid.UUID, conte
 // UpdateMessageStatus updates the status of a message.
 // Used to mark streaming messages as failed if an error occurs.
 func (s *Store) UpdateMessageStatus(ctx context.Context, msgID uuid.UUID, status string) error {
-	if err := s.querier.UpdateMessageStatus(ctx, sqlc.UpdateMessageStatusParams{
+	if err := s.queries.UpdateMessageStatus(ctx, sqlc.UpdateMessageStatusParams{
 		ID:     uuidToPgUUID(msgID),
 		Status: status,
 	}); err != nil {
@@ -1008,7 +949,7 @@ func (s *Store) UpdateMessageStatus(ctx context.Context, msgID uuid.UUID, status
 }
 
 // =============================================================================
-// Canvas Mode and Artifact Operations
+// Canvas Mode Operation
 // =============================================================================
 
 // UpdateCanvasMode toggles canvas mode for a session.
@@ -1022,7 +963,7 @@ func (s *Store) UpdateMessageStatus(ctx context.Context, msgID uuid.UUID, status
 // Returns:
 //   - error: If update fails
 func (s *Store) UpdateCanvasMode(ctx context.Context, sessionID uuid.UUID, canvasMode bool) error {
-	if err := s.querier.UpdateCanvasMode(ctx, sqlc.UpdateCanvasModeParams{
+	if err := s.queries.UpdateCanvasMode(ctx, sqlc.UpdateCanvasModeParams{
 		SessionID:  uuidToPgUUID(sessionID),
 		CanvasMode: canvasMode,
 	}); err != nil {
@@ -1031,94 +972,4 @@ func (s *Store) UpdateCanvasMode(ctx context.Context, sessionID uuid.UUID, canva
 
 	s.logger.Debug("updated canvas mode", "session_id", sessionID, "canvas_mode", canvasMode)
 	return nil
-}
-
-// SaveArtifact creates a new artifact for canvas panel (autosave).
-// Per golang-master: Error wrapping with context.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: UUID of the session
-//   - messageID: Optional message ID (nil if not linked to a message)
-//   - artifact: Artifact data to save
-//
-// Returns:
-//   - *Artifact: Created artifact with generated ID and sequence number
-//   - error: If creation fails
-func (s *Store) SaveArtifact(ctx context.Context, sessionID uuid.UUID, messageID *uuid.UUID, artifact *Artifact) (*Artifact, error) {
-	var msgID pgtype.UUID
-	if messageID != nil {
-		msgID = uuidToPgUUID(*messageID)
-	}
-
-	// Convert language to nullable
-	var language *string
-	if artifact.Language != "" {
-		language = &artifact.Language
-	}
-
-	result, err := s.querier.CreateArtifact(ctx, sqlc.CreateArtifactParams{
-		SessionID: uuidToPgUUID(sessionID),
-		MessageID: msgID,
-		Type:      artifact.Type,
-		Language:  language,
-		Title:     artifact.Title,
-		Content:   artifact.Content,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create artifact for session %s: %w", sessionID, err)
-	}
-
-	saved := s.sqlcArtifactToArtifact(result)
-	s.logger.Debug("saved artifact", "session_id", sessionID, "artifact_id", saved.ID, "type", saved.Type)
-	return saved, nil
-}
-
-// GetLatestArtifact retrieves the most recent artifact for a session.
-// Returns (nil, nil) if no artifacts exist for the session.
-// Returns (nil, error) if a database error occurs.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: UUID of the session
-//
-// Returns:
-//   - *Artifact: The latest artifact, or nil if none exists
-//   - error: If a database error occurs (not for "not found")
-func (s *Store) GetLatestArtifact(ctx context.Context, sessionID uuid.UUID) (*Artifact, error) {
-	result, err := s.querier.GetLatestArtifact(ctx, uuidToPgUUID(sessionID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrArtifactNotFound // Normal state for new sessions without canvas output
-		}
-		return nil, fmt.Errorf("get latest artifact for session %s: %w", sessionID, err)
-	}
-
-	return s.sqlcArtifactToArtifact(result), nil
-}
-
-// sqlcArtifactToArtifact converts sqlc.SessionArtifact to Artifact (application type).
-func (*Store) sqlcArtifactToArtifact(sa sqlc.SessionArtifact) *Artifact {
-	artifact := &Artifact{
-		ID:             pgUUIDToUUID(sa.ID),
-		SessionID:      pgUUIDToUUID(sa.SessionID),
-		Type:           sa.Type,
-		Title:          sa.Title,
-		Content:        sa.Content,
-		Version:        int(sa.Version),
-		SequenceNumber: int(sa.SequenceNumber),
-		CreatedAt:      sa.CreatedAt.Time,
-		UpdatedAt:      sa.UpdatedAt.Time,
-	}
-
-	// Handle nullable fields
-	if sa.MessageID.Valid {
-		msgID := pgUUIDToUUID(sa.MessageID)
-		artifact.MessageID = &msgID
-	}
-	if sa.Language != nil {
-		artifact.Language = *sa.Language
-	}
-
-	return artifact
 }

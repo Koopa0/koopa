@@ -17,8 +17,8 @@ const (
 	DefaultSidebarSessionLimit = 20
 )
 
-// PagesDeps contains dependencies for the Pages handler.
-type PagesDeps struct {
+// PagesConfig contains configuration for the Pages handler.
+type PagesConfig struct {
 	Logger   *slog.Logger
 	Sessions *Sessions
 }
@@ -31,13 +31,13 @@ type Pages struct {
 
 // NewPages creates a new Pages handler.
 // logger is required (panics if nil).
-func NewPages(deps PagesDeps) *Pages {
-	if deps.Logger == nil {
+func NewPages(cfg PagesConfig) *Pages {
+	if cfg.Logger == nil {
 		panic("NewPages: logger is required")
 	}
 	return &Pages{
-		logger:   deps.Logger,
-		sessions: deps.Sessions,
+		logger:   cfg.Logger,
+		sessions: cfg.Sessions,
 	}
 }
 

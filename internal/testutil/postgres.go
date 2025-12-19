@@ -178,13 +178,9 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	// Read and execute migration files in order
-	// IMPORTANT: Keep this list in sync with db/migrations/*.up.sql files
+	// NOTE: All migrations have been consolidated into 000001_init_schema.up.sql
 	migrationFiles := []string{
 		filepath.Join(projectRoot, "db", "migrations", "000001_init_schema.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000002_create_sessions.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000003_add_branch_column.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000004_add_message_status.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000005_add_canvas_artifacts.up.sql"),
 	}
 
 	for _, migrationPath := range migrationFiles {

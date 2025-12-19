@@ -1,143 +1,92 @@
-// Package knowledge provides system knowledge indexing functionality.
-// This file implements SystemKnowledgeIndexer for managing built-in knowledge
+// Package rag provides RAG (Retrieval-Augmented Generation) functionality.
+// This file implements IndexSystemKnowledge for managing built-in knowledge
 // about Agent capabilities, Golang best practices, and architecture principles.
-package knowledge
+package rag
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
-	"time"
+
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/plugins/postgresql"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// SystemKnowledgeIndexer manages indexing of system knowledge documents.
-// It provides pre-defined knowledge about Agent capabilities, coding standards,
-// and architectural principles.
-//
-// Thread-safe: safe for concurrent use (protected by mu).
-type SystemKnowledgeIndexer struct {
-	store  *Store
-	logger *slog.Logger
-	mu     sync.Mutex // Protects IndexAll/ClearAll from concurrent calls
-}
-
-// NewSystemKnowledgeIndexer creates a new system knowledge indexer.
-func NewSystemKnowledgeIndexer(store *Store, logger *slog.Logger) *SystemKnowledgeIndexer {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	return &SystemKnowledgeIndexer{
-		store:  store,
-		logger: logger,
-	}
-}
-
-// IndexAll indexes all default system knowledge documents.
-// This method is called during application startup.
+// IndexSystemKnowledge indexes all built-in system knowledge documents.
+// Called once during application startup.
 //
 // Features:
 //   - Uses fixed document IDs (e.g., "system:golang-errors")
-//   - UPSERT behavior (updates if already exists)
+//   - UPSERT behavior via delete-then-insert (Genkit DocStore doesn't support UPSERT)
 //   - Returns count of successfully indexed documents
-//   - Thread-safe (uses mutex)
 //
 // Returns: (indexedCount, error)
-// Error: returns error if ALL documents failed to index
-func (s *SystemKnowledgeIndexer) IndexAll(ctx context.Context) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// Error: returns error if indexing fails
+func IndexSystemKnowledge(ctx context.Context, store *postgresql.DocStore, pool *pgxpool.Pool) (int, error) {
+	docs := buildSystemKnowledgeDocs()
 
-	docs := s.buildSystemKnowledgeDocs()
-
-	successCount := 0
+	// Extract document IDs for deletion (UPSERT emulation)
+	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {
-		if err := s.store.Add(ctx, doc); err != nil {
-			s.logger.Error("failed to index system knowledge",
-				"doc_id", doc.ID,
-				"error", err)
-			// Continue indexing other documents
-			continue
+		if id, ok := doc.Metadata["id"].(string); ok {
+			ids = append(ids, id)
 		}
-		successCount++
 	}
 
-	// Use Debug level - this is an internal background operation
-	s.logger.Debug("system knowledge indexed",
-		"total", len(docs),
-		"success", successCount,
-		"failed", len(docs)-successCount)
-
-	// Return error if all documents failed to prevent silent failures
-	if successCount == 0 {
-		return 0, fmt.Errorf("failed to index any system knowledge documents")
+	// Delete existing documents first (UPSERT emulation)
+	// This is necessary because Genkit DocStore.Index() only does INSERT
+	if err := deleteByIDs(ctx, pool, ids); err != nil {
+		slog.Debug("failed to delete existing system knowledge (may not exist)", "error", err)
+		// Continue - documents may not exist yet
 	}
 
-	return successCount, nil
+	if err := store.Index(ctx, docs); err != nil {
+		return 0, fmt.Errorf("failed to index system knowledge: %w", err)
+	}
+
+	slog.Debug("system knowledge indexed", "count", len(docs))
+
+	return len(docs), nil
 }
 
-// ClearAll removes all system knowledge documents.
-// Useful for testing and manual reindexing.
-// Thread-safe (uses mutex).
-func (s *SystemKnowledgeIndexer) ClearAll(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// deleteByIDs deletes documents by their IDs.
+// Used for UPSERT emulation since Genkit DocStore only supports INSERT.
+func deleteByIDs(ctx context.Context, pool *pgxpool.Pool, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
 
-	// Use Search with large TopK and source_type filter to get all system documents
-	// TopK=1000 is sufficient to cover all system knowledge documents (currently 6)
-	results, err := s.store.Search(ctx, "system knowledge",
-		WithTopK(1000),
-		WithFilter("source_type", SourceTypeSystem))
+	// Use parameterized query to prevent SQL injection
+	query := `DELETE FROM documents WHERE id = ANY($1)`
+	_, err := pool.Exec(ctx, query, ids)
 	if err != nil {
-		return fmt.Errorf("failed to search system documents: %w", err)
+		return fmt.Errorf("deleting documents: %w", err)
 	}
-
-	// Delete all found system documents
-	deletedCount := 0
-	for _, result := range results {
-		if err := s.store.Delete(ctx, result.Document.ID); err != nil {
-			s.logger.Warn("failed to delete system document",
-				"id", result.Document.ID,
-				"error", err)
-			// Continue deleting other documents
-			continue
-		}
-		deletedCount++
-	}
-
-	s.logger.Info("system knowledge cleared",
-		"deleted", deletedCount,
-		"failed", len(results)-deletedCount)
-
 	return nil
 }
 
 // buildSystemKnowledgeDocs constructs all system knowledge documents.
-func (s *SystemKnowledgeIndexer) buildSystemKnowledgeDocs() []Document {
-	var docs []Document
+func buildSystemKnowledgeDocs() []*ai.Document {
+	var docs []*ai.Document
 
 	// 1. Golang Style Guide
-	docs = append(docs, s.buildGolangStyleDocs()...)
+	docs = append(docs, buildGolangStyleDocs()...)
 
 	// 2. Agent Capabilities
-	docs = append(docs, s.buildCapabilitiesDocs()...)
+	docs = append(docs, buildCapabilitiesDocs()...)
 
 	// 3. Architecture Principles
-	docs = append(docs, s.buildArchitectureDocs()...)
+	docs = append(docs, buildArchitectureDocs()...)
 
 	return docs
 }
 
 // buildGolangStyleDocs creates Golang best practices documents.
-func (*SystemKnowledgeIndexer) buildGolangStyleDocs() []Document {
-	now := time.Now()
-
-	return []Document{
+func buildGolangStyleDocs() []*ai.Document {
+	return []*ai.Document{
 		// Document 1: Error Handling
-		{
-			ID: "system:golang-errors",
-			Content: `# Golang Error Handling Best Practices
+		ai.DocumentFromText(`# Golang Error Handling Best Practices
 
 ## Core Principles
 - Always check errors immediately after function calls
@@ -157,21 +106,17 @@ Bad:
 
 ## Security
 - Never expose internal error details to users
-- Log full errors, return sanitized messages
-`,
-			Metadata: map[string]string{
+- Log full errors, return sanitized messages`,
+			map[string]any{
+				"id":          "system:golang-errors",
 				"source_type": SourceTypeSystem,
 				"category":    "golang",
 				"topic":       "error-handling",
 				"version":     "1.0",
-			},
-			CreateAt: now,
-		},
+			}),
 
 		// Document 2: Concurrency Patterns
-		{
-			ID: "system:golang-concurrency",
-			Content: `# Golang Concurrency Best Practices
+		ai.DocumentFromText(`# Golang Concurrency Best Practices
 
 ## Goroutines
 - Always have a way to stop goroutines (context, done channel)
@@ -191,21 +136,17 @@ Bad:
 ## Mutexes
 - Keep critical sections small
 - Use RWMutex when read-heavy workload
-- Prefer channels over shared memory when possible
-`,
-			Metadata: map[string]string{
+- Prefer channels over shared memory when possible`,
+			map[string]any{
+				"id":          "system:golang-concurrency",
 				"source_type": SourceTypeSystem,
 				"category":    "golang",
 				"topic":       "concurrency",
 				"version":     "1.0",
-			},
-			CreateAt: now,
-		},
+			}),
 
 		// Document 3: Naming Conventions
-		{
-			ID: "system:golang-naming",
-			Content: `# Golang Naming Conventions
+		ai.DocumentFromText(`# Golang Naming Conventions
 
 ## Packages
 - Short, lowercase, no underscores (e.g., httputil, not http_util)
@@ -225,28 +166,22 @@ Bad:
 
 ## Exported vs Unexported
 - Exported: PascalCase (MyFunction, MyStruct)
-- Unexported: camelCase (myFunction, myStruct)
-`,
-			Metadata: map[string]string{
+- Unexported: camelCase (myFunction, myStruct)`,
+			map[string]any{
+				"id":          "system:golang-naming",
 				"source_type": SourceTypeSystem,
 				"category":    "golang",
 				"topic":       "naming",
 				"version":     "1.0",
-			},
-			CreateAt: now,
-		},
+			}),
 	}
 }
 
 // buildCapabilitiesDocs creates Agent capabilities documents.
-func (*SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
-	now := time.Now()
-
-	return []Document{
+func buildCapabilitiesDocs() []*ai.Document {
+	return []*ai.Document{
 		// Document 4: Available Tools
-		{
-			ID: "system:agent-tools",
-			Content: `# Agent Available Tools
+		ai.DocumentFromText(`# Agent Available Tools
 
 ## File Operations
 - readFile: Read file contents
@@ -272,21 +207,17 @@ func (*SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
 - File operations limited to current working directory
 - Commands requiring sudo are blocked
 - Network access: HTTP GET only (no POST/PUT)
-- Cannot access system files (/etc, /sys, etc.)
-`,
-			Metadata: map[string]string{
+- Cannot access system files (/etc, /sys, etc.)`,
+			map[string]any{
+				"id":          "system:agent-tools",
 				"source_type": SourceTypeSystem,
 				"category":    "capabilities",
 				"topic":       "available-tools",
 				"version":     "1.0",
-			},
-			CreateAt: now,
-		},
+			}),
 
 		// Document 5: Best Practices
-		{
-			ID: "system:agent-best-practices",
-			Content: `# Agent Best Practices
+		ai.DocumentFromText(`# Agent Best Practices
 
 ## When to Use Tools
 - searchHistory: When user asks "what did I say about X?"
@@ -308,28 +239,22 @@ func (*SystemKnowledgeIndexer) buildCapabilitiesDocs() []Document {
 ## Security
 - Never execute user-provided code without understanding it
 - Always validate file paths before operations
-- Sanitize command inputs to prevent injection
-`,
-			Metadata: map[string]string{
+- Sanitize command inputs to prevent injection`,
+			map[string]any{
+				"id":          "system:agent-best-practices",
 				"source_type": SourceTypeSystem,
 				"category":    "capabilities",
 				"topic":       "best-practices",
 				"version":     "1.0",
-			},
-			CreateAt: now,
-		},
+			}),
 	}
 }
 
 // buildArchitectureDocs creates architecture principles documents.
-func (*SystemKnowledgeIndexer) buildArchitectureDocs() []Document {
-	now := time.Now()
-
-	return []Document{
+func buildArchitectureDocs() []*ai.Document {
+	return []*ai.Document{
 		// Document 6: Design Principles
-		{
-			ID: "system:architecture-principles",
-			Content: `# Koopa CLI Architecture Principles
+		ai.DocumentFromText(`# Koopa CLI Architecture Principles
 
 ## Dependency Injection
 - Use Wire for compile-time DI
@@ -339,7 +264,7 @@ func (*SystemKnowledgeIndexer) buildArchitectureDocs() []Document {
 ## Package Structure
 - internal/agent: Core AI interaction logic
 - internal/tools: Tool definitions and implementations
-- internal/knowledge: Knowledge store and search
+- internal/rag: Knowledge retrieval and indexing
 - internal/session: Session persistence
 - cmd: CLI commands and user interaction
 
@@ -361,15 +286,13 @@ func (*SystemKnowledgeIndexer) buildArchitectureDocs() []Document {
 ## Concurrency
 - Use context for cancellation
 - Protect shared state with mutexes
-- Goroutines must have cleanup mechanism
-`,
-			Metadata: map[string]string{
+- Goroutines must have cleanup mechanism`,
+			map[string]any{
+				"id":          "system:architecture-principles",
 				"source_type": SourceTypeSystem,
 				"category":    "architecture",
 				"topic":       "design-principles",
 				"version":     "1.0",
-			},
-			CreateAt: now,
-		},
+			}),
 	}
 }

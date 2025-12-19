@@ -1,13 +1,18 @@
--- Rollback schema migration
+-- Koopa Database Schema v2 - Rollback
+-- Drop all tables and functions
 
-DROP TRIGGER IF EXISTS update_documents_updated_at ON documents;
-DROP FUNCTION IF EXISTS update_updated_at_column();
+-- Drop triggers first
+DROP TRIGGER IF EXISTS update_artifact_updated_at ON artifact;
+DROP TRIGGER IF EXISTS update_message_updated_at ON message;
+DROP TRIGGER IF EXISTS update_sessions_updated_at ON sessions;
 
-DROP INDEX IF EXISTS metadata_session_id_idx;
-DROP INDEX IF EXISTS metadata_source_type_idx;
-DROP INDEX IF EXISTS metadata_gin_idx;
-DROP INDEX IF EXISTS embedding_hnsw_idx;
-
+-- Drop tables (order matters due to foreign keys)
+DROP TABLE IF EXISTS artifact;
+DROP TABLE IF EXISTS message;
+DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS documents;
 
-DROP EXTENSION IF EXISTS vector;
+-- Drop function
+DROP FUNCTION IF EXISTS update_updated_at_column();
+
+-- Note: pgvector extension is NOT dropped as it may be shared

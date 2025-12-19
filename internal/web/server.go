@@ -23,8 +23,8 @@ type Server struct {
 	isDev    bool
 }
 
-// ServerDeps contains dependencies for creating a GenUI server.
-type ServerDeps struct {
+// ServerConfig contains configuration for creating a GenUI server.
+type ServerConfig struct {
 	Logger       *slog.Logger
 	Genkit       *genkit.Genkit // Optional: nil disables AI title generation (falls back to truncation)
 	ChatFlow     *chat.Flow     // Optional: nil enables simulation mode
@@ -35,17 +35,17 @@ type ServerDeps struct {
 }
 
 // NewServer creates a new GenUI server with all routes configured.
-// If deps.ChatFlow is nil, the chat handler operates in simulation mode.
-// Returns an error if required dependencies are missing.
-func NewServer(deps ServerDeps) (*Server, error) {
-	// Validate required dependencies
-	if deps.SessionStore == nil {
+// If cfg.ChatFlow is nil, the chat handler operates in simulation mode.
+// Returns an error if required configuration is missing.
+func NewServer(cfg ServerConfig) (*Server, error) {
+	// Validate required configuration
+	if cfg.SessionStore == nil {
 		return nil, errors.New("SessionStore is required")
 	}
-	if len(deps.CSRFSecret) < 32 {
+	if len(cfg.CSRFSecret) < 32 {
 		return nil, errors.New("CSRFSecret must be at least 32 bytes")
 	}
-	if deps.Config == nil {
+	if cfg.Config == nil {
 		return nil, errors.New("config is required")
 	}
 
@@ -53,30 +53,30 @@ func NewServer(deps ServerDeps) (*Server, error) {
 
 	// Initialize session handler
 	// isDev enables HTTP cookies (Secure=false) for local development
-	sessions := handlers.NewSessions(deps.SessionStore, deps.CSRFSecret, deps.IsDev)
+	sessions := handlers.NewSessions(cfg.SessionStore, cfg.CSRFSecret, cfg.IsDev)
 
 	s := &Server{
 		mux:      mux,
-		logger:   deps.Logger,
+		logger:   cfg.Logger,
 		sessions: sessions,
-		isDev:    deps.IsDev,
+		isDev:    cfg.IsDev,
 	}
 
 	// Initialize health handler
 	health := handlers.NewHealth()
 
 	// Initialize handlers
-	pages := handlers.NewPages(handlers.PagesDeps{
-		Logger:   deps.Logger,
+	pages := handlers.NewPages(handlers.PagesConfig{
+		Logger:   cfg.Logger,
 		Sessions: sessions,
 	})
-	chatHandler := handlers.NewChat(handlers.ChatDeps{
-		Logger:   deps.Logger,
-		Genkit:   deps.Genkit,
-		Flow:     deps.ChatFlow,
+	chatHandler := handlers.NewChat(handlers.ChatConfig{
+		Logger:   cfg.Logger,
+		Genkit:   cfg.Genkit,
+		Flow:     cfg.ChatFlow,
 		Sessions: sessions,
 	})
-	modeHandler := handlers.NewMode(handlers.ModeDeps{
+	modeHandler := handlers.NewMode(handlers.ModeConfig{
 		Sessions: sessions,
 	})
 	// TODO: Implement Settings and Search handlers

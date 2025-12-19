@@ -17,7 +17,7 @@ func TestMode_Toggle_ChatMode(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -53,7 +53,7 @@ func TestMode_Toggle_CanvasMode(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -88,7 +88,7 @@ func TestMode_Toggle_ModeFromQueryParam(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -121,7 +121,7 @@ func TestMode_Toggle_CSRFValidation_HTMX(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -181,7 +181,7 @@ func TestMode_Toggle_CSRFFromQueryParam(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -206,7 +206,7 @@ func TestMode_Toggle_NonHTMX_Redirect(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -239,7 +239,7 @@ func TestMode_Toggle_NoSession_CreatesOne(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// HTMX request without session cookie
 	form := url.Values{}
@@ -274,7 +274,7 @@ func TestMode_Toggle_InvalidFormData(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Send malformed form data that ParseForm will reject
 	req := httptest.NewRequest(http.MethodPost, "/genui/mode", strings.NewReader("%invalid"))
@@ -292,7 +292,7 @@ func TestMode_Toggle_InvalidMode_DefaultsToChat(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -326,7 +326,7 @@ func TestMode_RegisterRoutes(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 	mux := http.NewServeMux()
 
 	mode.RegisterRoutes(mux)
@@ -349,7 +349,7 @@ func TestMode_CanvasToggle_Enable(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session with canvas mode initially OFF
 	ctx := testContext(t)
@@ -387,7 +387,7 @@ func TestMode_CanvasToggle_Disable(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session with canvas mode initially ON
 	ctx := testContext(t)
@@ -424,7 +424,7 @@ func TestMode_CanvasToggle_CSRFValidation(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -483,7 +483,7 @@ func TestMode_CanvasToggle_NonHTMX_Redirect(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -515,7 +515,7 @@ func TestMode_CanvasToggle_NoSession_Returns400(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// HTMX request without session cookie
 	form := url.Values{}
@@ -537,7 +537,7 @@ func TestMode_CanvasToggle_InvalidFormData(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Send malformed form data that ParseForm will reject
 	req := httptest.NewRequest(http.MethodPost, "/genui/canvas-toggle", strings.NewReader("%invalid"))
@@ -555,7 +555,7 @@ func TestMode_CanvasToggle_SessionNotFound(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Use a non-existent session ID
 	fakeSessionID := uuid.New()
@@ -582,7 +582,7 @@ func TestMode_CanvasToggle_RegisterRoutes(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 	mux := http.NewServeMux()
 
 	mode.RegisterRoutes(mux)
@@ -605,7 +605,7 @@ func TestMode_CanvasToggle_DatabasePersistence(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session
 	ctx := testContext(t)
@@ -657,7 +657,7 @@ func TestMode_CanvasToggle_OOBScriptOnlyWhenDisabling(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	ctx := testContext(t)
 
@@ -715,7 +715,7 @@ func TestMode_CanvasToggle_UIVisualState_Enabled(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session with canvas mode OFF (will be toggled ON)
 	ctx := testContext(t)
@@ -769,7 +769,7 @@ func TestMode_CanvasToggle_UIVisualState_Disabled(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session with canvas mode ON (will be toggled OFF)
 	ctx := testContext(t)
@@ -820,7 +820,7 @@ func TestMode_CanvasToggle_UIVisualState_HTMXAttributes(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	ctx := testContext(t)
 	sess, err := store.CreateSession(ctx, "Test Session", "", "")
@@ -869,7 +869,7 @@ func TestMode_CanvasToggle_UIVisualState_ToggleCycle(t *testing.T) {
 
 	store := newTestSessionStore(t)
 	sessions := NewSessions(store, testSecret, true)
-	mode := NewMode(ModeDeps{Sessions: sessions})
+	mode := NewMode(ModeConfig{Sessions: sessions})
 
 	// Create session starting with canvas OFF
 	ctx := testContext(t)

@@ -13,7 +13,6 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/koopa0/koopa-cli/internal/agent"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
 )
 
@@ -28,7 +27,7 @@ func BenchmarkStore_LoadHistory(b *testing.B) {
 	store, session, cleanup := setupBenchmarkSession(b, ctx, 100) // 100 messages
 	defer cleanup()
 
-	sessionID := agent.SessionID(session.ID.String())
+	sessionID := session.ID
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -45,7 +44,7 @@ func BenchmarkStore_LoadHistory_SmallSession(b *testing.B) {
 	store, session, cleanup := setupBenchmarkSession(b, ctx, 10) // 10 messages
 	defer cleanup()
 
-	sessionID := agent.SessionID(session.ID.String())
+	sessionID := session.ID
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -61,7 +60,7 @@ func BenchmarkStore_LoadHistory_LargeSession(b *testing.B) {
 	store, session, cleanup := setupBenchmarkSession(b, ctx, 500) // 500 messages
 	defer cleanup()
 
-	sessionID := agent.SessionID(session.ID.String())
+	sessionID := session.ID
 
 	b.ResetTimer()
 	for b.Loop() {

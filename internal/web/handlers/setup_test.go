@@ -18,12 +18,11 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/google/uuid"
 
 	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/knowledge"
-	"github.com/koopa0/koopa-cli/internal/rag"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
 	"github.com/koopa0/koopa-cli/internal/sqlc"
@@ -35,9 +34,9 @@ import (
 // This is the handler-specific equivalent of testutil.AgentTestFramework.
 type TestFramework struct {
 	// Handler dependencies
-	Flow           *chat.Flow
-	SessionStore   *session.Store
-	KnowledgeStore *knowledge.Store
+	Flow         *chat.Flow
+	SessionStore *session.Store
+	DocStore     *postgresql.DocStore // For indexing documents in tests
 
 	// Infrastructure
 	DBContainer *testutil.TestDBContainer
@@ -80,11 +79,12 @@ func SetupTest(t *testing.T) (*TestFramework, func()) {
 
 	// Layer 1: Use testutil primitives
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
-	aiSetup := testutil.SetupGoogleAI(t)
+
+	// Setup RAG with Genkit PostgreSQL plugin
+	ragSetup := testutil.SetupRAG(t, dbContainer.Pool)
 
 	// Layer 2: Build handler-specific dependencies
 	queries := sqlc.New(dbContainer.Pool)
-	knowledgeStore := knowledge.New(queries, aiSetup.Embedder, aiSetup.Logger)
 	sessionStore := session.New(queries, dbContainer.Pool, slog.Default())
 
 	cfg := &config.Config{
@@ -110,50 +110,52 @@ func SetupTest(t *testing.T) (*TestFramework, func()) {
 		t.Fatalf("Failed to create test session: %v", err)
 	}
 
-	// Create retriever (required for chat agent)
-	retriever := rag.New(knowledgeStore)
-	_ = retriever.DefineConversation(aiSetup.Genkit, "handler-test-retriever")
-
 	// Create toolsets
 	pathValidator, err := security.NewPath([]string{os.TempDir()})
 	if err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to create path validator: %v", err)
 	}
-	fileToolset, err := tools.NewFileToolset(pathValidator, slog.Default())
+
+	// Register file tools
+	fileTools, err := tools.RegisterFileTools(ragSetup.Genkit, pathValidator, slog.Default())
 	if err != nil {
 		dbCleanup()
-		t.Fatalf("Failed to create file toolset: %v", err)
+		t.Fatalf("Failed to register file tools: %v", err)
 	}
 
 	// Create Chat Agent (needed to get Flow)
 	chatAgent, err := chat.New(chat.Deps{
-		Config:         cfg,
-		Genkit:         aiSetup.Genkit,
-		Retriever:      retriever,
-		SessionStore:   sessionStore,
-		KnowledgeStore: knowledgeStore,
-		Logger:         slog.Default(),
-		Toolsets:       []tools.Toolset{fileToolset},
+		Config:       cfg,
+		Genkit:       ragSetup.Genkit,
+		Retriever:    ragSetup.Retriever,
+		SessionStore: sessionStore,
+		Logger:       slog.Default(),
+		Tools:        fileTools,
 	})
 	if err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to create chat agent: %v", err)
 	}
 
-	// Get Flow singleton (this is what handlers need)
-	flow := chat.GetFlow(aiSetup.Genkit, chatAgent)
+	// Initialize Flow singleton (reset first for test isolation)
+	chat.ResetFlowForTesting()
+	flow, err := chat.InitFlow(ragSetup.Genkit, chatAgent)
+	if err != nil {
+		dbCleanup()
+		t.Fatalf("Failed to init chat flow: %v", err)
+	}
 
 	framework := &TestFramework{
-		Flow:           flow,
-		SessionStore:   sessionStore,
-		KnowledgeStore: knowledgeStore,
-		DBContainer:    dbContainer,
-		Genkit:         aiSetup.Genkit,
-		Embedder:       aiSetup.Embedder,
-		Config:         cfg,
-		SessionID:      testSession.ID,
-		cleanup:        dbCleanup,
+		Flow:         flow,
+		SessionStore: sessionStore,
+		DocStore:     ragSetup.DocStore,
+		DBContainer:  dbContainer,
+		Genkit:       ragSetup.Genkit,
+		Embedder:     ragSetup.Embedder,
+		Config:       cfg,
+		SessionID:    testSession.ID,
+		cleanup:      dbCleanup,
 	}
 
 	return framework, dbCleanup

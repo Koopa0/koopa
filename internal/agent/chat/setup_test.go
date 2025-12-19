@@ -19,11 +19,11 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/google/uuid"
 
 	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/rag"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
@@ -36,13 +36,12 @@ import (
 // This is the chat-specific equivalent of testutil.AgentTestFramework.
 type TestFramework struct {
 	// Core components
-	Agent          *chat.Chat
-	Flow           *chat.Flow
-	KnowledgeStore *knowledge.Store
-	SystemIndexer  *knowledge.SystemKnowledgeIndexer
-	SessionStore   *session.Store
-	Retriever      *rag.Retriever
-	Config         *config.Config
+	Agent        *chat.Chat
+	Flow         *chat.Flow
+	DocStore     *postgresql.DocStore // For indexing documents in tests
+	Retriever    ai.Retriever         // Genkit Retriever for RAG
+	SessionStore *session.Store
+	Config       *config.Config
 
 	// Infrastructure
 	DBContainer *testutil.TestDBContainer
@@ -70,7 +69,8 @@ type TestFramework struct {
 //	    framework, cleanup := SetupTest(t)
 //	    defer cleanup()
 //
-//	    resp, err := framework.Agent.Execute(ctx, "test query")
+//	    ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+//	    resp, err := framework.Agent.Execute(ctx, sessionID, branch, "test query")
 //	}
 func SetupTest(t *testing.T) (*TestFramework, func()) {
 	t.Helper()
@@ -84,13 +84,13 @@ func SetupTest(t *testing.T) (*TestFramework, func()) {
 
 	// Layer 1: Use testutil primitives
 	dbContainer, dbCleanup := testutil.SetupTestDB(t)
-	aiSetup := testutil.SetupGoogleAI(t)
+
+	// Setup RAG with Genkit PostgreSQL plugin
+	ragSetup := testutil.SetupRAG(t, dbContainer.Pool)
 
 	// Layer 2: Build chat-specific dependencies
 	queries := sqlc.New(dbContainer.Pool)
-	knowledgeStore := knowledge.New(queries, aiSetup.Embedder, aiSetup.Logger)
 	sessionStore := session.New(queries, dbContainer.Pool, slog.Default())
-	systemIndexer := knowledge.NewSystemKnowledgeIndexer(knowledgeStore, slog.Default())
 
 	cfg := &config.Config{
 		ModelName:        "googleai/gemini-2.5-flash",
@@ -115,56 +115,63 @@ func SetupTest(t *testing.T) (*TestFramework, func()) {
 		t.Fatalf("Failed to create test session: %v", err)
 	}
 
-	// Create retriever
-	retriever := rag.New(knowledgeStore)
-	if err := retriever.DefineConversation(aiSetup.Genkit, "chat-test-retriever"); err != nil {
-		dbCleanup()
-		t.Fatalf("Failed to define retriever: %v", err)
-	}
-
 	// Create toolsets
 	pathValidator, err := security.NewPath([]string{os.TempDir()})
 	if err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to create path validator: %v", err)
 	}
-	fileToolset, err := tools.NewFileToolset(pathValidator, slog.Default())
+
+	// Create file tools instance
+	fileToolset, err := tools.NewFileTools(pathValidator, slog.Default())
 	if err != nil {
 		dbCleanup()
-		t.Fatalf("Failed to create file toolset: %v", err)
+		t.Fatalf("Failed to create file tools: %v", err)
+	}
+
+	// Register file tools with Genkit
+	fileTools, err := tools.RegisterFileTools(ragSetup.Genkit, fileToolset)
+	if err != nil {
+		dbCleanup()
+		t.Fatalf("Failed to register file tools: %v", err)
 	}
 
 	// Create Chat Agent
-	chatAgent, err := chat.New(chat.Deps{
-		Config:         cfg,
-		Genkit:         aiSetup.Genkit,
-		Retriever:      retriever,
-		SessionStore:   sessionStore,
-		KnowledgeStore: knowledgeStore,
-		Logger:         slog.Default(),
-		Toolsets:       []tools.Toolset{fileToolset},
+	chatAgent, err := chat.New(chat.Config{
+		Genkit:       ragSetup.Genkit,
+		Retriever:    ragSetup.Retriever,
+		SessionStore: sessionStore,
+		Logger:       slog.Default(),
+		Tools:        fileTools,
+		MaxTurns:     cfg.MaxTurns,
+		RAGTopK:      cfg.RAGTopK,
+		Language:     cfg.Language,
 	})
 	if err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to create chat agent: %v", err)
 	}
 
-	// Get Flow singleton
-	flow := chat.GetFlow(aiSetup.Genkit, chatAgent)
+	// Initialize Flow singleton (reset first for test isolation)
+	chat.ResetFlowForTesting()
+	flow, err := chat.InitFlow(ragSetup.Genkit, chatAgent)
+	if err != nil {
+		dbCleanup()
+		t.Fatalf("Failed to init chat flow: %v", err)
+	}
 
 	framework := &TestFramework{
-		Agent:          chatAgent,
-		Flow:           flow,
-		KnowledgeStore: knowledgeStore,
-		SystemIndexer:  systemIndexer,
-		SessionStore:   sessionStore,
-		Retriever:      retriever,
-		Config:         cfg,
-		DBContainer:    dbContainer,
-		Genkit:         aiSetup.Genkit,
-		Embedder:       aiSetup.Embedder,
-		SessionID:      testSession.ID,
-		cleanup:        dbCleanup,
+		Agent:        chatAgent,
+		Flow:         flow,
+		DocStore:     ragSetup.DocStore,
+		Retriever:    ragSetup.Retriever,
+		SessionStore: sessionStore,
+		Config:       cfg,
+		DBContainer:  dbContainer,
+		Genkit:       ragSetup.Genkit,
+		Embedder:     ragSetup.Embedder,
+		SessionID:    testSession.ID,
+		cleanup:      dbCleanup,
 	}
 
 	return framework, dbCleanup
@@ -181,13 +188,28 @@ func (f *TestFramework) CreateTestSession(t *testing.T, name string) uuid.UUID {
 	return sess.ID
 }
 
-// IndexSystemKnowledge indexes system knowledge for RAG testing.
-func (f *TestFramework) IndexSystemKnowledge(t *testing.T) {
+// newInvocationContext creates a simple invocation context for integration tests.
+// This helper exists to maintain test readability after removing agent.InvocationContext.
+func newInvocationContext(ctx context.Context, sessionID uuid.UUID) (context.Context, uuid.UUID, string) {
+	return ctx, sessionID, "main"
+}
+
+// IndexDocument indexes a document using the Genkit DocStore.
+// This is a test helper for adding documents to the RAG knowledge base.
+func (f *TestFramework) IndexDocument(t *testing.T, content string, metadata map[string]any) {
 	t.Helper()
 	ctx := context.Background()
-	count, err := f.SystemIndexer.IndexAll(ctx)
-	if err != nil {
-		t.Fatalf("Failed to index system knowledge: %v", err)
+
+	// Ensure source_type is set
+	if metadata == nil {
+		metadata = make(map[string]any)
 	}
-	t.Logf("Indexed %d system knowledge documents", count)
+	if _, ok := metadata["source_type"]; !ok {
+		metadata["source_type"] = rag.SourceTypeFile
+	}
+
+	doc := ai.DocumentFromText(content, metadata)
+	if err := f.DocStore.Index(ctx, []*ai.Document{doc}); err != nil {
+		t.Fatalf("Failed to index document: %v", err)
+	}
 }

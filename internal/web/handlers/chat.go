@@ -37,8 +37,8 @@ type SSEWriter interface {
 // without properly closing the connection.
 const SSETimeout = 5 * time.Minute
 
-// ChatDeps contains dependencies for the Chat handler.
-type ChatDeps struct {
+// ChatConfig contains configuration for the Chat handler.
+type ChatConfig struct {
 	Logger      *slog.Logger
 	Genkit      *genkit.Genkit                                 // Optional: nil disables AI title generation
 	Flow        *chat.Flow                                     // Optional: nil enables simulation mode
@@ -66,19 +66,19 @@ func defaultSSEWriterFn(w http.ResponseWriter) (SSEWriter, error) {
 // logger is required (panics if nil).
 // flow is optional - if nil, simulation mode is used.
 // genkit is optional - if nil, AI title generation falls back to truncation.
-func NewChat(deps ChatDeps) *Chat {
-	if deps.Logger == nil {
+func NewChat(cfg ChatConfig) *Chat {
+	if cfg.Logger == nil {
 		panic("NewChat: logger is required")
 	}
-	sseWriterFn := deps.SSEWriterFn
+	sseWriterFn := cfg.SSEWriterFn
 	if sseWriterFn == nil {
 		sseWriterFn = defaultSSEWriterFn
 	}
 	return &Chat{
-		logger:      deps.Logger,
-		genkit:      deps.Genkit,
-		flow:        deps.Flow,
-		sessions:    deps.Sessions,
+		logger:      cfg.Logger,
+		genkit:      cfg.Genkit,
+		flow:        cfg.Flow,
+		sessions:    cfg.Sessions,
 		sseWriterFn: sseWriterFn,
 	}
 }
@@ -267,7 +267,7 @@ func (s *streamState) processChunk(ctx context.Context, h *Chat, w SSEWriter, te
 
 	// 3. Send artifact to canvas panel
 	artifactComp := component.ArtifactContent(component.ArtifactContentProps{
-		Type:     artifact.Type,
+		Type:     string(artifact.Type),
 		Language: artifact.Language,
 		Title:    artifact.Title,
 		Content:  artifact.Content,

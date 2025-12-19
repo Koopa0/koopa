@@ -23,11 +23,11 @@ import (
 
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/koopa-cli/internal/agent/chat"
 	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/knowledge"
 	"github.com/koopa0/koopa-cli/internal/rag"
 	"github.com/koopa0/koopa-cli/internal/security"
 	"github.com/koopa0/koopa-cli/internal/session"
@@ -105,27 +105,65 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	}
 	promptsDir := filepath.Join(projectRoot, "prompts")
 
-	g := genkit.Init(ctx,
-		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithPromptDir(promptsDir))
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
-
-	cfg := &config.Config{
-		ModelName:     "gemini-2.0-flash",
-		EmbedderModel: "text-embedding-004",
-	}
-
+	// Create database pool
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		cancel()
 		t.Fatalf("Failed to connect to database: %v", err)
 	}
 
+	// Create PostgreSQL engine for Genkit
+	pEngine, err := postgresql.NewPostgresEngine(ctx,
+		postgresql.WithPool(pool),
+		postgresql.WithDatabase("koopa_test"),
+	)
+	if err != nil {
+		pool.Close()
+		cancel()
+		t.Fatalf("Failed to create PostgresEngine: %v", err)
+	}
+
+	postgres := &postgresql.Postgres{Engine: pEngine}
+
+	// Initialize Genkit with both GoogleAI and PostgreSQL plugins
+	g := genkit.Init(ctx,
+		genkit.WithPlugins(&googlegenai.GoogleAI{}, postgres),
+		genkit.WithPromptDir(promptsDir))
+
+	if g == nil {
+		pool.Close()
+		cancel()
+		t.Fatal("Failed to initialize Genkit")
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	cfg := &config.Config{
+		ModelName:     "gemini-2.0-flash",
+		EmbedderModel: "text-embedding-004",
+		RAGTopK:       5,
+		MaxTurns:      10,
+	}
+
+	// Create embedder
+	embedder := googlegenai.GoogleAIEmbedder(g, cfg.EmbedderModel)
+	if embedder == nil {
+		pool.Close()
+		cancel()
+		t.Fatalf("Failed to create embedder for model %q", cfg.EmbedderModel)
+	}
+
+	// Create DocStore and Retriever using shared config factory
+	ragCfg := rag.NewDocStoreConfig(embedder)
+	_, retriever, err := postgresql.DefineRetriever(ctx, g, postgres, ragCfg)
+	if err != nil {
+		pool.Close()
+		cancel()
+		t.Fatalf("Failed to define retriever: %v", err)
+	}
+
 	queries := sqlc.New(pool)
 	sessionStore := session.New(queries, pool, logger)
-	knowledgeStore := knowledge.New(queries, googlegenai.GoogleAIEmbedder(g, cfg.EmbedderModel), logger)
-	retriever := rag.New(knowledgeStore)
 
 	pathValidator, err := security.NewPath([]string{"."})
 	if err != nil {
@@ -134,37 +172,40 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 		t.Fatalf("Failed to create path validator: %v", err)
 	}
 
-	fileToolset, err := tools.NewFileToolset(pathValidator, logger)
+	// Register file tools
+	fileTools, err := tools.RegisterFileTools(g, pathValidator, logger)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create file toolset: %v", err)
+		t.Fatalf("Failed to register file tools: %v", err)
 	}
 
 	cmdValidator := security.NewCommand()
 	envValidator := security.NewEnv()
-	systemToolset, err := tools.NewSystemToolset(cmdValidator, envValidator, logger)
+	systemTools, err := tools.RegisterSystemTools(g, cmdValidator, envValidator, logger)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create system toolset: %v", err)
+		t.Fatalf("Failed to register system tools: %v", err)
 	}
 
-	knowledgeToolset, err := tools.NewKnowledgeToolset(knowledgeStore, logger)
+	knowledgeTools, err := tools.RegisterKnowledgeTools(g, retriever, logger)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create knowledge toolset: %v", err)
+		t.Fatalf("Failed to register knowledge tools: %v", err)
 	}
+
+	// Combine all tools
+	allTools := append(append(fileTools, systemTools...), knowledgeTools...)
 
 	chatAgent, err := chat.New(chat.Deps{
-		Config:         cfg,
-		Genkit:         g,
-		Retriever:      retriever,
-		SessionStore:   sessionStore,
-		KnowledgeStore: knowledgeStore,
-		Logger:         logger,
-		Toolsets:       []tools.Toolset{fileToolset, systemToolset, knowledgeToolset},
+		Config:       cfg,
+		Genkit:       g,
+		Retriever:    retriever,
+		SessionStore: sessionStore,
+		Logger:       logger,
+		Tools:        allTools,
 	})
 	if err != nil {
 		pool.Close()
@@ -172,7 +213,14 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 		t.Fatalf("Failed to create chat agent: %v", err)
 	}
 
-	flow := chat.GetFlow(g, chatAgent)
+	// Initialize Flow singleton (reset first for test isolation)
+	chat.ResetFlowForTesting()
+	flow, err := chat.InitFlow(g, chatAgent)
+	if err != nil {
+		pool.Close()
+		cancel()
+		t.Fatalf("Failed to init chat flow: %v", err)
+	}
 
 	setup := &chatFlowSetup{
 		Flow:         flow,

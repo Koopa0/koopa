@@ -8,24 +8,24 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server wraps the MCP SDK server and Koopa's Toolsets.
+// Server wraps the MCP SDK server and Koopa's tool handlers.
 // It exposes Koopa's tools via the Model Context Protocol.
 type Server struct {
-	mcpServer      *mcp.Server
-	fileToolset    *tools.FileToolset
-	systemToolset  *tools.SystemToolset
-	networkToolset *tools.NetworkToolset
-	name           string
-	version        string
+	mcpServer    *mcp.Server
+	fileTools    *tools.FileTools
+	systemTools  *tools.SystemTools
+	networkTools *tools.NetworkTools
+	name         string
+	version      string
 }
 
 // Config holds MCP server configuration.
 type Config struct {
-	Name           string
-	Version        string
-	FileToolset    *tools.FileToolset
-	SystemToolset  *tools.SystemToolset
-	NetworkToolset *tools.NetworkToolset
+	Name         string
+	Version      string
+	FileTools    *tools.FileTools
+	SystemTools  *tools.SystemTools
+	NetworkTools *tools.NetworkTools
 }
 
 // NewServer creates a new MCP server with the given configuration.
@@ -37,14 +37,14 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.Version == "" {
 		return nil, fmt.Errorf("server version is required")
 	}
-	if cfg.FileToolset == nil {
-		return nil, fmt.Errorf("file toolset is required")
+	if cfg.FileTools == nil {
+		return nil, fmt.Errorf("file tools is required")
 	}
-	if cfg.SystemToolset == nil {
-		return nil, fmt.Errorf("system toolset is required")
+	if cfg.SystemTools == nil {
+		return nil, fmt.Errorf("system tools is required")
 	}
-	if cfg.NetworkToolset == nil {
-		return nil, fmt.Errorf("network toolset is required")
+	if cfg.NetworkTools == nil {
+		return nil, fmt.Errorf("network tools is required")
 	}
 
 	// Create MCP server (using official SDK)
@@ -54,12 +54,12 @@ func NewServer(cfg Config) (*Server, error) {
 	}, nil)
 
 	s := &Server{
-		mcpServer:      mcpServer,
-		fileToolset:    cfg.FileToolset,
-		systemToolset:  cfg.SystemToolset,
-		networkToolset: cfg.NetworkToolset,
-		name:           cfg.Name,
-		version:        cfg.Version,
+		mcpServer:    mcpServer,
+		fileTools:    cfg.FileTools,
+		systemTools:  cfg.SystemTools,
+		networkTools: cfg.NetworkTools,
+		name:         cfg.Name,
+		version:      cfg.Version,
 	}
 
 	// Register all tools

@@ -17,7 +17,7 @@ func TestChat_Send(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{Logger: logger}) // nil flow = simulation mode, nil sessions = no CSRF
+	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode, nil sessions = no CSRF
 
 	tests := []struct {
 		name       string
@@ -87,7 +87,7 @@ func TestChat_Send_XSSPrevention(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{Logger: logger}) // nil flow = simulation mode
+	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
 
 	// XSS payloads that should be escaped by templ.
 	// templ uses HTML entity encoding, so we verify the raw HTML tag doesn't appear.
@@ -159,7 +159,7 @@ func TestChat_Stream_ParameterValidation(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{Logger: logger}) // nil flow = simulation mode
+	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
 
 	// In simulation mode (nil sessions), query is fetched from DB, so we only validate msgId and session_id.
 	// When sessions != nil, query comes from DB via GetUserMessageBefore.
@@ -216,7 +216,7 @@ func TestNewChat(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{Logger: logger}) // nil flow = simulation mode
+	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
 
 	if handler == nil {
 		t.Fatal("NewChat returned nil")
@@ -232,7 +232,7 @@ func TestNewChat_NilLogger_Panics(t *testing.T) {
 		}
 	}()
 
-	handlers.NewChat(handlers.ChatDeps{})
+	handlers.NewChat(handlers.ChatConfig{})
 }
 
 func TestNewChat_NilFlow_SimulationMode(t *testing.T) {
@@ -240,7 +240,7 @@ func TestNewChat_NilFlow_SimulationMode(t *testing.T) {
 
 	logger := slog.Default()
 	// nil flow should work (simulation mode)
-	handler := handlers.NewChat(handlers.ChatDeps{Logger: logger})
+	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger})
 
 	if handler == nil {
 		t.Fatal("NewChat with nil flow should work (simulation mode)")
@@ -251,7 +251,7 @@ func TestChat_Stream_SimulationMode(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{Logger: logger}) // nil flow = simulation mode, nil sessions = no DB
+	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode, nil sessions = no DB
 
 	// In simulation mode, query is fetched from a fixed placeholder since no DB is available.
 	// No query parameter is needed in URL - it comes from DB in production.
@@ -304,7 +304,7 @@ func TestChat_Stream_SimulationMode_NoXSSInOutput(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{Logger: logger}) // nil flow = simulation mode
+	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
 
 	// In simulation mode, query comes from DB (not URL), so XSS in URL params is not relevant.
 	// This test verifies that the simulation response itself doesn't contain XSS.
@@ -354,7 +354,7 @@ func TestChat_SSEWriterInjection(t *testing.T) {
 
 	// Create handler with injected SSE writer factory
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: logger,
 		// Flow: nil = simulation mode
 		// Sessions: nil = no DB, uses placeholder query
@@ -434,7 +434,7 @@ func TestChat_SSE_SidebarRefreshBeforeWriteDone(t *testing.T) {
 
 	// Create handler with injected SSE writer factory
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: logger,
 		// Flow: nil = simulation mode (maybeGenerateTitle will be called)
 		// Sessions: nil = no DB, but simulation mode still calls maybeGenerateTitle
@@ -496,7 +496,7 @@ func TestChat_SSEWriterFactory_NilMeansDefault(t *testing.T) {
 
 	// Create handler WITHOUT injected SSE writer (nil = use default)
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatDeps{
+	handler := handlers.NewChat(handlers.ChatConfig{
 		Logger: logger,
 		// SSEWriterFn: nil = use default sse.NewWriter
 		// Sessions: nil = no DB, uses placeholder query

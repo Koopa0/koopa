@@ -52,70 +52,30 @@ func (s *Server) registerSystemTools() error {
 // CurrentTime handles the currentTime MCP tool call.
 func (s *Server) CurrentTime(ctx context.Context, _ *mcp.CallToolRequest, input tools.CurrentTimeInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
-	output, err := s.systemToolset.CurrentTime(toolCtx, input)
+	result, err := s.systemTools.CurrentTime(toolCtx, input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("currentTime failed: %w", err)
 	}
-
-	// CurrentTime returns a direct output, not Result
-	text := fmt.Sprintf("Current time: %s (Unix: %d, ISO8601: %s)",
-		output.Time, output.Timestamp, output.ISO8601)
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: text}},
-	}, nil, nil
+	return resultToMCP(result), nil, nil
 }
 
 // ExecuteCommand handles the executeCommand MCP tool call.
 func (s *Server) ExecuteCommand(ctx context.Context, _ *mcp.CallToolRequest, input tools.ExecuteCommandInput) (*mcp.CallToolResult, any, error) {
-	// Create ToolContext with the MCP context for cancellation support
 	toolCtx := &ai.ToolContext{Context: ctx}
-	output, err := s.systemToolset.ExecuteCommand(toolCtx, input)
+	result, err := s.systemTools.ExecuteCommand(toolCtx, input)
 	if err != nil {
-		// MCP protocol: tool errors are returned via IsError field, not Go error.
-		// The nil Go error allows the MCP server to properly serialize the response.
-		//nolint:nilerr // MCP protocol returns tool errors via IsError, not Go error
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-			IsError: true,
-		}, nil, nil
+		// Only infrastructure errors (context cancellation) return Go error
+		return nil, nil, fmt.Errorf("executeCommand failed: %w", err)
 	}
-
-	// Format output
-	text := output.Output
-	if !output.Success {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: text}},
-			IsError: true,
-		}, nil, nil
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: text}},
-	}, nil, nil
+	return resultToMCP(result), nil, nil
 }
 
 // GetEnv handles the getEnv MCP tool call.
 func (s *Server) GetEnv(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetEnvInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
-	output, err := s.systemToolset.GetEnv(toolCtx, input)
+	result, err := s.systemTools.GetEnv(toolCtx, input)
 	if err != nil {
-		// MCP protocol: tool errors are returned via IsError field, not Go error.
-		//nolint:nilerr // MCP protocol returns tool errors via IsError, not Go error
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-			IsError: true,
-		}, nil, nil
+		return nil, nil, fmt.Errorf("getEnv failed: %w", err)
 	}
-
-	var text string
-	if output.IsSet {
-		text = fmt.Sprintf("%s=%s", output.Key, output.Value)
-	} else {
-		text = fmt.Sprintf("%s is not set", output.Key)
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: text}},
-	}, nil, nil
+	return resultToMCP(result), nil, nil
 }

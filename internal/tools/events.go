@@ -4,22 +4,20 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// WithEvents wraps a tool execution function to emit lifecycle events.
-// Per genkit-master: Wrap the function BEFORE passing to genkit.DefineTool().
-// Per architecture-master: Retrieve emitter from context for per-request binding.
+// WithEvents wraps a typed tool handler to emit lifecycle events.
+// This generic version works directly with genkit.DefineTool().
 //
 // The wrapper:
 //  1. Retrieves emitter from context (may be nil for non-streaming calls)
 //  2. Emits OnToolStart before execution
-//  3. Calls the original execution function
+//  3. Calls the original handler function
 //  4. Emits OnToolComplete or OnToolError after execution
 //
 // If no emitter is in context, the wrapper simply passes through to the original function.
 // This allows graceful degradation for non-streaming code paths.
-func WithEvents(name string, execute func(ctx *ai.ToolContext, input any) (any, error)) func(ctx *ai.ToolContext, input any) (any, error) {
-	return func(ctx *ai.ToolContext, input any) (any, error) {
+func WithEvents[In, Out any](name string, fn func(*ai.ToolContext, In) (Out, error)) func(*ai.ToolContext, In) (Out, error) {
+	return func(ctx *ai.ToolContext, input In) (Out, error) {
 		// Retrieve emitter from context (may be nil for non-streaming calls)
-		// Per architecture-master: Graceful degradation when no emitter
 		emitter := EmitterFromContext(ctx.Context)
 
 		// Emit start event if emitter available
@@ -27,8 +25,8 @@ func WithEvents(name string, execute func(ctx *ai.ToolContext, input any) (any, 
 			emitter.OnToolStart(name)
 		}
 
-		// Execute original tool
-		result, err := execute(ctx, input)
+		// Execute original handler
+		result, err := fn(ctx, input)
 
 		// Emit complete/error event if emitter available
 		if emitter != nil {

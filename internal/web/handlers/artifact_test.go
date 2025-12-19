@@ -3,6 +3,8 @@ package handlers
 import (
 	"strings"
 	"testing"
+
+	"github.com/koopa0/koopa-cli/internal/artifact"
 )
 
 func TestParseArtifact_Complete(t *testing.T) {
@@ -15,21 +17,21 @@ func main() {}
 </artifact>
 That's the implementation.`
 
-	artifact, before, after := parseArtifact(input)
+	art, before, after := parseArtifact(input)
 
-	if artifact == nil {
+	if art == nil {
 		t.Fatal("expected artifact to be parsed")
 	}
-	if artifact.Type != "code" {
-		t.Errorf("type = %q, want code", artifact.Type)
+	if art.Type != artifact.TypeCode {
+		t.Errorf("type = %q, want code", art.Type)
 	}
-	if artifact.Language != "go" {
-		t.Errorf("language = %q, want go", artifact.Language)
+	if art.Language != "go" {
+		t.Errorf("language = %q, want go", art.Language)
 	}
-	if artifact.Title != "main.go" {
-		t.Errorf("title = %q, want main.go", artifact.Title)
+	if art.Title != "main.go" {
+		t.Errorf("title = %q, want main.go", art.Title)
 	}
-	if !strings.Contains(artifact.Content, "package main") {
+	if !strings.Contains(art.Content, "package main") {
 		t.Errorf("content missing expected code")
 	}
 	if !strings.Contains(before, "Here's the code:") {
@@ -46,42 +48,42 @@ func TestParseArtifact_AttributeOrder(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
-		wantType  string
+		wantType  artifact.Type
 		wantLang  string
 		wantTitle string
 	}{
 		{
 			name:      "standard order",
 			input:     `<artifact type="code" language="go" title="main.go">content</artifact>`,
-			wantType:  "code",
+			wantType:  artifact.TypeCode,
 			wantLang:  "go",
 			wantTitle: "main.go",
 		},
 		{
 			name:      "reversed order",
 			input:     `<artifact title="main.go" language="go" type="code">content</artifact>`,
-			wantType:  "code",
+			wantType:  artifact.TypeCode,
 			wantLang:  "go",
 			wantTitle: "main.go",
 		},
 		{
 			name:      "mixed order",
 			input:     `<artifact language="python" type="code" title="script.py">content</artifact>`,
-			wantType:  "code",
+			wantType:  artifact.TypeCode,
 			wantLang:  "python",
 			wantTitle: "script.py",
 		},
 		{
 			name:      "markdown type",
 			input:     `<artifact type="markdown" language="" title="README.md">content</artifact>`,
-			wantType:  "markdown",
+			wantType:  artifact.TypeMarkdown,
 			wantLang:  "",
 			wantTitle: "README.md",
 		},
 		{
 			name:      "html type",
 			input:     `<artifact type="html" language="html" title="index.html">content</artifact>`,
-			wantType:  "html",
+			wantType:  artifact.TypeHTML,
 			wantLang:  "html",
 			wantTitle: "index.html",
 		},
@@ -90,18 +92,18 @@ func TestParseArtifact_AttributeOrder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			artifact, _, _ := parseArtifact(tt.input)
-			if artifact == nil {
+			art, _, _ := parseArtifact(tt.input)
+			if art == nil {
 				t.Fatal("expected artifact")
 			}
-			if artifact.Type != tt.wantType {
-				t.Errorf("type = %q, want %q", artifact.Type, tt.wantType)
+			if art.Type != tt.wantType {
+				t.Errorf("type = %q, want %q", art.Type, tt.wantType)
 			}
-			if artifact.Language != tt.wantLang {
-				t.Errorf("language = %q, want %q", artifact.Language, tt.wantLang)
+			if art.Language != tt.wantLang {
+				t.Errorf("language = %q, want %q", art.Language, tt.wantLang)
 			}
-			if artifact.Title != tt.wantTitle {
-				t.Errorf("title = %q, want %q", artifact.Title, tt.wantTitle)
+			if art.Title != tt.wantTitle {
+				t.Errorf("title = %q, want %q", art.Title, tt.wantTitle)
 			}
 		})
 	}
@@ -145,8 +147,8 @@ func TestParseArtifact_PartialTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			artifact, before, after := parseArtifact(tt.input)
-			if artifact != nil {
+			art, before, after := parseArtifact(tt.input)
+			if art != nil {
 				t.Error("expected no artifact for partial tag")
 			}
 			if before != tt.wantBefore {
@@ -163,9 +165,9 @@ func TestParseArtifact_NoArtifact(t *testing.T) {
 	t.Parallel()
 
 	input := "Just regular text without any artifact tags."
-	artifact, before, after := parseArtifact(input)
+	art, before, after := parseArtifact(input)
 
-	if artifact != nil {
+	if art != nil {
 		t.Error("expected no artifact")
 	}
 	if before != input {
@@ -223,13 +225,13 @@ func TestParseArtifact_EmptyContent(t *testing.T) {
 	t.Parallel()
 
 	input := `<artifact type="code" language="go" title="empty.go"></artifact>`
-	artifact, _, _ := parseArtifact(input)
+	art, _, _ := parseArtifact(input)
 
-	if artifact == nil {
+	if art == nil {
 		t.Fatal("expected artifact even with empty content")
 	}
-	if artifact.Content != "" {
-		t.Errorf("content = %q, want empty", artifact.Content)
+	if art.Content != "" {
+		t.Errorf("content = %q, want empty", art.Content)
 	}
 }
 
@@ -237,14 +239,14 @@ func TestParseArtifact_InvalidType(t *testing.T) {
 	t.Parallel()
 
 	input := `<artifact type="unknown" language="go" title="test.go">content</artifact>`
-	artifact, _, _ := parseArtifact(input)
+	art, _, _ := parseArtifact(input)
 
-	if artifact == nil {
+	if art == nil {
 		t.Fatal("expected artifact")
 	}
 	// Invalid type should default to "code"
-	if artifact.Type != "code" {
-		t.Errorf("type = %q, want code (default)", artifact.Type)
+	if art.Type != artifact.TypeCode {
+		t.Errorf("type = %q, want code (default)", art.Type)
 	}
 }
 
@@ -394,23 +396,23 @@ func TestParseArtifact_SpecialCharactersInContent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
+		name        string
+		input       string
 		wantContent string
 	}{
 		{
-			name:    "newlines",
-			input:   "<artifact type=\"code\" language=\"go\" title=\"t.go\">line1\nline2\nline3</artifact>",
+			name:        "newlines",
+			input:       "<artifact type=\"code\" language=\"go\" title=\"t.go\">line1\nline2\nline3</artifact>",
 			wantContent: "line1\nline2\nline3",
 		},
 		{
-			name:    "tabs",
-			input:   "<artifact type=\"code\" language=\"go\" title=\"t.go\">\tfunc() {}</artifact>",
+			name:        "tabs",
+			input:       "<artifact type=\"code\" language=\"go\" title=\"t.go\">\tfunc() {}</artifact>",
 			wantContent: "\tfunc() {}",
 		},
 		{
-			name:    "quotes in content",
-			input:   `<artifact type="code" language="go" title="t.go">fmt.Println("hello")</artifact>`,
+			name:        "quotes in content",
+			input:       `<artifact type="code" language="go" title="t.go">fmt.Println("hello")</artifact>`,
 			wantContent: `fmt.Println("hello")`,
 		},
 	}
@@ -418,12 +420,12 @@ func TestParseArtifact_SpecialCharactersInContent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			artifact, _, _ := parseArtifact(tt.input)
-			if artifact == nil {
+			art, _, _ := parseArtifact(tt.input)
+			if art == nil {
 				t.Fatal("expected artifact")
 			}
-			if artifact.Content != tt.wantContent {
-				t.Errorf("content = %q, want %q", artifact.Content, tt.wantContent)
+			if art.Content != tt.wantContent {
+				t.Errorf("content = %q, want %q", art.Content, tt.wantContent)
 			}
 		})
 	}
