@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/koopa0/koopa/internal/agent/chat"
 	"github.com/koopa0/koopa/internal/app"
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/tui"
@@ -45,6 +46,9 @@ func TestTUI_Integration(t *testing.T) {
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
 	}
+
+	// Reset Flow singleton for test isolation
+	chat.ResetFlowForTesting()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -90,6 +94,9 @@ func TestTUI_SlashCommands(t *testing.T) {
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("GEMINI_API_KEY not set - skipping integration test")
 	}
+
+	// Reset Flow singleton for test isolation
+	chat.ResetFlowForTesting()
 
 	cfg, err := config.Load()
 	if err != nil {
