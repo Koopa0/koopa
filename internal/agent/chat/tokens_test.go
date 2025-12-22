@@ -173,6 +173,7 @@ func TestTruncateHistory(t *testing.T) {
 			budget:       100, // Way over what's needed
 			wantLen:      3,
 			wantLastText: "how are you",
+			wantTexts:    []string{"hello", "hi there", "how are you"}, // Verify order preserved
 		},
 		{
 			name: "over budget truncates oldest",
@@ -200,6 +201,7 @@ func TestTruncateHistory(t *testing.T) {
 			wantLen:       3,  // System + 2 recent
 			wantHasSystem: true,
 			wantLastText:  "fourth",
+			wantTexts:     []string{"You are a helpful assistant", "third", "fourth"}, // System + recent, in order
 		},
 		{
 			name: "maintains chronological order after truncation",
@@ -249,7 +251,8 @@ func TestTruncateHistory(t *testing.T) {
 				}
 			}
 
-			// Check all retained message texts (verifies correct subset kept)
+			// Check all retained message texts AND ORDER (verifies correct subset kept in chronological order)
+			// wantTexts[i] must match got[i] - this implicitly verifies ordering
 			if len(tt.wantTexts) > 0 {
 				if len(got) != len(tt.wantTexts) {
 					t.Fatalf("got %d messages but expected %d texts to verify", len(got), len(tt.wantTexts))
