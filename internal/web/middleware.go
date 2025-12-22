@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/web/handlers"
+	"github.com/koopa0/koopa/internal/web/handlers"
 )
 
 // Unexported context key type to prevent collisions (Critical Fix #2).

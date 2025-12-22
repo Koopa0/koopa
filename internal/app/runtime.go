@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
-	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/config"
 )
 
 // Runtime provides a fully initialized application runtime with all components ready to use.

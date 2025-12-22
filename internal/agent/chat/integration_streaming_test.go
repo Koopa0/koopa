@@ -6,7 +6,6 @@ package chat_test
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
@@ -26,7 +25,7 @@ func TestChatAgent_StreamingCallbackError(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 	chunks := 0
 	maxChunks := 3
 
@@ -41,9 +40,8 @@ func TestChatAgent_StreamingCallbackError(t *testing.T) {
 		return nil
 	}
 
-	resp, err := framework.Agent.ExecuteStream(ctx, sessionID, branch,
+	resp, err := framework.Agent.ExecuteStream(ctx, sessionID,
 		"Write a long story about a space adventure",
-		false,
 		callback,
 	)
 
@@ -68,7 +66,7 @@ func TestChatAgent_StreamingCallbackSuccess(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 	chunks := 0
 	var receivedTexts []string
 
@@ -80,9 +78,8 @@ func TestChatAgent_StreamingCallbackSuccess(t *testing.T) {
 		return nil // Success - continue streaming
 	}
 
-	resp, err := framework.Agent.ExecuteStream(ctx, sessionID, branch,
+	resp, err := framework.Agent.ExecuteStream(ctx, sessionID,
 		"Count from 1 to 5",
-		false,
 		callback,
 	)
 
@@ -104,10 +101,9 @@ func TestChatAgent_StreamingVsNonStreaming(t *testing.T) {
 
 	// Non-streaming execution
 	session1 := framework.CreateTestSession(t, "Non-streaming test")
-	invCtx1, sessionID1, branch1 := newInvocationContext(ctx, session1)
-	respNoStream, err := framework.Agent.ExecuteStream(invCtx1, sessionID1, branch1,
+	invCtx1, sessionID1 := newInvocationContext(ctx, session1)
+	respNoStream, err := framework.Agent.ExecuteStream(invCtx1, sessionID1,
 		query,
-		false,
 		nil, // No callback = non-streaming
 	)
 	require.NoError(t, err, "Non-streaming should succeed")
@@ -115,16 +111,15 @@ func TestChatAgent_StreamingVsNonStreaming(t *testing.T) {
 
 	// Streaming execution
 	session2 := framework.CreateTestSession(t, "Streaming test")
-	invCtx2, sessionID2, branch2 := newInvocationContext(ctx, session2)
+	invCtx2, sessionID2 := newInvocationContext(ctx, session2)
 	var streamedResponse string
 	callback := func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
 		streamedResponse += chunk.Text()
 		return nil
 	}
 
-	respStream, err := framework.Agent.ExecuteStream(invCtx2, sessionID2, branch2,
+	respStream, err := framework.Agent.ExecuteStream(invCtx2, sessionID2,
 		query,
-		false,
 		callback,
 	)
 	require.NoError(t, err, "Streaming should succeed")
@@ -147,7 +142,7 @@ func TestChatAgent_StreamingContextCancellation(t *testing.T) {
 	defer cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	_, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 	chunks := 0
 
 	callback := func(callbackCtx context.Context, chunk *ai.ModelResponseChunk) error {
@@ -161,9 +156,8 @@ func TestChatAgent_StreamingContextCancellation(t *testing.T) {
 		return nil
 	}
 
-	resp, err := framework.Agent.ExecuteStream(ctx, sessionID, branch,
+	resp, err := framework.Agent.ExecuteStream(ctx, sessionID,
 		"Write a very long story",
-		false,
 		callback,
 	)
 
@@ -185,7 +179,7 @@ func TestChatAgent_StreamingEmptyChunks(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 	totalChunks := 0
 	emptyChunks := 0
 
@@ -201,9 +195,8 @@ func TestChatAgent_StreamingEmptyChunks(t *testing.T) {
 		return nil
 	}
 
-	resp, err := framework.Agent.ExecuteStream(ctx, sessionID, branch,
+	resp, err := framework.Agent.ExecuteStream(ctx, sessionID,
 		"Say hello",
-		false,
 		callback,
 	)
 
@@ -215,39 +208,4 @@ func TestChatAgent_StreamingEmptyChunks(t *testing.T) {
 	} else {
 		t.Logf("No empty chunks received (%d total chunks)", totalChunks)
 	}
-}
-
-// TestChatAgent_StreamingWithCanvasMode verifies streaming works correctly
-// when canvas mode is enabled.
-func TestChatAgent_StreamingWithCanvasMode(t *testing.T) {
-	framework, cleanup := SetupTest(t)
-	defer cleanup()
-
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
-	chunks := 0
-
-	callback := func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
-		chunks++
-		t.Logf("Canvas mode chunk %d: %d bytes", chunks, len(chunk.Text()))
-		return nil
-	}
-
-	resp, err := framework.Agent.ExecuteStream(ctx, sessionID, branch,
-		"Write a simple Python function to add two numbers",
-		true, // Canvas mode enabled
-		callback,
-	)
-
-	require.NoError(t, err, "Streaming with canvas mode should succeed")
-	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
-	assert.Greater(t, chunks, 0, "Should have received streaming chunks")
-
-	// Response should contain code (canvas mode hint to LLM)
-	response := resp.FinalText
-	hasCode := strings.Contains(response, "def ") || strings.Contains(response, "```")
-	if hasCode {
-		t.Log("Response contains code block (canvas mode working)")
-	}
-
-	t.Logf("Canvas mode response (%d chunks): %s", chunks, resp.FinalText)
 }

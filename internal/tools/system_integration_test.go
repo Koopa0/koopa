@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 // systemTools provides test utilities for SystemTools.

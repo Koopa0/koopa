@@ -10,8 +10,8 @@ import (
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/rag"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/rag"
 )
 
 // RAGSetup contains all resources needed for RAG-enabled integration tests.

@@ -3,16 +3,17 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/web/handlers"
-	"github.com/koopa0/koopa-cli/internal/web/static"
+	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/web/handlers"
+	"github.com/koopa0/koopa/internal/web/static"
 )
 
 // Server is the GenUI HTTP server.
@@ -66,19 +67,22 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	health := handlers.NewHealth()
 
 	// Initialize handlers
-	pages := handlers.NewPages(handlers.PagesConfig{
+	pages, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   cfg.Logger,
 		Sessions: sessions,
 	})
-	chatHandler := handlers.NewChat(handlers.ChatConfig{
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pages handler: %w", err)
+	}
+	chatHandler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger:   cfg.Logger,
 		Genkit:   cfg.Genkit,
 		Flow:     cfg.ChatFlow,
 		Sessions: sessions,
 	})
-	modeHandler := handlers.NewMode(handlers.ModeConfig{
-		Sessions: sessions,
-	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chat handler: %w", err)
+	}
 	// TODO: Implement Settings and Search handlers
 	// settingsHandler := handlers.NewSettings(handlers.SettingsDeps{
 	// 	Logger:   deps.Logger,
@@ -104,9 +108,6 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// Chat API routes (matches hx-post in chat_input.templ)
 	mux.HandleFunc("POST /genui/send", chatHandler.Send)
 	mux.HandleFunc("GET /genui/stream", chatHandler.Stream)
-
-	// Mode toggle route (canvas/chat mode)
-	modeHandler.RegisterRoutes(mux)
 
 	// TODO: Settings and Search routes
 	// settingsHandler.RegisterRoutes(mux)

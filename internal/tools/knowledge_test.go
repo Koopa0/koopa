@@ -6,7 +6,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
-	"github.com/koopa0/koopa-cli/internal/log"
+	"github.com/koopa0/koopa/internal/log"
 )
 
 // mockRetriever is a minimal ai.Retriever implementation for testing.

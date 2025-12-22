@@ -5,55 +5,36 @@
 package sqlc
 
 import (
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pgvector/pgvector-go"
 )
 
-type Artifact struct {
-	ID             pgtype.UUID        `json:"id"`
-	SessionID      pgtype.UUID        `json:"session_id"`
-	MessageID      pgtype.UUID        `json:"message_id"`
-	Type           string             `json:"type"`
-	Language       *string            `json:"language"`
-	Title          string             `json:"title"`
-	Content        string             `json:"content"`
-	Version        int32              `json:"version"`
-	SequenceNumber int32              `json:"sequence_number"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	// Unique filename within session (e.g., main.go, report.md)
-	Filename string `json:"filename"`
-}
-
 type Document struct {
-	ID        string             `json:"id"`
-	Content   string             `json:"content"`
-	Embedding *pgvector.Vector   `json:"embedding"`
-	Metadata  []byte             `json:"metadata"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID         string           `json:"id"`
+	Content    string           `json:"content"`
+	Embedding  *pgvector.Vector `json:"embedding"`
+	SourceType *string          `json:"source_type"`
+	Metadata   []byte           `json:"metadata"`
 }
 
 type Message struct {
-	ID             pgtype.UUID        `json:"id"`
-	SessionID      pgtype.UUID        `json:"session_id"`
+	ID             uuid.UUID          `json:"id"`
+	SessionID      uuid.UUID          `json:"session_id"`
 	Role           string             `json:"role"`
 	Content        []byte             `json:"content"`
 	SequenceNumber int32              `json:"sequence_number"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	Branch         string             `json:"branch"`
 	Status         string             `json:"status"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Session struct {
-	ID           pgtype.UUID        `json:"id"`
+	ID           uuid.UUID          `json:"id"`
 	Title        *string            `json:"title"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	ModelName    *string            `json:"model_name"`
 	SystemPrompt *string            `json:"system_prompt"`
 	MessageCount *int32             `json:"message_count"`
-	// When true, AI outputs artifacts to Canvas panel
-	CanvasMode bool `json:"canvas_mode"`
 }

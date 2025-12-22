@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/web"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/web"
 )
 
 // testSecret is a 32-byte secret for testing.

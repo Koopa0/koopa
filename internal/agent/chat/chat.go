@@ -5,16 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/google/uuid"
+	"golang.org/x/time/rate"
 
-	"github.com/koopa0/koopa-cli/internal/artifact"
-	"github.com/koopa0/koopa-cli/internal/log"
-	"github.com/koopa0/koopa-cli/internal/rag"
-	"github.com/koopa0/koopa-cli/internal/session"
+	"github.com/koopa0/koopa/internal/log"
+	"github.com/koopa0/koopa/internal/rag"
+	"github.com/koopa0/koopa/internal/session"
 )
 
 // Agent name and description constants
@@ -47,18 +48,25 @@ type StreamCallback func(ctx context.Context, chunk *ai.ModelResponseChunk) erro
 
 // Config contains all required parameters for Chat agent.
 type Config struct {
-	Genkit        *genkit.Genkit
-	Retriever     ai.Retriever // Genkit Retriever for RAG context
-	SessionStore  *session.Store
-	ArtifactStore *artifact.Store // Optional: nil = Canvas disabled
-	Logger        log.Logger
-	Tools         []ai.Tool // Pre-registered tools from RegisterXxxTools()
+	Genkit       *genkit.Genkit
+	Retriever    ai.Retriever // Genkit Retriever for RAG context
+	SessionStore *session.Store
+	Logger       log.Logger
+	Tools        []ai.Tool // Pre-registered tools from RegisterXxxTools()
 
 	// Configuration values
 	// NOTE: LLM model is configured in prompts/koopa.prompt, not here
 	MaxTurns int    // Maximum agentic loop turns
 	RAGTopK  int    // Number of RAG documents to retrieve
 	Language string // Response language preference
+
+	// Resilience configuration
+	RetryConfig          RetryConfig          // LLM retry settings (zero-value uses defaults)
+	CircuitBreakerConfig CircuitBreakerConfig // Circuit breaker settings (zero-value uses defaults)
+	RateLimiter          *rate.Limiter        // Optional: proactive rate limiting (nil = use default)
+
+	// Token management
+	TokenBudget TokenBudget // Token budget for context window (zero-value uses defaults)
 }
 
 // validate checks if all required parameters are present.
@@ -95,11 +103,18 @@ type Chat struct {
 	maxTurns       int
 	ragTopK        int
 
+	// Resilience (captured at construction)
+	retryConfig    RetryConfig
+	circuitBreaker *CircuitBreaker
+	rateLimiter    *rate.Limiter // Proactive rate limiting (nil = disabled)
+
+	// Token management (captured at construction)
+	tokenBudget TokenBudget
+
 	// Dependencies (read-only after construction)
 	g         *genkit.Genkit
 	retriever ai.Retriever // Genkit Retriever for RAG context
 	sessions  *session.Store
-	artifacts *artifact.Store // Optional: nil = Canvas disabled
 	logger    log.Logger
 	tools     []ai.Tool    // Pre-registered tools (passed in via Config)
 	toolRefs  []ai.ToolRef // Cached at construction (ai.Tool implements ai.ToolRef)
@@ -140,6 +155,29 @@ func New(cfg Config) (*Chat, error) {
 		languagePrompt = "the same language as the user's input (auto-detect)"
 	}
 
+	// Apply resilience defaults if not configured
+	retryConfig := cfg.RetryConfig
+	if retryConfig.MaxRetries == 0 {
+		retryConfig = DefaultRetryConfig()
+	}
+
+	cbConfig := cfg.CircuitBreakerConfig
+	if cbConfig.FailureThreshold == 0 {
+		cbConfig = DefaultCircuitBreakerConfig()
+	}
+
+	tokenBudget := cfg.TokenBudget
+	if tokenBudget.MaxHistoryTokens == 0 {
+		tokenBudget = DefaultTokenBudget()
+	}
+
+	// Use provided rate limiter or create default
+	// Default: 10 requests/sec sustained, burst of 30
+	rl := cfg.RateLimiter
+	if rl == nil {
+		rl = rate.NewLimiter(10, 30)
+	}
+
 	// Cache tool refs and names at construction (zero allocation per request)
 	toolRefs := make([]ai.ToolRef, len(cfg.Tools))
 	names := make([]string, len(cfg.Tools))
@@ -154,11 +192,18 @@ func New(cfg Config) (*Chat, error) {
 		maxTurns:       maxTurns,
 		ragTopK:        cfg.RAGTopK,
 
+		// Resilience
+		retryConfig:    retryConfig,
+		circuitBreaker: NewCircuitBreaker(cbConfig),
+		rateLimiter:    rl,
+
+		// Token management
+		tokenBudget: tokenBudget,
+
 		// Dependencies
 		g:         cfg.Genkit,
 		retriever: cfg.Retriever,
 		sessions:  cfg.SessionStore,
-		artifacts: cfg.ArtifactStore, // Optional: nil = Canvas disabled
 		logger:    cfg.Logger,
 		tools:     cfg.Tools,                 // Already registered with Genkit
 		toolRefs:  toolRefs,                  // Cached for ai.WithTools()
@@ -183,39 +228,38 @@ func New(cfg Config) (*Chat, error) {
 
 // Execute runs the chat agent with the given input (non-streaming).
 // This is a convenience wrapper around ExecuteStream with nil callback.
-func (c *Chat) Execute(ctx context.Context, sessionID uuid.UUID, branch, input string) (*Response, error) {
-	return c.ExecuteStream(ctx, sessionID, branch, input, false, nil)
+func (c *Chat) Execute(ctx context.Context, sessionID uuid.UUID, input string) (*Response, error) {
+	return c.ExecuteStream(ctx, sessionID, input, nil)
 }
 
 // ExecuteStream runs the chat agent with optional streaming output.
 // If callback is non-nil, it is called for each chunk of the response as it's generated.
 // If callback is nil, the response is generated without streaming (equivalent to Execute).
-// canvasEnabled tells the AI to output interactive content (code, markdown) for Canvas panel.
 // The final response is always returned after generation completes.
-func (c *Chat) ExecuteStream(ctx context.Context, sessionID uuid.UUID, branch, input string, canvasEnabled bool, callback StreamCallback) (*Response, error) {
+func (c *Chat) ExecuteStream(ctx context.Context, sessionID uuid.UUID, input string, callback StreamCallback) (*Response, error) {
 	streaming := callback != nil
 	c.logger.Debug("executing chat agent",
 		"session_id", sessionID,
-		"branch", branch,
-		"streaming", streaming,
-		"canvasEnabled", canvasEnabled)
+		"streaming", streaming)
 
 	// Load session history
-	history, err := c.sessions.LoadHistory(ctx, sessionID, branch)
+	history, err := c.sessions.GetHistory(ctx, sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load history: %w", err)
+		return nil, fmt.Errorf("failed to get history: %w", err)
 	}
 
 	// Generate response using unified core logic
-	resp, err := c.generateResponse(ctx, input, history.Messages(), canvasEnabled, callback)
+	resp, err := c.generateResponse(ctx, input, history.Messages(), callback)
 	if err != nil {
 		return nil, err
 	}
 
 	responseText := resp.Text()
 
-	if strings.TrimSpace(responseText) == "" {
-		c.logger.Warn("model returned empty response",
+	// Only apply fallback when truly empty (no text AND no tool requests)
+	// When LLM returns empty text but has tool requests, this is valid agentic behavior
+	if strings.TrimSpace(responseText) == "" && len(resp.ToolRequests()) == 0 {
+		c.logger.Warn("model returned empty response with no tool requests",
 			"session_id", sessionID)
 		responseText = FallbackResponseMessage
 	}
@@ -228,7 +272,7 @@ func (c *Chat) ExecuteStream(ctx context.Context, sessionID uuid.UUID, branch, i
 		ai.NewUserMessage(ai.NewTextPart(input)),
 		ai.NewModelMessage(ai.NewTextPart(responseText)),
 	}
-	if err := c.sessions.AppendMessages(ctx, sessionID, branch, newMessages); err != nil {
+	if err := c.sessions.AppendMessages(ctx, sessionID, newMessages); err != nil {
 		c.logger.Error("failed to append messages to history", "error", err)
 		// Don't fail the request, just log the error
 	}
@@ -242,13 +286,17 @@ func (c *Chat) ExecuteStream(ctx context.Context, sessionID uuid.UUID, branch, i
 
 // generateResponse is the unified response generation logic for both streaming and non-streaming modes.
 // If callback is non-nil, streaming is enabled; otherwise, standard generation is used.
-// canvasEnabled is passed to the Dotprompt template for Canvas-specific instructions.
-func (c *Chat) generateResponse(ctx context.Context, input string, historyMessages []*ai.Message, canvasEnabled bool, callback StreamCallback) (*ai.ModelResponse, error) {
+func (c *Chat) generateResponse(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
 	// Build messages: deep copy history and append current user input
 	// CRITICAL: Deep copy is required to prevent DATA RACE in Genkit's renderMessages()
 	// Genkit modifies msg.Content in-place, so concurrent executions sharing the same
 	// message objects will race. We must copy each message, not just the slice.
 	messages := deepCopyMessages(historyMessages)
+
+	// Apply token budget before adding new message
+	// This ensures we don't exceed context window limits
+	messages = c.truncateHistory(messages, c.tokenBudget.MaxHistoryTokens)
+
 	messages = append(messages, ai.NewUserMessage(ai.NewTextPart(input)))
 
 	// Retrieve relevant documents for RAG context (graceful fallback on error)
@@ -257,8 +305,7 @@ func (c *Chat) generateResponse(ctx context.Context, input string, historyMessag
 	// Build execute options (using cached toolRefs and languagePrompt)
 	opts := []ai.PromptExecuteOption{
 		ai.WithInput(map[string]any{
-			"language":      c.languagePrompt,
-			"canvasEnabled": canvasEnabled,
+			"language": c.languagePrompt,
 		}),
 		ai.WithMessagesFn(func(_ context.Context, _ any) ([]*ai.Message, error) {
 			return messages, nil
@@ -283,17 +330,29 @@ func (c *Chat) generateResponse(ctx context.Context, input string, historyMessag
 		"tools", c.toolNames,
 		"maxTurns", c.maxTurns,
 		"queryLength", len(input),
-		"canvasEnabled", canvasEnabled,
 	)
 
-	// Execute prompt
-	resp, err := c.prompt.Execute(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("prompt execution failed: %w", err)
+	// Check circuit breaker before attempting request
+	if err := c.circuitBreaker.Allow(); err != nil {
+		c.logger.Warn("circuit breaker is open, rejecting request",
+			"state", c.circuitBreaker.State().String())
+		return nil, fmt.Errorf("service unavailable: %w", err)
 	}
 
+	// Execute prompt with retry mechanism
+	resp, err := c.executeWithRetry(ctx, opts)
+	if err != nil {
+		c.circuitBreaker.Failure()
+		return nil, err
+	}
+
+	c.circuitBreaker.Success()
 	return resp, nil
 }
+
+// ragRetrievalTimeout is the maximum time allowed for RAG document retrieval.
+// This prevents slow queries from blocking the entire chat request.
+const ragRetrievalTimeout = 5 * time.Second
 
 // retrieveRAGContext retrieves relevant documents from the knowledge base.
 // Returns empty slice on error (graceful degradation).
@@ -302,6 +361,11 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 	if c.ragTopK <= 0 {
 		return nil
 	}
+
+	// Add dedicated timeout for RAG retrieval to prevent slow queries
+	// from blocking the entire chat request
+	ragCtx, cancel := context.WithTimeout(ctx, ragRetrievalTimeout)
+	defer cancel()
 
 	// Build retriever request with source_type filter for files (documents)
 	req := &ai.RetrieverRequest{
@@ -312,14 +376,15 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 		},
 	}
 
-	// Retrieve documents
-	resp, err := c.retriever.Retrieve(ctx, req)
+	// Retrieve documents with timeout
+	resp, err := c.retriever.Retrieve(ragCtx, req)
 	if err != nil {
 		// Use Debug for expected errors (timeout, cancellation)
 		// Use Warn for unexpected errors (DB issues, etc.) that ops should know about
-		if ctx.Err() != nil {
-			c.logger.Debug("RAG retrieval canceled (continuing without context)",
+		if ctx.Err() != nil || ragCtx.Err() != nil {
+			c.logger.Debug("RAG retrieval canceled or timed out (continuing without context)",
 				"error", err,
+				"timeout", ragRetrievalTimeout,
 				"query_length", len(query))
 		} else {
 			c.logger.Warn("RAG retrieval failed (continuing without context)",

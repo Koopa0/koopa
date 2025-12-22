@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -15,8 +16,8 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/testutil"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -496,7 +497,7 @@ func TestStore_ConcurrentLoadAndSaveHistory(t *testing.T) {
 		// Load goroutine
 		go func(id int) {
 			defer wg.Done()
-			history, err := store.LoadHistory(ctx, sessionID, "main")
+			history, err := store.GetHistory(ctx, sessionID)
 			if err != nil {
 				loadErrors <- fmt.Errorf("load goroutine %d: %w", id, err)
 				return
@@ -534,7 +535,7 @@ func TestStore_ConcurrentLoadAndSaveHistory(t *testing.T) {
 	}
 
 	// Verify final state
-	finalHistory, err := store.LoadHistory(ctx, sessionID, "main")
+	finalHistory, err := store.GetHistory(ctx, sessionID)
 	require.NoError(t, err)
 
 	// Should have at least initial messages + some concurrent messages
@@ -660,7 +661,7 @@ func TestStore_RaceDetector(t *testing.T) {
 		// Operation 3: Load history
 		go func() {
 			defer wg.Done()
-			_, _ = store.LoadHistory(ctx, sessionID, "main")
+			_, _ = store.GetHistory(ctx, sessionID)
 		}()
 
 		// Operation 4: Get session
@@ -894,105 +895,49 @@ func TestStore_SQLInjectionViaSessionID(t *testing.T) {
 }
 
 // =============================================================================
-// Canvas Mode Tests
+// Error Handling Tests
 // =============================================================================
 
-// TestStore_UpdateCanvasMode tests toggling canvas mode for a session.
-func TestStore_UpdateCanvasMode(t *testing.T) {
+// TestStore_GetHistory_SessionNotFound verifies that GetHistory returns ErrSessionNotFound
+// sentinel error when the session doesn't exist. This test validates the A3 fix from
+// Proposal 056 - proper sentinel error propagation without double-wrapping.
+func TestStore_GetHistory_SessionNotFound(t *testing.T) {
 	store, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 	ctx := context.Background()
 
-	// Create a session
-	session, err := store.CreateSession(ctx, "Canvas Mode Test", "gemini-2.5-flash", "")
-	require.NoError(t, err)
-
-	// Verify initial state (canvas mode defaults to false)
-	retrieved, err := store.GetSession(ctx, session.ID)
-	require.NoError(t, err)
-	assert.False(t, retrieved.CanvasMode, "initial canvas mode should be false")
-
-	// Enable canvas mode
-	err = store.UpdateCanvasMode(ctx, session.ID, true)
-	require.NoError(t, err, "UpdateCanvasMode(true) should not error")
-
-	// Verify canvas mode is enabled
-	retrieved, err = store.GetSession(ctx, session.ID)
-	require.NoError(t, err)
-	assert.True(t, retrieved.CanvasMode, "canvas mode should be true after enabling")
-
-	// Disable canvas mode
-	err = store.UpdateCanvasMode(ctx, session.ID, false)
-	require.NoError(t, err, "UpdateCanvasMode(false) should not error")
-
-	// Verify canvas mode is disabled
-	retrieved, err = store.GetSession(ctx, session.ID)
-	require.NoError(t, err)
-	assert.False(t, retrieved.CanvasMode, "canvas mode should be false after disabling")
-}
-
-// TestStore_UpdateCanvasMode_NonExistentSession tests updating canvas mode for non-existent session.
-func TestStore_UpdateCanvasMode_NonExistentSession(t *testing.T) {
-	store, cleanup := setupIntegrationTest(t)
-	defer cleanup()
-	ctx := context.Background()
-
-	// Try to update canvas mode for non-existent session
+	// Use a non-existent session ID
 	nonExistentID := uuid.New()
-	err := store.UpdateCanvasMode(ctx, nonExistentID, true)
-	// Note: PostgreSQL UPDATE with WHERE returns no error even if 0 rows affected
-	// This behavior is acceptable - the operation succeeds but affects nothing
-	// However, the session won't have the canvas mode set because it doesn't exist
-	assert.NoError(t, err, "UpdateCanvasMode should not error for non-existent session (0 rows affected)")
+
+	// GetHistory should return ErrSessionNotFound
+	_, err := store.GetHistory(ctx, nonExistentID)
+	require.Error(t, err, "GetHistory with non-existent session should return error")
+
+	// Verify the error is the sentinel ErrSessionNotFound (errors.Is check)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("Expected ErrSessionNotFound sentinel, got: %v (type: %T)", err, err)
+	}
+
+	// Verify error message is not double-wrapped
+	errStr := err.Error()
+	if strings.Contains(errStr, "session not found: session not found") {
+		t.Errorf("Error message is double-wrapped: %v", err)
+	}
 }
 
-// TestStore_ConcurrentCanvasMode tests concurrent canvas mode updates.
-func TestStore_ConcurrentCanvasMode(t *testing.T) {
+// TestStore_GetSession_NotFound verifies GetSession returns ErrSessionNotFound sentinel.
+func TestStore_GetSession_NotFound(t *testing.T) {
 	store, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 	ctx := context.Background()
 
-	// Create a session
-	session, err := store.CreateSession(ctx, "Concurrent Canvas Test", "gemini-2.5-flash", "")
-	require.NoError(t, err)
+	nonExistentID := uuid.New()
+	_, err := store.GetSession(ctx, nonExistentID)
+	require.Error(t, err)
 
-	const numGoroutines = 10
-	var wg sync.WaitGroup
-	errors := make(chan error, numGoroutines*2)
-
-	// Concurrent toggle on/off operations
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(2)
-
-		// Turn on
-		go func() {
-			defer wg.Done()
-			if err := store.UpdateCanvasMode(ctx, session.ID, true); err != nil {
-				errors <- err
-			}
-		}()
-
-		// Turn off
-		go func() {
-			defer wg.Done()
-			if err := store.UpdateCanvasMode(ctx, session.ID, false); err != nil {
-				errors <- err
-			}
-		}()
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("Expected ErrSessionNotFound sentinel, got: %v", err)
 	}
-
-	wg.Wait()
-	close(errors)
-
-	// Check for errors
-	for err := range errors {
-		t.Errorf("concurrent canvas mode update error: %v", err)
-	}
-
-	// Final state should be consistent (either true or false, not corrupted)
-	finalSession, err := store.GetSession(ctx, session.ID)
-	require.NoError(t, err)
-	t.Logf("Final canvas mode state: %v", finalSession.CanvasMode)
 }
 
 // =============================================================================
@@ -1041,7 +986,7 @@ func TestStore_SQLInjectionViaMessageContent(t *testing.T) {
 
 		// Should be able to load messages
 		sessionID := session.ID
-		history, err := store.LoadHistory(ctx, sessionID, "main")
+		history, err := store.GetHistory(ctx, sessionID)
 		require.NoError(t, err, "should be able to load history")
 		t.Logf("loaded history with %d messages", len(history.Messages()))
 	})

@@ -10,10 +10,9 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/koopa0/koopa-cli/internal/sqlc"
+	"github.com/koopa0/koopa/internal/sqlc"
 )
 
 // Store manages session persistence with PostgreSQL backend.
@@ -89,7 +88,7 @@ func (s *Store) CreateSession(ctx context.Context, title, modelName, systemPromp
 // GetSession retrieves a session by ID.
 // Returns ErrSessionNotFound if the session does not exist.
 func (s *Store) GetSession(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
-	sqlcSession, err := s.queries.GetSession(ctx, uuidToPgUUID(sessionID))
+	sqlcSession, err := s.queries.GetSession(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Return sentinel error directly (no wrapping per reviewer guidance)
@@ -167,7 +166,7 @@ func (s *Store) ListSessionsWithMessages(ctx context.Context, limit, offset int3
 // Returns:
 //   - error: If deletion fails
 func (s *Store) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
-	if err := s.queries.DeleteSession(ctx, uuidToPgUUID(sessionID)); err != nil {
+	if err := s.queries.DeleteSession(ctx, sessionID); err != nil {
 		return fmt.Errorf("failed to delete session %s: %w", sessionID, err)
 	}
 
@@ -192,7 +191,7 @@ func (s *Store) UpdateSessionTitle(ctx context.Context, sessionID uuid.UUID, tit
 	}
 
 	if err := s.queries.UpdateSessionTitle(ctx, sqlc.UpdateSessionTitleParams{
-		SessionID: uuidToPgUUID(sessionID),
+		SessionID: sessionID,
 		Title:     titlePtr,
 	}); err != nil {
 		return fmt.Errorf("failed to update session title %s: %w", sessionID, err)
@@ -246,12 +245,12 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	// 0. Lock session row to prevent concurrent modifications
 	// This SELECT ... FOR UPDATE ensures that only one transaction can modify
 	// this session at a time, preventing race conditions on sequence numbers
-	if _, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID)); err != nil {
+	if _, err = txQuerier.LockSession(ctx, sessionID); err != nil {
 		return fmt.Errorf("failed to lock session: %w", err)
 	}
 
 	// 1. Get current max sequence number within transaction
-	maxSeq, err := txQuerier.GetMaxSequenceNumber(ctx, uuidToPgUUID(sessionID))
+	maxSeq, err := txQuerier.GetMaxSequenceNumber(ctx, sessionID)
 	if err != nil {
 		// If session doesn't exist yet or no messages, start from 0
 		s.logger.Debug("no existing messages, starting from sequence 0",
@@ -280,7 +279,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
 
 		if err = txQuerier.AddMessage(ctx, sqlc.AddMessageParams{
-			SessionID:      uuidToPgUUID(sessionID),
+			SessionID:      sessionID,
 			Role:           msg.Role,
 			Content:        contentJSON,
 			SequenceNumber: seqNum,
@@ -295,7 +294,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
 	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
 		MessageCount: &newCount,
-		SessionID:    uuidToPgUUID(sessionID),
+		SessionID:    sessionID,
 	}); err != nil {
 		// Transaction will be rolled back by defer
 		return fmt.Errorf("failed to update session metadata: %w", err)
@@ -323,7 +322,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 //   - error: If retrieval fails
 func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*Message, error) {
 	sqlcMessages, err := s.queries.GetMessages(ctx, sqlc.GetMessagesParams{
-		SessionID:    uuidToPgUUID(sessionID),
+		SessionID:    sessionID,
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})
@@ -336,7 +335,7 @@ func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, off
 		msg, err := s.sqlcMessageToMessage(sqlcMessages[i])
 		if err != nil {
 			s.logger.Warn("failed to unmarshal message content",
-				"message_id", pgUUIDToUUID(sqlcMessages[i].ID),
+				"message_id", sqlcMessages[i].ID,
 				"error", err)
 			continue // Skip malformed messages
 		}
@@ -347,211 +346,75 @@ func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, off
 	return messages, nil
 }
 
-// GetMessagesByBranch retrieves messages for a session filtered by branch.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: UUID of the session
-//   - branch: Branch name to filter by
-//   - limit: Maximum number of messages to return
-//   - offset: Number of messages to skip (for pagination)
-//
-// Returns:
-//   - []*Message: List of messages ordered by sequence number ascending
-//   - error: If retrieval fails
-func (s *Store) GetMessagesByBranch(ctx context.Context, sessionID uuid.UUID, branch string, limit, offset int32) ([]*Message, error) {
-	sqlcMessages, err := s.queries.GetMessagesByBranch(ctx, sqlc.GetMessagesByBranchParams{
-		SessionID:    uuidToPgUUID(sessionID),
-		Branch:       branch,
-		ResultLimit:  limit,
-		ResultOffset: offset,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get messages for session %s branch %s: %w", sessionID, branch, err)
+// normalizeRole converts Genkit roles to database-canonical roles.
+// Genkit uses ai.RoleModel = "model" but we store "assistant" for consistency
+// with the database CHECK constraint.
+func normalizeRole(role string) string {
+	if role == "model" {
+		return "assistant"
 	}
-
-	messages := make([]*Message, 0, len(sqlcMessages))
-	for i := range sqlcMessages {
-		msg, err := s.sqlcMessageToMessage(sqlcMessages[i])
-		if err != nil {
-			s.logger.Warn("failed to unmarshal message content",
-				"message_id", pgUUIDToUUID(sqlcMessages[i].ID),
-				"error", err)
-			continue
-		}
-		messages = append(messages, msg)
-	}
-
-	s.logger.Debug("retrieved messages by branch",
-		"session_id", sessionID,
-		"branch", branch,
-		"count", len(messages))
-	return messages, nil
+	return role
 }
 
-// AppendMessages appends new messages to a session branch.
+// AppendMessages appends new messages to a session.
 // This is the preferred method for saving conversation history.
 //
 // Parameters:
 //   - ctx: Context for the operation
 //   - sessionID: Session UUID
-//   - branch: Branch name (empty defaults to "main")
 //   - messages: Messages to append
 //
 // Returns:
-//   - error: If saving fails or branch is invalid
-func (s *Store) AppendMessages(ctx context.Context, sessionID uuid.UUID, branch string, messages []*ai.Message) error {
+//   - error: If saving fails
+func (s *Store) AppendMessages(ctx context.Context, sessionID uuid.UUID, messages []*ai.Message) error {
 	if len(messages) == 0 {
 		return nil
 	}
 
-	// Validate and normalize branch
-	var err error
-	branch, err = NormalizeBranch(branch)
-	if err != nil {
-		return fmt.Errorf("invalid branch: %w", err)
-	}
-
-	// Convert ai.Message to session.Message
+	// Convert ai.Message to session.Message with role normalization
 	sessionMessages := make([]*Message, len(messages))
 	for i, msg := range messages {
 		sessionMessages[i] = &Message{
-			Role:    string(msg.Role),
+			Role:    normalizeRole(string(msg.Role)),
 			Content: msg.Content,
 		}
 	}
 
-	// Use branch-aware AddMessages
-	if err := s.AddMessagesWithBranch(ctx, sessionID, branch, sessionMessages); err != nil {
+	// Use AddMessages
+	if err := s.AddMessages(ctx, sessionID, sessionMessages); err != nil {
 		return fmt.Errorf("failed to append messages: %w", err)
 	}
 
 	s.logger.Debug("appended messages",
 		"session_id", sessionID,
-		"branch", branch,
 		"count", len(messages))
 	return nil
 }
 
-// AddMessagesWithBranch adds multiple messages to a session branch in batch.
-// This is more efficient than adding messages one by one.
-//
-// All operations are wrapped in a database transaction to ensure atomicity.
-func (s *Store) AddMessagesWithBranch(ctx context.Context, sessionID uuid.UUID, branch string, messages []*Message) error {
-	if len(messages) == 0 {
-		return nil
-	}
-
-	// Database pool is required for transactional operations
-	if s.pool == nil {
-		return fmt.Errorf("database pool required for AddMessagesWithBranch: use pgxmock or real database for testing")
-	}
-
-	// Begin transaction for atomicity
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-			s.logger.Debug("transaction rollback (may be already committed)", "error", rollbackErr)
-		}
-	}()
-
-	txQuerier := sqlc.New(tx)
-
-	// Lock session row to prevent concurrent modifications
-	_, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID))
-	if err != nil {
-		return fmt.Errorf("failed to lock session: %w", err)
-	}
-
-	// Get current max sequence number for this branch
-	maxSeq, err := txQuerier.GetMaxSequenceByBranch(ctx, sqlc.GetMaxSequenceByBranchParams{
-		SessionID: uuidToPgUUID(sessionID),
-		Branch:    branch,
-	})
-	if err != nil {
-		s.logger.Debug("no existing messages in branch, starting from sequence 0",
-			"session_id", sessionID, "branch", branch)
-		maxSeq = 0
-	}
-
-	// Insert messages
-	for i, msg := range messages {
-		for j, part := range msg.Content {
-			if part == nil {
-				return fmt.Errorf("message %d has nil content at index %d", i, j)
-			}
-		}
-
-		contentJSON, marshalErr := json.Marshal(msg.Content)
-		if marshalErr != nil {
-			return fmt.Errorf("failed to marshal message content at index %d: %w", i, marshalErr)
-		}
-
-		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
-
-		if err = txQuerier.AddMessageWithBranch(ctx, sqlc.AddMessageWithBranchParams{
-			SessionID:      uuidToPgUUID(sessionID),
-			Branch:         branch,
-			Role:           msg.Role,
-			Content:        contentJSON,
-			SequenceNumber: seqNum,
-		}); err != nil {
-			return fmt.Errorf("failed to insert message %d: %w", i, err)
-		}
-	}
-
-	// Update session metadata
-	newCount := maxSeq + int32(len(messages)) // #nosec G115 -- len bounded by practical message limits
-	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
-		MessageCount: &newCount,
-		SessionID:    uuidToPgUUID(sessionID),
-	}); err != nil {
-		return fmt.Errorf("failed to update session metadata: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	s.logger.Debug("added messages with branch",
-		"session_id", sessionID,
-		"branch", branch,
-		"count", len(messages))
-	return nil
-}
-
-// LoadHistory retrieves the conversation history for a session and branch.
+// GetHistory retrieves the conversation history for a session.
 // Used by chat.Chat agent for session management.
 //
 // Parameters:
 //   - ctx: Context for the operation
 //   - sessionID: Session UUID
-//   - branch: Branch name (empty defaults to "main")
 //
 // Returns:
-//   - *History: Conversation history for the specified branch
-//   - error: If retrieval fails or branch is invalid
-func (s *Store) LoadHistory(ctx context.Context, sessionID uuid.UUID, branch string) (*History, error) {
+//   - *History: Conversation history
+//   - error: If retrieval fails
+func (s *Store) GetHistory(ctx context.Context, sessionID uuid.UUID) (*History, error) {
 	// Verify session exists before loading history
 	if _, err := s.GetSession(ctx, sessionID); err != nil {
-		return nil, fmt.Errorf("session not found: %w", err)
-	}
-
-	// Validate and normalize branch
-	var err error
-	branch, err = NormalizeBranch(branch)
-	if err != nil {
-		return nil, fmt.Errorf("invalid branch: %w", err)
+		if errors.Is(err, ErrSessionNotFound) {
+			return nil, err // Sentinel propagates unchanged
+		}
+		return nil, fmt.Errorf("get history for session %s: %w", sessionID, err)
 	}
 
 	// Use default limit for history retrieval
 	limit := DefaultHistoryLimit
 
-	// Retrieve messages for this specific branch
-	messages, err := s.GetMessagesByBranch(ctx, sessionID, branch, limit, 0)
+	// Retrieve messages
+	messages, err := s.GetMessages(ctx, sessionID, limit, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load history: %w", err)
 	}
@@ -567,7 +430,6 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID uuid.UUID, branch str
 
 	s.logger.Debug("loaded history",
 		"session_id", sessionID,
-		"branch", branch,
 		"message_count", len(messages))
 
 	history := NewHistory()
@@ -575,74 +437,12 @@ func (s *Store) LoadHistory(ctx context.Context, sessionID uuid.UUID, branch str
 	return history, nil
 }
 
-// SaveHistory saves the conversation history for a session.
-//
-// Deprecated: Use AppendMessages instead for incremental updates.
-// This method has poor performance as it loads all existing messages to determine new ones.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: Session UUID
-//   - branch: Branch name (empty defaults to "main")
-//   - history: Conversation history
-//
-// Returns:
-//   - error: If saving fails
-func (s *Store) SaveHistory(ctx context.Context, sessionID uuid.UUID, branch string, history *History) error {
-	// Validate and normalize branch
-	var err error
-	branch, err = NormalizeBranch(branch)
-	if err != nil {
-		return fmt.Errorf("invalid branch: %w", err)
-	}
-
-	// Get current messages from history
-	aiMessages := history.Messages()
-	if len(aiMessages) == 0 {
-		return nil
-	}
-
-	// Load existing messages for this branch to determine which are new
-	limit := DefaultHistoryLimit
-	existingMessages, err := s.GetMessagesByBranch(ctx, sessionID, branch, limit, 0)
-	if err != nil {
-		s.logger.Debug("no existing messages found", "session_id", sessionID, "branch", branch)
-		existingMessages = nil
-	}
-
-	// Only save messages that don't already exist (compare by count)
-	existingCount := len(existingMessages)
-	if len(aiMessages) <= existingCount {
-		return nil
-	}
-
-	// Convert new ai.Messages to session.Messages
-	newMessages := make([]*Message, 0, len(aiMessages)-existingCount)
-	for i := existingCount; i < len(aiMessages); i++ {
-		msg := aiMessages[i]
-		newMessages = append(newMessages, &Message{
-			Role:    string(msg.Role),
-			Content: msg.Content,
-		})
-	}
-
-	// Add new messages with branch support
-	if len(newMessages) > 0 {
-		if err := s.AddMessagesWithBranch(ctx, sessionID, branch, newMessages); err != nil {
-			return fmt.Errorf("failed to add messages: %w", err)
-		}
-	}
-
-	return nil
-}
-
 // sqlcSessionToSession converts sqlc.Session to Session (application type).
 func (*Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 	session := &Session{
-		ID:         pgUUIDToUUID(ss.ID),
-		CreatedAt:  ss.CreatedAt.Time,
-		UpdatedAt:  ss.UpdatedAt.Time,
-		CanvasMode: ss.CanvasMode,
+		ID:        ss.ID,
+		CreatedAt: ss.CreatedAt.Time,
+		UpdatedAt: ss.UpdatedAt.Time,
 	}
 
 	if ss.Title != nil {
@@ -670,31 +470,14 @@ func (*Store) sqlcMessageToMessage(sm sqlc.Message) (*Message, error) {
 	}
 
 	return &Message{
-		ID:             pgUUIDToUUID(sm.ID),
-		SessionID:      pgUUIDToUUID(sm.SessionID),
+		ID:             sm.ID,
+		SessionID:      sm.SessionID,
 		Role:           sm.Role,
 		Content:        content,
-		Branch:         sm.Branch,
 		Status:         sm.Status,
 		SequenceNumber: int(sm.SequenceNumber),
 		CreatedAt:      sm.CreatedAt.Time,
 	}, nil
-}
-
-// uuidToPgUUID converts uuid.UUID to pgtype.UUID.
-func uuidToPgUUID(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{
-		Bytes: id,
-		Valid: true,
-	}
-}
-
-// pgUUIDToUUID converts pgtype.UUID to uuid.UUID.
-func pgUUIDToUUID(pgUUID pgtype.UUID) uuid.UUID {
-	if !pgUUID.Valid {
-		return uuid.Nil
-	}
-	return pgUUID.Bytes
 }
 
 // =============================================================================
@@ -717,7 +500,6 @@ type MessagePair struct {
 // Parameters:
 //   - ctx: Context for the operation
 //   - sessionID: UUID of the session
-//   - branch: Branch name (empty defaults to "main")
 //   - userContent: User message content as ai.Part slice
 //   - assistantID: Pre-generated UUID for the assistant message (used in SSE URL)
 //
@@ -727,16 +509,9 @@ type MessagePair struct {
 func (s *Store) CreateMessagePair(
 	ctx context.Context,
 	sessionID uuid.UUID,
-	branch string,
 	userContent []*ai.Part,
 	assistantID uuid.UUID,
 ) (*MessagePair, error) {
-	// Validate and normalize branch
-	branch, err := NormalizeBranch(branch)
-	if err != nil {
-		return nil, fmt.Errorf("invalid branch: %w", err)
-	}
-
 	// Database pool is required for transactional operations
 	if s.pool == nil {
 		return nil, fmt.Errorf("database pool required for CreateMessagePair")
@@ -756,19 +531,16 @@ func (s *Store) CreateMessagePair(
 	txQuerier := sqlc.New(tx)
 
 	// Lock session row to prevent concurrent modifications
-	_, err = txQuerier.LockSession(ctx, uuidToPgUUID(sessionID))
+	_, err = txQuerier.LockSession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("lock session: %w", err)
 	}
 
-	// Get current max sequence number for this branch
-	maxSeq, err := txQuerier.GetMaxSequenceByBranch(ctx, sqlc.GetMaxSequenceByBranchParams{
-		SessionID: uuidToPgUUID(sessionID),
-		Branch:    branch,
-	})
+	// Get current max sequence number
+	maxSeq, err := txQuerier.GetMaxSequenceNumber(ctx, sessionID)
 	if err != nil {
-		s.logger.Debug("no existing messages in branch, starting from sequence 0",
-			"session_id", sessionID, "branch", branch)
+		s.logger.Debug("no existing messages, starting from sequence 0",
+			"session_id", sessionID)
 		maxSeq = 0
 	}
 
@@ -785,12 +557,11 @@ func (s *Store) CreateMessagePair(
 
 	// Insert user message (status = completed)
 	_, err = txQuerier.AddMessageWithID(ctx, sqlc.AddMessageWithIDParams{
-		ID:             uuidToPgUUID(userMsgID),
-		SessionID:      uuidToPgUUID(sessionID),
+		ID:             userMsgID,
+		SessionID:      sessionID,
 		Role:           "user",
 		Content:        userContentJSON,
 		Status:         StatusCompleted,
-		Branch:         branch,
 		SequenceNumber: userSeq,
 	})
 	if err != nil {
@@ -800,12 +571,11 @@ func (s *Store) CreateMessagePair(
 	// Insert empty assistant message placeholder (status = streaming)
 	emptyContent := []byte("[]") // Empty ai.Part slice
 	_, err = txQuerier.AddMessageWithID(ctx, sqlc.AddMessageWithIDParams{
-		ID:             uuidToPgUUID(assistantID),
-		SessionID:      uuidToPgUUID(sessionID),
-		Role:           "assistant",
+		ID:             assistantID,
+		SessionID:      sessionID,
+		Role:           RoleAssistant,
 		Content:        emptyContent,
 		Status:         StatusStreaming,
-		Branch:         branch,
 		SequenceNumber: assistantSeq,
 	})
 	if err != nil {
@@ -815,7 +585,7 @@ func (s *Store) CreateMessagePair(
 	// Update session metadata
 	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sqlc.UpdateSessionUpdatedAtParams{
 		MessageCount: &assistantSeq,
-		SessionID:    uuidToPgUUID(sessionID),
+		SessionID:    sessionID,
 	}); err != nil {
 		return nil, fmt.Errorf("update session metadata: %w", err)
 	}
@@ -827,7 +597,6 @@ func (s *Store) CreateMessagePair(
 
 	s.logger.Debug("created message pair",
 		"session_id", sessionID,
-		"branch", branch,
 		"user_msg_id", userMsgID,
 		"assistant_msg_id", assistantID)
 
@@ -846,7 +615,6 @@ func (s *Store) CreateMessagePair(
 // Parameters:
 //   - ctx: Context for the operation
 //   - sessionID: UUID of the session
-//   - branch: Branch name (empty defaults to "main")
 //   - beforeSeq: Sequence number to search before
 //
 // Returns:
@@ -855,18 +623,10 @@ func (s *Store) CreateMessagePair(
 func (s *Store) GetUserMessageBefore(
 	ctx context.Context,
 	sessionID uuid.UUID,
-	branch string,
 	beforeSeq int32,
 ) (string, error) {
-	// Validate and normalize branch
-	branch, err := NormalizeBranch(branch)
-	if err != nil {
-		return "", fmt.Errorf("invalid branch: %w", err)
-	}
-
 	content, err := s.queries.GetUserMessageBefore(ctx, sqlc.GetUserMessageBeforeParams{
-		SessionID:      uuidToPgUUID(sessionID),
-		Branch:         branch,
+		SessionID:      sessionID,
 		BeforeSequence: beforeSeq,
 	})
 	if err != nil {
@@ -904,7 +664,7 @@ func (s *Store) GetUserMessageBefore(
 //   - *Message: The message if found
 //   - error: ErrMessageNotFound if not found
 func (s *Store) GetMessageByID(ctx context.Context, msgID uuid.UUID) (*Message, error) {
-	sm, err := s.queries.GetMessageByID(ctx, uuidToPgUUID(msgID))
+	sm, err := s.queries.GetMessageByID(ctx, msgID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrMessageNotFound
@@ -924,7 +684,7 @@ func (s *Store) UpdateMessageContent(ctx context.Context, msgID uuid.UUID, conte
 	}
 
 	if err := s.queries.UpdateMessageContent(ctx, sqlc.UpdateMessageContentParams{
-		ID:      uuidToPgUUID(msgID),
+		ID:      msgID,
 		Content: contentJSON,
 	}); err != nil {
 		return fmt.Errorf("update message content: %w", err)
@@ -938,38 +698,12 @@ func (s *Store) UpdateMessageContent(ctx context.Context, msgID uuid.UUID, conte
 // Used to mark streaming messages as failed if an error occurs.
 func (s *Store) UpdateMessageStatus(ctx context.Context, msgID uuid.UUID, status string) error {
 	if err := s.queries.UpdateMessageStatus(ctx, sqlc.UpdateMessageStatusParams{
-		ID:     uuidToPgUUID(msgID),
+		ID:     msgID,
 		Status: status,
 	}); err != nil {
 		return fmt.Errorf("update message status: %w", err)
 	}
 
 	s.logger.Debug("updated message status", "msg_id", msgID, "status", status)
-	return nil
-}
-
-// =============================================================================
-// Canvas Mode Operation
-// =============================================================================
-
-// UpdateCanvasMode toggles canvas mode for a session.
-// Per golang-master: Error wrapping with context.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: UUID of the session
-//   - canvasMode: New canvas mode state
-//
-// Returns:
-//   - error: If update fails
-func (s *Store) UpdateCanvasMode(ctx context.Context, sessionID uuid.UUID, canvasMode bool) error {
-	if err := s.queries.UpdateCanvasMode(ctx, sqlc.UpdateCanvasModeParams{
-		SessionID:  uuidToPgUUID(sessionID),
-		CanvasMode: canvasMode,
-	}); err != nil {
-		return fmt.Errorf("update canvas mode for session %s: %w", sessionID, err)
-	}
-
-	s.logger.Debug("updated canvas mode", "session_id", sessionID, "canvas_mode", canvasMode)
 	return nil
 }

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/web/handlers"
+	"github.com/koopa0/koopa/internal/web/handlers"
 )
 
 // Note: TestPages_Chat requires a mock session store since Pages now depends on Sessions.
@@ -23,30 +23,31 @@ func TestNewPages(t *testing.T) {
 	// (store methods won't be called in this test)
 	sessions := handlers.NewSessions(nil, []byte("test-secret-32-bytes-minimum!!!!"), true)
 
-	handler := handlers.NewPages(handlers.PagesConfig{
+	handler, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   logger,
 		Sessions: sessions,
 	})
 
+	if err != nil {
+		t.Fatalf("NewPages failed: %v", err)
+	}
 	if handler == nil {
 		t.Fatal("NewPages returned nil")
 	}
 }
 
-func TestNewPages_NilLoggerPanics(t *testing.T) {
+func TestNewPages_NilLogger_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic when logger is nil")
-		}
-	}()
-
-	// Should panic with nil logger
-	handlers.NewPages(handlers.PagesConfig{
+	// Should return error with nil logger
+	_, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   nil,
 		Sessions: nil,
 	})
+
+	if err == nil {
+		t.Error("expected error when logger is nil")
+	}
 }
 
 func TestPages_Chat_RequiresSessions(t *testing.T) {
@@ -55,11 +56,14 @@ func TestPages_Chat_RequiresSessions(t *testing.T) {
 	logger := slog.Default()
 
 	// Create handler with nil sessions to verify behavior
-	handler := handlers.NewPages(handlers.PagesConfig{
+	handler, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   logger,
 		Sessions: nil,
 	})
 
+	if err != nil {
+		t.Fatalf("NewPages failed: %v", err)
+	}
 	if handler == nil {
 		t.Fatal("NewPages returned nil")
 	}
@@ -75,10 +79,13 @@ func TestPages_Chat_Structure(t *testing.T) {
 
 	logger := slog.Default()
 	sessions := handlers.NewSessions(nil, []byte("test-secret-32-bytes-minimum!!!!"), true)
-	handler := handlers.NewPages(handlers.PagesConfig{
+	handler, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   logger,
 		Sessions: sessions,
 	})
+	if err != nil {
+		t.Fatalf("NewPages failed: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/genui", nil)
 	rec := httptest.NewRecorder()

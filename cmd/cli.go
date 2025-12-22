@@ -10,10 +10,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/koopa0/koopa-cli/internal/app"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/tui"
+	"github.com/koopa0/koopa/internal/app"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/tui"
 )
 
 // runCLI initializes and starts the interactive CLI with Bubble Tea TUI.
@@ -41,7 +41,10 @@ func runCLI() error {
 		return fmt.Errorf("failed to get session: %w", err)
 	}
 
-	model := tui.New(ctx, runtime.Flow, sessionID)
+	model, err := tui.New(ctx, runtime.Flow, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to create TUI: %w", err)
+	}
 	program := tea.NewProgram(model, tea.WithContext(ctx))
 
 	if _, err = program.Run(); err != nil {

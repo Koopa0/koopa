@@ -173,19 +173,19 @@ jobs:
 
       - name: Build (Unix)
         if: runner.os != 'Windows'
-        run: go build -v -o koopa-cli ./
+        run: go build -v -o koopa ./
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
-        run: go build -v -o koopa-cli.exe ./
+        run: go build -v -o koopa.exe ./
 
       - name: Test binary (Unix)
         if: runner.os != 'Windows'
-        run: ./koopa-cli --help
+        run: ./koopa --help
 
       - name: Test binary (Windows)
         if: runner.os == 'Windows'
-        run: .\koopa-cli.exe --help
+        run: .\koopa.exe --help
 
   fuzz:
     name: Fuzz Tests

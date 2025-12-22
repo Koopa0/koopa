@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/koopa0/koopa-cli/internal/rag"
+	"github.com/koopa0/koopa/internal/rag"
 )
 
 // =============================================================================
@@ -46,10 +46,9 @@ func TestChatAgent_RAGIntegration_EndToEnd(t *testing.T) {
 	t.Logf("Indexed document %s with test content", docID)
 
 	// STEP 2: Query should trigger RAG retrieval
-	invCtx, sessionID, branch := newInvocationContext(ctx, framework.SessionID)
-	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID, branch,
+	invCtx, sessionID := newInvocationContext(ctx, framework.SessionID)
+	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID,
 		"What is the secret password from the test document?",
-		false,
 		nil,
 	)
 
@@ -88,10 +87,9 @@ func TestRetrieveRAGContext_ActualRetrieval(t *testing.T) {
 	t.Log("Indexed 2 test documents")
 
 	// Query that should trigger retrieval
-	invCtx, sessionID, branch := newInvocationContext(ctx, framework.SessionID)
-	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID, branch,
+	invCtx, sessionID := newInvocationContext(ctx, framework.SessionID)
+	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID,
 		"Tell me about Go programming language",
-		false,
 		nil,
 	)
 
@@ -127,10 +125,9 @@ func TestRetrieveRAGContext_DisabledWhenTopKZero(t *testing.T) {
 	})
 
 	// Query - should NOT trigger retrieval
-	invCtx, sessionID, branch := newInvocationContext(ctx, framework.SessionID)
-	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID, branch,
+	invCtx, sessionID := newInvocationContext(ctx, framework.SessionID)
+	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID,
 		"What does the ignored document say?",
-		false,
 		nil,
 	)
 
@@ -152,10 +149,9 @@ func TestRetrieveRAGContext_EmptyKnowledgeBase(t *testing.T) {
 	ctx := context.Background()
 
 	// Query with empty knowledge base (no documents indexed)
-	invCtx, sessionID, branch := newInvocationContext(ctx, framework.SessionID)
-	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID, branch,
+	invCtx, sessionID := newInvocationContext(ctx, framework.SessionID)
+	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID,
 		"What is in the knowledge base?",
-		false,
 		nil,
 	)
 
@@ -195,10 +191,9 @@ func TestRetrieveRAGContext_MultipleRelevantDocuments(t *testing.T) {
 	t.Logf("Indexed %d related documents", len(topics))
 
 	// Query should retrieve multiple relevant documents
-	invCtx, sessionID, branch := newInvocationContext(ctx, framework.SessionID)
-	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID, branch,
+	invCtx, sessionID := newInvocationContext(ctx, framework.SessionID)
+	resp, err := framework.Agent.ExecuteStream(invCtx, sessionID,
 		"Summarize the key features of Go programming language",
-		false,
 		nil,
 	)
 

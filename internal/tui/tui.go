@@ -4,7 +4,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/agent/chat"
 )
 
 // State represents TUI state machine.
@@ -32,12 +31,8 @@ const (
 	maxHistory  = 100 // Maximum command history entries
 )
 
-// Timeout constants for stream operations and cleanup.
-// Centralized here for consistency across the TUI package.
-const (
-	streamTimeout  = 5 * time.Minute        // Maximum time for a single stream
-	cleanupTimeout = 100 * time.Millisecond // Maximum wait for goroutine cleanup
-)
+// Timeout constants for stream operations.
+const streamTimeout = 5 * time.Minute // Maximum time for a single stream
 
 // Message role constants for consistent display.
 const (
@@ -72,12 +67,9 @@ type TUI struct {
 
 	// Stream management
 	// Note: No sync.WaitGroup - Bubble Tea's event loop provides synchronization.
-	// Channel closure signals goroutine completion.
-	streamCancel context.CancelFunc
-	streamTextCh <-chan string
-	streamDoneCh <-chan chat.Output
-	streamErrCh  <-chan error
-	streamDone   chan struct{} // Signals goroutine exit for cleanup
+	// Single union channel with discriminated events simplifies select logic.
+	streamCancel  context.CancelFunc
+	streamEventCh <-chan streamEvent
 
 	// Dependencies (direct, no interface)
 	chatFlow  *chat.Flow
@@ -106,17 +98,19 @@ func (t *TUI) addMessage(msg Message) {
 }
 
 // New creates a TUI model for chat interaction.
-// Panics if flow or ctx are nil - these are programmer errors that
-// should be caught during development, not runtime.
+// Returns error if required dependencies are nil.
 //
 // IMPORTANT: ctx MUST be the same context passed to tea.WithContext()
 // to ensure consistent cancellation behavior.
-func New(ctx context.Context, flow *chat.Flow, sessionID string) *TUI {
+func New(ctx context.Context, flow *chat.Flow, sessionID string) (*TUI, error) {
 	if flow == nil {
-		panic("tui.New: flow is required")
+		return nil, errors.New("tui.New: flow is required")
 	}
 	if ctx == nil {
-		panic("tui.New: ctx is required")
+		return nil, errors.New("tui.New: ctx is required")
+	}
+	if sessionID == "" {
+		return nil, errors.New("tui.New: session ID is required")
 	}
 
 	// Create cancellable context for cleanup on exit
@@ -159,7 +153,7 @@ func New(ctx context.Context, flow *chat.Flow, sessionID string) *TUI {
 		history:   make([]string, 0, maxHistory),
 		markdown:  newMarkdownRenderer(80),
 		width:     80, // Default width until WindowSizeMsg arrives
-	}
+	}, nil
 }
 
 // Init implements tea.Model.
@@ -195,36 +189,23 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamStartedMsg:
 		t.streamCancel = msg.cancel
-		t.streamTextCh = msg.textCh
-		t.streamDoneCh = msg.doneCh
-		t.streamErrCh = msg.errCh
-		t.streamDone = msg.done
+		t.streamEventCh = msg.eventCh
 		t.state = StateStreaming
-		return t, listenForStream(msg.textCh, msg.doneCh, msg.errCh)
+		return t, listenForStream(msg.eventCh)
 
 	case streamTextMsg:
 		t.output.WriteString(msg.text)
-		return t, listenForStream(t.streamTextCh, t.streamDoneCh, t.streamErrCh)
+		return t, listenForStream(t.streamEventCh)
 
 	case streamDoneMsg:
 		t.state = StateInput
 
-		// Cancel context to release timer resources BEFORE clearing reference
+		// Cancel context to release timer resources
 		if t.streamCancel != nil {
 			t.streamCancel()
 			t.streamCancel = nil
 		}
-
-		// Wait for goroutine to fully exit before proceeding
-		if t.streamDone != nil {
-			select {
-			case <-t.streamDone:
-				// Goroutine exited cleanly
-			case <-time.After(cleanupTimeout):
-				slog.Warn("stream goroutine did not exit after Done")
-			}
-			t.streamDone = nil
-		}
+		t.streamEventCh = nil
 
 		// Prefer msg.output.Response (complete response from Genkit) over accumulated chunks.
 		// This handles models that don't stream or send final content only in Output.
@@ -245,22 +226,12 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamErrorMsg:
 		t.state = StateInput
 
-		// Cancel context to release timer resources BEFORE clearing reference
+		// Cancel context to release timer resources
 		if t.streamCancel != nil {
 			t.streamCancel()
 			t.streamCancel = nil
 		}
-
-		// Wait for goroutine to fully exit before proceeding
-		if t.streamDone != nil {
-			select {
-			case <-t.streamDone:
-				// Goroutine exited cleanly
-			case <-time.After(cleanupTimeout):
-				slog.Warn("stream goroutine did not exit after error")
-			}
-			t.streamDone = nil
-		}
+		t.streamEventCh = nil
 
 		switch {
 		case errors.Is(msg.err, context.Canceled):

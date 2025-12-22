@@ -14,7 +14,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/koopa0/koopa-cli/internal/log"
+	"github.com/koopa0/koopa/internal/log"
 )
 
 // Version is set at build time via ldflags:

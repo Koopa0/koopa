@@ -26,13 +26,13 @@ import (
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/rag"
-	"github.com/koopa0/koopa-cli/internal/security"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/rag"
+	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // chatFlowSetup contains all resources needed for chat flow integration tests.

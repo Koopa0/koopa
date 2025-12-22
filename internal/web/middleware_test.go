@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/web/handlers"
+	"github.com/koopa0/koopa/internal/web/handlers"
 )
 
 // TestLoggingMiddleware_CapturesMetrics verifies that the middleware logs request metrics.

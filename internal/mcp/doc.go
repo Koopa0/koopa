@@ -86,8 +86,8 @@
 //
 //	import (
 //	    "context"
-//	    "github.com/koopa0/koopa-cli/internal/mcp"
-//	    "github.com/koopa0/koopa-cli/internal/tools"
+//	    "github.com/koopa0/koopa/internal/mcp"
+//	    "github.com/koopa0/koopa/internal/tools"
 //	    "github.com/modelcontextprotocol/go-sdk/mcp"
 //	    "os"
 //	)

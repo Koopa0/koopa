@@ -8,11 +8,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/testutil"
-	"github.com/koopa0/koopa-cli/internal/web/e2e"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
+	"github.com/koopa0/koopa/internal/web/e2e"
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -134,7 +134,7 @@ type SSECapture struct {
 
 // SSEEvent represents a captured SSE event.
 type SSEEvent struct {
-	Type string // "chunk", "done", "error", "artifact", "canvas_show"
+	Type string // "chunk", "done", "error"
 	Data string // Raw event data
 }
 

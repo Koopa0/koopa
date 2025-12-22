@@ -211,7 +211,6 @@ func TestSentinelErrors(t *testing.T) {
 		{"ErrMissingAPIKey", ErrMissingAPIKey, ErrMissingAPIKey},
 		{"ErrInvalidModelName", ErrInvalidModelName, ErrInvalidModelName},
 		{"ErrInvalidTemperature", ErrInvalidTemperature, ErrInvalidTemperature},
-		{"ErrInvalidBranch", ErrInvalidBranch, ErrInvalidBranch},
 	}
 
 	for _, tt := range tests {
@@ -949,7 +948,6 @@ func FuzzMaskSecret(f *testing.F) {
 
 		// Property 3: Meaningful portions of input should not leak (CRITICAL SECURITY)
 		// REVISED: Only check for leaks of 3+ chars (real security risk)
-		// We allow single-byte UTF-8 artifacts (harmless) but prevent
 		// meaningful data exposure (e.g., "password" appearing in masked output)
 		if len(input) >= 3 {
 			// Check for 3+ character leaks (actual security risk)
