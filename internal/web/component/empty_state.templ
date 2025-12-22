@@ -8,7 +8,7 @@ type EmptyStateProps struct {
 // EmptyState renders the welcome message shown when chat has no messages.
 // This component is hidden via CSS when #message-list has messages (using :has() selector).
 templ EmptyState(props EmptyStateProps) {
-	<div id="empty-state" class="flex flex-col items-center justify-center min-h-[60vh] px-4">
+	<div id="empty-state" class="flex flex-1 flex-col items-center justify-center px-4">
 		<!-- Logo/Icon -->
 		<div class="flex size-16 items-center justify-center rounded-2xl bg-indigo-500/10 ring-1 ring-indigo-500/20 mb-6">
 			<span class="text-3xl font-bold text-indigo-400">K</span>

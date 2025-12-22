@@ -5,9 +5,9 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/web/component"
-	"github.com/koopa0/koopa-cli/internal/web/page"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/web/component"
+	"github.com/koopa0/koopa/internal/web/page"
 )
 
 // extractTextContent extracts text content from ai.Part slice.

@@ -7,12 +7,12 @@ VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: GetSession :one
-SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count, canvas_mode
+SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
 FROM sessions
 WHERE id = $1;
 
 -- name: ListSessions :many
-SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count, canvas_mode
+SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
 FROM sessions
 ORDER BY updated_at DESC
 LIMIT sqlc.arg(result_limit)
@@ -21,7 +21,7 @@ OFFSET sqlc.arg(result_offset);
 -- name: ListSessionsWithMessages :many
 -- Only list sessions that have messages or titles (not empty sessions)
 -- This is used for sidebar to hide "New Chat" placeholder sessions
-SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count, canvas_mode
+SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
 FROM sessions
 WHERE message_count > 0 OR title IS NOT NULL
 ORDER BY updated_at DESC
@@ -46,17 +46,12 @@ DELETE FROM sessions
 WHERE id = $1;
 
 -- name: AddMessage :exec
--- Legacy: adds message to 'main' branch
-INSERT INTO message (session_id, role, content, sequence_number, branch)
-VALUES ($1, $2, $3, $4, 'main');
-
--- name: AddMessageWithBranch :exec
--- Add a message to a specific branch
-INSERT INTO message (session_id, branch, role, content, sequence_number)
-VALUES ($1, $2, $3, $4, $5);
+-- Add a message to a session
+INSERT INTO message (session_id, role, content, sequence_number)
+VALUES ($1, $2, $3, $4);
 
 -- name: GetMessages :many
--- Legacy: returns all messages regardless of branch
+-- Get all messages for a session ordered by sequence
 SELECT *
 FROM message
 WHERE session_id = sqlc.arg(session_id)
@@ -64,46 +59,31 @@ ORDER BY sequence_number ASC
 LIMIT sqlc.arg(result_limit)
 OFFSET sqlc.arg(result_offset);
 
--- name: GetMessagesByBranch :many
--- Get messages for a specific session and branch
-SELECT *
-FROM message
-WHERE session_id = sqlc.arg(session_id) AND branch = sqlc.arg(branch)
-ORDER BY sequence_number ASC
-LIMIT sqlc.arg(result_limit)
-OFFSET sqlc.arg(result_offset);
-
 -- name: GetMaxSequenceNumber :one
--- Legacy: max sequence across all branches
+-- Get max sequence number for a session
 SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
 FROM message
 WHERE session_id = $1;
 
--- name: GetMaxSequenceByBranch :one
--- Get max sequence number for a specific branch
-SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
-FROM message
-WHERE session_id = sqlc.arg(session_id) AND branch = sqlc.arg(branch);
-
--- name: CountMessagesByBranch :one
--- Count messages in a specific branch
+-- name: CountMessages :one
+-- Count messages in a session
 SELECT COUNT(*)::integer AS count
 FROM message
-WHERE session_id = sqlc.arg(session_id) AND branch = sqlc.arg(branch);
+WHERE session_id = sqlc.arg(session_id);
 
 -- name: LockSession :one
 -- Locks the session row to prevent concurrent modifications
 SELECT id FROM sessions WHERE id = $1 FOR UPDATE;
 
--- name: DeleteMessagesByBranch :exec
--- Delete all messages in a specific branch
+-- name: DeleteMessages :exec
+-- Delete all messages in a session
 DELETE FROM message
-WHERE session_id = sqlc.arg(session_id) AND branch = sqlc.arg(branch);
+WHERE session_id = sqlc.arg(session_id);
 
 -- name: AddMessageWithID :one
 -- Add message with pre-assigned ID and status (for streaming)
-INSERT INTO message (id, session_id, role, content, status, branch, sequence_number)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO message (id, session_id, role, content, status, sequence_number)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: UpdateMessageContent :exec
@@ -127,7 +107,6 @@ WHERE id = $1;
 SELECT content
 FROM message
 WHERE session_id = sqlc.arg(session_id)
-  AND branch = sqlc.arg(branch)
   AND role = 'user'
   AND sequence_number < sqlc.arg(before_sequence)
 ORDER BY sequence_number DESC
@@ -138,10 +117,3 @@ LIMIT 1;
 SELECT *
 FROM message
 WHERE id = $1;
-
--- name: UpdateCanvasMode :exec
--- Toggle canvas mode for a session
-UPDATE sessions
-SET canvas_mode = sqlc.arg(canvas_mode),
-    updated_at = NOW()
-WHERE id = sqlc.arg(session_id);

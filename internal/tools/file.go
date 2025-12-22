@@ -9,8 +9,8 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 
-	"github.com/koopa0/koopa-cli/internal/log"
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/log"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 // Entry type constants for ListFiles results.
@@ -94,19 +94,41 @@ func RegisterFileTools(g *genkit.Genkit, ft *FileTools) ([]ai.Tool, error) {
 
 	return []ai.Tool{
 		genkit.DefineTool(g, ToolReadFile,
-			"Read the complete content of any text-based file.",
+			"Read the complete content of a text-based file. "+
+				"Use this to examine source code, configuration files, logs, or documentation. "+
+				"Supports files up to 10MB. Binary files are not supported and will return an error. "+
+				"Returns: file path, content (UTF-8), size in bytes, and line count. "+
+				"Common errors: file not found (verify path with list_files), "+
+				"permission denied, file too large, binary file detected.",
 			WithEvents(ToolReadFile, ft.ReadFile)),
 		genkit.DefineTool(g, ToolWriteFile,
-			"Write or create any text-based file.",
+			"Write or create a text-based file with the specified content. "+
+				"Creates parent directories automatically if they don't exist. "+
+				"Overwrites existing files without confirmation. "+
+				"Use this for: creating new files, updating configuration, saving generated content. "+
+				"Returns: file path, bytes written, whether file was created or updated. "+
+				"Common errors: permission denied, disk full, invalid path.",
 			WithEvents(ToolWriteFile, ft.WriteFile)),
 		genkit.DefineTool(g, ToolListFiles,
-			"List all files and subdirectories in a directory.",
+			"List files and subdirectories in a directory. "+
+				"Returns file names, sizes, types (file/directory), and modification times. "+
+				"Does not recurse into subdirectories (use recursively for deep exploration). "+
+				"Use this to: explore project structure, find files by name, verify paths. "+
+				"Tip: Start from the project root and navigate down to find specific files.",
 			WithEvents(ToolListFiles, ft.ListFiles)),
 		genkit.DefineTool(g, ToolDeleteFile,
-			"Delete a file permanently.",
+			"Permanently delete a file or empty directory. "+
+				"WARNING: This action cannot be undone. "+
+				"Only deletes empty directories (use with caution). "+
+				"Returns: confirmation of deletion with file path. "+
+				"Common errors: file not found, directory not empty, permission denied.",
 			WithEvents(ToolDeleteFile, ft.DeleteFile)),
 		genkit.DefineTool(g, ToolGetFileInfo,
-			"Get detailed metadata about a file.",
+			"Get detailed metadata about a file without reading its contents. "+
+				"Returns: file size, modification time, permissions, and type (file/directory). "+
+				"Use this to: check if a file exists, verify file size before reading, "+
+				"determine file type without opening it. "+
+				"More efficient than read_file when you only need metadata.",
 			WithEvents(ToolGetFileInfo, ft.GetFileInfo)),
 	}, nil
 }

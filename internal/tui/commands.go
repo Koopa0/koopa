@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/agent/chat"
 )
 
 // streamBufferSize is sized for ~1.5s burst at 60 FPS refresh rate.
@@ -15,13 +15,21 @@ import (
 // memory bounded (100 strings ≈ 10KB typical).
 const streamBufferSize = 100
 
-// Stream message types
+// streamEvent is a discriminated union for all stream events.
+// Using a single channel with union type simplifies select logic
+// and eliminates complex multi-channel closure handling.
+type streamEvent struct {
+	// Exactly one of these fields is set per event
+	text   string      // Text chunk (when non-empty)
+	output chat.Output // Final output (when done is true)
+	err    error       // Error (when non-nil)
+	done   bool        // True when stream completed successfully
+}
+
+// Stream message types for Bubble Tea
 type streamStartedMsg struct {
-	textCh <-chan string
-	doneCh <-chan chat.Output
-	errCh  <-chan error
-	cancel context.CancelFunc
-	done   chan struct{} // Signals goroutine exit
+	eventCh <-chan streamEvent
+	cancel  context.CancelFunc
 }
 
 type streamTextMsg struct {
@@ -45,14 +53,9 @@ type streamErrorMsg struct {
 //  3. Error occurs
 //
 // Channel closure signals completion - no WaitGroup needed.
-//
-//nolint:gocognit // TODO: Refactor goroutine logic to separate method for testability
 func (t *TUI) startStream(query string) tea.Cmd {
 	return func() tea.Msg {
-		textCh := make(chan string, streamBufferSize)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
-		done := make(chan struct{})
+		eventCh := make(chan streamEvent, streamBufferSize)
 
 		// Create context with timeout to prevent indefinite hangs
 		ctx, cancel := context.WithTimeout(t.ctx, streamTimeout)
@@ -60,24 +63,19 @@ func (t *TUI) startStream(query string) tea.Cmd {
 		go func() {
 			// Ensure timer resources are released on all exit paths
 			defer cancel()
+			// Channel closure signals goroutine completion
+			defer close(eventCh)
+
 			// Panic recovery to prevent TUI lockup
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("stream panic recovered", "panic", r)
 					select {
-					case errCh <- fmt.Errorf("stream panic: %v", r):
+					case eventCh <- streamEvent{err: fmt.Errorf("stream panic: %v", r)}:
 					default:
 					}
 				}
 			}()
-
-			// Signal goroutine exit for cleanup
-			defer close(done)
-
-			// Channel closure signals goroutine completion
-			defer close(textCh)
-			defer close(doneCh)
-			defer close(errCh)
 
 			var chunkCount int
 
@@ -89,24 +87,24 @@ func (t *TUI) startStream(query string) tea.Cmd {
 			}) {
 				if err != nil {
 					select {
-					case errCh <- fmt.Errorf("chunk %d: %w", chunkCount, err):
+					case eventCh <- streamEvent{err: fmt.Errorf("chunk %d: %w", chunkCount, err)}:
 					case <-ctx.Done():
 					}
-					return // Error sent, exit immediately
+					return
 				}
 
 				if streamValue.Done {
 					select {
-					case doneCh <- streamValue.Output:
+					case eventCh <- streamEvent{done: true, output: streamValue.Output}:
 					case <-ctx.Done():
 					}
-					return // Completion sent, exit immediately
+					return
 				}
 
 				if streamValue.Stream.Text != "" {
 					chunkCount++
 					select {
-					case textCh <- streamValue.Stream.Text:
+					case eventCh <- streamEvent{text: streamValue.Stream.Text}:
 					case <-ctx.Done():
 						return
 					}
@@ -115,94 +113,49 @@ func (t *TUI) startStream(query string) tea.Cmd {
 
 			// CRITICAL: Guarantee completion signal if iterator exits without Done
 			// This happens when: context canceled, zero chunks, or early termination
-			// If we reach here, the iterator exited without sending Done or error
-			{
-				err := ctx.Err()
-				if err == nil {
-					// Iterator exited without error and without Done - unexpected
-					err = fmt.Errorf("stream ended unexpectedly without completion")
-					slog.Warn("stream iterator exited without completion signal")
-				}
-				select {
-				case errCh <- err:
-				default:
-					// Channel full - should not happen with buffered channel
-				}
+			err := ctx.Err()
+			if err == nil {
+				err = fmt.Errorf("stream ended unexpectedly without completion")
+				slog.Warn("stream iterator exited without completion signal")
+			}
+			select {
+			case eventCh <- streamEvent{err: err}:
+			default:
 			}
 		}()
 
 		return streamStartedMsg{
-			textCh: textCh,
-			doneCh: doneCh,
-			errCh:  errCh,
-			cancel: cancel,
-			done:   done,
+			eventCh: eventCh,
+			cancel:  cancel,
 		}
 	}
 }
 
-// listenForStream creates a command to wait for next stream message.
-// Handles channel closure correctly by checking ok values.
-//
-// Design: When textCh closes, we block on doneCh/errCh to get the final result.
-// The goroutine always sends to doneCh OR errCh before exiting, so this is safe.
-//
-//nolint:gocognit,gocyclo // Channel multiplexing requires complex branching for correct closure semantics
-func listenForStream(textCh <-chan string, doneCh <-chan chat.Output, errCh <-chan error) tea.Cmd {
+// listenForStream creates a command to wait for next stream event.
+// Uses single union channel - no complex multi-channel select needed.
+func listenForStream(eventCh <-chan streamEvent) tea.Cmd {
 	return func() tea.Msg {
-		// Nil channel check - if channels are nil, stream has ended
-		if textCh == nil && doneCh == nil && errCh == nil {
+		if eventCh == nil {
 			return nil
 		}
 
-		select {
-		case text, ok := <-textCh:
-			if !ok {
-				// textCh closed - block on doneCh/errCh for final result
-				// Goroutine guarantees one of these will receive a value
-				select {
-				case output, ok := <-doneCh:
-					if ok {
-						return streamDoneMsg{output: output}
-					}
-				case err, ok := <-errCh:
-					if ok {
-						return streamErrorMsg{err: err}
-					}
-				}
-				// Both channels closed without values - protocol violation
-				// Return error to prevent UI deadlock
-				return streamErrorMsg{err: fmt.Errorf("stream ended without completion signal")}
-			}
-			return streamTextMsg{text: text}
+		event, ok := <-eventCh
+		if !ok {
+			// Channel closed - stream ended
+			return streamErrorMsg{err: fmt.Errorf("stream ended without completion signal")}
+		}
 
-		case output, ok := <-doneCh:
-			if ok {
-				return streamDoneMsg{output: output}
-			}
-			// doneCh closed without value - wait for errCh
-			select {
-			case err, ok := <-errCh:
-				if ok {
-					return streamErrorMsg{err: err}
-				}
-			default:
-			}
-			return streamErrorMsg{err: fmt.Errorf("stream completed without result")}
-
-		case err, ok := <-errCh:
-			if ok {
-				return streamErrorMsg{err: err}
-			}
-			// errCh closed without value - wait for doneCh
-			select {
-			case output, ok := <-doneCh:
-				if ok {
-					return streamDoneMsg{output: output}
-				}
-			default:
-			}
-			return streamErrorMsg{err: fmt.Errorf("stream error channel closed unexpectedly")}
+		// Discriminated union dispatch
+		switch {
+		case event.err != nil:
+			return streamErrorMsg{err: event.err}
+		case event.done:
+			return streamDoneMsg{output: event.output}
+		case event.text != "":
+			return streamTextMsg{text: event.text}
+		default:
+			// Empty event - continue listening
+			return listenForStream(eventCh)()
 		}
 	}
 }

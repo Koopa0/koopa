@@ -44,7 +44,7 @@ func App(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"/genui/static/css/output.css\"><!-- Vendored JS: htmx 2.0.4, htmx-sse 2.2.2, elements 1.0.19 --><script src=\"/genui/static/js/htmx.min.js\" defer></script><script src=\"/genui/static/js/htmx-sse.js\" defer></script><script src=\"/genui/static/js/elements.min.js\" type=\"module\"></script><script src=\"/genui/static/js/app.js\" defer></script></head><body class=\"h-full\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"/genui/static/css/output.css\"><!-- Vendored JS: htmx 2.0.4, htmx-sse 2.2.2, elements 1.0.19 --><script src=\"/genui/static/js/htmx.min.js\" defer></script><script src=\"/genui/static/js/htmx-sse.js\" defer></script><script src=\"/genui/static/js/elements.min.js\" type=\"module\"></script><script src=\"/genui/static/js/app.js\" defer></script></head><body class=\"h-full\"><!-- Skip link for keyboard navigation --><a href=\"#main-content\" class=\"sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4\n\t\t\t\t       focus:z-50 focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white\n\t\t\t\t       focus:rounded-md focus:outline-none focus:ring-2 focus:ring-white\">Skip to main content</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

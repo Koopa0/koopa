@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/app"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/mcp"
-	"github.com/koopa0/koopa-cli/internal/security"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/internal/app"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/mcp"
+	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa/internal/tools"
 	mcpSdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/app"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/tui"
+	"github.com/koopa0/koopa/internal/app"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/tui"
 )
 
 // TestTUI_Integration tests the TUI can be created with real runtime.
@@ -42,9 +42,9 @@ func TestTUI_Integration(t *testing.T) {
 	})
 
 	// Verify TUI can be created with real Flow
-	tuiModel := tui.New(ctx, runtime.Flow, "test-session-id")
-	if tuiModel == nil {
-		t.Fatal("TUI model should not be nil")
+	tuiModel, err := tui.New(ctx, runtime.Flow, "test-session-id")
+	if err != nil {
+		t.Fatalf("Failed to create TUI: %v", err)
 	}
 
 	// Verify Init returns a command
@@ -78,7 +78,10 @@ func TestTUI_SlashCommands(t *testing.T) {
 		}
 	})
 
-	tuiModel := tui.New(ctx, runtime.Flow, "test-session-id")
+	tuiModel, err := tui.New(ctx, runtime.Flow, "test-session-id")
+	if err != nil {
+		t.Fatalf("Failed to create TUI: %v", err)
+	}
 
 	// Test /help command by simulating the message flow
 	// Note: Full TUI testing requires teatest or similar framework

@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/testutil"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
 )
 
 // testSecret is a 32-byte secret for testing.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/koopa0/koopa-cli/cmd"
+	"github.com/koopa0/koopa/cmd"
 )
 
 func main() {

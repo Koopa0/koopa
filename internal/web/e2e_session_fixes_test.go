@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/web"
-	"github.com/koopa0/koopa-cli/internal/web/e2e"
+	"github.com/koopa0/koopa/internal/web"
+	"github.com/koopa0/koopa/internal/web/e2e"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -299,116 +299,6 @@ func TestE2E_Session_SidebarRefreshOnNewMessage(t *testing.T) {
 	// Log for debugging (helpful in CI)
 	t.Logf("Initial sidebar: %d chars, Updated sidebar: %d chars",
 		len(initialSidebar), len(updatedSidebar))
-}
-
-// =============================================================================
-// CANVAS PANEL DISPLAY TESTS
-// =============================================================================
-// These tests verify the Canvas panel appears when AI generates artifacts.
-// Bug Fix: WriteCanvasShow now removes 'hidden' class in addition to translate classes.
-
-// TestE2E_Canvas_PanelHiddenByDefault verifies Canvas panel is hidden initially.
-func TestE2E_Canvas_PanelHiddenByDefault(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping E2E test in short mode")
-	}
-
-	server, cleanup := web.StartTestServer(t)
-	t.Cleanup(cleanup)
-
-	browser, cleanupBrowser := web.SetupBrowserFixture(t)
-	t.Cleanup(cleanupBrowser)
-
-	page, err := browser.BrowserCtx.NewPage()
-	require.NoError(t, err)
-
-	_, err = page.Goto(server.URL + "/genui")
-	require.NoError(t, err)
-
-	// Wait for page to load
-	err = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-		State: playwright.LoadStateNetworkidle,
-	})
-	require.NoError(t, err)
-
-	// Verify artifact panel exists but is hidden
-	artifactPanel := page.Locator("#artifact-panel")
-
-	// Panel should exist
-	panelCount, err := artifactPanel.Count()
-	require.NoError(t, err)
-	assert.Equal(t, 1, panelCount, "artifact panel should exist in DOM")
-
-	// Panel should be hidden (not visible)
-	isVisible, err := artifactPanel.IsVisible()
-	require.NoError(t, err)
-	assert.False(t, isVisible, "artifact panel should be hidden by default (canvas mode off)")
-
-	// Verify hidden class is present
-	classAttr, err := artifactPanel.GetAttribute("class")
-	require.NoError(t, err)
-	assert.Contains(t, classAttr, "hidden", "artifact panel should have 'hidden' class when canvas mode is off")
-}
-
-// TestE2E_Canvas_ToggleVisibility verifies Canvas toggle button works.
-func TestE2E_Canvas_ToggleVisibility(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping E2E test in short mode")
-	}
-
-	server, cleanup := web.StartTestServer(t)
-	t.Cleanup(cleanup)
-
-	browser, cleanupBrowser := web.SetupBrowserFixture(t)
-	t.Cleanup(cleanupBrowser)
-
-	page, err := browser.BrowserCtx.NewPage()
-	require.NoError(t, err)
-
-	_, err = page.Goto(server.URL + "/genui")
-	require.NoError(t, err)
-
-	err = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-		State: playwright.LoadStateNetworkidle,
-	})
-	require.NoError(t, err)
-
-	// First, we need a session to enable canvas toggle
-	// Send a message to create session
-	err = page.Fill("#chat-input-textarea", "Create session for canvas test")
-	require.NoError(t, err)
-	err = page.Click("#send-button")
-	require.NoError(t, err)
-
-	// Wait for streaming to complete
-	finalMsg := page.Locator(".group.flex.gap-3:not(.justify-end)")
-	err = finalMsg.WaitFor(playwright.LocatorWaitForOptions{
-		State:   playwright.WaitForSelectorStateVisible,
-		Timeout: playwright.Float(e2e.TimeoutMillis(e2e.StreamingTimeout)),
-	})
-	require.NoError(t, err)
-
-	// Find canvas toggle button
-	canvasToggle := page.Locator("#canvas-toggle")
-	toggleCount, err := canvasToggle.Count()
-	require.NoError(t, err)
-
-	if toggleCount == 0 {
-		t.Skip("Canvas toggle button not found, skipping test")
-	}
-
-	// Click toggle to enable canvas
-	err = canvasToggle.Click()
-	require.NoError(t, err)
-
-	// Wait for toggle effect
-	time.Sleep(1 * time.Second)
-
-	// Verify aria-checked changed
-	ariaChecked, err := canvasToggle.GetAttribute("aria-checked")
-	require.NoError(t, err)
-	// Note: The exact value depends on initial state and toggle behavior
-	t.Logf("Canvas toggle aria-checked: %s", ariaChecked)
 }
 
 // =============================================================================

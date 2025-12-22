@@ -16,7 +16,7 @@ It unifies terminal efficiency with rich web interactions through a hybrid archi
 
 ## Features
 
-- **Generative Web UI**: A server-driven interface supporting streaming responses, rich component rendering, and artifact management without SPA complexity.
+- **Generative Web UI**: A server-driven interface supporting streaming responses and rich component rendering without SPA complexity.
 - **Terminal UI**: A low-latency Bubble Tea application for rapid interaction.
 - **Local RAG**: Automatic document indexing using `pgvector` for context-aware conversations.
 - **MCP Integration**: Implements the Model Context Protocol to serve as a backend for compatible clients like Claude Desktop.

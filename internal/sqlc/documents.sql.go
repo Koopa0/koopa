@@ -8,7 +8,6 @@ package sqlc
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -48,37 +47,28 @@ func (q *Queries) DeleteDocument(ctx context.Context, id string) error {
 }
 
 const getDocument = `-- name: GetDocument :one
-SELECT id, content, metadata, created_at, updated_at
+SELECT id, content, metadata
 FROM documents
 WHERE id = $1
 `
 
 type GetDocumentRow struct {
-	ID        string             `json:"id"`
-	Content   string             `json:"content"`
-	Metadata  []byte             `json:"metadata"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID       string `json:"id"`
+	Content  string `json:"content"`
+	Metadata []byte `json:"metadata"`
 }
 
 func (q *Queries) GetDocument(ctx context.Context, id string) (GetDocumentRow, error) {
 	row := q.db.QueryRow(ctx, getDocument, id)
 	var i GetDocumentRow
-	err := row.Scan(
-		&i.ID,
-		&i.Content,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+	err := row.Scan(&i.ID, &i.Content, &i.Metadata)
 	return i, err
 }
 
 const listDocumentsBySourceType = `-- name: ListDocumentsBySourceType :many
-SELECT id, content, metadata, created_at, updated_at
+SELECT id, content, metadata
 FROM documents
-WHERE metadata->>'source_type' = $1::text
-ORDER BY created_at DESC
+WHERE source_type = $1::text
 LIMIT $2
 `
 
@@ -88,14 +78,12 @@ type ListDocumentsBySourceTypeParams struct {
 }
 
 type ListDocumentsBySourceTypeRow struct {
-	ID        string             `json:"id"`
-	Content   string             `json:"content"`
-	Metadata  []byte             `json:"metadata"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID       string `json:"id"`
+	Content  string `json:"content"`
+	Metadata []byte `json:"metadata"`
 }
 
-// List all documents by source_type without similarity calculation
+// List all documents by source_type using dedicated indexed column
 // Used for listing indexed files without needing embeddings
 func (q *Queries) ListDocumentsBySourceType(ctx context.Context, arg ListDocumentsBySourceTypeParams) ([]ListDocumentsBySourceTypeRow, error) {
 	rows, err := q.db.Query(ctx, listDocumentsBySourceType, arg.SourceType, arg.ResultLimit)
@@ -106,13 +94,7 @@ func (q *Queries) ListDocumentsBySourceType(ctx context.Context, arg ListDocumen
 	items := []ListDocumentsBySourceTypeRow{}
 	for rows.Next() {
 		var i ListDocumentsBySourceTypeRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Content,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.Content, &i.Metadata); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -125,10 +107,10 @@ func (q *Queries) ListDocumentsBySourceType(ctx context.Context, arg ListDocumen
 
 const searchBySourceType = `-- name: SearchBySourceType :many
 
-SELECT id, content, metadata, created_at,
+SELECT id, content, metadata,
        (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM documents
-WHERE metadata->>'source_type' = $2::text
+WHERE source_type = $2::text
 ORDER BY similarity DESC
 LIMIT $3
 `
@@ -140,15 +122,14 @@ type SearchBySourceTypeParams struct {
 }
 
 type SearchBySourceTypeRow struct {
-	ID         string             `json:"id"`
-	Content    string             `json:"content"`
-	Metadata   []byte             `json:"metadata"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
+	ID         string  `json:"id"`
+	Content    string  `json:"content"`
+	Metadata   []byte  `json:"metadata"`
+	Similarity float64 `json:"similarity"`
 }
 
 // ===== Optimized RAG Queries (SQL-level filtering) =====
-// Generic search by source_type (flexible for future source types)
+// Generic search by source_type using dedicated indexed column
 func (q *Queries) SearchBySourceType(ctx context.Context, arg SearchBySourceTypeParams) ([]SearchBySourceTypeRow, error) {
 	rows, err := q.db.Query(ctx, searchBySourceType, arg.QueryEmbedding, arg.SourceType, arg.ResultLimit)
 	if err != nil {
@@ -162,7 +143,6 @@ func (q *Queries) SearchBySourceType(ctx context.Context, arg SearchBySourceType
 			&i.ID,
 			&i.Content,
 			&i.Metadata,
-			&i.CreatedAt,
 			&i.Similarity,
 		); err != nil {
 			return nil, err
@@ -176,7 +156,7 @@ func (q *Queries) SearchBySourceType(ctx context.Context, arg SearchBySourceType
 }
 
 const searchDocuments = `-- name: SearchDocuments :many
-SELECT id, content, metadata, created_at,
+SELECT id, content, metadata,
        (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM documents
 WHERE metadata @> $2::jsonb
@@ -191,11 +171,10 @@ type SearchDocumentsParams struct {
 }
 
 type SearchDocumentsRow struct {
-	ID         string             `json:"id"`
-	Content    string             `json:"content"`
-	Metadata   []byte             `json:"metadata"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
+	ID         string  `json:"id"`
+	Content    string  `json:"content"`
+	Metadata   []byte  `json:"metadata"`
+	Similarity float64 `json:"similarity"`
 }
 
 func (q *Queries) SearchDocuments(ctx context.Context, arg SearchDocumentsParams) ([]SearchDocumentsRow, error) {
@@ -211,7 +190,6 @@ func (q *Queries) SearchDocuments(ctx context.Context, arg SearchDocumentsParams
 			&i.ID,
 			&i.Content,
 			&i.Metadata,
-			&i.CreatedAt,
 			&i.Similarity,
 		); err != nil {
 			return nil, err
@@ -225,7 +203,7 @@ func (q *Queries) SearchDocuments(ctx context.Context, arg SearchDocumentsParams
 }
 
 const searchDocumentsAll = `-- name: SearchDocumentsAll :many
-SELECT id, content, metadata, created_at,
+SELECT id, content, metadata,
        (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM documents
 ORDER BY similarity DESC
@@ -238,11 +216,10 @@ type SearchDocumentsAllParams struct {
 }
 
 type SearchDocumentsAllRow struct {
-	ID         string             `json:"id"`
-	Content    string             `json:"content"`
-	Metadata   []byte             `json:"metadata"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
+	ID         string  `json:"id"`
+	Content    string  `json:"content"`
+	Metadata   []byte  `json:"metadata"`
+	Similarity float64 `json:"similarity"`
 }
 
 func (q *Queries) SearchDocumentsAll(ctx context.Context, arg SearchDocumentsAllParams) ([]SearchDocumentsAllRow, error) {
@@ -258,7 +235,6 @@ func (q *Queries) SearchDocumentsAll(ctx context.Context, arg SearchDocumentsAll
 			&i.ID,
 			&i.Content,
 			&i.Metadata,
-			&i.CreatedAt,
 			&i.Similarity,
 		); err != nil {
 			return nil, err
@@ -273,21 +249,21 @@ func (q *Queries) SearchDocumentsAll(ctx context.Context, arg SearchDocumentsAll
 
 const upsertDocument = `-- name: UpsertDocument :exec
 
-INSERT INTO documents (id, content, embedding, metadata, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, NOW())
+INSERT INTO documents (id, content, embedding, source_type, metadata)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (id) DO UPDATE SET
     content = EXCLUDED.content,
     embedding = EXCLUDED.embedding,
-    metadata = EXCLUDED.metadata,
-    updated_at = NOW()
+    source_type = EXCLUDED.source_type,
+    metadata = EXCLUDED.metadata
 `
 
 type UpsertDocumentParams struct {
-	ID        string             `json:"id"`
-	Content   string             `json:"content"`
-	Embedding *pgvector.Vector   `json:"embedding"`
-	Metadata  []byte             `json:"metadata"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID         string           `json:"id"`
+	Content    string           `json:"content"`
+	Embedding  *pgvector.Vector `json:"embedding"`
+	SourceType *string          `json:"source_type"`
+	Metadata   []byte           `json:"metadata"`
 }
 
 // Documents queries for sqlc
@@ -297,8 +273,8 @@ func (q *Queries) UpsertDocument(ctx context.Context, arg UpsertDocumentParams) 
 		arg.ID,
 		arg.Content,
 		arg.Embedding,
+		arg.SourceType,
 		arg.Metadata,
-		arg.CreatedAt,
 	)
 	return err
 }

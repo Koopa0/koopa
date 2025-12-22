@@ -13,59 +13,62 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
+	"github.com/koopa0/koopa/internal/sqlc"
 )
 
 // Performance Expectations (from TESTING_STRATEGY_v3.md):
-// - LoadHistory (100 msgs): < 50ms
+// - GetHistory (100 msgs): < 50ms
 // - SaveHistory: < 100ms
 
-// BenchmarkStore_LoadHistory benchmarks loading conversation history.
-// Run with: go test -tags=integration -bench=BenchmarkStore_LoadHistory -benchmem ./internal/session/...
-func BenchmarkStore_LoadHistory(b *testing.B) {
+// BenchmarkStore_GetHistory benchmarks loading conversation history.
+// Run with: go test -tags=integration -bench=BenchmarkStore_GetHistory -benchmem ./internal/session/...
+func BenchmarkStore_GetHistory(b *testing.B) {
 	ctx := context.Background()
 	store, session, cleanup := setupBenchmarkSession(b, ctx, 100) // 100 messages
 	defer cleanup()
 
 	sessionID := session.ID
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := store.LoadHistory(ctx, sessionID, "main")
+		_, err := store.GetHistory(ctx, sessionID)
 		if err != nil {
-			b.Fatalf("LoadHistory failed: %v", err)
+			b.Fatalf("GetHistory failed: %v", err)
 		}
 	}
 }
 
-// BenchmarkStore_LoadHistory_SmallSession benchmarks loading a small conversation.
-func BenchmarkStore_LoadHistory_SmallSession(b *testing.B) {
+// BenchmarkStore_GetHistory_SmallSession benchmarks loading a small conversation.
+func BenchmarkStore_GetHistory_SmallSession(b *testing.B) {
 	ctx := context.Background()
 	store, session, cleanup := setupBenchmarkSession(b, ctx, 10) // 10 messages
 	defer cleanup()
 
 	sessionID := session.ID
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := store.LoadHistory(ctx, sessionID, "main"); err != nil {
-			b.Fatalf("LoadHistory failed: %v", err)
+		if _, err := store.GetHistory(ctx, sessionID); err != nil {
+			b.Fatalf("GetHistory failed: %v", err)
 		}
 	}
 }
 
-// BenchmarkStore_LoadHistory_LargeSession benchmarks loading a large conversation.
-func BenchmarkStore_LoadHistory_LargeSession(b *testing.B) {
+// BenchmarkStore_GetHistory_LargeSession benchmarks loading a large conversation.
+func BenchmarkStore_GetHistory_LargeSession(b *testing.B) {
 	ctx := context.Background()
 	store, session, cleanup := setupBenchmarkSession(b, ctx, 500) // 500 messages
 	defer cleanup()
 
 	sessionID := session.ID
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := store.LoadHistory(ctx, sessionID, "main"); err != nil {
-			b.Fatalf("LoadHistory failed: %v", err)
+		if _, err := store.GetHistory(ctx, sessionID); err != nil {
+			b.Fatalf("GetHistory failed: %v", err)
 		}
 	}
 }
@@ -101,11 +104,47 @@ func BenchmarkStore_AddMessages(b *testing.B) {
 		}
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
 		err := store.AddMessages(ctx, session.ID, messages[i])
 		if err != nil {
 			b.Fatalf("AddMessages failed at iteration %d: %v", i, err)
+		}
+	}
+}
+
+// BenchmarkStore_AppendMessages benchmarks the Genkit-type message appending.
+func BenchmarkStore_AppendMessages(b *testing.B) {
+	ctx := context.Background()
+	pool, cleanup := setupBenchmarkDB(b, ctx)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	store := New(sqlc.New(pool), pool, logger)
+
+	// Create a test session
+	session, err := store.CreateSession(ctx, "Benchmark-AppendMessages", "", "")
+	if err != nil {
+		b.Fatalf("Failed to create session: %v", err)
+	}
+	defer func() { _ = store.DeleteSession(ctx, session.ID) }()
+
+	// Prepare ai.Message slices
+	messages := make([][]*ai.Message, b.N)
+	for i := range b.N {
+		messages[i] = []*ai.Message{
+			ai.NewUserMessage(ai.NewTextPart(fmt.Sprintf("Benchmark message %d", i))),
+			ai.NewModelMessage(ai.NewTextPart(fmt.Sprintf("Benchmark response %d", i))),
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := range b.N {
+		err := store.AppendMessages(ctx, session.ID, messages[i])
+		if err != nil {
+			b.Fatalf("AppendMessages failed at iteration %d: %v", i, err)
 		}
 	}
 }
@@ -128,6 +167,7 @@ func BenchmarkStore_CreateSession(b *testing.B) {
 		}
 	}()
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
 		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-Session-%d", i), "test-model", "test-prompt")
@@ -154,6 +194,7 @@ func BenchmarkStore_GetSession(b *testing.B) {
 	}
 	defer func() { _ = store.DeleteSession(ctx, session.ID) }()
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		_, err := store.GetSession(ctx, session.ID)
@@ -181,6 +222,7 @@ func BenchmarkStore_ListSessions(b *testing.B) {
 		defer func(s *Session) { _ = store.DeleteSession(context.Background(), s.ID) }(session)
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		_, err := store.ListSessions(ctx, 100, 0)
@@ -196,6 +238,7 @@ func BenchmarkStore_GetMessages(b *testing.B) {
 	store, session, cleanup := setupBenchmarkSession(b, ctx, 100)
 	defer cleanup()
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		_, err := store.GetMessages(ctx, session.ID, 100, 0)

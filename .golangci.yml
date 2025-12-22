@@ -192,7 +192,7 @@ linters:
         - .WithMessagef(
         - .WithStack(
       ignore-package-globs:
-        - github.com/koopa0/koopa-cli/*
+        - github.com/koopa0/koopa/*
 
     gocritic:
       enabled-tags:

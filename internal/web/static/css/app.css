@@ -40,6 +40,21 @@
   .animation-delay-400 {
     animation-delay: 400ms;
   }
+
+  /* Focus ring utilities with proper background offset colors */
+  /* Use focus-ring-800 for elements on bg-gray-800 backgrounds */
+  .focus-ring-800 {
+    @apply focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-indigo-500 focus-visible:ring-offset-2
+           focus-visible:ring-offset-gray-800;
+  }
+
+  /* Use focus-ring-900 for elements on bg-gray-900 backgrounds (sidebar, headers) */
+  .focus-ring-900 {
+    @apply focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-indigo-500 focus-visible:ring-offset-2
+           focus-visible:ring-offset-gray-900;
+  }
 }
 
 /* Respect reduced motion preference */

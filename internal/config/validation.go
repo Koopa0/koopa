@@ -100,51 +100,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ValidateBranch validates a branch name according to the following rules:
-//   - Branch format: "segment" or "segment1.segment2.segment3"
-//   - Each segment must start with a letter and contain only alphanumeric chars and underscores
-//   - Maximum total length is MaxBranchLength (256)
-//   - Maximum depth is MaxBranchDepth (10 segments)
-//   - Empty branch defaults to DefaultBranch ("main")
-//
-// Returns sentinel errors that can be checked with errors.Is():
-//   - ErrBranchTooLong: branch exceeds MaxBranchLength
-//   - ErrBranchTooDeep: branch exceeds MaxBranchDepth
-//   - ErrInvalidBranch: branch format is invalid
-//
-// Examples of valid branches: "main", "main.research", "chat.agent1.subtask"
-// Examples of invalid branches: ".main", "main.", "main..sub", "123abc"
-func ValidateBranch(branch string) (string, error) {
-	if branch == "" {
-		return DefaultBranch, nil
-	}
-
-	if len(branch) > MaxBranchLength {
-		return "", fmt.Errorf("%w: %q exceeds max %d characters", ErrBranchTooLong, branch, MaxBranchLength)
-	}
-
-	segments := splitBranch(branch)
-	if len(segments) > MaxBranchDepth {
-		return "", fmt.Errorf("%w: %q exceeds max %d levels", ErrBranchTooDeep, branch, MaxBranchDepth)
-	}
-
-	for i, seg := range segments {
-		if seg == "" {
-			return "", fmt.Errorf("%w: %q has empty segment (consecutive dots or leading/trailing dot)", ErrInvalidBranch, branch)
-		}
-		if !isValidSegment(seg) {
-			return "", fmt.Errorf("%w: segment %d %q must start with a letter and contain only alphanumeric characters and underscores", ErrInvalidBranch, i+1, seg)
-		}
-	}
-
-	return branch, nil
-}
-
-// NormalizeBranch normalizes and validates a branch name.
-func NormalizeBranch(branch string) (string, error) {
-	return ValidateBranch(branch)
-}
-
 // NormalizeMaxHistoryMessages normalizes the max history messages value.
 func NormalizeMaxHistoryMessages(limit int32) int32 {
 	if limit <= 0 {
@@ -157,45 +112,4 @@ func NormalizeMaxHistoryMessages(limit int32) int32 {
 		return MaxAllowedHistoryMessages
 	}
 	return limit
-}
-
-// splitBranch splits a branch name by dots.
-func splitBranch(branch string) []string {
-	if branch == "" {
-		return []string{}
-	}
-
-	var segments []string
-	start := 0
-	for i := range branch {
-		if branch[i] == '.' {
-			segments = append(segments, branch[start:i])
-			start = i + 1
-		}
-	}
-	segments = append(segments, branch[start:])
-	return segments
-}
-
-// isValidSegment checks if a branch segment is valid.
-func isValidSegment(seg string) bool {
-	if seg == "" {
-		return false
-	}
-
-	// First character must be a letter (De Morgan's law applied)
-	first := seg[0]
-	if (first < 'a' || first > 'z') && (first < 'A' || first > 'Z') {
-		return false
-	}
-
-	// Remaining characters must be alphanumeric or underscore (De Morgan's law applied)
-	for i := 1; i < len(seg); i++ {
-		c := seg[i]
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
-			return false
-		}
-	}
-
-	return true
 }

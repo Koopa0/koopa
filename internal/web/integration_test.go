@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/testutil"
-	"github.com/koopa0/koopa-cli/internal/web"
-	"github.com/koopa0/koopa-cli/internal/web/handlers"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
+	"github.com/koopa0/koopa/internal/web"
+	"github.com/koopa0/koopa/internal/web/handlers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

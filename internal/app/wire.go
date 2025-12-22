@@ -18,14 +18,14 @@ import (
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/koopa0/koopa-cli/db"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/observability"
-	"github.com/koopa0/koopa-cli/internal/rag"
-	"github.com/koopa0/koopa-cli/internal/security"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/db"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/observability"
+	"github.com/koopa0/koopa/internal/rag"
+	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // InitializeApp is the Wire injector function.

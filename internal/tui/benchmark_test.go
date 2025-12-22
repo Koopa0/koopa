@@ -8,7 +8,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/agent/chat"
 )
 
 // newBenchmarkTUI creates a TUI for benchmarking with minimal setup.
@@ -191,12 +191,8 @@ func BenchmarkTUI_Update(b *testing.B) {
 	b.Run("stream_text_msg", func(b *testing.B) {
 		tui := newBenchmarkTUI()
 		tui.state = StateStreaming
-		textCh := make(chan string, 1)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
-		tui.streamTextCh = textCh
-		tui.streamDoneCh = doneCh
-		tui.streamErrCh = errCh
+		eventCh := make(chan streamEvent, 1)
+		tui.streamEventCh = eventCh
 
 		msg := streamTextMsg{text: "Hello "}
 		b.ResetTimer()
@@ -314,39 +310,35 @@ This is a paragraph with **bold** and *italic* text.
 
 // BenchmarkListenForStream measures stream listening performance.
 func BenchmarkListenForStream(b *testing.B) {
-	b.Run("text_msg", func(b *testing.B) {
-		textCh := make(chan string, 1)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
+	b.Run("text_event", func(b *testing.B) {
+		eventCh := make(chan streamEvent, 1)
 
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
-			textCh <- "Hello"
-			cmd := listenForStream(textCh, doneCh, errCh)
+			eventCh <- streamEvent{text: "Hello"}
+			cmd := listenForStream(eventCh)
 			_ = cmd()
 		}
 	})
 
-	b.Run("done_msg", func(b *testing.B) {
-		textCh := make(chan string, 1)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
+	b.Run("done_event", func(b *testing.B) {
+		eventCh := make(chan streamEvent, 1)
 
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
-			doneCh <- chat.Output{Response: "done"}
-			cmd := listenForStream(textCh, doneCh, errCh)
+			eventCh <- streamEvent{done: true, output: chat.Output{Response: "done"}}
+			cmd := listenForStream(eventCh)
 			_ = cmd()
 		}
 	})
 
-	b.Run("nil_channels", func(b *testing.B) {
+	b.Run("nil_channel", func(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
-			cmd := listenForStream(nil, nil, nil)
+			cmd := listenForStream(nil)
 			_ = cmd()
 		}
 	})

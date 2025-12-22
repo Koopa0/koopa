@@ -51,7 +51,6 @@ tmp/
 temp/
 *.tmp
 
-# Test artifacts
 testdata/temp/
 *_test_output/
 
@@ -74,7 +73,6 @@ downloads/
 .minio/
 minio-data/
 
-# Documentation build artifacts
 docs/_build/
 *.pdf
 
@@ -84,7 +82,6 @@ docs/_build/
 .claude/
 .task/
 
-# Frontend build artifacts
 node_modules/
 build/frontend/node_modules/
 internal/ui/web/static/css/output.css

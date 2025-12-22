@@ -11,15 +11,13 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/google/uuid"
 
-	"github.com/koopa0/koopa-cli/internal/agent"
-	"github.com/koopa0/koopa-cli/internal/artifact"
+	"github.com/koopa0/koopa/internal/agent"
 )
 
 // Input is the input for Chat Agent Flow
 type Input struct {
-	Query         string `json:"query"`
-	SessionID     string `json:"sessionId"`     // Required field: session ID
-	CanvasEnabled bool   `json:"canvasEnabled"` // When true, AI outputs interactive content (code, markdown) for Canvas panel
+	Query     string `json:"query"`
+	SessionID string `json:"sessionId"` // Required field: session ID
 }
 
 // Output is the output for Chat Agent Flow
@@ -32,11 +30,6 @@ type Output struct {
 // Each chunk contains partial text that can be immediately displayed to the user.
 type StreamChunk struct {
 	Text string `json:"text"` // Partial text chunk
-	// TODO: Artifact extraction is not yet implemented.
-	// This field is reserved for Canvas feature Phase 2 where AI-signaled artifacts
-	// (code blocks, markdown, etc.) will be extracted from the stream and sent separately.
-	// Until implemented, this field will always be nil.
-	Artifact *artifact.Artifact `json:"artifact,omitempty"`
 }
 
 // FlowName is the registered name of the Chat Flow in Genkit.
@@ -120,9 +113,6 @@ func (c *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %w", agent.ErrInvalidSession, err)
 			}
 
-			// Default branch for top-level agent
-			branch := "main"
-
 			// Create StreamCallback wrapper if streaming is enabled
 			// When streamCb is nil (e.g., called via Run() instead of Stream()),
 			// agentCallback will be nil and ExecuteStream will operate in non-streaming mode.
@@ -144,8 +134,7 @@ func (c *Chat) DefineFlow(g *genkit.Genkit) *Flow {
 			}
 
 			// Execute with streaming callback (or non-streaming if callback is nil)
-			// Pass canvasEnabled from Flow Input to instruct AI about Canvas mode
-			resp, err := c.ExecuteStream(ctx, sessionID, branch, input.Query, input.CanvasEnabled, agentCallback)
+			resp, err := c.ExecuteStream(ctx, sessionID, input.Query, agentCallback)
 			if err != nil {
 				// Genkit will mark this span as failed, enabling proper observability
 				return Output{SessionID: input.SessionID}, fmt.Errorf("%w: %w", agent.ErrExecutionFailed, err)

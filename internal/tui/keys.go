@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"log/slog"
 	"strings"
 	"time"
 
@@ -195,17 +194,7 @@ func (t *TUI) cleanup() tea.Cmd {
 
 	// Then cancel stream-specific context (may already be canceled via parent)
 	t.cancelStream()
-
-	// Wait for goroutine with timeout (increased for network cleanup)
-	if t.streamDone != nil {
-		select {
-		case <-t.streamDone:
-			// Goroutine exited cleanly
-		case <-time.After(500 * time.Millisecond): // Allow more time for network cleanup
-			slog.Error("goroutine leak: stream did not exit after context cancel")
-		}
-		t.streamDone = nil
-	}
+	t.streamEventCh = nil
 
 	return tea.Quit
 }

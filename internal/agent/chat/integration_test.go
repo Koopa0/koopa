@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/agent/chat"
 )
 
 // TestChatAgent_BasicExecution tests basic chat agent execution
@@ -22,10 +22,10 @@ func TestChatAgent_BasicExecution(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 
 	t.Run("simple question", func(t *testing.T) {
-		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "Hello, how are you?")
+		resp, err := framework.Agent.Execute(ctx, sessionID, "Hello, how are you?")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 		assert.NotEmpty(t, resp.FinalText, "Agent should provide a non-empty response")
@@ -37,17 +37,17 @@ func TestChatAgent_SessionPersistence(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 
 	t.Run("first message creates history", func(t *testing.T) {
-		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "My name is Koopa")
+		resp, err := framework.Agent.Execute(ctx, sessionID, "My name is Koopa")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 	})
 
 	t.Run("second message uses history", func(t *testing.T) {
 		// Use same session for history continuity
-		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "What is my name?")
+		resp, err := framework.Agent.Execute(ctx, sessionID, "What is my name?")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 		// Session history should allow LLM to remember the name from previous message
@@ -60,11 +60,11 @@ func TestChatAgent_ToolIntegration(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 
 	t.Run("can use file tools", func(t *testing.T) {
 		// Ask agent to list files - LLM decides whether to call tools
-		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "List the files in /tmp directory")
+		resp, err := framework.Agent.Execute(ctx, sessionID, "List the files in /tmp directory")
 		require.NoError(t, err)
 		assert.NotNil(t, resp)
 		// Agent should respond (with or without tool calls)
@@ -78,9 +78,9 @@ func TestChatAgent_ErrorHandling(t *testing.T) {
 	defer cleanup()
 
 	t.Run("handles empty input gracefully", func(t *testing.T) {
-		ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+		ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 
-		resp, err := framework.Agent.Execute(ctx, sessionID, branch, "")
+		resp, err := framework.Agent.Execute(ctx, sessionID, "")
 		// Should handle empty input without crashing
 		// Either returns error or empty response
 		if err == nil {
@@ -163,7 +163,7 @@ func TestChatAgent_ConcurrentExecution(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numConcurrentQueries)
 
-	ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
+	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 
 	// Collect results safely
 	type result struct {
@@ -177,7 +177,7 @@ func TestChatAgent_ConcurrentExecution(t *testing.T) {
 	for i := 0; i < numConcurrentQueries; i++ {
 		go func(queryID int) {
 			defer wg.Done()
-			resp, err := framework.Agent.Execute(ctx, sessionID, branch, fmt.Sprintf("What is the capital of France? Query ID: %d", queryID))
+			resp, err := framework.Agent.Execute(ctx, sessionID, fmt.Sprintf("What is the capital of France? Query ID: %d", queryID))
 			mu.Lock()
 			results[queryID] = result{queryID: queryID, resp: resp, err: err}
 			mu.Unlock()

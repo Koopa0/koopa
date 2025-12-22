@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/security"
 	"golang.org/x/sync/errgroup"
 )
 

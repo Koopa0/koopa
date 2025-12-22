@@ -32,5 +32,5 @@ func runHelp() {
 	fmt.Println("  GEMINI_API_KEY     Required: Gemini API key")
 	fmt.Println("  DEBUG              Optional: Enable debug logging")
 	fmt.Println()
-	fmt.Println("Learn more: https://github.com/koopa0/koopa-cli")
+	fmt.Println("Learn more: https://github.com/koopa0/koopa")
 }

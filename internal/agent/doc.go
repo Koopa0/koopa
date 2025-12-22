@@ -16,7 +16,7 @@
 //
 // The chat subpackage provides the Chat agent implementation:
 //
-//	import "github.com/koopa0/koopa-cli/internal/agent/chat"
+//	import "github.com/koopa0/koopa/internal/agent/chat"
 //
 //	chatAgent, err := chat.New(chat.Config{
 //	    Genkit:       g,

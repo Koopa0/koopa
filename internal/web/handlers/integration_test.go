@@ -14,10 +14,10 @@ import (
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/testutil"
-	"github.com/koopa0/koopa-cli/internal/web/handlers"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
+	"github.com/koopa0/koopa/internal/web/handlers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,10 +30,11 @@ func TestChat_Stream_WithRealFlow(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
+	require.NoError(t, err)
 
 	params := url.Values{}
 	params.Set("msgId", "int-test-123")
@@ -72,10 +73,11 @@ func TestChat_Stream_HTMXCompatibility(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
+	require.NoError(t, err)
 
 	t.Run("OOB innerHTML swap for chunks", func(t *testing.T) {
 		sessionID := framework.CreateTestSession(t, t.Name())
@@ -133,10 +135,11 @@ func TestChat_Stream_ErrorPropagation(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
+	require.NoError(t, err)
 
 	params := url.Values{}
 	params.Set("msgId", "error-test")
@@ -157,8 +160,8 @@ func TestChat_Stream_ErrorPropagation(t *testing.T) {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	err := json.Unmarshal([]byte(errorEvent.Data), &payload)
-	require.NoError(t, err, "error event must be valid JSON")
+	unmarshalErr := json.Unmarshal([]byte(errorEvent.Data), &payload)
+	require.NoError(t, unmarshalErr, "error event must be valid JSON")
 	assert.Equal(t, "invalid_session", payload.Code)
 }
 
@@ -170,10 +173,11 @@ func TestChat_Stream_ConcurrentConnections(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
+	require.NoError(t, err)
 
 	// Note: Each goroutine uses its own sessionID to ensure isolation.
 	// Flow is a singleton but Genkit handles concurrent streaming safely.
@@ -223,10 +227,11 @@ func TestChat_Stream_AccessibilityAttributes(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
+	require.NoError(t, err)
 
 	params := url.Values{}
 	params.Set("msgId", "a11y-test")
@@ -255,10 +260,11 @@ func TestChat_Stream_ContentType(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
+	require.NoError(t, err)
 
 	params := url.Values{}
 	params.Set("msgId", "content-type-test")
@@ -287,10 +293,11 @@ func TestChat_Stream_NoHTMXHeader(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: testutil.DiscardLogger(),
 		Flow:   framework.Flow,
 	})
+	require.NoError(t, err)
 
 	params := url.Values{}
 	params.Set("msgId", "no-htmx-header-test")
@@ -332,10 +339,11 @@ func TestPages_Chat_LoadsHistoryFromDatabase(t *testing.T) {
 	// Create Sessions handler with dummy HMAC secret
 	sessions := handlers.NewSessions(store, []byte("test-secret-at-least-32-bytes-long!!!"), true)
 
-	handler := handlers.NewPages(handlers.PagesDeps{
+	handler, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   testutil.DiscardLogger(),
 		Sessions: sessions,
 	})
+	require.NoError(t, err)
 
 	// Create test session with history messages
 	ctx := context.Background()
@@ -359,7 +367,7 @@ func TestPages_Chat_LoadsHistoryFromDatabase(t *testing.T) {
 		},
 	}
 
-	err = store.AppendMessages(ctx, sessionID, "main", messages)
+	err = store.AppendMessages(ctx, sessionID, messages)
 	require.NoError(t, err)
 
 	// Send HTTP request
@@ -397,10 +405,11 @@ func TestPages_Chat_ConcurrentHistoryLoad(t *testing.T) {
 	store := session.New(sqlc.New(dbContainer.Pool), dbContainer.Pool, testutil.DiscardLogger())
 	sessions := handlers.NewSessions(store, []byte("test-secret-at-least-32-bytes-long!!!"), true)
 
-	handler := handlers.NewPages(handlers.PagesDeps{
+	handler, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   testutil.DiscardLogger(),
 		Sessions: sessions,
 	})
+	require.NoError(t, err)
 
 	// Create test session with history messages
 	ctx := context.Background()
@@ -412,7 +421,7 @@ func TestPages_Chat_ConcurrentHistoryLoad(t *testing.T) {
 		{Role: "model", Content: []*ai.Part{ai.NewTextPart("Response 1")}},
 	}
 
-	err = store.AppendMessages(ctx, sess.ID, "main", messages)
+	err = store.AppendMessages(ctx, sess.ID, messages)
 	require.NoError(t, err)
 
 	// Concurrent test: 10 goroutines loading same session's history
@@ -463,11 +472,12 @@ func TestChat_Send_ProgressiveEnhancement(t *testing.T) {
 	store := session.New(sqlc.New(dbContainer.Pool), dbContainer.Pool, testutil.DiscardLogger())
 	sessions := handlers.NewSessions(store, []byte("test-secret-at-least-32-bytes-long!!!"), true)
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger:   testutil.DiscardLogger(),
 		Sessions: sessions,
 		Flow:     nil, // Not testing Flow integration here
 	})
+	require.NoError(t, err)
 
 	t.Run("HTMX request returns fragments", func(t *testing.T) {
 		// Create session and CSRF token
@@ -590,11 +600,12 @@ func TestChat_Send_CSRFIntegration(t *testing.T) {
 	store := session.New(sqlc.New(dbContainer.Pool), dbContainer.Pool, testutil.DiscardLogger())
 	sessions := handlers.NewSessions(store, []byte("test-secret-at-least-32-bytes-long!!!"), true)
 
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger:   testutil.DiscardLogger(),
 		Sessions: sessions,
 		Flow:     nil,
 	})
+	require.NoError(t, err)
 
 	t.Run("CSRF token from different session fails", func(t *testing.T) {
 		// Create two different sessions
@@ -639,201 +650,6 @@ func TestChat_Send_CSRFIntegration(t *testing.T) {
 }
 
 // =============================================================================
-// Canvas Mode Tests
-// =============================================================================
-
-// TestChat_Stream_CanvasMode_FromDatabase verifies canvas mode is read from database.
-func TestChat_Stream_CanvasMode_FromDatabase(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	framework, cleanup := SetupTest(t)
-	defer cleanup()
-
-	ctx := context.Background()
-
-	t.Run("canvas enabled affects streaming", func(t *testing.T) {
-		// Create session with canvas mode ENABLED
-		sess, err := framework.SessionStore.CreateSession(ctx, "Canvas Enabled Session", "gemini-2.5-flash", "")
-		require.NoError(t, err)
-
-		// Enable canvas mode in database
-		err = framework.SessionStore.UpdateCanvasMode(ctx, sess.ID, true)
-		require.NoError(t, err)
-
-		// Verify canvas mode is set
-		updatedSess, err := framework.SessionStore.GetSession(ctx, sess.ID)
-		require.NoError(t, err)
-		require.True(t, updatedSess.CanvasMode, "canvas mode should be enabled in DB")
-
-		// Create handler with sessions to read canvas mode from DB
-		sessions := handlers.NewSessions(
-			framework.SessionStore,
-			[]byte("test-secret-32-bytes-minimum!!!!"),
-			true,
-		)
-
-		handler := handlers.NewChat(handlers.ChatConfig{
-			Logger:   testutil.DiscardLogger(),
-			Flow:     framework.Flow,
-			Sessions: sessions,
-		})
-
-		params := url.Values{}
-		params.Set("msgId", "canvas-enabled-test")
-		params.Set("session_id", sess.ID.String())
-		params.Set("query", "Hello canvas mode")
-
-		req := httptest.NewRequest(http.MethodGet, "/genui/stream?"+params.Encode(), nil)
-		rec := httptest.NewRecorder()
-
-		handler.Stream(rec, req)
-
-		// Verify SSE response is valid (canvas mode is passed to Flow internally)
-		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
-
-		events := testutil.ParseSSEEvents(t, rec.Body.String())
-		// Accept either "done" (success) or "error" (API key issue in CI)
-		// The key test is that canvas mode is READ from DB and PASSED to Flow
-		doneEvent := testutil.FindEvent(events, "done")
-		errorEvent := testutil.FindEvent(events, "error")
-		assert.True(t, doneEvent != nil || errorEvent != nil,
-			"should have either done or error event (streaming completed)")
-	})
-
-	t.Run("canvas disabled is default", func(t *testing.T) {
-		// Create session WITHOUT explicitly setting canvas mode (defaults to false)
-		sess, err := framework.SessionStore.CreateSession(ctx, "Canvas Disabled Session", "gemini-2.5-flash", "")
-		require.NoError(t, err)
-
-		// Verify canvas mode is false by default
-		retrievedSess, err := framework.SessionStore.GetSession(ctx, sess.ID)
-		require.NoError(t, err)
-		require.False(t, retrievedSess.CanvasMode, "canvas mode should be false by default")
-
-		// Create handler with sessions
-		sessions := handlers.NewSessions(
-			framework.SessionStore,
-			[]byte("test-secret-32-bytes-minimum!!!!"),
-			true,
-		)
-
-		handler := handlers.NewChat(handlers.ChatConfig{
-			Logger:   testutil.DiscardLogger(),
-			Flow:     framework.Flow,
-			Sessions: sessions,
-		})
-
-		params := url.Values{}
-		params.Set("msgId", "canvas-disabled-test")
-		params.Set("session_id", sess.ID.String())
-		params.Set("query", "Hello without canvas")
-
-		req := httptest.NewRequest(http.MethodGet, "/genui/stream?"+params.Encode(), nil)
-		rec := httptest.NewRecorder()
-
-		handler.Stream(rec, req)
-
-		// Verify SSE response is valid
-		assert.Equal(t, http.StatusOK, rec.Code)
-
-		events := testutil.ParseSSEEvents(t, rec.Body.String())
-		// Accept either "done" (success) or "error" (API key issue in CI)
-		doneEvent := testutil.FindEvent(events, "done")
-		errorEvent := testutil.FindEvent(events, "error")
-		assert.True(t, doneEvent != nil || errorEvent != nil,
-			"should have either done or error event (streaming completed)")
-	})
-
-	t.Run("nil sessions defaults canvas to false", func(t *testing.T) {
-		// Handler without sessions (simulation mode for canvas)
-		handler := handlers.NewChat(handlers.ChatConfig{
-			Logger:   testutil.DiscardLogger(),
-			Flow:     framework.Flow,
-			Sessions: nil, // No sessions = can't read canvas from DB
-		})
-
-		sess := framework.CreateTestSession(t, "Nil Sessions Test")
-
-		params := url.Values{}
-		params.Set("msgId", "nil-sessions-test")
-		params.Set("session_id", sess.String())
-		params.Set("query", "Hello nil sessions")
-
-		req := httptest.NewRequest(http.MethodGet, "/genui/stream?"+params.Encode(), nil)
-		rec := httptest.NewRecorder()
-
-		handler.Stream(rec, req)
-
-		// Should still work (canvas defaults to false)
-		assert.Equal(t, http.StatusOK, rec.Code)
-	})
-}
-
-// TestPages_Chat_CanvasMode_FromDatabase verifies canvas mode is read from database in Pages handler.
-func TestPages_Chat_CanvasMode_FromDatabase(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	// Setup real database
-	dbContainer, cleanup := testutil.SetupTestDB(t)
-	defer cleanup()
-
-	store := session.New(sqlc.New(dbContainer.Pool), dbContainer.Pool, testutil.DiscardLogger())
-	sessions := handlers.NewSessions(store, []byte("test-secret-at-least-32-bytes-long!!!"), true)
-
-	handler := handlers.NewPages(handlers.PagesDeps{
-		Logger:   testutil.DiscardLogger(),
-		Sessions: sessions,
-	})
-
-	ctx := context.Background()
-
-	t.Run("canvas mode enabled shows canvas UI", func(t *testing.T) {
-		// Create session with canvas mode ENABLED
-		sess, err := store.CreateSession(ctx, "Canvas UI Test", "gemini-2.5-flash", "")
-		require.NoError(t, err)
-
-		err = store.UpdateCanvasMode(ctx, sess.ID, true)
-		require.NoError(t, err)
-
-		// Request chat page
-		req := httptest.NewRequest(http.MethodGet, "/genui?session="+sess.ID.String(), nil)
-		rec := httptest.NewRecorder()
-
-		handler.Chat(rec, req)
-
-		assert.Equal(t, http.StatusOK, rec.Code)
-		html := rec.Body.String()
-
-		// With canvas mode enabled, the artifact panel should be present
-		// The panel is always in the DOM but its visibility is controlled by canvas mode
-		assert.Contains(t, html, "artifact-panel", "should have artifact panel in DOM")
-	})
-
-	t.Run("canvas mode disabled by default", func(t *testing.T) {
-		// Create session WITHOUT enabling canvas mode
-		sess, err := store.CreateSession(ctx, "No Canvas Test", "gemini-2.5-flash", "")
-		require.NoError(t, err)
-
-		// Request chat page
-		req := httptest.NewRequest(http.MethodGet, "/genui?session="+sess.ID.String(), nil)
-		rec := httptest.NewRecorder()
-
-		handler.Chat(rec, req)
-
-		assert.Equal(t, http.StatusOK, rec.Code)
-		html := rec.Body.String()
-
-		// Page should render successfully with canvas mode disabled
-		assert.Contains(t, html, "id=\"main-content\"", "should have main content")
-	})
-}
-
-// =============================================================================
 // QA-Master Required Tests: New Chat Button Flow (P0)
 // =============================================================================
 
@@ -852,10 +668,11 @@ func TestPages_NewChatButton_CreatesNewSession(t *testing.T) {
 		[]byte("test-secret-32-bytes-minimum!!!!"),
 		true,
 	)
-	pages := handlers.NewPages(handlers.PagesDeps{
+	pages, err := handlers.NewPages(handlers.PagesConfig{
 		Logger:   testutil.DiscardLogger(),
 		Sessions: sessions,
 	})
+	require.NoError(t, err)
 
 	t.Run("new=true creates fresh session", func(t *testing.T) {
 		// First request: establish a session with some history
@@ -898,7 +715,7 @@ func TestPages_NewChatButton_CreatesNewSession(t *testing.T) {
 		existingSession := framework.CreateTestSession(t, "Session with history")
 
 		// Add messages to the session using Store directly
-		// AppendMessages signature: (ctx, sessionID agent.SessionID, branch, messages)
+		// AppendMessages signature: (ctx, sessionID uuid.UUID, messages)
 		testMsgs := []*ai.Message{
 			ai.NewUserMessage(ai.NewTextPart("Hello world unique test")),
 			ai.NewModelMessage(ai.NewTextPart("Hi there unique response")),
@@ -906,7 +723,6 @@ func TestPages_NewChatButton_CreatesNewSession(t *testing.T) {
 		err := framework.SessionStore.AppendMessages(
 			context.Background(),
 			existingSession,
-			"main",
 			testMsgs,
 		)
 		require.NoError(t, err)

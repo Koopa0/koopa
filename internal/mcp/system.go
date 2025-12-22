@@ -6,7 +6,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

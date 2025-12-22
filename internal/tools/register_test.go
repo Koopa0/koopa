@@ -6,7 +6,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/web"
-	"github.com/koopa0/koopa-cli/internal/web/e2e"
+	"github.com/koopa0/koopa/internal/web"
+	"github.com/koopa0/koopa/internal/web/e2e"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -217,11 +217,6 @@ func TestE2E_Accessibility_ModeToggleARIA(t *testing.T) {
 	ariaPressedChat, err := chatBtn.GetAttribute("aria-pressed")
 	require.NoError(t, err)
 	assert.Equal(t, "true", ariaPressedChat, "Chat button should be pressed by default")
-
-	// Verify Canvas button not pressed
-	canvasBtn := page.Locator("#mode-toggle button[value='canvas']")
-	ariaPressedCanvas, _ := canvasBtn.GetAttribute("aria-pressed")
-	assert.Equal(t, "false", ariaPressedCanvas, "Canvas button should not be pressed")
 }
 
 // =============================================================================

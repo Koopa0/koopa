@@ -12,16 +12,12 @@ type ChatInputProps struct {
 	SessionID   string
 	CSRFToken   string // Optional. Zero-value "" will not include CSRF token
 	Placeholder string // Optional. Zero-value "" will show "Type a message..."
-	CanvasMode  bool   // When true, Canvas button is active; when false, Chat button is active
 }
 
-// ChatInput renders the chat input form with Canvas toggle and HTMX integration.
+// ChatInput renders the chat input form with HTMX integration.
 // Design reference: Tailwind UI forms/textareas/with-avatar-and-actions.html
 // Progressive enhancement: works with standard form submission, enhanced with HTMX.
 // On submit: POSTs to /genui/send, appends user + AI message shells, clears form.
-//
-// Canvas Toggle: Single button following Gemini's design pattern.
-// Chat is always the default mode; Canvas is an opt-in capability hint to AI.
 func ChatInput(props ChatInputProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -43,54 +39,46 @@ func ChatInput(props ChatInputProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-gray-900 p-4\"><div class=\"mx-auto max-w-3xl\"><!-- Canvas Toggle: Single button per Gemini design pattern --><!-- Chat is always default; Canvas is opt-in capability hint to AI --><div class=\"flex items-center gap-3 mb-3\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = ModeSelector(props.SessionID, props.CSRFToken, props.CanvasMode).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div><!-- Chat Form --><form id=\"chat-form\" action=\"/genui/send\" method=\"POST\" hx-post=\"/genui/send\" hx-target=\"#message-list\" hx-swap=\"beforeend show:bottom\" hx-disabled-elt=\"#chat-input-textarea, #send-button\" hx-indicator=\"#send-spinner\" class=\"relative\"><!-- Hidden fields (using snake_case per architecture-master) --><!--  IDs required for HTMX OOB swaps during lazy session creation --><!-- Always render fields (even if empty) so OOB swap targets exist --><input type=\"hidden\" name=\"session_id\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bg-gray-900 p-4\"><div class=\"mx-auto max-w-3xl\"><!-- Chat Form --><form id=\"chat-form\" action=\"/genui/send\" method=\"POST\" hx-post=\"/genui/send\" hx-target=\"#message-list\" hx-swap=\"beforeend show:bottom\" hx-disabled-elt=\"#chat-input-textarea, #send-button\" hx-indicator=\"#send-spinner\" class=\"relative\"><!-- Hidden fields (using snake_case per architecture-master) --><!--  IDs required for HTMX OOB swaps during lazy session creation --><!-- Always render fields (even if empty) so OOB swap targets exist --><input type=\"hidden\" name=\"session_id\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(props.SessionID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 40, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 31, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" id=\"session-id-field\"> <input type=\"hidden\" name=\"csrf_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" id=\"session-id-field\"> <input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(props.CSRFToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 41, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 32, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" id=\"csrf-token-field\"><!-- Textarea container with rounded corners --><div class=\"rounded-2xl bg-white/5 border border-white/10 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all duration-200\"><label for=\"chat-input-textarea\" class=\"sr-only\">Your message</label> <textarea id=\"chat-input-textarea\" name=\"content\" rows=\"1\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" id=\"csrf-token-field\"><!-- Textarea container with rounded corners --><div class=\"rounded-2xl bg-white/5 border border-white/10 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all duration-200\"><label for=\"chat-input-textarea\" class=\"sr-only\">Your message</label> <textarea id=\"chat-input-textarea\" name=\"content\" rows=\"1\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(getPlaceholder(props.Placeholder))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 49, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 40, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" required class=\"block w-full resize-none bg-transparent px-6 py-4 text-base text-white placeholder:text-gray-400 focus:outline-none sm:text-sm/6\"></textarea><!-- Spacer for action buttons --><div aria-hidden=\"true\" class=\"py-2\"><div class=\"py-px\"><div class=\"h-9\"></div></div></div></div><!-- Action buttons (absolute positioned) --><div class=\"absolute inset-x-0 bottom-0 flex justify-end py-2 px-4\"><div class=\"shrink-0 flex items-center gap-3\"><!-- Keyboard shortcut hint --><span class=\"hidden sm:inline text-xs text-gray-500\">Enter ↵ send · Shift+Enter newline</span><!-- Send button with gradient --><button id=\"send-button\" type=\"submit\" aria-label=\"Send message\" class=\"inline-flex items-center justify-center p-2 text-gray-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200\"><!-- Send arrow icon (hidden when loading) --><svg viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\" class=\"size-5 htmx-hide-on-request\"><path d=\"M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z\"></path></svg><!-- Loading spinner (shown during request) --><svg id=\"send-spinner\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\" class=\"size-5 animate-spin htmx-indicator\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle> <path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z\"></path></svg></button></div></div></form></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" required class=\"block w-full resize-none bg-transparent px-6 py-4 text-base text-white placeholder:text-gray-400 focus:outline-none sm:text-sm/6\"></textarea><!-- Spacer for action buttons --><div aria-hidden=\"true\" class=\"py-2\"><div class=\"py-px\"><div class=\"h-9\"></div></div></div></div><!-- Action buttons (absolute positioned) --><div class=\"absolute inset-x-0 bottom-0 flex justify-end py-2 px-4\"><div class=\"shrink-0 flex items-center gap-3\"><!-- Keyboard shortcut hint --><span class=\"hidden sm:inline text-xs text-gray-500\">Enter ↵ send · Shift+Enter newline</span><!-- Send button with gradient --><button id=\"send-button\" type=\"submit\" aria-label=\"Send message\" class=\"inline-flex items-center justify-center p-2 text-gray-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200\"><!-- Send arrow icon (hidden when loading) --><svg viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\" class=\"size-5 htmx-hide-on-request\"><path d=\"M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z\"></path></svg><!-- Loading spinner (shown during request) --><svg id=\"send-spinner\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\" class=\"size-5 animate-spin htmx-indicator\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle> <path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z\"></path></svg></button></div></div></form></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -103,172 +91,6 @@ func getPlaceholder(placeholder string) string {
 		return "Type a message..."
 	}
 	return placeholder
-}
-
-// getCanvasToggleVals builds the hx-vals JSON for canvas toggle.
-// Per HTMX-Master review: CSRF token moved from URL to form body for security.
-// This prevents CSRF tokens from appearing in browser history and server logs.
-func getCanvasToggleVals(canvasEnabled bool, csrfToken string) string {
-	enabledStr := boolToString(canvasEnabled)
-	if csrfToken == "" {
-		return `{"canvas_enabled": "` + enabledStr + `"}`
-	}
-	return `{"canvas_enabled": "` + enabledStr + `", "csrf_token": "` + csrfToken + `"}`
-}
-
-// ModeSelector is deprecated, kept for backwards compatibility.
-// Use CanvasToggle instead for Gemini-style single toggle button.
-// TODO: Remove after migration complete.
-func ModeSelector(sessionID string, csrfToken string, canvasMode bool) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var5 == nil {
-			templ_7745c5c3_Var5 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = CanvasToggle(sessionID, csrfToken, canvasMode).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-// CanvasToggle renders a single toggle button for Canvas mode.
-// Canvas Redesign - Follows Gemini's design pattern:
-// - Single toggle button in prompt bar, clicked BEFORE typing prompt
-// - AI receives context that Canvas is enabled via system prompt modification
-// - Panel appears WHEN AI has rich content (code, markdown), not immediately
-// - It's a capability hint to AI, not a UI mode switch
-//
-// When enabled: AI knows to output interactive content (code blocks, etc.)
-// that will be rendered in a side panel.
-//
-// Per HTMX-Master review: CSRF token moved from URL to hx-vals for security.
-// Per UI-Master review: Added disabled styling and increased indicator dot size.
-func CanvasToggle(sessionID string, csrfToken string, canvasEnabled bool) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var6 == nil {
-			templ_7745c5c3_Var6 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var7 = []any{"inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200",
-			templ.KV("bg-indigo-500 text-white shadow-sm hover:bg-indigo-400", canvasEnabled),
-			templ.KV("bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white ring-1 ring-inset ring-white/10", !canvasEnabled),
-			"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900",
-			"disabled:opacity-50 disabled:cursor-not-allowed",
-		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var7...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<button type=\"button\" id=\"canvas-toggle\" role=\"switch\" aria-checked=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(boolToString(canvasEnabled))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 131, Col: 44}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" aria-label=\"Enable Canvas mode for interactive AI output\" title=\"Canvas: AI can output interactive code and documents\" hx-post=\"/genui/canvas-toggle\" hx-vals=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(getCanvasToggleVals(!canvasEnabled, csrfToken))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 135, Col: 58}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" hx-swap=\"outerHTML\" hx-target=\"this\" hx-disabled-elt=\"this\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var7).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"><!-- Code/Canvas icon --><svg class=\"size-4\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg> <span>Canvas</span> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if canvasEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<!-- Active indicator dot (size-2 per UI-Master review for better visibility) --> <span class=\"size-2 rounded-full bg-white\"></span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</button><!-- Screen reader announcement with enhanced context --><div aria-live=\"polite\" class=\"sr-only\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if canvasEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "Canvas mode enabled. AI will format responses for interactive editing.")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "Canvas mode disabled. Standard chat mode.")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-// boolToString converts bool to "true"/"false" string for HTML attributes.
-func boolToString(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
 }
 
 // SessionFieldsOOB renders hidden form fields as OOB swaps.
@@ -291,38 +113,38 @@ func SessionFieldsOOB(sessionID, csrfToken string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var5 == nil {
+			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<input type=\"hidden\" name=\"session_id\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<input type=\"hidden\" name=\"session_id\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(sessionID)
+		var templ_7745c5c3_Var6 string
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(sessionID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 183, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 95, Col: 19}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" id=\"session-id-field\" hx-swap-oob=\"true\"> <input type=\"hidden\" name=\"csrf_token\" value=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 190, Col: 19}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" id=\"session-id-field\" hx-swap-oob=\"true\"> <input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" id=\"csrf-token-field\" hx-swap-oob=\"true\">")
+		var templ_7745c5c3_Var7 string
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/component/chat_input.templ`, Line: 102, Col: 19}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" id=\"csrf-token-field\" hx-swap-oob=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

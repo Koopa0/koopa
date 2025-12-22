@@ -22,14 +22,14 @@ import (
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/google/uuid"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/rag"
-	"github.com/koopa0/koopa-cli/internal/security"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/testutil"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/rag"
+	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // TestFramework provides a complete test environment for chat integration tests.
@@ -69,8 +69,8 @@ type TestFramework struct {
 //	    framework, cleanup := SetupTest(t)
 //	    defer cleanup()
 //
-//	    ctx, sessionID, branch := newInvocationContext(context.Background(), framework.SessionID)
-//	    resp, err := framework.Agent.Execute(ctx, sessionID, branch, "test query")
+//	    ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
+//	    resp, err := framework.Agent.Execute(ctx, sessionID, "test query")
 //	}
 func SetupTest(t *testing.T) (*TestFramework, func()) {
 	t.Helper()
@@ -190,8 +190,9 @@ func (f *TestFramework) CreateTestSession(t *testing.T, name string) uuid.UUID {
 
 // newInvocationContext creates a simple invocation context for integration tests.
 // This helper exists to maintain test readability after removing agent.InvocationContext.
-func newInvocationContext(ctx context.Context, sessionID uuid.UUID) (context.Context, uuid.UUID, string) {
-	return ctx, sessionID, "main"
+// NOTE: Branch parameter was removed in Proposal 051.
+func newInvocationContext(ctx context.Context, sessionID uuid.UUID) (context.Context, uuid.UUID) {
+	return ctx, sessionID
 }
 
 // IndexDocument indexes a document using the Genkit DocStore.

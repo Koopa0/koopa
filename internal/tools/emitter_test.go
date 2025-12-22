@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // mockEmitter is a test implementation of ToolEventEmitter.

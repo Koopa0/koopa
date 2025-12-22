@@ -1,8 +1,8 @@
 // Package session provides conversation history persistence.
 //
 // The session package manages conversation sessions and messages with PostgreSQL backend.
-// It provides thread-safe storage for conversation history with support for branch isolation,
-// concurrent message insertion, and transaction-safe operations.
+// It provides thread-safe storage for conversation history with concurrent message insertion
+// and transaction-safe operations.
 //
 // # Overview
 //
@@ -15,7 +15,6 @@
 //   - Session lifecycle (create, retrieve, list, delete)
 //   - Message persistence with sequential ordering
 //   - Transaction-safe batch message insertion
-//   - Support for branch-based history isolation
 //   - Concurrent access safety
 //
 // # Architecture
@@ -84,15 +83,12 @@
 //
 // The Store provides methods for integration with the Chat agent:
 //
-//	LoadHistory(ctx, sessionID, branch) - Load conversation history for agent
-//	SaveHistory(ctx, sessionID, branch, history) - Persist conversation history
+//	GetHistory(ctx, sessionID) - Get conversation history for agent
+//	AppendMessages(ctx, sessionID, messages) - Persist conversation messages
 //
 // Following Go standard library conventions (similar to database/sql returning *sql.DB),
 // consumers use *session.Store directly instead of defining separate interfaces.
 // Testability is achieved via the internal Querier interface (for mocking database operations).
-//
-// Branch-based isolation allows multiple parallel conversation branches
-// on the same session (future feature for complex workflows).
 //
 // # Database Backend
 //
@@ -123,7 +119,7 @@
 //	    "context"
 //	    "github.com/firebase/genkit/go/ai"
 //	    "github.com/jackc/pgx/v5/pgxpool"
-//	    "github.com/koopa0/koopa-cli/internal/session"
+//	    "github.com/koopa0/koopa/internal/session"
 //	    "log/slog"
 //	)
 //
@@ -166,7 +162,7 @@
 //	    println("Retrieved", len(retrieved), "messages")
 //
 //	    // Load history for agent
-//	    history, _ := store.LoadHistory(ctx, agent.SessionID(sess.ID.String()), "main")
+//	    history, _ := store.GetHistory(ctx, sess.ID)
 //	    println("History messages:", len(history.Messages()))
 //
 //	    // List all sessions

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/web"
-	"github.com/koopa0/koopa-cli/internal/web/e2e"
+	"github.com/koopa0/koopa/internal/web"
+	"github.com/koopa0/koopa/internal/web/e2e"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -332,7 +332,7 @@ func TestE2E_Component_NewChatButton(t *testing.T) {
 	assert.Contains(t, strings.TrimSpace(text), "New Chat")
 }
 
-// TestE2E_Component_ModeToggle verifies the Chat/Canvas mode toggle.
+// TestE2E_Component_ModeToggle verifies the mode toggle.
 func TestE2E_Component_ModeToggle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping E2E test")
@@ -360,19 +360,11 @@ func TestE2E_Component_ModeToggle(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Verify both buttons have hx-post
+	// Verify chat button has hx-post
 	chatBtn := page.Locator("#mode-toggle button[value='chat']")
 	chatHxPost, err := chatBtn.GetAttribute("hx-post")
 	require.NoError(t, err)
 	assert.Contains(t, chatHxPost, "/genui/mode")
-
-	canvasBtn := page.Locator("#mode-toggle button[value='canvas']")
-	canvasHxPost, _ := canvasBtn.GetAttribute("hx-post")
-	assert.Contains(t, canvasHxPost, "/genui/mode")
-
-	// Verify hx-target
-	hxTarget, _ := canvasBtn.GetAttribute("hx-target")
-	assert.Equal(t, "#page-content", hxTarget)
 }
 
 // TestE2E_Component_EmptyState verifies empty state logo and styling.

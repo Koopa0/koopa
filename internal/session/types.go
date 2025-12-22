@@ -83,9 +83,9 @@ func (h *History) Clear() {
 
 // Role constants define valid message roles for type safety.
 const (
-	RoleUser  = "user"
-	RoleModel = "model"
-	RoleTool  = "tool"
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+	RoleTool      = "tool"
 )
 
 // Session represents a conversation session (application-level type).
@@ -97,7 +97,6 @@ type Session struct {
 	ModelName    string
 	SystemPrompt string
 	MessageCount int
-	CanvasMode   bool // Per-session canvas mode preference
 }
 
 // Message represents a single conversation message (application-level type).
@@ -105,9 +104,8 @@ type Session struct {
 type Message struct {
 	ID             uuid.UUID
 	SessionID      uuid.UUID
-	Role           string     // "user" | "model" | "tool"
+	Role           string     // "user" | "assistant" | "tool"
 	Content        []*ai.Part // Genkit Part slice (stored as JSONB)
-	Branch         string     // Branch name (default: "main")
 	Status         string     // Message status: streaming/completed/failed
 	SequenceNumber int
 	CreatedAt      time.Time
