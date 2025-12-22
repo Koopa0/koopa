@@ -5,7 +5,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -13,6 +16,27 @@ import (
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/tui"
 )
+
+// findProjectRoot finds the project root directory by looking for go.mod.
+func findProjectRoot() (string, error) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed to get caller info")
+	}
+
+	dir := filepath.Dir(filename)
+	for {
+		goModPath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("go.mod not found in any parent directory of %s", filename)
+		}
+		dir = parent
+	}
+}
 
 // TestTUI_Integration tests the TUI can be created with real runtime.
 // Note: Bubble Tea TUI cannot be fully tested without a real TTY.
@@ -26,6 +50,13 @@ func TestTUI_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Set absolute path for prompts directory (required for tests running from different directories)
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		t.Fatalf("Failed to find project root: %v", err)
+	}
+	cfg.PromptDir = filepath.Join(projectRoot, "prompts")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -64,6 +95,13 @@ func TestTUI_SlashCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Set absolute path for prompts directory (required for tests running from different directories)
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		t.Fatalf("Failed to find project root: %v", err)
+	}
+	cfg.PromptDir = filepath.Join(projectRoot, "prompts")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
