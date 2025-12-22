@@ -172,24 +172,44 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 		t.Fatalf("Failed to create path validator: %v", err)
 	}
 
-	// Register file tools
-	fileTools, err := tools.RegisterFileTools(g, pathValidator, logger)
+	// Create and register file tools
+	ft, err := tools.NewFileTools(pathValidator, logger)
+	if err != nil {
+		pool.Close()
+		cancel()
+		t.Fatalf("Failed to create file tools: %v", err)
+	}
+	fileTools, err := tools.RegisterFileTools(g, ft)
 	if err != nil {
 		pool.Close()
 		cancel()
 		t.Fatalf("Failed to register file tools: %v", err)
 	}
 
+	// Create and register system tools
 	cmdValidator := security.NewCommand()
 	envValidator := security.NewEnv()
-	systemTools, err := tools.RegisterSystemTools(g, cmdValidator, envValidator, logger)
+	st, err := tools.NewSystemTools(cmdValidator, envValidator, logger)
+	if err != nil {
+		pool.Close()
+		cancel()
+		t.Fatalf("Failed to create system tools: %v", err)
+	}
+	systemTools, err := tools.RegisterSystemTools(g, st)
 	if err != nil {
 		pool.Close()
 		cancel()
 		t.Fatalf("Failed to register system tools: %v", err)
 	}
 
-	knowledgeTools, err := tools.RegisterKnowledgeTools(g, retriever, logger)
+	// Create and register knowledge tools
+	kt, err := tools.NewKnowledgeTools(retriever, logger)
+	if err != nil {
+		pool.Close()
+		cancel()
+		t.Fatalf("Failed to create knowledge tools: %v", err)
+	}
+	knowledgeTools, err := tools.RegisterKnowledgeTools(g, kt)
 	if err != nil {
 		pool.Close()
 		cancel()
