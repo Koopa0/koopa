@@ -219,13 +219,14 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	// Combine all tools
 	allTools := append(append(fileTools, systemTools...), knowledgeTools...)
 
-	chatAgent, err := chat.New(chat.Deps{
-		Config:       cfg,
+	chatAgent, err := chat.New(chat.Config{
 		Genkit:       g,
 		Retriever:    retriever,
 		SessionStore: sessionStore,
 		Logger:       logger,
 		Tools:        allTools,
+		MaxTurns:     cfg.MaxTurns,
+		RAGTopK:      cfg.RAGTopK,
 	})
 	if err != nil {
 		pool.Close()
