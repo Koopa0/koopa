@@ -1,5 +1,6 @@
 -- Koopa Database Schema
 -- Consolidated migration for sessions, messages, and documents
+-- NOTE: All CREATE statements use IF NOT EXISTS for idempotent execution
 
 -- Enable pgvector extension (required for vector search)
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -9,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Used by Genkit PostgreSQL Plugin with custom column names
 -- ============================================================================
 
-CREATE TABLE documents (
+CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
     content TEXT NOT NULL,
     embedding vector(768) NOT NULL,  -- text-embedding-004 dimension
@@ -18,15 +19,15 @@ CREATE TABLE documents (
 );
 
 -- HNSW index for fast vector similarity search
-CREATE INDEX idx_documents_embedding ON documents
+CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
 -- Index for filtering by source_type
-CREATE INDEX idx_documents_source_type ON documents(source_type);
+CREATE INDEX IF NOT EXISTS idx_documents_source_type ON documents(source_type);
 
 -- Enables fast queries like: WHERE metadata @> '{"key": "value"}'
-CREATE INDEX idx_documents_metadata_gin
+CREATE INDEX IF NOT EXISTS idx_documents_metadata_gin
     ON documents USING GIN (metadata jsonb_path_ops);
 
 -- ============================================================================
@@ -46,7 +47,7 @@ $$ LANGUAGE plpgsql;
 -- Sessions Table
 -- ============================================================================
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -56,18 +57,24 @@ CREATE TABLE sessions (
     message_count INTEGER DEFAULT 0
 );
 
-CREATE INDEX idx_sessions_updated_at ON sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC);
 
-CREATE TRIGGER update_sessions_updated_at
-    BEFORE UPDATE ON sessions
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Use DO block for trigger (no IF NOT EXISTS syntax for triggers)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_sessions_updated_at') THEN
+        CREATE TRIGGER update_sessions_updated_at
+            BEFORE UPDATE ON sessions
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
 
 -- ============================================================================
 -- Messages Table
 -- ============================================================================
 
-CREATE TABLE message (
+CREATE TABLE IF NOT EXISTS message (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
@@ -82,21 +89,27 @@ CREATE TABLE message (
     CONSTRAINT message_role_check CHECK (role IN ('user', 'assistant', 'system', 'tool'))
 );
 
-CREATE INDEX idx_message_session_id ON message(session_id);
-CREATE INDEX idx_message_session_seq ON message(session_id, sequence_number);
-CREATE INDEX idx_incomplete_messages ON message(session_id, updated_at)
+CREATE INDEX IF NOT EXISTS idx_message_session_id ON message(session_id);
+CREATE INDEX IF NOT EXISTS idx_message_session_seq ON message(session_id, sequence_number);
+CREATE INDEX IF NOT EXISTS idx_incomplete_messages ON message(session_id, updated_at)
     WHERE status IN ('streaming', 'failed');
 
 -- Index for querying failed/streaming messages
-CREATE INDEX idx_message_status ON message(session_id, status)
+CREATE INDEX IF NOT EXISTS idx_message_status ON message(session_id, status)
     WHERE status != 'completed';
 
 -- Index for message.content (ai.Part array stored as JSONB)
 -- Enables fast queries like: WHERE content @> '[{"text": "search term"}]'
-CREATE INDEX idx_message_content_gin
+CREATE INDEX IF NOT EXISTS idx_message_content_gin
         ON message USING GIN (content jsonb_path_ops);
 
-CREATE TRIGGER update_message_updated_at
-    BEFORE UPDATE ON message
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Use DO block for trigger (no IF NOT EXISTS syntax for triggers)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_message_updated_at') THEN
+        CREATE TRIGGER update_message_updated_at
+            BEFORE UPDATE ON message
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
