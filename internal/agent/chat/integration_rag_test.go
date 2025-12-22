@@ -205,8 +205,11 @@ func TestRetrieveRAGContext_MultipleRelevantDocuments(t *testing.T) {
 	require.NotNil(t, resp, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 
-	// Response should mention multiple aspects
-	// (LLM might rephrase, so we check for general topics)
+	// Response should mention multiple aspects from different retrieved documents.
+	// We use substring matching with synonym alternatives (e.g., "concurrent" OR "goroutine")
+	// rather than semantic similarity to keep the test simple and dependency-free.
+	// Known limitation: LLM paraphrasing may occasionally miss all synonyms; this is an
+	// acceptable trade-off for an integration test focused on retrieval behavior, not output quality.
 	response := strings.ToLower(resp.FinalText)
 	hasMultipleAspects := (strings.Contains(response, "concurrent") || strings.Contains(response, "goroutine")) &&
 		(strings.Contains(response, "simple") || strings.Contains(response, "readab")) &&
