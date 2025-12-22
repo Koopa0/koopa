@@ -208,7 +208,7 @@ linters:
       no-mixed-args: true # Prevent mixing attrs with key-values
       attr-only: false    # Allow key-value pairs
       no-raw-keys: false  # Allow raw string keys
-      key-naming-case: "" # Don't enforce key naming (allow camelCase)
+      # key-naming-case omitted = don't enforce (allow any case)
 
     # OpenTelemetry span handling
     spancheck:
