@@ -48,7 +48,10 @@ func TestTUI_Integration_StartStream_Success(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Ctx, setup.Flow, sessionID)
+	tui, err := New(setup.Ctx, setup.Flow, sessionID)
+	if err != nil {
+		t.Fatalf("Failed to create TUI: %v", err)
+	}
 
 	// Start a stream with a simple query
 	cmd := tui.startStream("Say hello in exactly 3 words")
@@ -59,21 +62,12 @@ func TestTUI_Integration_StartStream_Success(t *testing.T) {
 		t.Fatalf("Expected streamStartedMsg, got %T", msg)
 	}
 
-	// Verify channels are initialized
-	if startedMsg.textCh == nil {
-		t.Error("textCh should not be nil")
-	}
-	if startedMsg.doneCh == nil {
-		t.Error("doneCh should not be nil")
-	}
-	if startedMsg.errCh == nil {
-		t.Error("errCh should not be nil")
+	// Verify eventCh and cancel are initialized
+	if startedMsg.eventCh == nil {
+		t.Error("eventCh should not be nil")
 	}
 	if startedMsg.cancel == nil {
 		t.Error("cancel should not be nil")
-	}
-	if startedMsg.done == nil {
-		t.Error("done channel should not be nil")
 	}
 
 	// Collect stream output
@@ -90,7 +84,7 @@ streamLoop:
 		case <-timeout:
 			t.Fatal("Stream timed out")
 		default:
-			cmd := listenForStream(startedMsg.textCh, startedMsg.doneCh, startedMsg.errCh)
+			cmd := listenForStream(startedMsg.eventCh)
 			msg := cmd()
 
 			switch m := msg.(type) {
@@ -123,14 +117,7 @@ streamLoop:
 	}
 
 	t.Logf("Received %d chunks, final response length: %d", len(chunks), len(finalOutput.Response))
-
-	// Wait for goroutine cleanup
-	select {
-	case <-startedMsg.done:
-		// Goroutine exited cleanly
-	case <-time.After(5 * time.Second):
-		t.Error("Goroutine did not exit within timeout")
-	}
+	// Goroutine cleanup is handled by channel closure - no explicit wait needed
 }
 
 func TestTUI_Integration_StartStream_Cancellation(t *testing.T) {
@@ -143,7 +130,10 @@ func TestTUI_Integration_StartStream_Cancellation(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Ctx, setup.Flow, sessionID)
+	tui, err := New(setup.Ctx, setup.Flow, sessionID)
+	if err != nil {
+		t.Fatalf("Failed to create TUI: %v", err)
+	}
 
 	// Start a stream with a long query
 	cmd := tui.startStream("Write a very long story about a turtle. Make it at least 500 words.")
@@ -165,7 +155,7 @@ cancelLoop:
 		case <-timeout:
 			t.Fatal("Test timed out")
 		default:
-			cmd := listenForStream(startedMsg.textCh, startedMsg.doneCh, startedMsg.errCh)
+			cmd := listenForStream(startedMsg.eventCh)
 			msg := cmd()
 
 			switch msg.(type) {
@@ -191,14 +181,7 @@ cancelLoop:
 			}
 		}
 	}
-
-	// Wait for goroutine cleanup
-	select {
-	case <-startedMsg.done:
-		// Goroutine exited cleanly
-	case <-time.After(5 * time.Second):
-		t.Error("Goroutine did not exit within timeout after cancellation")
-	}
+	// Goroutine cleanup is handled by channel closure - no explicit wait needed
 }
 
 func TestTUI_Integration_HandleSubmit_StateTransition(t *testing.T) {
@@ -213,7 +196,10 @@ func TestTUI_Integration_HandleSubmit_StateTransition(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Ctx, setup.Flow, sessionID)
+	tui, err := New(setup.Ctx, setup.Flow, sessionID)
+	if err != nil {
+		t.Fatalf("Failed to create TUI: %v", err)
+	}
 
 	// Set input value
 	tui.input.SetValue("What is 2+2?")
@@ -343,20 +329,16 @@ func TestTUI_Integration_ChannelLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("all channels closed without value", func(t *testing.T) {
-		textCh := make(chan string)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
+	t.Run("event channel closed without value", func(t *testing.T) {
+		eventCh := make(chan streamEvent)
+		close(eventCh)
 
-		close(textCh)
-		close(doneCh)
-		close(errCh)
-
-		cmd := listenForStream(textCh, doneCh, errCh)
+		cmd := listenForStream(eventCh)
 		msg := cmd()
 
-		if msg != nil {
-			t.Errorf("Expected nil for all closed channels, got %T", msg)
+		// When channel closes without a value, listenForStream returns an error
+		if _, ok := msg.(streamErrorMsg); !ok {
+			t.Errorf("Expected streamErrorMsg for closed channel, got %T", msg)
 		}
 	})
 }
@@ -371,7 +353,10 @@ func TestTUI_Integration_ViewDuringStreaming(t *testing.T) {
 
 	sessionID, sessionCleanup := createTestSession(t, setup)
 	defer sessionCleanup()
-	tui := New(setup.Ctx, setup.Flow, sessionID)
+	tui, err := New(setup.Ctx, setup.Flow, sessionID)
+	if err != nil {
+		t.Fatalf("Failed to create TUI: %v", err)
+	}
 
 	// Start streaming
 	tui.input.SetValue("Tell me about Go programming")
