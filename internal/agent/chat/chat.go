@@ -409,7 +409,14 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 // causing data races in concurrent executions. This function creates
 // independent struct copies to prevent the race.
 //
-// TODO: Remove when Genkit fixes the data race in renderMessages()
+// Tracking: https://github.com/firebase/genkit/issues/XXX (TODO: file issue)
+// Tested version: github.com/firebase/genkit/go v1.20.0
+//
+// To remove this workaround:
+// 1. Upgrade Genkit: go get -u github.com/firebase/genkit/go@latest
+// 2. Run: go test -race ./internal/agent/chat/...
+// 3. If race detector passes, remove deepCopyMessages() calls
+// 4. If race still fails, update version in this comment
 func deepCopyMessages(msgs []*ai.Message) []*ai.Message {
 	if msgs == nil {
 		return nil // Preserve nil vs empty slice semantics

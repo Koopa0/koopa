@@ -522,7 +522,7 @@ func TestSessions_Create(t *testing.T) {
 
 	// Expect HTTP 303 redirect (progressive enhancement - works for HTMX and standard browsers)
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Contains(t, w.Header().Get("Location"), "/genui?session=")
+	assert.Contains(t, w.Header().Get("Location"), "/genui?session_id=")
 	assert.NotContains(t, w.Header().Get("Location"), initSess.ID.String(), "should create NEW session")
 }
 

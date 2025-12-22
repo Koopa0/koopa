@@ -99,8 +99,8 @@ func TestEstimateMessagesTokens(t *testing.T) {
 		{
 			name: "multiple messages",
 			msgs: []*ai.Message{
-				ai.NewUserMessage(ai.NewTextPart("hello")),      // 5 / 2 = 2
-				ai.NewModelMessage(ai.NewTextPart("world")),     // 5 / 2 = 2
+				ai.NewUserMessage(ai.NewTextPart("hello")),       // 5 / 2 = 2
+				ai.NewModelMessage(ai.NewTextPart("world")),      // 5 / 2 = 2
 				ai.NewUserMessage(ai.NewTextPart("how are you")), // 11 / 2 = 5
 			},
 			expected: 9,
@@ -176,10 +176,10 @@ func TestTruncateHistory(t *testing.T) {
 		{
 			name: "over budget truncates oldest",
 			msgs: []*ai.Message{
-				userMsg("first message"),  // 6 tokens
-				modelMsg("second msg"),    // 5 tokens
-				userMsg("third message"),  // 6 tokens
-				modelMsg("fourth final"),  // 6 tokens
+				userMsg("first message"), // 6 tokens
+				modelMsg("second msg"),   // 5 tokens
+				userMsg("third message"), // 6 tokens
+				modelMsg("fourth final"), // 6 tokens
 			},
 			budget:       12, // Only room for ~2 messages
 			wantLen:      2,
@@ -202,10 +202,10 @@ func TestTruncateHistory(t *testing.T) {
 		{
 			name: "maintains chronological order after truncation",
 			msgs: []*ai.Message{
-				userMsg("oldest"),     // 3 tokens
-				modelMsg("older"),     // 2 tokens
-				userMsg("newer"),      // 2 tokens
-				modelMsg("newest"),    // 3 tokens
+				userMsg("oldest"),  // 3 tokens
+				modelMsg("older"),  // 2 tokens
+				userMsg("newer"),   // 2 tokens
+				modelMsg("newest"), // 3 tokens
 			},
 			budget:       8, // Room for ~2-3 messages
 			wantLen:      3,

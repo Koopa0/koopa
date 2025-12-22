@@ -338,7 +338,7 @@ func (s *Sessions) Create(w http.ResponseWriter, r *http.Request) {
 	// Use standard HTTP 303 redirect (progressive enhancement compatible)
 	// HTMX will intercept and navigate without full page reload
 	// Non-HTMX browsers will perform standard redirect
-	http.Redirect(w, r, "/genui?session="+newSession.ID.String(), http.StatusSeeOther)
+	http.Redirect(w, r, "/genui?session_id="+newSession.ID.String(), http.StatusSeeOther)
 }
 
 // Delete handles DELETE /genui/sessions/:id - deletes session and triggers sidebar refresh.
@@ -477,4 +477,3 @@ func (s *Sessions) setCookie(w http.ResponseWriter, sessionID uuid.UUID) {
 		MaxAge:   SessionMaxAge,
 	})
 }
-

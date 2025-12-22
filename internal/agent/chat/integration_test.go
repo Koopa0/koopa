@@ -27,7 +27,7 @@ func TestChatAgent_BasicExecution(t *testing.T) {
 	t.Run("simple question", func(t *testing.T) {
 		resp, err := framework.Agent.Execute(ctx, sessionID, "Hello, how are you?")
 		require.NoError(t, err)
-		assert.NotNil(t, resp)
+		require.NotNil(t, resp, "Response should not be nil when error is nil")
 		assert.NotEmpty(t, resp.FinalText, "Agent should provide a non-empty response")
 	})
 }
@@ -42,14 +42,14 @@ func TestChatAgent_SessionPersistence(t *testing.T) {
 	t.Run("first message creates history", func(t *testing.T) {
 		resp, err := framework.Agent.Execute(ctx, sessionID, "My name is Koopa")
 		require.NoError(t, err)
-		assert.NotNil(t, resp)
+		require.NotNil(t, resp, "Response should not be nil when error is nil")
 	})
 
 	t.Run("second message uses history", func(t *testing.T) {
 		// Use same session for history continuity
 		resp, err := framework.Agent.Execute(ctx, sessionID, "What is my name?")
 		require.NoError(t, err)
-		assert.NotNil(t, resp)
+		require.NotNil(t, resp, "Response should not be nil when error is nil")
 		// Session history should allow LLM to remember the name from previous message
 		assert.Contains(t, resp.FinalText, "Koopa", "LLM should remember 'Koopa' from session history")
 	})
@@ -66,7 +66,7 @@ func TestChatAgent_ToolIntegration(t *testing.T) {
 		// Ask agent to list files - LLM decides whether to call tools
 		resp, err := framework.Agent.Execute(ctx, sessionID, "List the files in /tmp directory")
 		require.NoError(t, err)
-		assert.NotNil(t, resp)
+		require.NotNil(t, resp, "Response should not be nil when error is nil")
 		// Agent should respond (with or without tool calls)
 		assert.NotEmpty(t, resp.FinalText, "Agent should provide a response")
 	})
