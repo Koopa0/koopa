@@ -100,12 +100,15 @@ func TestChatAgent_StreamingVsNonStreaming(t *testing.T) {
 	ctx := context.Background()
 	query := "What is 2+2? Answer with just the number."
 
-	// Non-streaming execution
+	// Non-streaming execution:
+	// ExecuteStream with nil callback executes in non-streaming mode.
+	// This is a standard Go idiom (nil function = skip optional behavior).
+	// Contract: When callback is nil, the method returns only after full completion.
 	session1 := framework.CreateTestSession(t, "Non-streaming test")
 	invCtx1, sessionID1 := newInvocationContext(ctx, session1)
 	respNoStream, err := framework.Agent.ExecuteStream(invCtx1, sessionID1,
 		query,
-		nil, // No callback = non-streaming
+		nil, // No callback = non-streaming mode (returns complete response)
 	)
 	require.NoError(t, err, "Non-streaming should succeed")
 	require.NotNil(t, respNoStream, "Response should not be nil when error is nil")
