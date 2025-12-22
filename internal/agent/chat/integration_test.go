@@ -7,8 +7,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/stretchr/testify/assert"
@@ -51,7 +55,10 @@ func TestChatAgent_SessionPersistence(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp, "Response should not be nil when error is nil")
 		// Session history should allow LLM to remember the name from previous message
-		assert.Contains(t, resp.FinalText, "Koopa", "LLM should remember 'Koopa' from session history")
+		// Use case-insensitive check to handle LLM rephrasing variations
+		responseLower := strings.ToLower(resp.FinalText)
+		assert.Contains(t, responseLower, "koopa",
+			"LLM should remember 'Koopa' from session history. Got: %s", resp.FinalText)
 	})
 }
 
@@ -63,12 +70,23 @@ func TestChatAgent_ToolIntegration(t *testing.T) {
 	ctx, sessionID := newInvocationContext(context.Background(), framework.SessionID)
 
 	t.Run("can use file tools", func(t *testing.T) {
-		// Ask agent to list files - LLM decides whether to call tools
-		resp, err := framework.Agent.Execute(ctx, sessionID, "List the files in /tmp directory")
+		// Create unique marker file to verify tool was actually invoked
+		markerName := fmt.Sprintf("koopa-test-%d.txt", time.Now().UnixNano())
+		markerPath := filepath.Join(os.TempDir(), markerName)
+		require.NoError(t, os.WriteFile(markerPath, []byte("marker"), 0644))
+		t.Cleanup(func() { os.Remove(markerPath) })
+
+		// Ask agent to find the specific file - proves tool must be called
+		resp, err := framework.Agent.Execute(ctx, sessionID,
+			fmt.Sprintf("List files in /tmp and tell me if %s exists", markerName))
 		require.NoError(t, err)
 		require.NotNil(t, resp, "Response should not be nil when error is nil")
-		// Agent should respond (with or without tool calls)
 		assert.NotEmpty(t, resp.FinalText, "Agent should provide a response")
+
+		// Verify tool was actually invoked by checking for file mention
+		// (The agent can't know about this unique file without calling the tool)
+		assert.Contains(t, strings.ToLower(resp.FinalText), strings.ToLower(markerName),
+			"Response should mention the marker file, proving tool was called. Got: %s", resp.FinalText)
 	})
 }
 

@@ -147,8 +147,9 @@ func TestTruncateHistory(t *testing.T) {
 		msgs          []*ai.Message
 		budget        int
 		wantLen       int
-		wantHasSystem bool   // Should result start with system message?
-		wantLastText  string // Expected text of last message
+		wantHasSystem bool     // Should result start with system message?
+		wantLastText  string   // Expected text of last message
+		wantTexts     []string // Expected texts of all retained messages (verifies specific messages kept)
 	}{
 		{
 			name:    "nil messages returns nil",
@@ -184,6 +185,7 @@ func TestTruncateHistory(t *testing.T) {
 			budget:       12, // Only room for ~2 messages
 			wantLen:      2,
 			wantLastText: "fourth final",
+			wantTexts:    []string{"third message", "fourth final"}, // Verify specific messages retained
 		},
 		{
 			name: "preserves system message when truncating",
@@ -210,6 +212,7 @@ func TestTruncateHistory(t *testing.T) {
 			budget:       8, // Room for ~2-3 messages
 			wantLen:      3,
 			wantLastText: "newest",
+			wantTexts:    []string{"older", "newer", "newest"}, // Verify correct subset retained
 		},
 	}
 
@@ -243,6 +246,22 @@ func TestTruncateHistory(t *testing.T) {
 				}
 				if lastMsg.Content[0].Text != tt.wantLastText {
 					t.Errorf("last message text = %q, want %q", lastMsg.Content[0].Text, tt.wantLastText)
+				}
+			}
+
+			// Check all retained message texts (verifies correct subset kept)
+			if len(tt.wantTexts) > 0 {
+				if len(got) != len(tt.wantTexts) {
+					t.Fatalf("got %d messages but expected %d texts to verify", len(got), len(tt.wantTexts))
+				}
+				for i, want := range tt.wantTexts {
+					if len(got[i].Content) == 0 {
+						t.Fatalf("message %d has no content", i)
+					}
+					gotText := got[i].Content[0].Text
+					if gotText != want {
+						t.Errorf("message %d text = %q, want %q", i, gotText, want)
+					}
 				}
 			}
 		})

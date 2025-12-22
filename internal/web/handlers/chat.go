@@ -318,7 +318,9 @@ func (h *Chat) Send(w http.ResponseWriter, r *http.Request) {
 			sessionIDStr = sessionUUID.String()
 		}
 	} else {
-		// No sessions configured - use form value or default
+		// UNIT TESTS ONLY: When sessions is nil, we're in test simulation mode.
+		// This branch is unreachable in production because NewServer() requires SessionStore.
+		// The session ID here is only used for logging; the Flow rejects non-UUID values anyway.
 		sessionIDStr = r.FormValue("session_id")
 		if sessionIDStr == "" {
 			sessionIDStr = "default"
