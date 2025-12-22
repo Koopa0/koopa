@@ -53,6 +53,7 @@ func TestChatAgent_RAGIntegration_EndToEnd(t *testing.T) {
 	)
 
 	require.NoError(t, err, "Query with RAG should succeed")
+	require.NotNil(t, resp, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 
 	// STEP 3: Verify LLM response uses retrieved context
@@ -94,6 +95,7 @@ func TestRetrieveRAGContext_ActualRetrieval(t *testing.T) {
 	)
 
 	require.NoError(t, err, "Query should succeed")
+	require.NotNil(t, resp, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 
 	// Response should incorporate retrieved knowledge
@@ -132,6 +134,7 @@ func TestRetrieveRAGContext_DisabledWhenTopKZero(t *testing.T) {
 	)
 
 	require.NoError(t, err, "Query should succeed even without RAG")
+	require.NotNil(t, resp, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 
 	// Response should NOT contain the ignored content
@@ -156,6 +159,7 @@ func TestRetrieveRAGContext_EmptyKnowledgeBase(t *testing.T) {
 	)
 
 	require.NoError(t, err, "Query should succeed even with empty knowledge base")
+	require.NotNil(t, resp, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 	t.Logf("Response with empty knowledge base: %s", resp.FinalText)
 }
@@ -198,6 +202,7 @@ func TestRetrieveRAGContext_MultipleRelevantDocuments(t *testing.T) {
 	)
 
 	require.NoError(t, err, "Query should succeed")
+	require.NotNil(t, resp, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
 
 	// Response should mention multiple aspects

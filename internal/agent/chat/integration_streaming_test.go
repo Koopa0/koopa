@@ -84,6 +84,7 @@ func TestChatAgent_StreamingCallbackSuccess(t *testing.T) {
 	)
 
 	require.NoError(t, err, "Streaming should succeed when callback always returns nil")
+	require.NotNil(t, resp, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, resp.FinalText, "Should have complete response")
 	assert.Greater(t, chunks, 0, "Should have received at least one chunk")
 
@@ -107,6 +108,7 @@ func TestChatAgent_StreamingVsNonStreaming(t *testing.T) {
 		nil, // No callback = non-streaming
 	)
 	require.NoError(t, err, "Non-streaming should succeed")
+	require.NotNil(t, respNoStream, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, respNoStream.FinalText)
 
 	// Streaming execution
@@ -123,6 +125,7 @@ func TestChatAgent_StreamingVsNonStreaming(t *testing.T) {
 		callback,
 	)
 	require.NoError(t, err, "Streaming should succeed")
+	require.NotNil(t, respStream, "Response should not be nil when error is nil")
 	assert.NotEmpty(t, respStream.FinalText)
 
 	// Both should contain "4" (the answer)
@@ -141,36 +144,23 @@ func TestChatAgent_StreamingContextCancellation(t *testing.T) {
 	framework, cleanup := SetupTest(t)
 	defer cleanup()
 
+	// Cancel BEFORE starting stream to guarantee cancellation
+	// This is deterministic - no race between stream completion and cancellation
 	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
 	_, sessionID := newInvocationContext(context.Background(), framework.SessionID)
-	chunks := 0
-
-	callback := func(callbackCtx context.Context, chunk *ai.ModelResponseChunk) error {
-		chunks++
-		t.Logf("Received chunk %d", chunks)
-
-		// Cancel after first chunk
-		if chunks == 1 {
-			cancel()
-		}
-		return nil
-	}
 
 	resp, err := framework.Agent.ExecuteStream(ctx, sessionID,
 		"Write a very long story",
-		callback,
+		nil,
 	)
 
 	// Should fail with context canceled error
-	if err != nil {
-		assert.Contains(t, err.Error(), "context canceled",
-			"Should fail with context canceled error")
-		t.Logf("Context cancellation detected: %v", err)
-	} else {
-		// If somehow completed despite cancellation, that's unexpected but not wrong
-		assert.NotNil(t, resp)
-		t.Logf("Completed despite cancellation (unexpected): %s", resp.FinalText)
-	}
+	require.Error(t, err, "Cancelled context should error")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, resp, "Response should be nil when context is cancelled")
+	t.Logf("Context cancellation detected: %v", err)
 }
 
 // TestChatAgent_StreamingEmptyChunks verifies handling of empty chunks
