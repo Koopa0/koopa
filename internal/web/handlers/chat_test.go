@@ -10,14 +10,17 @@ import (
 	"testing"
 
 	"github.com/a-h/templ"
-	"github.com/koopa0/koopa-cli/internal/web/handlers"
+	"github.com/koopa0/koopa/internal/web/handlers"
 )
 
 func TestChat_Send(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode, nil sessions = no CSRF
+	handler, err := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode, nil sessions = no CSRF
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	tests := []struct {
 		name       string
@@ -87,7 +90,10 @@ func TestChat_Send_XSSPrevention(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
+	handler, err := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	// XSS payloads that should be escaped by templ.
 	// templ uses HTML entity encoding, so we verify the raw HTML tag doesn't appear.
@@ -159,7 +165,10 @@ func TestChat_Stream_ParameterValidation(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
+	handler, err := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	// In simulation mode (nil sessions), query is fetched from DB, so we only validate msgId and session_id.
 	// When sessions != nil, query comes from DB via GetUserMessageBefore.
@@ -216,23 +225,24 @@ func TestNewChat(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
+	handler, err := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
 
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 	if handler == nil {
 		t.Fatal("NewChat returned nil")
 	}
 }
 
-func TestNewChat_NilLogger_Panics(t *testing.T) {
+func TestNewChat_NilLogger_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("NewChat with nil logger should panic")
-		}
-	}()
+	_, err := handlers.NewChat(handlers.ChatConfig{})
 
-	handlers.NewChat(handlers.ChatConfig{})
+	if err == nil {
+		t.Error("NewChat with nil logger should return error")
+	}
 }
 
 func TestNewChat_NilFlow_SimulationMode(t *testing.T) {
@@ -240,8 +250,11 @@ func TestNewChat_NilFlow_SimulationMode(t *testing.T) {
 
 	logger := slog.Default()
 	// nil flow should work (simulation mode)
-	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger})
+	handler, err := handlers.NewChat(handlers.ChatConfig{Logger: logger})
 
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 	if handler == nil {
 		t.Fatal("NewChat with nil flow should work (simulation mode)")
 	}
@@ -251,7 +264,10 @@ func TestChat_Stream_SimulationMode(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode, nil sessions = no DB
+	handler, err := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode, nil sessions = no DB
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	// In simulation mode, query is fetched from a fixed placeholder since no DB is available.
 	// No query parameter is needed in URL - it comes from DB in production.
@@ -304,7 +320,10 @@ func TestChat_Stream_SimulationMode_NoXSSInOutput(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
+	handler, err := handlers.NewChat(handlers.ChatConfig{Logger: logger}) // nil flow = simulation mode
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	// In simulation mode, query comes from DB (not URL), so XSS in URL params is not relevant.
 	// This test verifies that the simulation response itself doesn't contain XSS.
@@ -354,7 +373,7 @@ func TestChat_SSEWriterInjection(t *testing.T) {
 
 	// Create handler with injected SSE writer factory
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: logger,
 		// Flow: nil = simulation mode
 		// Sessions: nil = no DB, uses placeholder query
@@ -362,6 +381,9 @@ func TestChat_SSEWriterInjection(t *testing.T) {
 			return mockWriter, nil
 		},
 	})
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	// In simulation mode, query comes from placeholder (no DB), not URL.
 	// No need for XSS payload in URL - that's tested in production mode with mock DB.
@@ -434,7 +456,7 @@ func TestChat_SSE_SidebarRefreshBeforeWriteDone(t *testing.T) {
 
 	// Create handler with injected SSE writer factory
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: logger,
 		// Flow: nil = simulation mode (maybeGenerateTitle will be called)
 		// Sessions: nil = no DB, but simulation mode still calls maybeGenerateTitle
@@ -442,6 +464,9 @@ func TestChat_SSE_SidebarRefreshBeforeWriteDone(t *testing.T) {
 			return mockWriter, nil
 		},
 	})
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	// Execute stream request
 	params := url.Values{}
@@ -496,11 +521,14 @@ func TestChat_SSEWriterFactory_NilMeansDefault(t *testing.T) {
 
 	// Create handler WITHOUT injected SSE writer (nil = use default)
 	logger := slog.Default()
-	handler := handlers.NewChat(handlers.ChatConfig{
+	handler, err := handlers.NewChat(handlers.ChatConfig{
 		Logger: logger,
 		// SSEWriterFn: nil = use default sse.NewWriter
 		// Sessions: nil = no DB, uses placeholder query
 	})
+	if err != nil {
+		t.Fatalf("NewChat failed: %v", err)
+	}
 
 	// Make request - no query param needed, it comes from DB (placeholder in simulation mode)
 	params := url.Values{}
@@ -568,22 +596,5 @@ func (m *mockSSEWriter) WriteError(msgID, code, message string) error {
 func (m *mockSSEWriter) WriteSidebarRefresh(_, _ string) error {
 	m.SidebarRefreshCalled = true
 	m.CallOrder = append(m.CallOrder, "WriteSidebarRefresh")
-	return nil
-}
-
-// Canvas Panel Methods
-
-func (*mockSSEWriter) WriteCanvasShow() error {
-	// Mock: no-op for canvas show in tests
-	return nil
-}
-
-func (*mockSSEWriter) WriteCanvasHide() error {
-	// Mock: no-op for canvas hide in tests
-	return nil
-}
-
-func (*mockSSEWriter) WriteArtifact(_ context.Context, _ templ.Component) error {
-	// Mock: no-op for artifact in tests
 	return nil
 }

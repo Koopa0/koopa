@@ -33,12 +33,11 @@
 // Chat requires configuration via the Config struct at construction time:
 //
 //	type Config struct {
-//	    Genkit        *genkit.Genkit
-//	    Retriever     ai.Retriever
-//	    SessionStore  *session.Store
-//	    ArtifactStore *artifact.Store  // Optional: nil = Canvas disabled
-//	    Logger        log.Logger
-//	    Tools         []ai.Tool
+//	    Genkit       *genkit.Genkit
+//	    Retriever    ai.Retriever
+//	    SessionStore *session.Store
+//	    Logger       log.Logger
+//	    Tools        []ai.Tool
 //
 //	    // Configuration values
 //	    ModelName string  // e.g., "googleai/gemini-2.5-flash"
@@ -107,10 +106,9 @@
 //
 // Chat manages conversation history through the SessionStore:
 //
-//	LoadHistory: Retrieves previous messages for a session
+//	GetHistory: Retrieves previous messages for a session
 //	AppendMessages: Persists new messages incrementally (preferred)
 //
-// Sessions are branch-aware, allowing isolated conversation contexts.
 // History save failures are logged but don't fail the request.
 //
 // # Example Usage
@@ -132,10 +130,10 @@
 //	}
 //
 //	// Non-streaming execution
-//	resp, err := chatAgent.Execute(ctx, sessionID, branch, "What is the weather?")
+//	resp, err := chatAgent.Execute(ctx, sessionID, "What is the weather?")
 //
 //	// Streaming execution with callback
-//	resp, err := chatAgent.ExecuteStream(ctx, sessionID, branch, "What is the weather?", false,
+//	resp, err := chatAgent.ExecuteStream(ctx, sessionID, "What is the weather?",
 //	    func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
 //	        fmt.Print(chunk.Text()) // Real-time output
 //	        return nil

@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"go.uber.org/goleak"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/agent/chat"
 )
 
 // goleakOptions returns standard goleak options for all TUI tests.
@@ -39,27 +39,29 @@ func newTestTUI() *TUI {
 	}
 }
 
-func TestNew_PanicOnNilFlow(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic for nil flow")
-		}
-	}()
-	New(context.Background(), nil, "test")
+func TestNew_ErrorOnNilFlow(t *testing.T) {
+	_, err := New(context.Background(), nil, "test")
+	if err == nil {
+		t.Error("Expected error for nil flow")
+	}
 }
 
-func TestNew_PanicOnNilContext(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic for nil context")
-		}
-	}()
+func TestNew_ErrorOnNilContext(t *testing.T) {
 	// Note: We can't create a real *chat.Flow without full setup,
-	// so we're testing that panic happens before nil check
-	// In reality, flow check comes first so this test validates the pattern
+	// so we're testing that error is returned for nil context
 	var flow *chat.Flow
 	//lint:ignore SA1012 intentionally testing nil context handling
-	New(nil, flow, "test") //nolint:staticcheck
+	_, err := New(nil, flow, "test") //nolint:staticcheck
+	if err == nil {
+		t.Error("Expected error for nil context")
+	}
+}
+
+func TestNew_ErrorOnEmptySessionID(t *testing.T) {
+	_, err := New(context.Background(), nil, "")
+	if err == nil {
+		t.Error("Expected error for empty session ID")
+	}
 }
 
 func TestTUI_Init(t *testing.T) {
@@ -208,15 +210,11 @@ func TestTUI_StreamMessageTypes(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
 	t.Run("streamTextMsg", func(t *testing.T) {
-		textCh := make(chan string, 1)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
+		eventCh := make(chan streamEvent, 1)
 
 		tui := newTestTUI()
 		tui.state = StateStreaming
-		tui.streamTextCh = textCh
-		tui.streamDoneCh = doneCh
-		tui.streamErrCh = errCh
+		tui.streamEventCh = eventCh
 
 		model, _ := tui.Update(streamTextMsg{text: "Hello"})
 		result := model.(*TUI)
@@ -264,60 +262,67 @@ func TestTUI_StreamMessageTypes(t *testing.T) {
 	})
 }
 
-func TestListenForStream_ChannelClosure(t *testing.T) {
+func TestListenForStream_UnionChannel(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	t.Run("textCh closed with done value", func(t *testing.T) {
-		textCh := make(chan string)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
-		close(textCh)
-		doneCh <- chat.Output{Response: "done"}
+	t.Run("text event", func(t *testing.T) {
+		eventCh := make(chan streamEvent, 1)
+		eventCh <- streamEvent{text: "hello"}
 
-		cmd := listenForStream(textCh, doneCh, errCh)
+		cmd := listenForStream(eventCh)
 		msg := cmd()
 
-		if _, ok := msg.(streamDoneMsg); !ok {
-			t.Errorf("Expected streamDoneMsg when textCh closed, got %T", msg)
+		if m, ok := msg.(streamTextMsg); !ok {
+			t.Errorf("Expected streamTextMsg, got %T", msg)
+		} else if m.text != "hello" {
+			t.Errorf("Expected text 'hello', got %q", m.text)
 		}
 	})
 
-	t.Run("textCh closed with error value", func(t *testing.T) {
-		textCh := make(chan string)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
-		close(textCh)
-		errCh <- context.Canceled
+	t.Run("done event", func(t *testing.T) {
+		eventCh := make(chan streamEvent, 1)
+		eventCh <- streamEvent{done: true, output: chat.Output{Response: "done"}}
 
-		cmd := listenForStream(textCh, doneCh, errCh)
+		cmd := listenForStream(eventCh)
+		msg := cmd()
+
+		if m, ok := msg.(streamDoneMsg); !ok {
+			t.Errorf("Expected streamDoneMsg, got %T", msg)
+		} else if m.output.Response != "done" {
+			t.Errorf("Expected response 'done', got %q", m.output.Response)
+		}
+	})
+
+	t.Run("error event", func(t *testing.T) {
+		eventCh := make(chan streamEvent, 1)
+		eventCh <- streamEvent{err: context.Canceled}
+
+		cmd := listenForStream(eventCh)
 		msg := cmd()
 
 		if _, ok := msg.(streamErrorMsg); !ok {
-			t.Errorf("Expected streamErrorMsg when textCh closed, got %T", msg)
+			t.Errorf("Expected streamErrorMsg, got %T", msg)
 		}
 	})
 
-	t.Run("doneCh receives value", func(t *testing.T) {
-		textCh := make(chan string)
-		doneCh := make(chan chat.Output, 1)
-		errCh := make(chan error, 1)
+	t.Run("channel closed", func(t *testing.T) {
+		eventCh := make(chan streamEvent)
+		close(eventCh)
 
-		doneCh <- chat.Output{Response: "done"}
-
-		cmd := listenForStream(textCh, doneCh, errCh)
+		cmd := listenForStream(eventCh)
 		msg := cmd()
 
-		if _, ok := msg.(streamDoneMsg); !ok {
-			t.Errorf("Expected streamDoneMsg, got %T", msg)
+		if _, ok := msg.(streamErrorMsg); !ok {
+			t.Errorf("Expected streamErrorMsg on channel close, got %T", msg)
 		}
 	})
 
-	t.Run("nil channels returns nil", func(t *testing.T) {
-		cmd := listenForStream(nil, nil, nil)
+	t.Run("nil channel returns nil", func(t *testing.T) {
+		cmd := listenForStream(nil)
 		msg := cmd()
 
 		if msg != nil {
-			t.Errorf("Expected nil for nil channels, got %T", msg)
+			t.Errorf("Expected nil for nil channel, got %T", msg)
 		}
 	})
 }
@@ -485,24 +490,23 @@ func TestMarkdownRenderer_Render(t *testing.T) {
 	})
 }
 
-func TestTUI_Cleanup_WithTimeout(t *testing.T) {
+func TestTUI_Cleanup(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
 	tui := newTestTUI()
 
-	// Create a done channel that closes quickly
-	done := make(chan struct{})
-	tui.streamDone = done
-	close(done)
+	// Setup stream state
+	eventCh := make(chan streamEvent, 1)
+	tui.streamEventCh = eventCh
 
 	cmd := tui.cleanup()
 	if cmd == nil {
 		t.Error("cleanup should return quit command")
 	}
 
-	// Verify streamDone is nil after cleanup
-	if tui.streamDone != nil {
-		t.Error("streamDone should be nil after cleanup")
+	// Verify streamEventCh is nil after cleanup
+	if tui.streamEventCh != nil {
+		t.Error("streamEventCh should be nil after cleanup")
 	}
 }
 

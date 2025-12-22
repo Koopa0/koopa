@@ -1,12 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/web/component"
-	"github.com/koopa0/koopa-cli/internal/web/page"
+	"github.com/koopa0/koopa/internal/web/component"
+	"github.com/koopa0/koopa/internal/web/page"
 )
 
 // Pagination limits for the chat page.
@@ -30,15 +31,15 @@ type Pages struct {
 }
 
 // NewPages creates a new Pages handler.
-// logger is required (panics if nil).
-func NewPages(cfg PagesConfig) *Pages {
+// Returns error if required dependencies are nil.
+func NewPages(cfg PagesConfig) (*Pages, error) {
 	if cfg.Logger == nil {
-		panic("NewPages: logger is required")
+		return nil, errors.New("NewPages: logger is required")
 	}
 	return &Pages{
 		logger:   cfg.Logger,
 		sessions: cfg.Sessions,
-	}
+	}, nil
 }
 
 // Chat renders the main chat page with message history.
@@ -93,7 +94,6 @@ func (h *Pages) Chat(w http.ResponseWriter, r *http.Request) {
 	var (
 		pageMessages      []page.Message
 		componentSessions []component.Session
-		canvasMode        bool
 		csrfToken         string
 		sessionIDStr      string
 	)
@@ -103,8 +103,8 @@ func (h *Pages) Chat(w http.ResponseWriter, r *http.Request) {
 		sessionIDStr = sessionID.String()
 
 		// Load message history
-		messages, msgErr := h.sessions.Store().GetMessagesByBranch(
-			r.Context(), sessionID, "main", DefaultMessageHistoryLimit, 0,
+		messages, msgErr := h.sessions.Store().GetMessages(
+			r.Context(), sessionID, DefaultMessageHistoryLimit, 0,
 		)
 		if msgErr != nil {
 			h.logger.Error("failed to load message history",
@@ -114,15 +114,6 @@ func (h *Pages) Chat(w http.ResponseWriter, r *http.Request) {
 			// Don't fail the page load, just show empty chat
 		} else {
 			pageMessages = messagesToPage(messages)
-		}
-
-		// Get canvas mode from database
-		currentSession, sessionErr := h.sessions.Store().GetSession(r.Context(), sessionID)
-		if sessionErr == nil {
-			canvasMode = currentSession.CanvasMode
-		} else {
-			h.logger.Warn("failed to get session for canvas mode, defaulting to false",
-				"session_id", sessionID, "error", sessionErr)
 		}
 
 		// Generate session-bound CSRF token
@@ -144,11 +135,10 @@ func (h *Pages) Chat(w http.ResponseWriter, r *http.Request) {
 
 	// Render chat page
 	if err := page.ChatPage(page.ChatPageProps{
-		SessionID:  sessionIDStr, // Empty string in pre-session state
-		Sessions:   componentSessions,
-		Messages:   pageMessages,
-		CanvasMode: canvasMode,
-		CSRFToken:  csrfToken,
+		SessionID: sessionIDStr, // Empty string in pre-session state
+		Sessions:  componentSessions,
+		Messages:  pageMessages,
+		CSRFToken: csrfToken,
 	}).Render(r.Context(), w); err != nil {
 		h.logger.Error("failed to render chat page", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)

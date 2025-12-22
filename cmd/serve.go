@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/app"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/web"
+	"github.com/koopa0/koopa/internal/app"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/web"
 )
 
 // Server timeout configuration.

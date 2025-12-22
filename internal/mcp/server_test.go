@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/security"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // testHelper provides common test utilities.

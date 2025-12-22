@@ -4,8 +4,8 @@ import (
 	"html"
 	"log/slog"
 
-	"github.com/koopa0/koopa-cli/internal/tools"
-	"github.com/koopa0/koopa-cli/internal/web/sse"
+	"github.com/koopa0/koopa/internal/tools"
+	"github.com/koopa0/koopa/internal/web/sse"
 )
 
 // SSEToolEmitter implements ToolEventEmitter using SSE writer.

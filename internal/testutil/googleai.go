@@ -10,7 +10,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
-	"github.com/koopa0/koopa-cli/internal/config"
+	"github.com/koopa0/koopa/internal/config"
 )
 
 // GoogleAISetup contains all resources needed for Google AI-based tests.

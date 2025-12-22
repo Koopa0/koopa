@@ -15,10 +15,10 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/agent"
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
-	"github.com/koopa0/koopa-cli/internal/web/component"
-	"github.com/koopa0/koopa-cli/internal/web/sse"
+	"github.com/koopa0/koopa/internal/agent"
+	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/web/component"
+	"github.com/koopa0/koopa/internal/web/sse"
 )
 
 // SSEWriter defines the interface for SSE streaming operations.
@@ -27,8 +27,6 @@ type SSEWriter interface {
 	WriteChunkRaw(msgID, htmlContent string) error
 	WriteDone(ctx context.Context, msgID string, comp templ.Component) error
 	WriteError(msgID, code, message string) error
-	WriteArtifact(ctx context.Context, comp templ.Component) error
-	WriteCanvasShow() error
 	WriteSidebarRefresh(sessionID, title string) error // For title auto-generation
 }
 
@@ -63,12 +61,12 @@ func defaultSSEWriterFn(w http.ResponseWriter) (SSEWriter, error) {
 }
 
 // NewChat creates a new Chat handler.
-// logger is required (panics if nil).
+// Returns error if required dependencies are nil.
 // flow is optional - if nil, simulation mode is used.
 // genkit is optional - if nil, AI title generation falls back to truncation.
-func NewChat(cfg ChatConfig) *Chat {
+func NewChat(cfg ChatConfig) (*Chat, error) {
 	if cfg.Logger == nil {
-		panic("NewChat: logger is required")
+		return nil, errors.New("NewChat: logger is required")
 	}
 	sseWriterFn := cfg.SSEWriterFn
 	if sseWriterFn == nil {
@@ -80,7 +78,7 @@ func NewChat(cfg ChatConfig) *Chat {
 		flow:        cfg.Flow,
 		sessions:    cfg.Sessions,
 		sseWriterFn: sseWriterFn,
-	}
+	}, nil
 }
 
 // =============================================================================
@@ -90,10 +88,9 @@ func NewChat(cfg ChatConfig) *Chat {
 // streamState encapsulates streaming state for a single response.
 // Per rob-pike: State belongs in a struct, not passed as *bool.
 type streamState struct {
-	msgID       string
-	sessionID   string
-	buffer      strings.Builder
-	canvasShown bool
+	msgID     string
+	sessionID string
+	buffer    strings.Builder
 }
 
 // =============================================================================
@@ -227,59 +224,18 @@ func (*Chat) writeFinalMessage(ctx context.Context, w SSEWriter, s *streamState,
 	return w.WriteDone(ctx, s.msgID, finalMsg)
 }
 
-// processChunk handles a single text chunk, parsing artifacts and streaming content.
-// Per rob-pike: Shorter name; "with artifacts" is implementation detail.
+// processChunk handles a single text chunk and streams content.
 // State changes are made directly on streamState receiver.
-func (s *streamState) processChunk(ctx context.Context, h *Chat, w SSEWriter, text string) error {
+func (s *streamState) processChunk(_ context.Context, _ *Chat, w SSEWriter, text string) error {
 	// Accumulate text
 	s.buffer.WriteString(text)
 
-	// Parse for artifacts
-	artifact, before, after := parseArtifact(s.buffer.String())
-
-	if artifact == nil {
-		// No complete artifact - send safe content
-		safe, held := safeSplit(s.buffer.String())
-		s.buffer.Reset()
-		s.buffer.WriteString(held)
-		if safe != "" {
-			return w.WriteChunkRaw(s.msgID, html.EscapeString(safe))
-		}
-		return nil
-	}
-
-	// Complete artifact found
-	// 1. Send text before artifact
-	if before != "" {
-		if err := w.WriteChunkRaw(s.msgID, html.EscapeString(before)); err != nil {
-			return err
-		}
-	}
-
-	// 2. Show canvas panel (once)
-	// Per htmx-master: WriteCanvasShow BEFORE WriteArtifact
-	if !s.canvasShown {
-		if err := w.WriteCanvasShow(); err != nil {
-			h.logger.Warn("canvas show failed", "error", err)
-		}
-		s.canvasShown = true
-	}
-
-	// 3. Send artifact to canvas panel
-	artifactComp := component.ArtifactContent(component.ArtifactContentProps{
-		Type:     string(artifact.Type),
-		Language: artifact.Language,
-		Title:    artifact.Title,
-		Content:  artifact.Content,
-	})
-	if err := w.WriteArtifact(ctx, artifactComp); err != nil {
-		return err
-	}
-
-	// 4. Reset buffer with remaining text
+	// Send accumulated content
+	content := s.buffer.String()
 	s.buffer.Reset()
-	s.buffer.WriteString(after)
-
+	if content != "" {
+		return w.WriteChunkRaw(s.msgID, html.EscapeString(content))
+	}
 	return nil
 }
 
@@ -449,32 +405,12 @@ func (h *Chat) streamWithFlow(ctx context.Context, w SSEWriter, msgID, sessionID
 		sessionID: sessionID,
 	}
 
-	// BUG #1 FIX: Get canvas mode from DATABASE (not cookie)
-	var canvasEnabled bool
-	if h.sessions != nil {
-		sessionUUID, parseErr := uuid.Parse(sessionID)
-		if parseErr != nil {
-			h.logger.Warn("invalid session ID format, defaulting canvas to false",
-				"session_id", sessionID, "error", parseErr)
-		} else {
-			session, getErr := h.sessions.Store().GetSession(ctx, sessionUUID)
-			if getErr == nil {
-				canvasEnabled = session.CanvasMode
-			} else {
-				h.logger.Warn("failed to get session for canvas mode", "error", getErr)
-			}
-		}
-	}
-
 	input := chat.Input{
-		Query:         query,
-		SessionID:     sessionID,
-		CanvasEnabled: canvasEnabled, // BUG #1 FIX: Now properly set!
+		Query:     query,
+		SessionID: sessionID,
 	}
 
-	h.logger.Debug("starting stream",
-		"sessionId", sessionID,
-		"canvasEnabled", canvasEnabled)
+	h.logger.Debug("starting stream", "sessionId", sessionID)
 
 	var (
 		finalOutput chat.Output
@@ -501,7 +437,7 @@ func (h *Chat) streamWithFlow(ctx context.Context, w SSEWriter, msgID, sessionID
 			break
 		}
 
-		// Process partial text chunks with artifact parsing
+		// Process partial text chunks
 		if streamValue.Stream.Text != "" {
 			if err := state.processChunk(ctx, h, w, streamValue.Stream.Text); err != nil {
 				h.logger.Error("failed to process chunk", "error", err)
@@ -637,7 +573,7 @@ func (h *Chat) simulateStreaming(ctx context.Context, w SSEWriter, msgID, sessio
 }
 
 func generateMessageID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return uuid.New().String()
 }
 
 // logContextDone logs the appropriate message based on context cancellation reason.

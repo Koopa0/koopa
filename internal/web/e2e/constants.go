@@ -23,7 +23,7 @@ const (
 	// ElementVisibleTimeout is the maximum time to wait for element visibility.
 	ElementVisibleTimeout = 5 * time.Second
 
-	// SSEWaitTimeout is the maximum time to wait for SSE events (tool indicators, artifacts).
+	// SSEWaitTimeout is the maximum time to wait for SSE events (tool indicators, etc).
 	// Longer than InteractionTimeout because SSE streaming may take time.
 	SSEWaitTimeout = 10 * time.Second
 )

@@ -143,21 +143,21 @@ tasks:
     deps: [generate]
     cmds:
       - |
-        echo "=== Running FuzzParseArtifact ==="
-        go test -fuzz=FuzzParseArtifact -fuzztime=30s ./internal/web/handlers/ || true
-        echo "=== Running FuzzExtractAttr ==="
-        go test -fuzz=FuzzExtractAttr -fuzztime=30s ./internal/web/handlers/ || true
-        echo "=== Running FuzzHasPartialTag ==="
-        go test -fuzz=FuzzHasPartialTag -fuzztime=30s ./internal/web/handlers/ || true
-        echo "=== Running FuzzSafeSplit ==="
-        go test -fuzz=FuzzSafeSplit -fuzztime=30s ./internal/web/handlers/ || true
+        echo "=== Running FuzzCSRFToken ==="
+        go test -fuzz=FuzzCSRFToken -fuzztime=30s ./internal/web/handlers/ || true
+        echo "=== Running FuzzMessageContent ==="
+        go test -fuzz=FuzzMessageContent -fuzztime=30s ./internal/web/handlers/ || true
+        echo "=== Running FuzzHTMLEscape ==="
+        go test -fuzz=FuzzHTMLEscape -fuzztime=30s ./internal/web/handlers/ || true
+        echo "=== Running FuzzToolNameEscape ==="
+        go test -fuzz=FuzzToolNameEscape -fuzztime=30s ./internal/web/handlers/ || true
 
   test:fuzz:quick:
     desc: Run fuzz tests (10 seconds per test - quick validation)
     deps: [generate]
     cmds:
       - |
-        for fuzz in FuzzParseArtifact FuzzExtractAttr FuzzHasPartialTag FuzzSafeSplit FuzzIsValidArtifactType; do
+        for fuzz in FuzzCSRFToken FuzzMessageContent FuzzHTMLEscape FuzzToolNameEscape FuzzMessageIDEscape; do
           echo "=== Running $fuzz ==="
           go test -fuzz=$fuzz -fuzztime=10s ./internal/web/handlers/ || true
         done
@@ -271,7 +271,7 @@ tasks:
     cmds:
       - find ./internal/web -name "*_templ.go" -delete 2>/dev/null || true
       - rm -f ./internal/web/static/css/output.css
-      - rm -f koopa koopa-cli tui.test
+      - rm -f koopa tui.test
       - rm -f coverage.out coverage.html
 
   clean:all:

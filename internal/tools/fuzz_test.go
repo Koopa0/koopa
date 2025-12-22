@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 // FuzzClampTopK tests that clampTopK never panics and always returns valid bounds.

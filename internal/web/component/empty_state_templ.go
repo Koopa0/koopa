@@ -36,7 +36,7 @@ func EmptyState(props EmptyStateProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"empty-state\" class=\"flex flex-col items-center justify-center min-h-[60vh] px-4\"><!-- Logo/Icon --><div class=\"flex size-16 items-center justify-center rounded-2xl bg-indigo-500/10 ring-1 ring-indigo-500/20 mb-6\"><span class=\"text-3xl font-bold text-indigo-400\">K</span></div><!-- Title --><h1 class=\"text-2xl font-bold text-white mb-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"empty-state\" class=\"flex flex-1 flex-col items-center justify-center px-4\"><!-- Logo/Icon --><div class=\"flex size-16 items-center justify-center rounded-2xl bg-indigo-500/10 ring-1 ring-indigo-500/20 mb-6\"><span class=\"text-3xl font-bold text-indigo-400\">K</span></div><!-- Title --><h1 class=\"text-2xl font-bold text-white mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

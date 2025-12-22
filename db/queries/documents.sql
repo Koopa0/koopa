@@ -2,16 +2,16 @@
 -- Generated code will be in internal/sqlc/documents.sql.go
 
 -- name: UpsertDocument :exec
-INSERT INTO documents (id, content, embedding, metadata, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, NOW())
+INSERT INTO documents (id, content, embedding, source_type, metadata)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (id) DO UPDATE SET
     content = EXCLUDED.content,
     embedding = EXCLUDED.embedding,
-    metadata = EXCLUDED.metadata,
-    updated_at = NOW();
+    source_type = EXCLUDED.source_type,
+    metadata = EXCLUDED.metadata;
 
 -- name: SearchDocuments :many
-SELECT id, content, metadata, created_at,
+SELECT id, content, metadata,
        (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float8 AS similarity
 FROM documents
 WHERE metadata @> sqlc.arg(filter_metadata)::jsonb
@@ -19,7 +19,7 @@ ORDER BY similarity DESC
 LIMIT sqlc.arg(result_limit);
 
 -- name: SearchDocumentsAll :many
-SELECT id, content, metadata, created_at,
+SELECT id, content, metadata,
        (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float8 AS similarity
 FROM documents
 ORDER BY similarity DESC
@@ -35,7 +35,7 @@ SELECT COUNT(*)
 FROM documents;
 
 -- name: GetDocument :one
-SELECT id, content, metadata, created_at, updated_at
+SELECT id, content, metadata
 FROM documents
 WHERE id = $1;
 
@@ -46,19 +46,18 @@ WHERE id = $1;
 -- ===== Optimized RAG Queries (SQL-level filtering) =====
 
 -- name: SearchBySourceType :many
--- Generic search by source_type (flexible for future source types)
-SELECT id, content, metadata, created_at,
+-- Generic search by source_type using dedicated indexed column
+SELECT id, content, metadata,
        (1 - (embedding <=> sqlc.arg(query_embedding)::vector))::float8 AS similarity
 FROM documents
-WHERE metadata->>'source_type' = sqlc.arg(source_type)::text
+WHERE source_type = sqlc.arg(source_type)::text
 ORDER BY similarity DESC
 LIMIT sqlc.arg(result_limit);
 
 -- name: ListDocumentsBySourceType :many
--- List all documents by source_type without similarity calculation
+-- List all documents by source_type using dedicated indexed column
 -- Used for listing indexed files without needing embeddings
-SELECT id, content, metadata, created_at, updated_at
+SELECT id, content, metadata
 FROM documents
-WHERE metadata->>'source_type' = sqlc.arg(source_type)::text
-ORDER BY created_at DESC
+WHERE source_type = sqlc.arg(source_type)::text
 LIMIT sqlc.arg(result_limit);

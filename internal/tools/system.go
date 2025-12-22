@@ -11,8 +11,8 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 
-	"github.com/koopa0/koopa-cli/internal/log"
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/log"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 const (
@@ -71,13 +71,24 @@ func RegisterSystemTools(g *genkit.Genkit, st *SystemTools) ([]ai.Tool, error) {
 
 	return []ai.Tool{
 		genkit.DefineTool(g, ToolCurrentTime,
-			"Get the current system date and time in formatted string",
+			"Get the current system date and time. "+
+				"Returns: formatted time string, Unix timestamp, and ISO 8601 format. "+
+				"Use this to: check current time, calculate relative times, add timestamps to outputs. "+
+				"Always returns the server's local time zone.",
 			WithEvents(ToolCurrentTime, st.CurrentTime)),
 		genkit.DefineTool(g, ToolExecuteCommand,
-			"Execute a shell command with security validation. Dangerous commands (rm -rf, sudo, etc.) are blocked.",
+			"Execute a shell command from the allowed list with security validation. "+
+				"Allowed commands: git, npm, yarn, go, make, docker, kubectl, ls, cat, grep, find, pwd, echo. "+
+				"Commands run with a timeout to prevent hanging. "+
+				"Returns: stdout, stderr, exit code, and execution time. "+
+				"Use this for: running builds, checking git status, listing processes, viewing file contents. "+
+				"Security: Dangerous commands (rm -rf, sudo, chmod, etc.) are blocked.",
 			WithEvents(ToolExecuteCommand, st.ExecuteCommand)),
 		genkit.DefineTool(g, ToolGetEnv,
-			"Read an environment variable value. Sensitive variables (*KEY*, *SECRET*, *TOKEN*) are protected.",
+			"Read an environment variable value from the system. "+
+				"Returns: the variable name and its value. "+
+				"Use this to: check configuration, verify paths, read non-sensitive settings. "+
+				"Security: Sensitive variables containing KEY, SECRET, TOKEN, or PASSWORD in their names are protected and will not be returned.",
 			WithEvents(ToolGetEnv, st.GetEnv)),
 	}, nil
 }

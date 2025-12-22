@@ -21,13 +21,13 @@ import (
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/google/uuid"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
-	"github.com/koopa0/koopa-cli/internal/config"
-	"github.com/koopa0/koopa-cli/internal/security"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/sqlc"
-	"github.com/koopa0/koopa-cli/internal/testutil"
-	"github.com/koopa0/koopa-cli/internal/tools"
+	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/security"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // TestFramework provides a complete test environment for handler integration tests.
@@ -117,21 +117,29 @@ func SetupTest(t *testing.T) (*TestFramework, func()) {
 		t.Fatalf("Failed to create path validator: %v", err)
 	}
 
-	// Register file tools
-	fileTools, err := tools.RegisterFileTools(ragSetup.Genkit, pathValidator, slog.Default())
+	// Create and register file tools
+	fileTools, err := tools.NewFileTools(pathValidator, slog.Default())
+	if err != nil {
+		dbCleanup()
+		t.Fatalf("Failed to create file tools: %v", err)
+	}
+
+	registeredTools, err := tools.RegisterFileTools(ragSetup.Genkit, fileTools)
 	if err != nil {
 		dbCleanup()
 		t.Fatalf("Failed to register file tools: %v", err)
 	}
 
 	// Create Chat Agent (needed to get Flow)
-	chatAgent, err := chat.New(chat.Deps{
-		Config:       cfg,
+	chatAgent, err := chat.New(chat.Config{
 		Genkit:       ragSetup.Genkit,
 		Retriever:    ragSetup.Retriever,
 		SessionStore: sessionStore,
 		Logger:       slog.Default(),
-		Tools:        fileTools,
+		Tools:        registeredTools,
+		MaxTurns:     cfg.MaxTurns,
+		RAGTopK:      cfg.RAGTopK,
+		Language:     cfg.Language,
 	})
 	if err != nil {
 		dbCleanup()

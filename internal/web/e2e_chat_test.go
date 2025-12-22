@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/koopa0/koopa-cli/internal/web"
-	"github.com/koopa0/koopa-cli/internal/web/e2e"
+	"github.com/koopa0/koopa/internal/web"
+	"github.com/koopa0/koopa/internal/web/e2e"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -136,62 +136,6 @@ func (w *Writer) WriteError(msgID, _, message string) error {
 	return w.writeSSEData("error", oobHTML)
 }
 
-// =============================================================================
-// Canvas Mode Methods (Artifact Panel Support)
-// =============================================================================
-
-// WriteArtifact sends an artifact update to the Canvas panel.
-// Used for displaying generated code, documents, or other rich content.
-// Context is passed for component rendering cancellation.
-//
-// Uses OOB swap to update #artifact-content div.
-// The panel visibility is controlled separately via WriteCanvasShow().
-//
-// CRITICAL: Must send via "chunk" event because the SSE client only listens
-// for "chunk" events via sse-swap="chunk". Events sent with other names
-// (like "artifact") are silently ignored by the HTMX SSE extension.
-func (w *Writer) WriteArtifact(ctx context.Context, comp templ.Component) error {
-	var buf bytes.Buffer
-	if err := comp.Render(ctx, &buf); err != nil {
-		return fmt.Errorf("render artifact component: %w", err)
-	}
-
-	// Wrap in OOB swap targeting artifact-content div
-	oobHTML := fmt.Sprintf(`<div id="artifact-content" hx-swap-oob="innerHTML">%s</div>`, buf.String())
-	return w.writeSSEData("chunk", oobHTML) // Must use "chunk" - see comment above
-}
-
-// WriteWithArtifact sends both a message chunk and artifact update in one event.
-// This reduces network round-trips when both panels need updating.
-// Context is passed for component rendering cancellation.
-func (w *Writer) WriteWithArtifact(ctx context.Context, msgID, msgHTML string, artifactComp templ.Component) error {
-	// Send message chunk first
-	if err := w.WriteChunkRaw(msgID, msgHTML); err != nil {
-		return fmt.Errorf("write chunk: %w", err)
-	}
-
-	// Send artifact update
-	return w.WriteArtifact(ctx, artifactComp)
-}
-
-// ClearArtifact sends an event to clear/reset the Canvas panel.
-// Used when switching modes or when artifact content is no longer relevant.
-// Context is passed for component rendering cancellation.
-//
-// CRITICAL: Must send via "chunk" event because the SSE client only listens
-// for "chunk" events via sse-swap="chunk". Events sent with other names
-// (like "artifact-clear") are silently ignored by the HTMX SSE extension.
-func (w *Writer) ClearArtifact(ctx context.Context, emptyStateComp templ.Component) error {
-	var buf bytes.Buffer
-	if err := emptyStateComp.Render(ctx, &buf); err != nil {
-		return fmt.Errorf("render empty state component: %w", err)
-	}
-
-	// Wrap in OOB swap targeting artifact-content div
-	oobHTML := fmt.Sprintf(`<div id="artifact-content" hx-swap-oob="innerHTML">%s</div>`, buf.String())
-	return w.writeSSEData("chunk", oobHTML) // Must use "chunk" - see comment above
-}
-
 // WriteSidebarRefresh sends an HX-Trigger event to refresh the sidebar.
 // Used after title is auto-generated to update the session list.
 // Per HTMX Master: Use HX-Trigger header pattern via SSE instead of OOB trigger div.
@@ -206,67 +150,6 @@ func (w *Writer) WriteSidebarRefresh(_, _ string) error {
 	// The sidebar has hx-trigger="sidebar-refresh from:body" which catches this event
 	triggerHTML := `<div hx-swap-oob="beforeend:body"><script data-sidebar-refresh>(function(){htmx.trigger(document.body,'sidebar-refresh');document.currentScript.remove();})();</script></div>`
 	return w.writeSSEData("chunk", triggerHTML)
-}
-
-// =============================================================================
-// Canvas Panel Dynamic Display
-// =============================================================================
-
-// WriteCanvasShow sends an SSE event to dynamically show the Canvas panel.
-// Per HTMX Master review: Uses script injection instead of invalid hx-swap-oob="className".
-// The panel uses translate-x-full (hidden) → translate-x-0 (visible) animation.
-// Panel should appear when AI signals an artifact, not on button click.
-//
-// CRITICAL: Must send via "chunk" event because the SSE client only listens for "chunk" events.
-//
-// Implementation: Single SSE event with self-removing script that:
-// 1. Removes 'hidden' class (CSS display:none) to make panel visible
-// 2. Removes xl:translate-x-full from panel (slides in)
-// 3. Adds xl:translate-x-0 to panel (visible position)
-// 4. Adds 'xl:flex' for proper desktop layout
-// 5. Updates aria-hidden for accessibility
-// 6. Adds xl:pr-96 to main content (layout shift)
-func (w *Writer) WriteCanvasShow() error {
-	showScript := `<div hx-swap-oob="beforeend:body"><script data-canvas-toggle>
-(function() {
-    var panel = document.getElementById('artifact-panel');
-    var main = document.getElementById('main-content');
-    if (panel) {
-        panel.classList.remove('hidden', 'xl:translate-x-full');
-        panel.classList.add('xl:translate-x-0', 'xl:flex');
-        panel.setAttribute('aria-hidden', 'false');
-    }
-    if (main) {
-        main.classList.add('xl:pr-96');
-    }
-    document.currentScript?.remove();
-})();
-</script></div>`
-	return w.writeSSEData("chunk", showScript)
-}
-
-// WriteCanvasHide sends an SSE event to dynamically hide the Canvas panel.
-// Uses script injection for class toggling (per HTMX Master review).
-// Called when Canvas mode is disabled or when clearing artifact content.
-//
-// CRITICAL: Must send via "chunk" event because the SSE client only listens for "chunk" events.
-func (w *Writer) WriteCanvasHide() error {
-	hideScript := `<div hx-swap-oob="beforeend:body"><script data-canvas-toggle>
-(function() {
-    var panel = document.getElementById('artifact-panel');
-    var main = document.getElementById('main-content');
-    if (panel) {
-        panel.classList.remove('xl:translate-x-0');
-        panel.classList.add('xl:translate-x-full');
-        panel.setAttribute('aria-hidden', 'true');
-    }
-    if (main) {
-        main.classList.remove('xl:pr-96');
-    }
-    document.currentScript?.remove();
-})();
-</script></div>`
-	return w.writeSSEData("chunk", hideScript)
 }
 
 // =============================================================================

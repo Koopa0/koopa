@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/agent"
+	"github.com/koopa0/koopa/internal/agent"
 	"github.com/stretchr/testify/assert"
 )
 

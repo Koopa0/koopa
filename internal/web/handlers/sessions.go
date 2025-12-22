@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/koopa0/koopa-cli/internal/session"
-	"github.com/koopa0/koopa-cli/internal/web/component"
+	"github.com/koopa0/koopa/internal/session"
+	"github.com/koopa0/koopa/internal/web/component"
 )
 
 // Sentinel errors for session/CSRF operations.
@@ -478,7 +478,3 @@ func (s *Sessions) setCookie(w http.ResponseWriter, sessionID uuid.UUID) {
 	})
 }
 
-// NOTE: SetCanvasMode and GetCanvasMode removed
-// Canvas mode is now stored in sessions.canvas_mode column and accessed via:
-// - Store().UpdateCanvasMode() for setting
-// - Store().GetSession().CanvasMode for reading

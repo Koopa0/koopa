@@ -1,8 +1,8 @@
 package page
 
 import (
-	"github.com/koopa0/koopa-cli/internal/web/component"
-	"github.com/koopa0/koopa-cli/internal/web/layout"
+	"github.com/koopa0/koopa/internal/web/component"
+	"github.com/koopa0/koopa/internal/web/layout"
 )
 
 type Message struct {
@@ -13,57 +13,47 @@ type Message struct {
 }
 
 type ChatPageProps struct {
-	SessionID  string
-	Sessions   []component.Session
-	Messages   []Message
-	CanvasMode bool   // When true, show artifact panel
-	CSRFToken  string // Required for form submissions
+	SessionID string
+	Sessions  []component.Session
+	Messages  []Message
+	CSRFToken string // Required for form submissions
 }
 
-// ChatContentProps is used for HTMX partial updates (mode toggle).
+// ChatContentProps is used for HTMX partial updates.
 type ChatContentProps struct {
-	SessionID  string
-	Sessions   []component.Session
-	Messages   []Message
-	CanvasMode bool
-	CSRFToken  string // Required for form submissions
+	SessionID string
+	Sessions  []component.Session
+	Messages  []Message
+	CSRFToken string // Required for form submissions
 }
 
 // ChatPage renders the complete chat interface with sidebar and message feed.
-// Supports 3-column layout when CanvasMode is enabled (sidebar + chat + artifact).
+// Two-column layout: sidebar + chat.
 templ ChatPage(props ChatPageProps) {
 	@layout.App("Koopa - Chat") {
 		<div id="page-content" class="flex min-h-screen bg-gray-800">
-			@chatPageContent(props.SessionID, props.Sessions, props.Messages, props.CanvasMode, props.CSRFToken)
+			@chatPageContent(props.SessionID, props.Sessions, props.Messages, props.CSRFToken)
 		</div>
 		@chatStyles()
 	}
 }
 
-// ChatContent renders just the page content for HTMX swaps (mode toggle).
+// ChatContent renders just the page content for HTMX swaps.
 // Target: #page-content
 templ ChatContent(props ChatContentProps) {
-	@chatPageContent(props.SessionID, props.Sessions, props.Messages, props.CanvasMode, props.CSRFToken)
+	@chatPageContent(props.SessionID, props.Sessions, props.Messages, props.CSRFToken)
 }
 
 // chatPageContent renders the inner page content (shared between full page and HTMX partial).
-templ chatPageContent(sessionID string, sessions []component.Session, messages []Message, canvasMode bool, csrfToken string) {
+templ chatPageContent(sessionID string, sessions []component.Session, messages []Message, csrfToken string) {
 	<!-- Sidebar -->
 	@component.Sidebar(component.SidebarProps{
 		Sessions:  sessions,
 		CSRFToken: csrfToken,
 	})
 	<!-- Main Content Area -->
-	<!-- transition-all duration-300 for smooth layout shift when Canvas panel appears -->
-	<div
-		id="main-content"
-		class={
-			"flex flex-1 flex-col lg:pl-72",
-			"transition-all duration-300 ease-out motion-reduce:transition-none",
-			templ.KV("xl:pr-96", canvasMode),
-		}
-	>
-		<!-- Mobile header with menu button and optional artifact button -->
+	<main id="main-content" class="flex flex-1 flex-col lg:pl-72" role="main">
+		<!-- Mobile header with menu button -->
 		<div class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-white/10 bg-gray-900/80 backdrop-blur-md shadow-sm px-4 lg:hidden">
 			<!-- Menu button (left) -->
 			<button type="button" command="show-modal" commandfor="sidebar" class="-m-2.5 p-2.5 text-gray-400 hover:text-white">
@@ -79,25 +69,15 @@ templ chatPageContent(sessionID string, sessions []component.Session, messages [
 				</div>
 				<span class="text-lg font-semibold text-white">Koopa</span>
 			</div>
-			<!-- Artifact button (right, only in canvas mode) -->
-			if canvasMode {
-				<button type="button" command="show-modal" commandfor="artifact-drawer" class="-m-2.5 p-2.5 text-gray-400 hover:text-white">
-					<span class="sr-only">Open artifacts</span>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" class="size-6">
-						<path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" stroke-linecap="round" stroke-linejoin="round"></path>
-					</svg>
-				</button>
-			} else {
-				<!-- Placeholder to maintain layout balance -->
-				<div class="w-10"></div>
-			}
+			<!-- Placeholder to maintain layout balance -->
+			<div class="w-10"></div>
 		</div>
 		<!-- Chat Card Container -->
 		<div class="flex flex-1 flex-col p-4 lg:p-6">
 			<!-- Card wrapper for visual definition -->
 			<div class="flex flex-1 flex-col rounded-2xl bg-gray-900 ring-1 ring-white/10 shadow-xl overflow-hidden">
-				<!-- Messages Feed (scrollable) -->
-				<div id="message-container" class="flex-1 overflow-y-auto scrollbar-thin">
+				<!-- Messages Feed (scrollable, accessible log region) -->
+				<section id="message-container" role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions" class="flex-1 overflow-y-auto scrollbar-thin">
 					if len(messages) == 0 {
 						<!-- Empty State (server-side conditional to avoid FOUC) -->
 						<!-- transition classes for smooth fade out on message submit -->
@@ -115,21 +95,15 @@ templ chatPageContent(sessionID string, sessions []component.Session, messages [
 							})
 						}
 					</div>
-				</div>
-				<!-- Chat Input with Mode Toggle -->
+				</section>
+				<!-- Chat Input -->
 				@component.ChatInput(component.ChatInputProps{
-					SessionID:  sessionID,
-					CanvasMode: canvasMode,
-					CSRFToken:  csrfToken,
+					SessionID: sessionID,
+					CSRFToken: csrfToken,
 				})
 			</div>
 		</div>
-	</div>
-	<!-- Artifact Panel (only in canvas mode) -->
-	@component.ArtifactPanel(component.ArtifactPanelProps{
-		SessionID:  sessionID,
-		CanvasMode: canvasMode,
-	})
+	</main>
 }
 
 // chatStyles renders CSS for the chat page.

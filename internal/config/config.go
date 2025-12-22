@@ -66,15 +66,6 @@ var (
 	// ErrInvalidPostgresDBName indicates the PostgreSQL database name is invalid.
 	ErrInvalidPostgresDBName = errors.New("invalid PostgreSQL database name")
 
-	// ErrInvalidBranch indicates the branch name is invalid.
-	ErrInvalidBranch = errors.New("invalid branch")
-
-	// ErrBranchTooLong indicates the branch name exceeds maximum length.
-	ErrBranchTooLong = errors.New("branch name too long")
-
-	// ErrBranchTooDeep indicates the branch depth exceeds maximum.
-	ErrBranchTooDeep = errors.New("branch depth too deep")
-
 	// ErrConfigParse indicates configuration parsing failed.
 	ErrConfigParse = errors.New("failed to parse configuration")
 
@@ -93,7 +84,7 @@ const (
 	// DefaultEmbedderModel is the default embedder model for vector embeddings.
 	DefaultEmbedderModel = "text-embedding-004"
 
-	// DefaultMaxHistoryMessages is the default number of messages to load per branch.
+	// DefaultMaxHistoryMessages is the default number of messages to load.
 	DefaultMaxHistoryMessages int32 = 100
 
 	// MaxAllowedHistoryMessages is the absolute maximum to prevent OOM.
@@ -101,15 +92,6 @@ const (
 
 	// MinHistoryMessages is the minimum allowed value for MaxHistoryMessages.
 	MinHistoryMessages int32 = 10
-
-	// DefaultBranch is the default branch name for conversation history.
-	DefaultBranch = "main"
-
-	// MaxBranchLength is the maximum allowed length for branch names.
-	MaxBranchLength = 256
-
-	// MaxBranchDepth is the maximum nesting depth for branches (e.g., "main.a.b.c" = 4).
-	MaxBranchDepth = 10
 )
 
 // ============================================================================

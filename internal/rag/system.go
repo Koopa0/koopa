@@ -36,7 +36,7 @@ func IndexSystemKnowledge(ctx context.Context, store *postgresql.DocStore, pool 
 
 	// Delete existing documents first (UPSERT emulation)
 	// This is necessary because Genkit DocStore.Index() only does INSERT
-	if err := deleteByIDs(ctx, pool, ids); err != nil {
+	if err := DeleteByIDs(ctx, pool, ids); err != nil {
 		slog.Debug("failed to delete existing system knowledge (may not exist)", "error", err)
 		// Continue - documents may not exist yet
 	}
@@ -50,17 +50,17 @@ func IndexSystemKnowledge(ctx context.Context, store *postgresql.DocStore, pool 
 	return len(docs), nil
 }
 
-// deleteByIDs deletes documents by their IDs.
+// DeleteByIDs deletes documents by their IDs.
 // Used for UPSERT emulation since Genkit DocStore only supports INSERT.
-func deleteByIDs(ctx context.Context, pool *pgxpool.Pool, ids []string) error {
+// Exported for testing (fuzz tests in rag_test package).
+func DeleteByIDs(ctx context.Context, pool *pgxpool.Pool, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
 
 	// Use parameterized query to prevent SQL injection
 	query := `DELETE FROM documents WHERE id = ANY($1)`
-	_, err := pool.Exec(ctx, query, ids)
-	if err != nil {
+	if _, err := pool.Exec(ctx, query, ids); err != nil {
 		return fmt.Errorf("deleting documents: %w", err)
 	}
 	return nil

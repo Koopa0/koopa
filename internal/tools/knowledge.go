@@ -13,8 +13,8 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/postgresql"
 
-	"github.com/koopa0/koopa-cli/internal/log"
-	"github.com/koopa0/koopa-cli/internal/rag"
+	"github.com/koopa0/koopa/internal/log"
+	"github.com/koopa0/koopa/internal/rag"
 )
 
 const (
@@ -67,13 +67,25 @@ func RegisterKnowledgeTools(g *genkit.Genkit, kt *KnowledgeTools) ([]ai.Tool, er
 
 	return []ai.Tool{
 		genkit.DefineTool(g, ToolSearchHistory,
-			"Search conversation history using semantic similarity. Default topK: 3.",
+			"Search conversation history using semantic similarity. "+
+				"Finds past exchanges that are conceptually related to the query. "+
+				"Returns: matched conversation turns with timestamps and similarity scores. "+
+				"Use this to: recall past discussions, find context from earlier conversations. "+
+				"Default topK: 3. Maximum topK: 10.",
 			WithEvents(ToolSearchHistory, kt.SearchHistory)),
 		genkit.DefineTool(g, ToolSearchDocuments,
-			"Search indexed documents using semantic similarity. Default topK: 5.",
+			"Search indexed documents (PDFs, code files, notes) using semantic similarity. "+
+				"Finds document sections that are conceptually related to the query. "+
+				"Returns: document titles, content excerpts, and similarity scores. "+
+				"Use this to: find relevant documentation, locate code examples, research topics. "+
+				"Default topK: 5. Maximum topK: 10.",
 			WithEvents(ToolSearchDocuments, kt.SearchDocuments)),
 		genkit.DefineTool(g, ToolSearchSystemKnowledge,
-			"Search system knowledge base using semantic similarity. Default topK: 3.",
+			"Search system knowledge base (tool usage, commands, patterns) using semantic similarity. "+
+				"Finds internal system documentation and usage patterns. "+
+				"Returns: knowledge entries with descriptions and examples. "+
+				"Use this to: understand tool capabilities, find command syntax, learn system patterns. "+
+				"Default topK: 3. Maximum topK: 10.",
 			WithEvents(ToolSearchSystemKnowledge, kt.SearchSystemKnowledge)),
 	}, nil
 }

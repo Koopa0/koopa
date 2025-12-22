@@ -3,7 +3,7 @@ package tools
 import (
 	"testing"
 
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 func TestFileTools_Constructor(t *testing.T) {

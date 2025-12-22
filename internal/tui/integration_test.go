@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/koopa0/koopa-cli/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/agent/chat"
 )
 
 func TestMain(m *testing.M) {

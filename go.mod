@@ -1,4 +1,4 @@
-module github.com/koopa0/koopa-cli
+module github.com/koopa0/koopa
 
 go 1.25.1
 
@@ -21,7 +21,6 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.1.0
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/playwright-community/playwright-go v0.5200.1
-	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0
@@ -30,6 +29,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.38.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/sync v0.18.0
+	golang.org/x/time v0.14.0
 )
 
 require (
@@ -174,7 +174,6 @@ require (
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/api v0.252.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genai v1.36.0 // indirect

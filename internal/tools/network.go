@@ -16,8 +16,8 @@ import (
 	"github.com/go-shiori/go-readability"
 	"github.com/gocolly/colly/v2"
 
-	"github.com/koopa0/koopa-cli/internal/log"
-	"github.com/koopa0/koopa-cli/internal/security"
+	"github.com/koopa0/koopa/internal/log"
+	"github.com/koopa0/koopa/internal/security"
 )
 
 const (
