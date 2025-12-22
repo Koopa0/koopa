@@ -425,10 +425,64 @@ func deepCopyMessages(msgs []*ai.Message) []*ai.Message {
 	for i, msg := range msgs {
 		parts := make([]*ai.Part, len(msg.Content))
 		for j, part := range msg.Content {
-			cp := *part
-			parts[j] = &cp
+			parts[j] = deepCopyPart(part)
 		}
-		copied[i] = &ai.Message{Role: msg.Role, Content: parts}
+		copied[i] = &ai.Message{
+			Role:     msg.Role,
+			Content:  parts,
+			Metadata: shallowCopyMap(msg.Metadata),
+		}
 	}
 	return copied
+}
+
+// deepCopyPart creates an independent copy of an ai.Part struct.
+//
+// Note on Input/Output fields: ToolRequest.Input and ToolResponse.Output
+// are type `any` and copied by reference. This is acceptable because:
+// 1. Genkit's renderMessages() only mutates msg.Content slice, not tool data
+// 2. Tool inputs/outputs are typically JSON-serializable primitives
+// If deep copy of these fields is needed, use encoding/json round-trip.
+func deepCopyPart(p *ai.Part) *ai.Part {
+	if p == nil {
+		return nil
+	}
+	cp := &ai.Part{
+		Kind:        p.Kind,
+		ContentType: p.ContentType,
+		Text:        p.Text,
+		Custom:      shallowCopyMap(p.Custom),
+		Metadata:    shallowCopyMap(p.Metadata),
+	}
+	if p.ToolRequest != nil {
+		cp.ToolRequest = &ai.ToolRequest{
+			Input: p.ToolRequest.Input, // Reference copy - see function doc
+			Name:  p.ToolRequest.Name,
+			Ref:   p.ToolRequest.Ref,
+		}
+	}
+	if p.ToolResponse != nil {
+		cp.ToolResponse = &ai.ToolResponse{
+			Name:   p.ToolResponse.Name,
+			Output: p.ToolResponse.Output, // Reference copy - see function doc
+			Ref:    p.ToolResponse.Ref,
+		}
+	}
+	if p.Resource != nil {
+		cp.Resource = &ai.ResourcePart{Uri: p.Resource.Uri}
+	}
+	return cp
+}
+
+// shallowCopyMap copies map keys and values but not nested structures.
+// Nested maps, slices, or pointers remain shared with the original.
+func shallowCopyMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]any, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }

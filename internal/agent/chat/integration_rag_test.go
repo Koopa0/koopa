@@ -212,9 +212,8 @@ func TestRetrieveRAGContext_MultipleRelevantDocuments(t *testing.T) {
 		(strings.Contains(response, "simple") || strings.Contains(response, "readab")) &&
 		(strings.Contains(response, "compile") || strings.Contains(response, "fast"))
 
-	if hasMultipleAspects {
-		t.Logf("Response incorporates multiple retrieved documents")
-	}
+	assert.True(t, hasMultipleAspects,
+		"Response should incorporate multiple aspects from retrieved documents. Got: %s", resp.FinalText)
 
 	t.Logf("Response with multiple docs: %s", resp.FinalText)
 }
