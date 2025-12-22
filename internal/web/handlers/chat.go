@@ -325,6 +325,13 @@ func (h *Chat) Send(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Progressive enhancement: redirect for non-HTMX requests
+	// PRG pattern (Post/Redirect/Get) for standard form submissions
+	if !IsHTMX(r) {
+		http.Redirect(w, r, "/genui?session_id="+sessionIDStr, http.StatusSeeOther)
+		return
+	}
+
 	msgID := generateMessageID()
 
 	// 1. Render user message

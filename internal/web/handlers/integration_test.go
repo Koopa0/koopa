@@ -372,7 +372,7 @@ func TestPages_Chat_LoadsHistoryFromDatabase(t *testing.T) {
 
 	// Send HTTP request
 	req := httptest.NewRequest("GET",
-		fmt.Sprintf("/genui/chat?session=%s", sess.ID), nil)
+		fmt.Sprintf("/genui/chat?session_id=%s", sess.ID), nil)
 	rec := httptest.NewRecorder()
 
 	handler.Chat(rec, req)
@@ -433,7 +433,7 @@ func TestPages_Chat_ConcurrentHistoryLoad(t *testing.T) {
 			defer func() { done <- true }()
 
 			req := httptest.NewRequest("GET",
-				fmt.Sprintf("/genui/chat?session=%s", sess.ID), nil)
+				fmt.Sprintf("/genui/chat?session_id=%s", sess.ID), nil)
 			rec := httptest.NewRecorder()
 
 			handler.Chat(rec, req)
@@ -549,9 +549,9 @@ func TestChat_Send_ProgressiveEnhancement(t *testing.T) {
 			"non-HTMX request should redirect")
 
 		location := rec2.Header().Get("Location")
-		assert.Contains(t, location, "/genui/",
+		assert.Contains(t, location, "/genui",
 			"Should redirect to chat page")
-		assert.Contains(t, location, "session="+sessionID.String(),
+		assert.Contains(t, location, "session_id="+sessionID.String(),
 			"Redirect should include session ID")
 	})
 

@@ -400,7 +400,6 @@ func TestWriter_WriteDone_WithOOBSwap(t *testing.T) {
 	}
 }
 
-
 // =============================================================================
 // QA-Master Required Tests (P0)
 // =============================================================================
@@ -512,7 +511,6 @@ func TestWriter_WriteDone_ContextCanceled(t *testing.T) {
 		}
 	}
 }
-
 
 // TestWriter_WriteDone_EmptyMsgID tests behavior with empty message ID.
 func TestWriter_WriteDone_EmptyMsgID(t *testing.T) {
