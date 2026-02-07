@@ -83,11 +83,13 @@ docs/_build/
 .task/
 
 node_modules/
-build/frontend/node_modules/
-internal/ui/web/static/css/output.css
-
-# Generated templ files (optional - can be committed)
-# *_templ.go
-
-internal/web/_reference
 *.bak*
+
+# Development scratch files
+Obsidian.md
+element.txt
+llms.txt
+review.md
+ui-guide.md
+genkit-data-race-bug-report.md
+.mcp.json
