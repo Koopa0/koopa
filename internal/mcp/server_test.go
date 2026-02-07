@@ -70,8 +70,9 @@ func (h *testHelper) createNetworkTools() *tools.NetworkTools {
 	}))
 	h.t.Cleanup(func() { mockServer.Close() })
 
-	// Use ForTesting to skip SSRF checks (mock server uses localhost)
-	nt, err := tools.NewNetworkToolsForTesting(
+	// SSRF protection is only checked during Fetch(), not at construction.
+	// These tests only construct tools for Config, they don't execute network operations.
+	nt, err := tools.NewNetworkTools(
 		tools.NetworkConfig{
 			SearchBaseURL:    mockServer.URL,
 			FetchParallelism: 2,

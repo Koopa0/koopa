@@ -152,119 +152,6 @@ func (q *Queries) GetMaxSequenceNumber(ctx context.Context, sessionID uuid.UUID)
 	return max_seq, err
 }
 
-const getMessageByID = `-- name: GetMessageByID :one
-SELECT id, session_id, role, content, sequence_number, created_at, status, updated_at
-FROM message
-WHERE id = $1
-`
-
-// Get a single message by ID (for streaming lookup).
-func (q *Queries) GetMessageByID(ctx context.Context, id uuid.UUID) (Message, error) {
-	row := q.db.QueryRow(ctx, getMessageByID, id)
-	var i Message
-	err := row.Scan(
-		&i.ID,
-		&i.SessionID,
-		&i.Role,
-		&i.Content,
-		&i.SequenceNumber,
-		&i.CreatedAt,
-		&i.Status,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getMessages = `-- name: GetMessages :many
-SELECT id, session_id, role, content, sequence_number, created_at, status, updated_at
-FROM message
-WHERE session_id = $1
-ORDER BY sequence_number ASC
-LIMIT $3
-OFFSET $2
-`
-
-type GetMessagesParams struct {
-	SessionID    uuid.UUID `json:"session_id"`
-	ResultOffset int32     `json:"result_offset"`
-	ResultLimit  int32     `json:"result_limit"`
-}
-
-// Get all messages for a session ordered by sequence
-func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Message, error) {
-	rows, err := q.db.Query(ctx, getMessages, arg.SessionID, arg.ResultOffset, arg.ResultLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Message{}
-	for rows.Next() {
-		var i Message
-		if err := rows.Scan(
-			&i.ID,
-			&i.SessionID,
-			&i.Role,
-			&i.Content,
-			&i.SequenceNumber,
-			&i.CreatedAt,
-			&i.Status,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getSession = `-- name: GetSession :one
-SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
-FROM sessions
-WHERE id = $1
-`
-
-func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (Session, error) {
-	row := q.db.QueryRow(ctx, getSession, id)
-	var i Session
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ModelName,
-		&i.SystemPrompt,
-		&i.MessageCount,
-	)
-	return i, err
-}
-
-const getUserMessageBefore = `-- name: GetUserMessageBefore :one
-SELECT content
-FROM message
-WHERE session_id = $1
-  AND role = 'user'
-  AND sequence_number < $2
-ORDER BY sequence_number DESC
-LIMIT 1
-`
-
-type GetUserMessageBeforeParams struct {
-	SessionID      uuid.UUID `json:"session_id"`
-	BeforeSequence int32     `json:"before_sequence"`
-}
-
-// Get the user message content immediately before a given sequence number.
-// Used by Stream handler to retrieve query without URL parameter.
-func (q *Queries) GetUserMessageBefore(ctx context.Context, arg GetUserMessageBeforeParams) ([]byte, error) {
-	row := q.db.QueryRow(ctx, getUserMessageBefore, arg.SessionID, arg.BeforeSequence)
-	var content []byte
-	err := row.Scan(&content)
-	return content, err
-}
-
 const listSessions = `-- name: ListSessions :many
 SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
 FROM sessions
@@ -359,6 +246,72 @@ func (q *Queries) LockSession(ctx context.Context, id uuid.UUID) (uuid.UUID, err
 	row := q.db.QueryRow(ctx, lockSession, id)
 	err := row.Scan(&id)
 	return id, err
+}
+
+const messages = `-- name: Messages :many
+SELECT id, session_id, role, content, sequence_number, created_at, status, updated_at
+FROM message
+WHERE session_id = $1
+ORDER BY sequence_number ASC
+LIMIT $3
+OFFSET $2
+`
+
+type MessagesParams struct {
+	SessionID    uuid.UUID `json:"session_id"`
+	ResultOffset int32     `json:"result_offset"`
+	ResultLimit  int32     `json:"result_limit"`
+}
+
+// Get all messages for a session ordered by sequence
+func (q *Queries) Messages(ctx context.Context, arg MessagesParams) ([]Message, error) {
+	rows, err := q.db.Query(ctx, messages, arg.SessionID, arg.ResultOffset, arg.ResultLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Content,
+			&i.SequenceNumber,
+			&i.CreatedAt,
+			&i.Status,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const session = `-- name: Session :one
+SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
+FROM sessions
+WHERE id = $1
+`
+
+func (q *Queries) Session(ctx context.Context, id uuid.UUID) (Session, error) {
+	row := q.db.QueryRow(ctx, session, id)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ModelName,
+		&i.SystemPrompt,
+		&i.MessageCount,
+	)
+	return i, err
 }
 
 const updateMessageContent = `-- name: UpdateMessageContent :exec

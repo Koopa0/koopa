@@ -85,10 +85,10 @@ func (s *Store) CreateSession(ctx context.Context, title, modelName, systemPromp
 	return session, nil
 }
 
-// GetSession retrieves a session by ID.
+// Session retrieves a session by ID.
 // Returns ErrSessionNotFound if the session does not exist.
-func (s *Store) GetSession(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
-	sqlcSession, err := s.queries.GetSession(ctx, sessionID)
+func (s *Store) Session(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
+	sqlcSession, err := s.queries.Session(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Return sentinel error directly (no wrapping per reviewer guidance)
@@ -309,7 +309,7 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	return nil
 }
 
-// GetMessages retrieves messages for a session with pagination.
+// Messages retrieves messages for a session with pagination.
 //
 // Parameters:
 //   - ctx: Context for the operation
@@ -320,8 +320,8 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 // Returns:
 //   - []*Message: List of messages ordered by sequence number ascending
 //   - error: If retrieval fails
-func (s *Store) GetMessages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*Message, error) {
-	sqlcMessages, err := s.queries.GetMessages(ctx, sqlc.GetMessagesParams{
+func (s *Store) Messages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*Message, error) {
+	sqlcMessages, err := s.queries.Messages(ctx, sqlc.MessagesParams{
 		SessionID:    sessionID,
 		ResultLimit:  limit,
 		ResultOffset: offset,
@@ -391,7 +391,7 @@ func (s *Store) AppendMessages(ctx context.Context, sessionID uuid.UUID, message
 	return nil
 }
 
-// GetHistory retrieves the conversation history for a session.
+// History retrieves the conversation history for a session.
 // Used by chat.Chat agent for session management.
 //
 // Parameters:
@@ -401,9 +401,9 @@ func (s *Store) AppendMessages(ctx context.Context, sessionID uuid.UUID, message
 // Returns:
 //   - *History: Conversation history
 //   - error: If retrieval fails
-func (s *Store) GetHistory(ctx context.Context, sessionID uuid.UUID) (*History, error) {
+func (s *Store) History(ctx context.Context, sessionID uuid.UUID) (*History, error) {
 	// Verify session exists before loading history
-	if _, err := s.GetSession(ctx, sessionID); err != nil {
+	if _, err := s.Session(ctx, sessionID); err != nil {
 		if errors.Is(err, ErrSessionNotFound) {
 			return nil, err // Sentinel propagates unchanged
 		}
@@ -414,7 +414,7 @@ func (s *Store) GetHistory(ctx context.Context, sessionID uuid.UUID) (*History, 
 	limit := DefaultHistoryLimit
 
 	// Retrieve messages
-	messages, err := s.GetMessages(ctx, sessionID, limit, 0)
+	messages, err := s.Messages(ctx, sessionID, limit, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load history: %w", err)
 	}
@@ -606,73 +606,6 @@ func (s *Store) CreateMessagePair(
 		UserSeq:        userSeq,
 		AssistantSeq:   assistantSeq,
 	}, nil
-}
-
-// GetUserMessageBefore retrieves the text content of the user message
-// immediately preceding the specified sequence number.
-// This is used by Stream handler to retrieve query without URL parameter.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: UUID of the session
-//   - beforeSeq: Sequence number to search before
-//
-// Returns:
-//   - string: The user message text
-//   - error: ErrMessageNotFound if no preceding user message exists
-func (s *Store) GetUserMessageBefore(
-	ctx context.Context,
-	sessionID uuid.UUID,
-	beforeSeq int32,
-) (string, error) {
-	content, err := s.queries.GetUserMessageBefore(ctx, sqlc.GetUserMessageBeforeParams{
-		SessionID:      sessionID,
-		BeforeSequence: beforeSeq,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrMessageNotFound
-		}
-		return "", fmt.Errorf("get user message before %d: %w", beforeSeq, err)
-	}
-
-	// Unmarshal content to extract text
-	var parts []*ai.Part
-	if err := json.Unmarshal(content, &parts); err != nil {
-		return "", fmt.Errorf("unmarshal content: %w", err)
-	}
-
-	// Extract text from parts
-	var text string
-	for _, p := range parts {
-		if p != nil && (p.Kind == ai.PartText || p.Kind == ai.PartMedia) {
-			text += p.Text
-		}
-	}
-
-	if text == "" {
-		return "", ErrMessageNotFound
-	}
-
-	return text, nil
-}
-
-// GetMessageByID retrieves a message by its ID.
-// Used to get assistant message sequence number for user query lookup.
-//
-// Returns:
-//   - *Message: The message if found
-//   - error: ErrMessageNotFound if not found
-func (s *Store) GetMessageByID(ctx context.Context, msgID uuid.UUID) (*Message, error) {
-	sm, err := s.queries.GetMessageByID(ctx, msgID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrMessageNotFound
-		}
-		return nil, fmt.Errorf("get message %s: %w", msgID, err)
-	}
-
-	return s.sqlcMessageToMessage(sm)
 }
 
 // UpdateMessageContent updates the content of a message and marks it as completed.

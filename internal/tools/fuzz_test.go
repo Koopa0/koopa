@@ -217,7 +217,7 @@ func FuzzCommandInjection(f *testing.F) {
 	f.Add("echo", "hello world")
 	f.Add("pwd", "")
 	f.Add("date", "")
-	f.Add("cat", "/tmp/safe.txt")
+	f.Add("wc", "-l /tmp/safe.txt")
 	f.Add("git", "status")
 
 	// Edge cases

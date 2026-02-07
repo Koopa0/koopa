@@ -10,25 +10,30 @@ import (
 // TokenBudget manages context window limits.
 type TokenBudget struct {
 	MaxHistoryTokens int // Maximum tokens for conversation history
-	MaxInputTokens   int // Maximum tokens for user input
-	ReservedTokens   int // Reserved for system prompt and response
 }
 
 // DefaultTokenBudget returns conservative defaults for Gemini models.
 func DefaultTokenBudget() TokenBudget {
 	return TokenBudget{
 		MaxHistoryTokens: 8000, // ~8K tokens for history
-		MaxInputTokens:   2000, // ~2K for user input
-		ReservedTokens:   4000, // ~4K for system + response
 	}
 }
 
 // estimateTokens provides a rough token count.
 // Uses rune count divided by 2 as a conservative estimate that works
 // for both English (~4 chars/token) and CJK (~1.5 chars/token) text.
+// Returns at least 1 for any non-empty text to avoid zero-cost messages
+// breaking token budget calculations.
 func estimateTokens(text string) int {
 	runeCount := utf8.RuneCountInString(text)
-	return runeCount / 2
+	if runeCount == 0 {
+		return 0
+	}
+	tokens := runeCount / 2
+	if tokens == 0 {
+		return 1
+	}
+	return tokens
 }
 
 // estimateMessagesTokens estimates total tokens in messages.
@@ -77,7 +82,7 @@ func (c *Chat) truncateHistory(msgs []*ai.Message, budget int) []*ai.Message {
 	for i := len(msgs) - 1; i >= startIdx; i-- {
 		msgTokens := estimateMessagesTokens([]*ai.Message{msgs[i]})
 		if remaining < msgTokens {
-			break
+			continue
 		}
 		kept = append(kept, msgs[i])
 		remaining -= msgTokens
