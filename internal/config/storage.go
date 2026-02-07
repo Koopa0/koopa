@@ -11,9 +11,6 @@ import (
 // StorageConfig documentation.
 // Fields are embedded in the main Config struct for backward compatibility.
 //
-// SQLite:
-//   - DatabasePath: Path to SQLite database file
-//
 // PostgreSQL (for pgvector):
 //   - PostgresHost: Database host (default: localhost)
 //   - PostgresPort: Database port (default: 5432)

@@ -1,7 +1,6 @@
 package security
 
 import (
-	"slices"
 	"testing"
 )
 
@@ -45,44 +44,5 @@ func TestEnvValidator(t *testing.T) {
 				t.Errorf("unexpected error for %q: %v (%s)", tt.key, err, tt.reason)
 			}
 		})
-	}
-}
-
-// TestIsEnvSafe tests quick environment variable safety check
-func TestIsEnvSafe(t *testing.T) {
-	tests := []struct {
-		envName string
-		safe    bool
-	}{
-		{"MY_VAR", true},
-		{"USER", true},
-		{"API_KEY", false},
-		{"SECRET", false},
-		{"PASSWORD", false},
-		{"TOKEN", false},
-	}
-
-	for _, tt := range tests {
-		result := IsEnvSafe(tt.envName)
-		if result != tt.safe {
-			t.Errorf("IsEnvSafe(%q) = %v, want %v", tt.envName, result, tt.safe)
-		}
-	}
-}
-
-// TestGetAllowedEnvNames tests the whitelist of allowed env variables
-func TestGetAllowedEnvNames(t *testing.T) {
-	allowed := GetAllowedEnvNames()
-
-	if len(allowed) == 0 {
-		t.Error("expected non-empty list of allowed env names")
-	}
-
-	// Check for some expected entries
-	expectedVars := []string{"PATH", "HOME", "USER"}
-	for _, expected := range expectedVars {
-		if !slices.Contains(allowed, expected) {
-			t.Errorf("expected %q in allowed env names", expected)
-		}
 	}
 }

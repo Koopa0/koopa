@@ -66,7 +66,7 @@ func TestTUI_Integration(t *testing.T) {
 	defer cancel()
 
 	// Initialize runtime
-	runtime, err := app.NewRuntime(ctx, cfg)
+	runtime, err := app.NewChatRuntime(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to initialize runtime: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestTUI_SlashCommands(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	runtime, err := app.NewRuntime(ctx, cfg)
+	runtime, err := app.NewChatRuntime(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to initialize runtime: %v", err)
 	}

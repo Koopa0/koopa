@@ -5,7 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"go.uber.org/goleak"
 
@@ -24,18 +27,28 @@ func goleakOptions() []goleak.Option {
 	}
 }
 
-// newTestTUI creates a TUI with properly initialized textarea for testing.
+// newTestTUI creates a TUI with properly initialized components for testing.
 func newTestTUI() *TUI {
 	ta := textarea.New()
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
+
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	vp.MouseWheelEnabled = true
+	vp.SoftWrap = true
+	vp.KeyMap = viewport.KeyMap{}
+
 	return &TUI{
 		state:    StateInput,
 		input:    ta,
+		viewport: vp,
+		help:     help.New(),
+		keys:     newKeyMap(),
 		history:  make([]string, 0),
 		styles:   DefaultStyles(),
 		markdown: newMarkdownRenderer(80),
 		ctx:      context.Background(), // Required for stream operations
+		width:    80,
 	}
 }
 
@@ -194,15 +207,52 @@ func TestTUI_Update_KeyPress(t *testing.T) {
 	}
 }
 
-func TestTUI_View_ContainsHeader(t *testing.T) {
+func TestTUI_View_ReturnsAltScreen(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
 	tui := newTestTUI()
 
 	view := tui.View()
-	// The View contains styled content, but should include "Koopa" somewhere
+	if !view.AltScreen {
+		t.Error("View should use AltScreen")
+	}
 	if view.Content == nil {
 		t.Error("View content should not be nil")
+	}
+}
+
+func TestTUI_RebuildViewportContent(t *testing.T) {
+	defer goleak.VerifyNone(t, goleakOptions()...)
+
+	tui := newTestTUI()
+	tui.addMessage(Message{Role: roleUser, Text: "hello"})
+	tui.addMessage(Message{Role: roleAssistant, Text: "world"})
+
+	tui.rebuildViewportContent()
+
+	content := tui.viewport.GetContent()
+	if content == "" {
+		t.Error("rebuildViewportContent should set viewport content")
+	}
+}
+
+func TestTUI_ViewportScrolling(t *testing.T) {
+	defer goleak.VerifyNone(t, goleakOptions()...)
+
+	tui := newTestTUI()
+
+	// Add enough messages to exceed viewport height
+	for i := 0; i < 50; i++ {
+		tui.addMessage(Message{Role: roleUser, Text: "message line"})
+	}
+	tui.rebuildViewportContent()
+	tui.viewport.GotoBottom()
+
+	// PageUp should scroll
+	initialOffset := tui.viewport.YOffset()
+	tui.viewport.PageUp()
+	if tui.viewport.YOffset() >= initialOffset && initialOffset > 0 {
+		t.Error("PageUp should decrease Y offset")
 	}
 }
 
@@ -323,6 +373,25 @@ func TestListenForStream_UnionChannel(t *testing.T) {
 
 		if msg != nil {
 			t.Errorf("Expected nil for nil channel, got %T", msg)
+		}
+	})
+
+	t.Run("empty event skipped", func(t *testing.T) {
+		eventCh := make(chan streamEvent, 2)
+		// First event is empty (all zero fields) — should be skipped
+		eventCh <- streamEvent{}
+		// Second event has text — should be returned
+		eventCh <- streamEvent{text: "after-empty"}
+
+		cmd := listenForStream(eventCh)
+		msg := cmd()
+
+		m, ok := msg.(streamTextMsg)
+		if !ok {
+			t.Fatalf("listenForStream(empty, text) = %T, want streamTextMsg", msg)
+		}
+		if m.text != "after-empty" {
+			t.Errorf("listenForStream(empty, text) text = %q, want %q", m.text, "after-empty")
 		}
 	})
 }
@@ -548,5 +617,45 @@ func TestTUI_CtrlC_CancelsStream(t *testing.T) {
 	}
 	if len(result.messages) != 1 || result.messages[0].Role != "system" {
 		t.Error("Should add canceled system message")
+	}
+}
+
+func TestTUI_RenderStatusBar_StateInput(t *testing.T) {
+	defer goleak.VerifyNone(t, goleakOptions()...)
+
+	tui := newTestTUI()
+	tui.state = StateInput
+
+	bar := tui.renderStatusBar()
+	if bar == "" {
+		t.Error("renderStatusBar should return non-empty help text")
+	}
+}
+
+func TestTUI_RenderStatusBar_StateStreaming(t *testing.T) {
+	defer goleak.VerifyNone(t, goleakOptions()...)
+
+	tui := newTestTUI()
+	tui.state = StateStreaming
+
+	bar := tui.renderStatusBar()
+	if bar == "" {
+		t.Error("renderStatusBar should return non-empty help text during streaming")
+	}
+}
+
+func TestKeyMap_NewKeyMap(t *testing.T) {
+	km := newKeyMap()
+
+	// Verify all bindings are enabled
+	bindings := []key.Binding{
+		km.Submit, km.NewLine, km.History,
+		km.Cancel, km.Quit, km.ScrollUp,
+		km.ScrollDown, km.EscCancel,
+	}
+	for _, b := range bindings {
+		if !b.Enabled() {
+			t.Errorf("Binding should be enabled by default")
+		}
 	}
 }

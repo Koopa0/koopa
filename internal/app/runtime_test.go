@@ -6,13 +6,13 @@ import (
 )
 
 // ============================================================================
-// Runtime.Close() Tests
+// ChatChatRuntime.Close() Tests
 // ============================================================================
 
-func TestRuntime_Close(t *testing.T) {
+func TestChatRuntime_Close(t *testing.T) {
 	t.Run("close with nil app", func(t *testing.T) {
 		cleanupCalled := false
-		r := &Runtime{
+		r := &ChatRuntime{
 			App:     nil,
 			cleanup: func() { cleanupCalled = true },
 		}
@@ -27,7 +27,7 @@ func TestRuntime_Close(t *testing.T) {
 	})
 
 	t.Run("close with nil cleanup", func(t *testing.T) {
-		r := &Runtime{
+		r := &ChatRuntime{
 			App:     nil,
 			cleanup: nil,
 		}
@@ -45,7 +45,7 @@ func TestRuntime_Close(t *testing.T) {
 		}
 
 		cleanupCalled := false
-		r := &Runtime{
+		r := &ChatRuntime{
 			App:     app,
 			cleanup: func() { cleanupCalled = true },
 		}
@@ -62,14 +62,14 @@ func TestRuntime_Close(t *testing.T) {
 	t.Run("cleanup called after app close", func(t *testing.T) {
 		// This test verifies the shutdown order:
 		// 1. App.Close() (cancel context, wait for goroutines)
-		// 2. Wire cleanup (DB pool, OTel)
+		// 2. Cleanup (DB pool, OTel)
 		var order []string
 
 		app := &App{
 			cancel: func() { order = append(order, "cancel") },
 		}
 
-		r := &Runtime{
+		r := &ChatRuntime{
 			App:     app,
 			cleanup: func() { order = append(order, "cleanup") },
 		}
@@ -88,19 +88,19 @@ func TestRuntime_Close(t *testing.T) {
 	})
 }
 
-// TestRuntime_Close_ErrorAggregation tests that errors are properly joined.
-func TestRuntime_Close_ErrorAggregation(t *testing.T) {
+// TestChatRuntime_Close_ErrorAggregation tests that errors are properly joined.
+func TestChatRuntime_Close_ErrorAggregation(t *testing.T) {
 	t.Run("errors from app close are returned", func(t *testing.T) {
 		// We can't easily make App.Close() return an error without
 		// setting up an errgroup that returns an error.
 		// This documents the expected behavior.
 
-		// When App.Close() returns an error, Runtime.Close() should:
+		// When App.Close() returns an error, ChatRuntime.Close() should:
 		// 1. Still call cleanup()
 		// 2. Return the error
 
 		cleanupCalled := false
-		r := &Runtime{
+		r := &ChatRuntime{
 			App: &App{
 				cancel: nil,
 				eg:     nil,
@@ -118,8 +118,8 @@ func TestRuntime_Close_ErrorAggregation(t *testing.T) {
 	})
 }
 
-// TestNewRuntime_CleanupOnFailure documents the expected behavior when
-// CreateAgent fails during NewRuntime initialization.
+// TestNewChatRuntime_CleanupOnFailure documents the expected behavior when
+// CreateAgent fails during NewChatRuntime initialization.
 //
 // The fix in runtime.go:60-66 ensures:
 // 1. application.Close() is called to stop background goroutines
@@ -128,7 +128,7 @@ func TestRuntime_Close_ErrorAggregation(t *testing.T) {
 //
 // This test cannot easily verify the behavior without mocking,
 // but documents the contract for future maintainers.
-func TestNewRuntime_CleanupOnFailure(t *testing.T) {
+func TestNewChatRuntime_CleanupOnFailure(t *testing.T) {
 	t.Run("documented behavior on CreateAgent failure", func(t *testing.T) {
 		// When CreateAgent fails:
 		// 1. application is already created (with background goroutine)

@@ -12,6 +12,23 @@
 # Priority: Environment variables > config.yaml > defaults
 
 # ==========================================
+# CORS (serve mode only)
+# ==========================================
+# Allowed origins for API access (Angular dev server, etc.)
+
+# cors_origins:
+#   - "http://localhost:4200"
+
+# ==========================================
+# Proxy Trust (serve mode only)
+# ==========================================
+# Set to true when running behind a reverse proxy (nginx, HAProxy, etc.)
+# When true, X-Real-IP and X-Forwarded-For headers are used for rate limiting.
+# When false (default), only RemoteAddr is used (safe for direct exposure).
+
+# trust_proxy: false
+
+# ==========================================
 # MCP Servers (Model Context Protocol)
 # ==========================================
 # Enable external tool integrations for the AI agent.

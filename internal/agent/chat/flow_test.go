@@ -5,14 +5,17 @@ import (
 	"testing"
 
 	"github.com/koopa0/koopa/internal/agent"
-	"github.com/stretchr/testify/assert"
 )
 
 // TestFlowName tests the FlowName constant
 func TestFlowName(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "koopa/chat", FlowName)
-	assert.NotEmpty(t, FlowName)
+	if FlowName != "koopa/chat" {
+		t.Errorf("FlowName = %q, want %q", FlowName, "koopa/chat")
+	}
+	if FlowName == "" {
+		t.Error("FlowName is empty, want non-empty")
+	}
 }
 
 // TestStreamChunk_Structure tests the StreamChunk type
@@ -22,19 +25,25 @@ func TestStreamChunk_Structure(t *testing.T) {
 	t.Run("zero value has empty text", func(t *testing.T) {
 		t.Parallel()
 		var chunk StreamChunk
-		assert.Equal(t, "", chunk.Text)
+		if chunk.Text != "" {
+			t.Errorf("chunk.Text = %q, want %q", chunk.Text, "")
+		}
 	})
 
 	t.Run("can set text", func(t *testing.T) {
 		t.Parallel()
 		chunk := StreamChunk{Text: "Hello, World!"}
-		assert.Equal(t, "Hello, World!", chunk.Text)
+		if chunk.Text != "Hello, World!" {
+			t.Errorf("chunk.Text = %q, want %q", chunk.Text, "Hello, World!")
+		}
 	})
 
 	t.Run("can hold unicode text", func(t *testing.T) {
 		t.Parallel()
 		chunk := StreamChunk{Text: "你好世界 🌍"}
-		assert.Equal(t, "你好世界 🌍", chunk.Text)
+		if chunk.Text != "你好世界 🌍" {
+			t.Errorf("chunk.Text = %q, want %q", chunk.Text, "你好世界 🌍")
+		}
 	})
 }
 
@@ -45,8 +54,12 @@ func TestInput_Structure(t *testing.T) {
 	t.Run("zero value has empty fields", func(t *testing.T) {
 		t.Parallel()
 		var input Input
-		assert.Equal(t, "", input.Query)
-		assert.Equal(t, "", input.SessionID)
+		if input.Query != "" {
+			t.Errorf("input.Query = %q, want %q", input.Query, "")
+		}
+		if input.SessionID != "" {
+			t.Errorf("input.SessionID = %q, want %q", input.SessionID, "")
+		}
 	})
 
 	t.Run("can set all fields", func(t *testing.T) {
@@ -55,8 +68,12 @@ func TestInput_Structure(t *testing.T) {
 			Query:     "What is the weather?",
 			SessionID: "test-session-123",
 		}
-		assert.Equal(t, "What is the weather?", input.Query)
-		assert.Equal(t, "test-session-123", input.SessionID)
+		if input.Query != "What is the weather?" {
+			t.Errorf("input.Query = %q, want %q", input.Query, "What is the weather?")
+		}
+		if input.SessionID != "test-session-123" {
+			t.Errorf("input.SessionID = %q, want %q", input.SessionID, "test-session-123")
+		}
 	})
 }
 
@@ -67,8 +84,12 @@ func TestOutput_Structure(t *testing.T) {
 	t.Run("zero value has empty fields", func(t *testing.T) {
 		t.Parallel()
 		var output Output
-		assert.Equal(t, "", output.Response)
-		assert.Equal(t, "", output.SessionID)
+		if output.Response != "" {
+			t.Errorf("output.Response = %q, want %q", output.Response, "")
+		}
+		if output.SessionID != "" {
+			t.Errorf("output.SessionID = %q, want %q", output.SessionID, "")
+		}
 	})
 
 	t.Run("can set response and session", func(t *testing.T) {
@@ -77,8 +98,12 @@ func TestOutput_Structure(t *testing.T) {
 			Response:  "The weather is sunny.",
 			SessionID: "test-session-123",
 		}
-		assert.Equal(t, "The weather is sunny.", output.Response)
-		assert.Equal(t, "test-session-123", output.SessionID)
+		if output.Response != "The weather is sunny." {
+			t.Errorf("output.Response = %q, want %q", output.Response, "The weather is sunny.")
+		}
+		if output.SessionID != "test-session-123" {
+			t.Errorf("output.SessionID = %q, want %q", output.SessionID, "test-session-123")
+		}
 	})
 }
 
@@ -98,7 +123,9 @@ func TestSentinelErrors_CanBeChecked(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.True(t, errors.Is(tt.err, tt.sentinel))
+			if !errors.Is(tt.err, tt.sentinel) {
+				t.Errorf("errors.Is(%v, %v) = false, want true", tt.err, tt.sentinel)
+			}
 		})
 	}
 }
@@ -111,27 +138,17 @@ func TestWrappedErrors_PreserveSentinel(t *testing.T) {
 		t.Parallel()
 		err := errors.New("original error")
 		wrapped := errors.Join(agent.ErrInvalidSession, err)
-		assert.True(t, errors.Is(wrapped, agent.ErrInvalidSession))
+		if !errors.Is(wrapped, agent.ErrInvalidSession) {
+			t.Errorf("errors.Is(wrapped, ErrInvalidSession) = false, want true")
+		}
 	})
 
 	t.Run("wrapped execution failed error", func(t *testing.T) {
 		t.Parallel()
 		err := errors.New("LLM timeout")
 		wrapped := errors.Join(agent.ErrExecutionFailed, err)
-		assert.True(t, errors.Is(wrapped, agent.ErrExecutionFailed))
+		if !errors.Is(wrapped, agent.ErrExecutionFailed) {
+			t.Errorf("errors.Is(wrapped, ErrExecutionFailed) = false, want true")
+		}
 	})
-}
-
-// TestGetFlow_ReturnsNonNilOnSubsequentCalls tests that GetFlow returns cached flow
-// Note: Due to sync.Once, this test verifies the singleton behavior by ensuring
-// the returned flow is consistent (not nil after first initialization in other tests)
-func TestGetFlow_ReturnsNonNilOnSubsequentCalls(t *testing.T) {
-	// Note: We cannot easily test GetFlow in isolation because:
-	// 1. sync.Once cannot be reset between tests
-	// 2. GetFlow requires valid genkit.Genkit and Chat instances
-	// 3. The Flow may or may not be initialized depending on test execution order
-	//
-	// This is a known limitation documented in the GetFlow function.
-	// Integration tests in integration_test.go cover the full flow behavior.
-	t.Skip("GetFlow singleton behavior is tested via integration tests")
 }

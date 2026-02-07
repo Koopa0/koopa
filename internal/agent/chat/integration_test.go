@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/koopa0/koopa/internal/agent/chat"
 )
@@ -30,9 +28,15 @@ func TestChatAgent_BasicExecution(t *testing.T) {
 
 	t.Run("simple question", func(t *testing.T) {
 		resp, err := framework.Agent.Execute(ctx, sessionID, "Hello, how are you?")
-		require.NoError(t, err)
-		require.NotNil(t, resp, "Response should not be nil when error is nil")
-		assert.NotEmpty(t, resp.FinalText, "Agent should provide a non-empty response")
+		if err != nil {
+			t.Fatalf("Execute() unexpected error: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("Execute() response is nil, want non-nil when error is nil")
+		}
+		if resp.FinalText == "" {
+			t.Error("Execute() response.FinalText is empty, want non-empty")
+		}
 	})
 }
 
@@ -45,20 +49,29 @@ func TestChatAgent_SessionPersistence(t *testing.T) {
 
 	t.Run("first message creates history", func(t *testing.T) {
 		resp, err := framework.Agent.Execute(ctx, sessionID, "My name is Koopa")
-		require.NoError(t, err)
-		require.NotNil(t, resp, "Response should not be nil when error is nil")
+		if err != nil {
+			t.Fatalf("Execute() unexpected error: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("Execute() response is nil, want non-nil when error is nil")
+		}
 	})
 
 	t.Run("second message uses history", func(t *testing.T) {
 		// Use same session for history continuity
 		resp, err := framework.Agent.Execute(ctx, sessionID, "What is my name?")
-		require.NoError(t, err)
-		require.NotNil(t, resp, "Response should not be nil when error is nil")
+		if err != nil {
+			t.Fatalf("Execute() unexpected error: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("Execute() response is nil, want non-nil when error is nil")
+		}
 		// Session history should allow LLM to remember the name from previous message
 		// Use case-insensitive check to handle LLM rephrasing variations
 		responseLower := strings.ToLower(resp.FinalText)
-		assert.Contains(t, responseLower, "koopa",
-			"LLM should remember 'Koopa' from session history. Got: %s", resp.FinalText)
+		if !strings.Contains(responseLower, "koopa") {
+			t.Errorf("Execute() response = %q, want to contain %q (LLM should remember from session history)", resp.FinalText, "koopa")
+		}
 	})
 }
 
@@ -73,20 +86,29 @@ func TestChatAgent_ToolIntegration(t *testing.T) {
 		// Create unique marker file to verify tool was actually invoked
 		markerName := fmt.Sprintf("koopa-test-%d.txt", time.Now().UnixNano())
 		markerPath := filepath.Join(os.TempDir(), markerName)
-		require.NoError(t, os.WriteFile(markerPath, []byte("marker"), 0644))
+		if err := os.WriteFile(markerPath, []byte("marker"), 0644); err != nil {
+			t.Fatalf("setup: creating marker file: %v", err)
+		}
 		t.Cleanup(func() { os.Remove(markerPath) })
 
 		// Ask agent to find the specific file - proves tool must be called
 		resp, err := framework.Agent.Execute(ctx, sessionID,
 			fmt.Sprintf("List files in /tmp and tell me if %s exists", markerName))
-		require.NoError(t, err)
-		require.NotNil(t, resp, "Response should not be nil when error is nil")
-		assert.NotEmpty(t, resp.FinalText, "Agent should provide a response")
+		if err != nil {
+			t.Fatalf("Execute() unexpected error: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("Execute() response is nil, want non-nil when error is nil")
+		}
+		if resp.FinalText == "" {
+			t.Error("Execute() response.FinalText is empty, want non-empty")
+		}
 
 		// Verify tool was actually invoked by checking for file mention
 		// (The agent can't know about this unique file without calling the tool)
-		assert.Contains(t, strings.ToLower(resp.FinalText), strings.ToLower(markerName),
-			"Response should mention the marker file, proving tool was called. Got: %s", resp.FinalText)
+		if !strings.Contains(strings.ToLower(resp.FinalText), strings.ToLower(markerName)) {
+			t.Errorf("Execute() response = %q, want to contain %q (proves tool was called)", resp.FinalText, markerName)
+		}
 	})
 }
 
@@ -102,7 +124,9 @@ func TestChatAgent_ErrorHandling(t *testing.T) {
 		// Should handle empty input without crashing
 		// Either returns error or empty response
 		if err == nil {
-			assert.NotNil(t, resp)
+			if resp == nil {
+				t.Error("Execute() with empty input returned nil response and nil error")
+			}
 		}
 	})
 }
@@ -120,8 +144,12 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 			Logger:       slog.Default(),
 			Tools:        []ai.Tool{},
 		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "genkit instance is required")
+		if err == nil {
+			t.Fatal("New() expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "genkit instance is required") {
+			t.Errorf("New() error = %q, want to contain %q", err.Error(), "genkit instance is required")
+		}
 	})
 
 	t.Run("requires retriever", func(t *testing.T) {
@@ -131,8 +159,12 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 			Logger:       slog.Default(),
 			Tools:        []ai.Tool{},
 		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "retriever is required")
+		if err == nil {
+			t.Fatal("New() expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "retriever is required") {
+			t.Errorf("New() error = %q, want to contain %q", err.Error(), "retriever is required")
+		}
 	})
 
 	t.Run("requires session store", func(t *testing.T) {
@@ -142,8 +174,12 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 			Logger:    slog.Default(),
 			Tools:     []ai.Tool{},
 		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "session store is required")
+		if err == nil {
+			t.Fatal("New() expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "session store is required") {
+			t.Errorf("New() error = %q, want to contain %q", err.Error(), "session store is required")
+		}
 	})
 
 	t.Run("requires logger", func(t *testing.T) {
@@ -153,8 +189,12 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 			SessionStore: framework.SessionStore,
 			Tools:        []ai.Tool{},
 		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "logger is required")
+		if err == nil {
+			t.Fatal("New() expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "logger is required") {
+			t.Errorf("New() error = %q, want to contain %q", err.Error(), "logger is required")
+		}
 	})
 
 	t.Run("requires at least one tool", func(t *testing.T) {
@@ -165,8 +205,12 @@ func TestChatAgent_NewChatValidation(t *testing.T) {
 			Logger:       slog.Default(),
 			Tools:        []ai.Tool{},
 		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "at least one tool is required")
+		if err == nil {
+			t.Fatal("New() expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "at least one tool is required") {
+			t.Errorf("New() error = %q, want to contain %q", err.Error(), "at least one tool is required")
+		}
 	})
 }
 
@@ -205,11 +249,18 @@ func TestChatAgent_ConcurrentExecution(t *testing.T) {
 
 	// Assert after all goroutines complete
 	for _, r := range results {
-		require.NoError(t, r.err, "Concurrent query %d should not return an error", r.queryID)
-		assert.NotNil(t, r.resp, "Concurrent query %d response should not be nil", r.queryID)
-		if r.resp != nil {
-			assert.NotEmpty(t, r.resp.FinalText, "Concurrent query %d should provide a non-empty response", r.queryID)
-			assert.Contains(t, r.resp.FinalText, "Paris", "Concurrent query %d should identify Paris as the capital", r.queryID)
+		if r.err != nil {
+			t.Fatalf("Execute() concurrent query %d unexpected error: %v", r.queryID, r.err)
+		}
+		if r.resp == nil {
+			t.Errorf("Execute() concurrent query %d response is nil, want non-nil", r.queryID)
+			continue
+		}
+		if r.resp.FinalText == "" {
+			t.Errorf("Execute() concurrent query %d response.FinalText is empty, want non-empty", r.queryID)
+		}
+		if !strings.Contains(r.resp.FinalText, "Paris") {
+			t.Errorf("Execute() concurrent query %d response = %q, want to contain %q", r.queryID, r.resp.FinalText, "Paris")
 		}
 	}
 }

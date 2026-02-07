@@ -3,10 +3,8 @@ package tools
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/koopa0/koopa/internal/security"
 )
@@ -94,11 +92,21 @@ func TestFileTools_ReadFile_PathSecurity(t *testing.T) {
 			result, err := ft.ReadFile(nil, ReadFileInput{Path: tt.path})
 
 			// FileTools returns business errors in Result, not Go errors
-			require.NoError(t, err, "ReadFile should not return Go error")
-			assert.Equal(t, tt.wantStatus, result.Status)
-			require.NotNil(t, result.Error, "result.Error should not be nil for security errors")
-			assert.Equal(t, tt.wantErrCode, result.Error.Code)
-			assert.Contains(t, result.Error.Message, "path validation failed")
+			if err != nil {
+				t.Fatalf("ReadFile(%q) unexpected Go error: %v (should not return Go error)", tt.path, err)
+			}
+			if got, want := result.Status, tt.wantStatus; got != want {
+				t.Errorf("ReadFile(%q).Status = %v, want %v", tt.path, got, want)
+			}
+			if result.Error == nil {
+				t.Fatalf("ReadFile(%q).Error = nil, want non-nil for security errors", tt.path)
+			}
+			if got, want := result.Error.Code, tt.wantErrCode; got != want {
+				t.Errorf("ReadFile(%q).Error.Code = %v, want %v", tt.path, got, want)
+			}
+			if !strings.Contains(result.Error.Message, "path validation failed") {
+				t.Errorf("ReadFile(%q).Error.Message = %q, want contains %q", tt.path, result.Error.Message, "path validation failed")
+			}
 		})
 	}
 }
@@ -115,14 +123,24 @@ func TestFileTools_ReadFile_Success(t *testing.T) {
 
 	result, err := ft.ReadFile(nil, ReadFileInput{Path: testPath})
 
-	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, result.Status)
-	assert.Nil(t, result.Error)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) unexpected error: %v", testPath, err)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("ReadFile(%q).Status = %v, want %v", testPath, got, want)
+	}
+	if result.Error != nil {
+		t.Errorf("ReadFile(%q).Error = %v, want nil", testPath, result.Error)
+	}
 
 	// Verify content is returned
 	data, ok := result.Data.(map[string]any)
-	require.True(t, ok, "result.Data should be a map")
-	assert.Equal(t, testContent, data["content"])
+	if !ok {
+		t.Fatalf("ReadFile(%q).Data type = %T, want map[string]any", testPath, result.Data)
+	}
+	if got, want := data["content"], testContent; got != want {
+		t.Errorf("ReadFile(%q).Data[content] = %q, want %q", testPath, got, want)
+	}
 }
 
 func TestFileTools_ReadFile_NotFound(t *testing.T) {
@@ -136,10 +154,18 @@ func TestFileTools_ReadFile_NotFound(t *testing.T) {
 
 	result, err := ft.ReadFile(nil, ReadFileInput{Path: nonExistentPath})
 
-	require.NoError(t, err, "ReadFile should not return Go error")
-	assert.Equal(t, StatusError, result.Status)
-	require.NotNil(t, result.Error)
-	assert.Equal(t, ErrCodeNotFound, result.Error.Code)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) unexpected Go error: %v (should not return Go error)", nonExistentPath, err)
+	}
+	if got, want := result.Status, StatusError; got != want {
+		t.Errorf("ReadFile(%q).Status = %v, want %v", nonExistentPath, got, want)
+	}
+	if result.Error == nil {
+		t.Fatal("ReadFile(non-existent).Error = nil, want non-nil")
+	}
+	if got, want := result.Error.Code, ErrCodeNotFound; got != want {
+		t.Errorf("ReadFile(%q).Error.Code = %v, want %v", nonExistentPath, got, want)
+	}
 }
 
 func TestFileTools_ReadFile_FileTooLarge(t *testing.T) {
@@ -151,20 +177,36 @@ func TestFileTools_ReadFile_FileTooLarge(t *testing.T) {
 	// Create a file larger than MaxReadFileSize (10MB)
 	largePath := filepath.Join(h.tempDir, "large.txt")
 	f, err := os.Create(largePath)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("os.Create(%q) unexpected error: %v", largePath, err)
+	}
 
 	// Write 11MB of data
 	_, err = f.Write(make([]byte, MaxReadFileSize+1024*1024))
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
+	if err != nil {
+		t.Fatalf("f.Write() unexpected error: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("f.Close() unexpected error: %v", err)
+	}
 
 	result, err := ft.ReadFile(nil, ReadFileInput{Path: largePath})
 
-	require.NoError(t, err, "ReadFile should not return Go error")
-	assert.Equal(t, StatusError, result.Status)
-	require.NotNil(t, result.Error)
-	assert.Equal(t, ErrCodeValidation, result.Error.Code)
-	assert.Contains(t, result.Error.Message, "exceeds maximum")
+	if err != nil {
+		t.Fatalf("ReadFile(%q) unexpected Go error: %v (should not return Go error)", largePath, err)
+	}
+	if got, want := result.Status, StatusError; got != want {
+		t.Errorf("ReadFile(%q).Status = %v, want %v", largePath, got, want)
+	}
+	if result.Error == nil {
+		t.Fatal("ReadFile(large file).Error = nil, want non-nil")
+	}
+	if got, want := result.Error.Code, ErrCodeValidation; got != want {
+		t.Errorf("ReadFile(%q).Error.Code = %v, want %v", largePath, got, want)
+	}
+	if !strings.Contains(result.Error.Message, "exceeds maximum") {
+		t.Errorf("ReadFile(%q).Error.Message = %q, want contains %q", largePath, result.Error.Message, "exceeds maximum")
+	}
 }
 
 // ============================================================================
@@ -212,10 +254,18 @@ func TestFileTools_WriteFile_PathSecurity(t *testing.T) {
 				Content: "malicious content",
 			})
 
-			require.NoError(t, err, "WriteFile should not return Go error")
-			assert.Equal(t, tt.wantStatus, result.Status)
-			require.NotNil(t, result.Error)
-			assert.Equal(t, tt.wantErrCode, result.Error.Code)
+			if err != nil {
+				t.Fatalf("WriteFile(%q) unexpected Go error: %v (should not return Go error)", tt.path, err)
+			}
+			if got, want := result.Status, tt.wantStatus; got != want {
+				t.Errorf("WriteFile(%q).Status = %v, want %v", tt.path, got, want)
+			}
+			if result.Error == nil {
+				t.Fatalf("WriteFile(%q).Error = nil, want non-nil", tt.path)
+			}
+			if got, want := result.Error.Code, tt.wantErrCode; got != want {
+				t.Errorf("WriteFile(%q).Error.Code = %v, want %v", tt.path, got, want)
+			}
 		})
 	}
 }
@@ -234,14 +284,24 @@ func TestFileTools_WriteFile_Success(t *testing.T) {
 		Content: testContent,
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, result.Status)
-	assert.Nil(t, result.Error)
+	if err != nil {
+		t.Fatalf("WriteFile(%q) unexpected error: %v", testPath, err)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("WriteFile(%q).Status = %v, want %v", testPath, got, want)
+	}
+	if result.Error != nil {
+		t.Errorf("WriteFile(%q).Error = %v, want nil", testPath, result.Error)
+	}
 
 	// Verify file was actually written
 	content, err := os.ReadFile(testPath)
-	require.NoError(t, err)
-	assert.Equal(t, testContent, string(content))
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) unexpected error: %v", testPath, err)
+	}
+	if got, want := string(content), testContent; got != want {
+		t.Errorf("os.ReadFile(%q) = %q, want %q", testPath, got, want)
+	}
 }
 
 func TestFileTools_WriteFile_CreatesDirectories(t *testing.T) {
@@ -259,13 +319,21 @@ func TestFileTools_WriteFile_CreatesDirectories(t *testing.T) {
 		Content: testContent,
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, result.Status)
+	if err != nil {
+		t.Fatalf("WriteFile(%q) unexpected error: %v", nestedPath, err)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("WriteFile(%q).Status = %v, want %v", nestedPath, got, want)
+	}
 
 	// Verify file was created
 	content, err := os.ReadFile(nestedPath)
-	require.NoError(t, err)
-	assert.Equal(t, testContent, string(content))
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) unexpected error: %v", nestedPath, err)
+	}
+	if got, want := string(content), testContent; got != want {
+		t.Errorf("os.ReadFile(%q) = %q, want %q", nestedPath, got, want)
+	}
 }
 
 // ============================================================================
@@ -304,10 +372,18 @@ func TestFileTools_DeleteFile_PathSecurity(t *testing.T) {
 
 			result, err := ft.DeleteFile(nil, DeleteFileInput{Path: tt.path})
 
-			require.NoError(t, err, "DeleteFile should not return Go error")
-			assert.Equal(t, tt.wantStatus, result.Status)
-			require.NotNil(t, result.Error)
-			assert.Equal(t, tt.wantErrCode, result.Error.Code)
+			if err != nil {
+				t.Fatalf("DeleteFile(%q) unexpected Go error: %v (should not return Go error)", tt.path, err)
+			}
+			if got, want := result.Status, tt.wantStatus; got != want {
+				t.Errorf("DeleteFile(%q).Status = %v, want %v", tt.path, got, want)
+			}
+			if result.Error == nil {
+				t.Fatalf("DeleteFile(%q).Error = nil, want non-nil", tt.path)
+			}
+			if got, want := result.Error.Code, tt.wantErrCode; got != want {
+				t.Errorf("DeleteFile(%q).Error.Code = %v, want %v", tt.path, got, want)
+			}
 		})
 	}
 }
@@ -322,17 +398,23 @@ func TestFileTools_DeleteFile_Success(t *testing.T) {
 	testPath := h.createTestFile("to-delete.txt", "content")
 
 	// Verify file exists
-	_, err := os.Stat(testPath)
-	require.NoError(t, err)
+	if _, err := os.Stat(testPath); err != nil {
+		t.Fatalf("os.Stat(%q) unexpected error: %v (file should exist)", testPath, err)
+	}
 
 	result, err := ft.DeleteFile(nil, DeleteFileInput{Path: testPath})
 
-	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, result.Status)
+	if err != nil {
+		t.Fatalf("DeleteFile(%q) unexpected error: %v", testPath, err)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("DeleteFile(%q).Status = %v, want %v", testPath, got, want)
+	}
 
 	// Verify file was deleted
-	_, err = os.Stat(testPath)
-	assert.True(t, os.IsNotExist(err), "file should be deleted")
+	if _, err := os.Stat(testPath); !os.IsNotExist(err) {
+		t.Errorf("os.Stat(%q) after delete: file should not exist", testPath)
+	}
 }
 
 // ============================================================================
@@ -371,10 +453,18 @@ func TestFileTools_ListFiles_PathSecurity(t *testing.T) {
 
 			result, err := ft.ListFiles(nil, ListFilesInput{Path: tt.path})
 
-			require.NoError(t, err, "ListFiles should not return Go error")
-			assert.Equal(t, tt.wantStatus, result.Status)
-			require.NotNil(t, result.Error)
-			assert.Equal(t, tt.wantErrCode, result.Error.Code)
+			if err != nil {
+				t.Fatalf("ListFiles(%q) unexpected Go error: %v (should not return Go error)", tt.path, err)
+			}
+			if got, want := result.Status, tt.wantStatus; got != want {
+				t.Errorf("ListFiles(%q).Status = %v, want %v", tt.path, got, want)
+			}
+			if result.Error == nil {
+				t.Fatalf("ListFiles(%q).Error = nil, want non-nil", tt.path)
+			}
+			if got, want := result.Error.Code, tt.wantErrCode; got != want {
+				t.Errorf("ListFiles(%q).Error.Code = %v, want %v", tt.path, got, want)
+			}
 		})
 	}
 }
@@ -391,25 +481,39 @@ func TestFileTools_ListFiles_Success(t *testing.T) {
 
 	// Create a subdirectory
 	subDir := filepath.Join(h.tempDir, "subdir")
-	require.NoError(t, os.Mkdir(subDir, 0o750))
+	if err := os.Mkdir(subDir, 0o750); err != nil {
+		t.Fatalf("os.Mkdir(%q) unexpected error: %v", subDir, err)
+	}
 
 	result, err := ft.ListFiles(nil, ListFilesInput{Path: h.tempDir})
 
-	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, result.Status)
+	if err != nil {
+		t.Fatalf("ListFiles(%q) unexpected error: %v", h.tempDir, err)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("ListFiles(%q).Status = %v, want %v", h.tempDir, got, want)
+	}
 
 	// Verify entries are returned
 	data, ok := result.Data.(map[string]any)
-	require.True(t, ok, "result.Data should be a map")
+	if !ok {
+		t.Fatalf("ListFiles(%q).Data type = %T, want map[string]any", h.tempDir, result.Data)
+	}
 
 	// entries is []map[string]any, but type assertion gives []any
 	entries := data["entries"]
-	require.NotNil(t, entries, "entries should not be nil")
+	if entries == nil {
+		t.Fatal("ListFiles().Data[entries] = nil, want non-nil")
+	}
 
 	// Use count field to verify
 	count, ok := data["count"].(int)
-	require.True(t, ok, "count should be an int")
-	assert.GreaterOrEqual(t, count, 3, "should have at least 3 entries")
+	if !ok {
+		t.Fatalf("ListFiles().Data[count] type = %T, want int", data["count"])
+	}
+	if count < 3 {
+		t.Errorf("ListFiles().Data[count] = %d, want >= 3 (should have at least 3 entries)", count)
+	}
 }
 
 // ============================================================================
@@ -424,10 +528,18 @@ func TestFileTools_GetFileInfo_PathSecurity(t *testing.T) {
 
 	result, err := ft.GetFileInfo(nil, GetFileInfoInput{Path: "/etc/passwd"})
 
-	require.NoError(t, err, "GetFileInfo should not return Go error")
-	assert.Equal(t, StatusError, result.Status)
-	require.NotNil(t, result.Error)
-	assert.Equal(t, ErrCodeSecurity, result.Error.Code)
+	if err != nil {
+		t.Fatalf("GetFileInfo(%q) unexpected Go error: %v (should not return Go error)", "/etc/passwd", err)
+	}
+	if got, want := result.Status, StatusError; got != want {
+		t.Errorf("GetFileInfo(%q).Status = %v, want %v", "/etc/passwd", got, want)
+	}
+	if result.Error == nil {
+		t.Fatal("GetFileInfo(/etc/passwd).Error = nil, want non-nil")
+	}
+	if got, want := result.Error.Code, ErrCodeSecurity; got != want {
+		t.Errorf("GetFileInfo(/etc/passwd).Error.Code = %v, want %v", got, want)
+	}
 }
 
 func TestFileTools_GetFileInfo_Success(t *testing.T) {
@@ -441,12 +553,22 @@ func TestFileTools_GetFileInfo_Success(t *testing.T) {
 
 	result, err := ft.GetFileInfo(nil, GetFileInfoInput{Path: testPath})
 
-	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, result.Status)
+	if err != nil {
+		t.Fatalf("GetFileInfo(%q) unexpected error: %v", testPath, err)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("GetFileInfo(%q).Status = %v, want %v", testPath, got, want)
+	}
 
 	// Verify info is returned
 	data, ok := result.Data.(map[string]any)
-	require.True(t, ok, "result.Data should be a map")
-	assert.Equal(t, "info.txt", data["name"])
-	assert.Equal(t, int64(12), data["size"]) // "test content" = 12 bytes
+	if !ok {
+		t.Fatalf("GetFileInfo(%q).Data type = %T, want map[string]any", testPath, result.Data)
+	}
+	if got, want := data["name"], "info.txt"; got != want {
+		t.Errorf("GetFileInfo(%q).Data[name] = %q, want %q", testPath, got, want)
+	}
+	if got, want := data["size"], int64(12); got != want {
+		t.Errorf("GetFileInfo(%q).Data[size] = %v, want %v (test content = 12 bytes)", testPath, got, want)
+	}
 }

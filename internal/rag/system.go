@@ -34,11 +34,15 @@ func IndexSystemKnowledge(ctx context.Context, store *postgresql.DocStore, pool 
 		}
 	}
 
-	// Delete existing documents first (UPSERT emulation)
-	// This is necessary because Genkit DocStore.Index() only does INSERT
+	// Delete existing documents first (UPSERT emulation).
+	// Genkit DocStore.Index() only does INSERT, so we must delete first.
+	// NOTE: Not fully atomic — Genkit DocStore manages its own connections,
+	// so delete (via pool) and insert (via DocStore) cannot share a transaction.
+	// This is acceptable because IndexSystemKnowledge runs only at startup.
 	if err := DeleteByIDs(ctx, pool, ids); err != nil {
-		slog.Debug("failed to delete existing system knowledge (may not exist)", "error", err)
-		// Continue - documents may not exist yet
+		// DELETE with non-existent IDs returns 0 rows (not an error).
+		// A real error here indicates a connection or SQL problem.
+		slog.Warn("failed to delete existing system knowledge", "error", err, "ids", ids)
 	}
 
 	if err := store.Index(ctx, docs); err != nil {
@@ -184,29 +188,30 @@ func buildCapabilitiesDocs() []*ai.Document {
 		ai.DocumentFromText(`# Agent Available Tools
 
 ## File Operations
-- readFile: Read file contents
-- writeFile: Create or update file
-- listFiles: List directory contents with glob patterns
-- deleteFile: Remove file (requires confirmation)
-- getFileInfo: Get file metadata
+- read_file: Read file contents
+- write_file: Create or update file
+- list_files: List directory contents with glob patterns
+- delete_file: Remove file (requires confirmation)
+- get_file_info: Get file metadata
 
 ## System Operations
-- currentTime: Get current timestamp
-- executeCommand: Run shell commands (requires confirmation for destructive ops)
-- getEnv: Read environment variables
+- current_time: Get current timestamp
+- execute_command: Run shell commands (requires confirmation for destructive ops)
+- get_env: Read environment variables
 
 ## Network Operations
-- httpGet: Fetch web content
+- web_search: Search the web using SearXNG metasearch engine
+- web_fetch: Fetch and extract content from a specific URL
 
-## Knowledge Search
-- searchHistory: Search conversation history
-- searchDocuments: Search user-indexed documents (Notion pages, local files)
-- searchSystemKnowledge: Search Agent's built-in knowledge
+## Knowledge Operations
+- search_history: Search conversation history
+- search_documents: Search user-indexed documents (Notion pages, local files)
+- search_system_knowledge: Search Agent's built-in knowledge
+- knowledge_store: Store new knowledge documents for later retrieval
 
 ## Limitations
 - File operations limited to current working directory
 - Commands requiring sudo are blocked
-- Network access: HTTP GET only (no POST/PUT)
 - Cannot access system files (/etc, /sys, etc.)`,
 			map[string]any{
 				"id":          "system:agent-tools",
@@ -220,10 +225,10 @@ func buildCapabilitiesDocs() []*ai.Document {
 		ai.DocumentFromText(`# Agent Best Practices
 
 ## When to Use Tools
-- searchHistory: When user asks "what did I say about X?"
-- searchDocuments: When user asks about their notes/documents
-- searchSystemKnowledge: When unsure about Golang conventions or Agent capabilities
-- readFile before writeFile: Always read first to understand context
+- search_history: When user asks "what did I say about X?"
+- search_documents: When user asks about their notes/documents
+- search_system_knowledge: When unsure about Golang conventions or Agent capabilities
+- read_file before write_file: Always read first to understand context
 
 ## Communication
 - Be concise but informative
@@ -257,7 +262,7 @@ func buildArchitectureDocs() []*ai.Document {
 		ai.DocumentFromText(`# Koopa CLI Architecture Principles
 
 ## Dependency Injection
-- Use Wire for compile-time DI
+- Use struct-based DI
 - Define interfaces in consumer packages (not provider packages)
 - Accept interfaces, return structs
 

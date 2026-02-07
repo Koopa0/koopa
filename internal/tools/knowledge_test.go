@@ -53,17 +53,20 @@ func TestKnowledgeToolConstants(t *testing.T) {
 	if ToolSearchSystemKnowledge != "search_system_knowledge" {
 		t.Errorf("ToolSearchSystemKnowledge = %q, want %q", ToolSearchSystemKnowledge, "search_system_knowledge")
 	}
+	if ToolStoreKnowledge != "knowledge_store" {
+		t.Errorf("ToolStoreKnowledge = %q, want %q", ToolStoreKnowledge, "knowledge_store")
+	}
 }
 
 func TestNewKnowledgeTools(t *testing.T) {
 	t.Run("nil retriever returns error", func(t *testing.T) {
-		if _, err := NewKnowledgeTools(nil, log.NewNop()); err == nil {
+		if _, err := NewKnowledgeTools(nil, nil, log.NewNop()); err == nil {
 			t.Error("expected error for nil retriever")
 		}
 	})
 
 	t.Run("nil logger returns error", func(t *testing.T) {
-		if _, err := NewKnowledgeTools(&mockRetriever{}, nil); err == nil {
+		if _, err := NewKnowledgeTools(&mockRetriever{}, nil, nil); err == nil {
 			t.Error("expected error for nil logger")
 		}
 	})

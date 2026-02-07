@@ -1,12 +1,14 @@
 package tools
 
-// knowledge.go defines knowledge search tools for semantic retrieval.
+// knowledge.go defines knowledge tools for semantic retrieval and storage.
 //
-// Provides 3 knowledge tools: searchHistory, searchDocuments, searchSystemKnowledge.
-// Each tool searches a specific knowledge source with metadata filtering.
+// Provides 4 knowledge tools: search_history, search_documents, search_system_knowledge, knowledge_store.
+// Search tools query specific knowledge sources with metadata filtering.
+// The store tool indexes new documents for later retrieval.
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
@@ -21,6 +23,7 @@ const (
 	ToolSearchHistory         = "search_history"
 	ToolSearchDocuments       = "search_documents"
 	ToolSearchSystemKnowledge = "search_system_knowledge"
+	ToolStoreKnowledge        = "knowledge_store"
 )
 
 // Default TopK values for knowledge searches.
@@ -38,21 +41,29 @@ type KnowledgeSearchInput struct {
 	TopK  int    `json:"topK,omitempty" jsonschema_description:"Maximum results to return (1-10)"`
 }
 
+// KnowledgeStoreInput defines input for the knowledge_store tool.
+type KnowledgeStoreInput struct {
+	Title   string `json:"title" jsonschema_description:"Short title for the knowledge entry"`
+	Content string `json:"content" jsonschema_description:"The knowledge content to store"`
+}
+
 // KnowledgeTools holds dependencies for knowledge operation handlers.
 type KnowledgeTools struct {
 	retriever ai.Retriever
+	docStore  *postgresql.DocStore // nil disables knowledge_store tool
 	logger    log.Logger
 }
 
 // NewKnowledgeTools creates a KnowledgeTools instance.
-func NewKnowledgeTools(retriever ai.Retriever, logger log.Logger) (*KnowledgeTools, error) {
+// docStore is optional: when nil, the knowledge_store tool is not registered.
+func NewKnowledgeTools(retriever ai.Retriever, docStore *postgresql.DocStore, logger log.Logger) (*KnowledgeTools, error) {
 	if retriever == nil {
 		return nil, fmt.Errorf("retriever is required")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	return &KnowledgeTools{retriever: retriever, logger: logger}, nil
+	return &KnowledgeTools{retriever: retriever, docStore: docStore, logger: logger}, nil
 }
 
 // RegisterKnowledgeTools registers all knowledge search tools with Genkit.
@@ -65,7 +76,7 @@ func RegisterKnowledgeTools(g *genkit.Genkit, kt *KnowledgeTools) ([]ai.Tool, er
 		return nil, fmt.Errorf("KnowledgeTools is required")
 	}
 
-	return []ai.Tool{
+	tools := []ai.Tool{
 		genkit.DefineTool(g, ToolSearchHistory,
 			"Search conversation history using semantic similarity. "+
 				"Finds past exchanges that are conceptually related to the query. "+
@@ -87,7 +98,19 @@ func RegisterKnowledgeTools(g *genkit.Genkit, kt *KnowledgeTools) ([]ai.Tool, er
 				"Use this to: understand tool capabilities, find command syntax, learn system patterns. "+
 				"Default topK: 3. Maximum topK: 10.",
 			WithEvents(ToolSearchSystemKnowledge, kt.SearchSystemKnowledge)),
-	}, nil
+	}
+
+	// Register knowledge_store only when DocStore is available.
+	if kt.docStore != nil {
+		tools = append(tools, genkit.DefineTool(g, ToolStoreKnowledge,
+			"Store a knowledge entry for later retrieval via search_documents. "+
+				"Use this to save important information, notes, or learnings "+
+				"that the user wants to remember across sessions. "+
+				"Each entry gets a unique ID and is indexed for semantic search.",
+			WithEvents(ToolStoreKnowledge, kt.StoreKnowledge)))
+	}
+
+	return tools, nil
 }
 
 // clampTopK validates topK and returns a value within [1, MaxTopK].
@@ -191,6 +214,70 @@ func (k *KnowledgeTools) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSea
 			"query":        input.Query,
 			"result_count": len(results),
 			"results":      results,
+		},
+	}, nil
+}
+
+// StoreKnowledge stores a new knowledge document for later retrieval.
+func (k *KnowledgeTools) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInput) (Result, error) {
+	k.logger.Info("StoreKnowledge called", "title", input.Title)
+
+	if k.docStore == nil {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeExecution,
+				Message: "knowledge store is not available",
+			},
+		}, nil
+	}
+
+	if input.Title == "" {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: "title is required",
+			},
+		}, nil
+	}
+	if input.Content == "" {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: "content is required",
+			},
+		}, nil
+	}
+
+	// Generate a deterministic document ID from the title using SHA-256.
+	// Prefix "user:" namespaces user-created knowledge (vs "system:" for built-in).
+	docID := fmt.Sprintf("user:%x", sha256.Sum256([]byte(input.Title)))
+
+	doc := ai.DocumentFromText(input.Content, map[string]any{
+		"id":          docID,
+		"source_type": rag.SourceTypeFile,
+		"title":       input.Title,
+	})
+
+	if err := k.docStore.Index(ctx, []*ai.Document{doc}); err != nil {
+		k.logger.Error("StoreKnowledge failed", "title", input.Title, "error", err)
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeExecution,
+				Message: fmt.Sprintf("failed to store knowledge: %v", err),
+			},
+		}, nil
+	}
+
+	k.logger.Info("StoreKnowledge succeeded", "title", input.Title)
+	return Result{
+		Status: StatusSuccess,
+		Data: map[string]any{
+			"title":   input.Title,
+			"message": "Knowledge stored successfully. It can now be found via search_documents.",
 		},
 	}, nil
 }

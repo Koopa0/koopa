@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/koopa0/koopa/internal/api"
 	"github.com/koopa0/koopa/internal/app"
 	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/web"
 )
 
 // Server timeout configuration.
@@ -29,12 +29,12 @@ const (
 	ShutdownTimeout   = 30 * time.Second
 )
 
-// RunServe starts the HTTP web server (GenUI + Health checks).
+// RunServe starts the HTTP API server (JSON REST + Health checks).
 //
 // Architecture:
 //   - Validates required configuration (HMAC_SECRET)
 //   - Initializes the application runtime
-//   - Creates the web server with all routes
+//   - Creates the API server with all routes
 //   - Signal handling is done by caller (executeServe)
 func RunServe(ctx context.Context, cfg *config.Config, version, addr string) error {
 	logger := slog.Default()
@@ -47,10 +47,10 @@ func RunServe(ctx context.Context, cfg *config.Config, version, addr string) err
 		return fmt.Errorf("HMAC_SECRET must be at least 32 characters, got %d", len(cfg.HMACSecret))
 	}
 
-	logger.Info("starting HTTP web server", "version", version)
+	logger.Info("starting HTTP API server", "version", version)
 
 	// Initialize runtime with all components
-	runtime, err := app.NewRuntime(ctx, cfg)
+	runtime, err := app.NewChatRuntime(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime: %w", err)
 	}
@@ -60,23 +60,26 @@ func RunServe(ctx context.Context, cfg *config.Config, version, addr string) err
 		}
 	}()
 
-	// Create web server (GenUI + Health checks)
-	webServer, err := web.NewServer(web.ServerConfig{
+	// Create API server (JSON REST + Health checks)
+	apiServer, err := api.NewServer(api.ServerConfig{
 		Logger:       logger,
 		Genkit:       runtime.App.Genkit,
+		ModelName:    cfg.FullModelName(),
 		ChatFlow:     runtime.Flow,
 		SessionStore: runtime.App.SessionStore,
 		CSRFSecret:   []byte(cfg.HMACSecret),
-		Config:       cfg,
+		CORSOrigins:  cfg.CORSOrigins,
+		IsDev:        cfg.PostgresSSLMode == "disable",
+		TrustProxy:   cfg.TrustProxy,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create web server: %w", err)
+		return fmt.Errorf("failed to create API server: %w", err)
 	}
 
 	// Create HTTP server
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           webServer.Handler(),
+		Handler:           apiServer.Handler(),
 		ReadHeaderTimeout: ReadHeaderTimeout,
 		ReadTimeout:       ReadTimeout,
 		WriteTimeout:      WriteTimeout,
@@ -85,7 +88,7 @@ func RunServe(ctx context.Context, cfg *config.Config, version, addr string) err
 
 	logger.Info("HTTP server ready",
 		"addr", addr,
-		"genui", "/genui/*",
+		"api", "/api/v1/*",
 		"health", "/health, /ready",
 	)
 

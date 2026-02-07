@@ -10,18 +10,19 @@ import (
 	"github.com/koopa0/koopa/internal/config"
 )
 
-// Runtime provides a fully initialized application runtime with all components ready to use.
-// It encapsulates the common initialization logic used by CLI, HTTP server, and other entry points.
+// ChatRuntime provides a fully initialized application runtime with all components ready to use.
+// It encapsulates the common initialization logic used by CLI and HTTP server entry points.
+// MCP mode uses InitializeApp directly (no chat flow needed).
 // Implements io.Closer for resource cleanup.
-type Runtime struct {
+type ChatRuntime struct {
 	App     *App
 	Flow    *chat.Flow
-	cleanup func() // Wire cleanup (unexported) - handles DB pool, OTel
+	cleanup func() // cleanup (unexported) - handles DB pool, OTel
 }
 
 // Close releases all resources. Implements io.Closer.
-// Shutdown order: App.Close (goroutines) → Wire cleanup (DB pool, OTel).
-func (r *Runtime) Close() error {
+// Shutdown order: App.Close (goroutines) → cleanup (DB pool, OTel).
+func (r *ChatRuntime) Close() error {
 	var errs []error
 
 	// 1. App shutdown (cancel context, wait for goroutines)
@@ -31,7 +32,7 @@ func (r *Runtime) Close() error {
 		}
 	}
 
-	// 2. Wire cleanup (DB pool, OTel)
+	// 2. Cleanup (DB pool, OTel)
 	if r.cleanup != nil {
 		r.cleanup()
 	}
@@ -39,27 +40,27 @@ func (r *Runtime) Close() error {
 	return errors.Join(errs...)
 }
 
-// NewRuntime creates a fully initialized runtime with all components ready for use.
-// This is the recommended way to initialize Koopa for any entry point (CLI, HTTP, etc.).
+// NewChatRuntime creates a fully initialized runtime with all components ready for use.
+// This is the recommended way to initialize Koopa for CLI and HTTP entry points.
 //
 // Usage:
 //
-//	runtime, err := app.NewRuntime(ctx, cfg)
+//	runtime, err := app.NewChatRuntime(ctx, cfg)
 //	if err != nil { ... }
 //	defer runtime.Close()  // Single cleanup method (implements io.Closer)
 //	// Use runtime.Flow for agent interactions
-func NewRuntime(ctx context.Context, cfg *config.Config) (*Runtime, error) {
-	// Initialize application using Wire DI
+func NewChatRuntime(ctx context.Context, cfg *config.Config) (*ChatRuntime, error) {
+	// Initialize application
 	application, cleanup, err := InitializeApp(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize application: %w", err)
 	}
 
-	// Create Chat Agent (uses pre-registered tools from Wire DI)
+	// Create Chat Agent (uses pre-registered tools)
 	chatAgent, err := application.CreateAgent(ctx)
 	if err != nil {
 		// Must close application first (stops background goroutines)
-		// then Wire cleanup (closes DB pool, OTel)
+		// then cleanup (closes DB pool, OTel)
 		if closeErr := application.Close(); closeErr != nil {
 			slog.Warn("app close failed during CreateAgent recovery", "error", closeErr)
 		}
@@ -78,7 +79,7 @@ func NewRuntime(ctx context.Context, cfg *config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("failed to init flow: %w", err)
 	}
 
-	return &Runtime{
+	return &ChatRuntime{
 		App:     application,
 		Flow:    chatFlow,
 		cleanup: cleanup,

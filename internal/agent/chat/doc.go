@@ -106,7 +106,7 @@
 //
 // Chat manages conversation history through the SessionStore:
 //
-//	GetHistory: Retrieves previous messages for a session
+//	History: Retrieves previous messages for a session
 //	AppendMessages: Persists new messages incrementally (preferred)
 //
 // History save failures are logged but don't fail the request.

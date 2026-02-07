@@ -3,13 +3,10 @@ package observability
 import (
 	"context"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSetupDatadog_DefaultAgentHost(t *testing.T) {
-	t.Parallel()
+	// NOTE: not parallel — SetupDatadog modifies global state (os.Setenv, TracerProvider)
 
 	cfg := Config{
 		AgentHost:   "", // Empty should use default
@@ -21,16 +18,21 @@ func TestSetupDatadog_DefaultAgentHost(t *testing.T) {
 	shutdown, err := SetupDatadog(ctx, cfg)
 
 	// Should not fail even with empty AgentHost
-	require.NoError(t, err)
-	require.NotNil(t, shutdown)
+	if err != nil {
+		t.Fatalf("SetupDatadog() unexpected error: %v", err)
+	}
+	if shutdown == nil {
+		t.Fatal("SetupDatadog() shutdown = nil, want non-nil")
+	}
 
 	// Cleanup
-	err = shutdown(ctx)
-	assert.NoError(t, err)
+	if err := shutdown(ctx); err != nil {
+		t.Errorf("shutdown() unexpected error: %v", err)
+	}
 }
 
 func TestSetupDatadog_CustomAgentHost(t *testing.T) {
-	t.Parallel()
+	// NOTE: not parallel — SetupDatadog modifies global state (os.Setenv, TracerProvider)
 
 	cfg := Config{
 		AgentHost:   "custom-host:4318",
@@ -42,16 +44,21 @@ func TestSetupDatadog_CustomAgentHost(t *testing.T) {
 	shutdown, err := SetupDatadog(ctx, cfg)
 
 	// Should not fail with custom host
-	require.NoError(t, err)
-	require.NotNil(t, shutdown)
+	if err != nil {
+		t.Fatalf("SetupDatadog() unexpected error: %v", err)
+	}
+	if shutdown == nil {
+		t.Fatal("SetupDatadog() shutdown = nil, want non-nil")
+	}
 
 	// Cleanup
-	err = shutdown(ctx)
-	assert.NoError(t, err)
+	if err := shutdown(ctx); err != nil {
+		t.Errorf("shutdown() unexpected error: %v", err)
+	}
 }
 
 func TestSetupDatadog_AgentUnavailable_GracefulDegradation(t *testing.T) {
-	t.Parallel()
+	// NOTE: not parallel — SetupDatadog modifies global state (os.Setenv, TracerProvider)
 
 	// Point to a non-existent agent
 	cfg := Config{
@@ -65,16 +72,21 @@ func TestSetupDatadog_AgentUnavailable_GracefulDegradation(t *testing.T) {
 
 	// Should NOT fail - graceful degradation
 	// The exporter creation may succeed but spans will fail to export silently
-	require.NoError(t, err)
-	require.NotNil(t, shutdown)
+	if err != nil {
+		t.Fatalf("SetupDatadog() unexpected error: %v", err)
+	}
+	if shutdown == nil {
+		t.Fatal("SetupDatadog() shutdown = nil, want non-nil")
+	}
 
 	// Shutdown should not panic
-	err = shutdown(ctx)
-	assert.NoError(t, err)
+	if err := shutdown(ctx); err != nil {
+		t.Errorf("shutdown() unexpected error: %v", err)
+	}
 }
 
 func TestSetupDatadog_EmptyConfig(t *testing.T) {
-	t.Parallel()
+	// NOTE: not parallel — SetupDatadog modifies global state (os.Setenv, TracerProvider)
 
 	// All empty config - should use defaults
 	cfg := Config{}
@@ -82,15 +94,22 @@ func TestSetupDatadog_EmptyConfig(t *testing.T) {
 	ctx := context.Background()
 	shutdown, err := SetupDatadog(ctx, cfg)
 
-	require.NoError(t, err)
-	require.NotNil(t, shutdown)
+	if err != nil {
+		t.Fatalf("SetupDatadog() unexpected error: %v", err)
+	}
+	if shutdown == nil {
+		t.Fatal("SetupDatadog() shutdown = nil, want non-nil")
+	}
 
-	err = shutdown(ctx)
-	assert.NoError(t, err)
+	if err := shutdown(ctx); err != nil {
+		t.Errorf("shutdown() unexpected error: %v", err)
+	}
 }
 
 func TestDefaultAgentHost_Value(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "localhost:4318", DefaultAgentHost)
+	if got, want := DefaultAgentHost, "localhost:4318"; got != want {
+		t.Errorf("DefaultAgentHost = %q, want %q", got, want)
+	}
 }

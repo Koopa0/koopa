@@ -26,7 +26,7 @@ func runCLI() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	runtime, err := app.NewRuntime(ctx, cfg)
+	runtime, err := app.NewChatRuntime(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime: %w", err)
 	}
@@ -61,7 +61,7 @@ func getOrCreateSessionID(ctx context.Context, store *session.Store, cfg *config
 	}
 
 	if currentID != nil {
-		if _, err = store.GetSession(ctx, *currentID); err == nil {
+		if _, err = store.Session(ctx, *currentID); err == nil {
 			return currentID.String(), nil
 		}
 		if !errors.Is(err, session.ErrSessionNotFound) {

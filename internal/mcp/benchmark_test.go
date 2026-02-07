@@ -35,7 +35,7 @@ func BenchmarkServer_Creation(b *testing.B) {
 			b.Fatalf("Failed to create system tools: %v", err)
 		}
 
-		networkTools, err := tools.NewNetworkToolsForTesting(tools.NetworkConfig{
+		networkTools, err := tools.NewNetworkTools(tools.NetworkConfig{
 			SearchBaseURL:    "http://localhost:8080",
 			FetchParallelism: 2,
 			FetchDelay:       100 * time.Millisecond,
@@ -182,7 +182,7 @@ func BenchmarkConfig_Validation(b *testing.B) {
 		b.Fatalf("Failed to create system tools: %v", err)
 	}
 
-	networkTools, err := tools.NewNetworkToolsForTesting(tools.NetworkConfig{
+	networkTools, err := tools.NewNetworkTools(tools.NetworkConfig{
 		SearchBaseURL:    "http://localhost:8080",
 		FetchParallelism: 2,
 		FetchDelay:       100 * time.Millisecond,

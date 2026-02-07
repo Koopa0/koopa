@@ -3,11 +3,10 @@ package tools
 import (
 	"context"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/koopa0/koopa/internal/security"
 )
@@ -148,19 +147,29 @@ func TestSystemTools_ExecuteCommand_WhitelistEnforcement(t *testing.T) {
 			})
 
 			// Go error only for infrastructure errors (context cancellation)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("ExecuteCommand(%q, %v) unexpected Go error: %v", tt.command, tt.args, err)
+			}
 
 			if tt.wantErr {
 				// Business errors are in Result.Error
-				require.NotNil(t, result.Error)
-				assert.Contains(t, result.Error.Message, tt.errContains)
+				if result.Error == nil {
+					t.Fatalf("ExecuteCommand(%q, %v).Error = nil, want non-nil", tt.command, tt.args)
+				}
+				if !strings.Contains(result.Error.Message, tt.errContains) {
+					t.Errorf("ExecuteCommand(%q, %v).Error.Message = %q, want contains %q", tt.command, tt.args, result.Error.Message, tt.errContains)
+				}
 			} else {
 				// Note: even whitelisted commands can fail if they error (e.g., file not found)
 				// We just verify they aren't rejected by the validator
 				if result.Error != nil {
 					// Allow execution errors, just not validation errors
-					assert.NotContains(t, result.Error.Message, "not in whitelist")
-					assert.NotContains(t, result.Error.Message, "dangerous command rejected")
+					if strings.Contains(result.Error.Message, "not in whitelist") {
+						t.Errorf("ExecuteCommand(%q, %v) rejected by whitelist, should be allowed", tt.command, tt.args)
+					}
+					if strings.Contains(result.Error.Message, "dangerous command rejected") {
+						t.Errorf("ExecuteCommand(%q, %v) rejected as dangerous, should be allowed", tt.command, tt.args)
+					}
 				}
 			}
 		})
@@ -234,10 +243,16 @@ func TestSystemTools_ExecuteCommand_DangerousPatterns(t *testing.T) {
 			})
 
 			// Go error only for infrastructure errors
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("ExecuteCommand(%q, %v) unexpected Go error: %v", tt.command, tt.args, err)
+			}
 			// Business errors are in Result.Error
-			require.NotNil(t, result.Error, "dangerous command should be rejected")
-			assert.Contains(t, result.Error.Message, tt.errContains)
+			if result.Error == nil {
+				t.Fatalf("ExecuteCommand(%q, %v).Error = nil, want non-nil (dangerous command should be rejected)", tt.command, tt.args)
+			}
+			if !strings.Contains(result.Error.Message, tt.errContains) {
+				t.Errorf("ExecuteCommand(%q, %v).Error.Message = %q, want contains %q", tt.command, tt.args, result.Error.Message, tt.errContains)
+			}
 		})
 	}
 }
@@ -254,15 +269,33 @@ func TestSystemTools_ExecuteCommand_Success(t *testing.T) {
 		Args:    []string{"hello", "world"},
 	})
 
-	require.NoError(t, err)
-	require.Nil(t, result.Error)
-	assert.Equal(t, StatusSuccess, result.Status)
+	if err != nil {
+		t.Fatalf("ExecuteCommand(%q, %v) unexpected error: %v", "echo", []string{"hello", "world"}, err)
+	}
+	if result.Error != nil {
+		t.Errorf("ExecuteCommand(%q, %v).Error = %v, want nil", "echo", []string{"hello", "world"}, result.Error)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("ExecuteCommand(%q, %v).Status = %v, want %v", "echo", []string{"hello", "world"}, got, want)
+	}
 
 	data, ok := result.Data.(map[string]any)
-	require.True(t, ok, "result.Data should be map[string]any")
-	assert.Equal(t, "echo", data["command"])
-	assert.Equal(t, true, data["success"])
-	assert.Contains(t, data["output"], "hello world")
+	if !ok {
+		t.Fatalf("ExecuteCommand(%q, %v).Data type = %T, want map[string]any", "echo", []string{"hello", "world"}, result.Data)
+	}
+	if got, want := data["command"], "echo"; got != want {
+		t.Errorf("ExecuteCommand(%q).Data[command] = %q, want %q", "echo", got, want)
+	}
+	if got, want := data["success"], true; got != want {
+		t.Errorf("ExecuteCommand(%q).Data[success] = %v, want %v", "echo", got, want)
+	}
+	output, ok := data["output"].(string)
+	if !ok {
+		t.Fatalf("ExecuteCommand(%q).Data[output] type = %T, want string", "echo", data["output"])
+	}
+	if !strings.Contains(output, "hello world") {
+		t.Errorf("ExecuteCommand(%q).Data[output] = %q, want contains %q", "echo", output, "hello world")
+	}
 }
 
 func TestSystemTools_ExecuteCommand_ContextCancellation(t *testing.T) {
@@ -289,7 +322,9 @@ func TestSystemTools_ExecuteCommand_ContextCancellation(t *testing.T) {
 	// The command may or may not execute depending on timing
 	// but the context cancellation should be respected
 	if err != nil {
-		assert.Contains(t, err.Error(), "cancel")
+		if !strings.Contains(err.Error(), "cancel") {
+			t.Errorf("ExecuteCommand(canceled context) error = %q, want contains %q", err.Error(), "cancel")
+		}
 	}
 }
 
@@ -410,10 +445,16 @@ func TestSystemTools_GetEnv_SensitiveVariableBlocked(t *testing.T) {
 			result, err := st.GetEnv(nil, GetEnvInput{Key: tt.envKey})
 
 			// Go error only for infrastructure errors
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("GetEnv(%q) unexpected Go error: %v", tt.envKey, err)
+			}
 			// Business errors are in Result.Error
-			require.NotNil(t, result.Error, "sensitive variable should be blocked")
-			assert.Contains(t, result.Error.Message, tt.errContains)
+			if result.Error == nil {
+				t.Fatalf("GetEnv(%q).Error = nil, want non-nil (sensitive variable should be blocked)", tt.envKey)
+			}
+			if !strings.Contains(result.Error.Message, tt.errContains) {
+				t.Errorf("GetEnv(%q).Error.Message = %q, want contains %q", tt.envKey, result.Error.Message, tt.errContains)
+			}
 		})
 	}
 }
@@ -444,13 +485,23 @@ func TestSystemTools_GetEnv_SafeVariableAllowed(t *testing.T) {
 
 			result, err := st.GetEnv(nil, GetEnvInput{Key: tt.envKey})
 
-			require.NoError(t, err, "safe variable should not be blocked")
-			require.Nil(t, result.Error, "safe variable should not be blocked")
-			assert.Equal(t, StatusSuccess, result.Status)
+			if err != nil {
+				t.Fatalf("GetEnv(%q) unexpected error: %v (safe variable should not be blocked)", tt.envKey, err)
+			}
+			if result.Error != nil {
+				t.Errorf("GetEnv(%q).Error = %v, want nil (safe variable should not be blocked)", tt.envKey, result.Error)
+			}
+			if got, want := result.Status, StatusSuccess; got != want {
+				t.Errorf("GetEnv(%q).Status = %v, want %v", tt.envKey, got, want)
+			}
 
 			data, ok := result.Data.(map[string]any)
-			require.True(t, ok, "result.Data should be map[string]any")
-			assert.Equal(t, tt.envKey, data["key"])
+			if !ok {
+				t.Fatalf("GetEnv(%q).Data type = %T, want map[string]any", tt.envKey, result.Data)
+			}
+			if got, want := data["key"], tt.envKey; got != want {
+				t.Errorf("GetEnv(%q).Data[key] = %q, want %q", tt.envKey, got, want)
+			}
 			// IsSet may be true or false depending on system
 		})
 	}
@@ -481,10 +532,16 @@ func TestSystemTools_GetEnv_CaseInsensitiveBlocking(t *testing.T) {
 			result, err := st.GetEnv(nil, GetEnvInput{Key: tt.envKey})
 
 			// Go error only for infrastructure errors
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("GetEnv(%q) unexpected Go error: %v", tt.envKey, err)
+			}
 			// Business errors are in Result.Error
-			require.NotNil(t, result.Error, "sensitive pattern should be blocked regardless of case")
-			assert.Contains(t, result.Error.Message, "sensitive")
+			if result.Error == nil {
+				t.Fatalf("GetEnv(%q).Error = nil, want non-nil (sensitive pattern should be blocked regardless of case)", tt.envKey)
+			}
+			if !strings.Contains(result.Error.Message, "sensitive") {
+				t.Errorf("GetEnv(%q).Error.Message = %q, want contains %q", tt.envKey, result.Error.Message, "sensitive")
+			}
 		})
 	}
 }
@@ -501,15 +558,31 @@ func TestSystemTools_CurrentTime_Success(t *testing.T) {
 
 	result, err := st.CurrentTime(nil, CurrentTimeInput{})
 
-	require.NoError(t, err)
-	require.Nil(t, result.Error)
-	assert.Equal(t, StatusSuccess, result.Status)
+	if err != nil {
+		t.Fatalf("CurrentTime() unexpected error: %v", err)
+	}
+	if result.Error != nil {
+		t.Errorf("CurrentTime().Error = %v, want nil", result.Error)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("CurrentTime().Status = %v, want %v", got, want)
+	}
 
 	data, ok := result.Data.(map[string]any)
-	require.True(t, ok, "result.Data should be map[string]any")
-	assert.NotEmpty(t, data["time"])
-	assert.NotEmpty(t, data["iso8601"])
+	if !ok {
+		t.Fatalf("CurrentTime().Data type = %T, want map[string]any", result.Data)
+	}
+	if data["time"] == "" {
+		t.Error("CurrentTime().Data[time] = empty, want non-empty")
+	}
+	if data["iso8601"] == "" {
+		t.Error("CurrentTime().Data[iso8601] = empty, want non-empty")
+	}
 	timestamp, ok := data["timestamp"].(int64)
-	require.True(t, ok, "timestamp should be int64")
-	assert.Greater(t, timestamp, int64(0))
+	if !ok {
+		t.Fatalf("CurrentTime().Data[timestamp] type = %T, want int64", data["timestamp"])
+	}
+	if timestamp <= 0 {
+		t.Errorf("CurrentTime().Data[timestamp] = %d, want > 0", timestamp)
+	}
 }

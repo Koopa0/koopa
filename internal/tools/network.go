@@ -56,8 +56,8 @@ type NetworkTools struct {
 	// SSRF protection
 	urlValidator *security.URL
 
-	// skipSSRFCheck is set ONLY via NewNetworkToolsForTesting()
-	// Production code cannot set this
+	// skipSSRFCheck disables SSRF protection for testing.
+	// Only settable within the tools package (unexported field).
 	skipSSRFCheck bool
 
 	logger log.Logger
@@ -102,17 +102,6 @@ func NewNetworkTools(cfg NetworkConfig, logger log.Logger) (*NetworkTools, error
 	}, nil
 }
 
-// NewNetworkToolsForTesting creates a NetworkTools instance with SSRF protection disabled.
-// This should ONLY be used in tests.
-func NewNetworkToolsForTesting(cfg NetworkConfig, logger log.Logger) (*NetworkTools, error) {
-	nt, err := NewNetworkTools(cfg, logger)
-	if err != nil {
-		return nil, err
-	}
-	nt.skipSSRFCheck = true
-	return nt, nil
-}
-
 // RegisterNetworkTools registers all network operation tools with Genkit.
 // Tools are registered with event emission wrappers for streaming support.
 func RegisterNetworkTools(g *genkit.Genkit, nt *NetworkTools) ([]ai.Tool, error) {
@@ -139,16 +128,6 @@ func RegisterNetworkTools(g *genkit.Genkit, nt *NetworkTools) ([]ai.Tool, error)
 				"Note: Does not render JavaScript - for SPA pages, content may be incomplete.",
 			WithEvents(ToolWebFetch, nt.Fetch)),
 	}, nil
-}
-
-// RegisterNetworkToolsForTesting creates network tools with SSRF protection disabled.
-// This should ONLY be used in tests.
-func RegisterNetworkToolsForTesting(g *genkit.Genkit, cfg NetworkConfig, logger log.Logger) ([]ai.Tool, error) {
-	nt, err := NewNetworkToolsForTesting(cfg, logger)
-	if err != nil {
-		return nil, err
-	}
-	return RegisterNetworkTools(g, nt)
 }
 
 // ============================================================================
@@ -451,6 +430,13 @@ func (n *NetworkTools) createCollector() *colly.Collector {
 		colly.MaxDepth(1),
 		colly.UserAgent("Mozilla/5.0 (compatible; KoopaBot/1.0; +https://github.com/koopa0/koopa)"),
 	)
+
+	// Inject SafeTransport for DNS-level SSRF protection.
+	// This validates resolved IPs at connection time, preventing DNS rebinding attacks
+	// where a hostname passes Validate() but resolves to a private IP.
+	if !n.skipSSRFCheck {
+		c.WithTransport(n.urlValidator.SafeTransport())
+	}
 
 	c.SetRedirectHandler(func(req *http.Request, via []*http.Request) error {
 		if len(via) >= MaxRedirects {

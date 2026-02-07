@@ -217,12 +217,6 @@ linters:
         - record-error
         - set-status
 
-    # testify best practices
-    testifylint:
-      enable-all: true
-      disable:
-        - suite-dont-use-pkg # testify/suite is fine
-
     # Test helper validation
     thelper:
       test:
@@ -354,18 +348,13 @@ linters:
         linters:
           - dupl
 
-      # Wire-generated code - exclude all linters
-      - path: wire_gen\.go
-        linters:
-          - all
-
       # depguard: allow os/exec in security package (it's the validator itself)
       - path: internal/security/
         linters:
           - depguard
 
       # containedctx: allow in app lifecycle and TUI (legitimate use cases)
-      - path: (internal/app/|internal/tui/|internal/agent/context\.go|internal/testutil/)
+      - path: (internal/app/|internal/tui/|internal/testutil/)
         linters:
           - containedctx
 
@@ -374,11 +363,6 @@ linters:
         text: "G304:"
         linters:
           - gosec
-
-      # contextcheck: session file doesn't need context for local file ops
-      - path: internal/session/file\.go
-        linters:
-          - contextcheck
 
       # contextcheck: mcp tools use toolCtx which contains context
       - path: internal/mcp/
@@ -401,10 +385,11 @@ linters:
         linters:
           - contextcheck
 
-      # contextcheck: templ components internally pass context through Render()
-      - path: internal/web/component/.*_ui_test\.go
+      # var-naming: "api" is an intentional package name under internal/
+      - path: internal/api/
+        text: "var-naming: avoid meaningless package names"
         linters:
-          - contextcheck
+          - revive
 
       # depguard: system tools intentionally use os/exec with security wrapper
       - path: internal/tools/system\.go

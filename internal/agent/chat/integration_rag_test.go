@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/koopa0/koopa/internal/rag"
 )
@@ -33,7 +31,9 @@ func TestChatAgent_RAGIntegration_EndToEnd(t *testing.T) {
 	ctx := context.Background()
 
 	// Ensure RAG is enabled
-	require.Greater(t, framework.Config.RAGTopK, 0, "RAG must be enabled for this test")
+	if framework.Config.RAGTopK <= 0 {
+		t.Fatal("RAG must be enabled for this test (RAGTopK > 0)")
+	}
 
 	// STEP 1: Index test document using DocStore
 	docID := uuid.New()
@@ -52,13 +52,20 @@ func TestChatAgent_RAGIntegration_EndToEnd(t *testing.T) {
 		nil,
 	)
 
-	require.NoError(t, err, "Query with RAG should succeed")
-	require.NotNil(t, resp, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
+	if err != nil {
+		t.Fatalf("ExecuteStream() with RAG unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("ExecuteStream() response is nil, want non-nil when error is nil")
+	}
+	if resp.FinalText == "" {
+		t.Error("ExecuteStream() response.FinalText is empty, want non-empty")
+	}
 
 	// STEP 3: Verify LLM response uses retrieved context
-	assert.Contains(t, resp.FinalText, "KOOPA_TEST_123",
-		"Response should contain the password from retrieved document")
+	if !strings.Contains(resp.FinalText, "KOOPA_TEST_123") {
+		t.Errorf("ExecuteStream() response = %q, want to contain %q (from retrieved document)", resp.FinalText, "KOOPA_TEST_123")
+	}
 	t.Logf("RAG response: %s", resp.FinalText)
 }
 
@@ -94,14 +101,21 @@ func TestRetrieveRAGContext_ActualRetrieval(t *testing.T) {
 		nil,
 	)
 
-	require.NoError(t, err, "Query should succeed")
-	require.NotNil(t, resp, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
+	if err != nil {
+		t.Fatalf("ExecuteStream() unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("ExecuteStream() response is nil, want non-nil when error is nil")
+	}
+	if resp.FinalText == "" {
+		t.Error("ExecuteStream() response.FinalText is empty, want non-empty")
+	}
 
 	// Response should incorporate retrieved knowledge
 	// (Exact matching is LLM-dependent, but it should reference Go)
-	assert.Contains(t, resp.FinalText, "Go",
-		"Response should reference Go from retrieved documents")
+	if !strings.Contains(resp.FinalText, "Go") {
+		t.Errorf("ExecuteStream() response = %q, want to contain %q (from retrieved documents)", resp.FinalText, "Go")
+	}
 	t.Logf("Response with RAG: %s", resp.FinalText)
 }
 
@@ -133,13 +147,20 @@ func TestRetrieveRAGContext_DisabledWhenTopKZero(t *testing.T) {
 		nil,
 	)
 
-	require.NoError(t, err, "Query should succeed even without RAG")
-	require.NotNil(t, resp, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
+	if err != nil {
+		t.Fatalf("ExecuteStream() unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("ExecuteStream() response is nil, want non-nil when error is nil")
+	}
+	if resp.FinalText == "" {
+		t.Error("ExecuteStream() response.FinalText is empty, want non-empty")
+	}
 
 	// Response should NOT contain the ignored content
-	assert.NotContains(t, resp.FinalText, "should be ignored",
-		"Response should not contain content from ignored document")
+	if strings.Contains(resp.FinalText, "should be ignored") {
+		t.Errorf("ExecuteStream() response = %q, should not contain %q (RAG disabled)", resp.FinalText, "should be ignored")
+	}
 	t.Logf("Response without RAG (topK=0): %s", resp.FinalText)
 }
 
@@ -158,9 +179,15 @@ func TestRetrieveRAGContext_EmptyKnowledgeBase(t *testing.T) {
 		nil,
 	)
 
-	require.NoError(t, err, "Query should succeed even with empty knowledge base")
-	require.NotNil(t, resp, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
+	if err != nil {
+		t.Fatalf("ExecuteStream() with empty knowledge base unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("ExecuteStream() response is nil, want non-nil when error is nil")
+	}
+	if resp.FinalText == "" {
+		t.Error("ExecuteStream() response.FinalText is empty, want non-empty")
+	}
 	t.Logf("Response with empty knowledge base: %s", resp.FinalText)
 }
 
@@ -201,9 +228,15 @@ func TestRetrieveRAGContext_MultipleRelevantDocuments(t *testing.T) {
 		nil,
 	)
 
-	require.NoError(t, err, "Query should succeed")
-	require.NotNil(t, resp, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, resp.FinalText, "Response should not be empty")
+	if err != nil {
+		t.Fatalf("ExecuteStream() unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("ExecuteStream() response is nil, want non-nil when error is nil")
+	}
+	if resp.FinalText == "" {
+		t.Error("ExecuteStream() response.FinalText is empty, want non-empty")
+	}
 
 	// Response should mention multiple aspects from different retrieved documents.
 	// We use substring matching with synonym alternatives (e.g., "concurrent" OR "goroutine")
@@ -215,8 +248,9 @@ func TestRetrieveRAGContext_MultipleRelevantDocuments(t *testing.T) {
 		(strings.Contains(response, "simple") || strings.Contains(response, "readab")) &&
 		(strings.Contains(response, "compile") || strings.Contains(response, "fast"))
 
-	assert.True(t, hasMultipleAspects,
-		"Response should incorporate multiple aspects from retrieved documents. Got: %s", resp.FinalText)
+	if !hasMultipleAspects {
+		t.Errorf("ExecuteStream() response = %q, want to incorporate multiple aspects from retrieved documents", resp.FinalText)
+	}
 
 	t.Logf("Response with multiple docs: %s", resp.FinalText)
 }

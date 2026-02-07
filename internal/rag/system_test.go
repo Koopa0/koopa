@@ -7,9 +7,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/koopa0/koopa/internal/rag"
 	"github.com/koopa0/koopa/internal/testutil"
 )
@@ -26,8 +23,12 @@ func TestIndexSystemKnowledge_FirstTime(t *testing.T) {
 
 	// Index system knowledge for the first time
 	count, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool)
-	require.NoError(t, err, "first-time indexing should succeed")
-	assert.Greater(t, count, 0, "should index at least one document")
+	if err != nil {
+		t.Fatalf("IndexSystemKnowledge() first-time indexing unexpected error: %v (should succeed)", err)
+	}
+	if count <= 0 {
+		t.Errorf("IndexSystemKnowledge() count = %d, want > 0 (should index at least one document)", count)
+	}
 
 	t.Logf("Indexed %d system knowledge documents", count)
 }
@@ -44,13 +45,19 @@ func TestIndexSystemKnowledge_Reindexing(t *testing.T) {
 
 	// First indexing
 	count1, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool)
-	require.NoError(t, err, "first indexing should succeed")
+	if err != nil {
+		t.Fatalf("IndexSystemKnowledge() first indexing unexpected error: %v (should succeed)", err)
+	}
 
 	// Second indexing (should not create duplicates)
 	count2, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool)
-	require.NoError(t, err, "re-indexing should succeed")
+	if err != nil {
+		t.Fatalf("IndexSystemKnowledge() re-indexing unexpected error: %v (should succeed)", err)
+	}
 
-	assert.Equal(t, count1, count2, "re-indexing should index same number of documents")
+	if count1 != count2 {
+		t.Errorf("IndexSystemKnowledge() re-indexing count = %d, want %d (should index same number of documents)", count2, count1)
+	}
 
 	// Verify no duplicates by counting documents with system source type
 	var totalCount int
@@ -58,9 +65,13 @@ func TestIndexSystemKnowledge_Reindexing(t *testing.T) {
 		`SELECT COUNT(*) FROM documents WHERE metadata->>'source_type' = $1`,
 		rag.SourceTypeSystem,
 	).Scan(&totalCount)
-	require.NoError(t, err, "counting documents should succeed")
+	if err != nil {
+		t.Fatalf("QueryRow() counting documents unexpected error: %v (should succeed)", err)
+	}
 
-	assert.Equal(t, count1, totalCount, "should have no duplicate documents after re-indexing")
+	if totalCount != count1 {
+		t.Errorf("total system documents after re-indexing = %d, want %d (should have no duplicate documents)", totalCount, count1)
+	}
 	t.Logf("Total system documents after re-indexing: %d (expected: %d)", totalCount, count1)
 }
 
@@ -75,35 +86,51 @@ func TestIndexSystemKnowledge_DocumentMetadata(t *testing.T) {
 	ctx := context.Background()
 
 	// Index documents
-	_, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool)
-	require.NoError(t, err)
+	if _, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool); err != nil {
+		t.Fatalf("IndexSystemKnowledge() unexpected error: %v", err)
+	}
 
 	// Query documents and verify metadata
 	rows, err := dbContainer.Pool.Query(ctx,
 		`SELECT id, metadata FROM documents WHERE metadata->>'source_type' = $1`,
 		rag.SourceTypeSystem,
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Query() unexpected error: %v", err)
+	}
 	defer rows.Close()
 
 	docCount := 0
 	for rows.Next() {
 		var id string
 		var metadata map[string]any
-		err := rows.Scan(&id, &metadata)
-		require.NoError(t, err)
+		if err := rows.Scan(&id, &metadata); err != nil {
+			t.Fatalf("rows.Scan() unexpected error: %v", err)
+		}
 
 		// Verify required metadata fields
-		assert.NotEmpty(t, metadata["id"], "document %s should have 'id' metadata", id)
-		assert.NotEmpty(t, metadata["source_type"], "document %s should have 'source_type' metadata", id)
-		assert.NotEmpty(t, metadata["category"], "document %s should have 'category' metadata", id)
-		assert.NotEmpty(t, metadata["topic"], "document %s should have 'topic' metadata", id)
+		if metadata["id"] == "" || metadata["id"] == nil {
+			t.Errorf("document %q metadata[id] = empty, want non-empty", id)
+		}
+		if metadata["source_type"] == "" || metadata["source_type"] == nil {
+			t.Errorf("document %q metadata[source_type] = empty, want non-empty", id)
+		}
+		if metadata["category"] == "" || metadata["category"] == nil {
+			t.Errorf("document %q metadata[category] = empty, want non-empty", id)
+		}
+		if metadata["topic"] == "" || metadata["topic"] == nil {
+			t.Errorf("document %q metadata[topic] = empty, want non-empty", id)
+		}
 
 		docCount++
 	}
 
-	require.NoError(t, rows.Err())
-	assert.Greater(t, docCount, 0, "should have at least one system document")
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err() unexpected error: %v", err)
+	}
+	if docCount <= 0 {
+		t.Errorf("verified documents count = %d, want > 0 (should have at least one system document)", docCount)
+	}
 	t.Logf("Verified metadata for %d documents", docCount)
 }
 
@@ -118,8 +145,9 @@ func TestIndexSystemKnowledge_UniqueIDs(t *testing.T) {
 	ctx := context.Background()
 
 	// Index documents
-	_, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool)
-	require.NoError(t, err)
+	if _, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool); err != nil {
+		t.Fatalf("IndexSystemKnowledge() unexpected error: %v", err)
+	}
 
 	// Query for duplicate IDs
 	rows, err := dbContainer.Pool.Query(ctx,
@@ -130,21 +158,28 @@ func TestIndexSystemKnowledge_UniqueIDs(t *testing.T) {
 		 HAVING COUNT(*) > 1`,
 		rag.SourceTypeSystem,
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Query() unexpected error: %v", err)
+	}
 	defer rows.Close()
 
 	duplicates := 0
 	for rows.Next() {
 		var docID string
 		var count int
-		err := rows.Scan(&docID, &count)
-		require.NoError(t, err)
+		if err := rows.Scan(&docID, &count); err != nil {
+			t.Fatalf("rows.Scan() unexpected error: %v", err)
+		}
 		t.Errorf("duplicate document ID found: %s (count: %d)", docID, count)
 		duplicates++
 	}
 
-	require.NoError(t, rows.Err())
-	assert.Equal(t, 0, duplicates, "should have no duplicate document IDs")
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err() unexpected error: %v", err)
+	}
+	if duplicates != 0 {
+		t.Errorf("duplicate document IDs = %d, want 0", duplicates)
+	}
 }
 
 // TestIndexSystemKnowledge_CanceledContext verifies graceful handling of canceled context.
@@ -164,6 +199,8 @@ func TestIndexSystemKnowledge_CanceledContext(t *testing.T) {
 	_, err := rag.IndexSystemKnowledge(ctx, ragSetup.DocStore, dbContainer.Pool)
 
 	// Error is expected (context canceled)
-	assert.Error(t, err, "should fail with canceled context")
+	if err == nil {
+		t.Error("IndexSystemKnowledge(canceled context) error = nil, want non-nil (should fail with canceled context)")
+	}
 	t.Logf("Expected error: %v", err)
 }

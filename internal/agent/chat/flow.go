@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
@@ -44,7 +45,7 @@ type Flow = core.Flow[Input, Output, StreamChunk]
 var (
 	flowOnce     sync.Once
 	flow         *Flow
-	flowInitDone bool
+	flowInitDone atomic.Bool
 )
 
 // InitFlow initializes the Chat Flow singleton.
@@ -57,10 +58,10 @@ func InitFlow(g *genkit.Genkit, chatAgent *Chat) (*Flow, error) {
 	var initialized bool
 	flowOnce.Do(func() {
 		flow = chatAgent.DefineFlow(g)
-		flowInitDone = true
+		flowInitDone.Store(true)
 		initialized = true
 	})
-	if !initialized && flowInitDone {
+	if !initialized && flowInitDone.Load() {
 		return nil, fmt.Errorf("InitFlow called more than once")
 	}
 	return flow, nil
@@ -69,7 +70,7 @@ func InitFlow(g *genkit.Genkit, chatAgent *Chat) (*Flow, error) {
 // GetFlow returns the initialized Flow singleton.
 // Panics if InitFlow was not called - this indicates a programming error.
 func GetFlow() *Flow {
-	if !flowInitDone {
+	if !flowInitDone.Load() {
 		panic("GetFlow called before InitFlow")
 	}
 	return flow
@@ -81,7 +82,7 @@ func GetFlow() *Flow {
 func ResetFlowForTesting() {
 	flowOnce = sync.Once{}
 	flow = nil
-	flowInitDone = false
+	flowInitDone.Store(false)
 }
 
 // DefineFlow defines the Genkit Streaming Flow for Chat Agent.
