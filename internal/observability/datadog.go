@@ -131,8 +131,9 @@ func SetupDatadog(ctx context.Context, cfg Config) (shutdown func(context.Contex
 		agentHost = DefaultAgentHost
 	}
 
-	// Set OTEL_SERVICE_NAME for Genkit's TracerProvider to pick up
-	// This ensures the service name appears correctly in Datadog APM
+	// Set OTEL env vars for Genkit's TracerProvider to pick up.
+	// SAFETY: os.Setenv is not concurrent-safe, but this function is called
+	// exactly once during startup in InitializeApp, before goroutines are spawned.
 	if cfg.ServiceName != "" {
 		_ = os.Setenv("OTEL_SERVICE_NAME", cfg.ServiceName)
 	}

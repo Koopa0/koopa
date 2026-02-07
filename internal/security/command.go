@@ -9,31 +9,35 @@ import (
 // Command validates commands to prevent injection attacks.
 // Used to prevent command injection attacks (CWE-78).
 type Command struct {
-	blacklist []string
-	whitelist []string // If non-empty, only allow commands in the whitelist
+	blacklist          []string
+	whitelist          []string            // If non-empty, only allow commands in the whitelist
+	blockedSubcommands map[string][]string // cmd → blocked first-arg subcommands
+	blockedArgPatterns map[string][]string // cmd → blocked argument patterns (any position)
 }
 
 // NewCommand creates a new Command validator with whitelist mode (secure by default).
 // Only allows explicitly whitelisted safe commands to prevent command injection attacks.
 //
 // Allowed commands include:
-//   - File operations: ls, cat, head, tail, grep, find, etc.
-//   - Directory operations: pwd, cd, mkdir, tree
+//   - File listing: ls, wc, sort, uniq, tree
+//   - Directory: pwd, cd
 //   - System info: date, whoami, hostname, uname, df, du, ps
 //   - Network (read-only): ping, traceroute, nslookup, dig
-//   - Version control: git
+//   - Version control: git (with subcommand restrictions)
+//   - Build tools: go, npm, yarn (with subcommand restrictions)
 //
-// Dangerous commands like rm, chmod, mv, python, etc. are blocked by default.
+// File reading commands (cat, head, tail, grep, find) are NOT whitelisted.
+// Use the read_file/list_files tools instead — they enforce path validation.
+// make and mkdir are NOT whitelisted — make can execute arbitrary Makefile targets.
 func NewCommand() *Command {
 	return &Command{
 		blacklist: []string{}, // Whitelist mode doesn't need blacklist
 		whitelist: []string{
-			// File operations (read-only and safe writes)
-			"ls", "cat", "head", "tail", "less", "more",
-			"grep", "find", "wc", "sort", "uniq",
+			// File listing (metadata only — no content reading)
+			"ls", "wc", "sort", "uniq",
 
 			// Directory operations
-			"pwd", "cd", "mkdir", "tree",
+			"pwd", "cd", "tree",
 
 			// System information (read-only)
 			"date", "whoami", "hostname", "uname",
@@ -42,15 +46,25 @@ func NewCommand() *Command {
 			// Network (read-only)
 			"ping", "traceroute", "nslookup", "dig",
 
-			// Version control
+			// Version control (with subcommand restrictions)
 			"git",
 
 			// Build tools (commonly needed for development)
-			"go", "npm", "yarn", "make",
+			// NOTE: subcommand restrictions apply (see blockedSubcommands)
+			"go", "npm", "yarn",
 
 			// Other utilities
 			"echo", "printf", "which", "whereis",
 		},
+		// Blocked subcommands: first argument must NOT match these.
+		// Prevents whitelisted commands from executing arbitrary code.
+		blockedSubcommands: map[string][]string{
+			"go":   {"run", "generate", "tool"},
+			"npm":  {"run", "exec", "start", "explore"},
+			"yarn": {"run", "exec", "start"},
+			"git":  {"filter-branch", "config", "difftool", "mergetool"},
+		},
+		blockedArgPatterns: map[string][]string{},
 	}
 }
 
@@ -88,7 +102,12 @@ func (v *Command) ValidateCommand(cmd string, args []string) error {
 		}
 	}
 
-	// 4. Check args for obviously malicious patterns
+	// 4. Check blocked subcommands (e.g., "go run", "npm exec")
+	if err := v.validateSubcommands(cmd, args); err != nil {
+		return err
+	}
+
+	// 5. Check args for obviously malicious patterns
 	// NOTE: We do NOT check for shell metacharacters (|, $, >, etc.) because
 	// exec.Command treats them as literal strings, not shell operators
 	for i, arg := range args {
@@ -103,7 +122,7 @@ func (v *Command) ValidateCommand(cmd string, args []string) error {
 		}
 	}
 
-	// 5. Check full command string (cmd + args) for dangerous patterns
+	// 6. Check full command string (cmd + args) for dangerous patterns
 	// Some dangerous patterns span command and arguments (e.g., "rm -rf /")
 	fullCmd := strings.ToLower(cmd + " " + strings.Join(args, " "))
 	for _, pattern := range v.blacklist {
@@ -165,6 +184,46 @@ func (v *Command) isCommandInWhitelist(cmd string) bool {
 	return false
 }
 
+// validateSubcommands checks if a whitelisted command is being used with a
+// dangerous subcommand that would allow arbitrary code execution.
+// For example, "go" is whitelisted but "go run" is blocked.
+func (v *Command) validateSubcommands(cmd string, args []string) error {
+	cmdLower := strings.ToLower(strings.TrimSpace(cmd))
+
+	// Check blocked subcommands (first argument)
+	if blocked, ok := v.blockedSubcommands[cmdLower]; ok && len(args) > 0 {
+		firstArg := strings.ToLower(strings.TrimSpace(args[0]))
+		for _, sub := range blocked {
+			if firstArg == sub {
+				slog.Warn("blocked subcommand",
+					"command", cmd,
+					"subcommand", args[0],
+					"security_event", "blocked_subcommand")
+				return fmt.Errorf("subcommand '%s %s' is not allowed (can execute arbitrary code)", cmd, args[0])
+			}
+		}
+	}
+
+	// Check blocked argument patterns (any position)
+	if blocked, ok := v.blockedArgPatterns[cmdLower]; ok {
+		for _, arg := range args {
+			argLower := strings.ToLower(strings.TrimSpace(arg))
+			for _, pattern := range blocked {
+				// Match exact or flag=value form (e.g., "--eval" matches "--eval=cmd")
+				if argLower == pattern || strings.HasPrefix(argLower, pattern+"=") {
+					slog.Warn("blocked argument pattern",
+						"command", cmd,
+						"argument", arg,
+						"security_event", "blocked_argument_pattern")
+					return fmt.Errorf("argument '%s' is not allowed with '%s' (can execute arbitrary code)", arg, cmd)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // validateArgument checks if an argument contains obviously malicious patterns.
 //
 // IMPORTANT: This function does NOT check for shell metacharacters like $, |, >, <
@@ -206,58 +265,4 @@ func (*Command) validateArgument(arg string) error {
 	}
 
 	return nil
-}
-
-// IsCommandSafe quickly checks if a command string is obviously unsafe
-// This is a lightweight check and should not be used as the sole validation
-func IsCommandSafe(cmd string) bool {
-	// Check for obvious dangerous patterns
-	dangerousPatterns := []string{
-		"rm -rf",
-		"mkfs",
-		"format",
-		"dd if=",
-		"> /dev/",
-		"sudo",
-		"su -",
-		"shutdown",
-		"reboot",
-	}
-
-	lowerCmd := strings.ToLower(cmd)
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(lowerCmd, pattern) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// QuoteCommandArgs quotes command arguments containing dangerous characters
-// This wraps arguments in single quotes for shell safety
-// Note: This cannot replace complete validation via ValidateCommand()
-func QuoteCommandArgs(args []string) []string {
-	quoted := make([]string, 0, len(args))
-
-	for _, arg := range args {
-		// Trim leading and trailing whitespace
-		arg = strings.TrimSpace(arg)
-
-		// Skip empty arguments
-		if arg == "" {
-			continue
-		}
-
-		// Check for dangerous characters that need quoting
-		if strings.ContainsAny(arg, ";|&`$()<>\\") {
-			// Wrap in single quotes using POSIX shell escaping
-			// This escapes embedded single quotes: 'it'\''s' → it's
-			arg = "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
-		}
-
-		quoted = append(quoted, arg)
-	}
-
-	return quoted
 }
