@@ -31,17 +31,13 @@ const (
 //
 // Example:
 //
-//	sess, err := store.GetSession(ctx, id)
+//	sess, err := store.Session(ctx, id)
 //	if errors.Is(err, session.ErrSessionNotFound) {
 //	    // Handle missing session
 //	}
-var (
-	// ErrSessionNotFound indicates the requested session does not exist in the database.
-	ErrSessionNotFound = errors.New("session not found")
-
-	// ErrMessageNotFound indicates the requested message does not exist.
-	ErrMessageNotFound = errors.New("message not found")
-)
+//
+// ErrSessionNotFound indicates the requested session does not exist in the database.
+var ErrSessionNotFound = errors.New("session not found")
 
 // NormalizeHistoryLimit normalizes the history limit value.
 // Returns DefaultHistoryLimit for zero/negative values.

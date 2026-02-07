@@ -6,7 +6,7 @@ INSERT INTO sessions (title, model_name, system_prompt)
 VALUES ($1, $2, $3)
 RETURNING *;
 
--- name: GetSession :one
+-- name: Session :one
 SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
 FROM sessions
 WHERE id = $1;
@@ -50,7 +50,7 @@ WHERE id = $1;
 INSERT INTO message (session_id, role, content, sequence_number)
 VALUES ($1, $2, $3, $4);
 
--- name: GetMessages :many
+-- name: Messages :many
 -- Get all messages for a session ordered by sequence
 SELECT *
 FROM message
@@ -101,19 +101,3 @@ SET status = $2,
     updated_at = NOW()
 WHERE id = $1;
 
--- name: GetUserMessageBefore :one
--- Get the user message content immediately before a given sequence number.
--- Used by Stream handler to retrieve query without URL parameter.
-SELECT content
-FROM message
-WHERE session_id = sqlc.arg(session_id)
-  AND role = 'user'
-  AND sequence_number < sqlc.arg(before_sequence)
-ORDER BY sequence_number DESC
-LIMIT 1;
-
--- name: GetMessageByID :one
--- Get a single message by ID (for streaming lookup).
-SELECT *
-FROM message
-WHERE id = $1;

@@ -16,12 +16,6 @@ func TestDefaultTokenBudget(t *testing.T) {
 	if budget.MaxHistoryTokens <= 0 {
 		t.Error("MaxHistoryTokens should be positive")
 	}
-	if budget.MaxInputTokens <= 0 {
-		t.Error("MaxInputTokens should be positive")
-	}
-	if budget.ReservedTokens <= 0 {
-		t.Error("ReservedTokens should be positive")
-	}
 }
 
 func TestEstimateTokens(t *testing.T) {
@@ -36,6 +30,11 @@ func TestEstimateTokens(t *testing.T) {
 			name:     "empty string",
 			text:     "",
 			expected: 0,
+		},
+		{
+			name:     "single char returns 1",
+			text:     "a",
+			expected: 1, // 1 rune / 2 = 0, but min 1 for non-empty
 		},
 		{
 			name:     "short english",
@@ -191,17 +190,30 @@ func TestTruncateHistory(t *testing.T) {
 		{
 			name: "preserves system message when truncating",
 			msgs: []*ai.Message{
-				systemMsg("You are a helpful assistant"), // 14 tokens
+				systemMsg("You are a helpful assistant"), // 13 tokens
 				userMsg("first"),                         // 2 tokens
 				modelMsg("second"),                       // 3 tokens
 				userMsg("third"),                         // 2 tokens
 				modelMsg("fourth"),                       // 3 tokens
 			},
-			budget:        20, // Room for system + ~2 messages
-			wantLen:       3,  // System + 2 recent
+			budget:        20, // Room for system(13) + first(2) + third(2) + fourth(3) = 20, skips second(3)
+			wantLen:       4,  // System + first + third + fourth (second skipped)
 			wantHasSystem: true,
 			wantLastText:  "fourth",
-			wantTexts:     []string{"You are a helpful assistant", "third", "fourth"}, // System + recent, in order
+			wantTexts:     []string{"You are a helpful assistant", "first", "third", "fourth"},
+		},
+		{
+			name: "skips large message but keeps surrounding small ones",
+			msgs: []*ai.Message{
+				userMsg("hi"), // 1 token
+				modelMsg("This is a very long response that takes many many tokens in the budget and should be skipped"), // ~46 tokens
+				userMsg("ok"),   // 1 token
+				modelMsg("bye"), // 1 token
+			},
+			budget:       5,
+			wantLen:      3,
+			wantLastText: "bye",
+			wantTexts:    []string{"hi", "ok", "bye"}, // Large msg2 skipped, small msgs kept
 		},
 		{
 			name: "maintains chronological order after truncation",

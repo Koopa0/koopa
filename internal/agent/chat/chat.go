@@ -55,10 +55,10 @@ type Config struct {
 	Tools        []ai.Tool // Pre-registered tools from RegisterXxxTools()
 
 	// Configuration values
-	// NOTE: LLM model is configured in prompts/koopa.prompt, not here
-	MaxTurns int    // Maximum agentic loop turns
-	RAGTopK  int    // Number of RAG documents to retrieve
-	Language string // Response language preference
+	ModelName string // Provider-qualified model name (e.g., "googleai/gemini-2.5-flash", "ollama/llama3.3")
+	MaxTurns  int    // Maximum agentic loop turns
+	RAGTopK   int    // Number of RAG documents to retrieve
+	Language  string // Response language preference
 
 	// Resilience configuration
 	RetryConfig          RetryConfig          // LLM retry settings (zero-value uses defaults)
@@ -99,6 +99,7 @@ func (cfg Config) validate() error {
 // to ensure thread-safe concurrent access.
 type Chat struct {
 	// Immutable configuration (captured at construction)
+	modelName      string // Provider-qualified model name (overrides Dotprompt model)
 	languagePrompt string // Resolved language for prompt template
 	maxTurns       int
 	ragTopK        int
@@ -188,6 +189,7 @@ func New(cfg Config) (*Chat, error) {
 
 	c := &Chat{
 		// Immutable configuration
+		modelName:      cfg.ModelName,
 		languagePrompt: languagePrompt,
 		maxTurns:       maxTurns,
 		ragTopK:        cfg.RAGTopK,
@@ -243,7 +245,7 @@ func (c *Chat) ExecuteStream(ctx context.Context, sessionID uuid.UUID, input str
 		"streaming", streaming)
 
 	// Load session history
-	history, err := c.sessions.GetHistory(ctx, sessionID)
+	history, err := c.sessions.History(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get history: %w", err)
 	}
@@ -312,6 +314,11 @@ func (c *Chat) generateResponse(ctx context.Context, input string, historyMessag
 		}),
 		ai.WithTools(c.toolRefs...),
 		ai.WithMaxTurns(c.maxTurns),
+	}
+
+	// Override model from Dotprompt if configured (supports multi-provider)
+	if c.modelName != "" {
+		opts = append(opts, ai.WithModelName(c.modelName))
 	}
 
 	// Add RAG documents if available
@@ -409,8 +416,7 @@ func (c *Chat) retrieveRAGContext(ctx context.Context, query string) []*ai.Docum
 // causing data races in concurrent executions. This function creates
 // independent struct copies to prevent the race.
 //
-// Tracking: https://github.com/firebase/genkit/issues/XXX (TODO: file issue)
-// Tested version: github.com/firebase/genkit/go v1.20.0
+// Tested version: github.com/firebase/genkit/go v1.4.0
 //
 // To remove this workaround:
 // 1. Upgrade Genkit: go get -u github.com/firebase/genkit/go@latest

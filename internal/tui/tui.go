@@ -7,8 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -42,6 +45,14 @@ const (
 	roleError     = "error"
 )
 
+// Layout constants for viewport height calculation.
+const (
+	separatorLines = 2 // Two separator lines (above and below input)
+	helpLines      = 1 // Help bar height
+	promptLines    = 1 // Prompt prefix line
+	minViewport    = 3 // Minimum viewport height
+)
+
 // Message represents a conversation message for display.
 type Message struct {
 	Role string // "user", "assistant", "system", "error"
@@ -64,6 +75,13 @@ type TUI struct {
 	output   strings.Builder
 	viewBuf  strings.Builder // Reusable buffer for View() to reduce allocations
 	messages []Message
+
+	// Scrollable message viewport
+	viewport viewport.Model
+
+	// Help bar for keyboard shortcuts
+	help help.Model
+	keys keyMap
 
 	// Stream management
 	// Note: No sync.WaitGroup - Bubble Tea's event loop provides synchronization.
@@ -142,6 +160,16 @@ func New(ctx context.Context, flow *chat.Flow, sessionID string) (*TUI, error) {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	// Create viewport for scrollable message history.
+	// Disable built-in keyboard handling — we route keys explicitly
+	// in handleKey to avoid conflicts with textarea/history navigation.
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	vp.MouseWheelEnabled = true
+	vp.SoftWrap = true
+	vp.KeyMap = viewport.KeyMap{} // Disable default key bindings
+
+	h := help.New()
+
 	return &TUI{
 		chatFlow:  flow,
 		sessionID: sessionID,
@@ -149,6 +177,9 @@ func New(ctx context.Context, flow *chat.Flow, sessionID string) (*TUI, error) {
 		ctxCancel: cancel,
 		input:     ta,
 		spinner:   sp,
+		viewport:  vp,
+		help:      h,
+		keys:      newKeyMap(),
 		styles:    DefaultStyles(),
 		history:   make([]string, 0, maxHistory),
 		markdown:  newMarkdownRenderer(80),
@@ -176,25 +207,49 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		t.width = msg.Width
 		t.height = msg.Height
-		// Update textarea width (leave room for prompt "> ")
-		t.input.SetWidth(msg.Width - 4)
-		// Update markdown renderer only if width actually changed
+
+		// Calculate viewport height: total - input - separators - help
+		inputHeight := t.input.Height() + promptLines
+		fixedHeight := separatorLines + inputHeight + helpLines
+		vpHeight := max(msg.Height-fixedHeight, minViewport)
+
+		t.viewport.SetWidth(msg.Width)
+		t.viewport.SetHeight(vpHeight)
+		t.input.SetWidth(msg.Width - 4) // Room for "> " prompt
+		t.help.SetWidth(msg.Width)
 		t.markdown.UpdateWidth(msg.Width)
+
+		// Rebuild viewport content with new dimensions
+		t.rebuildViewportContent()
 		return t, nil
+
+	case tea.MouseWheelMsg:
+		// Forward mouse wheel to viewport for scrolling
+		var cmd tea.Cmd
+		t.viewport, cmd = t.viewport.Update(msg)
+		return t, cmd
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		t.spinner, cmd = t.spinner.Update(msg)
+		// Rebuild viewport to update spinner animation
+		if t.state == StateThinking {
+			t.rebuildViewportContent()
+		}
 		return t, cmd
 
 	case streamStartedMsg:
 		t.streamCancel = msg.cancel
 		t.streamEventCh = msg.eventCh
 		t.state = StateStreaming
+		t.rebuildViewportContent()
+		t.viewport.GotoBottom()
 		return t, listenForStream(msg.eventCh)
 
 	case streamTextMsg:
 		t.output.WriteString(msg.text)
+		t.rebuildViewportContent()
+		t.viewport.GotoBottom()
 		return t, listenForStream(t.streamEventCh)
 
 	case streamDoneMsg:
@@ -220,6 +275,8 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Text: finalText,
 		})
 		t.output.Reset()
+		t.rebuildViewportContent()
+		t.viewport.GotoBottom()
 		// Re-focus textarea after stream completes
 		return t, t.input.Focus()
 
@@ -242,6 +299,8 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.addMessage(Message{Role: roleError, Text: msg.err.Error()})
 		}
 		t.output.Reset()
+		t.rebuildViewportContent()
+		t.viewport.GotoBottom()
 		// Re-focus textarea after error
 		return t, t.input.Focus()
 	}
@@ -252,49 +311,15 @@ func (t *TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View implements tea.Model.
-// Renders inline (no AltScreen).
+// Uses AltScreen with viewport for scrollable message history.
 func (t *TUI) View() tea.View {
-	// Reuse builder to reduce allocations (reset at end of each call)
 	t.viewBuf.Reset()
 
-	// Banner (ASCII art) and tips - always show
-	_, _ = t.viewBuf.WriteString(t.styles.RenderBanner())
-	_, _ = t.viewBuf.WriteString("\n")
-	_, _ = t.viewBuf.WriteString(t.styles.RenderWelcomeTips())
+	// Viewport (scrollable message area)
+	_, _ = t.viewBuf.WriteString(t.viewport.View())
 	_, _ = t.viewBuf.WriteString("\n")
 
-	// Messages (already bounded by addMessage)
-	for _, msg := range t.messages {
-		switch msg.Role {
-		case roleUser:
-			_, _ = t.viewBuf.WriteString(t.styles.User.Render("You> "))
-			_, _ = t.viewBuf.WriteString(msg.Text)
-		case roleAssistant:
-			_, _ = t.viewBuf.WriteString(t.styles.Assistant.Render("Koopa> "))
-			// Render markdown for assistant messages
-			_, _ = t.viewBuf.WriteString(t.markdown.Render(msg.Text))
-		case roleSystem:
-			_, _ = t.viewBuf.WriteString(t.styles.System.Render(msg.Text))
-		case roleError:
-			_, _ = t.viewBuf.WriteString(t.styles.Error.Render("Error: " + msg.Text))
-		}
-		_, _ = t.viewBuf.WriteString("\n\n")
-	}
-
-	// Current streaming output
-	if t.state == StateStreaming && t.output.Len() > 0 {
-		_, _ = t.viewBuf.WriteString(t.styles.Assistant.Render("Koopa> "))
-		_, _ = t.viewBuf.WriteString(t.output.String())
-		_, _ = t.viewBuf.WriteString("\n\n")
-	}
-
-	// Thinking indicator
-	if t.state == StateThinking {
-		_, _ = t.viewBuf.WriteString(t.spinner.View())
-		_, _ = t.viewBuf.WriteString(" Thinking...\n\n")
-	}
-
-	// Separator line above input (like Claude Code / Gemini CLI)
+	// Separator line above input
 	_, _ = t.viewBuf.WriteString(t.renderSeparator())
 	_, _ = t.viewBuf.WriteString("\n")
 
@@ -308,11 +333,56 @@ func (t *TUI) View() tea.View {
 	_, _ = t.viewBuf.WriteString(t.renderSeparator())
 	_, _ = t.viewBuf.WriteString("\n")
 
-	// Status bar
+	// Help bar (keyboard shortcuts)
 	_, _ = t.viewBuf.WriteString(t.renderStatusBar())
 
-	// Inline rendering (no AltScreen)
-	return tea.NewView(t.viewBuf.String())
+	v := tea.NewView(t.viewBuf.String())
+	v.AltScreen = true
+	return v
+}
+
+// rebuildViewportContent reconstructs the viewport content from messages and state.
+// Called when messages, streaming output, or state changes.
+func (t *TUI) rebuildViewportContent() {
+	var b strings.Builder
+
+	// Banner (ASCII art) and tips
+	_, _ = b.WriteString(t.styles.RenderBanner())
+	_, _ = b.WriteString("\n")
+	_, _ = b.WriteString(t.styles.RenderWelcomeTips())
+	_, _ = b.WriteString("\n")
+
+	// Messages (already bounded by addMessage)
+	for _, msg := range t.messages {
+		switch msg.Role {
+		case roleUser:
+			_, _ = b.WriteString(t.styles.User.Render("You> "))
+			_, _ = b.WriteString(msg.Text)
+		case roleAssistant:
+			_, _ = b.WriteString(t.styles.Assistant.Render("Koopa> "))
+			_, _ = b.WriteString(t.markdown.Render(msg.Text))
+		case roleSystem:
+			_, _ = b.WriteString(t.styles.System.Render(msg.Text))
+		case roleError:
+			_, _ = b.WriteString(t.styles.Error.Render("Error: " + msg.Text))
+		}
+		_, _ = b.WriteString("\n\n")
+	}
+
+	// Current streaming output
+	if t.state == StateStreaming && t.output.Len() > 0 {
+		_, _ = b.WriteString(t.styles.Assistant.Render("Koopa> "))
+		_, _ = b.WriteString(t.output.String())
+		_, _ = b.WriteString("\n\n")
+	}
+
+	// Thinking indicator
+	if t.state == StateThinking {
+		_, _ = b.WriteString(t.spinner.View())
+		_, _ = b.WriteString(" Thinking...\n\n")
+	}
+
+	t.viewport.SetContent(b.String())
 }
 
 // renderSeparator returns a horizontal line separator.
@@ -324,13 +394,20 @@ func (t *TUI) renderSeparator() string {
 	return t.styles.Separator.Render(strings.Repeat("─", width))
 }
 
+// renderStatusBar returns state-appropriate keyboard shortcut help.
 func (t *TUI) renderStatusBar() string {
-	var help string
+	var bindings []key.Binding
 	switch t.state {
 	case StateInput:
-		help = "Enter: send | Shift+Enter: newline | Up/Down: history | Ctrl+C: clear | Ctrl+D: exit"
+		bindings = []key.Binding{
+			t.keys.Submit, t.keys.NewLine, t.keys.History,
+			t.keys.Cancel, t.keys.Quit, t.keys.ScrollUp,
+		}
 	case StateThinking, StateStreaming:
-		help = "Esc: cancel | Ctrl+C x2: force exit"
+		bindings = []key.Binding{
+			t.keys.EscCancel, t.keys.Cancel,
+			t.keys.ScrollUp, t.keys.ScrollDown,
+		}
 	}
-	return t.styles.StatusBar.Render(help)
+	return t.help.ShortHelpView(bindings)
 }

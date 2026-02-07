@@ -7,26 +7,10 @@ import (
 	"testing"
 )
 
-// TestValidateSuccess tests successful validation
-func TestValidateSuccess(t *testing.T) {
-	originalAPIKey := os.Getenv("GEMINI_API_KEY")
-	defer func() {
-		if originalAPIKey != "" {
-			if err := os.Setenv("GEMINI_API_KEY", originalAPIKey); err != nil {
-				t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
-			}
-		} else {
-			if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-				t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-			}
-		}
-	}()
-
-	if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-
+// validBaseConfig returns a Config with all required fields set for the given provider.
+func validBaseConfig(provider string) *Config {
 	cfg := &Config{
+		Provider:         provider,
 		ModelName:        "gemini-2.5-flash",
 		Temperature:      0.7,
 		MaxTokens:        2048,
@@ -38,503 +22,372 @@ func TestValidateSuccess(t *testing.T) {
 		PostgresDBName:   "koopa",
 		PostgresSSLMode:  "disable",
 	}
+	switch provider {
+	case "ollama":
+		cfg.ModelName = "llama3.3"
+		cfg.OllamaHost = "http://localhost:11434"
+	case "openai":
+		cfg.ModelName = "gpt-4o"
+	}
+	return cfg
+}
 
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("Validate() failed with valid config: %v", err)
+// setEnvForProvider sets the required API key for the given provider.
+// Returns a cleanup function.
+func setEnvForProvider(t *testing.T, provider string) func() {
+	t.Helper()
+	switch provider {
+	case "gemini", "":
+		if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
+			t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		}
+		return func() { os.Unsetenv("GEMINI_API_KEY") }
+	case "openai":
+		if err := os.Setenv("OPENAI_API_KEY", "test-openai-key"); err != nil {
+			t.Fatalf("Failed to set OPENAI_API_KEY: %v", err)
+		}
+		return func() { os.Unsetenv("OPENAI_API_KEY") }
+	case "ollama":
+		return func() {} // no key needed
+	default:
+		return func() {}
 	}
 }
 
-// TestValidateMissingAPIKey tests validation failure when API key is missing
-func TestValidateMissingAPIKey(t *testing.T) {
-	originalAPIKey := os.Getenv("GEMINI_API_KEY")
-	defer func() {
-		if originalAPIKey != "" {
-			if err := os.Setenv("GEMINI_API_KEY", originalAPIKey); err != nil {
-				t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
-			}
-		} else {
-			if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-				t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-			}
+// TestValidateSuccess tests successful validation for each provider.
+func TestValidateSuccess(t *testing.T) {
+	providers := []string{"", "gemini", "ollama", "openai"}
+
+	for _, provider := range providers {
+		name := provider
+		if name == "" {
+			name = "default"
 		}
-	}()
+		t.Run(name, func(t *testing.T) {
+			cleanup := setEnvForProvider(t, provider)
+			defer cleanup()
 
-	if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-		t.Fatalf("Failed to unset GEMINI_API_KEY: %v", err)
+			cfg := validBaseConfig(provider)
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("Validate() failed with valid config (provider %q): %v", provider, err)
+			}
+		})
 	}
+}
 
-	cfg := &Config{
-		ModelName:      "gemini-2.5-flash",
-		Temperature:    0.7,
-		MaxTokens:      2048,
-		RAGTopK:        3,
-		EmbedderModel:  "text-embedding-004",
-		PostgresHost:   "localhost",
-		PostgresPort:   5432,
-		PostgresDBName: "koopa",
-	}
+// TestValidateInvalidProvider tests that unsupported providers are rejected.
+func TestValidateInvalidProvider(t *testing.T) {
+	cfg := validBaseConfig("")
+	cfg.Provider = "unsupported"
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Error("expected error for missing API key, got none")
+		t.Fatal("expected error for unsupported provider, got nil")
 	}
-
-	if !strings.Contains(err.Error(), "GEMINI_API_KEY") {
-		t.Errorf("error should mention GEMINI_API_KEY, got: %v", err)
-	}
-}
-
-// TestValidateModelName tests model name validation
-func TestValidateModelName(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
-
-	cfg := &Config{
-		ModelName:      "",
-		Temperature:    0.7,
-		MaxTokens:      2048,
-		RAGTopK:        3,
-		EmbedderModel:  "text-embedding-004",
-		PostgresHost:   "localhost",
-		PostgresPort:   5432,
-		PostgresDBName: "koopa",
-	}
-
-	err := cfg.Validate()
-	if err == nil {
-		t.Error("expected error for empty model name, got none")
-	}
-
-	if !strings.Contains(err.Error(), "model_name") {
-		t.Errorf("error should mention model_name, got: %v", err)
+	if !errors.Is(err, ErrInvalidProvider) {
+		t.Errorf("Validate() error = %v, want ErrInvalidProvider", err)
 	}
 }
 
-// TestValidateTemperature tests temperature range validation
-func TestValidateTemperature(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
-
+// TestValidateProviderAPIKey tests provider-specific API key validation.
+func TestValidateProviderAPIKey(t *testing.T) {
 	tests := []struct {
-		name        string
-		temperature float32
-		shouldErr   bool
+		name     string
+		provider string
+		envKey   string
+		wantErr  bool
 	}{
-		{"valid min", 0.0, false},
-		{"valid mid", 1.0, false},
-		{"valid max", 2.0, false},
-		{"invalid negative", -0.1, true},
-		{"invalid too high", 2.1, true},
-		{"invalid far negative", -5.0, true},
-		{"invalid far too high", 10.0, true},
+		{name: "gemini missing key", provider: "gemini", envKey: "GEMINI_API_KEY", wantErr: true},
+		{name: "openai missing key", provider: "openai", envKey: "OPENAI_API_KEY", wantErr: true},
+		{name: "ollama no key needed", provider: "ollama", wantErr: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      tt.temperature,
-				MaxTokens:        2048,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresPassword: "test_password",
-				PostgresDBName:   "koopa",
-				PostgresSSLMode:  "disable",
+			// Clear all API keys
+			os.Unsetenv("GEMINI_API_KEY")
+			os.Unsetenv("OPENAI_API_KEY")
+
+			cfg := validBaseConfig(tt.provider)
+			err := cfg.Validate()
+
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for missing API key (provider %q), got nil", tt.provider)
 			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for provider %q: %v", tt.provider, err)
+			}
+			if tt.wantErr && err != nil && !errors.Is(err, ErrMissingAPIKey) {
+				t.Errorf("error should be ErrMissingAPIKey, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestValidateModelName tests model name validation.
+func TestValidateModelName(t *testing.T) {
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
+
+	cfg := validBaseConfig("gemini")
+	cfg.ModelName = ""
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty model name, got nil")
+	}
+	if !errors.Is(err, ErrInvalidModelName) {
+		t.Errorf("error should be ErrInvalidModelName, got: %v", err)
+	}
+}
+
+// TestValidateTemperature tests temperature range validation.
+func TestValidateTemperature(t *testing.T) {
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
+
+	tests := []struct {
+		name        string
+		temperature float32
+		wantErr     bool
+	}{
+		{name: "valid min", temperature: 0.0},
+		{name: "valid mid", temperature: 1.0},
+		{name: "valid max", temperature: 2.0},
+		{name: "invalid negative", temperature: -0.1, wantErr: true},
+		{name: "invalid too high", temperature: 2.1, wantErr: true},
+		{name: "invalid far negative", temperature: -5.0, wantErr: true},
+		{name: "invalid far too high", temperature: 10.0, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validBaseConfig("gemini")
+			cfg.Temperature = tt.temperature
 
 			err := cfg.Validate()
-			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for temperature %f, got none", tt.temperature)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for temperature %.2f, got nil", tt.temperature)
 			}
-			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for temperature %f: %v", tt.temperature, err)
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for temperature %.2f: %v", tt.temperature, err)
 			}
-			if tt.shouldErr && err != nil && !errors.Is(err, ErrInvalidTemperature) {
+			if tt.wantErr && err != nil && !errors.Is(err, ErrInvalidTemperature) {
 				t.Errorf("error should be ErrInvalidTemperature, got: %v", err)
 			}
 		})
 	}
 }
 
-// TestValidateMaxTokens tests max tokens range validation
+// TestValidateMaxTokens tests max tokens range validation.
 func TestValidateMaxTokens(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
 	tests := []struct {
 		name      string
 		maxTokens int
-		shouldErr bool
+		wantErr   bool
 	}{
-		{"valid min", 1, false},
-		{"valid mid", 100000, false},
-		{"valid max", 2097152, false},
-		{"invalid zero", 0, true},
-		{"invalid negative", -1, true},
-		{"invalid too high", 2097153, true},
-		{"invalid far too high", 10000000, true},
+		{name: "valid min", maxTokens: 1},
+		{name: "valid mid", maxTokens: 100000},
+		{name: "valid max", maxTokens: 2097152},
+		{name: "invalid zero", maxTokens: 0, wantErr: true},
+		{name: "invalid negative", maxTokens: -1, wantErr: true},
+		{name: "invalid too high", maxTokens: 2097153, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        tt.maxTokens,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresPassword: "test_password",
-				PostgresDBName:   "koopa",
-				PostgresSSLMode:  "disable",
-			}
+			cfg := validBaseConfig("gemini")
+			cfg.MaxTokens = tt.maxTokens
 
 			err := cfg.Validate()
-			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for max_tokens %d, got none", tt.maxTokens)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for max_tokens %d, got nil", tt.maxTokens)
 			}
-			if !tt.shouldErr && err != nil {
+			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error for max_tokens %d: %v", tt.maxTokens, err)
 			}
-			if tt.shouldErr && err != nil && !errors.Is(err, ErrInvalidMaxTokens) {
+			if tt.wantErr && err != nil && !errors.Is(err, ErrInvalidMaxTokens) {
 				t.Errorf("error should be ErrInvalidMaxTokens, got: %v", err)
 			}
 		})
 	}
 }
 
-// TestValidateRAGTopK tests RAG top K validation
-func TestValidateRAGTopK(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+// TestValidateOllamaHost tests Ollama host validation.
+func TestValidateOllamaHost(t *testing.T) {
+	cfg := validBaseConfig("ollama")
+	cfg.OllamaHost = ""
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty ollama_host, got nil")
 	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
+	if !errors.Is(err, ErrInvalidOllamaHost) {
+		t.Errorf("error should be ErrInvalidOllamaHost, got: %v", err)
+	}
+}
+
+// TestValidateRAGTopK tests RAG top K validation.
+func TestValidateRAGTopK(t *testing.T) {
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
 	tests := []struct {
-		name      string
-		ragTopK   int
-		shouldErr bool
+		name    string
+		ragTopK int
+		wantErr bool
 	}{
-		{"valid min", 1, false},
-		{"valid mid", 5, false},
-		{"valid max", 10, false},
-		{"invalid zero", 0, true},
-		{"invalid negative", -1, true},
-		{"invalid too high", 11, true},
-		{"invalid far too high", 100, true},
+		{name: "valid min", ragTopK: 1},
+		{name: "valid mid", ragTopK: 5},
+		{name: "valid max", ragTopK: 10},
+		{name: "invalid zero", ragTopK: 0, wantErr: true},
+		{name: "invalid negative", ragTopK: -1, wantErr: true},
+		{name: "invalid too high", ragTopK: 11, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        2048,
-				RAGTopK:          tt.ragTopK,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresPassword: "test_password",
-				PostgresDBName:   "koopa",
-				PostgresSSLMode:  "disable",
-			}
+			cfg := validBaseConfig("gemini")
+			cfg.RAGTopK = tt.ragTopK
 
 			err := cfg.Validate()
-			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for rag_top_k %d, got none", tt.ragTopK)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for rag_top_k %d, got nil", tt.ragTopK)
 			}
-			if !tt.shouldErr && err != nil {
+			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error for rag_top_k %d: %v", tt.ragTopK, err)
 			}
-			if tt.shouldErr && err != nil && !errors.Is(err, ErrInvalidRAGTopK) {
+			if tt.wantErr && err != nil && !errors.Is(err, ErrInvalidRAGTopK) {
 				t.Errorf("error should be ErrInvalidRAGTopK, got: %v", err)
 			}
 		})
 	}
 }
 
-// TestValidateEmbedderModel tests embedder model validation
+// TestValidateEmbedderModel tests embedder model validation.
 func TestValidateEmbedderModel(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
-	cfg := &Config{
-		ModelName:      "gemini-2.5-flash",
-		Temperature:    0.7,
-		MaxTokens:      2048,
-		RAGTopK:        3,
-		EmbedderModel:  "",
-		PostgresHost:   "localhost",
-		PostgresPort:   5432,
-		PostgresDBName: "koopa",
-	}
+	cfg := validBaseConfig("gemini")
+	cfg.EmbedderModel = ""
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Error("expected error for empty embedder_model, got none")
+		t.Fatal("expected error for empty embedder_model, got nil")
 	}
-
 	if !strings.Contains(err.Error(), "embedder_model") {
 		t.Errorf("error should mention embedder_model, got: %v", err)
 	}
 }
 
-// TestValidatePostgresHost tests PostgreSQL host validation
+// TestValidatePostgresHost tests PostgreSQL host validation.
 func TestValidatePostgresHost(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
-	cfg := &Config{
-		ModelName:      "gemini-2.5-flash",
-		Temperature:    0.7,
-		MaxTokens:      2048,
-		RAGTopK:        3,
-		EmbedderModel:  "text-embedding-004",
-		PostgresHost:   "",
-		PostgresPort:   5432,
-		PostgresDBName: "koopa",
-	}
+	cfg := validBaseConfig("gemini")
+	cfg.PostgresHost = ""
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Error("expected error for empty postgres_host, got none")
+		t.Fatal("expected error for empty postgres_host, got nil")
 	}
-
-	if !strings.Contains(err.Error(), "PostgreSQL host") {
-		t.Errorf("error should mention PostgreSQL host, got: %v", err)
+	if !errors.Is(err, ErrInvalidPostgresHost) {
+		t.Errorf("error should be ErrInvalidPostgresHost, got: %v", err)
 	}
 }
 
-// TestValidatePostgresPort tests PostgreSQL port validation
+// TestValidatePostgresPort tests PostgreSQL port validation.
 func TestValidatePostgresPort(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
 	tests := []struct {
-		name      string
-		port      int
-		shouldErr bool
+		name    string
+		port    int
+		wantErr bool
 	}{
-		{"valid min", 1, false},
-		{"valid standard", 5432, false},
-		{"valid max", 65535, false},
-		{"invalid zero", 0, true},
-		{"invalid negative", -1, true},
-		{"invalid too high", 65536, true},
-		{"invalid far too high", 100000, true},
+		{name: "valid min", port: 1},
+		{name: "valid standard", port: 5432},
+		{name: "valid max", port: 65535},
+		{name: "invalid zero", port: 0, wantErr: true},
+		{name: "invalid negative", port: -1, wantErr: true},
+		{name: "invalid too high", port: 65536, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        2048,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     tt.port,
-				PostgresPassword: "test_password",
-				PostgresDBName:   "koopa",
-				PostgresSSLMode:  "disable",
-			}
+			cfg := validBaseConfig("gemini")
+			cfg.PostgresPort = tt.port
 
 			err := cfg.Validate()
-			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for postgres_port %d, got none", tt.port)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for port %d, got nil", tt.port)
 			}
-			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for postgres_port %d: %v", tt.port, err)
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for port %d: %v", tt.port, err)
 			}
-			if tt.shouldErr && err != nil && !strings.Contains(err.Error(), "PostgreSQL port") {
-				t.Errorf("error should mention PostgreSQL port, got: %v", err)
+			if tt.wantErr && err != nil && !errors.Is(err, ErrInvalidPostgresPort) {
+				t.Errorf("error should be ErrInvalidPostgresPort, got: %v", err)
 			}
 		})
 	}
 }
 
-// TestValidatePostgresDBName tests PostgreSQL database name validation
+// TestValidatePostgresDBName tests PostgreSQL database name validation.
 func TestValidatePostgresDBName(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
-	cfg := &Config{
-		ModelName:      "gemini-2.5-flash",
-		Temperature:    0.7,
-		MaxTokens:      2048,
-		RAGTopK:        3,
-		EmbedderModel:  "text-embedding-004",
-		PostgresHost:   "localhost",
-		PostgresPort:   5432,
-		PostgresDBName: "",
-	}
+	cfg := validBaseConfig("gemini")
+	cfg.PostgresDBName = ""
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Error("expected error for empty postgres_db_name, got none")
+		t.Fatal("expected error for empty postgres_db_name, got nil")
 	}
-
-	if !strings.Contains(err.Error(), "database name") {
-		t.Errorf("error should mention database name, got: %v", err)
-	}
-}
-
-// TestNormalizeMaxHistoryMessages tests max history messages normalization
-func TestNormalizeMaxHistoryMessages(t *testing.T) {
-	tests := []struct {
-		name  string
-		input int32
-		want  int32
-	}{
-		{"zero returns default", 0, DefaultMaxHistoryMessages},
-		{"negative returns default", -10, DefaultMaxHistoryMessages},
-		{"below min returns min", MinHistoryMessages - 1, MinHistoryMessages},
-		{"at min", MinHistoryMessages, MinHistoryMessages},
-		{"normal value", 500, 500},
-		{"at max", MaxAllowedHistoryMessages, MaxAllowedHistoryMessages},
-		{"above max returns max", MaxAllowedHistoryMessages + 1, MaxAllowedHistoryMessages},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := NormalizeMaxHistoryMessages(tt.input)
-			if got != tt.want {
-				t.Errorf("NormalizeMaxHistoryMessages(%d) = %d, want %d", tt.input, got, tt.want)
-			}
-		})
+	if !errors.Is(err, ErrInvalidPostgresDBName) {
+		t.Errorf("error should be ErrInvalidPostgresDBName, got: %v", err)
 	}
 }
 
-// BenchmarkValidate benchmarks configuration validation
-func BenchmarkValidate(b *testing.B) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		b.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			b.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
-		}
-	}()
-
-	cfg := &Config{
-		ModelName:        "gemini-2.5-flash",
-		Temperature:      0.7,
-		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
-		PostgresHost:     "localhost",
-		PostgresPort:     5432,
-		PostgresDBName:   "koopa",
-		PostgresPassword: "securepass123",
-		PostgresSSLMode:  "disable",
-	}
-
-	// Verify Validate() works before starting benchmark
-	if err := cfg.Validate(); err != nil {
-		b.Fatalf("Validate() failed: %v", err)
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		_ = cfg.Validate()
-	}
-}
-
-// TestValidatePostgresPassword tests PostgreSQL password validation
+// TestValidatePostgresPassword tests PostgreSQL password validation.
 func TestValidatePostgresPassword(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer os.Unsetenv("GEMINI_API_KEY")
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
 	tests := []struct {
 		name      string
 		password  string
-		shouldErr bool
+		wantErr   bool
 		errSubstr string
 	}{
-		{"valid password", "securepass123", false, ""},
-		{"valid long password", "very_secure_password_with_many_chars", false, ""},
-		{"empty password", "", true, "must be set"},
-		{"too short 1 char", "a", true, "at least 8 characters"},
-		{"too short 7 chars", "1234567", true, "at least 8 characters"},
-		{"exactly 8 chars", "12345678", false, ""},
-		// Default password should be allowed but warns (tested separately)
-		{"default dev password", "koopa_dev_password", false, ""},
+		{name: "valid password", password: "securepass123"},
+		{name: "valid long password", password: "very_secure_password_with_many_chars"},
+		{name: "empty password", password: "", wantErr: true, errSubstr: "must be set"},
+		{name: "too short 1 char", password: "a", wantErr: true, errSubstr: "at least 8 characters"},
+		{name: "too short 7 chars", password: "1234567", wantErr: true, errSubstr: "at least 8 characters"},
+		{name: "exactly 8 chars", password: "12345678"},
+		{name: "default dev password", password: "koopa_dev_password"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        2048,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresPassword: tt.password,
-				PostgresDBName:   "koopa",
-				PostgresSSLMode:  "disable",
-			}
+			cfg := validBaseConfig("gemini")
+			cfg.PostgresPassword = tt.password
 
 			err := cfg.Validate()
-			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for password %q, got none", tt.password)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for password %q, got nil", tt.password)
 			}
-			if !tt.shouldErr && err != nil {
+			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error for password %q: %v", tt.password, err)
 			}
-			if tt.shouldErr && err != nil {
+			if tt.wantErr && err != nil {
 				if !errors.Is(err, ErrInvalidPostgresPassword) {
 					t.Errorf("error should be ErrInvalidPostgresPassword, got: %v", err)
 				}
@@ -546,55 +399,61 @@ func TestValidatePostgresPassword(t *testing.T) {
 	}
 }
 
-// TestValidatePostgresSSLMode tests PostgreSQL SSL mode validation
+// TestValidatePostgresSSLMode tests PostgreSQL SSL mode validation.
 func TestValidatePostgresSSLMode(t *testing.T) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
-	}
-	defer os.Unsetenv("GEMINI_API_KEY")
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
 
 	tests := []struct {
-		name      string
-		sslMode   string
-		shouldErr bool
+		name    string
+		sslMode string
+		wantErr bool
 	}{
-		{"valid disable", "disable", false},
-		{"valid require", "require", false},
-		{"valid verify-ca", "verify-ca", false},
-		{"valid verify-full", "verify-full", false},
-		{"invalid empty", "", true},
-		{"invalid mode", "invalid", true},
-		{"typo disabled", "disabled", true}, // Common mistake
-		{"typo enabled", "enabled", true},
-		{"deprecated allow", "allow", true},   // No longer supported
-		{"deprecated prefer", "prefer", true}, // No longer supported
+		{name: "valid disable", sslMode: "disable"},
+		{name: "valid require", sslMode: "require"},
+		{name: "valid verify-ca", sslMode: "verify-ca"},
+		{name: "valid verify-full", sslMode: "verify-full"},
+		{name: "invalid empty", sslMode: "", wantErr: true},
+		{name: "invalid mode", sslMode: "invalid", wantErr: true},
+		{name: "typo disabled", sslMode: "disabled", wantErr: true},
+		{name: "deprecated allow", sslMode: "allow", wantErr: true},
+		{name: "deprecated prefer", sslMode: "prefer", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				ModelName:        "gemini-2.5-flash",
-				Temperature:      0.7,
-				MaxTokens:        2048,
-				RAGTopK:          3,
-				EmbedderModel:    "text-embedding-004",
-				PostgresHost:     "localhost",
-				PostgresPort:     5432,
-				PostgresPassword: "test_password",
-				PostgresDBName:   "koopa",
-				PostgresSSLMode:  tt.sslMode,
-			}
+			cfg := validBaseConfig("gemini")
+			cfg.PostgresSSLMode = tt.sslMode
 
 			err := cfg.Validate()
-			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for SSL mode %q, got none", tt.sslMode)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for SSL mode %q, got nil", tt.sslMode)
 			}
-			if !tt.shouldErr && err != nil {
+			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error for SSL mode %q: %v", tt.sslMode, err)
 			}
-			if tt.shouldErr && err != nil && !errors.Is(err, ErrInvalidPostgresSSLMode) {
+			if tt.wantErr && err != nil && !errors.Is(err, ErrInvalidPostgresSSLMode) {
 				t.Errorf("error should be ErrInvalidPostgresSSLMode, got: %v", err)
 			}
 		})
+	}
+}
+
+// BenchmarkValidate benchmarks configuration validation.
+func BenchmarkValidate(b *testing.B) {
+	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
+		b.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+	}
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	cfg := validBaseConfig("gemini")
+
+	if err := cfg.Validate(); err != nil {
+		b.Fatalf("Validate() failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = cfg.Validate()
 	}
 }

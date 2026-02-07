@@ -155,37 +155,3 @@ func (v *Path) Validate(path string) (string, error) {
 
 	return absPath, nil
 }
-
-// IsPathSafe quickly checks if a path contains obvious dangerous patterns
-// This is an additional layer of protection but should not be relied upon alone
-func IsPathSafe(path string) bool {
-	// Check for common dangerous patterns
-	dangerousPatterns := []string{
-		"../",    // Upward traversal
-		"..\\",   // Windows upward traversal
-		"/etc/",  // System configuration
-		"/dev/",  // Device files
-		"/proc/", // Process information
-		"/sys/",  // System information
-		"c:\\",   // Windows system root directory
-		"c:/",    // Windows system root directory
-	}
-
-	lowerPath := strings.ToLower(path)
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(lowerPath, pattern) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// GetHomeDir safely retrieves the user's home directory
-func GetHomeDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("unable to get user home directory: %w", err)
-	}
-	return home, nil
-}

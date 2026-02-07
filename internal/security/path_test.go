@@ -97,26 +97,6 @@ func TestPathErrorSanitization(t *testing.T) {
 	}
 }
 
-// TestIsPathSafe tests quick path safety check
-func TestIsPathSafe(t *testing.T) {
-	tests := []struct {
-		path string
-		safe bool
-	}{
-		{"file.txt", true},
-		{"../etc/passwd", false},      // Contains "../"
-		{"/etc/passwd", false},        // Contains "/etc/"
-		{"../../secret", false},       // Contains "../"
-		{"/home/user/file.txt", true}, // Safe absolute path
-	}
-
-	for _, tt := range tests {
-		if result := IsPathSafe(tt.path); result != tt.safe {
-			t.Errorf("IsPathSafe(%q) = %v, want %v", tt.path, result, tt.safe)
-		}
-	}
-}
-
 // TestSymlinkValidation tests symlink handling
 func TestSymlinkValidation(t *testing.T) {
 	// Create temp directory for testing
@@ -259,17 +239,6 @@ func TestPathValidationErrors(t *testing.T) {
 	_, err = validator.Validate(longPath)
 	// Should not panic, error is acceptable
 	_ = err
-}
-
-// TestGetHomeDir tests home directory retrieval
-func TestGetHomeDir(t *testing.T) {
-	homeDir, err := GetHomeDir()
-	if err != nil {
-		t.Errorf("GetHomeDir() returned error: %v", err)
-	}
-	if homeDir == "" {
-		t.Error("GetHomeDir() returned empty string")
-	}
 }
 
 // BenchmarkPathValidation benchmarks path validation performance

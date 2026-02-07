@@ -32,7 +32,7 @@ func BenchmarkStore_GetHistory(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := store.GetHistory(ctx, sessionID)
+		_, err := store.History(ctx, sessionID)
 		if err != nil {
 			b.Fatalf("GetHistory failed: %v", err)
 		}
@@ -50,7 +50,7 @@ func BenchmarkStore_GetHistory_SmallSession(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := store.GetHistory(ctx, sessionID); err != nil {
+		if _, err := store.History(ctx, sessionID); err != nil {
 			b.Fatalf("GetHistory failed: %v", err)
 		}
 	}
@@ -67,7 +67,7 @@ func BenchmarkStore_GetHistory_LargeSession(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := store.GetHistory(ctx, sessionID); err != nil {
+		if _, err := store.History(ctx, sessionID); err != nil {
 			b.Fatalf("GetHistory failed: %v", err)
 		}
 	}
@@ -197,7 +197,7 @@ func BenchmarkStore_GetSession(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := store.GetSession(ctx, session.ID)
+		_, err := store.Session(ctx, session.ID)
 		if err != nil {
 			b.Fatalf("GetSession failed: %v", err)
 		}
@@ -241,7 +241,7 @@ func BenchmarkStore_GetMessages(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := store.GetMessages(ctx, session.ID, 100, 0)
+		_, err := store.Messages(ctx, session.ID, 100, 0)
 		if err != nil {
 			b.Fatalf("GetMessages failed: %v", err)
 		}

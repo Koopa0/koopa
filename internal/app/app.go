@@ -1,6 +1,6 @@
 // Package app provides application initialization and dependency injection.
 //
-// App is the core container that orchestrates all application components using Wire for DI.
+// App is the core container that orchestrates all application components with struct-based DI.
 // It initializes Genkit, database connection, DocStore (via Genkit PostgreSQL Plugin),
 // and creates the agent with all necessary dependencies.
 package app
@@ -27,25 +27,24 @@ type App struct {
 	Config *config.Config
 
 	Genkit        *genkit.Genkit
-	Embedder      ai.Embedder          // Explicitly exported for Wire
+	Embedder      ai.Embedder
 	DBPool        *pgxpool.Pool        // Database connection pool
 	DocStore      *postgresql.DocStore // Genkit PostgreSQL DocStore for indexing
 	Retriever     ai.Retriever         // Genkit Retriever for searching
 	SessionStore  *session.Store       // Session persistence (concrete type, not interface)
 	PathValidator *security.Path       // Path validator for security
-	Tools         []ai.Tool            // Pre-registered tools (injected by Wire)
+	Tools         []ai.Tool            // Pre-registered tools
 
 	// Lifecycle management
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	// errgroup for background goroutine lifecycle management
-	eg    *errgroup.Group
-	egCtx context.Context
+	eg *errgroup.Group
 }
 
 // Close gracefully shuts down App-managed resources.
-// Wire cleanup handles DB pool and OTel (single owner principle).
+// Cleanup function handles DB pool and OTel (single owner principle).
 //
 // Shutdown order:
 // 1. Cancel context (signals background tasks to stop)
@@ -66,7 +65,7 @@ func (a *App) Close() error {
 		slog.Debug("background tasks completed")
 	}
 
-	// Pool is closed by Wire cleanup, NOT here (single owner principle)
+	// Pool is closed by cleanup function, NOT here (single owner principle)
 	return nil
 }
 
@@ -92,15 +91,16 @@ func (a *App) Go(f func() error) {
 
 // CreateAgent creates a Chat Agent using pre-registered tools.
 // Tools are registered once at App construction (not lazily).
-// Wire guarantees all dependencies are non-nil.
+// InitializeApp guarantees all dependencies are non-nil.
 func (a *App) CreateAgent(_ context.Context) (*chat.Chat, error) {
-	// No nil checks - Wire guarantees injection (Rob Pike: "trust your constructors")
+	// No nil checks - InitializeApp guarantees injection
 	return chat.New(chat.Config{
 		Genkit:       a.Genkit,
 		Retriever:    a.Retriever,
 		SessionStore: a.SessionStore,
 		Logger:       slog.Default(),
 		Tools:        a.Tools,
+		ModelName:    a.Config.FullModelName(),
 		MaxTurns:     a.Config.MaxTurns,
 		RAGTopK:      a.Config.RAGTopK,
 		Language:     a.Config.Language,

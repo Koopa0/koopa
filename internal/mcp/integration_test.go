@@ -13,7 +13,6 @@ import (
 
 	"github.com/koopa0/koopa/internal/security"
 	"github.com/koopa0/koopa/internal/tools"
-	"github.com/stretchr/testify/require"
 )
 
 // createIntegrationTestConfig creates a complete Config for integration tests.
@@ -23,18 +22,26 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 	// Resolve symlinks in temp dir (macOS /var -> /private/var)
 	tmpDir := t.TempDir()
 	realTmpDir, err := filepath.EvalSymlinks(tmpDir)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q) unexpected error: %v", tmpDir, err)
+	}
 
 	pathVal, err := security.NewPath([]string{realTmpDir})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("security.NewPath(%q) unexpected error: %v", realTmpDir, err)
+	}
 
 	fileTools, err := tools.NewFileTools(pathVal, slog.Default())
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("tools.NewFileTools() unexpected error: %v", err)
+	}
 
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
 	systemTools, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("tools.NewSystemTools() unexpected error: %v", err)
+	}
 
 	networkCfg := tools.NetworkConfig{
 		SearchBaseURL:    "http://localhost:8080",
@@ -43,7 +50,9 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 		FetchTimeout:     30 * time.Second,
 	}
 	networkTools, err := tools.NewNetworkTools(networkCfg, slog.Default())
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("tools.NewNetworkTools() unexpected error: %v", err)
+	}
 
 	return Config{
 		Name:         name,
@@ -96,7 +105,7 @@ func TestServer_ConcurrentCreation(t *testing.T) {
 	}
 
 	if count != numGoroutines {
-		t.Errorf("created %d servers, want %d", count, numGoroutines)
+		t.Errorf("NewServer() created %d servers, want %d", count, numGoroutines)
 	}
 
 	t.Logf("Successfully created %d servers concurrently", count)
@@ -108,16 +117,22 @@ func TestServer_ConcurrentToolsetAccess(t *testing.T) {
 	// Resolve symlinks in temp dir (macOS /var -> /private/var)
 	tmpDir := t.TempDir()
 	realTmpDir, err := filepath.EvalSymlinks(tmpDir)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q) unexpected error: %v", tmpDir, err)
+	}
 
 	// Create a test file
 	testFile := realTmpDir + "/test.txt"
 	err = os.WriteFile(testFile, []byte("test content"), 0600)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("WriteFile(%q) unexpected error: %v", testFile, err)
+	}
 
 	cfg := createIntegrationTestConfig(t, "concurrent-access-test")
 	server, err := NewServer(cfg)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("NewServer() unexpected error: %v", err)
+	}
 
 	// Access toolset concurrently
 	const numGoroutines = 20
@@ -147,7 +162,9 @@ func TestServer_ConcurrentToolsetAccess(t *testing.T) {
 func TestServer_RaceDetector(t *testing.T) {
 	cfg := createIntegrationTestConfig(t, "race-detector-server")
 	server, err := NewServer(cfg)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("NewServer() unexpected error: %v", err)
+	}
 
 	var wg sync.WaitGroup
 	const numOps = 50

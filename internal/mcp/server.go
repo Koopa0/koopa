@@ -11,21 +11,23 @@ import (
 // Server wraps the MCP SDK server and Koopa's tool handlers.
 // It exposes Koopa's tools via the Model Context Protocol.
 type Server struct {
-	mcpServer    *mcp.Server
-	fileTools    *tools.FileTools
-	systemTools  *tools.SystemTools
-	networkTools *tools.NetworkTools
-	name         string
-	version      string
+	mcpServer      *mcp.Server
+	fileTools      *tools.FileTools
+	systemTools    *tools.SystemTools
+	networkTools   *tools.NetworkTools
+	knowledgeTools *tools.KnowledgeTools // nil when knowledge search is unavailable
+	name           string
+	version        string
 }
 
 // Config holds MCP server configuration.
 type Config struct {
-	Name         string
-	Version      string
-	FileTools    *tools.FileTools
-	SystemTools  *tools.SystemTools
-	NetworkTools *tools.NetworkTools
+	Name           string
+	Version        string
+	FileTools      *tools.FileTools
+	SystemTools    *tools.SystemTools
+	NetworkTools   *tools.NetworkTools
+	KnowledgeTools *tools.KnowledgeTools // Optional: nil disables knowledge search tools
 }
 
 // NewServer creates a new MCP server with the given configuration.
@@ -54,12 +56,13 @@ func NewServer(cfg Config) (*Server, error) {
 	}, nil)
 
 	s := &Server{
-		mcpServer:    mcpServer,
-		fileTools:    cfg.FileTools,
-		systemTools:  cfg.SystemTools,
-		networkTools: cfg.NetworkTools,
-		name:         cfg.Name,
-		version:      cfg.Version,
+		mcpServer:      mcpServer,
+		fileTools:      cfg.FileTools,
+		systemTools:    cfg.SystemTools,
+		networkTools:   cfg.NetworkTools,
+		knowledgeTools: cfg.KnowledgeTools,
+		name:           cfg.Name,
+		version:        cfg.Version,
 	}
 
 	// Register all tools
@@ -91,6 +94,13 @@ func (s *Server) registerTools() error {
 
 	if err := s.registerNetworkTools(); err != nil {
 		return fmt.Errorf("register network tools: %w", err)
+	}
+
+	// Knowledge tools are optional (require DB + embedder)
+	if s.knowledgeTools != nil {
+		if err := s.registerKnowledgeTools(); err != nil {
+			return fmt.Errorf("register knowledge tools: %w", err)
+		}
 	}
 
 	return nil

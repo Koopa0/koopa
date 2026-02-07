@@ -41,7 +41,7 @@
 // The Store type provides session operations:
 //
 //	CreateSession(ctx, title, modelName, systemPrompt)  - Create new session
-//	GetSession(ctx, sessionID)                          - Retrieve session
+//	Session(ctx, sessionID)                             - Retrieve session
 //	ListSessions(ctx, limit, offset)                   - List sessions with pagination
 //	DeleteSession(ctx, sessionID)                      - Delete session and messages
 //
@@ -57,7 +57,7 @@
 // The Store provides message operations:
 //
 //	AddMessages(ctx, sessionID, messages)  - Batch insert with transaction safety
-//	GetMessages(ctx, sessionID, limit, offset) - Retrieve messages with pagination
+//	Messages(ctx, sessionID, limit, offset) - Retrieve messages with pagination
 //
 // Messages are stored with:
 //
@@ -83,7 +83,7 @@
 //
 // The Store provides methods for integration with the Chat agent:
 //
-//	GetHistory(ctx, sessionID) - Get conversation history for agent
+//	History(ctx, sessionID) - Get conversation history for agent
 //	AppendMessages(ctx, sessionID, messages) - Persist conversation messages
 //
 // Following Go standard library conventions (similar to database/sql returning *sql.DB),
@@ -158,11 +158,11 @@
 //	    }
 //
 //	    // Retrieve messages
-//	    retrieved, _ := store.GetMessages(ctx, sess.ID, 100, 0)
+//	    retrieved, _ := store.Messages(ctx, sess.ID, 100, 0)
 //	    println("Retrieved", len(retrieved), "messages")
 //
 //	    // Load history for agent
-//	    history, _ := store.GetHistory(ctx, sess.ID)
+//	    history, _ := store.History(ctx, sess.ID)
 //	    println("History messages:", len(history.Messages()))
 //
 //	    // List all sessions

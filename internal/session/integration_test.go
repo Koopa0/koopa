@@ -18,8 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/koopa0/koopa/internal/sqlc"
 	"github.com/koopa0/koopa/internal/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -47,23 +45,51 @@ func TestStore_CreateAndGet(t *testing.T) {
 
 	// Create a session
 	session, err := store.CreateSession(ctx, "Test Session", "gemini-2.5-flash", "You are a helpful assistant")
-	require.NoError(t, err, "CreateSession should not return error")
-	require.NotNil(t, session, "Created session should not be nil")
-	assert.NotEqual(t, uuid.Nil, session.ID, "Session ID should not be nil UUID")
-	assert.Equal(t, "Test Session", session.Title)
-	assert.Equal(t, "gemini-2.5-flash", session.ModelName)
-	assert.Equal(t, "You are a helpful assistant", session.SystemPrompt)
-	assert.NotZero(t, session.CreatedAt, "CreatedAt should be set")
-	assert.NotZero(t, session.UpdatedAt, "UpdatedAt should be set")
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
+	if session == nil {
+		t.Fatal("CreateSession() returned nil session")
+	}
+	if session.ID == uuid.Nil {
+		t.Errorf("CreateSession() session ID = %v, want non-nil UUID", session.ID)
+	}
+	if session.Title != "Test Session" {
+		t.Errorf("CreateSession() Title = %q, want %q", session.Title, "Test Session")
+	}
+	if session.ModelName != "gemini-2.5-flash" {
+		t.Errorf("CreateSession() ModelName = %q, want %q", session.ModelName, "gemini-2.5-flash")
+	}
+	if session.SystemPrompt != "You are a helpful assistant" {
+		t.Errorf("CreateSession() SystemPrompt = %q, want %q", session.SystemPrompt, "You are a helpful assistant")
+	}
+	if session.CreatedAt.IsZero() {
+		t.Error("CreateSession() CreatedAt should be set")
+	}
+	if session.UpdatedAt.IsZero() {
+		t.Error("CreateSession() UpdatedAt should be set")
+	}
 
 	// Retrieve the session
-	retrieved, err := store.GetSession(ctx, session.ID)
-	require.NoError(t, err, "GetSession should not return error")
-	require.NotNil(t, retrieved, "Retrieved session should not be nil")
-	assert.Equal(t, session.ID, retrieved.ID)
-	assert.Equal(t, session.Title, retrieved.Title)
-	assert.Equal(t, session.ModelName, retrieved.ModelName)
-	assert.Equal(t, session.SystemPrompt, retrieved.SystemPrompt)
+	retrieved, err := store.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("GetSession(%v) unexpected error: %v", session.ID, err)
+	}
+	if retrieved == nil {
+		t.Fatal("GetSession() returned nil session")
+	}
+	if retrieved.ID != session.ID {
+		t.Errorf("GetSession() ID = %v, want %v", retrieved.ID, session.ID)
+	}
+	if retrieved.Title != session.Title {
+		t.Errorf("GetSession() Title = %q, want %q", retrieved.Title, session.Title)
+	}
+	if retrieved.ModelName != session.ModelName {
+		t.Errorf("GetSession() ModelName = %q, want %q", retrieved.ModelName, session.ModelName)
+	}
+	if retrieved.SystemPrompt != session.SystemPrompt {
+		t.Errorf("GetSession() SystemPrompt = %q, want %q", retrieved.SystemPrompt, session.SystemPrompt)
+	}
 }
 
 // TestStore_CreateWithEmptyFields tests creating session with empty optional fields
@@ -74,17 +100,33 @@ func TestStore_CreateWithEmptyFields(t *testing.T) {
 
 	// Create session with empty title and system prompt
 	session, err := store.CreateSession(ctx, "", "gemini-2.5-flash", "")
-	require.NoError(t, err, "CreateSession with empty fields should succeed")
-	assert.NotEqual(t, uuid.Nil, session.ID)
-	assert.Empty(t, session.Title, "Title should be empty")
-	assert.Equal(t, "gemini-2.5-flash", session.ModelName)
-	assert.Empty(t, session.SystemPrompt, "SystemPrompt should be empty")
+	if err != nil {
+		t.Fatalf("CreateSession() with empty fields unexpected error: %v", err)
+	}
+	if session.ID == uuid.Nil {
+		t.Errorf("CreateSession() session ID = %v, want non-nil UUID", session.ID)
+	}
+	if session.Title != "" {
+		t.Errorf("CreateSession() Title = %q, want empty string", session.Title)
+	}
+	if session.ModelName != "gemini-2.5-flash" {
+		t.Errorf("CreateSession() ModelName = %q, want %q", session.ModelName, "gemini-2.5-flash")
+	}
+	if session.SystemPrompt != "" {
+		t.Errorf("CreateSession() SystemPrompt = %q, want empty string", session.SystemPrompt)
+	}
 
 	// Retrieve should work
-	retrieved, err := store.GetSession(ctx, session.ID)
-	require.NoError(t, err)
-	assert.Empty(t, retrieved.Title)
-	assert.Empty(t, retrieved.SystemPrompt)
+	retrieved, err := store.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("GetSession(%v) unexpected error: %v", session.ID, err)
+	}
+	if retrieved.Title != "" {
+		t.Errorf("GetSession() Title = %q, want empty string", retrieved.Title)
+	}
+	if retrieved.SystemPrompt != "" {
+		t.Errorf("GetSession() SystemPrompt = %q, want empty string", retrieved.SystemPrompt)
+	}
 }
 
 // TestStore_ListSessions tests listing sessions with pagination
@@ -99,23 +141,37 @@ func TestStore_ListSessions_Integration(t *testing.T) {
 			fmt.Sprintf("Session %d", i+1),
 			"gemini-2.5-flash",
 			"")
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("CreateSession(%d) unexpected error: %v", i+1, err)
+		}
 	}
 
 	// List all sessions
 	sessions, err := store.ListSessions(ctx, 10, 0)
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, len(sessions), 5, "Should have at least 5 sessions")
+	if err != nil {
+		t.Fatalf("ListSessions(10, 0) unexpected error: %v", err)
+	}
+	if len(sessions) < 5 {
+		t.Errorf("ListSessions(10, 0) returned %d sessions, want at least 5", len(sessions))
+	}
 
 	// Test pagination - first 3
 	sessions, err = store.ListSessions(ctx, 3, 0)
-	require.NoError(t, err)
-	assert.Len(t, sessions, 3, "Should return exactly 3 sessions")
+	if err != nil {
+		t.Fatalf("ListSessions(3, 0) unexpected error: %v", err)
+	}
+	if len(sessions) != 3 {
+		t.Errorf("ListSessions(3, 0) returned %d sessions, want exactly 3", len(sessions))
+	}
 
 	// Test pagination - next 2
 	sessions, err = store.ListSessions(ctx, 3, 3)
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, len(sessions), 2, "Should have at least 2 more sessions")
+	if err != nil {
+		t.Fatalf("ListSessions(3, 3) unexpected error: %v", err)
+	}
+	if len(sessions) < 2 {
+		t.Errorf("ListSessions(3, 3) returned %d sessions, want at least 2", len(sessions))
+	}
 }
 
 // TestStore_DeleteSession tests deleting a session
@@ -126,19 +182,27 @@ func TestStore_DeleteSession_Integration(t *testing.T) {
 
 	// Create a session
 	session, err := store.CreateSession(ctx, "To Be Deleted", "gemini-2.5-flash", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Verify it exists
-	_, err = store.GetSession(ctx, session.ID)
-	require.NoError(t, err)
+	_, err = store.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("GetSession(%v) before delete unexpected error: %v", session.ID, err)
+	}
 
 	// Delete the session
 	err = store.DeleteSession(ctx, session.ID)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("DeleteSession(%v) unexpected error: %v", session.ID, err)
+	}
 
 	// Verify it no longer exists
-	_, err = store.GetSession(ctx, session.ID)
-	assert.Error(t, err, "GetSession should return error for deleted session")
+	_, err = store.Session(ctx, session.ID)
+	if err == nil {
+		t.Errorf("GetSession(%v) after delete should return error", session.ID)
+	}
 }
 
 // =============================================================================
@@ -153,7 +217,9 @@ func TestStore_AddMessage(t *testing.T) {
 
 	// Create a session
 	session, err := store.CreateSession(ctx, "Message Test", "gemini-2.5-flash", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Add a user message
 	userMessage := &Message{
@@ -164,7 +230,9 @@ func TestStore_AddMessage(t *testing.T) {
 	}
 
 	err = store.AddMessages(ctx, session.ID, []*Message{userMessage})
-	require.NoError(t, err, "AddMessages should not return error")
+	if err != nil {
+		t.Fatalf("AddMessages() with user message unexpected error: %v", err)
+	}
 
 	// Add a model message
 	modelMessage := &Message{
@@ -175,18 +243,32 @@ func TestStore_AddMessage(t *testing.T) {
 	}
 
 	err = store.AddMessages(ctx, session.ID, []*Message{modelMessage})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("AddMessages() with model message unexpected error: %v", err)
+	}
 
 	// Retrieve messages
-	messages, err := store.GetMessages(ctx, session.ID, 10, 0)
-	require.NoError(t, err)
-	assert.Len(t, messages, 2, "Should have 2 messages")
+	messages, err := store.Messages(ctx, session.ID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages(%v, 10, 0) unexpected error: %v", session.ID, err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("GetMessages() returned %d messages, want 2", len(messages))
+	}
 
 	// Verify order (should be chronological)
-	assert.Equal(t, string(ai.RoleUser), messages[0].Role)
-	assert.Equal(t, "Hello, how are you?", messages[0].Content[0].Text)
-	assert.Equal(t, string(ai.RoleModel), messages[1].Role)
-	assert.Equal(t, "I'm doing well, thank you!", messages[1].Content[0].Text)
+	if messages[0].Role != string(ai.RoleUser) {
+		t.Errorf("GetMessages()[0].Role = %q, want %q", messages[0].Role, string(ai.RoleUser))
+	}
+	if messages[0].Content[0].Text != "Hello, how are you?" {
+		t.Errorf("GetMessages()[0].Content[0].Text = %q, want %q", messages[0].Content[0].Text, "Hello, how are you?")
+	}
+	if messages[1].Role != string(ai.RoleModel) {
+		t.Errorf("GetMessages()[1].Role = %q, want %q", messages[1].Role, string(ai.RoleModel))
+	}
+	if messages[1].Content[0].Text != "I'm doing well, thank you!" {
+		t.Errorf("GetMessages()[1].Content[0].Text = %q, want %q", messages[1].Content[0].Text, "I'm doing well, thank you!")
+	}
 }
 
 // TestStore_GetMessages tests retrieving messages with pagination
@@ -197,7 +279,9 @@ func TestStore_GetMessages_Integration(t *testing.T) {
 
 	// Create a session
 	session, err := store.CreateSession(ctx, "Pagination Test", "gemini-2.5-flash", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Add 10 messages
 	messages := make([]*Message, 10)
@@ -211,19 +295,33 @@ func TestStore_GetMessages_Integration(t *testing.T) {
 	}
 
 	err = store.AddMessages(ctx, session.ID, messages)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("AddMessages() unexpected error: %v", err)
+	}
 
 	// Get first 5 messages
-	retrieved, err := store.GetMessages(ctx, session.ID, 5, 0)
-	require.NoError(t, err)
-	assert.Len(t, retrieved, 5)
-	assert.Equal(t, "Message 1", retrieved[0].Content[0].Text)
+	retrieved, err := store.Messages(ctx, session.ID, 5, 0)
+	if err != nil {
+		t.Fatalf("GetMessages(%v, 5, 0) unexpected error: %v", session.ID, err)
+	}
+	if len(retrieved) != 5 {
+		t.Errorf("GetMessages(%v, 5, 0) returned %d messages, want 5", session.ID, len(retrieved))
+	}
+	if retrieved[0].Content[0].Text != "Message 1" {
+		t.Errorf("GetMessages(%v, 5, 0)[0].Content[0].Text = %q, want %q", session.ID, retrieved[0].Content[0].Text, "Message 1")
+	}
 
 	// Get next 5 messages
-	retrieved, err = store.GetMessages(ctx, session.ID, 5, 5)
-	require.NoError(t, err)
-	assert.Len(t, retrieved, 5)
-	assert.Equal(t, "Message 6", retrieved[0].Content[0].Text)
+	retrieved, err = store.Messages(ctx, session.ID, 5, 5)
+	if err != nil {
+		t.Fatalf("GetMessages(%v, 5, 5) unexpected error: %v", session.ID, err)
+	}
+	if len(retrieved) != 5 {
+		t.Errorf("GetMessages(%v, 5, 5) returned %d messages, want 5", session.ID, len(retrieved))
+	}
+	if retrieved[0].Content[0].Text != "Message 6" {
+		t.Errorf("GetMessages(%v, 5, 5)[0].Content[0].Text = %q, want %q", session.ID, retrieved[0].Content[0].Text, "Message 6")
+	}
 }
 
 // TestStore_MessageOrdering tests that messages maintain chronological order
@@ -234,7 +332,9 @@ func TestStore_MessageOrdering(t *testing.T) {
 
 	// Create a session
 	session, err := store.CreateSession(ctx, "Ordering Test", "gemini-2.5-flash", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Add messages in multiple batches
 	for i := 0; i < 3; i++ {
@@ -253,24 +353,40 @@ func TestStore_MessageOrdering(t *testing.T) {
 			},
 		}
 		err = store.AddMessages(ctx, session.ID, messages)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("AddMessages() batch %d unexpected error: %v", i, err)
+		}
 	}
 
 	// Retrieve all messages
-	retrieved, err := store.GetMessages(ctx, session.ID, 100, 0)
-	require.NoError(t, err)
-	assert.Len(t, retrieved, 6, "Should have 6 messages")
+	retrieved, err := store.Messages(ctx, session.ID, 100, 0)
+	if err != nil {
+		t.Fatalf("GetMessages(%v, 100, 0) unexpected error: %v", session.ID, err)
+	}
+	if len(retrieved) != 6 {
+		t.Fatalf("GetMessages() returned %d messages, want 6", len(retrieved))
+	}
 
 	// Verify order
 	for i := 0; i < 3; i++ {
 		userMsg := retrieved[i*2]
 		modelMsg := retrieved[i*2+1]
 
-		assert.Equal(t, string(ai.RoleUser), userMsg.Role)
-		assert.Contains(t, userMsg.Content[0].Text, fmt.Sprintf("User message %d", i+1))
+		if userMsg.Role != string(ai.RoleUser) {
+			t.Errorf("Message[%d].Role = %q, want %q", i*2, userMsg.Role, string(ai.RoleUser))
+		}
+		expectedUserText := fmt.Sprintf("User message %d", i+1)
+		if !strings.Contains(userMsg.Content[0].Text, expectedUserText) {
+			t.Errorf("Message[%d].Content[0].Text = %q, want to contain %q", i*2, userMsg.Content[0].Text, expectedUserText)
+		}
 
-		assert.Equal(t, string(ai.RoleModel), modelMsg.Role)
-		assert.Contains(t, modelMsg.Content[0].Text, fmt.Sprintf("Model response %d", i+1))
+		if modelMsg.Role != string(ai.RoleModel) {
+			t.Errorf("Message[%d].Role = %q, want %q", i*2+1, modelMsg.Role, string(ai.RoleModel))
+		}
+		expectedModelText := fmt.Sprintf("Model response %d", i+1)
+		if !strings.Contains(modelMsg.Content[0].Text, expectedModelText) {
+			t.Errorf("Message[%d].Content[0].Text = %q, want to contain %q", i*2+1, modelMsg.Content[0].Text, expectedModelText)
+		}
 	}
 }
 
@@ -282,7 +398,9 @@ func TestStore_LargeMessageContent(t *testing.T) {
 
 	// Create a session
 	session, err := store.CreateSession(ctx, "Large Content Test", "gemini-2.5-flash", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Create a large message (>10KB)
 	largeText := strings.Repeat("This is a test message. ", 1000) // ~24KB
@@ -295,13 +413,21 @@ func TestStore_LargeMessageContent(t *testing.T) {
 	}
 
 	err = store.AddMessages(ctx, session.ID, []*Message{message})
-	require.NoError(t, err, "Should handle large message content")
+	if err != nil {
+		t.Fatalf("AddMessages() with large content unexpected error: %v", err)
+	}
 
 	// Retrieve and verify
-	messages, err := store.GetMessages(ctx, session.ID, 10, 0)
-	require.NoError(t, err)
-	assert.Len(t, messages, 1)
-	assert.Equal(t, largeText, messages[0].Content[0].Text, "Large content should be preserved")
+	messages, err := store.Messages(ctx, session.ID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages(%v, 10, 0) unexpected error: %v", session.ID, err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("GetMessages() returned %d messages, want 1", len(messages))
+	}
+	if messages[0].Content[0].Text != largeText {
+		t.Errorf("GetMessages()[0].Content[0].Text length = %d, want %d (large content not preserved)", len(messages[0].Content[0].Text), len(largeText))
+	}
 }
 
 // TestStore_DeleteSessionWithMessages tests that deleting a session also deletes messages
@@ -312,7 +438,9 @@ func TestStore_DeleteSessionWithMessages(t *testing.T) {
 
 	// Create a session with messages
 	session, err := store.CreateSession(ctx, "Cascade Delete Test", "gemini-2.5-flash", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	messages := []*Message{
 		{
@@ -321,20 +449,30 @@ func TestStore_DeleteSessionWithMessages(t *testing.T) {
 		},
 	}
 	err = store.AddMessages(ctx, session.ID, messages)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("AddMessages() unexpected error: %v", err)
+	}
 
 	// Verify message exists
-	retrieved, err := store.GetMessages(ctx, session.ID, 10, 0)
-	require.NoError(t, err)
-	assert.Len(t, retrieved, 1)
+	retrieved, err := store.Messages(ctx, session.ID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages(%v, 10, 0) before delete unexpected error: %v", session.ID, err)
+	}
+	if len(retrieved) != 1 {
+		t.Errorf("GetMessages() before delete returned %d messages, want 1", len(retrieved))
+	}
 
 	// Delete session
 	err = store.DeleteSession(ctx, session.ID)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("DeleteSession(%v) unexpected error: %v", session.ID, err)
+	}
 
 	// Verify session is deleted
-	_, err = store.GetSession(ctx, session.ID)
-	assert.Error(t, err)
+	_, err = store.Session(ctx, session.ID)
+	if err == nil {
+		t.Error("GetSession() after delete should return error")
+	}
 }
 
 // =============================================================================
@@ -388,7 +526,10 @@ func TestStore_ConcurrentSessionCreation(t *testing.T) {
 		ids[id] = true
 	}
 
-	assert.Equal(t, numGoroutines-errCount, len(ids), "should have created %d unique sessions", numGoroutines-errCount)
+	expectedCount := numGoroutines - errCount
+	if len(ids) != expectedCount {
+		t.Errorf("created %d unique sessions, want %d", len(ids), expectedCount)
+	}
 	t.Logf("Successfully created %d sessions concurrently", len(ids))
 }
 
@@ -401,7 +542,9 @@ func TestStore_ConcurrentHistoryUpdate(t *testing.T) {
 
 	// Create a test session
 	session, err := store.CreateSession(ctx, "Race-History-Test", "", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	const numGoroutines = 10
 	const messagesPerGoroutine = 5
@@ -440,12 +583,15 @@ func TestStore_ConcurrentHistoryUpdate(t *testing.T) {
 	}
 
 	// Verify message integrity
-	allMessages, err := store.GetMessages(ctx, session.ID, 1000, 0)
-	require.NoError(t, err)
+	allMessages, err := store.Messages(ctx, session.ID, 1000, 0)
+	if err != nil {
+		t.Fatalf("GetMessages(%v, 1000, 0) unexpected error: %v", session.ID, err)
+	}
 
 	expectedCount := int(successCount.Load()) * messagesPerGoroutine
-	assert.Equal(t, expectedCount, len(allMessages),
-		"expected %d messages, got %d", expectedCount, len(allMessages))
+	if len(allMessages) != expectedCount {
+		t.Errorf("GetMessages() returned %d messages, want %d", len(allMessages), expectedCount)
+	}
 
 	// Verify sequence numbers are unique and sequential
 	seqNumbers := make(map[int]bool)
@@ -475,14 +621,18 @@ func TestStore_ConcurrentLoadAndSaveHistory(t *testing.T) {
 
 	// Create a test session with initial messages
 	session, err := store.CreateSession(ctx, "Race-LoadSave-Test", "", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Add initial messages
 	initialMsgs := []*Message{
 		{Role: "user", Content: []*ai.Part{ai.NewTextPart("Initial message 1")}},
 		{Role: "model", Content: []*ai.Part{ai.NewTextPart("Initial response 1")}},
 	}
-	require.NoError(t, store.AddMessages(ctx, session.ID, initialMsgs))
+	if err := store.AddMessages(ctx, session.ID, initialMsgs); err != nil {
+		t.Fatalf("AddMessages() for initial messages unexpected error: %v", err)
+	}
 
 	sessionID := session.ID
 	const numGoroutines = 10
@@ -497,7 +647,7 @@ func TestStore_ConcurrentLoadAndSaveHistory(t *testing.T) {
 		// Load goroutine
 		go func(id int) {
 			defer wg.Done()
-			history, err := store.GetHistory(ctx, sessionID)
+			history, err := store.History(ctx, sessionID)
 			if err != nil {
 				loadErrors <- fmt.Errorf("load goroutine %d: %w", id, err)
 				return
@@ -535,12 +685,15 @@ func TestStore_ConcurrentLoadAndSaveHistory(t *testing.T) {
 	}
 
 	// Verify final state
-	finalHistory, err := store.GetHistory(ctx, sessionID)
-	require.NoError(t, err)
+	finalHistory, err := store.History(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("GetHistory(%v) final state unexpected error: %v", sessionID, err)
+	}
 
 	// Should have at least initial messages + some concurrent messages
-	assert.GreaterOrEqual(t, len(finalHistory.Messages()), 2,
-		"final history should have at least 2 messages")
+	if len(finalHistory.Messages()) < 2 {
+		t.Errorf("GetHistory() final state returned %d messages, want at least 2", len(finalHistory.Messages()))
+	}
 
 	t.Logf("Final history has %d messages after concurrent load/save", len(finalHistory.Messages()))
 }
@@ -558,14 +711,18 @@ func TestStore_ConcurrentSessionDeletion(t *testing.T) {
 	// Create test sessions
 	for i := 0; i < numSessions; i++ {
 		session, err := store.CreateSession(ctx, fmt.Sprintf("Race-Delete-Test-%d", i), "", "")
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("CreateSession() for session %d unexpected error: %v", i, err)
+		}
 		sessions[i] = session
 
 		// Add some messages
 		msgs := []*Message{
 			{Role: "user", Content: []*ai.Part{ai.NewTextPart("test message")}},
 		}
-		require.NoError(t, store.AddMessages(ctx, session.ID, msgs))
+		if err := store.AddMessages(ctx, session.ID, msgs); err != nil {
+			t.Fatalf("AddMessages() for session %d unexpected error: %v", i, err)
+		}
 	}
 
 	var wg sync.WaitGroup
@@ -593,7 +750,7 @@ func TestStore_ConcurrentSessionDeletion(t *testing.T) {
 		// Get goroutine
 		go func(s *Session) {
 			defer wg.Done()
-			_, _ = store.GetSession(ctx, s.ID)
+			_, _ = store.Session(ctx, s.ID)
 		}(session)
 	}
 
@@ -601,7 +758,9 @@ func TestStore_ConcurrentSessionDeletion(t *testing.T) {
 
 	// Verify all sessions are deleted
 	remaining, err := store.ListSessions(ctx, 100, 0)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("ListSessions(100, 0) after concurrent deletion unexpected error: %v", err)
+	}
 
 	for _, session := range sessions {
 		found := false
@@ -631,7 +790,9 @@ func TestStore_RaceDetector(t *testing.T) {
 
 	// Create a shared session
 	session, err := store.CreateSession(ctx, "Race-Detector-Test", "", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	sessionID := session.ID
 
@@ -655,19 +816,19 @@ func TestStore_RaceDetector(t *testing.T) {
 		// Operation 2: Get messages
 		go func() {
 			defer wg.Done()
-			_, _ = store.GetMessages(ctx, session.ID, 100, 0)
+			_, _ = store.Messages(ctx, session.ID, 100, 0)
 		}()
 
 		// Operation 3: Load history
 		go func() {
 			defer wg.Done()
-			_, _ = store.GetHistory(ctx, sessionID)
+			_, _ = store.History(ctx, sessionID)
 		}()
 
 		// Operation 4: Get session
 		go func() {
 			defer wg.Done()
-			_, _ = store.GetSession(ctx, session.ID)
+			_, _ = store.Session(ctx, session.ID)
 		}()
 	}
 
@@ -686,7 +847,9 @@ func TestStore_ConcurrentWrites(t *testing.T) {
 	sessions := make([]*Session, numSessions)
 	for i := 0; i < numSessions; i++ {
 		session, err := store.CreateSession(ctx, fmt.Sprintf("Concurrent Session %d", i+1), "gemini-2.5-flash", "")
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("CreateSession() for session %d unexpected error: %v", i+1, err)
+		}
 		sessions[i] = session
 	}
 
@@ -725,9 +888,13 @@ func TestStore_ConcurrentWrites(t *testing.T) {
 
 	// Verify each session has 10 messages
 	for i, session := range sessions {
-		messages, err := store.GetMessages(ctx, session.ID, 100, 0)
-		require.NoError(t, err)
-		assert.Len(t, messages, 10, "Session %d should have 10 messages", i+1)
+		messages, err := store.Messages(ctx, session.ID, 100, 0)
+		if err != nil {
+			t.Fatalf("GetMessages(%v, 100, 0) for session %d unexpected error: %v", session.ID, i+1, err)
+		}
+		if len(messages) != 10 {
+			t.Errorf("Session %d has %d messages, want 10", i+1, len(messages))
+		}
 	}
 }
 
@@ -744,12 +911,16 @@ func TestStore_SQLInjectionPrevention(t *testing.T) {
 
 	// First, create a legitimate session
 	legitSession, err := store.CreateSession(ctx, "Legitimate Session", "", "")
-	require.NoError(t, err, "failed to create legitimate session")
+	if err != nil {
+		t.Fatalf("CreateSession() for legitimate session unexpected error: %v", err)
+	}
 	t.Logf("Created legitimate session: %s", legitSession.ID)
 
 	// Count sessions before attacks
 	sessions, err := store.ListSessions(ctx, 100, 0)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("ListSessions(100, 0) before attacks unexpected error: %v", err)
+	}
 	t.Logf("Initial session count: %d", len(sessions))
 
 	// SQL injection attack vectors for session title
@@ -834,7 +1005,9 @@ func TestStore_SQLInjectionPrevention(t *testing.T) {
 	t.Run("verify database integrity", func(t *testing.T) {
 		// Sessions table should still exist
 		sessions, err := store.ListSessions(ctx, 100, 0)
-		require.NoError(t, err, "sessions table should still exist")
+		if err != nil {
+			t.Fatalf("ListSessions(100, 0) after attacks unexpected error: %v (sessions table should still exist)", err)
+		}
 
 		// Legitimate session should still exist
 		found := false
@@ -844,12 +1017,18 @@ func TestStore_SQLInjectionPrevention(t *testing.T) {
 				break
 			}
 		}
-		assert.True(t, found, "legitimate session should still exist")
+		if !found {
+			t.Error("legitimate session should still exist after SQL injection attempts")
+		}
 
 		// Should be able to load the session
-		loaded, err := store.GetSession(ctx, legitSession.ID)
-		require.NoError(t, err)
-		assert.Equal(t, "Legitimate Session", loaded.Title)
+		loaded, err := store.Session(ctx, legitSession.ID)
+		if err != nil {
+			t.Fatalf("GetSession(%v) after attacks unexpected error: %v", legitSession.ID, err)
+		}
+		if loaded.Title != "Legitimate Session" {
+			t.Errorf("GetSession(%v) Title = %q, want %q", legitSession.ID, loaded.Title, "Legitimate Session")
+		}
 	})
 }
 
@@ -861,7 +1040,9 @@ func TestStore_SQLInjectionViaSessionID(t *testing.T) {
 
 	// Create a test session
 	session, err := store.CreateSession(ctx, "Test Session", "", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Malicious session IDs (note: UUID type in PostgreSQL provides some protection)
 	maliciousIDs := []string{
@@ -883,15 +1064,19 @@ func TestStore_SQLInjectionViaSessionID(t *testing.T) {
 				return
 			}
 			// If somehow parsed, try to get session (should fail safely)
-			_, err = store.GetSession(ctx, parsedID)
+			_, err = store.Session(ctx, parsedID)
 			t.Logf("GetSession result: %v", err)
 		})
 	}
 
 	// Verify the test session still exists
-	loaded, err := store.GetSession(ctx, session.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "Test Session", loaded.Title)
+	loaded, err := store.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("GetSession(%v) after malicious ID attempts unexpected error: %v", session.ID, err)
+	}
+	if loaded.Title != "Test Session" {
+		t.Errorf("GetSession(%v) Title = %q, want %q", session.ID, loaded.Title, "Test Session")
+	}
 }
 
 // =============================================================================
@@ -910,18 +1095,20 @@ func TestStore_GetHistory_SessionNotFound(t *testing.T) {
 	nonExistentID := uuid.New()
 
 	// GetHistory should return ErrSessionNotFound
-	_, err := store.GetHistory(ctx, nonExistentID)
-	require.Error(t, err, "GetHistory with non-existent session should return error")
+	_, err := store.History(ctx, nonExistentID)
+	if err == nil {
+		t.Fatal("GetHistory() with non-existent session should return error")
+	}
 
 	// Verify the error is the sentinel ErrSessionNotFound (errors.Is check)
 	if !errors.Is(err, ErrSessionNotFound) {
-		t.Errorf("Expected ErrSessionNotFound sentinel, got: %v (type: %T)", err, err)
+		t.Errorf("GetHistory(%v) error = %v (type: %T), want ErrSessionNotFound sentinel", nonExistentID, err, err)
 	}
 
 	// Verify error message is not double-wrapped
 	errStr := err.Error()
 	if strings.Contains(errStr, "session not found: session not found") {
-		t.Errorf("Error message is double-wrapped: %v", err)
+		t.Errorf("GetHistory(%v) error message is double-wrapped: %v", nonExistentID, err)
 	}
 }
 
@@ -932,11 +1119,13 @@ func TestStore_GetSession_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	nonExistentID := uuid.New()
-	_, err := store.GetSession(ctx, nonExistentID)
-	require.Error(t, err)
+	_, err := store.Session(ctx, nonExistentID)
+	if err == nil {
+		t.Fatal("GetSession() with non-existent session should return error")
+	}
 
 	if !errors.Is(err, ErrSessionNotFound) {
-		t.Errorf("Expected ErrSessionNotFound sentinel, got: %v", err)
+		t.Errorf("GetSession(%v) error = %v, want ErrSessionNotFound sentinel", nonExistentID, err)
 	}
 }
 
@@ -952,7 +1141,9 @@ func TestStore_SQLInjectionViaMessageContent(t *testing.T) {
 
 	// Create a test session
 	session, err := store.CreateSession(ctx, "Message Test", "", "")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
 
 	// Malicious message content
 	maliciousMessages := []string{
@@ -981,13 +1172,17 @@ func TestStore_SQLInjectionViaMessageContent(t *testing.T) {
 	// Verify session and messages table integrity
 	t.Run("verify integrity", func(t *testing.T) {
 		// Session should still exist
-		_, err := store.GetSession(ctx, session.ID)
-		require.NoError(t, err, "session should still exist")
+		_, err := store.Session(ctx, session.ID)
+		if err != nil {
+			t.Fatalf("GetSession(%v) after malicious message attempts unexpected error: %v (session should still exist)", session.ID, err)
+		}
 
 		// Should be able to load messages
 		sessionID := session.ID
-		history, err := store.GetHistory(ctx, sessionID)
-		require.NoError(t, err, "should be able to load history")
+		history, err := store.History(ctx, sessionID)
+		if err != nil {
+			t.Fatalf("GetHistory(%v) after malicious message attempts unexpected error: %v (should be able to load history)", sessionID, err)
+		}
 		t.Logf("loaded history with %d messages", len(history.Messages()))
 	})
 }

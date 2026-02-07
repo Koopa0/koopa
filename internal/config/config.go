@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -69,6 +70,12 @@ var (
 	// ErrConfigParse indicates configuration parsing failed.
 	ErrConfigParse = errors.New("failed to parse configuration")
 
+	// ErrInvalidProvider indicates the AI provider is not supported.
+	ErrInvalidProvider = errors.New("invalid provider")
+
+	// ErrInvalidOllamaHost indicates the Ollama host is invalid.
+	ErrInvalidOllamaHost = errors.New("invalid Ollama host")
+
 	// ErrInvalidPostgresPassword indicates the PostgreSQL password is invalid.
 	ErrInvalidPostgresPassword = errors.New("invalid PostgreSQL password")
 
@@ -102,19 +109,22 @@ const (
 // SECURITY: Sensitive fields are explicitly masked in MarshalJSON().
 // When adding new sensitive fields (passwords, API keys, tokens), update MarshalJSON.
 type Config struct {
-	// AI configuration (see ai.go for documentation)
-	ModelName   string  `mapstructure:"model_name" json:"model_name"`
+	// AI provider and model configuration
+	Provider    string  `mapstructure:"provider" json:"provider"`     // "gemini" (default), "ollama", "openai"
+	ModelName   string  `mapstructure:"model_name" json:"model_name"` // Model identifier (e.g., "gemini-2.5-flash", "llama3.3", "gpt-4o")
 	Temperature float32 `mapstructure:"temperature" json:"temperature"`
 	MaxTokens   int     `mapstructure:"max_tokens" json:"max_tokens"`
 	Language    string  `mapstructure:"language" json:"language"`
 	PromptDir   string  `mapstructure:"prompt_dir" json:"prompt_dir"`
+
+	// Ollama configuration (only used when provider is "ollama")
+	OllamaHost string `mapstructure:"ollama_host" json:"ollama_host"`
 
 	// Conversation history configuration
 	MaxHistoryMessages int32 `mapstructure:"max_history_messages" json:"max_history_messages"`
 	MaxTurns           int   `mapstructure:"max_turns" json:"max_turns"`
 
 	// Storage configuration (see storage.go for documentation)
-	DatabasePath     string `mapstructure:"database_path" json:"database_path"`
 	PostgresHost     string `mapstructure:"postgres_host" json:"postgres_host"`
 	PostgresPort     int    `mapstructure:"postgres_port" json:"postgres_port"`
 	PostgresUser     string `mapstructure:"postgres_user" json:"postgres_user"`
@@ -138,7 +148,9 @@ type Config struct {
 	Datadog DatadogConfig `mapstructure:"datadog" json:"datadog"`
 
 	// Security configuration (serve mode only)
-	HMACSecret string `mapstructure:"hmac_secret" json:"hmac_secret"` // SENSITIVE: masked in MarshalJSON
+	HMACSecret  string   `mapstructure:"hmac_secret" json:"hmac_secret"` // SENSITIVE: masked in MarshalJSON
+	CORSOrigins []string `mapstructure:"cors_origins" json:"cors_origins"`
+	TrustProxy  bool     `mapstructure:"trust_proxy" json:"trust_proxy"` // Trust X-Real-IP/X-Forwarded-For headers (set true behind reverse proxy)
 }
 
 // ============================================================================
@@ -207,12 +219,16 @@ func Load() (*Config, error) {
 // setDefaults sets all default configuration values.
 func setDefaults(configDir string) {
 	// AI defaults
+	viper.SetDefault("provider", "gemini")
 	viper.SetDefault("model_name", "gemini-2.5-flash")
 	viper.SetDefault("temperature", 0.7)
 	viper.SetDefault("max_tokens", 2048)
 	viper.SetDefault("language", "auto")
 	viper.SetDefault("max_history_messages", DefaultMaxHistoryMessages)
 	viper.SetDefault("max_turns", 5)
+
+	// Ollama defaults
+	viper.SetDefault("ollama_host", "http://localhost:11434")
 	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
 
 	// PostgreSQL defaults (matching docker-compose.yml)
@@ -237,6 +253,12 @@ func setDefaults(configDir string) {
 	viper.SetDefault("web_scraper.parallelism", 2)
 	viper.SetDefault("web_scraper.delay_ms", 1000)
 	viper.SetDefault("web_scraper.timeout_ms", 30000)
+
+	// CORS defaults (Angular dev server)
+	viper.SetDefault("cors_origins", []string{"http://localhost:4200"})
+
+	// Proxy trust (default: false — safe for direct exposure; set true behind reverse proxy)
+	viper.SetDefault("trust_proxy", false)
 
 	// Datadog defaults
 	viper.SetDefault("datadog.agent_host", "localhost:4318")
@@ -264,8 +286,20 @@ func bindEnvVariables() {
 	// HMAC secret (serve mode CSRF protection)
 	mustBind("hmac_secret", "HMAC_SECRET")
 
+	// CORS origins (serve mode, comma-separated list)
+	mustBind("cors_origins", "KOOPA_CORS_ORIGINS")
+
+	// Proxy trust (serve mode, behind reverse proxy)
+	mustBind("trust_proxy", "KOOPA_TRUST_PROXY")
+
+	// AI provider and model overrides
+	mustBind("provider", "KOOPA_PROVIDER")
+	mustBind("model_name", "KOOPA_MODEL_NAME")
+	mustBind("ollama_host", "KOOPA_OLLAMA_HOST")
+
 	// NOTE: GEMINI_API_KEY is read directly by Genkit, not via Viper
-	// Validation checks its presence in cfg.Validate()
+	// NOTE: OPENAI_API_KEY is read directly by Genkit OpenAI plugin, not via Viper
+	// Validation checks their presence based on the selected provider in cfg.Validate()
 }
 
 // ============================================================================
@@ -327,6 +361,23 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("marshal config: %w", err)
 	}
 	return data, nil
+}
+
+// FullModelName returns the provider-qualified model name for Genkit.
+// Examples: "googleai/gemini-2.5-flash", "ollama/llama3.3", "openai/gpt-4o".
+// If ModelName already contains a "/", it is returned as-is.
+func (c *Config) FullModelName() string {
+	if strings.Contains(c.ModelName, "/") {
+		return c.ModelName
+	}
+	switch c.Provider {
+	case "ollama":
+		return "ollama/" + c.ModelName
+	case "openai":
+		return "openai/" + c.ModelName
+	default:
+		return "googleai/" + c.ModelName
+	}
 }
 
 // String implements Stringer to prevent accidental printing of secrets.

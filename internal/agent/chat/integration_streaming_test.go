@@ -6,11 +6,10 @@ package chat_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -46,11 +45,15 @@ func TestChatAgent_StreamingCallbackError(t *testing.T) {
 	)
 
 	// Stream should stop and propagate the error
-	require.Error(t, err, "Should propagate streaming callback error")
-	assert.Contains(t, err.Error(), "simulated streaming error",
-		"Error should contain callback error message")
-	assert.Equal(t, maxChunks, chunks,
-		"Should have received exactly maxChunks chunks before error")
+	if err == nil {
+		t.Fatal("ExecuteStream() expected error, got nil (should propagate streaming callback error)")
+	}
+	if !strings.Contains(err.Error(), "simulated streaming error") {
+		t.Errorf("ExecuteStream() error = %q, want to contain %q", err.Error(), "simulated streaming error")
+	}
+	if chunks != maxChunks {
+		t.Errorf("chunks received = %d, want %d (should have received exactly maxChunks chunks before error)", chunks, maxChunks)
+	}
 
 	// Response might be nil or partial depending on error handling
 	if resp != nil {
@@ -83,10 +86,18 @@ func TestChatAgent_StreamingCallbackSuccess(t *testing.T) {
 		callback,
 	)
 
-	require.NoError(t, err, "Streaming should succeed when callback always returns nil")
-	require.NotNil(t, resp, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, resp.FinalText, "Should have complete response")
-	assert.Greater(t, chunks, 0, "Should have received at least one chunk")
+	if err != nil {
+		t.Fatalf("ExecuteStream() unexpected error: %v (streaming should succeed when callback always returns nil)", err)
+	}
+	if resp == nil {
+		t.Fatal("ExecuteStream() response is nil, want non-nil when error is nil")
+	}
+	if resp.FinalText == "" {
+		t.Error("ExecuteStream() response.FinalText is empty, want complete response")
+	}
+	if chunks <= 0 {
+		t.Errorf("chunks received = %d, want > 0 (should have received at least one chunk)", chunks)
+	}
 
 	t.Logf("Received %d chunks, final response: %s", chunks, resp.FinalText)
 }
@@ -110,9 +121,15 @@ func TestChatAgent_StreamingVsNonStreaming(t *testing.T) {
 		query,
 		nil, // No callback = non-streaming mode (returns complete response)
 	)
-	require.NoError(t, err, "Non-streaming should succeed")
-	require.NotNil(t, respNoStream, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, respNoStream.FinalText)
+	if err != nil {
+		t.Fatalf("ExecuteStream() non-streaming unexpected error: %v", err)
+	}
+	if respNoStream == nil {
+		t.Fatal("ExecuteStream() non-streaming response is nil, want non-nil when error is nil")
+	}
+	if respNoStream.FinalText == "" {
+		t.Error("ExecuteStream() non-streaming response.FinalText is empty, want non-empty")
+	}
 
 	// Streaming execution
 	session2 := framework.CreateTestSession(t, "Streaming test")
@@ -127,15 +144,23 @@ func TestChatAgent_StreamingVsNonStreaming(t *testing.T) {
 		query,
 		callback,
 	)
-	require.NoError(t, err, "Streaming should succeed")
-	require.NotNil(t, respStream, "Response should not be nil when error is nil")
-	assert.NotEmpty(t, respStream.FinalText)
+	if err != nil {
+		t.Fatalf("ExecuteStream() streaming unexpected error: %v", err)
+	}
+	if respStream == nil {
+		t.Fatal("ExecuteStream() streaming response is nil, want non-nil when error is nil")
+	}
+	if respStream.FinalText == "" {
+		t.Error("ExecuteStream() streaming response.FinalText is empty, want non-empty")
+	}
 
 	// Both should contain "4" (the answer)
-	assert.Contains(t, respNoStream.FinalText, "4",
-		"Non-streaming response should contain answer")
-	assert.Contains(t, respStream.FinalText, "4",
-		"Streaming response should contain answer")
+	if !strings.Contains(respNoStream.FinalText, "4") {
+		t.Errorf("ExecuteStream() non-streaming response = %q, want to contain %q", respNoStream.FinalText, "4")
+	}
+	if !strings.Contains(respStream.FinalText, "4") {
+		t.Errorf("ExecuteStream() streaming response = %q, want to contain %q", respStream.FinalText, "4")
+	}
 
 	t.Logf("Non-streaming: %s", respNoStream.FinalText)
 	t.Logf("Streaming: %s", respStream.FinalText)
@@ -160,9 +185,15 @@ func TestChatAgent_StreamingContextCancellation(t *testing.T) {
 	)
 
 	// Should fail with context canceled error
-	require.Error(t, err, "Cancelled context should error")
-	assert.ErrorIs(t, err, context.Canceled)
-	assert.Nil(t, resp, "Response should be nil when context is cancelled")
+	if err == nil {
+		t.Fatal("ExecuteStream() expected error, got nil (cancelled context should error)")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("ExecuteStream() error = %v, want context.Canceled", err)
+	}
+	if resp != nil {
+		t.Errorf("ExecuteStream() response = %v, want nil (response should be nil when context is cancelled)", resp)
+	}
 	t.Logf("Context cancellation detected: %v", err)
 }
 
@@ -193,8 +224,12 @@ func TestChatAgent_StreamingEmptyChunks(t *testing.T) {
 		callback,
 	)
 
-	require.NoError(t, err, "Should handle empty chunks gracefully")
-	assert.NotEmpty(t, resp.FinalText, "Final response should not be empty")
+	if err != nil {
+		t.Fatalf("ExecuteStream() unexpected error: %v (should handle empty chunks gracefully)", err)
+	}
+	if resp.FinalText == "" {
+		t.Error("ExecuteStream() response.FinalText is empty, want non-empty")
+	}
 
 	if emptyChunks > 0 {
 		t.Logf("Received %d empty chunks out of %d total chunks", emptyChunks, totalChunks)

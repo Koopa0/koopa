@@ -133,29 +133,33 @@ func (t *TUI) startStream(query string) tea.Cmd {
 
 // listenForStream creates a command to wait for next stream event.
 // Uses single union channel - no complex multi-channel select needed.
+// Empty events (all fields zero) are skipped via loop instead of recursion
+// to prevent stack overflow under pathological conditions.
 func listenForStream(eventCh <-chan streamEvent) tea.Cmd {
 	return func() tea.Msg {
 		if eventCh == nil {
 			return nil
 		}
 
-		event, ok := <-eventCh
-		if !ok {
-			// Channel closed - stream ended
-			return streamErrorMsg{err: fmt.Errorf("stream ended without completion signal")}
-		}
+		for {
+			event, ok := <-eventCh
+			if !ok {
+				// Channel closed - stream ended
+				return streamErrorMsg{err: fmt.Errorf("stream ended without completion signal")}
+			}
 
-		// Discriminated union dispatch
-		switch {
-		case event.err != nil:
-			return streamErrorMsg{err: event.err}
-		case event.done:
-			return streamDoneMsg{output: event.output}
-		case event.text != "":
-			return streamTextMsg{text: event.text}
-		default:
-			// Empty event - continue listening
-			return listenForStream(eventCh)()
+			// Discriminated union dispatch
+			switch {
+			case event.err != nil:
+				return streamErrorMsg{err: event.err}
+			case event.done:
+				return streamDoneMsg{output: event.output}
+			case event.text != "":
+				return streamTextMsg{text: event.text}
+			default:
+				// Empty event - loop instead of recursing
+				continue
+			}
 		}
 	}
 }

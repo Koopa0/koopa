@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // networkTools provides test utilities for NetworkTools.
@@ -171,13 +170,23 @@ func TestNetworkTools_Fetch_SSRFBlockedHosts(t *testing.T) {
 
 			output, err := nt.Fetch(ctx, FetchInput{URLs: []string{tt.url}})
 
-			require.NoError(t, err, "Fetch should not return Go error")
+			if err != nil {
+				t.Fatalf("Fetch(%q) unexpected Go error: %v (should not return Go error)", tt.url, err)
+			}
 
 			if tt.wantBlocked {
-				assert.Len(t, output.Results, 0, "should have no successful results")
-				assert.Len(t, output.FailedURLs, 1, "should have one failed URL")
-				assert.Equal(t, tt.url, output.FailedURLs[0].URL)
-				assert.Contains(t, output.FailedURLs[0].Reason, "blocked")
+				if got, want := len(output.Results), 0; got != want {
+					t.Errorf("Fetch(%q) successful results = %d, want %d", tt.url, got, want)
+				}
+				if got, want := len(output.FailedURLs), 1; got != want {
+					t.Fatalf("Fetch(%q) failed URLs count = %d, want %d", tt.url, got, want)
+				}
+				if got, want := output.FailedURLs[0].URL, tt.url; got != want {
+					t.Errorf("Fetch(%q) failed URL = %q, want %q", tt.url, got, want)
+				}
+				if !strings.Contains(output.FailedURLs[0].Reason, "blocked") {
+					t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.url, output.FailedURLs[0].Reason, "blocked")
+				}
 			}
 		})
 	}
@@ -233,12 +242,20 @@ func TestNetworkTools_Fetch_SchemeValidation(t *testing.T) {
 
 			output, err := nt.Fetch(ctx, FetchInput{URLs: []string{tt.url}})
 
-			require.NoError(t, err, "Fetch should not return Go error")
+			if err != nil {
+				t.Fatalf("Fetch(%q) unexpected Go error: %v (should not return Go error)", tt.url, err)
+			}
 
 			if tt.wantBlocked {
-				assert.Len(t, output.Results, 0, "should have no successful results")
-				assert.Len(t, output.FailedURLs, 1, "should have one failed URL")
-				assert.Contains(t, output.FailedURLs[0].Reason, "blocked")
+				if got, want := len(output.Results), 0; got != want {
+					t.Errorf("Fetch(%q) successful results = %d, want %d", tt.url, got, want)
+				}
+				if got, want := len(output.FailedURLs), 1; got != want {
+					t.Fatalf("Fetch(%q) failed URLs count = %d, want %d", tt.url, got, want)
+				}
+				if !strings.Contains(output.FailedURLs[0].Reason, "blocked") {
+					t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.url, output.FailedURLs[0].Reason, "blocked")
+				}
 			}
 		})
 	}
@@ -261,8 +278,7 @@ func TestNetworkTools_Fetch_MixedURLsFiltered(t *testing.T) {
 		FetchDelay:       10 * time.Millisecond,
 		FetchTimeout:     5 * time.Second,
 	}
-	nt, err := NewNetworkToolsForTesting(cfg, testLogger())
-	require.NoError(t, err)
+	nt := newNetworkToolsForTesting(t, cfg, testLogger())
 
 	ctx := h.toolContext()
 
@@ -276,7 +292,9 @@ func TestNetworkTools_Fetch_MixedURLsFiltered(t *testing.T) {
 
 	output, err := nt.Fetch(ctx, FetchInput{URLs: urls})
 
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Fetch(mixed URLs) unexpected error: %v", err)
+	}
 
 	// The mock server URL should succeed in testing mode
 	// Private IPs should fail
@@ -344,21 +362,31 @@ func TestNetworkTools_Fetch_RedirectSSRFProtection(t *testing.T) {
 
 			output, err := nt.Fetch(ctx, FetchInput{URLs: []string{redirectServer.URL + tt.path}})
 
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("Fetch(%q) unexpected error: %v", tt.path, err)
+			}
 
 			if tt.blocked {
 				// Either the fetch fails or the redirect is blocked
 				if len(output.Results) > 0 {
 					// If we got a result, it should NOT contain the redirected content
 					for _, result := range output.Results {
-						assert.NotContains(t, result.URL, "localhost")
-						assert.NotContains(t, result.URL, "192.168")
-						assert.NotContains(t, result.URL, "169.254")
+						if strings.Contains(result.URL, "localhost") {
+							t.Errorf("Fetch(%q) result URL = %q, should not contain localhost", tt.path, result.URL)
+						}
+						if strings.Contains(result.URL, "192.168") {
+							t.Errorf("Fetch(%q) result URL = %q, should not contain 192.168", tt.path, result.URL)
+						}
+						if strings.Contains(result.URL, "169.254") {
+							t.Errorf("Fetch(%q) result URL = %q, should not contain 169.254", tt.path, result.URL)
+						}
 					}
 				}
 				// Most likely the redirect is blocked and we have a failed URL
 				if len(output.FailedURLs) > 0 {
-					assert.Contains(t, output.FailedURLs[0].Reason, "blocked")
+					if !strings.Contains(output.FailedURLs[0].Reason, "blocked") {
+						t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.path, output.FailedURLs[0].Reason, "blocked")
+					}
 				}
 			}
 		})
@@ -383,10 +411,18 @@ func TestNetworkTools_Fetch_InputValidation(t *testing.T) {
 		output, err := nt.Fetch(ctx, FetchInput{URLs: []string{}})
 
 		// Should return structured error, not Go error
-		require.NoError(t, err)
-		assert.NotEmpty(t, output.Error)
-		assert.Contains(t, output.Error, "required")
-		assert.Len(t, output.Results, 0)
+		if err != nil {
+			t.Fatalf("Fetch(empty URLs) unexpected Go error: %v", err)
+		}
+		if output.Error == "" {
+			t.Error("Fetch(empty URLs).Error = empty string, want non-empty")
+		}
+		if !strings.Contains(output.Error, "required") {
+			t.Errorf("Fetch(empty URLs).Error = %q, want contains %q", output.Error, "required")
+		}
+		if got, want := len(output.Results), 0; got != want {
+			t.Errorf("Fetch(empty URLs) results = %d, want %d", got, want)
+		}
 	})
 
 	t.Run("too many URLs", func(t *testing.T) {
@@ -400,10 +436,18 @@ func TestNetworkTools_Fetch_InputValidation(t *testing.T) {
 		output, err := nt.Fetch(ctx, FetchInput{URLs: urls})
 
 		// Should return structured error, not Go error
-		require.NoError(t, err)
-		assert.NotEmpty(t, output.Error)
-		assert.Contains(t, output.Error, "Maximum")
-		assert.Len(t, output.Results, 0)
+		if err != nil {
+			t.Fatalf("Fetch(too many URLs) unexpected Go error: %v", err)
+		}
+		if output.Error == "" {
+			t.Error("Fetch(too many URLs).Error = empty string, want non-empty")
+		}
+		if !strings.Contains(output.Error, "Maximum") {
+			t.Errorf("Fetch(too many URLs).Error = %q, want contains %q", output.Error, "Maximum")
+		}
+		if got, want := len(output.Results), 0; got != want {
+			t.Errorf("Fetch(too many URLs) results = %d, want %d", got, want)
+		}
 	})
 
 	t.Run("invalid URL format", func(t *testing.T) {
@@ -411,9 +455,15 @@ func TestNetworkTools_Fetch_InputValidation(t *testing.T) {
 
 		output, err := nt.Fetch(ctx, FetchInput{URLs: []string{"not-a-valid-url"}})
 
-		require.NoError(t, err) // Business errors in output, not Go errors
-		assert.Len(t, output.Results, 0)
-		assert.Len(t, output.FailedURLs, 1)
+		if err != nil {
+			t.Fatalf("Fetch(invalid URL) unexpected Go error: %v (business errors in output, not Go errors)", err)
+		}
+		if got, want := len(output.Results), 0; got != want {
+			t.Errorf("Fetch(invalid URL) results = %d, want %d", got, want)
+		}
+		if got, want := len(output.FailedURLs), 1; got != want {
+			t.Errorf("Fetch(invalid URL) failed URLs = %d, want %d", got, want)
+		}
 	})
 }
 
@@ -435,9 +485,15 @@ func TestNetworkTools_Search_InputValidation(t *testing.T) {
 		output, err := nt.Search(ctx, SearchInput{Query: ""})
 
 		// Should return structured error, not Go error
-		require.NoError(t, err)
-		assert.NotEmpty(t, output.Error)
-		assert.Contains(t, output.Error, "required")
+		if err != nil {
+			t.Fatalf("Search(empty query) unexpected Go error: %v", err)
+		}
+		if output.Error == "" {
+			t.Error("Search(empty query).Error = empty string, want non-empty")
+		}
+		if !strings.Contains(output.Error, "required") {
+			t.Errorf("Search(empty query).Error = %q, want contains %q", output.Error, "required")
+		}
 	})
 
 	t.Run("whitespace-only query rejected", func(t *testing.T) {
@@ -446,9 +502,15 @@ func TestNetworkTools_Search_InputValidation(t *testing.T) {
 		output, err := nt.Search(ctx, SearchInput{Query: "   "})
 
 		// Should return structured error, not Go error
-		require.NoError(t, err)
-		assert.NotEmpty(t, output.Error)
-		assert.Contains(t, output.Error, "required")
+		if err != nil {
+			t.Fatalf("Search(whitespace query) unexpected Go error: %v", err)
+		}
+		if output.Error == "" {
+			t.Error("Search(whitespace query).Error = empty string, want non-empty")
+		}
+		if !strings.Contains(output.Error, "required") {
+			t.Errorf("Search(whitespace query).Error = %q, want contains %q", output.Error, "required")
+		}
 	})
 }
 
@@ -469,20 +531,31 @@ func TestNetworkTools_Fetch_PublicURLSuccess(t *testing.T) {
 		FetchDelay:       10 * time.Millisecond,
 		FetchTimeout:     5 * time.Second,
 	}
-	nt, err := NewNetworkToolsForTesting(cfg, testLogger())
-	require.NoError(t, err)
+	nt := newNetworkToolsForTesting(t, cfg, testLogger())
 
 	ctx := h.toolContext()
 
 	output, err := nt.Fetch(ctx, FetchInput{URLs: []string{server.URL}})
 
-	require.NoError(t, err)
-	assert.Len(t, output.Results, 1)
-	assert.Len(t, output.FailedURLs, 0)
+	if err != nil {
+		t.Fatalf("Fetch(%q) unexpected error: %v", server.URL, err)
+	}
+	if got, want := len(output.Results), 1; got != want {
+		t.Fatalf("Fetch(%q) results count = %d, want %d", server.URL, got, want)
+	}
+	if got, want := len(output.FailedURLs), 0; got != want {
+		t.Errorf("Fetch(%q) failed URLs count = %d, want %d", server.URL, got, want)
+	}
 	// URL may have trailing slash added by Colly
-	assert.Contains(t, output.Results[0].URL, server.URL)
-	assert.Equal(t, "Test Page", output.Results[0].Title)
-	assert.Contains(t, output.Results[0].Content, "Test Content")
+	if !strings.Contains(output.Results[0].URL, server.URL) {
+		t.Errorf("Fetch(%q) result URL = %q, want contains %q", server.URL, output.Results[0].URL, server.URL)
+	}
+	if got, want := output.Results[0].Title, "Test Page"; got != want {
+		t.Errorf("Fetch(%q) result title = %q, want %q", server.URL, got, want)
+	}
+	if !strings.Contains(output.Results[0].Content, "Test Content") {
+		t.Errorf("Fetch(%q) result content = %q, want contains %q", server.URL, output.Results[0].Content, "Test Content")
+	}
 }
 
 // ============================================================================
@@ -509,8 +582,7 @@ func TestNetworkTools_Fetch_Concurrent(t *testing.T) {
 		FetchDelay:       5 * time.Millisecond,
 		FetchTimeout:     5 * time.Second,
 	}
-	nt, err := NewNetworkToolsForTesting(cfg, testLogger())
-	require.NoError(t, err)
+	nt := newNetworkToolsForTesting(t, cfg, testLogger())
 
 	ctx := h.toolContext()
 
@@ -525,7 +597,13 @@ func TestNetworkTools_Fetch_Concurrent(t *testing.T) {
 
 	output, err := nt.Fetch(ctx, FetchInput{URLs: urls})
 
-	require.NoError(t, err)
-	assert.Len(t, output.Results, 5, "all URLs should be fetched")
-	assert.Len(t, output.FailedURLs, 0, "no failures expected")
+	if err != nil {
+		t.Fatalf("Fetch(concurrent) unexpected error: %v", err)
+	}
+	if got, want := len(output.Results), 5; got != want {
+		t.Errorf("Fetch(concurrent) results count = %d, want %d (all URLs should be fetched)", got, want)
+	}
+	if got, want := len(output.FailedURLs), 0; got != want {
+		t.Errorf("Fetch(concurrent) failed URLs = %d, want %d (no failures expected)", got, want)
+	}
 }

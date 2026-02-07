@@ -9,13 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	goruntime "runtime" // Alias to avoid confusion with *app.Runtime
+	goruntime "runtime" // Alias to avoid confusion with app.ChatRuntime
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // executableName returns the platform-specific binary name.
@@ -41,14 +38,9 @@ func executableName() string {
 //   - Execute the actual Koopa CLI binary
 //   - Test real API interactions with Gemini
 //   - Validate database persistence
-//   - Test MCP protocol integration
 //   - Verify end-to-end user workflows
 
-const (
-	testTimeout        = 90 * time.Second
-	shortTimeout       = 30 * time.Second
-	defaultTestSession = "e2e-test-session"
-)
+const shortTimeout = 30 * time.Second
 
 // e2eTestContext holds test infrastructure
 type e2eTestContext struct {
@@ -148,179 +140,16 @@ func TestE2E_VersionCommand(t *testing.T) {
 	ctx := setupE2ETest(t)
 
 	output, err := ctx.runKoopaCommand(shortTimeout, "version")
-	require.NoError(t, err, "version command should succeed")
-
-	assert.Contains(t, output, "Koopa", "version output should contain 'Koopa'")
-	assert.Contains(t, output, "v0.", "version output should show version number")
-}
-
-// TestE2E_BasicChatWorkflow tests a complete chat interaction workflow
-func TestE2E_BasicChatWorkflow(t *testing.T) {
-	t.Skip("Interactive chat workflow requires stdin interaction - implement with expect-like tool")
-
-	// This test would:
-	// 1. Start Koopa in chat mode
-	// 2. Send a simple question like "What is 2+2?"
-	// 3. Verify response is received
-	// 4. Test /exit command
-	//
-	// Implementation requires:
-	// - PTY (pseudo-terminal) for interactive I/O
-	// - Expect-like tool (e.g., github.com/Netflix/go-expect)
-	// - Or restructure CLI to support non-interactive mode
-}
-
-// TestE2E_SessionManagement tests session creation and management
-func TestE2E_SessionManagement(t *testing.T) {
-	t.Skip("Session management requires CLI refactoring for non-interactive testing")
-
-	// This test would validate:
-	// - /session new "Test Session"
-	// - /session list
-	// - /session switch <id>
-	// - Session persistence across restarts
-}
-
-// TestE2E_RAGWorkflow tests document indexing and retrieval
-func TestE2E_RAGWorkflow(t *testing.T) {
-	t.Skip("RAG workflow requires CLI refactoring for non-interactive testing")
-
-	// This test would validate:
-	// 1. Create test documents in temp directory
-	// 2. /rag add <path>
-	// 3. /rag list
-	// 4. Query indexed content
-	// 5. Verify RAG results in response
-	// 6. /rag status
-}
-
-// TestE2E_MCPServer tests MCP server functionality
-// FIXME: Test currently fails because MCP server exits immediately when stdin is not kept open
-// Issue: MCP server requires persistent stdin connection, but test setup causes immediate shutdown
-// Root cause: Server exits with "MCP server shut down gracefully" before test can send init request
-// TODO: Refactor MCP server to handle test scenarios or implement proper test harness
-func TestE2E_MCPServer(t *testing.T) {
-	t.Skip("FIXME: MCP server exits immediately - requires test harness refactoring")
-	ctx := setupE2ETest(t)
-
-	// Start MCP server
-	cmdCtx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(cmdCtx, ctx.koopaBin, "mcp")
-	cmd.Env = append(os.Environ(),
-		"DATABASE_URL="+ctx.databaseURL,
-		"GEMINI_API_KEY="+ctx.apiKey,
-	)
-
-	// Create stdin/stdout pipes for MCP communication
-	stdin, err := cmd.StdinPipe()
-	require.NoError(t, err)
-
-	stdout, err := cmd.StdoutPipe()
-	require.NoError(t, err)
-
-	err = cmd.Start()
-	require.NoError(t, err)
-
-	// Send MCP initialize request
-	initRequest := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}` + "\n"
-	_, err = stdin.Write([]byte(initRequest))
-	require.NoError(t, err)
-
-	// Read response with timeout
-	responseChan := make(chan string, 1)
-	go func() {
-		buf := make([]byte, 4096)
-		n, _ := stdout.Read(buf)
-		responseChan <- string(buf[:n])
-	}()
-
-	select {
-	case response := <-responseChan:
-		t.Logf("MCP initialize response: %s", response)
-		assert.Contains(t, response, "result", "MCP response should contain result")
-		assert.Contains(t, response, "serverInfo", "MCP response should contain serverInfo")
-	case <-time.After(10 * time.Second):
-		t.Fatal("MCP server did not respond within timeout")
+	if err != nil {
+		t.Fatalf("version command unexpected error: %v", err)
 	}
 
-	// Cleanup - errors are expected when killing the process
-	_ = stdin.Close()
-	_ = cmd.Process.Kill()
-	_ = cmd.Wait()
-}
-
-// TestE2E_MCPToolsAvailable tests that MCP exposes expected tools
-// FIXME: Test currently fails with EOF error when reading MCP responses
-// Issue: Same as TestE2E_MCPServer - MCP exits before test can communicate
-// Root cause: stdin/stdout pipe handling needs improvement for test scenarios
-// TODO: Implement proper MCP test client or mock server
-func TestE2E_MCPToolsAvailable(t *testing.T) {
-	t.Skip("FIXME: MCP communication fails - EOF error on stdout read")
-	ctx := setupE2ETest(t)
-
-	cmdCtx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(cmdCtx, ctx.koopaBin, "mcp")
-	cmd.Env = append(os.Environ(),
-		"DATABASE_URL="+ctx.databaseURL,
-		"GEMINI_API_KEY="+ctx.apiKey,
-	)
-
-	stdin, err := cmd.StdinPipe()
-	require.NoError(t, err)
-
-	stdout, err := cmd.StdoutPipe()
-	require.NoError(t, err)
-
-	err = cmd.Start()
-	require.NoError(t, err)
-	defer func() {
-		// Errors are expected when killing the process
-		_ = stdin.Close()
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
-
-	// Initialize MCP
-	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}` + "\n"
-	_, err = stdin.Write([]byte(initReq))
-	require.NoError(t, err)
-
-	// Read initialize response first
-	buf := make([]byte, 8192)
-	n, err := stdout.Read(buf)
-	require.NoError(t, err)
-	initResponse := string(buf[:n])
-	t.Logf("MCP initialize response: %s", initResponse)
-	assert.Contains(t, initResponse, "result", "MCP initialize should return result")
-
-	// Request tools list
-	toolsReq := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}` + "\n"
-	_, err = stdin.Write([]byte(toolsReq))
-	require.NoError(t, err)
-
-	// Read tools/list response
-	n, err = stdout.Read(buf)
-	require.NoError(t, err)
-	toolsResponse := string(buf[:n])
-	t.Logf("MCP tools/list response: %s", toolsResponse)
-
-	// Verify expected tools are available
-	assert.Contains(t, toolsResponse, "readFile", "MCP should expose readFile tool")
-}
-
-// TestE2E_DatabasePersistence tests that data persists across CLI restarts
-func TestE2E_DatabasePersistence(t *testing.T) {
-	t.Skip("Database persistence testing requires CLI refactoring for session creation via CLI")
-
-	// This test would validate:
-	// 1. Create session with specific title
-	// 2. Exit CLI
-	// 3. Restart CLI
-	// 4. List sessions and verify created session exists
+	if !strings.Contains(output, "Koopa") {
+		t.Errorf("version command output = %q, want to contain %q", output, "Koopa")
+	}
+	if !strings.Contains(output, "v0.") {
+		t.Errorf("version command output = %q, want to contain %q", output, "v0.")
+	}
 }
 
 // TestE2E_ErrorRecovery tests CLI behavior with various inputs
@@ -329,8 +158,12 @@ func TestE2E_ErrorRecovery(t *testing.T) {
 
 	t.Run("help command works", func(t *testing.T) {
 		output, err := ctx.runKoopaCommand(shortTimeout, "help")
-		assert.NoError(t, err, "help command should succeed")
-		assert.Contains(t, strings.ToLower(output), "koopa", "help output should mention koopa")
+		if err != nil {
+			t.Errorf("help command unexpected error: %v", err)
+		}
+		if !strings.Contains(strings.ToLower(output), "koopa") {
+			t.Errorf("help command output = %q, want to contain %q", output, "koopa")
+		}
 	})
 
 	t.Run("version without api key", func(t *testing.T) {
@@ -344,31 +177,13 @@ func TestE2E_ErrorRecovery(t *testing.T) {
 		ctx.apiKey = originalKey
 
 		// Version command should still work without API key
-		assert.NoError(t, err, "version should work without API key")
-		assert.Contains(t, output, "Koopa", "version output should show Koopa")
+		if err != nil {
+			t.Errorf("version command without API key unexpected error: %v", err)
+		}
+		if !strings.Contains(output, "Koopa") {
+			t.Errorf("version command output = %q, want to contain %q", output, "Koopa")
+		}
 	})
-}
-
-// TestE2E_ConcurrentAccess tests that multiple CLI instances can coexist
-func TestE2E_ConcurrentAccess(t *testing.T) {
-	t.Skip("Concurrent access testing requires session isolation implementation")
-
-	// This test would validate:
-	// 1. Start two CLI instances
-	// 2. Create different sessions in each
-	// 3. Verify no data corruption
-	// 4. Verify proper session isolation
-}
-
-// TestE2E_ToolExecution tests that agent tools execute correctly
-func TestE2E_ToolExecution(t *testing.T) {
-	t.Skip("Tool execution testing requires interactive CLI or agent API endpoint")
-
-	// This test would validate:
-	// 1. Ask agent to read a file
-	// 2. Verify tool call happens
-	// 3. Verify correct file content returned
-	// 4. Test other tools (system, network, knowledge)
 }
 
 // TestE2E_IntegrationTestHelper verifies E2E test infrastructure
@@ -376,14 +191,22 @@ func TestE2E_IntegrationTestHelper(t *testing.T) {
 	ctx := setupE2ETest(t)
 
 	// Verify binary exists
-	assert.FileExists(t, ctx.koopaBin, "Koopa binary should exist")
+	if _, err := os.Stat(ctx.koopaBin); err != nil {
+		t.Errorf("koopa binary should exist at %q, but got error: %v", ctx.koopaBin, err)
+	}
 
 	// Verify working directory
-	assert.DirExists(t, ctx.workDir, "Working directory should exist")
+	if info, err := os.Stat(ctx.workDir); err != nil || !info.IsDir() {
+		t.Errorf("working directory should exist at %q, but got error: %v", ctx.workDir, err)
+	}
 
 	// Verify environment
-	assert.NotEmpty(t, ctx.databaseURL, "DATABASE_URL should be set")
-	assert.NotEmpty(t, ctx.apiKey, "GEMINI_API_KEY should be set")
+	if ctx.databaseURL == "" {
+		t.Error("DATABASE_URL should be set")
+	}
+	if ctx.apiKey == "" {
+		t.Error("GEMINI_API_KEY should be set")
+	}
 
 	t.Logf("E2E test infrastructure:")
 	t.Logf("  Binary: %s", ctx.koopaBin)

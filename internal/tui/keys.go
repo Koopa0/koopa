@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -15,13 +16,38 @@ const (
 	cmdQuit  = "/quit"
 )
 
+// keyMap holds key bindings for help bar display.
+type keyMap struct {
+	Submit     key.Binding
+	NewLine    key.Binding
+	History    key.Binding
+	Cancel     key.Binding
+	Quit       key.Binding
+	ScrollUp   key.Binding
+	ScrollDown key.Binding
+	EscCancel  key.Binding
+}
+
+func newKeyMap() keyMap {
+	return keyMap{
+		Submit:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "send")),
+		NewLine:    key.NewBinding(key.WithKeys("shift+enter"), key.WithHelp("s+enter", "newline")),
+		History:    key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "history")),
+		Cancel:     key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "cancel")),
+		Quit:       key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "exit")),
+		ScrollUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "scroll up")),
+		ScrollDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "scroll down")),
+		EscCancel:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+	}
+}
+
 //nolint:gocyclo // Keyboard handler requires branching for all key combinations
 func (t *TUI) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := msg.Key()
+	k := msg.Key()
 
 	// Check for Ctrl modifier
-	if key.Mod&tea.ModCtrl != 0 {
-		switch key.Code {
+	if k.Mod&tea.ModCtrl != 0 {
+		switch k.Code {
 		case 'c':
 			return t.handleCtrlC()
 		case 'd':
@@ -31,12 +57,12 @@ func (t *TUI) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Check special keys
-	switch key.Code {
+	switch k.Code {
 	case tea.KeyEnter:
 		if t.state == StateInput {
 			// Enter without Shift = submit
 			// Shift+Enter = newline (pass through to textarea)
-			if key.Mod&tea.ModShift == 0 {
+			if k.Mod&tea.ModShift == 0 {
 				return t.handleSubmit()
 			}
 		}
@@ -60,6 +86,14 @@ func (t *TUI) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			t.output.Reset()
 			return t, nil
 		}
+
+	case tea.KeyPgUp:
+		t.viewport.PageUp()
+		return t, nil
+
+	case tea.KeyPgDown:
+		t.viewport.PageDown()
+		return t, nil
 	}
 
 	// Pass keys to textarea for typing - ALWAYS allow typing even during streaming
@@ -134,7 +168,7 @@ func (t *TUI) handleSlashCommand(cmd string) (tea.Model, tea.Cmd) {
 	case cmdHelp:
 		t.addMessage(Message{
 			Role: roleSystem,
-			Text: "Commands: " + cmdHelp + ", " + cmdClear + ", " + cmdExit + "\nShortcuts:\n  Enter: send message\n  Shift+Enter: new line\n  Ctrl+C: cancel/clear\n  Ctrl+D: exit\n  Up/Down: history",
+			Text: "Commands: " + cmdHelp + ", " + cmdClear + ", " + cmdExit + "\nShortcuts:\n  Enter: send message\n  Shift+Enter: new line\n  Ctrl+C: cancel/clear\n  Ctrl+D: exit\n  Up/Down: history\n  PgUp/PgDn: scroll",
 		})
 	case cmdClear:
 		t.messages = nil
