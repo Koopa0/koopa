@@ -47,12 +47,12 @@ func runMCP() error {
 func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 	slog.Info("starting MCP server", "version", version)
 
-	// Initialize application using Wire DI
+	// Initialize application
 	application, cleanup, err := app.InitializeApp(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize application: %w", err)
 	}
-	// Cleanup order: App.Close (goroutines) first, then Wire cleanup (DB pool, OTel)
+	// Cleanup order: App.Close (goroutines) first, then cleanup (DB pool, OTel)
 	defer cleanup()
 	defer func() {
 		if closeErr := application.Close(); closeErr != nil {
@@ -88,13 +88,27 @@ func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 		return fmt.Errorf("failed to create network tools: %w", err)
 	}
 
+	// 4. KnowledgeTools (optional - requires retriever from App)
+	var knowledgeTools *tools.KnowledgeTools
+	toolCategories := []string{"file", "system", "network"}
+	if application.Retriever != nil {
+		kt, ktErr := tools.NewKnowledgeTools(application.Retriever, application.DocStore, logger)
+		if ktErr != nil {
+			slog.Warn("knowledge tools unavailable", "error", ktErr)
+		} else {
+			knowledgeTools = kt
+			toolCategories = append(toolCategories, "knowledge")
+		}
+	}
+
 	// Create MCP Server with all tools
 	mcpServer, err := mcp.NewServer(mcp.Config{
-		Name:         "koopa",
-		Version:      version,
-		FileTools:    fileTools,
-		SystemTools:  systemTools,
-		NetworkTools: networkTools,
+		Name:           "koopa",
+		Version:        version,
+		FileTools:      fileTools,
+		SystemTools:    systemTools,
+		NetworkTools:   networkTools,
+		KnowledgeTools: knowledgeTools,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create MCP server: %w", err)
@@ -103,7 +117,7 @@ func RunMCP(ctx context.Context, cfg *config.Config, version string) error {
 	slog.Info("MCP server initialized",
 		"name", "koopa",
 		"version", version,
-		"tools", []string{"file", "system", "network"})
+		"tools", toolCategories)
 	slog.Info("starting MCP server on stdio transport")
 
 	// Run server on stdio transport
