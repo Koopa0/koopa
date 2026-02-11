@@ -26,7 +26,12 @@ import (
 
 // resultToMCP converts a tools.Result to mcp.CallToolResult.
 // This follows the Direct Inline Handling principle but extracts the common pattern.
-func resultToMCP(result tools.Result) *mcp.CallToolResult {
+// If logger is nil, falls back to slog.Default().
+func resultToMCP(result tools.Result, logger *slog.Logger) *mcp.CallToolResult {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	if result.Status == tools.StatusError {
 		errorText := fmt.Sprintf("[%s] %s", result.Error.Code, result.Error.Message)
 		if result.Error.Details != nil {
@@ -36,7 +41,7 @@ func resultToMCP(result tools.Result) *mcp.CallToolResult {
 				detailsJSON, err := json.Marshal(sanitized)
 				if err != nil {
 					// Log internal error, don't expose to client
-					slog.Warn("failed to marshal sanitized error details", "error", err)
+					logger.Warn("marshaling sanitized error details", "error", err)
 					errorText += "\nDetails: (see server logs)"
 				} else {
 					errorText += fmt.Sprintf("\nDetails: %s", string(detailsJSON))
@@ -44,7 +49,7 @@ func resultToMCP(result tools.Result) *mcp.CallToolResult {
 			}
 
 			// Always log full details server-side for debugging
-			slog.Debug("MCP error details", "details", result.Error.Details)
+			logger.Debug("MCP error details", "details", result.Error.Details)
 		}
 
 		return &mcp.CallToolResult{

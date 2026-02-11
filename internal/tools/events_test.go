@@ -8,7 +8,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// mockEmitterForEvents is a test implementation of ToolEventEmitter.
+// mockEmitterForEvents is a test implementation of Emitter.
 type mockEmitterForEvents struct {
 	startCalls    []string
 	completeCalls []string
@@ -27,8 +27,8 @@ func (m *mockEmitterForEvents) OnToolError(name string) {
 	m.errorCalls = append(m.errorCalls, name)
 }
 
-// Verify mockEmitterForEvents implements ToolEventEmitter.
-var _ ToolEventEmitter = (*mockEmitterForEvents)(nil)
+// Verify mockEmitterForEvents implements Emitter.
+var _ Emitter = (*mockEmitterForEvents)(nil)
 
 func TestWithEvents_Success(t *testing.T) {
 	emitter := &mockEmitterForEvents{}

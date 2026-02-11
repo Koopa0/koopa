@@ -26,15 +26,14 @@ import (
 // Provides:
 //   - Isolated PostgreSQL instance with pgvector extension
 //   - Connection pool for database operations
-//   - Automatic cleanup via cleanup function
+//   - Automatic cleanup via tb.Cleanup (no manual cleanup needed)
 //
 // Usage:
 //
-//	db, cleanup := testutil.SetupTestDB(t)
-//	defer cleanup()
+//	db := testutil.SetupTestDB(t)
 //	// Use db.Pool for database operations
 type TestDBContainer struct {
-	Container *postgres.PostgresContainer
+	container *postgres.PostgresContainer
 	Pool      *pgxpool.Pool
 	ConnStr   string
 }
@@ -46,25 +45,24 @@ type TestDBContainer struct {
 //   - Test database schema (via migrations)
 //   - Connection pool ready for use
 //
-// Returns:
-//   - TestDBContainer: Container with connection pool
-//   - cleanup function: Must be called to terminate container
+// Cleanup is registered via tb.Cleanup and runs automatically when the test ends.
 //
 // Example:
 //
 //	func TestMyFeature(t *testing.T) {
-//	    db, cleanup := testutil.SetupTestDB(t)
-//	    defer cleanup()
+//	    db := testutil.SetupTestDB(t)
 //
 //	    // Use db.Pool for queries
 //	    var count int
 //	    err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM documents").Scan(&count)
-//	    require.NoError(t, err)
+//	    if err != nil {
+//	        t.Fatalf("QueryRow() unexpected error: %v", err)
+//	    }
 //	}
 //
 // Note: Accepts testing.TB interface to support both *testing.T (tests) and
 // *testing.B (benchmarks). This allows the same setup to be used in both contexts.
-func SetupTestDB(tb testing.TB) (*TestDBContainer, func()) {
+func SetupTestDB(tb testing.TB) *TestDBContainer {
 	tb.Helper()
 
 	ctx := context.Background()
@@ -81,62 +79,58 @@ func SetupTestDB(tb testing.TB) (*TestDBContainer, func()) {
 				WithStartupTimeout(60*time.Second)),
 	)
 	if err != nil {
-		tb.Fatalf("Failed to start PostgreSQL container: %v", err)
+		tb.Fatalf("starting PostgreSQL container: %v", err)
 	}
 
 	// Get connection string
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		_ = pgContainer.Terminate(ctx)
-		tb.Fatalf("Failed to get connection string: %v", err)
+		_ = pgContainer.Terminate(ctx) // best-effort cleanup
+		tb.Fatalf("getting connection string: %v", err)
 	}
 
 	// Create connection pool
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-		_ = pgContainer.Terminate(ctx)
-		tb.Fatalf("Failed to create connection pool: %v", err)
+		_ = pgContainer.Terminate(ctx) // best-effort cleanup
+		tb.Fatalf("creating connection pool: %v", err)
 	}
 
 	// Verify connection
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		_ = pgContainer.Terminate(ctx)
-		tb.Fatalf("Failed to ping database: %v", err)
+		_ = pgContainer.Terminate(ctx) // best-effort cleanup
+		tb.Fatalf("pinging database: %v", err)
 	}
 
 	// Run migrations
 	if err := runMigrations(ctx, pool); err != nil {
 		pool.Close()
 		_ = pgContainer.Terminate(ctx)
-		tb.Fatalf("Failed to run migrations: %v", err)
+		tb.Fatalf("running migrations: %v", err)
 	}
 
 	container := &TestDBContainer{
-		Container: pgContainer,
+		container: pgContainer,
 		Pool:      pool,
 		ConnStr:   connStr,
 	}
 
-	cleanup := func() {
-		if pool != nil {
-			pool.Close()
-		}
-		if pgContainer != nil {
-			_ = pgContainer.Terminate(context.Background())
-		}
-	}
+	tb.Cleanup(func() {
+		pool.Close()
+		_ = pgContainer.Terminate(context.Background())
+	})
 
-	return container, cleanup
+	return container
 }
 
-// findProjectRoot finds the project root directory by looking for go.mod.
+// FindProjectRoot finds the project root directory by looking for go.mod.
 // This allows tests to run from any subdirectory and still find migration files.
-func findProjectRoot() (string, error) {
+func FindProjectRoot() (string, error) {
 	// Start from the current file's directory
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", fmt.Errorf("failed to get current file path")
+		return "", fmt.Errorf("getting current file path")
 	}
 
 	dir := filepath.Dir(filename)
@@ -168,9 +162,9 @@ func findProjectRoot() (string, error) {
 //nolint:gocognit // Complex error handling necessary for transaction safety in test utility
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	// Find project root to build absolute paths to migrations
-	projectRoot, err := findProjectRoot()
+	projectRoot, err := FindProjectRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find project root: %w", err)
+		return fmt.Errorf("finding project root: %w", err)
 	}
 
 	// Read and execute migration files in order
@@ -183,7 +177,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		// #nosec G304 -- migration paths are hardcoded constants, not from user input
 		migrationSQL, readErr := os.ReadFile(migrationPath)
 		if readErr != nil {
-			return fmt.Errorf("failed to read migration %s: %w", migrationPath, readErr)
+			return fmt.Errorf("reading migration %s: %w", migrationPath, readErr)
 		}
 
 		// Skip empty migration files to avoid unnecessary execution
@@ -198,7 +192,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			// This ensures that if a migration fails, changes are rolled back
 			tx, beginErr := pool.Begin(ctx)
 			if beginErr != nil {
-				return fmt.Errorf("failed to begin transaction for migration %s: %w", migrationPath, beginErr)
+				return fmt.Errorf("beginning transaction for migration %s: %w", migrationPath, beginErr)
 			}
 
 			// Ensure transaction is always closed (rollback unless committed)
@@ -215,11 +209,11 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 
 			_, execErr := tx.Exec(ctx, string(migrationSQL))
 			if execErr != nil {
-				return fmt.Errorf("failed to execute migration %s: %w", migrationPath, execErr)
+				return fmt.Errorf("executing migration %s: %w", migrationPath, execErr)
 			}
 
 			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return fmt.Errorf("failed to commit migration %s: %w", migrationPath, commitErr)
+				return fmt.Errorf("committing migration %s: %w", migrationPath, commitErr)
 			}
 			committed = true
 			return nil

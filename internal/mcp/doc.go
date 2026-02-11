@@ -21,7 +21,7 @@
 //	     +-- Handler Methods (ReadFile, WriteFile, ExecuteCommand, ...)
 //	     |
 //	     v
-//	Toolsets (FileTools, SystemTools, NetworkTools, KnowledgeTools)
+//	Toolsets (File, System, Network, Knowledge)
 //	     |
 //	     v
 //	Execution Results
@@ -34,7 +34,7 @@
 //
 // Network tools (2): web_search, web_fetch
 //
-// Knowledge tools (3, optional): search_history, search_documents, search_system_knowledge
+// Knowledge tools (3-4, optional): search_history, search_documents, search_system_knowledge, knowledge_store
 //
 // # Tool Handler Pattern
 //

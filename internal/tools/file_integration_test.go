@@ -9,7 +9,7 @@ import (
 	"github.com/koopa0/koopa/internal/security"
 )
 
-// fileTools provides test utilities for FileTools.
+// fileTools provides test utilities for File.
 type fileTools struct {
 	t       *testing.T
 	tempDir string
@@ -21,20 +21,20 @@ func newfileTools(t *testing.T) *fileTools {
 	// Resolve symlinks (macOS /var -> /private/var)
 	realTempDir, err := filepath.EvalSymlinks(tempDir)
 	if err != nil {
-		t.Fatalf("failed to resolve temp dir symlinks: %v", err)
+		t.Fatalf("resolving temp dir symlinks: %v", err)
 	}
 	return &fileTools{t: t, tempDir: realTempDir}
 }
 
-func (h *fileTools) createFileTools() *FileTools {
+func (h *fileTools) createFile() *File {
 	h.t.Helper()
 	pathVal, err := security.NewPath([]string{h.tempDir})
 	if err != nil {
-		h.t.Fatalf("failed to create path validator: %v", err)
+		h.t.Fatalf("creating path validator: %v", err)
 	}
-	ft, err := NewFileTools(pathVal, testLogger())
+	ft, err := NewFile(pathVal, testLogger())
 	if err != nil {
-		h.t.Fatalf("failed to create file tools: %v", err)
+		h.t.Fatalf("creating file tools: %v", err)
 	}
 	return ft
 }
@@ -44,16 +44,12 @@ func (h *fileTools) createTestFile(name, content string) string {
 	path := filepath.Join(h.tempDir, name)
 	err := os.WriteFile(path, []byte(content), 0o600)
 	if err != nil {
-		h.t.Fatalf("failed to create test file: %v", err)
+		h.t.Fatalf("creating test file: %v", err)
 	}
 	return path
 }
 
-// ============================================================================
-// ReadFile Integration Tests
-// ============================================================================
-
-func TestFileTools_ReadFile_PathSecurity(t *testing.T) {
+func TestFile_ReadFile_PathSecurity(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -87,11 +83,11 @@ func TestFileTools_ReadFile_PathSecurity(t *testing.T) {
 			t.Parallel()
 
 			h := newfileTools(t)
-			ft := h.createFileTools()
+			ft := h.createFile()
 
 			result, err := ft.ReadFile(nil, ReadFileInput{Path: tt.path})
 
-			// FileTools returns business errors in Result, not Go errors
+			// File returns business errors in Result, not Go errors
 			if err != nil {
 				t.Fatalf("ReadFile(%q) unexpected Go error: %v (should not return Go error)", tt.path, err)
 			}
@@ -104,18 +100,18 @@ func TestFileTools_ReadFile_PathSecurity(t *testing.T) {
 			if got, want := result.Error.Code, tt.wantErrCode; got != want {
 				t.Errorf("ReadFile(%q).Error.Code = %v, want %v", tt.path, got, want)
 			}
-			if !strings.Contains(result.Error.Message, "path validation failed") {
-				t.Errorf("ReadFile(%q).Error.Message = %q, want contains %q", tt.path, result.Error.Message, "path validation failed")
+			if !strings.Contains(result.Error.Message, "validating path") {
+				t.Errorf("ReadFile(%q).Error.Message = %q, want contains %q", tt.path, result.Error.Message, "validating path")
 			}
 		})
 	}
 }
 
-func TestFileTools_ReadFile_Success(t *testing.T) {
+func TestFile_ReadFile_Success(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	// Create a test file
 	testContent := "Hello, World!"
@@ -143,11 +139,11 @@ func TestFileTools_ReadFile_Success(t *testing.T) {
 	}
 }
 
-func TestFileTools_ReadFile_NotFound(t *testing.T) {
+func TestFile_ReadFile_NotFound(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	// Try to read non-existent file within allowed directory
 	nonExistentPath := filepath.Join(h.tempDir, "does-not-exist.txt")
@@ -168,11 +164,11 @@ func TestFileTools_ReadFile_NotFound(t *testing.T) {
 	}
 }
 
-func TestFileTools_ReadFile_FileTooLarge(t *testing.T) {
+func TestFile_ReadFile_FileTooLarge(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	// Create a file larger than MaxReadFileSize (10MB)
 	largePath := filepath.Join(h.tempDir, "large.txt")
@@ -209,11 +205,7 @@ func TestFileTools_ReadFile_FileTooLarge(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// WriteFile Integration Tests
-// ============================================================================
-
-func TestFileTools_WriteFile_PathSecurity(t *testing.T) {
+func TestFile_WriteFile_PathSecurity(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -247,7 +239,7 @@ func TestFileTools_WriteFile_PathSecurity(t *testing.T) {
 			t.Parallel()
 
 			h := newfileTools(t)
-			ft := h.createFileTools()
+			ft := h.createFile()
 
 			result, err := ft.WriteFile(nil, WriteFileInput{
 				Path:    tt.path,
@@ -270,11 +262,11 @@ func TestFileTools_WriteFile_PathSecurity(t *testing.T) {
 	}
 }
 
-func TestFileTools_WriteFile_Success(t *testing.T) {
+func TestFile_WriteFile_Success(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	testPath := filepath.Join(h.tempDir, "new-file.txt")
 	testContent := "New content"
@@ -304,11 +296,11 @@ func TestFileTools_WriteFile_Success(t *testing.T) {
 	}
 }
 
-func TestFileTools_WriteFile_CreatesDirectories(t *testing.T) {
+func TestFile_WriteFile_CreatesDirectories(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	// Write to a nested path that doesn't exist
 	nestedPath := filepath.Join(h.tempDir, "subdir", "nested", "file.txt")
@@ -336,11 +328,7 @@ func TestFileTools_WriteFile_CreatesDirectories(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// DeleteFile Integration Tests
-// ============================================================================
-
-func TestFileTools_DeleteFile_PathSecurity(t *testing.T) {
+func TestFile_DeleteFile_PathSecurity(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -368,7 +356,7 @@ func TestFileTools_DeleteFile_PathSecurity(t *testing.T) {
 			t.Parallel()
 
 			h := newfileTools(t)
-			ft := h.createFileTools()
+			ft := h.createFile()
 
 			result, err := ft.DeleteFile(nil, DeleteFileInput{Path: tt.path})
 
@@ -388,11 +376,11 @@ func TestFileTools_DeleteFile_PathSecurity(t *testing.T) {
 	}
 }
 
-func TestFileTools_DeleteFile_Success(t *testing.T) {
+func TestFile_DeleteFile_Success(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	// Create a file to delete
 	testPath := h.createTestFile("to-delete.txt", "content")
@@ -417,11 +405,7 @@ func TestFileTools_DeleteFile_Success(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// ListFiles Integration Tests
-// ============================================================================
-
-func TestFileTools_ListFiles_PathSecurity(t *testing.T) {
+func TestFile_ListFiles_PathSecurity(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -449,7 +433,7 @@ func TestFileTools_ListFiles_PathSecurity(t *testing.T) {
 			t.Parallel()
 
 			h := newfileTools(t)
-			ft := h.createFileTools()
+			ft := h.createFile()
 
 			result, err := ft.ListFiles(nil, ListFilesInput{Path: tt.path})
 
@@ -469,11 +453,11 @@ func TestFileTools_ListFiles_PathSecurity(t *testing.T) {
 	}
 }
 
-func TestFileTools_ListFiles_Success(t *testing.T) {
+func TestFile_ListFiles_Success(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	// Create some test files
 	h.createTestFile("file1.txt", "content1")
@@ -516,15 +500,11 @@ func TestFileTools_ListFiles_Success(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// GetFileInfo Integration Tests
-// ============================================================================
-
-func TestFileTools_GetFileInfo_PathSecurity(t *testing.T) {
+func TestFile_GetFileInfo_PathSecurity(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	result, err := ft.GetFileInfo(nil, GetFileInfoInput{Path: "/etc/passwd"})
 
@@ -542,11 +522,11 @@ func TestFileTools_GetFileInfo_PathSecurity(t *testing.T) {
 	}
 }
 
-func TestFileTools_GetFileInfo_Success(t *testing.T) {
+func TestFile_GetFileInfo_Success(t *testing.T) {
 	t.Parallel()
 
 	h := newfileTools(t)
-	ft := h.createFileTools()
+	ft := h.createFile()
 
 	// Create a test file
 	testPath := h.createTestFile("info.txt", "test content")

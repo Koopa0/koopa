@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,13 +17,15 @@ import (
 	"github.com/go-shiori/go-readability"
 	"github.com/gocolly/colly/v2"
 
-	"github.com/koopa0/koopa/internal/log"
 	"github.com/koopa0/koopa/internal/security"
 )
 
+// Tool name constants for network operations registered with Genkit.
 const (
-	ToolWebSearch = "web_search"
-	ToolWebFetch  = "web_fetch"
+	// WebSearchName is the Genkit tool name for performing web searches.
+	WebSearchName = "web_search"
+	// WebFetchName is the Genkit tool name for fetching web page content.
+	WebFetchName = "web_fetch"
 )
 
 // Content limits.
@@ -39,11 +42,11 @@ const (
 	MaxRedirects = 5
 )
 
-// NetworkTools holds dependencies for network operation handlers.
-// Use NewNetworkTools to create an instance, then either:
+// Network holds dependencies for network operation handlers.
+// Use NewNetwork to create an instance, then either:
 // - Call methods directly (for MCP)
-// - Use RegisterNetworkTools to register with Genkit
-type NetworkTools struct {
+// - Use RegisterNetwork to register with Genkit
+type Network struct {
 	// Search configuration (SearXNG)
 	searchBaseURL string
 	searchClient  *http.Client
@@ -60,19 +63,19 @@ type NetworkTools struct {
 	// Only settable within the tools package (unexported field).
 	skipSSRFCheck bool
 
-	logger log.Logger
+	logger *slog.Logger
 }
 
-// NetworkConfig holds configuration for network tools.
-type NetworkConfig struct {
+// NetConfig holds configuration for network tools.
+type NetConfig struct {
 	SearchBaseURL    string
 	FetchParallelism int
 	FetchDelay       time.Duration
 	FetchTimeout     time.Duration
 }
 
-// NewNetworkTools creates a NetworkTools instance.
-func NewNetworkTools(cfg NetworkConfig, logger log.Logger) (*NetworkTools, error) {
+// NewNetwork creates a Network instance.
+func NewNetwork(cfg NetConfig, logger *slog.Logger) (*Network, error) {
 	if cfg.SearchBaseURL == "" {
 		return nil, fmt.Errorf("search base URL is required")
 	}
@@ -91,33 +94,38 @@ func NewNetworkTools(cfg NetworkConfig, logger log.Logger) (*NetworkTools, error
 		cfg.FetchTimeout = 30 * time.Second
 	}
 
-	return &NetworkTools{
-		searchBaseURL:    strings.TrimSuffix(cfg.SearchBaseURL, "/"),
-		searchClient:     &http.Client{Timeout: 30 * time.Second},
+	urlValidator := security.NewURL()
+
+	return &Network{
+		searchBaseURL: strings.TrimSuffix(cfg.SearchBaseURL, "/"),
+		searchClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: urlValidator.SafeTransport(),
+		},
 		fetchParallelism: cfg.FetchParallelism,
 		fetchDelay:       cfg.FetchDelay,
 		fetchTimeout:     cfg.FetchTimeout,
-		urlValidator:     security.NewURL(),
+		urlValidator:     urlValidator,
 		logger:           logger,
 	}, nil
 }
 
-// RegisterNetworkTools registers all network operation tools with Genkit.
+// RegisterNetwork registers all network operation tools with Genkit.
 // Tools are registered with event emission wrappers for streaming support.
-func RegisterNetworkTools(g *genkit.Genkit, nt *NetworkTools) ([]ai.Tool, error) {
+func RegisterNetwork(g *genkit.Genkit, nt *Network) ([]ai.Tool, error) {
 	if g == nil {
 		return nil, fmt.Errorf("genkit instance is required")
 	}
 	if nt == nil {
-		return nil, fmt.Errorf("NetworkTools is required")
+		return nil, fmt.Errorf("Network is required")
 	}
 
 	return []ai.Tool{
-		genkit.DefineTool(g, ToolWebSearch,
+		genkit.DefineTool(g, WebSearchName,
 			"Search the web for information. Returns relevant results with titles, URLs, and content snippets. "+
 				"Use this to find current information, news, or facts from the internet.",
-			WithEvents(ToolWebSearch, nt.Search)),
-		genkit.DefineTool(g, ToolWebFetch,
+			WithEvents(WebSearchName, nt.Search)),
+		genkit.DefineTool(g, WebFetchName,
 			"Fetch and extract content from one or more URLs (max 10). "+
 				"Supports HTML pages, JSON APIs, and plain text. "+
 				"For HTML: uses Readability algorithm to extract main content. "+
@@ -126,13 +134,9 @@ func RegisterNetworkTools(g *genkit.Genkit, nt *NetworkTools) ([]ai.Tool, error)
 				"Supports parallel fetching with rate limiting. "+
 				"Returns extracted content (max 50KB per URL). "+
 				"Note: Does not render JavaScript - for SPA pages, content may be incomplete.",
-			WithEvents(ToolWebFetch, nt.Fetch)),
+			WithEvents(WebFetchName, nt.Fetch)),
 	}, nil
 }
-
-// ============================================================================
-// web_search: Search the web via SearXNG
-// ============================================================================
 
 // SearchInput defines the input for web_search tool.
 type SearchInput struct {
@@ -166,7 +170,7 @@ type SearchResult struct {
 }
 
 // Search performs web search via SearXNG.
-func (n *NetworkTools) Search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
+func (n *Network) Search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, error) {
 	// Validate required fields
 	if strings.TrimSpace(input.Query) == "" {
 		return SearchOutput{Error: "Query is required. Please provide a search query."}, nil
@@ -202,8 +206,7 @@ func (n *NetworkTools) Search(ctx *ai.ToolContext, input SearchInput) (SearchOut
 	// Execute request
 	resp, err := n.searchClient.Do(req)
 	if err != nil {
-		n.logger.Error("search request failed", "error", err)
-		return SearchOutput{}, fmt.Errorf("search request failed: %w", err)
+		return SearchOutput{}, fmt.Errorf("executing search request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -274,10 +277,6 @@ type searxngResult struct {
 type searxngResponse struct {
 	Results []searxngResult `json:"results"`
 }
-
-// ============================================================================
-// web_fetch: Fetch and extract content from URLs
-// ============================================================================
 
 // FetchInput defines the input for web_fetch tool.
 type FetchInput struct {
@@ -352,7 +351,7 @@ func (s *fetchState) markProcessed(urlStr string) bool {
 
 // Fetch retrieves and extracts content from one or more URLs.
 // Includes SSRF protection to block private IPs and cloud metadata endpoints.
-func (n *NetworkTools) Fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
+func (n *Network) Fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput, error) {
 	// Validate input
 	if len(input.URLs) == 0 {
 		return FetchOutput{Error: "At least one URL is required. Please provide URLs to fetch."}, nil
@@ -403,7 +402,7 @@ func (n *NetworkTools) Fetch(ctx *ai.ToolContext, input FetchInput) (FetchOutput
 }
 
 // filterURLs validates and deduplicates URLs, returning safe and failed lists.
-func (n *NetworkTools) filterURLs(urls []string) (safe []string, failed []FailedURL) {
+func (n *Network) filterURLs(urls []string) (safe []string, failed []FailedURL) {
 	urlSet := make(map[string]struct{})
 	for _, u := range urls {
 		if _, exists := urlSet[u]; exists {
@@ -424,7 +423,7 @@ func (n *NetworkTools) filterURLs(urls []string) (safe []string, failed []Failed
 }
 
 // createCollector creates a configured Colly collector.
-func (n *NetworkTools) createCollector() *colly.Collector {
+func (n *Network) createCollector() *colly.Collector {
 	c := colly.NewCollector(
 		colly.Async(true),
 		colly.MaxDepth(1),
@@ -462,7 +461,7 @@ func (n *NetworkTools) createCollector() *colly.Collector {
 }
 
 // setupCallbacks configures all Colly callbacks.
-func (n *NetworkTools) setupCallbacks(c *colly.Collector, ctx *ai.ToolContext, state *fetchState, selector string) {
+func (n *Network) setupCallbacks(c *colly.Collector, ctx *ai.ToolContext, state *fetchState, selector string) {
 	c.OnRequest(func(r *colly.Request) {
 		select {
 		case <-ctx.Done():
@@ -472,7 +471,7 @@ func (n *NetworkTools) setupCallbacks(c *colly.Collector, ctx *ai.ToolContext, s
 	})
 
 	c.OnResponse(func(r *colly.Response) {
-		n.handleNonHTMLResponse(r, state)
+		handleNonHTMLResponse(r, state)
 	})
 
 	c.OnHTML("html", func(e *colly.HTMLElement) {
@@ -485,7 +484,7 @@ func (n *NetworkTools) setupCallbacks(c *colly.Collector, ctx *ai.ToolContext, s
 }
 
 // handleNonHTMLResponse processes JSON, XML, and text responses.
-func (n *NetworkTools) handleNonHTMLResponse(r *colly.Response, state *fetchState) {
+func handleNonHTMLResponse(r *colly.Response, state *fetchState) {
 	contentType := r.Headers.Get("Content-Type")
 	if strings.Contains(contentType, "text/html") {
 		return
@@ -496,7 +495,7 @@ func (n *NetworkTools) handleNonHTMLResponse(r *colly.Response, state *fetchStat
 		return
 	}
 
-	title, content := n.extractNonHTMLContent(r.Body, contentType)
+	title, content := extractNonHTMLContent(r.Body, contentType)
 	if len(content) > MaxContentLength {
 		content = content[:MaxContentLength] + "\n\n[Content truncated...]"
 	}
@@ -510,7 +509,7 @@ func (n *NetworkTools) handleNonHTMLResponse(r *colly.Response, state *fetchStat
 }
 
 // extractNonHTMLContent extracts content from non-HTML responses.
-func (*NetworkTools) extractNonHTMLContent(body []byte, contentType string) (title, content string) {
+func extractNonHTMLContent(body []byte, contentType string) (title, content string) {
 	switch {
 	case strings.Contains(contentType, "application/json"):
 		var jsonData any
@@ -532,7 +531,7 @@ func (*NetworkTools) extractNonHTMLContent(body []byte, contentType string) (tit
 }
 
 // handleHTMLResponse processes HTML responses using readability.
-func (n *NetworkTools) handleHTMLResponse(e *colly.HTMLElement, state *fetchState, selector string) {
+func (n *Network) handleHTMLResponse(e *colly.HTMLElement, state *fetchState, selector string) {
 	urlStr := e.Request.URL.String()
 	if state.markProcessed(urlStr) {
 		return
@@ -558,7 +557,7 @@ func (n *NetworkTools) handleHTMLResponse(e *colly.HTMLElement, state *fetchStat
 }
 
 // handleError processes fetch errors.
-func (n *NetworkTools) handleError(r *colly.Response, err error, state *fetchState) {
+func (n *Network) handleError(r *colly.Response, err error, state *fetchState) {
 	reason := err.Error()
 	statusCode := 0
 	if r.StatusCode > 0 {
@@ -578,7 +577,7 @@ func (n *NetworkTools) handleError(r *colly.Response, err error, state *fetchSta
 // extractWithReadability extracts content using go-readability with CSS selector fallback.
 // Returns (title, content).
 // u should be the final URL after redirects (e.Request.URL from Colly).
-func (n *NetworkTools) extractWithReadability(u *url.URL, html string, e *colly.HTMLElement, selector string) (title, content string) {
+func (n *Network) extractWithReadability(u *url.URL, html string, e *colly.HTMLElement, selector string) (title, content string) {
 	// Try go-readability first (Mozilla Readability algorithm)
 	// u is already parsed and reflects the final URL after any redirects
 	article, err := readability.FromReader(bytes.NewReader([]byte(html)), u)
@@ -590,7 +589,7 @@ func (n *NetworkTools) extractWithReadability(u *url.URL, html string, e *colly.
 		}
 
 		// Convert HTML content to plain text (remove tags)
-		content = n.htmlToText(article.Content)
+		content = htmlToText(article.Content)
 		if content != "" {
 			return title, content
 		}
@@ -598,12 +597,12 @@ func (n *NetworkTools) extractWithReadability(u *url.URL, html string, e *colly.
 
 	// Readability failed or returned empty - fallback to CSS selector
 	n.logger.Debug("readability fallback to selector", "url", u.String())
-	return n.extractWithSelector(e, selector)
+	return extractWithSelector(e, selector)
 }
 
 // extractWithSelector extracts content using CSS selectors (fallback method).
 // Returns (title, content).
-func (*NetworkTools) extractWithSelector(e *colly.HTMLElement, selector string) (extractedTitle, extractedContent string) {
+func extractWithSelector(e *colly.HTMLElement, selector string) (extractedTitle, extractedContent string) {
 	// Extract title
 	extractedTitle = e.ChildText("title")
 	if extractedTitle == "" {
@@ -631,7 +630,7 @@ func (*NetworkTools) extractWithSelector(e *colly.HTMLElement, selector string) 
 }
 
 // htmlToText converts HTML content to plain text.
-func (*NetworkTools) htmlToText(html string) string {
+func htmlToText(html string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
 		return ""

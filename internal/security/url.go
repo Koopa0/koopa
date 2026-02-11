@@ -1,7 +1,3 @@
-// Package security provides security validators for Koopa.
-//
-// URL validator prevents SSRF (Server-Side Request Forgery) attacks by blocking
-// requests to private networks, cloud metadata endpoints, and other dangerous targets.
 package security
 
 import (
@@ -173,7 +169,7 @@ func (v *URL) safeDialContext(ctx context.Context, network, addr string) (net.Co
 		}
 		conn, dialErr := (&net.Dialer{}).DialContext(ctx, network, addr)
 		if dialErr != nil {
-			return nil, fmt.Errorf("dial failed: %w", dialErr)
+			return nil, fmt.Errorf("dialing: %w", dialErr)
 		}
 		return conn, nil
 	}
@@ -181,7 +177,7 @@ func (v *URL) safeDialContext(ctx context.Context, network, addr string) (net.Co
 	// Resolve DNS and check all returned IPs
 	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
-		return nil, fmt.Errorf("DNS lookup failed: %w", err)
+		return nil, fmt.Errorf("resolving DNS: %w", err)
 	}
 
 	// Check all resolved IPs
@@ -200,7 +196,7 @@ func (v *URL) safeDialContext(ctx context.Context, network, addr string) (net.Co
 		}
 		conn, err := (&net.Dialer{}).DialContext(ctx, network, targetAddr)
 		if err != nil {
-			return nil, fmt.Errorf("dial to %s failed: %w", targetAddr, err)
+			return nil, fmt.Errorf("dialing %s: %w", targetAddr, err)
 		}
 		return conn, nil
 	}

@@ -16,14 +16,14 @@ func TestReadFile_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Create test file
 	testFile := filepath.Join(h.tempDir, "test.txt")
 	testContent := "hello world"
 	if err := os.WriteFile(testFile, []byte(testContent), 0o600); err != nil {
-		t.Fatalf("failed to create test file: %v", err)
+		t.Fatalf("creating test file: %v", err)
 	}
 
 	// Call ReadFile handler
@@ -32,7 +32,7 @@ func TestReadFile_Success(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
+		t.Fatalf("ReadFile(): %v", err)
 	}
 
 	if result.IsError {
@@ -51,7 +51,7 @@ func TestReadFile_FileNotFound(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Call ReadFile with non-existent file
@@ -74,7 +74,7 @@ func TestReadFile_SecurityViolation(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Try to read file outside allowed directory
@@ -97,7 +97,7 @@ func TestWriteFile_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	testFile := filepath.Join(h.tempDir, "write_test.txt")
@@ -109,7 +109,7 @@ func TestWriteFile_Success(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
+		t.Fatalf("WriteFile(): %v", err)
 	}
 
 	if result.IsError {
@@ -119,7 +119,7 @@ func TestWriteFile_Success(t *testing.T) {
 	// Verify file was created
 	content, err := os.ReadFile(testFile)
 	if err != nil {
-		t.Fatalf("failed to read written file: %v", err)
+		t.Fatalf("reading written file: %v", err)
 	}
 
 	if string(content) != testContent {
@@ -133,7 +133,7 @@ func TestWriteFile_CreatesDirectory(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Write to a file in a non-existent subdirectory
@@ -145,7 +145,7 @@ func TestWriteFile_CreatesDirectory(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
+		t.Fatalf("WriteFile(): %v", err)
 	}
 
 	if result.IsError {
@@ -164,19 +164,19 @@ func TestListFiles_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Create some test files
 	for _, name := range []string{"file1.txt", "file2.txt"} {
 		if err := os.WriteFile(filepath.Join(h.tempDir, name), []byte("test"), 0o600); err != nil {
-			t.Fatalf("failed to create test file: %v", err)
+			t.Fatalf("creating test file: %v", err)
 		}
 	}
 
 	// Create a subdirectory
 	if err := os.Mkdir(filepath.Join(h.tempDir, "subdir"), 0o750); err != nil {
-		t.Fatalf("failed to create subdirectory: %v", err)
+		t.Fatalf("creating subdirectory: %v", err)
 	}
 
 	result, _, err := server.ListFiles(context.Background(), &mcp.CallToolRequest{}, tools.ListFilesInput{
@@ -184,7 +184,7 @@ func TestListFiles_Success(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("ListFiles failed: %v", err)
+		t.Fatalf("ListFiles(): %v", err)
 	}
 
 	if result.IsError {
@@ -198,7 +198,7 @@ func TestListFiles_DirectoryNotFound(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	result, _, err := server.ListFiles(context.Background(), &mcp.CallToolRequest{}, tools.ListFilesInput{
@@ -220,13 +220,13 @@ func TestDeleteFile_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Create test file
 	testFile := filepath.Join(h.tempDir, "to_delete.txt")
 	if err := os.WriteFile(testFile, []byte("delete me"), 0o600); err != nil {
-		t.Fatalf("failed to create test file: %v", err)
+		t.Fatalf("creating test file: %v", err)
 	}
 
 	result, _, err := server.DeleteFile(context.Background(), &mcp.CallToolRequest{}, tools.DeleteFileInput{
@@ -234,7 +234,7 @@ func TestDeleteFile_Success(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("DeleteFile failed: %v", err)
+		t.Fatalf("DeleteFile(): %v", err)
 	}
 
 	if result.IsError {
@@ -253,7 +253,7 @@ func TestDeleteFile_FileNotFound(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	result, _, err := server.DeleteFile(context.Background(), &mcp.CallToolRequest{}, tools.DeleteFileInput{
@@ -275,14 +275,14 @@ func TestGetFileInfo_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Create test file
 	testFile := filepath.Join(h.tempDir, "info_test.txt")
 	testContent := "test content for info"
 	if err := os.WriteFile(testFile, []byte(testContent), 0o600); err != nil {
-		t.Fatalf("failed to create test file: %v", err)
+		t.Fatalf("creating test file: %v", err)
 	}
 
 	result, _, err := server.GetFileInfo(context.Background(), &mcp.CallToolRequest{}, tools.GetFileInfoInput{
@@ -290,7 +290,7 @@ func TestGetFileInfo_Success(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("GetFileInfo failed: %v", err)
+		t.Fatalf("GetFileInfo(): %v", err)
 	}
 
 	if result.IsError {
@@ -304,7 +304,7 @@ func TestGetFileInfo_FileNotFound(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	result, _, err := server.GetFileInfo(context.Background(), &mcp.CallToolRequest{}, tools.GetFileInfoInput{

@@ -2,6 +2,7 @@ package security
 
 import (
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -164,7 +165,7 @@ func TestURL_Validate(t *testing.T) {
 					t.Errorf("Validate(%q) expected error, got nil", tt.url)
 					return
 				}
-				if tt.errMsg != "" && !urlContains(err.Error(), tt.errMsg) {
+				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
 					t.Errorf("Validate(%q) error = %q, want error containing %q", tt.url, err.Error(), tt.errMsg)
 				}
 			} else if err != nil {
@@ -205,7 +206,7 @@ func TestURL_checkIP(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ip := net.ParseIP(tt.ip)
 			if ip == nil {
-				t.Fatalf("failed to parse IP: %s", tt.ip)
+				t.Fatalf("parsing IP: %s", tt.ip)
 			}
 			err := v.checkIP(ip)
 			if tt.wantErr && err == nil {
@@ -229,20 +230,32 @@ func TestURL_SafeTransport(t *testing.T) {
 	if transport.DialContext == nil {
 		t.Error("SafeTransport() DialContext is nil")
 	}
-}
 
-// Helper functions
-
-func urlContains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || substr == "" ||
-		(s != "" && substr != "" && urlContainsSubstring(s, substr)))
-}
-
-func urlContainsSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+	// Verify SafeTransport blocks dangerous IPs at the dial level.
+	// This tests DNS-rebinding protection: even if DNS resolves to a blocked IP,
+	// the custom DialContext must reject the connection.
+	tests := []struct {
+		name    string
+		addr    string
+		wantSub string // expected substring in error message
+	}{
+		{name: "loopback", addr: "127.0.0.1:80", wantSub: "loopback"},
+		{name: "private 10.x", addr: "10.0.0.1:80", wantSub: "private"},
+		{name: "private 192.168.x", addr: "192.168.1.1:80", wantSub: "private"},
+		{name: "link-local metadata", addr: "169.254.169.254:80", wantSub: "link-local"},
+		{name: "IPv6 loopback", addr: "[::1]:80", wantSub: "loopback"},
 	}
-	return false
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := transport.DialContext(t.Context(), "tcp", tt.addr)
+			if err == nil {
+				t.Errorf("SafeTransport().DialContext(%q) = nil, want error", tt.addr)
+				return
+			}
+			if !strings.Contains(err.Error(), tt.wantSub) {
+				t.Errorf("SafeTransport().DialContext(%q) error = %q, want error containing %q", tt.addr, err.Error(), tt.wantSub)
+			}
+		})
+	}
 }

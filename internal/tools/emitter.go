@@ -1,25 +1,22 @@
-// Package tools provides tool abstractions for AI agent interactions.
 package tools
 
 import (
 	"context"
 )
 
-// emitterKey uses empty struct for zero-allocation context key.
-// Per Rob Pike: empty struct is idiomatic for context keys.
+// emitterKey is an unexported context key for zero-allocation type safety.
 type emitterKey struct{}
 
-// ToolEventEmitter receives tool lifecycle events.
+// Emitter receives tool lifecycle events.
 // Interface is minimal - only tool name, no UI concerns.
-// Per architecture-master: Interface for loose coupling between tools and SSE layer.
-// UI presentation logic moved to web/handlers layer.
+// UI presentation logic is handled by the SSE/API layer.
 //
 // Usage:
 //  1. Handler creates emitter bound to SSE writer
 //  2. Handler stores emitter in context via ContextWithEmitter()
 //  3. Wrapped tool retrieves emitter via EmitterFromContext()
 //  4. Tool calls OnToolStart/Complete/Error during execution
-type ToolEventEmitter interface {
+type Emitter interface {
 	// OnToolStart signals that a tool has started execution.
 	// name: tool name (e.g., "web_search")
 	// UI presentation (messages, icons) handled by web layer.
@@ -35,16 +32,14 @@ type ToolEventEmitter interface {
 	OnToolError(name string)
 }
 
-// EmitterFromContext retrieves ToolEventEmitter from context.
+// EmitterFromContext retrieves Emitter from context.
 // Returns nil if not set, allowing graceful degradation (no events emitted).
-// Per architecture-master: Non-streaming code paths won't have emitter set.
-func EmitterFromContext(ctx context.Context) ToolEventEmitter {
-	emitter, _ := ctx.Value(emitterKey{}).(ToolEventEmitter)
+func EmitterFromContext(ctx context.Context) Emitter {
+	emitter, _ := ctx.Value(emitterKey{}).(Emitter)
 	return emitter
 }
 
-// ContextWithEmitter stores ToolEventEmitter in context.
-// Per architecture-master: Per-request binding via context.Context.
-func ContextWithEmitter(ctx context.Context, emitter ToolEventEmitter) context.Context {
+// ContextWithEmitter stores Emitter in context for per-request binding.
+func ContextWithEmitter(ctx context.Context, emitter Emitter) context.Context {
 	return context.WithValue(ctx, emitterKey{}, emitter)
 }

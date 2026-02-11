@@ -2,6 +2,8 @@ package testutil
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
@@ -46,8 +48,7 @@ type RAGSetup struct {
 // Example:
 //
 //	func TestRAGFeature(t *testing.T) {
-//	    db, dbCleanup := testutil.SetupTestDB(t)
-//	    defer dbCleanup()
+//	    db := testutil.SetupTestDB(t)
 //
 //	    rag := testutil.SetupRAG(t, db.Pool)
 //
@@ -64,10 +65,12 @@ type RAGSetup struct {
 func SetupRAG(tb testing.TB, pool *pgxpool.Pool) *RAGSetup {
 	tb.Helper()
 
-	// Check for API key (SetupGoogleAI skips test if not set)
-	// We don't use the returned setup because we need to create a
-	// Genkit instance with both GoogleAI and PostgreSQL plugins
-	_ = SetupGoogleAI(tb)
+	// Check for API key — skip test if not set.
+	// We don't use SetupGoogleAI here because we need a Genkit instance
+	// with both GoogleAI and PostgreSQL plugins.
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		tb.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
+	}
 
 	ctx := context.Background()
 
@@ -77,7 +80,7 @@ func SetupRAG(tb testing.TB, pool *pgxpool.Pool) *RAGSetup {
 		postgresql.WithDatabase("koopa_test"),
 	)
 	if err != nil {
-		tb.Fatalf("Failed to create PostgresEngine: %v", err)
+		tb.Fatalf("creating PostgresEngine: %v", err)
 	}
 
 	// Create PostgreSQL plugin
@@ -85,30 +88,30 @@ func SetupRAG(tb testing.TB, pool *pgxpool.Pool) *RAGSetup {
 
 	// Re-initialize Genkit with both plugins
 	// We need to create a new Genkit instance that has both plugins
-	projectRoot, err := findProjectRoot()
+	projectRoot, err := FindProjectRoot()
 	if err != nil {
-		tb.Fatalf("Failed to find project root: %v", err)
+		tb.Fatalf("finding project root: %v", err)
 	}
 
 	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}, postgres),
-		genkit.WithPromptDir(projectRoot+"/prompts"),
+		genkit.WithPromptDir(filepath.Join(projectRoot, "prompts")),
 	)
 	if g == nil {
-		tb.Fatal("Failed to initialize Genkit with PostgreSQL plugin")
+		tb.Fatal("genkit.Init with PostgreSQL plugin returned nil")
 	}
 
 	// Create embedder
-	embedder := googlegenai.GoogleAIEmbedder(g, config.DefaultEmbedderModel)
+	embedder := googlegenai.GoogleAIEmbedder(g, config.DefaultGeminiEmbedderModel)
 	if embedder == nil {
-		tb.Fatalf("Failed to create embedder for model %q", config.DefaultEmbedderModel)
+		tb.Fatalf("GoogleAIEmbedder returned nil for model %q", config.DefaultGeminiEmbedderModel)
 	}
 
 	// Create DocStore and Retriever using shared config factory
 	cfg := rag.NewDocStoreConfig(embedder)
 	docStore, retriever, err := postgresql.DefineRetriever(ctx, g, postgres, cfg)
 	if err != nil {
-		tb.Fatalf("Failed to define retriever: %v", err)
+		tb.Fatalf("defining retriever: %v", err)
 	}
 
 	return &RAGSetup{

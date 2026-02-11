@@ -72,7 +72,7 @@ func FuzzPathValidation(f *testing.F) {
 	tmpDir := f.TempDir()
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
-		f.Fatalf("failed to create validator: %v", err)
+		f.Fatalf("creating validator: %v", err)
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
@@ -132,14 +132,14 @@ func FuzzPathValidationWithSymlinks(f *testing.F) {
 		tmpDir := t.TempDir()
 		validator, err := NewPath([]string{tmpDir})
 		if err != nil {
-			t.Skipf("failed to create validator: %v", err)
+			t.Skipf("creating validator: %v", err)
 		}
 
 		// Create a symlink pointing outside allowed directories
 		linkPath := filepath.Join(tmpDir, linkName)
 		err = os.Symlink("/etc/passwd", linkPath)
 		if err != nil {
-			t.Skipf("failed to create symlink: %v", err)
+			t.Skipf("creating symlink: %v", err)
 		}
 
 		// Validation should fail because symlink points outside allowed dirs
@@ -208,7 +208,7 @@ func FuzzCommandValidation(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, cmd, args string) {
 		argSlice := strings.Fields(args)
-		err := validator.ValidateCommand(cmd, argSlice)
+		err := validator.Validate(cmd, argSlice)
 
 		// Property 1: Commands with shell metacharacters in name must be rejected
 		shellMetachars := []string{";", "|", "&", "`", "$", "(", ")", "\n", ">", "<"}
@@ -266,5 +266,70 @@ func FuzzCommandValidation(f *testing.F) {
 				}
 			}
 		}
+	})
+}
+
+// =============================================================================
+// URL Fuzzing Tests
+// =============================================================================
+
+// FuzzURLValidation tests URL validation against SSRF bypass attempts.
+// Run with: go test -fuzz=FuzzURLValidation -fuzztime=30s ./internal/security/
+func FuzzURLValidation(f *testing.F) {
+	seeds := []string{
+		// Valid public URLs
+		"https://example.com",
+		"http://example.com/path?q=1",
+
+		// Blocked schemes
+		"ftp://example.com",
+		"file:///etc/passwd",
+		"javascript:alert(1)",
+		"gopher://evil.com",
+
+		// Loopback
+		"http://127.0.0.1",
+		"http://127.0.0.1:8080",
+		"http://[::1]",
+
+		// Private IPs
+		"http://10.0.0.1",
+		"http://172.16.0.1",
+		"http://192.168.1.1",
+
+		// Cloud metadata
+		"http://169.254.169.254/latest/meta-data/",
+		"http://metadata.google.internal",
+
+		// Blocked hosts
+		"http://localhost",
+		"http://localhost:3000",
+
+		// Edge cases
+		"",
+		"://",
+		"http://",
+		"http://0.0.0.0",
+		"http://[::ffff:127.0.0.1]",
+
+		// Encoding tricks
+		"http://0x7f000001",      // 127.0.0.1 as hex
+		"http://2130706433",      // 127.0.0.1 as decimal
+		"http://017700000001",    // 127.0.0.1 as octal
+		"http://[::ffff:7f00:1]", // IPv6-mapped IPv4 loopback
+		"http://127.1",           // short form loopback
+		"http://0x7f.0.0.1",      // partial hex loopback
+		"http://0177.0.0.1",      // octal first octet
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	validator := NewURL()
+
+	f.Fuzz(func(t *testing.T, rawURL string) {
+		// Must not panic
+		_ = validator.Validate(rawURL)
 	})
 }

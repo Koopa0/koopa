@@ -12,12 +12,10 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -26,12 +24,13 @@ import (
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/chat"
 	"github.com/koopa0/koopa/internal/config"
 	"github.com/koopa0/koopa/internal/rag"
 	"github.com/koopa0/koopa/internal/security"
 	"github.com/koopa0/koopa/internal/session"
 	"github.com/koopa0/koopa/internal/sqlc"
+	"github.com/koopa0/koopa/internal/testutil"
 	"github.com/koopa0/koopa/internal/tools"
 )
 
@@ -42,27 +41,6 @@ type chatFlowSetup struct {
 	SessionStore *session.Store
 	Ctx          context.Context
 	Cancel       context.CancelFunc
-}
-
-// findProjectRoot finds the project root directory by looking for go.mod.
-func findProjectRoot() (string, error) {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("runtime.Caller failed to get caller info")
-	}
-
-	dir := filepath.Dir(filename)
-	for {
-		goModPath := filepath.Join(dir, "go.mod")
-		if _, err := os.Stat(goModPath); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("go.mod not found in any parent directory of %s", filename)
-		}
-		dir = parent
-	}
 }
 
 // setupChatFlow creates a complete chat flow setup for integration testing.
@@ -81,7 +59,9 @@ func findProjectRoot() (string, error) {
 //	    setup, cleanup := setupChatFlow(t)
 //	    defer cleanup()
 //
-//	    tui := New(setup.Ctx, setup.Flow, "test-session-id")
+//	    sessionID, cleanup := createTestSession(t, setup)
+//	    defer cleanup()
+//	    tui := New(setup.Ctx, setup.Flow, sessionID)
 //	}
 func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	t.Helper()
@@ -98,10 +78,10 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 
-	projectRoot, err := findProjectRoot()
+	projectRoot, err := testutil.FindProjectRoot()
 	if err != nil || projectRoot == "" {
 		cancel()
-		t.Fatalf("Failed to find project root: %v", err)
+		t.Fatalf("FindProjectRoot() error: %v", err)
 	}
 	promptsDir := filepath.Join(projectRoot, "prompts")
 
@@ -109,7 +89,7 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		cancel()
-		t.Fatalf("Failed to connect to database: %v", err)
+		t.Fatalf("pgxpool.New() error: %v", err)
 	}
 
 	// Create PostgreSQL engine for Genkit
@@ -120,7 +100,7 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create PostgresEngine: %v", err)
+		t.Fatalf("NewPostgresEngine() error: %v", err)
 	}
 
 	postgres := &postgresql.Postgres{Engine: pEngine}
@@ -133,15 +113,14 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	if g == nil {
 		pool.Close()
 		cancel()
-		t.Fatal("Failed to initialize Genkit")
+		t.Fatal("genkit.Init() returned nil")
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	cfg := &config.Config{
 		ModelName:     "gemini-2.0-flash",
-		EmbedderModel: "text-embedding-004",
-		RAGTopK:       5,
+		EmbedderModel: "gemini-embedding-001",
 		MaxTurns:      10,
 	}
 
@@ -150,7 +129,7 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	if embedder == nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create embedder for model %q", cfg.EmbedderModel)
+		t.Fatalf("GoogleAIEmbedder(%q) returned nil", cfg.EmbedderModel)
 	}
 
 	// Create DocStore and Retriever using shared config factory
@@ -159,7 +138,7 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to define retriever: %v", err)
+		t.Fatalf("DefineRetriever() error: %v", err)
 	}
 
 	queries := sqlc.New(pool)
@@ -169,51 +148,51 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create path validator: %v", err)
+		t.Fatalf("NewPath() error: %v", err)
 	}
 
 	// Create and register file tools
-	ft, err := tools.NewFileTools(pathValidator, logger)
+	ft, err := tools.NewFile(pathValidator, logger)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create file tools: %v", err)
+		t.Fatalf("NewFile() error: %v", err)
 	}
-	fileTools, err := tools.RegisterFileTools(g, ft)
+	fileTools, err := tools.RegisterFile(g, ft)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to register file tools: %v", err)
+		t.Fatalf("RegisterFile() error: %v", err)
 	}
 
 	// Create and register system tools
 	cmdValidator := security.NewCommand()
 	envValidator := security.NewEnv()
-	st, err := tools.NewSystemTools(cmdValidator, envValidator, logger)
+	st, err := tools.NewSystem(cmdValidator, envValidator, logger)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create system tools: %v", err)
+		t.Fatalf("NewSystem() error: %v", err)
 	}
-	systemTools, err := tools.RegisterSystemTools(g, st)
+	systemTools, err := tools.RegisterSystem(g, st)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to register system tools: %v", err)
+		t.Fatalf("RegisterSystem() error: %v", err)
 	}
 
 	// Create and register knowledge tools
-	kt, err := tools.NewKnowledgeTools(retriever, nil, logger)
+	kt, err := tools.NewKnowledge(retriever, nil, logger)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create knowledge tools: %v", err)
+		t.Fatalf("NewKnowledge() error: %v", err)
 	}
-	knowledgeTools, err := tools.RegisterKnowledgeTools(g, kt)
+	knowledgeTools, err := tools.RegisterKnowledge(g, kt)
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to register knowledge tools: %v", err)
+		t.Fatalf("RegisterKnowledge() error: %v", err)
 	}
 
 	// Combine all tools
@@ -221,27 +200,20 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 
 	chatAgent, err := chat.New(chat.Config{
 		Genkit:       g,
-		Retriever:    retriever,
 		SessionStore: sessionStore,
 		Logger:       logger,
 		Tools:        allTools,
 		MaxTurns:     cfg.MaxTurns,
-		RAGTopK:      cfg.RAGTopK,
 	})
 	if err != nil {
 		pool.Close()
 		cancel()
-		t.Fatalf("Failed to create chat agent: %v", err)
+		t.Fatalf("chat.New() error: %v", err)
 	}
 
 	// Initialize Flow singleton (reset first for test isolation)
 	chat.ResetFlowForTesting()
-	flow, err := chat.InitFlow(g, chatAgent)
-	if err != nil {
-		pool.Close()
-		cancel()
-		t.Fatalf("Failed to init chat flow: %v", err)
-	}
+	flow := chat.NewFlow(g, chatAgent)
 
 	setup := &chatFlowSetup{
 		Flow:         flow,

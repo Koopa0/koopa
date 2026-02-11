@@ -5,16 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/chat"
 	"github.com/koopa0/koopa/internal/session"
 )
 
 // ServerConfig contains configuration for creating the API server.
 type ServerConfig struct {
 	Logger       *slog.Logger
-	Genkit       *genkit.Genkit // Optional: nil disables AI title generation
-	ModelName    string         // Provider-qualified model name (e.g., "googleai/gemini-2.5-flash")
+	ChatAgent    *chat.Agent    // Optional: nil disables AI title generation
 	ChatFlow     *chat.Flow     // Optional: nil enables simulation mode
 	SessionStore *session.Store // Required
 	CSRFSecret   []byte         // Required: 32+ bytes
@@ -50,11 +48,10 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 
 	ch := &chatHandler{
-		logger:    logger,
-		genkit:    cfg.Genkit,
-		modelName: cfg.ModelName,
-		flow:      cfg.ChatFlow,
-		sessions:  sm,
+		logger:   logger,
+		agent:    cfg.ChatAgent,
+		flow:     cfg.ChatFlow,
+		sessions: sm,
 	}
 
 	mux := http.NewServeMux()
@@ -79,7 +76,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// Build middleware stack: Recovery → Logging → RateLimit → CORS → Session → CSRF → Routes
 	var handler http.Handler = mux
 	handler = csrfMiddleware(sm, logger)(handler)
-	handler = sessionMiddleware(sm, logger)(handler)
+	handler = sessionMiddleware(sm)(handler)
 	handler = corsMiddleware(cfg.CORSOrigins)(handler)
 	handler = rateLimitMiddleware(rl, cfg.TrustProxy, logger)(handler)
 	handler = loggingMiddleware(logger)(handler)

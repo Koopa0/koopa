@@ -12,7 +12,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// networkTools provides test utilities for NetworkTools.
+// networkTools provides test utilities for Network.
 type networkTools struct {
 	t *testing.T
 }
@@ -22,17 +22,17 @@ func newnetworkTools(t *testing.T) *networkTools {
 	return &networkTools{t: t}
 }
 
-func (h *networkTools) createNetworkTools(serverURL string) *NetworkTools {
+func (h *networkTools) createNetwork(serverURL string) *Network {
 	h.t.Helper()
-	cfg := NetworkConfig{
+	cfg := NetConfig{
 		SearchBaseURL:    serverURL,
 		FetchParallelism: 2,
 		FetchDelay:       10 * time.Millisecond,
 		FetchTimeout:     5 * time.Second,
 	}
-	nt, err := NewNetworkTools(cfg, testLogger())
+	nt, err := NewNetwork(cfg, testLogger())
 	if err != nil {
-		h.t.Fatalf("failed to create network tools: %v", err)
+		h.t.Fatalf("creating network tools: %v", err)
 	}
 	return nt
 }
@@ -61,11 +61,7 @@ func (*networkTools) toolContext() *ai.ToolContext {
 	return &ai.ToolContext{Context: context.Background()}
 }
 
-// ============================================================================
-// SSRF Protection Tests - Blocked Hosts
-// ============================================================================
-
-func TestNetworkTools_Fetch_SSRFBlockedHosts(t *testing.T) {
+func TestNetwork_Fetch_SSRFBlockedHosts(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -165,7 +161,7 @@ func TestNetworkTools_Fetch_SSRFBlockedHosts(t *testing.T) {
 
 			h := newnetworkTools(t)
 			server := h.createMockServer()
-			nt := h.createNetworkTools(server.URL)
+			nt := h.createNetwork(server.URL)
 			ctx := h.toolContext()
 
 			output, err := nt.Fetch(ctx, FetchInput{URLs: []string{tt.url}})
@@ -192,11 +188,7 @@ func TestNetworkTools_Fetch_SSRFBlockedHosts(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// SSRF Protection Tests - Scheme Validation
-// ============================================================================
-
-func TestNetworkTools_Fetch_SchemeValidation(t *testing.T) {
+func TestNetwork_Fetch_SchemeValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -237,7 +229,7 @@ func TestNetworkTools_Fetch_SchemeValidation(t *testing.T) {
 
 			h := newnetworkTools(t)
 			server := h.createMockServer()
-			nt := h.createNetworkTools(server.URL)
+			nt := h.createNetwork(server.URL)
 			ctx := h.toolContext()
 
 			output, err := nt.Fetch(ctx, FetchInput{URLs: []string{tt.url}})
@@ -261,24 +253,20 @@ func TestNetworkTools_Fetch_SchemeValidation(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// SSRF Protection Tests - Mixed URLs
-// ============================================================================
-
-func TestNetworkTools_Fetch_MixedURLsFiltered(t *testing.T) {
+func TestNetwork_Fetch_MixedURLsFiltered(t *testing.T) {
 	t.Parallel()
 
 	h := newnetworkTools(t)
 	server := h.createMockServer()
 
-	// Create NetworkTools with testing mode (SSRF protection enabled but using mock server)
-	cfg := NetworkConfig{
+	// Create Network with testing mode (SSRF protection enabled but using mock server)
+	cfg := NetConfig{
 		SearchBaseURL:    server.URL,
 		FetchParallelism: 2,
 		FetchDelay:       10 * time.Millisecond,
 		FetchTimeout:     5 * time.Second,
 	}
-	nt := newNetworkToolsForTesting(t, cfg, testLogger())
+	nt := newNetworkForTesting(t, cfg, testLogger())
 
 	ctx := h.toolContext()
 
@@ -290,24 +278,13 @@ func TestNetworkTools_Fetch_MixedURLsFiltered(t *testing.T) {
 		"http://169.254.169.254/", // Cloud metadata - blocked
 	}
 
-	output, err := nt.Fetch(ctx, FetchInput{URLs: urls})
-
+	_, err := nt.Fetch(ctx, FetchInput{URLs: urls})
 	if err != nil {
 		t.Fatalf("Fetch(mixed URLs) unexpected error: %v", err)
 	}
-
-	// The mock server URL should succeed in testing mode
-	// Private IPs should fail
-	// Note: skipSSRFCheck affects URL validation, so in testing mode
-	// even private URLs might pass. Let's verify the test setup.
-	t.Logf("Results: %d, Failed: %d", len(output.Results), len(output.FailedURLs))
 }
 
-// ============================================================================
-// SSRF Protection Tests - Redirect Protection
-// ============================================================================
-
-func TestNetworkTools_Fetch_RedirectSSRFProtection(t *testing.T) {
+func TestNetwork_Fetch_RedirectSSRFProtection(t *testing.T) {
 	t.Parallel()
 
 	h := newnetworkTools(t)
@@ -331,7 +308,7 @@ func TestNetworkTools_Fetch_RedirectSSRFProtection(t *testing.T) {
 	}))
 	t.Cleanup(func() { redirectServer.Close() })
 
-	nt := h.createNetworkTools(redirectServer.URL)
+	nt := h.createNetwork(redirectServer.URL)
 	ctx := h.toolContext()
 
 	tests := []struct {
@@ -393,16 +370,12 @@ func TestNetworkTools_Fetch_RedirectSSRFProtection(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Input Validation Tests
-// ============================================================================
-
-func TestNetworkTools_Fetch_InputValidation(t *testing.T) {
+func TestNetwork_Fetch_InputValidation(t *testing.T) {
 	t.Parallel()
 
 	h := newnetworkTools(t)
 	server := h.createMockServer()
-	nt := h.createNetworkTools(server.URL)
+	nt := h.createNetwork(server.URL)
 	ctx := h.toolContext()
 
 	t.Run("empty URL list", func(t *testing.T) {
@@ -467,16 +440,12 @@ func TestNetworkTools_Fetch_InputValidation(t *testing.T) {
 	})
 }
 
-// ============================================================================
-// Search Input Validation Tests
-// ============================================================================
-
-func TestNetworkTools_Search_InputValidation(t *testing.T) {
+func TestNetwork_Search_InputValidation(t *testing.T) {
 	t.Parallel()
 
 	h := newnetworkTools(t)
 	server := h.createMockServer()
-	nt := h.createNetworkTools(server.URL)
+	nt := h.createNetwork(server.URL)
 	ctx := h.toolContext()
 
 	t.Run("empty query rejected", func(t *testing.T) {
@@ -514,24 +483,20 @@ func TestNetworkTools_Search_InputValidation(t *testing.T) {
 	})
 }
 
-// ============================================================================
-// Public URL Success Test (using httptest)
-// ============================================================================
-
-func TestNetworkTools_Fetch_PublicURLSuccess(t *testing.T) {
+func TestNetwork_Fetch_PublicURLSuccess(t *testing.T) {
 	t.Parallel()
 
 	h := newnetworkTools(t)
 	server := h.createMockServer()
 
 	// Use ForTesting to allow httptest server (which uses localhost)
-	cfg := NetworkConfig{
+	cfg := NetConfig{
 		SearchBaseURL:    server.URL,
 		FetchParallelism: 2,
 		FetchDelay:       10 * time.Millisecond,
 		FetchTimeout:     5 * time.Second,
 	}
-	nt := newNetworkToolsForTesting(t, cfg, testLogger())
+	nt := newNetworkForTesting(t, cfg, testLogger())
 
 	ctx := h.toolContext()
 
@@ -558,11 +523,7 @@ func TestNetworkTools_Fetch_PublicURLSuccess(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Concurrent Fetch Test
-// ============================================================================
-
-func TestNetworkTools_Fetch_Concurrent(t *testing.T) {
+func TestNetwork_Fetch_Concurrent(t *testing.T) {
 	t.Parallel()
 
 	h := newnetworkTools(t)
@@ -576,13 +537,13 @@ func TestNetworkTools_Fetch_Concurrent(t *testing.T) {
 	}))
 	t.Cleanup(func() { server.Close() })
 
-	cfg := NetworkConfig{
+	cfg := NetConfig{
 		SearchBaseURL:    server.URL,
 		FetchParallelism: 5,
 		FetchDelay:       5 * time.Millisecond,
 		FetchTimeout:     5 * time.Second,
 	}
-	nt := newNetworkToolsForTesting(t, cfg, testLogger())
+	nt := newNetworkForTesting(t, cfg, testLogger())
 
 	ctx := h.toolContext()
 

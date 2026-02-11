@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/koopa0/koopa/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,42 +13,42 @@ import (
 // Server wraps the MCP SDK server and Koopa's tool handlers.
 // It exposes Koopa's tools via the Model Context Protocol.
 type Server struct {
-	mcpServer      *mcp.Server
-	fileTools      *tools.FileTools
-	systemTools    *tools.SystemTools
-	networkTools   *tools.NetworkTools
-	knowledgeTools *tools.KnowledgeTools // nil when knowledge search is unavailable
-	name           string
-	version        string
+	mcpServer *mcp.Server
+	logger    *slog.Logger
+	file      *tools.File
+	system    *tools.System
+	network   *tools.Network
+	knowledge *tools.Knowledge // nil when knowledge search is unavailable
 }
 
 // Config holds MCP server configuration.
 type Config struct {
-	Name           string
-	Version        string
-	FileTools      *tools.FileTools
-	SystemTools    *tools.SystemTools
-	NetworkTools   *tools.NetworkTools
-	KnowledgeTools *tools.KnowledgeTools // Optional: nil disables knowledge search tools
+	Name      string
+	Version   string
+	Logger    *slog.Logger // Optional: nil uses slog.Default()
+	File      *tools.File
+	System    *tools.System
+	Network   *tools.Network
+	Knowledge *tools.Knowledge // Optional: nil disables knowledge search tools
 }
 
 // NewServer creates a new MCP server with the given configuration.
 func NewServer(cfg Config) (*Server, error) {
 	// Validate required config
 	if cfg.Name == "" {
-		return nil, fmt.Errorf("server name is required")
+		return nil, errors.New("server name is required")
 	}
 	if cfg.Version == "" {
-		return nil, fmt.Errorf("server version is required")
+		return nil, errors.New("server version is required")
 	}
-	if cfg.FileTools == nil {
-		return nil, fmt.Errorf("file tools is required")
+	if cfg.File == nil {
+		return nil, errors.New("file tools is required")
 	}
-	if cfg.SystemTools == nil {
-		return nil, fmt.Errorf("system tools is required")
+	if cfg.System == nil {
+		return nil, errors.New("system tools is required")
 	}
-	if cfg.NetworkTools == nil {
-		return nil, fmt.Errorf("network tools is required")
+	if cfg.Network == nil {
+		return nil, errors.New("network tools is required")
 	}
 
 	// Create MCP server (using official SDK)
@@ -55,19 +57,23 @@ func NewServer(cfg Config) (*Server, error) {
 		Version: cfg.Version,
 	}, nil)
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	s := &Server{
-		mcpServer:      mcpServer,
-		fileTools:      cfg.FileTools,
-		systemTools:    cfg.SystemTools,
-		networkTools:   cfg.NetworkTools,
-		knowledgeTools: cfg.KnowledgeTools,
-		name:           cfg.Name,
-		version:        cfg.Version,
+		mcpServer: mcpServer,
+		logger:    logger,
+		file:      cfg.File,
+		system:    cfg.System,
+		network:   cfg.Network,
+		knowledge: cfg.Knowledge,
 	}
 
 	// Register all tools
 	if err := s.registerTools(); err != nil {
-		return nil, fmt.Errorf("failed to register tools: %w", err)
+		return nil, fmt.Errorf("registering tools: %w", err)
 	}
 
 	return s, nil
@@ -77,28 +83,28 @@ func NewServer(cfg Config) (*Server, error) {
 // This is a blocking call that handles all MCP protocol communication.
 func (s *Server) Run(ctx context.Context, transport mcp.Transport) error {
 	if err := s.mcpServer.Run(ctx, transport); err != nil {
-		return fmt.Errorf("MCP server run failed: %w", err)
+		return fmt.Errorf("running mcp server: %w", err)
 	}
 	return nil
 }
 
 // registerTools registers all Toolset tools to the MCP server.
 func (s *Server) registerTools() error {
-	if err := s.registerFileTools(); err != nil {
+	if err := s.registerFile(); err != nil {
 		return fmt.Errorf("register file tools: %w", err)
 	}
 
-	if err := s.registerSystemTools(); err != nil {
+	if err := s.registerSystem(); err != nil {
 		return fmt.Errorf("register system tools: %w", err)
 	}
 
-	if err := s.registerNetworkTools(); err != nil {
+	if err := s.registerNetwork(); err != nil {
 		return fmt.Errorf("register network tools: %w", err)
 	}
 
 	// Knowledge tools are optional (require DB + embedder)
-	if s.knowledgeTools != nil {
-		if err := s.registerKnowledgeTools(); err != nil {
+	if s.knowledge != nil {
+		if err := s.registerKnowledge(); err != nil {
 			return fmt.Errorf("register knowledge tools: %w", err)
 		}
 	}

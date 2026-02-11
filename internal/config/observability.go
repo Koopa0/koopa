@@ -8,7 +8,7 @@ import (
 // DatadogConfig holds Datadog APM tracing configuration.
 //
 // Tracing uses the local Datadog Agent for OTLP ingestion.
-// See internal/observability/datadog.go for detailed setup instructions.
+// Setup is inlined in internal/app/setup.go (provideOtelShutdown).
 type DatadogConfig struct {
 	// APIKey is the Datadog API key (optional, for observability)
 	APIKey string `mapstructure:"api_key" json:"api_key"`

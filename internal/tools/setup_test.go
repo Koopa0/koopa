@@ -1,25 +1,25 @@
 package tools
 
 import (
+	"log/slog"
 	"testing"
-
-	"github.com/koopa0/koopa/internal/log"
 )
 
 // testLogger returns a no-op logger for testing.
-func testLogger() log.Logger {
-	return log.NewNop()
+func testLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
 }
 
-// newNetworkToolsForTesting creates a NetworkTools instance with SSRF protection
+// newNetworkForTesting creates a Network instance with SSRF protection
 // disabled. This allows tests to use httptest.Server (which binds to localhost).
 // Only accessible within tools package tests (unexported).
-func newNetworkToolsForTesting(tb testing.TB, cfg NetworkConfig, logger log.Logger) *NetworkTools {
+func newNetworkForTesting(tb testing.TB, cfg NetConfig, logger *slog.Logger) *Network {
 	tb.Helper()
-	nt, err := NewNetworkTools(cfg, logger)
+	nt, err := NewNetwork(cfg, logger)
 	if err != nil {
-		tb.Fatalf("NewNetworkTools() unexpected error: %v", err)
+		tb.Fatalf("NewNetwork() unexpected error: %v", err)
 	}
 	nt.skipSSRFCheck = true
+	nt.searchClient.Transport = nil // allow localhost in tests
 	return nt
 }

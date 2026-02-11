@@ -10,28 +10,34 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// registerNetworkTools registers all network operation tools to the MCP server.
+// registerNetwork registers all network operation tools to the MCP server.
 // Tools: web_search, web_fetch
-func (s *Server) registerNetworkTools() error {
+func (s *Server) registerNetwork() error {
 	// web_search
 	searchSchema, err := jsonschema.For[tools.SearchInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for %s: %w", tools.ToolWebSearch, err)
+		return fmt.Errorf("schema for %s: %w", tools.WebSearchName, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        tools.ToolWebSearch,
-		Description: "Search the web for information. Returns relevant results with titles, URLs, and content snippets.",
+		Name: tools.WebSearchName,
+		Description: "Search the web for information. Returns relevant results with titles, URLs, and content snippets. " +
+			"Use this to find current information, news, or facts from the internet.",
 		InputSchema: searchSchema,
 	}, s.WebSearch)
 
 	// web_fetch
 	fetchSchema, err := jsonschema.For[tools.FetchInput](nil)
 	if err != nil {
-		return fmt.Errorf("schema for %s: %w", tools.ToolWebFetch, err)
+		return fmt.Errorf("schema for %s: %w", tools.WebFetchName, err)
 	}
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        tools.ToolWebFetch,
-		Description: "Fetch and extract content from one or more URLs (max 10). Supports HTML, JSON, and plain text.",
+		Name: tools.WebFetchName,
+		Description: "Fetch and extract content from one or more URLs (max 10). " +
+			"Supports HTML pages, JSON APIs, and plain text. " +
+			"For HTML: uses Readability algorithm to extract main content. " +
+			"Supports parallel fetching with rate limiting. " +
+			"Returns extracted content (max 50KB per URL). " +
+			"Note: Does not render JavaScript - for SPA pages, content may be incomplete.",
 		InputSchema: fetchSchema,
 	}, s.WebFetch)
 
@@ -39,28 +45,22 @@ func (s *Server) registerNetworkTools() error {
 }
 
 // WebSearch handles the web_search MCP tool call.
-// Architecture: Direct method call (consistent with file.go and system.go).
 func (s *Server) WebSearch(ctx context.Context, _ *mcp.CallToolRequest, input tools.SearchInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
-
-	// Direct method call - O(1), consistent with FileToolset.ReadFile() pattern
-	result, err := s.networkTools.Search(toolCtx, input)
+	result, err := s.network.Search(toolCtx, input)
 	if err != nil {
-		return nil, nil, fmt.Errorf("web_search failed: %w", err)
+		return nil, nil, fmt.Errorf("searching web: %w", err)
 	}
 
 	return dataToMCP(result), nil, nil
 }
 
 // WebFetch handles the web_fetch MCP tool call.
-// Architecture: Direct method call (consistent with file.go and system.go).
 func (s *Server) WebFetch(ctx context.Context, _ *mcp.CallToolRequest, input tools.FetchInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
-
-	// Direct method call - O(1), consistent with FileToolset.ReadFile() pattern
-	result, err := s.networkTools.Fetch(toolCtx, input)
+	result, err := s.network.Fetch(toolCtx, input)
 	if err != nil {
-		return nil, nil, fmt.Errorf("web_fetch failed: %w", err)
+		return nil, nil, fmt.Errorf("fetching web: %w", err)
 	}
 
 	return dataToMCP(result), nil, nil

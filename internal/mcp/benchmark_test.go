@@ -16,46 +16,48 @@ import (
 // BenchmarkServer_Creation benchmarks MCP server creation.
 // Run with: go test -bench=BenchmarkServer_Creation -benchmem ./internal/mcp/...
 func BenchmarkServer_Creation(b *testing.B) {
+	// Setup toolsets once — benchmark only NewServer + tool registration.
+	tmpDir := b.TempDir()
+	pathVal, err := security.NewPath([]string{tmpDir})
+	if err != nil {
+		b.Fatalf("creating path validator: %v", err)
+	}
+
+	fileTools, err := tools.NewFile(pathVal, slog.Default())
+	if err != nil {
+		b.Fatalf("creating file tools: %v", err)
+	}
+
+	cmdVal := security.NewCommand()
+	envVal := security.NewEnv()
+	systemTools, err := tools.NewSystem(cmdVal, envVal, slog.Default())
+	if err != nil {
+		b.Fatalf("creating system tools: %v", err)
+	}
+
+	networkTools, err := tools.NewNetwork(tools.NetConfig{
+		SearchBaseURL:    "http://localhost:8080",
+		FetchParallelism: 2,
+		FetchDelay:       100 * time.Millisecond,
+		FetchTimeout:     30 * time.Second,
+	}, slog.Default())
+	if err != nil {
+		b.Fatalf("creating network tools: %v", err)
+	}
+
+	cfg := Config{
+		Name:    "benchmark-server",
+		Version: "1.0.0",
+		File:    fileTools,
+		System:  systemTools,
+		Network: networkTools,
+	}
+
+	b.ResetTimer()
 	for b.Loop() {
-		tmpDir := b.TempDir()
-		pathVal, err := security.NewPath([]string{tmpDir})
-		if err != nil {
-			b.Fatalf("Failed to create path validator: %v", err)
-		}
-
-		fileTools, err := tools.NewFileTools(pathVal, slog.Default())
-		if err != nil {
-			b.Fatalf("Failed to create file tools: %v", err)
-		}
-
-		cmdVal := security.NewCommand()
-		envVal := security.NewEnv()
-		systemTools, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
-		if err != nil {
-			b.Fatalf("Failed to create system tools: %v", err)
-		}
-
-		networkTools, err := tools.NewNetworkTools(tools.NetworkConfig{
-			SearchBaseURL:    "http://localhost:8080",
-			FetchParallelism: 2,
-			FetchDelay:       100 * time.Millisecond,
-			FetchTimeout:     30 * time.Second,
-		}, slog.Default())
-		if err != nil {
-			b.Fatalf("Failed to create network tools: %v", err)
-		}
-
-		cfg := Config{
-			Name:         "benchmark-server",
-			Version:      "1.0.0",
-			FileTools:    fileTools,
-			SystemTools:  systemTools,
-			NetworkTools: networkTools,
-		}
-
 		_, err = NewServer(cfg)
 		if err != nil {
-			b.Fatalf("NewServer failed: %v", err)
+			b.Fatalf("NewServer(): %v", err)
 		}
 	}
 }
@@ -70,7 +72,7 @@ func BenchmarkJSONRPC_Parse(b *testing.B) {
 	for b.Loop() {
 		var request map[string]any
 		if err := json.Unmarshal([]byte(requestJSON), &request); err != nil {
-			b.Fatalf("JSON unmarshal failed: %v", err)
+			b.Fatalf("unmarshaling JSON: %v", err)
 		}
 	}
 }
@@ -96,7 +98,7 @@ func BenchmarkJSONRPC_Parse_LargePayload(b *testing.B) {
 	for b.Loop() {
 		var parsed map[string]any
 		if err := json.Unmarshal(responseJSON, &parsed); err != nil {
-			b.Fatalf("JSON unmarshal failed: %v", err)
+			b.Fatalf("unmarshaling JSON: %v", err)
 		}
 	}
 }
@@ -120,7 +122,7 @@ func BenchmarkJSONRPC_Serialize(b *testing.B) {
 	for b.Loop() {
 		_, err := json.Marshal(response)
 		if err != nil {
-			b.Fatalf("JSON marshal failed: %v", err)
+			b.Fatalf("marshaling JSON: %v", err)
 		}
 	}
 }
@@ -144,7 +146,7 @@ func BenchmarkJSONRPC_Serialize_LargePayload(b *testing.B) {
 	for b.Loop() {
 		_, err := json.Marshal(response)
 		if err != nil {
-			b.Fatalf("JSON marshal failed: %v", err)
+			b.Fatalf("marshaling JSON: %v", err)
 		}
 	}
 }
@@ -157,7 +159,7 @@ func BenchmarkReadFileInput_Parse(b *testing.B) {
 	for b.Loop() {
 		var input tools.ReadFileInput
 		if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
-			b.Fatalf("JSON unmarshal failed: %v", err)
+			b.Fatalf("unmarshaling JSON: %v", err)
 		}
 	}
 }
@@ -167,37 +169,37 @@ func BenchmarkConfig_Validation(b *testing.B) {
 	tmpDir := b.TempDir()
 	pathVal, err := security.NewPath([]string{tmpDir})
 	if err != nil {
-		b.Fatalf("Failed to create path validator: %v", err)
+		b.Fatalf("creating path validator: %v", err)
 	}
 
-	fileTools, err := tools.NewFileTools(pathVal, slog.Default())
+	fileTools, err := tools.NewFile(pathVal, slog.Default())
 	if err != nil {
-		b.Fatalf("Failed to create file tools: %v", err)
+		b.Fatalf("creating file tools: %v", err)
 	}
 
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
-	systemTools, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
+	systemTools, err := tools.NewSystem(cmdVal, envVal, slog.Default())
 	if err != nil {
-		b.Fatalf("Failed to create system tools: %v", err)
+		b.Fatalf("creating system tools: %v", err)
 	}
 
-	networkTools, err := tools.NewNetworkTools(tools.NetworkConfig{
+	networkTools, err := tools.NewNetwork(tools.NetConfig{
 		SearchBaseURL:    "http://localhost:8080",
 		FetchParallelism: 2,
 		FetchDelay:       100 * time.Millisecond,
 		FetchTimeout:     30 * time.Second,
 	}, slog.Default())
 	if err != nil {
-		b.Fatalf("Failed to create network tools: %v", err)
+		b.Fatalf("creating network tools: %v", err)
 	}
 
 	cfg := Config{
-		Name:         "validation-test",
-		Version:      "1.0.0",
-		FileTools:    fileTools,
-		SystemTools:  systemTools,
-		NetworkTools: networkTools,
+		Name:    "validation-test",
+		Version: "1.0.0",
+		File:    fileTools,
+		System:  systemTools,
+		Network: networkTools,
 	}
 
 	b.ResetTimer()

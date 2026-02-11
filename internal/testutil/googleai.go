@@ -51,9 +51,9 @@ func SetupGoogleAI(tb testing.TB) *GoogleAISetup {
 	ctx := context.Background()
 
 	// Find project root to get absolute path to prompts directory
-	projectRoot, err := findProjectRoot()
+	projectRoot, err := FindProjectRoot()
 	if err != nil {
-		tb.Fatalf("Failed to find project root: %v", err)
+		tb.Fatalf("finding project root: %v", err)
 	}
 	promptsDir := filepath.Join(projectRoot, "prompts")
 
@@ -64,19 +64,18 @@ func SetupGoogleAI(tb testing.TB) *GoogleAISetup {
 
 	// Nil check: genkit.Init returns nil on internal initialization failure
 	if g == nil {
-		tb.Fatal("Failed to initialize Genkit: genkit.Init returned nil")
+		tb.Fatal("genkit.Init returned nil")
 	}
 
 	// Create embedder using config constant for maintainability
-	embedder := googlegenai.GoogleAIEmbedder(g, config.DefaultEmbedderModel)
+	embedder := googlegenai.GoogleAIEmbedder(g, config.DefaultGeminiEmbedderModel)
 
 	// Nil check: GoogleAIEmbedder returns nil if model lookup fails
 	if embedder == nil {
-		tb.Fatalf("Failed to create embedder: GoogleAIEmbedder returned nil for model %q", config.DefaultEmbedderModel)
+		tb.Fatalf("GoogleAIEmbedder returned nil for model %q", config.DefaultGeminiEmbedderModel)
 	}
 
-	// Create quiet logger for tests (discard all logs)
-	logger := slog.New(slog.DiscardHandler)
+	logger := DiscardLogger()
 
 	return &GoogleAISetup{
 		Embedder: embedder,

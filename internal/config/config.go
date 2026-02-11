@@ -6,9 +6,9 @@
 //  3. Default values (sensible defaults for quick start)
 //
 // Main configuration categories:
-//   - AI: Model selection, temperature, max tokens, embedder (see ai.go)
-//   - Storage: SQLite database path, PostgreSQL connection (see storage.go)
-//   - RAG: Number of documents to retrieve (RAGTopK)
+//   - AI: Model selection, temperature, max tokens, embedder
+//   - Storage: PostgreSQL connection (see storage.go)
+//   - RAG: Embedder model for vector embeddings
 //   - MCP: Model Context Protocol server management (see tools.go)
 //   - Observability: Datadog APM tracing (see observability.go)
 //
@@ -32,10 +32,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// ============================================================================
-// Sentinel Errors
-// ============================================================================
-
 var (
 	// ErrConfigNil indicates the configuration is nil.
 	ErrConfigNil = errors.New("configuration is nil")
@@ -52,11 +48,11 @@ var (
 	// ErrInvalidMaxTokens indicates the max tokens value is out of range.
 	ErrInvalidMaxTokens = errors.New("invalid max tokens")
 
-	// ErrInvalidRAGTopK indicates the RAG top-k value is out of range.
-	ErrInvalidRAGTopK = errors.New("invalid RAG top-k")
-
 	// ErrInvalidEmbedderModel indicates the embedder model is invalid.
 	ErrInvalidEmbedderModel = errors.New("invalid embedder model")
+
+	// ErrInvalidEmbedderDimension indicates the embedder produces incompatible vector dimensions.
+	ErrInvalidEmbedderDimension = errors.New("incompatible embedder dimension")
 
 	// ErrInvalidPostgresHost indicates the PostgreSQL host is invalid.
 	ErrInvalidPostgresHost = errors.New("invalid PostgreSQL host")
@@ -66,9 +62,6 @@ var (
 
 	// ErrInvalidPostgresDBName indicates the PostgreSQL database name is invalid.
 	ErrInvalidPostgresDBName = errors.New("invalid PostgreSQL database name")
-
-	// ErrConfigParse indicates configuration parsing failed.
-	ErrConfigParse = errors.New("failed to parse configuration")
 
 	// ErrInvalidProvider indicates the AI provider is not supported.
 	ErrInvalidProvider = errors.New("invalid provider")
@@ -81,15 +74,20 @@ var (
 
 	// ErrInvalidPostgresSSLMode indicates the PostgreSQL SSL mode is invalid.
 	ErrInvalidPostgresSSLMode = errors.New("invalid PostgreSQL SSL mode")
+
+	// ErrMissingHMACSecret indicates the HMAC secret is not set.
+	ErrMissingHMACSecret = errors.New("missing HMAC secret")
+
+	// ErrInvalidHMACSecret indicates the HMAC secret is too short.
+	ErrInvalidHMACSecret = errors.New("invalid HMAC secret")
 )
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const (
-	// DefaultEmbedderModel is the default embedder model for vector embeddings.
-	DefaultEmbedderModel = "text-embedding-004"
+	// DefaultGeminiEmbedderModel is the default Gemini embedder model.
+	// gemini-embedding-001 outputs 3072 dimensions by default, but supports
+	// truncation to 768 via OutputDimensionality (Matryoshka Representation Learning).
+	// Our pgvector schema uses 768 dimensions; see rag.VectorDimension.
+	DefaultGeminiEmbedderModel = "gemini-embedding-001"
 
 	// DefaultMaxHistoryMessages is the default number of messages to load.
 	DefaultMaxHistoryMessages int32 = 100
@@ -101,9 +99,13 @@ const (
 	MinHistoryMessages int32 = 10
 )
 
-// ============================================================================
-// Config Struct
-// ============================================================================
+// AI provider identifiers used in Config.Provider.
+const (
+	ProviderGemini   = "gemini"
+	ProviderOllama   = "ollama"
+	ProviderOpenAI   = "openai"
+	ProviderGoogleAI = "googleai"
+)
 
 // Config stores application configuration.
 // SECURITY: Sensitive fields are explicitly masked in MarshalJSON().
@@ -133,12 +135,7 @@ type Config struct {
 	PostgresSSLMode  string `mapstructure:"postgres_ssl_mode" json:"postgres_ssl_mode"`
 
 	// RAG configuration
-	RAGTopK       int    `mapstructure:"rag_top_k" json:"rag_top_k"`
 	EmbedderModel string `mapstructure:"embedder_model" json:"embedder_model"`
-
-	// MCP configuration (see tools.go for type definitions)
-	MCP        MCPConfig            `mapstructure:"mcp" json:"mcp"`
-	MCPServers map[string]MCPServer `mapstructure:"mcp_servers" json:"mcp_servers"`
 
 	// Tool configuration (see tools.go for type definitions)
 	SearXNG    SearXNGConfig    `mapstructure:"searxng" json:"searxng"`
@@ -153,24 +150,20 @@ type Config struct {
 	TrustProxy  bool     `mapstructure:"trust_proxy" json:"trust_proxy"` // Trust X-Real-IP/X-Forwarded-For headers (set true behind reverse proxy)
 }
 
-// ============================================================================
-// Load Function
-// ============================================================================
-
 // Load loads configuration.
 // Priority: Environment variables > Configuration file > Default values
 func Load() (*Config, error) {
 	// Configuration directory: ~/.koopa/
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
+		return nil, fmt.Errorf("getting user home directory: %w", err)
 	}
 
 	configDir := filepath.Join(home, ".koopa")
 
 	// Ensure directory exists (use 0750 permission for better security)
 	if err := os.MkdirAll(configDir, 0o750); err != nil {
-		return nil, fmt.Errorf("failed to create config directory: %w", err)
+		return nil, fmt.Errorf("creating config directory: %w", err)
 	}
 
 	// Configure Viper
@@ -180,7 +173,7 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".") // Also support current directory
 
 	// Set default values
-	setDefaults(configDir)
+	setDefaults()
 
 	// Bind environment variables
 	bindEnvVariables()
@@ -190,7 +183,7 @@ func Load() (*Config, error) {
 		// Configuration file not found is not an error, use default values
 		var configNotFound viper.ConfigFileNotFoundError
 		if !errors.As(err, &configNotFound) {
-			return nil, fmt.Errorf("failed to read config file: %w", err)
+			return nil, fmt.Errorf("reading config file: %w", err)
 		}
 		slog.Debug("configuration file not found, using default values",
 			"search_paths", []string{configDir, "."},
@@ -200,26 +193,26 @@ func Load() (*Config, error) {
 	// Use Unmarshal to automatically map to struct (type-safe)
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+		return nil, fmt.Errorf("parsing configuration: %w", err)
 	}
 
 	// Parse DATABASE_URL if set (highest priority for PostgreSQL config)
 	if err := cfg.parseDatabaseURL(); err != nil {
-		return nil, fmt.Errorf("failed to parse DATABASE_URL: %w", err)
+		return nil, fmt.Errorf("parsing DATABASE_URL: %w", err)
 	}
 
 	// CRITICAL: Validate immediately (fail-fast)
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("configuration validation failed: %w", err)
+		return nil, fmt.Errorf("validating configuration: %w", err)
 	}
 
 	return &cfg, nil
 }
 
 // setDefaults sets all default configuration values.
-func setDefaults(configDir string) {
+func setDefaults() {
 	// AI defaults
-	viper.SetDefault("provider", "gemini")
+	viper.SetDefault("provider", ProviderGemini)
 	viper.SetDefault("model_name", "gemini-2.5-flash")
 	viper.SetDefault("temperature", 0.7)
 	viper.SetDefault("max_tokens", 2048)
@@ -229,8 +222,6 @@ func setDefaults(configDir string) {
 
 	// Ollama defaults
 	viper.SetDefault("ollama_host", "http://localhost:11434")
-	viper.SetDefault("database_path", filepath.Join(configDir, "koopa.db"))
-
 	// PostgreSQL defaults (matching docker-compose.yml)
 	viper.SetDefault("postgres_host", "localhost")
 	viper.SetDefault("postgres_port", 5432)
@@ -240,8 +231,7 @@ func setDefaults(configDir string) {
 	viper.SetDefault("postgres_ssl_mode", "disable")
 
 	// RAG defaults
-	viper.SetDefault("rag_top_k", 3)
-	viper.SetDefault("embedder_model", DefaultEmbedderModel)
+	viper.SetDefault("embedder_model", DefaultGeminiEmbedderModel)
 
 	// MCP defaults
 	viper.SetDefault("mcp.timeout", 5)
@@ -302,10 +292,6 @@ func bindEnvVariables() {
 	// Validation checks their presence based on the selected provider in cfg.Validate()
 }
 
-// ============================================================================
-// Sensitive Data Masking
-// ============================================================================
-
 // maskedValue is the placeholder for masked sensitive data.
 // Using ████████ (full-width blocks U+2588) to avoid substring matching
 // Previous attempts:
@@ -346,7 +332,6 @@ func maskSecret(s string) string {
 //   - PostgresPassword
 //   - HMACSecret
 //   - Datadog.APIKey (via DatadogConfig.MarshalJSON)
-//   - MCPServers[*].Env (via MCPServer.MarshalJSON)
 //
 // When adding new sensitive fields, update this method or the nested struct's MarshalJSON.
 // The compiler will remind you when tests fail.
@@ -355,7 +340,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	a := alias(c)
 	a.PostgresPassword = maskSecret(a.PostgresPassword)
 	a.HMACSecret = maskSecret(a.HMACSecret)
-	// Note: Datadog.APIKey and MCPServers[*].Env are handled by their own MarshalJSON
+	// Note: Datadog.APIKey is handled by its own MarshalJSON
 	data, err := json.Marshal(a)
 	if err != nil {
 		return nil, fmt.Errorf("marshal config: %w", err)
@@ -371,12 +356,12 @@ func (c *Config) FullModelName() string {
 		return c.ModelName
 	}
 	switch c.Provider {
-	case "ollama":
-		return "ollama/" + c.ModelName
-	case "openai":
-		return "openai/" + c.ModelName
+	case ProviderOllama:
+		return ProviderOllama + "/" + c.ModelName
+	case ProviderOpenAI:
+		return ProviderOpenAI + "/" + c.ModelName
 	default:
-		return "googleai/" + c.ModelName
+		return ProviderGoogleAI + "/" + c.ModelName
 	}
 }
 

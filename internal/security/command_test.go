@@ -89,12 +89,12 @@ func TestCommandValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := cmdValidator.ValidateCommand(tt.command, tt.args)
+			err := cmdValidator.Validate(tt.command, tt.args)
 			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for %q, but got none: %s", tt.command, tt.reason)
+				t.Errorf("Validate(%q, %v) = nil, want error: %s", tt.command, tt.args, tt.reason)
 			}
 			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for %q: %v (%s)", tt.command, err, tt.reason)
+				t.Errorf("Validate(%q, %v) = %v, want nil (%s)", tt.command, tt.args, err, tt.reason)
 			}
 		})
 	}
@@ -133,12 +133,12 @@ func TestStrictCommandValidator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.ValidateCommand(tt.command, tt.args)
+			err := validator.Validate(tt.command, tt.args)
 			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for %q", tt.command)
+				t.Errorf("Validate(%q, %v) = nil, want error", tt.command, tt.args)
 			}
 			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for %q: %v", tt.command, err)
+				t.Errorf("Validate(%q, %v) = %v, want nil", tt.command, tt.args, err)
 			}
 		})
 	}
@@ -193,18 +193,33 @@ func TestBlockedSubcommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := v.ValidateCommand(tt.command, tt.args)
+			err := v.Validate(tt.command, tt.args)
 			if tt.shouldErr && err == nil {
-				t.Errorf("ValidateCommand(%q, %v) = nil, want error", tt.command, tt.args)
+				t.Errorf("Validate(%q, %v) = nil, want error", tt.command, tt.args)
 			}
 			if !tt.shouldErr && err != nil {
-				t.Errorf("ValidateCommand(%q, %v) = %v, want nil", tt.command, tt.args, err)
+				t.Errorf("Validate(%q, %v) = %v, want nil", tt.command, tt.args, err)
 			}
 		})
 	}
 }
 
 // TestCommandValidationEdgeCases tests edge cases in command validation
+// TestAllShellMetacharsBlocked verifies every shell metacharacter in the const
+// is blocked when it appears in a command name. This prevents regressions if
+// shellMetachars is modified.
+func TestAllShellMetacharsBlocked(t *testing.T) {
+	v := NewCommand()
+	metachars := []string{";", "|", "&", "`", "\n", ">", "<", "$", "(", ")"}
+
+	for _, char := range metachars {
+		cmd := "ls" + char + "cat"
+		if err := v.Validate(cmd, nil); err == nil {
+			t.Errorf("Validate(%q, nil) = nil, want error for metachar %q", cmd, char)
+		}
+	}
+}
+
 func TestCommandValidationEdgeCases(t *testing.T) {
 	cmdValidator := NewCommand()
 
@@ -275,12 +290,12 @@ func TestCommandValidationEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := cmdValidator.ValidateCommand(tt.command, tt.args)
+			err := cmdValidator.Validate(tt.command, tt.args)
 			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for %q, but got none: %s", tt.name, tt.reason)
+				t.Errorf("Validate(%q, %v) = nil, want error: %s", tt.command, tt.args, tt.reason)
 			}
 			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for %q: %v (%s)", tt.name, err, tt.reason)
+				t.Errorf("Validate(%q, %v) = %v, want nil (%s)", tt.command, tt.args, err, tt.reason)
 			}
 		})
 	}

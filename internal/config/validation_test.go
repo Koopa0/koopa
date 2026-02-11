@@ -14,8 +14,7 @@ func validBaseConfig(provider string) *Config {
 		ModelName:        "gemini-2.5-flash",
 		Temperature:      0.7,
 		MaxTokens:        2048,
-		RAGTopK:          3,
-		EmbedderModel:    "text-embedding-004",
+		EmbedderModel:    "gemini-embedding-001",
 		PostgresHost:     "localhost",
 		PostgresPort:     5432,
 		PostgresPassword: "test_password",
@@ -39,12 +38,12 @@ func setEnvForProvider(t *testing.T, provider string) func() {
 	switch provider {
 	case "gemini", "":
 		if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
-			t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+			t.Fatalf("setting GEMINI_API_KEY: %v", err)
 		}
 		return func() { os.Unsetenv("GEMINI_API_KEY") }
 	case "openai":
 		if err := os.Setenv("OPENAI_API_KEY", "test-openai-key"); err != nil {
-			t.Fatalf("Failed to set OPENAI_API_KEY: %v", err)
+			t.Fatalf("setting OPENAI_API_KEY: %v", err)
 		}
 		return func() { os.Unsetenv("OPENAI_API_KEY") }
 	case "ollama":
@@ -69,7 +68,7 @@ func TestValidateSuccess(t *testing.T) {
 
 			cfg := validBaseConfig(provider)
 			if err := cfg.Validate(); err != nil {
-				t.Errorf("Validate() failed with valid config (provider %q): %v", provider, err)
+				t.Errorf("Validate() unexpected error with valid config (provider %q): %v", provider, err)
 			}
 		})
 	}
@@ -230,43 +229,6 @@ func TestValidateOllamaHost(t *testing.T) {
 	}
 }
 
-// TestValidateRAGTopK tests RAG top K validation.
-func TestValidateRAGTopK(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
-	tests := []struct {
-		name    string
-		ragTopK int
-		wantErr bool
-	}{
-		{name: "valid min", ragTopK: 1},
-		{name: "valid mid", ragTopK: 5},
-		{name: "valid max", ragTopK: 10},
-		{name: "invalid zero", ragTopK: 0, wantErr: true},
-		{name: "invalid negative", ragTopK: -1, wantErr: true},
-		{name: "invalid too high", ragTopK: 11, wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := validBaseConfig("gemini")
-			cfg.RAGTopK = tt.ragTopK
-
-			err := cfg.Validate()
-			if tt.wantErr && err == nil {
-				t.Errorf("expected error for rag_top_k %d, got nil", tt.ragTopK)
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("unexpected error for rag_top_k %d: %v", tt.ragTopK, err)
-			}
-			if tt.wantErr && err != nil && !errors.Is(err, ErrInvalidRAGTopK) {
-				t.Errorf("error should be ErrInvalidRAGTopK, got: %v", err)
-			}
-		})
-	}
-}
-
 // TestValidateEmbedderModel tests embedder model validation.
 func TestValidateEmbedderModel(t *testing.T) {
 	cleanup := setEnvForProvider(t, "gemini")
@@ -279,8 +241,8 @@ func TestValidateEmbedderModel(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty embedder_model, got nil")
 	}
-	if !strings.Contains(err.Error(), "embedder_model") {
-		t.Errorf("error should mention embedder_model, got: %v", err)
+	if !errors.Is(err, ErrInvalidEmbedderModel) {
+		t.Errorf("Validate() error = %v, want ErrInvalidEmbedderModel", err)
 	}
 }
 
@@ -442,14 +404,14 @@ func TestValidatePostgresSSLMode(t *testing.T) {
 // BenchmarkValidate benchmarks configuration validation.
 func BenchmarkValidate(b *testing.B) {
 	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		b.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		b.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 	defer os.Unsetenv("GEMINI_API_KEY")
 
 	cfg := validBaseConfig("gemini")
 
 	if err := cfg.Validate(); err != nil {
-		b.Fatalf("Validate() failed: %v", err)
+		b.Fatalf("Validate() unexpected error: %v", err)
 	}
 
 	b.ResetTimer()

@@ -19,12 +19,18 @@ import (
 
 // Sentinel errors for session/CSRF operations.
 var (
+	// ErrSessionCookieNotFound is returned when the session cookie is absent from the request.
 	ErrSessionCookieNotFound = errors.New("session cookie not found")
-	ErrSessionInvalid        = errors.New("session ID invalid")
-	ErrCSRFRequired          = errors.New("csrf token required")
-	ErrCSRFInvalid           = errors.New("csrf token invalid")
-	ErrCSRFExpired           = errors.New("csrf token expired")
-	ErrCSRFMalformed         = errors.New("csrf token malformed")
+	// ErrSessionInvalid is returned when the session cookie value is not a valid UUID.
+	ErrSessionInvalid = errors.New("session ID invalid")
+	// ErrCSRFRequired is returned when a state-changing request has no CSRF token.
+	ErrCSRFRequired = errors.New("csrf token required")
+	// ErrCSRFInvalid is returned when the CSRF token signature does not match.
+	ErrCSRFInvalid = errors.New("csrf token invalid")
+	// ErrCSRFExpired is returned when the CSRF token timestamp exceeds csrfTokenTTL.
+	ErrCSRFExpired = errors.New("csrf token expired")
+	// ErrCSRFMalformed is returned when the CSRF token format cannot be parsed.
+	ErrCSRFMalformed = errors.New("csrf token malformed")
 )
 
 // Pre-session CSRF token prefix to distinguish from session-bound tokens.
@@ -32,10 +38,11 @@ const preSessionPrefix = "pre:"
 
 // Cookie and CSRF configuration.
 const (
-	sessionCookieName = "sid"
-	csrfTokenTTL      = 24 * time.Hour
-	sessionMaxAge     = 30 * 24 * 3600 // 30 days in seconds
-	csrfClockSkew     = 5 * time.Minute
+	sessionCookieName    = "sid"
+	csrfTokenTTL         = 24 * time.Hour
+	sessionMaxAge        = 30 * 24 * 3600 // 30 days in seconds
+	csrfClockSkew        = 5 * time.Minute
+	messagesDefaultLimit = 100
 )
 
 // sessionManager handles session cookies and CSRF token operations.
@@ -44,31 +51,6 @@ type sessionManager struct {
 	hmacSecret []byte
 	isDev      bool
 	logger     *slog.Logger
-}
-
-// GetOrCreate retrieves session ID from cookie or creates a new session.
-// On success, sets/refreshes the session cookie and returns the session UUID.
-func (sm *sessionManager) GetOrCreate(w http.ResponseWriter, r *http.Request) (uuid.UUID, error) {
-	// Try to get existing session from cookie
-	cookie, err := r.Cookie(sessionCookieName)
-	if err == nil && cookie.Value != "" {
-		sessionID, parseErr := uuid.Parse(cookie.Value)
-		if parseErr == nil {
-			if _, getErr := sm.store.Session(r.Context(), sessionID); getErr == nil {
-				sm.setCookie(w, sessionID)
-				return sessionID, nil
-			}
-		}
-	}
-
-	// Create new session
-	sess, err := sm.store.CreateSession(r.Context(), "", "", "")
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("create session: %w", err)
-	}
-
-	sm.setCookie(w, sess.ID)
-	return sess.ID, nil
 }
 
 // ID extracts session ID from cookie without creating a new session.
@@ -197,24 +179,24 @@ func (sm *sessionManager) CheckPreSessionCSRF(token string) error {
 func (sm *sessionManager) requireOwnership(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	idStr := r.PathValue("id")
 	if idStr == "" {
-		WriteError(w, http.StatusBadRequest, "missing_id", "session ID required")
+		WriteError(w, http.StatusBadRequest, "missing_id", "session ID required", sm.logger)
 		return uuid.Nil, false
 	}
 
 	targetID, err := uuid.Parse(idStr)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_id", "invalid session ID")
+		WriteError(w, http.StatusBadRequest, "invalid_id", "invalid session ID", sm.logger)
 		return uuid.Nil, false
 	}
 
-	ownerID, ok := SessionIDFromContext(r.Context())
+	ownerID, ok := sessionIDFromContext(r.Context())
 	if !ok || ownerID != targetID {
 		sm.logger.Warn("session ownership check failed",
 			"target", targetID,
 			"path", r.URL.Path,
 			"remote_addr", r.RemoteAddr,
 		)
-		WriteError(w, http.StatusForbidden, "forbidden", "session access denied")
+		WriteError(w, http.StatusForbidden, "forbidden", "session access denied", sm.logger)
 		return uuid.Nil, false
 	}
 
@@ -240,13 +222,13 @@ func (sm *sessionManager) csrfToken(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		WriteJSON(w, http.StatusOK, map[string]string{
 			"csrfToken": sm.NewCSRFToken(sessionID),
-		})
+		}, sm.logger)
 		return
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]string{
 		"csrfToken": sm.NewPreSessionCSRFToken(),
-	})
+	}, sm.logger)
 }
 
 // listSessions handles GET /api/v1/sessions — returns sessions owned by the caller.
@@ -258,21 +240,21 @@ func (sm *sessionManager) listSessions(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt string `json:"updatedAt"`
 	}
 
-	sessionID, ok := SessionIDFromContext(r.Context())
+	sessionID, ok := sessionIDFromContext(r.Context())
 	if !ok {
 		// No session cookie — return empty list
-		WriteJSON(w, http.StatusOK, []sessionItem{})
+		WriteJSON(w, http.StatusOK, []sessionItem{}, sm.logger)
 		return
 	}
 
 	sess, err := sm.store.Session(r.Context(), sessionID)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			WriteJSON(w, http.StatusOK, []sessionItem{})
+		if errors.Is(err, session.ErrNotFound) {
+			WriteJSON(w, http.StatusOK, []sessionItem{}, sm.logger)
 			return
 		}
-		sm.logger.Error("failed to get session", "error", err, "session_id", sessionID)
-		WriteError(w, http.StatusInternalServerError, "list_failed", "failed to list sessions")
+		sm.logger.Error("getting session", "error", err, "session_id", sessionID)
+		WriteError(w, http.StatusInternalServerError, "list_failed", "failed to list sessions", sm.logger)
 		return
 	}
 
@@ -282,15 +264,15 @@ func (sm *sessionManager) listSessions(w http.ResponseWriter, r *http.Request) {
 			Title:     sess.Title,
 			UpdatedAt: sess.UpdatedAt.Format(time.RFC3339),
 		},
-	})
+	}, sm.logger)
 }
 
 // createSession handles POST /api/v1/sessions — creates a new session.
 func (sm *sessionManager) createSession(w http.ResponseWriter, r *http.Request) {
-	sess, err := sm.store.CreateSession(r.Context(), "", "", "")
+	sess, err := sm.store.CreateSession(r.Context(), "")
 	if err != nil {
-		sm.logger.Error("failed to create session", "error", err)
-		WriteError(w, http.StatusInternalServerError, "create_failed", "failed to create session")
+		sm.logger.Error("creating session", "error", err)
+		WriteError(w, http.StatusInternalServerError, "create_failed", "failed to create session", sm.logger)
 		return
 	}
 
@@ -299,7 +281,7 @@ func (sm *sessionManager) createSession(w http.ResponseWriter, r *http.Request) 
 	WriteJSON(w, http.StatusCreated, map[string]string{
 		"id":        sess.ID.String(),
 		"csrfToken": sm.NewCSRFToken(sess.ID),
-	})
+	}, sm.logger)
 }
 
 // getSession handles GET /api/v1/sessions/{id} — returns a single session.
@@ -312,12 +294,12 @@ func (sm *sessionManager) getSession(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := sm.store.Session(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			WriteError(w, http.StatusNotFound, "not_found", "session not found")
+		if errors.Is(err, session.ErrNotFound) {
+			WriteError(w, http.StatusNotFound, "not_found", "session not found", sm.logger)
 			return
 		}
-		sm.logger.Error("failed to get session", "error", err, "session_id", id)
-		WriteError(w, http.StatusInternalServerError, "get_failed", "failed to get session")
+		sm.logger.Error("getting session", "error", err, "session_id", id)
+		WriteError(w, http.StatusInternalServerError, "get_failed", "failed to get session", sm.logger)
 		return
 	}
 
@@ -326,7 +308,7 @@ func (sm *sessionManager) getSession(w http.ResponseWriter, r *http.Request) {
 		"title":     sess.Title,
 		"createdAt": sess.CreatedAt.Format(time.RFC3339),
 		"updatedAt": sess.UpdatedAt.Format(time.RFC3339),
-	})
+	}, sm.logger)
 }
 
 // getSessionMessages handles GET /api/v1/sessions/{id}/messages — returns messages for a session.
@@ -337,10 +319,10 @@ func (sm *sessionManager) getSessionMessages(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	messages, err := sm.store.Messages(r.Context(), id, 100, 0)
+	messages, err := sm.store.Messages(r.Context(), id, messagesDefaultLimit, 0)
 	if err != nil {
-		sm.logger.Error("failed to get messages", "error", err, "session_id", id)
-		WriteError(w, http.StatusInternalServerError, "get_failed", "failed to get messages")
+		sm.logger.Error("getting messages", "error", err, "session_id", id)
+		WriteError(w, http.StatusInternalServerError, "get_failed", "failed to get messages", sm.logger)
 		return
 	}
 
@@ -369,7 +351,7 @@ func (sm *sessionManager) getSessionMessages(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, items)
+	WriteJSON(w, http.StatusOK, items, sm.logger)
 }
 
 // deleteSession handles DELETE /api/v1/sessions/{id} — deletes a session.
@@ -381,10 +363,10 @@ func (sm *sessionManager) deleteSession(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := sm.store.DeleteSession(r.Context(), id); err != nil {
-		sm.logger.Error("failed to delete session", "error", err, "session_id", id)
-		WriteError(w, http.StatusInternalServerError, "delete_failed", "failed to delete session")
+		sm.logger.Error("deleting session", "error", err, "session_id", id)
+		WriteError(w, http.StatusInternalServerError, "delete_failed", "failed to delete session", sm.logger)
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"}, sm.logger)
 }

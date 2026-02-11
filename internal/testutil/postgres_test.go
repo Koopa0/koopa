@@ -21,14 +21,13 @@ import (
 // Run with: go test -tags=integration ./internal/testutil -v
 func TestSetupTestDB_Integration(t *testing.T) {
 	// Setup test database
-	dbContainer, cleanup := SetupTestDB(t)
-	defer cleanup()
+	dbContainer := SetupTestDB(t)
 
 	// Verify database is accessible
 	ctx := context.Background()
 	err := dbContainer.Pool.Ping(ctx)
 	if err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
+		t.Fatalf("Pool.Ping() unexpected error: %v", err)
 	}
 
 	// Verify pgvector extension is installed
@@ -36,26 +35,24 @@ func TestSetupTestDB_Integration(t *testing.T) {
 	err = dbContainer.Pool.QueryRow(ctx,
 		"SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')").Scan(&hasExtension)
 	if err != nil {
-		t.Fatalf("Failed to check for vector extension: %v", err)
+		t.Fatalf("QueryRow(vector extension check) unexpected error: %v", err)
 	}
 
 	if !hasExtension {
-		t.Error("pgvector extension not installed")
+		t.Error("pgvector extension installed = false, want true")
 	}
 
 	// Verify all required tables exist
-	tables := []string{"documents", "sessions", "session_messages"}
+	tables := []string{"documents", "sessions", "messages"}
 	for _, table := range tables {
 		var exists bool
 		err = dbContainer.Pool.QueryRow(ctx,
 			"SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1)", table).Scan(&exists)
 		if err != nil {
-			t.Fatalf("Failed to check for table %s: %v", table, err)
+			t.Fatalf("QueryRow(table %q check) unexpected error: %v", table, err)
 		}
 		if !exists {
-			t.Errorf("Table %s does not exist", table)
+			t.Errorf("table %q exists = false, want true", table)
 		}
 	}
-
-	t.Log("Database setup successful with all required tables")
 }

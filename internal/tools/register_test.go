@@ -17,11 +17,7 @@ func setupTestGenkit(t *testing.T) *genkit.Genkit {
 	return genkit.Init(context.Background())
 }
 
-// ============================================================================
-// NewFileTools Tests
-// ============================================================================
-
-func TestNewFileTools(t *testing.T) {
+func TestNewFile(t *testing.T) {
 	t.Parallel()
 
 	t.Run("successful creation", func(t *testing.T) {
@@ -31,27 +27,27 @@ func TestNewFileTools(t *testing.T) {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}
 
-		ft, err := NewFileTools(pathVal, testLogger())
+		ft, err := NewFile(pathVal, testLogger())
 		if err != nil {
-			t.Fatalf("NewFileTools() unexpected error: %v", err)
+			t.Fatalf("NewFile() unexpected error: %v", err)
 		}
 		if ft == nil {
-			t.Fatal("NewFileTools() = nil, want non-nil")
+			t.Fatal("NewFile() = nil, want non-nil")
 		}
 	})
 
 	t.Run("nil path validator", func(t *testing.T) {
 		t.Parallel()
 
-		ft, err := NewFileTools(nil, testLogger())
+		ft, err := NewFile(nil, testLogger())
 		if err == nil {
-			t.Fatal("NewFileTools(nil, logger) expected error, got nil")
+			t.Fatal("NewFile(nil, logger) expected error, got nil")
 		}
 		if ft != nil {
-			t.Errorf("NewFileTools(nil, logger) = %v, want nil", ft)
+			t.Errorf("NewFile(nil, logger) = %v, want nil", ft)
 		}
 		if !strings.Contains(err.Error(), "path validator is required") {
-			t.Errorf("NewFileTools(nil, logger) error = %q, want contains %q", err.Error(), "path validator is required")
+			t.Errorf("NewFile(nil, logger) error = %q, want contains %q", err.Error(), "path validator is required")
 		}
 	})
 
@@ -62,24 +58,20 @@ func TestNewFileTools(t *testing.T) {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}
 
-		ft, err := NewFileTools(pathVal, nil)
+		ft, err := NewFile(pathVal, nil)
 		if err == nil {
-			t.Fatal("NewFileTools(pathVal, nil) expected error, got nil")
+			t.Fatal("NewFile(pathVal, nil) expected error, got nil")
 		}
 		if ft != nil {
-			t.Errorf("NewFileTools(pathVal, nil) = %v, want nil", ft)
+			t.Errorf("NewFile(pathVal, nil) = %v, want nil", ft)
 		}
 		if !strings.Contains(err.Error(), "logger is required") {
-			t.Errorf("NewFileTools(pathVal, nil) error = %q, want contains %q", err.Error(), "logger is required")
+			t.Errorf("NewFile(pathVal, nil) error = %q, want contains %q", err.Error(), "logger is required")
 		}
 	})
 }
 
-// ============================================================================
-// RegisterFileTools Tests
-// ============================================================================
-
-func TestRegisterFileTools(t *testing.T) {
+func TestRegisterFile(t *testing.T) {
 	t.Parallel()
 
 	t.Run("successful registration", func(t *testing.T) {
@@ -90,24 +82,24 @@ func TestRegisterFileTools(t *testing.T) {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}
 
-		ft, err := NewFileTools(pathVal, testLogger())
+		ft, err := NewFile(pathVal, testLogger())
 		if err != nil {
-			t.Fatalf("NewFileTools() unexpected error: %v", err)
+			t.Fatalf("NewFile() unexpected error: %v", err)
 		}
 
-		tools, err := RegisterFileTools(g, ft)
+		tools, err := RegisterFile(g, ft)
 		if err != nil {
-			t.Fatalf("RegisterFileTools() unexpected error: %v", err)
+			t.Fatalf("RegisterFile() unexpected error: %v", err)
 		}
 		if got, want := len(tools), 5; got != want {
-			t.Errorf("RegisterFileTools() tool count = %d, want %d (should register 5 file tools)", got, want)
+			t.Errorf("RegisterFile() tool count = %d, want %d (should register 5 file tools)", got, want)
 		}
 
 		// Verify tool names
-		expectedNames := []string{ToolReadFile, ToolWriteFile, ToolListFiles, ToolDeleteFile, ToolGetFileInfo}
+		expectedNames := []string{ReadFileName, WriteFileName, ListFilesName, DeleteFileName, FileInfoName}
 		actualNames := extractToolNames(tools)
 		if !slicesEqual(expectedNames, actualNames) {
-			t.Errorf("RegisterFileTools() tool names = %v, want %v", actualNames, expectedNames)
+			t.Errorf("RegisterFile() tool names = %v, want %v", actualNames, expectedNames)
 		}
 	})
 
@@ -118,45 +110,41 @@ func TestRegisterFileTools(t *testing.T) {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}
 
-		ft, err := NewFileTools(pathVal, testLogger())
+		ft, err := NewFile(pathVal, testLogger())
 		if err != nil {
-			t.Fatalf("NewFileTools() unexpected error: %v", err)
+			t.Fatalf("NewFile() unexpected error: %v", err)
 		}
 
-		tools, err := RegisterFileTools(nil, ft)
+		tools, err := RegisterFile(nil, ft)
 		if err == nil {
-			t.Fatal("RegisterFileTools(nil, ft) expected error, got nil")
+			t.Fatal("RegisterFile(nil, ft) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterFileTools(nil, ft) = %v, want nil", tools)
+			t.Errorf("RegisterFile(nil, ft) = %v, want nil", tools)
 		}
 		if !strings.Contains(err.Error(), "genkit instance is required") {
-			t.Errorf("RegisterFileTools(nil, ft) error = %q, want contains %q", err.Error(), "genkit instance is required")
+			t.Errorf("RegisterFile(nil, ft) error = %q, want contains %q", err.Error(), "genkit instance is required")
 		}
 	})
 
-	t.Run("nil FileTools", func(t *testing.T) {
+	t.Run("nil File", func(t *testing.T) {
 		t.Parallel()
 		g := setupTestGenkit(t)
 
-		tools, err := RegisterFileTools(g, nil)
+		tools, err := RegisterFile(g, nil)
 		if err == nil {
-			t.Fatal("RegisterFileTools(g, nil) expected error, got nil")
+			t.Fatal("RegisterFile(g, nil) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterFileTools(g, nil) = %v, want nil", tools)
+			t.Errorf("RegisterFile(g, nil) = %v, want nil", tools)
 		}
-		if !strings.Contains(err.Error(), "FileTools is required") {
-			t.Errorf("RegisterFileTools(g, nil) error = %q, want contains %q", err.Error(), "FileTools is required")
+		if !strings.Contains(err.Error(), "File is required") {
+			t.Errorf("RegisterFile(g, nil) error = %q, want contains %q", err.Error(), "File is required")
 		}
 	})
 }
 
-// ============================================================================
-// NewSystemTools Tests
-// ============================================================================
-
-func TestNewSystemTools(t *testing.T) {
+func TestNewSystem(t *testing.T) {
 	t.Parallel()
 
 	t.Run("successful creation", func(t *testing.T) {
@@ -164,12 +152,12 @@ func TestNewSystemTools(t *testing.T) {
 		cmdVal := security.NewCommand()
 		envVal := security.NewEnv()
 
-		st, err := NewSystemTools(cmdVal, envVal, testLogger())
+		st, err := NewSystem(cmdVal, envVal, testLogger())
 		if err != nil {
-			t.Fatalf("NewSystemTools() unexpected error: %v", err)
+			t.Fatalf("NewSystem() unexpected error: %v", err)
 		}
 		if st == nil {
-			t.Fatal("NewSystemTools() = nil, want non-nil")
+			t.Fatal("NewSystem() = nil, want non-nil")
 		}
 	})
 
@@ -177,15 +165,15 @@ func TestNewSystemTools(t *testing.T) {
 		t.Parallel()
 		envVal := security.NewEnv()
 
-		st, err := NewSystemTools(nil, envVal, testLogger())
+		st, err := NewSystem(nil, envVal, testLogger())
 		if err == nil {
-			t.Fatal("NewSystemTools(nil, envVal, logger) expected error, got nil")
+			t.Fatal("NewSystem(nil, envVal, logger) expected error, got nil")
 		}
 		if st != nil {
-			t.Errorf("NewSystemTools(nil, envVal, logger) = %v, want nil", st)
+			t.Errorf("NewSystem(nil, envVal, logger) = %v, want nil", st)
 		}
 		if !strings.Contains(err.Error(), "command validator is required") {
-			t.Errorf("NewSystemTools(nil, envVal, logger) error = %q, want contains %q", err.Error(), "command validator is required")
+			t.Errorf("NewSystem(nil, envVal, logger) error = %q, want contains %q", err.Error(), "command validator is required")
 		}
 	})
 
@@ -193,15 +181,15 @@ func TestNewSystemTools(t *testing.T) {
 		t.Parallel()
 		cmdVal := security.NewCommand()
 
-		st, err := NewSystemTools(cmdVal, nil, testLogger())
+		st, err := NewSystem(cmdVal, nil, testLogger())
 		if err == nil {
-			t.Fatal("NewSystemTools(cmdVal, nil, logger) expected error, got nil")
+			t.Fatal("NewSystem(cmdVal, nil, logger) expected error, got nil")
 		}
 		if st != nil {
-			t.Errorf("NewSystemTools(cmdVal, nil, logger) = %v, want nil", st)
+			t.Errorf("NewSystem(cmdVal, nil, logger) = %v, want nil", st)
 		}
 		if !strings.Contains(err.Error(), "env validator is required") {
-			t.Errorf("NewSystemTools(cmdVal, nil, logger) error = %q, want contains %q", err.Error(), "env validator is required")
+			t.Errorf("NewSystem(cmdVal, nil, logger) error = %q, want contains %q", err.Error(), "env validator is required")
 		}
 	})
 
@@ -210,24 +198,20 @@ func TestNewSystemTools(t *testing.T) {
 		cmdVal := security.NewCommand()
 		envVal := security.NewEnv()
 
-		st, err := NewSystemTools(cmdVal, envVal, nil)
+		st, err := NewSystem(cmdVal, envVal, nil)
 		if err == nil {
-			t.Fatal("NewSystemTools(cmdVal, envVal, nil) expected error, got nil")
+			t.Fatal("NewSystem(cmdVal, envVal, nil) expected error, got nil")
 		}
 		if st != nil {
-			t.Errorf("NewSystemTools(cmdVal, envVal, nil) = %v, want nil", st)
+			t.Errorf("NewSystem(cmdVal, envVal, nil) = %v, want nil", st)
 		}
 		if !strings.Contains(err.Error(), "logger is required") {
-			t.Errorf("NewSystemTools(cmdVal, envVal, nil) error = %q, want contains %q", err.Error(), "logger is required")
+			t.Errorf("NewSystem(cmdVal, envVal, nil) error = %q, want contains %q", err.Error(), "logger is required")
 		}
 	})
 }
 
-// ============================================================================
-// RegisterSystemTools Tests
-// ============================================================================
-
-func TestRegisterSystemTools(t *testing.T) {
+func TestRegisterSystem(t *testing.T) {
 	t.Parallel()
 
 	t.Run("successful registration", func(t *testing.T) {
@@ -236,24 +220,24 @@ func TestRegisterSystemTools(t *testing.T) {
 		cmdVal := security.NewCommand()
 		envVal := security.NewEnv()
 
-		st, err := NewSystemTools(cmdVal, envVal, testLogger())
+		st, err := NewSystem(cmdVal, envVal, testLogger())
 		if err != nil {
-			t.Fatalf("NewSystemTools() unexpected error: %v", err)
+			t.Fatalf("NewSystem() unexpected error: %v", err)
 		}
 
-		tools, err := RegisterSystemTools(g, st)
+		tools, err := RegisterSystem(g, st)
 		if err != nil {
-			t.Fatalf("RegisterSystemTools() unexpected error: %v", err)
+			t.Fatalf("RegisterSystem() unexpected error: %v", err)
 		}
 		if got, want := len(tools), 3; got != want {
-			t.Errorf("RegisterSystemTools() tool count = %d, want %d (should register 3 system tools)", got, want)
+			t.Errorf("RegisterSystem() tool count = %d, want %d (should register 3 system tools)", got, want)
 		}
 
 		// Verify tool names
-		expectedNames := []string{ToolCurrentTime, ToolExecuteCommand, ToolGetEnv}
+		expectedNames := []string{CurrentTimeName, ExecuteCommandName, GetEnvName}
 		actualNames := extractToolNames(tools)
 		if !slicesEqual(expectedNames, actualNames) {
-			t.Errorf("RegisterSystemTools() tool names = %v, want %v", actualNames, expectedNames)
+			t.Errorf("RegisterSystem() tool names = %v, want %v", actualNames, expectedNames)
 		}
 	})
 
@@ -262,234 +246,218 @@ func TestRegisterSystemTools(t *testing.T) {
 		cmdVal := security.NewCommand()
 		envVal := security.NewEnv()
 
-		st, err := NewSystemTools(cmdVal, envVal, testLogger())
+		st, err := NewSystem(cmdVal, envVal, testLogger())
 		if err != nil {
-			t.Fatalf("NewSystemTools() unexpected error: %v", err)
+			t.Fatalf("NewSystem() unexpected error: %v", err)
 		}
 
-		tools, err := RegisterSystemTools(nil, st)
+		tools, err := RegisterSystem(nil, st)
 		if err == nil {
-			t.Fatal("RegisterSystemTools(nil, st) expected error, got nil")
+			t.Fatal("RegisterSystem(nil, st) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterSystemTools(nil, st) = %v, want nil", tools)
+			t.Errorf("RegisterSystem(nil, st) = %v, want nil", tools)
 		}
 		if !strings.Contains(err.Error(), "genkit instance is required") {
-			t.Errorf("RegisterSystemTools(nil, st) error = %q, want contains %q", err.Error(), "genkit instance is required")
+			t.Errorf("RegisterSystem(nil, st) error = %q, want contains %q", err.Error(), "genkit instance is required")
 		}
 	})
 
-	t.Run("nil SystemTools", func(t *testing.T) {
+	t.Run("nil System", func(t *testing.T) {
 		t.Parallel()
 		g := setupTestGenkit(t)
 
-		tools, err := RegisterSystemTools(g, nil)
+		tools, err := RegisterSystem(g, nil)
 		if err == nil {
-			t.Fatal("RegisterSystemTools(g, nil) expected error, got nil")
+			t.Fatal("RegisterSystem(g, nil) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterSystemTools(g, nil) = %v, want nil", tools)
+			t.Errorf("RegisterSystem(g, nil) = %v, want nil", tools)
 		}
-		if !strings.Contains(err.Error(), "SystemTools is required") {
-			t.Errorf("RegisterSystemTools(g, nil) error = %q, want contains %q", err.Error(), "SystemTools is required")
+		if !strings.Contains(err.Error(), "System is required") {
+			t.Errorf("RegisterSystem(g, nil) error = %q, want contains %q", err.Error(), "System is required")
 		}
 	})
 }
 
-// ============================================================================
-// NewNetworkTools Tests
-// ============================================================================
-
-func TestNewNetworkTools(t *testing.T) {
+func TestNewNetwork(t *testing.T) {
 	t.Parallel()
 
 	t.Run("successful creation", func(t *testing.T) {
 		t.Parallel()
-		cfg := NetworkConfig{
+		cfg := NetConfig{
 			SearchBaseURL: "http://localhost:8080",
 		}
 
-		nt, err := NewNetworkTools(cfg, testLogger())
+		nt, err := NewNetwork(cfg, testLogger())
 		if err != nil {
-			t.Fatalf("NewNetworkTools() unexpected error: %v", err)
+			t.Fatalf("NewNetwork() unexpected error: %v", err)
 		}
 		if nt == nil {
-			t.Fatal("NewNetworkTools() = nil, want non-nil")
+			t.Fatal("NewNetwork() = nil, want non-nil")
 		}
 	})
 
 	t.Run("empty search base URL", func(t *testing.T) {
 		t.Parallel()
-		cfg := NetworkConfig{}
+		cfg := NetConfig{}
 
-		nt, err := NewNetworkTools(cfg, testLogger())
+		nt, err := NewNetwork(cfg, testLogger())
 		if err == nil {
-			t.Fatal("NewNetworkTools(empty config) expected error, got nil")
+			t.Fatal("NewNetwork(empty config) expected error, got nil")
 		}
 		if nt != nil {
-			t.Errorf("NewNetworkTools(empty config) = %v, want nil", nt)
+			t.Errorf("NewNetwork(empty config) = %v, want nil", nt)
 		}
 		if !strings.Contains(err.Error(), "search base URL is required") {
-			t.Errorf("NewNetworkTools(empty config) error = %q, want contains %q", err.Error(), "search base URL is required")
+			t.Errorf("NewNetwork(empty config) error = %q, want contains %q", err.Error(), "search base URL is required")
 		}
 	})
 
 	t.Run("nil logger", func(t *testing.T) {
 		t.Parallel()
-		cfg := NetworkConfig{
+		cfg := NetConfig{
 			SearchBaseURL: "http://localhost:8080",
 		}
 
-		nt, err := NewNetworkTools(cfg, nil)
+		nt, err := NewNetwork(cfg, nil)
 		if err == nil {
-			t.Fatal("NewNetworkTools(cfg, nil) expected error, got nil")
+			t.Fatal("NewNetwork(cfg, nil) expected error, got nil")
 		}
 		if nt != nil {
-			t.Errorf("NewNetworkTools(cfg, nil) = %v, want nil", nt)
+			t.Errorf("NewNetwork(cfg, nil) = %v, want nil", nt)
 		}
 		if !strings.Contains(err.Error(), "logger is required") {
-			t.Errorf("NewNetworkTools(cfg, nil) error = %q, want contains %q", err.Error(), "logger is required")
+			t.Errorf("NewNetwork(cfg, nil) error = %q, want contains %q", err.Error(), "logger is required")
 		}
 	})
 
 	t.Run("default values applied", func(t *testing.T) {
 		t.Parallel()
-		cfg := NetworkConfig{
+		cfg := NetConfig{
 			SearchBaseURL: "http://localhost:8080/",
 			// Leave other values at zero - should get defaults
 		}
 
-		nt, err := NewNetworkTools(cfg, testLogger())
+		nt, err := NewNetwork(cfg, testLogger())
 		if err != nil {
-			t.Fatalf("NewNetworkTools() unexpected error: %v", err)
+			t.Fatalf("NewNetwork() unexpected error: %v", err)
 		}
 		if nt == nil {
-			t.Fatal("NewNetworkTools() = nil, want non-nil")
+			t.Fatal("NewNetwork() = nil, want non-nil")
 		}
 	})
 }
 
-// ============================================================================
-// RegisterNetworkTools Tests
-// ============================================================================
-
-func TestRegisterNetworkTools(t *testing.T) {
+func TestRegisterNetwork(t *testing.T) {
 	t.Parallel()
 
 	t.Run("successful registration", func(t *testing.T) {
 		t.Parallel()
 		g := setupTestGenkit(t)
-		cfg := NetworkConfig{
+		cfg := NetConfig{
 			SearchBaseURL: "http://localhost:8080",
 		}
 
-		nt, err := NewNetworkTools(cfg, testLogger())
+		nt, err := NewNetwork(cfg, testLogger())
 		if err != nil {
-			t.Fatalf("NewNetworkTools() unexpected error: %v", err)
+			t.Fatalf("NewNetwork() unexpected error: %v", err)
 		}
 
-		tools, err := RegisterNetworkTools(g, nt)
+		tools, err := RegisterNetwork(g, nt)
 		if err != nil {
-			t.Fatalf("RegisterNetworkTools() unexpected error: %v", err)
+			t.Fatalf("RegisterNetwork() unexpected error: %v", err)
 		}
 		if got, want := len(tools), 2; got != want {
-			t.Errorf("RegisterNetworkTools() tool count = %d, want %d (should register 2 network tools)", got, want)
+			t.Errorf("RegisterNetwork() tool count = %d, want %d (should register 2 network tools)", got, want)
 		}
 
 		// Verify tool names
-		expectedNames := []string{ToolWebSearch, ToolWebFetch}
+		expectedNames := []string{WebSearchName, WebFetchName}
 		actualNames := extractToolNames(tools)
 		if !slicesEqual(expectedNames, actualNames) {
-			t.Errorf("RegisterNetworkTools() tool names = %v, want %v", actualNames, expectedNames)
+			t.Errorf("RegisterNetwork() tool names = %v, want %v", actualNames, expectedNames)
 		}
 	})
 
 	t.Run("nil genkit", func(t *testing.T) {
 		t.Parallel()
-		cfg := NetworkConfig{
+		cfg := NetConfig{
 			SearchBaseURL: "http://localhost:8080",
 		}
 
-		nt, err := NewNetworkTools(cfg, testLogger())
+		nt, err := NewNetwork(cfg, testLogger())
 		if err != nil {
-			t.Fatalf("NewNetworkTools() unexpected error: %v", err)
+			t.Fatalf("NewNetwork() unexpected error: %v", err)
 		}
 
-		tools, err := RegisterNetworkTools(nil, nt)
+		tools, err := RegisterNetwork(nil, nt)
 		if err == nil {
-			t.Fatal("RegisterNetworkTools(nil, nt) expected error, got nil")
+			t.Fatal("RegisterNetwork(nil, nt) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterNetworkTools(nil, nt) = %v, want nil", tools)
+			t.Errorf("RegisterNetwork(nil, nt) = %v, want nil", tools)
 		}
 		if !strings.Contains(err.Error(), "genkit instance is required") {
-			t.Errorf("RegisterNetworkTools(nil, nt) error = %q, want contains %q", err.Error(), "genkit instance is required")
+			t.Errorf("RegisterNetwork(nil, nt) error = %q, want contains %q", err.Error(), "genkit instance is required")
 		}
 	})
 
-	t.Run("nil NetworkTools", func(t *testing.T) {
+	t.Run("nil Network", func(t *testing.T) {
 		t.Parallel()
 		g := setupTestGenkit(t)
 
-		tools, err := RegisterNetworkTools(g, nil)
+		tools, err := RegisterNetwork(g, nil)
 		if err == nil {
-			t.Fatal("RegisterNetworkTools(g, nil) expected error, got nil")
+			t.Fatal("RegisterNetwork(g, nil) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterNetworkTools(g, nil) = %v, want nil", tools)
+			t.Errorf("RegisterNetwork(g, nil) = %v, want nil", tools)
 		}
-		if !strings.Contains(err.Error(), "NetworkTools is required") {
-			t.Errorf("RegisterNetworkTools(g, nil) error = %q, want contains %q", err.Error(), "NetworkTools is required")
+		if !strings.Contains(err.Error(), "Network is required") {
+			t.Errorf("RegisterNetwork(g, nil) error = %q, want contains %q", err.Error(), "Network is required")
 		}
 	})
 }
 
-// ============================================================================
-// RegisterKnowledgeTools Tests
-// ============================================================================
+// Note: Knowledge validation (nil store, nil logger) is tested in
+// TestNewKnowledge in knowledge_test.go. These tests verify
+// RegisterKnowledge parameter validation only.
 
-// Note: KnowledgeTools validation (nil store, nil logger) is tested in
-// TestNewKnowledgeTools in knowledge_test.go. These tests verify
-// RegisterKnowledgeTools parameter validation only.
-
-func TestRegisterKnowledgeTools(t *testing.T) {
+func TestRegisterKnowledge(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nil genkit", func(t *testing.T) {
 		t.Parallel()
 
-		tools, err := RegisterKnowledgeTools(nil, &KnowledgeTools{})
+		tools, err := RegisterKnowledge(nil, &Knowledge{})
 		if err == nil {
-			t.Fatal("RegisterKnowledgeTools(nil, kt) expected error, got nil")
+			t.Fatal("RegisterKnowledge(nil, kt) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterKnowledgeTools(nil, kt) = %v, want nil", tools)
+			t.Errorf("RegisterKnowledge(nil, kt) = %v, want nil", tools)
 		}
 		if !strings.Contains(err.Error(), "genkit instance is required") {
-			t.Errorf("RegisterKnowledgeTools(nil, kt) error = %q, want contains %q", err.Error(), "genkit instance is required")
+			t.Errorf("RegisterKnowledge(nil, kt) error = %q, want contains %q", err.Error(), "genkit instance is required")
 		}
 	})
 
-	t.Run("nil KnowledgeTools", func(t *testing.T) {
+	t.Run("nil Knowledge", func(t *testing.T) {
 		t.Parallel()
 		g := setupTestGenkit(t)
 
-		tools, err := RegisterKnowledgeTools(g, nil)
+		tools, err := RegisterKnowledge(g, nil)
 		if err == nil {
-			t.Fatal("RegisterKnowledgeTools(g, nil) expected error, got nil")
+			t.Fatal("RegisterKnowledge(g, nil) expected error, got nil")
 		}
 		if tools != nil {
-			t.Errorf("RegisterKnowledgeTools(g, nil) = %v, want nil", tools)
+			t.Errorf("RegisterKnowledge(g, nil) = %v, want nil", tools)
 		}
-		if !strings.Contains(err.Error(), "KnowledgeTools is required") {
-			t.Errorf("RegisterKnowledgeTools(g, nil) error = %q, want contains %q", err.Error(), "KnowledgeTools is required")
+		if !strings.Contains(err.Error(), "Knowledge is required") {
+			t.Errorf("RegisterKnowledge(g, nil) error = %q, want contains %q", err.Error(), "Knowledge is required")
 		}
 	})
 }
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
 
 func extractToolNames(tools []ai.Tool) []string {
 	names := make([]string, len(tools))

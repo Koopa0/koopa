@@ -31,12 +31,12 @@ func FuzzTUI_HandleSlashCommand(f *testing.F) {
 			return
 		}
 
-		tui := newTestTUI()
+		tui := newTestModel()
 		tui.messages = []Message{{Role: "user", Text: "hello"}}
 
 		// Should never panic
 		model, resultCmd := tui.handleSlashCommand(cmd)
-		result := model.(*TUI)
+		result := model.(*Model)
 
 		// Basic invariants
 		if result == nil {
@@ -71,13 +71,13 @@ func FuzzTUI_NavigateHistory(f *testing.F) {
 	f.Add(-1000000)
 
 	f.Fuzz(func(t *testing.T, delta int) {
-		tui := newTestTUI()
+		tui := newTestModel()
 		tui.history = []string{"first", "second", "third"}
 		tui.historyIdx = 1
 
 		// Should never panic
 		model, _ := tui.navigateHistory(delta)
-		result := model.(*TUI)
+		result := model.(*Model)
 
 		// Index should be within bounds
 		if result.historyIdx < 0 {
@@ -104,7 +104,7 @@ func FuzzTUI_AddMessage(f *testing.F) {
 	f.Add("user", "\x00\x01\x02")             // Binary
 
 	f.Fuzz(func(t *testing.T, role, text string) {
-		tui := newTestTUI()
+		tui := newTestModel()
 
 		// Should never panic
 		tui.addMessage(Message{Role: role, Text: text})
@@ -138,7 +138,7 @@ func FuzzTUI_KeyPress(f *testing.F) {
 	f.Add(int32(tea.KeySpace), 0)                 //nolint:unconvert // f.Add requires exact types
 
 	f.Fuzz(func(t *testing.T, code int32, mod int) {
-		tui := newTestTUI()
+		tui := newTestModel()
 		// Use background context to avoid nil pointer issues
 		tui.ctx = context.Background()
 
@@ -166,7 +166,7 @@ func FuzzTUI_View(f *testing.F) {
 	f.Add(0, 10000, 1) // Very wide
 
 	f.Fuzz(func(t *testing.T, state, width, height int) {
-		tui := newTestTUI()
+		tui := newTestModel()
 
 		// Set state (bounded to valid values)
 		if state >= 0 && state <= 2 {
@@ -219,7 +219,7 @@ func FuzzMarkdownRenderer_Render(f *testing.F) {
 	f.Fuzz(func(t *testing.T, markdown string) {
 		mr := newMarkdownRenderer(80)
 		if mr == nil {
-			t.Skip("Failed to create markdown renderer")
+			t.Skip("newMarkdownRenderer() returned nil")
 		}
 
 		// Should never panic
@@ -251,7 +251,7 @@ func FuzzMarkdownRenderer_UpdateWidth(f *testing.F) {
 	f.Fuzz(func(t *testing.T, width int) {
 		mr := newMarkdownRenderer(80)
 		if mr == nil {
-			t.Skip("Failed to create markdown renderer")
+			t.Skip("newMarkdownRenderer() returned nil")
 		}
 
 		// Should never panic

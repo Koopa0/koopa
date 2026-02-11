@@ -26,19 +26,19 @@ func TestGetStateFilePath(t *testing.T) {
 
 	// Verify path is absolute
 	if !filepath.IsAbs(path) {
-		t.Errorf("getStateFilePath() returned relative path: %s", path)
+		t.Errorf("getStateFilePath() returned relative path: %q", path)
 	}
 
 	// Verify path uses temp directory
 	rel, err := filepath.Rel(tempDir, path)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		t.Errorf("getStateFilePath() = %s, expected to be within %s", path, tempDir)
+		t.Errorf("getStateFilePath() = %q, want within %q", path, tempDir)
 	}
 
 	// Verify directory was created
 	dir := filepath.Dir(path)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Errorf("getStateFilePath() did not create directory: %s", dir)
+		t.Errorf("getStateFilePath() did not create directory: %q", dir)
 	}
 }
 
@@ -64,7 +64,6 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 
 		if loadedID == nil {
 			t.Fatal("LoadCurrentSessionID() returned nil")
-			return
 		}
 
 		if *loadedID != testID {
@@ -110,7 +109,6 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 
 		if loadedID == nil {
 			t.Fatal("LoadCurrentSessionID() returned nil")
-			return
 		}
 
 		if *loadedID != secondID {

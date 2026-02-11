@@ -8,7 +8,7 @@ import (
 // BenchmarkClampTopK benchmarks the clampTopK function.
 func BenchmarkClampTopK(b *testing.B) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = clampTopK(5, 3)
 	}
 }
@@ -17,7 +17,7 @@ func BenchmarkClampTopK(b *testing.B) {
 func BenchmarkResultConstruction(b *testing.B) {
 	b.Run("success", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = Result{
 				Status: StatusSuccess,
 				Data:   map[string]any{"key": "value"},
@@ -27,7 +27,7 @@ func BenchmarkResultConstruction(b *testing.B) {
 
 	b.Run("error", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = Result{
 				Status: StatusError,
 				Error:  &Error{Code: ErrCodeSecurity, Message: "test error"},
@@ -36,9 +36,9 @@ func BenchmarkResultConstruction(b *testing.B) {
 	})
 }
 
-// BenchmarkNetworkToolsCreation benchmarks NetworkTools constructor.
-func BenchmarkNetworkToolsCreation(b *testing.B) {
-	cfg := NetworkConfig{
+// BenchmarkNetworkCreation benchmarks Network constructor.
+func BenchmarkNetworkCreation(b *testing.B) {
+	cfg := NetConfig{
 		SearchBaseURL:    "http://localhost:8080",
 		FetchParallelism: 2,
 		FetchDelay:       time.Second,
@@ -48,20 +48,20 @@ func BenchmarkNetworkToolsCreation(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = NewNetworkTools(cfg, logger)
+	for b.Loop() {
+		_, _ = NewNetwork(cfg, logger)
 	}
 }
 
 // BenchmarkFilterURLs benchmarks URL filtering and validation.
 func BenchmarkFilterURLs(b *testing.B) {
-	cfg := NetworkConfig{
+	cfg := NetConfig{
 		SearchBaseURL:    "http://localhost:8080",
 		FetchParallelism: 2,
 		FetchDelay:       time.Second,
 		FetchTimeout:     30 * time.Second,
 	}
-	nt, _ := NewNetworkTools(cfg, testLogger())
+	nt, _ := NewNetwork(cfg, testLogger())
 
 	urls := []string{
 		"https://example.com/",
@@ -74,21 +74,19 @@ func BenchmarkFilterURLs(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = nt.filterURLs(urls)
 	}
 }
 
 // BenchmarkExtractNonHTMLContent benchmarks non-HTML content extraction.
 func BenchmarkExtractNonHTMLContent(b *testing.B) {
-	nt := &NetworkTools{}
-
 	b.Run("json", func(b *testing.B) {
 		body := []byte(`{"key": "value", "nested": {"a": 1, "b": 2}}`)
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = nt.extractNonHTMLContent(body, "application/json")
+		for b.Loop() {
+			_, _ = extractNonHTMLContent(body, "application/json")
 		}
 	})
 
@@ -96,8 +94,8 @@ func BenchmarkExtractNonHTMLContent(b *testing.B) {
 		body := []byte("Plain text content here")
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = nt.extractNonHTMLContent(body, "text/plain")
+		for b.Loop() {
+			_, _ = extractNonHTMLContent(body, "text/plain")
 		}
 	})
 
@@ -112,8 +110,8 @@ func BenchmarkExtractNonHTMLContent(b *testing.B) {
 
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = nt.extractNonHTMLContent(body, "application/json")
+		for b.Loop() {
+			_, _ = extractNonHTMLContent(body, "application/json")
 		}
 	})
 }
@@ -133,7 +131,7 @@ func BenchmarkFetchState(b *testing.B) {
 
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			state.addResult(result)
 		}
 	})
@@ -145,23 +143,18 @@ func BenchmarkFetchState(b *testing.B) {
 
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		i := 0
+		for b.Loop() {
 			state.markProcessed("https://example.com/page" + string(rune(i%100)))
+			i++
 		}
 	})
-}
-
-// BenchmarkFileToolsCreation benchmarks FileTools constructor.
-func BenchmarkFileToolsCreation(b *testing.B) {
-	// Note: This benchmark requires a valid path validator
-	// Skip if we can't create one
-	b.Skip("requires valid path validator setup")
 }
 
 // BenchmarkKnowledgeSearchInput benchmarks the unified search input struct.
 func BenchmarkKnowledgeSearchInput(b *testing.B) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = KnowledgeSearchInput{
 			Query: "test query",
 			TopK:  5,

@@ -8,7 +8,7 @@ import (
 )
 
 // supportedProviders lists all valid AI provider values.
-var supportedProviders = []string{"gemini", "ollama", "openai"}
+var supportedProviders = []string{ProviderGemini, ProviderOllama, ProviderOpenAI}
 
 // Validate validates configuration values.
 // Returns sentinel errors that can be checked with errors.Is().
@@ -54,16 +54,16 @@ func (c *Config) validateAI() error {
 	}
 
 	// Ollama host
-	if c.resolvedProvider() == "ollama" && c.OllamaHost == "" {
+	if c.resolvedProvider() == ProviderOllama && c.OllamaHost == "" {
 		return fmt.Errorf("%w: ollama_host cannot be empty when provider is ollama", ErrInvalidOllamaHost)
 	}
 
-	// RAG
-	if c.RAGTopK <= 0 || c.RAGTopK > 10 {
-		return fmt.Errorf("%w: must be between 1 and 10, got %d", ErrInvalidRAGTopK, c.RAGTopK)
-	}
+	// RAG embedder
 	if c.EmbedderModel == "" {
 		return fmt.Errorf("%w: embedder_model cannot be empty", ErrInvalidEmbedderModel)
+	}
+	if err := c.validateEmbedder(); err != nil {
+		return err
 	}
 
 	return nil
@@ -104,9 +104,50 @@ func (c *Config) validatePostgresSSL() error {
 			ErrInvalidPostgresSSLMode)
 	}
 	if !slices.Contains(validSSLModes, c.PostgresSSLMode) {
-		return fmt.Errorf("%w: %q is not valid, must be one of: %v\n"+
-			"Note: 'allow' and 'prefer' modes are deprecated (vulnerable to MITM attacks)",
+		return fmt.Errorf("%w: %q is not valid, must be one of: %v (allow/prefer excluded: MITM vulnerable)",
 			ErrInvalidPostgresSSLMode, c.PostgresSSLMode, validSSLModes)
+	}
+	return nil
+}
+
+// knownEmbedderDimensions maps provider → model → native output dimension.
+// Used to catch dimension mismatches at startup before hitting pgvector errors.
+var knownEmbedderDimensions = map[string]map[string]int{
+	ProviderGemini: {
+		"gemini-embedding-001": 3072,
+		"text-embedding-004":   768,
+	},
+	ProviderOpenAI: {
+		"text-embedding-3-small": 1536,
+		"text-embedding-3-large": 3072,
+	},
+}
+
+// requiredVectorDimension must match the pgvector schema: embedding vector(768).
+const requiredVectorDimension = 768
+
+// validateEmbedder checks that the configured embedder model produces vectors
+// compatible with the database schema. For known models whose native dimension
+// differs from requiredVectorDimension, this returns an error so operators
+// know to set OutputDimensionality (handled by rag.NewDocStoreConfig).
+//
+// Unknown providers or models pass validation silently — the operator may
+// know what they are doing (e.g., a custom Ollama embedder producing 768-dim).
+func (c *Config) validateEmbedder() error {
+	models, ok := knownEmbedderDimensions[c.resolvedProvider()]
+	if !ok {
+		return nil // unknown provider (e.g., ollama) — skip
+	}
+	dim, ok := models[c.EmbedderModel]
+	if !ok {
+		return nil // unknown model — skip
+	}
+	if dim != requiredVectorDimension {
+		slog.Warn("embedder native dimension differs from schema",
+			"model", c.EmbedderModel,
+			"native_dim", dim,
+			"schema_dim", requiredVectorDimension,
+			"note", "rag.NewDocStoreConfig truncates output via OutputDimensionality")
 	}
 	return nil
 }
@@ -114,27 +155,47 @@ func (c *Config) validatePostgresSSL() error {
 // resolvedProvider returns the effective provider, defaulting to "gemini".
 func (c *Config) resolvedProvider() string {
 	if c.Provider == "" {
-		return "gemini"
+		return ProviderGemini
 	}
 	return c.Provider
+}
+
+// ValidateServe validates configuration specific to serve mode.
+// HMAC_SECRET is required for CSRF protection in HTTP mode.
+func (c *Config) ValidateServe() error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if c.HMACSecret == "" {
+		return fmt.Errorf("%w: HMAC_SECRET environment variable is required for serve mode (min 32 characters)",
+			ErrMissingHMACSecret)
+	}
+	if len(c.HMACSecret) < 32 {
+		return fmt.Errorf("%w: must be at least 32 characters, got %d",
+			ErrInvalidHMACSecret, len(c.HMACSecret))
+	}
+	if c.TrustProxy {
+		slog.Warn("trust_proxy is enabled — ensure this server is behind a reverse proxy")
+	}
+	return nil
 }
 
 // validateProviderAPIKey checks that the required API key is set for the configured provider.
 func (c *Config) validateProviderAPIKey() error {
 	switch c.resolvedProvider() {
-	case "gemini":
+	case ProviderGemini:
 		if os.Getenv("GEMINI_API_KEY") == "" {
 			return fmt.Errorf("%w: GEMINI_API_KEY environment variable is required for provider %q\n"+
 				"Get your API key at: https://ai.google.dev/gemini-api/docs/api-key",
 				ErrMissingAPIKey, c.resolvedProvider())
 		}
-	case "openai":
+	case ProviderOpenAI:
 		if os.Getenv("OPENAI_API_KEY") == "" {
 			return fmt.Errorf("%w: OPENAI_API_KEY environment variable is required for provider %q\n"+
 				"Get your API key at: https://platform.openai.com/api-keys",
 				ErrMissingAPIKey, c.resolvedProvider())
 		}
-	case "ollama":
+	case ProviderOllama:
 		// Ollama runs locally, no API key required
 	}
 	return nil

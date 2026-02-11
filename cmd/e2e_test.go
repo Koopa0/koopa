@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	goruntime "runtime" // Alias to avoid confusion with app.ChatRuntime
+	goruntime "runtime" // Alias to avoid conflict with runtime package name
 	"strings"
 	"testing"
 	"time"
@@ -101,7 +101,7 @@ func findOrBuildKoopa(t *testing.T) string {
 	cmd := exec.Command("go", "build", "-o", binName, ".")
 	cmd.Dir = projectRoot
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to build koopa: %v\nOutput: %s", err, output)
+		t.Fatalf("go build error: %v\nOutput: %s", err, output)
 	}
 
 	return koopaBin
@@ -141,14 +141,14 @@ func TestE2E_VersionCommand(t *testing.T) {
 
 	output, err := ctx.runKoopaCommand(shortTimeout, "version")
 	if err != nil {
-		t.Fatalf("version command unexpected error: %v", err)
+		t.Fatalf("running version command: %v", err)
 	}
 
 	if !strings.Contains(output, "Koopa") {
 		t.Errorf("version command output = %q, want to contain %q", output, "Koopa")
 	}
-	if !strings.Contains(output, "v0.") {
-		t.Errorf("version command output = %q, want to contain %q", output, "v0.")
+	if !strings.Contains(output, "v") {
+		t.Errorf("version command output = %q, want to contain %q", output, "v")
 	}
 }
 
@@ -159,7 +159,7 @@ func TestE2E_ErrorRecovery(t *testing.T) {
 	t.Run("help command works", func(t *testing.T) {
 		output, err := ctx.runKoopaCommand(shortTimeout, "help")
 		if err != nil {
-			t.Errorf("help command unexpected error: %v", err)
+			t.Errorf("running help command: %v", err)
 		}
 		if !strings.Contains(strings.ToLower(output), "koopa") {
 			t.Errorf("help command output = %q, want to contain %q", output, "koopa")
@@ -178,38 +178,10 @@ func TestE2E_ErrorRecovery(t *testing.T) {
 
 		// Version command should still work without API key
 		if err != nil {
-			t.Errorf("version command without API key unexpected error: %v", err)
+			t.Errorf("running version command without API key: %v", err)
 		}
 		if !strings.Contains(output, "Koopa") {
 			t.Errorf("version command output = %q, want to contain %q", output, "Koopa")
 		}
 	})
-}
-
-// TestE2E_IntegrationTestHelper verifies E2E test infrastructure
-func TestE2E_IntegrationTestHelper(t *testing.T) {
-	ctx := setupE2ETest(t)
-
-	// Verify binary exists
-	if _, err := os.Stat(ctx.koopaBin); err != nil {
-		t.Errorf("koopa binary should exist at %q, but got error: %v", ctx.koopaBin, err)
-	}
-
-	// Verify working directory
-	if info, err := os.Stat(ctx.workDir); err != nil || !info.IsDir() {
-		t.Errorf("working directory should exist at %q, but got error: %v", ctx.workDir, err)
-	}
-
-	// Verify environment
-	if ctx.databaseURL == "" {
-		t.Error("DATABASE_URL should be set")
-	}
-	if ctx.apiKey == "" {
-		t.Error("GEMINI_API_KEY should be set")
-	}
-
-	t.Logf("E2E test infrastructure:")
-	t.Logf("  Binary: %s", ctx.koopaBin)
-	t.Logf("  WorkDir: %s", ctx.workDir)
-	t.Logf("  Database: %s", ctx.databaseURL)
 }

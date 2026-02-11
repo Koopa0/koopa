@@ -8,15 +8,15 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/koopa0/koopa/internal/chat"
 )
 
-// newBenchmarkTUI creates a TUI for benchmarking with minimal setup.
-func newBenchmarkTUI() *TUI {
+// newBenchmarkModel creates a Model for benchmarking with minimal setup.
+func newBenchmarkModel() *Model {
 	ta := textarea.New()
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
-	return &TUI{
+	return &Model{
 		state:    StateInput,
 		input:    ta,
 		history:  make([]string, 0, maxHistory),
@@ -32,7 +32,7 @@ func newBenchmarkTUI() *TUI {
 // BenchmarkTUI_View measures View rendering performance.
 func BenchmarkTUI_View(b *testing.B) {
 	b.Run("empty", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
@@ -41,7 +41,7 @@ func BenchmarkTUI_View(b *testing.B) {
 	})
 
 	b.Run("10_messages", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		for i := 0; i < 10; i++ {
 			tui.addMessage(Message{Role: "user", Text: "Hello, this is a test message"})
 			tui.addMessage(Message{Role: "assistant", Text: "This is a response with some content"})
@@ -54,7 +54,7 @@ func BenchmarkTUI_View(b *testing.B) {
 	})
 
 	b.Run("50_messages", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		for i := 0; i < 50; i++ {
 			tui.addMessage(Message{Role: "user", Text: "Hello, this is a test message"})
 			tui.addMessage(Message{Role: "assistant", Text: "This is a response with some content"})
@@ -67,7 +67,7 @@ func BenchmarkTUI_View(b *testing.B) {
 	})
 
 	b.Run("max_messages", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		for i := 0; i < maxMessages; i++ {
 			tui.addMessage(Message{Role: "user", Text: "Hello, this is a test message with some longer content to simulate real usage"})
 		}
@@ -79,7 +79,7 @@ func BenchmarkTUI_View(b *testing.B) {
 	})
 
 	b.Run("streaming_state", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		tui.state = StateStreaming
 		tui.output.WriteString("This is streaming output that is being written in real-time...")
 		for i := 0; i < 10; i++ {
@@ -94,7 +94,7 @@ func BenchmarkTUI_View(b *testing.B) {
 	})
 
 	b.Run("thinking_state", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		tui.state = StateThinking
 		b.ResetTimer()
 		b.ReportAllocs()
@@ -104,7 +104,7 @@ func BenchmarkTUI_View(b *testing.B) {
 	})
 
 	b.Run("large_messages", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		largeText := strings.Repeat("This is a large message with lots of content. ", 100)
 		for i := 0; i < 20; i++ {
 			tui.addMessage(Message{Role: "assistant", Text: largeText})
@@ -120,7 +120,7 @@ func BenchmarkTUI_View(b *testing.B) {
 // BenchmarkTUI_AddMessage measures message addition performance.
 func BenchmarkTUI_AddMessage(b *testing.B) {
 	b.Run("single", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		msg := Message{Role: "user", Text: "Hello"}
 		b.ResetTimer()
 		b.ReportAllocs()
@@ -131,7 +131,7 @@ func BenchmarkTUI_AddMessage(b *testing.B) {
 	})
 
 	b.Run("with_bounds_check", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		// Pre-fill to near capacity
 		for i := 0; i < maxMessages-1; i++ {
 			tui.messages = append(tui.messages, Message{Role: "user", Text: "test"})
@@ -149,7 +149,7 @@ func BenchmarkTUI_AddMessage(b *testing.B) {
 	})
 
 	b.Run("at_capacity", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		// Fill to capacity
 		for i := 0; i < maxMessages; i++ {
 			tui.messages = append(tui.messages, Message{Role: "user", Text: "test"})
@@ -166,30 +166,30 @@ func BenchmarkTUI_AddMessage(b *testing.B) {
 // BenchmarkTUI_Update measures Update loop performance.
 func BenchmarkTUI_Update(b *testing.B) {
 	b.Run("key_press", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		key := tea.Key{Code: 'a'}
 		msg := tea.KeyPressMsg(key)
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
 			model, _ := tui.Update(msg)
-			tui = model.(*TUI)
+			tui = model.(*Model)
 		}
 	})
 
 	b.Run("window_resize", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
 			model, _ := tui.Update(msg)
-			tui = model.(*TUI)
+			tui = model.(*Model)
 		}
 	})
 
 	b.Run("stream_text_msg", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		tui.state = StateStreaming
 		eventCh := make(chan streamEvent, 1)
 		tui.streamEventCh = eventCh
@@ -199,7 +199,7 @@ func BenchmarkTUI_Update(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			model, _ := tui.Update(msg)
-			tui = model.(*TUI)
+			tui = model.(*Model)
 			tui.output.Reset() // Reset to avoid unbounded growth
 		}
 	})
@@ -208,14 +208,14 @@ func BenchmarkTUI_Update(b *testing.B) {
 // BenchmarkTUI_NavigateHistory measures history navigation performance.
 func BenchmarkTUI_NavigateHistory(b *testing.B) {
 	b.Run("small_history", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		tui.history = []string{"one", "two", "three"}
 		tui.historyIdx = 1
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
 			model, _ := tui.navigateHistory(-1)
-			tui = model.(*TUI)
+			tui = model.(*Model)
 			if tui.historyIdx == 0 {
 				tui.historyIdx = len(tui.history)
 			}
@@ -223,7 +223,7 @@ func BenchmarkTUI_NavigateHistory(b *testing.B) {
 	})
 
 	b.Run("large_history", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		for i := 0; i < maxHistory; i++ {
 			tui.history = append(tui.history, "history entry "+string(rune('a'+i%26)))
 		}
@@ -232,7 +232,7 @@ func BenchmarkTUI_NavigateHistory(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			model, _ := tui.navigateHistory(-1)
-			tui = model.(*TUI)
+			tui = model.(*Model)
 			if tui.historyIdx == 0 {
 				tui.historyIdx = len(tui.history)
 			}
@@ -376,18 +376,18 @@ func BenchmarkStyles(b *testing.B) {
 // BenchmarkTUI_HandleSlashCommand measures slash command handling performance.
 func BenchmarkTUI_HandleSlashCommand(b *testing.B) {
 	b.Run("help", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
 			tui.messages = tui.messages[:0] // Reset messages
 			model, _ := tui.handleSlashCommand("/help")
-			tui = model.(*TUI)
+			tui = model.(*Model)
 		}
 	})
 
 	b.Run("clear", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		for i := 0; i < 10; i++ {
 			tui.addMessage(Message{Role: "user", Text: "test"})
 		}
@@ -396,18 +396,18 @@ func BenchmarkTUI_HandleSlashCommand(b *testing.B) {
 		for b.Loop() {
 			tui.messages = []Message{{Role: "user", Text: "test"}}
 			model, _ := tui.handleSlashCommand("/clear")
-			tui = model.(*TUI)
+			tui = model.(*Model)
 		}
 	})
 
 	b.Run("unknown", func(b *testing.B) {
-		tui := newBenchmarkTUI()
+		tui := newBenchmarkModel()
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
 			tui.messages = tui.messages[:0]
 			model, _ := tui.handleSlashCommand("/unknown")
-			tui = model.(*TUI)
+			tui = model.(*Model)
 		}
 	})
 }

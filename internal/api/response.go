@@ -1,4 +1,3 @@
-// Package api provides the JSON REST API server for Koopa.
 package api
 
 import (
@@ -23,12 +22,16 @@ type envelope struct {
 
 // WriteJSON writes data wrapped in an envelope as JSON.
 // For nil data, writes no body (use with 204 No Content).
-func WriteJSON(w http.ResponseWriter, status int, data any) {
+// If logger is nil, falls back to slog.Default().
+func WriteJSON(w http.ResponseWriter, status int, data any, logger *slog.Logger) {
 	if data != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		if err := json.NewEncoder(w).Encode(envelope{Data: data}); err != nil {
-			slog.Error("failed to encode JSON response", "error", err)
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.Error("encoding JSON response", "error", err)
 		}
 	} else {
 		w.WriteHeader(status)
@@ -36,10 +39,14 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 }
 
 // WriteError writes a JSON error response wrapped in an envelope.
-func WriteError(w http.ResponseWriter, status int, code, message string) {
+// If logger is nil, falls back to slog.Default().
+func WriteError(w http.ResponseWriter, status int, code, message string, logger *slog.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(envelope{Error: &Error{Code: code, Message: message}}); err != nil {
-		slog.Error("failed to encode JSON error response", "error", err)
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Error("encoding JSON error response", "error", err)
 	}
 }

@@ -12,7 +12,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"go.uber.org/goleak"
 
-	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/google/uuid"
+	"github.com/koopa0/koopa/internal/chat"
 )
 
 // goleakOptions returns standard goleak options for all TUI tests.
@@ -27,8 +28,8 @@ func goleakOptions() []goleak.Option {
 	}
 }
 
-// newTestTUI creates a TUI with properly initialized components for testing.
-func newTestTUI() *TUI {
+// newTestModel creates a Model with properly initialized components for testing.
+func newTestModel() *Model {
 	ta := textarea.New()
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
@@ -38,7 +39,7 @@ func newTestTUI() *TUI {
 	vp.SoftWrap = true
 	vp.KeyMap = viewport.KeyMap{}
 
-	return &TUI{
+	return &Model{
 		state:    StateInput,
 		input:    ta,
 		viewport: vp,
@@ -53,7 +54,7 @@ func newTestTUI() *TUI {
 }
 
 func TestNew_ErrorOnNilFlow(t *testing.T) {
-	_, err := New(context.Background(), nil, "test")
+	_, err := New(context.Background(), nil, uuid.New())
 	if err == nil {
 		t.Error("Expected error for nil flow")
 	}
@@ -64,23 +65,23 @@ func TestNew_ErrorOnNilContext(t *testing.T) {
 	// so we're testing that error is returned for nil context
 	var flow *chat.Flow
 	//lint:ignore SA1012 intentionally testing nil context handling
-	_, err := New(nil, flow, "test") //nolint:staticcheck
+	_, err := New(nil, flow, uuid.New()) //nolint:staticcheck
 	if err == nil {
 		t.Error("Expected error for nil context")
 	}
 }
 
-func TestNew_ErrorOnEmptySessionID(t *testing.T) {
-	_, err := New(context.Background(), nil, "")
+func TestNew_ErrorOnNilSessionID(t *testing.T) {
+	_, err := New(context.Background(), nil, uuid.Nil)
 	if err == nil {
-		t.Error("Expected error for empty session ID")
+		t.Error("Expected error for nil session ID")
 	}
 }
 
 func TestTUI_Init(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	cmd := tui.Init()
 	if cmd == nil {
 		t.Error("Init should return a command (blink + spinner tick)")
@@ -96,22 +97,22 @@ func TestTUI_HandleSlashCommands(t *testing.T) {
 		wantExit bool
 		wantMsgs int // number of messages added
 	}{
-		{"help", "/help", false, 1},
-		{"clear", "/clear", false, 0}, // clears messages
-		{"exit", "/exit", true, 0},
-		{"quit", "/quit", true, 0},
-		{"unknown", "/unknown", false, 1}, // error message
+		{name: "help", cmd: "/help", wantExit: false, wantMsgs: 1},
+		{name: "clear", cmd: "/clear", wantExit: false, wantMsgs: 0}, // clears messages
+		{name: "exit", cmd: "/exit", wantExit: true, wantMsgs: 0},
+		{name: "quit", cmd: "/quit", wantExit: true, wantMsgs: 0},
+		{name: "unknown", cmd: "/unknown", wantExit: false, wantMsgs: 1}, // error message
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tui := newTestTUI()
+			tui := newTestModel()
 
 			// Pre-populate with a message for /clear test
 			tui.messages = []Message{{Role: "user", Text: "hello"}}
 
 			model, cmd := tui.handleSlashCommand(tt.cmd)
-			result := model.(*TUI)
+			result := model.(*Model)
 
 			if tt.wantExit {
 				if cmd == nil {
@@ -135,29 +136,29 @@ func TestTUI_HandleSlashCommands(t *testing.T) {
 func TestTUI_HistoryNavigation(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.history = []string{"first", "second", "third"}
 	tui.historyIdx = 3
 
 	tests := []struct {
-		delta    int
-		expected string
+		delta int
+		want  string
 	}{
-		{-1, "third"},
-		{-1, "second"},
-		{-1, "first"},
-		{-1, "first"}, // Should stay at first
-		{1, "second"},
-		{1, "third"},
-		{1, ""}, // Past end = empty
-		{1, ""}, // Should stay empty
+		{delta: -1, want: "third"},
+		{delta: -1, want: "second"},
+		{delta: -1, want: "first"},
+		{delta: -1, want: "first"}, // Should stay at first
+		{delta: 1, want: "second"},
+		{delta: 1, want: "third"},
+		{delta: 1, want: ""}, // Past end = empty
+		{delta: 1, want: ""}, // Should stay empty
 	}
 
 	for i, tt := range tests {
 		model, _ := tui.navigateHistory(tt.delta)
-		tui = model.(*TUI)
-		if tui.input.Value() != tt.expected {
-			t.Errorf("Step %d: got %q, want %q", i, tui.input.Value(), tt.expected)
+		tui = model.(*Model)
+		if tui.input.Value() != tt.want {
+			t.Errorf("navigateHistory(%d) step %d: got %q, want %q", tt.delta, i, tui.input.Value(), tt.want)
 		}
 	}
 }
@@ -165,11 +166,11 @@ func TestTUI_HistoryNavigation(t *testing.T) {
 func TestTUI_CtrlC_ClearsInput(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.input.SetValue("some input")
 
 	model, _ := tui.handleCtrlC()
-	result := model.(*TUI)
+	result := model.(*Model)
 
 	if result.input.Value() != "" {
 		t.Error("First Ctrl+C should clear input")
@@ -179,7 +180,7 @@ func TestTUI_CtrlC_ClearsInput(t *testing.T) {
 func TestTUI_DoubleCtrlC_Exits(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.lastCtrlC = time.Now()
 
 	_, cmd := tui.handleCtrlC()
@@ -192,7 +193,7 @@ func TestTUI_DoubleCtrlC_Exits(t *testing.T) {
 func TestTUI_Update_KeyPress(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.input.SetValue("test")
 
 	// Simulate Ctrl+C (should clear input)
@@ -200,7 +201,7 @@ func TestTUI_Update_KeyPress(t *testing.T) {
 	msg := tea.KeyPressMsg(key)
 
 	model, _ := tui.Update(msg)
-	result := model.(*TUI)
+	result := model.(*Model)
 
 	if result.input.Value() != "" {
 		t.Error("Ctrl+C should clear input")
@@ -210,7 +211,7 @@ func TestTUI_Update_KeyPress(t *testing.T) {
 func TestTUI_View_ReturnsAltScreen(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 
 	view := tui.View()
 	if !view.AltScreen {
@@ -224,7 +225,7 @@ func TestTUI_View_ReturnsAltScreen(t *testing.T) {
 func TestTUI_RebuildViewportContent(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.addMessage(Message{Role: roleUser, Text: "hello"})
 	tui.addMessage(Message{Role: roleAssistant, Text: "world"})
 
@@ -239,7 +240,7 @@ func TestTUI_RebuildViewportContent(t *testing.T) {
 func TestTUI_ViewportScrolling(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 
 	// Add enough messages to exceed viewport height
 	for i := 0; i < 50; i++ {
@@ -262,12 +263,12 @@ func TestTUI_StreamMessageTypes(t *testing.T) {
 	t.Run("streamTextMsg", func(t *testing.T) {
 		eventCh := make(chan streamEvent, 1)
 
-		tui := newTestTUI()
+		tui := newTestModel()
 		tui.state = StateStreaming
 		tui.streamEventCh = eventCh
 
 		model, _ := tui.Update(streamTextMsg{text: "Hello"})
-		result := model.(*TUI)
+		result := model.(*Model)
 
 		if result.output.String() != "Hello" {
 			t.Errorf("Expected 'Hello', got %q", result.output.String())
@@ -275,12 +276,12 @@ func TestTUI_StreamMessageTypes(t *testing.T) {
 	})
 
 	t.Run("streamDoneMsg", func(t *testing.T) {
-		tui := newTestTUI()
+		tui := newTestModel()
 		tui.state = StateStreaming
 		_, _ = tui.output.WriteString("Hello World")
 
 		model, _ := tui.Update(streamDoneMsg{output: chat.Output{Response: "Hello World"}})
-		result := model.(*TUI)
+		result := model.(*Model)
 
 		if result.state != StateInput {
 			t.Error("Should return to StateInput after stream done")
@@ -294,11 +295,11 @@ func TestTUI_StreamMessageTypes(t *testing.T) {
 	})
 
 	t.Run("streamErrorMsg", func(t *testing.T) {
-		tui := newTestTUI()
+		tui := newTestModel()
 		tui.state = StateStreaming
 
 		model, _ := tui.Update(streamErrorMsg{err: context.Canceled})
-		result := model.(*TUI)
+		result := model.(*Model)
 
 		if result.state != StateInput {
 			t.Error("Should return to StateInput after error")
@@ -399,7 +400,7 @@ func TestListenForStream_UnionChannel(t *testing.T) {
 func TestTUI_AddMessage_BoundsEnforcement(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 
 	// Add more than maxMessages
 	for i := 0; i < maxMessages+50; i++ {
@@ -418,7 +419,7 @@ func TestTUI_AddMessage_BoundsEnforcement(t *testing.T) {
 func TestTUI_HandleSubmit_AddsToHistory(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.ctx = context.Background()
 	tui.input.SetValue("test query")
 
@@ -445,7 +446,7 @@ func TestTUI_HandleSubmit_AddsToHistory(t *testing.T) {
 func TestTUI_HandleSubmit_HistoryBounds(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 
 	// Pre-fill history to max
 	for i := 0; i < maxHistory; i++ {
@@ -474,17 +475,17 @@ func TestMarkdownRenderer_UpdateWidth(t *testing.T) {
 	t.Run("creates renderer with correct width", func(t *testing.T) {
 		mr := newMarkdownRenderer(100)
 		if mr == nil {
-			t.Fatal("Failed to create markdown renderer")
+			t.Fatal("newMarkdownRenderer() returned nil")
 		}
 		if mr.width != 100 {
-			t.Errorf("Expected width 100, got %d", mr.width)
+			t.Errorf("newMarkdownRenderer(100).width = %d, want 100", mr.width)
 		}
 	})
 
 	t.Run("UpdateWidth changes width", func(t *testing.T) {
 		mr := newMarkdownRenderer(80)
 		if mr == nil {
-			t.Fatal("Failed to create markdown renderer")
+			t.Fatal("newMarkdownRenderer() returned nil")
 		}
 
 		updated := mr.UpdateWidth(120)
@@ -492,14 +493,14 @@ func TestMarkdownRenderer_UpdateWidth(t *testing.T) {
 			t.Error("UpdateWidth should return true when width changes")
 		}
 		if mr.width != 120 {
-			t.Errorf("Expected width 120, got %d", mr.width)
+			t.Errorf("UpdateWidth(120) width = %d, want 120", mr.width)
 		}
 	})
 
 	t.Run("UpdateWidth no-op for same width", func(t *testing.T) {
 		mr := newMarkdownRenderer(80)
 		if mr == nil {
-			t.Fatal("Failed to create markdown renderer")
+			t.Fatal("newMarkdownRenderer() returned nil")
 		}
 
 		updated := mr.UpdateWidth(80)
@@ -519,7 +520,7 @@ func TestMarkdownRenderer_UpdateWidth(t *testing.T) {
 	t.Run("UpdateWidth handles invalid width", func(t *testing.T) {
 		mr := newMarkdownRenderer(80)
 		if mr == nil {
-			t.Fatal("Failed to create markdown renderer")
+			t.Fatal("newMarkdownRenderer() returned nil")
 		}
 
 		updated := mr.UpdateWidth(0)
@@ -540,7 +541,7 @@ func TestMarkdownRenderer_Render(t *testing.T) {
 	t.Run("renders markdown", func(t *testing.T) {
 		mr := newMarkdownRenderer(80)
 		if mr == nil {
-			t.Fatal("Failed to create markdown renderer")
+			t.Fatal("newMarkdownRenderer() returned nil")
 		}
 
 		result := mr.Render("**bold**")
@@ -562,7 +563,7 @@ func TestMarkdownRenderer_Render(t *testing.T) {
 func TestTUI_Cleanup(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 
 	// Setup stream state
 	eventCh := make(chan streamEvent, 1)
@@ -582,7 +583,7 @@ func TestTUI_Cleanup(t *testing.T) {
 func TestTUI_CancelStream(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 
 	canceled := false
 	tui.streamCancel = func() { canceled = true }
@@ -600,14 +601,14 @@ func TestTUI_CancelStream(t *testing.T) {
 func TestTUI_CtrlC_CancelsStream(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.state = StateStreaming
 
 	canceled := false
 	tui.streamCancel = func() { canceled = true }
 
 	model, _ := tui.handleCtrlC()
-	result := model.(*TUI)
+	result := model.(*Model)
 
 	if !canceled {
 		t.Error("Ctrl+C during streaming should cancel")
@@ -623,7 +624,7 @@ func TestTUI_CtrlC_CancelsStream(t *testing.T) {
 func TestTUI_RenderStatusBar_StateInput(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.state = StateInput
 
 	bar := tui.renderStatusBar()
@@ -635,7 +636,7 @@ func TestTUI_RenderStatusBar_StateInput(t *testing.T) {
 func TestTUI_RenderStatusBar_StateStreaming(t *testing.T) {
 	defer goleak.VerifyNone(t, goleakOptions()...)
 
-	tui := newTestTUI()
+	tui := newTestModel()
 	tui.state = StateStreaming
 
 	bar := tui.renderStatusBar()
