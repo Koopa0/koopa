@@ -31,35 +31,35 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 		t.Fatalf("security.NewPath(%q) unexpected error: %v", realTmpDir, err)
 	}
 
-	fileTools, err := tools.NewFileTools(pathVal, slog.Default())
+	file, err := tools.NewFile(pathVal, slog.Default())
 	if err != nil {
-		t.Fatalf("tools.NewFileTools() unexpected error: %v", err)
+		t.Fatalf("tools.NewFile() unexpected error: %v", err)
 	}
 
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
-	systemTools, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
+	system, err := tools.NewSystem(cmdVal, envVal, slog.Default())
 	if err != nil {
-		t.Fatalf("tools.NewSystemTools() unexpected error: %v", err)
+		t.Fatalf("tools.NewSystem() unexpected error: %v", err)
 	}
 
-	networkCfg := tools.NetworkConfig{
+	networkCfg := tools.NetConfig{
 		SearchBaseURL:    "http://localhost:8080",
 		FetchParallelism: 2,
 		FetchDelay:       100 * time.Millisecond,
 		FetchTimeout:     30 * time.Second,
 	}
-	networkTools, err := tools.NewNetworkTools(networkCfg, slog.Default())
+	network, err := tools.NewNetwork(networkCfg, slog.Default())
 	if err != nil {
-		t.Fatalf("tools.NewNetworkTools() unexpected error: %v", err)
+		t.Fatalf("tools.NewNetwork() unexpected error: %v", err)
 	}
 
 	return Config{
-		Name:         name,
-		Version:      "1.0.0",
-		FileTools:    fileTools,
-		SystemTools:  systemTools,
-		NetworkTools: networkTools,
+		Name:    name,
+		Version: "1.0.0",
+		File:    file,
+		System:  system,
+		Network: network,
 	}
 }
 
@@ -69,24 +69,29 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 // Run with: go test -race ./internal/mcp/...
 func TestServer_ConcurrentCreation(t *testing.T) {
 	const numGoroutines = 10
+
+	// Pre-create configs outside goroutines — createIntegrationTestConfig
+	// calls t.Fatalf which is undefined behavior from goroutines.
+	configs := make([]Config, numGoroutines)
+	for i := range configs {
+		configs[i] = createIntegrationTestConfig(t, "race-test-server")
+	}
+
 	var wg sync.WaitGroup
 	errors := make(chan error, numGoroutines)
 	servers := make(chan *Server, numGoroutines)
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(id int) {
+		go func(cfg Config) {
 			defer wg.Done()
-
-			cfg := createIntegrationTestConfig(t, "race-test-server")
-
 			server, err := NewServer(cfg)
 			if err != nil {
 				errors <- err
 				return
 			}
 			servers <- server
-		}(i)
+		}(configs[i])
 	}
 
 	wg.Wait()
@@ -143,11 +148,9 @@ func TestServer_ConcurrentToolsetAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			// Access toolset fields (read-only)
-			_ = server.fileTools
-			_ = server.systemTools
-			_ = server.networkTools
-			_ = server.name
-			_ = server.version
+			_ = server.file
+			_ = server.system
+			_ = server.network
 		}()
 	}
 
@@ -171,36 +174,24 @@ func TestServer_RaceDetector(t *testing.T) {
 
 	// Concurrent field access (read-only operations)
 	for i := 0; i < numOps; i++ {
-		wg.Add(5)
-
-		// Read name
-		go func() {
-			defer wg.Done()
-			_ = server.name
-		}()
-
-		// Read version
-		go func() {
-			defer wg.Done()
-			_ = server.version
-		}()
+		wg.Add(3)
 
 		// Read file tools
 		go func() {
 			defer wg.Done()
-			_ = server.fileTools
+			_ = server.file
 		}()
 
 		// Read system tools
 		go func() {
 			defer wg.Done()
-			_ = server.systemTools
+			_ = server.system
 		}()
 
 		// Read network tools
 		go func() {
 			defer wg.Done()
-			_ = server.networkTools
+			_ = server.network
 		}()
 	}
 
@@ -215,14 +206,14 @@ func TestConfig_ConcurrentValidation(t *testing.T) {
 	validCfg := createIntegrationTestConfig(t, "valid")
 
 	configs := []Config{
-		{Name: "server1", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},
-		{Name: "server2", Version: "2.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},
-		{Name: "", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},   // Invalid: no name
-		{Name: "server3", Version: "", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools}, // Invalid: no version
-		{Name: "server4", Version: "1.0.0", FileTools: nil, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},           // Invalid: no file tools
-		{Name: "server5", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: nil, NetworkTools: validCfg.NetworkTools},             // Invalid: no system tools
-		{Name: "server6", Version: "1.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: nil},              // Invalid: no network tools
-		{Name: "server7", Version: "3.0.0", FileTools: validCfg.FileTools, SystemTools: validCfg.SystemTools, NetworkTools: validCfg.NetworkTools},
+		{Name: "server1", Version: "1.0.0", File: validCfg.File, System: validCfg.System, Network: validCfg.Network},
+		{Name: "server2", Version: "2.0.0", File: validCfg.File, System: validCfg.System, Network: validCfg.Network},
+		{Name: "", Version: "1.0.0", File: validCfg.File, System: validCfg.System, Network: validCfg.Network},   // Invalid: no name
+		{Name: "server3", Version: "", File: validCfg.File, System: validCfg.System, Network: validCfg.Network}, // Invalid: no version
+		{Name: "server4", Version: "1.0.0", File: nil, System: validCfg.System, Network: validCfg.Network},      // Invalid: no file tools
+		{Name: "server5", Version: "1.0.0", File: validCfg.File, System: nil, Network: validCfg.Network},        // Invalid: no system tools
+		{Name: "server6", Version: "1.0.0", File: validCfg.File, System: validCfg.System, Network: nil},         // Invalid: no network tools
+		{Name: "server7", Version: "3.0.0", File: validCfg.File, System: validCfg.System, Network: validCfg.Network},
 	}
 
 	var wg sync.WaitGroup

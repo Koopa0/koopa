@@ -42,193 +42,193 @@ func newKeyMap() keyMap {
 }
 
 //nolint:gocyclo // Keyboard handler requires branching for all key combinations
-func (t *TUI) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.Key()
 
 	// Check for Ctrl modifier
 	if k.Mod&tea.ModCtrl != 0 {
 		switch k.Code {
 		case 'c':
-			return t.handleCtrlC()
+			return m.handleCtrlC()
 		case 'd':
-			cmd := t.cleanup()
-			return t, cmd
+			cmd := m.cleanup()
+			return m, cmd
 		}
 	}
 
 	// Check special keys
 	switch k.Code {
 	case tea.KeyEnter:
-		if t.state == StateInput {
+		if m.state == StateInput {
 			// Enter without Shift = submit
 			// Shift+Enter = newline (pass through to textarea)
 			if k.Mod&tea.ModShift == 0 {
-				return t.handleSubmit()
+				return m.handleSubmit()
 			}
 		}
 
 	case tea.KeyUp:
 		// Up at first line navigates history, otherwise pass to textarea
-		if t.state == StateInput && t.input.Line() == 0 {
-			return t.navigateHistory(-1)
+		if m.state == StateInput && m.input.Line() == 0 {
+			return m.navigateHistory(-1)
 		}
 
 	case tea.KeyDown:
 		// Down at last line navigates history, otherwise pass to textarea
-		if t.state == StateInput && t.input.Line() == t.input.LineCount()-1 {
-			return t.navigateHistory(1)
+		if m.state == StateInput && m.input.Line() == m.input.LineCount()-1 {
+			return m.navigateHistory(1)
 		}
 
 	case tea.KeyEscape:
-		if t.state == StateStreaming || t.state == StateThinking {
-			t.cancelStream()
-			t.state = StateInput
-			t.output.Reset()
-			return t, nil
+		if m.state == StateStreaming || m.state == StateThinking {
+			m.cancelStream()
+			m.state = StateInput
+			m.output.Reset()
+			return m, nil
 		}
 
 	case tea.KeyPgUp:
-		t.viewport.PageUp()
-		return t, nil
+		m.viewport.PageUp()
+		return m, nil
 
 	case tea.KeyPgDown:
-		t.viewport.PageDown()
-		return t, nil
+		m.viewport.PageDown()
+		return m, nil
 	}
 
 	// Pass keys to textarea for typing - ALWAYS allow typing even during streaming
 	// Better UX: users can prepare next message while LLM responds
 	var cmd tea.Cmd
-	t.input, cmd = t.input.Update(msg)
-	return t, cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
 }
 
-func (t *TUI) handleCtrlC() (tea.Model, tea.Cmd) {
+func (m *Model) handleCtrlC() (tea.Model, tea.Cmd) {
 	now := time.Now()
 
 	// Double Ctrl+C within 1 second = quit
-	if now.Sub(t.lastCtrlC) < time.Second {
-		cmd := t.cleanup()
-		return t, cmd
+	if now.Sub(m.lastCtrlC) < time.Second {
+		cmd := m.cleanup()
+		return m, cmd
 	}
-	t.lastCtrlC = now
+	m.lastCtrlC = now
 
-	switch t.state {
+	switch m.state {
 	case StateInput:
-		t.input.Reset()
-		return t, nil
+		m.input.Reset()
+		return m, nil
 
 	case StateThinking, StateStreaming:
-		t.cancelStream()
-		t.state = StateInput
-		t.output.Reset()
-		t.addMessage(Message{Role: "system", Text: "(Canceled)"})
-		return t, nil
+		m.cancelStream()
+		m.state = StateInput
+		m.output.Reset()
+		m.addMessage(Message{Role: roleSystem, Text: "(Canceled)"})
+		return m, nil
 	}
 
-	return t, nil
+	return m, nil
 }
 
-func (t *TUI) handleSubmit() (tea.Model, tea.Cmd) {
-	query := strings.TrimSpace(t.input.Value())
+func (m *Model) handleSubmit() (tea.Model, tea.Cmd) {
+	query := strings.TrimSpace(m.input.Value())
 	if query == "" {
-		return t, nil
+		return m, nil
 	}
 
 	// Handle slash commands
 	if strings.HasPrefix(query, "/") {
-		return t.handleSlashCommand(query)
+		return m.handleSlashCommand(query)
 	}
 
 	// Add to history (enforce maxHistory cap)
-	t.history = append(t.history, query)
-	if len(t.history) > maxHistory {
+	m.history = append(m.history, query)
+	if len(m.history) > maxHistory {
 		// Remove oldest entries to stay within bounds
-		t.history = t.history[len(t.history)-maxHistory:]
+		m.history = m.history[len(m.history)-maxHistory:]
 	}
-	t.historyIdx = len(t.history)
+	m.historyIdx = len(m.history)
 
 	// Add user message
-	t.addMessage(Message{Role: "user", Text: query})
+	m.addMessage(Message{Role: roleUser, Text: query})
 
 	// Clear input
-	t.input.Reset()
+	m.input.Reset()
 
 	// Start thinking
-	t.state = StateThinking
+	m.state = StateThinking
 
-	return t, tea.Batch(
-		t.spinner.Tick,
-		t.startStream(query),
+	return m, tea.Batch(
+		m.spinner.Tick,
+		m.startStream(query),
 	)
 }
 
-func (t *TUI) handleSlashCommand(cmd string) (tea.Model, tea.Cmd) {
+func (m *Model) handleSlashCommand(cmd string) (tea.Model, tea.Cmd) {
 	switch cmd {
 	case cmdHelp:
-		t.addMessage(Message{
+		m.addMessage(Message{
 			Role: roleSystem,
 			Text: "Commands: " + cmdHelp + ", " + cmdClear + ", " + cmdExit + "\nShortcuts:\n  Enter: send message\n  Shift+Enter: new line\n  Ctrl+C: cancel/clear\n  Ctrl+D: exit\n  Up/Down: history\n  PgUp/PgDn: scroll",
 		})
 	case cmdClear:
-		t.messages = nil
+		m.messages = nil
 	case cmdExit, cmdQuit:
-		cleanupCmd := t.cleanup()
-		return t, cleanupCmd
+		cleanupCmd := m.cleanup()
+		return m, cleanupCmd
 	default:
-		t.addMessage(Message{
+		m.addMessage(Message{
 			Role: roleError,
 			Text: "Unknown command: " + cmd,
 		})
 	}
-	t.input.Reset()
-	return t, nil
+	m.input.Reset()
+	return m, nil
 }
 
-func (t *TUI) navigateHistory(delta int) (tea.Model, tea.Cmd) {
-	if len(t.history) == 0 {
-		return t, nil
+func (m *Model) navigateHistory(delta int) (tea.Model, tea.Cmd) {
+	if len(m.history) == 0 {
+		return m, nil
 	}
 
-	t.historyIdx += delta
+	m.historyIdx += delta
 
-	if t.historyIdx < 0 {
-		t.historyIdx = 0
+	if m.historyIdx < 0 {
+		m.historyIdx = 0
 	}
-	if t.historyIdx > len(t.history) {
-		t.historyIdx = len(t.history)
+	if m.historyIdx > len(m.history) {
+		m.historyIdx = len(m.history)
 	}
 
-	if t.historyIdx == len(t.history) {
-		t.input.SetValue("")
+	if m.historyIdx == len(m.history) {
+		m.input.SetValue("")
 	} else {
-		t.input.SetValue(t.history[t.historyIdx])
+		m.input.SetValue(m.history[m.historyIdx])
 		// Move cursor to end of text
-		t.input.CursorEnd()
+		m.input.CursorEnd()
 	}
 
-	return t, nil
+	return m, nil
 }
 
-func (t *TUI) cancelStream() {
-	if t.streamCancel != nil {
-		t.streamCancel()
-		t.streamCancel = nil
+func (m *Model) cancelStream() {
+	if m.streamCancel != nil {
+		m.streamCancel()
+		m.streamCancel = nil
 	}
 }
 
 // cleanup cancels any active stream and returns the quit command.
 // Waits for goroutine exit with timeout to prevent resource leaks.
-func (t *TUI) cleanup() tea.Cmd {
-	// Cancel main context first - this triggers all goroutines using t.ctx
-	if t.ctxCancel != nil {
-		t.ctxCancel()
-		t.ctxCancel = nil
+func (m *Model) cleanup() tea.Cmd {
+	// Cancel main context first - this triggers all goroutines using m.ctx
+	if m.ctxCancel != nil {
+		m.ctxCancel()
+		m.ctxCancel = nil
 	}
 
 	// Then cancel stream-specific context (may already be canceled via parent)
-	t.cancelStream()
-	t.streamEventCh = nil
+	m.cancelStream()
+	m.streamEventCh = nil
 
 	return tea.Quit
 }

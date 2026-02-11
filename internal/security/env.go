@@ -22,7 +22,6 @@ func NewEnv() *Env {
 			"SECRET",
 			"PASSWORD",
 			"PASSWD",
-			"PWD",
 			"TOKEN",
 			"ACCESS_TOKEN",
 			"REFRESH_TOKEN",
@@ -34,8 +33,8 @@ func NewEnv() *Env {
 			// Cloud services related
 			"AWS_SECRET",
 			"AWS_ACCESS_KEY",
-			"AZURE_",
-			"GCP_",
+			"AZURE",
+			"GCP",
 			"GOOGLE_API",
 			"GOOGLE_APPLICATION_CREDENTIALS",
 
@@ -88,13 +87,14 @@ func NewEnv() *Env {
 	}
 }
 
-// ValidateEnvAccess validates whether access to the specified environment variable is allowed
-func (v *Env) ValidateEnvAccess(envName string) error {
+// Validate validates whether access to the specified environment variable is allowed.
+func (v *Env) Validate(envName string) error {
 	envUpper := strings.ToUpper(envName)
 
-	// Check if it matches sensitive patterns
+	// Check if it matches sensitive patterns using word-boundary matching.
+	// Splits on "_" to avoid false positives like PWD matching PASSWORD.
 	for _, pattern := range v.sensitivePatterns {
-		if strings.Contains(envUpper, pattern) {
+		if isSensitivePattern(envUpper, pattern) {
 			slog.Warn("sensitive environment variable access attempt",
 				"env_name", envName,
 				"matched_pattern", pattern,
@@ -104,4 +104,28 @@ func (v *Env) ValidateEnvAccess(envName string) error {
 	}
 
 	return nil
+}
+
+// isSensitivePattern checks if envName matches pattern.
+//
+// For composite patterns (containing "_" like "API_KEY"), it uses substring matching
+// to catch variables like "MY_API_KEY".
+//
+// For single-word patterns (like "SECRET"), it uses word-boundary matching by splitting
+// on "_" to avoid false positives (e.g., "GOPATH" should not match "PATH").
+func isSensitivePattern(envName, pattern string) bool {
+	if envName == pattern {
+		return true
+	}
+	// Composite patterns: substring matching (e.g., "API_KEY" in "MY_API_KEY")
+	if strings.Contains(pattern, "_") {
+		return strings.Contains(envName, pattern)
+	}
+	// Single-word patterns: word-boundary matching (e.g., "SECRET" in "MY_SECRET_VAR")
+	for _, segment := range strings.Split(envName, "_") {
+		if segment == pattern {
+			return true
+		}
+	}
+	return false
 }

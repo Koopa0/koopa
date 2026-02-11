@@ -25,16 +25,11 @@ type Message struct {
 	Content        []byte             `json:"content"`
 	SequenceNumber int32              `json:"sequence_number"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	Status         string             `json:"status"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Session struct {
-	ID           uuid.UUID          `json:"id"`
-	Title        *string            `json:"title"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	ModelName    *string            `json:"model_name"`
-	SystemPrompt *string            `json:"system_prompt"`
-	MessageCount *int32             `json:"message_count"`
+	ID        uuid.UUID          `json:"id"`
+	Title     *string            `json:"title"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }

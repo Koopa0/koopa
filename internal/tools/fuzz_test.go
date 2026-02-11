@@ -22,17 +22,17 @@ func FuzzClampTopK(f *testing.F) {
 
 		if topK <= 0 {
 			if result != defaultVal {
-				t.Errorf("clampTopK(%d, %d) = %d, expected defaultVal %d for zero/negative topK",
+				t.Errorf("clampTopK(%d, %d) = %d, want %d for zero/negative topK",
 					topK, defaultVal, result, defaultVal)
 			}
 		} else if topK > 10 {
 			if result != 10 {
-				t.Errorf("clampTopK(%d, %d) = %d, expected 10 for topK > 10",
+				t.Errorf("clampTopK(%d, %d) = %d, want 10 for topK > 10",
 					topK, defaultVal, result)
 			}
 		} else {
 			if result != topK {
-				t.Errorf("clampTopK(%d, %d) = %d, expected %d for valid topK",
+				t.Errorf("clampTopK(%d, %d) = %d, want %d for valid topK",
 					topK, defaultVal, result, topK)
 			}
 		}
@@ -62,10 +62,6 @@ func FuzzResultConstruction(f *testing.F) {
 		}
 	})
 }
-
-// =============================================================================
-// Security Fuzz Tests
-// =============================================================================
 
 // FuzzPathTraversal tests path validation never panics and handles edge cases.
 // The validator allows relative paths (resolved from working directory) and
@@ -227,7 +223,7 @@ func FuzzCommandInjection(f *testing.F) {
 	f.Fuzz(func(t *testing.T, cmd, args string) {
 		validator := security.NewCommand()
 		argList := strings.Fields(args)
-		err := validator.ValidateCommand(cmd, argList)
+		err := validator.Validate(cmd, argList)
 
 		// If validation passes, verify it's not a dangerous command
 		if err == nil {
@@ -278,7 +274,7 @@ func FuzzEnvVarBypass(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, envName string) {
 		validator := security.NewEnv()
-		err := validator.ValidateEnvAccess(envName)
+		err := validator.Validate(envName)
 
 		// If validation passes, verify it's not a sensitive variable
 		if err == nil {

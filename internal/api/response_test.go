@@ -14,10 +14,10 @@ func decodeData(t *testing.T, w *httptest.ResponseRecorder, target any) {
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&env); err != nil {
-		t.Fatalf("failed to decode envelope: %v", err)
+		t.Fatalf("decoding envelope: %v", err)
 	}
 	if err := json.Unmarshal(env.Data, target); err != nil {
-		t.Fatalf("failed to decode envelope data: %v", err)
+		t.Fatalf("decoding envelope data: %v", err)
 	}
 }
 
@@ -28,7 +28,7 @@ func decodeErrorEnvelope(t *testing.T, w *httptest.ResponseRecorder) Error {
 		Error *Error `json:"error"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&env); err != nil {
-		t.Fatalf("failed to decode envelope: %v", err)
+		t.Fatalf("decoding envelope: %v", err)
 	}
 	if env.Error == nil {
 		t.Fatal("expected error in envelope, got nil")
@@ -40,7 +40,7 @@ func TestWriteJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	data := map[string]string{"key": "value"}
-	WriteJSON(w, http.StatusOK, data)
+	WriteJSON(w, http.StatusOK, data, nil)
 
 	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("WriteJSON() Content-Type = %q, want %q", ct, "application/json")
@@ -62,7 +62,7 @@ func TestWriteJSON_Envelope(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	items := []string{"a", "b"}
-	WriteJSON(w, http.StatusOK, items)
+	WriteJSON(w, http.StatusOK, items, nil)
 
 	var body []string
 	decodeData(t, w, &body)
@@ -75,7 +75,7 @@ func TestWriteJSON_Envelope(t *testing.T) {
 func TestWriteJSON_NilData(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	WriteJSON(w, http.StatusNoContent, nil)
+	WriteJSON(w, http.StatusNoContent, nil, nil)
 
 	if w.Code != http.StatusNoContent {
 		t.Errorf("WriteJSON(nil) status = %d, want %d", w.Code, http.StatusNoContent)
@@ -89,7 +89,7 @@ func TestWriteJSON_NilData(t *testing.T) {
 func TestWriteJSON_CustomStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	WriteJSON(w, http.StatusCreated, map[string]string{"id": "123"})
+	WriteJSON(w, http.StatusCreated, map[string]string{"id": "123"}, nil)
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("WriteJSON() status = %d, want %d", w.Code, http.StatusCreated)
@@ -99,7 +99,7 @@ func TestWriteJSON_CustomStatus(t *testing.T) {
 func TestWriteError(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	WriteError(w, http.StatusBadRequest, "invalid_input", "name is required")
+	WriteError(w, http.StatusBadRequest, "invalid_input", "name is required", nil)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("WriteError() status = %d, want %d", w.Code, http.StatusBadRequest)

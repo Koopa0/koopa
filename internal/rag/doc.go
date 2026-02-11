@@ -8,17 +8,11 @@
 // RAG enhances LLM responses by augmenting prompts with relevant context from a knowledge base.
 // The rag package manages:
 //
-//   - System knowledge indexing (IndexSystemKnowledge function)
+//   - DocStore configuration for vector storage
 //   - Integration with Genkit's PostgreSQL DocStore
 //
 // # Architecture
 //
-//	System Knowledge Docs
-//	     |
-//	     v
-//	IndexSystemKnowledge()
-//	     |
-//	     v
 //	Genkit PostgreSQL DocStore
 //	     |
 //	     +-- Vector embedding (via AI Embedder)
@@ -35,10 +29,9 @@
 //
 // # Key Components
 //
-// IndexSystemKnowledge: Package-level function that indexes built-in knowledge:
-//   - Go best practices and coding standards
-//   - Agent capabilities and tool usage
-//   - Architecture principles
+// NewDocStoreConfig: Creates configuration for the Genkit PostgreSQL DocStore.
+//
+// DeleteByIDs: Removes documents by ID for UPSERT emulation.
 //
 // # Source Types
 //
@@ -51,5 +44,4 @@
 // # Thread Safety
 //
 // DocStore handles concurrent operations safely.
-// IndexSystemKnowledge is called once at startup.
 package rag

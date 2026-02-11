@@ -10,20 +10,25 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/postgresql"
 
-	"github.com/koopa0/koopa/internal/log"
 	"github.com/koopa0/koopa/internal/rag"
 )
 
+// Tool name constants for knowledge operations registered with Genkit.
 const (
-	ToolSearchHistory         = "search_history"
-	ToolSearchDocuments       = "search_documents"
-	ToolSearchSystemKnowledge = "search_system_knowledge"
-	ToolStoreKnowledge        = "knowledge_store"
+	// SearchHistoryName is the Genkit tool name for searching conversation history.
+	SearchHistoryName = "search_history"
+	// SearchDocumentsName is the Genkit tool name for searching indexed documents.
+	SearchDocumentsName = "search_documents"
+	// SearchSystemKnowledgeName is the Genkit tool name for searching system knowledge.
+	SearchSystemKnowledgeName = "search_system_knowledge"
+	// StoreKnowledgeName is the Genkit tool name for storing new knowledge documents.
+	StoreKnowledgeName = "knowledge_store"
 )
 
 // Default TopK values for knowledge searches.
@@ -47,67 +52,73 @@ type KnowledgeStoreInput struct {
 	Content string `json:"content" jsonschema_description:"The knowledge content to store"`
 }
 
-// KnowledgeTools holds dependencies for knowledge operation handlers.
-type KnowledgeTools struct {
+// Knowledge holds dependencies for knowledge operation handlers.
+type Knowledge struct {
 	retriever ai.Retriever
 	docStore  *postgresql.DocStore // nil disables knowledge_store tool
-	logger    log.Logger
+	logger    *slog.Logger
 }
 
-// NewKnowledgeTools creates a KnowledgeTools instance.
+// HasDocStore reports whether the document store is available.
+// Used by MCP server to conditionally register the knowledge_store tool.
+func (k *Knowledge) HasDocStore() bool {
+	return k.docStore != nil
+}
+
+// NewKnowledge creates a Knowledge instance.
 // docStore is optional: when nil, the knowledge_store tool is not registered.
-func NewKnowledgeTools(retriever ai.Retriever, docStore *postgresql.DocStore, logger log.Logger) (*KnowledgeTools, error) {
+func NewKnowledge(retriever ai.Retriever, docStore *postgresql.DocStore, logger *slog.Logger) (*Knowledge, error) {
 	if retriever == nil {
 		return nil, fmt.Errorf("retriever is required")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	return &KnowledgeTools{retriever: retriever, docStore: docStore, logger: logger}, nil
+	return &Knowledge{retriever: retriever, docStore: docStore, logger: logger}, nil
 }
 
-// RegisterKnowledgeTools registers all knowledge search tools with Genkit.
+// RegisterKnowledge registers all knowledge search tools with Genkit.
 // Tools are registered with event emission wrappers for streaming support.
-func RegisterKnowledgeTools(g *genkit.Genkit, kt *KnowledgeTools) ([]ai.Tool, error) {
+func RegisterKnowledge(g *genkit.Genkit, kt *Knowledge) ([]ai.Tool, error) {
 	if g == nil {
 		return nil, fmt.Errorf("genkit instance is required")
 	}
 	if kt == nil {
-		return nil, fmt.Errorf("KnowledgeTools is required")
+		return nil, fmt.Errorf("Knowledge is required")
 	}
 
 	tools := []ai.Tool{
-		genkit.DefineTool(g, ToolSearchHistory,
+		genkit.DefineTool(g, SearchHistoryName,
 			"Search conversation history using semantic similarity. "+
 				"Finds past exchanges that are conceptually related to the query. "+
 				"Returns: matched conversation turns with timestamps and similarity scores. "+
 				"Use this to: recall past discussions, find context from earlier conversations. "+
 				"Default topK: 3. Maximum topK: 10.",
-			WithEvents(ToolSearchHistory, kt.SearchHistory)),
-		genkit.DefineTool(g, ToolSearchDocuments,
+			WithEvents(SearchHistoryName, kt.SearchHistory)),
+		genkit.DefineTool(g, SearchDocumentsName,
 			"Search indexed documents (PDFs, code files, notes) using semantic similarity. "+
 				"Finds document sections that are conceptually related to the query. "+
 				"Returns: document titles, content excerpts, and similarity scores. "+
 				"Use this to: find relevant documentation, locate code examples, research topics. "+
 				"Default topK: 5. Maximum topK: 10.",
-			WithEvents(ToolSearchDocuments, kt.SearchDocuments)),
-		genkit.DefineTool(g, ToolSearchSystemKnowledge,
+			WithEvents(SearchDocumentsName, kt.SearchDocuments)),
+		genkit.DefineTool(g, SearchSystemKnowledgeName,
 			"Search system knowledge base (tool usage, commands, patterns) using semantic similarity. "+
 				"Finds internal system documentation and usage patterns. "+
 				"Returns: knowledge entries with descriptions and examples. "+
 				"Use this to: understand tool capabilities, find command syntax, learn system patterns. "+
 				"Default topK: 3. Maximum topK: 10.",
-			WithEvents(ToolSearchSystemKnowledge, kt.SearchSystemKnowledge)),
+			WithEvents(SearchSystemKnowledgeName, kt.SearchSystemKnowledge)),
 	}
 
 	// Register knowledge_store only when DocStore is available.
 	if kt.docStore != nil {
-		tools = append(tools, genkit.DefineTool(g, ToolStoreKnowledge,
+		tools = append(tools, genkit.DefineTool(g, StoreKnowledgeName,
 			"Store a knowledge entry for later retrieval via search_documents. "+
 				"Use this to save important information, notes, or learnings "+
 				"that the user wants to remember across sessions. "+
 				"Each entry gets a unique ID and is indexed for semantic search.",
-			WithEvents(ToolStoreKnowledge, kt.StoreKnowledge)))
+			WithEvents(StoreKnowledgeName, kt.StoreKnowledge)))
 	}
 
 	return tools, nil
@@ -135,13 +146,17 @@ var validSourceTypes = map[string]bool{
 
 // search performs a knowledge search with the given source type filter.
 // Returns error if sourceType is not in the allowed whitelist.
-func (k *KnowledgeTools) search(ctx context.Context, query string, topK int, sourceType string) ([]*ai.Document, error) {
+func (k *Knowledge) search(ctx context.Context, query string, topK int, sourceType string) ([]*ai.Document, error) {
 	// Validate source type against whitelist (SQL injection prevention)
 	if !validSourceTypes[sourceType] {
 		return nil, fmt.Errorf("invalid source type: %q", sourceType)
 	}
 
-	// Build WHERE clause filter for source_type (safe: sourceType is validated)
+	// Build WHERE clause filter for source_type.
+	// SECURITY: sourceType is SQL injection-safe because it's validated against
+	// a hardcoded whitelist (validSourceTypes). This filter is passed to the
+	// Genkit PostgreSQL retriever which includes it in a SQL query.
+	// DO NOT bypass the whitelist validation above.
 	filter := fmt.Sprintf("source_type = '%s'", sourceType)
 
 	req := &ai.RetrieverRequest{
@@ -161,7 +176,7 @@ func (k *KnowledgeTools) search(ctx context.Context, query string, topK int, sou
 }
 
 // SearchHistory searches conversation history using semantic similarity.
-func (k *KnowledgeTools) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
+func (k *Knowledge) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
 	k.logger.Info("SearchHistory called", "query", input.Query, "topK", input.TopK)
 
 	topK := clampTopK(input.TopK, DefaultHistoryTopK)
@@ -173,7 +188,7 @@ func (k *KnowledgeTools) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearc
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("history search failed: %v", err),
+				Message: fmt.Sprintf("searching history: %v", err),
 			},
 		}, nil
 	}
@@ -190,7 +205,7 @@ func (k *KnowledgeTools) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearc
 }
 
 // SearchDocuments searches indexed documents using semantic similarity.
-func (k *KnowledgeTools) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
+func (k *Knowledge) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
 	k.logger.Info("SearchDocuments called", "query", input.Query, "topK", input.TopK)
 
 	topK := clampTopK(input.TopK, DefaultDocumentsTopK)
@@ -202,7 +217,7 @@ func (k *KnowledgeTools) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSea
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("document search failed: %v", err),
+				Message: fmt.Sprintf("searching documents: %v", err),
 			},
 		}, nil
 	}
@@ -219,7 +234,7 @@ func (k *KnowledgeTools) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSea
 }
 
 // StoreKnowledge stores a new knowledge document for later retrieval.
-func (k *KnowledgeTools) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInput) (Result, error) {
+func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInput) (Result, error) {
 	k.logger.Info("StoreKnowledge called", "title", input.Title)
 
 	if k.docStore == nil {
@@ -252,6 +267,7 @@ func (k *KnowledgeTools) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStor
 	}
 
 	// Generate a deterministic document ID from the title using SHA-256.
+	// Changing the title creates a new document; the old entry remains.
 	// Prefix "user:" namespaces user-created knowledge (vs "system:" for built-in).
 	docID := fmt.Sprintf("user:%x", sha256.Sum256([]byte(input.Title)))
 
@@ -267,7 +283,7 @@ func (k *KnowledgeTools) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStor
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("failed to store knowledge: %v", err),
+				Message: fmt.Sprintf("storing knowledge: %v", err),
 			},
 		}, nil
 	}
@@ -283,7 +299,7 @@ func (k *KnowledgeTools) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStor
 }
 
 // SearchSystemKnowledge searches system knowledge base using semantic similarity.
-func (k *KnowledgeTools) SearchSystemKnowledge(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
+func (k *Knowledge) SearchSystemKnowledge(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
 	k.logger.Info("SearchSystemKnowledge called", "query", input.Query, "topK", input.TopK)
 
 	topK := clampTopK(input.TopK, DefaultSystemKnowledgeTopK)
@@ -295,7 +311,7 @@ func (k *KnowledgeTools) SearchSystemKnowledge(ctx *ai.ToolContext, input Knowle
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("system knowledge search failed: %v", err),
+				Message: fmt.Sprintf("searching system knowledge: %v", err),
 			},
 		}, nil
 	}

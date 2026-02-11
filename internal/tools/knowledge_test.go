@@ -2,11 +2,11 @@ package tools
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
-	"github.com/koopa0/koopa/internal/log"
 )
 
 // mockRetriever is a minimal ai.Retriever implementation for testing.
@@ -25,12 +25,12 @@ func TestClampTopK(t *testing.T) {
 		defaultVal int
 		want       int
 	}{
-		{"zero uses default", 0, 3, 3},
-		{"negative uses default", -5, 5, 5},
-		{"value in range unchanged", 5, 3, 5},
-		{"max boundary", 10, 3, 10},
-		{"exceeds max clamped to 10", 50, 3, 10},
-		{"min value", 1, 3, 1},
+		{name: "zero uses default", topK: 0, defaultVal: 3, want: 3},
+		{name: "negative uses default", topK: -5, defaultVal: 5, want: 5},
+		{name: "value in range unchanged", topK: 5, defaultVal: 3, want: 5},
+		{name: "max boundary", topK: 10, defaultVal: 3, want: 10},
+		{name: "exceeds max clamped to 10", topK: 50, defaultVal: 3, want: 10},
+		{name: "min value", topK: 1, defaultVal: 3, want: 1},
 	}
 
 	for _, tt := range tests {
@@ -44,30 +44,30 @@ func TestClampTopK(t *testing.T) {
 }
 
 func TestKnowledgeToolConstants(t *testing.T) {
-	if ToolSearchHistory != "search_history" {
-		t.Errorf("ToolSearchHistory = %q, want %q", ToolSearchHistory, "search_history")
+	if SearchHistoryName != "search_history" {
+		t.Errorf("SearchHistoryName = %q, want %q", SearchHistoryName, "search_history")
 	}
-	if ToolSearchDocuments != "search_documents" {
-		t.Errorf("ToolSearchDocuments = %q, want %q", ToolSearchDocuments, "search_documents")
+	if SearchDocumentsName != "search_documents" {
+		t.Errorf("SearchDocumentsName = %q, want %q", SearchDocumentsName, "search_documents")
 	}
-	if ToolSearchSystemKnowledge != "search_system_knowledge" {
-		t.Errorf("ToolSearchSystemKnowledge = %q, want %q", ToolSearchSystemKnowledge, "search_system_knowledge")
+	if SearchSystemKnowledgeName != "search_system_knowledge" {
+		t.Errorf("SearchSystemKnowledgeName = %q, want %q", SearchSystemKnowledgeName, "search_system_knowledge")
 	}
-	if ToolStoreKnowledge != "knowledge_store" {
-		t.Errorf("ToolStoreKnowledge = %q, want %q", ToolStoreKnowledge, "knowledge_store")
+	if StoreKnowledgeName != "knowledge_store" {
+		t.Errorf("StoreKnowledgeName = %q, want %q", StoreKnowledgeName, "knowledge_store")
 	}
 }
 
-func TestNewKnowledgeTools(t *testing.T) {
+func TestNewKnowledge(t *testing.T) {
 	t.Run("nil retriever returns error", func(t *testing.T) {
-		if _, err := NewKnowledgeTools(nil, nil, log.NewNop()); err == nil {
-			t.Error("expected error for nil retriever")
+		if _, err := NewKnowledge(nil, nil, slog.New(slog.DiscardHandler)); err == nil {
+			t.Error("NewKnowledge(nil, nil, logger) error = nil, want non-nil")
 		}
 	})
 
 	t.Run("nil logger returns error", func(t *testing.T) {
-		if _, err := NewKnowledgeTools(&mockRetriever{}, nil, nil); err == nil {
-			t.Error("expected error for nil logger")
+		if _, err := NewKnowledge(&mockRetriever{}, nil, nil); err == nil {
+			t.Error("NewKnowledge(retriever, nil, nil) error = nil, want non-nil")
 		}
 	})
 }
@@ -92,7 +92,7 @@ func TestValidSourceTypes(t *testing.T) {
 	validTypes := []string{"conversation", "file", "system"}
 	for _, st := range validTypes {
 		if !validSourceTypes[st] {
-			t.Errorf("expected %q to be valid source type", st)
+			t.Errorf("validSourceTypes[%q] = false, want true", st)
 		}
 	}
 
@@ -106,7 +106,7 @@ func TestValidSourceTypes(t *testing.T) {
 	}
 	for _, st := range invalidTypes {
 		if validSourceTypes[st] {
-			t.Errorf("expected %q to be invalid source type (SQL injection risk)", st)
+			t.Errorf("validSourceTypes[%q] = true, want false (SQL injection risk)", st)
 		}
 	}
 }

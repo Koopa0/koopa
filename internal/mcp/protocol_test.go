@@ -10,14 +10,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// connectTestServer creates a Koopa MCP server and an SDK client connected
-// via in-memory transports. Returns the client session for making protocol calls.
-// The server session and client session are cleaned up via t.Cleanup.
-func connectTestServer(t *testing.T) *mcp.ClientSession {
+// connectServer creates a Koopa MCP server from the given config and an SDK
+// client connected via in-memory transports. Returns the client session for
+// making protocol calls. Both sessions are cleaned up via t.Cleanup.
+func connectServer(t *testing.T, cfg Config) *mcp.ClientSession {
 	t.Helper()
-
-	h := newTestHelper(t)
-	cfg := h.createValidConfig()
 
 	server, err := NewServer(cfg)
 	if err != nil {
@@ -27,14 +24,12 @@ func connectTestServer(t *testing.T) *mcp.ClientSession {
 	ctx := context.Background()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 
-	// Connect server side
 	serverSession, err := server.mcpServer.Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("server.Connect() unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _ = serverSession.Close() })
 
-	// Connect client side
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "test-client",
 		Version: "1.0.0",
@@ -47,6 +42,22 @@ func connectTestServer(t *testing.T) *mcp.ClientSession {
 	t.Cleanup(func() { _ = clientSession.Close() })
 
 	return clientSession
+}
+
+// connectTestServer creates a Koopa MCP server without knowledge tools
+// and an SDK client connected via in-memory transports.
+func connectTestServer(t *testing.T) *mcp.ClientSession {
+	t.Helper()
+	h := newTestHelper(t)
+	return connectServer(t, h.createValidConfig())
+}
+
+// connectTestServerWithKnowledge creates a Koopa MCP server including
+// knowledge tools (backed by a mock retriever) and an SDK client.
+func connectTestServerWithKnowledge(t *testing.T) *mcp.ClientSession {
+	t.Helper()
+	h := newTestHelper(t)
+	return connectServer(t, h.createConfigWithKnowledge())
 }
 
 // TestProtocol_ListTools verifies that the MCP JSON-RPC tools/list
@@ -137,7 +148,7 @@ func TestProtocol_CallTool_CurrentTime(t *testing.T) {
 	// Parse the JSON text result (contains mixed types: strings and numbers)
 	var timeResult map[string]any
 	if err := json.Unmarshal([]byte(textContent.Text), &timeResult); err != nil {
-		t.Fatalf("CallTool(current_time) failed to parse JSON: %v\ntext: %s", err, textContent.Text)
+		t.Fatalf("CallTool(current_time) parsing JSON: %v\ntext: %s", err, textContent.Text)
 	}
 
 	// Should contain time fields
@@ -162,5 +173,129 @@ func TestProtocol_CallTool_UnknownTool(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "nonexistent_tool") {
 		t.Errorf("CallTool(nonexistent_tool) error = %q, want to contain tool name", err.Error())
+	}
+}
+
+// TestProtocol_ListTools_WithKnowledge verifies that knowledge search tools
+// are registered when Knowledge is configured. knowledge_store is excluded
+// because the test helper creates Knowledge with docStore=nil.
+func TestProtocol_ListTools_WithKnowledge(t *testing.T) {
+	session := connectTestServerWithKnowledge(t)
+
+	result, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools() unexpected error: %v", err)
+	}
+
+	var names []string
+	for _, tool := range result.Tools {
+		names = append(names, tool.Name)
+	}
+	sort.Strings(names)
+
+	// 10 base + 3 knowledge search tools (knowledge_store excluded: docStore=nil)
+	wantNames := []string{
+		"current_time",
+		"delete_file",
+		"execute_command",
+		"get_env",
+		"get_file_info",
+		"list_files",
+		"read_file",
+		"search_documents",
+		"search_history",
+		"search_system_knowledge",
+		"web_fetch",
+		"web_search",
+		"write_file",
+	}
+
+	if len(names) != len(wantNames) {
+		t.Fatalf("ListTools() returned %d tools, want %d\ngot:  %v\nwant: %v", len(names), len(wantNames), names, wantNames)
+	}
+
+	for i, got := range names {
+		if got != wantNames[i] {
+			t.Errorf("ListTools() tool[%d] = %q, want %q", i, got, wantNames[i])
+		}
+	}
+}
+
+// TestProtocol_CallTool_KnowledgeSearch verifies that each knowledge search
+// tool can be called through the MCP JSON-RPC layer and returns results.
+func TestProtocol_CallTool_KnowledgeSearch(t *testing.T) {
+	session := connectTestServerWithKnowledge(t)
+
+	tests := []struct {
+		name     string
+		toolName string
+	}{
+		{name: "search_history", toolName: "search_history"},
+		{name: "search_documents", toolName: "search_documents"},
+		{name: "search_system_knowledge", toolName: "search_system_knowledge"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+				Name: tt.toolName,
+				Arguments: map[string]any{
+					"query": "test query",
+					"topK":  3,
+				},
+			})
+			if err != nil {
+				t.Fatalf("CallTool(%q) unexpected error: %v", tt.toolName, err)
+			}
+
+			if result.IsError {
+				t.Fatalf("CallTool(%q) returned error result", tt.toolName)
+			}
+
+			if len(result.Content) == 0 {
+				t.Fatalf("CallTool(%q) returned empty content", tt.toolName)
+			}
+
+			textContent, ok := result.Content[0].(*mcp.TextContent)
+			if !ok {
+				t.Fatalf("CallTool(%q) content[0] type = %T, want *mcp.TextContent", tt.toolName, result.Content[0])
+			}
+
+			// Parse JSON and verify result structure
+			var parsed map[string]any
+			if err := json.Unmarshal([]byte(textContent.Text), &parsed); err != nil {
+				t.Fatalf("CallTool(%q) parsing JSON: %v\ntext: %s", tt.toolName, err, textContent.Text)
+			}
+
+			if parsed["query"] != "test query" {
+				t.Errorf("CallTool(%q) query = %v, want %q", tt.toolName, parsed["query"], "test query")
+			}
+
+			// mock retriever returns 1 document
+			if count, ok := parsed["result_count"].(float64); !ok || count != 1 {
+				t.Errorf("CallTool(%q) result_count = %v, want 1", tt.toolName, parsed["result_count"])
+			}
+		})
+	}
+}
+
+// TestProtocol_CallTool_KnowledgeStore_NoDocStore verifies that
+// knowledge_store is not registered when docStore is nil.
+func TestProtocol_CallTool_KnowledgeStore_NoDocStore(t *testing.T) {
+	session := connectTestServerWithKnowledge(t)
+
+	_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "knowledge_store",
+		Arguments: map[string]any{
+			"title":   "test",
+			"content": "test content",
+		},
+	})
+	if err == nil {
+		t.Fatal("CallTool(knowledge_store) expected error for unregistered tool, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "knowledge_store") {
+		t.Errorf("CallTool(knowledge_store) error = %q, want to contain tool name", err.Error())
 	}
 }

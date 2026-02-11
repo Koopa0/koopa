@@ -14,18 +14,18 @@ func TestPathValidation(t *testing.T) {
 	tmpDir := t.TempDir()
 	workDir, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+		t.Fatalf("getting working directory: %v", err)
 	}
 
 	// Change to temp directory for testing
 	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to change to temp directory: %v", err)
+		t.Fatalf("changing to temp directory: %v", err)
 	}
 	defer func() { _ = os.Chdir(workDir) }() // Restore original directory
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
-		t.Fatalf("failed to create path validator: %v", err)
+		t.Fatalf("creating path validator: %v", err)
 	}
 
 	tests := []struct {
@@ -64,10 +64,10 @@ func TestPathValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := validator.Validate(tt.path)
 			if tt.shouldErr && err == nil {
-				t.Errorf("expected error for %s, but got none: %s", tt.path, tt.reason)
+				t.Errorf("Validate(%q) = nil, want error: %s", tt.path, tt.reason)
 			}
 			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for %s: %v (%s)", tt.path, err, tt.reason)
+				t.Errorf("Validate(%q) unexpected error: %v (%s)", tt.path, err, tt.reason)
 			}
 		})
 	}
@@ -77,7 +77,7 @@ func TestPathValidation(t *testing.T) {
 func TestPathErrorSanitization(t *testing.T) {
 	validator, err := NewPath([]string{})
 	if err != nil {
-		t.Fatalf("failed to create path validator: %v", err)
+		t.Fatalf("creating path validator: %v", err)
 	}
 
 	// Try to access a path outside allowed directories
@@ -103,24 +103,24 @@ func TestSymlinkValidation(t *testing.T) {
 	tmpDir := t.TempDir()
 	workDir, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+		t.Fatalf("getting working directory: %v", err)
 	}
 
 	// Change to temp directory for testing
 	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to change to temp directory: %v", err)
+		t.Fatalf("changing to temp directory: %v", err)
 	}
 	defer func() { _ = os.Chdir(workDir) }() // Restore original directory
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
-		t.Fatalf("failed to create path validator: %v", err)
+		t.Fatalf("creating path validator: %v", err)
 	}
 
 	// Create a file
 	targetFile := filepath.Join(tmpDir, "target.txt")
 	if err := os.WriteFile(targetFile, []byte("test"), 0o600); err != nil {
-		t.Fatalf("failed to create target file: %v", err)
+		t.Fatalf("creating target file: %v", err)
 	}
 
 	// Create a symlink to the file
@@ -141,7 +141,7 @@ func TestSymlinkValidation(t *testing.T) {
 		expectedPath = targetFile
 	}
 	if resolvedPath != expectedPath {
-		t.Errorf("expected resolved path %s, got %s", expectedPath, resolvedPath)
+		t.Errorf("Validate() resolved path = %q, want %q", resolvedPath, expectedPath)
 	}
 }
 
@@ -150,17 +150,17 @@ func TestPathValidationWithNonExistentFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	workDir, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+		t.Fatalf("getting working directory: %v", err)
 	}
 
 	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to change to temp directory: %v", err)
+		t.Fatalf("changing to temp directory: %v", err)
 	}
 	defer func() { _ = os.Chdir(workDir) }()
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
-		t.Fatalf("failed to create path validator: %v", err)
+		t.Fatalf("creating path validator: %v", err)
 	}
 
 	// Test with non-existent file (should be allowed for creating new files)
@@ -170,7 +170,7 @@ func TestPathValidationWithNonExistentFile(t *testing.T) {
 		t.Errorf("validation of non-existent file failed: %v", err)
 	}
 	if validatedPath != nonExistentPath {
-		t.Errorf("expected path %s, got %s", nonExistentPath, validatedPath)
+		t.Errorf("Validate(%q) = %q, want %q", nonExistentPath, validatedPath, nonExistentPath)
 	}
 }
 
@@ -179,24 +179,24 @@ func TestSymlinkBypassAttempt(t *testing.T) {
 	tmpDir := t.TempDir()
 	workDir, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+		t.Fatalf("getting working directory: %v", err)
 	}
 
 	// Create another temp directory outside the allowed directory
 	outsideDir := t.TempDir()
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
 	if err := os.WriteFile(outsideFile, []byte("secret data"), 0o600); err != nil {
-		t.Fatalf("failed to create outside file: %v", err)
+		t.Fatalf("creating outside file: %v", err)
 	}
 
 	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to change to temp directory: %v", err)
+		t.Fatalf("changing to temp directory: %v", err)
 	}
 	defer func() { _ = os.Chdir(workDir) }()
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
-		t.Fatalf("failed to create path validator: %v", err)
+		t.Fatalf("creating path validator: %v", err)
 	}
 
 	// Create symlink inside allowed dir pointing to file outside
@@ -212,7 +212,7 @@ func TestSymlinkBypassAttempt(t *testing.T) {
 	}
 
 	if err != nil && !errors.Is(err, ErrSymlinkOutsideAllowed) {
-		t.Errorf("expected ErrSymlinkOutsideAllowed, got: %v", err)
+		t.Errorf("Validate(symlink) error = %v, want ErrSymlinkOutsideAllowed", err)
 	}
 }
 
@@ -221,31 +221,32 @@ func TestPathValidationErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	workDir, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+		t.Fatalf("getting working directory: %v", err)
 	}
 
 	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("failed to change to temp directory: %v", err)
+		t.Fatalf("changing to temp directory: %v", err)
 	}
 	defer func() { _ = os.Chdir(workDir) }()
 
 	validator, err := NewPath([]string{tmpDir})
 	if err != nil {
-		t.Fatalf("failed to create path validator: %v", err)
+		t.Fatalf("creating path validator: %v", err)
 	}
 
 	// Test with extremely long path (should be handled gracefully)
 	longPath := filepath.Join(tmpDir, string(make([]byte, 1000)))
 	_, err = validator.Validate(longPath)
-	// Should not panic, error is acceptable
-	_ = err
+	if err == nil {
+		t.Error("Validate(longPath) = nil, want error for 1000-byte filename")
+	}
 }
 
 // BenchmarkPathValidation benchmarks path validation performance
 func BenchmarkPathValidation(b *testing.B) {
 	validator, err := NewPath([]string{})
 	if err != nil {
-		b.Fatalf("failed to create path validator: %v", err)
+		b.Fatalf("creating path validator: %v", err)
 	}
 
 	b.ResetTimer()

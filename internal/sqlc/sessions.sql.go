@@ -12,7 +12,7 @@ import (
 )
 
 const addMessage = `-- name: AddMessage :exec
-INSERT INTO message (session_id, role, content, sequence_number)
+INSERT INTO messages (session_id, role, content, sequence_number)
 VALUES ($1, $2, $3, $4)
 `
 
@@ -34,98 +34,25 @@ func (q *Queries) AddMessage(ctx context.Context, arg AddMessageParams) error {
 	return err
 }
 
-const addMessageWithID = `-- name: AddMessageWithID :one
-INSERT INTO message (id, session_id, role, content, status, sequence_number)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, session_id, role, content, sequence_number, created_at, status, updated_at
-`
-
-type AddMessageWithIDParams struct {
-	ID             uuid.UUID `json:"id"`
-	SessionID      uuid.UUID `json:"session_id"`
-	Role           string    `json:"role"`
-	Content        []byte    `json:"content"`
-	Status         string    `json:"status"`
-	SequenceNumber int32     `json:"sequence_number"`
-}
-
-// Add message with pre-assigned ID and status (for streaming)
-func (q *Queries) AddMessageWithID(ctx context.Context, arg AddMessageWithIDParams) (Message, error) {
-	row := q.db.QueryRow(ctx, addMessageWithID,
-		arg.ID,
-		arg.SessionID,
-		arg.Role,
-		arg.Content,
-		arg.Status,
-		arg.SequenceNumber,
-	)
-	var i Message
-	err := row.Scan(
-		&i.ID,
-		&i.SessionID,
-		&i.Role,
-		&i.Content,
-		&i.SequenceNumber,
-		&i.CreatedAt,
-		&i.Status,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const countMessages = `-- name: CountMessages :one
-SELECT COUNT(*)::integer AS count
-FROM message
-WHERE session_id = $1
-`
-
-// Count messages in a session
-func (q *Queries) CountMessages(ctx context.Context, sessionID uuid.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countMessages, sessionID)
-	var count int32
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createSession = `-- name: CreateSession :one
 
-INSERT INTO sessions (title, model_name, system_prompt)
-VALUES ($1, $2, $3)
-RETURNING id, title, created_at, updated_at, model_name, system_prompt, message_count
+INSERT INTO sessions (title)
+VALUES ($1)
+RETURNING id, title, created_at, updated_at
 `
 
-type CreateSessionParams struct {
-	Title        *string `json:"title"`
-	ModelName    *string `json:"model_name"`
-	SystemPrompt *string `json:"system_prompt"`
-}
-
-// Sessions queries for sqlc
+// Sessions and messages queries for sqlc
 // Generated code will be in internal/sqlc/sessions.sql.go
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
-	row := q.db.QueryRow(ctx, createSession, arg.Title, arg.ModelName, arg.SystemPrompt)
+func (q *Queries) CreateSession(ctx context.Context, title *string) (Session, error) {
+	row := q.db.QueryRow(ctx, createSession, title)
 	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.ModelName,
-		&i.SystemPrompt,
-		&i.MessageCount,
 	)
 	return i, err
-}
-
-const deleteMessages = `-- name: DeleteMessages :exec
-DELETE FROM message
-WHERE session_id = $1
-`
-
-// Delete all messages in a session
-func (q *Queries) DeleteMessages(ctx context.Context, sessionID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteMessages, sessionID)
-	return err
 }
 
 const deleteSession = `-- name: DeleteSession :exec
@@ -138,103 +65,18 @@ func (q *Queries) DeleteSession(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const getMaxSequenceNumber = `-- name: GetMaxSequenceNumber :one
+const maxSequenceNumber = `-- name: MaxSequenceNumber :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
-FROM message
+FROM messages
 WHERE session_id = $1
 `
 
-// Get max sequence number for a session
-func (q *Queries) GetMaxSequenceNumber(ctx context.Context, sessionID uuid.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, getMaxSequenceNumber, sessionID)
+// MaxSequenceNumber returns the max sequence number for a session (returns 0 if no messages).
+func (q *Queries) MaxSequenceNumber(ctx context.Context, sessionID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, maxSequenceNumber, sessionID)
 	var max_seq int32
 	err := row.Scan(&max_seq)
 	return max_seq, err
-}
-
-const listSessions = `-- name: ListSessions :many
-SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
-FROM sessions
-ORDER BY updated_at DESC
-LIMIT $2
-OFFSET $1
-`
-
-type ListSessionsParams struct {
-	ResultOffset int32 `json:"result_offset"`
-	ResultLimit  int32 `json:"result_limit"`
-}
-
-func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error) {
-	rows, err := q.db.Query(ctx, listSessions, arg.ResultOffset, arg.ResultLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Session{}
-	for rows.Next() {
-		var i Session
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ModelName,
-			&i.SystemPrompt,
-			&i.MessageCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listSessionsWithMessages = `-- name: ListSessionsWithMessages :many
-SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
-FROM sessions
-WHERE message_count > 0 OR title IS NOT NULL
-ORDER BY updated_at DESC
-LIMIT $2
-OFFSET $1
-`
-
-type ListSessionsWithMessagesParams struct {
-	ResultOffset int32 `json:"result_offset"`
-	ResultLimit  int32 `json:"result_limit"`
-}
-
-// Only list sessions that have messages or titles (not empty sessions)
-// This is used for sidebar to hide "New Chat" placeholder sessions
-func (q *Queries) ListSessionsWithMessages(ctx context.Context, arg ListSessionsWithMessagesParams) ([]Session, error) {
-	rows, err := q.db.Query(ctx, listSessionsWithMessages, arg.ResultOffset, arg.ResultLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Session{}
-	for rows.Next() {
-		var i Session
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ModelName,
-			&i.SystemPrompt,
-			&i.MessageCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const lockSession = `-- name: LockSession :one
@@ -249,8 +91,8 @@ func (q *Queries) LockSession(ctx context.Context, id uuid.UUID) (uuid.UUID, err
 }
 
 const messages = `-- name: Messages :many
-SELECT id, session_id, role, content, sequence_number, created_at, status, updated_at
-FROM message
+SELECT id, session_id, role, content, sequence_number, created_at
+FROM messages
 WHERE session_id = $1
 ORDER BY sequence_number ASC
 LIMIT $3
@@ -280,8 +122,6 @@ func (q *Queries) Messages(ctx context.Context, arg MessagesParams) ([]Message, 
 			&i.Content,
 			&i.SequenceNumber,
 			&i.CreatedAt,
-			&i.Status,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -294,7 +134,7 @@ func (q *Queries) Messages(ctx context.Context, arg MessagesParams) ([]Message, 
 }
 
 const session = `-- name: Session :one
-SELECT id, title, created_at, updated_at, model_name, system_prompt, message_count
+SELECT id, title, created_at, updated_at
 FROM sessions
 WHERE id = $1
 `
@@ -307,48 +147,46 @@ func (q *Queries) Session(ctx context.Context, id uuid.UUID) (Session, error) {
 		&i.Title,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.ModelName,
-		&i.SystemPrompt,
-		&i.MessageCount,
 	)
 	return i, err
 }
 
-const updateMessageContent = `-- name: UpdateMessageContent :exec
-UPDATE message
-SET content = $2,
-    status = 'completed',
-    updated_at = NOW()
-WHERE id = $1
+const sessions = `-- name: Sessions :many
+SELECT id, title, created_at, updated_at
+FROM sessions
+ORDER BY updated_at DESC
+LIMIT $2
+OFFSET $1
 `
 
-type UpdateMessageContentParams struct {
-	ID      uuid.UUID `json:"id"`
-	Content []byte    `json:"content"`
+type SessionsParams struct {
+	ResultOffset int32 `json:"result_offset"`
+	ResultLimit  int32 `json:"result_limit"`
 }
 
-// Update message content and mark as completed
-func (q *Queries) UpdateMessageContent(ctx context.Context, arg UpdateMessageContentParams) error {
-	_, err := q.db.Exec(ctx, updateMessageContent, arg.ID, arg.Content)
-	return err
-}
-
-const updateMessageStatus = `-- name: UpdateMessageStatus :exec
-UPDATE message
-SET status = $2,
-    updated_at = NOW()
-WHERE id = $1
-`
-
-type UpdateMessageStatusParams struct {
-	ID     uuid.UUID `json:"id"`
-	Status string    `json:"status"`
-}
-
-// Update message status (streaming/completed/failed)
-func (q *Queries) UpdateMessageStatus(ctx context.Context, arg UpdateMessageStatusParams) error {
-	_, err := q.db.Exec(ctx, updateMessageStatus, arg.ID, arg.Status)
-	return err
+func (q *Queries) Sessions(ctx context.Context, arg SessionsParams) ([]Session, error) {
+	rows, err := q.db.Query(ctx, sessions, arg.ResultOffset, arg.ResultLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateSessionTitle = `-- name: UpdateSessionTitle :exec
@@ -371,17 +209,11 @@ func (q *Queries) UpdateSessionTitle(ctx context.Context, arg UpdateSessionTitle
 
 const updateSessionUpdatedAt = `-- name: UpdateSessionUpdatedAt :exec
 UPDATE sessions
-SET updated_at = NOW(),
-    message_count = $1
-WHERE id = $2
+SET updated_at = NOW()
+WHERE id = $1
 `
 
-type UpdateSessionUpdatedAtParams struct {
-	MessageCount *int32    `json:"message_count"`
-	SessionID    uuid.UUID `json:"session_id"`
-}
-
-func (q *Queries) UpdateSessionUpdatedAt(ctx context.Context, arg UpdateSessionUpdatedAtParams) error {
-	_, err := q.db.Exec(ctx, updateSessionUpdatedAt, arg.MessageCount, arg.SessionID)
+func (q *Queries) UpdateSessionUpdatedAt(ctx context.Context, sessionID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, updateSessionUpdatedAt, sessionID)
 	return err
 }

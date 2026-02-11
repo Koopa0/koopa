@@ -21,13 +21,13 @@ func TestLoadDefaults(t *testing.T) {
 	originalHome := os.Getenv("HOME")
 	defer func() {
 		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME: %v", err)
+			t.Errorf("restoring HOME: %v", err)
 		}
 	}()
 
 	// Set HOME to temp directory (no existing config.yaml)
 	if err := os.Setenv("HOME", tmpDir); err != nil {
-		t.Fatalf("Failed to set HOME: %v", err)
+		t.Fatalf("setting HOME: %v", err)
 	}
 
 	// Save and restore original environment
@@ -35,11 +35,11 @@ func TestLoadDefaults(t *testing.T) {
 	defer func() {
 		if originalAPIKey != "" {
 			if err := os.Setenv("GEMINI_API_KEY", originalAPIKey); err != nil {
-				t.Errorf("Failed to restore GEMINI_API_KEY: %v", err)
+				t.Errorf("restoring GEMINI_API_KEY: %v", err)
 			}
 		} else {
 			if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-				t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+				t.Errorf("unsetting GEMINI_API_KEY: %v", err)
 			}
 		}
 	}()
@@ -55,58 +55,51 @@ func TestLoadDefaults(t *testing.T) {
 
 	// Set API key for validation
 	if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		t.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("Load() unexpected error: %v", err)
 	}
 
 	// Verify default values
 	if cfg.ModelName != "gemini-2.5-flash" {
-		t.Errorf("expected default ModelName 'gemini-2.5-flash', got %q", cfg.ModelName)
+		t.Errorf("Load().ModelName = %q, want %q", cfg.ModelName, "gemini-2.5-flash")
 	}
 
 	if cfg.Temperature != 0.7 {
-		t.Errorf("expected default Temperature 0.7, got %f", cfg.Temperature)
+		t.Errorf("Load().Temperature = %f, want %f", cfg.Temperature, 0.7)
 	}
 
 	if cfg.MaxTokens != 2048 {
-		t.Errorf("expected default MaxTokens 2048, got %d", cfg.MaxTokens)
+		t.Errorf("Load().MaxTokens = %d, want %d", cfg.MaxTokens, 2048)
 	}
 
 	if cfg.MaxHistoryMessages != DefaultMaxHistoryMessages {
-		t.Errorf("expected default MaxHistoryMessages %d, got %d", DefaultMaxHistoryMessages, cfg.MaxHistoryMessages)
+		t.Errorf("Load().MaxHistoryMessages = %d, want %d", cfg.MaxHistoryMessages, DefaultMaxHistoryMessages)
 	}
 
 	if cfg.PostgresHost != "localhost" {
-		t.Errorf("expected default PostgresHost 'localhost', got %q", cfg.PostgresHost)
+		t.Errorf("Load().PostgresHost = %q, want %q", cfg.PostgresHost, "localhost")
 	}
 
 	if cfg.PostgresPort != 5432 {
-		t.Errorf("expected default PostgresPort 5432, got %d", cfg.PostgresPort)
+		t.Errorf("Load().PostgresPort = %d, want %d", cfg.PostgresPort, 5432)
 	}
 
 	if cfg.PostgresUser != "koopa" {
-		t.Errorf("expected default PostgresUser 'koopa', got %q", cfg.PostgresUser)
+		t.Errorf("Load().PostgresUser = %q, want %q", cfg.PostgresUser, "koopa")
 	}
 
 	if cfg.PostgresDBName != "koopa" {
-		t.Errorf("expected default PostgresDBName 'koopa', got %q", cfg.PostgresDBName)
+		t.Errorf("Load().PostgresDBName = %q, want %q", cfg.PostgresDBName, "koopa")
 	}
 
-	if cfg.RAGTopK != 3 {
-		t.Errorf("expected default RAGTopK 3, got %d", cfg.RAGTopK)
+	if cfg.EmbedderModel != "gemini-embedding-001" {
+		t.Errorf("Load().EmbedderModel = %q, want %q", cfg.EmbedderModel, "gemini-embedding-001")
 	}
 
-	if cfg.EmbedderModel != "text-embedding-004" {
-		t.Errorf("expected default EmbedderModel 'text-embedding-004', got %q", cfg.EmbedderModel)
-	}
-
-	if cfg.MCP.Timeout != 5 {
-		t.Errorf("expected default MCP timeout 5, got %d", cfg.MCP.Timeout)
-	}
 }
 
 // TestLoadConfigFile tests loading configuration from a file
@@ -119,20 +112,20 @@ func TestLoadConfigFile(t *testing.T) {
 	originalHome := os.Getenv("HOME")
 	defer func() {
 		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME: %v", err)
+			t.Errorf("restoring HOME: %v", err)
 		}
 	}()
 
 	// Set HOME to temp directory
 	if err := os.Setenv("HOME", tmpDir); err != nil {
-		t.Fatalf("Failed to set HOME: %v", err)
+		t.Fatalf("setting HOME: %v", err)
 	}
 	if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		t.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 	defer func() {
 		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			t.Errorf("unsetting GEMINI_API_KEY: %v", err)
 		}
 	}()
 
@@ -148,55 +141,50 @@ func TestLoadConfigFile(t *testing.T) {
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
 	if err := os.MkdirAll(koopaDir, 0o750); err != nil {
-		t.Fatalf("failed to create koopa dir: %v", err)
+		t.Fatalf("creating koopa dir: %v", err)
 	}
 
 	// Create config file
 	configContent := `model_name: gemini-2.5-pro
 temperature: 0.9
 max_tokens: 4096
-rag_top_k: 5
 postgres_host: test-host
 postgres_port: 5433
 postgres_db_name: test_db
 `
 	configPath := filepath.Join(koopaDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
+		t.Fatalf("writing config file: %v", err)
 	}
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("Load() unexpected error: %v", err)
 	}
 
 	// Verify values from config file
 	if cfg.ModelName != "gemini-2.5-pro" {
-		t.Errorf("expected ModelName 'gemini-2.5-pro', got %q", cfg.ModelName)
+		t.Errorf("Load().ModelName = %q, want %q", cfg.ModelName, "gemini-2.5-pro")
 	}
 
 	if cfg.Temperature != 0.9 {
-		t.Errorf("expected Temperature 0.9, got %f", cfg.Temperature)
+		t.Errorf("Load().Temperature = %f, want %f", cfg.Temperature, 0.9)
 	}
 
 	if cfg.MaxTokens != 4096 {
-		t.Errorf("expected MaxTokens 4096, got %d", cfg.MaxTokens)
-	}
-
-	if cfg.RAGTopK != 5 {
-		t.Errorf("expected RAGTopK 5, got %d", cfg.RAGTopK)
+		t.Errorf("Load().MaxTokens = %d, want %d", cfg.MaxTokens, 4096)
 	}
 
 	if cfg.PostgresHost != "test-host" {
-		t.Errorf("expected PostgresHost 'test-host', got %q", cfg.PostgresHost)
+		t.Errorf("Load().PostgresHost = %q, want %q", cfg.PostgresHost, "test-host")
 	}
 
 	if cfg.PostgresPort != 5433 {
-		t.Errorf("expected PostgresPort 5433, got %d", cfg.PostgresPort)
+		t.Errorf("Load().PostgresPort = %d, want %d", cfg.PostgresPort, 5433)
 	}
 
 	if cfg.PostgresDBName != "test_db" {
-		t.Errorf("expected PostgresDBName 'test_db', got %q", cfg.PostgresDBName)
+		t.Errorf("Load().PostgresDBName = %q, want %q", cfg.PostgresDBName, "test_db")
 	}
 }
 
@@ -228,25 +216,25 @@ func TestConfigDirectoryCreation(t *testing.T) {
 	originalHome := os.Getenv("HOME")
 	defer func() {
 		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME: %v", err)
+			t.Errorf("restoring HOME: %v", err)
 		}
 	}()
 
 	if err := os.Setenv("HOME", tmpDir); err != nil {
-		t.Fatalf("Failed to set HOME: %v", err)
+		t.Fatalf("setting HOME: %v", err)
 	}
 	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		t.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 	defer func() {
 		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			t.Errorf("unsetting GEMINI_API_KEY: %v", err)
 		}
 	}()
 
 	_, err := Load()
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("Load() unexpected error: %v", err)
 	}
 
 	// Check that .koopa directory was created
@@ -257,14 +245,13 @@ func TestConfigDirectoryCreation(t *testing.T) {
 	}
 
 	if !info.IsDir() {
-		t.Error("expected .koopa to be a directory")
+		t.Error("Load() created .koopa as file, want directory")
 	}
 
 	// Check permissions (0750 = drwxr-x---)
 	perm := info.Mode().Perm()
-	expectedPerm := os.FileMode(0o750)
-	if perm != expectedPerm {
-		t.Errorf("expected permissions %o, got %o", expectedPerm, perm)
+	if perm != 0o750 {
+		t.Errorf("Load() dir permissions = %o, want %o", perm, 0o750)
 	}
 }
 
@@ -274,26 +261,26 @@ func TestEnvironmentVariableOverride(t *testing.T) {
 	originalHome := os.Getenv("HOME")
 	defer func() {
 		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME: %v", err)
+			t.Errorf("restoring HOME: %v", err)
 		}
 	}()
 
 	if err := os.Setenv("HOME", tmpDir); err != nil {
-		t.Fatalf("Failed to set HOME: %v", err)
+		t.Fatalf("setting HOME: %v", err)
 	}
 	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		t.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 	defer func() {
 		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			t.Errorf("unsetting GEMINI_API_KEY: %v", err)
 		}
 	}()
 
 	// Create .koopa directory and config file
 	koopaDir := filepath.Join(tmpDir, ".koopa")
 	if err := os.MkdirAll(koopaDir, 0o750); err != nil {
-		t.Fatalf("failed to create koopa dir: %v", err)
+		t.Fatalf("creating koopa dir: %v", err)
 	}
 
 	configContent := `model_name: gemini-2.5-pro
@@ -302,7 +289,7 @@ max_tokens: 1024
 `
 	configPath := filepath.Join(koopaDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
+		t.Fatalf("writing config file: %v", err)
 	}
 
 	// KOOPA_* env vars NO LONGER supported (removed AutomaticEnv)
@@ -310,10 +297,10 @@ max_tokens: 1024
 	testHMACSecret := "test-hmac-secret-minimum-32-chars-long"
 
 	if err := os.Setenv("DD_API_KEY", testAPIKey); err != nil {
-		t.Fatalf("Failed to set DD_API_KEY: %v", err)
+		t.Fatalf("setting DD_API_KEY: %v", err)
 	}
 	if err := os.Setenv("HMAC_SECRET", testHMACSecret); err != nil {
-		t.Fatalf("Failed to set HMAC_SECRET: %v", err)
+		t.Fatalf("setting HMAC_SECRET: %v", err)
 	}
 	defer func() {
 		_ = os.Unsetenv("DD_API_KEY")
@@ -322,29 +309,29 @@ max_tokens: 1024
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("Load() unexpected error: %v", err)
 	}
 
 	// Config values should come from config.yaml (NOT env vars)
 	if cfg.ModelName != "gemini-2.5-pro" {
-		t.Errorf("expected ModelName from config 'gemini-2.5-pro', got %q", cfg.ModelName)
+		t.Errorf("Load().ModelName = %q, want %q", cfg.ModelName, "gemini-2.5-pro")
 	}
 
 	if cfg.Temperature != 0.5 {
-		t.Errorf("expected Temperature from config 0.5, got %f", cfg.Temperature)
+		t.Errorf("Load().Temperature = %f, want %f", cfg.Temperature, 0.5)
 	}
 
 	if cfg.MaxTokens != 1024 {
-		t.Errorf("expected MaxTokens from config 1024, got %d", cfg.MaxTokens)
+		t.Errorf("Load().MaxTokens = %d, want %d", cfg.MaxTokens, 1024)
 	}
 
 	// Sensitive env vars should be bound
 	if cfg.Datadog.APIKey != testAPIKey {
-		t.Errorf("expected Datadog.APIKey from env %q, got %q", testAPIKey, cfg.Datadog.APIKey)
+		t.Errorf("Load().Datadog.APIKey = %q, want %q", cfg.Datadog.APIKey, testAPIKey)
 	}
 
 	if cfg.HMACSecret != testHMACSecret {
-		t.Errorf("expected HMACSecret from env %q, got %q", testHMACSecret, cfg.HMACSecret)
+		t.Errorf("Load().HMACSecret = %q, want %q", cfg.HMACSecret, testHMACSecret)
 	}
 }
 
@@ -354,26 +341,26 @@ func TestLoadInvalidYAML(t *testing.T) {
 	originalHome := os.Getenv("HOME")
 	defer func() {
 		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME: %v", err)
+			t.Errorf("restoring HOME: %v", err)
 		}
 	}()
 
 	if err := os.Setenv("HOME", tmpDir); err != nil {
-		t.Fatalf("Failed to set HOME: %v", err)
+		t.Fatalf("setting HOME: %v", err)
 	}
 	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		t.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 	defer func() {
 		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			t.Errorf("unsetting GEMINI_API_KEY: %v", err)
 		}
 	}()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
 	if err := os.MkdirAll(koopaDir, 0o750); err != nil {
-		t.Fatalf("failed to create koopa dir: %v", err)
+		t.Fatalf("creating koopa dir: %v", err)
 	}
 
 	// Create invalid YAML config file
@@ -384,12 +371,12 @@ max_tokens: not_a_number
 `
 	configPath := filepath.Join(koopaDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(invalidYAML), 0o600); err != nil {
-		t.Fatalf("failed to write invalid config file: %v", err)
+		t.Fatalf("writing invalid config file: %v", err)
 	}
 
 	_, err := Load()
 	if err == nil {
-		t.Error("expected error for invalid YAML, got none")
+		t.Error("Load() error = nil, want error for invalid YAML")
 	}
 }
 
@@ -399,26 +386,26 @@ func TestLoadUnmarshalError(t *testing.T) {
 	originalHome := os.Getenv("HOME")
 	defer func() {
 		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME: %v", err)
+			t.Errorf("restoring HOME: %v", err)
 		}
 	}()
 
 	if err := os.Setenv("HOME", tmpDir); err != nil {
-		t.Fatalf("Failed to set HOME: %v", err)
+		t.Fatalf("setting HOME: %v", err)
 	}
 	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		t.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 	defer func() {
 		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			t.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			t.Errorf("unsetting GEMINI_API_KEY: %v", err)
 		}
 	}()
 
 	// Create .koopa directory
 	koopaDir := filepath.Join(tmpDir, ".koopa")
 	if err := os.MkdirAll(koopaDir, 0o750); err != nil {
-		t.Fatalf("failed to create koopa dir: %v", err)
+		t.Fatalf("creating koopa dir: %v", err)
 	}
 
 	// Create config with type mismatch
@@ -428,30 +415,28 @@ max_tokens: "this should also be a number"
 `
 	configPath := filepath.Join(koopaDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(invalidTypeYAML), 0o600); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
+		t.Fatalf("writing config file: %v", err)
 	}
 
-	// This will succeed because viper is flexible with type conversion
-	// but we document this test to show that invalid types are handled
-	_, err := Load()
-	// Note: viper may successfully parse string "0.7" as float, so we don't assert error here
-	_ = err
+	// Viper is flexible with type conversion so this may succeed or fail.
+	// The test verifies Load() doesn't panic on type-mismatched YAML.
+	_, _ = Load()
 }
 
 // BenchmarkLoad benchmarks configuration loading
 func BenchmarkLoad(b *testing.B) {
 	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		b.Fatalf("Failed to set GEMINI_API_KEY: %v", err)
+		b.Fatalf("setting GEMINI_API_KEY: %v", err)
 	}
 	defer func() {
 		if err := os.Unsetenv("GEMINI_API_KEY"); err != nil {
-			b.Errorf("Failed to unset GEMINI_API_KEY: %v", err)
+			b.Errorf("unsetting GEMINI_API_KEY: %v", err)
 		}
 	}()
 
 	// Verify Load() works before starting benchmark
 	if _, err := Load(); err != nil {
-		b.Fatalf("Load() failed: %v", err)
+		b.Fatalf("Load() unexpected error: %v", err)
 	}
 
 	b.ResetTimer()
@@ -473,7 +458,7 @@ func TestConfig_MarshalJSON_MasksSensitiveFields(t *testing.T) {
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		t.Fatalf("MarshalJSON failed: %v", err)
+		t.Fatalf("MarshalJSON() unexpected error: %v", err)
 	}
 
 	jsonStr := string(data)
@@ -488,9 +473,9 @@ func TestConfig_MarshalJSON_MasksSensitiveFields(t *testing.T) {
 	// 1. Not be the original password
 	// 2. Contain masking characters (****)
 	// 3. Be present in the JSON output
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatalf("failed to unmarshal result: %v", err)
+		t.Fatalf("unmarshaling result: %v", err)
 	}
 
 	maskedPwd, ok := result["postgres_password"].(string)
@@ -522,17 +507,17 @@ func TestConfig_MarshalJSON_EmptyPassword(t *testing.T) {
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		t.Fatalf("MarshalJSON failed: %v", err)
+		t.Fatalf("MarshalJSON() unexpected error: %v", err)
 	}
 
 	// Empty password should remain empty, not cause panic
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatalf("failed to unmarshal result: %v", err)
+		t.Fatalf("unmarshaling result: %v", err)
 	}
 
 	if result["postgres_password"] != "" {
-		t.Errorf("expected empty password to remain empty, got %v", result["postgres_password"])
+		t.Errorf("MarshalJSON() postgres_password = %v, want empty string", result["postgres_password"])
 	}
 }
 
@@ -544,7 +529,7 @@ func TestConfig_MarshalJSON_ShortPassword(t *testing.T) {
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		t.Fatalf("MarshalJSON failed: %v", err)
+		t.Fatalf("MarshalJSON() unexpected error: %v", err)
 	}
 
 	jsonStr := string(data)
@@ -555,7 +540,7 @@ func TestConfig_MarshalJSON_ShortPassword(t *testing.T) {
 	}
 
 	if !strings.Contains(jsonStr, `"postgres_password":"████████"`) {
-		t.Errorf("expected fully masked password '████████', got: %s", jsonStr)
+		t.Errorf("MarshalJSON() short password not fully masked, got: %s", jsonStr)
 	}
 }
 
@@ -582,23 +567,16 @@ func TestConfig_SensitiveFieldsAreMasked(t *testing.T) {
 		Datadog: DatadogConfig{
 			APIKey: "datadogapikey789",
 		},
-		MCPServers: map[string]MCPServer{
-			"test": {
-				Env: map[string]string{
-					"API_KEY": "envvarkey123",
-				},
-			},
-		},
 	}
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		t.Fatalf("MarshalJSON failed: %v", err)
+		t.Fatalf("MarshalJSON() unexpected error: %v", err)
 	}
 	jsonStr := string(data)
 
 	// Verify no raw secrets appear in output
-	secrets := []string{"secretpassword123", "hmacsecret456", "datadogapikey789", "envvarkey123"}
+	secrets := []string{"secretpassword123", "hmacsecret456", "datadogapikey789"}
 	for _, secret := range secrets {
 		if strings.Contains(jsonStr, secret) {
 			t.Errorf("sensitive value %q should be masked in JSON output", secret)
@@ -612,17 +590,6 @@ func TestConfig_MarshalJSON_NestedStructs(t *testing.T) {
 	cfg := Config{
 		ModelName:        "test-model",
 		PostgresPassword: "secretpassword",
-		MCP: MCPConfig{
-			Timeout: 10,
-			Allowed: []string{"server1", "server2"},
-		},
-		MCPServers: map[string]MCPServer{
-			"test-server": {
-				Command: "npx",
-				Args:    []string{"-y", "test-mcp"},
-				Timeout: 30,
-			},
-		},
 		SearXNG: SearXNGConfig{
 			BaseURL: "http://localhost:8080",
 		},
@@ -635,143 +602,36 @@ func TestConfig_MarshalJSON_NestedStructs(t *testing.T) {
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		t.Fatalf("MarshalJSON failed: %v", err)
+		t.Fatalf("MarshalJSON() unexpected error: %v", err)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatalf("failed to unmarshal result: %v", err)
-	}
-
-	// Verify nested MCP config is present
-	mcp, ok := result["mcp"].(map[string]interface{})
-	if !ok {
-		t.Fatal("mcp should be a nested object in JSON output")
-	}
-	if mcp["timeout"] != float64(10) {
-		t.Errorf("expected mcp.timeout = 10, got %v", mcp["timeout"])
-	}
-
-	// Verify MCPServers map is present
-	servers, ok := result["mcp_servers"].(map[string]interface{})
-	if !ok {
-		t.Fatal("mcp_servers should be a map in JSON output")
-	}
-	if _, exists := servers["test-server"]; !exists {
-		t.Error("expected test-server in mcp_servers")
+		t.Fatalf("unmarshaling result: %v", err)
 	}
 
 	// Verify SearXNG config
-	searxng, ok := result["searxng"].(map[string]interface{})
+	searxng, ok := result["searxng"].(map[string]any)
 	if !ok {
 		t.Fatal("searxng should be a nested object")
 	}
 	if searxng["base_url"] != "http://localhost:8080" {
-		t.Errorf("expected searxng.base_url = 'http://localhost:8080', got %v", searxng["base_url"])
+		t.Errorf("MarshalJSON() searxng.base_url = %v, want %q", searxng["base_url"], "http://localhost:8080")
 	}
 
 	// Verify Datadog config
-	datadog, ok := result["datadog"].(map[string]interface{})
+	datadog, ok := result["datadog"].(map[string]any)
 	if !ok {
 		t.Fatal("datadog should be a nested object")
 	}
 	if datadog["environment"] != "test" {
-		t.Errorf("expected datadog.environment = 'test', got %v", datadog["environment"])
+		t.Errorf("MarshalJSON() datadog.environment = %v, want %q", datadog["environment"], "test")
 	}
 
 	// CRITICAL: Verify sensitive field is still masked
 	jsonStr := string(data)
 	if strings.Contains(jsonStr, "secretpassword") {
 		t.Error("SECURITY: PostgresPassword should be masked in JSON with nested structs")
-	}
-}
-
-// TestConfig_MarshalJSON_MCPServerEnvMasked verifies that MCPServer.Env (sensitive map) is masked
-// SECURITY: MCPServer.Env commonly contains API keys, tokens, and secrets
-func TestConfig_MarshalJSON_MCPServerEnvMasked(t *testing.T) {
-	cfg := Config{
-		MCPServers: map[string]MCPServer{
-			"github-mcp": {
-				Command: "npx",
-				Args:    []string{"-y", "@modelcontextprotocol/server-github"},
-				Env: map[string]string{
-					"GITHUB_TOKEN":      "ghp_supersecrettoken12345678",
-					"API_KEY":           "sk-proj-secretapikey67890",
-					"OPENAI_API_KEY":    "sk-openai-verysecretkey",
-					"ANTHROPIC_KEY":     "anthropic-secret-key-xxx",
-					"DATABASE_PASSWORD": "dbpassword123",
-				},
-				Timeout: 30,
-			},
-			"another-server": {
-				Command: "node",
-				Env: map[string]string{
-					"SECRET_TOKEN": "another_secret_value",
-				},
-			},
-		},
-	}
-
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatalf("MarshalJSON failed: %v", err)
-	}
-
-	jsonStr := string(data)
-
-	// CRITICAL: All secret values in Env must be masked
-	secrets := []string{
-		"ghp_supersecrettoken12345678",
-		"sk-proj-secretapikey67890",
-		"sk-openai-verysecretkey",
-		"anthropic-secret-key-xxx",
-		"dbpassword123",
-		"another_secret_value",
-	}
-
-	for _, secret := range secrets {
-		if strings.Contains(jsonStr, secret) {
-			t.Errorf("SECURITY: MCPServer.Env secret leaked in JSON output: %s", secret)
-		}
-	}
-
-	// Verify the Env field is present but masked
-	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatalf("failed to unmarshal result: %v", err)
-	}
-
-	servers, ok := result["mcp_servers"].(map[string]interface{})
-	if !ok {
-		t.Fatal("mcp_servers should be present in JSON output")
-	}
-
-	githubServer, ok := servers["github-mcp"].(map[string]interface{})
-	if !ok {
-		t.Fatal("github-mcp server should be present")
-	}
-
-	// Env map values should be masked individually (keys visible, values masked)
-	env, ok := githubServer["env"].(map[string]interface{})
-	if !ok {
-		t.Fatal("MCPServer.Env should be a map")
-	}
-	// Check that original secrets are not present
-	for _, v := range env {
-		strVal, ok := v.(string)
-		if !ok {
-			t.Error("Env values should be strings")
-			continue
-		}
-		// Masked values should contain maskedValue (████████)
-		if !strings.Contains(strVal, "████████") && strVal != "" {
-			t.Errorf("Env value should be masked, got: %s", strVal)
-		}
-	}
-
-	// Verify non-sensitive fields are NOT masked
-	if githubServer["command"] != "npx" {
-		t.Error("non-sensitive field Command should not be masked")
 	}
 }
 
@@ -821,7 +681,7 @@ func TestMaskSecret_Unicode(t *testing.T) {
 
 			// Verify masking pattern is present (when expected)
 			if tt.wantContains != "" && !strings.Contains(masked, tt.wantContains) {
-				t.Errorf("expected masked output to contain %q, got: %q", tt.wantContains, masked)
+				t.Errorf("maskSecret(%q) = %q, want contains %q", tt.input, masked, tt.wantContains)
 			}
 
 			// CRITICAL: Original value must NEVER appear in masked output
@@ -866,7 +726,7 @@ func TestConfig_MarshalJSON_UnicodePasswords(t *testing.T) {
 
 			data, err := json.Marshal(cfg)
 			if err != nil {
-				t.Fatalf("MarshalJSON failed: %v", err)
+				t.Fatalf("MarshalJSON() unexpected error: %v", err)
 			}
 
 			jsonStr := string(data)
@@ -878,7 +738,7 @@ func TestConfig_MarshalJSON_UnicodePasswords(t *testing.T) {
 
 			// Verify masking was applied
 			if !strings.Contains(jsonStr, "████████") {
-				t.Errorf("expected masked output to contain '████████', got: %s", jsonStr)
+				t.Errorf("MarshalJSON() output missing mask chars, got: %s", jsonStr)
 			}
 		})
 	}
@@ -1082,19 +942,6 @@ func BenchmarkConfig_MarshalJSON(b *testing.B) {
 		PostgresPort:     5432,
 		PostgresUser:     "koopa",
 		PostgresDBName:   "koopa",
-		MCP: MCPConfig{
-			Timeout: 5,
-			Allowed: []string{"server1", "server2"},
-		},
-		MCPServers: map[string]MCPServer{
-			"github": {
-				Command: "npx",
-				Args:    []string{"-y", "@modelcontextprotocol/server-github"},
-				Env: map[string]string{
-					"GITHUB_TOKEN": "ghp_secrettoken12345",
-				},
-			},
-		},
 	}
 
 	b.ResetTimer()
@@ -1104,16 +951,40 @@ func BenchmarkConfig_MarshalJSON(b *testing.B) {
 	}
 }
 
+// TestFullModelName tests that FullModelName derives correct provider-qualified names.
+func TestFullModelName(t *testing.T) {
+	tests := []struct {
+		name      string
+		provider  string
+		modelName string
+		want      string
+	}{
+		{name: "gemini default", provider: "", modelName: "gemini-2.5-flash", want: "googleai/gemini-2.5-flash"},
+		{name: "gemini explicit", provider: "gemini", modelName: "gemini-2.5-pro", want: "googleai/gemini-2.5-pro"},
+		{name: "ollama", provider: "ollama", modelName: "llama3.3", want: "ollama/llama3.3"},
+		{name: "openai", provider: "openai", modelName: "gpt-4o", want: "openai/gpt-4o"},
+		{name: "already qualified", provider: "ollama", modelName: "ollama/llama3.3", want: "ollama/llama3.3"},
+		{name: "cross-qualified", provider: "gemini", modelName: "openai/gpt-4o", want: "openai/gpt-4o"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Provider:  tt.provider,
+				ModelName: tt.modelName,
+			}
+			got := cfg.FullModelName()
+			if got != tt.want {
+				t.Errorf("FullModelName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // BenchmarkConfig_MarshalJSON_Parallel benchmarks concurrent Config marshaling
 func BenchmarkConfig_MarshalJSON_Parallel(b *testing.B) {
 	cfg := Config{
 		PostgresPassword: "supersecretpassword123",
-		MCPServers: map[string]MCPServer{
-			"test": {
-				Command: "npx",
-				Env:     map[string]string{"SECRET": "value"},
-			},
-		},
 	}
 
 	b.ResetTimer()

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/koopa0/koopa/internal/tools"
@@ -13,7 +14,7 @@ func TestResultToMCP_Success(t *testing.T) {
 		Data:   map[string]any{"result": "value", "count": 42},
 	}
 
-	mcpResult := resultToMCP(result)
+	mcpResult := resultToMCP(result, nil)
 
 	if mcpResult.IsError {
 		t.Error("resultToMCP should not set IsError for success status")
@@ -29,7 +30,7 @@ func TestResultToMCP_Success(t *testing.T) {
 	}
 
 	// Data should be JSON marshaled
-	if !contains(textContent.Text, "result") || !contains(textContent.Text, "value") {
+	if !strings.Contains(textContent.Text, "result") || !strings.Contains(textContent.Text, "value") {
 		t.Errorf("resultToMCP text should contain JSON data: %s", textContent.Text)
 	}
 }
@@ -43,7 +44,7 @@ func TestResultToMCP_Error(t *testing.T) {
 		},
 	}
 
-	mcpResult := resultToMCP(result)
+	mcpResult := resultToMCP(result, nil)
 
 	if !mcpResult.IsError {
 		t.Error("resultToMCP should set IsError for error status")
@@ -59,11 +60,11 @@ func TestResultToMCP_Error(t *testing.T) {
 	}
 
 	// Should contain error code and message
-	if !contains(textContent.Text, string(tools.ErrCodeNotFound)) {
+	if !strings.Contains(textContent.Text, string(tools.ErrCodeNotFound)) {
 		t.Errorf("resultToMCP text should contain error code: %s", textContent.Text)
 	}
 
-	if !contains(textContent.Text, "File not found") {
+	if !strings.Contains(textContent.Text, "File not found") {
 		t.Errorf("resultToMCP text should contain error message: %s", textContent.Text)
 	}
 }
@@ -79,7 +80,7 @@ func TestResultToMCP_ErrorWithDetails(t *testing.T) {
 		},
 	}
 
-	mcpResult := resultToMCP(result)
+	mcpResult := resultToMCP(result, nil)
 
 	if !mcpResult.IsError {
 		t.Error("resultToMCP should set IsError for error status")
@@ -95,14 +96,10 @@ func TestResultToMCP_ErrorWithDetails(t *testing.T) {
 	}
 
 	// Should contain "Details:" with whitelisted fields
-	if !contains(textContent.Text, "Details:") {
+	if !strings.Contains(textContent.Text, "Details:") {
 		t.Errorf("resultToMCP text should contain 'Details:': %s", textContent.Text)
 	}
 }
-
-// =============================================================================
-// dataToMCP Tests
-// =============================================================================
 
 func TestDataToMCP_ValidData(t *testing.T) {
 	data := map[string]any{"key": "value", "count": 42}
@@ -121,7 +118,7 @@ func TestDataToMCP_ValidData(t *testing.T) {
 		t.Fatal("dataToMCP content is not TextContent")
 	}
 
-	if !contains(textContent.Text, "key") || !contains(textContent.Text, "value") {
+	if !strings.Contains(textContent.Text, "key") || !strings.Contains(textContent.Text, "value") {
 		t.Errorf("dataToMCP should contain JSON data: %s", textContent.Text)
 	}
 }
@@ -161,7 +158,7 @@ func TestDataToMCP_SliceData(t *testing.T) {
 		t.Fatal("dataToMCP content is not TextContent")
 	}
 
-	if !contains(textContent.Text, "item1") {
+	if !strings.Contains(textContent.Text, "item1") {
 		t.Errorf("dataToMCP should contain JSON array: %s", textContent.Text)
 	}
 }
@@ -187,7 +184,7 @@ func TestDataToMCP_NestedStruct(t *testing.T) {
 		t.Fatal("dataToMCP content is not TextContent")
 	}
 
-	if !contains(textContent.Text, "test") || !contains(textContent.Text, "42") {
+	if !strings.Contains(textContent.Text, "test") || !strings.Contains(textContent.Text, "42") {
 		t.Errorf("dataToMCP should contain nested JSON: %s", textContent.Text)
 	}
 }
@@ -222,7 +219,7 @@ func TestDataToMCP_ResultNilData(t *testing.T) {
 		Data:   nil,
 	}
 
-	mcpResult := resultToMCP(result)
+	mcpResult := resultToMCP(result, nil)
 
 	if mcpResult.IsError {
 		t.Error("resultToMCP should not set IsError for success with nil data")
@@ -237,10 +234,6 @@ func TestDataToMCP_ResultNilData(t *testing.T) {
 		t.Errorf("resultToMCP with nil data should return empty string, got: %q", textContent.Text)
 	}
 }
-
-// =============================================================================
-// sanitizeErrorDetails Tests
-// =============================================================================
 
 func TestSanitizeErrorDetails(t *testing.T) {
 	tests := []struct {

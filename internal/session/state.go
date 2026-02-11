@@ -64,7 +64,7 @@ func getStateFilePath() (string, error) {
 
 // LoadCurrentSessionID loads the currently active session ID from local state file.
 //
-// Acquires shared file lock to allow concurrent reads but prevent writes during read.
+// Acquires exclusive file lock to prevent concurrent access during read.
 //
 // Returns:
 //   - *uuid.UUID: Current session ID (nil if no current session)
@@ -146,15 +146,15 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 		return fmt.Errorf("saving session: %w", err)
 	}
 
-	// Clean up any orphaned temp files from previous crashed sessions
-	_ = cleanupOrphanedTempFiles()
-
 	// Acquire file lock to prevent concurrent access
 	lock, err := acquireStateLock()
 	if err != nil {
 		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
+
+	// Clean up any orphaned temp files from previous crashed sessions (under lock)
+	_ = cleanupOrphanedTempFiles()
 
 	// Write to temporary file first (atomic write pattern)
 	tmpFile := filePath + ".tmp"

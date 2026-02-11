@@ -381,7 +381,7 @@ linters:
           - contextcheck
 
       # contextcheck: flow.go uses InvocationContext which wraps context
-      - path: internal/agent/chat/flow\.go
+      - path: internal/chat/flow\.go
         linters:
           - contextcheck
 

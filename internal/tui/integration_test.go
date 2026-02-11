@@ -10,7 +10,8 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/koopa0/koopa/internal/agent/chat"
+	"github.com/google/uuid"
+	"github.com/koopa0/koopa/internal/chat"
 )
 
 func TestMain(m *testing.M) {
@@ -25,17 +26,17 @@ func TestMain(m *testing.M) {
 }
 
 // createTestSession creates a session in the database and returns its ID and cleanup function.
-func createTestSession(t *testing.T, setup *chatFlowSetup) (string, func()) {
+func createTestSession(t *testing.T, setup *chatFlowSetup) (uuid.UUID, func()) {
 	t.Helper()
-	sess, err := setup.SessionStore.CreateSession(setup.Ctx, "test-session", "gemini-2.0-flash", "")
+	sess, err := setup.SessionStore.CreateSession(setup.Ctx, "test-session")
 	if err != nil {
-		t.Fatalf("Failed to create test session: %v", err)
+		t.Fatalf("CreateSession() error: %v", err)
 	}
 	cleanup := func() {
 		// Use background context for cleanup since test context may be canceled
 		_ = setup.SessionStore.DeleteSession(context.Background(), sess.ID)
 	}
-	return sess.ID.String(), cleanup
+	return sess.ID, cleanup
 }
 
 func TestTUI_Integration_StartStream_Success(t *testing.T) {
@@ -50,7 +51,7 @@ func TestTUI_Integration_StartStream_Success(t *testing.T) {
 	defer sessionCleanup()
 	tui, err := New(setup.Ctx, setup.Flow, sessionID)
 	if err != nil {
-		t.Fatalf("Failed to create TUI: %v", err)
+		t.Fatalf("New() error: %v", err)
 	}
 
 	// Start a stream with a simple query
@@ -132,7 +133,7 @@ func TestTUI_Integration_StartStream_Cancellation(t *testing.T) {
 	defer sessionCleanup()
 	tui, err := New(setup.Ctx, setup.Flow, sessionID)
 	if err != nil {
-		t.Fatalf("Failed to create TUI: %v", err)
+		t.Fatalf("New() error: %v", err)
 	}
 
 	// Start a stream with a long query
@@ -198,7 +199,7 @@ func TestTUI_Integration_HandleSubmit_StateTransition(t *testing.T) {
 	defer sessionCleanup()
 	tui, err := New(setup.Ctx, setup.Flow, sessionID)
 	if err != nil {
-		t.Fatalf("Failed to create TUI: %v", err)
+		t.Fatalf("New() error: %v", err)
 	}
 
 	// Set input value
@@ -206,7 +207,7 @@ func TestTUI_Integration_HandleSubmit_StateTransition(t *testing.T) {
 
 	// Call handleSubmit
 	model, cmd := tui.handleSubmit()
-	result := model.(*TUI)
+	result := model.(*Model)
 
 	// Verify state changed to thinking
 	if result.state != StateThinking {
@@ -355,13 +356,13 @@ func TestTUI_Integration_ViewDuringStreaming(t *testing.T) {
 	defer sessionCleanup()
 	tui, err := New(setup.Ctx, setup.Flow, sessionID)
 	if err != nil {
-		t.Fatalf("Failed to create TUI: %v", err)
+		t.Fatalf("New() error: %v", err)
 	}
 
 	// Start streaming
 	tui.input.SetValue("Tell me about Go programming")
 	model, cmd := tui.handleSubmit()
-	tui = model.(*TUI)
+	tui = model.(*Model)
 
 	// Call View during different states and verify no panic
 	_ = tui.View()
@@ -380,7 +381,7 @@ func TestTUI_Integration_ViewDuringStreaming(t *testing.T) {
 			break
 		}
 		model, cmd = tui.Update(msg)
-		tui = model.(*TUI)
+		tui = model.(*Model)
 
 		// View should work in any state
 		_ = tui.View()

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,14 +12,17 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 
-	"github.com/koopa0/koopa/internal/log"
 	"github.com/koopa0/koopa/internal/security"
 )
 
+// Tool name constants for system operations registered with Genkit.
 const (
-	ToolCurrentTime    = "current_time"
-	ToolExecuteCommand = "execute_command"
-	ToolGetEnv         = "get_env"
+	// CurrentTimeName is the Genkit tool name for retrieving the current time.
+	CurrentTimeName = "current_time"
+	// ExecuteCommandName is the Genkit tool name for executing shell commands.
+	ExecuteCommandName = "execute_command"
+	// GetEnvName is the Genkit tool name for reading environment variables.
+	GetEnvName = "get_env"
 )
 
 // ExecuteCommandInput defines input for execute_command tool.
@@ -35,18 +39,18 @@ type GetEnvInput struct {
 // CurrentTimeInput defines input for current_time tool (no input needed).
 type CurrentTimeInput struct{}
 
-// SystemTools holds dependencies for system operation handlers.
-// Use NewSystemTools to create an instance, then either:
+// System holds dependencies for system operation handlers.
+// Use NewSystem to create an instance, then either:
 // - Call methods directly (for MCP)
-// - Use RegisterSystemTools to register with Genkit
-type SystemTools struct {
+// - Use RegisterSystem to register with Genkit
+type System struct {
 	cmdVal *security.Command
 	envVal *security.Env
-	logger log.Logger
+	logger *slog.Logger
 }
 
-// NewSystemTools creates a SystemTools instance.
-func NewSystemTools(cmdVal *security.Command, envVal *security.Env, logger log.Logger) (*SystemTools, error) {
+// NewSystem creates a System instance.
+func NewSystem(cmdVal *security.Command, envVal *security.Env, logger *slog.Logger) (*System, error) {
 	if cmdVal == nil {
 		return nil, fmt.Errorf("command validator is required")
 	}
@@ -56,45 +60,45 @@ func NewSystemTools(cmdVal *security.Command, envVal *security.Env, logger log.L
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	return &SystemTools{cmdVal: cmdVal, envVal: envVal, logger: logger}, nil
+	return &System{cmdVal: cmdVal, envVal: envVal, logger: logger}, nil
 }
 
-// RegisterSystemTools registers all system operation tools with Genkit.
+// RegisterSystem registers all system operation tools with Genkit.
 // Tools are registered with event emission wrappers for streaming support.
-func RegisterSystemTools(g *genkit.Genkit, st *SystemTools) ([]ai.Tool, error) {
+func RegisterSystem(g *genkit.Genkit, st *System) ([]ai.Tool, error) {
 	if g == nil {
 		return nil, fmt.Errorf("genkit instance is required")
 	}
 	if st == nil {
-		return nil, fmt.Errorf("SystemTools is required")
+		return nil, fmt.Errorf("System is required")
 	}
 
 	return []ai.Tool{
-		genkit.DefineTool(g, ToolCurrentTime,
+		genkit.DefineTool(g, CurrentTimeName,
 			"Get the current system date and time. "+
 				"Returns: formatted time string, Unix timestamp, and ISO 8601 format. "+
 				"Use this to: check current time, calculate relative times, add timestamps to outputs. "+
 				"Always returns the server's local time zone.",
-			WithEvents(ToolCurrentTime, st.CurrentTime)),
-		genkit.DefineTool(g, ToolExecuteCommand,
+			WithEvents(CurrentTimeName, st.CurrentTime)),
+		genkit.DefineTool(g, ExecuteCommandName,
 			"Execute a shell command from the allowed list with security validation. "+
 				"Allowed commands: git, npm, yarn, go, make, docker, kubectl, ls, cat, grep, find, pwd, echo. "+
 				"Commands run with a timeout to prevent hanging. "+
 				"Returns: stdout, stderr, exit code, and execution time. "+
 				"Use this for: running builds, checking git status, listing processes, viewing file contents. "+
 				"Security: Dangerous commands (rm -rf, sudo, chmod, etc.) are blocked.",
-			WithEvents(ToolExecuteCommand, st.ExecuteCommand)),
-		genkit.DefineTool(g, ToolGetEnv,
+			WithEvents(ExecuteCommandName, st.ExecuteCommand)),
+		genkit.DefineTool(g, GetEnvName,
 			"Read an environment variable value from the system. "+
 				"Returns: the variable name and its value. "+
 				"Use this to: check configuration, verify paths, read non-sensitive settings. "+
 				"Security: Sensitive variables containing KEY, SECRET, TOKEN, or PASSWORD in their names are protected and will not be returned.",
-			WithEvents(ToolGetEnv, st.GetEnv)),
+			WithEvents(GetEnvName, st.GetEnv)),
 	}, nil
 }
 
 // CurrentTime returns the current system date and time in multiple formats.
-func (s *SystemTools) CurrentTime(_ *ai.ToolContext, _ CurrentTimeInput) (Result, error) {
+func (s *System) CurrentTime(_ *ai.ToolContext, _ CurrentTimeInput) (Result, error) {
 	s.logger.Info("CurrentTime called")
 	now := time.Now()
 	s.logger.Info("CurrentTime succeeded")
@@ -112,11 +116,11 @@ func (s *SystemTools) CurrentTime(_ *ai.ToolContext, _ CurrentTimeInput) (Result
 // Dangerous commands like rm -rf, sudo, and shutdown are blocked.
 // Business errors (blocked commands, execution failures) are returned in Result.Error.
 // Only context cancellation returns a Go error.
-func (s *SystemTools) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) (Result, error) {
+func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) (Result, error) {
 	s.logger.Info("ExecuteCommand called", "command", input.Command, "args", input.Args)
 
 	// Command security validation (prevent command injection attacks CWE-78)
-	if err := s.cmdVal.ValidateCommand(input.Command, input.Args); err != nil {
+	if err := s.cmdVal.Validate(input.Command, input.Args); err != nil {
 		s.logger.Error("ExecuteCommand dangerous command rejected", "command", input.Command, "args", input.Args, "error", err)
 		return Result{
 			Status: StatusError,
@@ -138,17 +142,16 @@ func (s *SystemTools) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandIn
 	if err != nil {
 		// Check if it was canceled by context - this is infrastructure error
 		if execCtx.Err() != nil {
-			s.logger.Error("ExecuteCommand canceled", "command", input.Command, "error", execCtx.Err())
 			return Result{}, fmt.Errorf("command execution canceled: %w", execCtx.Err())
 		}
 
 		// Command execution failure is a business error
-		s.logger.Error("ExecuteCommand failed", "command", input.Command, "error", err, "output", string(output))
+		s.logger.Error("executing command", "command", input.Command, "error", err, "output", string(output))
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("command failed: %v", err),
+				Message: fmt.Sprintf("executing command: %v", err),
 				Details: map[string]any{
 					"command": input.Command,
 					"args":    strings.Join(input.Args, " "),
@@ -174,11 +177,11 @@ func (s *SystemTools) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandIn
 // GetEnv reads an environment variable value with security protection.
 // Sensitive variables containing KEY, SECRET, or TOKEN in the name are blocked.
 // Business errors (sensitive variable blocked) are returned in Result.Error.
-func (s *SystemTools) GetEnv(_ *ai.ToolContext, input GetEnvInput) (Result, error) {
+func (s *System) GetEnv(_ *ai.ToolContext, input GetEnvInput) (Result, error) {
 	s.logger.Info("GetEnv called", "key", input.Key)
 
 	// Environment variable security validation (prevent sensitive information leakage)
-	if err := s.envVal.ValidateEnvAccess(input.Key); err != nil {
+	if err := s.envVal.Validate(input.Key); err != nil {
 		s.logger.Error("GetEnv sensitive variable blocked", "key", input.Key, "error", err)
 		return Result{
 			Status: StatusError,

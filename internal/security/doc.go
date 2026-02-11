@@ -16,30 +16,30 @@
 // Path Validator: Prevents directory traversal and ensures file operations
 // stay within allowed boundaries.
 //
-//	pathValidator := security.NewPath()
-//	if err := pathValidator.ValidatePath(userInput); err != nil {
+//	pathValidator, err := security.NewPath([]string{"/safe/dir"})
+//	if _, err := pathValidator.Validate(userInput); err != nil {
 //	    return fmt.Errorf("invalid path: %w", err)
 //	}
 //
 // Command Validator: Blocks dangerous shell commands and prevents command injection.
 //
 //	cmdValidator := security.NewCommand()
-//	if err := cmdValidator.ValidateCommand(cmd, args); err != nil {
+//	if err := cmdValidator.Validate(cmd, args); err != nil {
 //	    return fmt.Errorf("dangerous command: %w", err)
 //	}
 //
 // Dangerous commands blocked include: rm -rf, sudo, shutdown, dd, mkfs,
 // format, and other destructive operations.
 //
-// HTTP Validator: Prevents SSRF attacks by blocking requests to private networks
+// URL Validator: Prevents SSRF attacks by blocking requests to private networks
 // and cloud metadata endpoints.
 //
-//	httpValidator := security.NewHTTP()
-//	if err := httpValidator.ValidateURL(url); err != nil {
+//	urlValidator := security.NewURL()
+//	if err := urlValidator.Validate(rawURL); err != nil {
 //	    return fmt.Errorf("SSRF attempt blocked: %w", err)
 //	}
-//	// Use the validator's HTTP client for safe requests
-//	resp, err := httpValidator.Client().Get(url)
+//	// Use SafeTransport for DNS-rebinding protection
+//	client := &http.Client{Transport: urlValidator.SafeTransport()}
 //
 // Blocked targets include:
 //   - Private IP ranges (127.0.0.1, 192.168.x.x, 10.x.x.x)
@@ -50,7 +50,7 @@
 // from unauthorized access.
 //
 //	envValidator := security.NewEnv()
-//	if err := envValidator.ValidateEnvAccess(key); err != nil {
+//	if err := envValidator.Validate(key); err != nil {
 //	    return fmt.Errorf("access to sensitive variable blocked: %w", err)
 //	}
 //
@@ -67,26 +67,31 @@
 // # Integration Example
 //
 //	// Create validators
-//	pathVal := security.NewPath()
+//	pathVal, _ := security.NewPath([]string{workDir})
 //	cmdVal := security.NewCommand()
-//	httpVal := security.NewHTTP()
+//	urlVal := security.NewURL()
 //	envVal := security.NewEnv()
 //
-//	// Pass to toolsets during initialization
-//	fileToolset := tools.NewFileToolset(pathVal)
-//	systemToolset := tools.NewSystemToolset(cmdVal, envVal)
-//	networkToolset := tools.NewNetworkToolset(httpVal)
+//	// Pass to tool constructors during initialization
+//	fileTools, _ := tools.NewFile(pathVal, logger)
+//	systemTools, _ := tools.NewSystem(cmdVal, envVal, logger)
+//	networkTools, _ := tools.NewNetwork(urlVal, logger)
 //
 // # Configuration
 //
-// The HTTP validator supports configuration for response size limits,
-// timeouts, and redirect limits:
+// The URL validator uses SafeTransport for DNS-resolution-level SSRF protection:
 //
-//	httpValidator := security.NewHTTP()
-//	// Default: 10MB max response, 30s timeout, 10 redirects
-//	client := httpValidator.Client()
+//	urlValidator := security.NewURL()
+//	client := &http.Client{Transport: urlValidator.SafeTransport()}
 //
 // Other validators use secure defaults and require no configuration.
+//
+// # Error Handling
+//
+// Validators intentionally both log and return errors. This is a deliberate
+// exception to the "handle errors once" rule: security events require an
+// audit trail (via logging) AND must propagate the error to callers so they
+// can deny the operation. Removing either side would create a security gap.
 //
 // # Testing
 //

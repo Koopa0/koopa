@@ -81,9 +81,9 @@ func TestCSRFToken_Malformed(t *testing.T) {
 		name  string
 		token string
 	}{
-		{"empty", ""},
-		{"no_colon", "justtext"},
-		{"bad_timestamp", "notanumber:signature"},
+		{name: "empty", token: ""},
+		{name: "no_colon", token: "justtext"},
+		{name: "bad_timestamp", token: "notanumber:signature"},
 	}
 
 	for _, tt := range tests {
@@ -245,10 +245,6 @@ func TestGetSessionMessages_InvalidUUID(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Session Ownership Tests
-// ============================================================================
-
 func TestRequireOwnership_NoSession(t *testing.T) {
 	sm := newTestSessionManager()
 	targetID := uuid.New()
@@ -346,5 +342,61 @@ func TestListSessions_NoSession(t *testing.T) {
 	decodeData(t, w, &items)
 	if len(items) != 0 {
 		t.Errorf("listSessions(no session) returned %d items, want 0", len(items))
+	}
+}
+
+func FuzzCheckCSRF(f *testing.F) {
+	sm := newTestSessionManager()
+	sessionID := uuid.New()
+	validToken := sm.NewCSRFToken(sessionID)
+
+	f.Add(sessionID.String(), validToken)
+	f.Add(sessionID.String(), "")
+	f.Add(sessionID.String(), "notanumber:signature")
+	f.Add(sessionID.String(), "12345:badsig")
+	f.Add(uuid.New().String(), validToken)
+	f.Add("", "")
+	f.Add("not-a-uuid", "1234:sig")
+
+	f.Fuzz(func(t *testing.T, sessionIDStr, token string) {
+		id, err := uuid.Parse(sessionIDStr)
+		if err != nil {
+			return
+		}
+		_ = sm.CheckCSRF(id, token) // must not panic
+	})
+}
+
+func FuzzCheckPreSessionCSRF(f *testing.F) {
+	sm := newTestSessionManager()
+	validToken := sm.NewPreSessionCSRFToken()
+
+	f.Add(validToken)
+	f.Add("")
+	f.Add("pre:")
+	f.Add("pre:nonce:notanumber:sig")
+	f.Add("pre:abc:12345:sig")
+	f.Add("notpre:abc:123:sig")
+	f.Add("pre:abc:12345:sig:extra")
+
+	f.Fuzz(func(t *testing.T, token string) {
+		_ = sm.CheckPreSessionCSRF(token) // must not panic
+	})
+}
+
+func BenchmarkNewCSRFToken(b *testing.B) {
+	sm := newTestSessionManager()
+	sessionID := uuid.New()
+	for b.Loop() {
+		sm.NewCSRFToken(sessionID)
+	}
+}
+
+func BenchmarkCheckCSRF(b *testing.B) {
+	sm := newTestSessionManager()
+	sessionID := uuid.New()
+	token := sm.NewCSRFToken(sessionID)
+	for b.Loop() {
+		_ = sm.CheckCSRF(sessionID, token)
 	}
 }

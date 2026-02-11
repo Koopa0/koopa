@@ -11,7 +11,7 @@ import (
 	"github.com/koopa0/koopa/internal/security"
 )
 
-// systemTools provides test utilities for SystemTools.
+// systemTools provides test utilities for System.
 type systemTools struct {
 	t *testing.T
 }
@@ -21,13 +21,13 @@ func newsystemTools(t *testing.T) *systemTools {
 	return &systemTools{t: t}
 }
 
-func (h *systemTools) createSystemTools() *SystemTools {
+func (h *systemTools) createSystem() *System {
 	h.t.Helper()
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
-	st, err := NewSystemTools(cmdVal, envVal, testLogger())
+	st, err := NewSystem(cmdVal, envVal, testLogger())
 	if err != nil {
-		h.t.Fatalf("failed to create system tools: %v", err)
+		h.t.Fatalf("creating system tools: %v", err)
 	}
 	return st
 }
@@ -36,11 +36,7 @@ func (*systemTools) toolContext() *ai.ToolContext {
 	return &ai.ToolContext{Context: context.Background()}
 }
 
-// ============================================================================
-// ExecuteCommand Integration Tests - Command Injection Prevention
-// ============================================================================
-
-func TestSystemTools_ExecuteCommand_WhitelistEnforcement(t *testing.T) {
+func TestSystem_ExecuteCommand_WhitelistEnforcement(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -138,7 +134,7 @@ func TestSystemTools_ExecuteCommand_WhitelistEnforcement(t *testing.T) {
 			t.Parallel()
 
 			h := newsystemTools(t)
-			st := h.createSystemTools()
+			st := h.createSystem()
 			ctx := h.toolContext()
 
 			result, err := st.ExecuteCommand(ctx, ExecuteCommandInput{
@@ -176,7 +172,7 @@ func TestSystemTools_ExecuteCommand_WhitelistEnforcement(t *testing.T) {
 	}
 }
 
-func TestSystemTools_ExecuteCommand_DangerousPatterns(t *testing.T) {
+func TestSystem_ExecuteCommand_DangerousPatterns(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -234,7 +230,7 @@ func TestSystemTools_ExecuteCommand_DangerousPatterns(t *testing.T) {
 			t.Parallel()
 
 			h := newsystemTools(t)
-			st := h.createSystemTools()
+			st := h.createSystem()
 			ctx := h.toolContext()
 
 			result, err := st.ExecuteCommand(ctx, ExecuteCommandInput{
@@ -257,11 +253,11 @@ func TestSystemTools_ExecuteCommand_DangerousPatterns(t *testing.T) {
 	}
 }
 
-func TestSystemTools_ExecuteCommand_Success(t *testing.T) {
+func TestSystem_ExecuteCommand_Success(t *testing.T) {
 	t.Parallel()
 
 	h := newsystemTools(t)
-	st := h.createSystemTools()
+	st := h.createSystem()
 	ctx := h.toolContext()
 
 	result, err := st.ExecuteCommand(ctx, ExecuteCommandInput{
@@ -298,7 +294,7 @@ func TestSystemTools_ExecuteCommand_Success(t *testing.T) {
 	}
 }
 
-func TestSystemTools_ExecuteCommand_ContextCancellation(t *testing.T) {
+func TestSystem_ExecuteCommand_ContextCancellation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("sleep command not available on Windows")
 	}
@@ -306,7 +302,7 @@ func TestSystemTools_ExecuteCommand_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	h := newsystemTools(t)
-	st := h.createSystemTools()
+	st := h.createSystem()
 
 	// Create a context that's already canceled
 	ctx, cancel := context.WithCancel(context.Background())
@@ -328,11 +324,7 @@ func TestSystemTools_ExecuteCommand_ContextCancellation(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// GetEnv Integration Tests - Sensitive Variable Protection
-// ============================================================================
-
-func TestSystemTools_GetEnv_SensitiveVariableBlocked(t *testing.T) {
+func TestSystem_GetEnv_SensitiveVariableBlocked(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -440,7 +432,7 @@ func TestSystemTools_GetEnv_SensitiveVariableBlocked(t *testing.T) {
 			t.Parallel()
 
 			h := newsystemTools(t)
-			st := h.createSystemTools()
+			st := h.createSystem()
 
 			result, err := st.GetEnv(nil, GetEnvInput{Key: tt.envKey})
 
@@ -459,7 +451,7 @@ func TestSystemTools_GetEnv_SensitiveVariableBlocked(t *testing.T) {
 	}
 }
 
-func TestSystemTools_GetEnv_SafeVariableAllowed(t *testing.T) {
+func TestSystem_GetEnv_SafeVariableAllowed(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -481,7 +473,7 @@ func TestSystemTools_GetEnv_SafeVariableAllowed(t *testing.T) {
 			t.Parallel()
 
 			h := newsystemTools(t)
-			st := h.createSystemTools()
+			st := h.createSystem()
 
 			result, err := st.GetEnv(nil, GetEnvInput{Key: tt.envKey})
 
@@ -507,7 +499,7 @@ func TestSystemTools_GetEnv_SafeVariableAllowed(t *testing.T) {
 	}
 }
 
-func TestSystemTools_GetEnv_CaseInsensitiveBlocking(t *testing.T) {
+func TestSystem_GetEnv_CaseInsensitiveBlocking(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -527,7 +519,7 @@ func TestSystemTools_GetEnv_CaseInsensitiveBlocking(t *testing.T) {
 			t.Parallel()
 
 			h := newsystemTools(t)
-			st := h.createSystemTools()
+			st := h.createSystem()
 
 			result, err := st.GetEnv(nil, GetEnvInput{Key: tt.envKey})
 
@@ -546,15 +538,11 @@ func TestSystemTools_GetEnv_CaseInsensitiveBlocking(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// CurrentTime Integration Tests
-// ============================================================================
-
-func TestSystemTools_CurrentTime_Success(t *testing.T) {
+func TestSystem_CurrentTime_Success(t *testing.T) {
 	t.Parallel()
 
 	h := newsystemTools(t)
-	st := h.createSystemTools()
+	st := h.createSystem()
 
 	result, err := st.CurrentTime(nil, CurrentTimeInput{})
 

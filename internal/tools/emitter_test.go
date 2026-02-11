@@ -7,7 +7,7 @@ import (
 	"github.com/koopa0/koopa/internal/tools"
 )
 
-// mockEmitter is a test implementation of ToolEventEmitter.
+// mockEmitter is a test implementation of Emitter.
 // Interface simplified to only tool name parameter.
 type mockEmitter struct {
 	startCalls    []string
@@ -27,8 +27,8 @@ func (m *mockEmitter) OnToolError(name string) {
 	m.errorCalls = append(m.errorCalls, name)
 }
 
-// Verify mockEmitter implements ToolEventEmitter.
-var _ tools.ToolEventEmitter = (*mockEmitter)(nil)
+// Verify mockEmitter implements Emitter.
+var _ tools.Emitter = (*mockEmitter)(nil)
 
 func TestContextWithEmitter(t *testing.T) {
 	t.Parallel()
@@ -43,7 +43,7 @@ func TestContextWithEmitter(t *testing.T) {
 
 		retrieved := tools.EmitterFromContext(ctxWithEmitter)
 		if retrieved == nil {
-			t.Fatal("expected emitter to be retrieved from context")
+			t.Fatal("EmitterFromContext() = nil, want non-nil")
 		}
 		// Compare via interface method behavior instead of pointer equality
 		retrieved.OnToolStart("test")
@@ -65,7 +65,7 @@ func TestContextWithEmitter(t *testing.T) {
 		retrieved.OnToolStart("test")
 		// emitter2 should receive the call, not emitter1
 		if len(emitter2.startCalls) != 1 {
-			t.Error("expected second emitter to overwrite first")
+			t.Error("ContextWithEmitter() did not overwrite previous emitter")
 		}
 		if len(emitter1.startCalls) != 0 {
 			t.Error("first emitter should not receive calls")
@@ -83,7 +83,7 @@ func TestEmitterFromContext(t *testing.T) {
 		emitter := tools.EmitterFromContext(ctx)
 
 		if emitter != nil {
-			t.Error("expected nil emitter from empty context")
+			t.Error("EmitterFromContext(empty) = non-nil, want nil")
 		}
 	})
 
@@ -96,7 +96,7 @@ func TestEmitterFromContext(t *testing.T) {
 		emitter := tools.EmitterFromContext(ctx)
 
 		if emitter != nil {
-			t.Error("expected nil for missing emitter")
+			t.Error("EmitterFromContext(no-emitter) = non-nil, want nil")
 		}
 	})
 
@@ -124,7 +124,7 @@ func TestEmitterInterface(t *testing.T) {
 		emitter.OnToolStart("web_search")
 
 		if len(emitter.startCalls) != 1 {
-			t.Fatalf("expected 1 start call, got %d", len(emitter.startCalls))
+			t.Fatalf("OnToolStart() call count = %d, want 1", len(emitter.startCalls))
 		}
 
 		if emitter.startCalls[0] != "web_search" {
@@ -139,7 +139,7 @@ func TestEmitterInterface(t *testing.T) {
 		emitter.OnToolComplete("web_search")
 
 		if len(emitter.completeCalls) != 1 {
-			t.Fatalf("expected 1 complete call, got %d", len(emitter.completeCalls))
+			t.Fatalf("OnToolComplete() call count = %d, want 1", len(emitter.completeCalls))
 		}
 
 		if emitter.completeCalls[0] != "web_search" {
@@ -154,7 +154,7 @@ func TestEmitterInterface(t *testing.T) {
 		emitter.OnToolError("web_search")
 
 		if len(emitter.errorCalls) != 1 {
-			t.Fatalf("expected 1 error call, got %d", len(emitter.errorCalls))
+			t.Fatalf("OnToolError() call count = %d, want 1", len(emitter.errorCalls))
 		}
 
 		if emitter.errorCalls[0] != "web_search" {

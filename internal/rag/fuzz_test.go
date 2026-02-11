@@ -33,8 +33,7 @@ func FuzzDeleteByIDs_SQLInjection(f *testing.F) {
 		}
 
 		// Setup test database
-		dbContainer, cleanup := testutil.SetupTestDB(t)
-		defer cleanup()
+		dbContainer := testutil.SetupTestDB(t)
 
 		ctx := context.Background()
 		pool := dbContainer.Pool
@@ -70,15 +69,14 @@ func FuzzDeleteByIDs_SQLInjection(f *testing.F) {
 func TestDeleteByIDs_EmptySlice(t *testing.T) {
 	t.Parallel()
 
-	dbContainer, cleanup := testutil.SetupTestDB(t)
-	defer cleanup()
+	dbContainer := testutil.SetupTestDB(t)
 
 	ctx := context.Background()
 
 	// Empty slice should return nil without executing query
 	err := rag.DeleteByIDs(ctx, dbContainer.Pool, []string{})
 	if err != nil {
-		t.Errorf("deleteByIDs with empty slice should return nil, got: %v", err)
+		t.Errorf("DeleteByIDs(empty slice) unexpected error: %v", err)
 	}
 }
 
@@ -86,8 +84,7 @@ func TestDeleteByIDs_EmptySlice(t *testing.T) {
 func TestDeleteByIDs_ValidUUIDs(t *testing.T) {
 	t.Parallel()
 
-	dbContainer, cleanup := testutil.SetupTestDB(t)
-	defer cleanup()
+	dbContainer := testutil.SetupTestDB(t)
 
 	ctx := context.Background()
 
@@ -99,6 +96,6 @@ func TestDeleteByIDs_ValidUUIDs(t *testing.T) {
 
 	err := rag.DeleteByIDs(ctx, dbContainer.Pool, validIDs)
 	if err != nil {
-		t.Errorf("deleteByIDs with valid UUIDs should succeed, got: %v", err)
+		t.Errorf("DeleteByIDs(valid UUIDs) unexpected error: %v", err)
 	}
 }

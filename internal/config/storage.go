@@ -8,43 +8,39 @@ import (
 	"strings"
 )
 
-// StorageConfig documentation.
-// Fields are embedded in the main Config struct for backward compatibility.
-//
-// PostgreSQL (for pgvector):
-//   - PostgresHost: Database host (default: localhost)
-//   - PostgresPort: Database port (default: 5432)
-//   - PostgresUser: Database user (default: koopa)
-//   - PostgresPassword: Database password
-//   - PostgresDBName: Database name (default: koopa)
-//   - PostgresSSLMode: SSL mode (default: disable)
-//
-// RAG:
-//   - RAGTopK: Number of documents to retrieve (1-10, default: 3)
-//   - EmbedderModel: Embedding model name (default: text-embedding-004)
+// quoteDSNValue quotes a value for PostgreSQL key=value DSN format.
+// Within single quotes, backslashes and single quotes are escaped.
+// This prevents parsing errors when values contain spaces or special characters.
+func quoteDSNValue(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `'`, `\'`)
+	return "'" + s + "'"
+}
 
 // PostgresConnectionString returns the PostgreSQL DSN for pgx driver.
+// Password is single-quoted to handle special characters (spaces, =, quotes).
 func (c *Config) PostgresConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		c.PostgresHost,
 		c.PostgresPort,
 		c.PostgresUser,
-		c.PostgresPassword,
+		quoteDSNValue(c.PostgresPassword),
 		c.PostgresDBName,
 		c.PostgresSSLMode,
 	)
 }
 
 // PostgresURL returns the PostgreSQL URL for golang-migrate.
+// Uses url.URL for proper encoding of special characters in credentials.
 func (c *Config) PostgresURL() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		c.PostgresUser,
-		c.PostgresPassword,
-		c.PostgresHost,
-		c.PostgresPort,
-		c.PostgresDBName,
-		c.PostgresSSLMode,
-	)
+	u := &url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(c.PostgresUser, c.PostgresPassword),
+		Host:     fmt.Sprintf("%s:%d", c.PostgresHost, c.PostgresPort),
+		Path:     c.PostgresDBName,
+		RawQuery: fmt.Sprintf("sslmode=%s", c.PostgresSSLMode),
+	}
+	return u.String()
 }
 
 // parseDatabaseURL parses DATABASE_URL environment variable and sets PostgreSQL config.

@@ -2,24 +2,26 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
+	"github.com/firebase/genkit/go/core/tracing"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/ollama"
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/koopa0/koopa/db"
 	"github.com/koopa0/koopa/internal/config"
-	"github.com/koopa0/koopa/internal/observability"
 	"github.com/koopa0/koopa/internal/rag"
 	"github.com/koopa0/koopa/internal/security"
 	"github.com/koopa0/koopa/internal/session"
@@ -27,96 +29,126 @@ import (
 	"github.com/koopa0/koopa/internal/tools"
 )
 
-// InitializeApp creates and initializes all application dependencies.
-// Returns the App, a cleanup function for infrastructure resources (DB pool, OTel),
-// and any initialization error.
-func InitializeApp(ctx context.Context, cfg *config.Config) (*App, func(), error) {
-	otelCleanup, err := provideOtelShutdown(ctx, cfg)
-	if err != nil {
-		return nil, nil, err
-	}
+// Setup creates and initializes the application.
+// Returns an App with embedded cleanup — call Close() to release.
+func Setup(ctx context.Context, cfg *config.Config) (_ *App, retErr error) {
+	a := &App{Config: cfg}
+
+	// On error, clean up everything already initialized
+	defer func() {
+		if retErr != nil {
+			if err := a.Close(); err != nil {
+				slog.Warn("cleanup during setup failure", "error", err)
+			}
+		}
+	}()
+
+	a.otelCleanup = provideOtelShutdown(ctx, cfg)
+
 	pool, dbCleanup, err := provideDBPool(ctx, cfg)
 	if err != nil {
-		otelCleanup()
-		return nil, nil, err
+		return nil, err
 	}
+	a.dbCleanup = dbCleanup
+	a.DBPool = pool
+
 	postgres, err := providePostgresPlugin(ctx, pool, cfg)
-	if err != nil {
-		dbCleanup()
-		otelCleanup()
-		return nil, nil, err
-	}
-	g, err := provideGenkit(ctx, cfg, postgres)
-	if err != nil {
-		dbCleanup()
-		otelCleanup()
-		return nil, nil, err
-	}
-	embedder := provideEmbedder(g, cfg)
-	docStore, retriever, err := provideRAGComponents(ctx, g, postgres, embedder)
-	if err != nil {
-		dbCleanup()
-		otelCleanup()
-		return nil, nil, err
-	}
-	store := provideSessionStore(pool)
-	path, err := providePathValidator()
-	if err != nil {
-		dbCleanup()
-		otelCleanup()
-		return nil, nil, err
-	}
-	v, err := provideTools(g, path, retriever, docStore, cfg)
-	if err != nil {
-		dbCleanup()
-		otelCleanup()
-		return nil, nil, err
-	}
-	application := newApp(ctx, cfg, g, embedder, pool, docStore, retriever, store, path, v)
-
-	// Start background system knowledge indexing.
-	// Launched here (not in newApp) to keep the constructor side-effect free.
-	//nolint:contextcheck // Independent context: indexing must complete even if parent is canceled
-	application.Go(func() error {
-		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer indexCancel()
-
-		count, err := rag.IndexSystemKnowledge(indexCtx, docStore, pool)
-		if err != nil {
-			slog.Debug("system knowledge indexing failed (non-critical)", "error", err)
-			return nil
-		}
-		slog.Debug("system knowledge indexed successfully", "count", count)
-		return nil
-	})
-
-	return application, func() {
-		dbCleanup()
-		otelCleanup()
-	}, nil
-}
-
-// provideOtelShutdown sets up Datadog tracing before Genkit initialization.
-// Must be called before provideGenkit to ensure TracerProvider is ready.
-func provideOtelShutdown(ctx context.Context, cfg *config.Config) (func(), error) {
-	shutdown, err := observability.SetupDatadog(ctx, observability.Config{
-		AgentHost:   cfg.Datadog.AgentHost,
-		Environment: cfg.Datadog.Environment,
-		ServiceName: cfg.Datadog.ServiceName,
-	})
 	if err != nil {
 		return nil, err
 	}
 
+	g, err := provideGenkit(ctx, cfg, postgres)
+	if err != nil {
+		return nil, err
+	}
+	a.Genkit = g
+
+	embedder := provideEmbedder(g, cfg)
+	if embedder == nil {
+		return nil, fmt.Errorf("embedder %q not found for provider %q", cfg.EmbedderModel, cfg.Provider)
+	}
+	a.Embedder = embedder
+
+	docStore, retriever, err := provideRAGComponents(ctx, g, postgres, embedder)
+	if err != nil {
+		return nil, err
+	}
+	a.DocStore = docStore
+	a.Retriever = retriever
+
+	a.SessionStore = provideSessionStore(pool)
+
+	path, err := providePathValidator()
+	if err != nil {
+		return nil, err
+	}
+	a.PathValidator = path
+
+	if err := provideTools(a); err != nil {
+		return nil, err
+	}
+
+	// Set up lifecycle management
+	_, cancel := context.WithCancel(ctx)
+	a.cancel = cancel
+
+	return a, nil
+}
+
+// provideOtelShutdown sets up Datadog tracing before Genkit initialization.
+// Must be called before provideGenkit to ensure TracerProvider is ready.
+//
+// Traces are exported to a local Datadog Agent via OTLP HTTP (localhost:4318).
+// The Agent handles authentication, buffering, and forwarding to Datadog backend.
+func provideOtelShutdown(ctx context.Context, cfg *config.Config) func() {
+	dd := cfg.Datadog
+
+	agentHost := dd.AgentHost
+	if agentHost == "" {
+		agentHost = "localhost:4318"
+	}
+
+	// Set OTEL env vars for Genkit's TracerProvider to pick up.
+	// SAFETY: os.Setenv is not concurrent-safe, but this function is called
+	// exactly once during startup in Setup, before goroutines are spawned.
+	if dd.ServiceName != "" {
+		_ = os.Setenv("OTEL_SERVICE_NAME", dd.ServiceName)
+	}
+	if dd.Environment != "" {
+		_ = os.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment="+dd.Environment)
+	}
+
+	// Create OTLP HTTP exporter pointing to local Datadog Agent.
+	// Agent handles authentication and forwarding to Datadog backend.
+	exporter, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpoint(agentHost),
+		otlptracehttp.WithInsecure(), // localhost doesn't need TLS
+	)
+	if err != nil {
+		slog.Warn("creating datadog exporter, tracing disabled", "error", err)
+		return func() {}
+	}
+
+	// Register BatchSpanProcessor with Genkit's TracerProvider.
+	processor := sdktrace.NewBatchSpanProcessor(exporter)
+	tracing.TracerProvider().RegisterSpanProcessor(processor)
+
+	slog.Debug("datadog tracing enabled",
+		"agent", agentHost,
+		"service", dd.ServiceName,
+		"environment", dd.Environment,
+	)
+
+	shutdown := tracing.TracerProvider().Shutdown
+
 	//nolint:contextcheck // Independent context: shutdown runs during teardown when parent is canceled
-	cleanupFn := func() {
+	return func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := shutdown(shutdownCtx); err != nil {
-			slog.Warn("failed to shutdown tracer provider", "error", err)
+			slog.Warn("shutting down tracer provider", "error", err)
 		}
 	}
-	return cleanupFn, nil
 }
 
 // providePostgresPlugin creates the Genkit PostgreSQL plugin.
@@ -124,7 +156,7 @@ func provideOtelShutdown(ctx context.Context, cfg *config.Config) (func(), error
 func providePostgresPlugin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*postgresql.Postgres, error) {
 	pEngine, err := postgresql.NewPostgresEngine(ctx, postgresql.WithPool(pool), postgresql.WithDatabase(cfg.PostgresDBName))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create postgres engine: %w", err)
+		return nil, fmt.Errorf("creating postgres engine: %w", err)
 	}
 
 	return &postgresql.Postgres{Engine: pEngine}, nil
@@ -132,7 +164,7 @@ func providePostgresPlugin(ctx context.Context, pool *pgxpool.Pool, cfg *config.
 
 // provideGenkit initializes Genkit with the configured AI provider and PostgreSQL plugins.
 // Supports gemini (default), ollama, and openai providers.
-// Call ordering in InitializeApp ensures tracing is set up first.
+// Call ordering in Setup ensures tracing is set up first.
 func provideGenkit(ctx context.Context, cfg *config.Config, postgres *postgresql.Postgres) (*genkit.Genkit, error) {
 	promptDir := cfg.PromptDir
 	if promptDir == "" {
@@ -154,7 +186,7 @@ func provideGenkit(ctx context.Context, cfg *config.Config, postgres *postgresql
 			genkit.WithPromptDir(promptDir),
 		)
 		if g == nil {
-			return nil, fmt.Errorf("failed to initialize Genkit with ollama provider")
+			return nil, errors.New("initializing genkit with ollama provider")
 		}
 		// Ollama requires explicit model registration (no auto-discovery)
 		ollamaPlugin.DefineModel(g, ollama.ModelDefinition{
@@ -172,7 +204,7 @@ func provideGenkit(ctx context.Context, cfg *config.Config, postgres *postgresql
 			genkit.WithPromptDir(promptDir),
 		)
 		if g == nil {
-			return nil, fmt.Errorf("failed to initialize Genkit with openai provider")
+			return nil, errors.New("initializing genkit with openai provider")
 		}
 		slog.Info("initialized Genkit with openai provider", "model", cfg.ModelName)
 
@@ -182,7 +214,7 @@ func provideGenkit(ctx context.Context, cfg *config.Config, postgres *postgresql
 			genkit.WithPromptDir(promptDir),
 		)
 		if g == nil {
-			return nil, fmt.Errorf("failed to initialize Genkit with gemini provider")
+			return nil, errors.New("initializing genkit with gemini provider")
 		}
 		slog.Info("initialized Genkit with gemini provider", "model", cfg.ModelName)
 	}
@@ -217,12 +249,12 @@ func provideEmbedder(g *genkit.Genkit, cfg *config.Config) ai.Embedder {
 // Pool is configured with sensible defaults for connection management.
 func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func(), error) {
 	if err := db.Migrate(cfg.PostgresURL()); err != nil {
-		return nil, nil, fmt.Errorf("failed to run migrations: %w", err)
+		return nil, nil, fmt.Errorf("running migrations: %w", err)
 	}
 
 	poolCfg, err := pgxpool.ParseConfig(cfg.PostgresConnectionString())
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse connection config: %w", err)
+		return nil, nil, fmt.Errorf("parsing connection config: %w", err)
 	}
 
 	poolCfg.MaxConns = 10
@@ -233,14 +265,14 @@ func provideDBPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, func
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create connection pool: %w", err)
+		return nil, nil, fmt.Errorf("creating connection pool: %w", err)
 	}
 
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer pingCancel()
 	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()
-		return nil, nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, nil, fmt.Errorf("pinging database: %w", err)
 	}
 
 	cleanup := func() {
@@ -256,7 +288,7 @@ func provideRAGComponents(ctx context.Context, g *genkit.Genkit, postgres *postg
 	cfg := rag.NewDocStoreConfig(embedder)
 	docStore, retriever, err := postgresql.DefineRetriever(ctx, g, postgres, cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to define retriever: %w", err)
+		return nil, nil, fmt.Errorf("defining retriever: %w", err)
 	}
 
 	return docStore, retriever, nil
@@ -272,96 +304,65 @@ func providePathValidator() (*security.Path, error) {
 	return security.NewPath([]string{"."})
 }
 
-// provideTools registers all tools at construction time.
-// Tools are registered once here, not lazily in CreateAgent.
-func provideTools(g *genkit.Genkit, pathValidator *security.Path, retriever ai.Retriever, docStore *postgresql.DocStore, cfg *config.Config) ([]ai.Tool, error) {
+// provideTools creates toolsets, registers them with Genkit, and stores both
+// the concrete toolsets and the Genkit-wrapped references in a.
+func provideTools(a *App) error {
 	logger := slog.Default()
+	cfg := a.Config
 	var allTools []ai.Tool
 
-	ft, err := tools.NewFileTools(pathValidator, logger)
+	ft, err := tools.NewFile(a.PathValidator, logger)
 	if err != nil {
-		return nil, fmt.Errorf("creating file tools: %w", err)
+		return fmt.Errorf("creating file tools: %w", err)
 	}
-	fileTools, err := tools.RegisterFileTools(g, ft)
+	a.File = ft
+	fileTools, err := tools.RegisterFile(a.Genkit, ft)
 	if err != nil {
-		return nil, fmt.Errorf("registering file tools: %w", err)
+		return fmt.Errorf("registering file tools: %w", err)
 	}
 	allTools = append(allTools, fileTools...)
 
 	cmdValidator := security.NewCommand()
 	envValidator := security.NewEnv()
-	st, err := tools.NewSystemTools(cmdValidator, envValidator, logger)
+	st, err := tools.NewSystem(cmdValidator, envValidator, logger)
 	if err != nil {
-		return nil, fmt.Errorf("creating system tools: %w", err)
+		return fmt.Errorf("creating system tools: %w", err)
 	}
-	systemTools, err := tools.RegisterSystemTools(g, st)
+	a.System = st
+	systemTools, err := tools.RegisterSystem(a.Genkit, st)
 	if err != nil {
-		return nil, fmt.Errorf("registering system tools: %w", err)
+		return fmt.Errorf("registering system tools: %w", err)
 	}
 	allTools = append(allTools, systemTools...)
 
-	nt, err := tools.NewNetworkTools(tools.NetworkConfig{
+	nt, err := tools.NewNetwork(tools.NetConfig{
 		SearchBaseURL:    cfg.SearXNG.BaseURL,
 		FetchParallelism: cfg.WebScraper.Parallelism,
 		FetchDelay:       time.Duration(cfg.WebScraper.DelayMs) * time.Millisecond,
 		FetchTimeout:     time.Duration(cfg.WebScraper.TimeoutMs) * time.Millisecond,
 	}, logger)
 	if err != nil {
-		return nil, fmt.Errorf("creating network tools: %w", err)
+		return fmt.Errorf("creating network tools: %w", err)
 	}
-	networkTools, err := tools.RegisterNetworkTools(g, nt)
+	a.Network = nt
+	networkTools, err := tools.RegisterNetwork(a.Genkit, nt)
 	if err != nil {
-		return nil, fmt.Errorf("registering network tools: %w", err)
+		return fmt.Errorf("registering network tools: %w", err)
 	}
 	allTools = append(allTools, networkTools...)
 
-	kt, err := tools.NewKnowledgeTools(retriever, docStore, logger)
+	kt, err := tools.NewKnowledge(a.Retriever, a.DocStore, logger)
 	if err != nil {
-		return nil, fmt.Errorf("creating knowledge tools: %w", err)
+		return fmt.Errorf("creating knowledge tools: %w", err)
 	}
-	knowledgeTools, err := tools.RegisterKnowledgeTools(g, kt)
+	a.Knowledge = kt
+	knowledgeTools, err := tools.RegisterKnowledge(a.Genkit, kt)
 	if err != nil {
-		return nil, fmt.Errorf("registering knowledge tools: %w", err)
+		return fmt.Errorf("registering knowledge tools: %w", err)
 	}
 	allTools = append(allTools, knowledgeTools...)
+
+	a.Tools = allTools
 	slog.Info("tools registered at construction", "count", len(allTools))
-	return allTools, nil
-}
-
-// newApp constructs an App instance with all dependencies.
-// All dependencies are injected by InitializeApp.
-// Tools are pre-registered by provideTools.
-// NOTE: This constructor has no side effects. Background tasks are started by the caller.
-func newApp(
-	ctx context.Context,
-	cfg *config.Config,
-	g *genkit.Genkit,
-	embedder ai.Embedder,
-	pool *pgxpool.Pool,
-	docStore *postgresql.DocStore,
-	retriever ai.Retriever,
-	sessionStore *session.Store,
-	pathValidator *security.Path, registeredTools []ai.Tool,
-) *App {
-
-	appCtx, cancel := context.WithCancel(ctx)
-
-	eg, _ := errgroup.WithContext(appCtx)
-
-	app := &App{
-		Config:        cfg,
-		ctx:           appCtx,
-		cancel:        cancel,
-		eg:            eg,
-		Genkit:        g,
-		Embedder:      embedder,
-		DBPool:        pool,
-		DocStore:      docStore,
-		Retriever:     retriever,
-		SessionStore:  sessionStore,
-		PathValidator: pathValidator,
-		Tools:         registeredTools,
-	}
-
-	return app
+	return nil
 }

@@ -1,16 +1,35 @@
 package mcp
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core/api"
 
 	"github.com/koopa0/koopa/internal/security"
 	"github.com/koopa0/koopa/internal/tools"
 )
+
+// mcpTestRetriever implements ai.Retriever for MCP protocol tests.
+// Returns a single mock document so tests can verify result structure.
+type mcpTestRetriever struct{}
+
+func (*mcpTestRetriever) Name() string { return "mock-retriever" }
+func (*mcpTestRetriever) Retrieve(_ context.Context, _ *ai.RetrieverRequest) (*ai.RetrieverResponse, error) {
+	return &ai.RetrieverResponse{
+		Documents: []*ai.Document{
+			ai.DocumentFromText("mock result for protocol test", nil),
+		},
+	}, nil
+}
+func (*mcpTestRetriever) Register(_ api.Registry) {}
 
 // testHelper provides common test utilities.
 type testHelper struct {
@@ -24,7 +43,7 @@ func newTestHelper(t *testing.T) *testHelper {
 	tempDir := t.TempDir()
 	realTempDir, err := filepath.EvalSymlinks(tempDir)
 	if err != nil {
-		t.Fatalf("failed to resolve temp dir symlinks: %v", err)
+		t.Fatalf("resolving temp dir symlinks: %v", err)
 	}
 	return &testHelper{
 		t:       t,
@@ -32,33 +51,33 @@ func newTestHelper(t *testing.T) *testHelper {
 	}
 }
 
-func (h *testHelper) createFileTools() *tools.FileTools {
+func (h *testHelper) createFile() *tools.File {
 	h.t.Helper()
 	pathVal, err := security.NewPath([]string{h.tempDir})
 	if err != nil {
-		h.t.Fatalf("failed to create path validator: %v", err)
+		h.t.Fatalf("creating path validator: %v", err)
 	}
 
-	ft, err := tools.NewFileTools(pathVal, slog.Default())
+	ft, err := tools.NewFile(pathVal, slog.Default())
 	if err != nil {
-		h.t.Fatalf("failed to create file tools: %v", err)
+		h.t.Fatalf("creating file tools: %v", err)
 	}
 	return ft
 }
 
-func (h *testHelper) createSystemTools() *tools.SystemTools {
+func (h *testHelper) createSystem() *tools.System {
 	h.t.Helper()
 	cmdVal := security.NewCommand()
 	envVal := security.NewEnv()
 
-	st, err := tools.NewSystemTools(cmdVal, envVal, slog.Default())
+	st, err := tools.NewSystem(cmdVal, envVal, slog.Default())
 	if err != nil {
-		h.t.Fatalf("failed to create system tools: %v", err)
+		h.t.Fatalf("creating system tools: %v", err)
 	}
 	return st
 }
 
-func (h *testHelper) createNetworkTools() *tools.NetworkTools {
+func (h *testHelper) createNetwork() *tools.Network {
 	h.t.Helper()
 
 	// Use httptest.NewServer instead of hardcoded localhost URL
@@ -72,8 +91,8 @@ func (h *testHelper) createNetworkTools() *tools.NetworkTools {
 
 	// SSRF protection is only checked during Fetch(), not at construction.
 	// These tests only construct tools for Config, they don't execute network operations.
-	nt, err := tools.NewNetworkTools(
-		tools.NetworkConfig{
+	nt, err := tools.NewNetwork(
+		tools.NetConfig{
 			SearchBaseURL:    mockServer.URL,
 			FetchParallelism: 2,
 			FetchDelay:       100 * time.Millisecond,
@@ -82,20 +101,36 @@ func (h *testHelper) createNetworkTools() *tools.NetworkTools {
 		slog.Default(),
 	)
 	if err != nil {
-		h.t.Fatalf("failed to create network tools: %v", err)
+		h.t.Fatalf("creating network tools: %v", err)
 	}
 	return nt
+}
+
+func (h *testHelper) createKnowledge() *tools.Knowledge {
+	h.t.Helper()
+	kt, err := tools.NewKnowledge(&mcpTestRetriever{}, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		h.t.Fatalf("creating knowledge tools: %v", err)
+	}
+	return kt
 }
 
 func (h *testHelper) createValidConfig() Config {
 	h.t.Helper()
 	return Config{
-		Name:         "test-server",
-		Version:      "1.0.0",
-		FileTools:    h.createFileTools(),
-		SystemTools:  h.createSystemTools(),
-		NetworkTools: h.createNetworkTools(),
+		Name:    "test-server",
+		Version: "1.0.0",
+		File:    h.createFile(),
+		System:  h.createSystem(),
+		Network: h.createNetwork(),
 	}
+}
+
+func (h *testHelper) createConfigWithKnowledge() Config {
+	h.t.Helper()
+	cfg := h.createValidConfig()
+	cfg.Knowledge = h.createKnowledge()
+	return cfg
 }
 
 // TestNewServer_Success tests successful server creation with all tools.
@@ -105,41 +140,32 @@ func TestNewServer_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
-	}
-
-	// Verify server fields are correctly set
-	if server.name != "test-server" {
-		t.Errorf("server.name = %q, want %q", server.name, "test-server")
-	}
-
-	if server.version != "1.0.0" {
-		t.Errorf("server.version = %q, want %q", server.version, "1.0.0")
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	if server.mcpServer == nil {
 		t.Error("server.mcpServer is nil")
 	}
 
-	if server.fileTools == nil {
-		t.Error("server.fileTools is nil")
+	if server.file == nil {
+		t.Error("server.file is nil")
 	}
 
-	if server.systemTools == nil {
-		t.Error("server.systemTools is nil")
+	if server.system == nil {
+		t.Error("server.system is nil")
 	}
 
-	if server.networkTools == nil {
-		t.Error("server.networkTools is nil")
+	if server.network == nil {
+		t.Error("server.network is nil")
 	}
 }
 
 // TestNewServer_ValidationErrors tests config validation.
 func TestNewServer_ValidationErrors(t *testing.T) {
 	h := newTestHelper(t)
-	validFile := h.createFileTools()
-	validSystem := h.createSystemTools()
-	validNetwork := h.createNetworkTools()
+	validFile := h.createFile()
+	validSystem := h.createSystem()
+	validNetwork := h.createNetwork()
 
 	tests := []struct {
 		name    string
@@ -149,50 +175,50 @@ func TestNewServer_ValidationErrors(t *testing.T) {
 		{
 			name: "missing name",
 			config: Config{
-				Version:      "1.0.0",
-				FileTools:    validFile,
-				SystemTools:  validSystem,
-				NetworkTools: validNetwork,
+				Version: "1.0.0",
+				File:    validFile,
+				System:  validSystem,
+				Network: validNetwork,
 			},
 			wantErr: "server name is required",
 		},
 		{
 			name: "missing version",
 			config: Config{
-				Name:         "test",
-				FileTools:    validFile,
-				SystemTools:  validSystem,
-				NetworkTools: validNetwork,
+				Name:    "test",
+				File:    validFile,
+				System:  validSystem,
+				Network: validNetwork,
 			},
 			wantErr: "server version is required",
 		},
 		{
 			name: "missing file tools",
 			config: Config{
-				Name:         "test",
-				Version:      "1.0.0",
-				SystemTools:  validSystem,
-				NetworkTools: validNetwork,
+				Name:    "test",
+				Version: "1.0.0",
+				System:  validSystem,
+				Network: validNetwork,
 			},
 			wantErr: "file tools is required",
 		},
 		{
 			name: "missing system tools",
 			config: Config{
-				Name:         "test",
-				Version:      "1.0.0",
-				FileTools:    validFile,
-				NetworkTools: validNetwork,
+				Name:    "test",
+				Version: "1.0.0",
+				File:    validFile,
+				Network: validNetwork,
 			},
 			wantErr: "system tools is required",
 		},
 		{
 			name: "missing network tools",
 			config: Config{
-				Name:        "test",
-				Version:     "1.0.0",
-				FileTools:   validFile,
-				SystemTools: validSystem,
+				Name:    "test",
+				Version: "1.0.0",
+				File:    validFile,
+				System:  validSystem,
 			},
 			wantErr: "network tools is required",
 		},
@@ -204,42 +230,9 @@ func TestNewServer_ValidationErrors(t *testing.T) {
 			if err == nil {
 				t.Fatal("NewServer succeeded, want error")
 			}
-			if !contains(err.Error(), tt.wantErr) {
+			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("NewServer error = %q, want to contain %q", err.Error(), tt.wantErr)
 			}
 		})
 	}
-}
-
-// TestRegisterTools_AllToolsRegistered verifies all 10 tools are registered.
-func TestRegisterTools_AllToolsRegistered(t *testing.T) {
-	h := newTestHelper(t)
-	cfg := h.createValidConfig()
-
-	server, err := NewServer(cfg)
-	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
-	}
-
-	// Verify server was created successfully (tools registered in constructor)
-	if server.mcpServer == nil {
-		t.Fatal("mcpServer is nil")
-	}
-
-	// Note: We can't directly verify tool registration without accessing
-	// internal MCP server state. The fact that NewServer succeeded without
-	// error means registerTools() completed successfully for all 10 tools:
-	// - File: read_file, write_file, list_files, delete_file, get_file_info
-	// - System: current_time, execute_command, get_env
-	// - Network: web_search, web_fetch
-}
-
-// contains checks if s contains substr.
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

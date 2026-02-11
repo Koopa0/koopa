@@ -15,13 +15,13 @@ func TestCurrentTime_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	result, _, err := server.CurrentTime(context.Background(), &mcp.CallToolRequest{}, tools.CurrentTimeInput{})
 
 	if err != nil {
-		t.Fatalf("CurrentTime failed: %v", err)
+		t.Fatalf("CurrentTime(): %v", err)
 	}
 
 	if result.IsError {
@@ -60,7 +60,7 @@ func TestExecuteCommand_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	result, _, err := server.ExecuteCommand(context.Background(), &mcp.CallToolRequest{}, tools.ExecuteCommandInput{
@@ -69,7 +69,7 @@ func TestExecuteCommand_Success(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("ExecuteCommand failed: %v", err)
+		t.Fatalf("ExecuteCommand(): %v", err)
 	}
 
 	if result.IsError {
@@ -97,7 +97,7 @@ func TestExecuteCommand_DangerousCommandBlocked(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Try to execute a dangerous command
@@ -122,7 +122,7 @@ func TestExecuteCommand_CommandNotFound(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	result, _, err := server.ExecuteCommand(context.Background(), &mcp.CallToolRequest{}, tools.ExecuteCommandInput{
@@ -146,7 +146,7 @@ func TestGetEnv_Success(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Set a test environment variable using t.Setenv for automatic cleanup
@@ -159,7 +159,7 @@ func TestGetEnv_Success(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("GetEnv failed: %v", err)
+		t.Fatalf("GetEnv(): %v", err)
 	}
 
 	if result.IsError {
@@ -187,7 +187,7 @@ func TestGetEnv_NotSet(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	result, _, err := server.GetEnv(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
@@ -195,7 +195,7 @@ func TestGetEnv_NotSet(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("GetEnv failed: %v", err)
+		t.Fatalf("GetEnv(): %v", err)
 	}
 
 	if result.IsError {
@@ -224,7 +224,7 @@ func TestGetEnv_SensitiveVariableBlocked(t *testing.T) {
 
 	server, err := NewServer(cfg)
 	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
+		t.Fatalf("NewServer(): %v", err)
 	}
 
 	// Try to access a sensitive variable

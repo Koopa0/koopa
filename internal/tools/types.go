@@ -1,14 +1,4 @@
-// Package tools provides tool types and result helpers for agent tool operations.
-//
-// Error Handling:
-//   - All tools return Result with structured error information
-//   - Business errors (validation, not found, etc.) use Result.Error
-//   - Only infrastructure errors (context cancellation) return Go error
 package tools
-
-// ============================================================================
-// Status and ErrorCode (for JSON responses to LLM)
-// ============================================================================
 
 // Status represents the execution status of a tool.
 type Status string
@@ -34,10 +24,6 @@ const (
 	ErrCodeNetwork    ErrorCode = "NetworkError"
 	ErrCodeValidation ErrorCode = "ValidationError"
 )
-
-// ============================================================================
-// Result Types (for structured JSON responses)
-// ============================================================================
 
 // Result is the standard return format for all tools.
 type Result struct {

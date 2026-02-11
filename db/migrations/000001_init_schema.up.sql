@@ -13,7 +13,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
     content TEXT NOT NULL,
-    embedding vector(768) NOT NULL,  -- text-embedding-004 dimension
+    embedding vector(768) NOT NULL,  -- gemini-embedding-001 truncated via OutputDimensionality
     source_type TEXT,                 -- Metadata column for filtering
     metadata JSONB                    -- Additional metadata in JSON format
 );
@@ -31,19 +31,6 @@ CREATE INDEX IF NOT EXISTS idx_documents_metadata_gin
     ON documents USING GIN (metadata jsonb_path_ops);
 
 -- ============================================================================
--- Helper Functions
--- ============================================================================
-
--- Auto-update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- ============================================================================
 -- Sessions Table
 -- ============================================================================
 
@@ -51,65 +38,24 @@ CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    model_name TEXT,
-    system_prompt TEXT,
-    message_count INTEGER DEFAULT 0
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC);
-
--- Use DO block for trigger (no IF NOT EXISTS syntax for triggers)
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_sessions_updated_at') THEN
-        CREATE TRIGGER update_sessions_updated_at
-            BEFORE UPDATE ON sessions
-            FOR EACH ROW
-            EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END $$;
 
 -- ============================================================================
 -- Messages Table
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS message (
+CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     content JSONB NOT NULL,
     sequence_number INTEGER NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    status TEXT NOT NULL DEFAULT 'completed'
-        CHECK (status IN ('streaming', 'completed', 'failed')),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
 
+    -- UNIQUE constraint automatically creates index on (session_id, sequence_number)
     CONSTRAINT unique_message_sequence UNIQUE (session_id, sequence_number),
     CONSTRAINT message_role_check CHECK (role IN ('user', 'assistant', 'system', 'tool'))
 );
-
-CREATE INDEX IF NOT EXISTS idx_message_session_id ON message(session_id);
-CREATE INDEX IF NOT EXISTS idx_message_session_seq ON message(session_id, sequence_number);
-CREATE INDEX IF NOT EXISTS idx_incomplete_messages ON message(session_id, updated_at)
-    WHERE status IN ('streaming', 'failed');
-
--- Index for querying failed/streaming messages
-CREATE INDEX IF NOT EXISTS idx_message_status ON message(session_id, status)
-    WHERE status != 'completed';
-
--- Index for message.content (ai.Part array stored as JSONB)
--- Enables fast queries like: WHERE content @> '[{"text": "search term"}]'
-CREATE INDEX IF NOT EXISTS idx_message_content_gin
-        ON message USING GIN (content jsonb_path_ops);
-
--- Use DO block for trigger (no IF NOT EXISTS syntax for triggers)
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_message_updated_at') THEN
-        CREATE TRIGGER update_message_updated_at
-            BEFORE UPDATE ON message
-            FOR EACH ROW
-            EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END $$;

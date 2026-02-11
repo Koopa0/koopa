@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/koopa0/koopa/internal/sqlc"
 )
@@ -34,7 +35,7 @@ func BenchmarkStore_GetHistory(b *testing.B) {
 	for b.Loop() {
 		_, err := store.History(ctx, sessionID)
 		if err != nil {
-			b.Fatalf("GetHistory failed: %v", err)
+			b.Fatalf("History(): %v", err)
 		}
 	}
 }
@@ -51,7 +52,7 @@ func BenchmarkStore_GetHistory_SmallSession(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		if _, err := store.History(ctx, sessionID); err != nil {
-			b.Fatalf("GetHistory failed: %v", err)
+			b.Fatalf("History(): %v", err)
 		}
 	}
 }
@@ -68,7 +69,7 @@ func BenchmarkStore_GetHistory_LargeSession(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		if _, err := store.History(ctx, sessionID); err != nil {
-			b.Fatalf("GetHistory failed: %v", err)
+			b.Fatalf("History(): %v", err)
 		}
 	}
 }
@@ -83,9 +84,9 @@ func BenchmarkStore_AddMessages(b *testing.B) {
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-AddMessages", "", "")
+	session, err := store.CreateSession(ctx, "Benchmark-AddMessages")
 	if err != nil {
-		b.Fatalf("Failed to create session: %v", err)
+		b.Fatalf("creating session: %v", err)
 	}
 	defer func() { _ = store.DeleteSession(ctx, session.ID) }()
 
@@ -124,9 +125,9 @@ func BenchmarkStore_AppendMessages(b *testing.B) {
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-AppendMessages", "", "")
+	session, err := store.CreateSession(ctx, "Benchmark-AppendMessages")
 	if err != nil {
-		b.Fatalf("Failed to create session: %v", err)
+		b.Fatalf("creating session: %v", err)
 	}
 	defer func() { _ = store.DeleteSession(ctx, session.ID) }()
 
@@ -158,23 +159,21 @@ func BenchmarkStore_CreateSession(b *testing.B) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	store := New(sqlc.New(pool), pool, logger)
 
-	createdSessionIDs := make([]string, 0, b.N)
+	createdSessionIDs := make([]uuid.UUID, 0, b.N)
 	defer func() {
 		for _, id := range createdSessionIDs {
-			if parsed, err := parseBenchUUID(id); err == nil {
-				_ = store.DeleteSession(context.Background(), parsed)
-			}
+			_ = store.DeleteSession(context.Background(), id)
 		}
 	}()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
-		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-Session-%d", i), "test-model", "test-prompt")
+		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-Session-%d", i))
 		if err != nil {
 			b.Fatalf("CreateSession failed at iteration %d: %v", i, err)
 		}
-		createdSessionIDs = append(createdSessionIDs, session.ID.String())
+		createdSessionIDs = append(createdSessionIDs, session.ID)
 	}
 }
 
@@ -188,9 +187,9 @@ func BenchmarkStore_GetSession(b *testing.B) {
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-GetSession", "", "")
+	session, err := store.CreateSession(ctx, "Benchmark-GetSession")
 	if err != nil {
-		b.Fatalf("Failed to create session: %v", err)
+		b.Fatalf("creating session: %v", err)
 	}
 	defer func() { _ = store.DeleteSession(ctx, session.ID) }()
 
@@ -199,13 +198,13 @@ func BenchmarkStore_GetSession(b *testing.B) {
 	for b.Loop() {
 		_, err := store.Session(ctx, session.ID)
 		if err != nil {
-			b.Fatalf("GetSession failed: %v", err)
+			b.Fatalf("Session(): %v", err)
 		}
 	}
 }
 
-// BenchmarkStore_ListSessions benchmarks listing sessions.
-func BenchmarkStore_ListSessions(b *testing.B) {
+// BenchmarkStore_Sessions benchmarks listing sessions.
+func BenchmarkStore_Sessions(b *testing.B) {
 	ctx := context.Background()
 	pool, cleanup := setupBenchmarkDB(b, ctx)
 	defer cleanup()
@@ -215,9 +214,9 @@ func BenchmarkStore_ListSessions(b *testing.B) {
 
 	// Create some test sessions
 	for i := 0; i < 20; i++ {
-		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-List-%d", i), "", "")
+		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-List-%d", i))
 		if err != nil {
-			b.Fatalf("Failed to create session: %v", err)
+			b.Fatalf("creating session: %v", err)
 		}
 		defer func(s *Session) { _ = store.DeleteSession(context.Background(), s.ID) }(session)
 	}
@@ -225,9 +224,9 @@ func BenchmarkStore_ListSessions(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := store.ListSessions(ctx, 100, 0)
+		_, err := store.Sessions(ctx, 100, 0)
 		if err != nil {
-			b.Fatalf("ListSessions failed: %v", err)
+			b.Fatalf("Sessions() unexpected error: %v", err)
 		}
 	}
 }
@@ -243,7 +242,7 @@ func BenchmarkStore_GetMessages(b *testing.B) {
 	for b.Loop() {
 		_, err := store.Messages(ctx, session.ID, 100, 0)
 		if err != nil {
-			b.Fatalf("GetMessages failed: %v", err)
+			b.Fatalf("Messages(): %v", err)
 		}
 	}
 }
@@ -257,10 +256,10 @@ func setupBenchmarkSession(b *testing.B, ctx context.Context, numMessages int) (
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-Session", "", "")
+	session, err := store.CreateSession(ctx, "Benchmark-Session")
 	if err != nil {
 		cleanup()
-		b.Fatalf("Failed to create session: %v", err)
+		b.Fatalf("creating session: %v", err)
 	}
 
 	// Pre-load messages (in batches for efficiency)
@@ -285,7 +284,7 @@ func setupBenchmarkSession(b *testing.B, ctx context.Context, numMessages int) (
 
 		if err := store.AddMessages(ctx, session.ID, messages); err != nil {
 			cleanup()
-			b.Fatalf("Failed to add messages: %v", err)
+			b.Fatalf("adding messages: %v", err)
 		}
 	}
 
@@ -311,12 +310,12 @@ func setupBenchmarkDB(b *testing.B, ctx context.Context) (*pgxpool.Pool, func())
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		b.Fatalf("Failed to connect to database: %v", err)
+		b.Fatalf("connecting to database: %v", err)
 	}
 
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		b.Fatalf("Failed to ping database: %v", err)
+		b.Fatalf("pinging database: %v", err)
 	}
 
 	cleanup := func() {
@@ -326,35 +325,4 @@ func setupBenchmarkDB(b *testing.B, ctx context.Context) (*pgxpool.Pool, func())
 	}
 
 	return pool, cleanup
-}
-
-// parseBenchUUID is a helper to parse UUID strings for benchmarks.
-func parseBenchUUID(s string) ([16]byte, error) {
-	var u [16]byte
-	if len(s) != 36 {
-		return u, fmt.Errorf("invalid UUID length")
-	}
-	// Simple UUID parsing - parse each segment into temporary variables
-	var a, b, c, d, e uint64
-	if _, err := fmt.Sscanf(s, "%08x-%04x-%04x-%04x-%012x", &a, &b, &c, &d, &e); err != nil {
-		return u, err
-	}
-	// Pack into [16]byte
-	u[0] = byte(a >> 24)
-	u[1] = byte(a >> 16)
-	u[2] = byte(a >> 8)
-	u[3] = byte(a)
-	u[4] = byte(b >> 8)
-	u[5] = byte(b)
-	u[6] = byte(c >> 8)
-	u[7] = byte(c)
-	u[8] = byte(d >> 8)
-	u[9] = byte(d)
-	u[10] = byte(e >> 40)
-	u[11] = byte(e >> 32)
-	u[12] = byte(e >> 24)
-	u[13] = byte(e >> 16)
-	u[14] = byte(e >> 8)
-	u[15] = byte(e)
-	return u, nil
 }

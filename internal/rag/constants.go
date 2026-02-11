@@ -1,14 +1,9 @@
-// Package rag constants.go defines shared constants, types, and configuration for RAG operations.
-//
-// Contents:
-//   - Source type constants (SourceTypeConversation, SourceTypeFile, SourceTypeSystem)
-//   - Table schema constants for documents table
-//   - NewDocStoreConfig factory for consistent DocStore configuration
 package rag
 
 import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/plugins/postgresql"
+	"google.golang.org/genai"
 )
 
 // Source type constants for knowledge documents.
@@ -24,6 +19,12 @@ const (
 	SourceTypeSystem = "system"
 )
 
+// VectorDimension is the vector dimension used by the pgvector schema.
+// Must match the documents table migration: embedding vector(768).
+// gemini-embedding-001 produces 3072 dimensions by default;
+// we truncate to 768 via OutputDimensionality in EmbedderOptions.
+const VectorDimension int32 = 768
+
 // Table schema constants for Genkit PostgreSQL plugin.
 // These match the documents table in db/migrations.
 const (
@@ -37,7 +38,9 @@ const (
 
 // NewDocStoreConfig creates a postgresql.Config for the documents table.
 // This factory ensures consistent configuration across production and tests.
+// EmbedderOptions sets OutputDimensionality to match the pgvector schema.
 func NewDocStoreConfig(embedder ai.Embedder) *postgresql.Config {
+	dim := VectorDimension
 	return &postgresql.Config{
 		TableName:          DocumentsTableName,
 		SchemaName:         DocumentsSchemaName,
@@ -47,5 +50,6 @@ func NewDocStoreConfig(embedder ai.Embedder) *postgresql.Config {
 		MetadataJSONColumn: DocumentsMetadataCol,
 		MetadataColumns:    []string{"source_type"}, // For filtering by type
 		Embedder:           embedder,
+		EmbedderOptions:    &genai.EmbedContentConfig{OutputDimensionality: &dim},
 	}
 }

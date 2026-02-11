@@ -10,35 +10,36 @@
 //
 // Tools are organized into four categories:
 //
-//   - FileTools: File operations (read, write, list, delete, info)
-//   - SystemTools: System operations (time, command execution, environment)
-//   - NetworkTools: Network operations (web search, web fetch)
-//   - knowledgeTools: Knowledge base operations (semantic search)
+//   - File: File operations (read, write, list, delete, info)
+//   - System: System operations (time, command execution, environment)
+//   - Network: Network operations (web search, web fetch)
+//   - Knowledge: Knowledge base operations (semantic search)
 //
 // Each tool struct is created with a constructor, then registered with Genkit.
 //
 // # Available Tools
 //
-// File tools (FileTools):
+// File tools (File):
 //   - read_file: Read file contents (max 10MB)
 //   - write_file: Write or create files
 //   - list_files: List directory contents
 //   - delete_file: Delete a file
 //   - get_file_info: Get file metadata
 //
-// System tools (SystemTools):
+// System tools (System):
 //   - current_time: Get current system time
 //   - execute_command: Execute shell commands (whitelist enforced)
 //   - get_env: Read environment variables (secrets protected)
 //
-// Network tools (NetworkTools):
+// Network tools (Network):
 //   - web_search: Search via SearXNG
 //   - web_fetch: Fetch web content with SSRF protection
 //
-// Knowledge tools (knowledgeTools):
+// Knowledge tools (Knowledge):
 //   - search_history: Search conversation history
 //   - search_documents: Search indexed documents
 //   - search_system_knowledge: Search system knowledge base
+//   - knowledge_store: Store knowledge documents (when DocStore is available)
 //
 // # Security
 //
@@ -50,7 +51,9 @@
 //
 // # Result Type
 //
-// All tools return the unified Result type:
+// File, System, and Knowledge tools return the unified Result type.
+// Network tools (Search, Fetch) use typed output structs (SearchOutput, FetchOutput)
+// with an Error string field for LLM-facing business errors.
 //
 //	type Result struct {
 //	    Status  Status  // StatusSuccess or StatusError
@@ -97,11 +100,11 @@
 //
 //	// Create tools with security validators
 //	pathVal, _ := security.NewPath([]string{"/allowed/path"})
-//	fileTools, err := tools.NewFileTools(pathVal, logger)
+//	fileTools, err := tools.NewFile(pathVal, logger)
 //	if err != nil {
 //	    return err
 //	}
 //
 //	// Register with Genkit
-//	fileToolList, _ := tools.RegisterFileTools(g, fileTools)
+//	fileToolList, _ := tools.RegisterFile(g, fileTools)
 package tools

@@ -3,14 +3,14 @@ package security
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 )
 
 // Command validates commands to prevent injection attacks.
 // Used to prevent command injection attacks (CWE-78).
 type Command struct {
-	blacklist          []string
-	whitelist          []string            // If non-empty, only allow commands in the whitelist
+	whitelist          []string            // Only allow commands in this list
 	blockedSubcommands map[string][]string // cmd → blocked first-arg subcommands
 	blockedArgPatterns map[string][]string // cmd → blocked argument patterns (any position)
 }
@@ -31,7 +31,6 @@ type Command struct {
 // make and mkdir are NOT whitelisted — make can execute arbitrary Makefile targets.
 func NewCommand() *Command {
 	return &Command{
-		blacklist: []string{}, // Whitelist mode doesn't need blacklist
 		whitelist: []string{
 			// File listing (metadata only — no content reading)
 			"ls", "wc", "sort", "uniq",
@@ -68,7 +67,7 @@ func NewCommand() *Command {
 	}
 }
 
-// ValidateCommand validates whether a command is safe.
+// Validate validates whether a command is safe to execute.
 //
 // SECURITY NOTE: This validator is designed for use with exec.Command(cmd, args...),
 // which does NOT pass arguments through a shell. Therefore:
@@ -79,14 +78,14 @@ func NewCommand() *Command {
 // Parameters:
 //   - cmd: command name (executable)
 //   - args: command arguments (passed directly to exec.Command, not shell-interpreted)
-func (v *Command) ValidateCommand(cmd string, args []string) error {
+func (v *Command) Validate(cmd string, args []string) error {
 	// 1. Check for empty command
 	if strings.TrimSpace(cmd) == "" {
 		return fmt.Errorf("command cannot be empty")
 	}
 
 	// 2. Validate command name only (no args yet)
-	if err := v.validateCommandName(cmd); err != nil {
+	if err := validateCommandName(cmd); err != nil {
 		return fmt.Errorf("validating command name: %w", err)
 	}
 
@@ -111,7 +110,7 @@ func (v *Command) ValidateCommand(cmd string, args []string) error {
 	// NOTE: We do NOT check for shell metacharacters (|, $, >, etc.) because
 	// exec.Command treats them as literal strings, not shell operators
 	for i, arg := range args {
-		if err := v.validateArgument(arg); err != nil {
+		if err := validateArgument(arg); err != nil {
 			slog.Warn("dangerous argument detected",
 				"command", cmd,
 				"arg_index", i,
@@ -122,52 +121,27 @@ func (v *Command) ValidateCommand(cmd string, args []string) error {
 		}
 	}
 
-	// 6. Check full command string (cmd + args) for dangerous patterns
-	// Some dangerous patterns span command and arguments (e.g., "rm -rf /")
-	fullCmd := strings.ToLower(cmd + " " + strings.Join(args, " "))
-	for _, pattern := range v.blacklist {
-		if strings.Contains(fullCmd, strings.ToLower(pattern)) {
-			slog.Warn("command+args match dangerous pattern",
-				"command", cmd,
-				"args", args,
-				"full_command", fullCmd,
-				"dangerous_pattern", pattern,
-				"security_event", "dangerous_command_combination")
-			return fmt.Errorf("command contains dangerous pattern: '%s'", pattern)
-		}
-	}
-
 	return nil
 }
 
+// shellMetachars lists characters that indicate shell injection in a command name.
+const shellMetachars = ";|&`\n><$()"
+
 // validateCommandName validates the command name (executable) only.
-// Checks blacklist patterns and shell injection attempts in the command name itself.
-func (v *Command) validateCommandName(cmd string) error {
+// Checks for shell injection attempts in the command name itself.
+func validateCommandName(cmd string) error {
 	// Normalize command name
 	cmd = strings.TrimSpace(strings.ToLower(cmd))
 
-	// Check blacklisted command patterns
-	for _, pattern := range v.blacklist {
-		if strings.Contains(cmd, strings.ToLower(pattern)) {
-			slog.Warn("command matches blacklisted pattern",
-				"command", cmd,
-				"dangerous_pattern", pattern,
-				"security_event", "command_blacklist_violation")
-			return fmt.Errorf("command contains dangerous pattern: '%s'", pattern)
-		}
-	}
-
 	// Check for shell metacharacters in command name itself
 	// (These would indicate shell injection attempt)
-	shellMetachars := []string{";", "|", "&", "`", "\n", ">", "<", "$", "(", ")"}
-	for _, char := range shellMetachars {
-		if strings.Contains(cmd, char) {
-			slog.Warn("command name contains shell metacharacter",
-				"command", cmd,
-				"character", char,
-				"security_event", "shell_injection_in_command_name")
-			return fmt.Errorf("command name contains shell metacharacter: '%s'", char)
-		}
+	if i := strings.IndexAny(cmd, shellMetachars); i >= 0 {
+		char := string(cmd[i])
+		slog.Warn("command name contains shell metacharacter",
+			"command", cmd,
+			"character", char,
+			"security_event", "shell_injection_in_command_name")
+		return fmt.Errorf("command name contains shell metacharacter: %q", char)
 	}
 
 	return nil
@@ -193,14 +167,12 @@ func (v *Command) validateSubcommands(cmd string, args []string) error {
 	// Check blocked subcommands (first argument)
 	if blocked, ok := v.blockedSubcommands[cmdLower]; ok && len(args) > 0 {
 		firstArg := strings.ToLower(strings.TrimSpace(args[0]))
-		for _, sub := range blocked {
-			if firstArg == sub {
-				slog.Warn("blocked subcommand",
-					"command", cmd,
-					"subcommand", args[0],
-					"security_event", "blocked_subcommand")
-				return fmt.Errorf("subcommand '%s %s' is not allowed (can execute arbitrary code)", cmd, args[0])
-			}
+		if slices.Contains(blocked, firstArg) {
+			slog.Warn("blocked subcommand",
+				"command", cmd,
+				"subcommand", args[0],
+				"security_event", "blocked_subcommand")
+			return fmt.Errorf("subcommand '%s %s' is not allowed (can execute arbitrary code)", cmd, args[0])
 		}
 	}
 
@@ -224,6 +196,20 @@ func (v *Command) validateSubcommands(cmd string, args []string) error {
 	return nil
 }
 
+// dangerousArgPatterns lists embedded command patterns that are dangerous
+// even when passed as arguments via exec.Command.
+var dangerousArgPatterns = []string{
+	"rm -rf /",
+	"rm -rf /*",
+	"rm -rf ~",
+	"mkfs",
+	"dd if=/dev/zero",
+	"dd if=/dev/urandom",
+	"shutdown",
+	"reboot",
+	"sudo su",
+}
+
 // validateArgument checks if an argument contains obviously malicious patterns.
 //
 // IMPORTANT: This function does NOT check for shell metacharacters like $, |, >, <
@@ -232,7 +218,7 @@ func (v *Command) validateSubcommands(cmd string, args []string) error {
 // - Embedded dangerous commands (e.g., "rm -rf /")
 // - Null bytes
 // - Extremely long arguments (possible buffer overflow)
-func (*Command) validateArgument(arg string) error {
+func validateArgument(arg string) error {
 	// Check for null bytes (often used in injection attacks)
 	if strings.Contains(arg, "\x00") {
 		return fmt.Errorf("argument contains null byte")
@@ -246,19 +232,7 @@ func (*Command) validateArgument(arg string) error {
 	// Check for embedded dangerous command patterns
 	// These are suspicious even in arguments
 	argLower := strings.ToLower(arg)
-	dangerousPatterns := []string{
-		"rm -rf /",
-		"rm -rf /*",
-		"rm -rf ~",
-		"mkfs",
-		"dd if=/dev/zero",
-		"dd if=/dev/urandom",
-		"shutdown",
-		"reboot",
-		"sudo su",
-	}
-
-	for _, pattern := range dangerousPatterns {
+	for _, pattern := range dangerousArgPatterns {
 		if strings.Contains(argLower, pattern) {
 			return fmt.Errorf("argument contains dangerous pattern: %s", pattern)
 		}
