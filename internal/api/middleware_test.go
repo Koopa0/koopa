@@ -209,8 +209,8 @@ func TestCSRFMiddleware_AcceptsValidSessionToken(t *testing.T) {
 		logger:     logger,
 	}
 
-	sessionID := uuid.New()
-	token := sm.NewCSRFToken(sessionID)
+	userID := uuid.New().String()
+	token := sm.NewCSRFToken(userID)
 
 	called := false
 	handler := csrfMiddleware(sm, logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -222,8 +222,8 @@ func TestCSRFMiddleware_AcceptsValidSessionToken(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
 	r.Header.Set("X-CSRF-Token", token)
 
-	// Inject session ID into context (normally done by sessionMiddleware)
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
+	// Inject user ID into context (normally done by userMiddleware)
+	ctx := context.WithValue(r.Context(), ctxKeyUserID, userID)
 	r = r.WithContext(ctx)
 
 	handler.ServeHTTP(w, r)
@@ -240,7 +240,7 @@ func TestCSRFMiddleware_RejectsInvalidToken(t *testing.T) {
 		logger:     logger,
 	}
 
-	sessionID := uuid.New()
+	userID := uuid.New().String()
 
 	handler := csrfMiddleware(sm, logger)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("handler should not be called with invalid token")
@@ -250,7 +250,7 @@ func TestCSRFMiddleware_RejectsInvalidToken(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
 	r.Header.Set("X-CSRF-Token", "obviously-invalid-token")
 
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
+	ctx := context.WithValue(r.Context(), ctxKeyUserID, userID)
 	r = r.WithContext(ctx)
 
 	handler.ServeHTTP(w, r)

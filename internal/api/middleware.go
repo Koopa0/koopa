@@ -10,16 +10,25 @@ import (
 	"github.com/google/uuid"
 )
 
-// sessionIDKey is an unexported context key type to prevent collisions.
+// Context key types (unexported to prevent collisions).
 type sessionIDKey struct{}
+type userIDCtxKey struct{}
 
 var ctxKeySessionID = sessionIDKey{}
+var ctxKeyUserID = userIDCtxKey{}
 
-// sessionIDFromContext retrieves the session ID from the request context.
+// sessionIDFromContext retrieves the active session ID from the request context.
 // Returns uuid.Nil and false if not found.
 func sessionIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	sessionID, ok := ctx.Value(ctxKeySessionID).(uuid.UUID)
 	return sessionID, ok
+}
+
+// userIDFromContext retrieves the user identity from the request context.
+// Returns empty string and false if not found.
+func userIDFromContext(ctx context.Context) (string, bool) {
+	uid, ok := ctx.Value(ctxKeyUserID).(string)
+	return uid, ok
 }
 
 // loggingWriter wraps http.ResponseWriter to capture metrics.
@@ -152,14 +161,30 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	}
 }
 
-// sessionMiddleware extracts the session ID from the cookie and adds it to the
-// request context. If no valid session cookie is present, the request continues
-// without a session ID in context. Individual handlers are responsible for
-// creating sessions when needed (e.g., createSession).
+// userMiddleware auto-provisions and extracts user identity (uid cookie).
+// On first visit, generates a new UUID and sets the uid cookie.
+// Subsequent requests use the existing uid cookie value.
+func userMiddleware(sm *sessionManager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := sm.UserID(r)
+			if userID == "" {
+				userID = uuid.New().String()
+				sm.setUserCookie(w, userID)
+			}
+			ctx := context.WithValue(r.Context(), ctxKeyUserID, userID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// sessionMiddleware extracts the active session ID from the sid cookie and adds
+// it to the request context. If no valid session cookie is present, the request
+// continues without a session ID in context.
 func sessionMiddleware(sm *sessionManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			sessionID, err := sm.ID(r)
+			sessionID, err := sm.SessionID(r)
 			if err == nil {
 				ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -173,7 +198,7 @@ func sessionMiddleware(sm *sessionManager) func(http.Handler) http.Handler {
 
 // csrfMiddleware validates CSRF tokens for state-changing requests.
 // Reads token from X-CSRF-Token header (JSON API pattern).
-// Supports both pre-session and session-bound tokens.
+// Supports both pre-session and user-bound tokens.
 func csrfMiddleware(sm *sessionManager, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +210,7 @@ func csrfMiddleware(sm *sessionManager, logger *slog.Logger) func(http.Handler) 
 
 			csrfToken := r.Header.Get("X-CSRF-Token")
 
-			// Check pre-session token
+			// Check pre-session token (before uid cookie is established)
 			if isPreSessionToken(csrfToken) {
 				if err := sm.CheckPreSessionCSRF(csrfToken); err != nil {
 					logger.Warn("pre-session CSRF validation failed",
@@ -200,21 +225,21 @@ func csrfMiddleware(sm *sessionManager, logger *slog.Logger) func(http.Handler) 
 				return
 			}
 
-			// Session-bound token
-			sessionID, ok := sessionIDFromContext(r.Context())
-			if !ok {
-				logger.Error("validating CSRF: session ID not in context",
+			// User-bound token
+			userID, ok := userIDFromContext(r.Context())
+			if !ok || userID == "" {
+				logger.Error("validating CSRF: user ID not in context",
 					"path", r.URL.Path,
 					"method", r.Method,
 				)
-				WriteError(w, http.StatusForbidden, "session_required", "session required", logger)
+				WriteError(w, http.StatusForbidden, "user_required", "user identity required", logger)
 				return
 			}
 
-			if err := sm.CheckCSRF(sessionID, csrfToken); err != nil {
+			if err := sm.CheckCSRF(userID, csrfToken); err != nil {
 				logger.Warn("validating CSRF",
 					"error", err,
-					"session", sessionID,
+					"user", userID,
 					"path", r.URL.Path,
 					"method", r.Method,
 				)

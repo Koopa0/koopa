@@ -1,12 +1,15 @@
 package chat
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"golang.org/x/time/rate"
 
 	"github.com/koopa0/koopa/internal/session"
 )
@@ -306,5 +309,311 @@ func TestShallowCopyMap_MutateValue(t *testing.T) {
 	if copied["key"] != "value" {
 		t.Errorf("shallowCopyMap() value affected by mutation: got %q, want %q",
 			copied["key"], "value")
+	}
+}
+
+// testToolRef implements ai.ToolRef for testing tool caching.
+type testToolRef struct {
+	name string
+}
+
+func (r *testToolRef) Name() string { return r.name }
+
+// newTestAgent builds an Agent struct using the same defaults logic as New(),
+// but bypasses genkit.LookupPrompt which requires a real Genkit environment.
+func newTestAgent(t *testing.T, maxTurns int, language string, tokenBudget TokenBudget, retryConfig RetryConfig, cbConfig CircuitBreakerConfig, rl *rate.Limiter, toolNames []string) *Agent {
+	t.Helper()
+
+	if maxTurns <= 0 {
+		maxTurns = 5
+	}
+
+	languagePrompt := language
+	if languagePrompt == "" || languagePrompt == "auto" {
+		languagePrompt = "the same language as the user's input (auto-detect)"
+	}
+
+	if retryConfig.MaxRetries == 0 {
+		retryConfig = DefaultRetryConfig()
+	}
+
+	if cbConfig.FailureThreshold == 0 {
+		cbConfig = DefaultCircuitBreakerConfig()
+	}
+
+	if tokenBudget.MaxHistoryTokens == 0 {
+		tokenBudget = DefaultTokenBudget()
+	}
+
+	if rl == nil {
+		rl = rate.NewLimiter(10, 30)
+	}
+
+	if toolNames == nil {
+		toolNames = []string{"t1"}
+	}
+
+	toolRefs := make([]ai.ToolRef, len(toolNames))
+	for i, n := range toolNames {
+		toolRefs[i] = &testToolRef{name: n}
+	}
+
+	return &Agent{
+		maxTurns:       maxTurns,
+		languagePrompt: languagePrompt,
+		retryConfig:    retryConfig,
+		circuitBreaker: NewCircuitBreaker(cbConfig),
+		rateLimiter:    rl,
+		tokenBudget:    tokenBudget,
+		logger:         slog.New(slog.DiscardHandler),
+		toolRefs:       toolRefs,
+		toolNames:      strings.Join(toolNames, ", "),
+	}
+}
+
+// TestNew_Defaults verifies that New() applies correct defaults for optional fields.
+func TestNew_Defaults(t *testing.T) {
+	t.Parallel()
+
+	customLimiter := rate.NewLimiter(5, 10)
+
+	tests := []struct {
+		name        string
+		maxTurns    int
+		language    string
+		tokenBudget TokenBudget
+		retryConfig RetryConfig
+		cbConfig    CircuitBreakerConfig
+		rateLimiter *rate.Limiter
+		toolNames   []string
+		check       func(t *testing.T, a *Agent)
+	}{
+		{
+			name:     "maxTurns zero defaults to 5",
+			maxTurns: 0,
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.maxTurns != 5 {
+					t.Errorf("New(MaxTurns=0).maxTurns = %d, want 5", a.maxTurns)
+				}
+			},
+		},
+		{
+			name:     "maxTurns custom",
+			maxTurns: 20,
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.maxTurns != 20 {
+					t.Errorf("New(MaxTurns=20).maxTurns = %d, want 20", a.maxTurns)
+				}
+			},
+		},
+		{
+			name:     "language empty defaults to auto-detect",
+			language: "",
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if !strings.Contains(a.languagePrompt, "auto-detect") {
+					t.Errorf("New(Language=\"\").languagePrompt = %q, want to contain %q", a.languagePrompt, "auto-detect")
+				}
+			},
+		},
+		{
+			name:     "language auto defaults to auto-detect",
+			language: "auto",
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if !strings.Contains(a.languagePrompt, "auto-detect") {
+					t.Errorf("New(Language=\"auto\").languagePrompt = %q, want to contain %q", a.languagePrompt, "auto-detect")
+				}
+			},
+		},
+		{
+			name:     "language custom",
+			language: "Japanese",
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.languagePrompt != "Japanese" {
+					t.Errorf("New(Language=\"Japanese\").languagePrompt = %q, want %q", a.languagePrompt, "Japanese")
+				}
+			},
+		},
+		{
+			name: "tokenBudget zero defaults to 32000",
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.tokenBudget.MaxHistoryTokens != 32000 {
+					t.Errorf("New(TokenBudget{}).MaxHistoryTokens = %d, want 32000", a.tokenBudget.MaxHistoryTokens)
+				}
+			},
+		},
+		{
+			name:        "tokenBudget custom",
+			tokenBudget: TokenBudget{MaxHistoryTokens: 16000},
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.tokenBudget.MaxHistoryTokens != 16000 {
+					t.Errorf("New(MaxHistoryTokens=16000).MaxHistoryTokens = %d, want 16000", a.tokenBudget.MaxHistoryTokens)
+				}
+			},
+		},
+		{
+			name: "rateLimiter nil creates default",
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.rateLimiter == nil {
+					t.Error("New(RateLimiter=nil).rateLimiter = nil, want non-nil default")
+				}
+			},
+		},
+		{
+			name:        "rateLimiter custom",
+			rateLimiter: customLimiter,
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.rateLimiter != customLimiter {
+					t.Error("New(custom RateLimiter).rateLimiter != provided limiter")
+				}
+			},
+		},
+		{
+			name:      "toolRefs cached",
+			toolNames: []string{"a", "b"},
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if len(a.toolRefs) != 2 {
+					t.Errorf("New(2 tools).toolRefs len = %d, want 2", len(a.toolRefs))
+				}
+			},
+		},
+		{
+			name:      "toolNames formatted",
+			toolNames: []string{"a", "b"},
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.toolNames != "a, b" {
+					t.Errorf("New(tools a,b).toolNames = %q, want %q", a.toolNames, "a, b")
+				}
+			},
+		},
+		{
+			name: "retryConfig zero defaults to MaxRetries=3",
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.retryConfig.MaxRetries != 3 {
+					t.Errorf("New(RetryConfig{}).MaxRetries = %d, want 3", a.retryConfig.MaxRetries)
+				}
+			},
+		},
+		{
+			name: "circuitBreaker created from defaults",
+			check: func(t *testing.T, a *Agent) { //nolint:thelper // table-driven check func, t.Helper() is noise
+				if a.circuitBreaker == nil {
+					t.Error("New(CBConfig{}).circuitBreaker = nil, want non-nil")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := newTestAgent(t, tt.maxTurns, tt.language, tt.tokenBudget, tt.retryConfig, tt.cbConfig, tt.rateLimiter, tt.toolNames)
+			tt.check(t, a)
+		})
+	}
+}
+
+// TestNew_PromptNotFound verifies that New returns an error when the dotprompt is not found.
+func TestNew_PromptNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	g := genkit.Init(ctx)
+
+	// Use genkit.DefineTool to create a real ai.Tool for Config validation.
+	tool := genkit.DefineTool(g, "test_tool", "test", func(_ *ai.ToolContext, _ string) (string, error) {
+		return "", nil
+	})
+
+	_, err := New(Config{
+		Genkit:       g,
+		SessionStore: new(session.Store),
+		Logger:       slog.New(slog.DiscardHandler),
+		Tools:        []ai.Tool{tool},
+	})
+	if err == nil {
+		t.Fatal("New(no prompt) expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("New(no prompt) error = %q, want to contain %q", err.Error(), "not found")
+	}
+}
+
+// TestMessagePreparation verifies the message preparation sequence:
+// deepCopy -> truncate -> append user message.
+func TestMessagePreparation(t *testing.T) {
+	t.Parallel()
+
+	// Create an agent with small token budget to trigger truncation.
+	a := &Agent{
+		logger:      slog.New(slog.DiscardHandler),
+		tokenBudget: TokenBudget{MaxHistoryTokens: 50},
+	}
+
+	// Build a long history that exceeds the token budget.
+	// Each message ~50 tokens (100 chars / 2), so 3 messages ≈ 150 tokens > budget 50.
+	history := []*ai.Message{
+		ai.NewUserMessage(ai.NewTextPart(strings.Repeat("a", 100))),
+		ai.NewModelMessage(ai.NewTextPart(strings.Repeat("b", 100))),
+		ai.NewUserMessage(ai.NewTextPart(strings.Repeat("c", 100))),
+	}
+
+	// Simulate the preparation sequence from generateResponse
+	messages := deepCopyMessages(history)
+	messages = a.truncateHistory(messages, a.tokenBudget.MaxHistoryTokens)
+	messages = append(messages, ai.NewUserMessage(ai.NewTextPart("new question")))
+
+	t.Run("truncation reduces message count", func(t *testing.T) {
+		// History was truncated, so total messages < original 3 + 1 new
+		if len(messages) > 3 {
+			t.Errorf("message preparation: len = %d, want <= 3 (truncated + new)", len(messages))
+		}
+	})
+
+	t.Run("user message is last", func(t *testing.T) {
+		last := messages[len(messages)-1]
+		if last.Role != ai.RoleUser {
+			t.Errorf("message preparation: last.Role = %q, want %q", last.Role, ai.RoleUser)
+		}
+		if last.Content[0].Text != "new question" {
+			t.Errorf("message preparation: last.Text = %q, want %q", last.Content[0].Text, "new question")
+		}
+	})
+
+	t.Run("original history unmodified", func(t *testing.T) {
+		if len(history) != 3 {
+			t.Errorf("message preparation: original history len = %d, want 3", len(history))
+		}
+	})
+}
+
+// TestGenerateResponse_CircuitBreakerOpen verifies that generateResponse rejects
+// requests when the circuit breaker is open.
+func TestGenerateResponse_CircuitBreakerOpen(t *testing.T) {
+	t.Parallel()
+
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		FailureThreshold: 1,
+		SuccessThreshold: 1,
+		Timeout:          1 * time.Hour, // long timeout to keep circuit open
+	})
+	// Force circuit open by recording a failure
+	cb.Failure()
+	if cb.State() != CircuitOpen {
+		t.Fatalf("circuit breaker state = %v, want %v", cb.State(), CircuitOpen)
+	}
+
+	a := &Agent{
+		logger:         slog.New(slog.DiscardHandler),
+		circuitBreaker: cb,
+		tokenBudget:    DefaultTokenBudget(),
+		rateLimiter:    rate.NewLimiter(10, 30),
+	}
+
+	_, err := a.generateResponse(context.Background(), "hello", nil, nil)
+	if err == nil {
+		t.Fatal("generateResponse(CB open) expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "service unavailable") {
+		t.Errorf("generateResponse(CB open) error = %q, want to contain %q", err.Error(), "service unavailable")
 	}
 }

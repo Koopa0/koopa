@@ -48,58 +48,63 @@ func New(queries *sqlc.Queries, pool *pgxpool.Pool, logger *slog.Logger) *Store 
 	}
 }
 
-// CreateSession creates a new conversation session.
+// CreateSession creates a new conversation session owned by the given user.
 //
 // Parameters:
 //   - ctx: Context for the operation
+//   - ownerID: User identity that owns this session
 //   - title: Session title (empty string = no title)
 //
 // Returns:
 //   - *Session: Created session with generated UUID
 //   - error: If creation fails
-func (s *Store) CreateSession(ctx context.Context, title string) (*Session, error) {
+func (s *Store) CreateSession(ctx context.Context, ownerID, title string) (*Session, error) {
 	var titlePtr *string
 	if title != "" {
 		titlePtr = &title
 	}
 
-	sqlcSession, err := s.queries.CreateSession(ctx, titlePtr)
+	sqlcSession, err := s.queries.CreateSession(ctx, sqlc.CreateSessionParams{
+		Title:   titlePtr,
+		OwnerID: ownerID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
 
 	session := s.sqlcSessionToSession(sqlcSession)
-	s.logger.Debug("created session", "id", session.ID, "title", session.Title)
+	s.logger.Debug("created session", "id", session.ID, "owner", ownerID, "title", session.Title)
 	return session, nil
 }
 
 // Session retrieves a session by ID.
 // Returns ErrNotFound if the session does not exist.
 func (s *Store) Session(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
-	sqlcSession, err := s.queries.Session(ctx, sessionID)
+	row, err := s.queries.Session(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Return sentinel error directly (no wrapping per reviewer guidance)
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("getting session %s: %w", sessionID, err)
 	}
 
-	return s.sqlcSessionToSession(sqlcSession), nil
+	return s.sqlcSessionRowToSession(row), nil
 }
 
-// Sessions lists sessions with pagination, ordered by updated_at descending.
+// Sessions lists sessions owned by the given user, ordered by updated_at descending.
 //
 // Parameters:
 //   - ctx: Context for the operation
+//   - ownerID: User identity to filter by
 //   - limit: Maximum number of sessions to return
 //   - offset: Number of sessions to skip (for pagination)
 //
 // Returns:
 //   - []*Session: List of sessions
 //   - error: If listing fails
-func (s *Store) Sessions(ctx context.Context, limit, offset int32) ([]*Session, error) {
-	sqlcSessions, err := s.queries.Sessions(ctx, sqlc.SessionsParams{
+func (s *Store) Sessions(ctx context.Context, ownerID string, limit, offset int32) ([]*Session, error) {
+	rows, err := s.queries.Sessions(ctx, sqlc.SessionsParams{
+		OwnerID:      ownerID,
 		ResultLimit:  limit,
 		ResultOffset: offset,
 	})
@@ -107,12 +112,12 @@ func (s *Store) Sessions(ctx context.Context, limit, offset int32) ([]*Session, 
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
 
-	sessions := make([]*Session, 0, len(sqlcSessions))
-	for i := range sqlcSessions {
-		sessions = append(sessions, s.sqlcSessionToSession(sqlcSessions[i]))
+	sessions := make([]*Session, 0, len(rows))
+	for i := range rows {
+		sessions = append(sessions, s.sqlcSessionsRowToSession(rows[i]))
 	}
 
-	s.logger.Debug("listed sessions", "count", len(sessions), "limit", limit, "offset", offset)
+	s.logger.Debug("listed sessions", "owner", ownerID, "count", len(sessions), "limit", limit, "offset", offset)
 	return sessions, nil
 }
 
@@ -307,6 +312,15 @@ func normalizeRole(role string) string {
 	return role
 }
 
+// denormalizeRole converts database roles back to Genkit roles.
+// Reverses normalizeRole: "assistant" → "model" so Gemini API accepts the history.
+func denormalizeRole(role string) string {
+	if role == "assistant" {
+		return "model"
+	}
+	return role
+}
+
 // AppendMessages appends new messages to a session.
 // This is the preferred method for saving conversation history.
 //
@@ -359,12 +373,13 @@ func (s *Store) History(ctx context.Context, sessionID uuid.UUID) ([]*ai.Message
 		return nil, fmt.Errorf("loading history: %w", err)
 	}
 
-	// Convert to ai.Message
+	// Convert to ai.Message with reverse role normalization.
+	// DB stores "assistant" but Gemini API requires "model".
 	aiMessages := make([]*ai.Message, len(messages))
 	for i, msg := range messages {
 		aiMessages[i] = &ai.Message{
 			Content: msg.Content,
-			Role:    ai.Role(msg.Role),
+			Role:    ai.Role(denormalizeRole(msg.Role)),
 		}
 	}
 
@@ -394,7 +409,7 @@ func (s *Store) ResolveCurrentSession(ctx context.Context) (uuid.UUID, error) {
 		}
 	}
 
-	newSess, err := s.CreateSession(ctx, "")
+	newSess, err := s.CreateSession(ctx, "cli", "")
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("creating session: %w", err)
 	}
@@ -408,18 +423,45 @@ func (s *Store) ResolveCurrentSession(ctx context.Context) (uuid.UUID, error) {
 	return newSess.ID, nil
 }
 
-// sqlcSessionToSession converts sqlc.Session to Session (application type).
+// sqlcSessionToSession converts sqlc.Session (from CreateSession RETURNING *) to Session.
 func (*Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 	session := &Session{
 		ID:        ss.ID,
+		OwnerID:   ss.OwnerID,
 		CreatedAt: ss.CreatedAt.Time,
 		UpdatedAt: ss.UpdatedAt.Time,
 	}
-
 	if ss.Title != nil {
 		session.Title = *ss.Title
 	}
+	return session
+}
 
+// sqlcSessionRowToSession converts sqlc.SessionRow (from Session query) to Session.
+func (*Store) sqlcSessionRowToSession(row sqlc.SessionRow) *Session {
+	session := &Session{
+		ID:        row.ID,
+		OwnerID:   row.OwnerID,
+		CreatedAt: row.CreatedAt.Time,
+		UpdatedAt: row.UpdatedAt.Time,
+	}
+	if row.Title != nil {
+		session.Title = *row.Title
+	}
+	return session
+}
+
+// sqlcSessionsRowToSession converts sqlc.SessionsRow (from Sessions query) to Session.
+func (*Store) sqlcSessionsRowToSession(row sqlc.SessionsRow) *Session {
+	session := &Session{
+		ID:        row.ID,
+		OwnerID:   row.OwnerID,
+		CreatedAt: row.CreatedAt.Time,
+		UpdatedAt: row.UpdatedAt.Time,
+	}
+	if row.Title != nil {
+		session.Title = *row.Title
+	}
 	return session
 }
 

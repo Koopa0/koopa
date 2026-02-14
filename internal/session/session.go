@@ -14,6 +14,7 @@ var ErrNotFound = errors.New("session not found")
 // Session represents a conversation session (application-level type).
 type Session struct {
 	ID        uuid.UUID
+	OwnerID   string
 	Title     string
 	CreatedAt time.Time
 	UpdatedAt time.Time

@@ -106,7 +106,7 @@ func SetupTest(t *testing.T) *TestFramework {
 	}
 
 	// Create test session
-	testSession, err := sessionStore.CreateSession(ctx, "Chat Integration Test")
+	testSession, err := sessionStore.CreateSession(ctx, "test-user", "Chat Integration Test")
 	if err != nil {
 		t.Fatalf("creating test session: %v", err)
 	}
@@ -164,7 +164,7 @@ func SetupTest(t *testing.T) *TestFramework {
 func (f *TestFramework) CreateTestSession(t *testing.T, name string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	sess, err := f.SessionStore.CreateSession(ctx, name)
+	sess, err := f.SessionStore.CreateSession(ctx, "test-user", name)
 	if err != nil {
 		t.Fatalf("creating test session: %v", err)
 	}

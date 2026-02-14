@@ -98,9 +98,11 @@ func NewNetwork(cfg NetConfig, logger *slog.Logger) (*Network, error) {
 
 	return &Network{
 		searchBaseURL: strings.TrimSuffix(cfg.SearchBaseURL, "/"),
+		// searchClient uses default transport: searchBaseURL is admin-configured
+		// infrastructure (like a database URL), not user-controlled input.
+		// SSRF protection applies to web_fetch (user/LLM-controlled URLs), not here.
 		searchClient: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: urlValidator.SafeTransport(),
+			Timeout: 30 * time.Second,
 		},
 		fetchParallelism: cfg.FetchParallelism,
 		fetchDelay:       cfg.FetchDelay,

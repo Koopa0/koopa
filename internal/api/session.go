@@ -33,19 +33,21 @@ var (
 	ErrCSRFMalformed = errors.New("csrf token malformed")
 )
 
-// Pre-session CSRF token prefix to distinguish from session-bound tokens.
+// Pre-session CSRF token prefix to distinguish from user-bound tokens.
 const preSessionPrefix = "pre:"
 
 // Cookie and CSRF configuration.
 const (
 	sessionCookieName    = "sid"
+	userCookieName       = "uid"
 	csrfTokenTTL         = 24 * time.Hour
-	sessionMaxAge        = 30 * 24 * 3600 // 30 days in seconds
+	cookieMaxAge         = 30 * 24 * 3600 // 30 days in seconds
 	csrfClockSkew        = 5 * time.Minute
 	messagesDefaultLimit = 100
+	sessionsDefaultLimit = 50
 )
 
-// sessionManager handles session cookies and CSRF token operations.
+// sessionManager handles session cookies, user identity, and CSRF token operations.
 type sessionManager struct {
 	store      *session.Store
 	hmacSecret []byte
@@ -53,8 +55,8 @@ type sessionManager struct {
 	logger     *slog.Logger
 }
 
-// ID extracts session ID from cookie without creating a new session.
-func (*sessionManager) ID(r *http.Request) (uuid.UUID, error) {
+// SessionID extracts the active session ID from the sid cookie.
+func (*sessionManager) SessionID(r *http.Request) (uuid.UUID, error) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return uuid.Nil, ErrSessionCookieNotFound
@@ -68,11 +70,21 @@ func (*sessionManager) ID(r *http.Request) (uuid.UUID, error) {
 	return sessionID, nil
 }
 
-// NewCSRFToken creates an HMAC-based token bound to the session ID.
+// UserID extracts the user identity from the uid cookie.
+// Returns empty string if no uid cookie is present.
+func (*sessionManager) UserID(r *http.Request) string {
+	cookie, err := r.Cookie(userCookieName)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+// NewCSRFToken creates an HMAC-based token bound to the user ID.
 // Format: "timestamp:signature"
-func (sm *sessionManager) NewCSRFToken(sessionID uuid.UUID) string {
+func (sm *sessionManager) NewCSRFToken(userID string) string {
 	timestamp := time.Now().Unix()
-	message := fmt.Sprintf("%s:%d", sessionID.String(), timestamp)
+	message := fmt.Sprintf("%s:%d", userID, timestamp)
 
 	h := hmac.New(sha256.New, sm.hmacSecret)
 	h.Write([]byte(message))
@@ -81,8 +93,8 @@ func (sm *sessionManager) NewCSRFToken(sessionID uuid.UUID) string {
 	return fmt.Sprintf("%d:%s", timestamp, signature)
 }
 
-// CheckCSRF verifies a session-bound CSRF token.
-func (sm *sessionManager) CheckCSRF(sessionID uuid.UUID, token string) error {
+// CheckCSRF verifies a user-bound CSRF token.
+func (sm *sessionManager) CheckCSRF(userID, token string) error {
 	if token == "" {
 		return ErrCSRFRequired
 	}
@@ -105,7 +117,7 @@ func (sm *sessionManager) CheckCSRF(sessionID uuid.UUID, token string) error {
 		return ErrCSRFInvalid
 	}
 
-	message := fmt.Sprintf("%s:%d", sessionID.String(), timestamp)
+	message := fmt.Sprintf("%s:%d", userID, timestamp)
 	h := hmac.New(sha256.New, sm.hmacSecret)
 	h.Write([]byte(message))
 	expectedSig := base64.URLEncoding.EncodeToString(h.Sum(nil))
@@ -173,9 +185,9 @@ func (sm *sessionManager) CheckPreSessionCSRF(token string) error {
 	return nil
 }
 
-// requireOwnership verifies the requested session ID matches the caller's session cookie.
+// requireOwnership verifies the requested session belongs to the caller.
+// Uses owner_id from the database to support multi-session ownership.
 // Returns the verified session ID and true, or writes an error response and returns false.
-// This prevents session enumeration and cross-session access.
 func (sm *sessionManager) requireOwnership(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	idStr := r.PathValue("id")
 	if idStr == "" {
@@ -189,12 +201,30 @@ func (sm *sessionManager) requireOwnership(w http.ResponseWriter, r *http.Reques
 		return uuid.Nil, false
 	}
 
-	ownerID, ok := sessionIDFromContext(r.Context())
-	if !ok || ownerID != targetID {
+	userID, ok := userIDFromContext(r.Context())
+	if !ok || userID == "" {
+		WriteError(w, http.StatusForbidden, "forbidden", "user identity required", sm.logger)
+		return uuid.Nil, false
+	}
+
+	// Verify session exists and is owned by this user
+	sess, err := sm.store.Session(r.Context(), targetID)
+	if err != nil {
+		if errors.Is(err, session.ErrNotFound) {
+			WriteError(w, http.StatusNotFound, "not_found", "session not found", sm.logger)
+			return uuid.Nil, false
+		}
+		sm.logger.Error("checking session ownership", "error", err, "session_id", targetID)
+		WriteError(w, http.StatusInternalServerError, "get_failed", "failed to verify session", sm.logger)
+		return uuid.Nil, false
+	}
+
+	if sess.OwnerID != userID {
 		sm.logger.Warn("session ownership check failed",
 			"target", targetID,
+			"owner", sess.OwnerID,
+			"caller", userID,
 			"path", r.URL.Path,
-			"remote_addr", r.RemoteAddr,
 		)
 		WriteError(w, http.StatusForbidden, "forbidden", "session access denied", sm.logger)
 		return uuid.Nil, false
@@ -203,7 +233,7 @@ func (sm *sessionManager) requireOwnership(w http.ResponseWriter, r *http.Reques
 	return targetID, true
 }
 
-func (sm *sessionManager) setCookie(w http.ResponseWriter, sessionID uuid.UUID) {
+func (sm *sessionManager) setSessionCookie(w http.ResponseWriter, sessionID uuid.UUID) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    sessionID.String(),
@@ -211,17 +241,29 @@ func (sm *sessionManager) setCookie(w http.ResponseWriter, sessionID uuid.UUID) 
 		Secure:   !sm.isDev,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   sessionMaxAge,
+		MaxAge:   cookieMaxAge,
+	})
+}
+
+func (sm *sessionManager) setUserCookie(w http.ResponseWriter, userID string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     userCookieName,
+		Value:    userID,
+		Path:     "/",
+		Secure:   !sm.isDev,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   cookieMaxAge,
 	})
 }
 
 // csrfToken handles GET /api/v1/csrf-token — provisions a CSRF token.
-// Returns a session-bound token if a session exists, otherwise a pre-session token.
+// Returns a user-bound token if uid cookie exists, otherwise a pre-session token.
 func (sm *sessionManager) csrfToken(w http.ResponseWriter, r *http.Request) {
-	sessionID, err := sm.ID(r)
-	if err == nil {
+	userID, ok := userIDFromContext(r.Context())
+	if ok && userID != "" {
 		WriteJSON(w, http.StatusOK, map[string]string{
-			"csrfToken": sm.NewCSRFToken(sessionID),
+			"csrfToken": sm.NewCSRFToken(userID),
 		}, sm.logger)
 		return
 	}
@@ -231,8 +273,7 @@ func (sm *sessionManager) csrfToken(w http.ResponseWriter, r *http.Request) {
 	}, sm.logger)
 }
 
-// listSessions handles GET /api/v1/sessions — returns sessions owned by the caller.
-// Only returns the session matching the caller's cookie (ownership enforcement).
+// listSessions handles GET /api/v1/sessions — returns all sessions owned by the caller.
 func (sm *sessionManager) listSessions(w http.ResponseWriter, r *http.Request) {
 	type sessionItem struct {
 		ID        string `json:"id"`
@@ -240,52 +281,56 @@ func (sm *sessionManager) listSessions(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt string `json:"updatedAt"`
 	}
 
-	sessionID, ok := sessionIDFromContext(r.Context())
-	if !ok {
-		// No session cookie — return empty list
+	userID, ok := userIDFromContext(r.Context())
+	if !ok || userID == "" {
 		WriteJSON(w, http.StatusOK, []sessionItem{}, sm.logger)
 		return
 	}
 
-	sess, err := sm.store.Session(r.Context(), sessionID)
+	sessions, err := sm.store.Sessions(r.Context(), userID, sessionsDefaultLimit, 0)
 	if err != nil {
-		if errors.Is(err, session.ErrNotFound) {
-			WriteJSON(w, http.StatusOK, []sessionItem{}, sm.logger)
-			return
-		}
-		sm.logger.Error("getting session", "error", err, "session_id", sessionID)
+		sm.logger.Error("listing sessions", "error", err, "user_id", userID)
 		WriteError(w, http.StatusInternalServerError, "list_failed", "failed to list sessions", sm.logger)
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, []sessionItem{
-		{
+	items := make([]sessionItem, len(sessions))
+	for i, sess := range sessions {
+		items[i] = sessionItem{
 			ID:        sess.ID.String(),
 			Title:     sess.Title,
 			UpdatedAt: sess.UpdatedAt.Format(time.RFC3339),
-		},
-	}, sm.logger)
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, items, sm.logger)
 }
 
 // createSession handles POST /api/v1/sessions — creates a new session.
 func (sm *sessionManager) createSession(w http.ResponseWriter, r *http.Request) {
-	sess, err := sm.store.CreateSession(r.Context(), "")
+	userID, ok := userIDFromContext(r.Context())
+	if !ok || userID == "" {
+		WriteError(w, http.StatusBadRequest, "user_required", "user identity required", sm.logger)
+		return
+	}
+
+	sess, err := sm.store.CreateSession(r.Context(), userID, "")
 	if err != nil {
 		sm.logger.Error("creating session", "error", err)
 		WriteError(w, http.StatusInternalServerError, "create_failed", "failed to create session", sm.logger)
 		return
 	}
 
-	sm.setCookie(w, sess.ID)
+	sm.setSessionCookie(w, sess.ID)
 
 	WriteJSON(w, http.StatusCreated, map[string]string{
 		"id":        sess.ID.String(),
-		"csrfToken": sm.NewCSRFToken(sess.ID),
+		"csrfToken": sm.NewCSRFToken(userID),
 	}, sm.logger)
 }
 
 // getSession handles GET /api/v1/sessions/{id} — returns a single session.
-// Requires ownership: the session ID must match the caller's session cookie.
+// Requires ownership: the session must belong to the caller.
 func (sm *sessionManager) getSession(w http.ResponseWriter, r *http.Request) {
 	id, ok := sm.requireOwnership(w, r)
 	if !ok {
@@ -312,7 +357,7 @@ func (sm *sessionManager) getSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // getSessionMessages handles GET /api/v1/sessions/{id}/messages — returns messages for a session.
-// Requires ownership: the session ID must match the caller's session cookie.
+// Requires ownership: the session must belong to the caller.
 func (sm *sessionManager) getSessionMessages(w http.ResponseWriter, r *http.Request) {
 	id, ok := sm.requireOwnership(w, r)
 	if !ok {
@@ -355,7 +400,7 @@ func (sm *sessionManager) getSessionMessages(w http.ResponseWriter, r *http.Requ
 }
 
 // deleteSession handles DELETE /api/v1/sessions/{id} — deletes a session.
-// Requires ownership: the session ID must match the caller's session cookie.
+// Requires ownership: the session must belong to the caller.
 func (sm *sessionManager) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id, ok := sm.requireOwnership(w, r)
 	if !ok {
