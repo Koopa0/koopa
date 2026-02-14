@@ -84,7 +84,7 @@ func BenchmarkStore_AddMessages(b *testing.B) {
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-AddMessages")
+	session, err := store.CreateSession(ctx, "bench-owner", "Benchmark-AddMessages")
 	if err != nil {
 		b.Fatalf("creating session: %v", err)
 	}
@@ -125,7 +125,7 @@ func BenchmarkStore_AppendMessages(b *testing.B) {
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-AppendMessages")
+	session, err := store.CreateSession(ctx, "bench-owner", "Benchmark-AppendMessages")
 	if err != nil {
 		b.Fatalf("creating session: %v", err)
 	}
@@ -169,7 +169,7 @@ func BenchmarkStore_CreateSession(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
-		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-Session-%d", i))
+		session, err := store.CreateSession(ctx, "bench-owner", fmt.Sprintf("Benchmark-Session-%d", i))
 		if err != nil {
 			b.Fatalf("CreateSession failed at iteration %d: %v", i, err)
 		}
@@ -187,7 +187,7 @@ func BenchmarkStore_GetSession(b *testing.B) {
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-GetSession")
+	session, err := store.CreateSession(ctx, "bench-owner", "Benchmark-GetSession")
 	if err != nil {
 		b.Fatalf("creating session: %v", err)
 	}
@@ -214,7 +214,7 @@ func BenchmarkStore_Sessions(b *testing.B) {
 
 	// Create some test sessions
 	for i := 0; i < 20; i++ {
-		session, err := store.CreateSession(ctx, fmt.Sprintf("Benchmark-List-%d", i))
+		session, err := store.CreateSession(ctx, "bench-owner", fmt.Sprintf("Benchmark-List-%d", i))
 		if err != nil {
 			b.Fatalf("creating session: %v", err)
 		}
@@ -224,7 +224,7 @@ func BenchmarkStore_Sessions(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := store.Sessions(ctx, 100, 0)
+		_, err := store.Sessions(ctx, "bench-owner", 100, 0)
 		if err != nil {
 			b.Fatalf("Sessions() unexpected error: %v", err)
 		}
@@ -256,7 +256,7 @@ func setupBenchmarkSession(b *testing.B, ctx context.Context, numMessages int) (
 	store := New(sqlc.New(pool), pool, logger)
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Benchmark-Session")
+	session, err := store.CreateSession(ctx, "bench-owner", "Benchmark-Session")
 	if err != nil {
 		cleanup()
 		b.Fatalf("creating session: %v", err)

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -15,6 +17,20 @@ import (
 	"github.com/koopa0/koopa/internal/chat"
 	"github.com/koopa0/koopa/internal/config"
 )
+
+// parseRateBurst reads KOOPA_RATE_BURST from the environment.
+// Returns 0 (use default) if unset or invalid.
+func parseRateBurst() int {
+	v := os.Getenv("KOOPA_RATE_BURST")
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
 
 // Server timeout configuration.
 const (
@@ -72,6 +88,7 @@ func runServe() error {
 		CORSOrigins:  cfg.CORSOrigins,
 		IsDev:        cfg.PostgresSSLMode == "disable",
 		TrustProxy:   cfg.TrustProxy,
+		RateBurst:    parseRateBurst(),
 	})
 	if err != nil {
 		return fmt.Errorf("creating API server: %w", err)

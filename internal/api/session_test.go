@@ -24,8 +24,8 @@ func newTestSessionManager() *sessionManager {
 }
 
 // csrfTokenWithTimestamp creates a CSRF token with a specific timestamp for testing expiration.
-func csrfTokenWithTimestamp(secret []byte, sessionID uuid.UUID, ts int64) string {
-	msg := fmt.Sprintf("%s:%d", sessionID.String(), ts)
+func csrfTokenWithTimestamp(secret []byte, userID string, ts int64) string {
+	msg := fmt.Sprintf("%s:%d", userID, ts)
 	h := hmac.New(sha256.New, secret)
 	h.Write([]byte(msg))
 	sig := base64.URLEncoding.EncodeToString(h.Sum(nil))
@@ -34,27 +34,27 @@ func csrfTokenWithTimestamp(secret []byte, sessionID uuid.UUID, ts int64) string
 
 func TestNewCSRFToken_RoundTrip(t *testing.T) {
 	sm := newTestSessionManager()
-	sessionID := uuid.New()
+	userID := uuid.New().String()
 
-	token := sm.NewCSRFToken(sessionID)
+	token := sm.NewCSRFToken(userID)
 	if token == "" {
 		t.Fatal("NewCSRFToken() returned empty token")
 	}
 
-	if err := sm.CheckCSRF(sessionID, token); err != nil {
+	if err := sm.CheckCSRF(userID, token); err != nil {
 		t.Fatalf("CheckCSRF(valid token) error: %v", err)
 	}
 }
 
-func TestCSRFToken_WrongSession(t *testing.T) {
+func TestCSRFToken_WrongUser(t *testing.T) {
 	sm := newTestSessionManager()
-	sessionID := uuid.New()
-	otherID := uuid.New()
+	userID := uuid.New().String()
+	otherID := uuid.New().String()
 
-	token := sm.NewCSRFToken(sessionID)
+	token := sm.NewCSRFToken(userID)
 
 	if err := sm.CheckCSRF(otherID, token); err == nil {
-		t.Error("CheckCSRF(wrong session) expected error, got nil")
+		t.Error("CheckCSRF(wrong user) expected error, got nil")
 	}
 }
 
@@ -65,17 +65,17 @@ func TestCSRFToken_WrongSecret(t *testing.T) {
 		logger:     slog.New(slog.DiscardHandler),
 	}
 
-	sessionID := uuid.New()
-	token := sm1.NewCSRFToken(sessionID)
+	userID := uuid.New().String()
+	token := sm1.NewCSRFToken(userID)
 
-	if err := sm2.CheckCSRF(sessionID, token); err == nil {
+	if err := sm2.CheckCSRF(userID, token); err == nil {
 		t.Error("CheckCSRF(wrong secret) expected error, got nil")
 	}
 }
 
 func TestCSRFToken_Malformed(t *testing.T) {
 	sm := newTestSessionManager()
-	sessionID := uuid.New()
+	userID := uuid.New().String()
 
 	tests := []struct {
 		name  string
@@ -88,7 +88,7 @@ func TestCSRFToken_Malformed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := sm.CheckCSRF(sessionID, tt.token)
+			err := sm.CheckCSRF(userID, tt.token)
 			if err == nil {
 				t.Errorf("CheckCSRF(%q) expected error, got nil", tt.token)
 			}
@@ -98,13 +98,13 @@ func TestCSRFToken_Malformed(t *testing.T) {
 
 func TestCSRFToken_Expired(t *testing.T) {
 	sm := newTestSessionManager()
-	sessionID := uuid.New()
+	userID := uuid.New().String()
 
 	// Construct a token with a timestamp 25 hours ago (exceeds 24h TTL)
 	oldTimestamp := time.Now().Add(-25 * time.Hour).Unix()
-	token := csrfTokenWithTimestamp(sm.hmacSecret, sessionID, oldTimestamp)
+	token := csrfTokenWithTimestamp(sm.hmacSecret, userID, oldTimestamp)
 
-	err := sm.CheckCSRF(sessionID, token)
+	err := sm.CheckCSRF(userID, token)
 	if err == nil {
 		t.Error("CheckCSRF(expired token) expected error, got nil")
 	}
@@ -146,7 +146,7 @@ func TestCSRFTokenEndpoint_PreSession(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/csrf-token", nil)
-	// No session cookie — should get pre-session token
+	// No uid cookie — should get pre-session token
 
 	sm.csrfToken(w, r)
 
@@ -163,11 +163,39 @@ func TestCSRFTokenEndpoint_PreSession(t *testing.T) {
 	}
 
 	if !isPreSessionToken(token) {
-		t.Error("csrfToken(no cookie) token should be pre-session")
+		t.Error("csrfToken(no uid) token should be pre-session")
 	}
 
 	if err := sm.CheckPreSessionCSRF(token); err != nil {
 		t.Fatalf("csrfToken() returned invalid pre-session token: %v", err)
+	}
+}
+
+func TestCSRFTokenEndpoint_WithUser(t *testing.T) {
+	sm := newTestSessionManager()
+	userID := uuid.New().String()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/csrf-token", nil)
+	ctx := context.WithValue(r.Context(), ctxKeyUserID, userID)
+	r = r.WithContext(ctx)
+
+	sm.csrfToken(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("csrfToken() status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body map[string]string
+	decodeData(t, w, &body)
+
+	token := body["csrfToken"]
+	if isPreSessionToken(token) {
+		t.Error("csrfToken(with uid) should not be pre-session")
+	}
+
+	if err := sm.CheckCSRF(userID, token); err != nil {
+		t.Fatalf("csrfToken() returned invalid user-bound token: %v", err)
 	}
 }
 
@@ -245,93 +273,70 @@ func TestGetSessionMessages_InvalidUUID(t *testing.T) {
 	}
 }
 
-func TestRequireOwnership_NoSession(t *testing.T) {
+func TestRequireOwnership_NoUser(t *testing.T) {
 	sm := newTestSessionManager()
 	targetID := uuid.New()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+targetID.String(), nil)
 	r.SetPathValue("id", targetID.String())
-	// No session in context — should return 403
+	// No user in context — should return 403
 
 	sm.getSession(w, r)
 
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("getSession(no session cookie) status = %d, want %d", w.Code, http.StatusForbidden)
+		t.Fatalf("getSession(no user) status = %d, want %d", w.Code, http.StatusForbidden)
 	}
 
 	body := decodeErrorEnvelope(t, w)
 	if body.Code != "forbidden" {
-		t.Errorf("getSession(no session cookie) code = %q, want %q", body.Code, "forbidden")
+		t.Errorf("getSession(no user) code = %q, want %q", body.Code, "forbidden")
 	}
 }
 
-func TestRequireOwnership_Mismatch(t *testing.T) {
+func TestDeleteSession_NoUser(t *testing.T) {
 	sm := newTestSessionManager()
-	ownerID := uuid.New()
-	targetID := uuid.New()
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+targetID.String(), nil)
-	r.SetPathValue("id", targetID.String())
-	// Set a different session ID in context (simulates different cookie)
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, ownerID)
-	r = r.WithContext(ctx)
-
-	sm.getSession(w, r)
-
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("getSession(mismatched session) status = %d, want %d", w.Code, http.StatusForbidden)
-	}
-}
-
-func TestDeleteSession_OwnershipDenied(t *testing.T) {
-	sm := newTestSessionManager()
-	ownerID := uuid.New()
 	targetID := uuid.New()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/"+targetID.String(), nil)
 	r.SetPathValue("id", targetID.String())
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, ownerID)
-	r = r.WithContext(ctx)
+	// No user in context
 
 	sm.deleteSession(w, r)
 
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("deleteSession(not owner) status = %d, want %d", w.Code, http.StatusForbidden)
+		t.Fatalf("deleteSession(no user) status = %d, want %d", w.Code, http.StatusForbidden)
 	}
 }
 
-func TestGetSessionMessages_OwnershipDenied(t *testing.T) {
+func TestGetSessionMessages_NoUser(t *testing.T) {
 	sm := newTestSessionManager()
-	ownerID := uuid.New()
 	targetID := uuid.New()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+targetID.String()+"/messages", nil)
 	r.SetPathValue("id", targetID.String())
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, ownerID)
-	r = r.WithContext(ctx)
+	// No user in context
 
 	sm.getSessionMessages(w, r)
 
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("getSessionMessages(not owner) status = %d, want %d", w.Code, http.StatusForbidden)
+		t.Fatalf("getSessionMessages(no user) status = %d, want %d", w.Code, http.StatusForbidden)
 	}
 }
 
-func TestListSessions_NoSession(t *testing.T) {
+func TestListSessions_NoUser(t *testing.T) {
 	sm := newTestSessionManager()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
-	// No session in context
+	// No user in context
 
 	sm.listSessions(w, r)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("listSessions(no session) status = %d, want %d", w.Code, http.StatusOK)
+		t.Fatalf("listSessions(no user) status = %d, want %d", w.Code, http.StatusOK)
 	}
 
 	// Should return empty list, not an error
@@ -341,29 +346,25 @@ func TestListSessions_NoSession(t *testing.T) {
 	var items []sessionItem
 	decodeData(t, w, &items)
 	if len(items) != 0 {
-		t.Errorf("listSessions(no session) returned %d items, want 0", len(items))
+		t.Errorf("listSessions(no user) returned %d items, want 0", len(items))
 	}
 }
 
 func FuzzCheckCSRF(f *testing.F) {
 	sm := newTestSessionManager()
-	sessionID := uuid.New()
-	validToken := sm.NewCSRFToken(sessionID)
+	userID := uuid.New().String()
+	validToken := sm.NewCSRFToken(userID)
 
-	f.Add(sessionID.String(), validToken)
-	f.Add(sessionID.String(), "")
-	f.Add(sessionID.String(), "notanumber:signature")
-	f.Add(sessionID.String(), "12345:badsig")
+	f.Add(userID, validToken)
+	f.Add(userID, "")
+	f.Add(userID, "notanumber:signature")
+	f.Add(userID, "12345:badsig")
 	f.Add(uuid.New().String(), validToken)
 	f.Add("", "")
 	f.Add("not-a-uuid", "1234:sig")
 
-	f.Fuzz(func(t *testing.T, sessionIDStr, token string) {
-		id, err := uuid.Parse(sessionIDStr)
-		if err != nil {
-			return
-		}
-		_ = sm.CheckCSRF(id, token) // must not panic
+	f.Fuzz(func(t *testing.T, uid, token string) {
+		_ = sm.CheckCSRF(uid, token) // must not panic
 	})
 }
 
@@ -386,17 +387,17 @@ func FuzzCheckPreSessionCSRF(f *testing.F) {
 
 func BenchmarkNewCSRFToken(b *testing.B) {
 	sm := newTestSessionManager()
-	sessionID := uuid.New()
+	userID := uuid.New().String()
 	for b.Loop() {
-		sm.NewCSRFToken(sessionID)
+		sm.NewCSRFToken(userID)
 	}
 }
 
 func BenchmarkCheckCSRF(b *testing.B) {
 	sm := newTestSessionManager()
-	sessionID := uuid.New()
-	token := sm.NewCSRFToken(sessionID)
+	userID := uuid.New().String()
+	token := sm.NewCSRFToken(userID)
 	for b.Loop() {
-		_ = sm.CheckCSRF(sessionID, token)
+		_ = sm.CheckCSRF(userID, token)
 	}
 }

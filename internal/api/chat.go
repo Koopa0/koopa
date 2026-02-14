@@ -84,24 +84,20 @@ func (h *chatHandler) send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve session from context (set by session middleware from cookie)
-	sessionID, ok := sessionIDFromContext(r.Context())
-	if !ok {
-		WriteError(w, http.StatusBadRequest, "session_required", "session ID required", h.logger)
+	if req.SessionID == "" {
+		WriteError(w, http.StatusBadRequest, "session_required", "sessionId is required", h.logger)
 		return
 	}
 
-	// If body also specifies a session, verify it matches (defense-in-depth)
-	if req.SessionID != "" {
-		parsed, err := uuid.Parse(req.SessionID)
-		if err != nil {
-			WriteError(w, http.StatusBadRequest, "invalid_session", "invalid session ID", h.logger)
-			return
-		}
-		if parsed != sessionID {
-			WriteError(w, http.StatusForbidden, "forbidden", "session access denied", h.logger)
-			return
-		}
+	sessionID, err := uuid.Parse(req.SessionID)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid_session", "invalid session ID", h.logger)
+		return
+	}
+
+	if !h.sessionAccessAllowed(r, sessionID) {
+		WriteError(w, http.StatusForbidden, "forbidden", "session access denied", h.logger)
+		return
 	}
 
 	msgID := uuid.New().String()
@@ -118,6 +114,30 @@ func (h *chatHandler) send(w http.ResponseWriter, r *http.Request) {
 	}, h.logger)
 }
 
+// sessionAccessAllowed checks whether the request may access the session.
+// Returns true when no session manager is configured (unit tests, CLI mode).
+// When configured, verifies the session belongs to the authenticated user.
+func (h *chatHandler) sessionAccessAllowed(r *http.Request, sessionID uuid.UUID) bool {
+	if h.sessions == nil {
+		return true // no session manager → allow (test/CLI mode)
+	}
+	if h.sessions.store == nil {
+		return false // configured but no store → deny
+	}
+
+	userID, ok := userIDFromContext(r.Context())
+	if !ok || userID == "" {
+		return false
+	}
+
+	sess, err := h.sessions.store.Session(r.Context(), sessionID)
+	if err != nil {
+		return false
+	}
+
+	return sess.OwnerID == userID
+}
+
 // stream handles GET /api/v1/chat/stream — SSE endpoint with JSON events.
 func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 	msgID := r.URL.Query().Get("msgId")
@@ -129,14 +149,13 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify session ownership
 	parsedID, err := uuid.Parse(sessionID)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_session", "invalid session ID", h.logger)
 		return
 	}
-	ctxID, ok := sessionIDFromContext(r.Context())
-	if !ok || ctxID != parsedID {
+
+	if !h.sessionAccessAllowed(r, parsedID) {
 		WriteError(w, http.StatusForbidden, "forbidden", "session access denied", h.logger)
 		return
 	}

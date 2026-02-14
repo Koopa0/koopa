@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addMessage = `-- name: AddMessage :exec
@@ -36,21 +37,27 @@ func (q *Queries) AddMessage(ctx context.Context, arg AddMessageParams) error {
 
 const createSession = `-- name: CreateSession :one
 
-INSERT INTO sessions (title)
-VALUES ($1)
-RETURNING id, title, created_at, updated_at
+INSERT INTO sessions (title, owner_id)
+VALUES ($1, $2)
+RETURNING id, title, created_at, updated_at, owner_id
 `
+
+type CreateSessionParams struct {
+	Title   *string `json:"title"`
+	OwnerID string  `json:"owner_id"`
+}
 
 // Sessions and messages queries for sqlc
 // Generated code will be in internal/sqlc/sessions.sql.go
-func (q *Queries) CreateSession(ctx context.Context, title *string) (Session, error) {
-	row := q.db.QueryRow(ctx, createSession, title)
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, createSession, arg.Title, arg.OwnerID)
 	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OwnerID,
 	)
 	return i, err
 }
@@ -65,20 +72,6 @@ func (q *Queries) DeleteSession(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const maxSequenceNumber = `-- name: MaxSequenceNumber :one
-SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
-FROM messages
-WHERE session_id = $1
-`
-
-// MaxSequenceNumber returns the max sequence number for a session (returns 0 if no messages).
-func (q *Queries) MaxSequenceNumber(ctx context.Context, sessionID uuid.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, maxSequenceNumber, sessionID)
-	var max_seq int32
-	err := row.Scan(&max_seq)
-	return max_seq, err
-}
-
 const lockSession = `-- name: LockSession :one
 SELECT id FROM sessions WHERE id = $1 FOR UPDATE
 `
@@ -88,6 +81,20 @@ func (q *Queries) LockSession(ctx context.Context, id uuid.UUID) (uuid.UUID, err
 	row := q.db.QueryRow(ctx, lockSession, id)
 	err := row.Scan(&id)
 	return id, err
+}
+
+const maxSequenceNumber = `-- name: MaxSequenceNumber :one
+SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_seq
+FROM messages
+WHERE session_id = $1
+`
+
+// Get max sequence number for a session (returns 0 if no messages)
+func (q *Queries) MaxSequenceNumber(ctx context.Context, sessionID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, maxSequenceNumber, sessionID)
+	var max_seq int32
+	err := row.Scan(&max_seq)
+	return max_seq, err
 }
 
 const messages = `-- name: Messages :many
@@ -134,17 +141,60 @@ func (q *Queries) Messages(ctx context.Context, arg MessagesParams) ([]Message, 
 }
 
 const session = `-- name: Session :one
-SELECT id, title, created_at, updated_at
+SELECT id, title, owner_id, created_at, updated_at
 FROM sessions
 WHERE id = $1
 `
 
-func (q *Queries) Session(ctx context.Context, id uuid.UUID) (Session, error) {
+type SessionRow struct {
+	ID        uuid.UUID          `json:"id"`
+	Title     *string            `json:"title"`
+	OwnerID   string             `json:"owner_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) Session(ctx context.Context, id uuid.UUID) (SessionRow, error) {
 	row := q.db.QueryRow(ctx, session, id)
-	var i Session
+	var i SessionRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const sessionByIDAndOwner = `-- name: SessionByIDAndOwner :one
+SELECT id, title, owner_id, created_at, updated_at
+FROM sessions
+WHERE id = $1 AND owner_id = $2
+`
+
+type SessionByIDAndOwnerParams struct {
+	SessionID uuid.UUID `json:"session_id"`
+	OwnerID   string    `json:"owner_id"`
+}
+
+type SessionByIDAndOwnerRow struct {
+	ID        uuid.UUID          `json:"id"`
+	Title     *string            `json:"title"`
+	OwnerID   string             `json:"owner_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Verify session exists and is owned by the given user.
+// Used for ownership checks without a separate query + comparison.
+func (q *Queries) SessionByIDAndOwner(ctx context.Context, arg SessionByIDAndOwnerParams) (SessionByIDAndOwnerRow, error) {
+	row := q.db.QueryRow(ctx, sessionByIDAndOwner, arg.SessionID, arg.OwnerID)
+	var i SessionByIDAndOwnerRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -152,30 +202,41 @@ func (q *Queries) Session(ctx context.Context, id uuid.UUID) (Session, error) {
 }
 
 const sessions = `-- name: Sessions :many
-SELECT id, title, created_at, updated_at
+SELECT id, title, owner_id, created_at, updated_at
 FROM sessions
+WHERE owner_id = $1
 ORDER BY updated_at DESC
-LIMIT $2
-OFFSET $1
+LIMIT $3
+OFFSET $2
 `
 
 type SessionsParams struct {
-	ResultOffset int32 `json:"result_offset"`
-	ResultLimit  int32 `json:"result_limit"`
+	OwnerID      string `json:"owner_id"`
+	ResultOffset int32  `json:"result_offset"`
+	ResultLimit  int32  `json:"result_limit"`
 }
 
-func (q *Queries) Sessions(ctx context.Context, arg SessionsParams) ([]Session, error) {
-	rows, err := q.db.Query(ctx, sessions, arg.ResultOffset, arg.ResultLimit)
+type SessionsRow struct {
+	ID        uuid.UUID          `json:"id"`
+	Title     *string            `json:"title"`
+	OwnerID   string             `json:"owner_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) Sessions(ctx context.Context, arg SessionsParams) ([]SessionsRow, error) {
+	rows, err := q.db.Query(ctx, sessions, arg.OwnerID, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Session{}
+	items := []SessionsRow{}
 	for rows.Next() {
-		var i Session
+		var i SessionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
+			&i.OwnerID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

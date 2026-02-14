@@ -2,21 +2,29 @@
 -- Generated code will be in internal/sqlc/sessions.sql.go
 
 -- name: CreateSession :one
-INSERT INTO sessions (title)
-VALUES ($1)
+INSERT INTO sessions (title, owner_id)
+VALUES ($1, sqlc.arg(owner_id))
 RETURNING *;
 
 -- name: Session :one
-SELECT id, title, created_at, updated_at
+SELECT id, title, owner_id, created_at, updated_at
 FROM sessions
 WHERE id = $1;
 
 -- name: Sessions :many
-SELECT id, title, created_at, updated_at
+SELECT id, title, owner_id, created_at, updated_at
 FROM sessions
+WHERE owner_id = sqlc.arg(owner_id)
 ORDER BY updated_at DESC
 LIMIT sqlc.arg(result_limit)
 OFFSET sqlc.arg(result_offset);
+
+-- name: SessionByIDAndOwner :one
+-- Verify session exists and is owned by the given user.
+-- Used for ownership checks without a separate query + comparison.
+SELECT id, title, owner_id, created_at, updated_at
+FROM sessions
+WHERE id = sqlc.arg(session_id) AND owner_id = sqlc.arg(owner_id);
 
 -- name: UpdateSessionUpdatedAt :exec
 UPDATE sessions

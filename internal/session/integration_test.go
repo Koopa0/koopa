@@ -35,7 +35,7 @@ func TestStore_CreateAndGet(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	session, err := store.CreateSession(ctx, "Test Session")
+	session, err := store.CreateSession(ctx, "test-owner", "Test Session")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -47,6 +47,9 @@ func TestStore_CreateAndGet(t *testing.T) {
 	}
 	if session.Title != "Test Session" {
 		t.Errorf("CreateSession() Title = %q, want %q", session.Title, "Test Session")
+	}
+	if session.OwnerID != "test-owner" {
+		t.Errorf("CreateSession() OwnerID = %q, want %q", session.OwnerID, "test-owner")
 	}
 	if session.CreatedAt.IsZero() {
 		t.Error("CreateSession() CreatedAt should be set")
@@ -77,7 +80,7 @@ func TestStore_CreateWithEmptyFields(t *testing.T) {
 	ctx := context.Background()
 
 	// Create session with empty title
-	session, err := store.CreateSession(ctx, "")
+	session, err := store.CreateSession(ctx, "test-owner", "")
 	if err != nil {
 		t.Fatalf("CreateSession() with empty fields unexpected error: %v", err)
 	}
@@ -105,14 +108,14 @@ func TestStore_ListSessions_Integration(t *testing.T) {
 
 	// Create multiple sessions
 	for i := 0; i < 5; i++ {
-		_, err := store.CreateSession(ctx, fmt.Sprintf("Session %d", i+1))
+		_, err := store.CreateSession(ctx, "test-owner", fmt.Sprintf("Session %d", i+1))
 		if err != nil {
 			t.Fatalf("CreateSession(%d) unexpected error: %v", i+1, err)
 		}
 	}
 
 	// List all sessions
-	sessions, err := store.Sessions(ctx, 10, 0)
+	sessions, err := store.Sessions(ctx, "test-owner", 10, 0)
 	if err != nil {
 		t.Fatalf("Sessions(10, 0) unexpected error: %v", err)
 	}
@@ -121,7 +124,7 @@ func TestStore_ListSessions_Integration(t *testing.T) {
 	}
 
 	// Test pagination - first 3
-	sessions, err = store.Sessions(ctx, 3, 0)
+	sessions, err = store.Sessions(ctx, "test-owner", 3, 0)
 	if err != nil {
 		t.Fatalf("Sessions(3, 0) unexpected error: %v", err)
 	}
@@ -130,7 +133,7 @@ func TestStore_ListSessions_Integration(t *testing.T) {
 	}
 
 	// Test pagination - next 2
-	sessions, err = store.Sessions(ctx, 3, 3)
+	sessions, err = store.Sessions(ctx, "test-owner", 3, 3)
 	if err != nil {
 		t.Fatalf("Sessions(3, 3) unexpected error: %v", err)
 	}
@@ -145,7 +148,7 @@ func TestStore_DeleteSession_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	session, err := store.CreateSession(ctx, "To Be Deleted")
+	session, err := store.CreateSession(ctx, "test-owner", "To Be Deleted")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -175,7 +178,7 @@ func TestStore_AddMessage(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	session, err := store.CreateSession(ctx, "Message Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Message Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -236,7 +239,7 @@ func TestStore_GetMessages_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	session, err := store.CreateSession(ctx, "Pagination Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Pagination Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -288,7 +291,7 @@ func TestStore_MessageOrdering(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	session, err := store.CreateSession(ctx, "Ordering Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Ordering Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -353,7 +356,7 @@ func TestStore_LargeMessageContent(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	session, err := store.CreateSession(ctx, "Large Content Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Large Content Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -392,7 +395,7 @@ func TestStore_DeleteSessionWithMessages(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session with messages
-	session, err := store.CreateSession(ctx, "Cascade Delete Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Cascade Delete Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -447,7 +450,7 @@ func TestStore_ConcurrentSessionCreation(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			title := fmt.Sprintf("Race-Session-%d", id)
-			session, err := store.CreateSession(ctx, title)
+			session, err := store.CreateSession(ctx, "test-owner", title)
 			if err != nil {
 				errs <- fmt.Errorf("goroutine %d: %w", id, err)
 				return
@@ -489,7 +492,7 @@ func TestStore_ConcurrentHistoryUpdate(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Race-History-Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Race-History-Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -565,7 +568,7 @@ func TestStore_ConcurrentLoadAndSaveHistory(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test session with initial messages
-	session, err := store.CreateSession(ctx, "Race-LoadSave-Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Race-LoadSave-Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -652,7 +655,7 @@ func TestStore_ConcurrentSessionDeletion(t *testing.T) {
 
 	// Create test sessions
 	for i := 0; i < numSessions; i++ {
-		session, err := store.CreateSession(ctx, fmt.Sprintf("Race-Delete-Test-%d", i))
+		session, err := store.CreateSession(ctx, "test-owner", fmt.Sprintf("Race-Delete-Test-%d", i))
 		if err != nil {
 			t.Fatalf("CreateSession() for session %d unexpected error: %v", i, err)
 		}
@@ -686,7 +689,7 @@ func TestStore_ConcurrentSessionDeletion(t *testing.T) {
 		// List goroutine
 		go func() {
 			defer wg.Done()
-			_, _ = store.Sessions(ctx, 100, 0)
+			_, _ = store.Sessions(ctx, "test-owner", 100, 0)
 		}()
 
 		// Get goroutine
@@ -699,7 +702,7 @@ func TestStore_ConcurrentSessionDeletion(t *testing.T) {
 	wg.Wait()
 
 	// Verify all sessions are deleted
-	remaining, err := store.Sessions(ctx, 100, 0)
+	remaining, err := store.Sessions(ctx, "test-owner", 100, 0)
 	if err != nil {
 		t.Fatalf("Sessions(100, 0) after concurrent deletion unexpected error: %v", err)
 	}
@@ -728,7 +731,7 @@ func TestStore_RaceDetector(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a shared session
-	session, err := store.CreateSession(ctx, "Race-Detector-Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Race-Detector-Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -783,7 +786,7 @@ func TestStore_ConcurrentWrites(t *testing.T) {
 	numSessions := 5
 	sessions := make([]*Session, numSessions)
 	for i := 0; i < numSessions; i++ {
-		session, err := store.CreateSession(ctx, fmt.Sprintf("Concurrent Session %d", i+1))
+		session, err := store.CreateSession(ctx, "test-owner", fmt.Sprintf("Concurrent Session %d", i+1))
 		if err != nil {
 			t.Fatalf("CreateSession() for session %d unexpected error: %v", i+1, err)
 		}
@@ -842,14 +845,14 @@ func TestStore_SQLInjectionPrevention(t *testing.T) {
 	ctx := context.Background()
 
 	// First, create a legitimate session
-	legitSession, err := store.CreateSession(ctx, "Legitimate Session")
+	legitSession, err := store.CreateSession(ctx, "test-owner", "Legitimate Session")
 	if err != nil {
 		t.Fatalf("CreateSession() for legitimate session unexpected error: %v", err)
 	}
 	t.Logf("Created legitimate session: %s", legitSession.ID)
 
 	// Count sessions before attacks
-	sessions, err := store.Sessions(ctx, 100, 0)
+	sessions, err := store.Sessions(ctx, "test-owner", 100, 0)
 	if err != nil {
 		t.Fatalf("Sessions(100, 0) before attacks unexpected error: %v", err)
 	}
@@ -889,7 +892,7 @@ func TestStore_SQLInjectionPrevention(t *testing.T) {
 	for _, tc := range maliciousTitles {
 		t.Run("title_"+tc.name, func(t *testing.T) {
 			// Attempt SQL injection via session title
-			session, err := store.CreateSession(ctx, tc.title)
+			session, err := store.CreateSession(ctx, "test-owner", tc.title)
 
 			// Should either succeed (with escaped title) or fail safely
 			if err != nil {
@@ -906,7 +909,7 @@ func TestStore_SQLInjectionPrevention(t *testing.T) {
 	// Verify database integrity
 	t.Run("verify database integrity", func(t *testing.T) {
 		// Sessions table should still exist
-		sessions, err := store.Sessions(ctx, 100, 0)
+		sessions, err := store.Sessions(ctx, "test-owner", 100, 0)
 		if err != nil {
 			t.Fatalf("Sessions(100, 0) after attacks unexpected error: %v (sessions table should still exist)", err)
 		}
@@ -940,7 +943,7 @@ func TestStore_SQLInjectionViaSessionID(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Test Session")
+	session, err := store.CreateSession(ctx, "test-owner", "Test Session")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}
@@ -1029,7 +1032,7 @@ func TestStore_SQLInjectionViaMessageContent(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test session
-	session, err := store.CreateSession(ctx, "Message Test")
+	session, err := store.CreateSession(ctx, "test-owner", "Message Test")
 	if err != nil {
 		t.Fatalf("CreateSession() unexpected error: %v", err)
 	}

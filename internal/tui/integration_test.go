@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 // createTestSession creates a session in the database and returns its ID and cleanup function.
 func createTestSession(t *testing.T, setup *chatFlowSetup) (uuid.UUID, func()) {
 	t.Helper()
-	sess, err := setup.SessionStore.CreateSession(setup.Ctx, "test-session")
+	sess, err := setup.SessionStore.CreateSession(setup.Ctx, "test-user", "test-session")
 	if err != nil {
 		t.Fatalf("CreateSession() error: %v", err)
 	}

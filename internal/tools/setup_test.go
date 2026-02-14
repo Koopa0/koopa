@@ -20,6 +20,5 @@ func newNetworkForTesting(tb testing.TB, cfg NetConfig, logger *slog.Logger) *Ne
 		tb.Fatalf("NewNetwork() unexpected error: %v", err)
 	}
 	nt.skipSSRFCheck = true
-	nt.searchClient.Transport = nil // allow localhost in tests
 	return nt
 }

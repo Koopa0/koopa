@@ -18,6 +18,8 @@ import (
 	"github.com/koopa0/koopa/internal/testutil"
 )
 
+const testOwnerID = "test-user"
+
 // setupIntegrationSessionManager creates a sessionManager backed by a real PostgreSQL database.
 func setupIntegrationSessionManager(t *testing.T) *sessionManager {
 	t.Helper()
@@ -40,6 +42,10 @@ func TestCreateSession_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
 
+	// Inject user identity into context (normally done by userMiddleware)
+	ctx := context.WithValue(r.Context(), ctxKeyUserID, testOwnerID)
+	r = r.WithContext(ctx)
+
 	sm.createSession(w, r)
 
 	if w.Code != http.StatusCreated {
@@ -54,7 +60,7 @@ func TestCreateSession_Success(t *testing.T) {
 		t.Errorf("createSession() id = %q, want valid UUID", resp["id"])
 	}
 
-	// Should return a CSRF token bound to the new session
+	// Should return a CSRF token bound to the user
 	if resp["csrfToken"] == "" {
 		t.Error("createSession() expected csrfToken in response")
 	}
@@ -83,7 +89,7 @@ func TestGetSession_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session first
-	sess, err := sm.store.CreateSession(ctx, "Test Session")
+	sess, err := sm.store.CreateSession(ctx, testOwnerID, "Test Session")
 	if err != nil {
 		t.Fatalf("setup: CreateSession() error: %v", err)
 	}
@@ -92,8 +98,8 @@ func TestGetSession_Success(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+sess.ID.String(), nil)
 	r.SetPathValue("id", sess.ID.String())
 
-	// Inject session ownership (same session ID in context)
-	rctx := context.WithValue(r.Context(), ctxKeySessionID, sess.ID)
+	// Inject user identity for ownership check
+	rctx := context.WithValue(r.Context(), ctxKeyUserID, testOwnerID)
 	r = r.WithContext(rctx)
 
 	sm.getSession(w, r)
@@ -128,8 +134,8 @@ func TestGetSession_NotFound(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+missingID.String(), nil)
 	r.SetPathValue("id", missingID.String())
 
-	// Set ownership to match (bypasses ownership check, tests store-level 404)
-	rctx := context.WithValue(r.Context(), ctxKeySessionID, missingID)
+	// Set user identity (session doesn't exist, so ownership check returns 404)
+	rctx := context.WithValue(r.Context(), ctxKeyUserID, testOwnerID)
 	r = r.WithContext(rctx)
 
 	sm.getSession(w, r)
@@ -149,7 +155,7 @@ func TestListSessions_WithSession(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	sess, err := sm.store.CreateSession(ctx, "My Chat")
+	sess, err := sm.store.CreateSession(ctx, testOwnerID, "My Chat")
 	if err != nil {
 		t.Fatalf("setup: CreateSession() error: %v", err)
 	}
@@ -157,8 +163,8 @@ func TestListSessions_WithSession(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
 
-	// Inject session ownership
-	rctx := context.WithValue(r.Context(), ctxKeySessionID, sess.ID)
+	// Inject user identity for listing
+	rctx := context.WithValue(r.Context(), ctxKeyUserID, testOwnerID)
 	r = r.WithContext(rctx)
 
 	sm.listSessions(w, r)
@@ -194,7 +200,7 @@ func TestGetSessionMessages_Empty(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session with no messages
-	sess, err := sm.store.CreateSession(ctx, "")
+	sess, err := sm.store.CreateSession(ctx, testOwnerID, "")
 	if err != nil {
 		t.Fatalf("setup: CreateSession() error: %v", err)
 	}
@@ -203,7 +209,7 @@ func TestGetSessionMessages_Empty(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+sess.ID.String()+"/messages", nil)
 	r.SetPathValue("id", sess.ID.String())
 
-	rctx := context.WithValue(r.Context(), ctxKeySessionID, sess.ID)
+	rctx := context.WithValue(r.Context(), ctxKeyUserID, testOwnerID)
 	r = r.WithContext(rctx)
 
 	sm.getSessionMessages(w, r)
@@ -235,7 +241,7 @@ func TestDeleteSession_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session
-	sess, err := sm.store.CreateSession(ctx, "To Delete")
+	sess, err := sm.store.CreateSession(ctx, testOwnerID, "To Delete")
 	if err != nil {
 		t.Fatalf("setup: CreateSession() error: %v", err)
 	}
@@ -244,8 +250,8 @@ func TestDeleteSession_Success(t *testing.T) {
 	r := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/"+sess.ID.String(), nil)
 	r.SetPathValue("id", sess.ID.String())
 
-	// Inject ownership
-	rctx := context.WithValue(r.Context(), ctxKeySessionID, sess.ID)
+	// Inject user identity for ownership check
+	rctx := context.WithValue(r.Context(), ctxKeyUserID, testOwnerID)
 	r = r.WithContext(rctx)
 
 	sm.deleteSession(w, r)
@@ -270,25 +276,20 @@ func TestDeleteSession_Success(t *testing.T) {
 
 func TestCSRFTokenEndpoint_WithSession(t *testing.T) {
 	sm := setupIntegrationSessionManager(t)
-	ctx := context.Background()
 
-	// Create a real session
-	sess, err := sm.store.CreateSession(ctx, "")
-	if err != nil {
-		t.Fatalf("setup: CreateSession() error: %v", err)
-	}
+	userID := uuid.New().String()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/csrf-token", nil)
-	r.AddCookie(&http.Cookie{
-		Name:  "sid",
-		Value: sess.ID.String(),
-	})
+
+	// Inject user identity into context (csrfToken handler reads from context now)
+	ctx := context.WithValue(r.Context(), ctxKeyUserID, userID)
+	r = r.WithContext(ctx)
 
 	sm.csrfToken(w, r)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("csrfToken(with session) status = %d, want %d", w.Code, http.StatusOK)
+		t.Fatalf("csrfToken(with user) status = %d, want %d", w.Code, http.StatusOK)
 	}
 
 	var body map[string]string
@@ -296,17 +297,80 @@ func TestCSRFTokenEndpoint_WithSession(t *testing.T) {
 
 	token := body["csrfToken"]
 	if token == "" {
-		t.Fatal("csrfToken(with session) expected csrfToken in response")
+		t.Fatal("csrfToken(with user) expected csrfToken in response")
 	}
 
-	// Session-bound tokens should NOT have pre: prefix
+	// User-bound tokens should NOT have pre: prefix
 	if isPreSessionToken(token) {
-		t.Error("csrfToken(with session) should return session-bound token, not pre-session")
+		t.Error("csrfToken(with user) should return user-bound token, not pre-session")
 	}
 
-	// Token should validate against the session
-	if err := sm.CheckCSRF(sess.ID, token); err != nil {
-		t.Fatalf("csrfToken(with session) returned invalid token: %v", err)
+	// Token should validate against the user
+	if err := sm.CheckCSRF(userID, token); err != nil {
+		t.Fatalf("csrfToken(with user) returned invalid token: %v", err)
+	}
+}
+
+// TestMaybeGenerateTitle_SessionHasTitle verifies that maybeGenerateTitle
+// returns empty when the session already has a title (no overwrite).
+func TestMaybeGenerateTitle_SessionHasTitle(t *testing.T) {
+	sm := setupIntegrationSessionManager(t)
+	ctx := context.Background()
+
+	sess, err := sm.store.CreateSession(ctx, testOwnerID, "Existing Title")
+	if err != nil {
+		t.Fatalf("setup: CreateSession() error: %v", err)
+	}
+
+	ch := &chatHandler{
+		logger:   slog.New(slog.DiscardHandler),
+		sessions: sm,
+	}
+
+	title := ch.maybeGenerateTitle(ctx, sess.ID.String(), "new message")
+	if title != "" {
+		t.Errorf("maybeGenerateTitle(%q) = %q, want empty string", sess.ID.String(), title)
+	}
+}
+
+// TestMaybeGenerateTitle_FallbackTruncation verifies that when agent is nil,
+// maybeGenerateTitle falls back to truncateForTitle for title generation.
+func TestMaybeGenerateTitle_FallbackTruncation(t *testing.T) {
+	sm := setupIntegrationSessionManager(t)
+	ctx := context.Background()
+
+	// Create session with empty title
+	sess, err := sm.store.CreateSession(ctx, testOwnerID, "")
+	if err != nil {
+		t.Fatalf("setup: CreateSession() error: %v", err)
+	}
+
+	ch := &chatHandler{
+		logger:   slog.New(slog.DiscardHandler),
+		agent:    nil, // no AI title generation
+		sessions: sm,
+	}
+
+	userMsg := "How do I use Go generics effectively?"
+	title := ch.maybeGenerateTitle(ctx, sess.ID.String(), userMsg)
+
+	if title == "" {
+		t.Fatal("maybeGenerateTitle(fallback) = empty, want truncated title")
+	}
+
+	// Verify fallback matches truncateForTitle behavior
+	want := truncateForTitle(userMsg)
+	if title != want {
+		t.Errorf("maybeGenerateTitle(%q) = %q, want %q", sess.ID.String(), title, want)
+	}
+
+	// Verify title was persisted
+	updated, err := sm.store.Session(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("verifying title: %v", err)
+	}
+	if updated.Title != title {
+		t.Errorf("persisted title = %q, want %q", updated.Title, title)
 	}
 }
 
@@ -315,7 +379,7 @@ func TestGetSessionMessages_WithMessages(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session with messages
-	sess, err := sm.store.CreateSession(ctx, "Test Chat")
+	sess, err := sm.store.CreateSession(ctx, testOwnerID, "Test Chat")
 	if err != nil {
 		t.Fatalf("setup: CreateSession() error: %v", err)
 	}
@@ -333,7 +397,7 @@ func TestGetSessionMessages_WithMessages(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+sess.ID.String()+"/messages", nil)
 	r.SetPathValue("id", sess.ID.String())
 
-	rctx := context.WithValue(r.Context(), ctxKeySessionID, sess.ID)
+	rctx := context.WithValue(r.Context(), ctxKeyUserID, testOwnerID)
 	r = r.WithContext(rctx)
 
 	sm.getSessionMessages(w, r)

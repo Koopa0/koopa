@@ -21,6 +21,16 @@ import (
 func newTestChatHandler() *chatHandler {
 	return &chatHandler{
 		logger: slog.New(slog.DiscardHandler),
+		// sessions is nil — ownership verification is skipped for unit tests
+	}
+}
+
+// newTestChatHandlerWithSessions creates a chat handler with a session manager
+// but no store, causing sessionAccessAllowed to always return false (ownership denied).
+func newTestChatHandlerWithSessions() *chatHandler {
+	return &chatHandler{
+		logger:   slog.New(slog.DiscardHandler),
+		sessions: &sessionManager{logger: slog.New(slog.DiscardHandler)},
 	}
 }
 
@@ -35,13 +45,11 @@ func TestChatSend_URLEncoding(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
-	r = r.WithContext(ctx)
 
 	newTestChatHandler().send(w, r)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("send() status = %d, want %d", w.Code, http.StatusOK)
+		t.Fatalf("send() status = %d, want %d\nbody: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
 	var resp map[string]string
@@ -78,13 +86,11 @@ func TestChatSend_SessionIDFromBody(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
-	r = r.WithContext(ctx)
 
 	newTestChatHandler().send(w, r)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("send() status = %d, want %d", w.Code, http.StatusOK)
+		t.Fatalf("send() status = %d, want %d\nbody: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
 	var resp map[string]string
@@ -99,8 +105,7 @@ func TestChatSend_SessionIDFromBody(t *testing.T) {
 	}
 }
 
-func TestChatSend_SessionIDFromContext(t *testing.T) {
-	sessionID := uuid.New()
+func TestChatSend_MissingSessionID(t *testing.T) {
 	body, _ := json.Marshal(map[string]string{
 		"content": "hello",
 		// No sessionId in body
@@ -109,21 +114,15 @@ func TestChatSend_SessionIDFromContext(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
 
-	// Inject session ID via context (as sessionMiddleware would)
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
-	r = r.WithContext(ctx)
-
 	newTestChatHandler().send(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("send() status = %d, want %d", w.Code, http.StatusOK)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("send(no session) status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 
-	var resp map[string]string
-	decodeData(t, w, &resp)
-
-	if resp["sessionId"] != sessionID.String() {
-		t.Errorf("send() sessionId = %s, want %s (from context)", resp["sessionId"], sessionID)
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "session_required" {
+		t.Errorf("send(no session) code = %q, want %q", errResp.Code, "session_required")
 	}
 }
 
@@ -172,9 +171,6 @@ func TestChatSend_InvalidSessionID(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
-	// Inject context session so we reach the body parse check
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, uuid.New())
-	r = r.WithContext(ctx)
 
 	newTestChatHandler().send(w, r)
 
@@ -189,28 +185,6 @@ func TestChatSend_InvalidSessionID(t *testing.T) {
 	}
 }
 
-func TestChatSend_NoSession(t *testing.T) {
-	body, _ := json.Marshal(map[string]string{
-		"content": "hello",
-		// No sessionId in body, no session in context
-	})
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
-
-	newTestChatHandler().send(w, r)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("send(no session) status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-
-	errResp := decodeErrorEnvelope(t, w)
-
-	if errResp.Code != "session_required" {
-		t.Errorf("send(no session) code = %q, want %q", errResp.Code, "session_required")
-	}
-}
-
 func TestChatSend_InvalidJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader([]byte("not json")))
@@ -219,6 +193,28 @@ func TestChatSend_InvalidJSON(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("send(invalid json) status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestChatSend_OwnershipDenied(t *testing.T) {
+	body, _ := json.Marshal(map[string]string{
+		"content":   "hello",
+		"sessionId": uuid.New().String(),
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+
+	// Use handler with sessions configured but no store — ownership always fails
+	newTestChatHandlerWithSessions().send(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("send(ownership denied) status = %d, want %d", w.Code, http.StatusForbidden)
+	}
+
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "forbidden" {
+		t.Errorf("send(ownership denied) code = %q, want %q", errResp.Code, "forbidden")
 	}
 }
 
@@ -312,8 +308,6 @@ func TestStream_SSEHeaders(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
-	r = r.WithContext(ctx)
 
 	ch.stream(w, r)
 
@@ -337,8 +331,6 @@ func TestStream_NilFlow(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hello", nil)
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
-	r = r.WithContext(ctx)
 
 	ch.stream(w, r)
 
@@ -414,7 +406,6 @@ func TestStream_NilFlow_ContextCanceled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
-	ctx = context.WithValue(ctx, ctxKeySessionID, sessionID)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
@@ -458,58 +449,34 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
-func TestChatSend_SessionMismatch(t *testing.T) {
-	body, _ := json.Marshal(map[string]string{
-		"content":   "hello",
-		"sessionId": uuid.New().String(), // Different from context
-	})
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, uuid.New())
-	r = r.WithContext(ctx)
-
-	newTestChatHandler().send(w, r)
-
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("send(mismatched session) status = %d, want %d", w.Code, http.StatusForbidden)
-	}
-
-	errResp := decodeErrorEnvelope(t, w)
-	if errResp.Code != "forbidden" {
-		t.Errorf("send(mismatched session) code = %q, want %q", errResp.Code, "forbidden")
-	}
-}
-
 func TestStream_OwnershipDenied(t *testing.T) {
-	ch := newTestChatHandler()
+	// Handler with sessions configured but no store → ownership always fails
+	ch := newTestChatHandlerWithSessions()
 	sessionID := uuid.New()
-	otherID := uuid.New()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
-	ctx := context.WithValue(r.Context(), ctxKeySessionID, otherID)
-	r = r.WithContext(ctx)
 
 	ch.stream(w, r)
 
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("stream(wrong session) status = %d, want %d", w.Code, http.StatusForbidden)
+		t.Fatalf("stream(ownership denied) status = %d, want %d", w.Code, http.StatusForbidden)
 	}
 }
 
-func TestStream_NoSession(t *testing.T) {
-	ch := newTestChatHandler()
+func TestStream_NoUser(t *testing.T) {
+	// Handler with sessions configured but no user in context
+	ch := newTestChatHandlerWithSessions()
 	sessionID := uuid.New()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
-	// No session in context
+	// No user in context
 
 	ch.stream(w, r)
 
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("stream(no session) status = %d, want %d", w.Code, http.StatusForbidden)
+		t.Fatalf("stream(no user) status = %d, want %d", w.Code, http.StatusForbidden)
 	}
 }
 
@@ -557,6 +524,164 @@ func filterSSEEvents(events []sseTestEvent, eventType string) []sseTestEvent {
 		}
 	}
 	return filtered
+}
+
+// TestJSONToolEmitter verifies that jsonToolEmitter emits correct SSE events
+// for tool start, complete, and error — for both known and unknown tools.
+func TestJSONToolEmitter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		method    string // "start", "complete", "error"
+		toolName  string
+		wantEvent string
+		wantMsg   string
+	}{
+		{
+			name:      "start known tool",
+			method:    "start",
+			toolName:  "web_search",
+			wantEvent: "tool_start",
+			wantMsg:   toolDisplay["web_search"].StartMsg,
+		},
+		{
+			name:      "start unknown tool",
+			method:    "start",
+			toolName:  "custom_tool",
+			wantEvent: "tool_start",
+			wantMsg:   defaultToolDisplay.StartMsg,
+		},
+		{
+			name:      "complete known tool",
+			method:    "complete",
+			toolName:  "read_file",
+			wantEvent: "tool_complete",
+			wantMsg:   toolDisplay["read_file"].CompleteMsg,
+		},
+		{
+			name:      "complete unknown tool",
+			method:    "complete",
+			toolName:  "custom_tool",
+			wantEvent: "tool_complete",
+			wantMsg:   defaultToolDisplay.CompleteMsg,
+		},
+		{
+			name:      "error known tool",
+			method:    "error",
+			toolName:  "web_fetch",
+			wantEvent: "tool_error",
+			wantMsg:   toolDisplay["web_fetch"].ErrorMsg,
+		},
+		{
+			name:      "error unknown tool",
+			method:    "error",
+			toolName:  "custom_tool",
+			wantEvent: "tool_error",
+			wantMsg:   defaultToolDisplay.ErrorMsg,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := httptest.NewRecorder()
+			emitter := &jsonToolEmitter{w: w, msgID: "test-msg"}
+
+			switch tt.method {
+			case "start":
+				emitter.OnToolStart(tt.toolName)
+			case "complete":
+				emitter.OnToolComplete(tt.toolName)
+			case "error":
+				emitter.OnToolError(tt.toolName)
+			}
+
+			events := parseSSEEvents(t, w.Body.String())
+			if len(events) != 1 {
+				t.Fatalf("jsonToolEmitter.%s(%q) emitted %d events, want 1", tt.method, tt.toolName, len(events))
+			}
+
+			ev := events[0]
+			if ev.Type != tt.wantEvent {
+				t.Errorf("jsonToolEmitter.%s(%q) event type = %q, want %q", tt.method, tt.toolName, ev.Type, tt.wantEvent)
+			}
+			if ev.Data["msgId"] != "test-msg" {
+				t.Errorf("jsonToolEmitter.%s(%q) msgId = %q, want %q", tt.method, tt.toolName, ev.Data["msgId"], "test-msg")
+			}
+			if ev.Data["tool"] != tt.toolName {
+				t.Errorf("jsonToolEmitter.%s(%q) tool = %q, want %q", tt.method, tt.toolName, ev.Data["tool"], tt.toolName)
+			}
+			if ev.Data["message"] != tt.wantMsg {
+				t.Errorf("jsonToolEmitter.%s(%q) message = %q, want %q", tt.method, tt.toolName, ev.Data["message"], tt.wantMsg)
+			}
+		})
+	}
+}
+
+// TestCreateSession_MissingUser verifies that createSession returns 400
+// when no user identity is present in the request context.
+func TestCreateSession_MissingUser(t *testing.T) {
+	t.Parallel()
+
+	sm := newTestSessionManager()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
+	// No user in context
+
+	sm.createSession(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("createSession(no user) status = %d, want %d\nbody: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "user_required" {
+		t.Errorf("createSession(no user) code = %q, want %q", errResp.Code, "user_required")
+	}
+}
+
+// TestMaybeGenerateTitle_NilPaths verifies early-return paths in maybeGenerateTitle
+// when sessions or store are nil, or when the session ID is invalid.
+func TestMaybeGenerateTitle_NilPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		handler   *chatHandler
+		sessionID string
+	}{
+		{
+			name:      "nil sessions",
+			handler:   &chatHandler{logger: slog.New(slog.DiscardHandler)},
+			sessionID: uuid.New().String(),
+		},
+		{
+			name: "nil store",
+			handler: &chatHandler{
+				logger:   slog.New(slog.DiscardHandler),
+				sessions: &sessionManager{logger: slog.New(slog.DiscardHandler)},
+			},
+			sessionID: uuid.New().String(),
+		},
+		{
+			name:      "invalid UUID",
+			handler:   &chatHandler{logger: slog.New(slog.DiscardHandler)},
+			sessionID: "not-a-uuid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			title := tt.handler.maybeGenerateTitle(context.Background(), tt.sessionID, "test message")
+			if title != "" {
+				t.Errorf("maybeGenerateTitle(%s) = %q, want empty string", tt.name, title)
+			}
+		})
+	}
 }
 
 func TestStreamWithFlow(t *testing.T) {
@@ -620,13 +745,12 @@ func TestStreamWithFlow(t *testing.T) {
 			ch := &chatHandler{
 				logger: slog.New(slog.DiscardHandler),
 				flow:   testFlow,
+				// sessions is nil — ownership skipped for unit tests
 			}
 
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet,
 				"/api/v1/chat/stream?msgId=m1&session_id="+sessionIDStr+"&query=test", nil)
-			rctx := context.WithValue(r.Context(), ctxKeySessionID, sessionID)
-			r = r.WithContext(rctx)
 
 			ch.stream(w, r)
 

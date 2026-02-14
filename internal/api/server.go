@@ -19,6 +19,7 @@ type ServerConfig struct {
 	CORSOrigins  []string       // Allowed origins for CORS
 	IsDev        bool           // Enables HTTP cookies (no Secure flag)
 	TrustProxy   bool           // Trust X-Real-IP/X-Forwarded-For headers (behind reverse proxy)
+	RateBurst    int            // Rate limiter burst size per IP (0 = default 60)
 }
 
 // Server is the JSON API HTTP server.
@@ -70,13 +71,18 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	mux.HandleFunc("POST /api/v1/chat", ch.send)
 	mux.HandleFunc("GET /api/v1/chat/stream", ch.stream)
 
-	// Rate limiter: 60 requests/minute per IP (1 token/sec, burst 60)
-	rl := newRateLimiter(1.0, 60)
+	// Rate limiter: per-IP token bucket (1 token/sec refill)
+	burst := cfg.RateBurst
+	if burst <= 0 {
+		burst = 60
+	}
+	rl := newRateLimiter(1.0, burst)
 
-	// Build middleware stack: Recovery → Logging → RateLimit → CORS → Session → CSRF → Routes
+	// Build middleware stack: Recovery → Logging → RateLimit → CORS → User → Session → CSRF → Routes
 	var handler http.Handler = mux
 	handler = csrfMiddleware(sm, logger)(handler)
 	handler = sessionMiddleware(sm)(handler)
+	handler = userMiddleware(sm)(handler)
 	handler = corsMiddleware(cfg.CORSOrigins)(handler)
 	handler = rateLimitMiddleware(rl, cfg.TrustProxy, logger)(handler)
 	handler = loggingMiddleware(logger)(handler)
