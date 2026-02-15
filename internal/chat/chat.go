@@ -299,7 +299,8 @@ func (a *Agent) generateResponse(ctx context.Context, input string, historyMessa
 	// Build execute options (using cached toolRefs and languagePrompt)
 	opts := []ai.PromptExecuteOption{
 		ai.WithInput(map[string]any{
-			"language": a.languagePrompt,
+			"language":     a.languagePrompt,
+			"current_date": time.Now().Format("2006-01-02"),
 		}),
 		ai.WithMessagesFn(func(_ context.Context, _ any) ([]*ai.Message, error) {
 			return messages, nil

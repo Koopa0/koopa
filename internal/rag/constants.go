@@ -48,7 +48,7 @@ func NewDocStoreConfig(embedder ai.Embedder) *postgresql.Config {
 		ContentColumn:      DocumentsContentCol,
 		EmbeddingColumn:    DocumentsEmbeddingCol,
 		MetadataJSONColumn: DocumentsMetadataCol,
-		MetadataColumns:    []string{"source_type"}, // For filtering by type
+		MetadataColumns:    []string{"source_type", "owner_id"}, // For filtering by type and owner
 		Embedder:           embedder,
 		EmbedderOptions:    &genai.EmbedContentConfig{OutputDimensionality: &dim},
 	}

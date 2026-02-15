@@ -150,6 +150,16 @@ func TestStoreKnowledge_Validation(t *testing.T) {
 			wantInMsg: "title is required",
 		},
 		{
+			name: "title exceeds maximum length",
+			kt:   knowledgeWithDocStore,
+			input: KnowledgeStoreInput{
+				Title:   strings.Repeat("t", MaxKnowledgeTitleLength+1),
+				Content: "c",
+			},
+			wantCode:  ErrCodeValidation,
+			wantInMsg: "title length",
+		},
+		{
 			name:      "empty content",
 			kt:        knowledgeWithDocStore,
 			input:     KnowledgeStoreInput{Title: "t", Content: ""},
@@ -187,5 +197,99 @@ func TestStoreKnowledge_Validation(t *testing.T) {
 				t.Errorf("StoreKnowledge() error message = %q, want to contain %q", result.Error.Message, tt.wantInMsg)
 			}
 		})
+	}
+}
+
+func TestOwnerFilter(t *testing.T) {
+	tests := []struct {
+		name       string
+		sourceType string
+		ownerID    string
+		want       string
+		wantErr    bool
+	}{
+		{
+			name:       "no owner",
+			sourceType: "file",
+			ownerID:    "",
+			want:       "source_type = 'file'",
+		},
+		{
+			name:       "valid UUID owner",
+			sourceType: "file",
+			ownerID:    "550e8400-e29b-41d4-a716-446655440000",
+			want:       "source_type = 'file' AND (owner_id = '550e8400-e29b-41d4-a716-446655440000' OR owner_id IS NULL)",
+		},
+		{
+			name:       "conversation with owner",
+			sourceType: "conversation",
+			ownerID:    "550e8400-e29b-41d4-a716-446655440000",
+			want:       "source_type = 'conversation' AND (owner_id = '550e8400-e29b-41d4-a716-446655440000' OR owner_id IS NULL)",
+		},
+		{
+			name:       "invalid source type",
+			sourceType: "invalid",
+			ownerID:    "",
+			wantErr:    true,
+		},
+		{
+			name:       "invalid owner ID format",
+			sourceType: "file",
+			ownerID:    "not-a-uuid",
+			wantErr:    true,
+		},
+		{
+			name:       "SQL injection in owner ID",
+			sourceType: "file",
+			ownerID:    "'; DROP TABLE documents; --",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ownerFilter(tt.sourceType, tt.ownerID)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ownerFilter(%q, %q) error = nil, want non-nil", tt.sourceType, tt.ownerID)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ownerFilter(%q, %q) unexpected error: %v", tt.sourceType, tt.ownerID, err)
+			}
+			if got != tt.want {
+				t.Errorf("ownerFilter(%q, %q) = %q, want %q", tt.sourceType, tt.ownerID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOwnerIDContext(t *testing.T) {
+	t.Run("empty when not set", func(t *testing.T) {
+		ctx := context.Background()
+		if got := OwnerIDFromContext(ctx); got != "" {
+			t.Errorf("OwnerIDFromContext(empty) = %q, want empty", got)
+		}
+	})
+
+	t.Run("round trip", func(t *testing.T) {
+		ctx := ContextWithOwnerID(context.Background(), "test-owner")
+		if got := OwnerIDFromContext(ctx); got != "test-owner" {
+			t.Errorf("OwnerIDFromContext(set) = %q, want %q", got, "test-owner")
+		}
+	})
+}
+
+func TestKnowledgeContentSizeLimit(t *testing.T) {
+	// Verify the content size limit is 10KB (Phase 0A reduction from 50KB).
+	if MaxKnowledgeContentSize != 10_000 {
+		t.Errorf("MaxKnowledgeContentSize = %d, want 10000", MaxKnowledgeContentSize)
+	}
+}
+
+func TestKnowledgeTitleLengthLimit(t *testing.T) {
+	if MaxKnowledgeTitleLength != 500 {
+		t.Errorf("MaxKnowledgeTitleLength = %d, want 500", MaxKnowledgeTitleLength)
 	}
 }

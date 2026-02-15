@@ -233,6 +233,11 @@ func (h *chatHandler) streamWithFlow(ctx context.Context, w http.ResponseWriter,
 	emitter := &jsonToolEmitter{w: w, msgID: msgID}
 	ctx = tools.ContextWithEmitter(ctx, emitter)
 
+	// Inject owner identity for per-user knowledge isolation (RAG poisoning prevention).
+	if ownerID, ok := userIDFromContext(ctx); ok && ownerID != "" {
+		ctx = tools.ContextWithOwnerID(ctx, ownerID)
+	}
+
 	h.logger.Debug("starting stream", "sessionId", sessionID)
 
 	var (
