@@ -20,18 +20,25 @@ var (
 
 	// ErrPathNullByte indicates the path contains a null byte (CWE-626).
 	ErrPathNullByte = errors.New("path contains null byte")
+
+	// ErrPathDenied indicates the path matches a denied prefix (e.g. prompts/).
+	ErrPathDenied = errors.New("path is denied")
 )
 
 // Path validates and sanitizes file paths to prevent traversal attacks.
 // Used to prevent path traversal attacks (CWE-22).
 type Path struct {
-	allowedDirs []string
-	workDir     string
+	allowedDirs    []string
+	deniedPrefixes []string // absolute paths that are always denied (case-insensitive on macOS HFS+)
+	workDir        string
 }
 
 // NewPath creates a new Path validator.
-// allowedDirs: list of allowed directories (empty list means only working directory is allowed)
-func NewPath(allowedDirs []string) (*Path, error) {
+// allowedDirs: list of allowed directories (empty list means only working directory is allowed).
+// deniedPrefixes: list of directory prefixes that are always denied even if inside allowed dirs
+// (e.g. "prompts/" to protect system prompt files). Compared case-insensitively on
+// case-insensitive filesystems (macOS HFS+).
+func NewPath(allowedDirs, deniedPrefixes []string) (*Path, error) {
 	workDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get working directory: %w", err)
@@ -47,10 +54,33 @@ func NewPath(allowedDirs []string) (*Path, error) {
 		absAllowedDirs = append(absAllowedDirs, absDir)
 	}
 
+	// Convert denied prefixes to absolute paths
+	absDenied := make([]string, 0, len(deniedPrefixes))
+	for _, prefix := range deniedPrefixes {
+		absPrefix, err := filepath.Abs(prefix)
+		if err != nil {
+			return nil, fmt.Errorf("unable to resolve denied prefix %s: %w", prefix, err)
+		}
+		absDenied = append(absDenied, absPrefix)
+	}
+
 	return &Path{
-		allowedDirs: absAllowedDirs,
-		workDir:     workDir,
+		allowedDirs:    absAllowedDirs,
+		deniedPrefixes: absDenied,
+		workDir:        workDir,
 	}, nil
+}
+
+// isPathDenied checks if a path matches any denied prefix.
+// Uses case-insensitive comparison to handle case-insensitive filesystems (macOS HFS+).
+func (v *Path) isPathDenied(absPath string) bool {
+	for _, denied := range v.deniedPrefixes {
+		deniedWithSep := filepath.Clean(denied) + string(filepath.Separator)
+		if strings.EqualFold(absPath, denied) || strings.HasPrefix(strings.ToLower(absPath+string(filepath.Separator)), strings.ToLower(deniedWithSep)) {
+			return true
+		}
+	}
+	return false
 }
 
 // isPathInAllowedDirs checks if a path is within allowed directories
@@ -124,6 +154,14 @@ func (v *Path) Validate(path string) (string, error) {
 			"security_event", "path_traversal_attempt")
 		// Return sentinel error wrapped with generic message
 		return "", fmt.Errorf("%w: access denied", ErrPathOutsideAllowed)
+	}
+
+	// 3b. Check if path matches a denied prefix (e.g. prompts/)
+	if v.isPathDenied(absPath) {
+		slog.Warn("path denied by prefix rule",
+			"path", absPath,
+			"security_event", "denied_prefix_access_attempt")
+		return "", fmt.Errorf("%w: access denied", ErrPathDenied)
 	}
 
 	// 4. Resolve symbolic links (prevent bypassing restrictions through symlinks)

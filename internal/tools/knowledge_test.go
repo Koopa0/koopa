@@ -3,10 +3,12 @@ package tools
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
+	"github.com/firebase/genkit/go/plugins/postgresql"
 )
 
 // mockRetriever is a minimal ai.Retriever implementation for testing.
@@ -108,5 +110,82 @@ func TestValidSourceTypes(t *testing.T) {
 		if validSourceTypes[st] {
 			t.Errorf("validSourceTypes[%q] = true, want false (SQL injection risk)", st)
 		}
+	}
+}
+
+func TestStoreKnowledge_Validation(t *testing.T) {
+	// knowledgeWithDocStore creates a Knowledge instance with a non-nil docStore
+	// for testing validation paths. The zero-value DocStore is safe because
+	// all test cases trigger validation errors before docStore.Index is called.
+	knowledgeWithDocStore := &Knowledge{
+		retriever: &mockRetriever{},
+		docStore:  &postgresql.DocStore{},
+		logger:    slog.New(slog.DiscardHandler),
+	}
+
+	knowledgeNilDocStore, err := NewKnowledge(&mockRetriever{}, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("NewKnowledge() unexpected error: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		kt        *Knowledge
+		input     KnowledgeStoreInput
+		wantCode  ErrorCode
+		wantInMsg string
+	}{
+		{
+			name:      "nil docStore returns not available",
+			kt:        knowledgeNilDocStore,
+			input:     KnowledgeStoreInput{Title: "t", Content: "c"},
+			wantCode:  ErrCodeExecution,
+			wantInMsg: "not available",
+		},
+		{
+			name:      "empty title",
+			kt:        knowledgeWithDocStore,
+			input:     KnowledgeStoreInput{Title: "", Content: "c"},
+			wantCode:  ErrCodeValidation,
+			wantInMsg: "title is required",
+		},
+		{
+			name:      "empty content",
+			kt:        knowledgeWithDocStore,
+			input:     KnowledgeStoreInput{Title: "t", Content: ""},
+			wantCode:  ErrCodeValidation,
+			wantInMsg: "content is required",
+		},
+		{
+			name: "content exceeds maximum size",
+			kt:   knowledgeWithDocStore,
+			input: KnowledgeStoreInput{
+				Title:   "large doc",
+				Content: strings.Repeat("x", MaxKnowledgeContentSize+1),
+			},
+			wantCode:  ErrCodeValidation,
+			wantInMsg: "exceeds maximum",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.kt.StoreKnowledge(nil, tt.input)
+			if err != nil {
+				t.Fatalf("StoreKnowledge() unexpected error: %v", err)
+			}
+			if result.Status != StatusError {
+				t.Fatalf("StoreKnowledge() status = %q, want %q", result.Status, StatusError)
+			}
+			if result.Error == nil {
+				t.Fatal("StoreKnowledge() error field is nil, want non-nil")
+			}
+			if result.Error.Code != tt.wantCode {
+				t.Errorf("StoreKnowledge() error code = %q, want %q", result.Error.Code, tt.wantCode)
+			}
+			if !strings.Contains(result.Error.Message, tt.wantInMsg) {
+				t.Errorf("StoreKnowledge() error message = %q, want to contain %q", result.Error.Message, tt.wantInMsg)
+			}
+		})
 	}
 }

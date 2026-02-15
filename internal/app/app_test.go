@@ -71,7 +71,7 @@ func TestApp_Fields(t *testing.T) {
 		defer cancel()
 
 		g := genkit.Init(ctx)
-		pathValidator, err := security.NewPath([]string{"."})
+		pathValidator, err := security.NewPath([]string{"."}, nil)
 		if err != nil {
 			t.Fatalf("security.NewPath() error: %v", err)
 		}

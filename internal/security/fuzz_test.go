@@ -70,7 +70,7 @@ func FuzzPathValidation(f *testing.F) {
 
 	// Create a validator with a safe temporary directory
 	tmpDir := f.TempDir()
-	validator, err := NewPath([]string{tmpDir})
+	validator, err := NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		f.Fatalf("creating validator: %v", err)
 	}
@@ -130,7 +130,7 @@ func FuzzPathValidationWithSymlinks(f *testing.F) {
 		}
 
 		tmpDir := t.TempDir()
-		validator, err := NewPath([]string{tmpDir})
+		validator, err := NewPath([]string{tmpDir}, nil)
 		if err != nil {
 			t.Skipf("creating validator: %v", err)
 		}

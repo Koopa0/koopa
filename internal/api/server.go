@@ -78,13 +78,15 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 	rl := newRateLimiter(1.0, burst)
 
-	// Build middleware stack: Recovery → Logging → RateLimit → CORS → User → Session → CSRF → Routes
+	// Build middleware stack (outermost first):
+	//   Recovery → Logging → CORS → RateLimit → User → Session → CSRF → Routes
+	// CORS must be before RateLimit so preflight OPTIONS gets proper CORS headers.
 	var handler http.Handler = mux
 	handler = csrfMiddleware(sm, logger)(handler)
 	handler = sessionMiddleware(sm)(handler)
 	handler = userMiddleware(sm)(handler)
-	handler = corsMiddleware(cfg.CORSOrigins)(handler)
 	handler = rateLimitMiddleware(rl, cfg.TrustProxy, logger)(handler)
+	handler = corsMiddleware(cfg.CORSOrigins)(handler)
 	handler = loggingMiddleware(logger)(handler)
 	handler = recoveryMiddleware(logger)(handler)
 

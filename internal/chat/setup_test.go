@@ -112,7 +112,7 @@ func SetupTest(t *testing.T) *TestFramework {
 	}
 
 	// Create toolsets
-	pathValidator, err := security.NewPath([]string{os.TempDir()})
+	pathValidator, err := security.NewPath([]string{os.TempDir()}, nil)
 	if err != nil {
 		t.Fatalf("creating path validator: %v", err)
 	}

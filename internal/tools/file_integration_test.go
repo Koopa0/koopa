@@ -28,7 +28,7 @@ func newfileTools(t *testing.T) *fileTools {
 
 func (h *fileTools) createFile() *File {
 	h.t.Helper()
-	pathVal, err := security.NewPath([]string{h.tempDir})
+	pathVal, err := security.NewPath([]string{h.tempDir}, nil)
 	if err != nil {
 		h.t.Fatalf("creating path validator: %v", err)
 	}

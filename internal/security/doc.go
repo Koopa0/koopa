@@ -16,7 +16,7 @@
 // Path Validator: Prevents directory traversal and ensures file operations
 // stay within allowed boundaries.
 //
-//	pathValidator, err := security.NewPath([]string{"/safe/dir"})
+//	pathValidator, err := security.NewPath([]string{"/safe/dir"}, nil)
 //	if _, err := pathValidator.Validate(userInput); err != nil {
 //	    return fmt.Errorf("invalid path: %w", err)
 //	}
@@ -67,7 +67,7 @@
 // # Integration Example
 //
 //	// Create validators
-//	pathVal, _ := security.NewPath([]string{workDir})
+//	pathVal, _ := security.NewPath([]string{workDir}, nil)
 //	cmdVal := security.NewCommand()
 //	urlVal := security.NewURL()
 //	envVal := security.NewEnv()

@@ -39,6 +39,10 @@ const (
 	MaxTopK                    = 10
 )
 
+// MaxKnowledgeContentSize is the maximum allowed content size for knowledge_store (50KB).
+// Prevents DoS via large document ingestion and embedding computation.
+const MaxKnowledgeContentSize = 50 * 1024
+
 // KnowledgeSearchInput defines input for all knowledge search tools.
 // The default TopK varies by tool: history=3, documents=5, system=3.
 type KnowledgeSearchInput struct {
@@ -262,6 +266,15 @@ func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInpu
 			Error: &Error{
 				Code:    ErrCodeValidation,
 				Message: "content is required",
+			},
+		}, nil
+	}
+	if len(input.Content) > MaxKnowledgeContentSize {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("content size %d exceeds maximum %d bytes", len(input.Content), MaxKnowledgeContentSize),
 			},
 		}, nil
 	}

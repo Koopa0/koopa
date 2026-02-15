@@ -99,7 +99,7 @@
 // # Usage Example
 //
 //	// Create tools with security validators
-//	pathVal, _ := security.NewPath([]string{"/allowed/path"})
+//	pathVal, _ := security.NewPath([]string{"/allowed/path"}, nil)
 //	fileTools, err := tools.NewFile(pathVal, logger)
 //	if err != nil {
 //	    return err

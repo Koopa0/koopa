@@ -196,6 +196,73 @@ func TestChatSend_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestChatSend_BodyTooLarge(t *testing.T) {
+	// Create a valid JSON body larger than maxRequestBodySize (1 MB).
+	// The content field must be large enough so the whole JSON exceeds the limit.
+	largeContent := strings.Repeat("x", maxRequestBodySize)
+	body, _ := json.Marshal(map[string]string{
+		"content":   largeContent,
+		"sessionId": uuid.New().String(),
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+
+	newTestChatHandler().send(w, r)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("send(>1MB body) status = %d, want %d\nbody: %s", w.Code, http.StatusRequestEntityTooLarge, w.Body.String())
+	}
+
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "body_too_large" {
+		t.Errorf("send(>1MB body) code = %q, want %q", errResp.Code, "body_too_large")
+	}
+}
+
+func TestChatSend_ContentTooLong(t *testing.T) {
+	// Create content that exceeds maxChatContentLength (32K)
+	longContent := strings.Repeat("x", maxChatContentLength+1)
+	body, _ := json.Marshal(map[string]string{
+		"content":   longContent,
+		"sessionId": uuid.New().String(),
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+
+	newTestChatHandler().send(w, r)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("send(>32K content) status = %d, want %d\nbody: %s", w.Code, http.StatusRequestEntityTooLarge, w.Body.String())
+	}
+
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "content_too_long" {
+		t.Errorf("send(>32K content) code = %q, want %q", errResp.Code, "content_too_long")
+	}
+}
+
+func TestStream_QueryTooLong(t *testing.T) {
+	ch := newTestChatHandler()
+	sessionID := uuid.New()
+	longQuery := strings.Repeat("x", maxChatContentLength+1)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query="+url.QueryEscape(longQuery), nil)
+
+	ch.stream(w, r)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("stream(>32K query) status = %d, want %d\nbody: %s", w.Code, http.StatusRequestEntityTooLarge, w.Body.String())
+	}
+
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "content_too_long" {
+		t.Errorf("stream(>32K query) code = %q, want %q", errResp.Code, "content_too_long")
+	}
+}
+
 func TestChatSend_OwnershipDenied(t *testing.T) {
 	body, _ := json.Marshal(map[string]string{
 		"content":   "hello",

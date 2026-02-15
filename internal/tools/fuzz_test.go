@@ -93,7 +93,7 @@ func FuzzPathTraversal(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, path string) {
 		// Create validator with /tmp as allowed base
-		validator, err := security.NewPath([]string{"/tmp"})
+		validator, err := security.NewPath([]string{"/tmp"}, nil)
 		if err != nil {
 			t.Skip("could not create validator")
 		}

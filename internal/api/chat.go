@@ -22,6 +22,12 @@ const sseTimeout = 5 * time.Minute
 // titleMaxLength is the maximum rune length for a fallback session title.
 const titleMaxLength = 50
 
+// maxRequestBodySize is the maximum allowed HTTP request body size (1 MB).
+const maxRequestBodySize = 1 << 20
+
+// maxChatContentLength is the maximum allowed chat message length in bytes (~8K tokens).
+const maxChatContentLength = 32_000
+
 // Tool display info for JSON SSE events.
 type toolDisplayInfo struct {
 	StartMsg    string
@@ -69,11 +75,18 @@ type chatHandler struct {
 
 // send handles POST /api/v1/chat — accepts JSON, sends message to chat flow.
 func (h *chatHandler) send(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
 	var req struct {
 		Content   string `json:"content"`
 		SessionID string `json:"sessionId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "request body too large", h.logger)
+			return
+		}
 		WriteError(w, http.StatusBadRequest, "invalid_json", "invalid request body", h.logger)
 		return
 	}
@@ -81,6 +94,11 @@ func (h *chatHandler) send(w http.ResponseWriter, r *http.Request) {
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
 		WriteError(w, http.StatusBadRequest, "content_required", "content is required", h.logger)
+		return
+	}
+
+	if len(content) > maxChatContentLength {
+		WriteError(w, http.StatusRequestEntityTooLarge, "content_too_long", "message content exceeds maximum length", h.logger)
 		return
 	}
 
@@ -96,6 +114,7 @@ func (h *chatHandler) send(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.sessionAccessAllowed(r, sessionID) {
+		h.logger.Warn("session access denied", "sessionId", req.SessionID, "path", r.URL.Path)
 		WriteError(w, http.StatusForbidden, "forbidden", "session access denied", h.logger)
 		return
 	}
@@ -149,6 +168,11 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(query) > maxChatContentLength {
+		WriteError(w, http.StatusRequestEntityTooLarge, "content_too_long", "query exceeds maximum length", h.logger)
+		return
+	}
+
 	parsedID, err := uuid.Parse(sessionID)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_session", "invalid session ID", h.logger)
@@ -156,6 +180,7 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.sessionAccessAllowed(r, parsedID) {
+		h.logger.Warn("session access denied", "sessionId", sessionID, "msgId", msgID, "path", r.URL.Path)
 		WriteError(w, http.StatusForbidden, "forbidden", "session access denied", h.logger)
 		return
 	}

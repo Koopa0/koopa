@@ -53,7 +53,7 @@ func newTestHelper(t *testing.T) *testHelper {
 
 func (h *testHelper) createFile() *tools.File {
 	h.t.Helper()
-	pathVal, err := security.NewPath([]string{h.tempDir})
+	pathVal, err := security.NewPath([]string{h.tempDir}, nil)
 	if err != nil {
 		h.t.Fatalf("creating path validator: %v", err)
 	}
