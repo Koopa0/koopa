@@ -300,8 +300,9 @@ func provideSessionStore(pool *pgxpool.Pool) *session.Store {
 }
 
 // providePathValidator creates a path validator instance.
+// Denies access to prompts/ to protect system prompt files from tool-based access.
 func providePathValidator() (*security.Path, error) {
-	return security.NewPath([]string{"."})
+	return security.NewPath([]string{"."}, []string{"prompts"})
 }
 
 // provideTools creates toolsets, registers them with Genkit, and stores both

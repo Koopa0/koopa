@@ -144,7 +144,7 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	queries := sqlc.New(pool)
 	sessionStore := session.New(queries, pool, logger)
 
-	pathValidator, err := security.NewPath([]string{"."})
+	pathValidator, err := security.NewPath([]string{"."}, nil)
 	if err != nil {
 		pool.Close()
 		cancel()

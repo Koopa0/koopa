@@ -11,7 +11,7 @@ import (
 // Setup is inlined in internal/app/setup.go (provideOtelShutdown).
 type DatadogConfig struct {
 	// APIKey is the Datadog API key (optional, for observability)
-	APIKey string `mapstructure:"api_key" json:"api_key"`
+	APIKey string `mapstructure:"api_key" json:"api_key"` // #nosec G117 -- masked in MarshalJSON, never serialized in plain text
 	// AgentHost is the Datadog Agent OTLP endpoint (default: localhost:4318)
 	AgentHost string `mapstructure:"agent_host" json:"agent_host"`
 	// Environment is the deployment environment tag (default: dev)

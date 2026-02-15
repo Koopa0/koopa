@@ -26,7 +26,7 @@ func createIntegrationTestConfig(t *testing.T, name string) Config {
 		t.Fatalf("EvalSymlinks(%q) unexpected error: %v", tmpDir, err)
 	}
 
-	pathVal, err := security.NewPath([]string{realTmpDir})
+	pathVal, err := security.NewPath([]string{realTmpDir}, nil)
 	if err != nil {
 		t.Fatalf("security.NewPath(%q) unexpected error: %v", realTmpDir, err)
 	}

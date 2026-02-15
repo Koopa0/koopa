@@ -8,7 +8,7 @@ import (
 
 func TestFile_Constructor(t *testing.T) {
 	t.Run("valid inputs", func(t *testing.T) {
-		pathVal, err := security.NewPath([]string{"/tmp"})
+		pathVal, err := security.NewPath([]string{"/tmp"}, nil)
 		if err != nil {
 			t.Fatalf("creating path validator: %v", err)
 		}
@@ -33,7 +33,7 @@ func TestFile_Constructor(t *testing.T) {
 	})
 
 	t.Run("nil logger", func(t *testing.T) {
-		pathVal, err := security.NewPath([]string{"/tmp"})
+		pathVal, err := security.NewPath([]string{"/tmp"}, nil)
 		if err != nil {
 			t.Fatalf("creating path validator: %v", err)
 		}

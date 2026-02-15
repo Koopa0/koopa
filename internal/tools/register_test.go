@@ -22,7 +22,7 @@ func TestNewFile(t *testing.T) {
 
 	t.Run("successful creation", func(t *testing.T) {
 		t.Parallel()
-		pathVal, err := security.NewPath([]string{})
+		pathVal, err := security.NewPath([]string{}, nil)
 		if err != nil {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}
@@ -53,7 +53,7 @@ func TestNewFile(t *testing.T) {
 
 	t.Run("nil logger", func(t *testing.T) {
 		t.Parallel()
-		pathVal, err := security.NewPath([]string{})
+		pathVal, err := security.NewPath([]string{}, nil)
 		if err != nil {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}
@@ -77,7 +77,7 @@ func TestRegisterFile(t *testing.T) {
 	t.Run("successful registration", func(t *testing.T) {
 		t.Parallel()
 		g := setupTestGenkit(t)
-		pathVal, err := security.NewPath([]string{})
+		pathVal, err := security.NewPath([]string{}, nil)
 		if err != nil {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}
@@ -105,7 +105,7 @@ func TestRegisterFile(t *testing.T) {
 
 	t.Run("nil genkit", func(t *testing.T) {
 		t.Parallel()
-		pathVal, err := security.NewPath([]string{})
+		pathVal, err := security.NewPath([]string{}, nil)
 		if err != nil {
 			t.Fatalf("NewPath() unexpected error: %v", err)
 		}

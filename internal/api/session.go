@@ -120,9 +120,14 @@ func (sm *sessionManager) CheckCSRF(userID, token string) error {
 	message := fmt.Sprintf("%s:%d", userID, timestamp)
 	h := hmac.New(sha256.New, sm.hmacSecret)
 	h.Write([]byte(message))
-	expectedSig := base64.URLEncoding.EncodeToString(h.Sum(nil))
+	expectedSig := h.Sum(nil)
 
-	if subtle.ConstantTimeCompare([]byte(parts[1]), []byte(expectedSig)) != 1 {
+	actualSig, err := base64.URLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ErrCSRFMalformed
+	}
+
+	if subtle.ConstantTimeCompare(actualSig, expectedSig) != 1 {
 		return ErrCSRFInvalid
 	}
 
@@ -176,9 +181,14 @@ func (sm *sessionManager) CheckPreSessionCSRF(token string) error {
 	message := fmt.Sprintf("%s:%d", nonce, timestamp)
 	h := hmac.New(sha256.New, sm.hmacSecret)
 	h.Write([]byte(message))
-	expectedSig := base64.URLEncoding.EncodeToString(h.Sum(nil))
+	expectedSig := h.Sum(nil)
 
-	if subtle.ConstantTimeCompare([]byte(parts[2]), []byte(expectedSig)) != 1 {
+	actualSig, err := base64.URLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return ErrCSRFMalformed
+	}
+
+	if subtle.ConstantTimeCompare(actualSig, expectedSig) != 1 {
 		return ErrCSRFInvalid
 	}
 

@@ -18,7 +18,7 @@ import (
 func BenchmarkServer_Creation(b *testing.B) {
 	// Setup toolsets once — benchmark only NewServer + tool registration.
 	tmpDir := b.TempDir()
-	pathVal, err := security.NewPath([]string{tmpDir})
+	pathVal, err := security.NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		b.Fatalf("creating path validator: %v", err)
 	}
@@ -167,7 +167,7 @@ func BenchmarkReadFileInput_Parse(b *testing.B) {
 // BenchmarkConfig_Validation benchmarks Config validation.
 func BenchmarkConfig_Validation(b *testing.B) {
 	tmpDir := b.TempDir()
-	pathVal, err := security.NewPath([]string{tmpDir})
+	pathVal, err := security.NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		b.Fatalf("creating path validator: %v", err)
 	}

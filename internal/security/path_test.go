@@ -23,7 +23,7 @@ func TestPathValidation(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(workDir) }() // Restore original directory
 
-	validator, err := NewPath([]string{tmpDir})
+	validator, err := NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		t.Fatalf("creating path validator: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestPathValidation(t *testing.T) {
 
 // TestPathErrorSanitization tests that error messages don't leak sensitive paths
 func TestPathErrorSanitization(t *testing.T) {
-	validator, err := NewPath([]string{})
+	validator, err := NewPath([]string{}, nil)
 	if err != nil {
 		t.Fatalf("creating path validator: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestSymlinkValidation(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(workDir) }() // Restore original directory
 
-	validator, err := NewPath([]string{tmpDir})
+	validator, err := NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		t.Fatalf("creating path validator: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestPathValidationWithNonExistentFile(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(workDir) }()
 
-	validator, err := NewPath([]string{tmpDir})
+	validator, err := NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		t.Fatalf("creating path validator: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestSymlinkBypassAttempt(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(workDir) }()
 
-	validator, err := NewPath([]string{tmpDir})
+	validator, err := NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		t.Fatalf("creating path validator: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestPathValidationErrors(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(workDir) }()
 
-	validator, err := NewPath([]string{tmpDir})
+	validator, err := NewPath([]string{tmpDir}, nil)
 	if err != nil {
 		t.Fatalf("creating path validator: %v", err)
 	}
@@ -242,9 +242,108 @@ func TestPathValidationErrors(t *testing.T) {
 	}
 }
 
+// TestDeniedPrefixes tests that paths matching denied prefixes are blocked.
+func TestDeniedPrefixes(t *testing.T) {
+	tmpDir := t.TempDir()
+	workDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getting working directory: %v", err)
+	}
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("changing to temp directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(workDir) }()
+
+	// Create a "prompts" directory inside tmpDir
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	if err := os.MkdirAll(promptsDir, 0o750); err != nil {
+		t.Fatalf("creating prompts directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(promptsDir, "system.prompt"), []byte("secret"), 0o600); err != nil {
+		t.Fatalf("creating prompt file: %v", err)
+	}
+
+	validator, err := NewPath([]string{tmpDir}, []string{filepath.Join(tmpDir, "prompts")})
+	if err != nil {
+		t.Fatalf("creating path validator: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr error
+	}{
+		{
+			name:    "allowed file outside denied prefix",
+			path:    filepath.Join(tmpDir, "allowed.txt"),
+			wantErr: nil,
+		},
+		{
+			name:    "file inside denied prefix",
+			path:    filepath.Join(promptsDir, "system.prompt"),
+			wantErr: ErrPathDenied,
+		},
+		{
+			name:    "denied directory itself",
+			path:    promptsDir,
+			wantErr: ErrPathDenied,
+		},
+		{
+			name:    "case-insensitive denied prefix",
+			path:    filepath.Join(tmpDir, "Prompts", "system.prompt"),
+			wantErr: ErrPathDenied,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validator.Validate(tt.path)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("Validate(%q) unexpected error: %v", tt.path, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate(%q) = nil, want %v", tt.path, tt.wantErr)
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("Validate(%q) error = %v, want %v", tt.path, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestDeniedPrefixes_NilSlice verifies that nil deniedPrefixes works correctly.
+func TestDeniedPrefixes_NilSlice(t *testing.T) {
+	tmpDir := t.TempDir()
+	workDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getting working directory: %v", err)
+	}
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("changing to temp directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(workDir) }()
+
+	validator, err := NewPath([]string{tmpDir}, nil)
+	if err != nil {
+		t.Fatalf("creating path validator: %v", err)
+	}
+
+	// With nil denied prefixes, all paths within allowed dirs should work
+	path := filepath.Join(tmpDir, "prompts", "system.prompt")
+	_, err = validator.Validate(path)
+	if err != nil {
+		t.Errorf("Validate(%q) with nil deniedPrefixes error = %v, want nil", path, err)
+	}
+}
+
 // BenchmarkPathValidation benchmarks path validation performance
 func BenchmarkPathValidation(b *testing.B) {
-	validator, err := NewPath([]string{})
+	validator, err := NewPath([]string{}, nil)
 	if err != nil {
 		b.Fatalf("creating path validator: %v", err)
 	}
