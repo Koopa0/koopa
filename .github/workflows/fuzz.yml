@@ -1,0 +1,31 @@
+name: Fuzz
+
+on:
+  schedule:
+    # Weekly: Sunday 03:00 UTC
+    - cron: "0 3 * * 0"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  fuzz:
+    name: Fuzz Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fuzz-target:
+          - FuzzPathValidation
+          - FuzzPathValidationWithSymlinks
+          - FuzzCommandValidation
+          - FuzzURLValidation
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Run ${{ matrix.fuzz-target }}
+        run: go test -fuzz=${{ matrix.fuzz-target }} -fuzztime=30s ./internal/security/

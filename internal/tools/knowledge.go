@@ -15,6 +15,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/postgresql"
+	"github.com/google/uuid"
 
 	"github.com/koopa0/koopa/internal/rag"
 )
@@ -39,9 +40,12 @@ const (
 	MaxTopK                    = 10
 )
 
-// MaxKnowledgeContentSize is the maximum allowed content size for knowledge_store (50KB).
+// MaxKnowledgeContentSize is the maximum allowed content size for knowledge_store (10KB).
 // Prevents DoS via large document ingestion and embedding computation.
-const MaxKnowledgeContentSize = 50 * 1024
+const MaxKnowledgeContentSize = 10_000
+
+// MaxKnowledgeTitleLength is the maximum allowed title length for knowledge_store.
+const MaxKnowledgeTitleLength = 500
 
 // KnowledgeSearchInput defines input for all knowledge search tools.
 // The default TopK varies by tool: history=3, documents=5, system=3.
@@ -148,20 +152,54 @@ var validSourceTypes = map[string]bool{
 	rag.SourceTypeSystem:       true,
 }
 
+// sourceTypeFilters maps validated source types to pre-computed SQL filter strings.
+// This eliminates string interpolation in the query path (defense-in-depth for CWE-89).
+// The whitelist check (validSourceTypes) remains as the primary gate; this map ensures
+// no fmt.Sprintf is ever called with user-influenced values in the SQL filter path.
+var sourceTypeFilters = map[string]string{
+	rag.SourceTypeConversation: "source_type = 'conversation'",
+	rag.SourceTypeFile:         "source_type = 'file'",
+	rag.SourceTypeSystem:       "source_type = 'system'",
+}
+
+// ownerFilter composes a SQL WHERE clause with source_type and optional owner_id filtering.
+// When ownerID is empty, only source_type filtering is applied.
+// When ownerID is valid, includes documents owned by the user OR legacy documents (NULL owner_id).
+//
+// SECURITY: ownerID is validated as UUID via uuid.Parse before interpolation.
+// UUID format guarantees only [0-9a-f-] characters reach the SQL filter,
+// preventing SQL injection via the owner_id parameter (CWE-89 defense-in-depth).
+func ownerFilter(sourceType, ownerID string) (string, error) {
+	base, ok := sourceTypeFilters[sourceType]
+	if !ok {
+		return "", fmt.Errorf("invalid source type: %q", sourceType)
+	}
+	if ownerID == "" {
+		return base, nil
+	}
+	// Validate UUID format — only allows [0-9a-f-] characters.
+	if _, err := uuid.Parse(ownerID); err != nil {
+		return "", fmt.Errorf("invalid owner ID format: %w", err)
+	}
+	return base + " AND (owner_id = '" + ownerID + "' OR owner_id IS NULL)", nil
+}
+
 // search performs a knowledge search with the given source type filter.
 // Returns error if sourceType is not in the allowed whitelist.
+// When owner ID is present in context, filters results to the owner's documents
+// and legacy documents (NULL owner_id) for RAG poisoning prevention.
 func (k *Knowledge) search(ctx context.Context, query string, topK int, sourceType string) ([]*ai.Document, error) {
 	// Validate source type against whitelist (SQL injection prevention)
 	if !validSourceTypes[sourceType] {
 		return nil, fmt.Errorf("invalid source type: %q", sourceType)
 	}
 
-	// Build WHERE clause filter for source_type.
-	// SECURITY: sourceType is SQL injection-safe because it's validated against
-	// a hardcoded whitelist (validSourceTypes). This filter is passed to the
-	// Genkit PostgreSQL retriever which includes it in a SQL query.
-	// DO NOT bypass the whitelist validation above.
-	filter := fmt.Sprintf("source_type = '%s'", sourceType)
+	// Compose filter with optional owner isolation.
+	ownerID := OwnerIDFromContext(ctx)
+	filter, err := ownerFilter(sourceType, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("building filter: %w", err)
+	}
 
 	req := &ai.RetrieverRequest{
 		Query: ai.DocumentFromText(query, nil),
@@ -187,7 +225,7 @@ func (k *Knowledge) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearchInpu
 
 	results, err := k.search(ctx, input.Query, topK, rag.SourceTypeConversation)
 	if err != nil {
-		k.logger.Error("SearchHistory failed", "query", input.Query, "error", err)
+		k.logger.Warn("SearchHistory failed", "query", input.Query, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
@@ -216,7 +254,7 @@ func (k *Knowledge) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSearchIn
 
 	results, err := k.search(ctx, input.Query, topK, rag.SourceTypeFile)
 	if err != nil {
-		k.logger.Error("SearchDocuments failed", "query", input.Query, "error", err)
+		k.logger.Warn("SearchDocuments failed", "query", input.Query, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
@@ -260,6 +298,15 @@ func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInpu
 			},
 		}, nil
 	}
+	if len(input.Title) > MaxKnowledgeTitleLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("title length %d exceeds maximum %d characters", len(input.Title), MaxKnowledgeTitleLength),
+			},
+		}, nil
+	}
 	if input.Content == "" {
 		return Result{
 			Status: StatusError,
@@ -284,14 +331,21 @@ func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInpu
 	// Prefix "user:" namespaces user-created knowledge (vs "system:" for built-in).
 	docID := fmt.Sprintf("user:%x", sha256.Sum256([]byte(input.Title)))
 
-	doc := ai.DocumentFromText(input.Content, map[string]any{
+	metadata := map[string]any{
 		"id":          docID,
 		"source_type": rag.SourceTypeFile,
 		"title":       input.Title,
-	})
+	}
+
+	// Tag document with owner for per-user isolation (RAG poisoning prevention).
+	if ownerID := OwnerIDFromContext(ctx); ownerID != "" {
+		metadata["owner_id"] = ownerID
+	}
+
+	doc := ai.DocumentFromText(input.Content, metadata)
 
 	if err := k.docStore.Index(ctx, []*ai.Document{doc}); err != nil {
-		k.logger.Error("StoreKnowledge failed", "title", input.Title, "error", err)
+		k.logger.Warn("StoreKnowledge failed", "title", input.Title, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
@@ -319,7 +373,7 @@ func (k *Knowledge) SearchSystemKnowledge(ctx *ai.ToolContext, input KnowledgeSe
 
 	results, err := k.search(ctx, input.Query, topK, rag.SourceTypeSystem)
 	if err != nil {
-		k.logger.Error("SearchSystemKnowledge failed", "query", input.Query, "error", err)
+		k.logger.Warn("SearchSystemKnowledge failed", "query", input.Query, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{

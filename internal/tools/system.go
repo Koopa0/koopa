@@ -78,7 +78,8 @@ func RegisterSystem(g *genkit.Genkit, st *System) ([]ai.Tool, error) {
 			"Get the current system date and time. "+
 				"Returns: formatted time string, Unix timestamp, and ISO 8601 format. "+
 				"Use this to: check current time, calculate relative times, add timestamps to outputs. "+
-				"Always returns the server's local time zone.",
+				"Always returns the server's local time zone. "+
+				"IMPORTANT: You MUST call this tool before answering ANY question about current dates, times, ages, durations, or 'how long ago' something happened.",
 			WithEvents(CurrentTimeName, st.CurrentTime)),
 		genkit.DefineTool(g, ExecuteCommandName,
 			"Execute a shell command from the allowed list with security validation. "+
@@ -121,7 +122,7 @@ func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) 
 
 	// Command security validation (prevent command injection attacks CWE-78)
 	if err := s.cmdVal.Validate(input.Command, input.Args); err != nil {
-		s.logger.Error("ExecuteCommand dangerous command rejected", "command", input.Command, "args", input.Args, "error", err)
+		s.logger.Warn("ExecuteCommand dangerous command rejected", "command", input.Command, "args", input.Args, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
@@ -146,7 +147,7 @@ func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) 
 		}
 
 		// Command execution failure is a business error
-		s.logger.Error("executing command", "command", input.Command, "error", err, "output", string(output))
+		s.logger.Warn("executing command", "command", input.Command, "error", err, "output", string(output))
 		return Result{
 			Status: StatusError,
 			Error: &Error{
@@ -182,7 +183,7 @@ func (s *System) GetEnv(_ *ai.ToolContext, input GetEnvInput) (Result, error) {
 
 	// Environment variable security validation (prevent sensitive information leakage)
 	if err := s.envVal.Validate(input.Key); err != nil {
-		s.logger.Error("GetEnv sensitive variable blocked", "key", input.Key, "error", err)
+		s.logger.Warn("GetEnv sensitive variable blocked", "key", input.Key, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
