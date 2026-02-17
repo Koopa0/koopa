@@ -155,6 +155,10 @@ func FindProjectRoot() (string, error) {
 //
 // Executes migrations in order:
 //  1. 000001_init_schema.up.sql - Creates tables and pgvector extension
+//  2. 000002_add_owner_id.up.sql - Adds owner_id to sessions
+//  3. 000003_add_document_owner.up.sql - Adds owner_id to documents
+//  4. 000004_create_memories.up.sql - Creates memories table with pgvector
+//  5. 000005_memory_enhancements.up.sql - Phase 4a: decay, access tracking, tsvector, 4 categories
 //
 // Each migration runs in its own transaction for atomicity.
 // This is a simplified version - production should use a migration tool like golang-migrate.
@@ -167,10 +171,13 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("finding project root: %w", err)
 	}
 
-	// Read and execute migration files in order
-	// NOTE: All migrations have been consolidated into 000001_init_schema.up.sql
+	// Read and execute migration files in order.
 	migrationFiles := []string{
 		filepath.Join(projectRoot, "db", "migrations", "000001_init_schema.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000002_add_owner_id.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000003_add_document_owner.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000004_create_memories.up.sql"),
+		filepath.Join(projectRoot, "db", "migrations", "000005_memory_enhancements.up.sql"),
 	}
 
 	for _, migrationPath := range migrationFiles {

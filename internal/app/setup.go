@@ -22,6 +22,7 @@ import (
 
 	"github.com/koopa0/koopa/db"
 	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/memory"
 	"github.com/koopa0/koopa/internal/rag"
 	"github.com/koopa0/koopa/internal/security"
 	"github.com/koopa0/koopa/internal/session"
@@ -78,6 +79,12 @@ func Setup(ctx context.Context, cfg *config.Config) (_ *App, retErr error) {
 
 	a.SessionStore = provideSessionStore(pool)
 
+	memStore, err := provideMemoryStore(pool, embedder)
+	if err != nil {
+		return nil, err
+	}
+	a.MemoryStore = memStore
+
 	path, err := providePathValidator()
 	if err != nil {
 		return nil, err
@@ -88,9 +95,20 @@ func Setup(ctx context.Context, cfg *config.Config) (_ *App, retErr error) {
 		return nil, err
 	}
 
-	// Set up lifecycle management
-	_, cancel := context.WithCancel(ctx)
+	// Set up lifecycle management.
+	bgCtx, cancel := context.WithCancel(ctx)
+	a.bgCtx = bgCtx
 	a.cancel = cancel
+
+	// Start memory decay scheduler if memory store is available.
+	if memStore != nil {
+		scheduler := memory.NewScheduler(memStore, slog.Default())
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			scheduler.Run(bgCtx)
+		}()
+	}
 
 	return a, nil
 }
@@ -297,6 +315,15 @@ func provideRAGComponents(ctx context.Context, g *genkit.Genkit, postgres *postg
 // provideSessionStore creates a session store instance.
 func provideSessionStore(pool *pgxpool.Pool) *session.Store {
 	return session.New(sqlc.New(pool), pool, nil)
+}
+
+// provideMemoryStore creates a memory store backed by pgvector.
+func provideMemoryStore(pool *pgxpool.Pool, embedder ai.Embedder) (*memory.Store, error) {
+	store, err := memory.NewStore(pool, embedder, slog.Default())
+	if err != nil {
+		return nil, fmt.Errorf("creating memory store: %w", err)
+	}
+	return store, nil
 }
 
 // providePathValidator creates a path validator instance.

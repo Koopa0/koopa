@@ -10,6 +10,7 @@ import (
 // TokenBudget manages context window limits.
 type TokenBudget struct {
 	MaxHistoryTokens int // Maximum tokens for conversation history
+	MaxMemoryTokens  int // Maximum tokens for user memory injection
 }
 
 // DefaultTokenBudget returns defaults for modern large-context models.
@@ -17,6 +18,7 @@ type TokenBudget struct {
 func DefaultTokenBudget() TokenBudget {
 	return TokenBudget{
 		MaxHistoryTokens: 32000,
+		MaxMemoryTokens:  2000,
 	}
 }
 

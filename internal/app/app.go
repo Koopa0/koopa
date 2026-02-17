@@ -5,6 +5,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/koopa0/koopa/internal/chat"
 	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/memory"
 	"github.com/koopa0/koopa/internal/security"
 	"github.com/koopa0/koopa/internal/session"
 	"github.com/koopa0/koopa/internal/tools"
@@ -32,6 +34,7 @@ type App struct {
 	DocStore      *postgresql.DocStore
 	Retriever     ai.Retriever
 	SessionStore  *session.Store
+	MemoryStore   *memory.Store
 	PathValidator *security.Path
 	Tools         []ai.Tool // Pre-registered Genkit tools (for chat agent)
 
@@ -41,8 +44,10 @@ type App struct {
 	Network   *tools.Network
 	Knowledge *tools.Knowledge // nil if retriever unavailable
 
-	// Lifecycle management (unexported)
+	// Lifecycle management (unexported except bgCtx for agent construction)
+	bgCtx       context.Context // Outlives individual requests; canceled by Close().
 	cancel      func()
+	wg          sync.WaitGroup // tracks background goroutines (scheduler, memory extraction)
 	dbCleanup   func()
 	otelCleanup func()
 	closeOnce   sync.Once
@@ -53,8 +58,9 @@ type App struct {
 //
 // Shutdown order:
 //  1. Cancel context (signals background tasks to stop)
-//  2. Close DB pool
-//  3. Flush OTel spans
+//  2. Wait for background goroutines (scheduler) to exit
+//  3. Close DB pool
+//  4. Flush OTel spans
 func (a *App) Close() error {
 	a.closeOnce.Do(func() {
 		slog.Info("shutting down application")
@@ -64,12 +70,15 @@ func (a *App) Close() error {
 			a.cancel()
 		}
 
-		// 2. Close DB pool
+		// 2. Wait for background goroutines to finish
+		a.wg.Wait()
+
+		// 3. Close DB pool
 		if a.dbCleanup != nil {
 			a.dbCleanup()
 		}
 
-		// 3. Flush OTel spans
+		// 4. Flush OTel spans
 		if a.otelCleanup != nil {
 			a.otelCleanup()
 		}
@@ -82,13 +91,16 @@ func (a *App) Close() error {
 // Setup guarantees all dependencies are non-nil.
 func (a *App) CreateAgent() (*chat.Agent, error) {
 	agent, err := chat.New(chat.Config{
-		Genkit:       a.Genkit,
-		SessionStore: a.SessionStore,
-		Logger:       slog.Default(),
-		Tools:        a.Tools,
-		ModelName:    a.Config.FullModelName(),
-		MaxTurns:     a.Config.MaxTurns,
-		Language:     a.Config.Language,
+		Genkit:        a.Genkit,
+		SessionStore:  a.SessionStore,
+		MemoryStore:   a.MemoryStore,
+		Logger:        slog.Default(),
+		Tools:         a.Tools,
+		ModelName:     a.Config.FullModelName(),
+		MaxTurns:      a.Config.MaxTurns,
+		Language:      a.Config.Language,
+		BackgroundCtx: a.bgCtx,
+		WG:            &a.wg,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating chat agent: %w", err)

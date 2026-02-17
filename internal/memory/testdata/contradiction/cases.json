@@ -1,0 +1,122 @@
+[
+  {
+    "id": "con-001",
+    "description": "OS switch: macOS to Linux",
+    "old_memory": "Uses macOS as primary operating system",
+    "old_category": "identity",
+    "new_conversation": "User: I finally made the switch to Linux last weekend. Running Fedora on my new ThinkPad and loving it.\nAssistant: Nice! Fedora is a great choice. How's the transition going?",
+    "want_facts": [
+      {"content": "Switched to Linux (Fedora) on ThinkPad", "category": "identity", "min_importance": 6, "max_importance": 8}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-002",
+    "description": "Job change: Company A to Company B",
+    "old_memory": "Works at TechCorp as a backend engineer",
+    "old_category": "identity",
+    "new_conversation": "User: Exciting news - I just started at DataFlow Inc this week! Same role but much better engineering culture.\nAssistant: Congratulations on the new position! How's the onboarding going?",
+    "want_facts": [
+      {"content": "Started working at DataFlow Inc", "category": "identity", "min_importance": 7, "max_importance": 9}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-003",
+    "description": "Deadline extended",
+    "old_memory": "Project deadline is February 2026",
+    "old_category": "contextual",
+    "new_conversation": "User: Good news and bad news. The deadline got pushed to April because the design team needs more time. At least we can add the extra features now.\nAssistant: That gives you more breathing room. What features are you planning to add?",
+    "want_facts": [
+      {"content": "Project deadline extended to April 2026", "category": "contextual", "min_importance": 5, "max_importance": 7}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-004",
+    "description": "Formatting preference change: tabs to spaces",
+    "old_memory": "Prefers tabs for code indentation",
+    "old_category": "preference",
+    "new_conversation": "User: Our team just adopted the Go standard of using tabs, but for our TypeScript code we switched to 2-space indentation. I've actually come to prefer spaces now.\nAssistant: The tabs vs spaces debate continues! At least Go makes it easy with gofmt.",
+    "want_facts": [
+      {"content": "Now prefers spaces for indentation (was tabs)", "category": "preference", "min_importance": 4, "max_importance": 6}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-005",
+    "description": "Learning completed: Python course finished",
+    "old_memory": "Currently learning Python programming language",
+    "old_category": "project",
+    "new_conversation": "User: I finally finished the Python course! Got my certificate last night. Now I'm looking for a real project to apply what I learned.\nAssistant: Congratulations! Having a real project is the best way to solidify your skills.",
+    "want_facts": [
+      {"content": "Completed Python course, looking for projects to practice", "category": "project", "min_importance": 5, "max_importance": 7}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-006",
+    "description": "Relationship status change",
+    "old_memory": "Lives alone in a studio apartment",
+    "old_category": "identity",
+    "new_conversation": "User: My partner and I just moved into a new two-bedroom apartment. Much more space for my home office setup!\nAssistant: That's great! Having a dedicated home office makes a big difference.",
+    "want_facts": [
+      {"content": "Lives with partner in a two-bedroom apartment", "category": "identity", "min_importance": 5, "max_importance": 7}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-007",
+    "description": "Database migration: PostgreSQL to SQLite",
+    "old_memory": "Uses PostgreSQL as the primary database",
+    "old_category": "project",
+    "new_conversation": "User: We decided to simplify our stack. Migrated the side project from PostgreSQL to SQLite since we don't need the scalability.\nAssistant: SQLite is great for smaller projects. Much simpler to deploy too.",
+    "want_facts": [
+      {"content": "Migrated side project from PostgreSQL to SQLite", "category": "project", "min_importance": 5, "max_importance": 7}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-008",
+    "description": "Career progression: junior to mid-level",
+    "old_memory": "Junior developer with 1 year of experience",
+    "old_category": "identity",
+    "new_conversation": "User: Just had my review and I got promoted to mid-level engineer! Two years of hard work paid off.\nAssistant: Congratulations on the promotion! Well deserved.",
+    "want_facts": [
+      {"content": "Promoted to mid-level engineer after 2 years", "category": "identity", "min_importance": 7, "max_importance": 9}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE", "DELETE"]
+  },
+  {
+    "id": "con-009",
+    "description": "Theme preference change: dark to light",
+    "old_memory": "Prefers dark mode for all applications",
+    "old_category": "preference",
+    "new_conversation": "User: I switched to light mode after reading about how it's better for daytime productivity. Still use dark mode at night though.\nAssistant: That's a balanced approach! Many developers use auto-switching based on time of day.",
+    "want_facts": [
+      {"content": "Uses light mode during day, dark mode at night", "category": "preference", "min_importance": 4, "max_importance": 6}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE"]
+  },
+  {
+    "id": "con-010",
+    "description": "Team size change: 5 to 12",
+    "old_memory": "Works in a team of 5 engineers",
+    "old_category": "project",
+    "new_conversation": "User: Our team just doubled! We hired 7 new engineers this quarter. Now we're 12 people and splitting into two squads.\nAssistant: That's rapid growth! How are you handling the team split?",
+    "want_facts": [
+      {"content": "Team expanded from 5 to 12 engineers, splitting into two squads", "category": "project", "min_importance": 5, "max_importance": 7}
+    ],
+    "want_operation": "UPDATE",
+    "accept_ops": ["UPDATE"]
+  }
+]

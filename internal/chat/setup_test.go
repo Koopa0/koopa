@@ -24,6 +24,7 @@ import (
 
 	"github.com/koopa0/koopa/internal/chat"
 	"github.com/koopa0/koopa/internal/config"
+	"github.com/koopa0/koopa/internal/memory"
 	"github.com/koopa0/koopa/internal/rag"
 	"github.com/koopa0/koopa/internal/security"
 	"github.com/koopa0/koopa/internal/session"
@@ -42,6 +43,7 @@ type TestFramework struct {
 	DocStore     *postgresql.DocStore // For indexing documents in tests
 	Retriever    ai.Retriever         // Genkit Retriever for RAG
 	SessionStore *session.Store
+	MemoryStore  *memory.Store
 	Config       *config.Config
 
 	// Infrastructure
@@ -129,12 +131,20 @@ func SetupTest(t *testing.T) *TestFramework {
 		t.Fatalf("registering file tools: %v", err)
 	}
 
+	// Create Memory Store (uses same pool and embedder as RAG)
+	memoryStore, err := memory.NewStore(dbContainer.Pool, ragSetup.Embedder, slog.Default())
+	if err != nil {
+		t.Fatalf("creating memory store: %v", err)
+	}
+
 	// Create Chat Agent
 	chatAgent, err := chat.New(chat.Config{
 		Genkit:       ragSetup.Genkit,
 		SessionStore: sessionStore,
+		MemoryStore:  memoryStore,
 		Logger:       slog.Default(),
 		Tools:        fileTools,
+		ModelName:    cfg.ModelName,
 		MaxTurns:     cfg.MaxTurns,
 		Language:     cfg.Language,
 	})
@@ -152,6 +162,7 @@ func SetupTest(t *testing.T) *TestFramework {
 		DocStore:     ragSetup.DocStore,
 		Retriever:    ragSetup.Retriever,
 		SessionStore: sessionStore,
+		MemoryStore:  memoryStore,
 		Config:       cfg,
 		DBContainer:  dbContainer,
 		Genkit:       ragSetup.Genkit,

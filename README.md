@@ -13,6 +13,7 @@ A terminal AI assistant with local knowledge management. Supports Gemini, Ollama
 - **HTTP API** — JSON REST API with SSE streaming for building frontends
 - **MCP Server** — Use Koopa's tools from Claude Desktop or Cursor
 - **RAG** — Semantic search over your conversations and documents (pgvector)
+- **User Memory** — Automatically learns user preferences, identity, and project context across sessions (pgvector + LLM extraction, two-threshold dedup, time-decay)
 - **Built-in tools** — File I/O, shell commands, web search, web scraping
 - **MCP client** — Plug in external MCP servers for additional tools
 - **Sessions** — Persistent conversation history in PostgreSQL
@@ -58,15 +59,7 @@ export HMAC_SECRET=$(openssl rand -base64 32)
 ./koopa serve
 ```
 
-| Endpoint                        | Method | Description              |
-|---------------------------------|--------|--------------------------|
-| `/api/chat`                     | POST   | Send message (SSE stream)|
-| `/api/sessions`                 | GET    | List sessions            |
-| `/api/sessions`                 | POST   | Create session           |
-| `/api/sessions/{id}`            | GET    | Get session              |
-| `/api/sessions/{id}`            | DELETE | Delete session           |
-| `/api/sessions/{id}/messages`   | GET    | Get session messages     |
-| `/health`                       | GET    | Health check             |
+See [API Integration Guide](docs/api-integration-guide.md) for endpoint details, SSE streaming protocol, and frontend integration examples.
 
 ### MCP Server
 
