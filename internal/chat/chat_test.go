@@ -609,7 +609,7 @@ func TestGenerateResponse_CircuitBreakerOpen(t *testing.T) {
 		rateLimiter:    rate.NewLimiter(10, 30),
 	}
 
-	_, err := a.generateResponse(context.Background(), "hello", nil, nil)
+	_, err := a.generateResponse(context.Background(), "hello", nil, "", nil)
 	if err == nil {
 		t.Fatal("generateResponse(CB open) expected error, got nil")
 	}

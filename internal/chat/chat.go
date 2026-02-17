@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
 
+	"github.com/koopa0/koopa/internal/memory"
 	"github.com/koopa0/koopa/internal/session"
 )
 
@@ -23,6 +25,9 @@ const (
 
 	// Description describes the Chat agent's capabilities.
 	Description = "A general purpose chat agent that can help with various tasks using tools and knowledge base."
+
+	// memorySearchTimeout limits how long the memory search can take per request.
+	memorySearchTimeout = 5 * time.Second
 
 	// KoopaPromptName is the name of the Dotprompt file for the Chat agent.
 	// This corresponds to prompts/koopa.prompt.
@@ -72,6 +77,15 @@ type Config struct {
 
 	// Token management
 	TokenBudget TokenBudget // Token budget for context window (zero-value uses defaults)
+
+	// Memory (optional)
+	MemoryStore *memory.Store // User memory store (nil = memory disabled)
+
+	// Background lifecycle (required when MemoryStore is set).
+	// BackgroundCtx outlives individual requests — used for async extraction.
+	// WG tracks background goroutines for graceful shutdown.
+	BackgroundCtx context.Context //nolint:containedctx // App lifecycle context, not a request context
+	WG            *sync.WaitGroup
 }
 
 // validate checks if all required parameters are present.
@@ -87,6 +101,9 @@ func (cfg Config) validate() error {
 	}
 	if len(cfg.Tools) == 0 {
 		return errors.New("at least one tool is required")
+	}
+	if cfg.MemoryStore != nil && cfg.WG == nil {
+		return errors.New("WG is required when MemoryStore is set")
 	}
 	return nil
 }
@@ -116,11 +133,16 @@ type Agent struct {
 	// Dependencies (read-only after construction)
 	g         *genkit.Genkit
 	sessions  *session.Store
+	memories  *memory.Store // nil = memory disabled (defensive; always set in production)
 	logger    *slog.Logger
 	tools     []ai.Tool    // Pre-registered tools (passed in via Config)
 	toolRefs  []ai.ToolRef // Cached at construction (ai.Tool implements ai.ToolRef)
 	toolNames string       // Cached as comma-separated for logging
 	prompt    ai.Prompt    // Cached Dotprompt instance (model configured in prompt file)
+
+	// Background lifecycle for async memory extraction.
+	bgCtx context.Context //nolint:containedctx // App lifecycle context, not a request context
+	wg    *sync.WaitGroup // Tracks extraction goroutines; waited on by App.Close().
 }
 
 // New creates a new Agent with required configuration.
@@ -170,7 +192,10 @@ func New(cfg Config) (*Agent, error) {
 
 	tokenBudget := cfg.TokenBudget
 	if tokenBudget.MaxHistoryTokens == 0 {
-		tokenBudget = DefaultTokenBudget()
+		tokenBudget.MaxHistoryTokens = DefaultTokenBudget().MaxHistoryTokens
+	}
+	if tokenBudget.MaxMemoryTokens == 0 {
+		tokenBudget.MaxMemoryTokens = DefaultTokenBudget().MaxMemoryTokens
 	}
 
 	// Use provided rate limiter or create default
@@ -186,6 +211,12 @@ func New(cfg Config) (*Agent, error) {
 	for i, t := range cfg.Tools {
 		toolRefs[i] = t
 		names[i] = t.Name()
+	}
+
+	// Resolve background context for async extraction.
+	bgCtx := cfg.BackgroundCtx
+	if bgCtx == nil {
+		bgCtx = context.Background()
 	}
 
 	a := &Agent{
@@ -205,10 +236,15 @@ func New(cfg Config) (*Agent, error) {
 		// Dependencies
 		g:         cfg.Genkit,
 		sessions:  cfg.SessionStore,
+		memories:  cfg.MemoryStore,
 		logger:    cfg.Logger,
 		tools:     cfg.Tools,                 // Already registered with Genkit
 		toolRefs:  toolRefs,                  // Cached for ai.WithTools()
 		toolNames: strings.Join(names, ", "), // Cached for logging
+
+		// Background lifecycle
+		bgCtx: bgCtx,
+		wg:    cfg.WG,
 	}
 
 	// Load Dotprompt (koopa.prompt) - REQUIRED
@@ -243,14 +279,65 @@ func (a *Agent) ExecuteStream(ctx context.Context, sessionID uuid.UUID, input st
 		"session_id", sessionID,
 		"streaming", streaming)
 
-	// Load session history
-	historyMessages, err := a.sessions.History(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("getting history: %w", err)
+	// Step 1: Fetch session to get ownerID (needed for memory search).
+	var ownerID string
+	if a.memories != nil {
+		sess, err := a.sessions.Session(ctx, sessionID)
+		if err != nil {
+			a.logger.Warn("fetching session for memory lookup", "error", err)
+			// Non-fatal: proceed without memory
+		} else {
+			ownerID = sess.OwnerID
+		}
 	}
 
-	// Generate response using unified core logic
-	resp, err := a.generateResponse(ctx, input, historyMessages, callback)
+	// Step 2: Load history and search memory in parallel.
+	var historyMessages []*ai.Message
+	var memoriesText string
+
+	type historyResult struct {
+		msgs []*ai.Message
+		err  error
+	}
+	type memoryResult struct {
+		text string
+		err  error
+	}
+
+	historyCh := make(chan historyResult, 1)
+	memoryCh := make(chan memoryResult, 1)
+
+	go func() {
+		msgs, err := a.sessions.History(ctx, sessionID)
+		historyCh <- historyResult{msgs, err}
+	}()
+
+	go func() {
+		if a.memories == nil || ownerID == "" {
+			memoryCh <- memoryResult{}
+			return
+		}
+		searchCtx, searchCancel := context.WithTimeout(ctx, memorySearchTimeout)
+		defer searchCancel()
+		text, err := a.searchMemories(searchCtx, input, ownerID)
+		memoryCh <- memoryResult{text, err}
+	}()
+
+	hr := <-historyCh
+	if hr.err != nil {
+		return nil, fmt.Errorf("getting history: %w", hr.err)
+	}
+	historyMessages = hr.msgs
+
+	mr := <-memoryCh
+	if mr.err != nil {
+		a.logger.Debug("memory search failed", "error", mr.err) // non-fatal
+	} else {
+		memoriesText = mr.text
+	}
+
+	// Step 3: Generate response with memory context.
+	resp, err := a.generateResponse(ctx, input, historyMessages, memoriesText, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +358,19 @@ func (a *Agent) ExecuteStream(ctx context.Context, sessionID uuid.UUID, input st
 		ai.NewModelMessage(ai.NewTextPart(responseText)),
 	}
 	if err := a.sessions.AppendMessages(ctx, sessionID, newMessages); err != nil {
-		a.logger.Error("appending messages to history", "error", err) // best-effort: don't fail the request
+		a.logger.Warn("appending messages to history", "error", err) // best-effort: don't fail the request
+	}
+
+	// Step 4: Extract and store new memories (best-effort, async).
+	// Uses bgCtx instead of request ctx so extraction outlives the HTTP response.
+	// Tracked by wg for graceful shutdown (App.Close waits for wg).
+	// Safety: validate() ensures wg != nil when memories != nil.
+	if a.memories != nil && ownerID != "" {
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			a.extractMemories(a.bgCtx, input, responseText, ownerID, sessionID)
+		}()
 	}
 
 	// Return formatted response
@@ -282,8 +381,9 @@ func (a *Agent) ExecuteStream(ctx context.Context, sessionID uuid.UUID, input st
 }
 
 // generateResponse is the unified response generation logic for both streaming and non-streaming modes.
+// memoriesText is injected into the prompt template; empty string means no memories available.
 // If callback is non-nil, streaming is enabled; otherwise, standard generation is used.
-func (a *Agent) generateResponse(ctx context.Context, input string, historyMessages []*ai.Message, callback StreamCallback) (*ai.ModelResponse, error) {
+func (a *Agent) generateResponse(ctx context.Context, input string, historyMessages []*ai.Message, memoriesText string, callback StreamCallback) (*ai.ModelResponse, error) {
 	// Build messages: deep copy history and append current user input
 	// CRITICAL: Deep copy is required to prevent DATA RACE in Genkit's renderMessages()
 	// Genkit modifies msg.Content in-place, so concurrent executions sharing the same
@@ -296,12 +396,18 @@ func (a *Agent) generateResponse(ctx context.Context, input string, historyMessa
 
 	messages = append(messages, ai.NewUserMessage(ai.NewTextPart(input)))
 
+	// Build prompt input map
+	promptInput := map[string]any{
+		"language":     a.languagePrompt,
+		"current_date": time.Now().Format("2006-01-02"),
+	}
+	if memoriesText != "" {
+		promptInput["memories"] = memoriesText
+	}
+
 	// Build execute options (using cached toolRefs and languagePrompt)
 	opts := []ai.PromptExecuteOption{
-		ai.WithInput(map[string]any{
-			"language":     a.languagePrompt,
-			"current_date": time.Now().Format("2006-01-02"),
-		}),
+		ai.WithInput(promptInput),
 		ai.WithMessagesFn(func(_ context.Context, _ any) ([]*ai.Message, error) {
 			return messages, nil
 		}),
@@ -343,6 +449,82 @@ func (a *Agent) generateResponse(ctx context.Context, input string, historyMessa
 
 	a.circuitBreaker.Success()
 	return resp, nil
+}
+
+// searchMemories retrieves relevant user memories and formats them for prompt injection.
+// Uses HybridSearch (vector + text + decay) and splits results by category.
+// Returns empty string if no memories found or on error.
+func (a *Agent) searchMemories(ctx context.Context, query, ownerID string) (string, error) {
+	all, err := a.memories.HybridSearch(ctx, query, ownerID, 10)
+	if err != nil {
+		return "", fmt.Errorf("searching memories: %w", err)
+	}
+
+	var identity, preference, project, contextual []*memory.Memory
+	for _, m := range all {
+		switch m.Category {
+		case memory.CategoryIdentity:
+			identity = append(identity, m)
+		case memory.CategoryPreference:
+			preference = append(preference, m)
+		case memory.CategoryProject:
+			project = append(project, m)
+		case memory.CategoryContextual:
+			contextual = append(contextual, m)
+		}
+	}
+
+	text := memory.FormatMemories(identity, preference, project, contextual, a.tokenBudget.MaxMemoryTokens)
+	if text != "" {
+		a.logger.Debug("injecting memories",
+			"owner", ownerID,
+			"identity_count", len(identity),
+			"preference_count", len(preference),
+			"project_count", len(project),
+			"contextual_count", len(contextual),
+		)
+	}
+	return text, nil
+}
+
+// extractMemories extracts facts from a conversation turn and stores them.
+// Best-effort: errors are logged, never returned.
+func (a *Agent) extractMemories(ctx context.Context, userInput, assistantResponse, ownerID string, sessionID uuid.UUID) {
+	conversation := memory.FormatConversation(userInput, assistantResponse)
+	facts, err := memory.Extract(ctx, a.g, a.modelName, conversation)
+	if err != nil {
+		a.logger.Debug("memory extraction failed", "error", err)
+		return
+	}
+
+	// Create arbitrator for two-threshold dedup (uses same model as extraction).
+	var arb memory.Arbitrator
+	if a.modelName != "" {
+		arb = &genkitArbitrator{g: a.g, modelName: a.modelName}
+	}
+
+	for _, f := range facts {
+		opts := memory.AddOpts{
+			Importance: f.Importance,
+			ExpiresIn:  f.ExpiresIn,
+		}
+		if err := a.memories.Add(ctx, f.Content, f.Category, ownerID, sessionID, opts, arb); err != nil {
+			a.logger.Debug("storing extracted memory", "error", err, "content_len", len(f.Content))
+		}
+	}
+	if len(facts) > 0 {
+		a.logger.Debug("extracted memories", "count", len(facts), "owner", ownerID)
+	}
+}
+
+// genkitArbitrator implements memory.Arbitrator using Genkit LLM calls.
+type genkitArbitrator struct {
+	g         *genkit.Genkit
+	modelName string
+}
+
+func (a *genkitArbitrator) Arbitrate(ctx context.Context, existing, candidate string) (*memory.ArbitrationResult, error) {
+	return memory.Arbitrate(ctx, a.g, a.modelName, existing, candidate)
 }
 
 // deepCopyMessages creates independent copies of Message and Part structs.
