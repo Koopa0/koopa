@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT unique_message_sequence UNIQUE (session_id, sequence_number),
-    CONSTRAINT message_role_check CHECK (role IN ('user', 'assistant', 'system', 'tool'))
+    CONSTRAINT message_role_check CHECK (role IN ('user', 'assistant', 'system', 'tool', 'model'))
 );
 
 -- ============================================================================
@@ -87,27 +87,27 @@ CREATE TABLE IF NOT EXISTS memories (
         GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
 );
 
-CREATE INDEX idx_memories_embedding ON memories
+CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
-CREATE INDEX idx_memories_owner ON memories(owner_id);
+CREATE INDEX IF NOT EXISTS idx_memories_owner ON memories(owner_id);
 
-CREATE INDEX idx_memories_owner_active_category
+CREATE INDEX IF NOT EXISTS idx_memories_owner_active_category
     ON memories(owner_id, active, category);
 
-CREATE UNIQUE INDEX idx_memories_owner_content_unique
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_owner_content_unique
     ON memories(owner_id, md5(content)) WHERE active = true;
 
-CREATE INDEX idx_memories_search_text ON memories USING gin (search_text);
+CREATE INDEX IF NOT EXISTS idx_memories_search_text ON memories USING gin (search_text);
 
-CREATE INDEX idx_memories_decay_candidates
+CREATE INDEX IF NOT EXISTS idx_memories_decay_candidates
     ON memories (owner_id, updated_at)
     WHERE active = true AND superseded_by IS NULL;
 
-CREATE INDEX idx_memories_superseded_by ON memories (superseded_by)
+CREATE INDEX IF NOT EXISTS idx_memories_superseded_by ON memories (superseded_by)
     WHERE superseded_by IS NOT NULL;
 
-CREATE INDEX idx_memories_expires_at
+CREATE INDEX IF NOT EXISTS idx_memories_expires_at
     ON memories (expires_at)
     WHERE expires_at IS NOT NULL AND active = true;

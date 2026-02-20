@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,15 +24,38 @@ import (
 // Setup + Helpers
 // ============================================================
 
-// setupIntegrationTest creates a Store with real PostgreSQL and Google AI embedder.
-// Skips if GEMINI_API_KEY is not set.
+var (
+	sharedDB *testutil.TestDBContainer
+	sharedAI *testutil.GoogleAISetup
+)
+
+func TestMain(m *testing.M) {
+	// Google AI is required for all memory integration tests.
+	var err error
+	sharedAI, err = testutil.SetupGoogleAIForMain()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(0) // skip all tests gracefully
+	}
+
+	var dbCleanup func()
+	sharedDB, dbCleanup, err = testutil.SetupTestDBForMain()
+	if err != nil {
+		log.Fatalf("starting test database: %v", err)
+	}
+	code := m.Run()
+	dbCleanup()
+	os.Exit(code)
+}
+
+// setupIntegrationTest creates a Store using the shared test database and Google AI embedder.
+// Truncates all tables for test isolation.
 func setupIntegrationTest(t *testing.T) *Store {
 	t.Helper()
 
-	db := testutil.SetupTestDB(t)
-	ai := testutil.SetupGoogleAI(t)
+	testutil.CleanTables(t, sharedDB.Pool)
 
-	store, err := NewStore(db.Pool, ai.Embedder, ai.Logger)
+	store, err := NewStore(sharedDB.Pool, sharedAI.Embedder, sharedAI.Logger)
 	if err != nil {
 		t.Fatalf("NewStore() unexpected error: %v", err)
 	}
@@ -1471,6 +1496,194 @@ func TestScheduler_RunOnce(t *testing.T) {
 	rawExpired := queryRaw(t, store.pool, expiredID)
 	if rawExpired.Active {
 		t.Error("after runOnce: expired memory active = true, want false")
+	}
+}
+
+func TestScheduler_RetentionCleanup(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+	ownerID := uniqueOwner()
+
+	// Add an active memory (should NOT be cleaned up).
+	activeID := addMemory(t, store, "Active memory", CategoryIdentity, ownerID)
+
+	// Add an inactive memory (soft-deleted), backdated beyond retention.
+	inactiveID := addMemory(t, store, "Inactive old memory", CategoryContextual, ownerID)
+	if err := store.Delete(ctx, inactiveID, ownerID); err != nil {
+		t.Fatalf("Delete() error: %v", err)
+	}
+	// Backdate the inactive memory beyond retention cutoff.
+	setUpdatedAt(t, store.pool, inactiveID, time.Now().AddDate(0, 0, -100))
+
+	// Add a recently inactive memory (should NOT be cleaned up).
+	recentInactiveID := addMemory(t, store, "Recently inactive memory", CategoryContextual, ownerID)
+	if err := store.Delete(ctx, recentInactiveID, ownerID); err != nil {
+		t.Fatalf("Delete() error: %v", err)
+	}
+
+	// Create scheduler with retention = 90 days, no session cleaner.
+	scheduler := NewScheduler(store, slog.Default())
+	scheduler.SetRetention(90, nil)
+
+	// Run once — should hard-delete the 100-day-old inactive memory.
+	scheduler.runOnce(ctx)
+
+	// Verify: active memory still exists.
+	rawActive := queryRaw(t, store.pool, activeID)
+	if rawActive.ID != activeID {
+		t.Errorf("active memory should still exist after retention cleanup")
+	}
+
+	// Verify: old inactive memory is hard-deleted (row gone).
+	_, err := store.pool.Exec(ctx, "SELECT id FROM memories WHERE id = $1", inactiveID)
+	// Can't use queryRaw since it might not find the row. Let's check directly.
+	var found int
+	if err := store.pool.QueryRow(ctx, "SELECT COUNT(*) FROM memories WHERE id = $1", inactiveID).Scan(&found); err != nil {
+		t.Fatalf("checking inactive memory: %v", err)
+	}
+	if found != 0 {
+		t.Errorf("old inactive memory (100 days) count = %d, want 0 (should be hard-deleted)", found)
+	}
+
+	// Verify: recent inactive memory still exists (only 0 days old, within 90-day retention).
+	var recentFound int
+	if err = store.pool.QueryRow(ctx, "SELECT COUNT(*) FROM memories WHERE id = $1", recentInactiveID).Scan(&recentFound); err != nil {
+		t.Fatalf("checking recent inactive memory: %v", err)
+	}
+	if recentFound != 1 {
+		t.Errorf("recent inactive memory count = %d, want 1 (within retention period)", recentFound)
+	}
+}
+
+func TestScheduler_SetRetention_Zero(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+	ownerID := uniqueOwner()
+
+	// Add and deactivate a memory, backdate it.
+	id := addMemory(t, store, "Should survive zero retention", CategoryContextual, ownerID)
+	if err := store.Delete(ctx, id, ownerID); err != nil {
+		t.Fatalf("Delete() error: %v", err)
+	}
+	setUpdatedAt(t, store.pool, id, time.Now().AddDate(0, 0, -500))
+
+	// RetentionDays = 0 → disabled, should not clean up.
+	scheduler := NewScheduler(store, slog.Default())
+	scheduler.SetRetention(0, nil)
+	scheduler.runOnce(ctx)
+
+	var found int
+	if err := store.pool.QueryRow(ctx, "SELECT COUNT(*) FROM memories WHERE id = $1", id).Scan(&found); err != nil {
+		t.Fatalf("checking memory: %v", err)
+	}
+	if found != 1 {
+		t.Errorf("memory count = %d, want 1 (retention disabled, should not delete)", found)
+	}
+}
+
+func TestStore_Memory_OwnershipCheck(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+	ownerID := uniqueOwner()
+	otherOwner := uniqueOwner()
+
+	id := addMemory(t, store, "Ownership test memory", CategoryIdentity, ownerID)
+
+	// Owner can access.
+	m, err := store.Memory(ctx, id, ownerID)
+	if err != nil {
+		t.Fatalf("Memory(%v, owner) unexpected error: %v", id, err)
+	}
+	if m.ID != id {
+		t.Errorf("Memory(%v, owner).ID = %v, want %v", id, m.ID, id)
+	}
+
+	// Other owner is forbidden.
+	_, err = store.Memory(ctx, id, otherOwner)
+	if !errors.Is(err, ErrForbidden) {
+		t.Errorf("Memory(%v, other) error = %v, want ErrForbidden", id, err)
+	}
+
+	// Non-existent ID returns not found.
+	_, err = store.Memory(ctx, uuid.New(), ownerID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Memory(random, owner) error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestStore_Memories_Pagination(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+	ownerID := uniqueOwner()
+
+	// Add 5 memories.
+	for i := 0; i < 5; i++ {
+		addMemory(t, store, fmt.Sprintf("Pagination test memory %d", i), CategoryContextual, ownerID)
+	}
+
+	// Page 1: limit=2, offset=0.
+	memories, total, err := store.Memories(ctx, ownerID, 2, 0)
+	if err != nil {
+		t.Fatalf("Memories(limit=2, offset=0) error: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("Memories() total = %d, want 5", total)
+	}
+	if len(memories) != 2 {
+		t.Errorf("Memories() len = %d, want 2", len(memories))
+	}
+
+	// Page 3: limit=2, offset=4.
+	memories, total, err = store.Memories(ctx, ownerID, 2, 4)
+	if err != nil {
+		t.Fatalf("Memories(limit=2, offset=4) error: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("Memories() total = %d, want 5", total)
+	}
+	if len(memories) != 1 {
+		t.Errorf("Memories() len = %d, want 1 (last page)", len(memories))
+	}
+}
+
+func TestStore_ActiveCount(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+	ownerID := uniqueOwner()
+
+	// Start with 0 memories.
+	count, err := store.ActiveCount(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("ActiveCount() error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("ActiveCount() = %d, want 0", count)
+	}
+
+	// Add 3 memories.
+	addMemory(t, store, "Active count test 1", CategoryIdentity, ownerID)
+	id2 := addMemory(t, store, "Active count test 2", CategoryContextual, ownerID)
+	addMemory(t, store, "Active count test 3", CategoryProject, ownerID)
+
+	count, err = store.ActiveCount(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("ActiveCount() error: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("ActiveCount() = %d, want 3", count)
+	}
+
+	// Deactivate one.
+	if err := store.Delete(ctx, id2, ownerID); err != nil {
+		t.Fatalf("Delete() error: %v", err)
+	}
+
+	count, err = store.ActiveCount(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("ActiveCount() error: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("ActiveCount() after delete = %d, want 2", count)
 	}
 }
 

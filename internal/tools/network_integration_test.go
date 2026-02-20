@@ -180,8 +180,8 @@ func TestNetwork_Fetch_SSRFBlockedHosts(t *testing.T) {
 				if got, want := output.FailedURLs[0].URL, tt.url; got != want {
 					t.Errorf("Fetch(%q) failed URL = %q, want %q", tt.url, got, want)
 				}
-				if !strings.Contains(output.FailedURLs[0].Reason, "blocked") {
-					t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.url, output.FailedURLs[0].Reason, "blocked")
+				if !strings.Contains(output.FailedURLs[0].Reason, "not permitted") {
+					t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.url, output.FailedURLs[0].Reason, "not permitted")
 				}
 			}
 		})
@@ -245,8 +245,8 @@ func TestNetwork_Fetch_SchemeValidation(t *testing.T) {
 				if got, want := len(output.FailedURLs), 1; got != want {
 					t.Fatalf("Fetch(%q) failed URLs count = %d, want %d", tt.url, got, want)
 				}
-				if !strings.Contains(output.FailedURLs[0].Reason, "blocked") {
-					t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.url, output.FailedURLs[0].Reason, "blocked")
+				if !strings.Contains(output.FailedURLs[0].Reason, "not permitted") {
+					t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.url, output.FailedURLs[0].Reason, "not permitted")
 				}
 			}
 		})
@@ -361,8 +361,8 @@ func TestNetwork_Fetch_RedirectSSRFProtection(t *testing.T) {
 				}
 				// Most likely the redirect is blocked and we have a failed URL
 				if len(output.FailedURLs) > 0 {
-					if !strings.Contains(output.FailedURLs[0].Reason, "blocked") {
-						t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.path, output.FailedURLs[0].Reason, "blocked")
+					if !strings.Contains(output.FailedURLs[0].Reason, "not permitted") {
+						t.Errorf("Fetch(%q) failure reason = %q, want contains %q", tt.path, output.FailedURLs[0].Reason, "not permitted")
 					}
 				}
 			}
@@ -520,6 +520,98 @@ func TestNetwork_Fetch_PublicURLSuccess(t *testing.T) {
 	}
 	if !strings.Contains(output.Results[0].Content, "Test Content") {
 		t.Errorf("Fetch(%q) result content = %q, want contains %q", server.URL, output.Results[0].Content, "Test Content")
+	}
+}
+
+func TestNetwork_Fetch_SelectorTooLong(t *testing.T) {
+	t.Parallel()
+
+	h := newnetworkTools(t)
+	server := h.createMockServer()
+	nt := h.createNetwork(server.URL)
+	ctx := h.toolContext()
+
+	longSelector := strings.Repeat("a", MaxSelectorLength+1)
+
+	output, err := nt.Fetch(ctx, FetchInput{
+		URLs:     []string{server.URL},
+		Selector: longSelector,
+	})
+
+	if err != nil {
+		t.Fatalf("Fetch(long selector) unexpected Go error: %v", err)
+	}
+	if output.Error == "" {
+		t.Fatal("Fetch(long selector).Error = empty, want non-empty")
+	}
+	if !strings.Contains(output.Error, "Selector too long") {
+		t.Errorf("Fetch(long selector).Error = %q, want contains %q", output.Error, "Selector too long")
+	}
+	if got, want := len(output.Results), 0; got != want {
+		t.Errorf("Fetch(long selector) results = %d, want %d", got, want)
+	}
+}
+
+func TestNetwork_Fetch_SelectorAtLimit(t *testing.T) {
+	t.Parallel()
+
+	h := newnetworkTools(t)
+	server := h.createMockServer()
+
+	cfg := NetConfig{
+		SearchBaseURL:    server.URL,
+		FetchParallelism: 2,
+		FetchDelay:       10 * time.Millisecond,
+		FetchTimeout:     5 * time.Second,
+	}
+	nt := newNetworkForTesting(t, cfg, testLogger())
+	ctx := h.toolContext()
+
+	// Exactly at the limit — should succeed (not return selector error)
+	atLimitSelector := strings.Repeat("a", MaxSelectorLength)
+
+	output, err := nt.Fetch(ctx, FetchInput{
+		URLs:     []string{server.URL},
+		Selector: atLimitSelector,
+	})
+
+	if err != nil {
+		t.Fatalf("Fetch(selector at limit) unexpected Go error: %v", err)
+	}
+	if strings.Contains(output.Error, "Selector too long") {
+		t.Errorf("Fetch(selector at limit).Error = %q, want no selector length error", output.Error)
+	}
+}
+
+func TestNetwork_Fetch_URLTooLong(t *testing.T) {
+	t.Parallel()
+
+	h := newnetworkTools(t)
+	server := h.createMockServer()
+	nt := h.createNetwork(server.URL)
+	ctx := h.toolContext()
+
+	// URL exceeds MaxURLLength (2048)
+	longURL := "http://example.com/" + strings.Repeat("a", MaxURLLength)
+
+	output, err := nt.Fetch(ctx, FetchInput{URLs: []string{longURL}})
+
+	if err != nil {
+		t.Fatalf("Fetch(long URL) unexpected Go error: %v", err)
+	}
+	// Should be in failed URLs, not results
+	if got, want := len(output.Results), 0; got != want {
+		t.Errorf("Fetch(long URL) results = %d, want %d", got, want)
+	}
+	if got, want := len(output.FailedURLs), 1; got != want {
+		t.Fatalf("Fetch(long URL) failed URLs = %d, want %d", got, want)
+	}
+	if !strings.Contains(output.FailedURLs[0].Reason, "too long") {
+		t.Errorf("Fetch(long URL).FailedURLs[0].Reason = %q, want contains %q", output.FailedURLs[0].Reason, "too long")
+	}
+	// URL should be truncated in the failure record
+	if len(output.FailedURLs[0].URL) > 200 {
+		t.Errorf("Fetch(long URL).FailedURLs[0].URL length = %d, want <= 200 (should be truncated)", len(output.FailedURLs[0].URL))
 	}
 }
 

@@ -9,12 +9,11 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addMessage = `-- name: AddMessage :exec
-INSERT INTO messages (session_id, role, content, sequence_number)
-VALUES ($1, $2, $3, $4)
+INSERT INTO messages (session_id, role, content, sequence_number, text_content)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type AddMessageParams struct {
@@ -22,6 +21,7 @@ type AddMessageParams struct {
 	Role           string    `json:"role"`
 	Content        []byte    `json:"content"`
 	SequenceNumber int32     `json:"sequence_number"`
+	TextContent    *string   `json:"text_content"`
 }
 
 // Add a message to a session
@@ -31,6 +31,7 @@ func (q *Queries) AddMessage(ctx context.Context, arg AddMessageParams) error {
 		arg.Role,
 		arg.Content,
 		arg.SequenceNumber,
+		arg.TextContent,
 	)
 	return err
 }
@@ -39,7 +40,7 @@ const createSession = `-- name: CreateSession :one
 
 INSERT INTO sessions (title, owner_id)
 VALUES ($1, $2)
-RETURNING id, title, created_at, updated_at, owner_id
+RETURNING id, title, owner_id, created_at, updated_at
 `
 
 type CreateSessionParams struct {
@@ -55,9 +56,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OwnerID,
 	)
 	return i, err
 }
@@ -146,17 +147,9 @@ FROM sessions
 WHERE id = $1
 `
 
-type SessionRow struct {
-	ID        uuid.UUID          `json:"id"`
-	Title     *string            `json:"title"`
-	OwnerID   string             `json:"owner_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) Session(ctx context.Context, id uuid.UUID) (SessionRow, error) {
+func (q *Queries) Session(ctx context.Context, id uuid.UUID) (Session, error) {
 	row := q.db.QueryRow(ctx, session, id)
-	var i SessionRow
+	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -178,19 +171,11 @@ type SessionByIDAndOwnerParams struct {
 	OwnerID   string    `json:"owner_id"`
 }
 
-type SessionByIDAndOwnerRow struct {
-	ID        uuid.UUID          `json:"id"`
-	Title     *string            `json:"title"`
-	OwnerID   string             `json:"owner_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // Verify session exists and is owned by the given user.
 // Used for ownership checks without a separate query + comparison.
-func (q *Queries) SessionByIDAndOwner(ctx context.Context, arg SessionByIDAndOwnerParams) (SessionByIDAndOwnerRow, error) {
+func (q *Queries) SessionByIDAndOwner(ctx context.Context, arg SessionByIDAndOwnerParams) (Session, error) {
 	row := q.db.QueryRow(ctx, sessionByIDAndOwner, arg.SessionID, arg.OwnerID)
-	var i SessionByIDAndOwnerRow
+	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -216,23 +201,15 @@ type SessionsParams struct {
 	ResultLimit  int32  `json:"result_limit"`
 }
 
-type SessionsRow struct {
-	ID        uuid.UUID          `json:"id"`
-	Title     *string            `json:"title"`
-	OwnerID   string             `json:"owner_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) Sessions(ctx context.Context, arg SessionsParams) ([]SessionsRow, error) {
+func (q *Queries) Sessions(ctx context.Context, arg SessionsParams) ([]Session, error) {
 	rows, err := q.db.Query(ctx, sessions, arg.OwnerID, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SessionsRow{}
+	items := []Session{}
 	for rows.Next() {
-		var i SessionsRow
+		var i Session
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -268,13 +245,16 @@ func (q *Queries) UpdateSessionTitle(ctx context.Context, arg UpdateSessionTitle
 	return err
 }
 
-const updateSessionUpdatedAt = `-- name: UpdateSessionUpdatedAt :exec
+const updateSessionUpdatedAt = `-- name: UpdateSessionUpdatedAt :execrows
 UPDATE sessions
 SET updated_at = NOW()
 WHERE id = $1
 `
 
-func (q *Queries) UpdateSessionUpdatedAt(ctx context.Context, sessionID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, updateSessionUpdatedAt, sessionID)
-	return err
+func (q *Queries) UpdateSessionUpdatedAt(ctx context.Context, sessionID uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, updateSessionUpdatedAt, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

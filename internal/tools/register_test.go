@@ -453,8 +453,8 @@ func TestRegisterKnowledge(t *testing.T) {
 		if tools != nil {
 			t.Errorf("RegisterKnowledge(g, nil) = %v, want nil", tools)
 		}
-		if !strings.Contains(err.Error(), "Knowledge is required") {
-			t.Errorf("RegisterKnowledge(g, nil) error = %q, want contains %q", err.Error(), "Knowledge is required")
+		if !strings.Contains(err.Error(), "knowledge instance is required") {
+			t.Errorf("RegisterKnowledge(g, nil) error = %q, want contains %q", err.Error(), "knowledge instance is required")
 		}
 	})
 }

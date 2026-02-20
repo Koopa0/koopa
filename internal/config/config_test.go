@@ -7,15 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
 // TestLoadDefaults tests that default configuration values are loaded correctly
 func TestLoadDefaults(t *testing.T) {
-	// Reset Viper singleton to avoid interference from other tests
-	viper.Reset()
-
 	// Create temporary config directory (no config.yaml = pure defaults)
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
@@ -104,9 +99,6 @@ func TestLoadDefaults(t *testing.T) {
 
 // TestLoadConfigFile tests loading configuration from a file
 func TestLoadConfigFile(t *testing.T) {
-	// Reset Viper singleton to avoid interference from other tests
-	viper.Reset()
-
 	// Create temporary config directory
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
@@ -292,7 +284,7 @@ max_tokens: 1024
 		t.Fatalf("writing config file: %v", err)
 	}
 
-	// KOOPA_* env vars NO LONGER supported (removed AutomaticEnv)
+	// Only explicitly bound KOOPA_* env vars work (AutomaticEnv removed for predictability)
 	testAPIKey := "test-datadog-api-key"
 	testHMACSecret := "test-hmac-secret-minimum-32-chars-long"
 

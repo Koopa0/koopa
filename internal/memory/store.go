@@ -101,8 +101,18 @@ func (s *Store) embed(ctx context.Context, text string) (pgvector.Vector, error)
 // NOTE: The arbitration LLM call and OpUpdate re-embedding happen inside
 // the transaction. This is acceptable because the advisory lock is per-owner
 // (not global) and memory extraction is a low-throughput background operation.
+// Named return retErr is used by the deferred timing log.
 func (s *Store) Add(ctx context.Context, content string, category Category,
-	ownerID string, sessionID uuid.UUID, opts AddOpts, arb Arbitrator) error {
+	ownerID string, sessionID uuid.UUID, opts AddOpts, arb Arbitrator) (retErr error) {
+	start := time.Now()
+	defer func() {
+		s.logger.Debug("memory.add",
+			"duration_ms", time.Since(start).Milliseconds(),
+			"owner", ownerID,
+			"category", category,
+			"failed", retErr != nil,
+		)
+	}()
 	if err := validateAddInput(content, category, ownerID); err != nil {
 		return err
 	}
@@ -216,7 +226,10 @@ type nearestNeighbor struct {
 	content string
 }
 
-// findNearest finds the nearest neighbor for dedup. Returns found=false if no neighbors exist.
+// findNearest searches ALL memories (active and inactive) for the nearest neighbor.
+// Including inactive memories allows auto-merge to reactivate previously deleted
+// entries when the user adds similar content again.
+// Returns found=false if no neighbors exist.
 func (*Store) findNearest(ctx context.Context, q querier, vec pgvector.Vector, ownerID string) (nn nearestNeighbor, similarity float64, found bool, err error) {
 	queryErr := q.QueryRow(ctx,
 		`SELECT id, active, content, 1 - (embedding <=> $1) AS similarity
@@ -244,6 +257,9 @@ func (s *Store) addWithDedup(ctx context.Context, q querier, nn nearestNeighbor,
 	arb Arbitrator) error {
 
 	// Threshold 1: Auto-merge (>= 0.95).
+	// NOTE: auto-merge intentionally reactivates soft-deleted memories (active = true).
+	// If a user deletes a memory then adds similar content, the old row is reused
+	// to preserve access history. This is by design, not a bug.
 	if similarity >= AutoMergeThreshold {
 		_, err := q.Exec(ctx,
 			`UPDATE memories
@@ -435,15 +451,26 @@ func (s *Store) evictIfNeeded(ctx context.Context, ownerID string) error {
 // Search finds memories similar to the query, filtered by owner.
 // Returns up to topK results ordered by cosine similarity descending.
 // Excludes superseded and expired memories.
-func (s *Store) Search(ctx context.Context, query, ownerID string, topK int) ([]*Memory, error) {
+//
+// Named returns are used by the deferred timing log.
+func (s *Store) Search(ctx context.Context, query, ownerID string, topK int) (results []*Memory, retErr error) {
+	start := time.Now()
+	defer func() {
+		s.logger.Debug("memory.search",
+			"duration_ms", time.Since(start).Milliseconds(),
+			"results", len(results),
+			"owner", ownerID,
+			"failed", retErr != nil,
+		)
+	}()
 	if query == "" || ownerID == "" {
 		return []*Memory{}, nil
 	}
 	if topK <= 0 {
 		topK = 5
 	}
-	if topK > MaxTopK {
-		topK = MaxTopK
+	if topK > maxTopK {
+		topK = maxTopK
 	}
 	if len(query) > MaxSearchQueryLen {
 		query = query[:MaxSearchQueryLen]
@@ -489,8 +516,8 @@ func (s *Store) HybridSearch(ctx context.Context, query, ownerID string, topK in
 	if topK <= 0 {
 		topK = 5
 	}
-	if topK > MaxTopK {
-		topK = MaxTopK
+	if topK > maxTopK {
+		topK = maxTopK
 	}
 	if len(query) > MaxSearchQueryLen {
 		query = query[:MaxSearchQueryLen]
@@ -507,10 +534,16 @@ func (s *Store) HybridSearch(ctx context.Context, query, ownerID string, topK in
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
+	// GREATEST picks the higher of tsvector rank and trigram similarity.
+	// This ensures CJK text (where tsvector returns 0) still gets scored
+	// via pg_trgm similarity(). Both functions are cheap on GIN indexes.
 	rows, err := s.pool.Query(ctx,
 		`SELECT `+memoryCols+`,
 		        ($4 * (1 - (embedding <=> $1))
-		         + $5 * LEAST(1.0, COALESCE(ts_rank_cd(search_text, plainto_tsquery('english', $3), 1), 0))
+		         + $5 * GREATEST(
+		             COALESCE(ts_rank_cd(search_text, plainto_tsquery('english', $3), 1), 0),
+		             COALESCE(similarity(content, $3), 0)
+		           )
 		         + $6 * decay_score
 		        ) AS relevance
 		 FROM memories
@@ -649,8 +682,9 @@ func (s *Store) All(ctx context.Context, ownerID string, category Category) ([]*
 			 WHERE owner_id = $1 AND active = true AND category = $2
 			   AND superseded_by IS NULL
 			   AND (expires_at IS NULL OR expires_at > now())
-			 ORDER BY updated_at DESC`,
-			ownerID, category,
+			 ORDER BY updated_at DESC
+			 LIMIT $3`,
+			ownerID, category, MaxPerUser,
 		)
 	} else {
 		rows, err = s.pool.Query(ctx,
@@ -659,8 +693,9 @@ func (s *Store) All(ctx context.Context, ownerID string, category Category) ([]*
 			 WHERE owner_id = $1 AND active = true
 			   AND superseded_by IS NULL
 			   AND (expires_at IS NULL OR expires_at > now())
-			 ORDER BY updated_at DESC`,
-			ownerID,
+			 ORDER BY updated_at DESC
+			 LIMIT $2`,
+			ownerID, MaxPerUser,
 		)
 	}
 	if err != nil {
@@ -722,25 +757,77 @@ func (s *Store) DeleteAll(ctx context.Context, ownerID string) error {
 	return nil
 }
 
+// HardDeleteInactive permanently deletes inactive memories older than cutoff.
+// Returns the number of deleted rows.
+//
+// PRIVILEGED: This is a cross-tenant operation intended only for the background
+// retention scheduler (Scheduler.runOnce). It must NOT be exposed via any API endpoint.
+func (s *Store) HardDeleteInactive(ctx context.Context, cutoff time.Time) (int, error) {
+	if cutoff.After(time.Now()) {
+		return 0, fmt.Errorf("cutoff cannot be in the future")
+	}
+
+	const batchSize = 1000
+	var total int
+	for {
+		select {
+		case <-ctx.Done():
+			return total, fmt.Errorf("hard-deleting inactive memories: %w", ctx.Err())
+		default:
+		}
+		tag, err := s.pool.Exec(ctx,
+			`DELETE FROM memories WHERE id IN (
+				SELECT id FROM memories WHERE active = false AND updated_at < $1 LIMIT $2
+			)`, cutoff, batchSize,
+		)
+		if err != nil {
+			return total, fmt.Errorf("hard-deleting inactive memories: %w", err)
+		}
+		n := int(tag.RowsAffected())
+		total += n
+		if n == 0 {
+			break
+		}
+	}
+	return total, nil
+}
+
 // Supersede marks an old memory as superseded by a new one.
 // Validation:
 //  1. Self-reference check: oldID == newID → error
 //  2. Owner match: atomic UPDATE ensures same owner_id
 //  3. Double-supersede guard: WHERE superseded_by IS NULL
-//  4. Cycle detection: walks chain up to 10 levels
+//  4. Cycle detection: walks chain up to 10 levels (within transaction)
+//
+// The cycle detection read and supersede UPDATE are wrapped in a single
+// transaction to prevent TOCTOU races where concurrent Supersede calls
+// could create a cycle between the read and write.
 func (s *Store) Supersede(ctx context.Context, oldID, newID uuid.UUID) error {
 	if oldID == newID {
 		return fmt.Errorf("memory cannot supersede itself")
 	}
 
-	// Cycle detection: walk from newID up the chain.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning supersede transaction: %w", err)
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			s.logger.Debug("supersede rollback", "error", rbErr)
+		}
+	}()
+
+	// Cycle detection within transaction: walk from newID up the chain.
 	current := newID
-	for depth := 0; depth < 10; depth++ {
+	for range 10 {
 		var next *uuid.UUID
-		err := s.pool.QueryRow(ctx,
+		scanErr := tx.QueryRow(ctx,
 			"SELECT superseded_by FROM memories WHERE id = $1", current,
 		).Scan(&next)
-		if err != nil || next == nil {
+		if scanErr != nil || next == nil {
+			if scanErr != nil && !errors.Is(scanErr, pgx.ErrNoRows) {
+				return fmt.Errorf("walking supersession chain: %w", scanErr)
+			}
 			break
 		}
 		if *next == oldID {
@@ -750,7 +837,7 @@ func (s *Store) Supersede(ctx context.Context, oldID, newID uuid.UUID) error {
 	}
 
 	// Atomic: only supersede if same owner and not already superseded.
-	tag, err := s.pool.Exec(ctx,
+	tag, err := tx.Exec(ctx,
 		`UPDATE memories
 		 SET superseded_by = $2, active = false, updated_at = now()
 		 WHERE id = $1
@@ -763,6 +850,10 @@ func (s *Store) Supersede(ctx context.Context, oldID, newID uuid.UUID) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing supersede: %w", err)
 	}
 	return nil
 }
@@ -875,15 +966,129 @@ func FormatMemories(identity, preference, project, contextual []*Memory, maxToke
 //
 // The LLM-side instruction boundary (section headers) is the primary containment;
 // this function is a secondary defense-in-depth layer.
+// memorySanitizer is a pre-allocated Replacer for sanitizeMemoryContent.
+// Avoids allocating a new Replacer on every call in FormatMemories.
+var memorySanitizer = strings.NewReplacer(
+	"<", "",
+	">", "",
+	"`", "",
+	"\n", " ",
+	"\r", " ",
+)
+
 func sanitizeMemoryContent(s string) string {
-	s = strings.NewReplacer(
-		"<", "",
-		">", "",
-		"`", "",
-		"\n", " ",
-		"\r", " ",
-	).Replace(s)
-	return s
+	return memorySanitizer.Replace(s)
+}
+
+// Memory retrieves a single memory by ID with ownership check.
+// Returns ErrNotFound if the memory doesn't exist.
+// Returns ErrForbidden if the memory belongs to a different owner.
+func (s *Store) Memory(ctx context.Context, id uuid.UUID, ownerID string) (*Memory, error) {
+	var m Memory
+	var sessionID *uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT `+memoryCols+`
+		 FROM memories
+		 WHERE id = $1`,
+		id,
+	).Scan(
+		&m.ID, &m.OwnerID, &m.Content, &m.Category,
+		&sessionID, &m.Active, &m.CreatedAt, &m.UpdatedAt,
+		&m.Importance, &m.AccessCount, &m.LastAccessedAt,
+		&m.DecayScore, &m.SupersededBy, &m.ExpiresAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying memory %s: %w", id, err)
+	}
+	if sessionID != nil {
+		m.SourceSessionID = *sessionID
+	}
+	if m.OwnerID != ownerID {
+		return nil, ErrForbidden
+	}
+	return &m, nil
+}
+
+// Memories returns paginated active memories for a user.
+// Returns memories + total count. Excludes superseded and expired entries.
+//
+// NOTE: When offset >= total matching memories, returns ([], 0, nil).
+// The zero total indicates no rows were scanned, not that zero memories exist.
+func (s *Store) Memories(ctx context.Context, ownerID string, limit, offset int) ([]*Memory, int, error) {
+	if ownerID == "" {
+		return []*Memory{}, 0, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > 10000 {
+		offset = 10000
+	}
+
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+memoryCols+`, COUNT(*) OVER() AS total
+		 FROM memories
+		 WHERE owner_id = $1 AND active = true
+		   AND superseded_by IS NULL
+		   AND (expires_at IS NULL OR expires_at > now())
+		 ORDER BY updated_at DESC
+		 LIMIT $2 OFFSET $3`,
+		ownerID, limit, offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing memories: %w", err)
+	}
+	defer rows.Close()
+
+	var memories []*Memory
+	var total int
+	for rows.Next() {
+		m := &Memory{}
+		var sessionID *uuid.UUID
+		if err := rows.Scan(
+			&m.ID, &m.OwnerID, &m.Content, &m.Category,
+			&sessionID, &m.Active, &m.CreatedAt, &m.UpdatedAt,
+			&m.Importance, &m.AccessCount, &m.LastAccessedAt,
+			&m.DecayScore, &m.SupersededBy, &m.ExpiresAt,
+			&total,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scanning memory: %w", err)
+		}
+		if sessionID != nil {
+			m.SourceSessionID = *sessionID
+		}
+		memories = append(memories, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating memories: %w", err)
+	}
+
+	return memories, total, nil
+}
+
+// ActiveCount returns the count of active memories for a user.
+func (s *Store) ActiveCount(ctx context.Context, ownerID string) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM memories
+		 WHERE owner_id = $1 AND active = true
+		   AND superseded_by IS NULL
+		   AND (expires_at IS NULL OR expires_at > now())`,
+		ownerID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting active memories: %w", err)
+	}
+	return count, nil
 }
 
 // decayScore calculates the exponential decay score for a given elapsed time.

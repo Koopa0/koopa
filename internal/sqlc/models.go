@@ -16,6 +16,26 @@ type Document struct {
 	Embedding  *pgvector.Vector `json:"embedding"`
 	SourceType *string          `json:"source_type"`
 	Metadata   []byte           `json:"metadata"`
+	OwnerID    *string          `json:"owner_id"`
+}
+
+type Memory struct {
+	ID              uuid.UUID          `json:"id"`
+	OwnerID         string             `json:"owner_id"`
+	Content         string             `json:"content"`
+	Embedding       *pgvector.Vector   `json:"embedding"`
+	Category        string             `json:"category"`
+	SourceSessionID pgtype.UUID        `json:"source_session_id"`
+	Active          bool               `json:"active"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Importance      int16              `json:"importance"`
+	AccessCount     int32              `json:"access_count"`
+	LastAccessedAt  pgtype.Timestamptz `json:"last_accessed_at"`
+	DecayScore      float32            `json:"decay_score"`
+	SupersededBy    pgtype.UUID        `json:"superseded_by"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	SearchText      interface{}        `json:"search_text"`
 }
 
 type Message struct {
@@ -30,7 +50,7 @@ type Message struct {
 type Session struct {
 	ID        uuid.UUID          `json:"id"`
 	Title     *string            `json:"title"`
+	OwnerID   string             `json:"owner_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	OwnerID   string             `json:"owner_id"`
 }

@@ -1,6 +1,7 @@
 package security
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,7 +165,7 @@ func FuzzCommandValidation(f *testing.F) {
 	}{
 		// Basic commands
 		{"ls", "-la"},
-		{"echo", "hello world"},
+		{"which", "go"},
 
 		// Shell injection in command name
 		{"; rm -rf /", ""},
@@ -190,10 +191,10 @@ func FuzzCommandValidation(f *testing.F) {
 
 		// Null byte injection
 		{"ls\x00rm", "-rf /"},
-		{"echo", "file.txt\x00/etc/passwd"},
+		{"ls", "file.txt\x00/etc/passwd"},
 
 		// Long arguments
-		{"echo", strings.Repeat("A", 20000)},
+		{"ls", strings.Repeat("A", 20000)},
 
 		// Unicode tricks
 		{"ls", "—help"}, // em dash instead of hyphen
@@ -223,14 +224,13 @@ func FuzzCommandValidation(f *testing.F) {
 
 		// Property 2: Commands not in whitelist must be rejected
 		whitelist := map[string]bool{
-			"ls": true, "wc": true, "sort": true, "uniq": true,
+			"ls":  true,
 			"pwd": true, "cd": true, "tree": true,
 			"date": true, "whoami": true, "hostname": true, "uname": true,
 			"df": true, "du": true, "free": true, "top": true, "ps": true,
-			"ping": true, "traceroute": true, "nslookup": true, "dig": true,
 			"git": true,
 			"go":  true, "npm": true, "yarn": true,
-			"echo": true, "printf": true, "which": true, "whereis": true,
+			"which": true, "whereis": true,
 		}
 
 		cmdLower := strings.ToLower(strings.TrimSpace(cmd))
@@ -260,7 +260,7 @@ func FuzzCommandValidation(f *testing.F) {
 
 		// Property 5: Excessively long arguments must be rejected
 		for _, arg := range argSlice {
-			if len(arg) > 10000 {
+			if len(arg) > maxArgLength {
 				if err == nil {
 					t.Errorf("excessively long argument not blocked: len=%d", len(arg))
 				}
@@ -270,8 +270,115 @@ func FuzzCommandValidation(f *testing.F) {
 }
 
 // =============================================================================
-// URL Fuzzing Tests
+// URL / SSRF Fuzzing Tests
 // =============================================================================
+
+// FuzzSafeDialContext tests the validateHost and checkIP functions that back
+// SafeTransport's DNS-rebinding protection. This specifically targets IP format
+// variations that might bypass SSRF checks.
+//
+// Run with: go test -fuzz=FuzzSafeDialContext -fuzztime=30s ./internal/security/
+func FuzzSafeDialContext(f *testing.F) {
+	// Seed with known bypass techniques for IP representation
+	seeds := []string{
+		// Loopback variants
+		"127.0.0.1",
+		"127.1",            // short form
+		"127.000.000.001",  // zero-padded
+		"0x7f000001",       // hex integer
+		"0x7f.0.0.1",       // partial hex
+		"0177.0.0.1",       // octal first octet
+		"2130706433",       // decimal integer
+		"017700000001",     // octal integer
+		"::1",              // IPv6 loopback
+		"::ffff:127.0.0.1", // IPv6-mapped IPv4
+		"::ffff:7f00:1",    // IPv6-mapped hex
+		"0:0:0:0:0:ffff:7f00:0001",
+		"[::1]",              // bracketed IPv6
+		"[::ffff:127.0.0.1]", // bracketed IPv6-mapped
+
+		// Private network variants (10.0.0.0/8)
+		"10.0.0.1",
+		"10.255.255.255",
+		"0xa.0.0.1",       // hex 10
+		"012.0.0.1",       // octal 10
+		"::ffff:10.0.0.1", // IPv6-mapped
+
+		// Private network variants (172.16.0.0/12)
+		"172.16.0.1",
+		"172.31.255.255",
+		"::ffff:172.16.0.1",
+
+		// Private network variants (192.168.0.0/16)
+		"192.168.0.1",
+		"192.168.255.255",
+		"::ffff:192.168.1.1",
+
+		// Cloud metadata
+		"169.254.169.254",
+		"::ffff:169.254.169.254",
+
+		// Unspecified
+		"0.0.0.0",
+		"::",
+
+		// Public IPs (should be allowed)
+		"8.8.8.8",
+		"1.1.1.1",
+		"93.184.216.34",
+		"2606:2800:220:1:248:1893:25c8:1946",
+
+		// Edge cases
+		"",
+		"localhost",
+		"metadata.google.internal",
+		"LOCALHOST",
+		"lOcAlHoSt",
+
+		// Unicode homoglyph tricks
+		"ⅼocalhost", // U+217C instead of l
+		"lоcalhost", // Cyrillic о instead of Latin o
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	validator := NewURL()
+
+	f.Fuzz(func(t *testing.T, host string) {
+		// validateHost must not panic
+		err := validator.validateHost(host)
+
+		// Property 1: Known loopback IPs must always be rejected
+		if ip := net.ParseIP(host); ip != nil {
+			if ip.IsLoopback() && err == nil {
+				t.Errorf("loopback IP not blocked: %q", host)
+			}
+			// Property 2: Known private IPs must always be rejected
+			if ip.IsPrivate() && err == nil {
+				t.Errorf("private IP not blocked: %q", host)
+			}
+			// Property 3: Link-local must always be rejected
+			if (ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) && err == nil {
+				t.Errorf("link-local IP not blocked: %q", host)
+			}
+			// Property 4: Unspecified must always be rejected
+			if ip.IsUnspecified() && err == nil {
+				t.Errorf("unspecified IP not blocked: %q", host)
+			}
+		}
+
+		// Property 5: Blocked hostnames must always be rejected (case-insensitive)
+		hostLower := strings.ToLower(host)
+		blockedHosts := []string{"localhost", "metadata.google.internal", "metadata.gce.internal", "metadata.internal"}
+		for _, blocked := range blockedHosts {
+			if hostLower == blocked && err == nil {
+				t.Errorf("blocked host not rejected: %q", host)
+			}
+		}
+	})
+}
 
 // FuzzURLValidation tests URL validation against SSRF bypass attempts.
 // Run with: go test -fuzz=FuzzURLValidation -fuzztime=30s ./internal/security/

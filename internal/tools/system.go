@@ -31,6 +31,13 @@ type ExecuteCommandInput struct {
 	Args    []string `json:"args,omitempty" jsonschema_description:"Command arguments as separate array elements"`
 }
 
+// MaxEnvKeyLength is the maximum allowed environment variable name length (256 bytes).
+const MaxEnvKeyLength = 256
+
+// MaxCommandArgLength is the maximum total length of command + args in bytes.
+// Prevents abuse via extremely long command strings.
+const MaxCommandArgLength = 10000
+
 // GetEnvInput defines input for get_env tool.
 type GetEnvInput struct {
 	Key string `json:"key" jsonschema_description:"The environment variable name"`
@@ -83,26 +90,27 @@ func RegisterSystem(g *genkit.Genkit, st *System) ([]ai.Tool, error) {
 			WithEvents(CurrentTimeName, st.CurrentTime)),
 		genkit.DefineTool(g, ExecuteCommandName,
 			"Execute a shell command from the allowed list with security validation. "+
-				"Allowed commands: git, npm, yarn, go, make, docker, kubectl, ls, cat, grep, find, pwd, echo. "+
+				"Allowed commands: ls, pwd, cd, tree, date, whoami, hostname, uname, df, du, free, top, ps, "+
+				"git (with subcommand restrictions), go (version/env/vet/doc/fmt/list only), npm/yarn (read-only queries), which, whereis. "+
 				"Commands run with a timeout to prevent hanging. "+
 				"Returns: stdout, stderr, exit code, and execution time. "+
-				"Use this for: running builds, checking git status, listing processes, viewing file contents. "+
-				"Security: Dangerous commands (rm -rf, sudo, chmod, etc.) are blocked.",
+				"Use this for: checking git status, listing files, viewing system info. "+
+				"Security: Commands not in the allowlist are blocked. Subcommands are restricted per command.",
 			WithEvents(ExecuteCommandName, st.ExecuteCommand)),
 		genkit.DefineTool(g, GetEnvName,
 			"Read an environment variable value from the system. "+
 				"Returns: the variable name and its value. "+
 				"Use this to: check configuration, verify paths, read non-sensitive settings. "+
 				"Security: Sensitive variables containing KEY, SECRET, TOKEN, or PASSWORD in their names are protected and will not be returned.",
-			WithEvents(GetEnvName, st.GetEnv)),
+			WithEvents(GetEnvName, st.Env)),
 	}, nil
 }
 
 // CurrentTime returns the current system date and time in multiple formats.
 func (s *System) CurrentTime(_ *ai.ToolContext, _ CurrentTimeInput) (Result, error) {
-	s.logger.Info("CurrentTime called")
+	s.logger.Debug("CurrentTime called")
 	now := time.Now()
-	s.logger.Info("CurrentTime succeeded")
+	s.logger.Debug("CurrentTime succeeded")
 	return Result{
 		Status: StatusSuccess,
 		Data: map[string]any{
@@ -118,7 +126,22 @@ func (s *System) CurrentTime(_ *ai.ToolContext, _ CurrentTimeInput) (Result, err
 // Business errors (blocked commands, execution failures) are returned in Result.Error.
 // Only context cancellation returns a Go error.
 func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) (Result, error) {
-	s.logger.Info("ExecuteCommand called", "command", input.Command, "args", input.Args)
+	s.logger.Debug("ExecuteCommand called", "command", input.Command, "args", input.Args)
+
+	// Validate total command + args length
+	totalLen := len(input.Command)
+	for _, a := range input.Args {
+		totalLen += len(a)
+	}
+	if totalLen > MaxCommandArgLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("command + args length %d exceeds maximum %d bytes", totalLen, MaxCommandArgLength),
+			},
+		}, nil
+	}
 
 	// Command security validation (prevent command injection attacks CWE-78)
 	if err := s.cmdVal.Validate(input.Command, input.Args); err != nil {
@@ -127,7 +150,7 @@ func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) 
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("dangerous command rejected: %v", err),
+				Message: "command not permitted",
 			},
 		}, nil
 	}
@@ -152,18 +175,18 @@ func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) 
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("executing command: %v", err),
+				Message: "command execution failed",
 				Details: map[string]any{
 					"command": input.Command,
 					"args":    strings.Join(input.Args, " "),
-					"output":  string(output),
+					"hint":    "check server logs for details",
 					"success": false,
 				},
 			},
 		}, nil
 	}
 
-	s.logger.Info("ExecuteCommand succeeded", "command", input.Command, "output_length", len(output))
+	s.logger.Debug("ExecuteCommand succeeded", "command", input.Command, "output_length", len(output))
 	return Result{
 		Status: StatusSuccess,
 		Data: map[string]any{
@@ -175,27 +198,37 @@ func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) 
 	}, nil
 }
 
-// GetEnv reads an environment variable value with security protection.
+// Env reads an environment variable value with security protection.
 // Sensitive variables containing KEY, SECRET, or TOKEN in the name are blocked.
 // Business errors (sensitive variable blocked) are returned in Result.Error.
-func (s *System) GetEnv(_ *ai.ToolContext, input GetEnvInput) (Result, error) {
-	s.logger.Info("GetEnv called", "key", input.Key)
+func (s *System) Env(_ *ai.ToolContext, input GetEnvInput) (Result, error) {
+	s.logger.Debug("Env called", "key", input.Key)
+
+	if len(input.Key) > MaxEnvKeyLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("env key length %d exceeds maximum %d bytes", len(input.Key), MaxEnvKeyLength),
+			},
+		}, nil
+	}
 
 	// Environment variable security validation (prevent sensitive information leakage)
 	if err := s.envVal.Validate(input.Key); err != nil {
-		s.logger.Warn("GetEnv sensitive variable blocked", "key", input.Key, "error", err)
+		s.logger.Warn("Env sensitive variable blocked", "key", input.Key, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("access to sensitive variable blocked: %v", err),
+				Message: "access to sensitive variable blocked",
 			},
 		}, nil
 	}
 
 	value, isSet := os.LookupEnv(input.Key)
 
-	s.logger.Info("GetEnv succeeded", "key", input.Key, "is_set", isSet)
+	s.logger.Debug("Env succeeded", "key", input.Key, "is_set", isSet)
 	return Result{
 		Status: StatusSuccess,
 		Data: map[string]any{

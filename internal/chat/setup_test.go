@@ -13,8 +13,11 @@ package chat_test
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"log/slog"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/firebase/genkit/go/ai"
@@ -32,6 +35,26 @@ import (
 	"github.com/koopa0/koopa/internal/testutil"
 	"github.com/koopa0/koopa/internal/tools"
 )
+
+var sharedDB *testutil.TestDBContainer
+
+func TestMain(m *testing.M) {
+	// All chat integration tests require GEMINI_API_KEY.
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		fmt.Println("GEMINI_API_KEY not set - skipping chat integration tests")
+		os.Exit(0)
+	}
+
+	var cleanup func()
+	var err error
+	sharedDB, cleanup, err = testutil.SetupTestDBForMain()
+	if err != nil {
+		log.Fatalf("starting test database: %v", err)
+	}
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
+}
 
 // TestFramework provides a complete test environment for chat integration tests.
 // This is the chat-specific equivalent of testutil.AgentTestFramework.
@@ -61,8 +84,8 @@ type TestFramework struct {
 // using testutil primitives. It's the canonical way to set up chat integration tests.
 //
 // Requirements:
-//   - GEMINI_API_KEY environment variable must be set
-//   - Docker daemon must be running (for testcontainers)
+//   - GEMINI_API_KEY environment variable must be set (checked in TestMain)
+//   - Docker daemon must be running (shared container started in TestMain)
 //
 // Example:
 //
@@ -75,22 +98,19 @@ type TestFramework struct {
 func SetupTest(t *testing.T) *TestFramework {
 	t.Helper()
 
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		t.Skip("GEMINI_API_KEY not set - skipping integration test")
-	}
-
 	ctx := context.Background()
 
-	// Layer 1: Use testutil primitives (cleanup is automatic via tb.Cleanup)
-	dbContainer := testutil.SetupTestDB(t)
+	// Clean tables for test isolation using the shared container.
+	testutil.CleanTables(t, sharedDB.Pool)
 
-	// Setup RAG with Genkit PostgreSQL plugin
-	ragSetup := testutil.SetupRAG(t, dbContainer.Pool)
+	// Setup RAG with Genkit PostgreSQL plugin (uses shared pool).
+	// Each test gets a fresh Genkit instance because Genkit has
+	// global state (registered flows, tools) that cannot be shared safely.
+	ragSetup := testutil.SetupRAG(t, sharedDB.Pool)
 
 	// Layer 2: Build chat-specific dependencies
-	queries := sqlc.New(dbContainer.Pool)
-	sessionStore := session.New(queries, dbContainer.Pool, slog.Default())
+	queries := sqlc.New(sharedDB.Pool)
+	sessionStore := session.New(queries, sharedDB.Pool, slog.Default())
 
 	cfg := &config.Config{
 		ModelName:        "googleai/gemini-2.5-flash",
@@ -131,13 +151,15 @@ func SetupTest(t *testing.T) *TestFramework {
 		t.Fatalf("registering file tools: %v", err)
 	}
 
-	// Create Memory Store (uses same pool and embedder as RAG)
-	memoryStore, err := memory.NewStore(dbContainer.Pool, ragSetup.Embedder, slog.Default())
+	// Create Memory Store (uses shared pool and embedder from RAG)
+	memoryStore, err := memory.NewStore(sharedDB.Pool, ragSetup.Embedder, slog.Default())
 	if err != nil {
 		t.Fatalf("creating memory store: %v", err)
 	}
 
 	// Create Chat Agent
+	var wg sync.WaitGroup
+	t.Cleanup(wg.Wait) // Wait for background goroutines on test cleanup
 	chatAgent, err := chat.New(chat.Config{
 		Genkit:       ragSetup.Genkit,
 		SessionStore: sessionStore,
@@ -147,6 +169,7 @@ func SetupTest(t *testing.T) *TestFramework {
 		ModelName:    cfg.ModelName,
 		MaxTurns:     cfg.MaxTurns,
 		Language:     cfg.Language,
+		WG:           &wg,
 	})
 	if err != nil {
 		t.Fatalf("creating chat agent: %v", err)
@@ -164,7 +187,7 @@ func SetupTest(t *testing.T) *TestFramework {
 		SessionStore: sessionStore,
 		MemoryStore:  memoryStore,
 		Config:       cfg,
-		DBContainer:  dbContainer,
+		DBContainer:  sharedDB,
 		Genkit:       ragSetup.Genkit,
 		Embedder:     ragSetup.Embedder,
 		SessionID:    testSession.ID,

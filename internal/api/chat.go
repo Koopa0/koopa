@@ -9,18 +9,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/koopa0/koopa/internal/chat"
+	"github.com/koopa0/koopa/internal/session"
 	"github.com/koopa0/koopa/internal/tools"
 )
 
 // SSE timeout for streaming connections.
 const sseTimeout = 5 * time.Minute
-
-// titleMaxLength is the maximum rune length for a fallback session title.
-const titleMaxLength = 50
 
 // maxRequestBodySize is the maximum allowed HTTP request body size (1 MB).
 const maxRequestBodySize = 1 << 20
@@ -65,12 +65,34 @@ func getToolDisplay(name string) toolDisplayInfo {
 	return defaultToolDisplay
 }
 
+// pendingQueryTTL is the maximum age for a server-side pending query.
+// Queries older than this are rejected as expired.
+const pendingQueryTTL = 2 * time.Minute
+
+// maxPendingQueries is the maximum number of concurrent pending queries.
+// Prevents memory exhaustion from POST /chat flooding without consuming via GET /stream (F6/CWE-400).
+const maxPendingQueries = 10_000
+
+// pendingCleanupInterval is how often the background goroutine sweeps expired entries.
+const pendingCleanupInterval = 30 * time.Second
+
+// pendingQuery holds a user's chat query server-side, keyed by msgID.
+// SECURITY: Prevents user query content from appearing in GET URL parameters,
+// which would leak PII to access logs, proxy logs, and Referer headers (CWE-284).
+type pendingQuery struct {
+	query     string
+	sessionID string
+	createdAt time.Time
+}
+
 // chatHandler handles chat-related API requests.
 type chatHandler struct {
-	logger   *slog.Logger
-	agent    *chat.Agent // Optional: nil disables AI title generation
-	flow     *chat.Flow
-	sessions *sessionManager
+	logger         *slog.Logger
+	agent          *chat.Agent // Optional: nil disables AI title generation
+	flow           *chat.Flow
+	sessions       *sessionManager
+	pendingQueries sync.Map     // msgID (string) → pendingQuery
+	pendingCount   atomic.Int64 // invariant: equals number of entries in pendingQueries (F6)
 }
 
 // send handles POST /api/v1/chat — accepts JSON, sends message to chat flow.
@@ -121,10 +143,30 @@ func (h *chatHandler) send(w http.ResponseWriter, r *http.Request) {
 
 	msgID := uuid.New().String()
 
+	// Enforce capacity limit to prevent memory exhaustion (F6/CWE-400).
+	// CAS loop ensures atomic check-and-increment, preventing TOCTOU race (H1).
+	for {
+		current := h.pendingCount.Load()
+		if current >= maxPendingQueries {
+			WriteError(w, http.StatusTooManyRequests, "too_many_pending", "too many pending queries, please try again later", h.logger)
+			return
+		}
+		if h.pendingCount.CompareAndSwap(current, current+1) {
+			break
+		}
+	}
+
+	// Store query server-side to keep it out of GET URL parameters.
+	// SECURITY: Prevents PII leakage to access logs, proxy logs, and Referer headers (CWE-284).
+	h.pendingQueries.Store(msgID, pendingQuery{
+		query:     content,
+		sessionID: sessionID.String(),
+		createdAt: time.Now(),
+	})
+
 	params := url.Values{}
 	params.Set("msgId", msgID)
 	params.Set("session_id", sessionID.String())
-	params.Set("query", content)
 
 	WriteJSON(w, http.StatusOK, map[string]string{
 		"msgId":     msgID,
@@ -157,19 +199,43 @@ func (h *chatHandler) sessionAccessAllowed(r *http.Request, sessionID uuid.UUID)
 	return sess.OwnerID == userID
 }
 
+// loadPendingQuery retrieves and deletes a pending query by msgID (one-time use).
+// Returns the query string and true if found, not expired, and matching sessionID.
+// SECURITY: LoadAndDelete ensures each query can only be consumed once (replay prevention).
+func (h *chatHandler) loadPendingQuery(msgID, sessionID string) (string, bool) {
+	val, ok := h.pendingQueries.LoadAndDelete(msgID)
+	if !ok {
+		return "", false
+	}
+	h.pendingCount.Add(-1)
+
+	pq, ok := val.(pendingQuery)
+	if !ok {
+		return "", false
+	}
+	if time.Since(pq.createdAt) > pendingQueryTTL {
+		return "", false
+	}
+	if pq.sessionID != sessionID {
+		h.logger.Warn("pending query session mismatch",
+			"msgId", msgID,
+			"expected_session", pq.sessionID,
+			"actual_session", sessionID,
+			"security_event", "session_mismatch")
+		return "", false
+	}
+	return pq.query, true
+}
+
 // stream handles GET /api/v1/chat/stream — SSE endpoint with JSON events.
+// SECURITY: The query is retrieved from the server-side pending store (set by send()),
+// NOT from URL parameters. This prevents PII leakage to logs and Referer headers.
 func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 	msgID := r.URL.Query().Get("msgId")
 	sessionID := r.URL.Query().Get("session_id")
-	query := r.URL.Query().Get("query")
 
-	if msgID == "" || sessionID == "" || query == "" {
-		WriteError(w, http.StatusBadRequest, "missing_params", "msgId, session_id, and query required", h.logger)
-		return
-	}
-
-	if len(query) > maxChatContentLength {
-		WriteError(w, http.StatusRequestEntityTooLarge, "content_too_long", "query exceeds maximum length", h.logger)
+	if msgID == "" || sessionID == "" {
+		WriteError(w, http.StatusBadRequest, "missing_params", "msgId and session_id required", h.logger)
 		return
 	}
 
@@ -182,6 +248,13 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 	if !h.sessionAccessAllowed(r, parsedID) {
 		h.logger.Warn("session access denied", "sessionId", sessionID, "msgId", msgID, "path", r.URL.Path)
 		WriteError(w, http.StatusForbidden, "forbidden", "session access denied", h.logger)
+		return
+	}
+
+	// Look up the query from server-side pending store (one-time use).
+	query, ok := h.loadPendingQuery(msgID, sessionID)
+	if !ok {
+		WriteError(w, http.StatusBadRequest, "query_not_found", "no pending query for this message ID", h.logger)
 		return
 	}
 
@@ -299,7 +372,7 @@ func classifyError(err error) (code, message string) {
 	case errors.Is(err, chat.ErrInvalidSession):
 		return "invalid_session", "Invalid session. Please refresh the page."
 	case errors.Is(err, chat.ErrExecutionFailed):
-		return "execution_failed", err.Error()
+		return "execution_failed", "Failed to execute request. Please try again."
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout", "Request timed out. Please try again."
 	default:
@@ -350,13 +423,13 @@ func (h *chatHandler) maybeGenerateTitle(ctx context.Context, sessionID, userMes
 func truncateForTitle(message string) string {
 	message = strings.TrimSpace(message)
 	runes := []rune(message)
-	if len(runes) <= titleMaxLength {
+	if len(runes) <= session.TitleMaxLength {
 		return message
 	}
 
-	truncated := string(runes[:titleMaxLength])
+	truncated := string(runes[:session.TitleMaxLength])
 	lastSpace := strings.LastIndex(truncated, " ")
-	if lastSpace > titleMaxLength/2 {
+	if lastSpace > session.TitleMaxLength/2 {
 		truncated = truncated[:lastSpace]
 	}
 
@@ -368,6 +441,51 @@ func (h *chatHandler) logContextDone(ctx context.Context, msgID string) {
 		h.logger.Warn("SSE connection timeout", "msgId", msgID, "timeout", sseTimeout)
 	} else {
 		h.logger.Info("client disconnected", "msgId", msgID)
+	}
+}
+
+// startPendingCleanup runs a background goroutine that periodically removes
+// expired pending queries. This prevents memory exhaustion when clients POST
+// /chat but never consume via GET /stream (F6/CWE-400).
+func (h *chatHandler) startPendingCleanup(ctx context.Context) {
+	ticker := time.NewTicker(pendingCleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.cleanExpiredPending()
+		}
+	}
+}
+
+// cleanExpiredPending removes all expired entries from pendingQueries.
+// Uses LoadAndDelete for each removal and decrements pendingCount per deletion.
+// This prevents counter drift when loadPendingQuery races with cleanup (H2).
+func (h *chatHandler) cleanExpiredPending() {
+	var cleaned int64
+	h.pendingQueries.Range(func(key, value any) bool {
+		pq, ok := value.(pendingQuery)
+		if !ok {
+			// Malformed entry: try to delete (may already be consumed).
+			if _, loaded := h.pendingQueries.LoadAndDelete(key); loaded {
+				h.pendingCount.Add(-1)
+				cleaned++
+			}
+			return true
+		}
+		if time.Since(pq.createdAt) > pendingQueryTTL {
+			// Expired: try to delete (may already be consumed by loadPendingQuery).
+			if _, loaded := h.pendingQueries.LoadAndDelete(key); loaded {
+				h.pendingCount.Add(-1)
+				cleaned++
+			}
+		}
+		return true
+	})
+	if cleaned > 0 {
+		h.logger.Info("cleaned expired pending queries", "count", cleaned)
 	}
 }
 

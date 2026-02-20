@@ -78,7 +78,7 @@ func (s *Server) registerFile() error {
 			"Returns: file size, modification time, permissions, and type (file/directory). " +
 			"More efficient than read_file when you only need metadata.",
 		InputSchema: getFileInfoSchema,
-	}, s.GetFileInfo)
+	}, s.FileInfo)
 
 	return nil
 }
@@ -127,10 +127,10 @@ func (s *Server) DeleteFile(ctx context.Context, _ *mcp.CallToolRequest, input t
 	return resultToMCP(result, s.logger), nil, nil
 }
 
-// GetFileInfo handles the getFileInfo MCP tool call.
-func (s *Server) GetFileInfo(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetFileInfoInput) (*mcp.CallToolResult, any, error) {
+// FileInfo handles the getFileInfo MCP tool call.
+func (s *Server) FileInfo(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetFileInfoInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
-	result, err := s.file.GetFileInfo(toolCtx, input)
+	result, err := s.file.FileInfo(toolCtx, input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting file info: %w", err)
 	}

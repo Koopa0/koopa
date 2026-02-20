@@ -23,6 +23,9 @@ func (c *Config) Validate() error {
 	if err := c.validatePostgres(); err != nil {
 		return err
 	}
+	if err := c.validateRetention(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -161,10 +164,16 @@ func (c *Config) resolvedProvider() string {
 }
 
 // ValidateServe validates configuration specific to serve mode.
-// HMAC_SECRET is required for CSRF protection in HTTP mode.
+// Serve mode is network-facing: default credentials and missing HMAC are hard errors.
 func (c *Config) ValidateServe() error {
 	if err := c.Validate(); err != nil {
 		return err
+	}
+	// Block default development password in serve mode (network-facing).
+	// The same password passes Validate() with a warning for CLI/MCP modes.
+	if c.PostgresPassword == "koopa_dev_password" {
+		return fmt.Errorf("%w: postgres_password must be changed from the default for serve mode",
+			ErrDefaultPassword)
 	}
 	if c.HMACSecret == "" {
 		return fmt.Errorf("%w: HMAC_SECRET environment variable is required for serve mode (min 32 characters)",
@@ -176,6 +185,16 @@ func (c *Config) ValidateServe() error {
 	}
 	if c.TrustProxy {
 		slog.Warn("trust_proxy is enabled — ensure this server is behind a reverse proxy")
+	}
+	return nil
+}
+
+// validateRetention validates data lifecycle configuration.
+func (c *Config) validateRetention() error {
+	// 0 means disabled (no cleanup). Otherwise must be in [30, 3650].
+	if c.RetentionDays != 0 && (c.RetentionDays < 30 || c.RetentionDays > 3650) {
+		return fmt.Errorf("%w: must be 0 (disabled) or between 30 and 3650, got %d",
+			ErrInvalidRetentionDays, c.RetentionDays)
 	}
 	return nil
 }

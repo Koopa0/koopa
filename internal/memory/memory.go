@@ -133,9 +133,9 @@ const (
 // MaxSearchQueryLen caps query length for HybridSearch to prevent abuse.
 const MaxSearchQueryLen = 1000
 
-// MaxTopK caps the number of results from Search/HybridSearch to prevent
+// maxTopK caps the number of results from Search/HybridSearch to prevent
 // excessive memory allocation and database load from unbounded topK values.
-const MaxTopK = 100
+const maxTopK = 100
 
 // Memory represents a single extracted fact about a user.
 type Memory struct {

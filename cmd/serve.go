@@ -79,14 +79,16 @@ func runServe() error {
 
 	flow := chat.NewFlow(a.Genkit, agent)
 
-	apiServer, err := api.NewServer(api.ServerConfig{
+	apiServer, err := api.NewServer(ctx, api.ServerConfig{
 		Logger:       logger,
 		ChatAgent:    agent,
 		ChatFlow:     flow,
 		SessionStore: a.SessionStore,
+		MemoryStore:  a.MemoryStore,
+		Pool:         a.DBPool,
 		CSRFSecret:   []byte(cfg.HMACSecret),
 		CORSOrigins:  cfg.CORSOrigins,
-		IsDev:        cfg.PostgresSSLMode == "disable",
+		IsDev:        cfg.DevMode,
 		TrustProxy:   cfg.TrustProxy,
 		RateBurst:    parseRateBurst(),
 	})

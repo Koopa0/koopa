@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/uuid"
@@ -88,37 +90,65 @@ func (s *Store) Session(ctx context.Context, sessionID uuid.UUID) (*Session, err
 		return nil, fmt.Errorf("getting session %s: %w", sessionID, err)
 	}
 
-	return s.sqlcSessionRowToSession(row), nil
+	return s.sqlcSessionToSession(row), nil
 }
 
 // Sessions lists sessions owned by the given user, ordered by updated_at descending.
+// Returns the sessions and total count for pagination.
 //
-// Parameters:
-//   - ctx: Context for the operation
-//   - ownerID: User identity to filter by
-//   - limit: Maximum number of sessions to return
-//   - offset: Number of sessions to skip (for pagination)
-//
-// Returns:
-//   - []*Session: List of sessions
-//   - error: If listing fails
-func (s *Store) Sessions(ctx context.Context, ownerID string, limit, offset int32) ([]*Session, error) {
-	rows, err := s.queries.Sessions(ctx, sqlc.SessionsParams{
-		OwnerID:      ownerID,
-		ResultLimit:  limit,
-		ResultOffset: offset,
-	})
+// NOTE: When offset >= total matching sessions, returns (nil, 0, nil).
+// The zero total indicates no rows were scanned, not that zero sessions exist.
+func (s *Store) Sessions(ctx context.Context, ownerID string, limit, offset int) ([]*Session, int, error) {
+	if s.pool == nil {
+		return nil, 0, fmt.Errorf("database pool is required for listing sessions")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > 10000 {
+		offset = 10000
+	}
+
+	const listSQL = `
+		SELECT s.id, s.title, s.owner_id, s.created_at, s.updated_at,
+		       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count,
+		       COUNT(*) OVER() AS total
+		FROM sessions s
+		WHERE s.owner_id = $1
+		ORDER BY s.updated_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := s.pool.Query(ctx, listSQL, ownerID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("listing sessions: %w", err)
+		return nil, 0, fmt.Errorf("listing sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []*Session
+	var total int
+	for rows.Next() {
+		var ss Session
+		var title *string
+		if err := rows.Scan(&ss.ID, &title, &ss.OwnerID, &ss.CreatedAt, &ss.UpdatedAt, &ss.MessageCount, &total); err != nil {
+			return nil, 0, fmt.Errorf("scanning session: %w", err)
+		}
+		if title != nil {
+			ss.Title = *title
+		}
+		sessions = append(sessions, &ss)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating sessions: %w", err)
 	}
 
-	sessions := make([]*Session, 0, len(rows))
-	for i := range rows {
-		sessions = append(sessions, s.sqlcSessionsRowToSession(rows[i]))
-	}
-
-	s.logger.Debug("listed sessions", "owner", ownerID, "count", len(sessions), "limit", limit, "offset", offset)
-	return sessions, nil
+	return sessions, total, nil
 }
 
 // DeleteSession deletes a session and all its messages (CASCADE).
@@ -196,10 +226,10 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	// Rollback if not committed - log any rollback errors for debugging
+	// Rollback if not committed — pgx.ErrTxClosed is expected after successful commit.
 	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-			s.logger.Debug("transaction rollback (may be already committed)", "error", rollbackErr)
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			s.logger.Debug("transaction rollback", "error", rollbackErr)
 		}
 	}()
 
@@ -239,11 +269,19 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 		// Safe conversion: loop index i is bounded by len(messages) which is checked by database constraints
 		seqNum := maxSeq + int32(i) + 1 // #nosec G115 -- i is loop index bounded by slice length
 
+		// Extract text content for FTS indexing.
+		textContent := extractTextContent(msg.Content)
+		var textContentPtr *string
+		if textContent != "" {
+			textContentPtr = &textContent
+		}
+
 		if err = txQuerier.AddMessage(ctx, sqlc.AddMessageParams{
 			SessionID:      sessionID,
 			Role:           msg.Role,
 			Content:        contentJSON,
 			SequenceNumber: seqNum,
+			TextContent:    textContentPtr,
 		}); err != nil {
 			// Transaction will be rolled back by defer
 			return fmt.Errorf("inserting message %d: %w", i, err)
@@ -251,9 +289,12 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 	}
 
 	// 3. Update session's updated_at within transaction
-	if err = txQuerier.UpdateSessionUpdatedAt(ctx, sessionID); err != nil {
-		// Transaction will be rolled back by defer
-		return fmt.Errorf("updating session metadata: %w", err)
+	rows, updateErr := txQuerier.UpdateSessionUpdatedAt(ctx, sessionID)
+	if updateErr != nil {
+		return fmt.Errorf("updating session metadata: %w", updateErr)
+	}
+	if rows == 0 {
+		return ErrNotFound // session disappeared between lock and update
 	}
 
 	// 4. Commit transaction
@@ -266,40 +307,99 @@ func (s *Store) AddMessages(ctx context.Context, sessionID uuid.UUID, messages [
 }
 
 // Messages retrieves messages for a session with pagination.
+// Returns messages ordered by sequence number ascending and the total count.
 //
-// Parameters:
-//   - ctx: Context for the operation
-//   - sessionID: UUID of the session
-//   - limit: Maximum number of messages to return
-//   - offset: Number of messages to skip (for pagination)
+// The offset cap is 100,000 (vs 10,000 for sessions/memories) because a single
+// long-running session can accumulate far more messages than a user has sessions.
 //
-// Returns:
-//   - []*Message: List of messages ordered by sequence number ascending
-//   - error: If retrieval fails
-func (s *Store) Messages(ctx context.Context, sessionID uuid.UUID, limit, offset int32) ([]*Message, error) {
-	sqlcMessages, err := s.queries.Messages(ctx, sqlc.MessagesParams{
-		SessionID:    sessionID,
-		ResultLimit:  limit,
-		ResultOffset: offset,
-	})
+// NOTE: When offset >= total messages, returns (nil, 0, nil).
+// The zero total indicates no rows were scanned, not that zero messages exist.
+func (s *Store) Messages(ctx context.Context, sessionID uuid.UUID, limit, offset int) ([]*Message, int, error) {
+	if s.pool == nil {
+		return nil, 0, fmt.Errorf("database pool is required for listing messages")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > 100000 {
+		offset = 100000
+	}
+
+	const messagesSQL = `
+		SELECT id, session_id, role, content, sequence_number, created_at,
+		       COUNT(*) OVER() AS total
+		FROM messages
+		WHERE session_id = $1
+		ORDER BY sequence_number ASC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := s.pool.Query(ctx, messagesSQL, sessionID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("getting messages for session %s: %w", sessionID, err)
+		return nil, 0, fmt.Errorf("getting messages for session %s: %w", sessionID, err)
 	}
+	defer rows.Close()
 
-	messages := make([]*Message, 0, len(sqlcMessages))
-	for i := range sqlcMessages {
-		msg, err := s.sqlcMessageToMessage(sqlcMessages[i])
-		if err != nil {
-			s.logger.Warn("skipping malformed message",
-				"message_id", sqlcMessages[i].ID,
-				"error", err)
-			continue // Skip malformed messages
+	var messages []*Message
+	var total int
+	for rows.Next() {
+		var (
+			id        uuid.UUID
+			sid       uuid.UUID
+			role      string
+			content   []byte
+			seqNum    int32
+			createdAt time.Time
+		)
+		if err := rows.Scan(&id, &sid, &role, &content, &seqNum, &createdAt, &total); err != nil {
+			return nil, 0, fmt.Errorf("scanning message: %w", err)
 		}
-		messages = append(messages, msg)
+
+		var parts []*ai.Part
+		if err := json.Unmarshal(content, &parts); err != nil {
+			s.logger.Warn("skipping malformed message", "message_id", id, "error", err)
+			continue
+		}
+
+		messages = append(messages, &Message{
+			ID:             id,
+			SessionID:      sid,
+			Role:           role,
+			Content:        parts,
+			SequenceNumber: int(seqNum),
+			CreatedAt:      createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating messages: %w", err)
 	}
 
-	s.logger.Debug("retrieved messages", "session_id", sessionID, "count", len(messages))
-	return messages, nil
+	return messages, total, nil
+}
+
+// Export retrieves a session and all its messages for export.
+// Returns ErrNotFound if the session does not exist.
+func (s *Store) Export(ctx context.Context, sessionID uuid.UUID) (*ExportData, error) {
+	sess, err := s.Session(ctx, sessionID)
+	if err != nil {
+		return nil, err // ErrNotFound propagates unchanged
+	}
+
+	// Export loads all messages up to MaxAllowedHistoryMessages (10000).
+	// The export endpoint is rate-limited and ownership-checked, so the
+	// cap is sufficient to prevent OOM without needing pagination.
+	msgs, _, err := s.Messages(ctx, sessionID, int(config.MaxAllowedHistoryMessages), 0)
+	if err != nil {
+		return nil, fmt.Errorf("exporting messages for session %s: %w", sessionID, err)
+	}
+
+	return &ExportData{Session: sess, Messages: msgs}, nil
 }
 
 // normalizeRole converts Genkit roles to database-canonical roles.
@@ -368,7 +468,7 @@ func (s *Store) History(ctx context.Context, sessionID uuid.UUID) ([]*ai.Message
 	}
 
 	// Retrieve messages
-	messages, err := s.Messages(ctx, sessionID, config.DefaultMaxHistoryMessages, 0)
+	messages, _, err := s.Messages(ctx, sessionID, int(config.DefaultMaxHistoryMessages), 0)
 	if err != nil {
 		return nil, fmt.Errorf("loading history: %w", err)
 	}
@@ -423,7 +523,237 @@ func (s *Store) ResolveCurrentSession(ctx context.Context) (uuid.UUID, error) {
 	return newSess.ID, nil
 }
 
-// sqlcSessionToSession converts sqlc.Session (from CreateSession RETURNING *) to Session.
+// extractTextContent concatenates all text parts from an ai.Part slice.
+// Used to populate the text_content column for full-text search indexing.
+func extractTextContent(parts []*ai.Part) string {
+	var b strings.Builder
+	for _, p := range parts {
+		if p != nil && p.Text != "" {
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
+}
+
+// SearchMessages performs full-text search across all messages owned by ownerID.
+// Uses dual search strategy: tsvector first (English ranked), then trigram ILIKE
+// fallback for CJK and other non-stemmed text if tsvector yields no results.
+//
+// NOTE: When offset >= total matching results, returns (nil, 0, nil).
+// The zero total indicates no rows were scanned, not that zero messages match.
+func (s *Store) SearchMessages(ctx context.Context, ownerID, query string, limit, offset int) ([]SearchResult, int, error) {
+	if query == "" {
+		return nil, 0, nil
+	}
+	if s.pool == nil {
+		return nil, 0, fmt.Errorf("database pool is required for search")
+	}
+	// Reject null bytes to prevent query poisoning.
+	if strings.ContainsRune(query, 0) {
+		return nil, 0, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > 10000 {
+		offset = 10000
+	}
+
+	// Primary: tsvector ranked search (works well for English / stemmed text).
+	results, total, err := s.searchMessagesTSVector(ctx, ownerID, query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Fallback: trigram ILIKE search for CJK / non-stemmed text.
+	// Only fires on the first page (offset=0) when tsvector yields nothing.
+	if len(results) == 0 && offset == 0 {
+		results, total, err = s.searchMessagesTrigram(ctx, ownerID, query, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return results, total, nil
+}
+
+// searchMessagesTSVector performs tsvector-based full-text search.
+func (s *Store) searchMessagesTSVector(ctx context.Context, ownerID, query string, limit, offset int) ([]SearchResult, int, error) {
+	const searchSQL = `
+		SELECT m.id AS message_id, m.session_id, m.role, m.created_at,
+		       COALESCE(s.title, '') AS session_title,
+		       LEFT(COALESCE(m.text_content, ''), 200) AS snippet,
+		       ts_rank_cd(m.search_text, plainto_tsquery('english', $2), 1) AS rank,
+		       COUNT(*) OVER() AS total
+		FROM messages m
+		JOIN sessions s ON s.id = m.session_id
+		WHERE s.owner_id = $1
+		  AND m.search_text @@ plainto_tsquery('english', $2)
+		ORDER BY rank DESC, m.created_at DESC
+		LIMIT $3 OFFSET $4
+	`
+
+	rows, err := s.pool.Query(ctx, searchSQL, ownerID, query, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("searching messages (tsvector): %w", err)
+	}
+	defer rows.Close()
+
+	return scanSearchResults(rows)
+}
+
+// searchMessagesTrigram performs trigram ILIKE fallback search for CJK text.
+// Always starts at offset 0 (only called as fallback on first page).
+func (s *Store) searchMessagesTrigram(ctx context.Context, ownerID, query string, limit int) ([]SearchResult, int, error) {
+	const trigramSQL = `
+		SELECT m.id AS message_id, m.session_id, m.role, m.created_at,
+		       COALESCE(s.title, '') AS session_title,
+		       LEFT(COALESCE(m.text_content, ''), 200) AS snippet,
+		       similarity(m.text_content, $2) AS rank,
+		       COUNT(*) OVER() AS total
+		FROM messages m
+		JOIN sessions s ON s.id = m.session_id
+		WHERE s.owner_id = $1
+		  AND m.text_content ILIKE '%' || $2 || '%'
+		ORDER BY rank DESC, m.created_at DESC
+		LIMIT $3
+	`
+
+	escaped := escapeLike(query)
+	rows, err := s.pool.Query(ctx, trigramSQL, ownerID, escaped, limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("searching messages (trigram): %w", err)
+	}
+	defer rows.Close()
+
+	return scanSearchResults(rows)
+}
+
+// scanSearchResults reads SearchResult rows from a query that returns
+// (message_id, session_id, role, created_at, session_title, snippet, rank, total).
+func scanSearchResults(rows pgx.Rows) ([]SearchResult, int, error) {
+	var results []SearchResult
+	var total int
+	for rows.Next() {
+		var r SearchResult
+		var rank float32
+		if err := rows.Scan(
+			&r.MessageID, &r.SessionID, &r.Role, &r.CreatedAt,
+			&r.SessionTitle, &r.Snippet, &rank, &total,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scanning search result: %w", err)
+		}
+		r.Rank = float64(rank)
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating search results: %w", err)
+	}
+	return results, total, nil
+}
+
+// escapeLike escapes LIKE metacharacters in a user-provided search term.
+// Backslash MUST be escaped first to avoid double-escaping.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`) // must be first
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+// DeleteOldSessions deletes sessions (and their messages via CASCADE) older than cutoff.
+// Returns the number of deleted sessions.
+//
+// PRIVILEGED: This is a cross-tenant operation intended only for the background
+// retention scheduler (memory.Scheduler). It must NOT be exposed via any API endpoint.
+func (s *Store) DeleteOldSessions(ctx context.Context, cutoff time.Time) (int, error) {
+	if s.pool == nil {
+		return 0, fmt.Errorf("database pool is required for retention cleanup")
+	}
+	if cutoff.After(time.Now()) {
+		return 0, fmt.Errorf("cutoff cannot be in the future")
+	}
+
+	const batchSize = 1000
+	var total int
+	for {
+		select {
+		case <-ctx.Done():
+			return total, fmt.Errorf("deleting old sessions: %w", ctx.Err())
+		default:
+		}
+		tag, err := s.pool.Exec(ctx,
+			`DELETE FROM sessions WHERE id IN (
+				SELECT id FROM sessions WHERE updated_at < $1 LIMIT $2
+			)`, cutoff, batchSize,
+		)
+		if err != nil {
+			return total, fmt.Errorf("deleting old sessions: %w", err)
+		}
+		n := int(tag.RowsAffected())
+		total += n
+		if n == 0 {
+			break
+		}
+	}
+	return total, nil
+}
+
+// CountSessions returns the number of sessions owned by the given user.
+func (s *Store) CountSessions(ctx context.Context, ownerID string) (int, error) {
+	if s.pool == nil {
+		return 0, fmt.Errorf("database pool is required for count")
+	}
+	var count int
+	err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM sessions WHERE owner_id = $1`, ownerID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting sessions: %w", err)
+	}
+	return count, nil
+}
+
+// CountMessagesForSession returns the number of messages in a single session.
+func (s *Store) CountMessagesForSession(ctx context.Context, sessionID uuid.UUID) (int, error) {
+	if s.pool == nil {
+		return 0, fmt.Errorf("database pool is required for count")
+	}
+	var count int
+	err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM messages WHERE session_id = $1`, sessionID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting messages for session %s: %w", sessionID, err)
+	}
+	return count, nil
+}
+
+// CountMessages returns the total number of messages across all sessions owned by the given user.
+func (s *Store) CountMessages(ctx context.Context, ownerID string) (int, error) {
+	if s.pool == nil {
+		return 0, fmt.Errorf("database pool is required for count")
+	}
+	var count int
+	err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.owner_id = $1`, ownerID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting messages: %w", err)
+	}
+	return count, nil
+}
+
+// sqlcSessionToSession converts sqlc.Session to the application Session type.
 func (*Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 	session := &Session{
 		ID:        ss.ID,
@@ -435,50 +765,4 @@ func (*Store) sqlcSessionToSession(ss sqlc.Session) *Session {
 		session.Title = *ss.Title
 	}
 	return session
-}
-
-// sqlcSessionRowToSession converts sqlc.SessionRow (from Session query) to Session.
-func (*Store) sqlcSessionRowToSession(row sqlc.SessionRow) *Session {
-	session := &Session{
-		ID:        row.ID,
-		OwnerID:   row.OwnerID,
-		CreatedAt: row.CreatedAt.Time,
-		UpdatedAt: row.UpdatedAt.Time,
-	}
-	if row.Title != nil {
-		session.Title = *row.Title
-	}
-	return session
-}
-
-// sqlcSessionsRowToSession converts sqlc.SessionsRow (from Sessions query) to Session.
-func (*Store) sqlcSessionsRowToSession(row sqlc.SessionsRow) *Session {
-	session := &Session{
-		ID:        row.ID,
-		OwnerID:   row.OwnerID,
-		CreatedAt: row.CreatedAt.Time,
-		UpdatedAt: row.UpdatedAt.Time,
-	}
-	if row.Title != nil {
-		session.Title = *row.Title
-	}
-	return session
-}
-
-// sqlcMessageToMessage converts sqlc.Message to Message (application type).
-func (*Store) sqlcMessageToMessage(sm sqlc.Message) (*Message, error) {
-	// Unmarshal JSONB content to ai.Part slice
-	var content []*ai.Part
-	if err := json.Unmarshal(sm.Content, &content); err != nil {
-		return nil, fmt.Errorf("unmarshaling content: %w", err)
-	}
-
-	return &Message{
-		ID:             sm.ID,
-		SessionID:      sm.SessionID,
-		Role:           sm.Role,
-		Content:        content,
-		SequenceNumber: int(sm.SequenceNumber),
-		CreatedAt:      sm.CreatedAt.Time,
-	}, nil
 }

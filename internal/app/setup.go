@@ -103,6 +103,9 @@ func Setup(ctx context.Context, cfg *config.Config) (_ *App, retErr error) {
 	// Start memory decay scheduler if memory store is available.
 	if memStore != nil {
 		scheduler := memory.NewScheduler(memStore, slog.Default())
+		if cfg.RetentionDays > 0 {
+			scheduler.SetRetention(cfg.RetentionDays, a.SessionStore)
+		}
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
@@ -130,10 +133,10 @@ func provideOtelShutdown(ctx context.Context, cfg *config.Config) func() {
 	// SAFETY: os.Setenv is not concurrent-safe, but this function is called
 	// exactly once during startup in Setup, before goroutines are spawned.
 	if dd.ServiceName != "" {
-		_ = os.Setenv("OTEL_SERVICE_NAME", dd.ServiceName)
+		_ = os.Setenv("OTEL_SERVICE_NAME", dd.ServiceName) // best-effort: Genkit uses default service name if unset
 	}
 	if dd.Environment != "" {
-		_ = os.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment="+dd.Environment)
+		_ = os.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment="+dd.Environment) // best-effort: tracing works without env attribute
 	}
 
 	// Create OTLP HTTP exporter pointing to local Datadog Agent.
@@ -379,7 +382,7 @@ func provideTools(a *App) error {
 	}
 	allTools = append(allTools, networkTools...)
 
-	kt, err := tools.NewKnowledge(a.Retriever, a.DocStore, logger)
+	kt, err := tools.NewKnowledge(a.Retriever, a.DocStore, a.DBPool, logger)
 	if err != nil {
 		return fmt.Errorf("creating knowledge tools: %w", err)
 	}

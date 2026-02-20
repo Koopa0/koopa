@@ -282,6 +282,188 @@ func TestTruncateHistory(t *testing.T) {
 	}
 }
 
+func TestTruncateHistory_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	makeAgent := func() *Agent {
+		return &Agent{logger: slog.New(slog.DiscardHandler)}
+	}
+
+	systemMsg := func(text string) *ai.Message {
+		return ai.NewSystemMessage(ai.NewTextPart(text))
+	}
+	userMsg := func(text string) *ai.Message {
+		return ai.NewUserMessage(ai.NewTextPart(text))
+	}
+	modelMsg := func(text string) *ai.Message {
+		return ai.NewModelMessage(ai.NewTextPart(text))
+	}
+
+	tests := []struct {
+		name      string
+		msgs      []*ai.Message
+		budget    int
+		wantLen   int
+		wantTexts []string
+	}{
+		{
+			name: "budget zero drops all non-system",
+			msgs: []*ai.Message{
+				userMsg("hello"),
+				modelMsg("world"),
+			},
+			budget:    0,
+			wantLen:   0,
+			wantTexts: nil,
+		},
+		{
+			name: "negative budget drops all non-system",
+			msgs: []*ai.Message{
+				userMsg("hello"),
+				modelMsg("world"),
+			},
+			budget:    -100,
+			wantLen:   0,
+			wantTexts: nil,
+		},
+		{
+			name: "budget zero with system message keeps only system",
+			msgs: []*ai.Message{
+				systemMsg("system"),
+				userMsg("hello"),
+				modelMsg("world"),
+			},
+			budget:    10, // system = 3 tokens, fits; user+model don't fit in remaining 7
+			wantLen:   3,
+			wantTexts: []string{"system", "hello", "world"},
+		},
+		{
+			name: "system message alone exceeds budget",
+			msgs: []*ai.Message{
+				systemMsg("This is a very long system prompt that uses many tokens"),
+				userMsg("hi"),
+			},
+			budget:    2, // System alone is ~25 tokens, way over budget
+			wantLen:   1, // System always kept; remaining budget negative → no more msgs
+			wantTexts: []string{"This is a very long system prompt that uses many tokens"},
+		},
+		{
+			name: "single message under budget",
+			msgs: []*ai.Message{
+				userMsg("hi"),
+			},
+			budget:    100,
+			wantLen:   1,
+			wantTexts: []string{"hi"},
+		},
+		{
+			name: "single message over budget returns empty",
+			msgs: []*ai.Message{
+				userMsg("this message exceeds the tiny budget"),
+			},
+			budget:    1,
+			wantLen:   0,
+			wantTexts: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			agent := makeAgent()
+			got := agent.truncateHistory(tt.msgs, tt.budget)
+
+			if len(got) != tt.wantLen {
+				t.Fatalf("truncateHistory(budget=%d) len = %d, want %d", tt.budget, len(got), tt.wantLen)
+			}
+
+			if tt.wantTexts != nil {
+				for i, want := range tt.wantTexts {
+					if len(got[i].Content) == 0 {
+						t.Fatalf("message %d has no content", i)
+					}
+					if got[i].Content[0].Text != want {
+						t.Errorf("message %d text = %q, want %q", i, got[i].Content[0].Text, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestEstimateTokens_SpecialCharacters(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		text string
+		want int
+	}{
+		{
+			name: "emoji single",
+			text: "😀",
+			want: 1, // 1 rune / 2 = 0, min 1
+		},
+		{
+			name: "emoji sequence",
+			text: "😀😁😂🤣😃",
+			want: 2, // 5 runes / 2 = 2
+		},
+		{
+			name: "emoji with text",
+			text: "hello 👋 world 🌍",
+			want: 7, // 15 runes / 2 = 7
+		},
+		{
+			name: "zero-width joiner sequence",
+			text: "👨‍👩‍👧‍👦", // family emoji with ZWJ, multiple runes
+			want: 3,         // 7 runes (4 emoji + 3 ZWJ) / 2 = 3
+		},
+		{
+			name: "CJK mixed with ASCII",
+			text: "Go語言は素晴らしい",
+			want: 5, // 10 runes / 2 = 5
+		},
+		{
+			name: "pure CJK sentence",
+			text: "人工知能の未来について",
+			want: 5, // 10 runes / 2 = 5
+		},
+		{
+			name: "zero-width space",
+			text: "hello\u200Bworld", // zero-width space between
+			want: 5,                  // 11 runes / 2 = 5
+		},
+		{
+			name: "combining diacriticals",
+			text: "e\u0301", // é as e + combining acute accent = 2 runes
+			want: 1,         // 2 runes / 2 = 1
+		},
+		{
+			name: "only whitespace",
+			text: "   ",
+			want: 1, // 3 runes / 2 = 1
+		},
+		{
+			name: "newlines and tabs",
+			text: "line1\nline2\tline3",
+			want: 8, // 17 runes / 2 = 8
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := estimateTokens(tt.text)
+			if got != tt.want {
+				t.Errorf("estimateTokens(%q) = %d, want %d", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTruncateHistory_ChronologicalOrder(t *testing.T) {
 	t.Parallel()
 

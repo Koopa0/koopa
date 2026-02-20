@@ -34,10 +34,11 @@ func (s *Server) registerSystem() error {
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name: tools.ExecuteCommandName,
 		Description: "Execute a shell command from the allowed list with security validation. " +
-			"Allowed commands: git, npm, yarn, go, make, docker, kubectl, ls, cat, grep, find, pwd, echo. " +
+			"Allowed commands: ls, pwd, cd, tree, date, whoami, hostname, uname, df, du, free, top, ps, " +
+			"git (with subcommand restrictions), go (version/env/vet/doc/fmt/list only), npm/yarn (read-only queries), which, whereis. " +
 			"Commands run with a timeout to prevent hanging. " +
 			"Returns: stdout, stderr, exit code, and execution time. " +
-			"Security: Dangerous commands (rm -rf, sudo, chmod, etc.) are blocked.",
+			"Security: Commands not in the allowlist are blocked. Subcommands are restricted per command.",
 		InputSchema: executeCommandSchema,
 	}, s.ExecuteCommand)
 
@@ -53,7 +54,7 @@ func (s *Server) registerSystem() error {
 			"Use this to: check configuration, verify paths, read non-sensitive settings. " +
 			"Security: Sensitive variables containing KEY, SECRET, TOKEN, or PASSWORD in their names are protected and will not be returned.",
 		InputSchema: getEnvSchema,
-	}, s.GetEnv)
+	}, s.Env)
 
 	return nil
 }
@@ -79,10 +80,10 @@ func (s *Server) ExecuteCommand(ctx context.Context, _ *mcp.CallToolRequest, inp
 	return resultToMCP(result, s.logger), nil, nil
 }
 
-// GetEnv handles the getEnv MCP tool call.
-func (s *Server) GetEnv(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetEnvInput) (*mcp.CallToolResult, any, error) {
+// Env handles the getEnv MCP tool call.
+func (s *Server) Env(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetEnvInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
-	result, err := s.system.GetEnv(toolCtx, input)
+	result, err := s.system.Env(toolCtx, input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting env: %w", err)
 	}

@@ -80,6 +80,12 @@ var (
 
 	// ErrInvalidHMACSecret indicates the HMAC secret is too short.
 	ErrInvalidHMACSecret = errors.New("invalid HMAC secret")
+
+	// ErrDefaultPassword indicates a default development password is used in serve mode.
+	ErrDefaultPassword = errors.New("default password in serve mode")
+
+	// ErrInvalidRetentionDays indicates the retention days value is out of range.
+	ErrInvalidRetentionDays = errors.New("invalid retention days")
 )
 
 const (
@@ -144,10 +150,14 @@ type Config struct {
 	// Observability configuration (see observability.go for type definition)
 	Datadog DatadogConfig `mapstructure:"datadog" json:"datadog"`
 
+	// Data lifecycle configuration
+	RetentionDays int `mapstructure:"retention_days" json:"retention_days"` // Days to retain sessions (0 = no cleanup, default 365)
+
 	// Security configuration (serve mode only)
 	HMACSecret  string   `mapstructure:"hmac_secret" json:"hmac_secret"` // SENSITIVE: masked in MarshalJSON
 	CORSOrigins []string `mapstructure:"cors_origins" json:"cors_origins"`
 	TrustProxy  bool     `mapstructure:"trust_proxy" json:"trust_proxy"` // Trust X-Real-IP/X-Forwarded-For headers (set true behind reverse proxy)
+	DevMode     bool     `mapstructure:"dev_mode" json:"dev_mode"`       // Dev mode: disables Secure flag on cookies (decoupled from DB SSL)
 }
 
 // Load loads configuration.
@@ -166,20 +176,22 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("creating config directory: %w", err)
 	}
 
-	// Configure Viper
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(configDir)
-	viper.AddConfigPath(".") // Also support current directory
+	// Use a viper instance instead of the global singleton.
+	// This makes Load() safe for concurrent use and prevents test pollution.
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath(configDir)
+	v.AddConfigPath(".") // Also support current directory
 
 	// Set default values
-	setDefaults()
+	setDefaults(v)
 
 	// Bind environment variables
-	bindEnvVariables()
+	bindEnvVariables(v)
 
 	// Read configuration file (if exists)
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		// Configuration file not found is not an error, use default values
 		var configNotFound viper.ConfigFileNotFoundError
 		if !errors.As(err, &configNotFound) {
@@ -192,7 +204,7 @@ func Load() (*Config, error) {
 
 	// Use Unmarshal to automatically map to struct (type-safe)
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing configuration: %w", err)
 	}
 
@@ -209,63 +221,69 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// setDefaults sets all default configuration values.
-func setDefaults() {
+// setDefaults sets all default configuration values on the given viper instance.
+func setDefaults(v *viper.Viper) {
 	// AI defaults
-	viper.SetDefault("provider", ProviderGemini)
-	viper.SetDefault("model_name", "gemini-2.5-flash")
-	viper.SetDefault("temperature", 0.7)
-	viper.SetDefault("max_tokens", 2048)
-	viper.SetDefault("language", "auto")
-	viper.SetDefault("max_history_messages", DefaultMaxHistoryMessages)
-	viper.SetDefault("max_turns", 5)
+	v.SetDefault("provider", ProviderGemini)
+	v.SetDefault("model_name", "gemini-2.5-flash")
+	v.SetDefault("temperature", 0.7)
+	v.SetDefault("max_tokens", 2048)
+	v.SetDefault("language", "auto")
+	v.SetDefault("max_history_messages", DefaultMaxHistoryMessages)
+	v.SetDefault("max_turns", 5)
 
 	// Ollama defaults
-	viper.SetDefault("ollama_host", "http://localhost:11434")
+	v.SetDefault("ollama_host", "http://localhost:11434")
 	// PostgreSQL defaults (matching docker-compose.yml)
-	viper.SetDefault("postgres_host", "localhost")
-	viper.SetDefault("postgres_port", 5432)
-	viper.SetDefault("postgres_user", "koopa")
-	viper.SetDefault("postgres_password", "koopa_dev_password")
-	viper.SetDefault("postgres_db_name", "koopa")
-	viper.SetDefault("postgres_ssl_mode", "disable")
+	v.SetDefault("postgres_host", "localhost")
+	v.SetDefault("postgres_port", 5432)
+	v.SetDefault("postgres_user", "koopa")
+	v.SetDefault("postgres_password", "koopa_dev_password")
+	v.SetDefault("postgres_db_name", "koopa")
+	v.SetDefault("postgres_ssl_mode", "disable")
 
 	// RAG defaults
-	viper.SetDefault("embedder_model", DefaultGeminiEmbedderModel)
+	v.SetDefault("embedder_model", DefaultGeminiEmbedderModel)
 
 	// MCP defaults
-	viper.SetDefault("mcp.timeout", 5)
+	v.SetDefault("mcp.timeout", 5)
 
 	// SearXNG defaults
-	viper.SetDefault("searxng.base_url", "http://localhost:8888")
+	v.SetDefault("searxng.base_url", "http://localhost:8888")
 
 	// WebScraper defaults
-	viper.SetDefault("web_scraper.parallelism", 2)
-	viper.SetDefault("web_scraper.delay_ms", 1000)
-	viper.SetDefault("web_scraper.timeout_ms", 30000)
+	v.SetDefault("web_scraper.parallelism", 2)
+	v.SetDefault("web_scraper.delay_ms", 1000)
+	v.SetDefault("web_scraper.timeout_ms", 30000)
+
+	// Data lifecycle defaults
+	v.SetDefault("retention_days", 365) // 1 year default
 
 	// CORS defaults (Angular dev server)
-	viper.SetDefault("cors_origins", []string{"http://localhost:4200"})
+	v.SetDefault("cors_origins", []string{"http://localhost:4200"})
 
 	// Proxy trust (default: false — safe for direct exposure; set true behind reverse proxy)
-	viper.SetDefault("trust_proxy", false)
+	v.SetDefault("trust_proxy", false)
+
+	// Dev mode (default: false — cookies set with Secure flag)
+	v.SetDefault("dev_mode", false)
 
 	// Datadog defaults
-	viper.SetDefault("datadog.agent_host", "localhost:4318")
-	viper.SetDefault("datadog.environment", "dev")
-	viper.SetDefault("datadog.service_name", "koopa")
+	v.SetDefault("datadog.agent_host", "localhost:4318")
+	v.SetDefault("datadog.environment", "dev")
+	v.SetDefault("datadog.service_name", "koopa")
 }
 
-// bindEnvVariables binds sensitive environment variables explicitly.
+// bindEnvVariables binds sensitive environment variables explicitly on the given viper instance.
 // Only 3 environment variables for secrets:
 //  1. GEMINI_API_KEY - Read directly by Genkit (not via Viper), validated in cfg.Validate()
 //  2. DD_API_KEY - Datadog API key (optional, for observability)
 //  3. HMAC_SECRET - HMAC secret for CSRF protection (serve mode only)
-func bindEnvVariables() {
+func bindEnvVariables(v *viper.Viper) {
 	// Helper to panic on unexpected bind errors (hardcoded strings can't fail)
 	// If this panics, it's a BUG in our code, not a runtime error
 	mustBind := func(key, envVar string) {
-		if err := viper.BindEnv(key, envVar); err != nil {
+		if err := v.BindEnv(key, envVar); err != nil {
 			panic(fmt.Sprintf("BUG: failed to bind %q to %q: %v", key, envVar, err))
 		}
 	}
@@ -281,6 +299,12 @@ func bindEnvVariables() {
 
 	// Proxy trust (serve mode, behind reverse proxy)
 	mustBind("trust_proxy", "KOOPA_TRUST_PROXY")
+
+	// Dev mode (serve mode, disables Secure cookie flag)
+	mustBind("dev_mode", "KOOPA_DEV_MODE")
+
+	// Data lifecycle
+	mustBind("retention_days", "KOOPA_RETENTION_DAYS")
 
 	// AI provider and model overrides
 	mustBind("provider", "KOOPA_PROVIDER")

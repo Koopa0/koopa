@@ -285,7 +285,7 @@ func TestGetFileInfo_Success(t *testing.T) {
 		t.Fatalf("creating test file: %v", err)
 	}
 
-	result, _, err := server.GetFileInfo(context.Background(), &mcp.CallToolRequest{}, tools.GetFileInfoInput{
+	result, _, err := server.FileInfo(context.Background(), &mcp.CallToolRequest{}, tools.GetFileInfoInput{
 		Path: testFile,
 	})
 
@@ -307,7 +307,7 @@ func TestGetFileInfo_FileNotFound(t *testing.T) {
 		t.Fatalf("NewServer(): %v", err)
 	}
 
-	result, _, err := server.GetFileInfo(context.Background(), &mcp.CallToolRequest{}, tools.GetFileInfoInput{
+	result, _, err := server.FileInfo(context.Background(), &mcp.CallToolRequest{}, tools.GetFileInfoInput{
 		Path: filepath.Join(h.tempDir, "nonexistent.txt"),
 	})
 
