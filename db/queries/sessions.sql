@@ -4,7 +4,7 @@
 -- name: CreateSession :one
 INSERT INTO sessions (title, owner_id)
 VALUES ($1, sqlc.arg(owner_id))
-RETURNING *;
+RETURNING id, title, owner_id, created_at, updated_at;
 
 -- name: Session :one
 SELECT id, title, owner_id, created_at, updated_at
@@ -26,7 +26,7 @@ SELECT id, title, owner_id, created_at, updated_at
 FROM sessions
 WHERE id = sqlc.arg(session_id) AND owner_id = sqlc.arg(owner_id);
 
--- name: UpdateSessionUpdatedAt :exec
+-- name: UpdateSessionUpdatedAt :execrows
 UPDATE sessions
 SET updated_at = NOW()
 WHERE id = sqlc.arg(session_id);
@@ -44,8 +44,8 @@ WHERE id = $1;
 
 -- name: AddMessage :exec
 -- Add a message to a session
-INSERT INTO messages (session_id, role, content, sequence_number)
-VALUES ($1, $2, $3, $4);
+INSERT INTO messages (session_id, role, content, sequence_number, text_content)
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: Messages :many
 -- Get all messages for a session ordered by sequence

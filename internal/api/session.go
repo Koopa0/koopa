@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,7 +42,7 @@ const preSessionPrefix = "pre:"
 const (
 	sessionCookieName    = "sid"
 	userCookieName       = "uid"
-	csrfTokenTTL         = 24 * time.Hour
+	csrfTokenTTL         = 1 * time.Hour
 	cookieMaxAge         = 30 * 24 * 3600 // 30 days in seconds
 	csrfClockSkew        = 5 * time.Minute
 	messagesDefaultLimit = 100
@@ -71,13 +73,24 @@ func (*sessionManager) SessionID(r *http.Request) (uuid.UUID, error) {
 }
 
 // UserID extracts the user identity from the uid cookie.
-// Returns empty string if no uid cookie is present.
-func (*sessionManager) UserID(r *http.Request) string {
+// Returns empty string if no uid cookie is present, the HMAC signature is invalid,
+// or the value is not a valid UUID.
+// SECURITY: Validates HMAC signature to prevent identity impersonation (F4/CWE-565),
+// then validates UUID format to prevent malformed ownerIDs reaching SQL queries,
+// advisory locks, and memory storage (CWE-20).
+func (sm *sessionManager) UserID(r *http.Request) string {
 	cookie, err := r.Cookie(userCookieName)
 	if err != nil {
 		return ""
 	}
-	return cookie.Value
+	uid, ok := verifySignedUID(cookie.Value, sm.hmacSecret)
+	if !ok {
+		return ""
+	}
+	if _, err := uuid.Parse(uid); err != nil {
+		return ""
+	}
+	return uid
 }
 
 // NewCSRFToken creates an HMAC-based token bound to the user ID.
@@ -109,14 +122,10 @@ func (sm *sessionManager) CheckCSRF(userID, token string) error {
 		return ErrCSRFMalformed
 	}
 
-	age := time.Since(time.Unix(timestamp, 0))
-	if age > csrfTokenTTL {
-		return ErrCSRFExpired
-	}
-	if age < -csrfClockSkew {
-		return ErrCSRFInvalid
-	}
-
+	// SECURITY: Compute and verify HMAC BEFORE timestamp checks to prevent
+	// timing oracle attacks (CWE-208). If timestamp were checked first,
+	// the response time difference between "expired" and "valid timestamp,
+	// wrong HMAC" would leak information about valid timestamps.
 	message := fmt.Sprintf("%s:%d", userID, timestamp)
 	h := hmac.New(sha256.New, sm.hmacSecret)
 	h.Write([]byte(message))
@@ -128,6 +137,14 @@ func (sm *sessionManager) CheckCSRF(userID, token string) error {
 	}
 
 	if subtle.ConstantTimeCompare(actualSig, expectedSig) != 1 {
+		return ErrCSRFInvalid
+	}
+
+	age := time.Since(time.Unix(timestamp, 0))
+	if age > csrfTokenTTL {
+		return ErrCSRFExpired
+	}
+	if age < -csrfClockSkew {
 		return ErrCSRFInvalid
 	}
 
@@ -170,14 +187,8 @@ func (sm *sessionManager) CheckPreSessionCSRF(token string) error {
 		return ErrCSRFMalformed
 	}
 
-	age := time.Since(time.Unix(timestamp, 0))
-	if age > csrfTokenTTL {
-		return ErrCSRFExpired
-	}
-	if age < -csrfClockSkew {
-		return ErrCSRFInvalid
-	}
-
+	// SECURITY: Compute and verify HMAC BEFORE timestamp checks to prevent
+	// timing oracle attacks (CWE-208). See CheckCSRF for full rationale.
 	message := fmt.Sprintf("%s:%d", nonce, timestamp)
 	h := hmac.New(sha256.New, sm.hmacSecret)
 	h.Write([]byte(message))
@@ -189,6 +200,14 @@ func (sm *sessionManager) CheckPreSessionCSRF(token string) error {
 	}
 
 	if subtle.ConstantTimeCompare(actualSig, expectedSig) != 1 {
+		return ErrCSRFInvalid
+	}
+
+	age := time.Since(time.Unix(timestamp, 0))
+	if age > csrfTokenTTL {
+		return ErrCSRFExpired
+	}
+	if age < -csrfClockSkew {
 		return ErrCSRFInvalid
 	}
 
@@ -258,13 +277,47 @@ func (sm *sessionManager) setSessionCookie(w http.ResponseWriter, sessionID uuid
 func (sm *sessionManager) setUserCookie(w http.ResponseWriter, userID string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     userCookieName,
-		Value:    userID,
+		Value:    signUID(userID, sm.hmacSecret),
 		Path:     "/",
 		Secure:   !sm.isDev,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   cookieMaxAge,
 	})
+}
+
+// signUID creates an HMAC-signed cookie value: "uid.base64url(HMAC-SHA256(secret, uid))".
+// SECURITY: Prevents identity impersonation by making the uid cookie tamper-evident (F4/CWE-565).
+func signUID(uid string, secret []byte) string {
+	h := hmac.New(sha256.New, secret)
+	h.Write([]byte(uid))
+	sig := base64.URLEncoding.EncodeToString(h.Sum(nil))
+	return uid + "." + sig
+}
+
+// verifySignedUID splits a signed cookie value and verifies the HMAC signature.
+// Returns the extracted UID and true on success, or empty string and false on any failure.
+func verifySignedUID(value string, secret []byte) (string, bool) {
+	idx := strings.LastIndex(value, ".")
+	if idx < 1 {
+		return "", false
+	}
+
+	uid := value[:idx]
+	sig, err := base64.URLEncoding.DecodeString(value[idx+1:])
+	if err != nil {
+		return "", false
+	}
+
+	h := hmac.New(sha256.New, secret)
+	h.Write([]byte(uid))
+	expected := h.Sum(nil)
+
+	if subtle.ConstantTimeCompare(sig, expected) != 1 {
+		return "", false
+	}
+
+	return uid, true
 }
 
 // csrfToken handles GET /api/v1/csrf-token — provisions a CSRF token.
@@ -283,21 +336,41 @@ func (sm *sessionManager) csrfToken(w http.ResponseWriter, r *http.Request) {
 	}, sm.logger)
 }
 
-// listSessions handles GET /api/v1/sessions — returns all sessions owned by the caller.
-func (sm *sessionManager) listSessions(w http.ResponseWriter, r *http.Request) {
-	type sessionItem struct {
-		ID        string `json:"id"`
-		Title     string `json:"title"`
-		UpdatedAt string `json:"updatedAt"`
-	}
+// sessionItem is the JSON representation of a session in list responses.
+type sessionItem struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	MessageCount int    `json:"messageCount"`
+	UpdatedAt    string `json:"updatedAt"`
+}
 
+// messageItem is the JSON representation of a message in list responses.
+type messageItem struct {
+	ID        string `json:"id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// listSessions handles GET /api/v1/sessions — returns paginated sessions owned by the caller.
+func (sm *sessionManager) listSessions(w http.ResponseWriter, r *http.Request) {
 	userID, ok := userIDFromContext(r.Context())
 	if !ok || userID == "" {
-		WriteJSON(w, http.StatusOK, []sessionItem{}, sm.logger)
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"items": []sessionItem{},
+			"total": 0,
+		}, sm.logger)
 		return
 	}
 
-	sessions, err := sm.store.Sessions(r.Context(), userID, sessionsDefaultLimit, 0)
+	limit := min(parseIntParam(r, "limit", sessionsDefaultLimit), 200)
+	offset := parseIntParam(r, "offset", 0)
+	if offset > 10000 {
+		WriteError(w, http.StatusBadRequest, "invalid_offset", "offset must be 10000 or less", sm.logger)
+		return
+	}
+
+	sessions, total, err := sm.store.Sessions(r.Context(), userID, limit, offset)
 	if err != nil {
 		sm.logger.Error("listing sessions", "error", err, "user_id", userID)
 		WriteError(w, http.StatusInternalServerError, "list_failed", "failed to list sessions", sm.logger)
@@ -307,13 +380,17 @@ func (sm *sessionManager) listSessions(w http.ResponseWriter, r *http.Request) {
 	items := make([]sessionItem, len(sessions))
 	for i, sess := range sessions {
 		items[i] = sessionItem{
-			ID:        sess.ID.String(),
-			Title:     sess.Title,
-			UpdatedAt: sess.UpdatedAt.Format(time.RFC3339),
+			ID:           sess.ID.String(),
+			Title:        sess.Title,
+			MessageCount: sess.MessageCount,
+			UpdatedAt:    sess.UpdatedAt.Format(time.RFC3339),
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, items, sm.logger)
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"total": total,
+	}, sm.logger)
 }
 
 // createSession handles POST /api/v1/sessions — creates a new session.
@@ -358,15 +435,23 @@ func (sm *sessionManager) getSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]string{
-		"id":        sess.ID.String(),
-		"title":     sess.Title,
-		"createdAt": sess.CreatedAt.Format(time.RFC3339),
-		"updatedAt": sess.UpdatedAt.Format(time.RFC3339),
+	msgCount, err := sm.store.CountMessagesForSession(r.Context(), id)
+	if err != nil {
+		sm.logger.Error("counting messages for session", "error", err, "session_id", id)
+		WriteError(w, http.StatusInternalServerError, "get_failed", "failed to get session", sm.logger)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"id":           sess.ID.String(),
+		"title":        sess.Title,
+		"messageCount": msgCount,
+		"createdAt":    sess.CreatedAt.Format(time.RFC3339),
+		"updatedAt":    sess.UpdatedAt.Format(time.RFC3339),
 	}, sm.logger)
 }
 
-// getSessionMessages handles GET /api/v1/sessions/{id}/messages — returns messages for a session.
+// getSessionMessages handles GET /api/v1/sessions/{id}/messages — returns paginated messages.
 // Requires ownership: the session must belong to the caller.
 func (sm *sessionManager) getSessionMessages(w http.ResponseWriter, r *http.Request) {
 	id, ok := sm.requireOwnership(w, r)
@@ -374,39 +459,195 @@ func (sm *sessionManager) getSessionMessages(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	messages, err := sm.store.Messages(r.Context(), id, messagesDefaultLimit, 0)
+	limit := min(parseIntParam(r, "limit", messagesDefaultLimit), 1000)
+	offset := parseIntParam(r, "offset", 0)
+	if offset > 100000 {
+		WriteError(w, http.StatusBadRequest, "invalid_offset", "offset must be 100000 or less", sm.logger)
+		return
+	}
+
+	messages, total, err := sm.store.Messages(r.Context(), id, limit, offset)
 	if err != nil {
 		sm.logger.Error("getting messages", "error", err, "session_id", id)
 		WriteError(w, http.StatusInternalServerError, "get_failed", "failed to get messages", sm.logger)
 		return
 	}
 
-	type messageItem struct {
+	items := make([]messageItem, len(messages))
+	for i, msg := range messages {
+		items[i] = messageItem{
+			ID:        msg.ID.String(),
+			Role:      msg.Role,
+			Content:   msg.Text(),
+			CreatedAt: msg.CreatedAt.Format(time.RFC3339),
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"total": total,
+	}, sm.logger)
+}
+
+// exportSession handles GET /api/v1/sessions/{id}/export — exports a session with all messages.
+// Requires ownership: the session must belong to the caller.
+// Query parameter: format=json (default) or format=markdown.
+func (sm *sessionManager) exportSession(w http.ResponseWriter, r *http.Request) {
+	id, ok := sm.requireOwnership(w, r)
+	if !ok {
+		return
+	}
+
+	data, err := sm.store.Export(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, session.ErrNotFound) {
+			WriteError(w, http.StatusNotFound, "not_found", "session not found", sm.logger)
+			return
+		}
+		sm.logger.Error("exporting session", "error", err, "session_id", id)
+		WriteError(w, http.StatusInternalServerError, "export_failed", "failed to export session", sm.logger)
+		return
+	}
+
+	format := r.URL.Query().Get("format")
+	switch format {
+	case "markdown":
+		sm.exportMarkdown(w, data)
+		return
+	case "", "json":
+		// Default: JSON export (fall through)
+	default:
+		WriteError(w, http.StatusBadRequest, "invalid_format",
+			"unsupported export format; use 'json' or 'markdown'", sm.logger)
+		return
+	}
+
+	// Build a DTO that omits internal fields (OwnerID, SessionID, SequenceNumber).
+	type exportMessage struct {
 		ID        string `json:"id"`
 		Role      string `json:"role"`
 		Content   string `json:"content"`
 		CreatedAt string `json:"createdAt"`
 	}
+	type exportSession struct {
+		ID        string          `json:"id"`
+		Title     string          `json:"title"`
+		CreatedAt string          `json:"createdAt"`
+		UpdatedAt string          `json:"updatedAt"`
+		Messages  []exportMessage `json:"messages"`
+	}
 
-	items := make([]messageItem, len(messages))
-	for i, msg := range messages {
-		// Extract text content from ai.Part slice
-		var text string
-		for _, part := range msg.Content {
-			if part != nil {
-				text += part.Text
-			}
-		}
-
-		items[i] = messageItem{
+	msgs := make([]exportMessage, len(data.Messages))
+	for i, msg := range data.Messages {
+		msgs[i] = exportMessage{
 			ID:        msg.ID.String(),
 			Role:      msg.Role,
-			Content:   text,
+			Content:   msg.Text(),
 			CreatedAt: msg.CreatedAt.Format(time.RFC3339),
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, items, sm.logger)
+	resp := exportSession{
+		ID:        data.Session.ID.String(),
+		Title:     data.Session.Title,
+		CreatedAt: data.Session.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: data.Session.UpdatedAt.Format(time.RFC3339),
+		Messages:  msgs,
+	}
+
+	// Default: JSON with Content-Disposition for download.
+	w.Header().Set("Content-Disposition",
+		mime.FormatMediaType("attachment", map[string]string{
+			"filename": fmt.Sprintf("session-%s.json", id),
+		}))
+	WriteJSON(w, http.StatusOK, resp, sm.logger)
+}
+
+// titleReplacer strips newlines to prevent Markdown heading breakout.
+// strings.Replacer is safe for concurrent use.
+var titleReplacer = strings.NewReplacer("\n", " ", "\r", " ")
+
+// sanitizeTitle replaces newline characters to prevent Markdown heading breakout.
+func sanitizeTitle(s string) string {
+	return titleReplacer.Replace(s)
+}
+
+// sanitizeMarkdownContent escapes leading Markdown structural characters
+// to prevent structural injection in exported Markdown documents.
+//
+// Escapes: ATX headings (# ...), setext heading underlines (===, ---).
+// Threat model: output is consumed as static text (editor, pandoc, etc.).
+// If browser rendering is added, link/image/HTML sanitization must be implemented.
+func sanitizeMarkdownContent(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		switch {
+		case strings.HasPrefix(trimmed, "#"):
+			// ATX heading: place backslash immediately before # to escape it.
+			indent := line[:len(line)-len(trimmed)]
+			lines[i] = indent + `\` + trimmed
+		case isSetextUnderline(trimmed):
+			// Setext heading underline: escape to prevent previous line promotion.
+			indent := line[:len(line)-len(trimmed)]
+			lines[i] = indent + `\` + trimmed
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// isSetextUnderline reports whether trimmed (leading whitespace already removed)
+// consists entirely of '=' or entirely of '-' characters (with optional trailing whitespace).
+// Such lines can promote the previous paragraph to a setext heading in CommonMark.
+func isSetextUnderline(trimmed string) bool {
+	s := strings.TrimRight(trimmed, " \t")
+	if s == "" {
+		return false
+	}
+	return strings.Trim(s, "=") == "" || strings.Trim(s, "-") == ""
+}
+
+// exportMarkdown renders a session export as a Markdown document.
+func (sm *sessionManager) exportMarkdown(w http.ResponseWriter, data *session.ExportData) {
+	var b strings.Builder
+	title := sanitizeTitle(data.Session.Title)
+	if title == "" {
+		title = "Untitled Session"
+	}
+	b.WriteString("# ")
+	b.WriteString(title)
+	b.WriteString("\n\n")
+
+	for _, msg := range data.Messages {
+		var role string
+		switch msg.Role {
+		case "user":
+			role = "User"
+		case "assistant":
+			role = "Assistant"
+		case "system":
+			role = "System"
+		case "tool":
+			role = "Tool"
+		default:
+			role = msg.Role
+		}
+
+		b.WriteString("**")
+		b.WriteString(role)
+		b.WriteString("**: ")
+		b.WriteString(sanitizeMarkdownContent(msg.Text()))
+		b.WriteString("\n\n")
+	}
+
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition",
+		mime.FormatMediaType("attachment", map[string]string{
+			"filename": fmt.Sprintf("session-%s.md", data.Session.ID),
+		}))
+	if _, err := io.WriteString(w, b.String()); err != nil {
+		sm.logger.Error("writing markdown export", "error", err)
+	}
 }
 
 // deleteSession handles DELETE /api/v1/sessions/{id} — deletes a session.

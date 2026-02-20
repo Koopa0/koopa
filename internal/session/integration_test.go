@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,13 +22,26 @@ import (
 	"github.com/koopa0/koopa/internal/testutil"
 )
 
-// setupIntegrationTest creates a Store with test database connection.
-// All integration tests should use this unified setup.
-// Cleanup is automatic via tb.Cleanup — no manual cleanup needed.
+var sharedDB *testutil.TestDBContainer
+
+func TestMain(m *testing.M) {
+	var cleanup func()
+	var err error
+	sharedDB, cleanup, err = testutil.SetupTestDBForMain()
+	if err != nil {
+		log.Fatalf("starting test database: %v", err)
+	}
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
+}
+
+// setupIntegrationTest creates a Store using the shared test database container.
+// Truncates all tables for test isolation.
 func setupIntegrationTest(t *testing.T) *Store {
 	t.Helper()
-	dbContainer := testutil.SetupTestDB(t)
-	return New(sqlc.New(dbContainer.Pool), dbContainer.Pool, slog.Default())
+	testutil.CleanTables(t, sharedDB.Pool)
+	return New(sqlc.New(sharedDB.Pool), sharedDB.Pool, slog.Default())
 }
 
 // TestStore_CreateAndGet tests creating and retrieving a session
@@ -1024,6 +1039,90 @@ func TestStore_GetSession_NotFound(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Session(%v) error = %v, want ErrNotFound sentinel", nonExistentID, err)
 	}
+}
+
+// TestStore_SQLInjectionViaSearch tests injection through SearchMessages query parameter.
+// SearchMessages uses plainto_tsquery with parameterized $2 — this test verifies
+// that malicious query strings are sanitized by plainto_tsquery and do not execute as SQL.
+func TestStore_SQLInjectionViaSearch(t *testing.T) {
+	store := setupIntegrationTest(t)
+	ctx := context.Background()
+
+	// Create a session with a searchable message so FTS infrastructure is exercised.
+	session, err := store.CreateSession(ctx, "test-owner", "Search Injection Test")
+	if err != nil {
+		t.Fatalf("CreateSession() unexpected error: %v", err)
+	}
+	msg := &Message{
+		Role:    "user",
+		Content: []*ai.Part{ai.NewTextPart("legitimate searchable content for testing")},
+	}
+	if err := store.AddMessages(ctx, session.ID, []*Message{msg}); err != nil {
+		t.Fatalf("AddMessages() unexpected error: %v", err)
+	}
+
+	// All queries below are passed as parameterized arguments ($2) to plainto_tsquery
+	// in store.go SearchMessages. PostgreSQL's parameterization treats $2 as a literal
+	// string value, preventing SQL injection regardless of content.
+	maliciousQueries := []struct {
+		name  string
+		query string
+	}{
+		{"classic drop", "'; DROP TABLE messages; --"},
+		{"boolean blind", "' OR '1'='1"},
+		{"union select", "' UNION SELECT password FROM users --"},
+		{"stacked delete", "'; DELETE FROM sessions; --"},
+		{"pg_sleep", "'; SELECT pg_sleep(10); --"},
+		{"null byte", "test\x00'; DROP TABLE messages; --"},
+		{"tsquery operator", "!()&|:*"},
+	}
+
+	for _, tc := range maliciousQueries {
+		t.Run("search_"+tc.name, func(t *testing.T) {
+			// plainto_tsquery sanitizes input — should never cause SQL error.
+			results, total, err := store.SearchMessages(ctx, "test-owner", tc.query, 10, 0)
+			if err != nil {
+				t.Fatalf("SearchMessages(%q) unexpected error: %v", tc.query, err)
+			}
+			// Malicious queries should not match real content.
+			t.Logf("SearchMessages(%q) returned %d results, total=%d", tc.query, len(results), total)
+		})
+	}
+
+	// Verify database integrity after all injection attempts.
+	t.Run("verify integrity", func(t *testing.T) {
+		_, err := store.Session(ctx, session.ID)
+		if err != nil {
+			t.Fatalf("Session(%v) after search injection attempts unexpected error: %v", session.ID, err)
+		}
+
+		// Legitimate search should still work.
+		results, total, err := store.SearchMessages(ctx, "test-owner", "legitimate searchable", 10, 0)
+		if err != nil {
+			t.Fatalf("SearchMessages(%q) unexpected error: %v", "legitimate searchable", err)
+		}
+		if total == 0 {
+			t.Error("SearchMessages(\"legitimate searchable\") total = 0, want >= 1")
+		}
+		if len(results) == 0 {
+			t.Fatal("SearchMessages(\"legitimate searchable\") returned 0 results, want >= 1")
+		}
+		if results[0].SessionID != session.ID {
+			t.Errorf("SearchMessages result SessionID = %v, want %v", results[0].SessionID, session.ID)
+		}
+
+		// Verify no extra rows were inserted via stacked queries.
+		var messageCount int
+		err = store.pool.QueryRow(ctx,
+			"SELECT COUNT(*) FROM messages WHERE session_id = $1", session.ID,
+		).Scan(&messageCount)
+		if err != nil {
+			t.Fatalf("counting messages after injection attempts: %v", err)
+		}
+		if messageCount != 1 {
+			t.Errorf("message count = %d, want 1 (only the legitimate message should exist)", messageCount)
+		}
+	})
 }
 
 // TestStore_SQLInjectionViaMessageContent tests injection through message content.

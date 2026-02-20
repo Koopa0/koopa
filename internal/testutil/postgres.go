@@ -65,6 +65,44 @@ type TestDBContainer struct {
 func SetupTestDB(tb testing.TB) *TestDBContainer {
 	tb.Helper()
 
+	container, cleanup, err := startTestDB()
+	if err != nil {
+		tb.Fatalf("starting test database: %v", err)
+	}
+	tb.Cleanup(cleanup)
+	return container
+}
+
+// SetupTestDBForMain creates a PostgreSQL container for use in TestMain.
+//
+// Unlike SetupTestDB, it does not register cleanup via tb.Cleanup.
+// The caller must call the returned cleanup function after m.Run().
+//
+// Use this when multiple tests in a package share a single container
+// to reduce Docker resource usage. Use CleanTables between tests for isolation.
+//
+// Example:
+//
+//	var sharedDB *testutil.TestDBContainer
+//
+//	func TestMain(m *testing.M) {
+//	    var cleanup func()
+//	    var err error
+//	    sharedDB, cleanup, err = testutil.SetupTestDBForMain()
+//	    if err != nil {
+//	        log.Fatalf("starting test database: %v", err)
+//	    }
+//	    code := m.Run()
+//	    cleanup()
+//	    os.Exit(code)
+//	}
+func SetupTestDBForMain() (*TestDBContainer, func(), error) {
+	return startTestDB()
+}
+
+// startTestDB creates a PostgreSQL container with pgvector, runs migrations,
+// and returns the container, a cleanup function, and any error.
+func startTestDB() (*TestDBContainer, func(), error) {
 	ctx := context.Background()
 
 	// Create PostgreSQL container with pgvector support
@@ -79,35 +117,35 @@ func SetupTestDB(tb testing.TB) *TestDBContainer {
 				WithStartupTimeout(60*time.Second)),
 	)
 	if err != nil {
-		tb.Fatalf("starting PostgreSQL container: %v", err)
+		return nil, nil, fmt.Errorf("starting PostgreSQL container: %w", err)
 	}
 
 	// Get connection string
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		_ = pgContainer.Terminate(ctx) // best-effort cleanup
-		tb.Fatalf("getting connection string: %v", err)
+		return nil, nil, fmt.Errorf("getting connection string: %w", err)
 	}
 
 	// Create connection pool
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		_ = pgContainer.Terminate(ctx) // best-effort cleanup
-		tb.Fatalf("creating connection pool: %v", err)
+		return nil, nil, fmt.Errorf("creating connection pool: %w", err)
 	}
 
 	// Verify connection
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		_ = pgContainer.Terminate(ctx) // best-effort cleanup
-		tb.Fatalf("pinging database: %v", err)
+		return nil, nil, fmt.Errorf("pinging database: %w", err)
 	}
 
 	// Run migrations
 	if err := runMigrations(ctx, pool); err != nil {
 		pool.Close()
 		_ = pgContainer.Terminate(ctx)
-		tb.Fatalf("running migrations: %v", err)
+		return nil, nil, fmt.Errorf("running migrations: %w", err)
 	}
 
 	container := &TestDBContainer{
@@ -116,12 +154,26 @@ func SetupTestDB(tb testing.TB) *TestDBContainer {
 		ConnStr:   connStr,
 	}
 
-	tb.Cleanup(func() {
+	cleanup := func() {
 		pool.Close()
 		_ = pgContainer.Terminate(context.Background())
-	})
+	}
 
-	return container
+	return container, cleanup, nil
+}
+
+// CleanTables truncates all test tables between tests for isolation.
+//
+// Call this at the start of each test when using shared containers via TestMain.
+// Uses TRUNCATE CASCADE to handle foreign key relationships.
+func CleanTables(tb testing.TB, pool *pgxpool.Pool) {
+	tb.Helper()
+	ctx := context.Background()
+	// TRUNCATE with CASCADE handles FK dependencies (messages→sessions, memories→sessions)
+	_, err := pool.Exec(ctx, "TRUNCATE memories, messages, documents, sessions CASCADE")
+	if err != nil {
+		tb.Fatalf("truncating tables: %v", err)
+	}
 }
 
 // FindProjectRoot finds the project root directory by looking for go.mod.
@@ -153,12 +205,12 @@ func FindProjectRoot() (string, error) {
 
 // runMigrations runs database migrations from db/migrations directory.
 //
-// Executes migrations in order:
-//  1. 000001_init_schema.up.sql - Creates tables and pgvector extension
-//  2. 000002_add_owner_id.up.sql - Adds owner_id to sessions
-//  3. 000003_add_document_owner.up.sql - Adds owner_id to documents
-//  4. 000004_create_memories.up.sql - Creates memories table with pgvector
-//  5. 000005_memory_enhancements.up.sql - Phase 4a: decay, access tracking, tsvector, 4 categories
+// Executes the consolidated schema migration:
+//  1. 000001_init_schema.up.sql - Creates all tables, extensions, and indexes
+//
+// The schema is consolidated into a single migration file that includes
+// sessions (with owner_id), messages, documents (with owner_id and pgvector),
+// and memories (with decay, access tracking, tsvector, categories).
 //
 // Each migration runs in its own transaction for atomicity.
 // This is a simplified version - production should use a migration tool like golang-migrate.
@@ -172,12 +224,9 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	// Read and execute migration files in order.
+	// Schema is consolidated into a single migration file.
 	migrationFiles := []string{
 		filepath.Join(projectRoot, "db", "migrations", "000001_init_schema.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000002_add_owner_id.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000003_add_document_owner.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000004_create_memories.up.sql"),
-		filepath.Join(projectRoot, "db", "migrations", "000005_memory_enhancements.up.sql"),
 	}
 
 	for _, migrationPath := range migrationFiles {

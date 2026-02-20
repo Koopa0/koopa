@@ -108,7 +108,7 @@ func (h *testHelper) createNetwork() *tools.Network {
 
 func (h *testHelper) createKnowledge() *tools.Knowledge {
 	h.t.Helper()
-	kt, err := tools.NewKnowledge(&mcpTestRetriever{}, nil, slog.New(slog.DiscardHandler))
+	kt, err := tools.NewKnowledge(&mcpTestRetriever{}, nil, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		h.t.Fatalf("creating knowledge tools: %v", err)
 	}

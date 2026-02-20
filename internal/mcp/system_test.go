@@ -64,8 +64,8 @@ func TestExecuteCommand_Success(t *testing.T) {
 	}
 
 	result, _, err := server.ExecuteCommand(context.Background(), &mcp.CallToolRequest{}, tools.ExecuteCommandInput{
-		Command: "echo",
-		Args:    []string{"hello", "world"},
+		Command: "date",
+		Args:    nil,
 	})
 
 	if err != nil {
@@ -76,7 +76,7 @@ func TestExecuteCommand_Success(t *testing.T) {
 		t.Errorf("ExecuteCommand returned error: %v", result.Content)
 	}
 
-	// Verify output contains "hello world"
+	// Verify output contains date-like content
 	if len(result.Content) == 0 {
 		t.Fatal("ExecuteCommand returned empty content")
 	}
@@ -86,8 +86,8 @@ func TestExecuteCommand_Success(t *testing.T) {
 		t.Fatal("ExecuteCommand content is not TextContent")
 	}
 
-	if !strings.Contains(textContent.Text, "hello world") {
-		t.Errorf("ExecuteCommand output does not contain 'hello world': %s", textContent.Text)
+	if !strings.Contains(textContent.Text, "202") {
+		t.Errorf("ExecuteCommand(date) output does not contain year: %s", textContent.Text)
 	}
 }
 
@@ -154,7 +154,7 @@ func TestGetEnv_Success(t *testing.T) {
 	testValue := "test_value_123"
 	t.Setenv(testKey, testValue)
 
-	result, _, err := server.GetEnv(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
+	result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
 		Key: testKey,
 	})
 
@@ -190,7 +190,7 @@ func TestGetEnv_NotSet(t *testing.T) {
 		t.Fatalf("NewServer(): %v", err)
 	}
 
-	result, _, err := server.GetEnv(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
+	result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
 		Key: "NONEXISTENT_VAR_12345",
 	})
 
@@ -232,7 +232,7 @@ func TestGetEnv_SensitiveVariableBlocked(t *testing.T) {
 
 	for _, key := range sensitiveKeys {
 		t.Run(key, func(t *testing.T) {
-			result, _, err := server.GetEnv(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
+			result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
 				Key: key,
 			})
 

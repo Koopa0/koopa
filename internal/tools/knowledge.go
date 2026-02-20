@@ -11,12 +11,15 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/postgresql"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/koopa0/koopa/internal/memory"
 	"github.com/koopa0/koopa/internal/rag"
 )
 
@@ -37,7 +40,7 @@ const (
 	DefaultHistoryTopK         = 3
 	DefaultDocumentsTopK       = 5
 	DefaultSystemKnowledgeTopK = 3
-	MaxTopK                    = 10
+	MaxKnowledgeTopK           = 10
 )
 
 // MaxKnowledgeContentSize is the maximum allowed content size for knowledge_store (10KB).
@@ -46,6 +49,14 @@ const MaxKnowledgeContentSize = 10_000
 
 // MaxKnowledgeTitleLength is the maximum allowed title length for knowledge_store.
 const MaxKnowledgeTitleLength = 500
+
+// MaxKnowledgeQueryLength is the maximum allowed search query length (1000 bytes).
+// Prevents DoS via extremely long queries that waste embedding computation.
+const MaxKnowledgeQueryLength = 1000
+
+// MaxDocsPerUser is the maximum number of user-created documents per owner.
+// Prevents resource exhaustion via unbounded document ingestion.
+const MaxDocsPerUser = 1000
 
 // KnowledgeSearchInput defines input for all knowledge search tools.
 // The default TopK varies by tool: history=3, documents=5, system=3.
@@ -64,6 +75,7 @@ type KnowledgeStoreInput struct {
 type Knowledge struct {
 	retriever ai.Retriever
 	docStore  *postgresql.DocStore // nil disables knowledge_store tool
+	pool      *pgxpool.Pool        // nil disables per-user document count limit
 	logger    *slog.Logger
 }
 
@@ -74,15 +86,16 @@ func (k *Knowledge) HasDocStore() bool {
 }
 
 // NewKnowledge creates a Knowledge instance.
-// docStore is optional: when nil, the knowledge_store tool is not registered.
-func NewKnowledge(retriever ai.Retriever, docStore *postgresql.DocStore, logger *slog.Logger) (*Knowledge, error) {
+// docStore and pool are optional: when nil, the knowledge_store tool is not
+// registered and per-user document limits are not enforced, respectively.
+func NewKnowledge(retriever ai.Retriever, docStore *postgresql.DocStore, pool *pgxpool.Pool, logger *slog.Logger) (*Knowledge, error) {
 	if retriever == nil {
 		return nil, fmt.Errorf("retriever is required")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	return &Knowledge{retriever: retriever, docStore: docStore, logger: logger}, nil
+	return &Knowledge{retriever: retriever, docStore: docStore, pool: pool, logger: logger}, nil
 }
 
 // RegisterKnowledge registers all knowledge search tools with Genkit.
@@ -92,7 +105,7 @@ func RegisterKnowledge(g *genkit.Genkit, kt *Knowledge) ([]ai.Tool, error) {
 		return nil, fmt.Errorf("genkit instance is required")
 	}
 	if kt == nil {
-		return nil, fmt.Errorf("Knowledge is required")
+		return nil, fmt.Errorf("knowledge instance is required")
 	}
 
 	tools := []ai.Tool{
@@ -132,14 +145,14 @@ func RegisterKnowledge(g *genkit.Genkit, kt *Knowledge) ([]ai.Tool, error) {
 	return tools, nil
 }
 
-// clampTopK validates topK and returns a value within [1, MaxTopK].
+// clampTopK validates topK and returns a value within [1, MaxKnowledgeTopK].
 // If topK <= 0, returns defaultVal.
 func clampTopK(topK, defaultVal int) int {
 	if topK <= 0 {
 		return defaultVal
 	}
-	if topK > MaxTopK {
-		return MaxTopK
+	if topK > MaxKnowledgeTopK {
+		return MaxKnowledgeTopK
 	}
 	return topK
 }
@@ -166,9 +179,15 @@ var sourceTypeFilters = map[string]string{
 // When ownerID is empty, only source_type filtering is applied.
 // When ownerID is valid, includes documents owned by the user OR legacy documents (NULL owner_id).
 //
-// SECURITY: ownerID is validated as UUID via uuid.Parse before interpolation.
-// UUID format guarantees only [0-9a-f-] characters reach the SQL filter,
-// preventing SQL injection via the owner_id parameter (CWE-89 defense-in-depth).
+// SECURITY (CWE-89 defense-in-depth): Three layers prevent SQL injection:
+//  1. sourceType is resolved from the pre-computed sourceTypeFilters map — no user input reaches SQL.
+//  2. ownerID is validated as UUID via uuid.Parse — only [0-9a-f-] characters pass.
+//  3. The string concatenation is required because the Genkit PostgreSQL plugin's
+//     RetrieverOptions.Filter field accepts a raw SQL string and does not support
+//     parameterized placeholders ($N).
+//
+// TECH DEBT: If the Genkit PostgreSQL plugin adds parameterized filter support,
+// migrate to parameterized queries and remove the UUID-format safety net.
 func ownerFilter(sourceType, ownerID string) (string, error) {
 	base, ok := sourceTypeFilters[sourceType]
 	if !ok {
@@ -182,6 +201,72 @@ func ownerFilter(sourceType, ownerID string) (string, error) {
 		return "", fmt.Errorf("invalid owner ID format: %w", err)
 	}
 	return base + " AND (owner_id = '" + ownerID + "' OR owner_id IS NULL)", nil
+}
+
+// injectionPatterns are substrings that indicate prompt injection attempts in knowledge content.
+// Checked case-insensitively. Phrases are chosen to be specific enough to avoid false positives
+// on legitimate content while catching common injection vectors.
+var injectionPatterns = []string{
+	"ignore previous",
+	"ignore all previous",
+	"ignore above",
+	"forget your instructions",
+	"forget everything",
+	"forget above",
+	"you are now",
+	"new instructions",
+	"system prompt",
+	"disregard previous",
+	"disregard all",
+	"override your",
+	"override previous",
+	"jailbreak",
+}
+
+// containsInjection reports whether text contains prompt injection patterns.
+func containsInjection(text string) bool {
+	lower := strings.ToLower(text)
+	for _, pattern := range injectionPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// injectionMarkers are delimiter strings stripped from knowledge content.
+// These are commonly used to frame injected instructions.
+var injectionMarkers = []string{
+	"===",
+	"<<<",
+	">>>",
+	"<system>",
+	"</system>",
+	"<instructions>",
+	"</instructions>",
+	"<prompt>",
+	"</prompt>",
+}
+
+// stripInjectionMarkers removes injection marker strings from content.
+func stripInjectionMarkers(content string) string {
+	for _, marker := range injectionMarkers {
+		content = strings.ReplaceAll(content, marker, "")
+	}
+	return strings.TrimSpace(content)
+}
+
+// countUserDocs returns the number of user-created documents owned by the given owner.
+func (k *Knowledge) countUserDocs(ctx context.Context, ownerID string) (int64, error) {
+	var count int64
+	err := k.pool.QueryRow(ctx,
+		"SELECT count(*) FROM documents WHERE owner_id = $1 AND source_type = 'file'",
+		ownerID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting user documents: %w", err)
+	}
+	return count, nil
 }
 
 // search performs a knowledge search with the given source type filter.
@@ -219,7 +304,17 @@ func (k *Knowledge) search(ctx context.Context, query string, topK int, sourceTy
 
 // SearchHistory searches conversation history using semantic similarity.
 func (k *Knowledge) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
-	k.logger.Info("SearchHistory called", "query", input.Query, "topK", input.TopK)
+	k.logger.Debug("SearchHistory called", "query", input.Query, "topK", input.TopK)
+
+	if len(input.Query) > MaxKnowledgeQueryLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("query length %d exceeds maximum %d bytes", len(input.Query), MaxKnowledgeQueryLength),
+			},
+		}, nil
+	}
 
 	topK := clampTopK(input.TopK, DefaultHistoryTopK)
 
@@ -230,12 +325,12 @@ func (k *Knowledge) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearchInpu
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("searching history: %v", err),
+				Message: "search failed",
 			},
 		}, nil
 	}
 
-	k.logger.Info("SearchHistory succeeded", "query", input.Query, "result_count", len(results))
+	k.logger.Debug("SearchHistory succeeded", "query", input.Query, "result_count", len(results))
 	return Result{
 		Status: StatusSuccess,
 		Data: map[string]any{
@@ -248,7 +343,17 @@ func (k *Knowledge) SearchHistory(ctx *ai.ToolContext, input KnowledgeSearchInpu
 
 // SearchDocuments searches indexed documents using semantic similarity.
 func (k *Knowledge) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
-	k.logger.Info("SearchDocuments called", "query", input.Query, "topK", input.TopK)
+	k.logger.Debug("SearchDocuments called", "query", input.Query, "topK", input.TopK)
+
+	if len(input.Query) > MaxKnowledgeQueryLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("query length %d exceeds maximum %d bytes", len(input.Query), MaxKnowledgeQueryLength),
+			},
+		}, nil
+	}
 
 	topK := clampTopK(input.TopK, DefaultDocumentsTopK)
 
@@ -259,12 +364,12 @@ func (k *Knowledge) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSearchIn
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("searching documents: %v", err),
+				Message: "search failed",
 			},
 		}, nil
 	}
 
-	k.logger.Info("SearchDocuments succeeded", "query", input.Query, "result_count", len(results))
+	k.logger.Debug("SearchDocuments succeeded", "query", input.Query, "result_count", len(results))
 	return Result{
 		Status: StatusSuccess,
 		Data: map[string]any{
@@ -276,8 +381,10 @@ func (k *Knowledge) SearchDocuments(ctx *ai.ToolContext, input KnowledgeSearchIn
 }
 
 // StoreKnowledge stores a new knowledge document for later retrieval.
+// Content is validated for secrets, prompt injection patterns, and injection markers.
+// Per-user document count is enforced when pool and owner ID are available.
 func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInput) (Result, error) {
-	k.logger.Info("StoreKnowledge called", "title", input.Title)
+	k.logger.Debug("StoreKnowledge called", "title", input.Title)
 
 	if k.docStore == nil {
 		return Result{
@@ -326,6 +433,69 @@ func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInpu
 		}, nil
 	}
 
+	// Block content containing secrets (API keys, tokens, passwords).
+	if memory.ContainsSecrets(input.Title) || memory.ContainsSecrets(input.Content) {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeSecurity,
+				Message: "content contains sensitive data (API keys, tokens, passwords)",
+			},
+		}, nil
+	}
+
+	// Block prompt injection patterns in title or content.
+	if containsInjection(input.Title) || containsInjection(input.Content) {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeSecurity,
+				Message: "content contains prohibited instruction patterns",
+			},
+		}, nil
+	}
+
+	// Strip injection markers from content (defense-in-depth).
+	cleanContent := stripInjectionMarkers(input.Content)
+	if cleanContent == "" {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: "content is empty after sanitization",
+			},
+		}, nil
+	}
+
+	// Enforce per-user document count limit when pool and owner are available.
+	// NOTE: This is a best-effort soft limit for DoS prevention. The count check
+	// and subsequent index write are not atomic (TOCTOU), so concurrent requests
+	// may slightly exceed the limit. This is acceptable because the limit is a
+	// resource protection measure, not a billing/compliance constraint.
+	ownerID := OwnerIDFromContext(ctx)
+	if k.pool != nil && ownerID != "" {
+		count, err := k.countUserDocs(ctx, ownerID)
+		if err != nil {
+			k.logger.Warn("document count check failed", "owner_id", ownerID, "error", err)
+			return Result{
+				Status: StatusError,
+				Error: &Error{
+					Code:    ErrCodeExecution,
+					Message: "storage check failed",
+				},
+			}, nil
+		}
+		if count >= MaxDocsPerUser {
+			return Result{
+				Status: StatusError,
+				Error: &Error{
+					Code:    ErrCodeValidation,
+					Message: fmt.Sprintf("document limit reached (%d/%d); delete old entries before adding new ones", count, MaxDocsPerUser),
+				},
+			}, nil
+		}
+	}
+
 	// Generate a deterministic document ID from the title using SHA-256.
 	// Changing the title creates a new document; the old entry remains.
 	// Prefix "user:" namespaces user-created knowledge (vs "system:" for built-in).
@@ -335,27 +505,28 @@ func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInpu
 		"id":          docID,
 		"source_type": rag.SourceTypeFile,
 		"title":       input.Title,
+		"source":      "user", // provenance: distinguishes user-created from system/web documents
 	}
 
 	// Tag document with owner for per-user isolation (RAG poisoning prevention).
-	if ownerID := OwnerIDFromContext(ctx); ownerID != "" {
+	if ownerID != "" {
 		metadata["owner_id"] = ownerID
 	}
 
-	doc := ai.DocumentFromText(input.Content, metadata)
+	doc := ai.DocumentFromText(cleanContent, metadata)
 
 	if err := k.docStore.Index(ctx, []*ai.Document{doc}); err != nil {
-		k.logger.Warn("StoreKnowledge failed", "title", input.Title, "error", err)
+		k.logger.Warn("knowledge storage failed", "title", input.Title, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("storing knowledge: %v", err),
+				Message: "storage failed",
 			},
 		}, nil
 	}
 
-	k.logger.Info("StoreKnowledge succeeded", "title", input.Title)
+	k.logger.Debug("StoreKnowledge succeeded", "title", input.Title, "owner_id", ownerID)
 	return Result{
 		Status: StatusSuccess,
 		Data: map[string]any{
@@ -367,7 +538,17 @@ func (k *Knowledge) StoreKnowledge(ctx *ai.ToolContext, input KnowledgeStoreInpu
 
 // SearchSystemKnowledge searches system knowledge base using semantic similarity.
 func (k *Knowledge) SearchSystemKnowledge(ctx *ai.ToolContext, input KnowledgeSearchInput) (Result, error) {
-	k.logger.Info("SearchSystemKnowledge called", "query", input.Query, "topK", input.TopK)
+	k.logger.Debug("SearchSystemKnowledge called", "query", input.Query, "topK", input.TopK)
+
+	if len(input.Query) > MaxKnowledgeQueryLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("query length %d exceeds maximum %d bytes", len(input.Query), MaxKnowledgeQueryLength),
+			},
+		}, nil
+	}
 
 	topK := clampTopK(input.TopK, DefaultSystemKnowledgeTopK)
 
@@ -378,12 +559,12 @@ func (k *Knowledge) SearchSystemKnowledge(ctx *ai.ToolContext, input KnowledgeSe
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeExecution,
-				Message: fmt.Sprintf("searching system knowledge: %v", err),
+				Message: "search failed",
 			},
 		}, nil
 	}
 
-	k.logger.Info("SearchSystemKnowledge succeeded", "query", input.Query, "result_count", len(results))
+	k.logger.Debug("SearchSystemKnowledge succeeded", "query", input.Query, "result_count", len(results))
 	return Result{
 		Status: StatusSuccess,
 		Data: map[string]any{

@@ -11,11 +11,22 @@ import (
 )
 
 // Context key types (unexported to prevent collisions).
+type requestIDCtxKey struct{}
 type sessionIDKey struct{}
 type userIDCtxKey struct{}
 
-var ctxKeySessionID = sessionIDKey{}
-var ctxKeyUserID = userIDCtxKey{}
+var (
+	ctxKeyRequestID = requestIDCtxKey{}
+	ctxKeySessionID = sessionIDKey{}
+	ctxKeyUserID    = userIDCtxKey{}
+)
+
+// requestIDFromContext retrieves the request ID from the request context.
+// Returns empty string if not found.
+func requestIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(ctxKeyRequestID).(string)
+	return id
+}
 
 // sessionIDFromContext retrieves the active session ID from the request context.
 // Returns uuid.Nil and false if not found.
@@ -99,6 +110,24 @@ func recoveryMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// requestIDMiddleware assigns a unique request ID to each request.
+// If the incoming X-Request-ID header contains a valid UUID, it is reused;
+// otherwise a new UUID v4 is generated. The ID is injected into the response
+// header and the request context.
+func requestIDMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := r.Header.Get("X-Request-ID")
+			if _, err := uuid.Parse(id); err != nil {
+				id = uuid.New().String()
+			}
+			w.Header().Set("X-Request-ID", id)
+			ctx := context.WithValue(r.Context(), ctxKeyRequestID, id)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // loggingMiddleware logs request details including latency, status, and response size.
 // Reuses an existing *loggingWriter from outer middleware (e.g., recoveryMiddleware)
 // to avoid double-wrapping the ResponseWriter.
@@ -119,14 +148,18 @@ func loggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 				status = http.StatusOK
 			}
 
-			logger.Debug("http request",
+			attrs := []any{
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", status,
 				"bytes", wrapper.bytesWritten,
 				"duration", time.Since(start),
 				"ip", r.RemoteAddr,
-			)
+			}
+			if rid := requestIDFromContext(r.Context()); rid != "" {
+				attrs = append(attrs, "request_id", rid)
+			}
+			logger.Debug("http request", attrs...)
 		})
 	}
 }

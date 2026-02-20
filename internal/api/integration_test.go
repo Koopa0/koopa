@@ -20,13 +20,14 @@ import (
 
 const testOwnerID = "test-user"
 
-// setupIntegrationSessionManager creates a sessionManager backed by a real PostgreSQL database.
+// setupIntegrationSessionManager creates a sessionManager backed by the shared PostgreSQL database.
+// Tables are truncated for isolation.
 func setupIntegrationSessionManager(t *testing.T) *sessionManager {
 	t.Helper()
 
-	db := testutil.SetupTestDB(t)
+	testutil.CleanTables(t, sharedDB.Pool)
 
-	store := session.New(sqlc.New(db.Pool), db.Pool, slog.New(slog.DiscardHandler))
+	store := session.New(sqlc.New(sharedDB.Pool), sharedDB.Pool, slog.New(slog.DiscardHandler))
 
 	return &sessionManager{
 		store:      store,
@@ -108,19 +109,25 @@ func TestGetSession_Success(t *testing.T) {
 		t.Fatalf("getSession(%s) status = %d, want %d\nbody: %s", sess.ID, w.Code, http.StatusOK, w.Body.String())
 	}
 
-	var resp map[string]string
+	var resp struct {
+		ID           string `json:"id"`
+		Title        string `json:"title"`
+		MessageCount int    `json:"messageCount"`
+		CreatedAt    string `json:"createdAt"`
+		UpdatedAt    string `json:"updatedAt"`
+	}
 	decodeData(t, w, &resp)
 
-	if resp["id"] != sess.ID.String() {
-		t.Errorf("getSession() id = %q, want %q", resp["id"], sess.ID.String())
+	if resp.ID != sess.ID.String() {
+		t.Errorf("getSession() id = %q, want %q", resp.ID, sess.ID.String())
 	}
-	if resp["title"] != "Test Session" {
-		t.Errorf("getSession() title = %q, want %q", resp["title"], "Test Session")
+	if resp.Title != "Test Session" {
+		t.Errorf("getSession() title = %q, want %q", resp.Title, "Test Session")
 	}
-	if resp["createdAt"] == "" {
+	if resp.CreatedAt == "" {
 		t.Error("getSession() expected createdAt in response")
 	}
-	if resp["updatedAt"] == "" {
+	if resp.UpdatedAt == "" {
 		t.Error("getSession() expected updatedAt in response")
 	}
 }
@@ -174,24 +181,31 @@ func TestListSessions_WithSession(t *testing.T) {
 	}
 
 	type sessionItem struct {
-		ID        string `json:"id"`
-		Title     string `json:"title"`
-		UpdatedAt string `json:"updatedAt"`
+		ID           string `json:"id"`
+		Title        string `json:"title"`
+		MessageCount int    `json:"messageCount"`
+		UpdatedAt    string `json:"updatedAt"`
 	}
-	var items []sessionItem
-	decodeData(t, w, &items)
+	var body struct {
+		Items []sessionItem `json:"items"`
+		Total int           `json:"total"`
+	}
+	decodeData(t, w, &body)
 
-	if len(items) != 1 {
-		t.Fatalf("listSessions() returned %d items, want 1", len(items))
+	if len(body.Items) != 1 {
+		t.Fatalf("listSessions() returned %d items, want 1", len(body.Items))
 	}
-	if items[0].ID != sess.ID.String() {
-		t.Errorf("listSessions() items[0].id = %q, want %q", items[0].ID, sess.ID.String())
+	if body.Items[0].ID != sess.ID.String() {
+		t.Errorf("listSessions() items[0].id = %q, want %q", body.Items[0].ID, sess.ID.String())
 	}
-	if items[0].Title != "My Chat" {
-		t.Errorf("listSessions() items[0].title = %q, want %q", items[0].Title, "My Chat")
+	if body.Items[0].Title != "My Chat" {
+		t.Errorf("listSessions() items[0].title = %q, want %q", body.Items[0].Title, "My Chat")
 	}
-	if items[0].UpdatedAt == "" {
+	if body.Items[0].UpdatedAt == "" {
 		t.Error("listSessions() expected updatedAt in item")
+	}
+	if body.Total != 1 {
+		t.Errorf("listSessions() total = %d, want 1", body.Total)
 	}
 }
 
@@ -218,21 +232,17 @@ func TestGetSessionMessages_Empty(t *testing.T) {
 		t.Fatalf("getSessionMessages(empty) status = %d, want %d\nbody: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	// Decode the raw envelope to check the data type
-	var env struct {
-		Data json.RawMessage `json:"data"`
+	var body struct {
+		Items []json.RawMessage `json:"items"`
+		Total int               `json:"total"`
 	}
-	if err := json.NewDecoder(w.Body).Decode(&env); err != nil {
-		t.Fatalf("decoding envelope: %v", err)
-	}
+	decodeData(t, w, &body)
 
-	var items []json.RawMessage
-	if err := json.Unmarshal(env.Data, &items); err != nil {
-		t.Fatalf("decoding data as array: %v", err)
+	if len(body.Items) != 0 {
+		t.Errorf("getSessionMessages(empty) returned %d items, want 0", len(body.Items))
 	}
-
-	if len(items) != 0 {
-		t.Errorf("getSessionMessages(empty) returned %d items, want 0", len(items))
+	if body.Total != 0 {
+		t.Errorf("getSessionMessages(empty) total = %d, want 0", body.Total)
 	}
 }
 
@@ -412,35 +422,41 @@ func TestGetSessionMessages_WithMessages(t *testing.T) {
 		Content   string `json:"content"`
 		CreatedAt string `json:"createdAt"`
 	}
-	var items []messageItem
-	decodeData(t, w, &items)
+	var body struct {
+		Items []messageItem `json:"items"`
+		Total int           `json:"total"`
+	}
+	decodeData(t, w, &body)
 
-	if len(items) != 2 {
-		t.Fatalf("getSessionMessages() returned %d items, want 2", len(items))
+	if len(body.Items) != 2 {
+		t.Fatalf("getSessionMessages() returned %d items, want 2", len(body.Items))
+	}
+	if body.Total != 2 {
+		t.Errorf("getSessionMessages() total = %d, want 2", body.Total)
 	}
 
 	// First message: user
-	if items[0].Role != "user" {
-		t.Errorf("getSessionMessages() items[0].role = %q, want %q", items[0].Role, "user")
+	if body.Items[0].Role != "user" {
+		t.Errorf("getSessionMessages() items[0].role = %q, want %q", body.Items[0].Role, "user")
 	}
-	if items[0].Content != "What is Go?" {
-		t.Errorf("getSessionMessages() items[0].content = %q, want %q", items[0].Content, "What is Go?")
+	if body.Items[0].Content != "What is Go?" {
+		t.Errorf("getSessionMessages() items[0].content = %q, want %q", body.Items[0].Content, "What is Go?")
 	}
-	if items[0].ID == "" {
+	if body.Items[0].ID == "" {
 		t.Error("getSessionMessages() items[0].id is empty")
 	}
-	if items[0].CreatedAt == "" {
+	if body.Items[0].CreatedAt == "" {
 		t.Error("getSessionMessages() items[0].createdAt is empty")
 	}
 
 	// Second message: model (normalizeRole converts "model" → "assistant" in DB)
-	if items[1].Role != "assistant" {
-		t.Errorf("getSessionMessages() items[1].role = %q, want %q", items[1].Role, "assistant")
+	if body.Items[1].Role != "assistant" {
+		t.Errorf("getSessionMessages() items[1].role = %q, want %q", body.Items[1].Role, "assistant")
 	}
-	if items[1].Content != "Go is a programming language." {
-		t.Errorf("getSessionMessages() items[1].content = %q, want %q", items[1].Content, "Go is a programming language.")
+	if body.Items[1].Content != "Go is a programming language." {
+		t.Errorf("getSessionMessages() items[1].content = %q, want %q", body.Items[1].Content, "Go is a programming language.")
 	}
-	if items[1].ID == "" {
+	if body.Items[1].ID == "" {
 		t.Error("getSessionMessages() items[1].id is empty")
 	}
 }

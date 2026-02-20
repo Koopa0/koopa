@@ -307,11 +307,14 @@ func (a *Agent) ExecuteStream(ctx context.Context, sessionID uuid.UUID, input st
 	historyCh := make(chan historyResult, 1)
 	memoryCh := make(chan memoryResult, 1)
 
+	// Goroutine exits after single channel send.
+	// Buffered channel (cap 1) prevents blocking if caller returns early on context error.
 	go func() {
 		msgs, err := a.sessions.History(ctx, sessionID)
 		historyCh <- historyResult{msgs, err}
 	}()
 
+	// Goroutine exits after single channel send. Early-return path when memories == nil.
 	go func() {
 		if a.memories == nil || ownerID == "" {
 			memoryCh <- memoryResult{}
@@ -612,12 +615,11 @@ func shallowCopyMap(m map[string]any) map[string]any {
 
 // Title generation constants.
 const (
-	titleMaxLength         = 50
 	titleGenerationTimeout = 5 * time.Second
 	titleInputMaxRunes     = 500
 )
 
-const titlePrompt = `Generate a concise title (max 50 characters) for a chat session based on this first message.
+var titlePrompt = fmt.Sprintf(`Generate a concise title (max %d characters) for a chat session based on this first message.`, session.TitleMaxLength) + `
 The title should capture the main topic or intent.
 Return ONLY the title text, no quotes, no explanations, no punctuation at the end.
 
@@ -656,8 +658,8 @@ func (a *Agent) GenerateTitle(ctx context.Context, userMessage string) string {
 	}
 
 	titleRunes := []rune(title)
-	if len(titleRunes) > titleMaxLength {
-		title = string(titleRunes[:titleMaxLength-3]) + "..."
+	if len(titleRunes) > session.TitleMaxLength {
+		title = string(titleRunes[:session.TitleMaxLength-3]) + "..."
 	}
 
 	return title

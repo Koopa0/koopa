@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/google/uuid"
@@ -34,7 +37,18 @@ func newTestChatHandlerWithSessions() *chatHandler {
 	}
 }
 
-func TestChatSend_URLEncoding(t *testing.T) {
+// storePendingQuery stores a query in the chatHandler's pending store for testing.
+// This simulates what send() does before stream() is called.
+func storePendingQuery(h *chatHandler, msgID, sessionID, query string) {
+	h.pendingQueries.Store(msgID, pendingQuery{
+		query:     query,
+		sessionID: sessionID,
+		createdAt: time.Now(),
+	})
+	h.pendingCount.Add(1)
+}
+
+func TestChatSend_PendingQueryStore(t *testing.T) {
 	sessionID := uuid.New()
 	content := "你好 world & foo=bar#hash?query"
 
@@ -46,7 +60,8 @@ func TestChatSend_URLEncoding(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
 
-	newTestChatHandler().send(w, r)
+	ch := newTestChatHandler()
+	ch.send(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("send() status = %d, want %d\nbody: %s", w.Code, http.StatusOK, w.Body.String())
@@ -60,20 +75,27 @@ func TestChatSend_URLEncoding(t *testing.T) {
 		t.Fatal("send() expected streamUrl in response")
 	}
 
-	// Parse the URL and verify query parameter is properly encoded
+	// SECURITY: Verify query content is NOT in the URL (CWE-284).
 	parsed, err := url.Parse(streamURL)
 	if err != nil {
 		t.Fatalf("streamUrl is not a valid URL: %v", err)
 	}
-
-	query := parsed.Query().Get("query")
-	if query != content {
-		t.Errorf("send() query = %q, want %q", query, content)
+	if parsed.Query().Get("query") != "" {
+		t.Error("send() streamUrl should NOT contain query parameter (PII leakage risk)")
 	}
 
-	// Verify the raw URL doesn't contain unencoded special characters
-	if bytes.ContainsAny([]byte(parsed.RawQuery), " #") {
-		t.Errorf("send() raw query contains unencoded characters: %q", parsed.RawQuery)
+	// Verify the query is stored server-side in pendingQueries.
+	msgID := resp["msgId"]
+	val, ok := ch.pendingQueries.Load(msgID)
+	if !ok {
+		t.Fatal("send() did not store pending query")
+	}
+	pq := val.(pendingQuery)
+	if pq.query != content {
+		t.Errorf("send() pending query = %q, want %q", pq.query, content)
+	}
+	if pq.sessionID != sessionID.String() {
+		t.Errorf("send() pending sessionID = %q, want %q", pq.sessionID, sessionID.String())
 	}
 }
 
@@ -243,24 +265,73 @@ func TestChatSend_ContentTooLong(t *testing.T) {
 	}
 }
 
-func TestStream_QueryTooLong(t *testing.T) {
-	ch := newTestChatHandler()
-	sessionID := uuid.New()
-	longQuery := strings.Repeat("x", maxChatContentLength+1)
+// TestLoadPendingQuery verifies the pending query store mechanics:
+// one-time use (LoadAndDelete), TTL expiry, and session mismatch rejection.
+func TestLoadPendingQuery(t *testing.T) {
+	t.Parallel()
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query="+url.QueryEscape(longQuery), nil)
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		ch := newTestChatHandler()
+		storePendingQuery(ch, "msg1", "sess1", "hello")
 
-	ch.stream(w, r)
+		query, ok := ch.loadPendingQuery("msg1", "sess1")
+		if !ok {
+			t.Fatal("loadPendingQuery() returned false, want true")
+		}
+		if query != "hello" {
+			t.Errorf("loadPendingQuery() query = %q, want %q", query, "hello")
+		}
+	})
 
-	if w.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("stream(>32K query) status = %d, want %d\nbody: %s", w.Code, http.StatusRequestEntityTooLarge, w.Body.String())
-	}
+	t.Run("one-time use", func(t *testing.T) {
+		t.Parallel()
+		ch := newTestChatHandler()
+		storePendingQuery(ch, "msg2", "sess2", "hello")
 
-	errResp := decodeErrorEnvelope(t, w)
-	if errResp.Code != "content_too_long" {
-		t.Errorf("stream(>32K query) code = %q, want %q", errResp.Code, "content_too_long")
-	}
+		// First load succeeds
+		if _, ok := ch.loadPendingQuery("msg2", "sess2"); !ok {
+			t.Fatal("loadPendingQuery() first call returned false")
+		}
+		// Second load fails (already consumed)
+		if _, ok := ch.loadPendingQuery("msg2", "sess2"); ok {
+			t.Error("loadPendingQuery() second call returned true, want false (one-time use)")
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		t.Parallel()
+		ch := newTestChatHandler()
+
+		if _, ok := ch.loadPendingQuery("nonexistent", "sess"); ok {
+			t.Error("loadPendingQuery(nonexistent) returned true, want false")
+		}
+	})
+
+	t.Run("session mismatch", func(t *testing.T) {
+		t.Parallel()
+		ch := newTestChatHandler()
+		storePendingQuery(ch, "msg3", "sess-a", "hello")
+
+		if _, ok := ch.loadPendingQuery("msg3", "sess-b"); ok {
+			t.Error("loadPendingQuery(wrong session) returned true, want false")
+		}
+	})
+
+	t.Run("expired", func(t *testing.T) {
+		t.Parallel()
+		ch := newTestChatHandler()
+		// Store with a creation time beyond TTL
+		ch.pendingQueries.Store("msg4", pendingQuery{
+			query:     "old query",
+			sessionID: "sess4",
+			createdAt: time.Now().Add(-(pendingQueryTTL + time.Second)),
+		})
+
+		if _, ok := ch.loadPendingQuery("msg4", "sess4"); ok {
+			t.Error("loadPendingQuery(expired) returned true, want false")
+		}
+	})
 }
 
 func TestChatSend_OwnershipDenied(t *testing.T) {
@@ -341,19 +412,19 @@ func TestStream_MissingParams(t *testing.T) {
 	ch := newTestChatHandler()
 
 	tests := []struct {
-		name  string
-		query string
+		name     string
+		urlQuery string
+		wantCode string
 	}{
-		{name: "missing all", query: ""},
-		{name: "missing session_id and query", query: "?msgId=abc"},
-		{name: "missing msgId and query", query: "?session_id=abc"},
-		{name: "missing query", query: "?msgId=abc&session_id=def"},
+		{name: "missing all", urlQuery: "", wantCode: "missing_params"},
+		{name: "missing session_id", urlQuery: "?msgId=abc", wantCode: "missing_params"},
+		{name: "missing msgId", urlQuery: "?session_id=abc", wantCode: "missing_params"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream"+tt.query, nil)
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream"+tt.urlQuery, nil)
 
 			ch.stream(w, r)
 
@@ -362,19 +433,40 @@ func TestStream_MissingParams(t *testing.T) {
 			}
 
 			errResp := decodeErrorEnvelope(t, w)
-			if errResp.Code != "missing_params" {
-				t.Errorf("stream(%s) code = %q, want %q", tt.name, errResp.Code, "missing_params")
+			if errResp.Code != tt.wantCode {
+				t.Errorf("stream(%s) code = %q, want %q", tt.name, errResp.Code, tt.wantCode)
 			}
 		})
+	}
+}
+
+func TestStream_NoPendingQuery(t *testing.T) {
+	ch := newTestChatHandler()
+	sessionID := uuid.New()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet,
+		"/api/v1/chat/stream?msgId=nonexistent&session_id="+sessionID.String(), nil)
+
+	ch.stream(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("stream(no pending) status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "query_not_found" {
+		t.Errorf("stream(no pending) code = %q, want %q", errResp.Code, "query_not_found")
 	}
 }
 
 func TestStream_SSEHeaders(t *testing.T) {
 	ch := newTestChatHandler() // flow is nil → error event (headers still set)
 	sessionID := uuid.New()
+	storePendingQuery(ch, "m1", sessionID.String(), "hi")
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String(), nil)
 
 	ch.stream(w, r)
 
@@ -395,9 +487,10 @@ func TestStream_SSEHeaders(t *testing.T) {
 func TestStream_NilFlow(t *testing.T) {
 	ch := newTestChatHandler() // flow is nil → error SSE event
 	sessionID := uuid.New()
+	storePendingQuery(ch, "m1", sessionID.String(), "hello")
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hello", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String(), nil)
 
 	ch.stream(w, r)
 
@@ -470,12 +563,13 @@ func TestSSEEvent_MarshalError(t *testing.T) {
 func TestStream_NilFlow_ContextCanceled(t *testing.T) {
 	ch := newTestChatHandler() // flow is nil
 	sessionID := uuid.New()
+	storePendingQuery(ch, "m1", sessionID.String(), "hi")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String(), nil)
 	r = r.WithContext(ctx)
 
 	ch.stream(w, r)
@@ -522,7 +616,7 @@ func TestStream_OwnershipDenied(t *testing.T) {
 	sessionID := uuid.New()
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String(), nil)
 
 	ch.stream(w, r)
 
@@ -537,7 +631,7 @@ func TestStream_NoUser(t *testing.T) {
 	sessionID := uuid.New()
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String()+"&query=hi", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?msgId=m1&session_id="+sessionID.String(), nil)
 	// No user in context
 
 	ch.stream(w, r)
@@ -814,10 +908,11 @@ func TestStreamWithFlow(t *testing.T) {
 				flow:   testFlow,
 				// sessions is nil — ownership skipped for unit tests
 			}
+			storePendingQuery(ch, "m1", sessionIDStr, "test")
 
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet,
-				"/api/v1/chat/stream?msgId=m1&session_id="+sessionIDStr+"&query=test", nil)
+				"/api/v1/chat/stream?msgId=m1&session_id="+sessionIDStr, nil)
 
 			ch.stream(w, r)
 
@@ -874,5 +969,307 @@ func TestStreamWithFlow(t *testing.T) {
 				t.Errorf("stream(%s) got %d error events, want 0", tt.name, len(errorEvents))
 			}
 		})
+	}
+}
+
+// TestChatSend_ConcurrentCapacity verifies that concurrent send() calls
+// correctly enforce the capacity limit using the CAS loop (H1 fix).
+// Under contention, the total entries stored must never exceed maxPendingQueries.
+func TestChatSend_ConcurrentCapacity(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestChatHandler()
+
+	// Set count just below the limit, leaving room for exactly 5 more entries.
+	const headroom = 5
+	ch.pendingCount.Store(maxPendingQueries - headroom)
+
+	// Launch more goroutines than headroom to create contention.
+	const goroutines = 20
+	results := make(chan int, goroutines) // collects HTTP status codes
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+
+			body, _ := json.Marshal(map[string]string{
+				"content":   "hello",
+				"sessionId": uuid.New().String(),
+			})
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+			ch.send(w, r)
+			results <- w.Code
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	var ok, rejected int
+	for code := range results {
+		switch code {
+		case http.StatusOK:
+			ok++
+		case http.StatusTooManyRequests:
+			rejected++
+		default:
+			t.Errorf("unexpected status code: %d", code)
+		}
+	}
+
+	// Exactly headroom requests should succeed; the rest must be rejected.
+	if ok != headroom {
+		t.Errorf("concurrent send(): %d succeeded, want exactly %d", ok, headroom)
+	}
+	if rejected != goroutines-headroom {
+		t.Errorf("concurrent send(): %d rejected, want %d", rejected, goroutines-headroom)
+	}
+
+	// Counter must be at the capacity limit (not over).
+	if got := ch.pendingCount.Load(); got != maxPendingQueries {
+		t.Errorf("pendingCount after concurrent send = %d, want %d", got, maxPendingQueries)
+	}
+}
+
+// TestCleanupAndConsumeRace verifies that when cleanExpiredPending and
+// loadPendingQuery race on the same entry, the counter decrements exactly once (H2 fix).
+// This ensures no counter drift from double-decrement.
+func TestCleanupAndConsumeRace(t *testing.T) {
+	t.Parallel()
+
+	// Repeat multiple times to increase chance of triggering the race.
+	for trial := range 50 {
+		ch := newTestChatHandler()
+
+		const n = 10
+		// Store entries that are "just expired" — eligible for both cleanup and consume.
+		for i := range n {
+			msgID := fmt.Sprintf("msg-%d-%d", trial, i)
+			ch.pendingQueries.Store(msgID, pendingQuery{
+				query:     "test",
+				sessionID: "sess",
+				createdAt: time.Now().Add(-(pendingQueryTTL + time.Millisecond)),
+			})
+			ch.pendingCount.Add(1)
+		}
+
+		if got := ch.pendingCount.Load(); got != n {
+			t.Fatalf("trial %d: initial pendingCount = %d, want %d", trial, got, n)
+		}
+
+		// Race: cleanup and consume goroutines run concurrently.
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			ch.cleanExpiredPending()
+		}()
+
+		go func() {
+			defer wg.Done()
+			for i := range n {
+				msgID := fmt.Sprintf("msg-%d-%d", trial, i)
+				ch.loadPendingQuery(msgID, "sess")
+			}
+		}()
+
+		wg.Wait()
+
+		// Counter must be exactly 0 — each entry decremented exactly once.
+		if got := ch.pendingCount.Load(); got != 0 {
+			t.Fatalf("trial %d: pendingCount after race = %d, want 0 (counter drift detected)", trial, got)
+		}
+	}
+}
+
+// TestChatSend_PendingCapacityLimit verifies that send() returns 429
+// when the pending query count reaches maxPendingQueries (F6/CWE-400).
+func TestChatSend_PendingCapacityLimit(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestChatHandler()
+
+	// Simulate capacity at the limit by setting the counter directly.
+	ch.pendingCount.Store(maxPendingQueries)
+
+	body, _ := json.Marshal(map[string]string{
+		"content":   "hello",
+		"sessionId": uuid.New().String(),
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+
+	ch.send(w, r)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("send(at capacity) status = %d, want %d\nbody: %s", w.Code, http.StatusTooManyRequests, w.Body.String())
+	}
+
+	errResp := decodeErrorEnvelope(t, w)
+	if errResp.Code != "too_many_pending" {
+		t.Errorf("send(at capacity) code = %q, want %q", errResp.Code, "too_many_pending")
+	}
+}
+
+// TestChatSend_PendingCapacityBelowLimit verifies that send() succeeds
+// when pending count is one below the limit.
+func TestChatSend_PendingCapacityBelowLimit(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestChatHandler()
+
+	// One below the limit should succeed.
+	ch.pendingCount.Store(maxPendingQueries - 1)
+
+	body, _ := json.Marshal(map[string]string{
+		"content":   "hello",
+		"sessionId": uuid.New().String(),
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/chat", bytes.NewReader(body))
+
+	ch.send(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("send(below capacity) status = %d, want %d\nbody: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Count should now be at the limit.
+	if got := ch.pendingCount.Load(); got != maxPendingQueries {
+		t.Errorf("pendingCount after send = %d, want %d", got, maxPendingQueries)
+	}
+}
+
+// TestPendingCount_SendAndConsume verifies that pendingCount tracks
+// store/load operations accurately.
+func TestPendingCount_SendAndConsume(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestChatHandler()
+
+	if got := ch.pendingCount.Load(); got != 0 {
+		t.Fatalf("initial pendingCount = %d, want 0", got)
+	}
+
+	// Store via helper (simulates send)
+	storePendingQuery(ch, "msg1", "sess1", "hello")
+	storePendingQuery(ch, "msg2", "sess2", "world")
+
+	if got := ch.pendingCount.Load(); got != 2 {
+		t.Fatalf("pendingCount after 2 stores = %d, want 2", got)
+	}
+
+	// Consume via loadPendingQuery (simulates stream)
+	if _, ok := ch.loadPendingQuery("msg1", "sess1"); !ok {
+		t.Fatal("loadPendingQuery(msg1) returned false")
+	}
+
+	if got := ch.pendingCount.Load(); got != 1 {
+		t.Errorf("pendingCount after 1 consume = %d, want 1", got)
+	}
+
+	// Consume second
+	if _, ok := ch.loadPendingQuery("msg2", "sess2"); !ok {
+		t.Fatal("loadPendingQuery(msg2) returned false")
+	}
+
+	if got := ch.pendingCount.Load(); got != 0 {
+		t.Errorf("pendingCount after 2 consumes = %d, want 0", got)
+	}
+}
+
+// TestCleanExpiredPending verifies that cleanExpiredPending removes expired
+// entries and decrements the counter correctly.
+func TestCleanExpiredPending(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestChatHandler()
+
+	// Store 3 queries: 2 expired, 1 fresh
+	ch.pendingQueries.Store("expired1", pendingQuery{
+		query:     "old1",
+		sessionID: "s1",
+		createdAt: time.Now().Add(-(pendingQueryTTL + 10*time.Second)),
+	})
+	ch.pendingQueries.Store("expired2", pendingQuery{
+		query:     "old2",
+		sessionID: "s2",
+		createdAt: time.Now().Add(-(pendingQueryTTL + 5*time.Second)),
+	})
+	ch.pendingQueries.Store("fresh1", pendingQuery{
+		query:     "new1",
+		sessionID: "s3",
+		createdAt: time.Now(),
+	})
+	ch.pendingCount.Store(3)
+
+	ch.cleanExpiredPending()
+
+	// Only fresh1 should remain
+	if got := ch.pendingCount.Load(); got != 1 {
+		t.Errorf("pendingCount after cleanup = %d, want 1", got)
+	}
+
+	if _, ok := ch.pendingQueries.Load("expired1"); ok {
+		t.Error("expired1 should have been cleaned")
+	}
+	if _, ok := ch.pendingQueries.Load("expired2"); ok {
+		t.Error("expired2 should have been cleaned")
+	}
+	if _, ok := ch.pendingQueries.Load("fresh1"); !ok {
+		t.Error("fresh1 should NOT have been cleaned")
+	}
+}
+
+// TestCleanExpiredPending_InvalidType verifies that entries with unexpected
+// types are cleaned up.
+func TestCleanExpiredPending_InvalidType(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestChatHandler()
+
+	// Store an invalid type (not pendingQuery)
+	ch.pendingQueries.Store("bad", "not a pendingQuery")
+	ch.pendingCount.Store(1)
+
+	ch.cleanExpiredPending()
+
+	if got := ch.pendingCount.Load(); got != 0 {
+		t.Errorf("pendingCount after cleanup = %d, want 0", got)
+	}
+	if _, ok := ch.pendingQueries.Load("bad"); ok {
+		t.Error("invalid-type entry should have been cleaned")
+	}
+}
+
+// TestStartPendingCleanup verifies that the background cleanup goroutine
+// stops when the context is canceled.
+func TestStartPendingCleanup(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestChatHandler()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		ch.startPendingCleanup(ctx)
+		close(done)
+	}()
+
+	// Cancel the context — goroutine should exit
+	cancel()
+
+	select {
+	case <-done:
+		// Goroutine exited cleanly
+	case <-time.After(2 * time.Second):
+		t.Fatal("startPendingCleanup did not exit after context cancel")
 	}
 }

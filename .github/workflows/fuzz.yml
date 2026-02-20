@@ -7,17 +7,45 @@ on:
   workflow_dispatch: # Allow manual trigger
 
 jobs:
-  fuzz:
-    name: Fuzz Tests
+  security-fuzz:
+    name: Security Fuzz
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        fuzz-target:
-          - FuzzPathValidation
-          - FuzzPathValidationWithSymlinks
-          - FuzzCommandValidation
-          - FuzzURLValidation
+        include:
+          # internal/security/ — core validators
+          - target: FuzzPathValidation
+            package: ./internal/security/
+          - target: FuzzPathValidationWithSymlinks
+            package: ./internal/security/
+          - target: FuzzCommandValidation
+            package: ./internal/security/
+          - target: FuzzURLValidation
+            package: ./internal/security/
+          - target: FuzzSafeDialContext
+            package: ./internal/security/
+          # internal/tools/ — tool-level security
+          - target: FuzzPathTraversal
+            package: ./internal/tools/
+          - target: FuzzSSRFBypass
+            package: ./internal/tools/
+          - target: FuzzCommandInjection
+            package: ./internal/tools/
+          - target: FuzzContainsInjection
+            package: ./internal/tools/
+          - target: FuzzEnvVarBypass
+            package: ./internal/tools/
+          # internal/memory/ — secret detection
+          - target: FuzzContainsSecrets
+            package: ./internal/memory/
+          # internal/api/ — auth/CSRF
+          - target: FuzzCheckCSRF
+            package: ./internal/api/
+          - target: FuzzCheckPreSessionCSRF
+            package: ./internal/api/
+          - target: FuzzVerifySignedUID
+            package: ./internal/api/
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,5 +55,5 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Run ${{ matrix.fuzz-target }}
-        run: go test -fuzz=${{ matrix.fuzz-target }} -fuzztime=30s ./internal/security/
+      - name: Run ${{ matrix.target }}
+        run: go test -fuzz=${{ matrix.target }} -fuzztime=30s ${{ matrix.package }}

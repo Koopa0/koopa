@@ -182,7 +182,7 @@ func setupChatFlow(t *testing.T) (*chatFlowSetup, func()) {
 	}
 
 	// Create and register knowledge tools
-	kt, err := tools.NewKnowledge(retriever, nil, logger)
+	kt, err := tools.NewKnowledge(retriever, nil, nil, logger)
 	if err != nil {
 		pool.Close()
 		cancel()

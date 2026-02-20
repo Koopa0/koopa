@@ -43,6 +43,14 @@ const (
 // This prevents OOM when reading large files into memory.
 const MaxReadFileSize = 10 * 1024 * 1024
 
+// MaxPathLength is the maximum allowed file path length (4096 bytes).
+// Matches Linux PATH_MAX. Prevents DoS via extremely long paths.
+const MaxPathLength = 4096
+
+// MaxWriteContentSize is the maximum content size for WriteFile (1 MB).
+// Prevents OOM and disk abuse from extremely large write payloads.
+const MaxWriteContentSize = 1 * 1024 * 1024
+
 // ReadFileInput defines input for read_file tool.
 type ReadFileInput struct {
 	Path string `json:"path" jsonschema_description:"The file path to read (absolute or relative)"`
@@ -135,21 +143,32 @@ func RegisterFile(g *genkit.Genkit, ft *File) ([]ai.Tool, error) {
 				"Use this to: check if a file exists, verify file size before reading, "+
 				"determine file type without opening it. "+
 				"More efficient than read_file when you only need metadata.",
-			WithEvents(FileInfoName, ft.GetFileInfo)),
+			WithEvents(FileInfoName, ft.FileInfo)),
 	}, nil
 }
 
 // ReadFile reads and returns the complete content of a file with security validation.
 func (f *File) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) {
-	f.logger.Info("ReadFile called", "path", input.Path)
+	f.logger.Debug("ReadFile called", "path", input.Path)
+
+	if len(input.Path) > MaxPathLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("path length %d exceeds maximum %d bytes", len(input.Path), MaxPathLength),
+			},
+		}, nil
+	}
 
 	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
+		f.logger.Warn("path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("validating path: %v", err),
+				Message: "path validation failed",
 			},
 		}, nil
 	}
@@ -165,11 +184,12 @@ func (f *File) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) 
 				},
 			}, nil
 		}
+		f.logger.Warn("file open failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to open file: %v", err),
+				Message: "file read failed",
 			},
 		}, nil
 	}
@@ -177,11 +197,12 @@ func (f *File) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) 
 
 	info, err := file.Stat()
 	if err != nil {
+		f.logger.Warn("file stat failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to stat file: %v", err),
+				Message: "file read failed",
 			},
 		}, nil
 	}
@@ -198,11 +219,12 @@ func (f *File) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) 
 
 	content, err := io.ReadAll(io.LimitReader(file, MaxReadFileSize))
 	if err != nil {
+		f.logger.Warn("file read failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to read file: %v", err),
+				Message: "file read failed",
 			},
 		}, nil
 	}
@@ -219,26 +241,48 @@ func (f *File) ReadFile(_ *ai.ToolContext, input ReadFileInput) (Result, error) 
 
 // WriteFile writes content to a file with security validation.
 func (f *File) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Result, error) {
-	f.logger.Info("WriteFile called", "path", input.Path)
+	f.logger.Debug("WriteFile called", "path", input.Path)
+
+	if len(input.Path) > MaxPathLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("path length %d exceeds maximum %d bytes", len(input.Path), MaxPathLength),
+			},
+		}, nil
+	}
+
+	if len(input.Content) > MaxWriteContentSize {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("content size %d exceeds maximum %d bytes", len(input.Content), MaxWriteContentSize),
+			},
+		}, nil
+	}
 
 	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
+		f.logger.Warn("path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("validating path: %v", err),
+				Message: "path validation failed",
 			},
 		}, nil
 	}
 
 	dir := filepath.Dir(safePath)
 	if mkdirErr := os.MkdirAll(dir, 0o750); mkdirErr != nil {
+		f.logger.Warn("directory creation failed", "dir", dir, "error", mkdirErr)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to create directory: %v", mkdirErr),
+				Message: "file write failed",
 			},
 		}, nil
 	}
@@ -246,22 +290,24 @@ func (f *File) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Result, error
 	// #nosec G304 - safePath is validated
 	file, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
+		f.logger.Warn("file open failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to open file: %v", err),
+				Message: "file write failed",
 			},
 		}, nil
 	}
 	defer func() { _ = file.Close() }()
 
 	if _, err := file.WriteString(input.Content); err != nil {
+		f.logger.Warn("file write failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to write file: %v", err),
+				Message: "file write failed",
 			},
 		}, nil
 	}
@@ -277,26 +323,38 @@ func (f *File) WriteFile(_ *ai.ToolContext, input WriteFileInput) (Result, error
 
 // ListFiles lists files in a directory.
 func (f *File) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Result, error) {
-	f.logger.Info("ListFiles called", "path", input.Path)
+	f.logger.Debug("ListFiles called", "path", input.Path)
+
+	if len(input.Path) > MaxPathLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("path length %d exceeds maximum %d bytes", len(input.Path), MaxPathLength),
+			},
+		}, nil
+	}
 
 	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
+		f.logger.Warn("path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("validating path: %v", err),
+				Message: "path validation failed",
 			},
 		}, nil
 	}
 
 	entries, err := os.ReadDir(safePath)
 	if err != nil {
+		f.logger.Warn("directory read failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to read directory: %v", err),
+				Message: "directory listing failed",
 			},
 		}, nil
 	}
@@ -325,25 +383,37 @@ func (f *File) ListFiles(_ *ai.ToolContext, input ListFilesInput) (Result, error
 
 // DeleteFile permanently deletes a file with security validation.
 func (f *File) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Result, error) {
-	f.logger.Info("DeleteFile called", "path", input.Path)
+	f.logger.Debug("DeleteFile called", "path", input.Path)
+
+	if len(input.Path) > MaxPathLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("path length %d exceeds maximum %d bytes", len(input.Path), MaxPathLength),
+			},
+		}, nil
+	}
 
 	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
+		f.logger.Warn("path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("validating path: %v", err),
+				Message: "path validation failed",
 			},
 		}, nil
 	}
 
 	if err := os.Remove(safePath); err != nil {
+		f.logger.Warn("file deletion failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to delete file: %v", err),
+				Message: "file deletion failed",
 			},
 		}, nil
 	}
@@ -356,28 +426,49 @@ func (f *File) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Result, err
 	}, nil
 }
 
-// GetFileInfo gets file metadata.
-func (f *File) GetFileInfo(_ *ai.ToolContext, input GetFileInfoInput) (Result, error) {
-	f.logger.Info("GetFileInfo called", "path", input.Path)
+// FileInfo gets file metadata.
+func (f *File) FileInfo(_ *ai.ToolContext, input GetFileInfoInput) (Result, error) {
+	f.logger.Debug("FileInfo called", "path", input.Path)
+
+	if len(input.Path) > MaxPathLength {
+		return Result{
+			Status: StatusError,
+			Error: &Error{
+				Code:    ErrCodeValidation,
+				Message: fmt.Sprintf("path length %d exceeds maximum %d bytes", len(input.Path), MaxPathLength),
+			},
+		}, nil
+	}
 
 	safePath, err := f.pathVal.Validate(input.Path)
 	if err != nil {
+		f.logger.Warn("path validation failed", "path", input.Path, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeSecurity,
-				Message: fmt.Sprintf("validating path: %v", err),
+				Message: "path validation failed",
 			},
 		}, nil
 	}
 
 	info, err := os.Stat(safePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return Result{
+				Status: StatusError,
+				Error: &Error{
+					Code:    ErrCodeNotFound,
+					Message: fmt.Sprintf("file not found: %s", input.Path),
+				},
+			}, nil
+		}
+		f.logger.Warn("file info failed", "path", safePath, "error", err)
 		return Result{
 			Status: StatusError,
 			Error: &Error{
 				Code:    ErrCodeIO,
-				Message: fmt.Sprintf("unable to get file info: %v", err),
+				Message: "file info failed",
 			},
 		}, nil
 	}

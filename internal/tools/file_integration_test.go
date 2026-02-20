@@ -100,8 +100,8 @@ func TestFile_ReadFile_PathSecurity(t *testing.T) {
 			if got, want := result.Error.Code, tt.wantErrCode; got != want {
 				t.Errorf("ReadFile(%q).Error.Code = %v, want %v", tt.path, got, want)
 			}
-			if !strings.Contains(result.Error.Message, "validating path") {
-				t.Errorf("ReadFile(%q).Error.Message = %q, want contains %q", tt.path, result.Error.Message, "validating path")
+			if !strings.Contains(result.Error.Message, "path validation failed") {
+				t.Errorf("ReadFile(%q).Error.Message = %q, want contains %q", tt.path, result.Error.Message, "path validation failed")
 			}
 		})
 	}
@@ -202,6 +202,94 @@ func TestFile_ReadFile_FileTooLarge(t *testing.T) {
 	}
 	if !strings.Contains(result.Error.Message, "exceeds maximum") {
 		t.Errorf("ReadFile(%q).Error.Message = %q, want contains %q", largePath, result.Error.Message, "exceeds maximum")
+	}
+}
+
+func TestFile_WriteFile_ContentTooLarge(t *testing.T) {
+	t.Parallel()
+
+	h := newfileTools(t)
+	ft := h.createFile()
+
+	testPath := filepath.Join(h.tempDir, "large-write.txt")
+	largeContent := strings.Repeat("x", MaxWriteContentSize+1)
+
+	result, err := ft.WriteFile(nil, WriteFileInput{
+		Path:    testPath,
+		Content: largeContent,
+	})
+
+	if err != nil {
+		t.Fatalf("WriteFile(large content) unexpected Go error: %v", err)
+	}
+	if got, want := result.Status, StatusError; got != want {
+		t.Errorf("WriteFile(large content).Status = %v, want %v", got, want)
+	}
+	if result.Error == nil {
+		t.Fatal("WriteFile(large content).Error = nil, want non-nil")
+	}
+	if got, want := result.Error.Code, ErrCodeValidation; got != want {
+		t.Errorf("WriteFile(large content).Error.Code = %v, want %v", got, want)
+	}
+	if !strings.Contains(result.Error.Message, "exceeds maximum") {
+		t.Errorf("WriteFile(large content).Error.Message = %q, want contains %q", result.Error.Message, "exceeds maximum")
+	}
+
+	// Verify file was NOT created
+	if _, statErr := os.Stat(testPath); !os.IsNotExist(statErr) {
+		t.Error("WriteFile(large content) created file, want no file created")
+	}
+}
+
+func TestFile_WriteFile_ContentAtLimit(t *testing.T) {
+	t.Parallel()
+
+	h := newfileTools(t)
+	ft := h.createFile()
+
+	testPath := filepath.Join(h.tempDir, "at-limit.txt")
+	atLimitContent := strings.Repeat("x", MaxWriteContentSize)
+
+	result, err := ft.WriteFile(nil, WriteFileInput{
+		Path:    testPath,
+		Content: atLimitContent,
+	})
+
+	if err != nil {
+		t.Fatalf("WriteFile(content at limit) unexpected Go error: %v", err)
+	}
+	if got, want := result.Status, StatusSuccess; got != want {
+		t.Errorf("WriteFile(content at limit).Status = %v, want %v", got, want)
+	}
+	if result.Error != nil {
+		t.Errorf("WriteFile(content at limit).Error = %v, want nil", result.Error)
+	}
+}
+
+func TestFile_ReadFile_PathTooLong(t *testing.T) {
+	t.Parallel()
+
+	h := newfileTools(t)
+	ft := h.createFile()
+
+	longPath := filepath.Join(h.tempDir, strings.Repeat("a", MaxPathLength+1))
+
+	result, err := ft.ReadFile(nil, ReadFileInput{Path: longPath})
+
+	if err != nil {
+		t.Fatalf("ReadFile(long path) unexpected Go error: %v", err)
+	}
+	if got, want := result.Status, StatusError; got != want {
+		t.Errorf("ReadFile(long path).Status = %v, want %v", got, want)
+	}
+	if result.Error == nil {
+		t.Fatal("ReadFile(long path).Error = nil, want non-nil")
+	}
+	if got, want := result.Error.Code, ErrCodeValidation; got != want {
+		t.Errorf("ReadFile(long path).Error.Code = %v, want %v", got, want)
+	}
+	if !strings.Contains(result.Error.Message, "exceeds maximum") {
+		t.Errorf("ReadFile(long path).Error.Message = %q, want contains %q", result.Error.Message, "exceeds maximum")
 	}
 }
 
@@ -506,7 +594,7 @@ func TestFile_GetFileInfo_PathSecurity(t *testing.T) {
 	h := newfileTools(t)
 	ft := h.createFile()
 
-	result, err := ft.GetFileInfo(nil, GetFileInfoInput{Path: "/etc/passwd"})
+	result, err := ft.FileInfo(nil, GetFileInfoInput{Path: "/etc/passwd"})
 
 	if err != nil {
 		t.Fatalf("GetFileInfo(%q) unexpected Go error: %v (should not return Go error)", "/etc/passwd", err)
@@ -531,7 +619,7 @@ func TestFile_GetFileInfo_Success(t *testing.T) {
 	// Create a test file
 	testPath := h.createTestFile("info.txt", "test content")
 
-	result, err := ft.GetFileInfo(nil, GetFileInfoInput{Path: testPath})
+	result, err := ft.FileInfo(nil, GetFileInfoInput{Path: testPath})
 
 	if err != nil {
 		t.Fatalf("GetFileInfo(%q) unexpected error: %v", testPath, err)
@@ -550,5 +638,29 @@ func TestFile_GetFileInfo_Success(t *testing.T) {
 	}
 	if got, want := data["size"], int64(12); got != want {
 		t.Errorf("GetFileInfo(%q).Data[size] = %v, want %v (test content = 12 bytes)", testPath, got, want)
+	}
+}
+
+func TestFile_GetFileInfo_NotFound(t *testing.T) {
+	t.Parallel()
+
+	h := newfileTools(t)
+	ft := h.createFile()
+
+	nonExistentPath := filepath.Join(h.tempDir, "does-not-exist.txt")
+
+	result, err := ft.FileInfo(nil, GetFileInfoInput{Path: nonExistentPath})
+
+	if err != nil {
+		t.Fatalf("GetFileInfo(%q) unexpected Go error: %v (should not return Go error)", nonExistentPath, err)
+	}
+	if got, want := result.Status, StatusError; got != want {
+		t.Errorf("GetFileInfo(%q).Status = %v, want %v", nonExistentPath, got, want)
+	}
+	if result.Error == nil {
+		t.Fatal("GetFileInfo(non-existent).Error = nil, want non-nil")
+	}
+	if got, want := result.Error.Code, ErrCodeNotFound; got != want {
+		t.Errorf("GetFileInfo(%q).Error.Code = %v, want %v", nonExistentPath, got, want)
 	}
 }

@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -48,38 +49,61 @@ func SetupGoogleAI(tb testing.TB) *GoogleAISetup {
 		tb.Skip("GEMINI_API_KEY not set - skipping test requiring embedder")
 	}
 
+	setup, err := initGoogleAI()
+	if err != nil {
+		tb.Fatalf("initializing Google AI: %v", err)
+	}
+	return setup
+}
+
+// SetupGoogleAIForMain creates a Google AI embedder for use in TestMain.
+//
+// Unlike SetupGoogleAI, it returns an error instead of calling tb.Fatal.
+// Returns nil and a descriptive error if GEMINI_API_KEY is not set.
+//
+// Example:
+//
+//	func TestMain(m *testing.M) {
+//	    ai, err := testutil.SetupGoogleAIForMain()
+//	    if err != nil {
+//	        fmt.Println(err)
+//	        os.Exit(0) // skip all tests
+//	    }
+//	    // use ai.Embedder, ai.Genkit, ai.Logger
+//	}
+func SetupGoogleAIForMain() (*GoogleAISetup, error) {
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY not set - skipping tests requiring embedder")
+	}
+	return initGoogleAI()
+}
+
+// initGoogleAI initializes Genkit with Google AI plugin and creates an embedder.
+func initGoogleAI() (*GoogleAISetup, error) {
 	ctx := context.Background()
 
-	// Find project root to get absolute path to prompts directory
 	projectRoot, err := FindProjectRoot()
 	if err != nil {
-		tb.Fatalf("finding project root: %v", err)
+		return nil, fmt.Errorf("finding project root: %w", err)
 	}
 	promptsDir := filepath.Join(projectRoot, "prompts")
 
-	// Initialize Genkit with Google AI plugin
 	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
 		genkit.WithPromptDir(promptsDir))
 
-	// Nil check: genkit.Init returns nil on internal initialization failure
 	if g == nil {
-		tb.Fatal("genkit.Init returned nil")
+		return nil, fmt.Errorf("genkit.Init returned nil")
 	}
 
-	// Create embedder using config constant for maintainability
 	embedder := googlegenai.GoogleAIEmbedder(g, config.DefaultGeminiEmbedderModel)
-
-	// Nil check: GoogleAIEmbedder returns nil if model lookup fails
 	if embedder == nil {
-		tb.Fatalf("GoogleAIEmbedder returned nil for model %q", config.DefaultGeminiEmbedderModel)
+		return nil, fmt.Errorf("GoogleAIEmbedder returned nil for model %q", config.DefaultGeminiEmbedderModel)
 	}
-
-	logger := DiscardLogger()
 
 	return &GoogleAISetup{
 		Embedder: embedder,
 		Genkit:   g,
-		Logger:   logger,
-	}
+		Logger:   DiscardLogger(),
+	}, nil
 }

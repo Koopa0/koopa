@@ -401,6 +401,85 @@ func TestValidatePostgresSSLMode(t *testing.T) {
 	}
 }
 
+// TestValidateServe_DefaultPassword verifies that ValidateServe rejects the
+// default development password (koopa_dev_password) as a hard error.
+// The same password passes Validate() with only a warning for CLI/MCP modes.
+func TestValidateServe_DefaultPassword(t *testing.T) {
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
+
+	cfg := validBaseConfig("gemini")
+	cfg.PostgresPassword = "koopa_dev_password"
+	cfg.HMACSecret = "test-hmac-secret-that-is-at-least-32-characters-long"
+
+	err := cfg.ValidateServe()
+	if err == nil {
+		t.Fatal("ValidateServe() with default password error = nil, want ErrDefaultPassword")
+	}
+	if !errors.Is(err, ErrDefaultPassword) {
+		t.Errorf("ValidateServe() error = %v, want ErrDefaultPassword", err)
+	}
+
+	// Confirm the same config passes Validate() (non-serve mode allows default password with warning).
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() with default password unexpected error: %v", err)
+	}
+}
+
+// TestValidateServe_NonDefaultPassword verifies that ValidateServe succeeds
+// when the password is not the default value.
+func TestValidateServe_NonDefaultPassword(t *testing.T) {
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
+
+	cfg := validBaseConfig("gemini")
+	cfg.PostgresPassword = "production_secure_password"
+	cfg.HMACSecret = "test-hmac-secret-that-is-at-least-32-characters-long"
+
+	if err := cfg.ValidateServe(); err != nil {
+		t.Errorf("ValidateServe() with non-default password unexpected error: %v", err)
+	}
+}
+
+// TestValidateRetentionDays tests retention days range validation.
+func TestValidateRetentionDays(t *testing.T) {
+	cleanup := setEnvForProvider(t, "gemini")
+	defer cleanup()
+
+	tests := []struct {
+		name          string
+		retentionDays int
+		wantErr       bool
+	}{
+		{name: "disabled (zero)", retentionDays: 0},
+		{name: "valid min", retentionDays: 30},
+		{name: "valid mid", retentionDays: 365},
+		{name: "valid max", retentionDays: 3650},
+		{name: "invalid below min", retentionDays: 29, wantErr: true},
+		{name: "invalid one", retentionDays: 1, wantErr: true},
+		{name: "invalid above max", retentionDays: 3651, wantErr: true},
+		{name: "invalid negative", retentionDays: -1, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validBaseConfig("gemini")
+			cfg.RetentionDays = tt.retentionDays
+
+			err := cfg.Validate()
+			if tt.wantErr && err == nil {
+				t.Errorf("Validate() with RetentionDays=%d: expected error, got nil", tt.retentionDays)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("Validate() with RetentionDays=%d: unexpected error: %v", tt.retentionDays, err)
+			}
+			if tt.wantErr && err != nil && !errors.Is(err, ErrInvalidRetentionDays) {
+				t.Errorf("Validate() with RetentionDays=%d: error = %v, want ErrInvalidRetentionDays", tt.retentionDays, err)
+			}
+		})
+	}
+}
+
 // BenchmarkValidate benchmarks configuration validation.
 func BenchmarkValidate(b *testing.B) {
 	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
