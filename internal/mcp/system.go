@@ -6,8 +6,9 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/koopa0/koopa/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // registerSystem registers all system operation tools to the MCP server.
@@ -43,7 +44,7 @@ func (s *Server) registerSystem() error {
 	}, s.ExecuteCommand)
 
 	// get_env
-	getEnvSchema, err := jsonschema.For[tools.GetEnvInput](nil)
+	getEnvSchema, err := jsonschema.For[tools.EnvInput](nil)
 	if err != nil {
 		return fmt.Errorf("schema for %s: %w", tools.GetEnvName, err)
 	}
@@ -81,7 +82,7 @@ func (s *Server) ExecuteCommand(ctx context.Context, _ *mcp.CallToolRequest, inp
 }
 
 // Env handles the getEnv MCP tool call.
-func (s *Server) Env(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetEnvInput) (*mcp.CallToolResult, any, error) {
+func (s *Server) Env(ctx context.Context, _ *mcp.CallToolRequest, input tools.EnvInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
 	result, err := s.system.Env(toolCtx, input)
 	if err != nil {

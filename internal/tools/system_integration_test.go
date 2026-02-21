@@ -518,7 +518,7 @@ func TestSystem_GetEnv_SensitiveVariableBlocked(t *testing.T) {
 			h := newsystemTools(t)
 			st := h.createSystem()
 
-			result, err := st.Env(nil, GetEnvInput{Key: tt.envKey})
+			result, err := st.Env(nil, EnvInput{Key: tt.envKey})
 
 			// Go error only for infrastructure errors
 			if err != nil {
@@ -559,7 +559,7 @@ func TestSystem_GetEnv_SafeVariableAllowed(t *testing.T) {
 			h := newsystemTools(t)
 			st := h.createSystem()
 
-			result, err := st.Env(nil, GetEnvInput{Key: tt.envKey})
+			result, err := st.Env(nil, EnvInput{Key: tt.envKey})
 
 			if err != nil {
 				t.Fatalf("GetEnv(%q) unexpected error: %v (safe variable should not be blocked)", tt.envKey, err)
@@ -605,7 +605,7 @@ func TestSystem_GetEnv_CaseInsensitiveBlocking(t *testing.T) {
 			h := newsystemTools(t)
 			st := h.createSystem()
 
-			result, err := st.Env(nil, GetEnvInput{Key: tt.envKey})
+			result, err := st.Env(nil, EnvInput{Key: tt.envKey})
 
 			// Go error only for infrastructure errors
 			if err != nil {

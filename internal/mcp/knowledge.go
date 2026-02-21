@@ -6,8 +6,9 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/koopa0/koopa/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // registerKnowledge registers all knowledge tools to the MCP server.

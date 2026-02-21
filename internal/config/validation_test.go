@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"os"
 	"strings"
 	"testing"
 )
@@ -27,30 +26,12 @@ func validBaseConfig(provider string) *Config {
 		cfg.OllamaHost = "http://localhost:11434"
 	case "openai":
 		cfg.ModelName = "gpt-4o"
+		cfg.openaiAPIKey = "test-openai-key"
+	default:
+		// gemini is the default provider (including when provider is "")
+		cfg.geminiAPIKey = "test-gemini-key"
 	}
 	return cfg
-}
-
-// setEnvForProvider sets the required API key for the given provider.
-// Returns a cleanup function.
-func setEnvForProvider(t *testing.T, provider string) func() {
-	t.Helper()
-	switch provider {
-	case "gemini", "":
-		if err := os.Setenv("GEMINI_API_KEY", "test-api-key"); err != nil {
-			t.Fatalf("setting GEMINI_API_KEY: %v", err)
-		}
-		return func() { os.Unsetenv("GEMINI_API_KEY") }
-	case "openai":
-		if err := os.Setenv("OPENAI_API_KEY", "test-openai-key"); err != nil {
-			t.Fatalf("setting OPENAI_API_KEY: %v", err)
-		}
-		return func() { os.Unsetenv("OPENAI_API_KEY") }
-	case "ollama":
-		return func() {} // no key needed
-	default:
-		return func() {}
-	}
 }
 
 // TestValidateSuccess tests successful validation for each provider.
@@ -63,9 +44,6 @@ func TestValidateSuccess(t *testing.T) {
 			name = "default"
 		}
 		t.Run(name, func(t *testing.T) {
-			cleanup := setEnvForProvider(t, provider)
-			defer cleanup()
-
 			cfg := validBaseConfig(provider)
 			if err := cfg.Validate(); err != nil {
 				t.Errorf("Validate() unexpected error with valid config (provider %q): %v", provider, err)
@@ -93,21 +71,20 @@ func TestValidateProviderAPIKey(t *testing.T) {
 	tests := []struct {
 		name     string
 		provider string
-		envKey   string
 		wantErr  bool
 	}{
-		{name: "gemini missing key", provider: "gemini", envKey: "GEMINI_API_KEY", wantErr: true},
-		{name: "openai missing key", provider: "openai", envKey: "OPENAI_API_KEY", wantErr: true},
+		{name: "gemini missing key", provider: "gemini", wantErr: true},
+		{name: "openai missing key", provider: "openai", wantErr: true},
 		{name: "ollama no key needed", provider: "ollama", wantErr: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear all API keys
-			os.Unsetenv("GEMINI_API_KEY")
-			os.Unsetenv("OPENAI_API_KEY")
-
 			cfg := validBaseConfig(tt.provider)
+			// Clear API keys to test missing key scenario
+			cfg.geminiAPIKey = ""
+			cfg.openaiAPIKey = ""
+
 			err := cfg.Validate()
 
 			if tt.wantErr && err == nil {
@@ -125,9 +102,6 @@ func TestValidateProviderAPIKey(t *testing.T) {
 
 // TestValidateModelName tests model name validation.
 func TestValidateModelName(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	cfg := validBaseConfig("gemini")
 	cfg.ModelName = ""
 
@@ -142,9 +116,6 @@ func TestValidateModelName(t *testing.T) {
 
 // TestValidateTemperature tests temperature range validation.
 func TestValidateTemperature(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	tests := []struct {
 		name        string
 		temperature float32
@@ -180,9 +151,6 @@ func TestValidateTemperature(t *testing.T) {
 
 // TestValidateMaxTokens tests max tokens range validation.
 func TestValidateMaxTokens(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	tests := []struct {
 		name      string
 		maxTokens int
@@ -231,9 +199,6 @@ func TestValidateOllamaHost(t *testing.T) {
 
 // TestValidateEmbedderModel tests embedder model validation.
 func TestValidateEmbedderModel(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	cfg := validBaseConfig("gemini")
 	cfg.EmbedderModel = ""
 
@@ -248,9 +213,6 @@ func TestValidateEmbedderModel(t *testing.T) {
 
 // TestValidatePostgresHost tests PostgreSQL host validation.
 func TestValidatePostgresHost(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	cfg := validBaseConfig("gemini")
 	cfg.PostgresHost = ""
 
@@ -265,9 +227,6 @@ func TestValidatePostgresHost(t *testing.T) {
 
 // TestValidatePostgresPort tests PostgreSQL port validation.
 func TestValidatePostgresPort(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	tests := []struct {
 		name    string
 		port    int
@@ -302,9 +261,6 @@ func TestValidatePostgresPort(t *testing.T) {
 
 // TestValidatePostgresDBName tests PostgreSQL database name validation.
 func TestValidatePostgresDBName(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	cfg := validBaseConfig("gemini")
 	cfg.PostgresDBName = ""
 
@@ -319,9 +275,6 @@ func TestValidatePostgresDBName(t *testing.T) {
 
 // TestValidatePostgresPassword tests PostgreSQL password validation.
 func TestValidatePostgresPassword(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	tests := []struct {
 		name      string
 		password  string
@@ -363,9 +316,6 @@ func TestValidatePostgresPassword(t *testing.T) {
 
 // TestValidatePostgresSSLMode tests PostgreSQL SSL mode validation.
 func TestValidatePostgresSSLMode(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	tests := []struct {
 		name    string
 		sslMode string
@@ -405,9 +355,6 @@ func TestValidatePostgresSSLMode(t *testing.T) {
 // default development password (koopa_dev_password) as a hard error.
 // The same password passes Validate() with only a warning for CLI/MCP modes.
 func TestValidateServe_DefaultPassword(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	cfg := validBaseConfig("gemini")
 	cfg.PostgresPassword = "koopa_dev_password"
 	cfg.HMACSecret = "test-hmac-secret-that-is-at-least-32-characters-long"
@@ -429,9 +376,6 @@ func TestValidateServe_DefaultPassword(t *testing.T) {
 // TestValidateServe_NonDefaultPassword verifies that ValidateServe succeeds
 // when the password is not the default value.
 func TestValidateServe_NonDefaultPassword(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	cfg := validBaseConfig("gemini")
 	cfg.PostgresPassword = "production_secure_password"
 	cfg.HMACSecret = "test-hmac-secret-that-is-at-least-32-characters-long"
@@ -443,9 +387,6 @@ func TestValidateServe_NonDefaultPassword(t *testing.T) {
 
 // TestValidateRetentionDays tests retention days range validation.
 func TestValidateRetentionDays(t *testing.T) {
-	cleanup := setEnvForProvider(t, "gemini")
-	defer cleanup()
-
 	tests := []struct {
 		name          string
 		retentionDays int
@@ -482,11 +423,6 @@ func TestValidateRetentionDays(t *testing.T) {
 
 // BenchmarkValidate benchmarks configuration validation.
 func BenchmarkValidate(b *testing.B) {
-	if err := os.Setenv("GEMINI_API_KEY", "test-key"); err != nil {
-		b.Fatalf("setting GEMINI_API_KEY: %v", err)
-	}
-	defer os.Unsetenv("GEMINI_API_KEY")
-
 	cfg := validBaseConfig("gemini")
 
 	if err := cfg.Validate(); err != nil {

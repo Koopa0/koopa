@@ -6,8 +6,9 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/koopa0/koopa/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // registerNetwork registers all network operation tools to the MCP server.

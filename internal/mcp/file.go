@@ -6,8 +6,9 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/koopa0/koopa/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // registerFile registers all file operation tools to the MCP server.
@@ -68,7 +69,7 @@ func (s *Server) registerFile() error {
 	}, s.DeleteFile)
 
 	// get_file_info
-	getFileInfoSchema, err := jsonschema.For[tools.GetFileInfoInput](nil)
+	getFileInfoSchema, err := jsonschema.For[tools.FileInfoInput](nil)
 	if err != nil {
 		return fmt.Errorf("schema for %s: %w", tools.FileInfoName, err)
 	}
@@ -128,7 +129,7 @@ func (s *Server) DeleteFile(ctx context.Context, _ *mcp.CallToolRequest, input t
 }
 
 // FileInfo handles the getFileInfo MCP tool call.
-func (s *Server) FileInfo(ctx context.Context, _ *mcp.CallToolRequest, input tools.GetFileInfoInput) (*mcp.CallToolResult, any, error) {
+func (s *Server) FileInfo(ctx context.Context, _ *mcp.CallToolRequest, input tools.FileInfoInput) (*mcp.CallToolResult, any, error) {
 	toolCtx := &ai.ToolContext{Context: ctx}
 	result, err := s.file.FileInfo(toolCtx, input)
 	if err != nil {

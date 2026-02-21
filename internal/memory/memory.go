@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/koopa0/koopa/internal/rag"
 )
 
 // Sentinel errors for memory operations.
@@ -95,8 +97,10 @@ func (c Category) DecayLambda() float64 {
 	return math.Log(2) / halfLife
 }
 
-// VectorDimension matches the embedding column size (768).
-const VectorDimension int32 = 768
+// VectorDimension matches the embedding column size.
+// Canonical source: rag.VectorDimension. Aliased here to avoid changing
+// 20+ references in memory package tests.
+const VectorDimension = rag.VectorDimension
 
 // Two-threshold dedup constants.
 const (

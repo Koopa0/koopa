@@ -604,45 +604,48 @@ func (s *Store) UpdateAccess(ctx context.Context, ids []uuid.UUID) error {
 	return nil
 }
 
-// UpdateDecayScores recalculates decay_score for all active memories.
-// Processes per-category with batched UPDATEs to avoid large locks.
+// UpdateDecayScores recalculates decay_score for all active memories in a single query.
+// Uses a VALUES join to apply per-category lambda rates atomically.
 // Does NOT update updated_at to preserve the decay index.
 // Returns total number of rows updated.
 //
 // The Go-side formula must stay in sync with the SQL expression:
 //
 //	Go:  math.Exp(-lambda * hours)
-//	SQL: exp(-$1 * extract(epoch from (now() - updated_at)) / 3600.0)
+//	SQL: exp(-v.lambda * extract(epoch from (now() - m.updated_at)) / 3600.0)
 //
-// NOTE: The explicit $1::float8 cast is required because pgx v5 sends
+// NOTE: The explicit ::float8 cast is required because pgx v5 sends
 // Go float64 as an untyped parameter. When PostgreSQL sees `$1 = 0`,
 // it infers the parameter as integer, silently truncating 0.001925 → 0.
 // The cast forces float8 inference. See: github.com/jackc/pgx/issues/2125
 func (s *Store) UpdateDecayScores(ctx context.Context) (int, error) {
 	categories := AllCategories()
 
-	var total int
-	for _, cat := range categories {
-		lambda := cat.DecayLambda()
-
-		tag, err := s.pool.Exec(ctx,
-			`UPDATE memories
-			 SET decay_score = CASE
-			     WHEN $1::float8 = 0.0 THEN 1.0
-			     ELSE LEAST(1.0, exp(-$1::float8 * extract(epoch from (now() - updated_at)) / 3600.0))
-			 END
-			 WHERE active = true
-			   AND superseded_by IS NULL
-			   AND category = $2`,
-			lambda, string(cat),
-		)
-		if err != nil {
-			return total, fmt.Errorf("updating decay scores for %s: %w", cat, err)
-		}
-		total += int(tag.RowsAffected())
+	// Build VALUES clause and params for a single batched UPDATE.
+	// Each category contributes ($N::text, $N+1::float8) to the VALUES list.
+	params := make([]any, 0, len(categories)*2)
+	valueParts := make([]string, 0, len(categories))
+	for i, cat := range categories {
+		paramIdx := i*2 + 1 // $1, $3, $5, $7
+		valueParts = append(valueParts, fmt.Sprintf("($%d::text, $%d::float8)", paramIdx, paramIdx+1))
+		params = append(params, string(cat), cat.DecayLambda())
 	}
 
-	return total, nil
+	query := `UPDATE memories m
+		 SET decay_score = CASE
+		     WHEN v.lambda = 0.0 THEN 1.0
+		     ELSE LEAST(1.0, exp(-v.lambda * extract(epoch from (now() - m.updated_at)) / 3600.0))
+		 END
+		 FROM (VALUES ` + strings.Join(valueParts, ", ") + `) AS v(cat, lambda)
+		 WHERE m.active = true
+		   AND m.superseded_by IS NULL
+		   AND m.category = v.cat`
+
+	tag, err := s.pool.Exec(ctx, query, params...)
+	if err != nil {
+		return 0, fmt.Errorf("updating decay scores: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // DeleteStale soft-deletes memories past their expires_at timestamp.
@@ -1049,7 +1052,7 @@ func (s *Store) Memories(ctx context.Context, ownerID string, limit, offset int)
 	}
 	defer rows.Close()
 
-	var memories []*Memory
+	memories := make([]*Memory, 0)
 	var total int
 	for rows.Next() {
 		m := &Memory{}

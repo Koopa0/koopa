@@ -13,19 +13,18 @@ import (
 )
 
 const (
-	stateDir     = ".koopa"
-	stateFile    = "current_session"
-	lockTimeout  = 5 * time.Second // Maximum time to wait for lock
-	lockFileName = "current_session.lock"
+	defaultStateDir = ".koopa"
+	stateFile       = "current_session"
+	lockTimeout     = 5 * time.Second // Maximum time to wait for lock
+	lockFileName    = "current_session.lock"
 )
 
-// getStateDirPath returns the state directory path.
-// Checks KOOPA_STATE_DIR environment variable first (for testing),
-// then falls back to ~/.koopa (for production).
-func getStateDirPath() (string, error) {
-	// Check for test override
-	if testDir := os.Getenv("KOOPA_STATE_DIR"); testDir != "" {
-		return testDir, nil
+// resolveStateDir returns the state directory path.
+// If overrideDir is non-empty, it is used directly (for testing or custom config).
+// Otherwise falls back to ~/.koopa (production default).
+func resolveStateDir(overrideDir string) (string, error) {
+	if overrideDir != "" {
+		return overrideDir, nil
 	}
 
 	// Production: use ~/.koopa
@@ -34,22 +33,13 @@ func getStateDirPath() (string, error) {
 		return "", fmt.Errorf("getting home directory: %w", err)
 	}
 
-	return filepath.Join(homeDir, stateDir), nil
+	return filepath.Join(homeDir, defaultStateDir), nil
 }
 
-// getStateFilePath returns the full path to the current session state file.
-// Creates the state directory (~/.koopa) if it doesn't exist.
-//
-// For testing, you can override the state directory by setting KOOPA_STATE_DIR
-// environment variable to a temporary directory (e.g., t.TempDir()).
-//
-// Returns:
-//   - string: Path to ~/.koopa/current_session (or $KOOPA_STATE_DIR/current_session if set)
-//   - error: If unable to determine home directory or create state directory
-//
-// Note: This is a private function as it's only used within the session package.
-func getStateFilePath() (string, error) {
-	stateDirPath, err := getStateDirPath()
+// stateFilePath returns the full path to the current session state file.
+// Creates the state directory if it doesn't exist.
+func stateFilePath(overrideDir string) (string, error) {
+	stateDirPath, err := resolveStateDir(overrideDir)
 	if err != nil {
 		return "", err
 	}
@@ -64,27 +54,24 @@ func getStateFilePath() (string, error) {
 
 // LoadCurrentSessionID loads the currently active session ID from local state file.
 //
-// Acquires exclusive file lock to prevent concurrent access during read.
+// The stateDir parameter overrides the default ~/.koopa directory.
+// Pass empty string for production default, or a temp directory for testing.
 //
-// Returns:
-//   - *uuid.UUID: Current session ID (nil if no current session)
-//   - error: If state file exists but is malformed or unreadable
-//
-// Note: Returns (nil, nil) if state file doesn't exist - this is not an error.
-func LoadCurrentSessionID() (*uuid.UUID, error) {
-	filePath, err := getStateFilePath()
+// Returns (nil, nil) if state file doesn't exist - this is not an error.
+func LoadCurrentSessionID(stateDir string) (*uuid.UUID, error) {
+	filePath, err := stateFilePath(stateDir)
 	if err != nil {
 		return nil, err
 	}
 
 	// Acquire file lock to prevent concurrent writes
-	lock, err := acquireStateLock()
+	lock, err := acquireStateLock(stateDir)
 	if err != nil {
 		return nil, fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
-	// #nosec G304 -- filePath is constructed internally via getStateFilePath() to ~/.koopa/current_session, not from user input
+	// #nosec G304 -- filePath is constructed internally via stateFilePath() to ~/.koopa/current_session, not from user input
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -107,22 +94,18 @@ func LoadCurrentSessionID() (*uuid.UUID, error) {
 }
 
 // cleanupOrphanedTempFiles removes any stale .tmp files from previous crashed sessions.
-// This prevents accumulation of temporary files when the process crashes after writing
-// the temp file but before renaming it.
-func cleanupOrphanedTempFiles() error {
-	stateDirPath, err := getStateDirPath()
+func cleanupOrphanedTempFiles(stateDir string) error {
+	stateDirPath, err := resolveStateDir(stateDir)
 	if err != nil {
 		return fmt.Errorf("getting state directory: %w", err)
 	}
 
-	// Find all .tmp files in state directory
 	pattern := filepath.Join(stateDirPath, "*.tmp")
 	tmpFiles, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("finding temp files: %w", err)
 	}
 
-	// Remove each temp file (ignore errors as they may not exist)
 	for _, tmpFile := range tmpFiles {
 		_ = os.Remove(tmpFile)
 	}
@@ -133,38 +116,27 @@ func cleanupOrphanedTempFiles() error {
 // SaveCurrentSessionID saves the current session ID to local state file.
 //
 // Uses atomic write (temp file + rename) to ensure file is never partially written.
-// Acquires exclusive file lock to prevent concurrent access.
-//
-// Parameters:
-//   - sessionID: UUID of the session to mark as current
-//
-// Returns:
-//   - error: If unable to write state file
-func SaveCurrentSessionID(sessionID uuid.UUID) error {
-	filePath, err := getStateFilePath()
+// The stateDir parameter overrides the default ~/.koopa directory.
+func SaveCurrentSessionID(stateDir string, sessionID uuid.UUID) error {
+	filePath, err := stateFilePath(stateDir)
 	if err != nil {
 		return fmt.Errorf("saving session: %w", err)
 	}
 
-	// Acquire file lock to prevent concurrent access
-	lock, err := acquireStateLock()
+	lock, err := acquireStateLock(stateDir)
 	if err != nil {
 		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
-	// Clean up any orphaned temp files from previous crashed sessions (under lock)
-	_ = cleanupOrphanedTempFiles()
+	_ = cleanupOrphanedTempFiles(stateDir)
 
-	// Write to temporary file first (atomic write pattern)
 	tmpFile := filePath + ".tmp"
 	if err := os.WriteFile(tmpFile, []byte(sessionID.String()), 0o600); err != nil {
 		return fmt.Errorf("writing temp state file: %w", err)
 	}
 
-	// Atomically rename temp file to final file
 	if err := os.Rename(tmpFile, filePath); err != nil {
-		// Clean up temp file on error
 		_ = os.Remove(tmpFile)
 		return fmt.Errorf("updating state file: %w", err)
 	}
@@ -173,19 +145,15 @@ func SaveCurrentSessionID(sessionID uuid.UUID) error {
 }
 
 // ClearCurrentSessionID removes the current session state file.
-//
-// Returns:
-//   - error: If unable to remove state file (ignores "file not found" errors)
-//
-// Note: This is idempotent - calling it when no current session exists is not an error.
-func ClearCurrentSessionID() error {
-	filePath, err := getStateFilePath()
+// Idempotent - calling when no current session exists is not an error.
+// The stateDir parameter overrides the default ~/.koopa directory.
+func ClearCurrentSessionID(stateDir string) error {
+	filePath, err := stateFilePath(stateDir)
 	if err != nil {
 		return fmt.Errorf("clearing session: %w", err)
 	}
 
-	// Acquire file lock to prevent concurrent access
-	lock, err := acquireStateLock()
+	lock, err := acquireStateLock(stateDir)
 	if err != nil {
 		return fmt.Errorf("acquiring lock: %w", err)
 	}
@@ -200,9 +168,8 @@ func ClearCurrentSessionID() error {
 }
 
 // acquireStateLock acquires an exclusive lock on the state file.
-// Returns a locked flock.Flock instance that should be unlocked by the caller.
-func acquireStateLock() (*flock.Flock, error) {
-	stateDirPath, err := getStateDirPath()
+func acquireStateLock(stateDir string) (*flock.Flock, error) {
+	stateDirPath, err := resolveStateDir(stateDir)
 	if err != nil {
 		return nil, err
 	}

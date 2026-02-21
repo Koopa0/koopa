@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/koopa0/koopa/internal/chat"
 	"github.com/koopa0/koopa/internal/session"
 	"github.com/koopa0/koopa/internal/tools"

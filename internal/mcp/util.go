@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/koopa0/koopa/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/koopa0/koopa/internal/tools"
 )
 
 // MCP Error Detail Whitelist Policy:

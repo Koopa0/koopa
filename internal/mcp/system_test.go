@@ -154,7 +154,7 @@ func TestGetEnv_Success(t *testing.T) {
 	testValue := "test_value_123"
 	t.Setenv(testKey, testValue)
 
-	result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
+	result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.EnvInput{
 		Key: testKey,
 	})
 
@@ -190,7 +190,7 @@ func TestGetEnv_NotSet(t *testing.T) {
 		t.Fatalf("NewServer(): %v", err)
 	}
 
-	result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
+	result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.EnvInput{
 		Key: "NONEXISTENT_VAR_12345",
 	})
 
@@ -232,7 +232,7 @@ func TestGetEnv_SensitiveVariableBlocked(t *testing.T) {
 
 	for _, key := range sensitiveKeys {
 		t.Run(key, func(t *testing.T) {
-			result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.GetEnvInput{
+			result, _, err := server.Env(context.Background(), &mcp.CallToolRequest{}, tools.EnvInput{
 				Key: key,
 			})
 

@@ -45,7 +45,7 @@ func (h *searchHandler) searchMessages(w http.ResponseWriter, r *http.Request) {
 
 	results, total, err := h.store.SearchMessages(r.Context(), userID, query, limit, offset)
 	if err != nil {
-		h.logger.Error("searching messages", "error", err, "user_id", userID, "query", query)
+		h.logger.Error("searching messages", "error", err, "user_id", userID, "query_len", len(query))
 		WriteError(w, http.StatusInternalServerError, "search_failed", "failed to search messages", h.logger)
 		return
 	}

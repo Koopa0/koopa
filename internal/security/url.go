@@ -146,9 +146,10 @@ func (v *URL) SafeTransport() *http.Transport {
 	return &http.Transport{
 		DialContext: v.safeDialContext,
 		// Reasonable defaults
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		TLSHandshakeTimeout: 10 * time.Second,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
 	}
 }
 
