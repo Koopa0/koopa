@@ -170,25 +170,27 @@ func TestAllowedSubcommands(t *testing.T) {
 		args      []string
 		shouldErr bool
 	}{
-		// git: allowed subcommands
+		// git: allowed subcommands (read-only only)
 		{name: "git status", command: "git", args: []string{"status"}, shouldErr: false},
 		{name: "git log", command: "git", args: []string{"log", "--oneline"}, shouldErr: false},
 		{name: "git diff", command: "git", args: []string{"diff"}, shouldErr: false},
 		{name: "git show", command: "git", args: []string{"show", "HEAD"}, shouldErr: false},
 		{name: "git blame", command: "git", args: []string{"blame", "file.go"}, shouldErr: false},
-		{name: "git branch", command: "git", args: []string{"branch", "-a"}, shouldErr: false},
-		{name: "git add", command: "git", args: []string{"add", "."}, shouldErr: false},
-		{name: "git commit", command: "git", args: []string{"commit", "-m", "msg"}, shouldErr: false},
-		{name: "git push", command: "git", args: []string{"push"}, shouldErr: false},
-		{name: "git pull", command: "git", args: []string{"pull"}, shouldErr: false},
-		{name: "git fetch", command: "git", args: []string{"fetch"}, shouldErr: false},
-		{name: "git checkout", command: "git", args: []string{"checkout", "main"}, shouldErr: false},
-		{name: "git merge", command: "git", args: []string{"merge", "feature"}, shouldErr: false},
-		{name: "git rebase", command: "git", args: []string{"rebase", "main"}, shouldErr: false},
-		{name: "git stash", command: "git", args: []string{"stash"}, shouldErr: false},
-		{name: "git tag", command: "git", args: []string{"tag", "-l"}, shouldErr: false},
 		{name: "git remote", command: "git", args: []string{"remote", "-v"}, shouldErr: false},
-		// git: blocked subcommands (not in allowlist)
+		{name: "git rev-parse", command: "git", args: []string{"rev-parse", "HEAD"}, shouldErr: false},
+		{name: "git describe", command: "git", args: []string{"describe", "--tags"}, shouldErr: false},
+		// git: blocked subcommands (write/mutate or have destructive flags)
+		{name: "git branch blocked", command: "git", args: []string{"branch", "-a"}, shouldErr: true},
+		{name: "git tag blocked", command: "git", args: []string{"tag", "-l"}, shouldErr: true},
+		{name: "git add blocked", command: "git", args: []string{"add", "."}, shouldErr: true},
+		{name: "git commit blocked", command: "git", args: []string{"commit", "-m", "msg"}, shouldErr: true},
+		{name: "git push blocked", command: "git", args: []string{"push"}, shouldErr: true},
+		{name: "git pull blocked", command: "git", args: []string{"pull"}, shouldErr: true},
+		{name: "git fetch blocked", command: "git", args: []string{"fetch"}, shouldErr: true},
+		{name: "git checkout blocked", command: "git", args: []string{"checkout", "main"}, shouldErr: true},
+		{name: "git merge blocked", command: "git", args: []string{"merge", "feature"}, shouldErr: true},
+		{name: "git rebase blocked", command: "git", args: []string{"rebase", "main"}, shouldErr: true},
+		{name: "git stash blocked", command: "git", args: []string{"stash"}, shouldErr: true},
 		{name: "git grep blocked (F3)", command: "git", args: []string{"grep", "pattern"}, shouldErr: true},
 		{name: "git archive blocked (F3)", command: "git", args: []string{"archive", "HEAD"}, shouldErr: true},
 		{name: "git filter-branch blocked", command: "git", args: []string{"filter-branch", "--tree-filter", "cmd"}, shouldErr: true},

@@ -9,55 +9,50 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestGetStateFilePath(t *testing.T) {
-	// Note: Testing private function getStateFilePath (accessible within same package)
-	// Use isolated temp directory for this test
+func TestStateFilePath(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("KOOPA_STATE_DIR", tempDir)
 
-	path, err := getStateFilePath()
+	path, err := stateFilePath(tempDir)
 	if err != nil {
-		t.Fatalf("getStateFilePath() error = %v", err)
+		t.Fatalf("stateFilePath(%q) error = %v", tempDir, err)
 	}
 
 	if path == "" {
-		t.Error("getStateFilePath() returned empty path")
+		t.Error("stateFilePath() returned empty path")
 	}
 
 	// Verify path is absolute
 	if !filepath.IsAbs(path) {
-		t.Errorf("getStateFilePath() returned relative path: %q", path)
+		t.Errorf("stateFilePath() returned relative path: %q", path)
 	}
 
 	// Verify path uses temp directory
 	rel, err := filepath.Rel(tempDir, path)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		t.Errorf("getStateFilePath() = %q, want within %q", path, tempDir)
+		t.Errorf("stateFilePath() = %q, want within %q", path, tempDir)
 	}
 
 	// Verify directory was created
 	dir := filepath.Dir(path)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Errorf("getStateFilePath() did not create directory: %q", dir)
+		t.Errorf("stateFilePath() did not create directory: %q", dir)
 	}
 }
 
 func TestSaveAndLoadCurrentSessionID(t *testing.T) {
-	// Use isolated temp directory for all sub-tests
 	tempDir := t.TempDir()
-	t.Setenv("KOOPA_STATE_DIR", tempDir)
 
 	t.Run("save and load session ID", func(t *testing.T) {
 		testID := uuid.New()
 
 		// Save session ID
-		err := SaveCurrentSessionID(testID)
+		err := SaveCurrentSessionID(tempDir, testID)
 		if err != nil {
 			t.Fatalf("SaveCurrentSessionID() error = %v", err)
 		}
 
 		// Load session ID
-		loadedID, err := LoadCurrentSessionID()
+		loadedID, err := LoadCurrentSessionID(tempDir)
 		if err != nil {
 			t.Fatalf("LoadCurrentSessionID() error = %v", err)
 		}
@@ -72,10 +67,9 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 	})
 
 	t.Run("load returns nil when file doesn't exist", func(t *testing.T) {
-		// Ensure file doesn't exist
-		_ = ClearCurrentSessionID()
+		emptyDir := t.TempDir()
 
-		loadedID, err := LoadCurrentSessionID()
+		loadedID, err := LoadCurrentSessionID(emptyDir)
 		if err != nil {
 			t.Errorf("LoadCurrentSessionID() error = %v, want nil", err)
 		}
@@ -90,19 +84,19 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 		secondID := uuid.New()
 
 		// Save first ID
-		err := SaveCurrentSessionID(firstID)
+		err := SaveCurrentSessionID(tempDir, firstID)
 		if err != nil {
 			t.Fatalf("SaveCurrentSessionID() first save error = %v", err)
 		}
 
 		// Overwrite with second ID
-		err = SaveCurrentSessionID(secondID)
+		err = SaveCurrentSessionID(tempDir, secondID)
 		if err != nil {
 			t.Fatalf("SaveCurrentSessionID() second save error = %v", err)
 		}
 
 		// Load and verify second ID
-		loadedID, err := LoadCurrentSessionID()
+		loadedID, err := LoadCurrentSessionID(tempDir)
 		if err != nil {
 			t.Fatalf("LoadCurrentSessionID() error = %v", err)
 		}
@@ -118,26 +112,24 @@ func TestSaveAndLoadCurrentSessionID(t *testing.T) {
 }
 
 func TestClearCurrentSessionID(t *testing.T) {
-	// Use isolated temp directory for all sub-tests
-	tempDir := t.TempDir()
-	t.Setenv("KOOPA_STATE_DIR", tempDir)
-
 	t.Run("clear existing session ID", func(t *testing.T) {
+		tempDir := t.TempDir()
+
 		// Set up - save a session ID first
 		testID := uuid.New()
-		err := SaveCurrentSessionID(testID)
+		err := SaveCurrentSessionID(tempDir, testID)
 		if err != nil {
 			t.Fatalf("SaveCurrentSessionID() setup error = %v", err)
 		}
 
 		// Clear session ID
-		err = ClearCurrentSessionID()
+		err = ClearCurrentSessionID(tempDir)
 		if err != nil {
 			t.Errorf("ClearCurrentSessionID() error = %v", err)
 		}
 
 		// Verify file was deleted
-		loadedID, err := LoadCurrentSessionID()
+		loadedID, err := LoadCurrentSessionID(tempDir)
 		if err != nil {
 			t.Errorf("LoadCurrentSessionID() error = %v", err)
 		}
@@ -148,11 +140,10 @@ func TestClearCurrentSessionID(t *testing.T) {
 	})
 
 	t.Run("clear when file doesn't exist is not an error", func(t *testing.T) {
-		// Ensure file doesn't exist
-		_ = ClearCurrentSessionID()
+		tempDir := t.TempDir()
 
-		// Clear again should not error
-		err := ClearCurrentSessionID()
+		// Clear on empty dir should not error
+		err := ClearCurrentSessionID(tempDir)
 		if err != nil {
 			t.Errorf("ClearCurrentSessionID() on non-existent file error = %v, want nil", err)
 		}
@@ -160,10 +151,6 @@ func TestClearCurrentSessionID(t *testing.T) {
 }
 
 func TestLoadCurrentSessionID_InvalidContent(t *testing.T) {
-	// Use isolated temp directory for all sub-tests
-	tempDir := t.TempDir()
-	t.Setenv("KOOPA_STATE_DIR", tempDir)
-
 	tests := []struct {
 		name    string
 		content string
@@ -202,10 +189,12 @@ func TestLoadCurrentSessionID_InvalidContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+
 			// Write test content directly to state file
-			filePath, err := getStateFilePath()
+			filePath, err := stateFilePath(tempDir)
 			if err != nil {
-				t.Fatalf("getStateFilePath() error = %v", err)
+				t.Fatalf("stateFilePath(%q) error = %v", tempDir, err)
 			}
 
 			err = os.WriteFile(filePath, []byte(tt.content), 0o600)
@@ -214,7 +203,7 @@ func TestLoadCurrentSessionID_InvalidContent(t *testing.T) {
 			}
 
 			// Try to load
-			loadedID, err := LoadCurrentSessionID()
+			loadedID, err := LoadCurrentSessionID(tempDir)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("LoadCurrentSessionID() error = %v, wantErr %v", err, tt.wantErr)

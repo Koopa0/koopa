@@ -4,7 +4,7 @@
 //
 // The API server uses Go 1.22+ routing with a layered middleware stack:
 //
-//	Recovery → Logging → RateLimit → CORS → Session → CSRF → Routes
+//	Recovery → RequestID → Logging → CORS → RateLimit → User → Session → CSRF → Routes
 //
 // Health probes (/health, /ready) bypass the middleware stack via a
 // top-level mux, ensuring they remain fast and unauthenticated.
@@ -24,10 +24,23 @@
 //   - GET    /api/v1/sessions/{id}         — get session by ID
 //   - GET    /api/v1/sessions/{id}/messages — get session messages
 //   - DELETE /api/v1/sessions/{id}         — delete session
+//   - GET    /api/v1/sessions/{id}/export  — export session
 //
 // Chat (ownership-enforced):
 //   - POST /api/v1/chat        — initiate chat, returns stream URL
 //   - GET  /api/v1/chat/stream — SSE endpoint for streaming responses
+//
+// Search:
+//   - GET /api/v1/search — full-text search across messages
+//
+// Stats:
+//   - GET /api/v1/stats — usage statistics (sessions, messages, memories)
+//
+// Memory (ownership-enforced):
+//   - GET    /api/v1/memories        — list memories
+//   - POST   /api/v1/memories        — create memory
+//   - DELETE /api/v1/memories/{id}   — delete memory
+//   - GET    /api/v1/memories/search — search memories
 //
 // # CSRF Token Model
 //
@@ -39,7 +52,7 @@
 //   - Session-bound tokens ("timestamp:signature"): bound to a specific
 //     session via HMAC-SHA256, verified with constant-time comparison.
 //
-// Both expire after 24 hours with 5 minutes of clock skew tolerance.
+// Both expire after 1 hour with 5 minutes of clock skew tolerance.
 //
 // # Session Ownership
 //

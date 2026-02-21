@@ -16,23 +16,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/koopa0/koopa/internal/session"
 )
 
-// Sentinel errors for session/CSRF operations.
 var (
-	// ErrSessionCookieNotFound is returned when the session cookie is absent from the request.
-	ErrSessionCookieNotFound = errors.New("session cookie not found")
-	// ErrSessionInvalid is returned when the session cookie value is not a valid UUID.
-	ErrSessionInvalid = errors.New("session ID invalid")
-	// ErrCSRFRequired is returned when a state-changing request has no CSRF token.
-	ErrCSRFRequired = errors.New("csrf token required")
-	// ErrCSRFInvalid is returned when the CSRF token signature does not match.
-	ErrCSRFInvalid = errors.New("csrf token invalid")
-	// ErrCSRFExpired is returned when the CSRF token timestamp exceeds csrfTokenTTL.
-	ErrCSRFExpired = errors.New("csrf token expired")
-	// ErrCSRFMalformed is returned when the CSRF token format cannot be parsed.
-	ErrCSRFMalformed = errors.New("csrf token malformed")
+	errSessionCookieNotFound = errors.New("session cookie not found")
+	errSessionInvalid        = errors.New("session ID invalid")
+	errCSRFRequired          = errors.New("csrf token required")
+	errCSRFInvalid           = errors.New("csrf token invalid")
+	errCSRFExpired           = errors.New("csrf token expired")
+	errCSRFMalformed         = errors.New("csrf token malformed")
 )
 
 // Pre-session CSRF token prefix to distinguish from user-bound tokens.
@@ -61,12 +55,12 @@ type sessionManager struct {
 func (*sessionManager) SessionID(r *http.Request) (uuid.UUID, error) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
-		return uuid.Nil, ErrSessionCookieNotFound
+		return uuid.Nil, errSessionCookieNotFound
 	}
 
 	sessionID, err := uuid.Parse(cookie.Value)
 	if err != nil {
-		return uuid.Nil, ErrSessionInvalid
+		return uuid.Nil, errSessionInvalid
 	}
 
 	return sessionID, nil
@@ -109,17 +103,17 @@ func (sm *sessionManager) NewCSRFToken(userID string) string {
 // CheckCSRF verifies a user-bound CSRF token.
 func (sm *sessionManager) CheckCSRF(userID, token string) error {
 	if token == "" {
-		return ErrCSRFRequired
+		return errCSRFRequired
 	}
 
 	parts := strings.SplitN(token, ":", 2)
 	if len(parts) != 2 {
-		return ErrCSRFMalformed
+		return errCSRFMalformed
 	}
 
 	timestamp, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return ErrCSRFMalformed
+		return errCSRFMalformed
 	}
 
 	// SECURITY: Compute and verify HMAC BEFORE timestamp checks to prevent
@@ -133,19 +127,19 @@ func (sm *sessionManager) CheckCSRF(userID, token string) error {
 
 	actualSig, err := base64.URLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return ErrCSRFMalformed
+		return errCSRFMalformed
 	}
 
 	if subtle.ConstantTimeCompare(actualSig, expectedSig) != 1 {
-		return ErrCSRFInvalid
+		return errCSRFInvalid
 	}
 
 	age := time.Since(time.Unix(timestamp, 0))
 	if age > csrfTokenTTL {
-		return ErrCSRFExpired
+		return errCSRFExpired
 	}
 	if age < -csrfClockSkew {
-		return ErrCSRFInvalid
+		return errCSRFInvalid
 	}
 
 	return nil
@@ -168,23 +162,23 @@ func (sm *sessionManager) NewPreSessionCSRFToken() string {
 // CheckPreSessionCSRF verifies a pre-session CSRF token.
 func (sm *sessionManager) CheckPreSessionCSRF(token string) error {
 	if token == "" {
-		return ErrCSRFRequired
+		return errCSRFRequired
 	}
 
 	if !strings.HasPrefix(token, preSessionPrefix) {
-		return ErrCSRFMalformed
+		return errCSRFMalformed
 	}
 
 	tokenBody := strings.TrimPrefix(token, preSessionPrefix)
 	parts := strings.SplitN(tokenBody, ":", 3)
 	if len(parts) != 3 {
-		return ErrCSRFMalformed
+		return errCSRFMalformed
 	}
 
 	nonce := parts[0]
 	timestamp, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return ErrCSRFMalformed
+		return errCSRFMalformed
 	}
 
 	// SECURITY: Compute and verify HMAC BEFORE timestamp checks to prevent
@@ -196,19 +190,19 @@ func (sm *sessionManager) CheckPreSessionCSRF(token string) error {
 
 	actualSig, err := base64.URLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return ErrCSRFMalformed
+		return errCSRFMalformed
 	}
 
 	if subtle.ConstantTimeCompare(actualSig, expectedSig) != 1 {
-		return ErrCSRFInvalid
+		return errCSRFInvalid
 	}
 
 	age := time.Since(time.Unix(timestamp, 0))
 	if age > csrfTokenTTL {
-		return ErrCSRFExpired
+		return errCSRFExpired
 	}
 	if age < -csrfClockSkew {
-		return ErrCSRFInvalid
+		return errCSRFInvalid
 	}
 
 	return nil

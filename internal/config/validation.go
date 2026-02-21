@@ -3,8 +3,9 @@ package config
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"slices"
+
+	"github.com/koopa0/koopa/internal/rag"
 )
 
 // supportedProviders lists all valid AI provider values.
@@ -127,7 +128,8 @@ var knownEmbedderDimensions = map[string]map[string]int{
 }
 
 // requiredVectorDimension must match the pgvector schema: embedding vector(768).
-const requiredVectorDimension = 768
+// Canonical source: rag.VectorDimension.
+var requiredVectorDimension = int(rag.VectorDimension)
 
 // validateEmbedder checks that the configured embedder model produces vectors
 // compatible with the database schema. For known models whose native dimension
@@ -200,16 +202,17 @@ func (c *Config) validateRetention() error {
 }
 
 // validateProviderAPIKey checks that the required API key is set for the configured provider.
+// API keys are captured from environment in Load() and stored as unexported fields.
 func (c *Config) validateProviderAPIKey() error {
 	switch c.resolvedProvider() {
 	case ProviderGemini:
-		if os.Getenv("GEMINI_API_KEY") == "" {
+		if c.geminiAPIKey == "" {
 			return fmt.Errorf("%w: GEMINI_API_KEY environment variable is required for provider %q\n"+
 				"Get your API key at: https://ai.google.dev/gemini-api/docs/api-key",
 				ErrMissingAPIKey, c.resolvedProvider())
 		}
 	case ProviderOpenAI:
-		if os.Getenv("OPENAI_API_KEY") == "" {
+		if c.openaiAPIKey == "" {
 			return fmt.Errorf("%w: OPENAI_API_KEY environment variable is required for provider %q\n"+
 				"Get your API key at: https://platform.openai.com/api-keys",
 				ErrMissingAPIKey, c.resolvedProvider())

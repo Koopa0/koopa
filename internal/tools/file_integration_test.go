@@ -594,7 +594,7 @@ func TestFile_GetFileInfo_PathSecurity(t *testing.T) {
 	h := newfileTools(t)
 	ft := h.createFile()
 
-	result, err := ft.FileInfo(nil, GetFileInfoInput{Path: "/etc/passwd"})
+	result, err := ft.FileInfo(nil, FileInfoInput{Path: "/etc/passwd"})
 
 	if err != nil {
 		t.Fatalf("GetFileInfo(%q) unexpected Go error: %v (should not return Go error)", "/etc/passwd", err)
@@ -619,7 +619,7 @@ func TestFile_GetFileInfo_Success(t *testing.T) {
 	// Create a test file
 	testPath := h.createTestFile("info.txt", "test content")
 
-	result, err := ft.FileInfo(nil, GetFileInfoInput{Path: testPath})
+	result, err := ft.FileInfo(nil, FileInfoInput{Path: testPath})
 
 	if err != nil {
 		t.Fatalf("GetFileInfo(%q) unexpected error: %v", testPath, err)
@@ -649,7 +649,7 @@ func TestFile_GetFileInfo_NotFound(t *testing.T) {
 
 	nonExistentPath := filepath.Join(h.tempDir, "does-not-exist.txt")
 
-	result, err := ft.FileInfo(nil, GetFileInfoInput{Path: nonExistentPath})
+	result, err := ft.FileInfo(nil, FileInfoInput{Path: nonExistentPath})
 
 	if err != nil {
 		t.Fatalf("GetFileInfo(%q) unexpected Go error: %v (should not return Go error)", nonExistentPath, err)

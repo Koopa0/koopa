@@ -64,16 +64,12 @@ func NewCommand() *Command {
 		// Prevents RCE via: go test (F2), npm install, git grep/archive (F3).
 		allowedSubcommands: map[string][]string{
 			"git": {
-				// Read-only metadata
-				"status", "branch", "tag", "remote", "rev-parse", "describe",
-				// History viewing (content scoped to repo)
+				// Read-only operations only — no write/mutate commands
+				// NOTE: "branch" and "tag" excluded — destructive flags (-D, -d, -m, -f)
+				// cannot be safely blocked without colliding with legitimate read-only
+				// flags (e.g., git diff -M). Use "git log --oneline --decorate" instead.
+				"status", "remote", "rev-parse", "describe",
 				"log", "diff", "show", "blame",
-				// Working tree operations
-				"add", "commit", "push", "pull", "fetch",
-				"checkout", "switch", "merge", "rebase",
-				"stash", "restore", "reset",
-				// Maintenance
-				"clean", "gc", "prune",
 			},
 			"go": {
 				// Metadata (no code execution)

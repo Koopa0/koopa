@@ -38,8 +38,8 @@ const MaxEnvKeyLength = 256
 // Prevents abuse via extremely long command strings.
 const MaxCommandArgLength = 10000
 
-// GetEnvInput defines input for get_env tool.
-type GetEnvInput struct {
+// EnvInput defines input for get_env tool.
+type EnvInput struct {
 	Key string `json:"key" jsonschema_description:"The environment variable name"`
 }
 
@@ -201,7 +201,7 @@ func (s *System) ExecuteCommand(ctx *ai.ToolContext, input ExecuteCommandInput) 
 // Env reads an environment variable value with security protection.
 // Sensitive variables containing KEY, SECRET, or TOKEN in the name are blocked.
 // Business errors (sensitive variable blocked) are returned in Result.Error.
-func (s *System) Env(_ *ai.ToolContext, input GetEnvInput) (Result, error) {
+func (s *System) Env(_ *ai.ToolContext, input EnvInput) (Result, error) {
 	s.logger.Debug("Env called", "key", input.Key)
 
 	if len(input.Key) > MaxEnvKeyLength {

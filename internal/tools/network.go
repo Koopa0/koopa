@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -235,9 +236,9 @@ func (n *Network) Search(ctx *ai.ToolContext, input SearchInput) (SearchOutput, 
 		return SearchOutput{Query: input.Query, Error: fmt.Sprintf("Search request error: HTTP %d", resp.StatusCode)}, nil
 	}
 
-	// Parse response
+	// Parse response (limit body to 10 MB to prevent resource exhaustion)
 	var searxResp searxngResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searxResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10<<20)).Decode(&searxResp); err != nil {
 		return SearchOutput{}, fmt.Errorf("parse response: %w", err)
 	}
 

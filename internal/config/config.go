@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -50,9 +51,6 @@ var (
 
 	// ErrInvalidEmbedderModel indicates the embedder model is invalid.
 	ErrInvalidEmbedderModel = errors.New("invalid embedder model")
-
-	// ErrInvalidEmbedderDimension indicates the embedder produces incompatible vector dimensions.
-	ErrInvalidEmbedderDimension = errors.New("incompatible embedder dimension")
 
 	// ErrInvalidPostgresHost indicates the PostgreSQL host is invalid.
 	ErrInvalidPostgresHost = errors.New("invalid PostgreSQL host")
@@ -158,6 +156,11 @@ type Config struct {
 	CORSOrigins []string `mapstructure:"cors_origins" json:"cors_origins"`
 	TrustProxy  bool     `mapstructure:"trust_proxy" json:"trust_proxy"` // Trust X-Real-IP/X-Forwarded-For headers (set true behind reverse proxy)
 	DevMode     bool     `mapstructure:"dev_mode" json:"dev_mode"`       // Dev mode: disables Secure flag on cookies (decoupled from DB SSL)
+
+	// API keys read from environment at Load() time.
+	// Unexported to avoid accidental serialization; validated in validateProviderAPIKey().
+	geminiAPIKey string
+	openaiAPIKey string
 }
 
 // Load loads configuration.
@@ -212,6 +215,12 @@ func Load() (*Config, error) {
 	if err := cfg.parseDatabaseURL(); err != nil {
 		return nil, fmt.Errorf("parsing DATABASE_URL: %w", err)
 	}
+
+	// Capture API keys from environment at load time.
+	// These are read by Genkit plugins directly, but we also need them
+	// for fail-fast validation (no os.Getenv in business logic).
+	cfg.geminiAPIKey = os.Getenv("GEMINI_API_KEY")
+	cfg.openaiAPIKey = os.Getenv("OPENAI_API_KEY")
 
 	// CRITICAL: Validate immediately (fail-fast)
 	if err := cfg.Validate(); err != nil {
@@ -280,11 +289,11 @@ func setDefaults(v *viper.Viper) {
 //  2. DD_API_KEY - Datadog API key (optional, for observability)
 //  3. HMAC_SECRET - HMAC secret for CSRF protection (serve mode only)
 func bindEnvVariables(v *viper.Viper) {
-	// Helper to panic on unexpected bind errors (hardcoded strings can't fail)
-	// If this panics, it's a BUG in our code, not a runtime error
+	// Helper to fatal on unexpected bind errors (hardcoded strings can't fail)
+	// If this fails, it's a BUG in our code, not a runtime error
 	mustBind := func(key, envVar string) {
 		if err := v.BindEnv(key, envVar); err != nil {
-			panic(fmt.Sprintf("BUG: failed to bind %q to %q: %v", key, envVar, err))
+			log.Fatalf("BUG: failed to bind %q to %q: %v", key, envVar, err)
 		}
 	}
 

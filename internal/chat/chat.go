@@ -103,7 +103,7 @@ func (cfg Config) validate() error {
 		return errors.New("at least one tool is required")
 	}
 	if cfg.MemoryStore != nil && cfg.WG == nil {
-		return errors.New("WG is required when MemoryStore is set")
+		return errors.New("wg is required when memory store is set")
 	}
 	return nil
 }

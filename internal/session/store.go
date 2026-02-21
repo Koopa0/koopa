@@ -117,9 +117,13 @@ func (s *Store) Sessions(ctx context.Context, ownerID string, limit, offset int)
 
 	const listSQL = `
 		SELECT s.id, s.title, s.owner_id, s.created_at, s.updated_at,
-		       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count,
+		       COALESCE(mc.cnt, 0) AS message_count,
 		       COUNT(*) OVER() AS total
 		FROM sessions s
+		LEFT JOIN (
+		    SELECT session_id, COUNT(*) AS cnt
+		    FROM messages GROUP BY session_id
+		) mc ON mc.session_id = s.id
 		WHERE s.owner_id = $1
 		ORDER BY s.updated_at DESC
 		LIMIT $2 OFFSET $3
@@ -131,7 +135,7 @@ func (s *Store) Sessions(ctx context.Context, ownerID string, limit, offset int)
 	}
 	defer rows.Close()
 
-	var sessions []*Session
+	sessions := make([]*Session, 0)
 	var total int
 	for rows.Next() {
 		var ss Session
@@ -495,7 +499,7 @@ func (s *Store) History(ctx context.Context, sessionID uuid.UUID) ([]*ai.Message
 // Returns the session ID.
 func (s *Store) ResolveCurrentSession(ctx context.Context) (uuid.UUID, error) {
 	//nolint:contextcheck // LoadCurrentSessionID manages its own lock timeout context
-	savedID, err := LoadCurrentSessionID()
+	savedID, err := LoadCurrentSessionID("")
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("loading current session: %w", err)
 	}
@@ -516,7 +520,7 @@ func (s *Store) ResolveCurrentSession(ctx context.Context) (uuid.UUID, error) {
 
 	// best-effort: state file is non-critical, session already created in DB
 	//nolint:contextcheck // SaveCurrentSessionID manages its own lock timeout context
-	if saveErr := SaveCurrentSessionID(newSess.ID); saveErr != nil {
+	if saveErr := SaveCurrentSessionID("", newSess.ID); saveErr != nil {
 		s.logger.Warn("saving session state", "error", saveErr)
 	}
 

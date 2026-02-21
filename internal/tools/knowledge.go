@@ -257,6 +257,7 @@ func stripInjectionMarkers(content string) string {
 }
 
 // countUserDocs returns the number of user-created documents owned by the given owner.
+// Raw SQL: sqlc does not manage this query. Keep in sync with documents table schema.
 func (k *Knowledge) countUserDocs(ctx context.Context, ownerID string) (int64, error) {
 	var count int64
 	err := k.pool.QueryRow(ctx,

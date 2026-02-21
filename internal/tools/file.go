@@ -72,8 +72,8 @@ type DeleteFileInput struct {
 	Path string `json:"path" jsonschema_description:"The file path to delete"`
 }
 
-// GetFileInfoInput defines input for get_file_info tool.
-type GetFileInfoInput struct {
+// FileInfoInput defines input for get_file_info tool.
+type FileInfoInput struct {
 	Path string `json:"path" jsonschema_description:"The file path to get info for"`
 }
 
@@ -427,7 +427,7 @@ func (f *File) DeleteFile(_ *ai.ToolContext, input DeleteFileInput) (Result, err
 }
 
 // FileInfo gets file metadata.
-func (f *File) FileInfo(_ *ai.ToolContext, input GetFileInfoInput) (Result, error) {
+func (f *File) FileInfo(_ *ai.ToolContext, input FileInfoInput) (Result, error) {
 	f.logger.Debug("FileInfo called", "path", input.Path)
 
 	if len(input.Path) > MaxPathLength {
