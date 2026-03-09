@@ -11,6 +11,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/auth"
@@ -25,11 +26,14 @@ import (
 )
 
 type config struct {
-	Port        string
-	DatabaseURL string
-	JWTSecret   string
-	CORSOrigin  string
-	SiteURL     string
+	Port                string
+	DatabaseURL         string
+	JWTSecret           string
+	CORSOrigin          string
+	SiteURL             string
+	GitHubWebhookSecret string
+	GitHubToken         string
+	GitHubRepo          string
 }
 
 func main() {
@@ -70,6 +74,16 @@ func run(logger *slog.Logger) error {
 	collectedStore := collected.NewStore(pool)
 	trackingStore := tracking.NewStore(pool)
 
+	// pipeline dependencies
+	githubFetcher := pipeline.NewGitHub(cfg.GitHubToken, cfg.GitHubRepo)
+	topicLookup := pipeline.NewTopicLookup(func(ctx context.Context, slug string) (uuid.UUID, error) {
+		t, err := topicStore.TopicBySlug(ctx, slug)
+		if err != nil {
+			return uuid.UUID{}, err
+		}
+		return t.ID, nil
+	})
+
 	// deps
 	deps := server.Deps{
 		Auth:      auth.NewHandler(authStore, cfg.JWTSecret, logger),
@@ -79,7 +93,7 @@ func run(logger *slog.Logger) error {
 		Review:    review.NewHandler(reviewStore, logger),
 		Collected: collected.NewHandler(collectedStore, logger),
 		Tracking:  tracking.NewHandler(trackingStore, logger),
-		Pipeline:  pipeline.NewHandler(),
+		Pipeline:  pipeline.NewHandler(contentStore, topicLookup, githubFetcher, cfg.GitHubWebhookSecret, logger),
 		Logger:    logger,
 	}
 
@@ -108,6 +122,10 @@ func loadConfig(logger *slog.Logger) config {
 		logger.Error("JWT_SECRET is required")
 		os.Exit(1)
 	}
+
+	cfg.GitHubWebhookSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
+	cfg.GitHubToken = os.Getenv("GITHUB_TOKEN")
+	cfg.GitHubRepo = envOr("GITHUB_REPO", "Koopa0/obsidian")
 
 	return cfg
 }

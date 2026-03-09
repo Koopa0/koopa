@@ -1,43 +1,49 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { SearchService } from './search.service';
-import { Article, ArticleStatus } from '../models/article.model';
+import type { ApiListResponse, ApiContent } from '../models';
 
-const MOCK_ARTICLE: Article = {
-  id: '1',
-  title: 'Angular Signals Guide',
-  slug: 'angular-signals-guide',
-  excerpt: 'Learn about Angular signals and reactive programming.',
-  content:
-    'Angular signals provide a reactive way to manage state in components.',
-  tags: ['Angular', 'TypeScript'],
-  publishedAt: new Date('2024-01-01'),
-  updatedAt: new Date('2024-01-01'),
-  readingTime: 10,
-  viewCount: 100,
-  status: ArticleStatus.PUBLISHED,
-};
-
-const MOCK_ARTICLE_2: Article = {
-  id: '2',
-  title: 'Golang Concurrency',
-  slug: 'golang-concurrency',
-  excerpt: 'Deep dive into goroutines and channels.',
-  content: 'Go provides powerful concurrency primitives with goroutines.',
-  tags: ['Golang'],
-  publishedAt: new Date('2024-02-01'),
-  updatedAt: new Date('2024-02-01'),
-  readingTime: 15,
-  viewCount: 80,
-  status: ArticleStatus.PUBLISHED,
-};
+function makeMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
+  return {
+    id: '1',
+    slug: 'test-article',
+    title: 'Test Article',
+    body: 'Test body content',
+    excerpt: 'Test excerpt',
+    type: 'article',
+    status: 'published',
+    tags: ['test'],
+    topics: [],
+    cover_image: null,
+    source: null,
+    source_type: null,
+    series_id: null,
+    series_order: null,
+    review_level: 'standard',
+    ai_metadata: null,
+    reading_time: 5,
+    published_at: '2026-01-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
 
 describe('SearchService', () => {
   let service: SearchService;
-  const articles: Article[] = [MOCK_ARTICLE, MOCK_ARTICLE_2];
+  let httpMock: HttpTestingController;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
     service = TestBed.inject(SearchService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
   });
 
   it('should be created', () => {
@@ -51,64 +57,47 @@ describe('SearchService', () => {
     expect(service.hasResults()).toBe(false);
   });
 
-  it('should find articles matching title', () => {
-    service.search('Angular', articles);
+  it('should search and populate results from backend', () => {
+    const mockResponse: ApiListResponse<ApiContent> = {
+      data: [makeMockContent({ id: '1', title: 'Angular Signals' })],
+      meta: { total: 1, page: 1, per_page: 20, total_pages: 1 },
+    };
+
+    service.search('Angular');
+
+    expect(service.searching()).toBe(true);
+
+    const req = httpMock.expectOne((r) => r.url.includes('/api/search'));
+    expect(req.request.params.get('q')).toBe('Angular');
+    req.flush(mockResponse);
+
+    expect(service.searching()).toBe(false);
     expect(service.hasResults()).toBe(true);
-    expect(service.results().some((r) => r.article.id === '1')).toBe(true);
+    expect(service.results().length).toBe(1);
+    expect(service.meta()?.total).toBe(1);
   });
 
-  it('should find articles matching tags', () => {
-    service.search('Golang', articles);
-    expect(service.hasResults()).toBe(true);
-    expect(service.results().some((r) => r.article.id === '2')).toBe(true);
-  });
+  it('should set empty results for blank query without HTTP call', () => {
+    service.search('');
 
-  it('should find articles matching content', () => {
-    service.search('goroutines', articles);
-    expect(service.hasResults()).toBe(true);
-    expect(service.results()[0].article.id).toBe('2');
-  });
-
-  it('should return empty results for non-matching query', () => {
-    service.search('xyznotfound', articles);
+    httpMock.expectNone((r) => r.url.includes('/api/search'));
     expect(service.hasResults()).toBe(false);
     expect(service.results()).toEqual([]);
   });
 
-  it('should set empty results for blank query', () => {
-    service.search('Angular', articles);
-    expect(service.hasResults()).toBe(true);
-
-    service.search('', articles);
-    expect(service.hasResults()).toBe(false);
-  });
-
-  it('should sort results by relevance score descending', () => {
-    service.search('Angular', articles);
-    const results = service.results();
-    for (let i = 1; i < results.length; i++) {
-      expect(results[i].score).toBeLessThanOrEqual(results[i - 1].score);
-    }
-  });
-
   it('should clear search state', () => {
-    service.search('Angular', articles);
+    const mockResponse: ApiListResponse<ApiContent> = {
+      data: [makeMockContent()],
+      meta: { total: 1, page: 1, per_page: 20, total_pages: 1 },
+    };
+
+    service.search('test');
+    httpMock.expectOne((r) => r.url.includes('/api/search')).flush(mockResponse);
     expect(service.hasResults()).toBe(true);
 
     service.clearSearch();
     expect(service.query()).toBe('');
     expect(service.results()).toEqual([]);
-  });
-
-  it('should provide highlights for title matches', () => {
-    service.search('Angular', articles);
-    const result = service.results().find((r) => r.article.id === '1');
-    expect(result?.highlights.title).toContain('<mark>');
-  });
-
-  it('should provide highlights for tag matches', () => {
-    service.search('Golang', articles);
-    const result = service.results().find((r) => r.article.id === '2');
-    expect(result?.highlights.tags).toContain('Golang');
+    expect(service.meta()).toBeNull();
   });
 });

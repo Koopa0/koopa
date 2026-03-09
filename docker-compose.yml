@@ -4,7 +4,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - '4000:4000'
+      - '127.0.0.1:4000:4000'
     environment:
       - NODE_ENV=production
       - PORT=4000
@@ -46,6 +46,9 @@ services:
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_ENDPOINT: ${R2_ENDPOINT}
       R2_BUCKET: ${R2_BUCKET:-blog}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_REPO: ${GITHUB_REPO:-Koopa0/obsidian}
     depends_on:
       postgres:
         condition: service_healthy

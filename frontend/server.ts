@@ -15,7 +15,25 @@ const SITE_DESCRIPTION =
   'Backend Engineer / Full-Stack Developer - 技術文章與個人作品集';
 
 const app = express();
+app.disable('x-powered-by');
 const commonEngine = new CommonEngine();
+
+// Security headers
+app.use((_req, res, next) => {
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// security.txt (RFC 9116)
+app.get('/.well-known/security.txt', (_req, res) => {
+  res.type('text/plain').send(
+    `Contact: mailto:contact@koopa0.dev\nPreferred-Languages: zh-TW, en\nCanonical: https://koopa0.dev/.well-known/security.txt\nExpires: 2027-01-01T00:00:00.000Z\n`,
+  );
+});
 
 // 靜態頁面路由（用於 sitemap）
 const STATIC_ROUTES: Array<{

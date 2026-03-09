@@ -11,7 +11,7 @@ describe('KeyboardShortcutsService', () => {
       TestBed.configureTestingModule({
         providers: [
           { provide: PLATFORM_ID, useValue: 'browser' },
-          { provide: Router, useValue: { navigate: jasmine.createSpy() } },
+          { provide: Router, useValue: { navigate: vi.fn() } },
         ],
       });
       service = TestBed.inject(KeyboardShortcutsService);
@@ -23,6 +23,22 @@ describe('KeyboardShortcutsService', () => {
 
     it('should initialize without errors', () => {
       expect(() => service.init()).not.toThrow();
+      service.destroy();
+    });
+
+    it('should clean up on destroy', () => {
+      service.init();
+      expect(() => service.destroy()).not.toThrow();
+    });
+
+    it('should handle multiple init calls without error', () => {
+      service.init();
+      expect(() => service.init()).not.toThrow();
+      service.destroy();
+    });
+
+    it('should handle destroy without init', () => {
+      expect(() => service.destroy()).not.toThrow();
     });
   });
 
@@ -31,7 +47,7 @@ describe('KeyboardShortcutsService', () => {
       TestBed.configureTestingModule({
         providers: [
           { provide: PLATFORM_ID, useValue: 'server' },
-          { provide: Router, useValue: { navigate: jasmine.createSpy() } },
+          { provide: Router, useValue: { navigate: vi.fn() } },
         ],
       });
       service = TestBed.inject(KeyboardShortcutsService);

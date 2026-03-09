@@ -106,19 +106,17 @@
 
     <!-- Actions -->
     <div class="flex items-center gap-2">
-      <!-- Search Toggle -->
+      <!-- Search / Command Palette Toggle -->
       <button
         type="button"
-        (click)="toggleSearch()"
-        class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-        aria-label="Search articles"
-        [attr.aria-expanded]="isSearchOpen()"
+        (click)="commandPalette.open()"
+        class="flex items-center gap-2 rounded-sm px-2 py-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+        aria-label="Search (⌘K)"
       >
-        @if (isSearchOpen()) {
-        <lucide-icon [img]="XIcon" [size]="18" />
-        } @else {
         <lucide-icon [img]="SearchIcon" [size]="18" />
-        }
+        <kbd
+          class="hidden rounded-xs border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 sm:inline"
+        >⌘K</kbd>
       </button>
 
       @if (isAuthenticated()) {
@@ -165,18 +163,6 @@
       </button>
     </div>
   </nav>
-
-  <!-- Search Panel -->
-  @if (isSearchOpen()) {
-  <div
-    @slideDown
-    class="border-t border-zinc-800 bg-zinc-950 px-4 py-3 sm:px-6 lg:px-8"
-  >
-    <div class="mx-auto max-w-2xl">
-      <app-search />
-    </div>
-  </div>
-  }
 
   <!-- Mobile Menu -->
   @if (isMobileMenuOpen()) {
@@ -312,3 +298,6 @@
 
 <!-- Back to Top Button -->
 <app-back-to-top />
+
+<!-- Command Palette (⌘K) -->
+<app-command-palette />

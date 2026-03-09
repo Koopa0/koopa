@@ -37,11 +37,11 @@ describe('NotFoundComponent', () => {
   });
 
   it('should call seoService.updateMeta with noIndex on init', () => {
-    spyOn(seoService, 'updateMeta');
+    const spy = vi.spyOn(seoService, 'updateMeta');
     fixture.detectChanges();
 
-    expect(seoService.updateMeta).toHaveBeenCalledWith(
-      jasmine.objectContaining({
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
         title: '404 - Page Not Found',
         noIndex: true,
       }),

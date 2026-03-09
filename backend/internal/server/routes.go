@@ -85,10 +85,12 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	mux.Handle("POST /api/pipeline/generate", authMid(http.HandlerFunc(d.Pipeline.Generate)))
 	mux.Handle("POST /api/pipeline/digest", authMid(http.HandlerFunc(d.Pipeline.Digest)))
 
-	// webhooks
+	// webhooks — HMAC-verified, not JWT
+	mux.HandleFunc("POST /api/webhook/github", d.Pipeline.WebhookGithub)
+
+	// webhooks — stubs (JWT-protected until implemented)
 	mux.Handle("POST /api/webhook/obsidian", authMid(http.HandlerFunc(d.Pipeline.WebhookObsidian)))
 	mux.Handle("POST /api/webhook/notion", authMid(http.HandlerFunc(d.Pipeline.WebhookNotion)))
-	mux.Handle("POST /api/webhook/github", authMid(http.HandlerFunc(d.Pipeline.WebhookGithub)))
 
 	// admin stats
 	mux.Handle("GET /api/admin/stats", authMid(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -19,7 +19,6 @@ import {
   LucideAngularModule,
   Menu,
   X,
-  LogIn,
   LogOut,
   LayoutDashboard,
   FilePen,
@@ -30,7 +29,8 @@ import {
   Mail,
 } from 'lucide-angular';
 import { BackToTopComponent } from './shared/back-to-top/back-to-top.component';
-import { SearchComponent } from './shared/search/search.component';
+import { CommandPaletteComponent } from './shared/command-palette/command-palette.component';
+import { CommandPaletteService } from './shared/command-palette/command-palette.service';
 import { AuthService } from './core/services/auth.service';
 import { slideDown } from './shared/animations/fade-in.animation';
 
@@ -43,7 +43,7 @@ import { slideDown } from './shared/animations/fade-in.animation';
     RouterLinkActive,
     LucideAngularModule,
     BackToTopComponent,
-    SearchComponent,
+    CommandPaletteComponent,
   ],
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -56,19 +56,18 @@ export class AppComponent {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly commandPalette = inject(CommandPaletteService);
 
   protected readonly isAuthenticated = this.authService.isAuthenticated;
   protected readonly currentUser = this.authService.currentUser;
 
   protected readonly isMobileMenuOpen = signal(false);
-  protected readonly isSearchOpen = signal(false);
   protected readonly isWritingMenuOpen = signal(false);
   protected readonly currentYear = new Date().getFullYear();
 
   // Lucide icons
   protected readonly MenuIcon = Menu;
   protected readonly XIcon = X;
-  protected readonly LogInIcon = LogIn;
   protected readonly LogOutIcon = LogOut;
   protected readonly DashboardIcon = LayoutDashboard;
   protected readonly EditIcon = FilePen;
@@ -91,20 +90,12 @@ export class AppComponent {
           window.scrollTo(0, 0);
         }
         this.isMobileMenuOpen.set(false);
-        this.isSearchOpen.set(false);
         this.isWritingMenuOpen.set(false);
       });
   }
 
   protected toggleMobileMenu(): void {
     this.isMobileMenuOpen.update((v) => !v);
-    if (this.isMobileMenuOpen()) {
-      this.isSearchOpen.set(false);
-    }
-  }
-
-  protected toggleSearch(): void {
-    this.isSearchOpen.update((v) => !v);
   }
 
   protected toggleWritingMenu(): void {

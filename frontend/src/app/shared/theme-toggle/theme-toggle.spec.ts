@@ -1,5 +1,4 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-
 import { ThemeToggleComponent } from './theme-toggle';
 
 describe('ThemeToggleComponent', () => {

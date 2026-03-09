@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Meta, Title } from '@angular/platform-browser';
 import { PLATFORM_ID } from '@angular/core';
-import { SeoService, PageMeta } from './seo.service';
+import { SeoService } from './seo.service';
 
 describe('SeoService', () => {
   let service: SeoService;
@@ -15,6 +15,18 @@ describe('SeoService', () => {
     service = TestBed.inject(SeoService);
     meta = TestBed.inject(Meta);
     title = TestBed.inject(Title);
+  });
+
+  afterEach(() => {
+    // Clean up JSON-LD scripts added during tests
+    const scripts = document.querySelectorAll(
+      'script[type="application/ld+json"][data-seo]',
+    );
+    scripts.forEach((s) => s.remove());
+
+    // Clean up canonical links added during tests
+    const canonicalLinks = document.querySelectorAll('link[rel="canonical"]');
+    canonicalLinks.forEach((l) => l.remove());
   });
 
   it('should be created', () => {

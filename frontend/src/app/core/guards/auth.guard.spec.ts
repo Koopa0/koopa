@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
-import { ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
+import { Router, ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
+import { signal } from '@angular/core';
 import { AuthService } from '../services/auth.service';
 import {
   authGuard,
@@ -10,22 +10,27 @@ import {
 } from './auth.guard';
 
 describe('Auth Guards', () => {
-  let authService: jasmine.SpyObj<AuthService>;
-  let router: jasmine.SpyObj<Router>;
+  let mockRouter: { navigate: ReturnType<typeof vi.fn> };
+  let mockIsAuthenticated: ReturnType<typeof signal<boolean>>;
+  let mockIsAdmin: ReturnType<typeof signal<boolean>>;
   let route: ActivatedRouteSnapshot;
   let state: RouterStateSnapshot;
 
   beforeEach(() => {
-    authService = jasmine.createSpyObj('AuthService', [
-      'isAuthenticated',
-      'isAdmin',
-    ]);
-    router = jasmine.createSpyObj('Router', ['navigate']);
+    mockIsAuthenticated = signal(false);
+    mockIsAdmin = signal(false);
+    mockRouter = { navigate: vi.fn() };
 
     TestBed.configureTestingModule({
       providers: [
-        { provide: AuthService, useValue: authService },
-        { provide: Router, useValue: router },
+        {
+          provide: AuthService,
+          useValue: {
+            isAuthenticated: mockIsAuthenticated,
+            isAdmin: mockIsAdmin,
+          },
+        },
+        { provide: Router, useValue: mockRouter },
       ],
     });
 
@@ -35,7 +40,7 @@ describe('Auth Guards', () => {
 
   describe('authGuard', () => {
     it('should allow access when authenticated', () => {
-      authService.isAuthenticated.and.returnValue(true);
+      mockIsAuthenticated.set(true);
 
       const result = TestBed.runInInjectionContext(() =>
         authGuard(route, state),
@@ -45,14 +50,14 @@ describe('Auth Guards', () => {
     });
 
     it('should redirect to login when not authenticated', () => {
-      authService.isAuthenticated.and.returnValue(false);
+      mockIsAuthenticated.set(false);
 
       const result = TestBed.runInInjectionContext(() =>
         authGuard(route, state),
       );
 
       expect(result).toBe(false);
-      expect(router.navigate).toHaveBeenCalledWith(['/login'], {
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/login'], {
         queryParams: { returnUrl: '/admin/dashboard' },
       });
     });
@@ -60,8 +65,8 @@ describe('Auth Guards', () => {
 
   describe('adminGuard', () => {
     it('should allow access when authenticated and admin', () => {
-      authService.isAuthenticated.and.returnValue(true);
-      authService.isAdmin.and.returnValue(true);
+      mockIsAuthenticated.set(true);
+      mockIsAdmin.set(true);
 
       const result = TestBed.runInInjectionContext(() =>
         adminGuard(route, state),
@@ -71,29 +76,29 @@ describe('Auth Guards', () => {
     });
 
     it('should redirect to login when not authenticated', () => {
-      authService.isAuthenticated.and.returnValue(false);
-      authService.isAdmin.and.returnValue(false);
+      mockIsAuthenticated.set(false);
+      mockIsAdmin.set(false);
 
       const result = TestBed.runInInjectionContext(() =>
         adminGuard(route, state),
       );
 
       expect(result).toBe(false);
-      expect(router.navigate).toHaveBeenCalledWith(['/login'], {
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/login'], {
         queryParams: { returnUrl: '/admin/dashboard' },
       });
     });
 
     it('should redirect to home when authenticated but not admin', () => {
-      authService.isAuthenticated.and.returnValue(true);
-      authService.isAdmin.and.returnValue(false);
+      mockIsAuthenticated.set(true);
+      mockIsAdmin.set(false);
 
       const result = TestBed.runInInjectionContext(() =>
         adminGuard(route, state),
       );
 
       expect(result).toBe(false);
-      expect(router.navigate).toHaveBeenCalledWith(['/'], {
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/'], {
         queryParams: { error: 'unauthorized' },
       });
     });
@@ -101,7 +106,7 @@ describe('Auth Guards', () => {
 
   describe('authChildGuard', () => {
     it('should delegate to authGuard', () => {
-      authService.isAuthenticated.and.returnValue(true);
+      mockIsAuthenticated.set(true);
 
       const result = TestBed.runInInjectionContext(() =>
         authChildGuard(route, state),
@@ -113,8 +118,8 @@ describe('Auth Guards', () => {
 
   describe('adminChildGuard', () => {
     it('should delegate to adminGuard', () => {
-      authService.isAuthenticated.and.returnValue(true);
-      authService.isAdmin.and.returnValue(true);
+      mockIsAuthenticated.set(true);
+      mockIsAdmin.set(true);
 
       const result = TestBed.runInInjectionContext(() =>
         adminChildGuard(route, state),
