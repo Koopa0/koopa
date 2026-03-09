@@ -72,7 +72,7 @@ export class MarkdownService {
             return `<pre><code class="language-${lang} hljs">${highlighted}</code></pre>`;
           }
         } catch {
-          // 語法高亮失敗，fallback 到自動偵測
+          // Syntax highlighting failed, fallback to auto-detection
         }
         try {
           const highlighted = hljs.highlightAuto(code).value;
@@ -98,7 +98,7 @@ export class MarkdownService {
     );
   }
 
-  // 將 mermaid 圖表渲染為 placeholder（未整合 mermaid.js 前的暫時方案）
+  // Render mermaid diagrams as placeholder (temporary solution before mermaid.js integration)
   initializeMermaid(): void {
     setTimeout(() => {
       const mermaidElements = document.querySelectorAll<HTMLElement>('.mermaid-diagram');
@@ -107,7 +107,7 @@ export class MarkdownService {
           element.getAttribute('data-mermaid-code') ?? '',
         );
         if (code) {
-          // 清空後用 DOM API 安全地建構元素，避免 innerHTML XSS 風險
+          // Clear and use DOM API to safely construct elements, avoiding innerHTML XSS risk
           element.textContent = '';
           element.classList.add(
             'rounded-lg', 'border-2', 'border-dashed', 'border-zinc-600',
@@ -122,7 +122,7 @@ export class MarkdownService {
 
           const subtitle = document.createElement('div');
           subtitle.className = 'mb-4 text-sm';
-          subtitle.textContent = '圖表類型已識別，等待 Mermaid.js 載入...';
+          subtitle.textContent = 'Diagram type identified, waiting for Mermaid.js to load...';
           element.appendChild(subtitle);
 
           const pre = document.createElement('pre');

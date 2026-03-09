@@ -68,10 +68,10 @@ export class ArticleDetailComponent implements OnInit {
     return this.markdownService.parse(article.body);
   });
 
-  // SECURITY_REVIEW: bypassSecurityTrustHtml 用於渲染 markdown 產生的 HTML。
-  // 安全性由 MarkdownService 保證：marked 解析 + highlight.js 語法高亮，
-  // 不包含使用者可注入的 raw HTML。若未來接受使用者輸入的 markdown，
-  // 必須在 MarkdownService 加入 DOMPurify 等 sanitizer。
+  // SECURITY_REVIEW: bypassSecurityTrustHtml is used to render markdown-generated HTML.
+  // Safety is guaranteed by MarkdownService: marked parsing + highlight.js syntax highlighting.
+  // No user-injectable raw HTML is included. If user-submitted markdown is accepted in the future,
+  // DOMPurify or similar sanitizer must be added to MarkdownService.
   protected readonly parsedContent = computed<SafeHtml>(() => {
     const html = this.rawHtml();
     if (!html) {
@@ -93,7 +93,7 @@ export class ArticleDetailComponent implements OnInit {
     if (slug) {
       this.loadArticle(slug);
     } else {
-      this.error.set('文章 ID 不存在');
+      this.error.set('Article not found');
       this.isLoading.set(false);
     }
   }
@@ -109,7 +109,7 @@ export class ArticleDetailComponent implements OnInit {
         this.updateSeo(article);
       },
       error: () => {
-        this.error.set('載入文章失敗');
+        this.error.set('Failed to load article');
         this.isLoading.set(false);
       },
     });

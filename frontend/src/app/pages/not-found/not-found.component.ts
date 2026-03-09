@@ -18,29 +18,29 @@ import { SeoService } from '../../core/services/seo/seo.service';
     >
       <div class="text-center">
         <p class="text-8xl font-bold text-zinc-800">404</p>
-        <h1 class="mt-4 text-2xl font-bold text-zinc-100">找不到頁面</h1>
-        <p class="mt-2 text-sm text-zinc-400">您要尋找的頁面不存在或已被移除</p>
+        <h1 class="mt-4 text-2xl font-bold text-zinc-100">Page Not Found</h1>
+        <p class="mt-2 text-sm text-zinc-400">The page you are looking for does not exist or has been removed.</p>
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           <a
             routerLink="/home"
             class="inline-flex items-center gap-2 rounded-sm bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
           >
             <lucide-icon [img]="HomeIcon" [size]="16" />
-            回到首頁
+            Back to Home
           </a>
           <a
             routerLink="/articles"
             class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-5 py-2.5 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:text-white"
           >
             <lucide-icon [img]="FileTextIcon" [size]="16" />
-            瀏覽文章
+            Articles
           </a>
           <a
             routerLink="/about"
             class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-5 py-2.5 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:text-white"
           >
             <lucide-icon [img]="UserIcon" [size]="16" />
-            關於我
+            About
           </a>
         </div>
       </div>
@@ -53,8 +53,8 @@ export class NotFoundComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '404 - 找不到頁面',
-      description: '您要尋找的頁面不存在或已被移除',
+      title: '404 - Page Not Found',
+      description: 'The page you are looking for does not exist or has been removed.',
       noIndex: true,
     });
   }

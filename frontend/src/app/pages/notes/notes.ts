@@ -40,7 +40,7 @@ export class NotesComponent implements OnInit {
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'Notes',
-      description: '技術筆記 — 程式碼片段、設定檔備忘、閱讀筆記',
+      description: 'Code snippets, config notes, and reading notes.',
       ogUrl: 'https://koopa0.dev/notes',
     });
     this.loadNotes();
@@ -53,7 +53,7 @@ export class NotesComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.error.set('載入筆記失敗');
+        this.error.set('Failed to load notes');
         this.isLoading.set(false);
       },
     });

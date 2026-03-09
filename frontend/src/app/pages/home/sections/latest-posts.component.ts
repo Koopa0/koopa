@@ -27,7 +27,7 @@ const LATEST_POSTS_LIMIT = 6;
             <h2 class="text-3xl font-bold text-zinc-100">
               Latest from the Blog
             </h2>
-            <p class="mt-3 text-zinc-400">技術文章、開發筆記與學習心得</p>
+            <p class="mt-3 text-zinc-400">Technical articles, dev notes, and lessons learned</p>
           </div>
           <a
             routerLink="/articles"

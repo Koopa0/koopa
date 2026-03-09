@@ -11,15 +11,15 @@
   <div
     class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-4 px-4 py-20 text-center"
   >
-    <h2 class="text-xl font-semibold text-zinc-100">找不到此專案</h2>
-    <p class="text-sm text-zinc-400">您要找的專案不存在或已被移除。</p>
+    <h2 class="text-xl font-semibold text-zinc-100">Project Not Found</h2>
+    <p class="text-sm text-zinc-400">The project you are looking for does not exist or has been removed.</p>
     <button
       type="button"
       class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
       (click)="goBack()"
     >
       <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
-      返回
+      Back
     </button>
   </div>
 </section>
@@ -34,7 +34,7 @@
         (click)="goBack()"
       >
         <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
-        返回
+        Back
       </button>
     </div>
 
@@ -78,7 +78,7 @@
       <div class="lg:col-span-2">
         <!-- Description -->
         <div class="mb-10">
-          <h2 class="mb-4 text-lg font-semibold text-zinc-100">關於此專案</h2>
+          <h2 class="mb-4 text-lg font-semibold text-zinc-100">About This Project</h2>
           <p class="leading-relaxed text-zinc-400">
             {{ project()!.long_description || project()!.description }}
           </p>
@@ -131,7 +131,7 @@
             class="mb-4 flex items-center gap-2 text-lg font-semibold text-zinc-100"
           >
             <lucide-icon [img]="CheckCircle2Icon" [size]="18" />
-            主要特點
+            Key Features
           </h2>
           <ul class="space-y-3">
             @for (highlight of project()!.highlights; track highlight) {

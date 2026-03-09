@@ -8,7 +8,7 @@ export interface TagInfo {
   count: number;
 }
 
-/** Tag 不是獨立 API — 從內容列表的 tags 欄位聚合 */
+/** Tag is not a standalone API — aggregated from content list tags field */
 @Injectable({ providedIn: 'root' })
 export class TagService {
   private readonly content = inject(ContentService);
@@ -19,7 +19,7 @@ export class TagService {
   readonly loading = this._loading.asReadonly();
   readonly errorMessage = this._error.asReadonly();
 
-  /** 依 tag 取得內容列表 */
+  /** Get content list by tag */
   getContentsByTag(
     tag: string,
     page = 1,
@@ -33,7 +33,7 @@ export class TagService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('載入標籤內容失敗');
+        this._error.set('Failed to load tag content');
         return throwError(() => err);
       }),
     );

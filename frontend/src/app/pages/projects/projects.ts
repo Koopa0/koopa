@@ -65,7 +65,7 @@ export class ProjectsComponent implements OnInit {
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'Projects',
-      description: '開源與個人專案列表，涵蓋後端服務、CLI 工具與全端應用',
+      description: 'Open-source and personal projects — backend services, CLI tools, and full-stack apps.',
       ogUrl: 'https://koopa0.dev/projects',
     });
     this.loadProjects();
@@ -102,7 +102,7 @@ export class ProjectsComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.error.set('載入專案失敗');
+        this.error.set('Failed to load projects');
         this.isLoading.set(false);
       },
     });

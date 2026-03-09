@@ -17,7 +17,7 @@ export class KeyboardShortcutsService {
       return;
     }
 
-    // 避免重複訂閱
+    // Avoid duplicate subscriptions
     this.subscription?.unsubscribe();
 
     this.subscription = fromEvent<KeyboardEvent>(document, 'keydown')

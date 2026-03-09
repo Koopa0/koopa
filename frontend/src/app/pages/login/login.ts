@@ -66,8 +66,8 @@ export class LoginComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '登入',
-      description: '管理員登入頁面',
+      title: 'Login',
+      description: 'Admin login page',
       noIndex: true,
     });
 
@@ -81,7 +81,7 @@ export class LoginComponent implements OnInit {
 
     const error = this.route.snapshot.queryParams['error'];
     if (error === 'unauthorized') {
-      this.errorMessage.set('您沒有權限訪問該頁面');
+      this.errorMessage.set('You do not have permission to access this page');
     }
   }
 
@@ -98,12 +98,12 @@ export class LoginComponent implements OnInit {
     this.authService.login(credentials).subscribe({
       next: () => {
         const user = this.authService.currentUser();
-        this.successMessage.set(`歡迎回來，${user?.email ?? ''}！`);
+        this.successMessage.set(`Welcome back, ${user?.email ?? ''}!`);
         this.router.navigate([this.returnUrl()]);
       },
       error: (err) => {
         this.errorMessage.set(
-          err.message || '登入失敗，請檢查您的電子郵件和密碼',
+          err.message || 'Login failed. Please check your email and password.',
         );
         this.isLoading.set(false);
       },
@@ -128,14 +128,14 @@ export class LoginComponent implements OnInit {
     const control = this.loginForm.get(fieldName);
     if (control?.errors && control.touched) {
       if (control.errors['required']) {
-        return '此欄位為必填';
+        return 'This field is required';
       }
       if (control.errors['email']) {
-        return '請輸入有效的電子郵件地址';
+        return 'Please enter a valid email address';
       }
       if (control.errors['minlength']) {
         const minLength = control.errors['minlength'].requiredLength;
-        return `至少需要 ${minLength} 個字符`;
+        return `Must be at least ${minLength} characters`;
       }
     }
     return '';

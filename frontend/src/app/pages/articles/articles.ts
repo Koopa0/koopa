@@ -98,8 +98,8 @@ export class ArticlesComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '文章列表',
-      description: '技術文章、開發筆記與學習心得',
+      title: 'Articles',
+      description: 'Technical articles, dev notes, and lessons learned.',
       ogUrl: 'https://koopa0.dev/articles',
     });
     this.loadArticles();
@@ -122,7 +122,7 @@ export class ArticlesComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.error.set('載入文章失敗，請稍後再試');
+        this.error.set('Failed to load articles. Please try again later.');
         this.isLoading.set(false);
       },
     });

@@ -33,8 +33,8 @@ import { LucideAngularModule, ArrowRight, Code2, Mail } from 'lucide-angular';
             <span class="text-zinc-500">backends that scale</span>
           </h1>
           <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400">
-            專注於後端架構設計與全端開發。以 Golang、Rust 建構高效能服務，用
-            Angular 打造現代化前端體驗。
+            Focused on backend architecture and full-stack development. Building
+            high-performance services with Go and Rust, crafting modern frontends with Angular.
           </p>
           <div class="mt-10 flex flex-wrap items-center gap-4">
             <a

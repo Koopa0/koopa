@@ -53,8 +53,8 @@ export class TagComponent implements OnInit {
       this.loadContents(tag);
 
       this.seoService.updateMeta({
-        title: `${tag} 相關文章`,
-        description: `所有標記為 ${tag} 的內容`,
+        title: `Tag: ${tag}`,
+        description: `All content tagged with ${tag}`,
         ogUrl: `https://koopa0.dev/tags/${tag}`,
       });
     }
@@ -69,7 +69,7 @@ export class TagComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.error.set('載入內容失敗，請稍後再試');
+        this.error.set('Failed to load content. Please try again later.');
         this.isLoading.set(false);
       },
     });

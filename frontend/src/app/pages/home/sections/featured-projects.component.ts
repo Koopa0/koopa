@@ -27,7 +27,7 @@ import type { ApiProject, ProjectStatus } from '../../../core/models';
         <div class="mb-12 text-center">
           <h2 class="text-3xl font-bold text-zinc-100">Featured Projects</h2>
           <p class="mt-3 text-zinc-400">
-            精選的開源與個人專案，涵蓋後端服務、CLI 工具與全端應用
+            Selected open-source and personal projects spanning backend services, CLI tools, and full-stack apps
           </p>
         </div>
 

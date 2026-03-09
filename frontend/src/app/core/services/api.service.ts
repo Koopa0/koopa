@@ -5,7 +5,7 @@ import { Observable, map } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import type { ApiResponse, ApiListResponse } from '../models';
 
-/** 根據執行環境（SSR / Browser）選擇正確的 API base URL */
+/** Selects the correct API base URL based on runtime environment (SSR / Browser) */
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private readonly http = inject(HttpClient);
@@ -17,7 +17,7 @@ export class ApiService {
       : environment.apiUrl;
   }
 
-  /** 組合完整 URL：baseUrl + path（path 應以 / 開頭） */
+  /** Build full URL: baseUrl + path (path should start with /) */
   private url(path: string): string {
     return `${this.baseUrl}${path}`;
   }
@@ -58,22 +58,22 @@ export class ApiService {
     return this.http.delete<void>(this.url(path));
   }
 
-  /** 取得單筆資料，自動解包 { data: T } */
+  /** Get single item, auto-unwraps { data: T } */
   getData<T>(path: string, params?: Record<string, string | number>): Observable<T> {
     return this.get<T>(path, params).pipe(map((res) => res.data));
   }
 
-  /** 取得列表資料，回傳 { data, meta } */
+  /** Get list data, returns { data, meta } */
   getListData<T>(path: string, params?: Record<string, string | number>): Observable<ApiListResponse<T>> {
     return this.getList<T>(path, params);
   }
 
-  /** POST 並解包 { data: T } */
+  /** POST and unwrap { data: T } */
   postData<T>(path: string, body: unknown): Observable<T> {
     return this.post<T>(path, body).pipe(map((res) => res.data));
   }
 
-  /** PUT 並解包 { data: T } */
+  /** PUT and unwrap { data: T } */
   putData<T>(path: string, body: unknown): Observable<T> {
     return this.put<T>(path, body).pipe(map((res) => res.data));
   }

@@ -15,7 +15,7 @@
   <div
     class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
   ></div>
-  <p class="text-sm text-zinc-400">載入文章中...</p>
+  <p class="text-sm text-zinc-400">Loading article...</p>
 </div>
 } @else {
 <!-- Toolbar -->
@@ -34,7 +34,7 @@
         <lucide-icon [img]="ArrowLeftIcon" [size]="18" />
       </button>
       <h1 class="text-base font-semibold text-zinc-200">
-        {{ isNewArticle() ? '新增文章' : '編輯文章' }}
+        {{ isNewArticle() ? 'New Article' : 'Edit Article' }}
       </h1>
     </div>
 
@@ -46,7 +46,7 @@
         [disabled]="isSaving()"
       >
         <lucide-icon [img]="SaveIcon" [size]="14" />
-        儲存草稿
+        Save Draft
       </button>
       <button
         type="button"
@@ -60,7 +60,7 @@
         ></div>
         } @else {
         <lucide-icon [img]="SendIcon" [size]="14" />
-        } 發布文章
+        } Publish
       </button>
     </div>
   </div>
@@ -76,19 +76,19 @@
             class="mb-4 flex items-center gap-2 text-sm font-medium text-zinc-300"
           >
             <lucide-icon [img]="InfoIcon" [size]="16" />
-            文章資訊
+            Article Info
           </h2>
 
           <form [formGroup]="articleForm" class="space-y-4">
             <!-- Title -->
             <div>
               <label class="mb-1 block text-xs font-medium text-zinc-400"
-                >文章標題</label
+                >Title</label
               >
               <input
                 type="text"
                 formControlName="title"
-                placeholder="請輸入引人注目的標題"
+                placeholder="Enter a compelling title"
                 class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               />
               @if (getFieldError('title')) {
@@ -119,12 +119,12 @@
             <!-- Excerpt -->
             <div>
               <label class="mb-1 block text-xs font-medium text-zinc-400"
-                >文章摘要</label
+                >Excerpt</label
               >
               <textarea
                 formControlName="excerpt"
                 rows="3"
-                placeholder="簡短描述文章內容 (最多200字)"
+                placeholder="Brief description of the article (max 200 chars)"
                 class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               ></textarea>
               <div class="mt-1 flex items-center justify-between">
@@ -144,7 +144,7 @@
             <!-- Status -->
             <div>
               <label class="mb-1 block text-xs font-medium text-zinc-400"
-                >發布狀態</label
+                >Status</label
               >
               <select
                 formControlName="status"
@@ -159,7 +159,7 @@
             <!-- Cover Image -->
             <div>
               <label class="mb-1 block text-xs font-medium text-zinc-400"
-                >封面圖片 URL</label
+                >Cover Image URL</label
               >
               <input
                 type="text"
@@ -172,13 +172,13 @@
             <!-- Tags -->
             <div>
               <label class="mb-2 block text-xs font-medium text-zinc-400"
-                >標籤</label
+                >Tags</label
               >
 
               <!-- Selected Tags -->
               <div class="mb-2 flex flex-wrap gap-1.5">
                 @if (selectedTags.length === 0) {
-                <span class="text-xs text-zinc-600">點擊下方標籤來新增</span>
+                <span class="text-xs text-zinc-600">Click tags below to add</span>
                 } @else { @for (tag of selectedTags; track tag) {
                 <span
                   class="inline-flex items-center gap-1 rounded-full border border-zinc-600 bg-zinc-700 px-2 py-0.5 text-xs text-zinc-200"
@@ -197,7 +197,7 @@
 
               <!-- Available Tags -->
               <div>
-                <span class="mb-1.5 block text-xs text-zinc-600">可用標籤</span>
+                <span class="mb-1.5 block text-xs text-zinc-600">Available tags</span>
                 <div class="flex flex-wrap gap-1.5">
                   @for (tag of availableTags; track tag) { @if
                   (!selectedTags.includes(tag)) {
@@ -232,7 +232,7 @@
               (click)="onTabChange('edit')"
             >
               <lucide-icon [img]="EditIcon" [size]="14" />
-              編輯
+              Edit
             </button>
             <button
               type="button"
@@ -245,7 +245,7 @@
               (click)="onTabChange('preview')"
             >
               <lucide-icon [img]="EyeIcon" [size]="14" />
-              預覽
+              Preview
             </button>
             <button
               type="button"
@@ -258,7 +258,7 @@
               (click)="onTabChange('split')"
             >
               <lucide-icon [img]="Columns2Icon" [size]="14" />
-              分割
+              Split
             </button>
           </div>
 
@@ -272,35 +272,35 @@
               <button
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                title="粗體"
+                title="Bold"
               >
                 <lucide-icon [img]="BoldIcon" [size]="14" />
               </button>
               <button
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                title="斜體"
+                title="Italic"
               >
                 <lucide-icon [img]="ItalicIcon" [size]="14" />
               </button>
               <button
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                title="連結"
+                title="Link"
               >
                 <lucide-icon [img]="LinkIcon" [size]="14" />
               </button>
               <button
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                title="程式碼"
+                title="Code"
               >
                 <lucide-icon [img]="CodeIcon" [size]="14" />
               </button>
               <button
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                title="圖片"
+                title="Image"
               >
                 <lucide-icon [img]="ImageIcon" [size]="14" />
               </button>
@@ -309,7 +309,7 @@
             <textarea
               [formControl]="$any(articleForm.get('body'))"
               rows="30"
-              placeholder="使用 Markdown 語法撰寫您的文章..."
+              placeholder="Write your article using Markdown..."
               class="w-full resize-y bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
               (input)="onContentChange($event)"
             ></textarea>
@@ -336,12 +336,12 @@
                 class="flex items-center gap-1.5 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-500"
               >
                 <lucide-icon [img]="EditIcon" [size]="12" />
-                Markdown 編輯
+                Markdown Editor
               </div>
               <textarea
                 [formControl]="$any(articleForm.get('body'))"
                 rows="20"
-                placeholder="Markdown 內容..."
+                placeholder="Markdown content..."
                 class="h-[calc(100%-2.5rem)] w-full resize-none bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
                 (input)="onContentChange($event)"
               ></textarea>
@@ -351,7 +351,7 @@
                 class="flex items-center gap-1.5 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-500"
               >
                 <lucide-icon [img]="EyeIcon" [size]="12" />
-                即時預覽
+                Live Preview
               </div>
               <div class="p-4">
                 <article class="prose" [innerHTML]="previewHtml()"></article>

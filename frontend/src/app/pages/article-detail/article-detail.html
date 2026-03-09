@@ -6,7 +6,7 @@
     <div
       class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
     ></div>
-    <p class="text-sm">載入文章中...</p>
+    <p class="text-sm">Loading article...</p>
   </div>
 </section>
 } @else if (error()) {
@@ -15,7 +15,7 @@
     class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-4 px-4 py-20 text-center"
   >
     <lucide-icon [img]="AlertCircleIcon" [size]="48" class="text-red-500" />
-    <h2 class="text-xl font-semibold text-zinc-100">載入失敗</h2>
+    <h2 class="text-xl font-semibold text-zinc-100">Failed to Load</h2>
     <p class="text-sm text-zinc-400">{{ error() }}</p>
     <button
       type="button"
@@ -23,7 +23,7 @@
       (click)="goBack()"
     >
       <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
-      返回
+      Back
     </button>
   </div>
 </section>
@@ -39,7 +39,7 @@
         (click)="goBack()"
       >
         <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
-        返回
+        Back
       </button>
       <button
         type="button"
@@ -48,9 +48,9 @@
       >
         @if (isCopied()) {
         <lucide-icon [img]="CheckIcon" [size]="14" />
-        已複製 } @else {
+        Copied } @else {
         <lucide-icon [img]="Share2Icon" [size]="14" />
-        分享 }
+        Share }
       </button>
     </div>
 
@@ -74,11 +74,11 @@
     <div class="flex flex-wrap items-center gap-4 text-sm text-zinc-500">
       <span class="flex items-center gap-1">
         <lucide-icon [img]="CalendarIcon" [size]="14" />
-        {{ article()!.published_at | date: 'yyyy年MM月dd日' }}
+        {{ article()!.published_at | date: 'MMM d, yyyy' }}
       </span>
       <span class="flex items-center gap-1">
         <lucide-icon [img]="ClockIcon" [size]="14" />
-        約 {{ article()!.reading_time }} 分鐘閱讀
+        {{ article()!.reading_time }} min read
       </span>
     </div>
   </div>
@@ -102,9 +102,7 @@
   </div>
 </section>
 
-<!-- Series Navigation（API 尚未提供 series 端點，暫時隱藏） -->
-
-<!-- Related Articles（API 尚未提供 related 端點，暫時不傳資料） -->
+<!-- Related Articles -->
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
     <app-related-articles />
@@ -123,9 +121,9 @@
         >
           @if (isCopied()) {
           <lucide-icon [img]="CheckIcon" [size]="16" />
-          已複製連結 } @else {
+          Link Copied } @else {
           <lucide-icon [img]="Share2Icon" [size]="16" />
-          分享文章 }
+          Share Article }
         </button>
         <button
           type="button"
@@ -133,13 +131,13 @@
           (click)="goBack()"
         >
           <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
-          返回列表
+          Back to List
         </button>
       </div>
 
       @if (article()!.updated_at !== article()!.published_at) {
       <p class="text-xs text-zinc-500">
-        最後更新：{{ article()!.updated_at | date: 'yyyy/MM/dd HH:mm' }}
+        Last updated: {{ article()!.updated_at | date: 'MMM d, yyyy HH:mm' }}
       </p>
       }
     </div>

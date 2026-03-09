@@ -27,7 +27,7 @@ export class TilService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('載入學習筆記失敗');
+        this._error.set('Failed to load TIL entries');
         return throwError(() => err);
       }),
     );
@@ -41,7 +41,7 @@ export class TilService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('學習筆記不存在');
+        this._error.set('TIL entry not found');
         return throwError(() => err);
       }),
     );

@@ -9,12 +9,12 @@ import type {
   ContentType,
 } from '../models';
 
-/** 統一內容 API — 對應後端 /api/contents */
+/** Unified content API — maps to backend /api/contents */
 @Injectable({ providedIn: 'root' })
 export class ContentService {
   private readonly api = inject(ApiService);
 
-  /** 取得已發布的內容列表（公開） */
+  /** Get published content list (public) */
   listPublished(params?: {
     page?: number;
     perPage?: number;
@@ -29,12 +29,12 @@ export class ContentService {
     return this.api.getListData<ApiContent>('/api/contents', query);
   }
 
-  /** 依 slug 取得單篇已發布內容（公開） */
+  /** Get single published content by slug (public) */
   getBySlug(slug: string): Observable<ApiContent> {
     return this.api.getData<ApiContent>(`/api/contents/${slug}`);
   }
 
-  /** 依類型取得已發布內容列表（公開） */
+  /** Get published content list by type (public) */
   listByType(
     type: ContentType,
     params?: { page?: number; perPage?: number },
@@ -45,7 +45,7 @@ export class ContentService {
     return this.api.getListData<ApiContent>(`/api/contents/type/${type}`, query);
   }
 
-  /** 全文搜尋（公開） */
+  /** Full-text search (public) */
   search(
     q: string,
     params?: { page?: number; perPage?: number },
@@ -56,22 +56,22 @@ export class ContentService {
     return this.api.getListData<ApiContent>('/api/search', query);
   }
 
-  /** Admin — 建立內容 */
+  /** Admin — create content */
   create(request: ApiCreateContentRequest): Observable<ApiContent> {
     return this.api.postData<ApiContent>('/api/admin/contents', request);
   }
 
-  /** Admin — 更新內容 */
+  /** Admin — update content */
   update(id: string, request: ApiUpdateContentRequest): Observable<ApiContent> {
     return this.api.putData<ApiContent>(`/api/admin/contents/${id}`, request);
   }
 
-  /** Admin — 刪除內容 */
+  /** Admin — delete content */
   remove(id: string): Observable<void> {
     return this.api.delete(`/api/admin/contents/${id}`);
   }
 
-  /** Admin — 發布內容 */
+  /** Admin — publish content */
   publish(id: string): Observable<ApiContent> {
     return this.api.postData<ApiContent>(
       `/api/admin/contents/${id}/publish`,

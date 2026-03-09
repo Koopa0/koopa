@@ -27,7 +27,6 @@ import {
   ChevronDown,
   Github,
   Linkedin,
-  Twitter,
   Mail,
 } from 'lucide-angular';
 import { BackToTopComponent } from './shared/back-to-top/back-to-top.component';
@@ -49,6 +48,7 @@ import { slideDown } from './shared/animations/fade-in.animation';
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [slideDown],
+  host: { class: 'flex min-h-dvh flex-col' },
 })
 export class AppComponent {
   protected readonly title = 'Koopa';
@@ -76,7 +76,6 @@ export class AppComponent {
   protected readonly ChevronDownIcon = ChevronDown;
   protected readonly GithubIcon = Github;
   protected readonly LinkedinIcon = Linkedin;
-  protected readonly TwitterIcon = Twitter;
   protected readonly MailIcon = Mail;
 
   constructor() {

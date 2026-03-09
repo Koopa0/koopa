@@ -33,14 +33,14 @@ interface FeedEntry {
 
 const FEED_LIMIT = 6;
 
-/** 從 API 回傳的 ContentType 對應到 FeedEntry type */
+/** Map API ContentType to FeedEntry type */
 const FEED_TYPE_MAP: Partial<Record<ContentType, FeedEntry['type']>> = {
   article: 'article',
   'build-log': 'build-log',
   til: 'til',
 };
 
-/** 從 FeedEntry type 對應到路由前綴 */
+/** Map FeedEntry type to route prefix */
 const PATH_PREFIX_MAP: Record<FeedEntry['type'], string> = {
   article: '/articles',
   'build-log': '/build-logs',
@@ -57,7 +57,7 @@ const PATH_PREFIX_MAP: Record<FeedEntry['type'], string> = {
         <div class="mb-12 flex items-center justify-between">
           <div>
             <h2 class="text-3xl font-bold text-zinc-100">Latest</h2>
-            <p class="mt-3 text-zinc-400">最新的文章、開發紀錄與學習筆記</p>
+            <p class="mt-3 text-zinc-400">Recent articles, build logs, and learning notes</p>
           </div>
           <a
             routerLink="/articles"

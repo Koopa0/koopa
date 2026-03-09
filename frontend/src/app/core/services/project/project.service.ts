@@ -17,7 +17,7 @@ export class ProjectService {
   readonly loading = this._loading.asReadonly();
   readonly errorMessage = this._error.asReadonly();
 
-  /** 取得所有專案（公開） */
+  /** Get all projects (public) */
   getAllProjects(): Observable<ApiProject[]> {
     this._loading.set(true);
     this._error.set(null);
@@ -26,13 +26,13 @@ export class ProjectService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('載入專案失敗');
+        this._error.set('Failed to load projects');
         return throwError(() => err);
       }),
     );
   }
 
-  /** 依 slug 取得單一專案（公開） */
+  /** Get single project by slug (public) */
   getProjectBySlug(slug: string): Observable<ApiProject> {
     this._loading.set(true);
     this._error.set(null);
@@ -41,18 +41,18 @@ export class ProjectService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('專案不存在');
+        this._error.set('Project not found');
         return throwError(() => err);
       }),
     );
   }
 
-  /** Admin — 建立專案 */
+  /** Admin — create project */
   createProject(request: ApiCreateProjectRequest): Observable<ApiProject> {
     return this.api.postData<ApiProject>('/api/admin/projects', request);
   }
 
-  /** Admin — 更新專案 */
+  /** Admin — update project */
   updateProject(
     id: string,
     request: ApiUpdateProjectRequest,
@@ -60,7 +60,7 @@ export class ProjectService {
     return this.api.putData<ApiProject>(`/api/admin/projects/${id}`, request);
   }
 
-  /** Admin — 刪除專案 */
+  /** Admin — delete project */
   deleteProject(id: string): Observable<void> {
     return this.api.delete(`/api/admin/projects/${id}`);
   }

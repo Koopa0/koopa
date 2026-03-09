@@ -18,7 +18,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { slideDown } from '../animations/fade-in.animation';
 import type { ContentType } from '../../core/models';
 
-/** 將 ContentType 對應到前端路由前綴 */
+/** Map ContentType to frontend route prefix */
 const TYPE_ROUTE_MAP: Record<ContentType, string> = {
   article: '/articles',
   essay: '/essays',
@@ -35,26 +35,26 @@ const TYPE_ROUTE_MAP: Record<ContentType, string> = {
   imports: [RouterLink, LucideAngularModule],
   animations: [slideDown],
   template: `
-    <div class="relative" role="search" aria-label="文章搜尋">
+    <div class="relative" role="search" aria-label="Article search">
       <div
         class="flex items-center gap-3 rounded-sm border border-zinc-700 bg-zinc-900 px-4 py-3"
       >
         <lucide-icon [img]="SearchIcon" [size]="18" class="text-zinc-500" />
         <input
           type="text"
-          placeholder="搜尋文章..."
+          placeholder="Search articles..."
           class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500"
           [value]="searchQuery()"
           (input)="onSearchInput($event)"
           autocomplete="off"
-          aria-label="搜尋文章"
+          aria-label="Search articles"
         />
         @if (searchQuery()) {
           <button
             type="button"
             (click)="clearSearch()"
             class="text-zinc-500 hover:text-zinc-300"
-            aria-label="清除搜尋"
+            aria-label="Clear search"
           >
             <lucide-icon [img]="XIcon" [size]="16" />
           </button>
@@ -66,7 +66,7 @@ const TYPE_ROUTE_MAP: Record<ContentType, string> = {
           @slideDown
           class="absolute top-full right-0 left-0 z-50 mt-2 max-h-96 overflow-y-auto rounded-sm border border-zinc-700 bg-zinc-900 shadow-lg"
           role="listbox"
-          aria-label="搜尋結果"
+          aria-label="Search results"
         >
           @if (isSearching()) {
             <div
@@ -75,12 +75,12 @@ const TYPE_ROUTE_MAP: Record<ContentType, string> = {
               <div
                 class="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300"
               ></div>
-              <span class="text-sm">搜尋中...</span>
+              <span class="text-sm">Searching...</span>
             </div>
           } @else if (searchQuery() && !hasResults()) {
             <div class="flex flex-col items-center gap-2 p-8 text-zinc-400">
               <lucide-icon [img]="SearchXIcon" [size]="32" class="opacity-50" />
-              <p class="text-sm">找不到符合「{{ searchQuery() }}」的文章</p>
+              <p class="text-sm">No results found for "{{ searchQuery() }}"</p>
             </div>
           } @else if (hasResults()) {
             <div class="p-2">

@@ -42,9 +42,9 @@ import type {
 } from '../../core/models';
 
 const STATUS_OPTIONS: Array<{ value: ContentStatus; label: string }> = [
-  { value: 'draft', label: '草稿' },
-  { value: 'published', label: '已發布' },
-  { value: 'archived', label: '封存' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'published', label: 'Published' },
+  { value: 'archived', label: 'Archived' },
 ];
 
 @Component({
@@ -71,7 +71,7 @@ export class ArticleEditorComponent implements OnInit {
     type: 'success' | 'error';
   } | null>(null);
 
-  /** 編輯模式下儲存文章 ID */
+  /** Article ID stored in edit mode */
   private articleId: string | null = null;
 
   protected readonly articleForm: FormGroup;
@@ -85,9 +85,9 @@ export class ArticleEditorComponent implements OnInit {
     'Golang',
     'Rust',
     'Flutter',
-    'Web開發',
-    '前端',
-    '後端',
+    'Web Dev',
+    'Frontend',
+    'Backend',
   ];
 
   protected readonly ArrowLeftIcon = ArrowLeft;
@@ -160,7 +160,7 @@ export class ArticleEditorComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.showNotification('載入文章失敗', 'error');
+        this.showNotification('Failed to load article', 'error');
         this.isLoading.set(false);
       },
     });
@@ -172,15 +172,15 @@ export class ArticleEditorComponent implements OnInit {
   }
 
   private getDefaultMarkdown(): string {
-    return `# 新文章標題
+    return `# New Article Title
 
-> 這裡是一個引用範例
+> This is a blockquote example
 
-## 介紹
+## Introduction
 
-在這裡開始撰寫您的技術文章...
+Start writing your article here...
 
-## 程式碼範例
+## Code Example
 
 \`\`\`typescript
 interface User {
@@ -190,9 +190,9 @@ interface User {
 }
 \`\`\`
 
-## 結論
+## Conclusion
 
-在這裡總結您的想法...
+Summarize your thoughts here...
 `;
   }
 
@@ -240,7 +240,7 @@ interface User {
   private saveArticle(status: ContentStatus): void {
     if (this.articleForm.invalid) {
       this.markFormGroupTouched();
-      this.showNotification('請填寫所有必要欄位', 'error');
+      this.showNotification('Please fill in all required fields', 'error');
       return;
     }
 
@@ -265,14 +265,14 @@ interface User {
       this.articleService.createArticle(request).subscribe({
         next: () => {
           this.showNotification(
-            status === 'published' ? '文章已發布！' : '草稿已保存！',
+            status === 'published' ? 'Article published!' : 'Draft saved!',
             'success',
           );
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('儲存失敗', 'error');
+          this.showNotification('Failed to save', 'error');
           this.isSaving.set(false);
         },
       });
@@ -290,14 +290,14 @@ interface User {
       this.articleService.updateArticle(this.articleId!, request).subscribe({
         next: () => {
           this.showNotification(
-            status === 'published' ? '文章已發布！' : '草稿已保存！',
+            status === 'published' ? 'Article published!' : 'Draft saved!',
             'success',
           );
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('更新失敗', 'error');
+          this.showNotification('Failed to update', 'error');
           this.isSaving.set(false);
         },
       });
@@ -330,15 +330,15 @@ interface User {
     const control = this.articleForm.get(fieldName);
     if (control?.errors && control.touched) {
       if (control.errors['required']) {
-        return '此欄位為必填';
+        return 'This field is required';
       }
       if (control.errors['minlength']) {
         const minLength = control.errors['minlength'].requiredLength;
-        return `至少需要 ${minLength} 個字符`;
+        return `Must be at least ${minLength} characters`;
       }
       if (control.errors['maxlength']) {
         const maxLength = control.errors['maxlength'].requiredLength;
-        return `最多 ${maxLength} 個字符`;
+        return `Must be at most ${maxLength} characters`;
       }
     }
     return '';

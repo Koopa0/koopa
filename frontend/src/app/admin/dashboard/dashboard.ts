@@ -141,7 +141,7 @@ export class DashboardComponent implements OnInit {
       next: () => {
         this.deleteTarget.set(null);
         this.isDeleting.set(false);
-        // 重新載入資料
+        // Reload data
         if (this.deleteType() === 'article') {
           this.articleService.getArticles().subscribe({
             next: (response) => this.articles.set(response.articles),
@@ -181,13 +181,13 @@ export class DashboardComponent implements OnInit {
   protected getStatusLabel(status: string): string {
     switch (status) {
       case 'published':
-        return '已發布';
+        return 'Published';
       case 'draft':
-        return '草稿';
+        return 'Draft';
       case 'review':
-        return '審核中';
+        return 'Under Review';
       case 'archived':
-        return '封存';
+        return 'Archived';
       default:
         return status;
     }

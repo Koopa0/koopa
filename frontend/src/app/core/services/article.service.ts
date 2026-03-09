@@ -46,7 +46,7 @@ export class ArticleService {
           tap(() => this._loading.set(false)),
           catchError((err) => {
             this._loading.set(false);
-            this._error.set('搜尋文章失敗');
+            this._error.set('Failed to search articles');
             return throwError(() => err);
           }),
         );
@@ -64,7 +64,7 @@ export class ArticleService {
         tap(() => this._loading.set(false)),
         catchError((err) => {
           this._loading.set(false);
-          this._error.set('載入文章列表失敗');
+          this._error.set('Failed to load articles');
           return throwError(() => err);
         }),
       );
@@ -78,18 +78,18 @@ export class ArticleService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('文章不存在');
+        this._error.set('Article not found');
         return throwError(() => err);
       }),
     );
   }
 
-  /** Admin — 建立文章 */
+  /** Admin — create article */
   createArticle(request: ApiCreateContentRequest): Observable<ApiContent> {
     return this.content.create({ ...request, type: 'article' });
   }
 
-  /** Admin — 更新文章 */
+  /** Admin — update article */
   updateArticle(
     id: string,
     request: ApiUpdateContentRequest,
@@ -97,12 +97,12 @@ export class ArticleService {
     return this.content.update(id, request);
   }
 
-  /** Admin — 刪除文章 */
+  /** Admin — delete article */
   deleteArticle(id: string): Observable<void> {
     return this.content.remove(id);
   }
 
-  /** Admin — 發布文章 */
+  /** Admin — publish article */
   publishArticle(id: string): Observable<ApiContent> {
     return this.content.publish(id);
   }

@@ -4,14 +4,14 @@ import {
   Mail,
   Github,
   Linkedin,
-  Twitter,
 } from 'lucide-angular';
 import type { LucideIconData } from 'lucide-angular';
 
 interface SocialLink {
   name: string;
   url: string;
-  icon: LucideIconData;
+  icon?: LucideIconData;
+  isX?: boolean;
 }
 
 @Component({
@@ -25,7 +25,7 @@ interface SocialLink {
           Let's Build Something Together
         </h2>
         <p class="mx-auto mt-4 max-w-xl text-zinc-400">
-          對合作有興趣、有技術問題想討論，或只是想打個招呼？歡迎隨時聯繫我。
+          Interested in collaboration, have a technical question, or just want to say hi? Feel free to reach out.
         </p>
         <div class="mt-10 flex items-center justify-center gap-4">
           @for (link of socialLinks; track link.name) {
@@ -36,7 +36,11 @@ interface SocialLink {
               [title]="link.name"
               class="flex h-11 w-11 items-center justify-center rounded-sm border border-zinc-700 text-zinc-400 no-underline transition-colors hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
             >
-              <lucide-icon [img]="link.icon" [size]="18" />
+              @if (link.isX) {
+                <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              } @else {
+                <lucide-icon [img]="link.icon!" [size]="18" />
+              }
             </a>
           }
         </div>
@@ -49,12 +53,11 @@ export class ContactCtaComponent {
   protected readonly MailIcon = Mail;
   protected readonly GithubIcon = Github;
   protected readonly LinkedinIcon = Linkedin;
-  protected readonly TwitterIcon = Twitter;
 
   protected readonly socialLinks: SocialLink[] = [
     {
       name: 'Email',
-      url: 'mailto:hello@koopa0.dev',
+      url: 'mailto:contact@koopa0.dev',
       icon: this.MailIcon,
     },
     {
@@ -64,13 +67,13 @@ export class ContactCtaComponent {
     },
     {
       name: 'LinkedIn',
-      url: 'https://linkedin.com/in/koopa0',
+      url: 'https://www.linkedin.com/in/koopa-chen-70a4651ba/',
       icon: this.LinkedinIcon,
     },
     {
       name: 'X',
-      url: 'https://x.com/koopa0',
-      icon: this.TwitterIcon,
+      url: 'https://x.com/Koopa012426',
+      isX: true,
     },
   ];
 }

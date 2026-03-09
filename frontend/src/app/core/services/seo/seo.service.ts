@@ -18,7 +18,7 @@ export interface PageMeta {
 
 const SITE_NAME = 'koopa0.dev';
 const DEFAULT_DESCRIPTION =
-  'Backend Engineer / Full-Stack Developer - 技術文章與個人作品集';
+  'Backend Engineer / Full-Stack Developer - Technical articles and personal projects';
 const DEFAULT_IMAGE = 'https://koopa0.dev/og-image.png';
 
 @Injectable({ providedIn: 'root' })
@@ -32,7 +32,7 @@ export class SeoService {
     const title = `${pageMeta.title} | ${SITE_NAME}`;
     this.titleService.setTitle(title);
 
-    // 基礎 meta tags
+    // Base meta tags
     this.meta.updateTag({
       name: 'description',
       content: pageMeta.description || DEFAULT_DESCRIPTION,
@@ -129,7 +129,7 @@ export class SeoService {
   }
 
   /**
-   * 清除所有 SEO 相關的 meta tags（路由切換時呼叫）
+   * Clear all SEO-related meta tags (called on route change)
    */
   clearMeta(): void {
     const existingScript = this.document.querySelector(

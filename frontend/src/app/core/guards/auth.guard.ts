@@ -11,7 +11,7 @@ export const authGuard: CanActivateFn = (route, state) => {
     return true;
   }
   
-  // 重定向到登入頁面，並保存原本要訪問的 URL
+  // Redirect to login page and preserve the originally requested URL
   router.navigate(['/login'], { 
     queryParams: { returnUrl: state.url } 
   });
@@ -31,7 +31,7 @@ export const adminGuard: CanActivateFn = (route, state) => {
       queryParams: { returnUrl: state.url } 
     });
   } else {
-    // 已登入但不是管理員
+    // Authenticated but not an admin
     router.navigate(['/'], {
       queryParams: { error: 'unauthorized' }
     });

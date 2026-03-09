@@ -21,9 +21,9 @@ import { SeoService } from '../../core/services/seo/seo.service';
         <div class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900">
           <lucide-icon [img]="AlertTriangleIcon" [size]="32" class="text-zinc-500" />
         </div>
-        <h1 class="text-2xl font-bold text-zinc-100">發生錯誤</h1>
+        <h1 class="text-2xl font-bold text-zinc-100">Something went wrong</h1>
         <p class="mt-2 max-w-md text-sm text-zinc-400">
-          很抱歉，伺服器發生了預期之外的錯誤。請稍後再試，或回到首頁。
+          Sorry, an unexpected error occurred. Please try again later or go back to the home page.
         </p>
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           <button
@@ -32,14 +32,14 @@ import { SeoService } from '../../core/services/seo/seo.service';
             class="inline-flex items-center gap-2 rounded-sm bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
           >
             <lucide-icon [img]="RefreshCwIcon" [size]="16" />
-            重新載入
+            Reload
           </button>
           <a
             routerLink="/home"
             class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-5 py-2.5 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:text-white"
           >
             <lucide-icon [img]="HomeIcon" [size]="16" />
-            回到首頁
+            Back to Home
           </a>
         </div>
       </div>
@@ -58,8 +58,8 @@ export class ErrorComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '發生錯誤',
-      description: '伺服器發生了預期之外的錯誤',
+      title: 'Error',
+      description: 'An unexpected error occurred',
       noIndex: true,
     });
   }

@@ -2,8 +2,8 @@ import { Injectable, signal, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 
 /**
- * ThemeService — 目前僅支援深色模式。
- * 保留此 service 以便未來擴展，但不再提供切換功能。
+ * ThemeService — currently only supports dark mode.
+ * Retained for future extensibility, but no toggle functionality is provided.
  */
 @Injectable({
   providedIn: 'root',

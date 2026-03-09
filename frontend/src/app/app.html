@@ -4,7 +4,7 @@
 >
   <nav
     class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8"
-    aria-label="主導航"
+    aria-label="Main navigation"
   >
     <!-- Brand -->
     <a
@@ -111,7 +111,7 @@
         type="button"
         (click)="toggleSearch()"
         class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-        aria-label="搜尋文章"
+        aria-label="Search articles"
         [attr.aria-expanded]="isSearchOpen()"
       >
         @if (isSearchOpen()) {
@@ -126,14 +126,14 @@
         <a
           routerLink="/admin"
           class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 no-underline"
-          aria-label="管理後台"
+          aria-label="Admin dashboard"
         >
           <lucide-icon [img]="DashboardIcon" [size]="18" />
         </a>
         <a
           routerLink="/admin/editor"
           class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 no-underline"
-          aria-label="新增文章"
+          aria-label="New article"
         >
           <lucide-icon [img]="EditIcon" [size]="18" />
         </a>
@@ -141,7 +141,7 @@
           type="button"
           (click)="logout()"
           class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-red-400"
-          aria-label="登出"
+          aria-label="Sign out"
         >
           <lucide-icon [img]="LogOutIcon" [size]="18" />
         </button>
@@ -154,7 +154,7 @@
         (click)="toggleMobileMenu()"
         class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 md:hidden"
         [attr.aria-expanded]="isMobileMenuOpen()"
-        aria-label="選單"
+        aria-label="Menu"
         aria-controls="mobile-menu"
       >
         @if (isMobileMenuOpen()) {
@@ -282,77 +282,30 @@
 </header>
 
 <!-- Main Content -->
-<main class="min-h-[calc(100dvh-64px-200px)]">
+<main class="flex-1">
   <router-outlet />
 </main>
 
 <!-- Footer -->
 <footer class="border-t border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <div class="grid grid-cols-1 gap-8 sm:grid-cols-3">
-      <div>
-        <h3
-          class="mb-3 text-sm font-semibold tracking-wider text-zinc-400 uppercase"
-        >
-          Tech
-        </h3>
-        <div class="flex flex-col gap-2">
-          <span class="text-sm text-zinc-500">Golang</span>
-          <span class="text-sm text-zinc-500">Angular</span>
-          <span class="text-sm text-zinc-500">Rust</span>
-          <span class="text-sm text-zinc-500">Flutter</span>
-        </div>
-      </div>
-
-      <div>
-        <h3
-          class="mb-3 text-sm font-semibold tracking-wider text-zinc-400 uppercase"
-        >
-          Connect
-        </h3>
-        <div class="flex gap-3">
-          <a
-            href="https://github.com/koopa0"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-            aria-label="GitHub"
-          >
-            <lucide-icon [img]="GithubIcon" [size]="20" />
-          </a>
-          <a
-            href="https://linkedin.com/in/koopa0"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-            aria-label="LinkedIn"
-          >
-            <lucide-icon [img]="LinkedinIcon" [size]="20" />
-          </a>
-          <a
-            href="https://x.com/koopa0"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-            aria-label="X"
-          >
-            <lucide-icon [img]="TwitterIcon" [size]="20" />
-          </a>
-          <a
-            href="mailto:contact@koopa0.dev"
-            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-            aria-label="Email"
-          >
-            <lucide-icon [img]="MailIcon" [size]="20" />
-          </a>
-        </div>
-      </div>
+  <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-6 sm:flex-row sm:px-6 lg:px-8">
+    <div class="flex items-center gap-3">
+      <img src="/logo.png" alt="Koopa" width="24" height="24" class="h-6 w-6 rounded-full" />
+      <span class="text-sm text-zinc-600">&copy; {{ currentYear }} koopa0.dev</span>
     </div>
-
-    <div class="mt-6 border-t border-zinc-800 pt-6 text-center">
-      <p class="text-sm text-zinc-600">
-        &copy; {{ currentYear }} koopa0.dev. All rights reserved.
-      </p>
+    <div class="flex items-center gap-1">
+      <a href="https://github.com/koopa0" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="GitHub">
+        <lucide-icon [img]="GithubIcon" [size]="18" />
+      </a>
+      <a href="https://www.linkedin.com/in/koopa-chen-70a4651ba/" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="LinkedIn">
+        <lucide-icon [img]="LinkedinIcon" [size]="18" />
+      </a>
+      <a href="https://x.com/Koopa012426" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="X">
+        <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      </a>
+      <a href="mailto:contact@koopa0.dev" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="Email">
+        <lucide-icon [img]="MailIcon" [size]="18" />
+      </a>
     </div>
   </div>
 </footer>

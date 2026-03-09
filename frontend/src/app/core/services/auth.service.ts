@@ -37,8 +37,8 @@ export class AuthService {
         catchError((error) => {
           const message =
             error.status === 401
-              ? '電子郵件或密碼錯誤'
-              : '登入失敗，請稍後再試';
+              ? 'Invalid email or password'
+              : 'Login failed. Please try again later.';
           return throwError(() => new Error(message));
         }),
       );
@@ -71,7 +71,7 @@ export class AuthService {
       );
   }
 
-  /** 從 token pair 解析使用者資訊並更新狀態 */
+  /** Parse user info from token pair and update auth state */
   private setTokens(apiTokens: ApiTokenResponse): void {
     const tokens: TokenPair = {
       accessToken: apiTokens.access_token,
@@ -87,7 +87,7 @@ export class AuthService {
     });
   }
 
-  /** 解碼 JWT payload 取得使用者資訊 */
+  /** Decode JWT payload to extract user info */
   private decodeUser(token: string): AuthUser {
     const payload = this.decodeJwt(token);
     return {

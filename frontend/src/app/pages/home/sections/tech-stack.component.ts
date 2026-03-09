@@ -17,7 +17,7 @@ interface TechCategory {
       <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div class="mb-12 text-center">
           <h2 class="text-3xl font-bold text-zinc-100">Tech Stack</h2>
-          <p class="mt-3 text-zinc-400">日常使用的技術與工具，持續學習與精進</p>
+          <p class="mt-3 text-zinc-400">Technologies and tools I work with daily</p>
         </div>
 
         <div class="grid grid-cols-1 gap-8 md:grid-cols-3">

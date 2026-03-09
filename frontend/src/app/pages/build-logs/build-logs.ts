@@ -44,7 +44,7 @@ export class BuildLogsComponent implements OnInit {
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'Build Log',
-      description: '專案開發紀錄 — 從構想到完成的過程、踩過的坑和做過的決策',
+      description: 'Development logs — process, decisions, and lessons learned.',
       ogUrl: 'https://koopa0.dev/build-logs',
     });
     this.loadBuildLogs();
@@ -57,7 +57,7 @@ export class BuildLogsComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.error.set('載入開發日誌失敗');
+        this.error.set('Failed to load build logs');
         this.isLoading.set(false);
       },
     });

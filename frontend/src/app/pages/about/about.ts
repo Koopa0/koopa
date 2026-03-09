@@ -8,12 +8,10 @@ import {
   LucideAngularModule,
   Code,
   Server,
-  Smartphone,
   Wrench,
   Mail,
   Github,
   Linkedin,
-  Twitter,
 } from 'lucide-angular';
 import type { LucideIconData } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -39,8 +37,8 @@ export class AboutComponent implements OnInit {
   private readonly seoService = inject(SeoService);
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '關於我',
-      description: 'Backend Engineer / Full-Stack Developer，熱愛技術與開源',
+      title: 'About',
+      description: 'Koopa — Backend Engineer / Full-Stack Developer. Go, Angular, and cloud-native technologies.',
       ogUrl: 'https://koopa0.dev/about',
       ogType: 'profile',
       jsonLd: buildPersonSchema(),
@@ -49,33 +47,25 @@ export class AboutComponent implements OnInit {
 
   protected readonly CodeIcon = Code;
   protected readonly ServerIcon = Server;
-  protected readonly SmartphoneIcon = Smartphone;
   protected readonly WrenchIcon = Wrench;
   protected readonly MailIcon = Mail;
   protected readonly GithubIcon = Github;
   protected readonly LinkedinIcon = Linkedin;
-  protected readonly TwitterIcon = Twitter;
-
   protected readonly skills: SkillGroup[] = [
     {
-      category: '前端開發',
-      icon: this.CodeIcon,
-      items: ['Angular', 'Flutter'],
-    },
-    {
-      category: '後端開發',
+      category: 'Backend',
       icon: this.ServerIcon,
-      items: ['Golang', 'Rust'],
+      items: ['Go', 'PostgreSQL', 'REST API'],
     },
     {
-      category: '行動開發',
-      icon: this.SmartphoneIcon,
-      items: ['Flutter'],
+      category: 'Frontend',
+      icon: this.CodeIcon,
+      items: ['Angular', 'Tailwind CSS', 'Flutter'],
     },
     {
-      category: '開發工具',
+      category: 'DevOps',
       icon: this.WrenchIcon,
-      items: ['Docker', 'Kubernetes'],
+      items: ['Docker', 'Kubernetes', 'GitHub Actions', 'Cloud'],
     },
   ];
 }

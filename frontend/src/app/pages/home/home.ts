@@ -39,9 +39,9 @@ export class HomeComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '首頁',
+      title: 'Home',
       description:
-        'Backend Engineer / Full-Stack Developer - 技術文章與個人作品集',
+        'Koopa — Backend Engineer / Full-Stack Developer. Technical articles and personal projects.',
       ogUrl: 'https://koopa0.dev/home',
       jsonLd: buildWebSiteSchema(),
     });

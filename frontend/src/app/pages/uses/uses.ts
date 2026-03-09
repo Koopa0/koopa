@@ -85,7 +85,7 @@ export class UsesComponent {
   constructor() {
     this.seoService.updateMeta({
       title: 'Uses',
-      description: '我的開發工具、硬體和軟體 — 用什麼、為什麼選它',
+      description: 'Tools, hardware, and software I use for development.',
       ogUrl: 'https://koopa0.dev/uses',
     });
   }

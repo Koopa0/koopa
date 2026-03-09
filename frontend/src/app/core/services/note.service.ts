@@ -27,7 +27,7 @@ export class NoteService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('載入筆記失敗');
+        this._error.set('Failed to load notes');
         return throwError(() => err);
       }),
     );
@@ -41,7 +41,7 @@ export class NoteService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('筆記不存在');
+        this._error.set('Note not found');
         return throwError(() => err);
       }),
     );

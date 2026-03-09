@@ -41,7 +41,7 @@ export class ProjectEditorComponent implements OnInit {
     type: 'success' | 'error';
   } | null>(null);
 
-  /** 編輯模式下儲存專案 ID */
+  /** Project ID stored in edit mode */
   private projectId: string | null = null;
 
   protected readonly projectForm: FormGroup;
@@ -61,7 +61,7 @@ export class ProjectEditorComponent implements OnInit {
   protected readonly PlusIcon = Plus;
   protected readonly XIcon = X;
 
-  // 暫存 tech stack 和 highlights 的新增欄位
+  // Temporary input fields for adding tech stack and highlights
   protected readonly newTech = signal('');
   protected readonly newHighlight = signal('');
 
@@ -113,7 +113,7 @@ export class ProjectEditorComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.showNotification('載入專案失敗', 'error');
+        this.showNotification('Failed to load project', 'error');
         this.isLoading.set(false);
       },
     });
@@ -190,7 +190,7 @@ export class ProjectEditorComponent implements OnInit {
   protected save(): void {
     if (this.projectForm.invalid) {
       this.markFormGroupTouched();
-      this.showNotification('請填寫所有必要欄位', 'error');
+      this.showNotification('Please fill in all required fields', 'error');
       return;
     }
 
@@ -215,12 +215,12 @@ export class ProjectEditorComponent implements OnInit {
 
       this.projectService.createProject(request).subscribe({
         next: () => {
-          this.showNotification('專案已建立！', 'success');
+          this.showNotification('Project created!', 'success');
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('建立失敗', 'error');
+          this.showNotification('Failed to create', 'error');
           this.isSaving.set(false);
         },
       });
@@ -242,12 +242,12 @@ export class ProjectEditorComponent implements OnInit {
 
       this.projectService.updateProject(this.projectId!, request).subscribe({
         next: () => {
-          this.showNotification('專案已更新！', 'success');
+          this.showNotification('Project updated!', 'success');
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('更新失敗', 'error');
+          this.showNotification('Failed to update', 'error');
           this.isSaving.set(false);
         },
       });
@@ -262,15 +262,15 @@ export class ProjectEditorComponent implements OnInit {
     const control = this.projectForm.get(fieldName);
     if (control?.errors && control.touched) {
       if (control.errors['required']) {
-        return '此欄位為必填';
+        return 'This field is required';
       }
       if (control.errors['minlength']) {
         const minLength = control.errors['minlength'].requiredLength;
-        return `至少需要 ${minLength} 個字符`;
+        return `Must be at least ${minLength} characters`;
       }
       if (control.errors['maxlength']) {
         const maxLength = control.errors['maxlength'].requiredLength;
-        return `最多 ${maxLength} 個字符`;
+        return `Must be at most ${maxLength} characters`;
       }
     }
     return '';

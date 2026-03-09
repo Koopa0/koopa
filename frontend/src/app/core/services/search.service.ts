@@ -18,7 +18,7 @@ export class SearchService {
   readonly searching = this._searching.asReadonly();
   readonly hasResults = computed(() => this._results().length > 0);
 
-  /** 全文搜尋 — 呼叫後端 /api/search */
+  /** Full-text search — calls backend /api/search */
   search(query: string, page = 1, perPage = 20): void {
     this._query.set(query);
 

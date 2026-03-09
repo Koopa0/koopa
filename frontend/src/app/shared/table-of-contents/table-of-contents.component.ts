@@ -34,13 +34,13 @@ export interface TocItem {
     @if (tocItems().length > 0) {
       <nav
         class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4"
-        aria-label="文章目錄"
+        aria-label="Table of contents"
       >
         <h3
           class="mb-3 flex items-center gap-2 text-sm font-medium text-zinc-300"
         >
           <lucide-icon [img]="ListIcon" [size]="14" />
-          目錄
+          Contents
         </h3>
         <ul class="space-y-0.5">
           @for (item of tocItems(); track item.id) {
@@ -107,7 +107,7 @@ export class TableOfContentsComponent {
         .subscribe(() => this.updateActiveSection());
     }
 
-    // 當內容變更時，等待 DOM 渲染後重新計算 active section
+    // When content changes, wait for DOM render then recalculate active section
     effect(() => {
       const items = this.tocItems();
       if (items.length > 0 && isPlatformBrowser(this.platformId)) {

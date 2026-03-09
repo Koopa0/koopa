@@ -23,7 +23,7 @@ import { LucideAngularModule, ChevronUp } from 'lucide-angular';
       [class.opacity-100]="isVisible()"
       [class.translate-y-0]="isVisible()"
       (click)="scrollToTop()"
-      aria-label="回到頂部"
+      aria-label="Back to top"
     >
       <lucide-icon [img]="ChevronUpIcon" [size]="20" />
     </button>

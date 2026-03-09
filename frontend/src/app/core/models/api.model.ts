@@ -1,4 +1,4 @@
-/** API 統一回應格式 — 對應後端 JSON 結構 */
+/** Unified API response format — matches backend JSON structure */
 
 export interface ApiResponse<T> {
   data: T;
@@ -23,7 +23,7 @@ export interface ApiError {
   };
 }
 
-/** 後端 Content 物件（snake_case，對應 API 回應） */
+/** Backend Content object (snake_case, matches API response) */
 export interface ApiContent {
   id: string;
   slug: string;
@@ -60,7 +60,7 @@ export type ContentStatus = 'draft' | 'review' | 'published' | 'archived';
 
 export type ReviewLevel = 'auto' | 'light' | 'standard' | 'strict';
 
-/** 後端 Topic 物件 */
+/** Backend Topic object */
 export interface ApiTopic {
   id: string;
   slug: string;
@@ -73,7 +73,7 @@ export interface ApiTopic {
   updated_at: string;
 }
 
-/** 後端 Project 物件 */
+/** Backend Project object */
 export interface ApiProject {
   id: string;
   slug: string;
@@ -102,7 +102,7 @@ export type ProjectStatus =
   | 'maintained'
   | 'archived';
 
-/** 後端 Auth 回應 */
+/** Backend Auth response */
 export interface ApiLoginRequest {
   email: string;
   password: string;
@@ -113,7 +113,7 @@ export interface ApiTokenResponse {
   refresh_token: string;
 }
 
-/** JWT payload（後端 Claims struct） */
+/** JWT payload (backend Claims struct) */
 export interface JwtPayload {
   user_id: string;
   email: string;
@@ -122,7 +122,7 @@ export interface JwtPayload {
   iat: number;
 }
 
-/** Admin — 建立/更新 Content 請求 */
+/** Admin — Create/Update Content request */
 export interface ApiCreateContentRequest {
   slug: string;
   title: string;
@@ -158,7 +158,7 @@ export interface ApiUpdateContentRequest {
   reading_time?: number;
 }
 
-/** Admin — 建立/更新 Project 請求 */
+/** Admin — Create/Update Project request */
 export interface ApiCreateProjectRequest {
   slug: string;
   title: string;
@@ -181,7 +181,7 @@ export interface ApiCreateProjectRequest {
 export interface ApiUpdateProjectRequest
   extends Partial<ApiCreateProjectRequest> {}
 
-/** Admin — 建立/更新 Topic 請求 */
+/** Admin — Create/Update Topic request */
 export interface ApiCreateTopicRequest {
   slug: string;
   name: string;
@@ -193,7 +193,7 @@ export interface ApiCreateTopicRequest {
 export interface ApiUpdateTopicRequest
   extends Partial<ApiCreateTopicRequest> {}
 
-/** Admin — Review 審核 */
+/** Admin — Review */
 export interface ApiReviewItem {
   id: string;
   content_id: string;
@@ -207,7 +207,7 @@ export interface ApiReviewItem {
   reviewed_at: string | null;
 }
 
-/** Admin — Collected 收集資料 */
+/** Admin — Collected items */
 export interface ApiCollectedItem {
   id: string;
   source_url: string;
@@ -222,7 +222,7 @@ export interface ApiCollectedItem {
   collected_at: string;
 }
 
-/** Admin — Tracking 追蹤主題 */
+/** Admin — Tracking topics */
 export interface ApiTrackingTopic {
   id: string;
   name: string;

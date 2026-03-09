@@ -24,14 +24,14 @@ export class CopyButtonDirective implements OnInit {
 
     const button = this.renderer.createElement('button');
     this.renderer.setAttribute(button, 'type', 'button');
-    this.renderer.setAttribute(button, 'title', '複製程式碼');
+    this.renderer.setAttribute(button, 'title', 'Copy code');
     this.renderer.setAttribute(
       button,
       'class',
       'absolute right-2 top-2 rounded-sm bg-zinc-700 px-2 py-1 text-xs text-zinc-300 opacity-0 transition-opacity hover:bg-zinc-600 group-hover:opacity-100',
     );
 
-    const text = this.renderer.createText('複製');
+    const text = this.renderer.createText('Copy');
     this.renderer.appendChild(button, text);
 
     const pre = this.el.nativeElement;
@@ -53,15 +53,15 @@ export class CopyButtonDirective implements OnInit {
     navigator.clipboard
       .writeText(text)
       .then(() => {
-        button.textContent = '已複製！';
+        button.textContent = 'Copied!';
         setTimeout(() => {
-          button.textContent = '複製';
+          button.textContent = 'Copy';
         }, 2000);
       })
       .catch(() => {
-        button.textContent = '複製失敗';
+        button.textContent = 'Copy failed';
         setTimeout(() => {
-          button.textContent = '複製';
+          button.textContent = 'Copy';
         }, 2000);
       });
   }

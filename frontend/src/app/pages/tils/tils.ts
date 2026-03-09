@@ -62,7 +62,7 @@ export class TilsComponent implements OnInit {
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'Today I Learned',
-      description: '每日學習紀錄 — 短小精悍的技術筆記和發現',
+      description: 'Daily learning notes — bite-sized technical discoveries.',
       ogUrl: 'https://koopa0.dev/til',
     });
     this.loadTils();
@@ -79,7 +79,7 @@ export class TilsComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.error.set('載入學習紀錄失敗');
+        this.error.set('Failed to load TIL entries');
         this.isLoading.set(false);
       },
     });

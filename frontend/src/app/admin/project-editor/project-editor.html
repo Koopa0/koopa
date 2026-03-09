@@ -7,12 +7,12 @@
           type="button"
           (click)="cancel()"
           class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-          aria-label="返回"
+          aria-label="Go back"
         >
           <lucide-icon [img]="ArrowLeftIcon" [size]="20" />
         </button>
         <h1 class="text-xl font-bold text-zinc-100">
-          {{ isNewProject() ? '新增專案' : '編輯專案' }}
+          {{ isNewProject() ? 'New Project' : 'Edit Project' }}
         </h1>
       </div>
       <button
@@ -25,9 +25,9 @@
         <span
           class="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
         ></span>
-        儲存中... } @else {
+        Saving... } @else {
         <lucide-icon [img]="SaveIcon" [size]="16" />
-        儲存 }
+        Save }
       </button>
     </div>
   </div>
@@ -55,20 +55,20 @@
     <form [formGroup]="projectForm" (ngSubmit)="save()" class="space-y-6">
       <!-- Basic Info -->
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
-        <h2 class="mb-4 text-sm font-medium text-zinc-400">基本資訊</h2>
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">Basic Info</h2>
 
         <div class="space-y-4">
           <!-- Title -->
           <div>
             <label for="title" class="mb-1 block text-sm text-zinc-300">
-              標題 <span class="text-red-400">*</span>
+              Title <span class="text-red-400">*</span>
             </label>
             <input
               id="title"
               type="text"
               formControlName="title"
               class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
-              placeholder="專案名稱"
+              placeholder="Project name"
             />
             @if (getFieldError('title')) {
             <p class="mt-1 text-xs text-red-400">
@@ -97,14 +97,14 @@
           <!-- Description -->
           <div>
             <label for="description" class="mb-1 block text-sm text-zinc-300">
-              簡述 <span class="text-red-400">*</span>
+              Description <span class="text-red-400">*</span>
             </label>
             <textarea
               id="description"
               formControlName="description"
               rows="3"
               class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
-              placeholder="專案的簡短描述"
+              placeholder="A short description of the project"
             ></textarea>
             @if (getFieldError('description')) {
             <p class="mt-1 text-xs text-red-400">
@@ -119,14 +119,14 @@
               for="long_description"
               class="mb-1 block text-sm text-zinc-300"
             >
-              詳細描述
+              Long Description
             </label>
             <textarea
               id="long_description"
               formControlName="long_description"
               rows="4"
               class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
-              placeholder="專案的詳細說明（可選）"
+              placeholder="Detailed project description (optional)"
             ></textarea>
           </div>
 
@@ -134,7 +134,7 @@
             <!-- Role -->
             <div>
               <label for="role" class="mb-1 block text-sm text-zinc-300">
-                角色 <span class="text-red-400">*</span>
+                Role <span class="text-red-400">*</span>
               </label>
               <input
                 id="role"
@@ -148,7 +148,7 @@
             <!-- Status -->
             <div>
               <label for="status" class="mb-1 block text-sm text-zinc-300">
-                狀態 <span class="text-red-400">*</span>
+                Status <span class="text-red-400">*</span>
               </label>
               <select
                 id="status"
@@ -166,7 +166,7 @@
             <!-- Order -->
             <div>
               <label for="sort_order" class="mb-1 block text-sm text-zinc-300">
-                排序
+                Sort Order
               </label>
               <input
                 id="sort_order"
@@ -184,7 +184,7 @@
                   formControlName="featured"
                   class="rounded-xs border-zinc-600 bg-zinc-800"
                 />
-                設為精選專案
+                Featured project
               </label>
             </div>
           </div>
@@ -193,7 +193,7 @@
 
       <!-- Links -->
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
-        <h2 class="mb-4 text-sm font-medium text-zinc-400">連結</h2>
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">Links</h2>
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -225,7 +225,7 @@
 
       <!-- Tech Stack -->
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
-        <h2 class="mb-4 text-sm font-medium text-zinc-400">技術棧</h2>
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">Tech Stack</h2>
 
         <div class="mb-3 flex gap-2">
           <input
@@ -234,7 +234,7 @@
             (input)="onTechInput($event)"
             (keydown)="onTechKeydown($event)"
             class="flex-1 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
-            placeholder="輸入技術名稱，按 Enter 新增"
+            placeholder="Enter a technology, press Enter to add"
           />
           <button
             type="button"
@@ -265,7 +265,7 @@
 
       <!-- Highlights -->
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
-        <h2 class="mb-4 text-sm font-medium text-zinc-400">亮點</h2>
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">Highlights</h2>
 
         <div class="mb-3 flex gap-2">
           <input
@@ -274,7 +274,7 @@
             (input)="onHighlightInput($event)"
             (keydown)="onHighlightKeydown($event)"
             class="flex-1 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
-            placeholder="輸入專案亮點，按 Enter 新增"
+            placeholder="Enter a project highlight, press Enter to add"
           />
           <button
             type="button"
@@ -310,7 +310,7 @@
           (click)="cancel()"
           class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         >
-          取消
+          Cancel
         </button>
         <button
           type="submit"
@@ -321,9 +321,9 @@
           <span
             class="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
           ></span>
-          儲存中... } @else {
+          Saving... } @else {
           <lucide-icon [img]="SaveIcon" [size]="16" />
-          {{ isNewProject() ? '建立專案' : '更新專案' }} }
+          {{ isNewProject() ? 'Create Project' : 'Update Project' }} }
         </button>
       </div>
     </form>

@@ -16,11 +16,11 @@ import type { ApiContent } from '../../core/models';
     @if (seriesArticles().length > 1) {
     <nav
       class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-5"
-      aria-label="系列文章導覽"
+      aria-label="Article series navigation"
     >
       <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
         <lucide-icon [img]="BookOpenIcon" [size]="16" />
-        系列文章
+        Series
       </div>
       <ol class="space-y-1.5">
         @for (article of seriesArticles(); track article.id; let i = $index) {
@@ -55,7 +55,7 @@ import type { ApiContent } from '../../core/models';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArticleSeriesNavComponent {
-  /** 由父元件傳入系列文章列表（API 尚未提供 series 端點） */
+  /** Series article list passed from parent component (API does not yet provide a series endpoint) */
   readonly articles = input<ApiContent[]>([]);
   readonly currentArticleId = input.required<string>();
 

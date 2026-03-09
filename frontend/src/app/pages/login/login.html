@@ -11,15 +11,15 @@
         height="64"
         class="mx-auto mb-4 h-16 w-16 rounded-full border border-zinc-700"
       />
-      <h1 class="text-2xl font-bold text-zinc-100">Koopa 技術部落格</h1>
-      <p class="mt-1 text-sm text-zinc-500">管理員登入</p>
+      <h1 class="text-2xl font-bold text-zinc-100">koopa0.dev</h1>
+      <p class="mt-1 text-sm text-zinc-500">Admin Login</p>
     </div>
 
     <!-- Login Card -->
     <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
       <div class="mb-6">
-        <h2 class="text-lg font-semibold text-zinc-100">登入</h2>
-        <p class="text-sm text-zinc-500">請輸入您的管理員憑證</p>
+        <h2 class="text-lg font-semibold text-zinc-100">Sign In</h2>
+        <p class="text-sm text-zinc-500">Enter your admin credentials</p>
       </div>
 
       <!-- Error Message -->
@@ -48,7 +48,7 @@
             for="email"
             class="mb-1 block text-sm font-medium text-zinc-300"
           >
-            電子郵件
+            Email
           </label>
           <div class="relative">
             <div
@@ -60,7 +60,7 @@
               id="email"
               type="email"
               formControlName="email"
-              placeholder="請輸入電子郵件"
+              placeholder="Enter your email"
               autocomplete="email"
               class="w-full rounded-sm border border-zinc-700 bg-zinc-800 py-2 pl-10 pr-3 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
               [class.border-red-500]="getFieldError('email')"
@@ -79,7 +79,7 @@
             for="password"
             class="mb-1 block text-sm font-medium text-zinc-300"
           >
-            密碼
+            Password
           </label>
           <div class="relative">
             <div
@@ -91,7 +91,7 @@
               id="password"
               [type]="hidePassword() ? 'password' : 'text'"
               formControlName="password"
-              placeholder="請輸入密碼"
+              placeholder="Enter your password"
               autocomplete="current-password"
               class="w-full rounded-sm border border-zinc-700 bg-zinc-800 py-2 pl-10 pr-10 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
               [class.border-red-500]="getFieldError('password')"
@@ -100,7 +100,7 @@
               type="button"
               class="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-500 hover:text-zinc-300"
               (click)="togglePasswordVisibility()"
-              [attr.aria-label]="'切換密碼顯示'"
+              [attr.aria-label]="'Toggle password visibility'"
             >
               <lucide-icon
                 [img]="hidePassword() ? EyeOffIcon : EyeIcon"
@@ -125,9 +125,9 @@
           <div
             class="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
           ></div>
-          登入中... } @else {
+          Signing in... } @else {
           <lucide-icon [img]="LogInIcon" [size]="16" />
-          登入 }
+          Sign In }
         </button>
       </form>
 
@@ -137,14 +137,14 @@
       >
         <div class="flex items-center gap-1 text-xs text-zinc-500">
           <lucide-icon [img]="InfoIcon" [size]="12" />
-          <span>僅限管理員訪問</span>
+          <span>Admin access only</span>
         </div>
         <a
           routerLink="/"
           class="inline-flex items-center gap-1 text-xs text-zinc-400 no-underline transition-colors hover:text-zinc-200"
         >
           <lucide-icon [img]="HomeIcon" [size]="12" />
-          返回首頁
+          Back to Home
         </a>
       </div>
     </div>

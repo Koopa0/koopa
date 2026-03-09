@@ -1,6 +1,6 @@
 export * from './api.model';
 export * from './auth.model';
-// 舊 model 保留供漸進遷移，但 ProjectStatus 已在 api.model 定義
+// Legacy models kept for gradual migration; ProjectStatus is already defined in api.model
 export {
   type Article,
   type ArticleListItem,

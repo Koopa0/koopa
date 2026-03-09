@@ -49,7 +49,7 @@ import type { ApiContent } from '../../core/models';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RelatedArticlesComponent {
-  /** 由父元件傳入相關文章列表（API 尚未提供 related articles 端點） */
+  /** Related articles list passed from parent component (API does not yet provide a related articles endpoint) */
   readonly articles = input<ApiContent[]>([]);
 
   protected readonly ClockIcon = Clock;

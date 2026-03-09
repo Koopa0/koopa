@@ -6,14 +6,14 @@
       class="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 no-underline transition-colors hover:text-zinc-300"
     >
       <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
-      返回文章列表
+      Back to Articles
     </a>
     <div class="flex items-center gap-3">
       <lucide-icon [img]="TagIcon" [size]="24" class="text-zinc-500" />
       <h1 class="text-3xl font-bold text-zinc-100">{{ tagName() }}</h1>
     </div>
     @if (!isLoading()) {
-    <p class="mt-2 text-zinc-400">共 {{ contents().length }} 篇相關內容</p>
+    <p class="mt-2 text-zinc-400">{{ contents().length }} related posts</p>
     }
   </div>
 </section>
@@ -49,7 +49,7 @@
           </span>
           <span class="flex items-center gap-1">
             <lucide-icon [img]="ClockIcon" [size]="12" />
-            {{ item.reading_time }} 分鐘
+            {{ item.reading_time }} min
           </span>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
@@ -74,13 +74,13 @@
     <div class="flex flex-col items-center gap-4 py-20 text-center">
       <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
       <h3 class="text-lg font-medium text-zinc-300">
-        沒有找到「{{ tagName() }}」相關的內容
+        No content found for "{{ tagName() }}"
       </h3>
       <a
         routerLink="/articles"
         class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
       >
-        瀏覽所有文章
+        Browse All Articles
       </a>
     </div>
     }

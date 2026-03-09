@@ -1,7 +1,7 @@
 /**
- * JSON-LD Schema 工具函式
+ * JSON-LD Schema utility functions
  *
- * 產生結構化資料，幫助搜尋引擎理解頁面內容。
+ * Generate structured data to help search engines understand page content.
  */
 
 const SITE_URL = 'https://koopa0.dev';
@@ -14,7 +14,7 @@ export function buildWebSiteSchema(): Record<string, unknown> {
     name: 'koopa0.dev',
     url: SITE_URL,
     description:
-      'Backend Engineer / Full-Stack Developer - 技術文章與個人作品集',
+      'Backend Engineer / Full-Stack Developer - Technical articles and personal projects',
     author: buildPersonSchema(),
   };
 }

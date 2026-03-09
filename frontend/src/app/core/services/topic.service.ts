@@ -19,7 +19,7 @@ export class TopicService {
   readonly loading = this._loading.asReadonly();
   readonly errorMessage = this._error.asReadonly();
 
-  /** 取得所有主題（公開） */
+  /** Get all topics (public) */
   getAllTopics(): Observable<ApiTopic[]> {
     this._loading.set(true);
     this._error.set(null);
@@ -28,13 +28,13 @@ export class TopicService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('載入主題失敗');
+        this._error.set('Failed to load topics');
         return throwError(() => err);
       }),
     );
   }
 
-  /** 取得單一主題及其內容（公開） */
+  /** Get single topic with its contents by slug (public) */
   getTopicBySlug(
     slug: string,
     params?: { page?: number; perPage?: number },
@@ -63,7 +63,7 @@ export class TopicService {
         tap(() => this._loading.set(false)),
         catchError((err) => {
           this._loading.set(false);
-          this._error.set('主題不存在');
+          this._error.set('Topic not found');
           return throwError(() => err);
         }),
       );

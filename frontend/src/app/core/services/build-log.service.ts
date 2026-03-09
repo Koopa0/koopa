@@ -27,7 +27,7 @@ export class BuildLogService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('載入開發紀錄失敗');
+        this._error.set('Failed to load build logs');
         return throwError(() => err);
       }),
     );
@@ -41,7 +41,7 @@ export class BuildLogService {
       tap(() => this._loading.set(false)),
       catchError((err) => {
         this._loading.set(false);
-        this._error.set('開發紀錄不存在');
+        this._error.set('Build log not found');
         return throwError(() => err);
       }),
     );
