@@ -18,13 +18,14 @@ COPY --from=builder /app/dist/koopa-blog/ ./dist/koopa-blog/
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
-# Angular 21 SSR startup script — loads manifests before starting Express server
+# Angular 21 SSR startup: load compiler + manifests before server
 RUN printf '%s\n' \
+  "import '@angular/compiler';" \
   "import { ɵsetAngularAppManifest, ɵsetAngularAppEngineManifest } from '@angular/ssr';" \
-  "const appManifest = await import('./dist/koopa-blog/server/angular-app-manifest.mjs');" \
-  "const engineManifest = await import('./dist/koopa-blog/server/angular-app-engine-manifest.mjs');" \
-  "ɵsetAngularAppManifest(appManifest.default);" \
-  "ɵsetAngularAppEngineManifest(engineManifest.default);" \
+  "const { default: appManifest } = await import('./dist/koopa-blog/server/angular-app-manifest.mjs');" \
+  "const { default: engineManifest } = await import('./dist/koopa-blog/server/angular-app-engine-manifest.mjs');" \
+  "ɵsetAngularAppManifest(appManifest);" \
+  "ɵsetAngularAppEngineManifest(engineManifest);" \
   "await import('./dist/koopa-blog/server/server.mjs');" \
   > start.mjs
 
