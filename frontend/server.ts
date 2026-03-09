@@ -3,7 +3,7 @@ import { CommonEngine, createNodeRequestHandler, isMainModule } from '@angular/s
 import express from 'express';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import bootstrap from './main.server';
+import bootstrap from './src/main.server';
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
