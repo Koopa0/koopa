@@ -1,0 +1,68 @@
+@if (isLoading()) {
+<div class="mx-auto max-w-3xl px-4 py-12">
+  <div class="animate-pulse space-y-4">
+    <div class="h-8 w-3/4 rounded-sm bg-zinc-800"></div>
+    <div class="h-4 w-1/2 rounded-sm bg-zinc-800"></div>
+    <div class="mt-8 h-64 rounded-sm bg-zinc-800"></div>
+  </div>
+</div>
+} @else if (error()) {
+<div class="flex min-h-[50vh] items-center justify-center">
+  <p class="text-zinc-500">{{ error() }}</p>
+</div>
+} @else {
+<article class="bg-zinc-950">
+  <!-- Header -->
+  <section class="border-b border-zinc-800">
+    <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+      <button
+        type="button"
+        (click)="goBack()"
+        class="mb-6 flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+        Back
+      </button>
+
+      @if (projectTitle()) {
+      <a
+        [routerLink]="'/projects/' + projectSlug()"
+        class="mb-3 inline-flex items-center gap-1 rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+      >
+        <lucide-icon [img]="FolderOpenIcon" [size]="12" />
+        {{ projectTitle() }}
+      </a>
+      }
+
+      <h1 class="text-3xl font-bold text-zinc-100">{{ buildLog()!.title }}</h1>
+
+      <div class="mt-4 flex items-center gap-4 text-sm text-zinc-500">
+        <span class="flex items-center gap-1">
+          <lucide-icon [img]="CalendarIcon" [size]="14" />
+          {{ buildLog()!.publishedAt | date: 'MMM d, yyyy' }}
+        </span>
+        <span class="flex items-center gap-1">
+          <lucide-icon [img]="ClockIcon" [size]="14" />
+          {{ buildLog()!.readingTime }} min read
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Content -->
+  <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+    <div class="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_200px]">
+      <div
+        class="prose prose-invert max-w-none prose-headings:text-zinc-100 prose-p:text-zinc-300 prose-a:text-zinc-300 prose-code:text-zinc-300"
+        [innerHTML]="parsedContent()"
+      ></div>
+
+      <aside class="hidden lg:block">
+        <div class="sticky top-20">
+          <app-table-of-contents [content]="rawHtml()" />
+        </div>
+      </aside>
+    </div>
+  </div>
+</article>
+}

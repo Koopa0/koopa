@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /login
+Disallow: /error
+
+Sitemap: https://koopa0.dev/sitemap.xml

@@ -1,0 +1,219 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <h1 class="text-3xl font-bold text-zinc-100">技術文章</h1>
+    <p class="mt-2 text-zinc-400">探索最新的技術趨勢與深度分析</p>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <!-- Filters -->
+    <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+      <!-- Search -->
+      <div
+        class="flex flex-1 items-center gap-2 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2"
+      >
+        <lucide-icon [img]="SearchIcon" [size]="16" class="text-zinc-500" />
+        <input
+          type="text"
+          placeholder="搜尋文章..."
+          class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500"
+          [value]="searchQuery()"
+          (input)="onSearchChange($event)"
+        />
+      </div>
+
+      <!-- Sort -->
+      <div class="flex items-center gap-2">
+        <select
+          class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 outline-hidden"
+          [ngModel]="sortBy()"
+          (ngModelChange)="sortBy.set($event); onSortChange()"
+        >
+          @for (option of sortOptions; track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+          }
+        </select>
+        <button
+          type="button"
+          class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+          (click)="toggleSortOrder()"
+          [title]="sortOrder() === 'asc' ? '升序' : '降序'"
+        >
+          <lucide-icon [img]="ArrowUpDownIcon" [size]="16" />
+        </button>
+      </div>
+
+      @if (hasFilters()) {
+      <button
+        type="button"
+        class="flex items-center gap-1 rounded-sm border border-red-900 px-3 py-2 text-sm text-red-400 transition-colors hover:bg-red-900/20"
+        (click)="clearFilters()"
+      >
+        <lucide-icon [img]="XIcon" [size]="14" />
+        清除篩選
+      </button>
+      }
+    </div>
+
+    <!-- Tags Filter -->
+    <div class="mb-8">
+      <h3 class="mb-3 text-sm font-medium text-zinc-500">標籤篩選</h3>
+      <div class="flex flex-wrap gap-2">
+        @for (tag of availableTags(); track tag.id) {
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs transition-colors"
+          [class]="
+              selectedTags().includes(tag.name)
+                ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
+                : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
+            "
+          (click)="onTagToggle(tag.name)"
+        >
+          {{ tag.name }}
+          <span class="ml-1 text-zinc-500">({{ tag.articleCount }})</span>
+        </button>
+        }
+      </div>
+    </div>
+
+    <!-- Content -->
+    @if (isLoading()) {
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      @for (_ of [1, 2, 3, 4, 5, 6]; track _) {
+      <app-skeleton variant="card" />
+      }
+    </div>
+    } @else {
+    <!-- Results Info -->
+    <div class="mb-6 text-sm text-zinc-500">
+      共找到
+      <strong class="text-zinc-300">{{ totalArticles() }}</strong>
+      篇文章 @if (hasFilters()) {
+      <span>（已套用篩選條件）</span>
+      }
+    </div>
+
+    @if (articles().length > 0) {
+    <!-- Articles Grid -->
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      @for (article of articles(); track article.id) {
+      <a
+        [routerLink]="'/articles/' + article.id"
+        class="group relative overflow-hidden rounded-sm border border-zinc-800 bg-zinc-900/50 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+      >
+        <!-- Gradient accent line -->
+        <div
+          class="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-zinc-600 via-zinc-400 to-zinc-600 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+        ></div>
+
+        <div class="p-6">
+          <!-- Tags (top) -->
+          <div class="mb-3 flex flex-wrap gap-1.5">
+            @for (tag of article.tags; track tag) {
+            <a
+              [routerLink]="'/tags/' + tag"
+              (click)="$event.stopPropagation()"
+              class="rounded-sm bg-zinc-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-300"
+            >
+              {{ tag }}
+            </a>
+            }
+          </div>
+
+          <!-- Title -->
+          <h3
+            class="mb-2 text-lg font-semibold text-zinc-100 group-hover:text-white"
+          >
+            {{ article.title }}
+          </h3>
+
+          <!-- Excerpt -->
+          <p class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400">
+            {{ article.excerpt }}
+          </p>
+        </div>
+
+        <!-- Meta row -->
+        <div
+          class="flex items-center gap-4 border-t border-zinc-800/60 px-6 py-3 text-xs text-zinc-500"
+        >
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="CalendarIcon" [size]="12" />
+            {{ article.publishedAt | date: 'MMM d, yyyy' }}
+          </span>
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="ClockIcon" [size]="12" />
+            {{ article.readingTime }} min
+          </span>
+          <span class="ml-auto flex items-center gap-1">
+            <lucide-icon [img]="EyeIcon" [size]="12" />
+            {{ article.viewCount }}
+          </span>
+        </div>
+      </a>
+      }
+    </div>
+
+    <!-- Pagination -->
+    @if (totalPages() > 1) {
+    <div class="mt-12 flex flex-col items-center gap-4">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
+          [disabled]="currentPage() === 1"
+          (click)="onPageChange(currentPage() - 1)"
+        >
+          <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
+        </button>
+
+        @for (page of pageArray(); track page) {
+        <button
+          type="button"
+          class="rounded-sm px-3 py-1 text-sm transition-colors"
+          [class]="
+                    currentPage() === page
+                      ? 'bg-zinc-700 text-white'
+                      : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                  "
+          (click)="onPageChange(page)"
+        >
+          {{ page }}
+        </button>
+        }
+
+        <button
+          type="button"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
+          [disabled]="currentPage() === totalPages()"
+          (click)="onPageChange(currentPage() + 1)"
+        >
+          <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+        </button>
+      </div>
+      <div class="text-xs text-zinc-500">
+        第 {{ currentPage() }} 頁，共 {{ totalPages() }} 頁
+      </div>
+    </div>
+    } } @else {
+    <!-- Empty State -->
+    <div class="flex flex-col items-center gap-4 py-20 text-center">
+      <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
+      <h3 class="text-lg font-medium text-zinc-300">沒有找到相關文章</h3>
+      <p class="text-sm text-zinc-500">請嘗試調整搜尋條件或清除篩選器</p>
+      @if (hasFilters()) {
+      <button
+        type="button"
+        class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700"
+        (click)="clearFilters()"
+      >
+        清除所有篩選
+      </button>
+      }
+    </div>
+    } }
+  </div>
+</section>

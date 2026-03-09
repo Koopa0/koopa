@@ -1,0 +1,58 @@
+@if (isLoading()) {
+<div class="mx-auto max-w-3xl px-4 py-12">
+  <div class="animate-pulse space-y-4">
+    <div class="h-8 w-3/4 rounded-sm bg-zinc-800"></div>
+    <div class="h-4 w-1/2 rounded-sm bg-zinc-800"></div>
+    <div class="mt-8 h-32 rounded-sm bg-zinc-800"></div>
+  </div>
+</div>
+} @else if (error()) {
+<div class="flex min-h-[50vh] items-center justify-center">
+  <p class="text-zinc-500">{{ error() }}</p>
+</div>
+} @else {
+<article class="bg-zinc-950">
+  <section class="border-b border-zinc-800">
+    <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+      <button
+        type="button"
+        (click)="goBack()"
+        class="mb-6 flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+        Back
+      </button>
+
+      <h1 class="text-3xl font-bold text-zinc-100">{{ til()!.title }}</h1>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+        <span class="flex items-center gap-1">
+          <lucide-icon [img]="CalendarIcon" [size]="14" />
+          {{ til()!.publishedAt | date: 'MMM d, yyyy' }}
+        </span>
+        @for (tag of til()!.tags; track tag) {
+        <a
+          [routerLink]="'/tags/' + tag"
+          class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+        >
+          {{ tag }}
+        </a>
+        }
+      </div>
+    </div>
+  </section>
+
+  <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+    <div
+      class="prose prose-invert max-w-none prose-headings:text-zinc-100 prose-p:text-zinc-300 prose-a:text-zinc-300 prose-code:text-zinc-300"
+      [innerHTML]="parsedContent()"
+    ></div>
+
+    @if (til()!.codeSnippet) {
+    <div class="mt-6 overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-900 p-4">
+      <pre class="text-sm text-zinc-300"><code>{{ til()!.codeSnippet }}</code></pre>
+    </div>
+    }
+  </div>
+</article>
+}

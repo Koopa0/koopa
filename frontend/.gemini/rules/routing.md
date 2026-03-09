@@ -1,0 +1,63 @@
+---
+paths:
+  - "src/app/**/*.routes.ts"
+  - "src/app/core/guards/**"
+---
+
+# 路由規範
+
+> 完整程式碼範例見 `angular-routing` skill。
+
+## 必須項目
+
+- 所有功能模組使用 `loadComponent` / `loadChildren` 延遲載入
+- Guard 使用函式型（`CanActivateFn`、`CanDeactivateFn`、`CanMatchFn`）
+- 禁止 class-based Guard
+- 有 `**` fallback 路由（404 頁面）
+
+## 路由檔案組織
+
+```
+app.routes.ts                 # 根路由（延遲載入）
+app.routes.server.ts          # SSR 配置
+features/<name>/<name>.routes.ts  # 功能路由
+```
+
+## 路徑參數 vs 查詢參數
+
+| 類型 | 用途 | 範例 |
+|------|------|------|
+| 路徑參數 | 識別資源 | `/products/:id` |
+| 查詢參數 | 篩選/排序/分頁 | `?category=x&page=2` |
+
+## Guard 類型
+
+| Guard | 用途 |
+|-------|------|
+| `CanActivateFn` | 進入路由前檢查（認證） |
+| `CanActivateChildFn` | 子路由檢查（權限） |
+| `CanDeactivateFn` | 離開路由前檢查（未儲存變更） |
+| `CanMatchFn` | 路由匹配前檢查（Feature Flag） |
+
+## Resolver vs 元件載入
+
+| 方式 | 優點 | 適用 |
+|------|------|------|
+| Resolver | 資料準備好才渲染 | SEO 需求、關鍵資料 |
+| 元件內載入 | 快速導航、可顯示 loading | 一般場景（推薦） |
+
+## SSR RenderMode
+
+| RenderMode | 適用 |
+|------------|------|
+| `Server` | 公開 + SEO 重要（`/login`, `/products`） |
+| `Client` | 需認證 + 高互動 + CDK Overlay |
+| `Prerender` | 靜態 + 不常變動（`/about`, `/terms`） |
+
+## 檢查清單
+
+- [ ] 所有功能路由延遲載入
+- [ ] Guard 使用函式型
+- [ ] 敏感路由有 `authGuard`
+- [ ] SSR RenderMode 正確設定
+- [ ] 有 404 fallback 路由

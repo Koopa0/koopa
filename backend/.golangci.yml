@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - gosec
+    - govet
+    - staticcheck
+    - gocritic
+
+issues:
+  exclude-dirs:
+    - internal/db

@@ -1,0 +1,331 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <button
+          type="button"
+          (click)="cancel()"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+          aria-label="返回"
+        >
+          <lucide-icon [img]="ArrowLeftIcon" [size]="20" />
+        </button>
+        <h1 class="text-xl font-bold text-zinc-100">
+          {{ isNewProject() ? '新增專案' : '編輯專案' }}
+        </h1>
+      </div>
+      <button
+        type="button"
+        (click)="save()"
+        [disabled]="isSaving()"
+        class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+      >
+        @if (isSaving()) {
+        <span
+          class="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
+        ></span>
+        儲存中... } @else {
+        <lucide-icon [img]="SaveIcon" [size]="16" />
+        儲存 }
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- Notification -->
+@if (notification()) {
+<div class="mx-auto max-w-4xl px-4 pt-4 sm:px-6 lg:px-8">
+  <div
+    class="rounded-sm border px-4 py-3 text-sm"
+    [class]="
+      notification()!.type === 'success'
+        ? 'border-emerald-800 bg-emerald-900/30 text-emerald-400'
+        : 'border-red-800 bg-red-900/30 text-red-400'
+    "
+  >
+    {{ notification()!.message }}
+  </div>
+</div>
+}
+
+<!-- Form -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+    <form [formGroup]="projectForm" (ngSubmit)="save()" class="space-y-6">
+      <!-- Basic Info -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">基本資訊</h2>
+
+        <div class="space-y-4">
+          <!-- Title -->
+          <div>
+            <label for="title" class="mb-1 block text-sm text-zinc-300">
+              標題 <span class="text-red-400">*</span>
+            </label>
+            <input
+              id="title"
+              type="text"
+              formControlName="title"
+              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              placeholder="專案名稱"
+            />
+            @if (getFieldError('title')) {
+            <p class="mt-1 text-xs text-red-400">
+              {{ getFieldError('title') }}
+            </p>
+            }
+          </div>
+
+          <!-- Slug -->
+          <div>
+            <label for="slug" class="mb-1 block text-sm text-zinc-300">
+              Slug <span class="text-red-400">*</span>
+            </label>
+            <input
+              id="slug"
+              type="text"
+              formControlName="slug"
+              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              placeholder="project-slug"
+            />
+            @if (getFieldError('slug')) {
+            <p class="mt-1 text-xs text-red-400">{{ getFieldError('slug') }}</p>
+            }
+          </div>
+
+          <!-- Description -->
+          <div>
+            <label for="description" class="mb-1 block text-sm text-zinc-300">
+              簡述 <span class="text-red-400">*</span>
+            </label>
+            <textarea
+              id="description"
+              formControlName="description"
+              rows="3"
+              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              placeholder="專案的簡短描述"
+            ></textarea>
+            @if (getFieldError('description')) {
+            <p class="mt-1 text-xs text-red-400">
+              {{ getFieldError('description') }}
+            </p>
+            }
+          </div>
+
+          <!-- Long Description -->
+          <div>
+            <label
+              for="longDescription"
+              class="mb-1 block text-sm text-zinc-300"
+            >
+              詳細描述
+            </label>
+            <textarea
+              id="longDescription"
+              formControlName="longDescription"
+              rows="4"
+              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              placeholder="專案的詳細說明（可選）"
+            ></textarea>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <!-- Role -->
+            <div>
+              <label for="role" class="mb-1 block text-sm text-zinc-300">
+                角色 <span class="text-red-400">*</span>
+              </label>
+              <input
+                id="role"
+                type="text"
+                formControlName="role"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+                placeholder="Full-Stack Developer"
+              />
+            </div>
+
+            <!-- Status -->
+            <div>
+              <label for="status" class="mb-1 block text-sm text-zinc-300">
+                狀態 <span class="text-red-400">*</span>
+              </label>
+              <select
+                id="status"
+                formControlName="status"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 outline-hidden focus:border-zinc-500"
+              >
+                @for (option of statusOptions; track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <!-- Order -->
+            <div>
+              <label for="order" class="mb-1 block text-sm text-zinc-300">
+                排序
+              </label>
+              <input
+                id="order"
+                type="number"
+                formControlName="order"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
+              />
+            </div>
+
+            <!-- Featured -->
+            <div class="flex items-end">
+              <label class="flex items-center gap-2 py-2 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  formControlName="featured"
+                  class="rounded-xs border-zinc-600 bg-zinc-800"
+                />
+                設為精選專案
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Links -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">連結</h2>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label for="githubUrl" class="mb-1 block text-sm text-zinc-300">
+              GitHub URL
+            </label>
+            <input
+              id="githubUrl"
+              type="url"
+              formControlName="githubUrl"
+              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              placeholder="https://github.com/..."
+            />
+          </div>
+          <div>
+            <label for="liveUrl" class="mb-1 block text-sm text-zinc-300">
+              Live URL
+            </label>
+            <input
+              id="liveUrl"
+              type="url"
+              formControlName="liveUrl"
+              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              placeholder="https://..."
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Tech Stack -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">技術棧</h2>
+
+        <div class="mb-3 flex gap-2">
+          <input
+            type="text"
+            [value]="newTech()"
+            (input)="onTechInput($event)"
+            (keydown)="onTechKeydown($event)"
+            class="flex-1 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+            placeholder="輸入技術名稱，按 Enter 新增"
+          />
+          <button
+            type="button"
+            (click)="addTech()"
+            class="rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          >
+            <lucide-icon [img]="PlusIcon" [size]="16" />
+          </button>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          @for (tech of techStack; track tech) {
+          <span
+            class="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300"
+          >
+            {{ tech }}
+            <button
+              type="button"
+              (click)="removeTech(tech)"
+              class="text-zinc-500 transition-colors hover:text-zinc-200"
+            >
+              <lucide-icon [img]="XIcon" [size]="12" />
+            </button>
+          </span>
+          }
+        </div>
+      </div>
+
+      <!-- Highlights -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+        <h2 class="mb-4 text-sm font-medium text-zinc-400">亮點</h2>
+
+        <div class="mb-3 flex gap-2">
+          <input
+            type="text"
+            [value]="newHighlight()"
+            (input)="onHighlightInput($event)"
+            (keydown)="onHighlightKeydown($event)"
+            class="flex-1 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+            placeholder="輸入專案亮點，按 Enter 新增"
+          />
+          <button
+            type="button"
+            (click)="addHighlight()"
+            class="rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          >
+            <lucide-icon [img]="PlusIcon" [size]="16" />
+          </button>
+        </div>
+
+        <div class="space-y-2">
+          @for (highlight of highlights; track $index) {
+          <div
+            class="flex items-center gap-2 rounded-sm bg-zinc-800 px-3 py-2 text-sm text-zinc-300"
+          >
+            <span class="flex-1">{{ highlight }}</span>
+            <button
+              type="button"
+              (click)="removeHighlight($index)"
+              class="text-zinc-500 transition-colors hover:text-zinc-200"
+            >
+              <lucide-icon [img]="XIcon" [size]="14" />
+            </button>
+          </div>
+          }
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-end gap-3">
+        <button
+          type="button"
+          (click)="cancel()"
+          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+        >
+          取消
+        </button>
+        <button
+          type="submit"
+          [disabled]="isSaving()"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+        >
+          @if (isSaving()) {
+          <span
+            class="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
+          ></span>
+          儲存中... } @else {
+          <lucide-icon [img]="SaveIcon" [size]="16" />
+          {{ isNewProject() ? '建立專案' : '更新專案' }} }
+        </button>
+      </div>
+    </form>
+  </div>
+</section>

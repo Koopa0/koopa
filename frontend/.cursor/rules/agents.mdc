@@ -1,0 +1,78 @@
+---
+description: "Agent coordination — task delegation, model selection, execution flow"
+alwaysApply: false
+---
+
+# Agent 協調規範
+
+## 開發生命週期層級
+
+完整流程見 `development-lifecycle.md`。
+
+| Tier | 流程 |
+|------|------|
+| 1: 直接修復 | 修復 → `/angular-verify` → `@code-reviewer` |
+| 2: 既有功能 | 輕量 comprehend → 實作 → `/angular-verify` + reviewers |
+| 3: 完整流程 | comprehend → `@planner` → 實作 → `/angular-verify` + reviewers + 語意檢查 |
+
+## 自動委派觸發器
+
+Claude **必須**在以下情況自動委派：
+
+| 觸發條件 | Agent |
+|----------|-------|
+| 新功能 / 非簡單變更 | comprehend（最先理解現有程式碼） |
+| comprehend 完成、使用者確認方向 | `@planner` |
+| 寫入/編輯 `.ts` / `.html` 檔案 | `@code-reviewer` |
+| 安全相關（auth、token、XSS、CSRF）、PR 前 | `@security-auditor` |
+| 「效能」、「慢」、「優化」、bundle 大小 | `@performance-auditor` |
+| 測試失敗、「寫測試」、缺少 `.spec.ts` | `@test-writer` |
+| Build/lint/tsc 錯誤 | `@build-error-resolver` |
+| 「重構」、「簡化」、過度抽象 | `@refactor-advisor` |
+| 無障礙問題、WCAG 合規 | `@accessibility-checker` |
+
+## 執行規則
+
+**平行**（獨立）：`@code-reviewer` AND `@security-auditor`
+**循序**（依賴）：comprehend → `@planner` → 實作 → `/angular-verify`
+
+## 審查順序
+
+```
+@code-reviewer → @security-auditor → @performance-auditor → @accessibility-checker
+```
+
+`@performance-auditor`：僅在使用者要求、大量資料載入、bundle 接近預算時執行
+`@accessibility-checker`：僅在新增/修改 UI 元件、使用者要求時執行
+
+## 優先順序
+
+| 情境 | 優先 |
+|------|------|
+| Build 錯誤 + 寫了程式碼 | `@build-error-resolver` 先 |
+| 安全疑慮 | `@security-auditor` 先 |
+| 新功能需求 | comprehend 永遠最先 |
+
+## Available Agents
+
+| Agent | 模型 | 用途 |
+|-------|------|------|
+| `@comprehend` | opus | 理解現有程式碼、質疑需求、識別整合點（Tier 2/3 第一步） |
+| `@planner` | opus | 功能規劃：元件階層、signal 設計、路由、測試策略 |
+| `@code-reviewer` | opus | 程式碼審查：Angular 21 合規、型別安全、signal 模式 |
+| `@security-auditor` | opus | 安全審查：XSS、CSRF、token 儲存、輸入驗證 |
+| `@test-writer` | sonnet | 撰寫 Vitest 單元測試和 Playwright E2E 測試 |
+| `@build-error-resolver` | sonnet | 修復 tsc、lint、build 錯誤 |
+| `@refactor-advisor` | sonnet | 簡化程式碼、消除過度抽象 |
+| `@performance-auditor` | sonnet | Bundle 大小、Web Vitals、lazy loading 分析 |
+| `@accessibility-checker` | sonnet | WCAG AA 合規、ARIA 屬性、鍵盤導航 |
+| `@tdd-guide` | sonnet | 測試驅動開發引導 |
+| `@e2e-runner` | sonnet | 執行和除錯 Playwright E2E 測試 |
+| `@architect` | opus | 重大架構決策（模組結構、狀態管理策略） |
+| `@doc-updater` | sonnet | 更新文件和 README |
+
+## Context 管理
+
+- 複雜任務避免使用 context window 最後 20%
+- 使用 `index.ts` 快速了解目錄結構
+- 評估 sub-agent 回傳結果，如不完整則追問（最多 3 循環）

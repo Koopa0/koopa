@@ -1,0 +1,361 @@
+<!-- Navigation Header -->
+<header
+  class="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md"
+>
+  <nav
+    class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8"
+    aria-label="主導航"
+  >
+    <!-- Brand -->
+    <a
+      routerLink="/"
+      class="flex items-center gap-2 text-lg font-semibold text-zinc-100 no-underline hover:text-white"
+    >
+      <img
+        src="/logo.png"
+        alt="Koopa"
+        width="32"
+        height="32"
+        class="h-8 w-8 rounded-sm"
+      />
+      <span class="hidden sm:inline">{{ title }}</span>
+    </a>
+
+    <!-- Desktop Nav Links -->
+    <div class="hidden items-center gap-1 md:flex">
+      <a
+        routerLink="/home"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
+      >
+        Home
+      </a>
+
+      <!-- Writing Dropdown -->
+      <div class="relative">
+        <button
+          type="button"
+          (click)="toggleWritingMenu()"
+          class="flex items-center gap-1 rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
+          [class.bg-zinc-800]="isWritingMenuOpen()"
+          [class.text-white]="isWritingMenuOpen()"
+        >
+          Writing
+          <lucide-icon
+            [img]="ChevronDownIcon"
+            [size]="14"
+            class="transition-transform"
+            [class.rotate-180]="isWritingMenuOpen()"
+          />
+        </button>
+        @if (isWritingMenuOpen()) {
+        <div
+          @slideDown
+          class="absolute left-0 top-full mt-1 w-48 rounded-sm border border-zinc-800 bg-zinc-950 py-1 shadow-lg"
+        >
+          <a
+            routerLink="/articles"
+            class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Articles
+          </a>
+          <a
+            routerLink="/build-logs"
+            class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Build Log
+          </a>
+          <a
+            routerLink="/til"
+            class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            TIL
+          </a>
+          <a
+            routerLink="/notes"
+            class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Notes
+          </a>
+        </div>
+        }
+      </div>
+
+      <a
+        routerLink="/projects"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
+      >
+        Projects
+      </a>
+      <a
+        routerLink="/resume"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
+      >
+        Resume
+      </a>
+      <a
+        routerLink="/about"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
+      >
+        About
+      </a>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2">
+      <!-- Search Toggle -->
+      <button
+        type="button"
+        (click)="toggleSearch()"
+        class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+        aria-label="搜尋文章"
+        [attr.aria-expanded]="isSearchOpen()"
+      >
+        @if (isSearchOpen()) {
+        <lucide-icon [img]="XIcon" [size]="18" />
+        } @else {
+        <lucide-icon [img]="SearchIcon" [size]="18" />
+        }
+      </button>
+
+      @if (isAuthenticated()) {
+      <div class="hidden items-center gap-1 sm:flex">
+        <a
+          routerLink="/admin"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 no-underline"
+          aria-label="管理後台"
+        >
+          <lucide-icon [img]="DashboardIcon" [size]="18" />
+        </a>
+        <a
+          routerLink="/admin/editor"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 no-underline"
+          aria-label="新增文章"
+        >
+          <lucide-icon [img]="EditIcon" [size]="18" />
+        </a>
+        <button
+          type="button"
+          (click)="logout()"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-red-400"
+          aria-label="登出"
+        >
+          <lucide-icon [img]="LogOutIcon" [size]="18" />
+        </button>
+      </div>
+      }
+
+      <!-- Mobile Menu Button -->
+      <button
+        type="button"
+        (click)="toggleMobileMenu()"
+        class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 md:hidden"
+        [attr.aria-expanded]="isMobileMenuOpen()"
+        aria-label="選單"
+        aria-controls="mobile-menu"
+      >
+        @if (isMobileMenuOpen()) {
+        <lucide-icon [img]="XIcon" [size]="20" />
+        } @else {
+        <lucide-icon [img]="MenuIcon" [size]="20" />
+        }
+      </button>
+    </div>
+  </nav>
+
+  <!-- Search Panel -->
+  @if (isSearchOpen()) {
+  <div
+    @slideDown
+    class="border-t border-zinc-800 bg-zinc-950 px-4 py-3 sm:px-6 lg:px-8"
+  >
+    <div class="mx-auto max-w-2xl">
+      <app-search />
+    </div>
+  </div>
+  }
+
+  <!-- Mobile Menu -->
+  @if (isMobileMenuOpen()) {
+  <div
+    @slideDown
+    id="mobile-menu"
+    class="border-t border-zinc-800 bg-zinc-950 px-4 pb-4 pt-2 md:hidden"
+  >
+    <div class="flex flex-col gap-1">
+      <a
+        routerLink="/home"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Home
+      </a>
+
+      <p class="px-3 pt-2 text-xs font-semibold tracking-wider text-zinc-600 uppercase">
+        Writing
+      </p>
+      <a
+        routerLink="/articles"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Articles
+      </a>
+      <a
+        routerLink="/build-logs"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Build Log
+      </a>
+      <a
+        routerLink="/til"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        TIL
+      </a>
+      <a
+        routerLink="/notes"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Notes
+      </a>
+
+      <div class="my-1 border-t border-zinc-800"></div>
+
+      <a
+        routerLink="/projects"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Projects
+      </a>
+      <a
+        routerLink="/resume"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Resume
+      </a>
+      <a
+        routerLink="/uses"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Uses
+      </a>
+      <a
+        routerLink="/about"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        About
+      </a>
+
+      <div class="my-2 border-t border-zinc-800"></div>
+
+      @if (isAuthenticated()) {
+      <a
+        routerLink="/admin"
+        class="flex items-center gap-2 rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        <lucide-icon [img]="DashboardIcon" [size]="16" />
+        Dashboard
+      </a>
+      <button
+        type="button"
+        (click)="logout()"
+        class="flex items-center gap-2 rounded-sm px-3 py-2 text-left text-sm font-medium text-zinc-400 hover:bg-zinc-800/50 hover:text-red-400"
+      >
+        <lucide-icon [img]="LogOutIcon" [size]="16" />
+        Logout
+      </button>
+      }
+    </div>
+  </div>
+  }
+</header>
+
+<!-- Main Content -->
+<main class="min-h-[calc(100dvh-64px-200px)]">
+  <router-outlet />
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="grid grid-cols-1 gap-8 sm:grid-cols-3">
+      <div>
+        <h3
+          class="mb-3 text-sm font-semibold tracking-wider text-zinc-400 uppercase"
+        >
+          Tech
+        </h3>
+        <div class="flex flex-col gap-2">
+          <span class="text-sm text-zinc-500">Golang</span>
+          <span class="text-sm text-zinc-500">Angular</span>
+          <span class="text-sm text-zinc-500">Rust</span>
+          <span class="text-sm text-zinc-500">Flutter</span>
+        </div>
+      </div>
+
+      <div>
+        <h3
+          class="mb-3 text-sm font-semibold tracking-wider text-zinc-400 uppercase"
+        >
+          Connect
+        </h3>
+        <div class="flex gap-3">
+          <a
+            href="https://github.com/koopa0"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            aria-label="GitHub"
+          >
+            <lucide-icon [img]="GithubIcon" [size]="20" />
+          </a>
+          <a
+            href="https://linkedin.com/in/koopa0"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            aria-label="LinkedIn"
+          >
+            <lucide-icon [img]="LinkedinIcon" [size]="20" />
+          </a>
+          <a
+            href="https://x.com/koopa0"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            aria-label="X"
+          >
+            <lucide-icon [img]="TwitterIcon" [size]="20" />
+          </a>
+          <a
+            href="mailto:contact@koopa0.dev"
+            class="rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            aria-label="Email"
+          >
+            <lucide-icon [img]="MailIcon" [size]="20" />
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 border-t border-zinc-800 pt-6 text-center">
+      <p class="text-sm text-zinc-600">
+        &copy; {{ currentYear }} koopa0.dev. All rights reserved.
+      </p>
+    </div>
+  </div>
+</footer>
+
+<!-- Back to Top Button -->
+<app-back-to-top />

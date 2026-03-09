@@ -1,0 +1,22 @@
+<button 
+  mat-icon-button 
+  [matMenuTriggerFor]="themeMenu"
+  [matTooltip]="getCurrentLabel()"
+  class="theme-toggle-btn">
+  <mat-icon>{{ getCurrentIcon() }}</mat-icon>
+</button>
+
+<mat-menu #themeMenu="matMenu" class="theme-menu">
+  @for (option of themeOptions; track option.value) {
+    <button 
+      mat-menu-item 
+      (click)="onThemeSelect(option.value)"
+      [class.active]="currentTheme() === option.value">
+      <mat-icon>{{ option.icon }}</mat-icon>
+      <span>{{ option.label }}</span>
+      @if (currentTheme() === option.value) {
+        <mat-icon class="check-icon">check</mat-icon>
+      }
+    </button>
+  }
+</mat-menu>

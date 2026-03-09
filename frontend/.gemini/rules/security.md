@@ -1,0 +1,40 @@
+# 安全性規範
+
+核心原則：深度防禦、最小權限、預設安全、所有外部輸入視為不可信任。
+
+## 禁令（由 compliance hook 強制）
+
+| 禁止 | 理由 |
+|------|------|
+| 硬編碼機密（API Key、密碼、Token） | 進入 Git 歷史無法清除 |
+| `bypassSecurityTrustHtml/Script/Style/Url/ResourceUrl` | 繞過 XSS 保護（除非有 `SECURITY_REVIEW` 註解） |
+| `localStorage/sessionStorage` 存 Token | XSS 可讀取 |
+| `eval()` / `new Function()` | 安全風險、CSP 不相容 |
+| `element.innerHTML = userInput` / `document.write()` | XSS |
+| `window.location.href = untrustedUrl` | Open Redirect |
+
+## Token 儲存
+
+允許：記憶體 Signal、HttpOnly + Secure + SameSite Cookie
+禁止：localStorage、sessionStorage、無 HttpOnly 的 Cookie
+
+## 輸入驗證邊界
+
+| 來源 | 驗證位置 |
+|------|---------|
+| 表單 | 元件 + 後端 |
+| URL 參數 | Route Guard + 後端 |
+| API 回應 | Service 層 |
+
+## 漏洞處理時限
+
+Critical → 立即阻擋合併。High → 24h。Moderate → 1 週 Issue。Low → 下次維護。
+
+## 檢查清單
+
+- [ ] 無硬編碼機密
+- [ ] 所有外部輸入有驗證
+- [ ] 未使用 `bypassSecurityTrust*`（或有 `SECURITY_REVIEW`）
+- [ ] Token 只存記憶體，HttpOnly Cookie 持久化
+- [ ] CSP / CSRF 保護已啟用
+- [ ] `npm audit` 無 high/critical

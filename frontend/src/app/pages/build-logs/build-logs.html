@@ -1,0 +1,71 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <div class="flex items-center gap-3">
+      <lucide-icon [img]="HammerIcon" [size]="28" class="text-zinc-500" />
+      <div>
+        <h1 class="text-3xl font-bold text-zinc-100">Build Log</h1>
+        <p class="mt-1 text-zinc-400">
+          專案開發紀錄 — 過程、決策與踩坑
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+    <div class="space-y-6">
+      @for (_ of [1, 2, 3]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-6">
+        <div class="mb-2 h-4 w-1/4 rounded-sm bg-zinc-800"></div>
+        <div class="mb-3 h-6 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-full rounded-sm bg-zinc-800"></div>
+      </div>
+      }
+    </div>
+    } @else if (error()) {
+    <p class="text-center text-zinc-500">{{ error() }}</p>
+    } @else if (buildLogs().length === 0) {
+    <p class="py-20 text-center text-zinc-500">還沒有開發日誌</p>
+    } @else {
+    <div class="space-y-6">
+      @for (log of buildLogs(); track log.id) {
+      <a
+        [routerLink]="'/build-logs/' + log.slug"
+        class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all hover:border-zinc-600 hover:bg-zinc-900"
+      >
+        <div class="mb-2 text-xs font-medium text-zinc-500">
+          {{ getProjectTitle(log.projectId) }}
+        </div>
+        <h2
+          class="mb-2 text-lg font-semibold text-zinc-100 group-hover:text-white"
+        >
+          {{ log.title }}
+        </h2>
+        <p class="mb-4 text-sm leading-relaxed text-zinc-400">
+          {{ log.excerpt }}
+        </p>
+        <div class="flex items-center gap-4 text-xs text-zinc-500">
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="CalendarIcon" [size]="12" />
+            {{ log.publishedAt | date: 'MMM d, yyyy' }}
+          </span>
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="ClockIcon" [size]="12" />
+            {{ log.readingTime }} min
+          </span>
+          <span
+            class="ml-auto flex items-center gap-1 text-zinc-400 transition-colors group-hover:text-white"
+          >
+            Read
+            <lucide-icon [img]="ArrowRightIcon" [size]="12" />
+          </span>
+        </div>
+      </a>
+      }
+    </div>
+    }
+  </div>
+</section>

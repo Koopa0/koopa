@@ -1,0 +1,107 @@
+---
+description: "Development lifecycle — tier system, phase gates, verification chain, plan change protocol"
+alwaysApply: true
+---
+
+# 開發生命週期 — 強制工作流程
+
+每個變更先選層級，再按流程執行。變更比預期大時立即升級。
+
+## 層級選擇
+
+**Tier 1: 直接修復** — 明確 bug/typo、1-3 檔、不改 API、不新增檔案/元件/服務/依賴
+→ 修復 → `/angular-verify` → `@code-reviewer`
+
+**Tier 2: 既有功能** — 在現有 feature 內、不改元件 public API、不引入新依賴
+→ 輕量 comprehend（3-5 行摘要）→ 實作 → `/angular-verify` + reviewers
+
+**Tier 3: 完整流程** — 新 feature/shared component、重大重構、設計決策、改 core 介面、新依賴
+→ comprehend → `@planner` → 實作 → `/angular-verify` + reviewers + 語意檢查
+
+升級：Tier 1→2（需理解 signal/store）、Tier 1/2→3（需新元件/service/API 變更）
+
+## Phase 0-1: 理解與挑戰（Tier 3）
+
+理解：讀現有程式碼 → `ls src/app/shared/components/` 確認可複用元件 → 釐清使用者意圖 → 確認整合點 → 查設計資源
+挑戰：需求模糊→問、方向錯→引用 rules 提替代、重複造輪子→指出已有元件、過度工程→推回
+
+關鍵規則：絕不在驗證前說「好主意」、絕不在需求模糊時繼續、絕不假設使用者意思、違反 rules 立即說明
+
+## Phase 2: 規劃（Tier 3）
+
+Agent `@planner` 設計：元件階層、Signal 類型、路由、設計資源參考、測試策略、範圍外事項。計畫**必須經使用者核准**。
+
+## Phase 3: 實作
+
+按計畫逐一實作邏輯單元。每單元完成後：`npx tsc --noEmit && npx ng lint`。不加計畫外功能，不改善相鄰程式碼。
+
+### 計畫變更協議
+
+**小變更**（相同檔案、相同元件、不同實作細節）：
+- 向使用者說明偏離，繼續實作
+- 例：「計畫用 signal()，但這裡更適合 linkedSignal()。改用 linkedSignal()。」
+
+**大變更**（新元件、新 service、路由變更、store 結構變更）：
+1. **立即停止**實作
+2. 執行 `/checkpoint` 儲存進度
+3. 描述什麼變了、為什麼
+4. 回到 Phase 2：產出更新後的計畫
+5. 取得使用者核准
+6. 從 checkpoint 繼續
+
+## Phase 4: 驗證
+
+### Step 1: 驗證套件（阻塞）
+```bash
+npx tsc --noEmit && npx ng lint && npx vitest run && npx ng build
+```
+
+### Step 2: Agent 審查
+- `.ts`/`.html` 修改 → `@code-reviewer`（永遠）
+- 安全相關 → `@security-auditor`（條件）
+- 效能疑慮 → `@performance-auditor`（條件）
+
+### Step 3: 語意檢查（僅 Tier 3）
+對照計畫驗證：元件階層、Signal 類型、路由、元件 API、職責、範圍外
+
+### 完成標準
+全部通過才宣告完成：tsc、lint（零問題）、vitest、build、@code-reviewer 無 Critical、語意檢查（Tier 3）
+
+## Phase 轉換閘門
+
+| 從→到 | 閘門 |
+|-------|------|
+| 需求→層級 | 判定 Tier |
+| Phase 0-1→2 | 理解報告含 `建議：進入規劃`、無阻塞問題 |
+| Phase 2→3 | 使用者核准（「好」/「approved」/「可以」） |
+| Phase 3→4 | 所有檔案已建立/修改、`tsc --noEmit` 通過 |
+| Phase 4→完成 | 所有驗證通過、結果已報告 |
+
+阻塞問題必須先解決。`建議：需要澄清` 先問使用者。`建議：推薦替代` 確認後才進規劃。
+
+## 使用者跳過階段的請求
+
+| 使用者說 | 回應 |
+|----------|------|
+| 「直接做」/「跳過分析」 | 「我需要先看現有程式碼和 shared components 以避免重複造輪子。讓我先看一下。」 |
+| 「我已經知道要什麼，直接寫」 | 「我還是會快速看一下現有元件和 signal 模式，確認方式與現有架構一致。」 |
+| 「跳過計畫，直接實作」 | 「計畫確保我們對元件階層和 signal 設計有共識。我會簡短。」 |
+| 「別質疑我，照我說的做」 | 「了解。我會記下疑慮但按你的方向進行。如果會違反專案規則，我提醒一次。」 |
+
+關鍵原則：**Tier 3 永遠完成 Phase 0**。Phase 1 可配合跳過但記下疑慮。Phase 2 可精簡不可跳過。
+
+## 衝突解決
+
+慣例違反：引用規則一次 → 解釋替代一次 → 使用者堅持→照做 → **不重複**反對
+範圍/技術分歧：說明取捨 → 按使用者選擇 → 記下風險
+
+## 驗證失敗恢復
+
+| Level | 情境 | 動作 |
+|-------|------|------|
+| 1 | 缺 import、未用變數 | 修復 → 重跑 `/angular-verify` |
+| 2 | 測試失敗、型別錯誤 | 診斷根因 → 修復 → 從頭重跑 |
+| 3 | 與計畫矛盾 | **停止** → 報告 → 計畫變更協議 |
+| 4 | 根本問題、連鎖失敗 | **停止** → 回 Phase 2 重新規劃 |
+
+絕不壓制 lint/test、絕不用 `@ts-ignore`/`eslint-disable`。同一步驟失敗 3 次升級 Level。

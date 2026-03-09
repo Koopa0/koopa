@@ -1,0 +1,40 @@
+---
+description: "Git workflow — Conventional Commits, PR process, pre-commit hooks"
+alwaysApply: true
+---
+
+# Git 工作流程規範
+
+## Conventional Commits
+
+格式：`<type>(<scope>): <description>`
+
+| 類型 | 用途 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | 修復 Bug |
+| `refactor` | 重構 |
+| `test` | 測試 |
+| `docs` | 文件 |
+| `chore` | 建置/工具 |
+| `perf` | 效能改善 |
+| `style` | 格式化 |
+
+- 描述使用英文、小寫開頭、不加句號
+- 主旨行不超過 72 字元
+- Breaking change 使用 `!` 標記
+
+## PR 流程
+
+- 分析**完整的 commit 歷史**撰寫 PR 描述
+- 每個 PR 必須經過審查
+- CI 所有檢查通過才能合併
+- 禁止對 main 分支 force push
+
+## 工作流程
+
+Plan → Implement → Review → Verify
+
+## Pre-commit Hooks
+
+使用 `lint-staged` 在 commit 前自動檢查 ESLint + Prettier。

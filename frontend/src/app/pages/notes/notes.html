@@ -1,0 +1,72 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <div class="flex items-center gap-3">
+      <lucide-icon [img]="StickyNoteIcon" [size]="28" class="text-zinc-500" />
+      <div>
+        <h1 class="text-3xl font-bold text-zinc-100">Notes</h1>
+        <p class="mt-1 text-zinc-400">
+          技術筆記 — 程式碼片段、設定備忘、閱讀筆記
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+    <!-- Category Tabs -->
+    <div class="mb-8 flex flex-wrap gap-2 border-b border-zinc-800 pb-4">
+      @for (cat of categories; track cat.value) {
+      <button
+        type="button"
+        (click)="selectCategory(cat.value)"
+        class="flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors"
+        [class]="selectedCategory() === cat.value
+          ? 'bg-zinc-100 text-zinc-900'
+          : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'"
+      >
+        <lucide-icon [img]="cat.icon" [size]="14" />
+        {{ cat.label }}
+      </button>
+      }
+    </div>
+
+    @if (filteredNotes().length === 0) {
+    <p class="py-20 text-center text-zinc-500">還沒有筆記</p>
+    } @else {
+    <div class="space-y-4">
+      @for (note of filteredNotes(); track note.id) {
+      <a
+        [routerLink]="'/notes/' + note.slug"
+        class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-5 no-underline transition-all hover:border-zinc-600 hover:bg-zinc-900"
+      >
+        <div class="mb-2 flex items-center gap-3 text-xs text-zinc-500">
+          <span
+            class="rounded-sm bg-zinc-800 px-1.5 py-0.5 font-medium uppercase"
+          >
+            {{ note.category }}
+          </span>
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="CalendarIcon" [size]="12" />
+            {{ note.publishedAt | date: 'MMM d, yyyy' }}
+          </span>
+        </div>
+        <h2
+          class="mb-1 text-base font-semibold text-zinc-100 group-hover:text-white"
+        >
+          {{ note.title }}
+        </h2>
+        <div class="flex flex-wrap gap-1.5">
+          @for (tag of note.tags; track tag) {
+          <span class="text-xs text-zinc-500">
+            #{{ tag }}
+          </span>
+          }
+        </div>
+      </a>
+      }
+    </div>
+    }
+  </div>
+</section>

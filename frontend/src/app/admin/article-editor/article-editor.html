@@ -1,0 +1,349 @@
+<!-- Notification -->
+@if (notification()) {
+<div
+  class="fixed right-4 top-20 z-50 flex items-center gap-2 rounded-sm border px-4 py-2.5 text-sm shadow-lg"
+  [class]="
+    notification()!.type === 'success'
+      ? 'border-emerald-800 bg-emerald-900/90 text-emerald-300'
+      : 'border-red-800 bg-red-900/90 text-red-300'
+  "
+>
+  {{ notification()!.message }}
+</div>
+} @if (isLoading()) {
+<div class="flex flex-col items-center justify-center gap-3 py-20">
+  <div
+    class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+  ></div>
+  <p class="text-sm text-zinc-400">載入文章中...</p>
+</div>
+} @else {
+<!-- Toolbar -->
+<section
+  class="sticky top-16 z-40 border-b border-zinc-800 bg-zinc-900/95 backdrop-blur-sm"
+>
+  <div
+    class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8"
+  >
+    <div class="flex items-center gap-3">
+      <button
+        type="button"
+        class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        (click)="cancel()"
+      >
+        <lucide-icon [img]="ArrowLeftIcon" [size]="18" />
+      </button>
+      <h1 class="text-base font-semibold text-zinc-200">
+        {{ isNewArticle() ? '新增文章' : '編輯文章' }}
+      </h1>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800 disabled:opacity-50"
+        (click)="saveDraft()"
+        [disabled]="isSaving()"
+      >
+        <lucide-icon [img]="SaveIcon" [size]="14" />
+        儲存草稿
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-sm bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+        (click)="publish()"
+        [disabled]="isSaving()"
+      >
+        @if (isSaving()) {
+        <div
+          class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
+        ></div>
+        } @else {
+        <lucide-icon [img]="SendIcon" [size]="14" />
+        } 發布文章
+      </button>
+    </div>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-6 lg:flex-row">
+      <!-- Sidebar: Article Info -->
+      <div class="w-full shrink-0 lg:w-80">
+        <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-5">
+          <h2
+            class="mb-4 flex items-center gap-2 text-sm font-medium text-zinc-300"
+          >
+            <lucide-icon [img]="InfoIcon" [size]="16" />
+            文章資訊
+          </h2>
+
+          <form [formGroup]="articleForm" class="space-y-4">
+            <!-- Title -->
+            <div>
+              <label class="mb-1 block text-xs font-medium text-zinc-400"
+                >文章標題</label
+              >
+              <input
+                type="text"
+                formControlName="title"
+                placeholder="請輸入引人注目的標題"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              />
+              @if (getFieldError('title')) {
+              <p class="mt-1 text-xs text-red-400">
+                {{ getFieldError('title') }}
+              </p>
+              }
+            </div>
+
+            <!-- Excerpt -->
+            <div>
+              <label class="mb-1 block text-xs font-medium text-zinc-400"
+                >文章摘要</label
+              >
+              <textarea
+                formControlName="excerpt"
+                rows="3"
+                placeholder="簡短描述文章內容 (最多200字)"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              ></textarea>
+              <div class="mt-1 flex items-center justify-between">
+                @if (getFieldError('excerpt')) {
+                <p class="text-xs text-red-400">
+                  {{ getFieldError('excerpt') }}
+                </p>
+                } @else {
+                <span></span>
+                }
+                <span class="text-xs text-zinc-600">
+                  {{ articleForm.get('excerpt')?.value?.length || 0 }}/200
+                </span>
+              </div>
+            </div>
+
+            <!-- Status -->
+            <div>
+              <label class="mb-1 block text-xs font-medium text-zinc-400"
+                >發布狀態</label
+              >
+              <select
+                formControlName="status"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
+              >
+                @for (option of statusOptions; track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+
+            <!-- Cover Image -->
+            <div>
+              <label class="mb-1 block text-xs font-medium text-zinc-400"
+                >封面圖片 URL</label
+              >
+              <input
+                type="text"
+                formControlName="coverImage"
+                placeholder="https://example.com/image.jpg"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              />
+            </div>
+
+            <!-- Tags -->
+            <div>
+              <label class="mb-2 block text-xs font-medium text-zinc-400"
+                >標籤</label
+              >
+
+              <!-- Selected Tags -->
+              <div class="mb-2 flex flex-wrap gap-1.5">
+                @if (selectedTags.length === 0) {
+                <span class="text-xs text-zinc-600">點擊下方標籤來新增</span>
+                } @else { @for (tag of selectedTags; track tag) {
+                <span
+                  class="inline-flex items-center gap-1 rounded-full border border-zinc-600 bg-zinc-700 px-2 py-0.5 text-xs text-zinc-200"
+                >
+                  {{ tag }}
+                  <button
+                    type="button"
+                    class="text-zinc-400 hover:text-zinc-200"
+                    (click)="removeTag(tag)"
+                  >
+                    <lucide-icon [img]="XIcon" [size]="10" />
+                  </button>
+                </span>
+                } }
+              </div>
+
+              <!-- Available Tags -->
+              <div>
+                <span class="mb-1.5 block text-xs text-zinc-600">可用標籤</span>
+                <div class="flex flex-wrap gap-1.5">
+                  @for (tag of availableTags; track tag) { @if
+                  (!selectedTags.includes(tag)) {
+                  <button
+                    type="button"
+                    class="rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+                    (click)="addTag(tag)"
+                  >
+                    {{ tag }}
+                  </button>
+                  } }
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Main: Editor -->
+      <div class="min-w-0 flex-1">
+        <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
+          <!-- Tab Bar -->
+          <div class="flex items-center border-b border-zinc-800">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors"
+              [class]="
+                selectedTab() === 'edit'
+                  ? 'border-b-2 border-zinc-100 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              "
+              (click)="onTabChange('edit')"
+            >
+              <lucide-icon [img]="EditIcon" [size]="14" />
+              編輯
+            </button>
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors"
+              [class]="
+                selectedTab() === 'preview'
+                  ? 'border-b-2 border-zinc-100 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              "
+              (click)="onTabChange('preview')"
+            >
+              <lucide-icon [img]="EyeIcon" [size]="14" />
+              預覽
+            </button>
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors"
+              [class]="
+                selectedTab() === 'split'
+                  ? 'border-b-2 border-zinc-100 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              "
+              (click)="onTabChange('split')"
+            >
+              <lucide-icon [img]="Columns2Icon" [size]="14" />
+              分割
+            </button>
+          </div>
+
+          <!-- Edit Tab -->
+          @if (selectedTab() === 'edit') {
+          <div>
+            <!-- Mini Toolbar -->
+            <div
+              class="flex items-center gap-1 border-b border-zinc-800 px-3 py-1.5"
+            >
+              <button
+                type="button"
+                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                title="粗體"
+              >
+                <lucide-icon [img]="BoldIcon" [size]="14" />
+              </button>
+              <button
+                type="button"
+                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                title="斜體"
+              >
+                <lucide-icon [img]="ItalicIcon" [size]="14" />
+              </button>
+              <button
+                type="button"
+                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                title="連結"
+              >
+                <lucide-icon [img]="LinkIcon" [size]="14" />
+              </button>
+              <button
+                type="button"
+                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                title="程式碼"
+              >
+                <lucide-icon [img]="CodeIcon" [size]="14" />
+              </button>
+              <button
+                type="button"
+                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                title="圖片"
+              >
+                <lucide-icon [img]="ImageIcon" [size]="14" />
+              </button>
+            </div>
+
+            <textarea
+              [formControl]="$any(articleForm.get('content'))"
+              rows="30"
+              placeholder="使用 Markdown 語法撰寫您的文章..."
+              class="w-full resize-y bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
+              (input)="onContentChange($event)"
+            ></textarea>
+            @if (getFieldError('content')) {
+            <p class="px-4 pb-2 text-xs text-red-400">
+              {{ getFieldError('content') }}
+            </p>
+            }
+          </div>
+          }
+
+          <!-- Preview Tab -->
+          @if (selectedTab() === 'preview') {
+          <div class="p-6">
+            <article class="prose" [innerHTML]="previewHtml()"></article>
+          </div>
+          }
+
+          <!-- Split Tab -->
+          @if (selectedTab() === 'split') {
+          <div class="flex h-[600px]">
+            <div class="flex-1 border-r border-zinc-800">
+              <div
+                class="flex items-center gap-1.5 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-500"
+              >
+                <lucide-icon [img]="EditIcon" [size]="12" />
+                Markdown 編輯
+              </div>
+              <textarea
+                [formControl]="$any(articleForm.get('content'))"
+                rows="20"
+                placeholder="Markdown 內容..."
+                class="h-[calc(100%-2.5rem)] w-full resize-none bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
+                (input)="onContentChange($event)"
+              ></textarea>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <div
+                class="flex items-center gap-1.5 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-500"
+              >
+                <lucide-icon [img]="EyeIcon" [size]="12" />
+                即時預覽
+              </div>
+              <div class="p-4">
+                <article class="prose" [innerHTML]="previewHtml()"></article>
+              </div>
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+}

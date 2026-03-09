@@ -1,0 +1,65 @@
+---
+description: "Testing — Vitest TDD workflow, signal testing, component testing, coverage rules"
+globs: "**/*.spec.ts"
+alwaysApply: false
+---
+
+# 測試規範
+
+> 完整程式碼範例見 `angular-testing` skill。
+
+## TDD 工作流程
+
+嚴格遵循 **RED -> GREEN -> REFACTOR**。**禁止**先寫實作再補測試。
+
+## 覆蓋率要求
+
+| 指標 | 最低標準 | 目標 |
+|------|---------|------|
+| Statements | 80% | 90% |
+| Branches | 80% | 85% |
+| Functions | 80% | 90% |
+| Lines | 80% | 90% |
+
+覆蓋率排除：測試工具、mock 檔案、type definitions。
+
+## 測試金字塔
+
+| 層級 | 工具 | 比例 | 測試對象 |
+|------|------|------|---------|
+| Unit | Vitest | 70% | Services, Utils, Pipes, Guards |
+| Integration | Vitest + TestBed | 20% | Components, Directives |
+| E2E | Playwright | 10% | User Flows |
+
+## 命名格式
+
+```
+it('should [預期行為] when [觸發條件]', ...)
+```
+
+## 禁令
+
+| 禁止 | 理由 |
+|------|------|
+| 測試私有方法 | 提取到 utility 或透過公開 API 間接測試 |
+| `any` 繞過型別 | 不可用 `as any` spy 私有方法 |
+| 測試實作細節 | 測試可觀察行為（輸出、DOM、事件） |
+| 空的 `it` 區塊 | 每個 `it` 至少一個 `expect` |
+| 隨機/時間依賴資料 | 使用固定 mock 資料（`shared/testing/mock-data.ts`） |
+| CSS class 選擇器 | 必須使用 `data-testid` 屬性 |
+
+## 測試隔離
+
+- 測試之間不共享狀態，`beforeEach` 重置
+- `vi.clearAllMocks()` + `vi.restoreAllMocks()`
+
+## 檢查清單
+
+- [ ] TDD：先寫測試再寫實作
+- [ ] `should ... when ...` 命名格式
+- [ ] `data-testid` 選擇 DOM
+- [ ] 固定 mock 資料
+- [ ] 每個 `it` 有 `expect`
+- [ ] 不測試私有方法
+- [ ] Signal / HTTP 測試使用正確模式
+- [ ] 覆蓋率 >= 80%
