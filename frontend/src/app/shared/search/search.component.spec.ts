@@ -64,7 +64,7 @@ describe('SearchComponent', () => {
 
   it('should have search input with aria-label', () => {
     const input = fixture.nativeElement.querySelector('input');
-    expect(input.getAttribute('aria-label')).toBe('搜尋文章');
+    expect(input.getAttribute('aria-label')).toBe('Search articles');
   });
 
   it('should have search role on container', () => {

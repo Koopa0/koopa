@@ -33,7 +33,7 @@ describe('CopyButtonDirective', () => {
     it('should add a copy button to the pre element', () => {
       const button = preElement.querySelector('button');
       expect(button).not.toBeNull();
-      expect(button?.textContent).toContain('複製');
+      expect(button?.textContent).toContain('Copy');
     });
 
     it('should add group class and relative positioning', () => {

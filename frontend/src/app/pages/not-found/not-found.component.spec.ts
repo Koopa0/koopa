@@ -33,7 +33,7 @@ describe('NotFoundComponent', () => {
   it('should render error message', () => {
     fixture.detectChanges();
     const el = fixture.nativeElement;
-    expect(el.textContent).toContain('找不到頁面');
+    expect(el.textContent).toContain('Page Not Found');
   });
 
   it('should call seoService.updateMeta with noIndex on init', () => {
@@ -42,7 +42,7 @@ describe('NotFoundComponent', () => {
 
     expect(seoService.updateMeta).toHaveBeenCalledWith(
       jasmine.objectContaining({
-        title: '404 - 找不到頁面',
+        title: '404 - Page Not Found',
         noIndex: true,
       }),
     );

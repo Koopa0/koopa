@@ -58,7 +58,7 @@ describe('TableOfContentsComponent', () => {
 
     const nav = fixture.nativeElement.querySelector('nav');
     expect(nav).not.toBeNull();
-    expect(nav.getAttribute('aria-label')).toBe('文章目錄');
+    expect(nav.getAttribute('aria-label')).toBe('Table of contents');
   });
 
   it('should not render nav when no headings', () => {

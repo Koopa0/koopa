@@ -158,9 +158,9 @@ describe('DashboardComponent', () => {
 
   describe('status helpers', () => {
     it('should return correct article status labels', () => {
-      expect(component['getStatusLabel']('published')).toBe('已發布');
-      expect(component['getStatusLabel']('draft')).toBe('草稿');
-      expect(component['getStatusLabel']('archived')).toBe('封存');
+      expect(component['getStatusLabel']('published')).toBe('Published');
+      expect(component['getStatusLabel']('draft')).toBe('Draft');
+      expect(component['getStatusLabel']('archived')).toBe('Archived');
       expect(component['getStatusLabel']('unknown')).toBe('unknown');
     });
 
@@ -194,19 +194,19 @@ describe('DashboardComponent', () => {
   describe('template rendering', () => {
     it('should display stat cards', () => {
       const text = fixture.nativeElement.textContent;
-      expect(text).toContain('總文章數');
-      expect(text).toContain('已發布');
-      expect(text).toContain('草稿');
+      expect(text).toContain('Total Articles');
+      expect(text).toContain('Published');
+      expect(text).toContain('Drafts');
     });
 
     it('should display projects section', () => {
       const text = fixture.nativeElement.textContent;
-      expect(text).toContain('專案管理');
+      expect(text).toContain('Project Management');
     });
 
     it('should display articles list', () => {
       const text = fixture.nativeElement.textContent;
-      expect(text).toContain('最近更新的文章');
+      expect(text).toContain('Recently Updated Articles');
     });
 
     it('should have link to create new article', () => {

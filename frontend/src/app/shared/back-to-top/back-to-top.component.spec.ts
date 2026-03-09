@@ -29,7 +29,7 @@ describe('BackToTopComponent', () => {
     it('should have a button with aria-label', () => {
       const button = fixture.nativeElement.querySelector('button');
       expect(button).not.toBeNull();
-      expect(button.getAttribute('aria-label')).toBe('回到頂部');
+      expect(button.getAttribute('aria-label')).toBe('Back to top');
     });
   });
 

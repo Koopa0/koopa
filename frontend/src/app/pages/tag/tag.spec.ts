@@ -93,8 +93,8 @@ describe('TagComponent', () => {
 
     expect(spy).toHaveBeenCalledWith(
       jasmine.objectContaining({
-        title: 'Docker 相關文章',
-        description: '所有標記為 Docker 的技術文章',
+        title: 'Tag: Docker',
+        description: 'All content tagged with Docker',
         ogUrl: 'https://koopa0.dev/tags/Docker',
       }),
     );
@@ -102,7 +102,7 @@ describe('TagComponent', () => {
 
   it('should show loading state initially', () => {
     createComponent('Angular');
-    // 不 tick，保持 loading 狀態
+    // Don't tick, keep loading state
     fixture.detectChanges();
 
     expect(component['isLoading']()).toBe(true);
@@ -141,7 +141,7 @@ describe('TagComponent', () => {
         (link as HTMLAnchorElement).getAttribute('href') === '/articles',
     );
     expect(backLink).toBeTruthy();
-    expect(backLink!.textContent).toContain('返回文章列表');
+    expect(backLink!.textContent).toContain('Back to Articles');
   });
 
   it('should show article count after loading', fakeAsync(() => {
@@ -153,7 +153,7 @@ describe('TagComponent', () => {
     const articleCount = component['articles']().length;
     const text = fixture.nativeElement.textContent;
     expect(text).toContain(`${articleCount}`);
-    expect(text).toContain('篇相關文章');
+    expect(text).toContain('related posts');
   }));
 
   it('should show empty state when no articles match tag', fakeAsync(() => {
@@ -165,7 +165,7 @@ describe('TagComponent', () => {
     const articles = component['articles']();
     if (articles.length === 0) {
       const text = fixture.nativeElement.textContent;
-      expect(text).toContain('沒有找到');
+      expect(text).toContain('No content found');
       expect(text).toContain('NonExistentTag12345');
     }
   }));
@@ -187,7 +187,7 @@ describe('TagComponent', () => {
 
     const articles = component['articles']();
     if (articles.length > 0) {
-      // 當前 tag 的 badge 應有不同樣式（bg-zinc-700）
+      // Current tag badge should have different style (bg-zinc-700)
       const badges = fixture.nativeElement.querySelectorAll(
         '.rounded-sm.px-2.py-0\\.5',
       );
@@ -196,7 +196,7 @@ describe('TagComponent', () => {
           (badge as HTMLElement).textContent?.trim() === 'Angular' &&
           (badge as HTMLElement).classList.contains('bg-zinc-700'),
       );
-      // 如果有 Angular 文章，應有高亮 badge
+      // If there are Angular articles, there should be highlighted badges
       if (articles.some((a) => a.tags.includes('Angular'))) {
         expect(currentTagBadges.length).toBeGreaterThan(0);
       }

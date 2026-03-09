@@ -64,9 +64,9 @@ describe('ProjectEditorComponent', () => {
       expect(component['isNewProject']()).toBe(true);
     });
 
-    it('should display "新增專案" in title', () => {
+    it('should display "New Project" in title', () => {
       const title = fixture.nativeElement.querySelector('h1');
-      expect(title.textContent).toContain('新增專案');
+      expect(title.textContent).toContain('New Project');
     });
 
     it('should have an empty form initially', () => {
@@ -85,7 +85,7 @@ describe('ProjectEditorComponent', () => {
       const notification = component['notification']();
       expect(notification).toBeTruthy();
       expect(notification!.type).toBe('error');
-      expect(notification!.message).toContain('必要欄位');
+      expect(notification!.message).toContain('required fields');
     });
 
     it('should require title with minimum 2 characters', () => {
@@ -94,11 +94,11 @@ describe('ProjectEditorComponent', () => {
       titleControl?.markAsTouched();
 
       expect(titleControl?.invalid).toBe(true);
-      expect(component['getFieldError']('title')).toBe('此欄位為必填');
+      expect(component['getFieldError']('title')).toBe('This field is required');
 
       titleControl?.setValue('A');
       expect(titleControl?.invalid).toBe(true);
-      expect(component['getFieldError']('title')).toContain('至少需要 2');
+      expect(component['getFieldError']('title')).toContain('Must be at least 2');
 
       titleControl?.setValue('AB');
       expect(titleControl?.invalid).toBe(false);
@@ -110,7 +110,7 @@ describe('ProjectEditorComponent', () => {
       descControl?.markAsTouched();
 
       expect(descControl?.invalid).toBe(true);
-      expect(component['getFieldError']('description')).toContain('最多 300');
+      expect(component['getFieldError']('description')).toContain('Must be at most 300');
     });
 
     it('should add tech stack item', () => {
@@ -156,13 +156,13 @@ describe('ProjectEditorComponent', () => {
     });
 
     it('should remove highlight by index', () => {
-      component['newHighlight'].set('亮點一');
+      component['newHighlight'].set('Highlight 1');
       component['addHighlight']();
-      component['newHighlight'].set('亮點二');
+      component['newHighlight'].set('Highlight 2');
       component['addHighlight']();
 
       component['removeHighlight'](0);
-      expect(component['highlights']).toEqual(['亮點二']);
+      expect(component['highlights']).toEqual(['Highlight 2']);
     });
 
     it('should create project and navigate to admin on save', fakeAsync(() => {
@@ -204,9 +204,9 @@ describe('ProjectEditorComponent', () => {
       expect(component['isNewProject']()).toBe(false);
     });
 
-    it('should display "編輯專案" in title', () => {
+    it('should display "Edit Project" in title', () => {
       const title = fixture.nativeElement.querySelector('h1');
-      expect(title.textContent).toContain('編輯專案');
+      expect(title.textContent).toContain('Edit Project');
     });
 
     it('should populate form with existing project data', () => {
@@ -236,17 +236,17 @@ describe('ProjectEditorComponent', () => {
       expect(component['isSaving']()).toBe(false);
       expect(navigateSpy).toHaveBeenCalledWith(['/admin']);
 
-      // 驗證 project 確實更新了
+      // Verify the project was actually updated
       const updated = projectService.getProjectById(existingProjectId);
       expect(updated!.title).toBe('Updated Title');
     }));
 
-    it('should show submit button text as "更新專案"', () => {
+    it('should show submit button text as "Update Project"', () => {
       const buttons = Array.from(
         fixture.nativeElement.querySelectorAll('button[type="submit"]'),
       ) as HTMLElement[];
       const submitBtn = buttons.find((b) =>
-        b.textContent?.includes('更新專案'),
+        b.textContent?.includes('Update Project'),
       );
       expect(submitBtn).toBeTruthy();
     });
@@ -270,14 +270,14 @@ describe('ProjectEditorComponent', () => {
     });
 
     it('should add highlight on Enter key', () => {
-      component['newHighlight'].set('自動化部署');
+      component['newHighlight'].set('Automated deployment');
       const event = new KeyboardEvent('keydown', { key: 'Enter' });
       spyOn(event, 'preventDefault');
 
       component['onHighlightKeydown'](event);
 
       expect(event.preventDefault).toHaveBeenCalled();
-      expect(component['highlights']).toEqual(['自動化部署']);
+      expect(component['highlights']).toEqual(['Automated deployment']);
     });
 
     it('should not add tech on non-Enter key', () => {

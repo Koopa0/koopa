@@ -22,14 +22,14 @@ describe('ErrorComponent', () => {
 
   it('should render error heading', () => {
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('發生錯誤');
+    expect(compiled.querySelector('h1')?.textContent).toContain('Something went wrong');
   });
 
   it('should have reload button', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     const buttons = compiled.querySelectorAll('button');
     const reloadButton = Array.from(buttons).find((b) =>
-      b.textContent?.includes('重新載入'),
+      b.textContent?.includes('Reload'),
     );
     expect(reloadButton).toBeTruthy();
   });

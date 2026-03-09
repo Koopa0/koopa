@@ -116,7 +116,7 @@ describe('ProjectService', () => {
 
       const updated = service.getProjectById(existing.id);
       expect(updated!.title).toBe(updatedTitle);
-      // 其他欄位不應改變
+      // Other fields should not change
       expect(updated!.slug).toBe(existing.slug);
       expect(updated!.description).toBe(existing.description);
     }));

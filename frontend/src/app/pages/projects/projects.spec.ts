@@ -54,7 +54,7 @@ describe('ProjectsComponent', () => {
     const allProjects = projectService.allProjects();
     const countText = fixture.nativeElement.textContent;
     expect(countText).toContain(`${allProjects.length}`);
-    expect(countText).toContain('個專案');
+    expect(countText).toContain('projects');
   });
 
   it('should render status filter buttons', () => {
@@ -74,7 +74,7 @@ describe('ProjectsComponent', () => {
       (p) => p.status === 'completed',
     ).length;
 
-    // 點擊 "Completed" 按鈕
+    // Click "Completed" button
     const filterButtons = fixture.nativeElement.querySelectorAll(
       '.flex.flex-wrap.gap-2 button',
     );
@@ -86,7 +86,7 @@ describe('ProjectsComponent', () => {
   });
 
   it('should show empty state when no projects match filter', () => {
-    // 用程式設定不存在的篩選
+    // Programmatically set a filter with no matches
     component['selectedStatus'].set('in-progress');
     fixture.detectChanges();
 
@@ -97,12 +97,12 @@ describe('ProjectsComponent', () => {
 
     if (inProgressCount === 0) {
       const emptyText = fixture.nativeElement.textContent;
-      expect(emptyText).toContain('沒有符合條件的專案');
+      expect(emptyText).toContain('No projects yet');
     }
   });
 
   it('should show reset button in empty state when filter is active', () => {
-    // 如果有一個 status 沒有對應的專案，就測試 reset 按鈕
+    // If a status has no matching projects, test the reset button
     component['selectedStatus'].set('in-progress');
     fixture.detectChanges();
 
@@ -113,12 +113,12 @@ describe('ProjectsComponent', () => {
 
     if (inProgressCount === 0) {
       const resetButton = fixture.nativeElement.querySelector('button');
-      // 應該有「顯示所有專案」按鈕
+      // There should be a reset/show all button
       const buttons = Array.from(
         fixture.nativeElement.querySelectorAll('button'),
       ) as HTMLElement[];
       const resetBtn = buttons.find((b) =>
-        b.textContent?.includes('顯示所有專案'),
+        b.textContent?.includes('Show all projects'),
       );
       expect(resetBtn).toBeTruthy();
     }
@@ -139,7 +139,7 @@ describe('ProjectsComponent', () => {
     const badges = fixture.nativeElement.querySelectorAll(
       '.rounded-full .text-xs',
     );
-    // 確保有 status badges 存在
+    // Ensure status badges exist
     const allProjects = projectService.allProjects();
     allProjects.forEach((project) => {
       const content = fixture.nativeElement.textContent;
@@ -154,13 +154,13 @@ describe('ProjectsComponent', () => {
   });
 
   it('should highlight the active filter button', () => {
-    // 預設 "All" 應該是 active
+    // Default "All" should be active
     const filterButtons = fixture.nativeElement.querySelectorAll(
       '.flex.flex-wrap.gap-2 button',
     );
     expect(filterButtons[0].classList).toContain('bg-zinc-700');
 
-    // 切換到 Completed
+    // Switch to Completed
     filterButtons[1].click();
     fixture.detectChanges();
 
