@@ -303,11 +303,11 @@ app.use('/bff', (req, res) => {
   const headers: Record<string, string> = {
     'content-type': req.headers['content-type'] || 'application/json',
   };
-  if (req.headers['authorization']) {
-    headers['authorization'] = req.headers['authorization'] as string;
-  }
-  if (req.headers['cookie']) {
-    headers['cookie'] = req.headers['cookie'] as string;
+  const forwardHeaders = ['authorization', 'cookie', 'x-hub-signature-256', 'x-github-event', 'x-github-delivery'];
+  for (const h of forwardHeaders) {
+    if (req.headers[h]) {
+      headers[h] = req.headers[h] as string;
+    }
   }
 
   const bodyChunks: Buffer[] = [];
