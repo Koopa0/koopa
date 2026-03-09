@@ -1,15 +1,13 @@
-import {
-  AngularNodeAppEngine,
-  createNodeRequestHandler,
-  isMainModule,
-  writeResponseToNodeResponse,
-} from '@angular/ssr/node';
+import { APP_BASE_HREF } from '@angular/common';
+import { CommonEngine, createNodeRequestHandler, isMainModule } from '@angular/ssr/node';
 import express from 'express';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import bootstrap from './main.server';
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
+const indexHtml = join(serverDistFolder, 'index.server.html');
 
 const SITE_URL = process.env['SITE_URL'] || 'https://koopa0.dev';
 const SITE_TITLE = 'koopa0.dev';
@@ -17,7 +15,7 @@ const SITE_DESCRIPTION =
   'Backend Engineer / Full-Stack Developer - 技術文章與個人作品集';
 
 const app = express();
-const angularApp = new AngularNodeAppEngine();
+const commonEngine = new CommonEngine();
 
 // 靜態頁面路由（用於 sitemap）
 const STATIC_ROUTES: Array<{
@@ -329,11 +327,15 @@ app.use(
 );
 
 app.use('/**', (req, res, next) => {
-  angularApp
-    .handle(req)
-    .then((response) =>
-      response ? writeResponseToNodeResponse(response, res) : next(),
-    )
+  commonEngine
+    .render({
+      bootstrap,
+      documentFilePath: indexHtml,
+      url: `${req.protocol}://${req.headers.host}${req.originalUrl}`,
+      publicPath: browserDistFolder,
+      providers: [{ provide: APP_BASE_HREF, useValue: req.baseUrl }],
+    })
+    .then((html) => res.send(html))
     .catch(next);
 });
 
@@ -344,4 +346,4 @@ if (isMainModule(import.meta.url)) {
   });
 }
 
-export const reqHandler = createNodeRequestHandler(app);
+export default createNodeRequestHandler(app);
