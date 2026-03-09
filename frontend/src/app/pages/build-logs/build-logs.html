@@ -36,9 +36,6 @@
         [routerLink]="'/build-logs/' + log.slug"
         class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all hover:border-zinc-600 hover:bg-zinc-900"
       >
-        <div class="mb-2 text-xs font-medium text-zinc-500">
-          {{ getProjectTitle(log.projectId) }}
-        </div>
         <h2
           class="mb-2 text-lg font-semibold text-zinc-100 group-hover:text-white"
         >
@@ -50,11 +47,11 @@
         <div class="flex items-center gap-4 text-xs text-zinc-500">
           <span class="flex items-center gap-1">
             <lucide-icon [img]="CalendarIcon" [size]="12" />
-            {{ log.publishedAt | date: 'MMM d, yyyy' }}
+            {{ log.published_at | date: 'MMM d, yyyy' }}
           </span>
           <span class="flex items-center gap-1">
             <lucide-icon [img]="ClockIcon" [size]="12" />
-            {{ log.readingTime }} min
+            {{ log.reading_time }} min
           </span>
           <span
             class="ml-auto flex items-center gap-1 text-zinc-400 transition-colors group-hover:text-white"

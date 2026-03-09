@@ -1,0 +1,121 @@
+package tracking
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/koopa0/blog-backend/internal/db"
+)
+
+// Store handles database operations for tracking topics.
+type Store struct {
+	q *db.Queries
+}
+
+// NewStore returns a Store backed by the given pool.
+func NewStore(pool *pgxpool.Pool) *Store {
+	return &Store{q: db.New(pool)}
+}
+
+// TrackingTopics returns all tracking topics.
+func (s *Store) TrackingTopics(ctx context.Context) ([]TrackingTopic, error) {
+	rows, err := s.q.TrackingTopics(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing tracking topics: %w", err)
+	}
+	topics := make([]TrackingTopic, len(rows))
+	for i, r := range rows {
+		topics[i] = dbToTrackingTopic(r)
+	}
+	return topics, nil
+}
+
+// TrackingTopicByID returns a single tracking topic by ID.
+func (s *Store) TrackingTopicByID(ctx context.Context, id uuid.UUID) (*TrackingTopic, error) {
+	r, err := s.q.TrackingTopicByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying tracking topic %s: %w", id, err)
+	}
+	t := dbToTrackingTopic(r)
+	return &t, nil
+}
+
+// CreateTrackingTopic inserts a new tracking topic.
+func (s *Store) CreateTrackingTopic(ctx context.Context, p CreateParams) (*TrackingTopic, error) {
+	if p.Keywords == nil {
+		p.Keywords = []string{}
+	}
+	if p.Sources == nil {
+		p.Sources = []string{}
+	}
+	if p.Schedule == "" {
+		p.Schedule = "0 */6 * * *"
+	}
+	enabled := true
+	if p.Enabled != nil {
+		enabled = *p.Enabled
+	}
+	r, err := s.q.CreateTrackingTopic(ctx, db.CreateTrackingTopicParams{
+		Name:     p.Name,
+		Keywords: p.Keywords,
+		Sources:  p.Sources,
+		Enabled:  enabled,
+		Schedule: p.Schedule,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating tracking topic: %w", err)
+	}
+	t := dbToTrackingTopic(r)
+	return &t, nil
+}
+
+// UpdateTrackingTopic updates a tracking topic.
+func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p UpdateParams) (*TrackingTopic, error) {
+	r, err := s.q.UpdateTrackingTopic(ctx, db.UpdateTrackingTopicParams{
+		ID:       id,
+		Name:     p.Name,
+		Keywords: p.Keywords,
+		Sources:  p.Sources,
+		Enabled:  p.Enabled,
+		Schedule: p.Schedule,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("updating tracking topic %s: %w", id, err)
+	}
+	t := dbToTrackingTopic(r)
+	return &t, nil
+}
+
+// DeleteTrackingTopic deletes a tracking topic by ID.
+func (s *Store) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
+	err := s.q.DeleteTrackingTopic(ctx, id)
+	if err != nil {
+		return fmt.Errorf("deleting tracking topic %s: %w", id, err)
+	}
+	return nil
+}
+
+// dbToTrackingTopic converts a db.TrackingTopic to TrackingTopic.
+func dbToTrackingTopic(r db.TrackingTopic) TrackingTopic {
+	return TrackingTopic{
+		ID:        r.ID,
+		Name:      r.Name,
+		Keywords:  r.Keywords,
+		Sources:   r.Sources,
+		Enabled:   r.Enabled,
+		Schedule:  r.Schedule,
+		CreatedAt: r.CreatedAt,
+		UpdatedAt: r.UpdatedAt,
+	}
+}

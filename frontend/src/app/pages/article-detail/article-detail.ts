@@ -17,14 +17,13 @@ import {
   Share2,
   Calendar,
   Clock,
-  Eye,
   AlertCircle,
   Copy,
   Check,
 } from 'lucide-angular';
 import { ArticleService } from '../../core/services/article.service';
 import { MarkdownService } from '../../core/services/markdown.service';
-import { Article } from '../../core/models';
+import type { ApiContent } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
 import { TableOfContentsComponent } from '../../shared/table-of-contents/table-of-contents.component';
@@ -56,7 +55,7 @@ export class ArticleDetailComponent implements OnInit {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly seoService = inject(SeoService);
 
-  protected readonly article = signal<Article | null>(null);
+  protected readonly article = signal<ApiContent | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly isCopied = signal(false);
@@ -66,7 +65,7 @@ export class ArticleDetailComponent implements OnInit {
     if (!article) {
       return '';
     }
-    return this.markdownService.parse(article.content);
+    return this.markdownService.parse(article.body);
   });
 
   // SECURITY_REVIEW: bypassSecurityTrustHtml 用於渲染 markdown 產生的 HTML。
@@ -85,26 +84,25 @@ export class ArticleDetailComponent implements OnInit {
   protected readonly Share2Icon = Share2;
   protected readonly CalendarIcon = Calendar;
   protected readonly ClockIcon = Clock;
-  protected readonly EyeIcon = Eye;
   protected readonly AlertCircleIcon = AlertCircle;
   protected readonly CopyIcon = Copy;
   protected readonly CheckIcon = Check;
 
   ngOnInit(): void {
-    const articleId = this.route.snapshot.paramMap.get('id');
-    if (articleId) {
-      this.loadArticle(articleId);
+    const slug = this.route.snapshot.paramMap.get('id');
+    if (slug) {
+      this.loadArticle(slug);
     } else {
       this.error.set('文章 ID 不存在');
       this.isLoading.set(false);
     }
   }
 
-  protected loadArticle(id: string): void {
+  protected loadArticle(slug: string): void {
     this.isLoading.set(true);
     this.error.set(null);
 
-    this.articleService.getArticleById(id).subscribe({
+    this.articleService.getArticleBySlug(slug).subscribe({
       next: (article) => {
         this.article.set(article);
         this.isLoading.set(false);
@@ -121,14 +119,14 @@ export class ArticleDetailComponent implements OnInit {
     this.location.back();
   }
 
-  private updateSeo(article: Article): void {
-    const articleUrl = `https://koopa0.dev/articles/${article.id}`;
+  private updateSeo(article: ApiContent): void {
+    const articleUrl = `https://koopa0.dev/articles/${article.slug}`;
     this.seoService.updateMeta({
       title: article.title,
-      description: article.seoDescription || article.excerpt,
+      description: article.excerpt,
       ogTitle: article.title,
       ogDescription: article.excerpt,
-      ogImage: article.coverImage,
+      ogImage: article.cover_image ?? undefined,
       ogUrl: articleUrl,
       ogType: 'article',
       twitterCard: 'summary_large_image',
@@ -137,9 +135,9 @@ export class ArticleDetailComponent implements OnInit {
         title: article.title,
         description: article.excerpt,
         url: articleUrl,
-        publishedAt: new Date(article.publishedAt).toISOString(),
-        updatedAt: new Date(article.updatedAt).toISOString(),
-        coverImage: article.coverImage,
+        publishedAt: article.published_at ?? article.created_at,
+        updatedAt: article.updated_at,
+        coverImage: article.cover_image ?? undefined,
         tags: article.tags,
       }),
     });

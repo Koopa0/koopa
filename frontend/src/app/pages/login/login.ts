@@ -14,7 +14,7 @@ import {
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
-  User,
+  Mail,
   Lock,
   LogIn,
   EyeOff,
@@ -24,7 +24,7 @@ import {
   Info,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
-import { LoginRequest } from '../../core/models';
+import type { LoginRequest } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 
 @Component({
@@ -48,7 +48,7 @@ export class LoginComponent implements OnInit {
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly successMessage = signal<string | null>(null);
 
-  protected readonly UserIcon = User;
+  protected readonly MailIcon = Mail;
   protected readonly LockIcon = Lock;
   protected readonly LogInIcon = LogIn;
   protected readonly EyeOffIcon = EyeOff;
@@ -59,7 +59,7 @@ export class LoginComponent implements OnInit {
 
   constructor() {
     this.loginForm = this.fb.group({
-      username: ['', [Validators.required, Validators.minLength(3)]],
+      email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required, Validators.minLength(6)]],
     });
   }
@@ -96,13 +96,14 @@ export class LoginComponent implements OnInit {
     const credentials: LoginRequest = this.loginForm.value;
 
     this.authService.login(credentials).subscribe({
-      next: (response) => {
-        this.successMessage.set(`歡迎回來，${response.user.displayName}！`);
+      next: () => {
+        const user = this.authService.currentUser();
+        this.successMessage.set(`歡迎回來，${user?.email ?? ''}！`);
         this.router.navigate([this.returnUrl()]);
       },
       error: (err) => {
         this.errorMessage.set(
-          err.message || '登入失敗，請檢查您的用戶名和密碼',
+          err.message || '登入失敗，請檢查您的電子郵件和密碼',
         );
         this.isLoading.set(false);
       },
@@ -128,6 +129,9 @@ export class LoginComponent implements OnInit {
     if (control?.errors && control.touched) {
       if (control.errors['required']) {
         return '此欄位為必填';
+      }
+      if (control.errors['email']) {
+        return '請輸入有效的電子郵件地址';
       }
       if (control.errors['minlength']) {
         const minLength = control.errors['minlength'].requiredLength;

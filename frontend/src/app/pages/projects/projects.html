@@ -10,7 +10,19 @@
 
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    @if (filteredProjects().length > 0) {
+    @if (isLoading()) {
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      @for (_ of [1, 2, 3]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-6">
+        <div class="mb-4 h-6 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="mb-4 h-16 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-1/2 rounded-sm bg-zinc-800"></div>
+      </div>
+      }
+    </div>
+    } @else if (error()) {
+    <p class="text-center text-zinc-500">{{ error() }}</p>
+    } @else if (filteredProjects().length > 0) {
     <!-- Projects Grid -->
     <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
       @for (project of filteredProjects(); track project.id) {
@@ -34,7 +46,7 @@
 
         <!-- Tech Stack -->
         <div class="mb-4 flex flex-wrap gap-1.5">
-          @for (tech of project.techStack; track tech) {
+          @for (tech of project.tech_stack; track tech) {
           <span
             class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
           >
@@ -45,9 +57,9 @@
 
         <!-- Links -->
         <div class="flex items-center gap-3 border-t border-zinc-800 pt-4">
-          @if (project.githubUrl) {
+          @if (project.github_url) {
           <a
-            [href]="project.githubUrl"
+            [href]="project.github_url"
             target="_blank"
             rel="noopener noreferrer"
             class="inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-200"
@@ -55,9 +67,9 @@
             <lucide-icon [img]="GithubIcon" [size]="14" />
             Source
           </a>
-          } @if (project.liveUrl) {
+          } @if (project.live_url) {
           <a
-            [href]="project.liveUrl"
+            [href]="project.live_url"
             target="_blank"
             rel="noopener noreferrer"
             class="inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-200"

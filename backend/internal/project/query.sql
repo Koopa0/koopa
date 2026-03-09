@@ -1,0 +1,36 @@
+-- name: Projects :many
+SELECT * FROM projects ORDER BY featured DESC, sort_order, title;
+
+-- name: ProjectBySlug :one
+SELECT * FROM projects WHERE slug = $1;
+
+-- name: CreateProject :one
+INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
+                      problem, solution, architecture, results, github_url, live_url, featured, sort_order, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+RETURNING *;
+
+-- name: UpdateProject :one
+UPDATE projects SET
+    slug = COALESCE(sqlc.narg('slug'), slug),
+    title = COALESCE(sqlc.narg('title'), title),
+    description = COALESCE(sqlc.narg('description'), description),
+    long_description = COALESCE(sqlc.narg('long_description'), long_description),
+    role = COALESCE(sqlc.narg('role'), role),
+    tech_stack = COALESCE(sqlc.narg('tech_stack'), tech_stack),
+    highlights = COALESCE(sqlc.narg('highlights'), highlights),
+    problem = COALESCE(sqlc.narg('problem'), problem),
+    solution = COALESCE(sqlc.narg('solution'), solution),
+    architecture = COALESCE(sqlc.narg('architecture'), architecture),
+    results = COALESCE(sqlc.narg('results'), results),
+    github_url = COALESCE(sqlc.narg('github_url'), github_url),
+    live_url = COALESCE(sqlc.narg('live_url'), live_url),
+    featured = COALESCE(sqlc.narg('featured'), featured),
+    sort_order = COALESCE(sqlc.narg('sort_order'), sort_order),
+    status = COALESCE(sqlc.narg('status')::project_status, status),
+    updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteProject :exec
+DELETE FROM projects WHERE id = $1;

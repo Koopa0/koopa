@@ -21,14 +21,27 @@ sql:
         overrides:
           - db_type: "uuid"
             go_type: "github.com/google/uuid.UUID"
+          - db_type: "uuid"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+              pointer: true
+            nullable: true
           - db_type: "timestamptz"
-            go_type: "time.Time"
-            go_type_import: "time"
+            go_type:
+              type: "Time"
+              import: "time"
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+            nullable: true
           - db_type: "pg_catalog.text[]"
             go_type:
               type: "[]string"
           - db_type: "jsonb"
             go_type:
-              type: "json.RawMessage"
+              type: "RawMessage"
               import: "encoding/json"
             nullable: true

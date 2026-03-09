@@ -18,7 +18,7 @@ import {
 } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
-import { Project } from '../../core/models';
+import type { ApiProject, ProjectStatus } from '../../core/models';
 
 @Component({
   selector: 'app-project-detail',
@@ -33,7 +33,8 @@ export class ProjectDetailComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly seoService = inject(SeoService);
 
-  protected readonly project = signal<Project | null>(null);
+  protected readonly project = signal<ApiProject | null>(null);
+  protected readonly isLoading = signal(true);
   protected readonly isNotFound = signal(false);
 
   protected readonly ArrowLeftIcon = ArrowLeft;
@@ -46,19 +47,28 @@ export class ProjectDetailComponent implements OnInit {
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (slug) {
-      const project = this.projectService.getProjectBySlug(slug);
-      if (project) {
-        this.project.set(project);
-        this.updateSeo(project);
-      } else {
-        this.isNotFound.set(true);
-      }
+      this.loadProject(slug);
     } else {
       this.isNotFound.set(true);
+      this.isLoading.set(false);
     }
   }
 
-  private updateSeo(project: Project): void {
+  private loadProject(slug: string): void {
+    this.projectService.getProjectBySlug(slug).subscribe({
+      next: (project) => {
+        this.project.set(project);
+        this.isLoading.set(false);
+        this.updateSeo(project);
+      },
+      error: () => {
+        this.isNotFound.set(true);
+        this.isLoading.set(false);
+      },
+    });
+  }
+
+  private updateSeo(project: ApiProject): void {
     const projectUrl = `https://koopa0.dev/projects/${project.slug}`;
     this.seoService.updateMeta({
       title: `${project.title} | Koopa`,
@@ -75,20 +85,22 @@ export class ProjectDetailComponent implements OnInit {
     this.location.back();
   }
 
-  protected getStatusLabel(status: Project['status']): string {
-    const labels: Record<Project['status'], string> = {
-      completed: 'Completed',
+  protected getStatusLabel(status: ProjectStatus): string {
+    const labels: Record<ProjectStatus, string> = {
+      'completed': 'Completed',
       'in-progress': 'In Progress',
-      maintained: 'Maintained',
+      'maintained': 'Maintained',
+      'archived': 'Archived',
     };
     return labels[status];
   }
 
-  protected getStatusClass(status: Project['status']): string {
-    const classes: Record<Project['status'], string> = {
-      completed: 'bg-emerald-900/50 text-emerald-400',
+  protected getStatusClass(status: ProjectStatus): string {
+    const classes: Record<ProjectStatus, string> = {
+      'completed': 'bg-emerald-900/50 text-emerald-400',
       'in-progress': 'bg-amber-900/50 text-amber-400',
-      maintained: 'bg-sky-900/50 text-sky-400',
+      'maintained': 'bg-sky-900/50 text-sky-400',
+      'archived': 'bg-zinc-800 text-zinc-400',
     };
     return classes[status];
   }

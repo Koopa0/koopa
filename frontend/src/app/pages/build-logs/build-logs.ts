@@ -15,10 +15,9 @@ import {
   Hammer,
 } from 'lucide-angular';
 import { BuildLogService } from '../../core/services/build-log.service';
-import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
-import { BuildLogListItem } from '../../core/models';
+import type { ApiContent } from '../../core/models';
 
 @Component({
   selector: 'app-build-logs',
@@ -31,10 +30,9 @@ import { BuildLogListItem } from '../../core/models';
 })
 export class BuildLogsComponent implements OnInit {
   private readonly buildLogService = inject(BuildLogService);
-  private readonly projectService = inject(ProjectService);
   private readonly seoService = inject(SeoService);
 
-  protected readonly buildLogs = signal<BuildLogListItem[]>([]);
+  protected readonly buildLogs = signal<ApiContent[]>([]);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
 
@@ -50,10 +48,6 @@ export class BuildLogsComponent implements OnInit {
       ogUrl: 'https://koopa0.dev/build-logs',
     });
     this.loadBuildLogs();
-  }
-
-  protected getProjectTitle(projectId: string): string {
-    return this.projectService.getProjectById(projectId)?.title ?? 'Unknown Project';
   }
 
   private loadBuildLogs(): void {

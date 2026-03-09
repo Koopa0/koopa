@@ -1,27 +1,21 @@
 export interface LoginRequest {
-  username: string;
+  email: string;
   password: string;
 }
 
-export interface LoginResponse {
-  token: string;
-  user: User;
-  expiresAt: string;
+export interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
 }
 
-export interface User {
+export interface AuthUser {
   id: string;
-  username: string;
-  email?: string;
+  email: string;
   role: 'admin' | 'user';
-  displayName: string;
-  avatar?: string;
-  createdAt: string;
-  lastLoginAt?: string;
 }
 
 export interface AuthState {
   isAuthenticated: boolean;
-  user: User | null;
-  token: string | null;
+  user: AuthUser | null;
+  tokens: TokenPair | null;
 }

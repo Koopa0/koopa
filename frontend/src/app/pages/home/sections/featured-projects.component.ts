@@ -1,4 +1,12 @@
-import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
+import {
+  Component,
+  ChangeDetectionStrategy,
+  inject,
+  signal,
+  DestroyRef,
+  OnInit,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
@@ -7,7 +15,7 @@ import {
   ArrowRight,
 } from 'lucide-angular';
 import { ProjectService } from '../../../core/services/project/project.service';
-import { Project } from '../../../core/models';
+import type { ApiProject, ProjectStatus } from '../../../core/models';
 
 @Component({
   selector: 'app-featured-projects',
@@ -45,7 +53,7 @@ import { Project } from '../../../core/models';
 
               <!-- Tech Stack -->
               <div class="mb-4 flex flex-wrap gap-1.5">
-                @for (tech of project.techStack; track tech) {
+                @for (tech of project.tech_stack; track tech) {
                   <span
                     class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
                   >
@@ -58,9 +66,9 @@ import { Project } from '../../../core/models';
               <div
                 class="flex items-center gap-3 border-t border-zinc-800 pt-4"
               >
-                @if (project.githubUrl) {
+                @if (project.github_url) {
                   <a
-                    [href]="project.githubUrl"
+                    [href]="project.github_url"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-200"
@@ -69,9 +77,9 @@ import { Project } from '../../../core/models';
                     Source
                   </a>
                 }
-                @if (project.liveUrl) {
+                @if (project.live_url) {
                   <a
-                    [href]="project.liveUrl"
+                    [href]="project.live_url"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-200"
@@ -106,29 +114,44 @@ import { Project } from '../../../core/models';
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class FeaturedProjectsComponent {
+export class FeaturedProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly projects = this.projectService.featuredProjects;
+  protected readonly projects = signal<ApiProject[]>([]);
 
   protected readonly GithubIcon = Github;
   protected readonly ExternalLinkIcon = ExternalLink;
   protected readonly ArrowRightIcon = ArrowRight;
 
-  protected getStatusLabel(status: Project['status']): string {
-    const labels: Record<Project['status'], string> = {
+  ngOnInit(): void {
+    this.projectService
+      .getAllProjects()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((allProjects) => {
+        const featured = allProjects
+          .filter((p) => p.featured)
+          .sort((a, b) => a.sort_order - b.sort_order);
+        this.projects.set(featured);
+      });
+  }
+
+  protected getStatusLabel(status: ProjectStatus): string {
+    const labels: Record<ProjectStatus, string> = {
       completed: 'Completed',
       'in-progress': 'In Progress',
       maintained: 'Maintained',
+      archived: 'Archived',
     };
     return labels[status];
   }
 
-  protected getStatusClass(status: Project['status']): string {
-    const classes: Record<Project['status'], string> = {
+  protected getStatusClass(status: ProjectStatus): string {
+    const classes: Record<ProjectStatus, string> = {
       completed: 'bg-emerald-900/50 text-emerald-400',
       'in-progress': 'bg-amber-900/50 text-amber-400',
       maintained: 'bg-sky-900/50 text-sky-400',
+      archived: 'bg-zinc-700/50 text-zinc-400',
     };
     return classes[status];
   }

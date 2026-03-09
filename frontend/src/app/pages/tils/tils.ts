@@ -4,6 +4,7 @@ import {
   inject,
   computed,
   signal,
+  OnInit,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
@@ -16,6 +17,7 @@ import {
 import { TilService } from '../../core/services/til.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
+import type { ApiContent } from '../../core/models';
 
 @Component({
   selector: 'app-tils',
@@ -26,11 +28,13 @@ import { fadeInUp } from '../../shared/animations/fade-in.animation';
   animations: [fadeInUp],
   host: { '[@fadeInUp]': '' },
 })
-export class TilsComponent {
+export class TilsComponent implements OnInit {
   private readonly tilService = inject(TilService);
   private readonly seoService = inject(SeoService);
 
-  protected readonly tils = this.tilService.publishedTils;
+  protected readonly tils = signal<ApiContent[]>([]);
+  protected readonly isLoading = signal(true);
+  protected readonly error = signal<string | null>(null);
   protected readonly selectedTag = signal<string | null>(null);
 
   protected readonly allTags = computed(() => {
@@ -55,15 +59,29 @@ export class TilsComponent {
   protected readonly LightbulbIcon = Lightbulb;
   protected readonly TagIcon = Tag;
 
-  constructor() {
+  ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'Today I Learned',
       description: '每日學習紀錄 — 短小精悍的技術筆記和發現',
       ogUrl: 'https://koopa0.dev/til',
     });
+    this.loadTils();
   }
 
   protected selectTag(tag: string | null): void {
     this.selectedTag.set(tag);
+  }
+
+  private loadTils(): void {
+    this.tilService.getTils(1, 100).subscribe({
+      next: (response) => {
+        this.tils.set(response.tils);
+        this.isLoading.set(false);
+      },
+      error: () => {
+        this.error.set('載入學習紀錄失敗');
+        this.isLoading.set(false);
+      },
+    });
   }
 }

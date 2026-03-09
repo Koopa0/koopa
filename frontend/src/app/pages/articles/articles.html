@@ -24,27 +24,6 @@
         />
       </div>
 
-      <!-- Sort -->
-      <div class="flex items-center gap-2">
-        <select
-          class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 outline-hidden"
-          [ngModel]="sortBy()"
-          (ngModelChange)="sortBy.set($event); onSortChange()"
-        >
-          @for (option of sortOptions; track option.value) {
-          <option [value]="option.value">{{ option.label }}</option>
-          }
-        </select>
-        <button
-          type="button"
-          class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
-          (click)="toggleSortOrder()"
-          [title]="sortOrder() === 'asc' ? '升序' : '降序'"
-        >
-          <lucide-icon [img]="ArrowUpDownIcon" [size]="16" />
-        </button>
-      </div>
-
       @if (hasFilters()) {
       <button
         type="button"
@@ -55,28 +34,6 @@
         清除篩選
       </button>
       }
-    </div>
-
-    <!-- Tags Filter -->
-    <div class="mb-8">
-      <h3 class="mb-3 text-sm font-medium text-zinc-500">標籤篩選</h3>
-      <div class="flex flex-wrap gap-2">
-        @for (tag of availableTags(); track tag.id) {
-        <button
-          type="button"
-          class="rounded-full border px-3 py-1 text-xs transition-colors"
-          [class]="
-              selectedTags().includes(tag.name)
-                ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
-                : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
-            "
-          (click)="onTagToggle(tag.name)"
-        >
-          {{ tag.name }}
-          <span class="ml-1 text-zinc-500">({{ tag.articleCount }})</span>
-        </button>
-        }
-      </div>
     </div>
 
     <!-- Content -->
@@ -101,7 +58,7 @@
     <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
       @for (article of articles(); track article.id) {
       <a
-        [routerLink]="'/articles/' + article.id"
+        [routerLink]="'/articles/' + article.slug"
         class="group relative overflow-hidden rounded-sm border border-zinc-800 bg-zinc-900/50 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
       >
         <!-- Gradient accent line -->
@@ -142,15 +99,11 @@
         >
           <span class="flex items-center gap-1">
             <lucide-icon [img]="CalendarIcon" [size]="12" />
-            {{ article.publishedAt | date: 'MMM d, yyyy' }}
+            {{ article.published_at | date: 'MMM d, yyyy' }}
           </span>
           <span class="flex items-center gap-1">
             <lucide-icon [img]="ClockIcon" [size]="12" />
-            {{ article.readingTime }} min
-          </span>
-          <span class="ml-auto flex items-center gap-1">
-            <lucide-icon [img]="EyeIcon" [size]="12" />
-            {{ article.viewCount }}
+            {{ article.reading_time }} min
           </span>
         </div>
       </a>

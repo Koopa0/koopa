@@ -1,8 +1,19 @@
-import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
+import {
+  Component,
+  ChangeDetectionStrategy,
+  inject,
+  signal,
+  DestroyRef,
+  OnInit,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
-import { LucideAngularModule, ArrowRight, Clock, Eye } from 'lucide-angular';
-import { ArticleService } from '../../../core/services/article.service';
+import { LucideAngularModule, ArrowRight, Clock } from 'lucide-angular';
+import { ContentService } from '../../../core/services/content.service';
+import type { ApiContent } from '../../../core/models';
+
+const LATEST_POSTS_LIMIT = 6;
 
 @Component({
   selector: 'app-latest-posts',
@@ -30,7 +41,7 @@ import { ArticleService } from '../../../core/services/article.service';
         <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           @for (article of latestArticles(); track article.id) {
             <a
-              [routerLink]="'/articles/' + article.id"
+              [routerLink]="'/articles/' + article.slug"
               class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
             >
               <div class="mb-3 flex flex-wrap gap-2">
@@ -53,14 +64,12 @@ import { ArticleService } from '../../../core/services/article.service';
                 {{ article.excerpt }}
               </p>
               <div class="flex items-center gap-4 text-xs text-zinc-500">
-                <span>{{ article.publishedAt | date: 'yyyy/MM/dd' }}</span>
+                <span>{{
+                  article.published_at | date: 'yyyy/MM/dd'
+                }}</span>
                 <span class="flex items-center gap-1">
                   <lucide-icon [img]="ClockIcon" [size]="12" />
-                  {{ article.readingTime }} min
-                </span>
-                <span class="flex items-center gap-1">
-                  <lucide-icon [img]="EyeIcon" [size]="12" />
-                  {{ article.viewCount }}
+                  {{ article.reading_time }} min
                 </span>
               </div>
             </a>
@@ -81,12 +90,21 @@ import { ArticleService } from '../../../core/services/article.service';
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class LatestPostsComponent {
-  private readonly articleService = inject(ArticleService);
+export class LatestPostsComponent implements OnInit {
+  private readonly contentService = inject(ContentService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly latestArticles = this.articleService.latestArticles;
+  protected readonly latestArticles = signal<ApiContent[]>([]);
 
   protected readonly ArrowRightIcon = ArrowRight;
   protected readonly ClockIcon = Clock;
-  protected readonly EyeIcon = Eye;
+
+  ngOnInit(): void {
+    this.contentService
+      .listByType('article', { perPage: LATEST_POSTS_LIMIT })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((response) => {
+        this.latestArticles.set(response.data);
+      });
+  }
 }

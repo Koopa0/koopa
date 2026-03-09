@@ -35,7 +35,17 @@ import {
 } from 'lucide-angular';
 import { ArticleService } from '../../core/services/article.service';
 import { MarkdownService } from '../../core/services/markdown.service';
-import { ArticleStatus } from '../../core/models';
+import type {
+  ContentStatus,
+  ApiCreateContentRequest,
+  ApiUpdateContentRequest,
+} from '../../core/models';
+
+const STATUS_OPTIONS: Array<{ value: ContentStatus; label: string }> = [
+  { value: 'draft', label: '草稿' },
+  { value: 'published', label: '已發布' },
+  { value: 'archived', label: '封存' },
+];
 
 @Component({
   selector: 'app-article-editor',
@@ -61,13 +71,12 @@ export class ArticleEditorComponent implements OnInit {
     type: 'success' | 'error';
   } | null>(null);
 
+  /** 編輯模式下儲存文章 ID */
+  private articleId: string | null = null;
+
   protected readonly articleForm: FormGroup;
 
-  protected readonly statusOptions = [
-    { value: ArticleStatus.DRAFT, label: '草稿' },
-    { value: ArticleStatus.PUBLISHED, label: '已發布' },
-    { value: ArticleStatus.ARCHIVED, label: '封存' },
-  ];
+  protected readonly statusOptions = STATUS_OPTIONS;
 
   protected readonly availableTags = [
     'Angular',
@@ -102,53 +111,59 @@ export class ArticleEditorComponent implements OnInit {
   constructor() {
     this.articleForm = this.fb.group({
       title: ['', [Validators.required, Validators.minLength(5)]],
+      slug: ['', [Validators.required]],
       excerpt: ['', [Validators.required, Validators.maxLength(200)]],
-      content: ['', [Validators.required, Validators.minLength(50)]],
+      body: ['', [Validators.required, Validators.minLength(50)]],
       tags: [[] as string[]],
-      status: [ArticleStatus.DRAFT, Validators.required],
-      coverImage: [''],
+      status: ['draft' as ContentStatus, Validators.required],
+      cover_image: [''],
     });
 
     this.articleForm
-      .get('content')
+      .get('body')
       ?.valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((content) => {
-        if (content) {
-          this.updatePreview(content);
+      .subscribe((body: string) => {
+        if (body) {
+          this.updatePreview(body);
         }
       });
   }
 
   ngOnInit(): void {
-    const articleId = this.route.snapshot.paramMap.get('id');
-    if (articleId) {
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (slug) {
       this.isNewArticle.set(false);
-      this.loadArticle(articleId);
+      this.loadArticle(slug);
     } else {
       const defaultContent = this.getDefaultMarkdown();
-      this.articleForm.patchValue({ content: defaultContent });
+      this.articleForm.patchValue({ body: defaultContent });
       this.updatePreview(defaultContent);
     }
   }
 
-  private loadArticle(id: string): void {
+  private loadArticle(slug: string): void {
     this.isLoading.set(true);
 
-    const article = this.articleService.articleList().find((a) => a.id === id);
-
-    if (article) {
-      this.articleForm.patchValue({
-        title: article.title,
-        excerpt: article.excerpt,
-        content: article.content,
-        tags: article.tags,
-        status: article.status,
-        coverImage: article.coverImage,
-      });
-      this.updatePreview(article.content);
-    }
-
-    this.isLoading.set(false);
+    this.articleService.getArticleBySlug(slug).subscribe({
+      next: (article) => {
+        this.articleId = article.id;
+        this.articleForm.patchValue({
+          title: article.title,
+          slug: article.slug,
+          excerpt: article.excerpt,
+          body: article.body,
+          tags: article.tags,
+          status: article.status,
+          cover_image: article.cover_image ?? '',
+        });
+        this.updatePreview(article.body);
+        this.isLoading.set(false);
+      },
+      error: () => {
+        this.showNotification('載入文章失敗', 'error');
+        this.isLoading.set(false);
+      },
+    });
   }
 
   private updatePreview(markdown: string): void {
@@ -184,16 +199,16 @@ interface User {
   protected onTabChange(tab: 'edit' | 'preview' | 'split'): void {
     this.selectedTab.set(tab);
     setTimeout(() => {
-      const content = this.articleForm.get('content')?.value || '';
-      this.updatePreview(content);
+      const body = this.articleForm.get('body')?.value || '';
+      this.updatePreview(body);
     }, 100);
   }
 
   protected onContentChange(event: Event): void {
     const textarea = event.target as HTMLTextAreaElement;
-    const content = textarea.value;
-    this.articleForm.patchValue({ content }, { emitEvent: false });
-    this.updatePreview(content);
+    const body = textarea.value;
+    this.articleForm.patchValue({ body }, { emitEvent: false });
+    this.updatePreview(body);
   }
 
   protected addTag(tag: string): void {
@@ -215,14 +230,14 @@ interface User {
   }
 
   protected saveDraft(): void {
-    this.saveArticle(ArticleStatus.DRAFT);
+    this.saveArticle('draft');
   }
 
   protected publish(): void {
-    this.saveArticle(ArticleStatus.PUBLISHED);
+    this.saveArticle('published');
   }
 
-  private saveArticle(status: ArticleStatus): void {
+  private saveArticle(status: ContentStatus): void {
     if (this.articleForm.invalid) {
       this.markFormGroupTouched();
       this.showNotification('請填寫所有必要欄位', 'error');
@@ -232,20 +247,61 @@ interface User {
     this.isSaving.set(true);
 
     const formValue = this.articleForm.value;
-    const articleData = {
-      ...formValue,
-      status,
-      excerpt: formValue.excerpt || this.generateExcerpt(formValue.content),
-    };
+    const excerpt =
+      formValue.excerpt || this.generateExcerpt(formValue.body);
 
-    setTimeout(() => {
-      this.showNotification(
-        status === ArticleStatus.PUBLISHED ? '文章已發布！' : '草稿已保存！',
-        'success',
-      );
-      this.isSaving.set(false);
-      this.router.navigate(['/admin']);
-    }, 1500);
+    if (this.isNewArticle()) {
+      const request: ApiCreateContentRequest = {
+        title: formValue.title,
+        slug: formValue.slug,
+        body: formValue.body,
+        excerpt,
+        type: 'article',
+        status,
+        tags: formValue.tags,
+        cover_image: formValue.cover_image || undefined,
+      };
+
+      this.articleService.createArticle(request).subscribe({
+        next: () => {
+          this.showNotification(
+            status === 'published' ? '文章已發布！' : '草稿已保存！',
+            'success',
+          );
+          this.isSaving.set(false);
+          this.router.navigate(['/admin']);
+        },
+        error: () => {
+          this.showNotification('儲存失敗', 'error');
+          this.isSaving.set(false);
+        },
+      });
+    } else {
+      const request: ApiUpdateContentRequest = {
+        title: formValue.title,
+        slug: formValue.slug,
+        body: formValue.body,
+        excerpt,
+        status,
+        tags: formValue.tags,
+        cover_image: formValue.cover_image || undefined,
+      };
+
+      this.articleService.updateArticle(this.articleId!, request).subscribe({
+        next: () => {
+          this.showNotification(
+            status === 'published' ? '文章已發布！' : '草稿已保存！',
+            'success',
+          );
+          this.isSaving.set(false);
+          this.router.navigate(['/admin']);
+        },
+        error: () => {
+          this.showNotification('更新失敗', 'error');
+          this.isSaving.set(false);
+        },
+      });
+    }
   }
 
   private showNotification(message: string, type: 'success' | 'error'): void {
@@ -253,8 +309,8 @@ interface User {
     setTimeout(() => this.notification.set(null), 3000);
   }
 
-  private generateExcerpt(content: string): string {
-    const textContent = content
+  private generateExcerpt(body: string): string {
+    const textContent = body
       .replace(/[#*`]/g, '')
       .replace(/\n/g, ' ')
       .trim();

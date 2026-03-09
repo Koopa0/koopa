@@ -19,7 +19,7 @@ import { TilService } from '../../core/services/til.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
-import { TilEntry } from '../../core/models';
+import type { ApiContent } from '../../core/models';
 
 @Component({
   selector: 'app-til-detail',
@@ -38,7 +38,7 @@ export class TilDetailComponent implements OnInit {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly seoService = inject(SeoService);
 
-  protected readonly til = signal<TilEntry | null>(null);
+  protected readonly til = signal<ApiContent | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
 
@@ -48,7 +48,7 @@ export class TilDetailComponent implements OnInit {
     if (!t) {
       return '';
     }
-    const html = this.markdownService.parse(t.content);
+    const html = this.markdownService.parse(t.body);
     return this.sanitizer.bypassSecurityTrustHtml(html);
   });
 
@@ -73,7 +73,7 @@ export class TilDetailComponent implements OnInit {
         this.isLoading.set(false);
         this.seoService.updateMeta({
           title: til.title,
-          description: til.content.slice(0, 160),
+          description: til.excerpt || til.body.slice(0, 160),
           ogUrl: `https://koopa0.dev/til/${til.slug}`,
           ogType: 'article',
         });

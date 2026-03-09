@@ -1,16 +1,13 @@
 import {
   Component,
   ChangeDetectionStrategy,
-  inject,
   input,
   computed,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { LucideAngularModule, Clock } from 'lucide-angular';
-import { ArticleService } from '../../core/services/article.service';
-
-const RELATED_LIMIT = 3;
+import type { ApiContent } from '../../core/models';
 
 @Component({
   selector: 'app-related-articles',
@@ -23,7 +20,7 @@ const RELATED_LIMIT = 3;
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         @for (article of relatedArticles(); track article.id) {
         <a
-          [routerLink]="'/articles/' + article.id"
+          [routerLink]="'/articles/' + article.slug"
           class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 no-underline transition-all hover:border-zinc-600 hover:bg-zinc-900"
         >
           <h3
@@ -35,10 +32,12 @@ const RELATED_LIMIT = 3;
             {{ article.excerpt }}
           </p>
           <div class="flex items-center gap-2 text-xs text-zinc-600">
-            <span>{{ article.publishedAt | date: 'MMM d' }}</span>
+            @if (article.published_at) {
+            <span>{{ article.published_at | date: 'MMM d' }}</span>
+            }
             <span class="flex items-center gap-1">
               <lucide-icon [img]="ClockIcon" [size]="10" />
-              {{ article.readingTime }} min
+              {{ article.reading_time }} min
             </span>
           </div>
         </a>
@@ -50,13 +49,10 @@ const RELATED_LIMIT = 3;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RelatedArticlesComponent {
-  private readonly articleService = inject(ArticleService);
-
-  readonly articleId = input.required<string>();
+  /** 由父元件傳入相關文章列表（API 尚未提供 related articles 端點） */
+  readonly articles = input<ApiContent[]>([]);
 
   protected readonly ClockIcon = Clock;
 
-  protected readonly relatedArticles = computed(() =>
-    this.articleService.getRelatedArticles(this.articleId(), RELATED_LIMIT),
-  );
+  protected readonly relatedArticles = computed(() => this.articles());
 }

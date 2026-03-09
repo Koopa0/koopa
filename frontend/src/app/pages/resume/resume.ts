@@ -6,7 +6,6 @@ import {
 import {
   LucideAngularModule,
   Briefcase,
-  GraduationCap,
   Code,
   ExternalLink,
   MapPin,
@@ -61,13 +60,6 @@ const SKILLS: Skill[] = [
   },
 ];
 
-const EDUCATION = [
-  {
-    school: 'University Name',
-    degree: 'Bachelor of Computer Science',
-    period: '2019 - 2023',
-  },
-];
 
 @Component({
   selector: 'app-resume',
@@ -83,10 +75,8 @@ export class ResumeComponent {
 
   protected readonly experiences = EXPERIENCES;
   protected readonly skills = SKILLS;
-  protected readonly education = EDUCATION;
 
   protected readonly BriefcaseIcon = Briefcase;
-  protected readonly GraduationCapIcon = GraduationCap;
   protected readonly CodeIcon = Code;
   protected readonly ExternalLinkIcon = ExternalLink;
   protected readonly MapPinIcon = MapPin;

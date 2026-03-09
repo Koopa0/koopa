@@ -1,4 +1,12 @@
-@if (isNotFound()) {
+@if (isLoading()) {
+<div class="mx-auto max-w-4xl px-4 py-12">
+  <div class="animate-pulse space-y-4">
+    <div class="h-10 w-3/4 rounded-sm bg-zinc-800"></div>
+    <div class="h-4 w-1/2 rounded-sm bg-zinc-800"></div>
+    <div class="mt-8 h-64 rounded-sm bg-zinc-800"></div>
+  </div>
+</div>
+} @else if (isNotFound()) {
 <section class="bg-zinc-950">
   <div
     class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-4 px-4 py-20 text-center"
@@ -37,9 +45,9 @@
     <p class="mb-6 text-sm text-zinc-400">{{ project()!.role }}</p>
 
     <div class="flex flex-wrap items-center gap-3">
-      @if (project()!.githubUrl) {
+      @if (project()!.github_url) {
       <a
-        [href]="project()!.githubUrl"
+        [href]="project()!.github_url"
         target="_blank"
         rel="noopener noreferrer"
         class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:text-white"
@@ -47,9 +55,9 @@
         <lucide-icon [img]="GithubIcon" [size]="16" />
         View Source
       </a>
-      } @if (project()!.liveUrl) {
+      } @if (project()!.live_url) {
       <a
-        [href]="project()!.liveUrl"
+        [href]="project()!.live_url"
         target="_blank"
         rel="noopener noreferrer"
         class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
@@ -72,7 +80,7 @@
         <div class="mb-10">
           <h2 class="mb-4 text-lg font-semibold text-zinc-100">關於此專案</h2>
           <p class="leading-relaxed text-zinc-400">
-            {{ project()!.longDescription || project()!.description }}
+            {{ project()!.long_description || project()!.description }}
           </p>
         </div>
 
@@ -150,7 +158,7 @@
             Tech Stack
           </h3>
           <div class="flex flex-wrap gap-2">
-            @for (tech of project()!.techStack; track tech) {
+            @for (tech of project()!.tech_stack; track tech) {
             <span
               class="rounded-sm bg-zinc-800 px-3 py-1 text-xs text-zinc-300"
             >

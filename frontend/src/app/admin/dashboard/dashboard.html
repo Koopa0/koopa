@@ -6,7 +6,7 @@
     >
       <div>
         <h1 class="text-2xl font-bold text-zinc-100">
-          歡迎回來，{{ currentUser()?.displayName }}！
+          歡迎回來，{{ currentUser()?.email }}！
         </h1>
         <p class="mt-1 text-sm text-zinc-400">管理您的技術部落格內容</p>
       </div>
@@ -196,7 +196,7 @@
                 </span>
               </td>
               <td class="hidden px-6 py-4 text-xs text-zinc-500 sm:table-cell">
-                {{ article.updatedAt | date: 'yyyy/MM/dd HH:mm' }}
+                {{ article.updated_at | date: 'yyyy/MM/dd HH:mm' }}
               </td>
               <td class="px-6 py-4">
                 <div class="flex items-center gap-1">
@@ -299,15 +299,15 @@
               </td>
               <td class="hidden px-6 py-4 sm:table-cell">
                 <div class="flex flex-wrap gap-1">
-                  @for (tech of project.techStack.slice(0, 3); track tech) {
+                  @for (tech of project.tech_stack.slice(0, 3); track tech) {
                   <span
                     class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
                   >
                     {{ tech }}
                   </span>
-                  } @if (project.techStack.length > 3) {
+                  } @if (project.tech_stack.length > 3) {
                   <span class="text-xs text-zinc-500">
-                    +{{ project.techStack.length - 3 }}
+                    +{{ project.tech_stack.length - 3 }}
                   </span>
                   }
                 </div>

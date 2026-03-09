@@ -279,6 +279,47 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// BFF Proxy — 轉發 /bff/* 到後端，後端零暴露
+const BACKEND_URL = process.env['BACKEND_URL'] || 'http://backend:8080';
+
+app.use('/bff', (req, res) => {
+  const targetUrl = `${BACKEND_URL}${req.originalUrl.replace(/^\/bff/, '')}`;
+  const headers: Record<string, string> = {
+    'content-type': req.headers['content-type'] || 'application/json',
+  };
+  if (req.headers['authorization']) {
+    headers['authorization'] = req.headers['authorization'] as string;
+  }
+  if (req.headers['cookie']) {
+    headers['cookie'] = req.headers['cookie'] as string;
+  }
+
+  const bodyChunks: Buffer[] = [];
+  req.on('data', (chunk: Buffer) => bodyChunks.push(chunk));
+  req.on('end', () => {
+    const body = bodyChunks.length > 0 ? Buffer.concat(bodyChunks) : undefined;
+    fetch(targetUrl, {
+      method: req.method,
+      headers,
+      body,
+    })
+      .then(async (upstream) => {
+        res.status(upstream.status);
+        upstream.headers.forEach((value, key) => {
+          if (!['transfer-encoding', 'content-encoding'].includes(key.toLowerCase())) {
+            res.setHeader(key, value);
+          }
+        });
+        const data = await upstream.arrayBuffer();
+        res.send(Buffer.from(data));
+      })
+      .catch((err) => {
+        console.error('BFF proxy error:', err);
+        res.status(502).json({ error: 'Backend unavailable' });
+      });
+  });
+});
+
 app.use(
   express.static(browserDistFolder, {
     maxAge: '1y',

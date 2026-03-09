@@ -1,4 +1,13 @@
-import { Component, ChangeDetectionStrategy, inject, computed } from '@angular/core';
+import {
+  Component,
+  ChangeDetectionStrategy,
+  inject,
+  signal,
+  computed,
+  DestroyRef,
+  OnInit,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import {
@@ -9,9 +18,8 @@ import {
   Hammer,
   Lightbulb,
 } from 'lucide-angular';
-import { ArticleService } from '../../../core/services/article.service';
-import { BuildLogService } from '../../../core/services/build-log.service';
-import { TilService } from '../../../core/services/til.service';
+import { ContentService } from '../../../core/services/content.service';
+import type { ApiContent, ContentType } from '../../../core/models';
 
 interface FeedEntry {
   id: string;
@@ -24,6 +32,20 @@ interface FeedEntry {
 }
 
 const FEED_LIMIT = 6;
+
+/** 從 API 回傳的 ContentType 對應到 FeedEntry type */
+const FEED_TYPE_MAP: Partial<Record<ContentType, FeedEntry['type']>> = {
+  article: 'article',
+  'build-log': 'build-log',
+  til: 'til',
+};
+
+/** 從 FeedEntry type 對應到路由前綴 */
+const PATH_PREFIX_MAP: Record<FeedEntry['type'], string> = {
+  article: '/articles',
+  'build-log': '/build-logs',
+  til: '/til',
+};
 
 @Component({
   selector: 'app-latest-feed',
@@ -48,40 +70,40 @@ const FEED_LIMIT = 6;
 
         <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           @for (entry of feedEntries(); track entry.id) {
-          <a
-            [routerLink]="entry.path"
-            class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
-          >
-            <div class="mb-3 flex items-center gap-2">
-              <span
-                class="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-medium"
-                [class]="getTypeClass(entry.type)"
-              >
-                <lucide-icon [img]="getTypeIcon(entry.type)" [size]="10" />
-                {{ getTypeLabel(entry.type) }}
-              </span>
-              @for (tag of entry.tags.slice(0, 2); track tag) {
-              <span
-                class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500"
-              >
-                {{ tag }}
-              </span>
-              }
-            </div>
-            <h3
-              class="mb-3 text-lg font-semibold text-zinc-100 group-hover:text-white"
+            <a
+              [routerLink]="entry.path"
+              class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
             >
-              {{ entry.title }}
-            </h3>
-            <p
-              class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400"
-            >
-              {{ entry.excerpt }}
-            </p>
-            <div class="text-xs text-zinc-500">
-              {{ entry.publishedAt | date: 'yyyy/MM/dd' }}
-            </div>
-          </a>
+              <div class="mb-3 flex items-center gap-2">
+                <span
+                  class="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-medium"
+                  [class]="getTypeClass(entry.type)"
+                >
+                  <lucide-icon [img]="getTypeIcon(entry.type)" [size]="10" />
+                  {{ getTypeLabel(entry.type) }}
+                </span>
+                @for (tag of entry.tags.slice(0, 2); track tag) {
+                  <span
+                    class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500"
+                  >
+                    {{ tag }}
+                  </span>
+                }
+              </div>
+              <h3
+                class="mb-3 text-lg font-semibold text-zinc-100 group-hover:text-white"
+              >
+                {{ entry.title }}
+              </h3>
+              <p
+                class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400"
+              >
+                {{ entry.excerpt }}
+              </p>
+              <div class="text-xs text-zinc-500">
+                {{ entry.publishedAt | date: 'yyyy/MM/dd' }}
+              </div>
+            </a>
           }
         </div>
 
@@ -99,10 +121,9 @@ const FEED_LIMIT = 6;
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class LatestFeedComponent {
-  private readonly articleService = inject(ArticleService);
-  private readonly buildLogService = inject(BuildLogService);
-  private readonly tilService = inject(TilService);
+export class LatestFeedComponent implements OnInit {
+  private readonly contentService = inject(ContentService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly ArrowRightIcon = ArrowRight;
   protected readonly FileTextIcon = FileText;
@@ -110,47 +131,35 @@ export class LatestFeedComponent {
   protected readonly LightbulbIcon = Lightbulb;
   protected readonly ClockIcon = Clock;
 
+  private readonly allContent = signal<ApiContent[]>([]);
+
   protected readonly feedEntries = computed<FeedEntry[]>(() => {
-    const articles: FeedEntry[] = this.articleService
-      .latestArticles()
-      .map((a) => ({
-        id: `article-${a.id}`,
-        title: a.title,
-        excerpt: a.excerpt,
-        path: `/articles/${a.id}`,
-        publishedAt: a.publishedAt,
-        type: 'article' as const,
-        tags: a.tags,
-      }));
-
-    const buildLogs: FeedEntry[] = this.buildLogService
-      .latestBuildLogs()
-      .map((bl) => ({
-        id: `bl-${bl.id}`,
-        title: bl.title,
-        excerpt: bl.excerpt,
-        path: `/build-logs/${bl.slug}`,
-        publishedAt: bl.publishedAt,
-        type: 'build-log' as const,
-        tags: [],
-      }));
-
-    const tils: FeedEntry[] = this.tilService
-      .latestTils()
-      .map((t) => ({
-        id: `til-${t.id}`,
-        title: t.title,
-        excerpt: t.content.slice(0, 120),
-        path: `/til/${t.slug}`,
-        publishedAt: t.publishedAt,
-        type: 'til' as const,
-        tags: t.tags,
-      }));
-
-    return [...articles, ...buildLogs, ...tils]
+    return this.allContent()
+      .filter((item) => item.type in FEED_TYPE_MAP && item.published_at != null)
+      .map((item) => {
+        const feedType = FEED_TYPE_MAP[item.type]!;
+        return {
+          id: `${feedType}-${item.id}`,
+          title: item.title,
+          excerpt: item.excerpt || item.body.slice(0, 120),
+          path: `${PATH_PREFIX_MAP[feedType]}/${item.slug}`,
+          publishedAt: new Date(item.published_at!),
+          type: feedType,
+          tags: item.tags,
+        };
+      })
       .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
       .slice(0, FEED_LIMIT);
   });
+
+  ngOnInit(): void {
+    this.contentService
+      .listPublished({ perPage: FEED_LIMIT * 3 })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((response) => {
+        this.allContent.set(response.data);
+      });
+  }
 
   protected getTypeLabel(type: FeedEntry['type']): string {
     const labels: Record<FeedEntry['type'], string> = {

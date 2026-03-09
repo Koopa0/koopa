@@ -98,6 +98,24 @@
               }
             </div>
 
+            <!-- Slug -->
+            <div>
+              <label class="mb-1 block text-xs font-medium text-zinc-400"
+                >Slug</label
+              >
+              <input
+                type="text"
+                formControlName="slug"
+                placeholder="article-url-slug"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              />
+              @if (getFieldError('slug')) {
+              <p class="mt-1 text-xs text-red-400">
+                {{ getFieldError('slug') }}
+              </p>
+              }
+            </div>
+
             <!-- Excerpt -->
             <div>
               <label class="mb-1 block text-xs font-medium text-zinc-400"
@@ -145,7 +163,7 @@
               >
               <input
                 type="text"
-                formControlName="coverImage"
+                formControlName="cover_image"
                 placeholder="https://example.com/image.jpg"
                 class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               />
@@ -289,15 +307,15 @@
             </div>
 
             <textarea
-              [formControl]="$any(articleForm.get('content'))"
+              [formControl]="$any(articleForm.get('body'))"
               rows="30"
               placeholder="使用 Markdown 語法撰寫您的文章..."
               class="w-full resize-y bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
               (input)="onContentChange($event)"
             ></textarea>
-            @if (getFieldError('content')) {
+            @if (getFieldError('body')) {
             <p class="px-4 pb-2 text-xs text-red-400">
-              {{ getFieldError('content') }}
+              {{ getFieldError('body') }}
             </p>
             }
           </div>
@@ -321,7 +339,7 @@
                 Markdown 編輯
               </div>
               <textarea
-                [formControl]="$any(articleForm.get('content'))"
+                [formControl]="$any(articleForm.get('body'))"
                 rows="20"
                 placeholder="Markdown 內容..."
                 class="h-[calc(100%-2.5rem)] w-full resize-none bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"

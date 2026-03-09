@@ -1,80 +1,49 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { Observable, of, throwError } from 'rxjs';
-import {
-  BuildLog,
-  BuildLogListItem,
-  BuildLogsResponse,
-} from '../models/build-log.model';
-import { MOCK_BUILD_LOGS } from './mock-build-logs';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, map, tap, catchError, throwError } from 'rxjs';
+import { ContentService } from './content.service';
+import type { ApiContent, ApiPaginationMeta } from '../models';
 
-const MOCK_DELAY_MS = 600;
+export interface BuildLogsResponse {
+  buildLogs: ApiContent[];
+  meta: ApiPaginationMeta;
+}
 
-@Injectable({
-  providedIn: 'root',
-})
+@Injectable({ providedIn: 'root' })
 export class BuildLogService {
-  private readonly buildLogs = signal<BuildLog[]>(MOCK_BUILD_LOGS);
+  private readonly content = inject(ContentService);
 
-  readonly allBuildLogs = this.buildLogs.asReadonly();
+  private readonly _loading = signal(false);
+  private readonly _error = signal<string | null>(null);
 
-  readonly publishedBuildLogs = computed(() =>
-    this.buildLogs().filter((bl) => bl.status === 'published'),
-  );
+  readonly loading = this._loading.asReadonly();
+  readonly errorMessage = this._error.asReadonly();
 
-  readonly latestBuildLogs = computed(() =>
-    this.publishedBuildLogs()
-      .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
-      .slice(0, 5),
-  );
+  getBuildLogs(page = 1, perPage = 10): Observable<BuildLogsResponse> {
+    this._loading.set(true);
+    this._error.set(null);
 
-  getBuildLogs(page = 1, limit = 10): Observable<BuildLogsResponse> {
-    return new Observable((observer) => {
-      setTimeout(() => {
-        const published = this.publishedBuildLogs().sort(
-          (a, b) => b.publishedAt.getTime() - a.publishedAt.getTime(),
-        );
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + limit;
-        const items: BuildLogListItem[] = published
-          .slice(startIndex, endIndex)
-          .map((bl) => ({
-            id: bl.id,
-            slug: bl.slug,
-            projectId: bl.projectId,
-            title: bl.title,
-            excerpt: bl.excerpt,
-            coverImage: bl.coverImage,
-            tags: bl.tags,
-            publishedAt: bl.publishedAt,
-            readingTime: bl.readingTime,
-          }));
-
-        observer.next({
-          buildLogs: items,
-          total: published.length,
-          page,
-          limit,
-          hasNext: endIndex < published.length,
-          hasPrevious: page > 1,
-        });
-        observer.complete();
-      }, MOCK_DELAY_MS);
-    });
-  }
-
-  getBySlug(slug: string): Observable<BuildLog> {
-    const buildLog = this.buildLogs().find(
-      (bl) => bl.slug === slug && bl.status === 'published',
+    return this.content.listByType('build-log', { page, perPage }).pipe(
+      map((res) => ({ buildLogs: res.data, meta: res.meta })),
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('載入開發紀錄失敗');
+        return throwError(() => err);
+      }),
     );
-    if (!buildLog) {
-      return throwError(() => new Error('Build log not found'));
-    }
-    return of(buildLog);
   }
 
-  getByProjectId(projectId: string): BuildLog[] {
-    return this.publishedBuildLogs()
-      .filter((bl) => bl.projectId === projectId)
-      .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+  getBySlug(slug: string): Observable<ApiContent> {
+    this._loading.set(true);
+    this._error.set(null);
+
+    return this.content.getBySlug(slug).pipe(
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('開發紀錄不存在');
+        return throwError(() => err);
+      }),
+    );
   }
 }

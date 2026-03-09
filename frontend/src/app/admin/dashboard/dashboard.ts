@@ -4,6 +4,7 @@ import {
   ChangeDetectionStrategy,
   computed,
   signal,
+  OnInit,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -28,7 +29,7 @@ import {
 import { ArticleService } from '../../core/services/article.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ProjectService } from '../../core/services/project/project.service';
-import { ProjectStatus } from '../../core/models';
+import type { ApiContent, ApiProject, ProjectStatus } from '../../core/models';
 
 interface DeleteTarget {
   id: string;
@@ -42,13 +43,13 @@ interface DeleteTarget {
   templateUrl: './dashboard.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class DashboardComponent {
+export class DashboardComponent implements OnInit {
   private readonly articleService = inject(ArticleService);
   private readonly authService = inject(AuthService);
   private readonly projectService = inject(ProjectService);
 
-  protected readonly articles = this.articleService.articleList;
-  protected readonly projects = this.projectService.allProjects;
+  protected readonly articles = signal<ApiContent[]>([]);
+  protected readonly projects = signal<ApiProject[]>([]);
   protected readonly currentUser = this.authService.currentUser;
 
   protected readonly deleteTarget = signal<DeleteTarget | null>(null);
@@ -78,7 +79,7 @@ export class DashboardComponent {
     [...this.articles()]
       .sort(
         (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
       )
       .slice(0, 5),
   );
@@ -98,6 +99,16 @@ export class DashboardComponent {
   protected readonly EyeIcon = Eye;
   protected readonly Trash2Icon = Trash2;
   protected readonly AlertTriangleIcon = AlertTriangle;
+
+  ngOnInit(): void {
+    this.articleService.getArticles().subscribe({
+      next: (response) => this.articles.set(response.articles),
+    });
+
+    this.projectService.getAllProjects().subscribe({
+      next: (projectList) => this.projects.set(projectList),
+    });
+  }
 
   protected requestDeleteArticle(id: string, title: string): void {
     this.deleteType.set('article');
@@ -130,6 +141,16 @@ export class DashboardComponent {
       next: () => {
         this.deleteTarget.set(null);
         this.isDeleting.set(false);
+        // 重新載入資料
+        if (this.deleteType() === 'article') {
+          this.articleService.getArticles().subscribe({
+            next: (response) => this.articles.set(response.articles),
+          });
+        } else {
+          this.projectService.getAllProjects().subscribe({
+            next: (projectList) => this.projects.set(projectList),
+          });
+        }
       },
       error: () => {
         this.isDeleting.set(false);
@@ -142,6 +163,7 @@ export class DashboardComponent {
       completed: 'Completed',
       'in-progress': 'In Progress',
       maintained: 'Maintained',
+      archived: 'Archived',
     };
     return labels[status];
   }
@@ -151,6 +173,7 @@ export class DashboardComponent {
       completed: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
       'in-progress': 'border-amber-800 bg-amber-900/30 text-amber-400',
       maintained: 'border-sky-800 bg-sky-900/30 text-sky-400',
+      archived: 'border-zinc-700 bg-zinc-800 text-zinc-400',
     };
     return classes[status];
   }
@@ -161,6 +184,8 @@ export class DashboardComponent {
         return '已發布';
       case 'draft':
         return '草稿';
+      case 'review':
+        return '審核中';
       case 'archived':
         return '封存';
       default:
@@ -174,6 +199,8 @@ export class DashboardComponent {
         return 'border-emerald-800 bg-emerald-900/30 text-emerald-400';
       case 'draft':
         return 'border-amber-800 bg-amber-900/30 text-amber-400';
+      case 'review':
+        return 'border-sky-800 bg-sky-900/30 text-sky-400';
       case 'archived':
         return 'border-zinc-700 bg-zinc-800 text-zinc-400';
       default:

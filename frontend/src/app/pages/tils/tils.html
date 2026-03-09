@@ -43,7 +43,19 @@
     </div>
     }
 
-    @if (filteredTils().length === 0) {
+    @if (isLoading()) {
+    <div class="space-y-6">
+      @for (_ of [1, 2, 3]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-6">
+        <div class="mb-2 h-4 w-1/4 rounded-sm bg-zinc-800"></div>
+        <div class="mb-3 h-6 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-full rounded-sm bg-zinc-800"></div>
+      </div>
+      }
+    </div>
+    } @else if (error()) {
+    <p class="text-center text-zinc-500">{{ error() }}</p>
+    } @else if (filteredTils().length === 0) {
     <p class="py-20 text-center text-zinc-500">還沒有學習紀錄</p>
     } @else {
     <div class="space-y-6">
@@ -55,7 +67,7 @@
         <div class="mb-2 flex items-center gap-3 text-xs text-zinc-500">
           <span class="flex items-center gap-1">
             <lucide-icon [img]="CalendarIcon" [size]="12" />
-            {{ til.publishedAt | date: 'MMM d, yyyy' }}
+            {{ til.published_at | date: 'MMM d, yyyy' }}
           </span>
           @for (tag of til.tags; track tag) {
           <span
@@ -71,7 +83,7 @@
           {{ til.title }}
         </h2>
         <p class="line-clamp-2 text-sm leading-relaxed text-zinc-400">
-          {{ til.content }}
+          {{ til.excerpt }}
         </p>
       </a>
       }

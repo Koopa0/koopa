@@ -42,33 +42,33 @@
       }
 
       <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
-        <!-- Username -->
+        <!-- Email -->
         <div class="mb-4">
           <label
-            for="username"
+            for="email"
             class="mb-1 block text-sm font-medium text-zinc-300"
           >
-            用戶名
+            電子郵件
           </label>
           <div class="relative">
             <div
               class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"
             >
-              <lucide-icon [img]="UserIcon" [size]="16" class="text-zinc-500" />
+              <lucide-icon [img]="MailIcon" [size]="16" class="text-zinc-500" />
             </div>
             <input
-              id="username"
-              type="text"
-              formControlName="username"
-              placeholder="請輸入用戶名"
-              autocomplete="username"
+              id="email"
+              type="email"
+              formControlName="email"
+              placeholder="請輸入電子郵件"
+              autocomplete="email"
               class="w-full rounded-sm border border-zinc-700 bg-zinc-800 py-2 pl-10 pr-3 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
-              [class.border-red-500]="getFieldError('username')"
+              [class.border-red-500]="getFieldError('email')"
             />
           </div>
-          @if (getFieldError('username')) {
+          @if (getFieldError('email')) {
           <p class="mt-1 text-xs text-red-400">
-            {{ getFieldError('username') }}
+            {{ getFieldError('email') }}
           </p>
           }
         </div>

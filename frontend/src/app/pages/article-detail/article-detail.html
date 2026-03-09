@@ -74,15 +74,11 @@
     <div class="flex flex-wrap items-center gap-4 text-sm text-zinc-500">
       <span class="flex items-center gap-1">
         <lucide-icon [img]="CalendarIcon" [size]="14" />
-        {{ article()!.publishedAt | date: 'yyyy年MM月dd日' }}
+        {{ article()!.published_at | date: 'yyyy年MM月dd日' }}
       </span>
       <span class="flex items-center gap-1">
         <lucide-icon [img]="ClockIcon" [size]="14" />
-        約 {{ article()!.readingTime }} 分鐘閱讀
-      </span>
-      <span class="flex items-center gap-1">
-        <lucide-icon [img]="EyeIcon" [size]="14" />
-        {{ article()!.viewCount }} 次瀏覽
+        約 {{ article()!.reading_time }} 分鐘閱讀
       </span>
     </div>
   </div>
@@ -106,22 +102,12 @@
   </div>
 </section>
 
-<!-- Series Navigation -->
-@if (article()!.seriesId) {
-<section class="bg-zinc-950">
-  <div class="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-    <app-article-series-nav
-      [seriesId]="article()!.seriesId!"
-      [currentArticleId]="article()!.id"
-    />
-  </div>
-</section>
-}
+<!-- Series Navigation（API 尚未提供 series 端點，暫時隱藏） -->
 
-<!-- Related Articles -->
+<!-- Related Articles（API 尚未提供 related 端點，暫時不傳資料） -->
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-    <app-related-articles [articleId]="article()!.id" />
+    <app-related-articles />
   </div>
 </section>
 
@@ -151,9 +137,9 @@
         </button>
       </div>
 
-      @if (article()!.updatedAt !== article()!.publishedAt) {
+      @if (article()!.updated_at !== article()!.published_at) {
       <p class="text-xs text-zinc-500">
-        最後更新：{{ article()!.updatedAt | date: 'yyyy/MM/dd HH:mm' }}
+        最後更新：{{ article()!.updated_at | date: 'yyyy/MM/dd HH:mm' }}
       </p>
       }
     </div>

@@ -26,6 +26,10 @@ CREATE TYPE collected_status AS ENUM (
     'unread', 'read', 'curated', 'ignored'
 );
 
+CREATE TYPE project_status AS ENUM (
+    'in-progress', 'completed', 'maintained', 'archived'
+);
+
 -- === Tables ===
 
 CREATE TABLE users (
@@ -75,6 +79,7 @@ CREATE TABLE contents (
     review_level  review_level NOT NULL DEFAULT 'standard',
     ai_metadata   JSONB,
     reading_time  INT NOT NULL DEFAULT 0,
+    cover_image   TEXT,
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -117,6 +122,7 @@ CREATE TABLE projects (
     live_url         TEXT,
     featured         BOOLEAN NOT NULL DEFAULT false,
     sort_order       INT NOT NULL DEFAULT 0,
+    status           project_status NOT NULL DEFAULT 'in-progress',
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -168,6 +174,6 @@ CREATE TABLE tracking_topics (
 -- Password: changeme (bcrypt cost 12)
 INSERT INTO users (email, password_hash, role) VALUES (
     'admin@koopa0.dev',
-    '$2a$12$LJ3m4ys3Lg8GfwNGMOliruBPSNKaojYRCJdwQRqnYeTbhXWOvDdHC',
+    '$2a$12$e7t8rSNW4CvNhV5pX8E//O9ryDmmCE1SLubyj6cxSU8wuV/uNwHFe',
     'admin'
 );

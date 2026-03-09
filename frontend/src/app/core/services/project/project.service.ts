@@ -1,90 +1,67 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { Observable } from 'rxjs';
-import {
-  Project,
-  CreateProjectRequest,
-  UpdateProjectRequest,
-} from '../../models/project.model';
-import { MOCK_PROJECTS } from '../mock-projects';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, tap, catchError, throwError } from 'rxjs';
+import { ApiService } from '../api.service';
+import type {
+  ApiProject,
+  ApiCreateProjectRequest,
+  ApiUpdateProjectRequest,
+} from '../../models';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectService {
-  private readonly projects = signal<Project[]>(MOCK_PROJECTS);
+  private readonly api = inject(ApiService);
 
-  readonly allProjects = this.projects.asReadonly();
+  private readonly _loading = signal(false);
+  private readonly _error = signal<string | null>(null);
 
-  readonly featuredProjects = computed(() =>
-    this.projects()
-      .filter((p) => p.featured)
-      .sort((a, b) => a.order - b.order),
-  );
+  readonly loading = this._loading.asReadonly();
+  readonly errorMessage = this._error.asReadonly();
 
-  getProjectBySlug(slug: string): Project | undefined {
-    return this.projects().find((p) => p.slug === slug);
+  /** 取得所有專案（公開） */
+  getAllProjects(): Observable<ApiProject[]> {
+    this._loading.set(true);
+    this._error.set(null);
+
+    return this.api.getData<ApiProject[]>('/api/projects').pipe(
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('載入專案失敗');
+        return throwError(() => err);
+      }),
+    );
   }
 
-  getProjectById(id: string): Project | undefined {
-    return this.projects().find((p) => p.id === id);
+  /** 依 slug 取得單一專案（公開） */
+  getProjectBySlug(slug: string): Observable<ApiProject> {
+    this._loading.set(true);
+    this._error.set(null);
+
+    return this.api.getData<ApiProject>(`/api/projects/${slug}`).pipe(
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('專案不存在');
+        return throwError(() => err);
+      }),
+    );
   }
 
-  createProject(request: CreateProjectRequest): Observable<Project> {
-    return new Observable((observer) => {
-      setTimeout(() => {
-        const newProject: Project = {
-          ...request,
-          id: `proj-${Date.now()}`,
-        };
-
-        this.projects.update((list) => [...list, newProject]);
-        observer.next(newProject);
-        observer.complete();
-      }, 500);
-    });
+  /** Admin — 建立專案 */
+  createProject(request: ApiCreateProjectRequest): Observable<ApiProject> {
+    return this.api.postData<ApiProject>('/api/admin/projects', request);
   }
 
-  updateProject(request: UpdateProjectRequest): Observable<Project> {
-    return new Observable((observer) => {
-      setTimeout(() => {
-        const index = this.projects().findIndex((p) => p.id === request.id);
-        if (index === -1) {
-          observer.error(new Error('Project not found'));
-          return;
-        }
-
-        const current = this.projects()[index];
-        const updated: Project = { ...current, ...request };
-
-        this.projects.update((list) =>
-          list.map((p) => (p.id === request.id ? updated : p)),
-        );
-
-        observer.next(updated);
-        observer.complete();
-      }, 500);
-    });
+  /** Admin — 更新專案 */
+  updateProject(
+    id: string,
+    request: ApiUpdateProjectRequest,
+  ): Observable<ApiProject> {
+    return this.api.putData<ApiProject>(`/api/admin/projects/${id}`, request);
   }
 
+  /** Admin — 刪除專案 */
   deleteProject(id: string): Observable<void> {
-    return new Observable((observer) => {
-      setTimeout(() => {
-        const exists = this.projects().some((p) => p.id === id);
-        if (!exists) {
-          observer.error(new Error('Project not found'));
-          return;
-        }
-
-        this.projects.update((list) => list.filter((p) => p.id !== id));
-        observer.next();
-        observer.complete();
-      }, 500);
-    });
-  }
-
-  private generateSlug(title: string): string {
-    return title
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .trim();
+    return this.api.delete(`/api/admin/projects/${id}`);
   }
 }

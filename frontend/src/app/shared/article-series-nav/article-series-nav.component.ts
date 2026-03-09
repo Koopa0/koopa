@@ -1,13 +1,12 @@
 import {
   Component,
   ChangeDetectionStrategy,
-  inject,
   input,
   computed,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { LucideAngularModule, BookOpen, ChevronRight } from 'lucide-angular';
-import { ArticleService } from '../../core/services/article.service';
+import type { ApiContent } from '../../core/models';
 
 @Component({
   selector: 'app-article-series-nav',
@@ -35,7 +34,7 @@ import { ArticleService } from '../../core/services/article.service';
           </span>
           } @else {
           <a
-            [routerLink]="'/articles/' + article.id"
+            [routerLink]="'/articles/' + article.slug"
             class="flex items-center gap-2 rounded-sm px-3 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200"
           >
             <span class="shrink-0 text-xs text-zinc-600">{{ i + 1 }}.</span>
@@ -56,15 +55,12 @@ import { ArticleService } from '../../core/services/article.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArticleSeriesNavComponent {
-  private readonly articleService = inject(ArticleService);
-
-  readonly seriesId = input.required<string>();
+  /** 由父元件傳入系列文章列表（API 尚未提供 series 端點） */
+  readonly articles = input<ApiContent[]>([]);
   readonly currentArticleId = input.required<string>();
 
   protected readonly BookOpenIcon = BookOpen;
   protected readonly ChevronRightIcon = ChevronRight;
 
-  protected readonly seriesArticles = computed(() =>
-    this.articleService.getArticlesBySeries(this.seriesId()),
-  );
+  protected readonly seriesArticles = computed(() => this.articles());
 }

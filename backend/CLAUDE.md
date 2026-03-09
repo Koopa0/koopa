@@ -110,6 +110,71 @@ Agents with `memory: project` persist learnings in `.claude/agent-memory/`.
 | `go-unsafe` | `/go-unsafe` | When to avoid unsafe/cgo, cost analysis, safe alternatives |
 | `go-compliance-test` | `/go-compliance-test` | AI compliance traps, detection commands, self-check checklist |
 
+## Infrastructure & Secrets
+
+### 部署架構
+
+```
+瀏覽器 → Cloudflare Tunnel → SSR Server (:4000) → Go Backend (:8080) → PostgreSQL (:5432)
+                                    ↑ BFF proxy /bff/*                        ↓
+                                    └── 後端零暴露，不對外                Cloudflare R2
+```
+
+- **VPS**: Hostinger KVM 2 (2 vCPU / 8GB RAM / 96GB), Ubuntu 24.04
+- **流量入口**: Cloudflare Tunnel（無 nginx/caddy），只有 SSH port 對外
+- **前端**: Angular 21 SSR (port 4000)，同時作為 BFF proxy
+- **後端**: Go API (port 8080)，只在 Docker 內網可達
+- **資料庫**: PostgreSQL 17 (Docker)，只在 Docker 內網可達
+- **物件儲存**: Cloudflare R2 (S3 兼容)
+
+### 環境變數
+
+Production `.env` 存放在 VPS `~/blog/.env`，由 docker-compose 讀取。
+
+| 變數 | 用途 | 來源 |
+|------|------|------|
+| `DATABASE_URL` | PostgreSQL 連線字串 | docker-compose 組合 |
+| `JWT_SECRET` | JWT 簽發密鑰 | VPS `~/blog/.env` (隨機生成) |
+| `POSTGRES_PASSWORD` | PG 密碼 | VPS `~/blog/.env` (隨機生成) |
+| `R2_ACCESS_KEY_ID` | R2 S3 存取金鑰 | VPS `~/blog/.env` |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 秘密金鑰 | VPS `~/blog/.env` |
+| `R2_ENDPOINT` | R2 S3 端點 | `https://d0ec7a1b2a7e00da142c766e7263dd3f.r2.cloudflarestorage.com` |
+| `R2_BUCKET` | R2 Bucket 名稱 | `blog` |
+| `CORS_ORIGIN` | 允許的 CORS 來源 | `https://koopa0.dev` |
+
+### R2 使用方式
+
+R2 走 S3 兼容 API，用 AWS SDK for Go：
+
+```go
+import (
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/credentials"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+cfg, _ := config.LoadDefaultConfig(ctx,
+    config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+        os.Getenv("R2_ACCESS_KEY_ID"),
+        os.Getenv("R2_SECRET_ACCESS_KEY"),
+        "",
+    )),
+    config.WithRegion("auto"),
+)
+client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+    o.BaseEndpoint = aws.String(os.Getenv("R2_ENDPOINT"))
+})
+```
+
+R2 API Token 已鎖定 IP `46.202.155.7`（VPS），只能從 VPS 存取。
+
+### Docker Network
+
+所有服務都在 `internal` network，**不對外暴露 port**（除了前端 4000 給 Tunnel）。
+- `postgres:5432` — 只有 backend 能連
+- `backend:8080` — 只有 frontend (BFF proxy) 能連
+- `frontend:4000` — Cloudflare Tunnel 連入
+
 ## Verification Workflow
 
 Before any commit or PR, run `/verify` or:

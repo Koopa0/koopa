@@ -28,7 +28,7 @@
       <div class="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
         <span class="flex items-center gap-1">
           <lucide-icon [img]="CalendarIcon" [size]="14" />
-          {{ til()!.publishedAt | date: 'MMM d, yyyy' }}
+          {{ til()!.published_at | date: 'MMM d, yyyy' }}
         </span>
         @for (tag of til()!.tags; track tag) {
         <a
@@ -48,11 +48,6 @@
       [innerHTML]="parsedContent()"
     ></div>
 
-    @if (til()!.codeSnippet) {
-    <div class="mt-6 overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-900 p-4">
-      <pre class="text-sm text-zinc-300"><code>{{ til()!.codeSnippet }}</code></pre>
-    </div>
-    }
   </div>
 </article>
 }

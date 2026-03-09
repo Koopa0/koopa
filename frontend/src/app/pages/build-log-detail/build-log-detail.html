@@ -24,26 +24,16 @@
         Back
       </button>
 
-      @if (projectTitle()) {
-      <a
-        [routerLink]="'/projects/' + projectSlug()"
-        class="mb-3 inline-flex items-center gap-1 rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-      >
-        <lucide-icon [img]="FolderOpenIcon" [size]="12" />
-        {{ projectTitle() }}
-      </a>
-      }
-
       <h1 class="text-3xl font-bold text-zinc-100">{{ buildLog()!.title }}</h1>
 
       <div class="mt-4 flex items-center gap-4 text-sm text-zinc-500">
         <span class="flex items-center gap-1">
           <lucide-icon [img]="CalendarIcon" [size]="14" />
-          {{ buildLog()!.publishedAt | date: 'MMM d, yyyy' }}
+          {{ buildLog()!.published_at | date: 'MMM d, yyyy' }}
         </span>
         <span class="flex items-center gap-1">
           <lucide-icon [img]="ClockIcon" [size]="14" />
-          {{ buildLog()!.readingTime }} min read
+          {{ buildLog()!.reading_time }} min read
         </span>
       </div>
     </div>

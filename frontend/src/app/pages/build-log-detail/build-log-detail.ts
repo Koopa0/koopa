@@ -6,7 +6,7 @@ import {
   computed,
   OnInit,
 } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { Location, DatePipe } from '@angular/common';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import {
@@ -14,20 +14,18 @@ import {
   ArrowLeft,
   Calendar,
   Clock,
-  FolderOpen,
 } from 'lucide-angular';
 import { BuildLogService } from '../../core/services/build-log.service';
-import { ProjectService } from '../../core/services/project/project.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
-import { BuildLog } from '../../core/models';
+import type { ApiContent } from '../../core/models';
 import { TableOfContentsComponent } from '../../shared/table-of-contents/table-of-contents.component';
 
 @Component({
   selector: 'app-build-log-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, LucideAngularModule, TableOfContentsComponent],
+  imports: [DatePipe, LucideAngularModule, TableOfContentsComponent],
   templateUrl: './build-log-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [fadeInUp],
@@ -37,12 +35,11 @@ export class BuildLogDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly location = inject(Location);
   private readonly buildLogService = inject(BuildLogService);
-  private readonly projectService = inject(ProjectService);
   private readonly markdownService = inject(MarkdownService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly seoService = inject(SeoService);
 
-  protected readonly buildLog = signal<BuildLog | null>(null);
+  protected readonly buildLog = signal<ApiContent | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
 
@@ -51,7 +48,7 @@ export class BuildLogDetailComponent implements OnInit {
     if (!bl) {
       return '';
     }
-    return this.markdownService.parse(bl.content);
+    return this.markdownService.parse(bl.body);
   });
 
   // SECURITY_REVIEW: 同 article-detail — 內容由 MarkdownService 產生，非使用者可注入
@@ -60,26 +57,9 @@ export class BuildLogDetailComponent implements OnInit {
     return html ? this.sanitizer.bypassSecurityTrustHtml(html) : '';
   });
 
-  protected readonly projectTitle = computed(() => {
-    const bl = this.buildLog();
-    if (!bl) {
-      return '';
-    }
-    return this.projectService.getProjectById(bl.projectId)?.title ?? '';
-  });
-
-  protected readonly projectSlug = computed(() => {
-    const bl = this.buildLog();
-    if (!bl) {
-      return '';
-    }
-    return this.projectService.getProjectById(bl.projectId)?.slug ?? '';
-  });
-
   protected readonly ArrowLeftIcon = ArrowLeft;
   protected readonly CalendarIcon = Calendar;
   protected readonly ClockIcon = Clock;
-  protected readonly FolderOpenIcon = FolderOpen;
 
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');

@@ -1,91 +1,41 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { Observable, of, delay } from 'rxjs';
-import { Tag, TagCloud } from '../models';
-import { MOCK_TAGS, MOCK_ARTICLES } from './mock-data';
-import { MOCK_BUILD_LOGS } from './mock-build-logs';
-import { MOCK_TILS } from './mock-tils';
-import { MOCK_NOTES } from './mock-notes';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, map, tap, catchError, throwError } from 'rxjs';
+import { ContentService } from './content.service';
+import type { ApiContent } from '../models';
 
-/** 根據所有內容類型計算每個標籤的內容數 */
-function buildTagsWithCounts(): Tag[] {
-  const countMap = new Map<string, number>();
-  const allTagSources = [
-    ...MOCK_ARTICLES.map((a) => a.tags),
-    ...MOCK_BUILD_LOGS.map((bl) => bl.tags),
-    ...MOCK_TILS.map((t) => t.tags),
-    ...MOCK_NOTES.map((n) => n.tags),
-  ];
-  for (const tags of allTagSources) {
-    for (const tagName of tags) {
-      countMap.set(tagName, (countMap.get(tagName) ?? 0) + 1);
-    }
-  }
-  return MOCK_TAGS.map((tag) => ({
-    ...tag,
-    articleCount: countMap.get(tag.name) ?? 0,
-  }));
+export interface TagInfo {
+  name: string;
+  count: number;
 }
 
-const COMPUTED_TAGS = buildTagsWithCounts();
-
-@Injectable({
-  providedIn: 'root',
-})
+/** Tag 不是獨立 API — 從內容列表的 tags 欄位聚合 */
+@Injectable({ providedIn: 'root' })
 export class TagService {
-  private readonly _tags = signal<Tag[]>(COMPUTED_TAGS);
-  private readonly _isLoading = signal(false);
+  private readonly content = inject(ContentService);
+
+  private readonly _loading = signal(false);
   private readonly _error = signal<string | null>(null);
 
-  readonly tagList = this._tags.asReadonly();
-  readonly loading = this._isLoading.asReadonly();
+  readonly loading = this._loading.asReadonly();
   readonly errorMessage = this._error.asReadonly();
 
-  readonly popularTags = computed(() =>
-    this._tags()
-      .filter((tag) => tag.articleCount > 0)
-      .sort((a, b) => b.articleCount - a.articleCount)
-      .slice(0, 10),
-  );
-
-  readonly tagCloud = computed((): TagCloud[] => {
-    const tags = this._tags().filter((tag) => tag.articleCount > 0);
-    const maxCount = Math.max(...tags.map((tag) => tag.articleCount), 1);
-
-    return tags.map((tag) => ({
-      tag,
-      weight: Math.round((tag.articleCount / maxCount) * 5) + 1,
-    }));
-  });
-
-  getAllTags(): Observable<Tag[]> {
-    this._isLoading.set(true);
+  /** 依 tag 取得內容列表 */
+  getContentsByTag(
+    tag: string,
+    page = 1,
+    perPage = 20,
+  ): Observable<{ contents: ApiContent[]; meta: { total: number; page: number; per_page: number; total_pages: number } }> {
+    this._loading.set(true);
     this._error.set(null);
 
-    this._isLoading.set(false);
-    return of(COMPUTED_TAGS).pipe(delay(300));
-  }
-
-  getTagBySlug(slug: string): Observable<Tag | null> {
-    this._isLoading.set(true);
-    this._error.set(null);
-
-    const tag = COMPUTED_TAGS.find((t) => t.slug === slug) ?? null;
-    this._isLoading.set(false);
-
-    return of(tag).pipe(delay(200));
-  }
-
-  searchTags(query: string): Observable<Tag[]> {
-    this._isLoading.set(true);
-    this._error.set(null);
-
-    const filteredTags = COMPUTED_TAGS.filter(
-      (tag) =>
-        tag.name.toLowerCase().includes(query.toLowerCase()) ||
-        tag.description?.toLowerCase().includes(query.toLowerCase()),
+    return this.content.listPublished({ tag, page, perPage }).pipe(
+      map((res) => ({ contents: res.data, meta: res.meta })),
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('載入標籤內容失敗');
+        return throwError(() => err);
+      }),
     );
-
-    this._isLoading.set(false);
-    return of(filteredTags).pipe(delay(300));
   }
 }

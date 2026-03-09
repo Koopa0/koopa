@@ -14,7 +14,11 @@ import {
 import { Router, ActivatedRoute } from '@angular/router';
 import { LucideAngularModule, ArrowLeft, Save, Plus, X } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
-import { ProjectStatus } from '../../core/models';
+import type {
+  ProjectStatus,
+  ApiCreateProjectRequest,
+  ApiUpdateProjectRequest,
+} from '../../core/models';
 
 @Component({
   selector: 'app-project-editor',
@@ -37,6 +41,9 @@ export class ProjectEditorComponent implements OnInit {
     type: 'success' | 'error';
   } | null>(null);
 
+  /** 編輯模式下儲存專案 ID */
+  private projectId: string | null = null;
+
   protected readonly projectForm: FormGroup;
 
   protected readonly statusOptions: Array<{
@@ -46,6 +53,7 @@ export class ProjectEditorComponent implements OnInit {
     { value: 'in-progress', label: 'In Progress' },
     { value: 'completed', label: 'Completed' },
     { value: 'maintained', label: 'Maintained' },
+    { value: 'archived', label: 'Archived' },
   ];
 
   protected readonly ArrowLeftIcon = ArrowLeft;
@@ -62,48 +70,53 @@ export class ProjectEditorComponent implements OnInit {
       title: ['', [Validators.required, Validators.minLength(2)]],
       slug: ['', [Validators.required]],
       description: ['', [Validators.required, Validators.maxLength(300)]],
-      longDescription: [''],
-      techStack: [[] as string[]],
+      long_description: [''],
+      tech_stack: [[] as string[]],
       role: ['', [Validators.required]],
       highlights: [[] as string[]],
-      githubUrl: [''],
-      liveUrl: [''],
+      github_url: [''],
+      live_url: [''],
       featured: [false],
-      order: [0],
+      sort_order: [0],
       status: ['in-progress' as ProjectStatus, Validators.required],
     });
   }
 
   ngOnInit(): void {
-    const projectId = this.route.snapshot.paramMap.get('id');
-    if (projectId) {
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (slug) {
       this.isNewProject.set(false);
-      this.loadProject(projectId);
+      this.loadProject(slug);
     }
   }
 
-  private loadProject(id: string): void {
+  private loadProject(slug: string): void {
     this.isLoading.set(true);
-    const project = this.projectService.getProjectById(id);
 
-    if (project) {
-      this.projectForm.patchValue({
-        title: project.title,
-        slug: project.slug,
-        description: project.description,
-        longDescription: project.longDescription || '',
-        techStack: project.techStack,
-        role: project.role,
-        highlights: project.highlights,
-        githubUrl: project.githubUrl || '',
-        liveUrl: project.liveUrl || '',
-        featured: project.featured,
-        order: project.order,
-        status: project.status,
-      });
-    }
-
-    this.isLoading.set(false);
+    this.projectService.getProjectBySlug(slug).subscribe({
+      next: (project) => {
+        this.projectId = project.id;
+        this.projectForm.patchValue({
+          title: project.title,
+          slug: project.slug,
+          description: project.description,
+          long_description: project.long_description ?? '',
+          tech_stack: project.tech_stack,
+          role: project.role,
+          highlights: project.highlights,
+          github_url: project.github_url ?? '',
+          live_url: project.live_url ?? '',
+          featured: project.featured,
+          sort_order: project.sort_order,
+          status: project.status,
+        });
+        this.isLoading.set(false);
+      },
+      error: () => {
+        this.showNotification('載入專案失敗', 'error');
+        this.isLoading.set(false);
+      },
+    });
   }
 
   protected addTech(): void {
@@ -112,17 +125,17 @@ export class ProjectEditorComponent implements OnInit {
       return;
     }
 
-    const current: string[] = this.projectForm.get('techStack')?.value || [];
+    const current: string[] = this.projectForm.get('tech_stack')?.value || [];
     if (!current.includes(tech)) {
-      this.projectForm.patchValue({ techStack: [...current, tech] });
+      this.projectForm.patchValue({ tech_stack: [...current, tech] });
     }
     this.newTech.set('');
   }
 
   protected removeTech(techToRemove: string): void {
-    const current: string[] = this.projectForm.get('techStack')?.value || [];
+    const current: string[] = this.projectForm.get('tech_stack')?.value || [];
     this.projectForm.patchValue({
-      techStack: current.filter((t) => t !== techToRemove),
+      tech_stack: current.filter((t) => t !== techToRemove),
     });
   }
 
@@ -145,7 +158,7 @@ export class ProjectEditorComponent implements OnInit {
   }
 
   protected get techStack(): string[] {
-    return this.projectForm.get('techStack')?.value || [];
+    return this.projectForm.get('tech_stack')?.value || [];
   }
 
   protected get highlights(): string[] {
@@ -185,7 +198,22 @@ export class ProjectEditorComponent implements OnInit {
     const formValue = this.projectForm.value;
 
     if (this.isNewProject()) {
-      this.projectService.createProject(formValue).subscribe({
+      const request: ApiCreateProjectRequest = {
+        title: formValue.title,
+        slug: formValue.slug,
+        description: formValue.description,
+        long_description: formValue.long_description || undefined,
+        tech_stack: formValue.tech_stack,
+        role: formValue.role,
+        highlights: formValue.highlights,
+        github_url: formValue.github_url || undefined,
+        live_url: formValue.live_url || undefined,
+        featured: formValue.featured,
+        sort_order: formValue.sort_order,
+        status: formValue.status,
+      };
+
+      this.projectService.createProject(request).subscribe({
         next: () => {
           this.showNotification('專案已建立！', 'success');
           this.isSaving.set(false);
@@ -197,8 +225,22 @@ export class ProjectEditorComponent implements OnInit {
         },
       });
     } else {
-      const id = this.route.snapshot.paramMap.get('id')!;
-      this.projectService.updateProject({ ...formValue, id }).subscribe({
+      const request: ApiUpdateProjectRequest = {
+        title: formValue.title,
+        slug: formValue.slug,
+        description: formValue.description,
+        long_description: formValue.long_description || undefined,
+        tech_stack: formValue.tech_stack,
+        role: formValue.role,
+        highlights: formValue.highlights,
+        github_url: formValue.github_url || undefined,
+        live_url: formValue.live_url || undefined,
+        featured: formValue.featured,
+        sort_order: formValue.sort_order,
+        status: formValue.status,
+      };
+
+      this.projectService.updateProject(this.projectId!, request).subscribe({
         next: () => {
           this.showNotification('專案已更新！', 'success');
           this.isSaving.set(false);

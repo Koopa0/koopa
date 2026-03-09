@@ -15,41 +15,31 @@
 
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-    <!-- Category Tabs -->
-    <div class="mb-8 flex flex-wrap gap-2 border-b border-zinc-800 pb-4">
-      @for (cat of categories; track cat.value) {
-      <button
-        type="button"
-        (click)="selectCategory(cat.value)"
-        class="flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors"
-        [class]="selectedCategory() === cat.value
-          ? 'bg-zinc-100 text-zinc-900'
-          : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'"
-      >
-        <lucide-icon [img]="cat.icon" [size]="14" />
-        {{ cat.label }}
-      </button>
+    @if (isLoading()) {
+    <div class="space-y-4">
+      @for (_ of [1, 2, 3]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-5">
+        <div class="mb-2 h-4 w-1/4 rounded-sm bg-zinc-800"></div>
+        <div class="mb-3 h-5 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-1/2 rounded-sm bg-zinc-800"></div>
+      </div>
       }
     </div>
-
-    @if (filteredNotes().length === 0) {
+    } @else if (error()) {
+    <p class="text-center text-zinc-500">{{ error() }}</p>
+    } @else if (notes().length === 0) {
     <p class="py-20 text-center text-zinc-500">還沒有筆記</p>
     } @else {
     <div class="space-y-4">
-      @for (note of filteredNotes(); track note.id) {
+      @for (note of notes(); track note.id) {
       <a
         [routerLink]="'/notes/' + note.slug"
         class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-5 no-underline transition-all hover:border-zinc-600 hover:bg-zinc-900"
       >
         <div class="mb-2 flex items-center gap-3 text-xs text-zinc-500">
-          <span
-            class="rounded-sm bg-zinc-800 px-1.5 py-0.5 font-medium uppercase"
-          >
-            {{ note.category }}
-          </span>
           <span class="flex items-center gap-1">
             <lucide-icon [img]="CalendarIcon" [size]="12" />
-            {{ note.publishedAt | date: 'MMM d, yyyy' }}
+            {{ note.published_at | date: 'MMM d, yyyy' }}
           </span>
         </div>
         <h2

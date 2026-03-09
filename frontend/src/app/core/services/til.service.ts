@@ -1,35 +1,49 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { Observable, of, throwError } from 'rxjs';
-import { TilEntry } from '../models/til.model';
-import { MOCK_TILS } from './mock-tils';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, map, tap, catchError, throwError } from 'rxjs';
+import { ContentService } from './content.service';
+import type { ApiContent, ApiPaginationMeta } from '../models';
 
-@Injectable({
-  providedIn: 'root',
-})
+export interface TilsResponse {
+  tils: ApiContent[];
+  meta: ApiPaginationMeta;
+}
+
+@Injectable({ providedIn: 'root' })
 export class TilService {
-  private readonly tils = signal<TilEntry[]>(MOCK_TILS);
+  private readonly content = inject(ContentService);
 
-  readonly allTils = this.tils.asReadonly();
+  private readonly _loading = signal(false);
+  private readonly _error = signal<string | null>(null);
 
-  readonly publishedTils = computed(() =>
-    this.tils()
-      .filter((t) => t.status === 'published')
-      .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime()),
-  );
+  readonly loading = this._loading.asReadonly();
+  readonly errorMessage = this._error.asReadonly();
 
-  readonly latestTils = computed(() => this.publishedTils().slice(0, 5));
+  getTils(page = 1, perPage = 20): Observable<TilsResponse> {
+    this._loading.set(true);
+    this._error.set(null);
 
-  getBySlug(slug: string): Observable<TilEntry> {
-    const til = this.tils().find(
-      (t) => t.slug === slug && t.status === 'published',
+    return this.content.listByType('til', { page, perPage }).pipe(
+      map((res) => ({ tils: res.data, meta: res.meta })),
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('載入學習筆記失敗');
+        return throwError(() => err);
+      }),
     );
-    if (!til) {
-      return throwError(() => new Error('TIL not found'));
-    }
-    return of(til);
   }
 
-  getByTag(tag: string): TilEntry[] {
-    return this.publishedTils().filter((t) => t.tags.includes(tag));
+  getBySlug(slug: string): Observable<ApiContent> {
+    this._loading.set(true);
+    this._error.set(null);
+
+    return this.content.getBySlug(slug).pipe(
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('學習筆記不存在');
+        return throwError(() => err);
+      }),
+    );
   }
 }

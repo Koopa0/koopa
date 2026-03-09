@@ -18,7 +18,7 @@ import { NoteService } from '../../core/services/note.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
-import { Note } from '../../core/models';
+import type { ApiContent } from '../../core/models';
 
 @Component({
   selector: 'app-note-detail',
@@ -37,7 +37,7 @@ export class NoteDetailComponent implements OnInit {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly seoService = inject(SeoService);
 
-  protected readonly note = signal<Note | null>(null);
+  protected readonly note = signal<ApiContent | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
 
@@ -47,7 +47,7 @@ export class NoteDetailComponent implements OnInit {
     if (!n) {
       return '';
     }
-    const html = this.markdownService.parse(n.content);
+    const html = this.markdownService.parse(n.body);
     return this.sanitizer.bypassSecurityTrustHtml(html);
   });
 
@@ -71,7 +71,7 @@ export class NoteDetailComponent implements OnInit {
         this.isLoading.set(false);
         this.seoService.updateMeta({
           title: note.title,
-          description: note.content.slice(0, 160),
+          description: note.excerpt || note.body.slice(0, 160),
           ogUrl: `https://koopa0.dev/notes/${note.slug}`,
           ogType: 'article',
         });

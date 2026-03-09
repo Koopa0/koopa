@@ -13,10 +13,21 @@ import {
   ArrowRight,
 } from 'lucide-angular';
 import { SearchService } from '../../core/services/search.service';
-import { ArticleService } from '../../core/services/article.service';
 import { debounceTime, Subject } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { slideDown } from '../animations/fade-in.animation';
+import type { ContentType } from '../../core/models';
+
+/** 將 ContentType 對應到前端路由前綴 */
+const TYPE_ROUTE_MAP: Record<ContentType, string> = {
+  article: '/articles',
+  essay: '/essays',
+  'build-log': '/build-logs',
+  til: '/til',
+  note: '/notes',
+  bookmark: '/bookmarks',
+  digest: '/digests',
+};
 
 @Component({
   selector: 'app-search',
@@ -73,24 +84,20 @@ import { slideDown } from '../animations/fade-in.animation';
             </div>
           } @else if (hasResults()) {
             <div class="p-2">
-              @for (result of results(); track result.article.id) {
+              @for (result of results(); track result.id) {
                 <a
-                  [routerLink]="['/articles', result.article.id]"
+                  [routerLink]="getResultRoute(result.type, result.slug)"
                   class="flex items-center gap-3 rounded-sm px-3 py-3 text-zinc-300 no-underline transition-colors hover:bg-zinc-800"
                   (click)="clearSearch()"
                 >
                   <div class="flex-1">
-                    <h4
-                      class="text-sm font-medium text-zinc-100"
-                      [innerHTML]="
-                        result.highlights.title || result.article.title
-                      "
-                    ></h4>
-                    @if (result.highlights.content) {
-                      <p
-                        class="mt-1 text-xs text-zinc-500"
-                        [innerHTML]="result.highlights.content"
-                      ></p>
+                    <h4 class="text-sm font-medium text-zinc-100">
+                      {{ result.title }}
+                    </h4>
+                    @if (result.excerpt) {
+                      <p class="mt-1 line-clamp-1 text-xs text-zinc-500">
+                        {{ result.excerpt }}
+                      </p>
                     }
                   </div>
                   <lucide-icon
@@ -110,7 +117,6 @@ import { slideDown } from '../animations/fade-in.animation';
 })
 export class SearchComponent {
   private readonly searchService = inject(SearchService);
-  private readonly articleService = inject(ArticleService);
 
   protected readonly searchQuery = signal('');
   protected readonly showResults = signal(false);
@@ -129,8 +135,7 @@ export class SearchComponent {
     this.searchSubject
       .pipe(debounceTime(300), takeUntilDestroyed())
       .subscribe((query) => {
-        const articles = this.articleService.publishedArticles();
-        this.searchService.search(query, articles);
+        this.searchService.search(query);
       });
   }
 
@@ -145,5 +150,10 @@ export class SearchComponent {
     this.searchQuery.set('');
     this.showResults.set(false);
     this.searchService.clearSearch();
+  }
+
+  protected getResultRoute(type: ContentType, slug: string): string {
+    const prefix = TYPE_ROUTE_MAP[type] ?? '/articles';
+    return `${prefix}/${slug}`;
   }
 }

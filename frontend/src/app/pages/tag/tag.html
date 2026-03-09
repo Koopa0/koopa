@@ -13,7 +13,7 @@
       <h1 class="text-3xl font-bold text-zinc-100">{{ tagName() }}</h1>
     </div>
     @if (!isLoading()) {
-    <p class="mt-2 text-zinc-400">共 {{ articles().length }} 篇相關文章</p>
+    <p class="mt-2 text-zinc-400">共 {{ contents().length }} 篇相關內容</p>
     }
   </div>
 </section>
@@ -26,38 +26,34 @@
       <app-skeleton variant="card" />
       }
     </div>
-    } @else if (articles().length > 0) {
-    <!-- Articles Grid -->
+    } @else if (contents().length > 0) {
+    <!-- Contents Grid -->
     <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-      @for (article of articles(); track article.id) {
+      @for (item of contents(); track item.id) {
       <a
-        [routerLink]="'/articles/' + article.id"
+        [routerLink]="'/articles/' + item.slug"
         class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
       >
         <h3
           class="mb-3 text-lg font-semibold text-zinc-100 group-hover:text-white"
         >
-          {{ article.title }}
+          {{ item.title }}
         </h3>
         <p class="mb-4 line-clamp-2 text-sm text-zinc-400">
-          {{ article.excerpt }}
+          {{ item.excerpt }}
         </p>
         <div class="flex flex-wrap items-center gap-4 text-xs text-zinc-500">
           <span class="flex items-center gap-1">
             <lucide-icon [img]="CalendarIcon" [size]="12" />
-            {{ article.publishedAt | date: 'MMM d, yyyy' }}
+            {{ item.published_at | date: 'MMM d, yyyy' }}
           </span>
           <span class="flex items-center gap-1">
             <lucide-icon [img]="ClockIcon" [size]="12" />
-            {{ article.readingTime }} 分鐘
-          </span>
-          <span class="flex items-center gap-1">
-            <lucide-icon [img]="EyeIcon" [size]="12" />
-            {{ article.viewCount }}
+            {{ item.reading_time }} 分鐘
           </span>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
-          @for (tag of article.tags; track tag) {
+          @for (tag of item.tags; track tag) {
           <span
             class="rounded-sm px-2 py-0.5 text-xs"
             [class]="
@@ -78,7 +74,7 @@
     <div class="flex flex-col items-center gap-4 py-20 text-center">
       <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
       <h3 class="text-lg font-medium text-zinc-300">
-        沒有找到「{{ tagName() }}」相關的文章
+        沒有找到「{{ tagName() }}」相關的內容
       </h3>
       <a
         routerLink="/articles"

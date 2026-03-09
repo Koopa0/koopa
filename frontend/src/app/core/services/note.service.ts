@@ -1,39 +1,49 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { Observable, of, throwError } from 'rxjs';
-import { Note, NoteCategory } from '../models/note.model';
-import { MOCK_NOTES } from './mock-notes';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, map, tap, catchError, throwError } from 'rxjs';
+import { ContentService } from './content.service';
+import type { ApiContent, ApiPaginationMeta } from '../models';
 
-@Injectable({
-  providedIn: 'root',
-})
+export interface NotesResponse {
+  notes: ApiContent[];
+  meta: ApiPaginationMeta;
+}
+
+@Injectable({ providedIn: 'root' })
 export class NoteService {
-  private readonly notes = signal<Note[]>(MOCK_NOTES);
+  private readonly content = inject(ContentService);
 
-  readonly allNotes = this.notes.asReadonly();
+  private readonly _loading = signal(false);
+  private readonly _error = signal<string | null>(null);
 
-  readonly publishedNotes = computed(() =>
-    this.notes()
-      .filter((n) => n.status === 'published')
-      .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime()),
-  );
+  readonly loading = this._loading.asReadonly();
+  readonly errorMessage = this._error.asReadonly();
 
-  readonly latestNotes = computed(() => this.publishedNotes().slice(0, 5));
+  getNotes(page = 1, perPage = 20): Observable<NotesResponse> {
+    this._loading.set(true);
+    this._error.set(null);
 
-  getBySlug(slug: string): Observable<Note> {
-    const note = this.notes().find(
-      (n) => n.slug === slug && n.status === 'published',
+    return this.content.listByType('note', { page, perPage }).pipe(
+      map((res) => ({ notes: res.data, meta: res.meta })),
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('載入筆記失敗');
+        return throwError(() => err);
+      }),
     );
-    if (!note) {
-      return throwError(() => new Error('Note not found'));
-    }
-    return of(note);
   }
 
-  getByCategory(category: NoteCategory): Note[] {
-    return this.publishedNotes().filter((n) => n.category === category);
-  }
+  getBySlug(slug: string): Observable<ApiContent> {
+    this._loading.set(true);
+    this._error.set(null);
 
-  getByTag(tag: string): Note[] {
-    return this.publishedNotes().filter((n) => n.tags.includes(tag));
+    return this.content.getBySlug(slug).pipe(
+      tap(() => this._loading.set(false)),
+      catchError((err) => {
+        this._loading.set(false);
+        this._error.set('筆記不存在');
+        return throwError(() => err);
+      }),
+    );
   }
 }
