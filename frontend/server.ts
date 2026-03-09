@@ -326,7 +326,7 @@ app.use(
   }),
 );
 
-app.use('/**', (req, res, next) => {
+app.use('*', (req, res, next) => {
   commonEngine
     .render({
       bootstrap,
