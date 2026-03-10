@@ -240,7 +240,7 @@ app.use('/bff', (req, res) => {
   const headers: Record<string, string> = {
     'content-type': req.headers['content-type'] || 'application/json',
   };
-  const forwardHeaders = ['authorization', 'cookie', 'x-hub-signature-256', 'x-github-event', 'x-github-delivery'];
+  const forwardHeaders = ['authorization', 'cookie', 'x-hub-signature-256', 'x-github-event', 'x-github-delivery', 'x-notion-signature'];
   for (const h of forwardHeaders) {
     if (req.headers[h]) {
       headers[h] = req.headers[h] as string;
