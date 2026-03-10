@@ -1,13 +1,15 @@
-import { APP_BASE_HREF } from '@angular/common';
-import { CommonEngine, createNodeRequestHandler, isMainModule } from '@angular/ssr/node';
+import {
+  AngularNodeAppEngine,
+  createNodeRequestHandler,
+  isMainModule,
+  writeResponseToNodeResponse,
+} from '@angular/ssr/node';
 import express from 'express';
-import { dirname, resolve, join } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import bootstrap from './src/main.server';
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
-const indexHtml = join(serverDistFolder, 'index.server.html');
 
 const SITE_URL = process.env['SITE_URL'] || 'https://koopa0.dev';
 const SITE_TITLE = 'koopa0.dev';
@@ -16,9 +18,9 @@ const SITE_DESCRIPTION =
 
 const BACKEND_URL = process.env['BACKEND_URL'] || 'http://backend:8080';
 
+const angularApp = new AngularNodeAppEngine();
 const app = express();
 app.disable('x-powered-by');
-const commonEngine = new CommonEngine();
 
 // Security headers
 app.use((_req, res, next) => {
@@ -271,6 +273,7 @@ app.use('/bff', (req, res) => {
   });
 });
 
+// 靜態檔案
 app.use(
   express.static(browserDistFolder, {
     maxAge: '1y',
@@ -279,16 +282,17 @@ app.use(
   }),
 );
 
-app.use((req, res, next) => {
-  commonEngine
-    .render({
-      bootstrap,
-      documentFilePath: indexHtml,
-      url: `${req.protocol}://${req.headers.host}${req.originalUrl}`,
-      publicPath: browserDistFolder,
-      providers: [{ provide: APP_BASE_HREF, useValue: req.baseUrl }],
+// Angular SSR
+app.get('/{*path}', (req, res, next) => {
+  angularApp
+    .handle(req)
+    .then((response) => {
+      if (response) {
+        writeResponseToNodeResponse(response, res);
+      } else {
+        next();
+      }
     })
-    .then((html) => res.send(html))
     .catch(next);
 });
 
