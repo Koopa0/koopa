@@ -170,6 +170,28 @@ CREATE TABLE tracking_topics (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- === Flow Runs ===
+
+CREATE TYPE flow_status AS ENUM ('pending', 'running', 'completed', 'failed');
+
+CREATE TABLE flow_runs (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flow_name    TEXT NOT NULL,
+    input        JSONB NOT NULL,
+    output       JSONB,
+    status       flow_status NOT NULL DEFAULT 'pending',
+    error        TEXT,
+    attempt      INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 3,
+    started_at   TIMESTAMPTZ,
+    ended_at     TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_flow_runs_status ON flow_runs (status);
+CREATE INDEX idx_flow_runs_retry ON flow_runs (created_at) WHERE status = 'failed';
+CREATE INDEX idx_flow_runs_created_at ON flow_runs (created_at DESC);
+
 -- === Seed admin user ===
 -- Password: changeme (bcrypt cost 12)
 INSERT INTO users (email, password_hash, role) VALUES (

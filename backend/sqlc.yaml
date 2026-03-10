@@ -9,6 +9,7 @@ sql:
       - "internal/review/query.sql"
       - "internal/collected/query.sql"
       - "internal/tracking/query.sql"
+      - "internal/flowrun/query.sql"
     schema: "migrations/"
     gen:
       go:

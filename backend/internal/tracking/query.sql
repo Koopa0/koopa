@@ -1,13 +1,15 @@
 -- name: TrackingTopics :many
-SELECT * FROM tracking_topics ORDER BY created_at DESC;
+SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
+FROM tracking_topics ORDER BY created_at DESC;
 
 -- name: TrackingTopicByID :one
-SELECT * FROM tracking_topics WHERE id = $1;
+SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
+FROM tracking_topics WHERE id = $1;
 
 -- name: CreateTrackingTopic :one
 INSERT INTO tracking_topics (name, keywords, sources, enabled, schedule)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING *;
+RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at;
 
 -- name: UpdateTrackingTopic :one
 UPDATE tracking_topics SET
@@ -18,7 +20,7 @@ UPDATE tracking_topics SET
     schedule = COALESCE(sqlc.narg('schedule'), schedule),
     updated_at = now()
 WHERE id = $1
-RETURNING *;
+RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at;
 
 -- name: DeleteTrackingTopic :exec
 DELETE FROM tracking_topics WHERE id = $1;

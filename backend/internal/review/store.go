@@ -22,6 +22,27 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{q: db.New(pool)}
 }
 
+// Create inserts a new review queue entry.
+func (s *Store) Create(ctx context.Context, contentID uuid.UUID, reviewLevel string, notes *string) (*Review, error) {
+	r, err := s.q.CreateReview(ctx, db.CreateReviewParams{
+		ContentID:     contentID,
+		ReviewLevel:   db.ReviewLevel(reviewLevel),
+		ReviewerNotes: notes,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating review for content %s: %w", contentID, err)
+	}
+	return &Review{
+		ID:            r.ID,
+		ContentID:     r.ContentID,
+		ReviewLevel:   r.RqReviewLevel,
+		Status:        r.RqStatus,
+		ReviewerNotes: r.ReviewerNotes,
+		SubmittedAt:   r.SubmittedAt,
+		ReviewedAt:    r.ReviewedAt,
+	}, nil
+}
+
 // PendingReviews returns all pending review items.
 func (s *Store) PendingReviews(ctx context.Context) ([]Review, error) {
 	rows, err := s.q.PendingReviews(ctx)

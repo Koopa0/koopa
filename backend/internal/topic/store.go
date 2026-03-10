@@ -23,6 +23,19 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{q: db.New(pool)}
 }
 
+// AllTopicSlugs returns all topic slugs and names, lightweight for AI tag classification.
+func (s *Store) AllTopicSlugs(ctx context.Context) ([]TopicSlug, error) {
+	rows, err := s.q.AllTopicSlugs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing topic slugs: %w", err)
+	}
+	slugs := make([]TopicSlug, len(rows))
+	for i, r := range rows {
+		slugs[i] = TopicSlug{Slug: r.Slug, Name: r.Name}
+	}
+	return slugs, nil
+}
+
 // Topics returns all topics with published content counts.
 func (s *Store) Topics(ctx context.Context) ([]Topic, error) {
 	rows, err := s.q.Topics(ctx)

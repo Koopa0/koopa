@@ -16,10 +16,13 @@ LEFT JOIN contents c ON c.id = ct.content_id
 WHERE t.slug = $1
 GROUP BY t.id;
 
+-- name: AllTopicSlugs :many
+SELECT slug, name FROM topics ORDER BY name;
+
 -- name: CreateTopic :one
 INSERT INTO topics (slug, name, description, icon, sort_order)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING *;
+RETURNING id, slug, name, description, icon, sort_order, created_at, updated_at;
 
 -- name: UpdateTopic :one
 UPDATE topics SET
@@ -30,7 +33,7 @@ UPDATE topics SET
     sort_order = COALESCE(sqlc.narg('sort_order'), sort_order),
     updated_at = now()
 WHERE id = $1
-RETURNING *;
+RETURNING id, slug, name, description, icon, sort_order, created_at, updated_at;
 
 -- name: DeleteTopic :exec
 DELETE FROM topics WHERE id = $1;

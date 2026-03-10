@@ -6,23 +6,13 @@ import {
 } from '@angular/core';
 import {
   LucideAngularModule,
-  Code,
-  Server,
-  Wrench,
   Mail,
   Github,
   Linkedin,
 } from 'lucide-angular';
-import type { LucideIconData } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildPersonSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
-
-interface SkillGroup {
-  category: string;
-  icon: LucideIconData;
-  items: string[];
-}
 
 @Component({
   selector: 'app-about',
@@ -45,27 +35,7 @@ export class AboutComponent implements OnInit {
     });
   }
 
-  protected readonly CodeIcon = Code;
-  protected readonly ServerIcon = Server;
-  protected readonly WrenchIcon = Wrench;
   protected readonly MailIcon = Mail;
   protected readonly GithubIcon = Github;
   protected readonly LinkedinIcon = Linkedin;
-  protected readonly skills: SkillGroup[] = [
-    {
-      category: 'Backend',
-      icon: this.ServerIcon,
-      items: ['Golang', 'Rust'],
-    },
-    {
-      category: 'Frontend',
-      icon: this.CodeIcon,
-      items: ['Angular', 'Flutter'],
-    },
-    {
-      category: 'DevOps',
-      icon: this.WrenchIcon,
-      items: ['Docker', 'Kubernetes', 'Cloud Native'],
-    },
-  ];
 }

@@ -67,6 +67,30 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool, q: db.New(pool)}
 }
 
+// Content returns a single content by ID.
+func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
+	r, err := s.q.ContentByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying content %s: %w", id, err)
+	}
+
+	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
+		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
+		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
+		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+
+	topics, err := s.topicsForContent(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.Topics = topics
+
+	return &c, nil
+}
+
 // Contents returns a paginated list of published contents.
 func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) {
 	ct := nullContentType(f.Type)

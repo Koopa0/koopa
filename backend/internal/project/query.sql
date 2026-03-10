@@ -1,14 +1,22 @@
 -- name: Projects :many
-SELECT * FROM projects ORDER BY featured DESC, sort_order, title;
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, sort_order, status, created_at, updated_at
+FROM projects ORDER BY featured DESC, sort_order, title;
 
 -- name: ProjectBySlug :one
-SELECT * FROM projects WHERE slug = $1;
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, sort_order, status, created_at, updated_at
+FROM projects WHERE slug = $1;
 
 -- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
                       problem, solution, architecture, results, github_url, live_url, featured, sort_order, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING *;
+RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
+          problem, solution, architecture, results, github_url, live_url,
+          featured, sort_order, status, created_at, updated_at;
 
 -- name: UpdateProject :one
 UPDATE projects SET
@@ -30,7 +38,9 @@ UPDATE projects SET
     status = COALESCE(sqlc.narg('status')::project_status, status),
     updated_at = now()
 WHERE id = $1
-RETURNING *;
+RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
+          problem, solution, architecture, results, github_url, live_url,
+          featured, sort_order, status, created_at, updated_at;
 
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;

@@ -8,6 +8,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
@@ -26,6 +27,7 @@ type Deps struct {
 	Collected *collected.Handler
 	Tracking  *tracking.Handler
 	Pipeline  *pipeline.Handler
+	FlowRun   *flowrun.Handler
 	Upload    *upload.Handler
 	Logger    *slog.Logger
 }
@@ -80,6 +82,10 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	mux.Handle("POST /api/admin/tracking", authMid(http.HandlerFunc(d.Tracking.Create)))
 	mux.Handle("PUT /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Tracking.Update)))
 	mux.Handle("DELETE /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Tracking.Delete)))
+
+	// admin — flow runs
+	mux.Handle("GET /api/admin/flow-runs", authMid(http.HandlerFunc(d.FlowRun.List)))
+	mux.Handle("GET /api/admin/flow-runs/{id}", authMid(http.HandlerFunc(d.FlowRun.ByID)))
 
 	// admin — upload
 	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))

@@ -1,0 +1,5 @@
+Generate a concise excerpt in Traditional Chinese (繁體中文) for the provided content.
+The excerpt should be 2-3 sentences, capturing the key point and enticing readers.
+Maximum 200 characters.
+
+Respond with ONLY the excerpt text. No quotes, no formatting, no explanation.

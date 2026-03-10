@@ -1,0 +1,6 @@
+Suggest relevant tags for the provided content.
+You MUST only select from the existing tags listed in the user message.
+Do NOT invent new tags.
+
+Select 1-5 tags that best match this content.
+Respond in JSON array format with tag slugs only: ["tag1", "tag2", "tag3"]

@@ -1,3 +1,9 @@
+-- name: ContentByID :one
+SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
+       series_id, series_order, review_level, ai_metadata, reading_time,
+       cover_image, published_at, created_at, updated_at
+FROM contents WHERE id = $1;
+
 -- name: PublishedContents :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
        series_id, series_order, review_level, ai_metadata, reading_time,
@@ -68,7 +74,9 @@ ORDER BY updated_at DESC;
 INSERT INTO contents (slug, title, body, excerpt, type, status, tags, source, source_type,
                       series_id, series_order, review_level, ai_metadata, reading_time, cover_image)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING *;
+RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
+          series_id, series_order, review_level, ai_metadata, reading_time,
+          cover_image, published_at, created_at, updated_at;
 
 -- name: UpdateContent :one
 UPDATE contents SET
@@ -89,12 +97,16 @@ UPDATE contents SET
     cover_image = COALESCE(sqlc.narg('cover_image'), cover_image),
     updated_at = now()
 WHERE id = $1
-RETURNING *;
+RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
+          series_id, series_order, review_level, ai_metadata, reading_time,
+          cover_image, published_at, created_at, updated_at;
 
 -- name: PublishContent :one
 UPDATE contents SET status = 'published', published_at = now(), updated_at = now()
 WHERE id = $1
-RETURNING *;
+RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
+          series_id, series_order, review_level, ai_metadata, reading_time,
+          cover_image, published_at, created_at, updated_at;
 
 -- name: ArchiveContent :exec
 UPDATE contents SET status = 'archived', updated_at = now() WHERE id = $1;

@@ -61,6 +61,35 @@ func (q *Queries) AllPublishedSlugs(ctx context.Context) ([]AllPublishedSlugsRow
 	return items, nil
 }
 
+const allTopicSlugs = `-- name: AllTopicSlugs :many
+SELECT slug, name FROM topics ORDER BY name
+`
+
+type AllTopicSlugsRow struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+func (q *Queries) AllTopicSlugs(ctx context.Context) ([]AllTopicSlugsRow, error) {
+	rows, err := q.db.Query(ctx, allTopicSlugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AllTopicSlugsRow{}
+	for rows.Next() {
+		var i AllTopicSlugsRow
+		if err := rows.Scan(&i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const approveReview = `-- name: ApproveReview :exec
 UPDATE review_queue SET status = 'approved', reviewed_at = now() WHERE id = $1
 `
@@ -80,7 +109,9 @@ func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
 }
 
 const collectedData = `-- name: CollectedData :many
-SELECT id, source_url, source_name, title, original_content, ai_summary, relevance_score, topics, status, curated_content_id, collected_at FROM collected_data
+SELECT id, source_url, source_name, title, original_content, ai_summary,
+       relevance_score, topics, status, curated_content_id, collected_at
+FROM collected_data
 WHERE ($3::collected_status IS NULL OR status = $3)
 ORDER BY collected_at DESC
 LIMIT $1 OFFSET $2
@@ -125,7 +156,9 @@ func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([
 }
 
 const collectedDataByID = `-- name: CollectedDataByID :one
-SELECT id, source_url, source_name, title, original_content, ai_summary, relevance_score, topics, status, curated_content_id, collected_at FROM collected_data WHERE id = $1
+SELECT id, source_url, source_name, title, original_content, ai_summary,
+       relevance_score, topics, status, curated_content_id, collected_at
+FROM collected_data WHERE id = $1
 `
 
 func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (CollectedDatum, error) {
@@ -157,6 +190,62 @@ func (q *Queries) CollectedDataCount(ctx context.Context, status NullCollectedSt
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const contentByID = `-- name: ContentByID :one
+SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
+       series_id, series_order, review_level, ai_metadata, reading_time,
+       cover_image, published_at, created_at, updated_at
+FROM contents WHERE id = $1
+`
+
+type ContentByIDRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Excerpt     string          `json:"excerpt"`
+	Type        ContentType     `json:"type"`
+	Status      ContentStatus   `json:"status"`
+	Tags        []string        `json:"tags"`
+	Source      *string         `json:"source"`
+	SourceType  NullSourceType  `json:"source_type"`
+	SeriesID    *string         `json:"series_id"`
+	SeriesOrder *int32          `json:"series_order"`
+	ReviewLevel ReviewLevel     `json:"review_level"`
+	AiMetadata  json.RawMessage `json:"ai_metadata"`
+	ReadingTime int32           `json:"reading_time"`
+	CoverImage  *string         `json:"cover_image"`
+	PublishedAt *time.Time      `json:"published_at"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow, error) {
+	row := q.db.QueryRow(ctx, contentByID, id)
+	var i ContentByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.Tags,
+		&i.Source,
+		&i.SourceType,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.ReviewLevel,
+		&i.AiMetadata,
+		&i.ReadingTime,
+		&i.CoverImage,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const contentBySlug = `-- name: ContentBySlug :one
@@ -311,7 +400,9 @@ const createContent = `-- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status, tags, source, source_type,
                       series_id, series_order, review_level, ai_metadata, reading_time, cover_image)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type, series_id, series_order, review_level, ai_metadata, reading_time, cover_image, published_at, created_at, updated_at, search_vector
+RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
+          series_id, series_order, review_level, ai_metadata, reading_time,
+          cover_image, published_at, created_at, updated_at
 `
 
 type CreateContentParams struct {
@@ -332,7 +423,29 @@ type CreateContentParams struct {
 	CoverImage  *string         `json:"cover_image"`
 }
 
-func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (Content, error) {
+type CreateContentRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Excerpt     string          `json:"excerpt"`
+	Type        ContentType     `json:"type"`
+	Status      ContentStatus   `json:"status"`
+	Tags        []string        `json:"tags"`
+	Source      *string         `json:"source"`
+	SourceType  NullSourceType  `json:"source_type"`
+	SeriesID    *string         `json:"series_id"`
+	SeriesOrder *int32          `json:"series_order"`
+	ReviewLevel ReviewLevel     `json:"review_level"`
+	AiMetadata  json.RawMessage `json:"ai_metadata"`
+	ReadingTime int32           `json:"reading_time"`
+	CoverImage  *string         `json:"cover_image"`
+	PublishedAt *time.Time      `json:"published_at"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (CreateContentRow, error) {
 	row := q.db.QueryRow(ctx, createContent,
 		arg.Slug,
 		arg.Title,
@@ -350,7 +463,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.ReadingTime,
 		arg.CoverImage,
 	)
-	var i Content
+	var i CreateContentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
@@ -371,7 +484,36 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.SearchVector,
+	)
+	return i, err
+}
+
+const createFlowRun = `-- name: CreateFlowRun :one
+INSERT INTO flow_runs (flow_name, input)
+VALUES ($1, $2)
+RETURNING id, flow_name, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
+`
+
+type CreateFlowRunParams struct {
+	FlowName string `json:"flow_name"`
+	Input    []byte `json:"input"`
+}
+
+func (q *Queries) CreateFlowRun(ctx context.Context, arg CreateFlowRunParams) (FlowRun, error) {
+	row := q.db.QueryRow(ctx, createFlowRun, arg.FlowName, arg.Input)
+	var i FlowRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowName,
+		&i.Input,
+		&i.Output,
+		&i.Status,
+		&i.Error,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -380,7 +522,9 @@ const createProject = `-- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
                       problem, solution, architecture, results, github_url, live_url, featured, sort_order, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING id, slug, title, description, long_description, role, tech_stack, highlights, problem, solution, architecture, results, github_url, live_url, featured, sort_order, status, created_at, updated_at
+RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
+          problem, solution, architecture, results, github_url, live_url,
+          featured, sort_order, status, created_at, updated_at
 `
 
 type CreateProjectParams struct {
@@ -462,6 +606,44 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 	return err
 }
 
+const createReview = `-- name: CreateReview :one
+INSERT INTO review_queue (content_id, review_level, reviewer_notes)
+VALUES ($1, $2, $3)
+RETURNING id, content_id, review_level::text AS rq_review_level,
+          status::text AS rq_status, reviewer_notes, submitted_at, reviewed_at
+`
+
+type CreateReviewParams struct {
+	ContentID     uuid.UUID   `json:"content_id"`
+	ReviewLevel   ReviewLevel `json:"review_level"`
+	ReviewerNotes *string     `json:"reviewer_notes"`
+}
+
+type CreateReviewRow struct {
+	ID            uuid.UUID  `json:"id"`
+	ContentID     uuid.UUID  `json:"content_id"`
+	RqReviewLevel string     `json:"rq_review_level"`
+	RqStatus      string     `json:"rq_status"`
+	ReviewerNotes *string    `json:"reviewer_notes"`
+	SubmittedAt   time.Time  `json:"submitted_at"`
+	ReviewedAt    *time.Time `json:"reviewed_at"`
+}
+
+func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (CreateReviewRow, error) {
+	row := q.db.QueryRow(ctx, createReview, arg.ContentID, arg.ReviewLevel, arg.ReviewerNotes)
+	var i CreateReviewRow
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.RqReviewLevel,
+		&i.RqStatus,
+		&i.ReviewerNotes,
+		&i.SubmittedAt,
+		&i.ReviewedAt,
+	)
+	return i, err
+}
+
 const createTopic = `-- name: CreateTopic :one
 INSERT INTO topics (slug, name, description, icon, sort_order)
 VALUES ($1, $2, $3, $4, $5)
@@ -537,7 +719,8 @@ func (q *Queries) CreateTrackingTopic(ctx context.Context, arg CreateTrackingTop
 const curateCollected = `-- name: CurateCollected :one
 UPDATE collected_data SET status = 'curated', curated_content_id = $2
 WHERE id = $1
-RETURNING id, source_url, source_name, title, original_content, ai_summary, relevance_score, topics, status, curated_content_id, collected_at
+RETURNING id, source_url, source_name, title, original_content, ai_summary,
+          relevance_score, topics, status, curated_content_id, collected_at
 `
 
 type CurateCollectedParams struct {
@@ -611,6 +794,88 @@ func (q *Queries) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const flowRunByID = `-- name: FlowRunByID :one
+SELECT id, flow_name, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
+FROM flow_runs WHERE id = $1
+`
+
+func (q *Queries) FlowRunByID(ctx context.Context, id uuid.UUID) (FlowRun, error) {
+	row := q.db.QueryRow(ctx, flowRunByID, id)
+	var i FlowRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowName,
+		&i.Input,
+		&i.Output,
+		&i.Status,
+		&i.Error,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const flowRuns = `-- name: FlowRuns :many
+SELECT id, flow_name, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
+FROM flow_runs
+WHERE ($3::flow_status IS NULL OR status = $3)
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type FlowRunsParams struct {
+	Limit  int32          `json:"limit"`
+	Offset int32          `json:"offset"`
+	Status NullFlowStatus `json:"status"`
+}
+
+func (q *Queries) FlowRuns(ctx context.Context, arg FlowRunsParams) ([]FlowRun, error) {
+	rows, err := q.db.Query(ctx, flowRuns, arg.Limit, arg.Offset, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FlowRun{}
+	for rows.Next() {
+		var i FlowRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.FlowName,
+			&i.Input,
+			&i.Output,
+			&i.Status,
+			&i.Error,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const flowRunsCount = `-- name: FlowRunsCount :one
+SELECT COUNT(*) FROM flow_runs
+WHERE ($1::flow_status IS NULL OR status = $1)
+`
+
+func (q *Queries) FlowRunsCount(ctx context.Context, status NullFlowStatus) (int64, error) {
+	row := q.db.QueryRow(ctx, flowRunsCount, status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const ignoreCollected = `-- name: IgnoreCollected :exec
 UPDATE collected_data SET status = 'ignored' WHERE id = $1
 `
@@ -675,7 +940,10 @@ func (q *Queries) PendingReviews(ctx context.Context) ([]PendingReviewsRow, erro
 }
 
 const projectBySlug = `-- name: ProjectBySlug :one
-SELECT id, slug, title, description, long_description, role, tech_stack, highlights, problem, solution, architecture, results, github_url, live_url, featured, sort_order, status, created_at, updated_at FROM projects WHERE slug = $1
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, sort_order, status, created_at, updated_at
+FROM projects WHERE slug = $1
 `
 
 func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
@@ -706,7 +974,10 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 }
 
 const projects = `-- name: Projects :many
-SELECT id, slug, title, description, long_description, role, tech_stack, highlights, problem, solution, architecture, results, github_url, live_url, featured, sort_order, status, created_at, updated_at FROM projects ORDER BY featured DESC, sort_order, title
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, sort_order, status, created_at, updated_at
+FROM projects ORDER BY featured DESC, sort_order, title
 `
 
 func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
@@ -752,12 +1023,36 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 const publishContent = `-- name: PublishContent :one
 UPDATE contents SET status = 'published', published_at = now(), updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type, series_id, series_order, review_level, ai_metadata, reading_time, cover_image, published_at, created_at, updated_at, search_vector
+RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
+          series_id, series_order, review_level, ai_metadata, reading_time,
+          cover_image, published_at, created_at, updated_at
 `
 
-func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (Content, error) {
+type PublishContentRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Excerpt     string          `json:"excerpt"`
+	Type        ContentType     `json:"type"`
+	Status      ContentStatus   `json:"status"`
+	Tags        []string        `json:"tags"`
+	Source      *string         `json:"source"`
+	SourceType  NullSourceType  `json:"source_type"`
+	SeriesID    *string         `json:"series_id"`
+	SeriesOrder *int32          `json:"series_order"`
+	ReviewLevel ReviewLevel     `json:"review_level"`
+	AiMetadata  json.RawMessage `json:"ai_metadata"`
+	ReadingTime int32           `json:"reading_time"`
+	CoverImage  *string         `json:"cover_image"`
+	PublishedAt *time.Time      `json:"published_at"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishContentRow, error) {
 	row := q.db.QueryRow(ctx, publishContent, id)
-	var i Content
+	var i PublishContentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
@@ -778,7 +1073,6 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (Content, er
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.SearchVector,
 	)
 	return i, err
 }
@@ -965,6 +1259,46 @@ type RejectReviewParams struct {
 func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) error {
 	_, err := q.db.Exec(ctx, rejectReview, arg.ID, arg.ReviewerNotes)
 	return err
+}
+
+const retryableFlowRuns = `-- name: RetryableFlowRuns :many
+UPDATE flow_runs SET status = 'pending'
+WHERE (status = 'failed' AND attempt < max_attempts)
+   OR (status = 'pending' AND attempt < max_attempts AND created_at < now() - INTERVAL '5 minutes')
+   OR (status = 'running' AND attempt < max_attempts AND started_at < now() - INTERVAL '10 minutes')
+RETURNING id, flow_name, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
+`
+
+func (q *Queries) RetryableFlowRuns(ctx context.Context) ([]FlowRun, error) {
+	rows, err := q.db.Query(ctx, retryableFlowRuns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FlowRun{}
+	for rows.Next() {
+		var i FlowRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.FlowName,
+			&i.Input,
+			&i.Output,
+			&i.Status,
+			&i.Error,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const reviewByID = `-- name: ReviewByID :one
@@ -1223,7 +1557,8 @@ func (q *Queries) TopicsForContent(ctx context.Context, contentID uuid.UUID) ([]
 }
 
 const trackingTopicByID = `-- name: TrackingTopicByID :one
-SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at FROM tracking_topics WHERE id = $1
+SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
+FROM tracking_topics WHERE id = $1
 `
 
 func (q *Queries) TrackingTopicByID(ctx context.Context, id uuid.UUID) (TrackingTopic, error) {
@@ -1243,7 +1578,8 @@ func (q *Queries) TrackingTopicByID(ctx context.Context, id uuid.UUID) (Tracking
 }
 
 const trackingTopics = `-- name: TrackingTopics :many
-SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at FROM tracking_topics ORDER BY created_at DESC
+SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
+FROM tracking_topics ORDER BY created_at DESC
 `
 
 func (q *Queries) TrackingTopics(ctx context.Context) ([]TrackingTopic, error) {
@@ -1294,7 +1630,9 @@ UPDATE contents SET
     cover_image = COALESCE($16, cover_image),
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type, series_id, series_order, review_level, ai_metadata, reading_time, cover_image, published_at, created_at, updated_at, search_vector
+RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
+          series_id, series_order, review_level, ai_metadata, reading_time,
+          cover_image, published_at, created_at, updated_at
 `
 
 type UpdateContentParams struct {
@@ -1316,7 +1654,29 @@ type UpdateContentParams struct {
 	CoverImage  *string           `json:"cover_image"`
 }
 
-func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (Content, error) {
+type UpdateContentRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Excerpt     string          `json:"excerpt"`
+	Type        ContentType     `json:"type"`
+	Status      ContentStatus   `json:"status"`
+	Tags        []string        `json:"tags"`
+	Source      *string         `json:"source"`
+	SourceType  NullSourceType  `json:"source_type"`
+	SeriesID    *string         `json:"series_id"`
+	SeriesOrder *int32          `json:"series_order"`
+	ReviewLevel ReviewLevel     `json:"review_level"`
+	AiMetadata  json.RawMessage `json:"ai_metadata"`
+	ReadingTime int32           `json:"reading_time"`
+	CoverImage  *string         `json:"cover_image"`
+	PublishedAt *time.Time      `json:"published_at"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
 	row := q.db.QueryRow(ctx, updateContent,
 		arg.ID,
 		arg.Slug,
@@ -1335,7 +1695,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (C
 		arg.ReadingTime,
 		arg.CoverImage,
 	)
-	var i Content
+	var i UpdateContentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
@@ -1356,9 +1716,48 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (C
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.SearchVector,
 	)
 	return i, err
+}
+
+const updateFlowRunCompleted = `-- name: UpdateFlowRunCompleted :exec
+UPDATE flow_runs SET status = 'completed', output = $2, ended_at = now()
+WHERE id = $1
+`
+
+type UpdateFlowRunCompletedParams struct {
+	ID     uuid.UUID       `json:"id"`
+	Output json.RawMessage `json:"output"`
+}
+
+func (q *Queries) UpdateFlowRunCompleted(ctx context.Context, arg UpdateFlowRunCompletedParams) error {
+	_, err := q.db.Exec(ctx, updateFlowRunCompleted, arg.ID, arg.Output)
+	return err
+}
+
+const updateFlowRunFailed = `-- name: UpdateFlowRunFailed :exec
+UPDATE flow_runs SET status = 'failed', error = $2, ended_at = now()
+WHERE id = $1
+`
+
+type UpdateFlowRunFailedParams struct {
+	ID    uuid.UUID `json:"id"`
+	Error *string   `json:"error"`
+}
+
+func (q *Queries) UpdateFlowRunFailed(ctx context.Context, arg UpdateFlowRunFailedParams) error {
+	_, err := q.db.Exec(ctx, updateFlowRunFailed, arg.ID, arg.Error)
+	return err
+}
+
+const updateFlowRunRunning = `-- name: UpdateFlowRunRunning :exec
+UPDATE flow_runs SET status = 'running', started_at = now(), attempt = attempt + 1
+WHERE id = $1
+`
+
+func (q *Queries) UpdateFlowRunRunning(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, updateFlowRunRunning, id)
+	return err
 }
 
 const updateProject = `-- name: UpdateProject :one
@@ -1381,7 +1780,9 @@ UPDATE projects SET
     status = COALESCE($17::project_status, status),
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, description, long_description, role, tech_stack, highlights, problem, solution, architecture, results, github_url, live_url, featured, sort_order, status, created_at, updated_at
+RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
+          problem, solution, architecture, results, github_url, live_url,
+          featured, sort_order, status, created_at, updated_at
 `
 
 type UpdateProjectParams struct {

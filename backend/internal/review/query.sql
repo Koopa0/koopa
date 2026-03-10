@@ -1,3 +1,9 @@
+-- name: CreateReview :one
+INSERT INTO review_queue (content_id, review_level, reviewer_notes)
+VALUES ($1, $2, $3)
+RETURNING id, content_id, review_level::text AS rq_review_level,
+          status::text AS rq_status, reviewer_notes, submitted_at, reviewed_at;
+
 -- name: PendingReviews :many
 SELECT rq.id, rq.content_id, rq.review_level::text AS rq_review_level,
        rq.status::text AS rq_status, rq.reviewer_notes, rq.submitted_at, rq.reviewed_at,

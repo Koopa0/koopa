@@ -38,6 +38,11 @@ func (a *topicLookupAdapter) TopicIDBySlug(ctx context.Context, slug string) (uu
 	return a.fn(ctx, slug)
 }
 
+// JobSubmitter submits a flow run for async processing.
+type JobSubmitter interface {
+	Submit(ctx context.Context, flowName string, input json.RawMessage) error
+}
+
 // GitHubFetcher retrieves raw file content from a GitHub repository.
 type GitHubFetcher interface {
 	FileContent(ctx context.Context, path string) ([]byte, error)
@@ -48,16 +53,18 @@ type Handler struct {
 	content       ContentWriter
 	topics        TopicLookup
 	fetcher       GitHubFetcher
+	jobs          JobSubmitter
 	webhookSecret string
 	logger        *slog.Logger
 }
 
 // NewHandler returns a pipeline Handler.
-func NewHandler(cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, webhookSecret string, logger *slog.Logger) *Handler {
+func NewHandler(cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, webhookSecret string, logger *slog.Logger) *Handler {
 	return &Handler{
 		content:       cw,
 		topics:        tl,
 		fetcher:       fetcher,
+		jobs:          jobs,
 		webhookSecret: webhookSecret,
 		logger:        logger,
 	}
@@ -100,6 +107,7 @@ func (h *Handler) WebhookNotion(w http.ResponseWriter, _ *http.Request) {
 
 // WebhookGithub handles POST /api/webhook/github.
 func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.logger.Error("reading webhook body", "error", err)
@@ -210,6 +218,8 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 				return fmt.Errorf("publishing content %s: %w", slug, err)
 			}
 		}
+
+		h.submitContentReview(ctx, existing.ID)
 		return nil
 	}
 
@@ -237,7 +247,25 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 		}
 	}
 
+	h.submitContentReview(ctx, created.ID)
 	return nil
+}
+
+// submitContentReview submits a content-review flow job.
+// Errors are logged but not propagated — content sync should not fail
+// because the AI pipeline is unavailable.
+func (h *Handler) submitContentReview(ctx context.Context, contentID uuid.UUID) {
+	if h.jobs == nil {
+		return
+	}
+	input, err := json.Marshal(map[string]string{"content_id": contentID.String()})
+	if err != nil {
+		h.logger.Error("marshaling content-review input", "content_id", contentID, "error", err)
+		return
+	}
+	if err := h.jobs.Submit(ctx, "content-review", input); err != nil {
+		h.logger.Error("submitting content-review", "content_id", contentID, "error", err)
+	}
 }
 
 // resolveTopics looks up topic IDs for the given slugs, skipping unknown ones.

@@ -148,6 +148,50 @@ func (ns NullContentType) Value() (driver.Value, error) {
 	return string(ns.ContentType), nil
 }
 
+type FlowStatus string
+
+const (
+	FlowStatusPending   FlowStatus = "pending"
+	FlowStatusRunning   FlowStatus = "running"
+	FlowStatusCompleted FlowStatus = "completed"
+	FlowStatusFailed    FlowStatus = "failed"
+)
+
+func (e *FlowStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = FlowStatus(s)
+	case string:
+		*e = FlowStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for FlowStatus: %T", src)
+	}
+	return nil
+}
+
+type NullFlowStatus struct {
+	FlowStatus FlowStatus `json:"flow_status"`
+	Valid      bool       `json:"valid"` // Valid is true if FlowStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullFlowStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.FlowStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.FlowStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullFlowStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.FlowStatus), nil
+}
+
 type ProjectStatus string
 
 const (
@@ -365,6 +409,20 @@ type Content struct {
 type ContentTopic struct {
 	ContentID uuid.UUID `json:"content_id"`
 	TopicID   uuid.UUID `json:"topic_id"`
+}
+
+type FlowRun struct {
+	ID          uuid.UUID       `json:"id"`
+	FlowName    string          `json:"flow_name"`
+	Input       []byte          `json:"input"`
+	Output      json.RawMessage `json:"output"`
+	Status      FlowStatus      `json:"status"`
+	Error       *string         `json:"error"`
+	Attempt     int32           `json:"attempt"`
+	MaxAttempts int32           `json:"max_attempts"`
+	StartedAt   *time.Time      `json:"started_at"`
+	EndedAt     *time.Time      `json:"ended_at"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 type Project struct {

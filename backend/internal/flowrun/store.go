@@ -1,0 +1,139 @@
+package flowrun
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/koopa0/blog-backend/internal/db"
+)
+
+// Store handles database operations for flow runs.
+type Store struct {
+	q *db.Queries
+}
+
+// NewStore returns a Store backed by the given pool.
+func NewStore(pool *pgxpool.Pool) *Store {
+	return &Store{q: db.New(pool)}
+}
+
+// CreateRun inserts a new flow run with status pending.
+func (s *Store) CreateRun(ctx context.Context, flowName string, input json.RawMessage) (*Run, error) {
+	r, err := s.q.CreateFlowRun(ctx, db.CreateFlowRunParams{
+		FlowName: flowName,
+		Input:    input,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating flow run: %w", err)
+	}
+	return dbToRun(r), nil
+}
+
+// Run returns a single flow run by ID.
+func (s *Store) Run(ctx context.Context, id uuid.UUID) (*Run, error) {
+	r, err := s.q.FlowRunByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying flow run %s: %w", id, err)
+	}
+	return dbToRun(r), nil
+}
+
+// Runs returns a paginated list of flow runs.
+func (s *Store) Runs(ctx context.Context, f Filter) ([]Run, int, error) {
+	var status db.NullFlowStatus
+	if f.Status != nil {
+		status = db.NullFlowStatus{FlowStatus: db.FlowStatus(*f.Status), Valid: true}
+	}
+
+	rows, err := s.q.FlowRuns(ctx, db.FlowRunsParams{
+		Limit:  int32(f.PerPage),                //nolint:gosec // pagination values are bounded by API layer
+		Offset: int32((f.Page - 1) * f.PerPage), //nolint:gosec // pagination values are bounded by API layer
+		Status: status,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing flow runs: %w", err)
+	}
+
+	count, err := s.q.FlowRunsCount(ctx, status)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting flow runs: %w", err)
+	}
+
+	runs := make([]Run, len(rows))
+	for i, r := range rows {
+		runs[i] = *dbToRun(r)
+	}
+	return runs, int(count), nil
+}
+
+// UpdateRunning marks a flow run as running and increments the attempt counter.
+func (s *Store) UpdateRunning(ctx context.Context, id uuid.UUID) error {
+	err := s.q.UpdateFlowRunRunning(ctx, id)
+	if err != nil {
+		return fmt.Errorf("updating flow run %s to running: %w", id, err)
+	}
+	return nil
+}
+
+// UpdateCompleted marks a flow run as completed with output.
+func (s *Store) UpdateCompleted(ctx context.Context, id uuid.UUID, output json.RawMessage) error {
+	err := s.q.UpdateFlowRunCompleted(ctx, db.UpdateFlowRunCompletedParams{
+		ID:     id,
+		Output: output,
+	})
+	if err != nil {
+		return fmt.Errorf("updating flow run %s to completed: %w", id, err)
+	}
+	return nil
+}
+
+// UpdateFailed marks a flow run as failed with an error message.
+func (s *Store) UpdateFailed(ctx context.Context, id uuid.UUID, errMsg string) error {
+	err := s.q.UpdateFlowRunFailed(ctx, db.UpdateFlowRunFailedParams{
+		ID:    id,
+		Error: &errMsg,
+	})
+	if err != nil {
+		return fmt.Errorf("updating flow run %s to failed: %w", id, err)
+	}
+	return nil
+}
+
+// RetryableRuns atomically resets failed and stuck-pending runs to pending status
+// and returns them. Uses UPDATE...RETURNING to prevent duplicate pickup by concurrent cron ticks.
+func (s *Store) RetryableRuns(ctx context.Context) ([]Run, error) {
+	rows, err := s.q.RetryableFlowRuns(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching retryable flow runs: %w", err)
+	}
+	runs := make([]Run, len(rows))
+	for i, r := range rows {
+		runs[i] = *dbToRun(r)
+	}
+	return runs, nil
+}
+
+func dbToRun(r db.FlowRun) *Run {
+	return &Run{
+		ID:          r.ID,
+		FlowName:    r.FlowName,
+		Input:       json.RawMessage(r.Input),
+		Output:      r.Output,
+		Status:      Status(r.Status),
+		Error:       r.Error,
+		Attempt:     int(r.Attempt),
+		MaxAttempts: int(r.MaxAttempts),
+		StartedAt:   r.StartedAt,
+		EndedAt:     r.EndedAt,
+		CreatedAt:   r.CreatedAt,
+	}
+}
