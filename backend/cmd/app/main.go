@@ -150,7 +150,7 @@ func run(logger *slog.Logger) error {
 			return fmt.Errorf("defining claude model: %w", modelErr)
 		}
 
-		embedder, embedErr := googleAI.DefineEmbedder(g, "text-embedding-004", nil)
+		embedder, embedErr := googleAI.DefineEmbedder(g, "text-embedding-004", &ai.EmbedderOptions{})
 		if embedErr != nil {
 			return fmt.Errorf("defining embedder: %w", embedErr)
 		}
