@@ -8,7 +8,10 @@ import (
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed"
+	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
@@ -28,7 +31,10 @@ type Deps struct {
 	Tracking  *tracking.Handler
 	Pipeline  *pipeline.Handler
 	FlowRun   *flowrun.Handler
+	Flow      *flow.Handler
 	Upload    *upload.Handler
+	Feed      *feed.Handler
+	Notion    *notion.Handler
 	Logger    *slog.Logger
 }
 
@@ -87,6 +93,21 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	mux.Handle("GET /api/admin/flow-runs", authMid(http.HandlerFunc(d.FlowRun.List)))
 	mux.Handle("GET /api/admin/flow-runs/{id}", authMid(http.HandlerFunc(d.FlowRun.ByID)))
 
+	// admin — flow polish
+	mux.Handle("POST /api/admin/flow/polish/{content_id}", authMid(http.HandlerFunc(d.Flow.TriggerPolish)))
+	mux.Handle("GET /api/admin/flow/polish/{content_id}/result", authMid(http.HandlerFunc(d.Flow.PolishResult)))
+	mux.Handle("POST /api/admin/flow/polish/{content_id}/approve", authMid(http.HandlerFunc(d.Flow.ApprovePolish)))
+
+	// admin — feeds
+	mux.Handle("GET /api/admin/feeds", authMid(http.HandlerFunc(d.Feed.List)))
+	mux.Handle("POST /api/admin/feeds", authMid(http.HandlerFunc(d.Feed.Create)))
+	mux.Handle("PUT /api/admin/feeds/{id}", authMid(http.HandlerFunc(d.Feed.Update)))
+	mux.Handle("DELETE /api/admin/feeds/{id}", authMid(http.HandlerFunc(d.Feed.Delete)))
+	mux.Handle("POST /api/admin/feeds/{id}/fetch", authMid(http.HandlerFunc(d.Feed.Fetch)))
+
+	// admin — collected feedback
+	mux.Handle("POST /api/admin/collected/{id}/feedback", authMid(http.HandlerFunc(d.Collected.SubmitFeedback)))
+
 	// admin — upload
 	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))
 
@@ -99,9 +120,11 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	// webhooks — HMAC-verified, not JWT
 	mux.HandleFunc("POST /api/webhook/github", d.Pipeline.WebhookGithub)
 
+	// webhooks — Notion (HMAC-verified)
+	mux.HandleFunc("POST /api/webhook/notion", d.Notion.Webhook)
+
 	// webhooks — stubs (JWT-protected until implemented)
 	mux.Handle("POST /api/webhook/obsidian", authMid(http.HandlerFunc(d.Pipeline.WebhookObsidian)))
-	mux.Handle("POST /api/webhook/notion", authMid(http.HandlerFunc(d.Pipeline.WebhookNotion)))
 
 	// admin stats
 	mux.Handle("GET /api/admin/stats", authMid(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

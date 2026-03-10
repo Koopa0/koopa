@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pgvector/pgvector-go"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -232,6 +233,25 @@ func (s *Store) PublishedForRSS(ctx context.Context, limit int) ([]Content, erro
 	return contents, nil
 }
 
+// PublishedByDateRange returns published content within a time range.
+func (s *Store) PublishedByDateRange(ctx context.Context, start, end time.Time) ([]Content, error) {
+	rows, err := s.q.PublishedContentsByDateRange(ctx, db.PublishedContentsByDateRangeParams{
+		PublishedAt:   &start,
+		PublishedAt_2: &end,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing published contents by date range: %w", err)
+	}
+	contents := make([]Content, len(rows))
+	for i, r := range rows {
+		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
+			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
+			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	}
+	return contents, nil
+}
+
 // AllPublishedSlugs returns all published content slugs for sitemap.
 func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 	rows, err := s.q.AllPublishedSlugs(ctx)
@@ -374,7 +394,18 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams)
 	return &c, nil
 }
 
-// DeleteContent soft-deletes content by setting status to archived.
+// UpdateEmbedding writes the embedding vector for a content item.
+func (s *Store) UpdateEmbedding(ctx context.Context, id uuid.UUID, embedding pgvector.Vector) error {
+	err := s.q.UpdateContentEmbedding(ctx, db.UpdateContentEmbeddingParams{
+		ID:        id,
+		Embedding: &embedding,
+	})
+	if err != nil {
+		return fmt.Errorf("updating embedding for content %s: %w", id, err)
+	}
+	return nil
+}
+
 func (s *Store) DeleteContent(ctx context.Context, id uuid.UUID) error {
 	err := s.q.ArchiveContent(ctx, id)
 	if err != nil {

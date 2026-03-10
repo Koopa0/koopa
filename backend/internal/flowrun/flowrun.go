@@ -24,6 +24,7 @@ const (
 type Run struct {
 	ID          uuid.UUID       `json:"id"`
 	FlowName    string          `json:"flow_name"`
+	ContentID   *uuid.UUID      `json:"content_id,omitempty"`
 	Input       json.RawMessage `json:"input"`
 	Output      json.RawMessage `json:"output,omitempty"`
 	Status      Status          `json:"status"`

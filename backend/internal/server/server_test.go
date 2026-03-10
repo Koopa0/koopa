@@ -28,13 +28,19 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed"
+	"github.com/koopa0/blog-backend/internal/flow"
+	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/server"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
+	"github.com/koopa0/blog-backend/internal/upload"
 )
 
 const testJWTSecret = "test-secret-key-for-integration-tests"
@@ -46,7 +52,7 @@ func testServer(t *testing.T) *httptest.Server {
 	ctx := t.Context()
 
 	pgContainer, err := postgres.Run(ctx,
-		"postgres:17-alpine",
+		"pgvector/pgvector:pg17",
 		postgres.WithDatabase("blog_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
@@ -103,6 +109,26 @@ func testServer(t *testing.T) *httptest.Server {
 	reviewStore := review.NewStore(pool)
 	collectedStore := collected.NewStore(pool)
 	trackingStore := tracking.NewStore(pool)
+	feedStore := feed.NewStore(pool)
+	flowrunStore := flowrun.NewStore(pool)
+
+	// mock flows + runner for pipeline endpoints
+	registry := flow.NewRegistry(
+		flow.NewMockContentReview(),
+		flow.NewMockContentPolish(),
+		flow.NewMockCollectScore(),
+		flow.NewMockDigestGenerate(),
+		flow.NewMockBookmarkGenerate(),
+	)
+	alerter := flowrun.NewLogAlerter(logger)
+	runner := flowrun.New(flowrunStore, registry, 1, alerter, logger)
+	runner.Start(t.Context())
+	t.Cleanup(runner.Stop)
+
+	feedCollector := collector.New(collectedStore, feedStore, logger)
+
+	pipelineHandler := pipeline.NewHandler(contentStore, nil, nil, runner, "", logger)
+	pipelineHandler.SetCollector(feedCollector, feedStore)
 
 	deps := server.Deps{
 		Auth:      auth.NewHandler(authStore, testJWTSecret, logger),
@@ -112,7 +138,12 @@ func testServer(t *testing.T) *httptest.Server {
 		Review:    review.NewHandler(reviewStore, logger),
 		Collected: collected.NewHandler(collectedStore, logger),
 		Tracking:  tracking.NewHandler(trackingStore, logger),
-		Pipeline:  pipeline.NewHandler(),
+		Pipeline:  pipelineHandler,
+		FlowRun:   flowrun.NewHandler(flowrunStore, logger),
+		Flow:      flow.NewHandler(runner, nil, contentStore, contentStore, logger),
+		Upload:    upload.NewHandler(nil, "test-bucket", "http://localhost", logger),
+		Feed:      feed.NewHandler(feedStore, feedCollector, logger),
+		Notion:    notion.NewHandler(notion.NewClient(""), projectStore, runner, notion.Config{}, logger),
 		Logger:    logger,
 	}
 
@@ -884,17 +915,14 @@ func TestPipelineStubs(t *testing.T) {
 	defer ts.Close()
 	token := login(t, ts.URL)
 
-	endpoints := []string{
+	// Endpoints still returning 501 (not yet implemented, JWT-protected)
+	stubEndpoints := []string{
 		"/api/pipeline/sync",
-		"/api/pipeline/collect",
 		"/api/pipeline/generate",
-		"/api/pipeline/digest",
 		"/api/webhook/obsidian",
-		"/api/webhook/notion",
-		"/api/webhook/github",
 	}
 
-	for _, ep := range endpoints {
+	for _, ep := range stubEndpoints {
 		t.Run(ep, func(t *testing.T) {
 			resp := doRequest(t, http.MethodPost, ts.URL+ep, "", token)
 			resp.Body.Close()
@@ -903,6 +931,32 @@ func TestPipelineStubs(t *testing.T) {
 			}
 		})
 	}
+
+	// Notion webhook: HMAC-verified, returns 501 when no webhook secret configured
+	t.Run("/api/webhook/notion_no_secret", func(t *testing.T) {
+		resp := doRequest(t, http.MethodPost, ts.URL+"/api/webhook/notion", "{}", "")
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotImplemented {
+			t.Errorf("/api/webhook/notion: expected 501, got %d", resp.StatusCode)
+		}
+	})
+
+	// Implemented endpoints: collect returns 202, digest returns 400 (missing dates)
+	t.Run("/api/pipeline/collect", func(t *testing.T) {
+		resp := doRequest(t, http.MethodPost, ts.URL+"/api/pipeline/collect", `{"schedule":"daily"}`, token)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusAccepted {
+			t.Errorf("/api/pipeline/collect: expected 202, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("/api/pipeline/digest_missing_dates", func(t *testing.T) {
+		resp := doRequest(t, http.MethodPost, ts.URL+"/api/pipeline/digest", `{}`, token)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("/api/pipeline/digest: expected 400, got %d", resp.StatusCode)
+		}
+	})
 }
 
 // --- Response Format Tests ---

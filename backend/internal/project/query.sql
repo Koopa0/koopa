@@ -1,13 +1,15 @@
 -- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, created_at, updated_at
+       featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+       created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title;
 
 -- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, created_at, updated_at
+       featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+       created_at, updated_at
 FROM projects WHERE slug = $1;
 
 -- name: CreateProject :one
@@ -16,7 +18,8 @@ INSERT INTO projects (slug, title, description, long_description, role, tech_sta
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, created_at, updated_at;
+          featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+          created_at, updated_at;
 
 -- name: UpdateProject :one
 UPDATE projects SET
@@ -40,7 +43,35 @@ UPDATE projects SET
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, created_at, updated_at;
+          featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+          created_at, updated_at;
+
+-- name: ActiveProjects :many
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+       created_at, updated_at
+FROM projects WHERE status IN ('in-progress', 'maintained')
+ORDER BY updated_at DESC;
 
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;
+
+-- name: UpsertProjectByNotionPageID :one
+INSERT INTO projects (slug, title, description, status, area, deadline, notion_page_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (notion_page_id) DO UPDATE SET
+    title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    status = EXCLUDED.status,
+    area = EXCLUDED.area,
+    deadline = EXCLUDED.deadline,
+    updated_at = now()
+RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
+          problem, solution, architecture, results, github_url, live_url,
+          featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+          created_at, updated_at;
+
+-- name: UpdateProjectLastActivity :exec
+UPDATE projects SET last_activity_at = now(), updated_at = now()
+WHERE notion_page_id = $1;

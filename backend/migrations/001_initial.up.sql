@@ -1,5 +1,7 @@
 -- Phase A: Initial schema for koopa0.dev knowledge engine
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- === Enums ===
 
 CREATE TYPE content_type AS ENUM (
@@ -27,7 +29,7 @@ CREATE TYPE collected_status AS ENUM (
 );
 
 CREATE TYPE project_status AS ENUM (
-    'in-progress', 'completed', 'maintained', 'archived'
+    'planned', 'in-progress', 'on-hold', 'completed', 'maintained', 'archived'
 );
 
 -- === Tables ===
@@ -83,6 +85,7 @@ CREATE TABLE contents (
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding     vector(768),
     search_vector TSVECTOR GENERATED ALWAYS AS (
         setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
         setweight(to_tsvector('english', coalesce(excerpt, '')), 'B') ||
@@ -123,6 +126,10 @@ CREATE TABLE projects (
     featured         BOOLEAN NOT NULL DEFAULT false,
     sort_order       INT NOT NULL DEFAULT 0,
     status           project_status NOT NULL DEFAULT 'in-progress',
+    notion_page_id   TEXT UNIQUE,
+    area             TEXT NOT NULL DEFAULT '',
+    deadline         TIMESTAMPTZ,
+    last_activity_at TIMESTAMPTZ,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -142,6 +149,25 @@ CREATE TABLE review_queue (
 CREATE INDEX idx_review_queue_status ON review_queue(status);
 CREATE INDEX idx_review_queue_content_id ON review_queue(content_id);
 
+CREATE TABLE feeds (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    url                  TEXT NOT NULL UNIQUE,
+    name                 TEXT NOT NULL,
+    schedule             TEXT NOT NULL,
+    topics               TEXT[] NOT NULL DEFAULT '{}',
+    enabled              BOOLEAN NOT NULL DEFAULT true,
+    etag                 TEXT NOT NULL DEFAULT '',
+    last_modified        TEXT NOT NULL DEFAULT '',
+    last_fetched_at      TIMESTAMPTZ,
+    consecutive_failures INT NOT NULL DEFAULT 0,
+    last_error           TEXT NOT NULL DEFAULT '',
+    disabled_reason      TEXT NOT NULL DEFAULT '',
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_feeds_schedule ON feeds (schedule) WHERE enabled = true;
+
 CREATE TABLE collected_data (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_url         TEXT NOT NULL,
@@ -153,11 +179,22 @@ CREATE TABLE collected_data (
     topics             TEXT[] NOT NULL DEFAULT '{}',
     status             collected_status NOT NULL DEFAULT 'unread',
     curated_content_id UUID REFERENCES contents(id) ON DELETE SET NULL,
-    collected_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    collected_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    url_hash           TEXT NOT NULL DEFAULT '',
+    ai_score           SMALLINT,
+    ai_score_reason    TEXT,
+    ai_summary_zh      TEXT,
+    ai_title_zh        TEXT,
+    user_feedback      TEXT,
+    feedback_at        TIMESTAMPTZ,
+    feed_id            UUID REFERENCES feeds(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_collected_data_status ON collected_data(status);
 CREATE INDEX idx_collected_data_relevance ON collected_data(relevance_score DESC);
+CREATE UNIQUE INDEX idx_collected_data_url_hash ON collected_data (url_hash) WHERE url_hash != '';
+CREATE INDEX idx_collected_data_ai_score ON collected_data (ai_score DESC) WHERE ai_score IS NOT NULL;
+CREATE INDEX idx_collected_data_feed_id ON collected_data (feed_id) WHERE feed_id IS NOT NULL;
 
 CREATE TABLE tracking_topics (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -177,6 +214,7 @@ CREATE TYPE flow_status AS ENUM ('pending', 'running', 'completed', 'failed');
 CREATE TABLE flow_runs (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     flow_name    TEXT NOT NULL,
+    content_id   UUID REFERENCES contents(id) ON DELETE SET NULL,
     input        JSONB NOT NULL,
     output       JSONB,
     status       flow_status NOT NULL DEFAULT 'pending',
@@ -191,6 +229,8 @@ CREATE TABLE flow_runs (
 CREATE INDEX idx_flow_runs_status ON flow_runs (status);
 CREATE INDEX idx_flow_runs_retry ON flow_runs (created_at) WHERE status = 'failed';
 CREATE INDEX idx_flow_runs_created_at ON flow_runs (created_at DESC);
+CREATE INDEX idx_flow_runs_content_id ON flow_runs (content_id) WHERE content_id IS NOT NULL;
+CREATE INDEX idx_flow_runs_dedup ON flow_runs (content_id, flow_name, status) WHERE status IN ('pending', 'running');
 
 -- === Seed admin user ===
 -- Password: changeme (bcrypt cost 12)

@@ -12,7 +12,9 @@ import (
 type Status string
 
 const (
+	StatusPlanned    Status = "planned"
 	StatusInProgress Status = "in-progress"
+	StatusOnHold     Status = "on-hold"
 	StatusCompleted  Status = "completed"
 	StatusMaintained Status = "maintained"
 	StatusArchived   Status = "archived"
@@ -20,25 +22,29 @@ const (
 
 // Project represents a portfolio project.
 type Project struct {
-	ID              uuid.UUID `json:"id"`
-	Slug            string    `json:"slug"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	LongDescription *string   `json:"long_description,omitempty"`
-	Role            string    `json:"role"`
-	TechStack       []string  `json:"tech_stack"`
-	Highlights      []string  `json:"highlights"`
-	Problem         *string   `json:"problem,omitempty"`
-	Solution        *string   `json:"solution,omitempty"`
-	Architecture    *string   `json:"architecture,omitempty"`
-	Results         *string   `json:"results,omitempty"`
-	GithubURL       *string   `json:"github_url,omitempty"`
-	LiveURL         *string   `json:"live_url,omitempty"`
-	Featured        bool      `json:"featured"`
-	SortOrder       int       `json:"sort_order"`
-	Status          Status    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              uuid.UUID  `json:"id"`
+	Slug            string     `json:"slug"`
+	Title           string     `json:"title"`
+	Description     string     `json:"description"`
+	LongDescription *string    `json:"long_description,omitempty"`
+	Role            string     `json:"role"`
+	TechStack       []string   `json:"tech_stack"`
+	Highlights      []string   `json:"highlights"`
+	Problem         *string    `json:"problem,omitempty"`
+	Solution        *string    `json:"solution,omitempty"`
+	Architecture    *string    `json:"architecture,omitempty"`
+	Results         *string    `json:"results,omitempty"`
+	GithubURL       *string    `json:"github_url,omitempty"`
+	LiveURL         *string    `json:"live_url,omitempty"`
+	Featured        bool       `json:"featured"`
+	SortOrder       int        `json:"sort_order"`
+	Status          Status     `json:"status"`
+	NotionPageID    *string    `json:"notion_page_id,omitempty"`
+	Area            string     `json:"area"`
+	Deadline        *time.Time `json:"deadline,omitempty"`
+	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // CreateParams are the parameters for creating a project.
@@ -79,6 +85,17 @@ type UpdateParams struct {
 	Featured        *bool    `json:"featured,omitempty"`
 	SortOrder       *int     `json:"sort_order,omitempty"`
 	Status          *Status  `json:"status,omitempty"`
+}
+
+// UpsertByNotionParams are the parameters for upserting a project from Notion.
+type UpsertByNotionParams struct {
+	Slug         string
+	Title        string
+	Description  string
+	Status       Status
+	Area         string
+	Deadline     *time.Time
+	NotionPageID string
 }
 
 var (

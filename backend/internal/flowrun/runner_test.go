@@ -31,17 +31,34 @@ func newMockStore() *mockStore {
 	return &mockStore{runs: make(map[uuid.UUID]*Run)}
 }
 
-func (m *mockStore) CreateRun(_ context.Context, flowName string, input json.RawMessage) (*Run, error) {
+func (m *mockStore) CreateRun(_ context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) (*Run, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := &Run{
-		ID:       uuid.New(),
-		FlowName: flowName,
-		Input:    input,
-		Status:   StatusPending,
+		ID:          uuid.New(),
+		FlowName:    flowName,
+		ContentID:   contentID,
+		Input:       input,
+		Status:      StatusPending,
+		MaxAttempts: 3,
 	}
 	m.runs[r.ID] = r
 	return r, nil
+}
+
+func (m *mockStore) PendingRunExists(_ context.Context, flowName string, contentID *uuid.UUID) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if contentID == nil {
+		return false, nil
+	}
+	for _, r := range m.runs {
+		if r.FlowName == flowName && r.ContentID != nil && *r.ContentID == *contentID &&
+			(r.Status == StatusPending || r.Status == StatusRunning) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *mockStore) Run(_ context.Context, id uuid.UUID) (*Run, error) {
@@ -123,6 +140,7 @@ func newTestRunner(t *testing.T, store runnerStore, registry *flow.Registry) *Ru
 	r := &Runner{
 		store:    store,
 		registry: registry,
+		alerter:  NewLogAlerter(logger),
 		jobs:     make(chan uuid.UUID, 4),
 		sem:      make(chan struct{}, 1),
 		logger:   logger,
@@ -187,7 +205,7 @@ func TestRunner_HappyPath(t *testing.T) {
 			runner.Start(ctx)
 			t.Cleanup(runner.Stop)
 
-			err := runner.Submit(ctx, tt.flowName, tt.input)
+			err := runner.Submit(ctx, tt.flowName, tt.input, nil)
 			if err != nil {
 				t.Fatalf("Submit: unexpected error: %v", err)
 			}
@@ -250,7 +268,7 @@ func TestRunner_ErrorPath(t *testing.T) {
 			runner.Start(ctx)
 			t.Cleanup(runner.Stop)
 
-			if err := runner.Submit(ctx, "err-flow", json.RawMessage(`{}`)); err != nil {
+			if err := runner.Submit(ctx, "err-flow", json.RawMessage(`{}`), nil); err != nil {
 				t.Fatalf("Submit: %v", err)
 			}
 
@@ -306,7 +324,7 @@ func TestRunner_UnknownFlow(t *testing.T) {
 			runner.Start(ctx)
 			t.Cleanup(runner.Stop)
 
-			if err := runner.Submit(ctx, tt.flowName, json.RawMessage(`{}`)); err != nil {
+			if err := runner.Submit(ctx, tt.flowName, json.RawMessage(`{}`), nil); err != nil {
 				t.Fatalf("Submit: %v", err)
 			}
 
@@ -356,7 +374,7 @@ func TestRunner_GracefulShutdown(t *testing.T) {
 	ctx := t.Context()
 	runner.Start(ctx)
 
-	if err := runner.Submit(ctx, "slow-flow", json.RawMessage(`{}`)); err != nil {
+	if err := runner.Submit(ctx, "slow-flow", json.RawMessage(`{}`), nil); err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
 
@@ -415,6 +433,7 @@ func TestRunner_ChannelFull(t *testing.T) {
 	runner := &Runner{
 		store:    store,
 		registry: registry,
+		alerter:  NewLogAlerter(slog.Default()),
 		jobs:     make(chan uuid.UUID, 1), // capacity 1
 		sem:      make(chan struct{}, 1),
 		logger:   slog.Default(),
@@ -424,12 +443,12 @@ func TestRunner_ChannelFull(t *testing.T) {
 	ctx := t.Context()
 
 	// First submit fills the channel.
-	if err := runner.Submit(ctx, "flow-a", json.RawMessage(`{}`)); err != nil {
+	if err := runner.Submit(ctx, "flow-a", json.RawMessage(`{}`), nil); err != nil {
 		t.Fatalf("first Submit: %v", err)
 	}
 
 	// Second submit hits the full channel (non-blocking select falls through).
-	if err := runner.Submit(ctx, "flow-b", json.RawMessage(`{}`)); err != nil {
+	if err := runner.Submit(ctx, "flow-b", json.RawMessage(`{}`), nil); err != nil {
 		t.Fatalf("second Submit: %v", err)
 	}
 
@@ -452,34 +471,101 @@ func TestRunner_ChannelFull(t *testing.T) {
 	store.mu.Unlock()
 }
 
-// TestRunner_MockFlowOutputUnmarshal verifies that the output produced by a
-// mock flow can be cleanly unmarshalled back into flow.ContentReviewOutput.
+func TestRunner_DedupSkipsDuplicate(t *testing.T) {
+	t.Parallel()
+
+	store := newMockStore()
+	mf := &mockFlow{
+		name: "content-review",
+		runFn: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	}
+	registry := flow.NewRegistry(mf)
+	runner := newTestRunner(t, store, registry)
+
+	ctx := t.Context()
+	runner.Start(ctx)
+	t.Cleanup(runner.Stop)
+
+	contentID := uuid.New()
+
+	// first submit should succeed
+	if err := runner.Submit(ctx, "content-review", json.RawMessage(`{}`), &contentID); err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+
+	// second submit with same content_id should be skipped (deduped)
+	if err := runner.Submit(ctx, "content-review", json.RawMessage(`{}`), &contentID); err != nil {
+		t.Fatalf("second Submit: %v", err)
+	}
+
+	// only one run should be persisted
+	store.mu.Lock()
+	count := len(store.runs)
+	store.mu.Unlock()
+
+	if count != 1 {
+		t.Errorf("Submit() persisted %d runs, want 1 (dedup should skip second)", count)
+	}
+}
+
+// TestRunner_MockFlowOutputUnmarshal verifies that the output produced by
+// mock flows can be cleanly unmarshalled back into their respective output types.
 func TestRunner_MockFlowOutputUnmarshal(t *testing.T) {
 	t.Parallel()
 
-	mockContentReview := flow.NewMockContentReview()
-	output, err := mockContentReview.Run(t.Context(), json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("mock flow Run: %v", err)
-	}
+	t.Run("content-review", func(t *testing.T) {
+		t.Parallel()
 
-	var got flow.ContentReviewOutput
-	if err := json.Unmarshal(output, &got); err != nil {
-		t.Fatalf("unmarshal ContentReviewOutput: %v", err)
-	}
+		mockContentReview := flow.NewMockContentReview()
+		output, err := mockContentReview.Run(t.Context(), json.RawMessage(`{}`))
+		if err != nil {
+			t.Fatalf("NewMockContentReview().Run() error: %v", err)
+		}
 
-	want := flow.ContentReviewOutput{
-		Proofread: &flow.ReviewResult{
-			Level:       "auto",
-			Notes:       "mock mode",
-			Corrections: []string{},
-		},
-		Excerpt:     "Mock excerpt for testing.",
-		Tags:        []string{},
-		ReadingTime: 1,
-	}
+		var got flow.ContentReviewOutput
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("unmarshal ContentReviewOutput: %v", err)
+		}
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("ContentReviewOutput mismatch (-want +got):\n%s", diff)
-	}
+		want := flow.ContentReviewOutput{
+			Proofread: &flow.ReviewResult{
+				Level:       "auto",
+				Notes:       "mock mode",
+				Corrections: []string{},
+			},
+			Excerpt:     "Mock excerpt for testing.",
+			Tags:        []string{},
+			ReadingTime: 1,
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("ContentReviewOutput mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("content-polish", func(t *testing.T) {
+		t.Parallel()
+
+		mockPolish := flow.NewMockContentPolish()
+		output, err := mockPolish.Run(t.Context(), json.RawMessage(`{}`))
+		if err != nil {
+			t.Fatalf("NewMockContentPolish().Run() error: %v", err)
+		}
+
+		var got flow.ContentPolishOutput
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("unmarshal ContentPolishOutput: %v", err)
+		}
+
+		want := flow.ContentPolishOutput{
+			OriginalBody: "Mock original body.",
+			PolishedBody: "Mock polished body.",
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("ContentPolishOutput mismatch (-want +got):\n%s", diff)
+		}
+	})
 }

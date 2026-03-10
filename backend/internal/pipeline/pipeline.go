@@ -2,15 +2,16 @@
 package pipeline
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
-	"strings"
+	"github.com/koopa0/blog-backend/internal/webhook"
 )
 
-// ErrInvalidSignature is returned when the GitHub webhook signature does not match.
-var ErrInvalidSignature = errors.New("invalid signature")
+// ErrInvalidSignature is an alias for webhook.ErrInvalidSignature for backward compatibility.
+var ErrInvalidSignature = webhook.ErrInvalidSignature
+
+// VerifySignature delegates to webhook.VerifySignature.
+func VerifySignature(payload []byte, signature, secret string) error {
+	return webhook.VerifySignature(payload, signature, secret)
+}
 
 // PushEvent represents a GitHub push webhook payload.
 type PushEvent struct {
@@ -46,28 +47,4 @@ func (e PushEvent) ChangedFiles() []string {
 	}
 
 	return files
-}
-
-// VerifySignature verifies a GitHub webhook HMAC-SHA256 signature.
-// The signature header is expected in the format "sha256=<hex>".
-func VerifySignature(payload []byte, signature, secret string) error {
-	if !strings.HasPrefix(signature, "sha256=") {
-		return ErrInvalidSignature
-	}
-
-	sigHex := strings.TrimPrefix(signature, "sha256=")
-	sigBytes, err := hex.DecodeString(sigHex)
-	if err != nil {
-		return ErrInvalidSignature
-	}
-
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(payload)
-	expected := mac.Sum(nil)
-
-	if !hmac.Equal(sigBytes, expected) {
-		return ErrInvalidSignature
-	}
-
-	return nil
 }

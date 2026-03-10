@@ -20,8 +20,9 @@ const semaphoreTimeout = 30 * time.Second
 // runnerStore is the minimal store interface the Runner needs.
 // Defined here (consumer side) so unit tests can substitute a mock.
 type runnerStore interface {
-	CreateRun(ctx context.Context, flowName string, input json.RawMessage) (*Run, error)
+	CreateRun(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) (*Run, error)
 	Run(ctx context.Context, id uuid.UUID) (*Run, error)
+	PendingRunExists(ctx context.Context, flowName string, contentID *uuid.UUID) (bool, error)
 	UpdateRunning(ctx context.Context, id uuid.UUID) error
 	UpdateCompleted(ctx context.Context, id uuid.UUID, output json.RawMessage) error
 	UpdateFailed(ctx context.Context, id uuid.UUID, errMsg string) error
@@ -33,6 +34,7 @@ type runnerStore interface {
 type Runner struct {
 	store    runnerStore
 	registry *flow.Registry
+	alerter  Alerter
 	jobs     chan uuid.UUID
 	sem      chan struct{} // concurrency semaphore
 	logger   *slog.Logger
@@ -43,10 +45,11 @@ type Runner struct {
 // New returns a Runner with the given concurrency limit.
 // Channel buffer is set to workers * 2 to avoid blocking callers
 // while still bounding in-memory queue size.
-func New(store *Store, registry *flow.Registry, workers int, logger *slog.Logger) *Runner {
+func New(store *Store, registry *flow.Registry, workers int, alerter Alerter, logger *slog.Logger) *Runner {
 	return &Runner{
 		store:    store,
 		registry: registry,
+		alerter:  alerter,
 		jobs:     make(chan uuid.UUID, workers*2),
 		sem:      make(chan struct{}, workers),
 		logger:   logger,
@@ -91,10 +94,24 @@ func (r *Runner) Stop() {
 }
 
 // Submit creates a flow_runs row and dispatches it to the worker pool.
+// If contentID is non-nil, dedup check prevents duplicate submissions
+// for the same flow+content combination that is already pending or running.
 // If the channel is full, the job is still persisted and will be picked up
 // by the cron retry scanner.
-func (r *Runner) Submit(ctx context.Context, flowName string, input json.RawMessage) error {
-	run, err := r.store.CreateRun(ctx, flowName, input)
+func (r *Runner) Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error {
+	// dedup: skip if a pending/running run already exists for this content
+	if contentID != nil {
+		exists, err := r.store.PendingRunExists(ctx, flowName, contentID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			r.logger.Info("skipped duplicate submit", "flow_name", flowName, "content_id", contentID)
+			return nil
+		}
+	}
+
+	run, err := r.store.CreateRun(ctx, flowName, input, contentID)
 	if err != nil {
 		return err
 	}
@@ -138,6 +155,8 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 		if err := r.store.UpdateFailed(ctx, runID, errMsg); err != nil {
 			logger.Error("marking flow run failed", "error", err)
 		}
+		// Unknown flow is a permanent failure — always alert regardless of attempt count.
+		r.alertAlways(ctx, run, errMsg)
 		return
 	}
 
@@ -154,6 +173,8 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 		if uerr := r.store.UpdateFailed(ctx, runID, err.Error()); uerr != nil {
 			logger.Error("marking flow run failed", "error", uerr)
 		}
+		// attempt was incremented by UpdateRunning, so current attempt = run.Attempt + 1
+		r.alertIfFinal(ctx, run, err.Error())
 		return
 	}
 
@@ -163,4 +184,23 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 	}
 
 	logger.Info("flow run completed")
+}
+
+// alertIfFinal sends an alert if this was the last attempt.
+// Called after UpdateRunning has incremented the attempt counter.
+func (r *Runner) alertIfFinal(ctx context.Context, run *Run, errMsg string) {
+	// attempt was incremented by UpdateRunning; next attempt = run.Attempt + 1
+	if run.Attempt+1 >= run.MaxAttempts {
+		r.alertAlways(ctx, run, errMsg)
+	}
+}
+
+// alertAlways unconditionally sends a failure alert.
+// Used for permanent failures (e.g. unknown flow) where retry won't help.
+func (r *Runner) alertAlways(ctx context.Context, run *Run, errMsg string) {
+	alertRun := *run
+	alertRun.Error = &errMsg
+	if err := r.alerter.Alert(ctx, alertRun); err != nil {
+		r.logger.Error("sending failure alert", "run_id", run.ID, "error", err)
+	}
 }

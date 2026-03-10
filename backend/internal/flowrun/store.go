@@ -24,13 +24,43 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 // CreateRun inserts a new flow run with status pending.
-func (s *Store) CreateRun(ctx context.Context, flowName string, input json.RawMessage) (*Run, error) {
+func (s *Store) CreateRun(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) (*Run, error) {
 	r, err := s.q.CreateFlowRun(ctx, db.CreateFlowRunParams{
-		FlowName: flowName,
-		Input:    input,
+		FlowName:  flowName,
+		ContentID: contentID,
+		Input:     input,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating flow run: %w", err)
+	}
+	return dbToRun(r), nil
+}
+
+// PendingRunExists returns true if a pending or running flow run exists
+// for the given flow name and content ID.
+func (s *Store) PendingRunExists(ctx context.Context, flowName string, contentID *uuid.UUID) (bool, error) {
+	exists, err := s.q.PendingRunExists(ctx, db.PendingRunExistsParams{
+		FlowName:  flowName,
+		ContentID: contentID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking pending run for %s: %w", flowName, err)
+	}
+	return exists, nil
+}
+
+// LatestCompletedRun returns the most recently completed flow run for
+// a given flow name and content ID.
+func (s *Store) LatestCompletedRun(ctx context.Context, flowName string, contentID uuid.UUID) (*Run, error) {
+	r, err := s.q.LatestCompletedRunByContentAndFlow(ctx, db.LatestCompletedRunByContentAndFlowParams{
+		FlowName:  flowName,
+		ContentID: &contentID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying latest completed run: %w", err)
 	}
 	return dbToRun(r), nil
 }
@@ -126,6 +156,7 @@ func dbToRun(r db.FlowRun) *Run {
 	return &Run{
 		ID:          r.ID,
 		FlowName:    r.FlowName,
+		ContentID:   r.ContentID,
 		Input:       json.RawMessage(r.Input),
 		Output:      r.Output,
 		Status:      Status(r.Status),

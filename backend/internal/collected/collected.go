@@ -31,6 +31,45 @@ type CollectedData struct {
 	Status           Status     `json:"status"`
 	CuratedContentID *uuid.UUID `json:"curated_content_id,omitempty"`
 	CollectedAt      time.Time  `json:"collected_at"`
+	URLHash          string     `json:"url_hash"`
+	AIScore          *int16     `json:"ai_score,omitempty"`
+	AIScoreReason    *string    `json:"ai_score_reason,omitempty"`
+	AISummaryZH      *string    `json:"ai_summary_zh,omitempty"`
+	AITitleZH        *string    `json:"ai_title_zh,omitempty"`
+	UserFeedback     *string    `json:"user_feedback,omitempty"`
+	FeedbackAt       *time.Time `json:"feedback_at,omitempty"`
+	FeedID           *uuid.UUID `json:"feed_id,omitempty"`
+}
+
+// Feedback represents user feedback on collected data.
+type Feedback string
+
+const (
+	// FeedbackUp indicates positive feedback.
+	FeedbackUp Feedback = "up"
+
+	// FeedbackDown indicates negative feedback.
+	FeedbackDown Feedback = "down"
+)
+
+// CreateParams are the parameters for creating collected data.
+type CreateParams struct {
+	SourceURL       string     `json:"source_url"`
+	SourceName      string     `json:"source_name"`
+	Title           string     `json:"title"`
+	OriginalContent *string    `json:"original_content,omitempty"`
+	Topics          []string   `json:"topics"`
+	URLHash         string     `json:"url_hash"`
+	FeedID          *uuid.UUID `json:"feed_id,omitempty"`
+}
+
+// ScoringParams are the parameters for updating AI scoring results.
+type ScoringParams struct {
+	Score     int16  `json:"score"`
+	Reason    string `json:"reason"`
+	SummaryZH string `json:"summary_zh"`
+	TitleZH   string `json:"title_zh"`
+	Status    Status `json:"status"`
 }
 
 // Filter holds collected data listing parameters.
@@ -43,4 +82,10 @@ type Filter struct {
 var (
 	// ErrNotFound indicates the collected data does not exist.
 	ErrNotFound = errors.New("not found")
+
+	// ErrConflict indicates a duplicate URL hash.
+	ErrConflict = errors.New("conflict")
+
+	// ErrInvalidInput indicates the request fails validation.
+	ErrInvalidInput = errors.New("invalid input")
 )

@@ -143,6 +143,45 @@ func (s *Store) DeleteProject(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// ActiveProjects returns projects with in-progress or maintained status.
+func (s *Store) ActiveProjects(ctx context.Context) ([]Project, error) {
+	rows, err := s.q.ActiveProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing active projects: %w", err)
+	}
+	projects := make([]Project, len(rows))
+	for i, r := range rows {
+		projects[i] = rowToProject(r)
+	}
+	return projects, nil
+}
+
+// UpsertByNotionPageID upserts a project by its Notion page ID.
+func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams) (*Project, error) {
+	r, err := s.q.UpsertProjectByNotionPageID(ctx, db.UpsertProjectByNotionPageIDParams{
+		Slug:         p.Slug,
+		Title:        p.Title,
+		Description:  p.Description,
+		Status:       db.ProjectStatus(p.Status),
+		Area:         p.Area,
+		Deadline:     p.Deadline,
+		NotionPageID: &p.NotionPageID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("upserting project by notion page %s: %w", p.NotionPageID, err)
+	}
+	proj := rowToProject(r)
+	return &proj, nil
+}
+
+// UpdateLastActivity sets last_activity_at to now for the project identified by Notion page ID.
+func (s *Store) UpdateLastActivity(ctx context.Context, notionPageID string) error {
+	if err := s.q.UpdateProjectLastActivity(ctx, &notionPageID); err != nil {
+		return fmt.Errorf("updating last activity for notion page %s: %w", notionPageID, err)
+	}
+	return nil
+}
+
 func rowToProject(r db.Project) Project {
 	return Project{
 		ID:              r.ID,
@@ -162,6 +201,10 @@ func rowToProject(r db.Project) Project {
 		Featured:        r.Featured,
 		SortOrder:       int(r.SortOrder),
 		Status:          Status(r.Status),
+		NotionPageID:    r.NotionPageID,
+		Area:            r.Area,
+		Deadline:        r.Deadline,
+		LastActivityAt:  r.LastActivityAt,
 		CreatedAt:       r.CreatedAt,
 		UpdatedAt:       r.UpdatedAt,
 	}

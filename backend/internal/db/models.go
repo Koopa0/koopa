@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 type CollectedStatus string
@@ -195,7 +196,9 @@ func (ns NullFlowStatus) Value() (driver.Value, error) {
 type ProjectStatus string
 
 const (
+	ProjectStatusPlanned    ProjectStatus = "planned"
 	ProjectStatusInProgress ProjectStatus = "in-progress"
+	ProjectStatusOnHold     ProjectStatus = "on-hold"
 	ProjectStatusCompleted  ProjectStatus = "completed"
 	ProjectStatusMaintained ProjectStatus = "maintained"
 	ProjectStatusArchived   ProjectStatus = "archived"
@@ -381,29 +384,38 @@ type CollectedDatum struct {
 	Status           CollectedStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	AiScore          *int16          `json:"ai_score"`
+	AiScoreReason    *string         `json:"ai_score_reason"`
+	AiSummaryZh      *string         `json:"ai_summary_zh"`
+	AiTitleZh        *string         `json:"ai_title_zh"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
 }
 
 type Content struct {
-	ID           uuid.UUID       `json:"id"`
-	Slug         string          `json:"slug"`
-	Title        string          `json:"title"`
-	Body         string          `json:"body"`
-	Excerpt      string          `json:"excerpt"`
-	Type         ContentType     `json:"type"`
-	Status       ContentStatus   `json:"status"`
-	Tags         []string        `json:"tags"`
-	Source       *string         `json:"source"`
-	SourceType   NullSourceType  `json:"source_type"`
-	SeriesID     *string         `json:"series_id"`
-	SeriesOrder  *int32          `json:"series_order"`
-	ReviewLevel  ReviewLevel     `json:"review_level"`
-	AiMetadata   json.RawMessage `json:"ai_metadata"`
-	ReadingTime  int32           `json:"reading_time"`
-	CoverImage   *string         `json:"cover_image"`
-	PublishedAt  *time.Time      `json:"published_at"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	SearchVector interface{}     `json:"search_vector"`
+	ID           uuid.UUID           `json:"id"`
+	Slug         string              `json:"slug"`
+	Title        string              `json:"title"`
+	Body         string              `json:"body"`
+	Excerpt      string              `json:"excerpt"`
+	Type         ContentType         `json:"type"`
+	Status       ContentStatus       `json:"status"`
+	Tags         []string            `json:"tags"`
+	Source       *string             `json:"source"`
+	SourceType   NullSourceType      `json:"source_type"`
+	SeriesID     *string             `json:"series_id"`
+	SeriesOrder  *int32              `json:"series_order"`
+	ReviewLevel  ReviewLevel         `json:"review_level"`
+	AiMetadata   json.RawMessage     `json:"ai_metadata"`
+	ReadingTime  int32               `json:"reading_time"`
+	CoverImage   *string             `json:"cover_image"`
+	PublishedAt  *time.Time          `json:"published_at"`
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+	Embedding    *pgvector_go.Vector `json:"embedding"`
+	SearchVector interface{}         `json:"search_vector"`
 }
 
 type ContentTopic struct {
@@ -411,9 +423,27 @@ type ContentTopic struct {
 	TopicID   uuid.UUID `json:"topic_id"`
 }
 
+type Feed struct {
+	ID                  uuid.UUID  `json:"id"`
+	Url                 string     `json:"url"`
+	Name                string     `json:"name"`
+	Schedule            string     `json:"schedule"`
+	Topics              []string   `json:"topics"`
+	Enabled             bool       `json:"enabled"`
+	Etag                string     `json:"etag"`
+	LastModified        string     `json:"last_modified"`
+	LastFetchedAt       *time.Time `json:"last_fetched_at"`
+	ConsecutiveFailures int32      `json:"consecutive_failures"`
+	LastError           string     `json:"last_error"`
+	DisabledReason      string     `json:"disabled_reason"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
 type FlowRun struct {
 	ID          uuid.UUID       `json:"id"`
 	FlowName    string          `json:"flow_name"`
+	ContentID   *uuid.UUID      `json:"content_id"`
 	Input       []byte          `json:"input"`
 	Output      json.RawMessage `json:"output"`
 	Status      FlowStatus      `json:"status"`
@@ -443,6 +473,10 @@ type Project struct {
 	Featured        bool          `json:"featured"`
 	SortOrder       int32         `json:"sort_order"`
 	Status          ProjectStatus `json:"status"`
+	NotionPageID    *string       `json:"notion_page_id"`
+	Area            string        `json:"area"`
+	Deadline        *time.Time    `json:"deadline"`
+	LastActivityAt  *time.Time    `json:"last_activity_at"`
 	CreatedAt       time.Time     `json:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at"`
 }

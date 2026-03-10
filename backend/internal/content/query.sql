@@ -111,6 +111,17 @@ RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_typ
 -- name: ArchiveContent :exec
 UPDATE contents SET status = 'archived', updated_at = now() WHERE id = $1;
 
+-- name: UpdateContentEmbedding :exec
+UPDATE contents SET embedding = $2 WHERE id = $1;
+
+-- name: PublishedContentsByDateRange :many
+SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
+       series_id, series_order, review_level, ai_metadata, reading_time,
+       cover_image, published_at, created_at, updated_at
+FROM contents
+WHERE status = 'published' AND published_at >= $1 AND published_at < $2
+ORDER BY published_at DESC;
+
 -- name: TopicsForContent :many
 SELECT t.id, t.slug, t.name FROM topics t
 JOIN content_topics ct ON ct.topic_id = t.id

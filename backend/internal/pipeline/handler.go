@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/obsidian"
 )
 
@@ -40,12 +41,22 @@ func (a *topicLookupAdapter) TopicIDBySlug(ctx context.Context, slug string) (uu
 
 // JobSubmitter submits a flow run for async processing.
 type JobSubmitter interface {
-	Submit(ctx context.Context, flowName string, input json.RawMessage) error
+	Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error
 }
 
 // GitHubFetcher retrieves raw file content from a GitHub repository.
 type GitHubFetcher interface {
 	FileContent(ctx context.Context, path string) ([]byte, error)
+}
+
+// FeedCollector fetches new items from feeds and scores them.
+type FeedCollector interface {
+	FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, error)
+}
+
+// FeedLister lists feeds by schedule.
+type FeedLister interface {
+	EnabledFeedsBySchedule(ctx context.Context, schedule string) ([]feed.Feed, error)
 }
 
 // Handler handles pipeline and webhook HTTP requests.
@@ -54,6 +65,8 @@ type Handler struct {
 	topics        TopicLookup
 	fetcher       GitHubFetcher
 	jobs          JobSubmitter
+	collector     FeedCollector
+	feeds         FeedLister
 	webhookSecret string
 	logger        *slog.Logger
 }
@@ -70,6 +83,12 @@ func NewHandler(cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs Jo
 	}
 }
 
+// SetCollector sets the feed collector and lister for the collect pipeline.
+func (h *Handler) SetCollector(c FeedCollector, f FeedLister) {
+	h.collector = c
+	h.feeds = f
+}
+
 // NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
 func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
 	return &topicLookupAdapter{fn: fn}
@@ -80,9 +99,69 @@ func (h *Handler) Sync(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
+// collectRequest is the optional request body for POST /api/pipeline/collect.
+type collectRequest struct {
+	Schedule string `json:"schedule"`
+}
+
 // Collect handles POST /api/pipeline/collect.
-func (h *Handler) Collect(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+// Fetches all enabled feeds for the given schedule (default: hourly_4),
+// then submits collect-and-score jobs for each new item.
+func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
+	if h.collector == nil || h.feeds == nil {
+		http.Error(w, "collector not configured", http.StatusNotImplemented)
+		return
+	}
+
+	schedule := feed.ScheduleHourly4
+	if r.Body != nil && r.ContentLength > 0 {
+		var req collectRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.Schedule != "" {
+			schedule = req.Schedule
+		}
+	}
+
+	feeds, err := h.feeds.EnabledFeedsBySchedule(r.Context(), schedule)
+	if err != nil {
+		h.logger.Error("listing feeds for collect", "schedule", schedule, "error", err)
+		http.Error(w, "failed to list feeds", http.StatusInternalServerError)
+		return
+	}
+
+	// respond 202 immediately, collect in background
+	w.WriteHeader(http.StatusAccepted)
+
+	go h.collectFeeds(context.WithoutCancel(r.Context()), feeds, schedule)
+}
+
+// collectFeeds fetches each feed and submits score jobs for new items.
+func (h *Handler) collectFeeds(ctx context.Context, feeds []feed.Feed, schedule string) {
+	var totalNew int
+	for _, f := range feeds {
+		ids, err := h.collector.FetchFeed(ctx, f)
+		if err != nil {
+			h.logger.Error("collecting feed", "feed_id", f.ID, "feed_name", f.Name, "error", err)
+			continue
+		}
+		totalNew += len(ids)
+
+		// submit collect-and-score flow for each new item
+		for _, id := range ids {
+			input, err := json.Marshal(map[string]string{"collected_data_id": id.String()})
+			if err != nil {
+				h.logger.Error("marshaling score input", "collected_id", id, "error", err)
+				continue
+			}
+			if err := h.jobs.Submit(ctx, "collect-and-score", input, nil); err != nil {
+				h.logger.Error("submitting collect-and-score", "collected_id", id, "error", err)
+			}
+		}
+	}
+	h.logger.Info("collect pipeline complete",
+		"schedule", schedule,
+		"feeds_count", len(feeds),
+		"new_items", totalNew,
+	)
 }
 
 // Generate handles POST /api/pipeline/generate.
@@ -90,18 +169,45 @@ func (h *Handler) Generate(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
+// digestRequest is the request body for POST /api/pipeline/digest.
+type digestRequest struct {
+	StartDate string `json:"start_date"` // YYYY-MM-DD
+	EndDate   string `json:"end_date"`   // YYYY-MM-DD
+}
+
 // Digest handles POST /api/pipeline/digest.
-func (h *Handler) Digest(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+// Submits a digest-generate flow job for the given date range.
+func (h *Handler) Digest(w http.ResponseWriter, r *http.Request) {
+	var req digestRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.StartDate == "" || req.EndDate == "" {
+		http.Error(w, "start_date and end_date are required", http.StatusBadRequest)
+		return
+	}
+
+	input, err := json.Marshal(req)
+	if err != nil {
+		h.logger.Error("marshaling digest input", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.jobs.Submit(r.Context(), "digest-generate", input, nil); err != nil {
+		h.logger.Error("submitting digest-generate", "error", err)
+		http.Error(w, "failed to submit digest job", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = fmt.Fprint(w, `{"status":"submitted"}`) // best-effort
 }
 
 // WebhookObsidian handles POST /api/webhook/obsidian.
 func (h *Handler) WebhookObsidian(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
-
-// WebhookNotion handles POST /api/webhook/notion.
-func (h *Handler) WebhookNotion(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
@@ -263,7 +369,7 @@ func (h *Handler) submitContentReview(ctx context.Context, contentID uuid.UUID) 
 		h.logger.Error("marshaling content-review input", "content_id", contentID, "error", err)
 		return
 	}
-	if err := h.jobs.Submit(ctx, "content-review", input); err != nil {
+	if err := h.jobs.Submit(ctx, "content-review", input, &contentID); err != nil {
 		h.logger.Error("submitting content-review", "content_id", contentID, "error", err)
 	}
 }

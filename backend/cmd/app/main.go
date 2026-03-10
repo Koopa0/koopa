@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/anthropic"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -19,10 +21,14 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/koopa0/blog-backend/internal/auth"
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
@@ -47,6 +53,12 @@ type config struct {
 	R2Bucket            string
 	R2PublicURL         string
 	GeminiModel         string
+	ClaudeModel         string
+	NotionAPIKey        string
+	NotionWebhookSecret string
+	NotionProjectsDB    string
+	NotionTasksDB       string
+	NotionBooksDB       string
 	MockMode            bool
 }
 
@@ -88,20 +100,32 @@ func run(logger *slog.Logger) error {
 	collectedStore := collected.NewStore(pool)
 	trackingStore := tracking.NewStore(pool)
 	flowrunStore := flowrun.NewStore(pool)
+	feedStore := feed.NewStore(pool)
+
+	// collector + budget
+	feedCollector := collector.New(collectedStore, feedStore, logger)
+	tokenBudget := budget.New(500_000)
 
 	// upload
 	s3Client := upload.NewS3Client(ctx, cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey)
 
 	// AI pipeline — Genkit + flow registry + runner
+	alerter := flowrun.NewLogAlerter(logger)
 	var runner *flowrun.Runner
 	if cfg.MockMode {
 		logger.Info("starting in MOCK MODE — AI calls disabled")
-		mockReview := flow.NewMockContentReview()
-		registry := flow.NewRegistry(mockReview)
-		runner = flowrun.New(flowrunStore, registry, 3, logger)
+		registry := flow.NewRegistry(
+			flow.NewMockContentReview(),
+			flow.NewMockContentPolish(),
+			flow.NewMockCollectScore(),
+			flow.NewMockDigestGenerate(),
+			flow.NewMockBookmarkGenerate(),
+		)
+		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	} else {
 		googleAI := &googlegenai.GoogleAI{}
-		g := genkit.Init(ctx, genkit.WithPlugins(googleAI))
+		anthropicPlugin := &anthropic.Anthropic{}
+		g := genkit.Init(ctx, genkit.WithPlugins(googleAI, anthropicPlugin))
 
 		geminiModel, modelErr := googleAI.DefineModel(g, cfg.GeminiModel, &ai.ModelOptions{
 			Label: "Gemini Review",
@@ -115,13 +139,33 @@ func run(logger *slog.Logger) error {
 			return fmt.Errorf("defining gemini model: %w", modelErr)
 		}
 
+		claudeModel, modelErr := anthropicPlugin.DefineModel(g, cfg.ClaudeModel, &ai.ModelOptions{
+			Label: "Claude Polish",
+			Supports: &ai.ModelSupports{
+				Multiturn:  true,
+				SystemRole: true,
+			},
+		})
+		if modelErr != nil {
+			return fmt.Errorf("defining claude model: %w", modelErr)
+		}
+
+		embedder, embedErr := googleAI.DefineEmbedder(g, "text-embedding-004", nil)
+		if embedErr != nil {
+			return fmt.Errorf("defining embedder: %w", embedErr)
+		}
+
 		contentReview := flow.NewContentReview(
-			g, geminiModel,
-			contentStore, contentStore, reviewStore, topicStore,
+			g, geminiModel, embedder,
+			contentStore, contentStore, contentStore, reviewStore, topicStore,
 			logger,
 		)
-		registry := flow.NewRegistry(contentReview)
-		runner = flowrun.New(flowrunStore, registry, 3, logger)
+		contentPolish := flow.NewContentPolish(g, claudeModel, contentStore, logger)
+		collectScore := flow.NewCollectScore(g, geminiModel, collectedStore, collectedStore, tokenBudget, logger)
+		digestGenerate := flow.NewDigestGenerate(g, geminiModel, contentStore, collectedStore, projectStore, tokenBudget, logger)
+		bookmarkGenerate := flow.NewBookmarkGenerate(g, geminiModel, collectedStore, tokenBudget, logger)
+		registry := flow.NewRegistry(contentReview, contentPolish, collectScore, digestGenerate, bookmarkGenerate)
+		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	}
 
 	runner.Start(ctx)
@@ -145,8 +189,117 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("adding cron job: %w", err)
 	}
+	// cron: collect feeds every 4 hours (hourly_4 schedule)
+	_, err = cronScheduler.AddFunc("0 */4 * * *", func() {
+		feeds, feedErr := feedStore.EnabledFeedsBySchedule(context.Background(), feed.ScheduleHourly4)
+		if feedErr != nil {
+			logger.Error("cron: listing hourly_4 feeds", "error", feedErr)
+			return
+		}
+		var totalNew int
+		for _, f := range feeds {
+			ids, fetchErr := feedCollector.FetchFeed(context.Background(), f)
+			if fetchErr != nil {
+				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
+				continue
+			}
+			totalNew += len(ids)
+			for _, id := range ids {
+				input, _ := json.Marshal(map[string]string{"collected_data_id": id.String()})
+				if submitErr := runner.Submit(context.Background(), "collect-and-score", input, nil); submitErr != nil {
+					logger.Error("cron: submitting score job", "collected_id", id, "error", submitErr)
+				}
+			}
+		}
+		if len(feeds) > 0 {
+			logger.Info("cron: hourly_4 collect complete", "feeds", len(feeds), "new_items", totalNew)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding hourly_4 cron job: %w", err)
+	}
+
+	// cron: collect daily feeds at 06:00
+	_, err = cronScheduler.AddFunc("0 6 * * *", func() {
+		feeds, feedErr := feedStore.EnabledFeedsBySchedule(context.Background(), feed.ScheduleDaily)
+		if feedErr != nil {
+			logger.Error("cron: listing daily feeds", "error", feedErr)
+			return
+		}
+		var totalNew int
+		for _, f := range feeds {
+			ids, fetchErr := feedCollector.FetchFeed(context.Background(), f)
+			if fetchErr != nil {
+				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
+				continue
+			}
+			totalNew += len(ids)
+			for _, id := range ids {
+				input, _ := json.Marshal(map[string]string{"collected_data_id": id.String()})
+				if submitErr := runner.Submit(context.Background(), "collect-and-score", input, nil); submitErr != nil {
+					logger.Error("cron: submitting score job", "collected_id", id, "error", submitErr)
+				}
+			}
+		}
+		if len(feeds) > 0 {
+			logger.Info("cron: daily collect complete", "feeds", len(feeds), "new_items", totalNew)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding daily cron job: %w", err)
+	}
+
+	// cron: collect weekly feeds at 06:00 Monday
+	_, err = cronScheduler.AddFunc("0 6 * * 1", func() {
+		feeds, feedErr := feedStore.EnabledFeedsBySchedule(context.Background(), feed.ScheduleWeekly)
+		if feedErr != nil {
+			logger.Error("cron: listing weekly feeds", "error", feedErr)
+			return
+		}
+		var totalNew int
+		for _, f := range feeds {
+			ids, fetchErr := feedCollector.FetchFeed(context.Background(), f)
+			if fetchErr != nil {
+				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
+				continue
+			}
+			totalNew += len(ids)
+			for _, id := range ids {
+				input, _ := json.Marshal(map[string]string{"collected_data_id": id.String()})
+				if submitErr := runner.Submit(context.Background(), "collect-and-score", input, nil); submitErr != nil {
+					logger.Error("cron: submitting score job", "collected_id", id, "error", submitErr)
+				}
+			}
+		}
+		if len(feeds) > 0 {
+			logger.Info("cron: weekly collect complete", "feeds", len(feeds), "new_items", totalNew)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding weekly cron job: %w", err)
+	}
+
+	// cron: reset token budget at midnight
+	_, err = cronScheduler.AddFunc("0 0 * * *", func() {
+		tokenBudget.Reset()
+		logger.Info("cron: daily token budget reset")
+	})
+	if err != nil {
+		return fmt.Errorf("adding budget reset cron job: %w", err)
+	}
+
 	cronScheduler.Start()
 	defer cronScheduler.Stop()
+
+	// notion webhook handler
+	notionClient := notion.NewClient(cfg.NotionAPIKey)
+	notionHandler := notion.NewHandler(notionClient, projectStore, runner, notion.Config{
+		APIKey:        cfg.NotionAPIKey,
+		WebhookSecret: cfg.NotionWebhookSecret,
+		ProjectsDB:    cfg.NotionProjectsDB,
+		TasksDB:       cfg.NotionTasksDB,
+		BooksDB:       cfg.NotionBooksDB,
+	}, logger)
 
 	// pipeline dependencies
 	githubFetcher := pipeline.NewGitHub(cfg.GitHubToken, cfg.GitHubRepo)
@@ -158,6 +311,19 @@ func run(logger *slog.Logger) error {
 		return t.ID, nil
 	})
 
+	// pipeline handler with collector
+	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, logger)
+	pipelineHandler.SetCollector(feedCollector, feedStore)
+
+	// flow admin handler
+	flowHandler := flow.NewHandler(
+		runner,
+		&runReaderAdapter{store: flowrunStore},
+		contentStore,
+		contentStore,
+		logger,
+	)
+
 	// deps
 	deps := server.Deps{
 		Auth:      auth.NewHandler(authStore, cfg.JWTSecret, logger),
@@ -167,9 +333,12 @@ func run(logger *slog.Logger) error {
 		Review:    review.NewHandler(reviewStore, logger),
 		Collected: collected.NewHandler(collectedStore, logger),
 		Tracking:  tracking.NewHandler(trackingStore, logger),
-		Pipeline:  pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, logger),
+		Pipeline:  pipelineHandler,
 		FlowRun:   flowrun.NewHandler(flowrunStore, logger),
 		Upload:    upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
+		Flow:      flowHandler,
+		Feed:      feed.NewHandler(feedStore, feedCollector, logger),
+		Notion:    notionHandler,
 		Logger:    logger,
 	}
 
@@ -183,9 +352,10 @@ func run(logger *slog.Logger) error {
 func loadConfig(logger *slog.Logger) config {
 	cfg := config{
 		Port:        envOr("SERVER_PORT", "8080"),
-		CORSOrigin:  envOr("CORS_ORIGIN", "*"),
+		CORSOrigin:  envOr("CORS_ORIGIN", "http://localhost:4200"),
 		SiteURL:     envOr("SITE_URL", "http://localhost:8080"),
 		GeminiModel: envOr("GEMINI_MODEL", "gemini-3-flash-preview"),
+		ClaudeModel: envOr("CLAUDE_MODEL", "claude-sonnet-4-6"),
 		MockMode:    os.Getenv("MOCK_MODE") == "true",
 	}
 
@@ -203,10 +373,19 @@ func loadConfig(logger *slog.Logger) config {
 	cfg.R2PublicURL = requireEnv("R2_PUBLIC_URL", logger)
 
 	// AI keys: required unless MOCK_MODE
-	// googlegenai plugin reads GEMINI_API_KEY (or GOOGLE_API_KEY) from env
+	// googlegenai plugin reads GEMINI_API_KEY from env
+	// anthropic plugin reads ANTHROPIC_API_KEY from env
 	if !cfg.MockMode {
 		requireEnv("GEMINI_API_KEY", logger)
+		requireEnv("ANTHROPIC_API_KEY", logger)
 	}
+
+	// Notion integration (optional — empty means disabled)
+	cfg.NotionAPIKey = os.Getenv("NOTION_API_KEY")
+	cfg.NotionWebhookSecret = os.Getenv("NOTION_WEBHOOK_SECRET")
+	cfg.NotionProjectsDB = os.Getenv("NOTION_PROJECTS_DB")
+	cfg.NotionTasksDB = os.Getenv("NOTION_TASKS_DB")
+	cfg.NotionBooksDB = os.Getenv("NOTION_BOOKS_DB")
 
 	return cfg
 }
@@ -252,4 +431,43 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// runReaderAdapter bridges flowrun.Store to flow.RunReader,
+// converting flowrun.Run to flow.RunResult to avoid an import cycle.
+type runReaderAdapter struct {
+	store *flowrun.Store
+}
+
+func (a *runReaderAdapter) RunResult(ctx context.Context, id uuid.UUID) (*flow.RunResult, error) {
+	run, err := a.store.Run(ctx, id)
+	if err != nil {
+		if errors.Is(err, flowrun.ErrNotFound) {
+			return nil, flow.ErrNotFound
+		}
+		return nil, err
+	}
+	return toRunResult(run), nil
+}
+
+func (a *runReaderAdapter) LatestCompletedRunResult(ctx context.Context, flowName string, contentID uuid.UUID) (*flow.RunResult, error) {
+	run, err := a.store.LatestCompletedRun(ctx, flowName, contentID)
+	if err != nil {
+		if errors.Is(err, flowrun.ErrNotFound) {
+			return nil, flow.ErrNotFound
+		}
+		return nil, err
+	}
+	return toRunResult(run), nil
+}
+
+func toRunResult(r *flowrun.Run) *flow.RunResult {
+	return &flow.RunResult{
+		ID:        r.ID,
+		FlowName:  r.FlowName,
+		ContentID: r.ContentID,
+		Status:    string(r.Status),
+		Output:    r.Output,
+		EndedAt:   r.EndedAt,
+	}
 }

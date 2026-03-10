@@ -1,6 +1,7 @@
 package collected
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -86,6 +87,41 @@ func (h *Handler) Ignore(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.Ignore(r.Context(), id); err != nil {
 		h.logger.Error("ignoring collected data", "id", id, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to ignore")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SubmitFeedback handles POST /api/admin/collected/{id}/feedback.
+func (h *Handler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid id")
+		return
+	}
+
+	type feedbackRequest struct {
+		Feedback string `json:"feedback"`
+	}
+	req, err := api.Decode[feedbackRequest](r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+
+	fb := Feedback(req.Feedback)
+	if fb != FeedbackUp && fb != FeedbackDown {
+		api.Error(w, http.StatusUnprocessableEntity, "INVALID_INPUT", "feedback must be \"up\" or \"down\"")
+		return
+	}
+
+	if err := h.store.UpdateFeedback(r.Context(), id, fb); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			api.Error(w, http.StatusNotFound, "NOT_FOUND", "collected data not found")
+			return
+		}
+		h.logger.Error("updating feedback", "id", id, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update feedback")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

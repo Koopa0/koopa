@@ -11,6 +11,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
 
@@ -32,6 +33,11 @@ type ContentUpdater interface {
 // ReviewCreator creates a review queue entry.
 type ReviewCreator interface {
 	Create(ctx context.Context, contentID uuid.UUID, reviewLevel string, notes *string) (*review.Review, error)
+}
+
+// EmbeddingWriter writes embedding vectors to content.
+type EmbeddingWriter interface {
+	UpdateEmbedding(ctx context.Context, id uuid.UUID, embedding pgvector.Vector) error
 }
 
 // TopicLister returns all topic slugs for constrained tag classification.
@@ -61,33 +67,39 @@ type ReviewResult struct {
 
 // ContentReview implements the content-review flow using Genkit.
 type ContentReview struct {
-	g       *genkit.Genkit
-	model   ai.Model
-	content ContentReader
-	updater ContentUpdater
-	review  ReviewCreator
-	topics  TopicLister
-	logger  *slog.Logger
+	g           *genkit.Genkit
+	model       ai.Model
+	embedder    ai.Embedder
+	content     ContentReader
+	updater     ContentUpdater
+	embedWriter EmbeddingWriter
+	review      ReviewCreator
+	topics      TopicLister
+	logger      *slog.Logger
 }
 
 // NewContentReview returns a ContentReview flow.
 func NewContentReview(
 	g *genkit.Genkit,
 	model ai.Model,
+	embedder ai.Embedder,
 	contentReader ContentReader,
 	updater ContentUpdater,
+	embedWriter EmbeddingWriter,
 	review ReviewCreator,
 	topics TopicLister,
 	logger *slog.Logger,
 ) *ContentReview {
 	return &ContentReview{
-		g:       g,
-		model:   model,
-		content: contentReader,
-		updater: updater,
-		review:  review,
-		topics:  topics,
-		logger:  logger,
+		g:           g,
+		model:       model,
+		embedder:    embedder,
+		content:     contentReader,
+		updater:     updater,
+		embedWriter: embedWriter,
+		review:      review,
+		topics:      topics,
+		logger:      logger,
 	}
 }
 
@@ -224,10 +236,25 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 		return err
 	})
 
-	// Step 5: embedding stub
+	// Step 5: generate embedding
 	g.Go(func() error {
-		_, err := genkit.Run(gctx, "embedding-stub", func() (any, error) {
-			cr.logger.Info("embedding stub, skipping", "content_id", contentID)
+		_, err := genkit.Run(gctx, "generate-embedding", func() (any, error) {
+			resp, err := genkit.Embed(gctx, cr.g,
+				ai.WithEmbedder(cr.embedder),
+				ai.WithTextDocs(c.Body),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating embedding: %w", err)
+			}
+			if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
+				cr.logger.Warn("empty embedding response", "content_id", contentID)
+				return nil, nil
+			}
+			vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
+			if err := cr.embedWriter.UpdateEmbedding(gctx, contentID, vec); err != nil {
+				return nil, fmt.Errorf("storing embedding: %w", err)
+			}
+			cr.logger.Info("embedding stored", "content_id", contentID, "dimensions", len(resp.Embeddings[0].Embedding))
 			return nil, nil
 		})
 		return err

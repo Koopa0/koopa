@@ -69,8 +69,13 @@ func (h *Handler) parseFilter(r *http.Request) Filter {
 	f := Filter{Page: page, PerPage: perPage}
 
 	if s := r.URL.Query().Get("status"); s != "" {
-		status := Status(s)
-		f.Status = &status
+		switch Status(s) {
+		case StatusPending, StatusRunning, StatusCompleted, StatusFailed:
+			status := Status(s)
+			f.Status = &status
+		default:
+			// ignore unknown status values
+		}
 	}
 
 	return f

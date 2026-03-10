@@ -10,6 +10,7 @@ sql:
       - "internal/collected/query.sql"
       - "internal/tracking/query.sql"
       - "internal/flowrun/query.sql"
+      - "internal/feed/query.sql"
     schema: "migrations/"
     gen:
       go:
@@ -45,4 +46,14 @@ sql:
             go_type:
               type: "RawMessage"
               import: "encoding/json"
+            nullable: true
+          - db_type: "vector"
+            go_type:
+              import: "github.com/pgvector/pgvector-go"
+              type: "Vector"
+          - db_type: "vector"
+            go_type:
+              import: "github.com/pgvector/pgvector-go"
+              type: "Vector"
+              pointer: true
             nullable: true
