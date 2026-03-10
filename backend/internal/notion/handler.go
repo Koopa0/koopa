@@ -46,16 +46,28 @@ func NewHandler(client *Client, projects ProjectWriter, jobs JobSubmitter, cfg C
 
 // Webhook handles POST /api/webhook/notion.
 func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
-	if h.config.WebhookSecret == "" {
-		http.Error(w, "not implemented", http.StatusNotImplemented)
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.logger.Error("reading notion webhook body", "error", err)
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	// Handle Notion verification handshake: respond 200 and log the token.
+	var probe struct {
+		VerificationToken string `json:"verification_token"`
+	}
+	if json.Unmarshal(body, &probe) == nil && probe.VerificationToken != "" {
+		h.logger.Info("notion webhook verification token received",
+			"verification_token", probe.VerificationToken,
+		)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if h.config.WebhookSecret == "" {
+		http.Error(w, "not implemented", http.StatusNotImplemented)
 		return
 	}
 
