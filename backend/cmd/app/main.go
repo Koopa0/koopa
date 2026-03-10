@@ -62,6 +62,7 @@ type config struct {
 	MockMode            bool
 }
 
+// main
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
