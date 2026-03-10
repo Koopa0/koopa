@@ -18,7 +18,7 @@ export interface PageMeta {
 
 const SITE_NAME = 'koopa0.dev';
 const DEFAULT_DESCRIPTION =
-  'Backend Engineer / Full-Stack Developer - Technical articles and personal projects';
+  'Software Engineer - Technical articles and personal projects';
 const DEFAULT_IMAGE = 'https://koopa0.dev/og-image.png';
 
 @Injectable({ providedIn: 'root' })

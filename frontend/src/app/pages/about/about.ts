@@ -38,7 +38,7 @@ export class AboutComponent implements OnInit {
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'About',
-      description: 'Koopa — Backend Engineer / Full-Stack Developer. Go, Angular, and cloud-native technologies.',
+      description: 'Koopa — Software Engineer. Go, Angular, and cloud-native technologies.',
       ogUrl: 'https://koopa0.dev/about',
       ogType: 'profile',
       jsonLd: buildPersonSchema(),

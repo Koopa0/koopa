@@ -29,7 +29,7 @@ describe('HeroSectionComponent', () => {
 
   it('should render role badge', () => {
     const badge = fixture.nativeElement.querySelector('p');
-    expect(badge.textContent).toContain('Backend Engineer');
+    expect(badge.textContent).toContain('Software Engineer');
   });
 
   it('should render View Projects CTA', () => {

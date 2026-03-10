@@ -41,7 +41,7 @@ export class HomeComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Home',
       description:
-        'Koopa — Backend Engineer / Full-Stack Developer. Technical articles and personal projects.',
+        'Koopa — Software Engineer. Technical articles and personal projects.',
       ogUrl: 'https://koopa0.dev/home',
       jsonLd: buildWebSiteSchema(),
     });

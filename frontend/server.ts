@@ -14,7 +14,7 @@ const browserDistFolder = resolve(serverDistFolder, '../browser');
 const SITE_URL = process.env['SITE_URL'] || 'https://koopa0.dev';
 const SITE_TITLE = 'koopa0.dev';
 const SITE_DESCRIPTION =
-  'Backend Engineer / Full-Stack Developer - 技術文章與個人作品集';
+  'Software Engineer - Technical articles and personal projects';
 
 const BACKEND_URL = process.env['BACKEND_URL'] || 'http://backend:8080';
 

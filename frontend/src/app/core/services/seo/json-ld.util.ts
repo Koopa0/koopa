@@ -14,7 +14,7 @@ export function buildWebSiteSchema(): Record<string, unknown> {
     name: 'koopa0.dev',
     url: SITE_URL,
     description:
-      'Backend Engineer / Full-Stack Developer - Technical articles and personal projects',
+      'Software Engineer - Technical articles and personal projects',
     author: buildPersonSchema(),
   };
 }
@@ -25,7 +25,7 @@ export function buildPersonSchema(): Record<string, unknown> {
     '@type': 'Person',
     name: AUTHOR_NAME,
     url: SITE_URL,
-    jobTitle: 'Backend Engineer',
+    jobTitle: 'Software Engineer',
     sameAs: ['https://github.com/koopa0', 'https://linkedin.com/in/koopa0'],
   };
 }

@@ -24,7 +24,7 @@ import { LucideAngularModule, ArrowRight, Code2, Mail } from 'lucide-angular';
             class="mb-4 inline-flex items-center gap-2 rounded-full border border-zinc-700 px-3 py-1 text-xs font-medium text-zinc-400"
           >
             <lucide-icon [img]="Code2Icon" [size]="12" />
-            Backend Engineer / Full-Stack Developer
+            Software Engineer
           </p>
           <h1
             class="text-4xl font-bold tracking-tight text-zinc-100 sm:text-5xl lg:text-6xl"
