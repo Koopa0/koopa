@@ -55,17 +55,17 @@ export class AboutComponent implements OnInit {
     {
       category: 'Backend',
       icon: this.ServerIcon,
-      items: ['Go', 'PostgreSQL', 'REST API'],
+      items: ['Golang', 'Rust'],
     },
     {
       category: 'Frontend',
       icon: this.CodeIcon,
-      items: ['Angular', 'Tailwind CSS', 'Flutter'],
+      items: ['Angular', 'Flutter'],
     },
     {
       category: 'DevOps',
       icon: this.WrenchIcon,
-      items: ['Docker', 'Kubernetes', 'GitHub Actions', 'Cloud'],
+      items: ['Docker', 'Kubernetes', 'Cloud Native'],
     },
   ];
 }

@@ -32,9 +32,13 @@ import {
   Italic,
   Link,
   Code,
+  Upload,
+  Loader2,
+  Trash2,
 } from 'lucide-angular';
 import { ArticleService } from '../../core/services/article.service';
 import { MarkdownService } from '../../core/services/markdown.service';
+import { UploadService } from '../../core/services/upload.service';
 import type {
   ContentStatus,
   ApiCreateContentRequest,
@@ -60,12 +64,14 @@ export class ArticleEditorComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly articleService = inject(ArticleService);
   private readonly markdownService = inject(MarkdownService);
+  private readonly uploadService = inject(UploadService);
 
   protected readonly isLoading = signal(false);
   protected readonly isSaving = signal(false);
   protected readonly isNewArticle = signal(true);
   protected readonly previewHtml = signal('');
   protected readonly selectedTab = signal<'edit' | 'preview' | 'split'>('edit');
+  protected readonly isUploading = signal(false);
   protected readonly notification = signal<{
     message: string;
     type: 'success' | 'error';
@@ -107,6 +113,9 @@ export class ArticleEditorComponent implements OnInit {
   protected readonly ItalicIcon = Italic;
   protected readonly LinkIcon = Link;
   protected readonly CodeIcon = Code;
+  protected readonly UploadIcon = Upload;
+  protected readonly Loader2Icon = Loader2;
+  protected readonly Trash2Icon = Trash2;
 
   constructor() {
     this.articleForm = this.fb.group({
@@ -342,6 +351,40 @@ Summarize your thoughts here...
       }
     }
     return '';
+  }
+
+  protected onCoverImageSelect(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const error = this.uploadService.validate(file);
+    if (error) {
+      this.showNotification(error, 'error');
+      input.value = '';
+      return;
+    }
+
+    this.isUploading.set(true);
+    this.uploadService.upload(file).subscribe({
+      next: (result) => {
+        this.articleForm.patchValue({ cover_image: result.url });
+        this.isUploading.set(false);
+        this.showNotification('封面圖片上傳成功', 'success');
+        input.value = '';
+      },
+      error: () => {
+        this.isUploading.set(false);
+        this.showNotification('圖片上傳失敗', 'error');
+        input.value = '';
+      },
+    });
+  }
+
+  protected removeCoverImage(): void {
+    this.articleForm.patchValue({ cover_image: '' });
   }
 
   protected cancel(): void {

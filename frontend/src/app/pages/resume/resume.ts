@@ -44,15 +44,15 @@ const EXPERIENCES: Experience[] = [
 const SKILLS: Skill[] = [
   {
     category: 'Backend',
-    items: ['Go', 'PostgreSQL', 'REST API'],
+    items: ['Golang', 'Rust'],
   },
   {
     category: 'Frontend',
-    items: ['Angular', 'Tailwind CSS', 'Flutter'],
+    items: ['Angular', 'Flutter'],
   },
   {
     category: 'DevOps',
-    items: ['Docker', 'Kubernetes', 'GitHub Actions', 'Cloud'],
+    items: ['Docker', 'Kubernetes', 'Cloud Native'],
   },
 ];
 

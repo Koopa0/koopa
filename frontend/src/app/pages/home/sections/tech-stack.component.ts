@@ -68,7 +68,7 @@ export class TechStackComponent {
     {
       name: 'Backend',
       icon: this.ServerIcon,
-      items: ['Golang', 'Rust', 'PostgreSQL'],
+      items: ['Golang', 'Rust'],
     },
     {
       name: 'DevOps',

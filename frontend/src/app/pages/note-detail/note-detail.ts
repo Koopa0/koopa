@@ -47,7 +47,9 @@ export class NoteDetailComponent implements OnInit {
     if (!n) {
       return '';
     }
-    const html = this.markdownService.parse(n.body);
+    // Strip leading h1 — title is already in the header section
+    const body = n.body.replace(/^#\s+.+\n+/, '');
+    const html = this.markdownService.parse(body);
     return this.sanitizer.bypassSecurityTrustHtml(html);
   });
 

@@ -77,4 +77,11 @@ export class ApiService {
   putData<T>(path: string, body: unknown): Observable<T> {
     return this.put<T>(path, body).pipe(map((res) => res.data));
   }
+
+  /** POST multipart/form-data upload, unwrap { data: T } */
+  uploadData<T>(path: string, formData: FormData): Observable<T> {
+    return this.http
+      .post<ApiResponse<T>>(this.url(path), formData)
+      .pipe(map((res) => res.data));
+  }
 }

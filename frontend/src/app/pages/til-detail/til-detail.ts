@@ -48,7 +48,9 @@ export class TilDetailComponent implements OnInit {
     if (!t) {
       return '';
     }
-    const html = this.markdownService.parse(t.body);
+    // Strip leading h1 — title is already in the header section
+    const body = t.body.replace(/^#\s+.+\n+/, '');
+    const html = this.markdownService.parse(body);
     return this.sanitizer.bypassSecurityTrustHtml(html);
   });
 

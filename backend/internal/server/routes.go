@@ -13,6 +13,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
+	"github.com/koopa0/blog-backend/internal/upload"
 )
 
 // Deps holds all handler dependencies for route registration.
@@ -25,6 +26,7 @@ type Deps struct {
 	Collected *collected.Handler
 	Tracking  *tracking.Handler
 	Pipeline  *pipeline.Handler
+	Upload    *upload.Handler
 	Logger    *slog.Logger
 }
 
@@ -78,6 +80,9 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	mux.Handle("POST /api/admin/tracking", authMid(http.HandlerFunc(d.Tracking.Create)))
 	mux.Handle("PUT /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Tracking.Update)))
 	mux.Handle("DELETE /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Tracking.Delete)))
+
+	// admin — upload
+	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))
 
 	// pipeline stubs
 	mux.Handle("POST /api/pipeline/sync", authMid(http.HandlerFunc(d.Pipeline.Sync)))

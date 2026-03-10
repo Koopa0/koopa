@@ -14,6 +14,8 @@ const SITE_TITLE = 'koopa0.dev';
 const SITE_DESCRIPTION =
   'Backend Engineer / Full-Stack Developer - 技術文章與個人作品集';
 
+const BACKEND_URL = process.env['BACKEND_URL'] || 'http://backend:8080';
+
 const app = express();
 app.disable('x-powered-by');
 const commonEngine = new CommonEngine();
@@ -53,120 +55,64 @@ const STATIC_ROUTES: Array<{
   { path: '/about', changefreq: 'monthly', priority: '0.7' },
 ];
 
-// 內容資料（從 mock 同步；未來接 API 後改為動態取得）
-interface FeedItem {
-  title: string;
-  path: string;
-  excerpt: string;
-  tags: string[];
-  publishedAt: string;
-}
-
-interface ArticleFeedItem {
-  id: string;
-  title: string;
+// 從後端 API 動態取得已發布內容（用於 sitemap + RSS feed）
+interface ContentItem {
   slug: string;
+  title: string;
   excerpt: string;
+  type: string;
   tags: string[];
-  publishedAt: string;
+  published_at: string | null;
+  updated_at: string;
 }
 
-function getArticles(): ArticleFeedItem[] {
-  // 此清單與 mock-data.ts 同步；未來改為從資料庫/CMS 取得
-  return [
-    {
-      id: '1',
-      title: 'Angular Signals: 完整指南與最佳實踐',
-      slug: 'angular-signals-complete-guide',
-      excerpt:
-        '深入探討 Angular 20+ 中的 Signal 響應式編程，包含實戰範例和效能優化技巧。',
-      tags: ['Angular', 'TypeScript', 'Web Development'],
-      publishedAt: '2024-12-01T00:00:00+08:00',
-    },
-    {
-      id: '2',
-      title: 'Golang 併發編程：Goroutines 與 Channels 深度解析',
-      slug: 'golang-concurrency-goroutines-channels',
-      excerpt:
-        '探索 Go 語言強大的併發模型，從 goroutines 的基本概念到 channels 的高級用法。',
-      tags: ['Golang'],
-      publishedAt: '2024-11-28T00:00:00+08:00',
-    },
-    {
-      id: '3',
-      title: 'Rust 所有權系統：記憶體安全的革命性方法',
-      slug: 'rust-ownership-memory-safety',
-      excerpt:
-        'Rust 的所有權系統如何在不使用垃圾回收器的情況下保證記憶體安全？',
-      tags: ['Rust'],
-      publishedAt: '2024-11-25T00:00:00+08:00',
-    },
-    {
-      id: '4',
-      title: 'Flutter 狀態管理：Riverpod vs Bloc 完整比較',
-      slug: 'flutter-state-management-riverpod-bloc',
-      excerpt:
-        '深度比較 Flutter 兩大主流狀態管理方案：Riverpod 和 Bloc。',
-      tags: ['Flutter'],
-      publishedAt: '2024-11-22T00:00:00+08:00',
-    },
-    {
-      id: '5',
-      title: 'PostgreSQL 效能優化：索引策略與查詢調優',
-      slug: 'postgresql-performance-optimization',
-      excerpt:
-        'PostgreSQL 效能優化的完整指南，包含索引設計、查詢分析、配置調優等實戰技巧。',
-      tags: ['PostgreSQL'],
-      publishedAt: '2024-11-20T00:00:00+08:00',
-    },
-    {
-      id: '6',
-      title: 'AI 輔助程式開發：ChatGPT 與 GitHub Copilot 實戰指南',
-      slug: 'ai-assisted-programming-guide',
-      excerpt:
-        'AI 工具如何革命性地改變程式開發流程？深入探討 AI 工具的實際應用技巧。',
-      tags: ['AI', 'Web Development'],
-      publishedAt: '2024-11-18T00:00:00+08:00',
-    },
-  ];
+interface ApiListResponse {
+  data: ContentItem[];
+  meta: { total: number; page: number; per_page: number; total_pages: number };
 }
 
-function getBuildLogs(): FeedItem[] {
-  return [
-    {
-      title: 'koopa0.dev 部落格建置紀錄 #1',
-      path: '/build-logs/koopa-blog-build-log-1',
-      excerpt: '從零開始打造個人部落格 — Angular 21 + SSR + Tailwind CSS v4 的技術選型與架構設計。',
-      tags: ['Angular', 'SSR'],
-      publishedAt: '2024-12-05T00:00:00+08:00',
-    },
-    {
-      title: 'Resonance 專案啟動紀錄',
-      path: '/build-logs/resonance-kickoff',
-      excerpt: 'AI 文學共創平台 Resonance 的設計理念與技術規劃。',
-      tags: ['Go', 'Angular', 'AI'],
-      publishedAt: '2024-12-03T00:00:00+08:00',
-    },
-  ];
-}
+const TYPE_ROUTE_PREFIX: Record<string, string> = {
+  article: '/articles',
+  essay: '/essays',
+  'build-log': '/build-logs',
+  til: '/til',
+  note: '/notes',
+};
 
-function getTils(): FeedItem[] {
-  return [
-    {
-      title: 'Go Dockerfile Multi-stage Build',
-      path: '/til/go-dockerfile-multistage',
-      excerpt: '使用 multi-stage build 優化 Go 專案的 Docker 映像大小。',
-      tags: ['Golang', 'Docker'],
-      publishedAt: '2024-12-06T00:00:00+08:00',
-    },
-    {
-      title: 'Angular linkedSignal 用法',
-      path: '/til/angular-linked-signal',
-      excerpt: 'Angular 21 linkedSignal 的使用情境與範例。',
-      tags: ['Angular', 'TypeScript'],
-      publishedAt: '2024-12-04T00:00:00+08:00',
-    },
-  ];
+/** 從後端取得所有已發布內容，帶快取避免頻繁請求 */
+let contentCache: { items: ContentItem[]; fetchedAt: number } | null = null;
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 分鐘
+
+async function fetchPublishedContent(): Promise<ContentItem[]> {
+  if (contentCache && Date.now() - contentCache.fetchedAt < CACHE_TTL_MS) {
+    return contentCache.items;
+  }
+
+  try {
+    const allItems: ContentItem[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    while (page <= totalPages) {
+      const res = await fetch(
+        `${BACKEND_URL}/api/contents?per_page=100&page=${page}`,
+      );
+      if (!res.ok) {
+        throw new Error(`API returned ${res.status}`);
+      }
+      const json = (await res.json()) as ApiListResponse;
+      allItems.push(...json.data);
+      totalPages = json.meta.total_pages;
+      page++;
+    }
+
+    contentCache = { items: allItems, fetchedAt: Date.now() };
+    return allItems;
+  } catch (err) {
+    console.error('Failed to fetch content for sitemap/feed:', err);
+    // 回傳快取（即使過期）或空陣列
+    return contentCache?.items ?? [];
+  }
 }
 
 function escapeXml(text: string): string {
@@ -178,10 +124,9 @@ function escapeXml(text: string): string {
     .replace(/'/g, '&apos;');
 }
 
-// Sitemap XML — 包含靜態頁面 + 所有已發布文章
-app.get('/sitemap.xml', (_req, res) => {
+// Sitemap XML — 靜態頁面 + 從 API 動態取得的已發布內容
+app.get('/sitemap.xml', async (_req, res) => {
   const now = new Date().toISOString().split('T')[0];
-  const articles = getArticles();
 
   const staticUrls = STATIC_ROUTES.map(
     (route) =>
@@ -193,39 +138,33 @@ app.get('/sitemap.xml', (_req, res) => {
   </url>`,
   );
 
-  const articleUrls = articles.map(
-    (article) =>
-      `  <url>
-    <loc>${SITE_URL}/articles/${article.id}</loc>
-    <lastmod>${article.publishedAt.split('T')[0]}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>`,
-  );
+  const contents = await fetchPublishedContent();
 
-  const buildLogUrls = getBuildLogs().map(
-    (bl) =>
-      `  <url>
-    <loc>${SITE_URL}${bl.path}</loc>
-    <lastmod>${bl.publishedAt.split('T')[0]}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>`,
-  );
+  const priorityMap: Record<string, string> = {
+    article: '0.7',
+    essay: '0.6',
+    'build-log': '0.5',
+    til: '0.4',
+    note: '0.4',
+  };
 
-  const tilUrls = getTils().map(
-    (til) =>
-      `  <url>
-    <loc>${SITE_URL}${til.path}</loc>
-    <lastmod>${til.publishedAt.split('T')[0]}</lastmod>
+  const contentUrls = contents
+    .filter((c) => TYPE_ROUTE_PREFIX[c.type])
+    .map((c) => {
+      const prefix = TYPE_ROUTE_PREFIX[c.type];
+      const lastmod = (c.published_at ?? c.updated_at).split('T')[0];
+      const priority = priorityMap[c.type] ?? '0.5';
+      return `  <url>
+    <loc>${SITE_URL}${prefix}/${c.slug}</loc>
+    <lastmod>${lastmod}</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-  </url>`,
-  );
+    <priority>${priority}</priority>
+  </url>`;
+    });
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${[...staticUrls, ...articleUrls, ...buildLogUrls, ...tilUrls].join('\n')}
+${[...staticUrls, ...contentUrls].join('\n')}
 </urlset>`;
 
   res.set('Content-Type', 'application/xml');
@@ -233,42 +172,40 @@ ${[...staticUrls, ...articleUrls, ...buildLogUrls, ...tilUrls].join('\n')}
   res.send(xml);
 });
 
-// RSS Feed — 包含所有已發布內容（文章 + Build Log + TIL）
-app.get('/feed.xml', (_req, res) => {
-  const articles = getArticles();
-  const buildLogs = getBuildLogs();
-  const tils = getTils();
+// RSS Feed — 從 API 動態取得所有已發布內容
+app.get('/feed.xml', async (_req, res) => {
+  const contents = await fetchPublishedContent();
 
-  const allItems: FeedItem[] = [
-    ...articles.map((a) => ({
-      title: a.title,
-      path: `/articles/${a.id}`,
-      excerpt: a.excerpt,
-      tags: a.tags,
-      publishedAt: a.publishedAt,
-    })),
-    ...buildLogs,
-    ...tils,
-  ].sort(
-    (a, b) =>
-      new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
-  );
+  const feedItems = contents
+    .filter((c) => TYPE_ROUTE_PREFIX[c.type])
+    .sort(
+      (a, b) =>
+        new Date(b.published_at ?? b.updated_at).getTime() -
+        new Date(a.published_at ?? a.updated_at).getTime(),
+    );
 
-  const latestDate = allItems.length > 0
-    ? new Date(allItems[0].publishedAt).toUTCString()
-    : new Date().toUTCString();
+  const latestDate =
+    feedItems.length > 0
+      ? new Date(feedItems[0].published_at ?? feedItems[0].updated_at).toUTCString()
+      : new Date().toUTCString();
 
-  const items = allItems
-    .map(
-      (item) => `    <item>
-      <title>${escapeXml(item.title)}</title>
-      <link>${SITE_URL}${item.path}</link>
-      <guid isPermaLink="true">${SITE_URL}${item.path}</guid>
-      <description>${escapeXml(item.excerpt)}</description>
-      <pubDate>${new Date(item.publishedAt).toUTCString()}</pubDate>
-${item.tags.map((tag) => `      <category>${escapeXml(tag)}</category>`).join('\n')}
-    </item>`,
-    )
+  const items = feedItems
+    .map((c) => {
+      const prefix = TYPE_ROUTE_PREFIX[c.type];
+      const link = `${SITE_URL}${prefix}/${c.slug}`;
+      const pubDate = new Date(c.published_at ?? c.updated_at).toUTCString();
+      const categories = c.tags
+        .map((tag) => `      <category>${escapeXml(tag)}</category>`)
+        .join('\n');
+      return `    <item>
+      <title>${escapeXml(c.title)}</title>
+      <link>${link}</link>
+      <guid isPermaLink="true">${link}</guid>
+      <description>${escapeXml(c.excerpt)}</description>
+      <pubDate>${pubDate}</pubDate>
+${categories}
+    </item>`;
+    })
     .join('\n');
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -296,8 +233,6 @@ app.get('/api/health', (_req, res) => {
 });
 
 // BFF Proxy — 轉發 /bff/* 到後端，後端零暴露
-const BACKEND_URL = process.env['BACKEND_URL'] || 'http://backend:8080';
-
 app.use('/bff', (req, res) => {
   const targetUrl = `${BACKEND_URL}${req.originalUrl.replace(/^\/bff/, '')}`;
   const headers: Record<string, string> = {

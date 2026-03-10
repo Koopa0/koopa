@@ -23,6 +23,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/server"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
+	"github.com/koopa0/blog-backend/internal/upload"
 )
 
 type config struct {
@@ -34,6 +35,11 @@ type config struct {
 	GitHubWebhookSecret string
 	GitHubToken         string
 	GitHubRepo          string
+	R2Endpoint          string
+	R2AccessKeyID       string
+	R2SecretAccessKey   string
+	R2Bucket            string
+	R2PublicURL         string
 }
 
 func main() {
@@ -74,6 +80,9 @@ func run(logger *slog.Logger) error {
 	collectedStore := collected.NewStore(pool)
 	trackingStore := tracking.NewStore(pool)
 
+	// upload
+	s3Client := upload.NewS3Client(ctx, cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey)
+
 	// pipeline dependencies
 	githubFetcher := pipeline.NewGitHub(cfg.GitHubToken, cfg.GitHubRepo)
 	topicLookup := pipeline.NewTopicLookup(func(ctx context.Context, slug string) (uuid.UUID, error) {
@@ -94,6 +103,7 @@ func run(logger *slog.Logger) error {
 		Collected: collected.NewHandler(collectedStore, logger),
 		Tracking:  tracking.NewHandler(trackingStore, logger),
 		Pipeline:  pipeline.NewHandler(contentStore, topicLookup, githubFetcher, cfg.GitHubWebhookSecret, logger),
+		Upload:    upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
 		Logger:    logger,
 	}
 
@@ -111,21 +121,18 @@ func loadConfig(logger *slog.Logger) config {
 		SiteURL:    envOr("SITE_URL", "http://localhost:8080"),
 	}
 
-	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
-	if cfg.DatabaseURL == "" {
-		logger.Error("DATABASE_URL is required")
-		os.Exit(1)
-	}
-
-	cfg.JWTSecret = os.Getenv("JWT_SECRET")
-	if cfg.JWTSecret == "" {
-		logger.Error("JWT_SECRET is required")
-		os.Exit(1)
-	}
+	cfg.DatabaseURL = requireEnv("DATABASE_URL", logger)
+	cfg.JWTSecret = requireEnv("JWT_SECRET", logger)
 
 	cfg.GitHubWebhookSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	cfg.GitHubToken = os.Getenv("GITHUB_TOKEN")
 	cfg.GitHubRepo = envOr("GITHUB_REPO", "Koopa0/obsidian")
+
+	cfg.R2Endpoint = requireEnv("R2_ENDPOINT", logger)
+	cfg.R2AccessKeyID = requireEnv("R2_ACCESS_KEY_ID", logger)
+	cfg.R2SecretAccessKey = requireEnv("R2_SECRET_ACCESS_KEY", logger)
+	cfg.R2Bucket = envOr("R2_BUCKET", "blog")
+	cfg.R2PublicURL = requireEnv("R2_PUBLIC_URL", logger)
 
 	return cfg
 }
@@ -155,6 +162,15 @@ func runMigrations(databaseURL string, logger *slog.Logger) error {
 
 	logger.Info("migrations: applied successfully")
 	return nil
+}
+
+func requireEnv(key string, logger *slog.Logger) string {
+	v := os.Getenv(key)
+	if v == "" {
+		logger.Error(key + " is required")
+		os.Exit(1)
+	}
+	return v
 }
 
 func envOr(key, fallback string) string {

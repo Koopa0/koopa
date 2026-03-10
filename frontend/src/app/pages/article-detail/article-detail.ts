@@ -65,7 +65,9 @@ export class ArticleDetailComponent implements OnInit {
     if (!article) {
       return '';
     }
-    return this.markdownService.parse(article.body);
+    // Strip leading h1 from markdown — the title is already rendered in the header section
+    const body = article.body.replace(/^#\s+.+\n+/, '');
+    return this.markdownService.parse(body);
   });
 
   // SECURITY_REVIEW: bypassSecurityTrustHtml is used to render markdown-generated HTML.
