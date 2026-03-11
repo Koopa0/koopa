@@ -102,6 +102,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("POST /api/admin/collected/{id}/ignore", authMid(http.HandlerFunc(d.Collected.Ignore)))
 
 	// admin — projects
+	mux.Handle("GET /api/admin/projects", authMid(http.HandlerFunc(d.Project.List)))
 	mux.Handle("POST /api/admin/projects", authMid(http.HandlerFunc(d.Project.Create)))
 	mux.Handle("PUT /api/admin/projects/{id}", authMid(http.HandlerFunc(d.Project.Update)))
 	mux.Handle("DELETE /api/admin/projects/{id}", authMid(http.HandlerFunc(d.Project.Delete)))
@@ -140,8 +141,10 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	// admin — upload
 	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))
 
-	// pipeline stubs
+	// pipeline
 	mux.Handle("POST /api/pipeline/sync", authMid(http.HandlerFunc(d.Pipeline.Sync)))
+	mux.Handle("POST /api/pipeline/notion-sync", authMid(http.HandlerFunc(d.Pipeline.NotionSync)))
+	mux.Handle("POST /api/pipeline/reconcile", authMid(http.HandlerFunc(d.Pipeline.Reconcile)))
 	mux.Handle("POST /api/pipeline/collect", authMid(http.HandlerFunc(d.Pipeline.Collect)))
 	mux.Handle("POST /api/pipeline/generate", authMid(http.HandlerFunc(d.Pipeline.Generate)))
 	mux.Handle("POST /api/pipeline/digest", authMid(http.HandlerFunc(d.Pipeline.Digest)))

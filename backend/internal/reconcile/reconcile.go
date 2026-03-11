@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-
-	"golang.org/x/sync/errgroup"
+	"sync"
 )
 
 // DirectoryLister lists markdown file slugs in a directory.
@@ -99,15 +98,81 @@ func New(
 	}
 }
 
-// Run executes the reconciliation and sends a report if issues are found.
+// Run executes the full reconciliation (Obsidian + Notion) and sends a report if issues are found.
 func (r *Reconciler) Run(ctx context.Context) error {
 	r.logger.Info("reconciliation starting")
 
+	var obsReport, notionReport Report
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		obsReport = r.reconcileObsidian(ctx)
+	})
+	wg.Go(func() {
+		notionReport = r.reconcileNotion(ctx)
+	})
+	wg.Wait()
+
+	report := Report{
+		ObsidianMissing:  obsReport.ObsidianMissing,
+		ObsidianOrphaned: obsReport.ObsidianOrphaned,
+		ProjectsMissing:  notionReport.ProjectsMissing,
+		ProjectsOrphaned: notionReport.ProjectsOrphaned,
+		GoalsMissing:     notionReport.GoalsMissing,
+		GoalsOrphaned:    notionReport.GoalsOrphaned,
+	}
+
+	return r.sendReport(ctx, report)
+}
+
+// ReconcileObsidian compares GitHub 10-Public-Content/ against local contents and sends a report.
+func (r *Reconciler) ReconcileObsidian(ctx context.Context) error {
+	r.logger.Info("reconcile obsidian starting")
+	report := r.reconcileObsidian(ctx)
+	return r.sendReport(ctx, report)
+}
+
+// ReconcileNotion compares Notion Projects + Goals against local DB and sends a report.
+func (r *Reconciler) ReconcileNotion(ctx context.Context) error {
+	r.logger.Info("reconcile notion starting")
+	report := r.reconcileNotion(ctx)
+	return r.sendReport(ctx, report)
+}
+
+// reconcileObsidian fetches GitHub and local slugs, returns partial report.
+func (r *Reconciler) reconcileObsidian(ctx context.Context) Report {
 	var (
-		githubSlugs   []string
-		githubErr     error
-		localSlugs    []string
-		localErr      error
+		githubSlugs []string
+		githubErr   error
+		localSlugs  []string
+		localErr    error
+	)
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		githubSlugs, githubErr = r.github.ListDirectory(ctx, "10-Public-Content")
+	})
+	wg.Go(func() {
+		localSlugs, localErr = r.content.ObsidianContentSlugs(ctx)
+	})
+	wg.Wait()
+
+	if githubErr != nil {
+		r.logger.Error("reconcile: listing github directory", "error", githubErr)
+	}
+	if localErr != nil {
+		r.logger.Error("reconcile: listing obsidian content", "error", localErr)
+	}
+
+	var report Report
+	if githubErr == nil && localErr == nil {
+		report.ObsidianMissing, report.ObsidianOrphaned = diff(githubSlugs, localSlugs)
+	}
+	return report
+}
+
+// reconcileNotion fetches Notion and local page IDs for Projects + Goals, returns partial report.
+func (r *Reconciler) reconcileNotion(ctx context.Context) Report {
+	var (
 		localProjIDs  []string
 		localProjErr  error
 		notionProjIDs []string
@@ -118,78 +183,54 @@ func (r *Reconciler) Run(ctx context.Context) error {
 		notionGoalErr error
 	)
 
-	g := new(errgroup.Group)
-
-	// Obsidian: GitHub vs local
-	g.Go(func() error {
-		githubSlugs, githubErr = r.github.ListDirectory(ctx, "10-Public-Content")
-		return nil
-	})
-	g.Go(func() error {
-		localSlugs, localErr = r.content.ObsidianContentSlugs(ctx)
-		return nil
-	})
-
-	// Projects: Notion vs local
-	g.Go(func() error {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		localProjIDs, localProjErr = r.projects.NotionPageIDs(ctx)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		if r.config.NotionProjectsDB == "" {
-			return nil
+			return
 		}
 		notionProjIDs, notionProjErr = r.notion.QueryPageIDs(ctx, r.config.NotionProjectsDB)
-		return nil
 	})
-
-	// Goals: Notion vs local
-	g.Go(func() error {
+	wg.Go(func() {
 		localGoalIDs, localGoalErr = r.goals.NotionPageIDs(ctx)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		if r.config.NotionGoalsDB == "" {
-			return nil
+			return
 		}
 		notionGoalIDs, notionGoalErr = r.notion.QueryPageIDs(ctx, r.config.NotionGoalsDB)
-		return nil
 	})
+	wg.Wait()
 
-	_ = g.Wait()
+	var report Report
 
-	report := Report{}
-
-	// Obsidian comparison
-	switch {
-	case githubErr != nil:
-		r.logger.Error("reconcile: listing github directory", "error", githubErr)
-	case localErr != nil:
-		r.logger.Error("reconcile: listing obsidian content", "error", localErr)
-	default:
-		report.ObsidianMissing, report.ObsidianOrphaned = diff(githubSlugs, localSlugs)
-	}
-
-	// Projects comparison
-	switch {
-	case localProjErr != nil:
+	if localProjErr != nil {
 		r.logger.Error("reconcile: listing local project page ids", "error", localProjErr)
-	case notionProjErr != nil:
+	}
+	if notionProjErr != nil {
 		r.logger.Error("reconcile: querying notion projects", "error", notionProjErr)
-	case len(notionProjIDs) > 0:
+	}
+	if localProjErr == nil && notionProjErr == nil && len(notionProjIDs) > 0 {
 		report.ProjectsMissing, report.ProjectsOrphaned = diff(notionProjIDs, localProjIDs)
 	}
 
-	// Goals comparison
-	switch {
-	case localGoalErr != nil:
+	if localGoalErr != nil {
 		r.logger.Error("reconcile: listing local goal page ids", "error", localGoalErr)
-	case notionGoalErr != nil:
+	}
+	if notionGoalErr != nil {
 		r.logger.Error("reconcile: querying notion goals", "error", notionGoalErr)
-	case len(notionGoalIDs) > 0:
+	}
+	if localGoalErr == nil && notionGoalErr == nil && len(notionGoalIDs) > 0 {
 		report.GoalsMissing, report.GoalsOrphaned = diff(notionGoalIDs, localGoalIDs)
 	}
 
+	return report
+}
+
+// sendReport sends a notification if the report has issues.
+func (r *Reconciler) sendReport(ctx context.Context, report Report) error {
 	if !report.HasIssues() {
 		r.logger.Info("reconciliation complete, no issues found")
 		return nil
@@ -199,31 +240,29 @@ func (r *Reconciler) Run(ctx context.Context) error {
 	r.logger.Warn("reconciliation found issues", "report", text)
 
 	if err := r.notifier.Send(ctx, text); err != nil {
-		r.logger.Error("sending reconciliation report", "error", err)
 		return fmt.Errorf("sending reconciliation report: %w", err)
 	}
-
 	return nil
 }
 
 // diff returns items in source but not in target (missing), and items in target but not in source (orphaned).
 func diff(source, target []string) (missing, orphaned []string) {
-	sourceSet := make(map[string]bool, len(source))
+	sourceSet := make(map[string]struct{}, len(source))
 	for _, s := range source {
-		sourceSet[s] = true
+		sourceSet[s] = struct{}{}
 	}
-	targetSet := make(map[string]bool, len(target))
+	targetSet := make(map[string]struct{}, len(target))
 	for _, t := range target {
-		targetSet[t] = true
+		targetSet[t] = struct{}{}
 	}
 
 	for _, s := range source {
-		if !targetSet[s] {
+		if _, ok := targetSet[s]; !ok {
 			missing = append(missing, s)
 		}
 	}
 	for _, t := range target {
-		if !sourceSet[t] {
+		if _, ok := sourceSet[t]; !ok {
 			orphaned = append(orphaned, t)
 		}
 	}

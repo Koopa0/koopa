@@ -60,6 +60,13 @@ type FeedLister interface {
 	EnabledFeedsBySchedule(ctx context.Context, schedule string) ([]feed.Feed, error)
 }
 
+// Reconciler runs Obsidian and Notion reconciliation.
+type Reconciler interface {
+	ReconcileObsidian(ctx context.Context) error
+	ReconcileNotion(ctx context.Context) error
+	Run(ctx context.Context) error
+}
+
 // Handler handles pipeline and webhook HTTP requests.
 type Handler struct {
 	content       ContentWriter
@@ -68,6 +75,7 @@ type Handler struct {
 	jobs          JobSubmitter
 	collector     FeedCollector
 	feeds         FeedLister
+	reconciler    Reconciler
 	webhookSecret string
 	obsidianRepo  string // "owner/repo" for Obsidian content sync
 	logger        *slog.Logger
@@ -92,14 +100,68 @@ func (h *Handler) SetCollector(c FeedCollector, f FeedLister) {
 	h.feeds = f
 }
 
+// SetReconciler sets the reconciler for manual sync endpoints.
+func (h *Handler) SetReconciler(r Reconciler) {
+	h.reconciler = r
+}
+
 // NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
 func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
 	return &topicLookupFunc{fn: fn}
 }
 
-// Sync handles POST /api/pipeline/sync.
-func (h *Handler) Sync(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+// Sync handles POST /api/pipeline/sync — Obsidian/GitHub reconciliation.
+func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
+	if h.reconciler == nil {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
+	go func() {
+		// Detach from HTTP request lifecycle; reconciler calls external APIs.
+		ctx := context.WithoutCancel(r.Context())
+		if err := h.reconciler.ReconcileObsidian(ctx); err != nil {
+			h.logger.Error("obsidian reconciliation failed", "error", err)
+		}
+	}()
+}
+
+// NotionSync handles POST /api/pipeline/notion-sync — Notion reconciliation.
+func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
+	if h.reconciler == nil {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
+	go func() {
+		// Detach from HTTP request lifecycle; reconciler calls external APIs.
+		ctx := context.WithoutCancel(r.Context())
+		if err := h.reconciler.ReconcileNotion(ctx); err != nil {
+			h.logger.Error("notion reconciliation failed", "error", err)
+		}
+	}()
+}
+
+// Reconcile handles POST /api/pipeline/reconcile — full Obsidian + Notion reconciliation.
+func (h *Handler) Reconcile(w http.ResponseWriter, r *http.Request) {
+	if h.reconciler == nil {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
+	go func() {
+		// Detach from HTTP request lifecycle; reconciler calls external APIs.
+		ctx := context.WithoutCancel(r.Context())
+		if err := h.reconciler.Run(ctx); err != nil {
+			h.logger.Error("full reconciliation failed", "error", err)
+		}
+	}()
 }
 
 // collectRequest is the optional request body for POST /api/pipeline/collect.

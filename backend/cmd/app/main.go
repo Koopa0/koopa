@@ -445,9 +445,10 @@ func run(logger *slog.Logger) error {
 		return t.ID, nil
 	})
 
-	// pipeline handler with collector
+	// pipeline handler with collector and reconciler
 	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
 	pipelineHandler.SetCollector(feedCollector, feedStore)
+	pipelineHandler.SetReconciler(recon)
 
 	// flow admin handler
 	flowHandler := flow.NewHandler(
