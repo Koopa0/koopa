@@ -57,11 +57,11 @@ func NewHandler(store *Store, jwtSecret string, gcfg GoogleConfig, logger *slog.
 	}
 }
 
-// GoogleLogin handles GET /api/auth/google — redirects to Google consent screen.
+// GoogleLogin handles GET /api/auth/google — returns Google OAuth URL for the frontend to redirect.
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	state := h.generateState()
-	url := h.oauthCfg.AuthCodeURL(state)
-	http.Redirect(w, r, url, http.StatusFound)
+	authURL := h.oauthCfg.AuthCodeURL(state, oauth2.SetAuthURLParam("login_hint", h.adminEmail))
+	api.Encode(w, http.StatusOK, api.Response{Data: map[string]string{"url": authURL}})
 }
 
 // GoogleCallback handles GET /api/auth/google/callback — exchanges code for tokens.

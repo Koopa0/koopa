@@ -1,4 +1,6 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, ActivatedRoute } from '@angular/router';
 import { signal, PLATFORM_ID } from '@angular/core';
 import { LoginComponent } from './login';
@@ -15,6 +17,7 @@ describe('LoginComponent', () => {
   };
   let mockSeoService: { updateMeta: ReturnType<typeof vi.fn> };
   let mockActivatedRoute: { snapshot: { queryParams: Record<string, string> } };
+  let httpMock: HttpTestingController;
 
   beforeEach(async () => {
     mockRouter = { navigate: vi.fn() };
@@ -30,6 +33,8 @@ describe('LoginComponent', () => {
     await TestBed.configureTestingModule({
       imports: [LoginComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: Router, useValue: mockRouter },
         { provide: AuthService, useValue: mockAuthService },
         { provide: SeoService, useValue: mockSeoService },
@@ -40,6 +45,11 @@ describe('LoginComponent', () => {
 
     fixture = TestBed.createComponent(LoginComponent);
     component = fixture.componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
   });
 
   it('should create', () => {
@@ -64,6 +74,8 @@ describe('LoginComponent', () => {
     await TestBed.configureTestingModule({
       imports: [LoginComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: Router, useValue: mockRouter },
         { provide: AuthService, useValue: authenticatedAuth },
         { provide: SeoService, useValue: mockSeoService },
@@ -112,11 +124,23 @@ describe('LoginComponent', () => {
   });
 
   describe('signInWithGoogle', () => {
-    it('should redirect to BFF OAuth endpoint', () => {
+    it('should fetch OAuth URL from BFF endpoint', () => {
       fixture.detectChanges();
-      // Cannot directly test window.location.href change in unit test,
-      // but we verify the method exists and is callable
-      expect(() => component['signInWithGoogle']()).not.toThrow();
+      component['signInWithGoogle']();
+
+      const req = httpMock.expectOne('/bff/api/auth/google');
+      expect(req.request.method).toBe('GET');
+      req.flush({ data: { url: 'https://accounts.google.com/o/oauth2/auth?...' } });
+    });
+
+    it('should set error message on HTTP failure', () => {
+      fixture.detectChanges();
+      component['signInWithGoogle']();
+
+      const req = httpMock.expectOne('/bff/api/auth/google');
+      req.flush('Error', { status: 500, statusText: 'Internal Server Error' });
+
+      expect(component['errorMessage']()).toBe('無法取得登入連結，請稍後再試');
     });
   });
 });

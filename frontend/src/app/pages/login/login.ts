@@ -7,6 +7,7 @@ import {
   PLATFORM_ID,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
@@ -31,6 +32,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginComponent implements OnInit {
+  private readonly http = inject(HttpClient);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -62,8 +64,15 @@ export class LoginComponent implements OnInit {
   }
 
   protected signInWithGoogle(): void {
-    if (isPlatformBrowser(this.platformId)) {
-      window.location.href = '/bff/api/auth/google';
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
     }
+
+    this.http
+      .get<{ data: { url: string } }>('/bff/api/auth/google')
+      .subscribe({
+        next: (res) => (window.location.href = res.data.url),
+        error: () => this.errorMessage.set('無法取得登入連結，請稍後再試'),
+      });
   }
 }
