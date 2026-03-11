@@ -3082,17 +3082,9 @@ ON CONFLICT (email) DO UPDATE SET updated_at = now()
 RETURNING id, email, role, created_at, updated_at
 `
 
-type UpsertUserByEmailRow struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (UpsertUserByEmailRow, error) {
+func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRow(ctx, upsertUserByEmail, email)
-	var i UpsertUserByEmailRow
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -3109,17 +3101,9 @@ FROM users
 WHERE email = $1
 `
 
-type UserByEmailRow struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow, error) {
+func (q *Queries) UserByEmail(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRow(ctx, userByEmail, email)
-	var i UserByEmailRow
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -3136,17 +3120,9 @@ FROM users
 WHERE id = $1
 `
 
-type UserByIDRow struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-func (q *Queries) UserByID(ctx context.Context, id uuid.UUID) (UserByIDRow, error) {
+func (q *Queries) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, userByID, id)
-	var i UserByIDRow
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
