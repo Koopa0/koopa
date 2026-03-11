@@ -1,4 +1,5 @@
-import { Injectable, inject, signal, computed } from '@angular/core';
+import { DestroyRef, Injectable, inject, signal, computed } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { tap, catchError, throwError } from 'rxjs';
 import { ContentService } from './content.service';
 import type { ApiContent, ApiPaginationMeta } from '../models';
@@ -6,6 +7,7 @@ import type { ApiContent, ApiPaginationMeta } from '../models';
 @Injectable({ providedIn: 'root' })
 export class SearchService {
   private readonly content = inject(ContentService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly _query = signal('');
   private readonly _results = signal<ApiContent[]>([]);
@@ -42,6 +44,7 @@ export class SearchService {
           this._searching.set(false);
           return throwError(() => err);
         }),
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe();
   }

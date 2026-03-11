@@ -1,7 +1,7 @@
-import { Injectable, inject, PLATFORM_ID } from '@angular/core';
+import { DestroyRef, Injectable, inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { Router } from '@angular/router';
-import { fromEvent, Subscription } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { fromEvent } from 'rxjs';
 import { filter } from 'rxjs/operators';
 
 @Injectable({
@@ -9,23 +9,23 @@ import { filter } from 'rxjs/operators';
 })
 export class KeyboardShortcutsService {
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly router = inject(Router);
-  private subscription: Subscription | null = null;
+  private readonly destroyRef = inject(DestroyRef);
+  private isInitialized = false;
 
   init(): void {
-    if (!isPlatformBrowser(this.platformId)) {
+    if (!isPlatformBrowser(this.platformId) || this.isInitialized) {
       return;
     }
 
-    // Avoid duplicate subscriptions
-    this.subscription?.unsubscribe();
+    this.isInitialized = true;
 
-    this.subscription = fromEvent<KeyboardEvent>(document, 'keydown')
+    fromEvent<KeyboardEvent>(document, 'keydown')
       .pipe(
         filter((event) => {
           const target = event.target as HTMLElement;
           return !['INPUT', 'TEXTAREA'].includes(target.tagName);
         }),
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((event) => {
         if (event.key === 'g' && event.shiftKey) {
@@ -41,10 +41,5 @@ export class KeyboardShortcutsService {
           window.scrollBy({ top: -100, behavior: 'smooth' });
         }
       });
-  }
-
-  destroy(): void {
-    this.subscription?.unsubscribe();
-    this.subscription = null;
   }
 }

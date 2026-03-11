@@ -6,17 +6,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 )
 
 // GitHub fetches file content from a GitHub repository using the GitHub API.
 type GitHub struct {
-	token string
-	repo  string // "owner/repo"
+	token  string
+	repo   string // "owner/repo"
+	client *http.Client
 }
 
-// NewGitHub returns a GitHub fetcher.
+// NewGitHub returns a GitHub fetcher with a 15-second HTTP timeout.
 func NewGitHub(token, repo string) *GitHub {
-	return &GitHub{token: token, repo: repo}
+	return &GitHub{
+		token: token,
+		repo:  repo,
+		client: &http.Client{
+			Timeout: 15 * time.Second,
+		},
+	}
 }
 
 // githubFileResponse represents the GitHub Contents API response.
@@ -36,7 +45,7 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	req.Header.Set("Authorization", "Bearer "+g.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching file: %w", err)
 	}
@@ -55,7 +64,9 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 		return nil, fmt.Errorf("unexpected encoding %q for %s", fileResp.Encoding, path)
 	}
 
-	content, err := base64.StdEncoding.DecodeString(fileResp.Content)
+	// GitHub API returns base64 with embedded newlines; strip before decoding.
+	cleaned := strings.ReplaceAll(fileResp.Content, "\n", "")
+	content, err := base64.StdEncoding.DecodeString(cleaned)
 	if err != nil {
 		return nil, fmt.Errorf("decoding base64: %w", err)
 	}

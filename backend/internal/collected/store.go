@@ -37,8 +37,8 @@ func (s *Store) CollectedData(ctx context.Context, f Filter) ([]CollectedData, i
 	status := nullCollectedStatus(f.Status)
 
 	rows, err := s.q.CollectedData(ctx, db.CollectedDataParams{
-		Limit:  int32(f.PerPage),                //nolint:gosec // pagination values are bounded by API layer
-		Offset: int32((f.Page - 1) * f.PerPage), //nolint:gosec // pagination values are bounded by API layer
+		Limit:  int32(f.PerPage),                // #nosec G115 -- pagination values are bounded by API layer
+		Offset: int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
 		Status: status,
 	})
 	if err != nil {

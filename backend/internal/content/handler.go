@@ -57,6 +57,10 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 // ByType handles GET /api/contents/type/{type}.
 func (h *Handler) ByType(w http.ResponseWriter, r *http.Request) {
 	t := Type(r.PathValue("type"))
+	if !t.Valid() {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
+		return
+	}
 	f := h.parseFilter(r)
 	f.Type = &t
 	contents, total, err := h.store.Contents(r.Context(), f)

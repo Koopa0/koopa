@@ -25,7 +25,11 @@
               "entry": "server.ts"
             },
             "security": {
-              "allowedHosts": ["localhost", "koopa0.dev", "www.koopa0.dev"]
+              "allowedHosts": [
+                "localhost",
+                "koopa0.dev",
+                "www.koopa0.dev"
+              ]
             },
             "polyfills": [
               "zone.js"
@@ -93,11 +97,23 @@
             "tsConfig": "tsconfig.spec.json",
             "buildTarget": "koopa-blog:build"
           }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
+          }
         }
       }
     }
   },
   "cli": {
-    "analytics": "54b95ba0-2e7f-46e3-8a85-f0f6d41ed666"
+    "analytics": "54b95ba0-2e7f-46e3-8a85-f0f6d41ed666",
+    "schematicCollections": [
+      "angular-eslint"
+    ]
   }
 }

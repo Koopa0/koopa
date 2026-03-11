@@ -37,20 +37,22 @@ import { LucideAngularModule, ArrowRight, Code2, Mail } from 'lucide-angular';
             high-performance services with Go and Rust, crafting modern frontends with Angular.
           </p>
           <div class="mt-10 flex flex-wrap items-center gap-4">
-            <a
+            <button
+              type="button"
               (click)="scrollTo('projects')"
               class="inline-flex cursor-pointer items-center gap-2 rounded-sm bg-white px-6 py-3 text-sm font-semibold text-zinc-900 no-underline transition-all hover:scale-[1.02] hover:bg-zinc-200 active:scale-[0.98]"
             >
               View Projects
               <lucide-icon [img]="ArrowRightIcon" [size]="16" />
-            </a>
-            <a
+            </button>
+            <button
+              type="button"
               (click)="scrollTo('contact')"
               class="inline-flex cursor-pointer items-center gap-2 rounded-sm border border-zinc-700 px-6 py-3 text-sm font-semibold text-zinc-300 no-underline transition-all hover:border-zinc-500 hover:text-white hover:shadow-xs hover:shadow-zinc-800 active:scale-[0.98]"
             >
               <lucide-icon [img]="MailIcon" [size]="16" />
               Get In Touch
-            </a>
+            </button>
           </div>
         </div>
       </div>

@@ -46,10 +46,10 @@ export class ProjectsComponent implements OnInit {
     return allProjects.filter((p) => p.status === status);
   });
 
-  protected readonly statusFilters: Array<{
+  protected readonly statusFilters: {
     value: ProjectStatus | 'all';
     label: string;
-  }> = [
+  }[] = [
     { value: 'all', label: 'All' },
     { value: 'completed', label: 'Completed' },
     { value: 'in-progress', label: 'In Progress' },

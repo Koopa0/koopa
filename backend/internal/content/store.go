@@ -97,8 +97,8 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	ct := nullContentType(f.Type)
 
 	rows, err := s.q.PublishedContents(ctx, db.PublishedContentsParams{
-		Limit:       int32(f.PerPage),                //nolint:gosec // pagination values are bounded by API layer
-		Offset:      int32((f.Page - 1) * f.PerPage), //nolint:gosec // pagination values are bounded by API layer
+		Limit:       int32(f.PerPage),                // #nosec G115 -- pagination values are bounded by API layer
+		Offset:      int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
 		ContentType: ct,
 		Tag:         f.Tag,
 	})
@@ -162,8 +162,8 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, perPage int) ([]Content, int, error) {
 	rows, err := s.q.ContentsByTopicID(ctx, db.ContentsByTopicIDParams{
 		TopicID: topicID,
-		Limit:   int32(perPage),              //nolint:gosec // pagination values are bounded by API layer
-		Offset:  int32((page - 1) * perPage), //nolint:gosec // pagination values are bounded by API layer
+		Limit:   int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
+		Offset:  int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing contents by topic: %w", err)
@@ -189,8 +189,8 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 func (s *Store) Search(ctx context.Context, query string, page, perPage int) ([]Content, int, error) {
 	rows, err := s.q.SearchContents(ctx, db.SearchContentsParams{
 		WebsearchToTsquery: query,
-		Limit:              int32(perPage),              //nolint:gosec // pagination values are bounded by API layer
-		Offset:             int32((page - 1) * perPage), //nolint:gosec // pagination values are bounded by API layer
+		Limit:              int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
+		Offset:             int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("searching contents: %w", err)
@@ -214,7 +214,7 @@ func (s *Store) Search(ctx context.Context, query string, page, perPage int) ([]
 
 // PublishedForRSS returns recent published content for RSS feed.
 func (s *Store) PublishedForRSS(ctx context.Context, limit int) ([]Content, error) {
-	rows, err := s.q.PublishedForRSS(ctx, int32(limit)) //nolint:gosec // RSS limit is a small constant, not user-controlled
+	rows, err := s.q.PublishedForRSS(ctx, int32(limit)) // #nosec G115 -- RSS limit is a small constant, not user-controlled
 	if err != nil {
 		return nil, fmt.Errorf("listing contents for rss: %w", err)
 	}
@@ -269,14 +269,23 @@ func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 	return contents, nil
 }
 
-// CreateContent inserts a new content and associates topics.
+// CreateContent inserts a new content and associates topics within a transaction.
 func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, error) {
 	var seriesOrder *int32
 	if p.SeriesOrder != nil {
-		v := int32(*p.SeriesOrder) //nolint:gosec // series order is a small sequential value, not user-controlled
+		v := int32(*p.SeriesOrder) // #nosec G115 -- series order is a small sequential value, not user-controlled
 		seriesOrder = &v
 	}
-	r, err := s.q.CreateContent(ctx, db.CreateContentParams{
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback is no-op after commit
+
+	qtx := s.q.WithTx(tx)
+
+	r, err := qtx.CreateContent(ctx, db.CreateContentParams{
 		Slug:        p.Slug,
 		Title:       p.Title,
 		Body:        p.Body,
@@ -290,7 +299,7 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 		SeriesOrder: seriesOrder,
 		ReviewLevel: db.ReviewLevel(p.ReviewLevel),
 		AiMetadata:  p.AIMetadata,
-		ReadingTime: int32(p.ReadingTime), //nolint:gosec // reading time in minutes is bounded, not user-controlled
+		ReadingTime: int32(p.ReadingTime), // #nosec G115 -- reading time in minutes is bounded, not user-controlled
 		CoverImage:  p.CoverImage,
 	})
 	if err != nil {
@@ -302,12 +311,16 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 	}
 
 	for _, topicID := range p.TopicIDs {
-		if err := s.q.AddContentTopic(ctx, db.AddContentTopicParams{
+		if err := qtx.AddContentTopic(ctx, db.AddContentTopicParams{
 			ContentID: r.ID,
 			TopicID:   topicID,
 		}); err != nil {
 			return nil, fmt.Errorf("adding content topic: %w", err)
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
@@ -324,20 +337,28 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 	return &c, nil
 }
 
-// UpdateContent updates a content and replaces topic associations.
+// UpdateContent updates a content and replaces topic associations within a transaction.
 func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams) (*Content, error) {
 	var readingTime *int32
 	if p.ReadingTime != nil {
-		v := int32(*p.ReadingTime) //nolint:gosec // reading time in minutes is bounded, not user-controlled
+		v := int32(*p.ReadingTime) // #nosec G115 -- reading time in minutes is bounded, not user-controlled
 		readingTime = &v
 	}
 	var seriesOrder *int32
 	if p.SeriesOrder != nil {
-		v := int32(*p.SeriesOrder) //nolint:gosec // series order is a small sequential value, not user-controlled
+		v := int32(*p.SeriesOrder) // #nosec G115 -- series order is a small sequential value, not user-controlled
 		seriesOrder = &v
 	}
 
-	r, err := s.q.UpdateContent(ctx, db.UpdateContentParams{
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback is no-op after commit
+
+	qtx := s.q.WithTx(tx)
+
+	r, err := qtx.UpdateContent(ctx, db.UpdateContentParams{
 		ID:          id,
 		Slug:        p.Slug,
 		Title:       p.Title,
@@ -367,17 +388,21 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams)
 	}
 
 	if p.TopicIDs != nil {
-		if err := s.q.SetContentTopics(ctx, id); err != nil {
+		if err := qtx.SetContentTopics(ctx, id); err != nil {
 			return nil, fmt.Errorf("clearing content topics: %w", err)
 		}
 		for _, topicID := range p.TopicIDs {
-			if err := s.q.AddContentTopic(ctx, db.AddContentTopicParams{
+			if err := qtx.AddContentTopic(ctx, db.AddContentTopicParams{
 				ContentID: id,
 				TopicID:   topicID,
 			}); err != nil {
 				return nil, fmt.Errorf("adding content topic: %w", err)
 			}
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,

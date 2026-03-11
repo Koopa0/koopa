@@ -4,7 +4,9 @@ import {
   OnInit,
   inject,
   input,
+  PLATFORM_ID,
 } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { LucideAngularModule, Home, RefreshCw, AlertTriangle } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -49,6 +51,7 @@ import { SeoService } from '../../core/services/seo/seo.service';
 })
 export class ErrorComponent implements OnInit {
   private readonly seoService = inject(SeoService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   readonly statusCode = input(500);
 
@@ -65,6 +68,8 @@ export class ErrorComponent implements OnInit {
   }
 
   protected reload(): void {
-    window.location.reload();
+    if (isPlatformBrowser(this.platformId)) {
+      window.location.reload();
+    }
   }
 }

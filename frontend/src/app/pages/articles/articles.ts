@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   inject,
   signal,
   computed,
@@ -56,6 +57,7 @@ export class ArticlesComponent implements OnInit {
   private readonly articleService = inject(ArticleService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly seoService = inject(SeoService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly searchSubject = new Subject<string>();
 
@@ -115,17 +117,20 @@ export class ArticlesComponent implements OnInit {
       perPage: ARTICLES_PER_PAGE,
     };
 
-    this.articleService.getArticles(filters).subscribe({
-      next: (response: ArticlesResponse) => {
-        this.articles.set(response.articles);
-        this.totalArticles.set(response.meta.total);
-        this.isLoading.set(false);
-      },
-      error: () => {
-        this.error.set('Failed to load articles. Please try again later.');
-        this.isLoading.set(false);
-      },
-    });
+    this.articleService
+      .getArticles(filters)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (response: ArticlesResponse) => {
+          this.articles.set(response.articles);
+          this.totalArticles.set(response.meta.total);
+          this.isLoading.set(false);
+        },
+        error: () => {
+          this.error.set('Failed to load articles. Please try again later.');
+          this.isLoading.set(false);
+        },
+      });
   }
 
   protected onSearchChange(event: Event): void {

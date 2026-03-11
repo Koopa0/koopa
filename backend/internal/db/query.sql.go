@@ -1307,12 +1307,13 @@ func (q *Queries) IgnoreCollected(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const incrementFeedFailure = `-- name: IncrementFeedFailure :exec
+const incrementFeedFailure = `-- name: IncrementFeedFailure :one
 UPDATE feeds SET
     consecutive_failures = consecutive_failures + 1,
     last_error = $2,
     updated_at = now()
 WHERE id = $1
+RETURNING consecutive_failures
 `
 
 type IncrementFeedFailureParams struct {
@@ -1320,9 +1321,11 @@ type IncrementFeedFailureParams struct {
 	LastError string    `json:"last_error"`
 }
 
-func (q *Queries) IncrementFeedFailure(ctx context.Context, arg IncrementFeedFailureParams) error {
-	_, err := q.db.Exec(ctx, incrementFeedFailure, arg.ID, arg.LastError)
-	return err
+func (q *Queries) IncrementFeedFailure(ctx context.Context, arg IncrementFeedFailureParams) (int32, error) {
+	row := q.db.QueryRow(ctx, incrementFeedFailure, arg.ID, arg.LastError)
+	var consecutive_failures int32
+	err := row.Scan(&consecutive_failures)
+	return consecutive_failures, err
 }
 
 const latestCompletedRunByContentAndFlow = `-- name: LatestCompletedRunByContentAndFlow :one

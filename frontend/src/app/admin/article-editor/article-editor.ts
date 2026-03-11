@@ -45,7 +45,7 @@ import type {
   ApiUpdateContentRequest,
 } from '../../core/models';
 
-const STATUS_OPTIONS: Array<{ value: ContentStatus; label: string }> = [
+const STATUS_OPTIONS: { value: ContentStatus; label: string }[] = [
   { value: 'draft', label: 'Draft' },
   { value: 'published', label: 'Published' },
   { value: 'archived', label: 'Archived' },

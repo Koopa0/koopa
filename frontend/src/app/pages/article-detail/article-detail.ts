@@ -27,7 +27,6 @@ import type { ApiContent } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
 import { TableOfContentsComponent } from '../../shared/table-of-contents/table-of-contents.component';
-import { ArticleSeriesNavComponent } from '../../shared/article-series-nav/article-series-nav.component';
 import { RelatedArticlesComponent } from '../../shared/related-articles/related-articles.component';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
@@ -38,7 +37,6 @@ import { fadeInUp } from '../../shared/animations/fade-in.animation';
     DatePipe,
     LucideAngularModule,
     TableOfContentsComponent,
-    ArticleSeriesNavComponent,
     RelatedArticlesComponent,
   ],
   templateUrl: './article-detail.html',

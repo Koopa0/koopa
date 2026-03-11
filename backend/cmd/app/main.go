@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync/atomic"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -77,7 +79,16 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("parsing database config: %w", err)
+	}
+	poolCfg.MaxConns = 10
+	poolCfg.MinConns = 2
+	poolCfg.MaxConnIdleTime = 5 * time.Minute
+	poolCfg.HealthCheckPeriod = 30 * time.Second
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
@@ -175,7 +186,9 @@ func run(logger *slog.Logger) error {
 	// cron: retry failed/stuck flow runs every 2 minutes
 	cronScheduler := cron.New()
 	_, err = cronScheduler.AddFunc("@every 2m", func() {
-		runs, retryErr := flowrunStore.RetryableRuns(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		runs, retryErr := flowrunStore.RetryableRuns(ctx)
 		if retryErr != nil {
 			logger.Error("cron: scanning retryable flow runs", "error", retryErr)
 			return
@@ -190,16 +203,29 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("adding cron job: %w", err)
 	}
-	// cron: collect feeds every 4 hours (hourly_4 schedule)
-	_, err = cronScheduler.AddFunc("0 */4 * * *", func() {
-		feeds, feedErr := feedStore.EnabledFeedsBySchedule(context.Background(), feed.ScheduleHourly4)
+
+	// overlap guard for feed collection cron jobs
+	var collectRunning atomic.Bool
+
+	// collectFeedsCron runs feed collection with timeout and overlap protection.
+	collectFeedsCron := func(schedule, label string) {
+		if !collectRunning.CompareAndSwap(false, true) {
+			logger.Info("cron: skipping " + label + ", previous run still active")
+			return
+		}
+		defer collectRunning.Store(false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		feeds, feedErr := feedStore.EnabledFeedsBySchedule(ctx, schedule)
 		if feedErr != nil {
-			logger.Error("cron: listing hourly_4 feeds", "error", feedErr)
+			logger.Error("cron: listing "+label+" feeds", "error", feedErr)
 			return
 		}
 		var totalNew int
 		for _, f := range feeds {
-			ids, fetchErr := feedCollector.FetchFeed(context.Background(), f)
+			ids, fetchErr := feedCollector.FetchFeed(ctx, f)
 			if fetchErr != nil {
 				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
 				continue
@@ -207,14 +233,19 @@ func run(logger *slog.Logger) error {
 			totalNew += len(ids)
 			for _, id := range ids {
 				input, _ := json.Marshal(map[string]string{"collected_data_id": id.String()})
-				if submitErr := runner.Submit(context.Background(), "collect-and-score", input, nil); submitErr != nil {
+				if submitErr := runner.Submit(ctx, "collect-and-score", input, nil); submitErr != nil {
 					logger.Error("cron: submitting score job", "collected_id", id, "error", submitErr)
 				}
 			}
 		}
 		if len(feeds) > 0 {
-			logger.Info("cron: hourly_4 collect complete", "feeds", len(feeds), "new_items", totalNew)
+			logger.Info("cron: "+label+" collect complete", "feeds", len(feeds), "new_items", totalNew)
 		}
+	}
+
+	// cron: collect feeds every 4 hours (hourly_4 schedule)
+	_, err = cronScheduler.AddFunc("0 */4 * * *", func() {
+		collectFeedsCron(feed.ScheduleHourly4, "hourly_4")
 	})
 	if err != nil {
 		return fmt.Errorf("adding hourly_4 cron job: %w", err)
@@ -222,29 +253,7 @@ func run(logger *slog.Logger) error {
 
 	// cron: collect daily feeds at 06:00
 	_, err = cronScheduler.AddFunc("0 6 * * *", func() {
-		feeds, feedErr := feedStore.EnabledFeedsBySchedule(context.Background(), feed.ScheduleDaily)
-		if feedErr != nil {
-			logger.Error("cron: listing daily feeds", "error", feedErr)
-			return
-		}
-		var totalNew int
-		for _, f := range feeds {
-			ids, fetchErr := feedCollector.FetchFeed(context.Background(), f)
-			if fetchErr != nil {
-				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
-				continue
-			}
-			totalNew += len(ids)
-			for _, id := range ids {
-				input, _ := json.Marshal(map[string]string{"collected_data_id": id.String()})
-				if submitErr := runner.Submit(context.Background(), "collect-and-score", input, nil); submitErr != nil {
-					logger.Error("cron: submitting score job", "collected_id", id, "error", submitErr)
-				}
-			}
-		}
-		if len(feeds) > 0 {
-			logger.Info("cron: daily collect complete", "feeds", len(feeds), "new_items", totalNew)
-		}
+		collectFeedsCron(feed.ScheduleDaily, "daily")
 	})
 	if err != nil {
 		return fmt.Errorf("adding daily cron job: %w", err)
@@ -252,29 +261,7 @@ func run(logger *slog.Logger) error {
 
 	// cron: collect weekly feeds at 06:00 Monday
 	_, err = cronScheduler.AddFunc("0 6 * * 1", func() {
-		feeds, feedErr := feedStore.EnabledFeedsBySchedule(context.Background(), feed.ScheduleWeekly)
-		if feedErr != nil {
-			logger.Error("cron: listing weekly feeds", "error", feedErr)
-			return
-		}
-		var totalNew int
-		for _, f := range feeds {
-			ids, fetchErr := feedCollector.FetchFeed(context.Background(), f)
-			if fetchErr != nil {
-				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
-				continue
-			}
-			totalNew += len(ids)
-			for _, id := range ids {
-				input, _ := json.Marshal(map[string]string{"collected_data_id": id.String()})
-				if submitErr := runner.Submit(context.Background(), "collect-and-score", input, nil); submitErr != nil {
-					logger.Error("cron: submitting score job", "collected_id", id, "error", submitErr)
-				}
-			}
-		}
-		if len(feeds) > 0 {
-			logger.Info("cron: weekly collect complete", "feeds", len(feeds), "new_items", totalNew)
-		}
+		collectFeedsCron(feed.ScheduleWeekly, "weekly")
 	})
 	if err != nil {
 		return fmt.Errorf("adding weekly cron job: %w", err)

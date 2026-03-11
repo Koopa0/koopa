@@ -82,10 +82,11 @@
           <form [formGroup]="articleForm" class="space-y-4">
             <!-- Title -->
             <div>
-              <label class="mb-1 block text-xs font-medium text-zinc-400"
+              <label for="article-title" class="mb-1 block text-xs font-medium text-zinc-400"
                 >Title</label
               >
               <input
+                id="article-title"
                 type="text"
                 formControlName="title"
                 placeholder="Enter a compelling title"
@@ -100,10 +101,11 @@
 
             <!-- Slug -->
             <div>
-              <label class="mb-1 block text-xs font-medium text-zinc-400"
+              <label for="article-slug" class="mb-1 block text-xs font-medium text-zinc-400"
                 >Slug</label
               >
               <input
+                id="article-slug"
                 type="text"
                 formControlName="slug"
                 placeholder="article-url-slug"
@@ -118,10 +120,11 @@
 
             <!-- Excerpt -->
             <div>
-              <label class="mb-1 block text-xs font-medium text-zinc-400"
+              <label for="article-excerpt" class="mb-1 block text-xs font-medium text-zinc-400"
                 >Excerpt</label
               >
               <textarea
+                id="article-excerpt"
                 formControlName="excerpt"
                 rows="3"
                 placeholder="Brief description of the article (max 200 chars)"
@@ -143,10 +146,11 @@
 
             <!-- Status -->
             <div>
-              <label class="mb-1 block text-xs font-medium text-zinc-400"
+              <label for="article-status" class="mb-1 block text-xs font-medium text-zinc-400"
                 >Status</label
               >
               <select
+                id="article-status"
                 formControlName="status"
                 class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
               >
@@ -158,7 +162,7 @@
 
             <!-- Cover Image -->
             <div>
-              <label class="mb-1 block text-xs font-medium text-zinc-400"
+              <label for="article-cover-image" class="mb-1 block text-xs font-medium text-zinc-400"
                 >Cover Image</label
               >
               @if (articleForm.get('cover_image')?.value) {
@@ -191,6 +195,7 @@
                 {{ articleForm.get('cover_image')?.value ? '更換圖片' : '上傳封面圖片' }}
                 }
                 <input
+                  id="article-cover-image"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   class="hidden"
@@ -204,8 +209,8 @@
 
             <!-- Tags -->
             <div>
-              <label class="mb-2 block text-xs font-medium text-zinc-400"
-                >Tags</label
+              <span class="mb-2 block text-xs font-medium text-zinc-400"
+                >Tags</span
               >
 
               <!-- Selected Tags -->

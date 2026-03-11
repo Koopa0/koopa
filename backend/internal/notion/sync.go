@@ -27,7 +27,7 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 	area := selectProperty(page.Properties["Tag"])
 	deadline := dateProperty(page.Properties["Target Deadline"])
 
-	slug := Slugify(title)
+	slug := Slugify(title) + "-" + pageID[:8]
 
 	p, err := h.projects.UpsertByNotionPageID(ctx, project.UpsertByNotionParams{
 		Slug:         slug,

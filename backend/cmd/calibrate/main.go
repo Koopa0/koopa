@@ -155,7 +155,7 @@ func processArticle(ctx context.Context, g *genkit.Genkit, model ai.Model, file 
 	name := filepath.Base(file)
 	start := time.Now()
 
-	raw, err := os.ReadFile(file) //nolint:gosec // CLI tool reads user-specified local files
+	raw, err := os.ReadFile(file) // #nosec G304 G703 -- CLI tool reads user-specified local files
 	if err != nil {
 		return articleResult{File: name, Error: fmt.Sprintf("reading file: %v", err)}
 	}
@@ -364,7 +364,7 @@ func init() {
 }
 
 func readPrompt(relPath string) (string, error) {
-	data, err := os.ReadFile(relPath) //nolint:gosec // reads prompt files from known relative paths
+	data, err := os.ReadFile(relPath) // #nosec G304 -- reads prompt files from known relative paths
 	if err != nil {
 		return "", err
 	}
@@ -425,7 +425,7 @@ func writeJSON(path string, results []articleResult) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644) //nolint:gosec // calibration results are not sensitive
+	return os.WriteFile(path, data, 0o644) // #nosec G306 G703 -- calibration results are not sensitive
 }
 
 func truncate(s string, maxLen int) string {

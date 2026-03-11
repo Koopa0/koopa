@@ -41,12 +41,13 @@ RETURNING id, url, name, schedule, topics, enabled, etag, last_modified,
 -- name: DeleteFeed :exec
 DELETE FROM feeds WHERE id = $1;
 
--- name: IncrementFeedFailure :exec
+-- name: IncrementFeedFailure :one
 UPDATE feeds SET
     consecutive_failures = consecutive_failures + 1,
     last_error = $2,
     updated_at = now()
-WHERE id = $1;
+WHERE id = $1
+RETURNING consecutive_failures;
 
 -- name: AutoDisableFeed :exec
 UPDATE feeds SET

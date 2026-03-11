@@ -54,14 +54,13 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle Notion verification handshake: respond 200 and log the token.
+	// Handle Notion verification handshake.
+	// NOTE: Notion does not sign the verification request, so HMAC check is skipped here.
 	var probe struct {
 		VerificationToken string `json:"verification_token"`
 	}
 	if json.Unmarshal(body, &probe) == nil && probe.VerificationToken != "" {
-		h.logger.Info("notion webhook verification token received",
-			"verification_token", probe.VerificationToken,
-		)
+		h.logger.Info("notion webhook verification handshake received")
 		w.WriteHeader(http.StatusOK)
 		return
 	}

@@ -130,7 +130,7 @@ describe('TagService', () => {
 
     it('should clear previous error on new request', () => {
       // First request fails
-      service.getContentsByTag('Angular').subscribe({ error: () => {} });
+      service.getContentsByTag('Angular').subscribe({ error: () => { /* expected error */ } });
       const req1 = httpMock.expectOne((r) => r.url.includes('/api/contents'));
       req1.flush('Error', { status: 500, statusText: 'Error' });
       expect(service.errorMessage()).toBe('Failed to load tag content');

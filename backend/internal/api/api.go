@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 )
@@ -41,10 +42,14 @@ func Encode[T any](w http.ResponseWriter, status int, v T) {
 	}
 }
 
-// Decode reads a JSON request body into T.
+// maxRequestBody is the default request body size limit (1 MB).
+const maxRequestBody = 1 << 20
+
+// Decode reads a JSON request body into T, enforcing a 1 MB size limit.
 func Decode[T any](r *http.Request) (T, error) {
 	var v T
-	err := json.NewDecoder(r.Body).Decode(&v)
+	reader := io.LimitReader(r.Body, maxRequestBody+1)
+	err := json.NewDecoder(reader).Decode(&v)
 	return v, err
 }
 

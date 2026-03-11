@@ -121,21 +121,17 @@ func (s *Store) DeleteFeed(ctx context.Context, id uuid.UUID) error {
 
 // IncrementFailure increments the failure counter and auto-disables when threshold is reached.
 func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg string) error {
-	if err := s.q.IncrementFeedFailure(ctx, db.IncrementFeedFailureParams{
+	failures, err := s.q.IncrementFeedFailure(ctx, db.IncrementFeedFailureParams{
 		ID:        id,
 		LastError: errMsg,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("incrementing feed failure %s: %w", id, err)
 	}
 
-	f, err := s.q.FeedByID(ctx, id)
-	if err != nil {
-		return fmt.Errorf("fetching feed after failure increment %s: %w", id, err)
-	}
-
-	if f.ConsecutiveFailures >= MaxConsecutiveFailures {
+	if failures >= MaxConsecutiveFailures {
 		reason := fmt.Sprintf("auto-disabled: %d consecutive failures", MaxConsecutiveFailures)
-		slog.Warn("auto-disabling feed", "feed_id", id, "name", f.Name, "failures", f.ConsecutiveFailures)
+		slog.Warn("auto-disabling feed", "feed_id", id, "failures", failures)
 		if err := s.q.AutoDisableFeed(ctx, db.AutoDisableFeedParams{
 			ID:             id,
 			DisabledReason: reason,

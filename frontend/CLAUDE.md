@@ -139,7 +139,7 @@ All rules in `.claude/rules/` are always-follow guidelines. Key mandatory patter
 | Shared pipes              | src/app/shared/pipes/             |
 | Utilities                 | src/app/shared/utils/             |
 | Test utilities            | src/app/shared/testing/           |
-| Feature modules           | src/app/features/{name}/          |
+| Page components           | src/app/pages/{name}/             |
 | E2E tests                 | e2e/tests/{name}/                 |
 | E2E Page Objects          | e2e/pages/                        |
 

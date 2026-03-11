@@ -48,3 +48,20 @@ func (e PushEvent) ChangedFiles() []string {
 
 	return files
 }
+
+// RemovedFiles returns deduplicated file paths from all commits that were removed.
+func (e PushEvent) RemovedFiles() []string {
+	seen := make(map[string]bool)
+	var files []string
+
+	for _, c := range e.Commits {
+		for _, f := range c.Removed {
+			if !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+			}
+		}
+	}
+
+	return files
+}

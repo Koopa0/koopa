@@ -76,6 +76,12 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		return nil, fmt.Errorf("rate limit wait: %w", err)
 	}
 
+	// validate URL scheme to prevent SSRF via file://, gopher://, etc.
+	parsedURL, err := url.Parse(f.URL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return nil, fmt.Errorf("invalid feed url scheme: %s", f.URL)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)

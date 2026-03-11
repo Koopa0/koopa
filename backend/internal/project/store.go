@@ -80,7 +80,7 @@ func (s *Store) CreateProject(ctx context.Context, p CreateParams) (*Project, er
 		GithubUrl:       p.GithubURL,
 		LiveUrl:         p.LiveURL,
 		Featured:        p.Featured,
-		SortOrder:       int32(p.SortOrder), //nolint:gosec // sort order is a small UI ordering value, not user-controlled
+		SortOrder:       int32(p.SortOrder), // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 		Status:          db.ProjectStatus(p.Status),
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Store) CreateProject(ctx context.Context, p CreateParams) (*Project, er
 func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p UpdateParams) (*Project, error) {
 	var sortOrder *int32
 	if p.SortOrder != nil {
-		v := int32(*p.SortOrder) //nolint:gosec // sort order is a small UI ordering value, not user-controlled
+		v := int32(*p.SortOrder) // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 		sortOrder = &v
 	}
 	r, err := s.q.UpdateProject(ctx, db.UpdateProjectParams{

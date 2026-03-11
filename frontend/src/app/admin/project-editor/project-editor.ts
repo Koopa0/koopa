@@ -46,10 +46,10 @@ export class ProjectEditorComponent implements OnInit {
 
   protected readonly projectForm: FormGroup;
 
-  protected readonly statusOptions: Array<{
+  protected readonly statusOptions: {
     value: ProjectStatus;
     label: string;
-  }> = [
+  }[] = [
     { value: 'in-progress', label: 'In Progress' },
     { value: 'completed', label: 'Completed' },
     { value: 'maintained', label: 'Maintained' },

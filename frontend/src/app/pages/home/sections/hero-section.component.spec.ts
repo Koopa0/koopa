@@ -33,17 +33,17 @@ describe('HeroSectionComponent', () => {
   });
 
   it('should render View Projects CTA', () => {
-    const links = fixture.nativeElement.querySelectorAll('a');
-    const projectsCta = Array.from(links).find((a: unknown) =>
-      (a as HTMLElement).textContent?.includes('View Projects'),
+    const buttons = fixture.nativeElement.querySelectorAll('button');
+    const projectsCta = Array.from(buttons).find((btn: unknown) =>
+      (btn as HTMLElement).textContent?.includes('View Projects'),
     );
     expect(projectsCta).toBeTruthy();
   });
 
   it('should render Get In Touch CTA', () => {
-    const links = fixture.nativeElement.querySelectorAll('a');
-    const contactCta = Array.from(links).find((a: unknown) =>
-      (a as HTMLElement).textContent?.includes('Get In Touch'),
+    const buttons = fixture.nativeElement.querySelectorAll('button');
+    const contactCta = Array.from(buttons).find((btn: unknown) =>
+      (btn as HTMLElement).textContent?.includes('Get In Touch'),
     );
     expect(contactCta).toBeTruthy();
   });

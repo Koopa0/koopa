@@ -88,7 +88,7 @@ func (s *Store) CreateTopic(ctx context.Context, p CreateParams) (*Topic, error)
 		Name:        p.Name,
 		Description: p.Description,
 		Icon:        p.Icon,
-		SortOrder:   int32(p.SortOrder), //nolint:gosec // sort order is a small UI ordering value, not user-controlled
+		SortOrder:   int32(p.SortOrder), // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -113,7 +113,7 @@ func (s *Store) CreateTopic(ctx context.Context, p CreateParams) (*Topic, error)
 func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p UpdateParams) (*Topic, error) {
 	var sortOrder *int32
 	if p.SortOrder != nil {
-		v := int32(*p.SortOrder) //nolint:gosec // sort order is a small UI ordering value, not user-controlled
+		v := int32(*p.SortOrder) // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 		sortOrder = &v
 	}
 	r, err := s.q.UpdateTopic(ctx, db.UpdateTopicParams{

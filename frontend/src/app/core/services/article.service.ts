@@ -1,9 +1,8 @@
-import { Injectable, inject, signal, computed } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { Observable, map, tap, catchError, throwError } from 'rxjs';
 import { ContentService } from './content.service';
 import type {
   ApiContent,
-  ApiListResponse,
   ApiPaginationMeta,
   ApiCreateContentRequest,
   ApiUpdateContentRequest,

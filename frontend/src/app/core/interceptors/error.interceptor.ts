@@ -58,7 +58,7 @@ function handle401(
       isRefreshing = false;
       authService.logout();
       router.navigate(['/login'], {
-        queryParams: { returnUrl: router.url },
+        queryParams: { returnUrl: sanitizeReturnUrl(router.url) },
       });
       return throwError(() => refreshError);
     }),
@@ -73,7 +73,15 @@ function isRefreshRequest(req: HttpRequest<unknown>): boolean {
 function logoutAndRedirect(authService: AuthService, router: Router) {
   authService.logout();
   router.navigate(['/login'], {
-    queryParams: { returnUrl: router.url },
+    queryParams: { returnUrl: sanitizeReturnUrl(router.url) },
   });
   return throwError(() => new Error('Session expired'));
+}
+
+/** Validate return URL to prevent open redirect attacks */
+function sanitizeReturnUrl(url: string): string {
+  if (!url || !url.startsWith('/') || url.startsWith('//') || url.includes('://')) {
+    return '/admin';
+  }
+  return url;
 }

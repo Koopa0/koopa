@@ -17,12 +17,13 @@ import (
 	"github.com/koopa0/blog-backend/internal/obsidian"
 )
 
-// ContentWriter creates or updates content in the database.
+// ContentWriter creates, updates, or archives content in the database.
 type ContentWriter interface {
 	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
 	CreateContent(ctx context.Context, p content.CreateParams) (*content.Content, error)
 	UpdateContent(ctx context.Context, id uuid.UUID, p content.UpdateParams) (*content.Content, error)
 	PublishContent(ctx context.Context, id uuid.UUID) (*content.Content, error)
+	DeleteContent(ctx context.Context, id uuid.UUID) error
 }
 
 // TopicLookup resolves a topic slug to a UUID.
@@ -115,6 +116,7 @@ func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 
 	schedule := feed.ScheduleHourly4
 	if r.Body != nil && r.ContentLength > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		var req collectRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.Schedule != "" {
 			schedule = req.Schedule
@@ -249,7 +251,9 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 
 	// filter markdown files under 10-Public-Content/
 	files := filterPublicMarkdown(event.ChangedFiles())
-	if len(files) == 0 {
+	removed := filterPublicMarkdown(event.RemovedFiles())
+
+	if len(files) == 0 && len(removed) == 0 {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -257,7 +261,29 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 	// respond 202 immediately, process in background
 	w.WriteHeader(http.StatusAccepted)
 
-	go h.syncFiles(context.WithoutCancel(r.Context()), files)
+	go func() {
+		ctx := context.WithoutCancel(r.Context())
+		h.syncFiles(ctx, files)
+		h.archiveRemovedFiles(ctx, removed)
+	}()
+}
+
+// archiveRemovedFiles archives content for deleted markdown files.
+func (h *Handler) archiveRemovedFiles(ctx context.Context, files []string) {
+	for _, path := range files {
+		slug := slugFromPath(path)
+		existing, err := h.content.ContentBySlug(ctx, slug)
+		if err != nil {
+			// not found — already deleted or never synced, skip
+			h.logger.Debug("removed file not found in db, skipping", "path", path, "slug", slug)
+			continue
+		}
+		if err := h.content.DeleteContent(ctx, existing.ID); err != nil {
+			h.logger.Error("archiving removed file", "path", path, "slug", slug, "error", err)
+			continue
+		}
+		h.logger.Info("archived removed file", "path", path, "slug", slug)
+	}
 }
 
 // syncFiles fetches and upserts each markdown file.
@@ -299,7 +325,7 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 	// check if content already exists
 	existing, err := h.content.ContentBySlug(ctx, slug)
 	if err == nil && existing != nil {
-		// update existing content
+		// update existing content — status reflects frontmatter published field
 		status := content.StatusDraft
 		if parsed.Published {
 			status = content.StatusPublished
@@ -318,7 +344,7 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 			return fmt.Errorf("updating content %s: %w", slug, err)
 		}
 
-		// publish if the obsidian file is marked as published
+		// publish if the obsidian file is marked as published and not yet published
 		if parsed.Published && existing.Status != content.StatusPublished {
 			if _, err := h.content.PublishContent(ctx, existing.ID); err != nil {
 				return fmt.Errorf("publishing content %s: %w", slug, err)

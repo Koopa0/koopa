@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -24,7 +25,7 @@ type Client struct {
 // NewClient returns a Notion API client rate-limited to 3 requests per second.
 func NewClient(apiKey string) *Client {
 	return &Client{
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 		apiKey:     apiKey,
 		limiter:    rate.NewLimiter(rate.Limit(3), 1),
 	}

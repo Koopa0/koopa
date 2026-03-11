@@ -85,8 +85,8 @@ func (s *Store) Runs(ctx context.Context, f Filter) ([]Run, int, error) {
 	}
 
 	rows, err := s.q.FlowRuns(ctx, db.FlowRunsParams{
-		Limit:  int32(f.PerPage),                //nolint:gosec // pagination values are bounded by API layer
-		Offset: int32((f.Page - 1) * f.PerPage), //nolint:gosec // pagination values are bounded by API layer
+		Limit:  int32(f.PerPage),                // #nosec G115 -- pagination values are bounded by API layer
+		Offset: int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
 		Status: status,
 	})
 	if err != nil {

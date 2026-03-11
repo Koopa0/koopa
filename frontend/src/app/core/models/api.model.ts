@@ -178,8 +178,7 @@ export interface ApiCreateProjectRequest {
   status?: ProjectStatus;
 }
 
-export interface ApiUpdateProjectRequest
-  extends Partial<ApiCreateProjectRequest> {}
+export type ApiUpdateProjectRequest = Partial<ApiCreateProjectRequest>;
 
 /** Admin — Create/Update Topic request */
 export interface ApiCreateTopicRequest {
@@ -190,8 +189,7 @@ export interface ApiCreateTopicRequest {
   sort_order?: number;
 }
 
-export interface ApiUpdateTopicRequest
-  extends Partial<ApiCreateTopicRequest> {}
+export type ApiUpdateTopicRequest = Partial<ApiCreateTopicRequest>;
 
 /** Admin — Review */
 export interface ApiReviewItem {

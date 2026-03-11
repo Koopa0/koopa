@@ -22,6 +22,16 @@ const (
 	TypeDigest   Type = "digest"
 )
 
+// Valid reports whether t is a known content type.
+func (t Type) Valid() bool {
+	switch t {
+	case TypeArticle, TypeEssay, TypeBuildLog, TypeTIL, TypeNote, TypeBookmark, TypeDigest:
+		return true
+	default:
+		return false
+	}
+}
+
 // Status represents a content status.
 type Status string
 

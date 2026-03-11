@@ -366,6 +366,7 @@
 <div
   class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs"
   (click)="cancelDelete()"
+  (keydown.escape)="cancelDelete()"
   role="dialog"
   aria-modal="true"
   aria-labelledby="delete-dialog-title"
@@ -373,6 +374,8 @@
   <div
     class="mx-4 w-full max-w-md rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-lg"
     (click)="$event.stopPropagation()"
+    (keydown.escape)="$event.stopPropagation()"
+    tabindex="-1"
   >
     <div class="mb-4 flex items-center gap-3">
       <div class="rounded-full bg-red-900/30 p-2">

@@ -77,7 +77,7 @@ export class LoginComponent implements OnInit {
     }
 
     const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/admin';
-    this.returnUrl.set(returnUrl);
+    this.returnUrl.set(this.sanitizeReturnUrl(returnUrl));
 
     const error = this.route.snapshot.queryParams['error'];
     if (error === 'unauthorized') {
@@ -122,6 +122,14 @@ export class LoginComponent implements OnInit {
       const control = this.loginForm.get(key);
       control?.markAsTouched();
     });
+  }
+
+  /** Validate returnUrl to prevent open redirect attacks */
+  private sanitizeReturnUrl(url: string): string {
+    if (!url || !url.startsWith('/') || url.startsWith('//') || url.includes('://')) {
+      return '/admin';
+    }
+    return url;
   }
 
   protected getFieldError(fieldName: string): string {
