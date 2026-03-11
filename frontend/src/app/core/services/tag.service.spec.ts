@@ -63,14 +63,6 @@ describe('TagService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('should have loading signal initialized to false', () => {
-    expect(service.loading()).toBe(false);
-  });
-
-  it('should have errorMessage signal initialized to null', () => {
-    expect(service.errorMessage()).toBeNull();
-  });
-
   describe('getContentsByTag', () => {
     it('should fetch contents by tag and map response correctly', () => {
       const mockContent = createMockContent({ tags: ['Angular'] });
@@ -88,18 +80,6 @@ describe('TagService', () => {
       req.flush({ data: [mockContent], meta: mockMeta });
     });
 
-    it('should set loading to true when called and false after response', () => {
-      service.getContentsByTag('Go').subscribe();
-      expect(service.loading()).toBe(true);
-
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents') && r.params.get('tag') === 'Go',
-      );
-      req.flush({ data: [], meta: createMockMeta() });
-
-      expect(service.loading()).toBe(false);
-    });
-
     it('should pass page and perPage parameters', () => {
       service.getContentsByTag('TypeScript', 2, 10).subscribe();
 
@@ -112,10 +92,10 @@ describe('TagService', () => {
       req.flush({ data: [], meta: createMockMeta({ page: 2, per_page: 10 }) });
     });
 
-    it('should set error message on failure', () => {
+    it('should propagate error to subscriber', () => {
       service.getContentsByTag('Angular').subscribe({
-        error: () => {
-          // expected
+        error: (err) => {
+          expect(err).toBeTruthy();
         },
       });
 
@@ -123,24 +103,6 @@ describe('TagService', () => {
         r.url.includes('/api/contents') && r.params.get('tag') === 'Angular',
       );
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
-
-      expect(service.loading()).toBe(false);
-      expect(service.errorMessage()).toBe('Failed to load tag content');
-    });
-
-    it('should clear previous error on new request', () => {
-      // First request fails
-      service.getContentsByTag('Angular').subscribe({ error: () => { /* expected error */ } });
-      const req1 = httpMock.expectOne((r) => r.url.includes('/api/contents'));
-      req1.flush('Error', { status: 500, statusText: 'Error' });
-      expect(service.errorMessage()).toBe('Failed to load tag content');
-
-      // Second request clears error
-      service.getContentsByTag('Go').subscribe();
-      expect(service.errorMessage()).toBeNull();
-
-      const req2 = httpMock.expectOne((r) => r.url.includes('/api/contents'));
-      req2.flush({ data: [], meta: createMockMeta() });
     });
   });
 });

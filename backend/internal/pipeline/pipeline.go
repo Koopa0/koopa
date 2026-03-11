@@ -15,12 +15,19 @@ func VerifySignature(payload []byte, signature, secret string) error {
 
 // PushEvent represents a GitHub push webhook payload.
 type PushEvent struct {
-	Ref     string       `json:"ref"`
-	Commits []PushCommit `json:"commits"`
+	Ref        string         `json:"ref"`
+	Repository PushRepository `json:"repository"`
+	Commits    []PushCommit   `json:"commits"`
+}
+
+// PushRepository identifies the repository in a push event.
+type PushRepository struct {
+	FullName string `json:"full_name"` // "owner/repo"
 }
 
 // PushCommit represents a single commit in a push event.
 type PushCommit struct {
+	Message  string   `json:"message"`
 	Added    []string `json:"added"`
 	Modified []string `json:"modified"`
 	Removed  []string `json:"removed"`

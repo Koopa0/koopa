@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -130,6 +131,22 @@ func mapNotionProjectStatus(notionStatus string, archived bool) project.Status {
 		return project.StatusCompleted
 	default:
 		return project.StatusInProgress
+	}
+}
+
+// mapNotionGoalStatus maps a Notion goal status to the local enum.
+func mapNotionGoalStatus(notionStatus string) goal.Status {
+	switch notionStatus {
+	case "Not Started":
+		return goal.StatusNotStarted
+	case "In Progress", "Doing":
+		return goal.StatusInProgress
+	case "Done":
+		return goal.StatusDone
+	case "Abandoned":
+		return goal.StatusAbandoned
+	default:
+		return goal.StatusNotStarted
 	}
 }
 

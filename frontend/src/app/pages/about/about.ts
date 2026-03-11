@@ -9,10 +9,32 @@ import {
   Mail,
   Github,
   Linkedin,
+  Code,
+  MapPin,
 } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildPersonSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
+
+interface Skill {
+  category: string;
+  items: string[];
+}
+
+const SKILLS: Skill[] = [
+  {
+    category: 'Backend',
+    items: ['Golang', 'Rust'],
+  },
+  {
+    category: 'Frontend',
+    items: ['Angular', 'Flutter'],
+  },
+  {
+    category: 'DevOps',
+    items: ['Docker', 'Kubernetes', 'Cloud Native'],
+  },
+];
 
 @Component({
   selector: 'app-about',
@@ -25,6 +47,15 @@ import { fadeInUp } from '../../shared/animations/fade-in.animation';
 })
 export class AboutComponent implements OnInit {
   private readonly seoService = inject(SeoService);
+
+  protected readonly skills = SKILLS;
+
+  protected readonly MailIcon = Mail;
+  protected readonly GithubIcon = Github;
+  protected readonly LinkedinIcon = Linkedin;
+  protected readonly CodeIcon = Code;
+  protected readonly MapPinIcon = MapPin;
+
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'About',
@@ -34,8 +65,4 @@ export class AboutComponent implements OnInit {
       jsonLd: buildPersonSchema(),
     });
   }
-
-  protected readonly MailIcon = Mail;
-  protected readonly GithubIcon = Github;
-  protected readonly LinkedinIcon = Linkedin;
 }

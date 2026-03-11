@@ -1,9 +1,11 @@
 import {
   Component,
   ChangeDetectionStrategy,
+  ElementRef,
   inject,
   PLATFORM_ID,
   signal,
+  afterNextRender,
 } from '@angular/core';
 import {
   Router,
@@ -30,8 +32,10 @@ import {
 } from 'lucide-angular';
 import { BackToTopComponent } from './shared/back-to-top/back-to-top.component';
 import { CommandPaletteComponent } from './shared/command-palette/command-palette.component';
+import { ToastComponent } from './shared/toast/toast.component';
 import { CommandPaletteService } from './shared/command-palette/command-palette.service';
 import { AuthService } from './core/services/auth.service';
+import { KeyboardShortcutsService } from './core/services/keyboard-shortcuts.service';
 import { slideDown } from './shared/animations/fade-in.animation';
 
 @Component({
@@ -44,11 +48,15 @@ import { slideDown } from './shared/animations/fade-in.animation';
     LucideAngularModule,
     BackToTopComponent,
     CommandPaletteComponent,
+    ToastComponent,
   ],
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [slideDown],
-  host: { class: 'flex min-h-dvh flex-col' },
+  host: {
+    'class': 'flex min-h-dvh flex-col',
+    '(document:click)': 'onDocumentClick($event)',
+  },
 })
 export class AppComponent {
   protected readonly title = 'Koopa';
@@ -56,6 +64,8 @@ export class AppComponent {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly elementRef = inject(ElementRef);
+  private readonly keyboardShortcuts = inject(KeyboardShortcutsService);
   protected readonly commandPalette = inject(CommandPaletteService);
 
   protected readonly isAuthenticated = this.authService.isAuthenticated;
@@ -78,6 +88,10 @@ export class AppComponent {
   protected readonly MailIcon = Mail;
 
   constructor() {
+    afterNextRender(() => {
+      this.keyboardShortcuts.init();
+    });
+
     this.router.events
       .pipe(
         filter(
@@ -100,6 +114,17 @@ export class AppComponent {
 
   protected toggleWritingMenu(): void {
     this.isWritingMenuOpen.update((v) => !v);
+  }
+
+  protected onDocumentClick(event: MouseEvent): void {
+    if (!this.isWritingMenuOpen()) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    const writingDropdown = this.elementRef.nativeElement.querySelector('.writing-dropdown');
+    if (writingDropdown && !writingDropdown.contains(target)) {
+      this.isWritingMenuOpen.set(false);
+    }
   }
 
   protected logout(): void {

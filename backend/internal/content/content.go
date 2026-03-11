@@ -142,6 +142,49 @@ type UpdateParams struct {
 	CoverImage  *string         `json:"cover_image,omitempty"`
 }
 
+// RelatedContent is a content item with a similarity score.
+type RelatedContent struct {
+	Slug       string     `json:"slug"`
+	Title      string     `json:"title"`
+	Excerpt    string     `json:"excerpt"`
+	Type       Type       `json:"type"`
+	Similarity float64    `json:"similarity"`
+	Topics     []TopicRef `json:"topics"`
+}
+
+// GraphNode represents a node in the knowledge graph.
+type GraphNode struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Type        string `json:"type"`
+	ContentType string `json:"content_type,omitempty"`
+	Topic       string `json:"topic,omitempty"`
+	Count       int    `json:"count,omitempty"`
+}
+
+// GraphLink represents an edge in the knowledge graph.
+type GraphLink struct {
+	Source     string   `json:"source"`
+	Target     string   `json:"target"`
+	Type       string   `json:"type"`
+	Similarity *float64 `json:"similarity,omitempty"`
+}
+
+// KnowledgeGraph is the full graph response.
+type KnowledgeGraph struct {
+	Nodes []GraphNode `json:"nodes"`
+	Links []GraphLink `json:"links"`
+}
+
+// EmbeddingContent holds a published content with its embedding vector for graph computation.
+type EmbeddingContent struct {
+	ID        uuid.UUID
+	Slug      string
+	Title     string
+	Type      Type
+	Embedding []float32
+}
+
 var (
 	// ErrNotFound indicates the content does not exist.
 	ErrNotFound = errors.New("not found")

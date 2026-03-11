@@ -14,14 +14,25 @@ import (
 	"github.com/koopa0/blog-backend/internal/db"
 )
 
+// AlertSender sends alert notifications when feeds are auto-disabled.
+type AlertSender interface {
+	Send(ctx context.Context, text string) error
+}
+
 // Store handles database operations for feeds.
 type Store struct {
-	q *db.Queries
+	q      *db.Queries
+	alerts AlertSender
 }
 
 // NewStore returns a Store backed by the given pool.
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{q: db.New(pool)}
+}
+
+// SetAlerts sets the alert sender for auto-disable notifications.
+func (s *Store) SetAlerts(alerts AlertSender) {
+	s.alerts = alerts
 }
 
 // Feeds returns all feeds, optionally filtered by schedule.
@@ -76,8 +87,7 @@ func (s *Store) CreateFeed(ctx context.Context, p CreateParams) (*Feed, error) {
 		Topics:   topics,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating feed: %w", err)
@@ -100,8 +110,7 @@ func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p UpdateParams) (*
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating feed %s: %w", id, err)
@@ -137,6 +146,14 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 			DisabledReason: reason,
 		}); err != nil {
 			return fmt.Errorf("auto-disabling feed %s: %w", id, err)
+		}
+
+		if s.alerts != nil {
+			msg := fmt.Sprintf("[ALERT] Feed auto-disabled\nFeed ID: %s\nFailures: %d\nLast error: %s",
+				id, failures, errMsg)
+			if sendErr := s.alerts.Send(ctx, msg); sendErr != nil {
+				slog.Error("sending feed disable alert", "feed_id", id, "error", sendErr)
+			}
 		}
 	}
 

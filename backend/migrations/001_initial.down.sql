@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS goals;
 DROP TABLE IF EXISTS flow_runs;
 DROP TABLE IF EXISTS tracking_topics;
 DROP TABLE IF EXISTS collected_data;
@@ -18,5 +19,6 @@ DROP TYPE IF EXISTS source_type;
 DROP TYPE IF EXISTS content_status;
 DROP TYPE IF EXISTS flow_status;
 DROP TYPE IF EXISTS content_type;
+DROP TYPE IF EXISTS goal_status;
 
 DROP EXTENSION IF EXISTS vector;

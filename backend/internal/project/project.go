@@ -40,6 +40,7 @@ type Project struct {
 	SortOrder       int        `json:"sort_order"`
 	Status          Status     `json:"status"`
 	NotionPageID    *string    `json:"notion_page_id,omitempty"`
+	Repo            *string    `json:"repo,omitempty"`
 	Area            string     `json:"area"`
 	Deadline        *time.Time `json:"deadline,omitempty"`
 	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`

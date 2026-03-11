@@ -193,6 +193,50 @@ func (ns NullFlowStatus) Value() (driver.Value, error) {
 	return string(ns.FlowStatus), nil
 }
 
+type GoalStatus string
+
+const (
+	GoalStatusNotStarted GoalStatus = "not-started"
+	GoalStatusInProgress GoalStatus = "in-progress"
+	GoalStatusDone       GoalStatus = "done"
+	GoalStatusAbandoned  GoalStatus = "abandoned"
+)
+
+func (e *GoalStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = GoalStatus(s)
+	case string:
+		*e = GoalStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for GoalStatus: %T", src)
+	}
+	return nil
+}
+
+type NullGoalStatus struct {
+	GoalStatus GoalStatus `json:"goal_status"`
+	Valid      bool       `json:"valid"` // Valid is true if GoalStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullGoalStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.GoalStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.GoalStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullGoalStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.GoalStatus), nil
+}
+
 type ProjectStatus string
 
 const (
@@ -455,6 +499,19 @@ type FlowRun struct {
 	CreatedAt   time.Time       `json:"created_at"`
 }
 
+type Goal struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	Description  string     `json:"description"`
+	Status       GoalStatus `json:"status"`
+	Area         string     `json:"area"`
+	Quarter      string     `json:"quarter"`
+	Deadline     *time.Time `json:"deadline"`
+	NotionPageID *string    `json:"notion_page_id"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
 type Project struct {
 	ID              uuid.UUID     `json:"id"`
 	Slug            string        `json:"slug"`
@@ -474,6 +531,7 @@ type Project struct {
 	SortOrder       int32         `json:"sort_order"`
 	Status          ProjectStatus `json:"status"`
 	NotionPageID    *string       `json:"notion_page_id"`
+	Repo            *string       `json:"repo"`
 	Area            string        `json:"area"`
 	Deadline        *time.Time    `json:"deadline"`
 	LastActivityAt  *time.Time    `json:"last_activity_at"`

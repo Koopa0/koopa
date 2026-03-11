@@ -32,7 +32,7 @@
       </a>
 
       <!-- Writing Dropdown -->
-      <div class="relative">
+      <div class="writing-dropdown relative">
         <button
           type="button"
           (click)="toggleWritingMenu()"
@@ -89,15 +89,16 @@
         Projects
       </a>
       <a
-        routerLink="/resume"
+        routerLink="/uses"
         routerLinkActive="bg-zinc-800 text-white"
         class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
       >
-        Resume
+        Uses
       </a>
       <a
         routerLink="/about"
         routerLinkActive="bg-zinc-800 text-white"
+        [routerLinkActiveOptions]="{ exact: true }"
         class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
       >
         About
@@ -222,13 +223,6 @@
         Projects
       </a>
       <a
-        routerLink="/resume"
-        routerLinkActive="bg-zinc-800 text-white"
-        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
-      >
-        Resume
-      </a>
-      <a
         routerLink="/uses"
         routerLinkActive="bg-zinc-800 text-white"
         class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
@@ -275,9 +269,16 @@
 <!-- Footer -->
 <footer class="border-t border-zinc-800 bg-zinc-950">
   <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-6 sm:flex-row sm:px-6 lg:px-8">
-    <div class="flex items-center gap-3">
-      <img src="/logo.png" alt="Koopa" width="24" height="24" class="h-6 w-6 rounded-full" />
-      <span class="text-sm text-zinc-600">&copy; {{ currentYear }} koopa0.dev</span>
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-3">
+        <img src="/logo.png" alt="Koopa" width="24" height="24" class="h-6 w-6 rounded-full" />
+        <span class="text-sm text-zinc-600">&copy; {{ currentYear }} koopa0.dev</span>
+      </div>
+      <span class="hidden text-zinc-800 sm:inline">|</span>
+      <div class="flex items-center gap-3">
+        <a routerLink="/privacy" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">隱私權政策</a>
+        <a routerLink="/terms" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">服務條款</a>
+      </div>
     </div>
     <div class="flex items-center gap-1">
       <a href="https://github.com/koopa0" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="GitHub">
@@ -301,3 +302,6 @@
 
 <!-- Command Palette (⌘K) -->
 <app-command-palette />
+
+<!-- Global Toast Notifications -->
+<app-toast />

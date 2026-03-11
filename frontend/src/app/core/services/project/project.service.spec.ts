@@ -24,6 +24,7 @@ function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
     github_url: null,
     live_url: null,
     featured: false,
+    public: true,
     sort_order: 0,
     status: 'in-progress',
     created_at: '2026-01-10T10:00:00Z',
@@ -52,14 +53,6 @@ describe('ProjectService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('should have loading signal initialized to false', () => {
-    expect(service.loading()).toBe(false);
-  });
-
-  it('should have errorMessage signal initialized to null', () => {
-    expect(service.errorMessage()).toBeNull();
-  });
-
   describe('getAllProjects', () => {
     it('should fetch all projects', () => {
       const mockProjects = [
@@ -77,28 +70,15 @@ describe('ProjectService', () => {
       req.flush({ data: mockProjects });
     });
 
-    it('should set loading to true when called and false after response', () => {
-      service.getAllProjects().subscribe();
-      expect(service.loading()).toBe(true);
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/projects'));
-      req.flush({ data: [] });
-
-      expect(service.loading()).toBe(false);
-    });
-
-    it('should set error message on failure', () => {
+    it('should propagate error to subscriber', () => {
       service.getAllProjects().subscribe({
-        error: () => {
-          // expected
+        error: (err) => {
+          expect(err).toBeTruthy();
         },
       });
 
       const req = httpMock.expectOne((r) => r.url.includes('/api/projects'));
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
-
-      expect(service.loading()).toBe(false);
-      expect(service.errorMessage()).toBe('Failed to load projects');
     });
   });
 
@@ -117,20 +97,10 @@ describe('ProjectService', () => {
       req.flush({ data: mockProject });
     });
 
-    it('should set loading state during request', () => {
-      service.getProjectBySlug('test').subscribe();
-      expect(service.loading()).toBe(true);
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/projects/test'));
-      req.flush({ data: createMockProject() });
-
-      expect(service.loading()).toBe(false);
-    });
-
-    it('should set error on failure', () => {
+    it('should propagate error to subscriber on failure', () => {
       service.getProjectBySlug('not-found').subscribe({
-        error: () => {
-          // expected
+        error: (err) => {
+          expect(err).toBeTruthy();
         },
       });
 
@@ -138,9 +108,6 @@ describe('ProjectService', () => {
         r.url.includes('/api/projects/not-found'),
       );
       req.flush('Not found', { status: 404, statusText: 'Not Found' });
-
-      expect(service.errorMessage()).toBe('Project not found');
-      expect(service.loading()).toBe(false);
     });
   });
 

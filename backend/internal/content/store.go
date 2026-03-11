@@ -83,7 +83,7 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
-	topics, err := s.topicsForContent(ctx, c.ID)
+	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 
 	// populate topics for each content
 	for i := range contents {
-		topics, err := s.topicsForContent(ctx, contents[i].ID)
+		topics, err := s.TopicsForContent(ctx, contents[i].ID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -149,7 +149,7 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
-	topics, err := s.topicsForContent(ctx, c.ID)
+	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -252,6 +252,15 @@ func (s *Store) PublishedByDateRange(ctx context.Context, start, end time.Time) 
 	return contents, nil
 }
 
+// PublishedContentCountSince returns the number of published articles since the given time.
+func (s *Store) PublishedContentCountSince(ctx context.Context, since time.Time) (int64, error) {
+	count, err := s.q.PublishedContentCountSince(ctx, &since)
+	if err != nil {
+		return 0, fmt.Errorf("counting published contents since %s: %w", since.Format("2006-01-02"), err)
+	}
+	return count, nil
+}
+
 // AllPublishedSlugs returns all published content slugs for sitemap.
 func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 	rows, err := s.q.AllPublishedSlugs(ctx)
@@ -267,6 +276,11 @@ func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 		}
 	}
 	return contents, nil
+}
+
+// ObsidianContentSlugs returns all slugs for content sourced from Obsidian.
+func (s *Store) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
+	return s.q.ObsidianContentSlugs(ctx)
 }
 
 // CreateContent inserts a new content and associates topics within a transaction.
@@ -303,8 +317,7 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 		CoverImage:  p.CoverImage,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating content: %w", err)
@@ -328,7 +341,7 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
-	topics, err := s.topicsForContent(ctx, c.ID)
+	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -380,8 +393,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating content %s: %w", id, err)
@@ -410,7 +422,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams)
 		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
-	topics, err := s.topicsForContent(ctx, c.ID)
+	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -429,6 +441,67 @@ func (s *Store) UpdateEmbedding(ctx context.Context, id uuid.UUID, embedding pgv
 		return fmt.Errorf("updating embedding for content %s: %w", id, err)
 	}
 	return nil
+}
+
+// SimilarContents returns published contents most similar to the given embedding.
+func (s *Store) SimilarContents(ctx context.Context, excludeID uuid.UUID, embedding pgvector.Vector, limit int) ([]RelatedContent, error) {
+	rows, err := s.q.SimilarContents(ctx, db.SimilarContentsParams{
+		TargetEmbedding: embedding,
+		ExcludeID:       excludeID,
+		MaxResults:      int32(limit), // #nosec G115 -- limit is bounded by handler (max 20)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying similar contents: %w", err)
+	}
+	results := make([]RelatedContent, len(rows))
+	for i, r := range rows {
+		topics, topicErr := s.TopicsForContent(ctx, r.ID)
+		if topicErr != nil {
+			return nil, topicErr
+		}
+		results[i] = RelatedContent{
+			Slug:       r.Slug,
+			Title:      r.Title,
+			Excerpt:    r.Excerpt,
+			Type:       Type(r.Type),
+			Similarity: r.Similarity,
+			Topics:     topics,
+		}
+	}
+	return results, nil
+}
+
+// ContentEmbeddingBySlug returns the ID and embedding for a content by slug.
+func (s *Store) ContentEmbeddingBySlug(ctx context.Context, slug string) (uuid.UUID, *pgvector.Vector, error) {
+	r, err := s.q.ContentEmbeddingBySlug(ctx, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, nil, ErrNotFound
+		}
+		return uuid.Nil, nil, fmt.Errorf("querying embedding for content %s: %w", slug, err)
+	}
+	return r.ID, r.Embedding, nil
+}
+
+// PublishedWithEmbeddings returns all published contents that have embeddings.
+func (s *Store) PublishedWithEmbeddings(ctx context.Context) ([]EmbeddingContent, error) {
+	rows, err := s.q.PublishedWithEmbeddings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing published contents with embeddings: %w", err)
+	}
+	results := make([]EmbeddingContent, len(rows))
+	for i, r := range rows {
+		results[i] = EmbeddingContent{
+			ID:    r.ID,
+			Slug:  r.Slug,
+			Title: r.Title,
+			Type:  Type(r.Type),
+		}
+		if r.Embedding != nil {
+			results[i].Embedding = r.Embedding.Slice()
+		}
+	}
+	return results, nil
 }
 
 func (s *Store) DeleteContent(ctx context.Context, id uuid.UUID) error {
@@ -454,7 +527,7 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
-	topics, err := s.topicsForContent(ctx, c.ID)
+	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +536,8 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 	return &c, nil
 }
 
-func (s *Store) topicsForContent(ctx context.Context, contentID uuid.UUID) ([]TopicRef, error) {
+// TopicsForContent returns topic references for a content item.
+func (s *Store) TopicsForContent(ctx context.Context, contentID uuid.UUID) ([]TopicRef, error) {
 	rows, err := s.q.TopicsForContent(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("querying topics for content %s: %w", contentID, err)

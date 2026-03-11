@@ -78,6 +78,11 @@ export class ApiService {
     return this.put<T>(path, body).pipe(map((res) => res.data));
   }
 
+  /** POST for endpoints returning 204 with no body */
+  postVoid(path: string, body: unknown): Observable<void> {
+    return this.http.post(this.url(path), body).pipe(map(() => undefined));
+  }
+
   /** POST multipart/form-data upload, unwrap { data: T } */
   uploadData<T>(path: string, formData: FormData): Observable<T> {
     return this.http

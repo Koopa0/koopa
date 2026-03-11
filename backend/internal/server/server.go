@@ -20,11 +20,20 @@ type Config struct {
 // It blocks until ctx is cancelled, then drains connections.
 func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error {
 	authMid := auth.Middleware(cfg.JWTSecret)
+	rlMid := rateLimitMiddleware(logger)
 
 	mux := http.NewServeMux()
-	RegisterRoutes(mux, deps, authMid)
+	RegisterRoutes(mux, deps, authMid, rlMid)
 
-	handler := loggingMiddleware(logger)(corsMiddleware(cfg.CORSOrigin)(mux))
+	// Middleware chain (outermost first):
+	// logging → security headers → CORS → CSRF → mux
+	handler := loggingMiddleware(logger)(
+		securityHeaders(
+			corsMiddleware(cfg.CORSOrigin)(
+				csrfMiddleware(cfg.CORSOrigin, logger)(mux),
+			),
+		),
+	)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

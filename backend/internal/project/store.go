@@ -84,8 +84,7 @@ func (s *Store) CreateProject(ctx context.Context, p CreateParams) (*Project, er
 		Status:          db.ProjectStatus(p.Status),
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating project: %w", err)
@@ -124,8 +123,7 @@ func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p UpdateParams)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating project %s: %w", id, err)
@@ -156,6 +154,19 @@ func (s *Store) ActiveProjects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
+// ProjectByRepo returns a project by its GitHub repository full name (e.g. "owner/repo").
+func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error) {
+	r, err := s.q.ProjectByRepo(ctx, &repo)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying project by repo %s: %w", repo, err)
+	}
+	p := rowToProject(r)
+	return &p, nil
+}
+
 // UpsertByNotionPageID upserts a project by its Notion page ID.
 func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams) (*Project, error) {
 	r, err := s.q.UpsertProjectByNotionPageID(ctx, db.UpsertProjectByNotionPageIDParams{
@@ -182,6 +193,21 @@ func (s *Store) UpdateLastActivity(ctx context.Context, notionPageID string) err
 	return nil
 }
 
+// NotionPageIDs returns all notion page IDs for projects synced from Notion.
+func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
+	ptrs, err := s.q.NotionProjectPageIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing project notion page ids: %w", err)
+	}
+	ids := make([]string, 0, len(ptrs))
+	for _, p := range ptrs {
+		if p != nil {
+			ids = append(ids, *p)
+		}
+	}
+	return ids, nil
+}
+
 func rowToProject(r db.Project) Project {
 	return Project{
 		ID:              r.ID,
@@ -202,6 +228,7 @@ func rowToProject(r db.Project) Project {
 		SortOrder:       int(r.SortOrder),
 		Status:          Status(r.Status),
 		NotionPageID:    r.NotionPageID,
+		Repo:            r.Repo,
 		Area:            r.Area,
 		Deadline:        r.Deadline,
 		LastActivityAt:  r.LastActivityAt,

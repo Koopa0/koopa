@@ -76,8 +76,8 @@ export const routes: Routes = [
   },
   {
     path: 'resume',
-    loadComponent: () =>
-      import('./pages/resume/resume').then((m) => m.ResumeComponent),
+    redirectTo: '/about',
+    pathMatch: 'full',
   },
   {
     path: 'uses',
@@ -90,47 +90,93 @@ export const routes: Routes = [
       import('./pages/about/about').then((m) => m.AboutComponent),
   },
   {
+    path: 'privacy',
+    loadComponent: () =>
+      import('./pages/privacy/privacy').then((m) => m.PrivacyComponent),
+  },
+  {
+    path: 'terms',
+    loadComponent: () =>
+      import('./pages/terms/terms').then((m) => m.TermsComponent),
+  },
+  {
     path: 'login',
     loadComponent: () =>
       import('./pages/login/login').then((m) => m.LoginComponent),
   },
   {
+    path: 'admin/oauth-callback',
+    loadComponent: () =>
+      import('./admin/oauth-callback/oauth-callback'),
+  },
+  {
     path: 'admin',
     loadComponent: () =>
-      import('./admin/dashboard/dashboard').then((m) => m.DashboardComponent),
-    canActivate: [adminGuard],
-  },
-  {
-    path: 'admin/editor',
-    loadComponent: () =>
-      import('./admin/article-editor/article-editor').then(
-        (m) => m.ArticleEditorComponent,
+      import('./admin/admin-layout/admin-layout').then(
+        (m) => m.AdminLayoutComponent,
       ),
     canActivate: [adminGuard],
-  },
-  {
-    path: 'admin/editor/:id',
-    loadComponent: () =>
-      import('./admin/article-editor/article-editor').then(
-        (m) => m.ArticleEditorComponent,
-      ),
-    canActivate: [adminGuard],
-  },
-  {
-    path: 'admin/project-editor',
-    loadComponent: () =>
-      import('./admin/project-editor/project-editor').then(
-        (m) => m.ProjectEditorComponent,
-      ),
-    canActivate: [adminGuard],
-  },
-  {
-    path: 'admin/project-editor/:id',
-    loadComponent: () =>
-      import('./admin/project-editor/project-editor').then(
-        (m) => m.ProjectEditorComponent,
-      ),
-    canActivate: [adminGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./admin/dashboard/dashboard').then(
+            (m) => m.DashboardComponent,
+          ),
+      },
+      {
+        path: 'editor',
+        loadComponent: () =>
+          import('./admin/article-editor/article-editor').then(
+            (m) => m.ArticleEditorComponent,
+          ),
+      },
+      {
+        path: 'editor/:id',
+        loadComponent: () =>
+          import('./admin/article-editor/article-editor').then(
+            (m) => m.ArticleEditorComponent,
+          ),
+      },
+      {
+        path: 'project-editor',
+        loadComponent: () =>
+          import('./admin/project-editor/project-editor').then(
+            (m) => m.ProjectEditorComponent,
+          ),
+      },
+      {
+        path: 'project-editor/:id',
+        loadComponent: () =>
+          import('./admin/project-editor/project-editor').then(
+            (m) => m.ProjectEditorComponent,
+          ),
+      },
+      {
+        path: 'flow-runs',
+        loadComponent: () =>
+          import('./admin/flow-runs/flow-runs').then(
+            (m) => m.FlowRunsComponent,
+          ),
+      },
+      {
+        path: 'feeds',
+        loadComponent: () =>
+          import('./admin/feeds/feeds').then((m) => m.FeedsComponent),
+      },
+      {
+        path: 'collected',
+        loadComponent: () =>
+          import('./admin/collected/collected').then(
+            (m) => m.CollectedComponent,
+          ),
+      },
+      {
+        path: 'review',
+        loadComponent: () =>
+          import('./admin/review/review').then((m) => m.ReviewComponent),
+      },
+    ],
   },
   {
     path: 'error',

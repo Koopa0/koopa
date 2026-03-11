@@ -5,10 +5,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// Commit represents a single GitHub commit.
+type Commit struct {
+	SHA     string
+	Message string
+	Date    time.Time
+}
 
 // GitHub fetches file content from a GitHub repository using the GitHub API.
 type GitHub struct {
@@ -52,6 +60,7 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 		return nil, fmt.Errorf("github api returned %d for %s", resp.StatusCode, path)
 	}
 
@@ -72,4 +81,110 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+// githubDirEntry represents a single entry from the GitHub Contents API directory listing.
+type githubDirEntry struct {
+	Name string `json:"name"`
+	Type string `json:"type"` // "file" or "dir"
+}
+
+// ListDirectory lists file names in a directory using the GitHub Contents API.
+func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, error) {
+	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing directory: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		return nil, fmt.Errorf("github api returned %d for directory %s", resp.StatusCode, path)
+	}
+
+	var entries []githubDirEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("decoding directory listing: %w", err)
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.Type == "file" && strings.HasSuffix(e.Name, ".md") {
+			names = append(names, strings.TrimSuffix(e.Name, ".md"))
+		}
+	}
+	return names, nil
+}
+
+// githubCommitResponse represents a single commit from the GitHub Commits API.
+type githubCommitResponse struct {
+	SHA    string `json:"sha"`
+	Commit struct {
+		Message string `json:"message"`
+		Author  struct {
+			Date time.Time `json:"date"`
+		} `json:"author"`
+	} `json:"commit"`
+}
+
+// RecentCommits lists commits for the configured repo since the given time.
+func (g *GitHub) RecentCommits(ctx context.Context, since time.Time) ([]Commit, error) {
+	return g.CommitsForRepo(ctx, g.repo, since)
+}
+
+// CommitsForRepo lists commits for an arbitrary repo since the given time using the GitHub Commits API.
+func (g *GitHub) CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]Commit, error) {
+	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/commits?since=%s&per_page=100",
+		repo, since.Format(time.RFC3339))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching commits: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		return nil, fmt.Errorf("github api returned %d for commits", resp.StatusCode)
+	}
+
+	var raw []githubCommitResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decoding commits: %w", err)
+	}
+
+	commits := make([]Commit, len(raw))
+	for i, r := range raw {
+		// Take only the first line of the commit message.
+		msg := r.Commit.Message
+		if idx := strings.IndexByte(msg, '\n'); idx > 0 {
+			msg = msg[:idx]
+		}
+		sha := r.SHA
+		if len(sha) > 7 {
+			sha = sha[:7]
+		}
+		commits[i] = Commit{
+			SHA:     sha,
+			Message: msg,
+			Date:    r.Commit.Author.Date,
+		}
+	}
+	return commits, nil
 }

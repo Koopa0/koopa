@@ -2,13 +2,13 @@ import {
   Component,
   inject,
   signal,
+  input,
   ChangeDetectionStrategy,
   OnInit,
   computed,
   PLATFORM_ID,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
 import { Location, DatePipe } from '@angular/common';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import {
@@ -45,7 +45,9 @@ import { fadeInUp } from '../../shared/animations/fade-in.animation';
   host: { '[@fadeInUp]': '' },
 })
 export class ArticleDetailComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+  /** Route param: articles/:id */
+  readonly id = input<string>();
+
   private readonly location = inject(Location);
   private readonly articleService = inject(ArticleService);
   private readonly markdownService = inject(MarkdownService);
@@ -89,7 +91,7 @@ export class ArticleDetailComponent implements OnInit {
   protected readonly CheckIcon = Check;
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('id');
+    const slug = this.id();
     if (slug) {
       this.loadArticle(slug);
     } else {

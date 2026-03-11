@@ -16,7 +16,7 @@ import (
 
 // ErrNotFound indicates a flow-related resource was not found.
 // Defined separately from flowrun.ErrNotFound to break the flow ↔ flowrun import cycle.
-// The adapter in cmd/app/main.go translates between the two.
+// The runReader bridge in cmd/app/main.go translates between the two.
 var ErrNotFound = errors.New("not found")
 
 // RunResult holds the fields the handler needs from a flow run,

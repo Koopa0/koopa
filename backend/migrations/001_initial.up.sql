@@ -37,7 +37,7 @@ CREATE TYPE project_status AS ENUM (
 CREATE TABLE users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email         TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT NOT NULL DEFAULT '',
     role          TEXT NOT NULL DEFAULT 'admin',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -99,6 +99,8 @@ CREATE INDEX idx_contents_published_at ON contents(published_at DESC NULLS LAST)
 CREATE INDEX idx_contents_tags ON contents USING GIN(tags);
 CREATE INDEX idx_contents_search ON contents USING GIN(search_vector);
 CREATE INDEX idx_contents_series ON contents(series_id, series_order) WHERE series_id IS NOT NULL;
+CREATE INDEX idx_contents_embedding_hnsw ON contents USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 CREATE TABLE content_topics (
     content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
@@ -127,6 +129,7 @@ CREATE TABLE projects (
     sort_order       INT NOT NULL DEFAULT 0,
     status           project_status NOT NULL DEFAULT 'in-progress',
     notion_page_id   TEXT UNIQUE,
+    repo             TEXT,
     area             TEXT NOT NULL DEFAULT '',
     deadline         TIMESTAMPTZ,
     last_activity_at TIMESTAMPTZ,
@@ -232,10 +235,18 @@ CREATE INDEX idx_flow_runs_created_at ON flow_runs (created_at DESC);
 CREATE INDEX idx_flow_runs_content_id ON flow_runs (content_id) WHERE content_id IS NOT NULL;
 CREATE INDEX idx_flow_runs_dedup ON flow_runs (content_id, flow_name, status) WHERE status IN ('pending', 'running');
 
--- === Seed admin user ===
--- Password: changeme (bcrypt cost 12)
-INSERT INTO users (email, password_hash, role) VALUES (
-    'admin@koopa0.dev',
-    '$2a$12$e7t8rSNW4CvNhV5pX8E//O9ryDmmCE1SLubyj6cxSU8wuV/uNwHFe',
-    'admin'
+CREATE TYPE goal_status AS ENUM ('not-started', 'in-progress', 'done', 'abandoned');
+
+CREATE TABLE goals (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title          TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    status         goal_status NOT NULL DEFAULT 'not-started',
+    area           TEXT NOT NULL DEFAULT '',
+    quarter        TEXT NOT NULL DEFAULT '',
+    deadline       TIMESTAMPTZ,
+    notion_page_id TEXT UNIQUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+

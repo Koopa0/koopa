@@ -1,0 +1,329 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+          <lucide-icon [img]="RssIcon" [size]="24" />
+          RSS Feeds
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">
+          管理 RSS 來源，{{ enabledCount() }} 個啟用中
+        </p>
+      </div>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="loadFeeds()"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          重新整理
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
+          (click)="openCreateDialog()"
+        >
+          <lucide-icon [img]="PlusIcon" [size]="16" />
+          新增 Feed
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <!-- Error -->
+    @if (error()) {
+      <div class="mb-4 rounded-sm border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+        {{ error() }}
+      </div>
+    }
+
+    <!-- Loading -->
+    @if (isLoading()) {
+      <div class="flex items-center justify-center py-16">
+        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+      </div>
+    } @else if (sortedFeeds().length === 0) {
+      <div class="flex flex-col items-center gap-3 py-16 text-center">
+        <lucide-icon [img]="RssIcon" [size]="40" class="text-zinc-700" />
+        <h3 class="text-sm font-medium text-zinc-300">尚無 RSS Feed</h3>
+        <p class="text-xs text-zinc-500">新增 RSS 來源開始收集文章</p>
+      </div>
+    } @else {
+      <!-- Feed Table -->
+      <div class="overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-900/50">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-zinc-800 text-left text-xs text-zinc-500">
+              <th class="px-4 py-3 font-medium">名稱</th>
+              <th class="hidden px-4 py-3 font-medium sm:table-cell">排程</th>
+              <th class="hidden px-4 py-3 font-medium md:table-cell">上次抓取</th>
+              <th class="hidden px-4 py-3 font-medium lg:table-cell">錯誤</th>
+              <th class="px-4 py-3 font-medium">狀態</th>
+              <th class="px-4 py-3 font-medium">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (feed of sortedFeeds(); track feed.id) {
+              <tr
+                class="border-b border-zinc-800/50 transition-colors hover:bg-zinc-800/30"
+                [class.opacity-50]="!feed.enabled"
+              >
+                <td class="px-4 py-3">
+                  <div class="text-sm font-medium text-zinc-200">{{ feed.name }}</div>
+                  <div class="mt-0.5 line-clamp-1 text-xs text-zinc-500">{{ feed.url }}</div>
+                  @if (feed.topics.length > 0) {
+                    <div class="mt-1 flex flex-wrap gap-1">
+                      @for (topic of feed.topics; track topic) {
+                        <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                          {{ topic }}
+                        </span>
+                      }
+                    </div>
+                  }
+                </td>
+                <td class="hidden px-4 py-3 sm:table-cell">
+                  <span
+                    class="inline-flex rounded-full border px-2 py-0.5 text-xs"
+                    [class]="getScheduleClass(feed.schedule)"
+                  >
+                    {{ getScheduleLabel(feed.schedule) }}
+                  </span>
+                </td>
+                <td class="hidden px-4 py-3 text-xs text-zinc-400 md:table-cell">
+                  @if (feed.last_fetched_at) {
+                    {{ feed.last_fetched_at | date: 'MM/dd HH:mm' }}
+                  } @else {
+                    <span class="text-zinc-600">從未</span>
+                  }
+                </td>
+                <td class="hidden px-4 py-3 lg:table-cell">
+                  @if (feed.consecutive_failures > 0) {
+                    <span class="inline-flex items-center gap-1 text-xs text-red-400">
+                      <lucide-icon [img]="AlertTriangleIcon" [size]="12" />
+                      {{ feed.consecutive_failures }} 次失敗
+                    </span>
+                  } @else {
+                    <span class="text-xs text-zinc-600">—</span>
+                  }
+                </td>
+                <td class="px-4 py-3">
+                  <button
+                    type="button"
+                    class="text-zinc-400 transition-colors hover:text-zinc-200"
+                    (click)="toggleEnabled(feed)"
+                    [attr.aria-label]="feed.enabled ? '停用' : '啟用'"
+                  >
+                    @if (feed.enabled) {
+                      <lucide-icon [img]="ToggleRightIcon" [size]="22" class="text-emerald-400" />
+                    } @else {
+                      <lucide-icon [img]="ToggleLeftIcon" [size]="22" class="text-zinc-600" />
+                    }
+                  </button>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                      aria-label="抓取"
+                      (click)="fetchNow(feed)"
+                      [disabled]="fetchingId() === feed.id"
+                    >
+                      @if (fetchingId() === feed.id) {
+                        <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+                      } @else {
+                        <lucide-icon [img]="DownloadIcon" [size]="14" />
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                      aria-label="編輯"
+                      (click)="openEditDialog(feed)"
+                    >
+                      <lucide-icon [img]="PencilIcon" [size]="14" />
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-red-400"
+                      aria-label="刪除"
+                      (click)="requestDelete(feed)"
+                    >
+                      <lucide-icon [img]="Trash2Icon" [size]="14" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</section>
+
+<!-- Create/Edit Dialog -->
+@if (isDialogOpen()) {
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs"
+    (click)="closeDialog()"
+    (keydown.escape)="closeDialog()"
+    tabindex="-1"
+    role="dialog"
+    aria-modal="true"
+  >
+    <div
+      class="mx-4 w-full max-w-lg rounded-sm border border-zinc-700 bg-zinc-900 shadow-xl"
+      (click)="$event.stopPropagation()"
+      (keydown.escape)="closeDialog()"
+      tabindex="-1"
+    >
+      <div class="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
+        <h2 class="text-lg font-semibold text-zinc-100">
+          {{ dialogMode() === 'create' ? '新增 Feed' : '編輯 Feed' }}
+        </h2>
+        <button
+          type="button"
+          class="rounded-sm p-1 text-zinc-400 hover:text-zinc-200"
+          (click)="closeDialog()"
+          aria-label="關閉"
+        >
+          <lucide-icon [img]="XIcon" [size]="18" />
+        </button>
+      </div>
+
+      <div class="space-y-4 px-6 py-4">
+        <div>
+          <label for="feed-name" class="mb-1 block text-sm font-medium text-zinc-300">名稱</label>
+          <input
+            id="feed-name"
+            type="text"
+            [value]="formName()"
+            (input)="onFormNameChange($event)"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="例：Hacker News"
+          />
+        </div>
+
+        <div>
+          <label for="feed-url" class="mb-1 block text-sm font-medium text-zinc-300">RSS URL</label>
+          <input
+            id="feed-url"
+            type="url"
+            [value]="formUrl()"
+            (input)="onFormUrlChange($event)"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="https://example.com/feed.xml"
+          />
+        </div>
+
+        <div>
+          <label for="feed-schedule" class="mb-1 block text-sm font-medium text-zinc-300">排程</label>
+          <select
+            id="feed-schedule"
+            [value]="formSchedule()"
+            (change)="onFormScheduleChange($event)"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
+          >
+            <option value="hourly_4">Every 4 hours</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
+
+        @if (topics().length > 0) {
+          <div>
+            <p class="mb-2 text-sm font-medium text-zinc-300">Topics</p>
+            <div class="flex flex-wrap gap-2">
+              @for (topic of topics(); track topic.id) {
+                <button
+                  type="button"
+                  class="rounded-sm border px-2.5 py-1 text-xs transition-colors"
+                  [class]="formTopics().includes(topic.name)
+                    ? 'border-white bg-white text-zinc-900'
+                    : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+                  (click)="toggleFormTopic(topic.name)"
+                >
+                  {{ topic.name }}
+                </button>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="flex justify-end gap-3 border-t border-zinc-800 px-6 py-4">
+        <button
+          type="button"
+          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="closeDialog()"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          (click)="saveFeed()"
+          [disabled]="isSaving() || !formName() || !formUrl()"
+        >
+          @if (isSaving()) {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+          }
+          {{ dialogMode() === 'create' ? '新增' : '儲存' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Delete Confirmation Dialog -->
+@if (deleteTarget()) {
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs"
+    (click)="cancelDelete()"
+    (keydown.escape)="cancelDelete()"
+    tabindex="-1"
+    role="dialog"
+    aria-modal="true"
+  >
+    <div
+      class="mx-4 w-full max-w-sm rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-xl"
+      (click)="$event.stopPropagation()"
+      (keydown.escape)="cancelDelete()"
+      tabindex="-1"
+    >
+      <div class="flex items-center gap-3 text-red-400">
+        <lucide-icon [img]="AlertTriangleIcon" [size]="20" />
+        <h3 class="text-lg font-semibold">刪除 Feed</h3>
+      </div>
+      <p class="mt-3 text-sm text-zinc-400">
+        確定要刪除「{{ deleteTarget()!.name }}」嗎？此操作無法復原。
+      </p>
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+          (click)="cancelDelete()"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          (click)="confirmDelete()"
+          [disabled]="isDeleting()"
+        >
+          @if (isDeleting()) {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+          }
+          刪除
+        </button>
+      </div>
+    </div>
+  </div>
+}

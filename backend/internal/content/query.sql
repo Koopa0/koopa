@@ -122,6 +122,10 @@ FROM contents
 WHERE status = 'published' AND published_at >= $1 AND published_at < $2
 ORDER BY published_at DESC;
 
+-- name: PublishedContentCountSince :one
+SELECT count(*) FROM contents
+WHERE status = 'published' AND published_at >= $1;
+
 -- name: TopicsForContent :many
 SELECT t.id, t.slug, t.name FROM topics t
 JOIN content_topics ct ON ct.topic_id = t.id
@@ -133,3 +137,24 @@ ON CONFLICT DO NOTHING;
 
 -- name: SetContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1;
+
+-- name: ObsidianContentSlugs :many
+SELECT slug FROM contents WHERE source_type = 'obsidian' ORDER BY slug;
+
+-- name: ContentEmbeddingBySlug :one
+SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published';
+
+-- name: SimilarContents :many
+SELECT c.id, c.slug, c.title, c.excerpt, c.type,
+       (1 - (c.embedding <=> @target_embedding::vector))::float8 AS similarity
+FROM contents c
+WHERE c.status = 'published'
+  AND c.id != @exclude_id
+  AND c.embedding IS NOT NULL
+ORDER BY c.embedding <=> @target_embedding::vector
+LIMIT @max_results;
+
+-- name: PublishedWithEmbeddings :many
+SELECT id, slug, title, type, embedding
+FROM contents
+WHERE status = 'published' AND embedding IS NOT NULL;

@@ -1,0 +1,20 @@
+<div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+  @for (notification of notifications(); track notification.id) {
+    <div
+      class="flex min-w-72 items-center justify-between gap-3 rounded-sm border-l-4 px-4 py-3 text-sm shadow-lg backdrop-blur-sm transition-all duration-300"
+      [class]="notification.type === 'success'
+        ? 'border-emerald-500 bg-emerald-900/20 text-emerald-400'
+        : 'border-red-500 bg-red-900/20 text-red-400'"
+    >
+      <span>{{ notification.message }}</span>
+      <button
+        type="button"
+        class="shrink-0 rounded-sm p-0.5 transition-colors hover:bg-zinc-800"
+        aria-label="Close notification"
+        (click)="notificationService.dismiss(notification.id)"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+  }
+</div>

@@ -1,9 +1,11 @@
 package notion
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -65,6 +67,7 @@ func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error)
 	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 		return nil, fmt.Errorf("notion api returned %d for page %s", resp.StatusCode, pageID)
 	}
 
@@ -73,6 +76,91 @@ func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error)
 		return nil, fmt.Errorf("decoding page %s: %w", pageID, err)
 	}
 	return &page, nil
+}
+
+// DatabaseQueryResult holds a single page from a database query response.
+type DatabaseQueryResult struct {
+	ID         string                     `json:"id"`
+	Properties map[string]json.RawMessage `json:"properties"`
+}
+
+// databaseQueryResponse is the Notion database query API response.
+type databaseQueryResponse struct {
+	Results    []DatabaseQueryResult `json:"results"`
+	HasMore    bool                  `json:"has_more"`
+	NextCursor *string               `json:"next_cursor"`
+}
+
+// QueryDatabase queries a Notion database with an optional filter.
+// filter should be a JSON-serializable filter object, or nil for no filter.
+func (c *Client) QueryDatabase(ctx context.Context, databaseID string, filter json.RawMessage) ([]DatabaseQueryResult, error) {
+	var allResults []DatabaseQueryResult
+	var cursor *string
+
+	for {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
+		}
+
+		body := map[string]any{"page_size": 100}
+		if filter != nil {
+			body["filter"] = json.RawMessage(filter)
+		}
+		if cursor != nil {
+			body["start_cursor"] = *cursor
+		}
+
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling query body: %w", err)
+		}
+
+		endpoint := fmt.Sprintf("%s/v1/databases/%s/query", notionBaseURL, databaseID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return nil, fmt.Errorf("creating query request: %w", err)
+		}
+		c.setHeaders(req)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("querying database %s: %w", databaseID, err)
+		}
+
+		// Decode before status check: body is consumed regardless, avoiding a separate drain step.
+		// If decode fails on an error response, the status error below takes precedence.
+		var qr databaseQueryResponse
+		decodeErr := json.NewDecoder(resp.Body).Decode(&qr)
+		resp.Body.Close() //nolint:errcheck,gosec // best-effort close on read-only HTTP response
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("notion api returned %d for database query %s", resp.StatusCode, databaseID)
+		}
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decoding database query response: %w", decodeErr)
+		}
+
+		allResults = append(allResults, qr.Results...)
+
+		if !qr.HasMore || qr.NextCursor == nil {
+			break
+		}
+		cursor = qr.NextCursor
+	}
+
+	return allResults, nil
+}
+
+// QueryPageIDs queries a database and returns just the page IDs.
+func (c *Client) QueryPageIDs(ctx context.Context, databaseID string) ([]string, error) {
+	results, err := c.QueryDatabase(ctx, databaseID, nil)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(results))
+	for i, r := range results {
+		ids[i] = r.ID
+	}
+	return ids, nil
 }
 
 func (c *Client) setHeaders(req *http.Request) {

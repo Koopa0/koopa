@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/collected"
@@ -20,6 +22,11 @@ import (
 	"github.com/koopa0/blog-backend/internal/upload"
 )
 
+// Pinger checks database connectivity.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 // Deps holds all handler dependencies for route registration.
 type Deps struct {
 	Auth      *auth.Handler
@@ -35,11 +42,29 @@ type Deps struct {
 	Upload    *upload.Handler
 	Feed      *feed.Handler
 	Notion    *notion.Handler
+	Pool      Pinger
 	Logger    *slog.Logger
 }
 
 // RegisterRoutes registers all API routes on the given mux.
-func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.Handler) {
+func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler) http.Handler) {
+	// health checks — no auth, no middleware
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "ok")
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		if err := d.Pool.Ping(ctx); err != nil {
+			d.Logger.Error("readiness check failed", "error", err)
+			http.Error(w, "db not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "ok")
+	})
+
 	// public
 	mux.HandleFunc("GET /api/contents", d.Content.List)
 	mux.HandleFunc("GET /api/contents/{slug}", d.Content.BySlug)
@@ -48,13 +73,16 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	mux.HandleFunc("GET /api/topics/{slug}", d.Topic.BySlug)
 	mux.HandleFunc("GET /api/projects", d.Project.List)
 	mux.HandleFunc("GET /api/projects/{slug}", d.Project.BySlug)
+	mux.HandleFunc("GET /api/contents/{slug}/related", d.Content.Related)
+	mux.Handle("GET /api/knowledge-graph", rlMid(http.HandlerFunc(d.Content.KnowledgeGraph)))
 	mux.HandleFunc("GET /api/search", d.Content.Search)
 	mux.HandleFunc("GET /api/feed/rss", d.Content.RSS)
 	mux.HandleFunc("GET /api/feed/sitemap", d.Content.Sitemap)
 
-	// auth
-	mux.HandleFunc("POST /api/auth/login", d.Auth.Login)
-	mux.HandleFunc("POST /api/auth/refresh", d.Auth.Refresh)
+	// auth — Google OAuth (rate limited)
+	mux.HandleFunc("GET /api/auth/google", d.Auth.GoogleLogin)
+	mux.Handle("GET /api/auth/google/callback", rlMid(http.HandlerFunc(d.Auth.GoogleCallback)))
+	mux.Handle("POST /api/auth/refresh", rlMid(http.HandlerFunc(d.Auth.Refresh)))
 
 	// admin — content
 	mux.Handle("POST /api/admin/contents", authMid(http.HandlerFunc(d.Content.Create)))
@@ -92,6 +120,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	// admin — flow runs
 	mux.Handle("GET /api/admin/flow-runs", authMid(http.HandlerFunc(d.FlowRun.List)))
 	mux.Handle("GET /api/admin/flow-runs/{id}", authMid(http.HandlerFunc(d.FlowRun.ByID)))
+	mux.Handle("POST /api/admin/flow-runs/{id}/retry", authMid(http.HandlerFunc(d.FlowRun.Retry)))
 
 	// admin — flow polish
 	mux.Handle("POST /api/admin/flow/polish/{content_id}", authMid(http.HandlerFunc(d.Flow.TriggerPolish)))
@@ -116,6 +145,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid func(http.Handler) http.
 	mux.Handle("POST /api/pipeline/collect", authMid(http.HandlerFunc(d.Pipeline.Collect)))
 	mux.Handle("POST /api/pipeline/generate", authMid(http.HandlerFunc(d.Pipeline.Generate)))
 	mux.Handle("POST /api/pipeline/digest", authMid(http.HandlerFunc(d.Pipeline.Digest)))
+	mux.Handle("POST /api/pipeline/bookmark", authMid(http.HandlerFunc(d.Pipeline.Bookmark)))
 
 	// webhooks — HMAC-verified, not JWT
 	mux.HandleFunc("POST /api/webhook/github", d.Pipeline.WebhookGithub)

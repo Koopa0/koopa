@@ -3,10 +3,10 @@ import {
   ChangeDetectionStrategy,
   inject,
   signal,
+  input,
   computed,
   OnInit,
 } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
 import { Location, DatePipe } from '@angular/common';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import {
@@ -32,7 +32,9 @@ import { TableOfContentsComponent } from '../../shared/table-of-contents/table-o
   host: { '[@fadeInUp]': '' },
 })
 export class BuildLogDetailComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+  /** Route param: build-logs/:slug */
+  readonly slug = input<string>();
+
   private readonly location = inject(Location);
   private readonly buildLogService = inject(BuildLogService);
   private readonly markdownService = inject(MarkdownService);
@@ -64,9 +66,9 @@ export class BuildLogDetailComponent implements OnInit {
   protected readonly ClockIcon = Clock;
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (slug) {
-      this.loadBuildLog(slug);
+    const slugValue = this.slug();
+    if (slugValue) {
+      this.loadBuildLog(slugValue);
     } else {
       this.error.set('Build log not found');
       this.isLoading.set(false);

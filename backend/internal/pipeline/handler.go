@@ -31,12 +31,12 @@ type TopicLookup interface {
 	TopicIDBySlug(ctx context.Context, slug string) (uuid.UUID, error)
 }
 
-// topicLookupAdapter adapts a *topic.Store to the TopicLookup interface.
-type topicLookupAdapter struct {
+// topicLookupFunc wraps a function as a TopicLookup implementation.
+type topicLookupFunc struct {
 	fn func(ctx context.Context, slug string) (uuid.UUID, error)
 }
 
-func (a *topicLookupAdapter) TopicIDBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
+func (a *topicLookupFunc) TopicIDBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
 	return a.fn(ctx, slug)
 }
 
@@ -69,17 +69,19 @@ type Handler struct {
 	collector     FeedCollector
 	feeds         FeedLister
 	webhookSecret string
+	obsidianRepo  string // "owner/repo" for Obsidian content sync
 	logger        *slog.Logger
 }
 
 // NewHandler returns a pipeline Handler.
-func NewHandler(cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, webhookSecret string, logger *slog.Logger) *Handler {
+func NewHandler(cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, webhookSecret, obsidianRepo string, logger *slog.Logger) *Handler {
 	return &Handler{
 		content:       cw,
 		topics:        tl,
 		fetcher:       fetcher,
 		jobs:          jobs,
 		webhookSecret: webhookSecret,
+		obsidianRepo:  obsidianRepo,
 		logger:        logger,
 	}
 }
@@ -92,7 +94,7 @@ func (h *Handler) SetCollector(c FeedCollector, f FeedLister) {
 
 // NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
 func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
-	return &topicLookupAdapter{fn: fn}
+	return &topicLookupFunc{fn: fn}
 }
 
 // Sync handles POST /api/pipeline/sync.
@@ -208,6 +210,43 @@ func (h *Handler) Digest(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`) // best-effort
 }
 
+// bookmarkRequest is the request body for POST /api/pipeline/bookmark.
+type bookmarkRequest struct {
+	CollectedDataID string `json:"collected_data_id"`
+}
+
+// Bookmark handles POST /api/pipeline/bookmark.
+// Submits a bookmark-generate flow for the given collected data.
+func (h *Handler) Bookmark(w http.ResponseWriter, r *http.Request) {
+	var req bookmarkRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := uuid.Parse(req.CollectedDataID); err != nil {
+		http.Error(w, "invalid collected_data_id", http.StatusBadRequest)
+		return
+	}
+
+	input, err := json.Marshal(req)
+	if err != nil {
+		h.logger.Error("marshaling bookmark input", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.jobs.Submit(r.Context(), "bookmark-generate", input, nil); err != nil {
+		h.logger.Error("submitting bookmark-generate", "error", err)
+		http.Error(w, "failed to submit bookmark job", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = fmt.Fprint(w, `{"status":"submitted"}`) // best-effort
+}
+
 // WebhookObsidian handles POST /api/webhook/obsidian.
 func (h *Handler) WebhookObsidian(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
@@ -249,6 +288,12 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// route: Obsidian repo → content sync, other repos → project-track
+	if event.Repository.FullName != h.obsidianRepo {
+		h.handleProjectTrack(w, r, event)
+		return
+	}
+
 	// filter markdown files under 10-Public-Content/
 	files := filterPublicMarkdown(event.ChangedFiles())
 	removed := filterPublicMarkdown(event.RemovedFiles())
@@ -266,6 +311,44 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 		h.syncFiles(ctx, files)
 		h.archiveRemovedFiles(ctx, removed)
 	}()
+}
+
+// handleProjectTrack submits a project-track flow job for non-Obsidian repos.
+func (h *Handler) handleProjectTrack(w http.ResponseWriter, r *http.Request, event PushEvent) {
+	if h.jobs == nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// collect commit messages
+	var messages []string
+	for _, c := range event.Commits {
+		messages = append(messages, c.Message)
+	}
+	if len(messages) == 0 {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	input, err := json.Marshal(map[string]any{
+		"repo":    event.Repository.FullName,
+		"commits": messages,
+	})
+	if err != nil {
+		h.logger.Error("marshaling project-track input", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	ctx := context.WithoutCancel(r.Context())
+	if err := h.jobs.Submit(ctx, "project-track", input, nil); err != nil {
+		h.logger.Error("submitting project-track", "repo", event.Repository.FullName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Info("project-track submitted", "repo", event.Repository.FullName, "commits", len(messages))
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // archiveRemovedFiles archives content for deleted markdown files.

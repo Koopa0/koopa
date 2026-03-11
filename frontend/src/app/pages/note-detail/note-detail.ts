@@ -3,10 +3,11 @@ import {
   ChangeDetectionStrategy,
   inject,
   signal,
+  input,
   computed,
   OnInit,
 } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { Location, DatePipe } from '@angular/common';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import {
@@ -30,7 +31,9 @@ import type { ApiContent } from '../../core/models';
   host: { '[@fadeInUp]': '' },
 })
 export class NoteDetailComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+  /** Route param: notes/:slug */
+  readonly slug = input<string>();
+
   private readonly location = inject(Location);
   private readonly noteService = inject(NoteService);
   private readonly markdownService = inject(MarkdownService);
@@ -57,9 +60,9 @@ export class NoteDetailComponent implements OnInit {
   protected readonly CalendarIcon = Calendar;
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (slug) {
-      this.loadNote(slug);
+    const slugValue = this.slug();
+    if (slugValue) {
+      this.loadNote(slugValue);
     } else {
       this.error.set('Note not found');
       this.isLoading.set(false);

@@ -10,6 +10,7 @@ type Config struct {
 	ProjectsDB    string // data_source_id for C1 Projects
 	TasksDB       string // data_source_id for C2 Tasks
 	BooksDB       string // data_source_id for C5 Books
+	GoalsDB       string // data_source_id for Goals
 }
 
 // WebhookPayload is the Notion webhook event structure (API version 2025-09-03).
@@ -45,6 +46,7 @@ const (
 	dbProjects          // C1: project sync
 	dbTasks             // C2: task activity
 	dbBooks             // C5: book bookmark
+	dbGoals             // goals sync
 )
 
 var (

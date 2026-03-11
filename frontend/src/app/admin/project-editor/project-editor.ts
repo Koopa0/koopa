@@ -4,6 +4,7 @@ import {
   ChangeDetectionStrategy,
   OnInit,
   signal,
+  input,
 } from '@angular/core';
 import {
   FormBuilder,
@@ -11,9 +12,10 @@ import {
   Validators,
   ReactiveFormsModule,
 } from '@angular/forms';
-import { Router, ActivatedRoute } from '@angular/router';
+import { Router } from '@angular/router';
 import { LucideAngularModule, ArrowLeft, Save, Plus, X } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
+import { NotificationService } from '../../core/services/notification.service';
 import type {
   ProjectStatus,
   ApiCreateProjectRequest,
@@ -28,18 +30,17 @@ import type {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProjectEditorComponent implements OnInit {
+  /** Route param: admin/project-editor/:id (undefined for new projects) */
+  readonly id = input<string>();
+
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
   private readonly projectService = inject(ProjectService);
+  private readonly notificationService = inject(NotificationService);
 
   protected readonly isLoading = signal(false);
   protected readonly isSaving = signal(false);
   protected readonly isNewProject = signal(true);
-  protected readonly notification = signal<{
-    message: string;
-    type: 'success' | 'error';
-  } | null>(null);
 
   /** Project ID stored in edit mode */
   private projectId: string | null = null;
@@ -77,23 +78,24 @@ export class ProjectEditorComponent implements OnInit {
       github_url: [''],
       live_url: [''],
       featured: [false],
+      public: [true],
       sort_order: [0],
       status: ['in-progress' as ProjectStatus, Validators.required],
     });
   }
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (slug) {
+    const idValue = this.id();
+    if (idValue) {
       this.isNewProject.set(false);
-      this.loadProject(slug);
+      this.loadProject(idValue);
     }
   }
 
-  private loadProject(slug: string): void {
+  private loadProject(id: string): void {
     this.isLoading.set(true);
 
-    this.projectService.getProjectBySlug(slug).subscribe({
+    this.projectService.getProjectBySlug(id).subscribe({
       next: (project) => {
         this.projectId = project.id;
         this.projectForm.patchValue({
@@ -107,13 +109,14 @@ export class ProjectEditorComponent implements OnInit {
           github_url: project.github_url ?? '',
           live_url: project.live_url ?? '',
           featured: project.featured,
+          public: project.public,
           sort_order: project.sort_order,
           status: project.status,
         });
         this.isLoading.set(false);
       },
       error: () => {
-        this.showNotification('Failed to load project', 'error');
+        this.notificationService.error('Failed to load project');
         this.isLoading.set(false);
       },
     });
@@ -190,7 +193,7 @@ export class ProjectEditorComponent implements OnInit {
   protected save(): void {
     if (this.projectForm.invalid) {
       this.markFormGroupTouched();
-      this.showNotification('Please fill in all required fields', 'error');
+      this.notificationService.error('Please fill in all required fields');
       return;
     }
 
@@ -209,22 +212,30 @@ export class ProjectEditorComponent implements OnInit {
         github_url: formValue.github_url || undefined,
         live_url: formValue.live_url || undefined,
         featured: formValue.featured,
+        public: formValue.public,
         sort_order: formValue.sort_order,
         status: formValue.status,
       };
 
       this.projectService.createProject(request).subscribe({
         next: () => {
-          this.showNotification('Project created!', 'success');
+          this.notificationService.success('Project created!');
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('Failed to create', 'error');
+          this.notificationService.error('Failed to create');
           this.isSaving.set(false);
         },
       });
     } else {
+      const projectId = this.projectId;
+      if (!projectId) {
+        this.notificationService.error('Project ID is missing');
+        this.isSaving.set(false);
+        return;
+      }
+
       const request: ApiUpdateProjectRequest = {
         title: formValue.title,
         slug: formValue.slug,
@@ -236,18 +247,19 @@ export class ProjectEditorComponent implements OnInit {
         github_url: formValue.github_url || undefined,
         live_url: formValue.live_url || undefined,
         featured: formValue.featured,
+        public: formValue.public,
         sort_order: formValue.sort_order,
         status: formValue.status,
       };
 
-      this.projectService.updateProject(this.projectId!, request).subscribe({
+      this.projectService.updateProject(projectId, request).subscribe({
         next: () => {
-          this.showNotification('Project updated!', 'success');
+          this.notificationService.success('Project updated!');
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('Failed to update', 'error');
+          this.notificationService.error('Failed to update');
           this.isSaving.set(false);
         },
       });
@@ -274,11 +286,6 @@ export class ProjectEditorComponent implements OnInit {
       }
     }
     return '';
-  }
-
-  private showNotification(message: string, type: 'success' | 'error'): void {
-    this.notification.set({ message, type });
-    setTimeout(() => this.notification.set(null), 3000);
   }
 
   private markFormGroupTouched(): void {

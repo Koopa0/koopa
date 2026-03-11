@@ -1,16 +1,4 @@
-<!-- Notification -->
-@if (notification()) {
-<div
-  class="fixed right-4 top-20 z-50 flex items-center gap-2 rounded-sm border px-4 py-2.5 text-sm shadow-lg"
-  [class]="
-    notification()!.type === 'success'
-      ? 'border-emerald-800 bg-emerald-900/90 text-emerald-300'
-      : 'border-red-800 bg-red-900/90 text-red-300'
-  "
->
-  {{ notification()!.message }}
-</div>
-} @if (isLoading()) {
+@if (isLoading()) {
 <div class="flex flex-col items-center justify-center gap-3 py-20">
   <div
     class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"

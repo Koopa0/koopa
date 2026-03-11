@@ -63,14 +63,6 @@ describe('ArticleService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('should have loading signal initialized to false', () => {
-    expect(service.loading()).toBe(false);
-  });
-
-  it('should have errorMessage signal initialized to null', () => {
-    expect(service.errorMessage()).toBeNull();
-  });
-
   describe('getArticles', () => {
     it('should fetch articles and map response correctly', () => {
       const mockArticle = createMockContent();
@@ -86,18 +78,6 @@ describe('ArticleService', () => {
       );
       expect(req.request.method).toBe('GET');
       req.flush({ data: [mockArticle], meta: mockMeta } as ApiListResponse<ApiContent>);
-    });
-
-    it('should set loading to true when called and false after response', () => {
-      expect(service.loading()).toBe(false);
-
-      service.getArticles().subscribe();
-      expect(service.loading()).toBe(true);
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents'));
-      req.flush({ data: [], meta: createMockMeta() });
-
-      expect(service.loading()).toBe(false);
     });
 
     it('should pass tag filter parameter', () => {
@@ -131,31 +111,15 @@ describe('ArticleService', () => {
       req.flush({ data: [], meta: createMockMeta() });
     });
 
-    it('should set error message on failure', () => {
+    it('should propagate error to subscriber', () => {
       service.getArticles().subscribe({
-        error: () => {
-          // expected
+        error: (err) => {
+          expect(err).toBeTruthy();
         },
       });
 
       const req = httpMock.expectOne((r) => r.url.includes('/api/contents'));
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
-
-      expect(service.loading()).toBe(false);
-      expect(service.errorMessage()).toBe('Failed to load articles');
-    });
-
-    it('should set search error message when search fails', () => {
-      service.getArticles({ search: 'test' }).subscribe({
-        error: () => {
-          // expected
-        },
-      });
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/search'));
-      req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
-
-      expect(service.errorMessage()).toBe('Failed to search articles');
     });
   });
 
@@ -174,28 +138,15 @@ describe('ArticleService', () => {
       req.flush({ data: mockArticle });
     });
 
-    it('should set loading state during request', () => {
-      service.getArticleBySlug('test').subscribe();
-      expect(service.loading()).toBe(true);
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/test'));
-      req.flush({ data: createMockContent() });
-
-      expect(service.loading()).toBe(false);
-    });
-
-    it('should set error on failure', () => {
+    it('should propagate error to subscriber on failure', () => {
       service.getArticleBySlug('not-found').subscribe({
-        error: () => {
-          // expected
+        error: (err) => {
+          expect(err).toBeTruthy();
         },
       });
 
       const req = httpMock.expectOne((r) => r.url.includes('/api/contents/not-found'));
       req.flush('Not found', { status: 404, statusText: 'Not Found' });
-
-      expect(service.errorMessage()).toBe('Article not found');
-      expect(service.loading()).toBe(false);
     });
   });
 

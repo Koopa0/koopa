@@ -29,9 +29,8 @@ export class CommandPaletteService {
       { id: 'til', label: 'TIL', group: 'Pages', keywords: ['today', 'learned', 'learning'], action: () => this.navigate('/til') },
       { id: 'notes', label: 'Notes', group: 'Pages', keywords: ['memo', 'snippet'], action: () => this.navigate('/notes') },
       { id: 'projects', label: 'Projects', group: 'Pages', keywords: ['portfolio', 'work'], action: () => this.navigate('/projects') },
-      { id: 'resume', label: 'Resume', group: 'Pages', keywords: ['cv', 'experience'], action: () => this.navigate('/resume') },
       { id: 'uses', label: 'Uses', group: 'Pages', keywords: ['tools', 'setup', 'stack'], action: () => this.navigate('/uses') },
-      { id: 'about', label: 'About', group: 'Pages', keywords: ['me', 'info'], action: () => this.navigate('/about') },
+      { id: 'about', label: 'About', group: 'Pages', keywords: ['me', 'info', 'cv', 'experience', 'resume'], action: () => this.navigate('/about') },
     ];
 
     if (this.isAuthenticated()) {

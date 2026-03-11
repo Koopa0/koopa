@@ -1,9 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter, ActivatedRoute, Router } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { PLATFORM_ID } from '@angular/core';
 import { ProjectEditorComponent } from './project-editor';
+import { NotificationService } from '../../core/services/notification.service';
 
 describe('ProjectEditorComponent', () => {
   let component: ProjectEditorComponent;
@@ -18,14 +19,6 @@ describe('ProjectEditorComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: PLATFORM_ID, useValue: 'browser' },
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: {
-              paramMap: { get: () => null },
-            },
-          },
-        },
       ],
     }).compileComponents();
 
@@ -53,13 +46,12 @@ describe('ProjectEditorComponent', () => {
   });
 
   it('should show validation errors when saving with empty required fields', () => {
+    const notificationService = TestBed.inject(NotificationService);
+    const errorSpy = vi.spyOn(notificationService, 'error');
     component['save']();
     fixture.detectChanges();
 
-    const notification = component['notification']();
-    expect(notification).toBeTruthy();
-    expect(notification!.type).toBe('error');
-    expect(notification!.message).toContain('required fields');
+    expect(errorSpy).toHaveBeenCalledWith('Please fill in all required fields');
   });
 
   it('should add tech stack item', () => {

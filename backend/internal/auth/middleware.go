@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -32,7 +33,10 @@ func Middleware(secret string) func(http.Handler) http.Handler {
 			}
 
 			claims := &Claims{}
-			parsed, err := jwt.ParseWithClaims(token, claims, func(_ *jwt.Token) (any, error) {
+			parsed, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
+				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+				}
 				return secretBytes, nil
 			})
 			if err != nil || !parsed.Valid {

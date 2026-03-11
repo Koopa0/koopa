@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -27,7 +28,11 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 	area := selectProperty(page.Properties["Tag"])
 	deadline := dateProperty(page.Properties["Target Deadline"])
 
-	slug := Slugify(title) + "-" + pageID[:8]
+	idSuffix := pageID
+	if len(idSuffix) > 8 {
+		idSuffix = idSuffix[:8]
+	}
+	slug := Slugify(title) + "-" + idSuffix
 
 	p, err := h.projects.UpsertByNotionPageID(ctx, project.UpsertByNotionParams{
 		Slug:         slug,
@@ -127,6 +132,49 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 		"title", title,
 		"author", author,
 		"rating", rating,
+	)
+
+	return nil
+}
+
+// syncGoal handles goal sync: fetch Notion page properties, upsert to goals table.
+func (h *Handler) syncGoal(ctx context.Context, pageID string) error {
+	page, err := h.client.Page(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("fetching notion goal page: %w", err)
+	}
+
+	title := titleProperty(page.Properties["Name"])
+	if title == "" {
+		return fmt.Errorf("notion goal page %s has no title", pageID)
+	}
+
+	status := statusProperty(page.Properties["Status"])
+	localStatus := mapNotionGoalStatus(status)
+
+	description := richTextProperty(page.Properties["Description"])
+	area := selectProperty(page.Properties["Area"])
+	quarter := selectProperty(page.Properties["Quarter"])
+	deadline := dateProperty(page.Properties["Deadline"])
+
+	g, err := h.goals.UpsertByNotionPageID(ctx, goal.UpsertByNotionParams{
+		Title:        title,
+		Description:  description,
+		Status:       localStatus,
+		Area:         area,
+		Quarter:      quarter,
+		Deadline:     deadline,
+		NotionPageID: pageID,
+	})
+	if err != nil {
+		return fmt.Errorf("upserting goal: %w", err)
+	}
+
+	h.logger.Info("goal synced from notion",
+		"page_id", pageID,
+		"goal_id", g.ID,
+		"title", title,
+		"status", localStatus,
 	)
 
 	return nil

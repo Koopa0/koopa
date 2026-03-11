@@ -33,22 +33,6 @@
   </div>
 </section>
 
-<!-- Notification -->
-@if (notification()) {
-<div class="mx-auto max-w-4xl px-4 pt-4 sm:px-6 lg:px-8">
-  <div
-    class="rounded-sm border px-4 py-3 text-sm"
-    [class]="
-      notification()!.type === 'success'
-        ? 'border-emerald-800 bg-emerald-900/30 text-emerald-400'
-        : 'border-red-800 bg-red-900/30 text-red-400'
-    "
-  >
-    {{ notification()!.message }}
-  </div>
-</div>
-}
-
 <!-- Form -->
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">

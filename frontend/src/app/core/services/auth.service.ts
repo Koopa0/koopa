@@ -2,7 +2,6 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { Observable, tap, catchError, throwError } from 'rxjs';
 import { ApiService } from './api.service';
 import type {
-  LoginRequest,
   TokenPair,
   AuthUser,
   AuthState,
@@ -23,25 +22,15 @@ export class AuthService {
   readonly authState = this._authState.asReadonly();
   readonly isAuthenticated = computed(() => this._authState().isAuthenticated);
   readonly currentUser = computed(() => this._authState().user);
-  readonly isAdmin = computed(() => this._authState().user?.role === 'admin');
+  /** Backend validates email allowlist — if authenticated, user is admin */
+  readonly isAdmin = computed(() => this._authState().isAuthenticated);
   readonly accessToken = computed(() => this._authState().tokens?.accessToken ?? null);
 
-  login(credentials: LoginRequest): Observable<ApiTokenResponse> {
-    return this.api
-      .postData<ApiTokenResponse>('/api/auth/login', {
-        email: credentials.email,
-        password: credentials.password,
-      })
-      .pipe(
-        tap((tokens) => this.setTokens(tokens)),
-        catchError((error) => {
-          const message =
-            error.status === 401
-              ? 'Invalid email or password'
-              : 'Login failed. Please try again later.';
-          return throwError(() => new Error(message));
-        }),
-      );
+  /** Handle OAuth callback — store tokens from redirect query params */
+  handleOAuthCallback(accessToken: string, refreshToken: string): void {
+    const tokens: TokenPair = { accessToken, refreshToken };
+    const user = this.decodeUser(accessToken);
+    this._authState.set({ isAuthenticated: true, user, tokens });
   }
 
   logout(): void {
@@ -63,7 +52,7 @@ export class AuthService {
         refresh_token: refreshToken,
       })
       .pipe(
-        tap((tokens) => this.setTokens(tokens)),
+        tap((apiTokens) => this.setTokens(apiTokens)),
         catchError((error) => {
           this.logout();
           return throwError(() => error);
@@ -91,9 +80,7 @@ export class AuthService {
   private decodeUser(token: string): AuthUser {
     const payload = this.decodeJwt(token);
     return {
-      id: payload.user_id,
       email: payload.email,
-      role: payload.role as 'admin' | 'user',
     };
   }
 

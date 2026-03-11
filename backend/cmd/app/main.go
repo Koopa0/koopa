@@ -30,9 +30,12 @@ import (
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/reconcile"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/server"
 	"github.com/koopa0/blog-backend/internal/topic"
@@ -61,6 +64,15 @@ type config struct {
 	NotionProjectsDB    string
 	NotionTasksDB       string
 	NotionBooksDB       string
+	NotionGoalsDB       string
+	LINEChannelToken    string
+	LINEUserID          string
+	TelegramBotToken    string
+	TelegramChatID      string
+	GoogleClientID      string
+	GoogleClientSecret  string
+	GoogleRedirectURI   string
+	AdminEmail          string
 	MockMode            bool
 }
 
@@ -113,6 +125,7 @@ func run(logger *slog.Logger) error {
 	trackingStore := tracking.NewStore(pool)
 	flowrunStore := flowrun.NewStore(pool)
 	feedStore := feed.NewStore(pool)
+	goalStore := goal.NewStore(pool)
 
 	// collector + budget
 	feedCollector := collector.New(collectedStore, feedStore, logger)
@@ -121,8 +134,35 @@ func run(logger *slog.Logger) error {
 	// upload
 	s3Client := upload.NewS3Client(ctx, cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey)
 
+	// notification providers
+	var notifiers []notify.Notifier
+	if cfg.LINEChannelToken != "" && cfg.LINEUserID != "" {
+		notifiers = append(notifiers, notify.NewLINE(cfg.LINEChannelToken, cfg.LINEUserID))
+		logger.Info("notification: LINE enabled")
+	}
+	if cfg.TelegramBotToken != "" && cfg.TelegramChatID != "" {
+		notifiers = append(notifiers, notify.NewTelegram(cfg.TelegramBotToken, cfg.TelegramChatID))
+		logger.Info("notification: Telegram enabled")
+	}
+	var notifier notify.Notifier
+	if len(notifiers) > 0 {
+		notifier = notify.NewMulti(notifiers...)
+	} else {
+		notifier = notify.NewNoop(logger)
+		logger.Info("notification: no providers configured, using noop")
+	}
+
+	// wire notifier to feed store for auto-disable alerts
+	feedStore.SetAlerts(notifier)
+
+	// notion client (used by morning brief flow and webhook handler)
+	notionClient := notion.NewClient(cfg.NotionAPIKey)
+
+	// github client (used by weekly review flow and pipeline handler)
+	githubFetcher := pipeline.NewGitHub(cfg.GitHubToken, cfg.GitHubRepo)
+
 	// AI pipeline — Genkit + flow registry + runner
-	alerter := flowrun.NewLogAlerter(logger)
+	alerter := &notifyAlerter{notifier: notifier, logger: logger}
 	var runner *flowrun.Runner
 	if cfg.MockMode {
 		logger.Info("starting in MOCK MODE — AI calls disabled")
@@ -132,6 +172,11 @@ func run(logger *slog.Logger) error {
 			flow.NewMockCollectScore(),
 			flow.NewMockDigestGenerate(),
 			flow.NewMockBookmarkGenerate(),
+			flow.NewMockMorningBrief(),
+			flow.NewMockWeeklyReview(),
+			flow.NewMockProjectTrack(),
+			flow.NewMockContentStrategy(),
+			flow.NewMockBuildLog(),
 		)
 		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	} else {
@@ -162,7 +207,7 @@ func run(logger *slog.Logger) error {
 			return fmt.Errorf("defining claude model: %w", modelErr)
 		}
 
-		embedder, embedErr := googleAI.DefineEmbedder(g, "text-embedding-004", &ai.EmbedderOptions{})
+		embedder, embedErr := googleAI.DefineEmbedder(g, "gemini-embedding-2-preview", &ai.EmbedderOptions{})
 		if embedErr != nil {
 			return fmt.Errorf("defining embedder: %w", embedErr)
 		}
@@ -176,15 +221,43 @@ func run(logger *slog.Logger) error {
 		collectScore := flow.NewCollectScore(g, geminiModel, collectedStore, collectedStore, tokenBudget, logger)
 		digestGenerate := flow.NewDigestGenerate(g, geminiModel, contentStore, collectedStore, projectStore, tokenBudget, logger)
 		bookmarkGenerate := flow.NewBookmarkGenerate(g, geminiModel, collectedStore, tokenBudget, logger)
-		registry := flow.NewRegistry(contentReview, contentPolish, collectScore, digestGenerate, bookmarkGenerate)
+		notionTasks := notion.NewTaskDB(notionClient, cfg.NotionTasksDB)
+		morningBrief := flow.NewMorningBrief(
+			g, geminiModel, notionTasks,
+			collectedStore, contentStore, notifier, tokenBudget, logger,
+		)
+		weeklyReview := flow.NewWeeklyReview(
+			g, geminiModel, notionTasks,
+			collectedStore, contentStore, projectStore, githubFetcher,
+			notifier, tokenBudget, logger,
+		)
+		projectTrack := flow.NewProjectTrack(
+			g, geminiModel, projectStore, projectStore,
+			notifier, tokenBudget, logger,
+		)
+		contentStrategy := flow.NewContentStrategy(
+			g, geminiModel, contentStore, collectedStore, projectStore,
+			notifier, tokenBudget, logger,
+		)
+		buildLog := flow.NewBuildLog(
+			g, geminiModel, projectStore, githubFetcher, contentStore,
+			tokenBudget, logger,
+		)
+		registry := flow.NewRegistry(contentReview, contentPolish, collectScore, digestGenerate, bookmarkGenerate, morningBrief, weeklyReview, projectTrack, contentStrategy, buildLog)
 		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	}
 
 	runner.Start(ctx)
 	defer runner.Stop()
 
+	// cron: all jobs run in Asia/Taipei timezone
+	taipeiLoc, err := time.LoadLocation("Asia/Taipei")
+	if err != nil {
+		return fmt.Errorf("loading Asia/Taipei timezone: %w", err)
+	}
+	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
+
 	// cron: retry failed/stuck flow runs every 2 minutes
-	cronScheduler := cron.New()
 	_, err = cronScheduler.AddFunc("@every 2m", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 		defer cancel()
@@ -251,7 +324,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("adding hourly_4 cron job: %w", err)
 	}
 
-	// cron: collect daily feeds at 06:00
+	// cron: collect daily feeds at 06:00 (Asia/Taipei)
 	_, err = cronScheduler.AddFunc("0 6 * * *", func() {
 		collectFeedsCron(feed.ScheduleDaily, "daily")
 	})
@@ -259,7 +332,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("adding daily cron job: %w", err)
 	}
 
-	// cron: collect weekly feeds at 06:00 Monday
+	// cron: collect weekly feeds at 06:00 Monday (Asia/Taipei)
 	_, err = cronScheduler.AddFunc("0 6 * * 1", func() {
 		collectFeedsCron(feed.ScheduleWeekly, "weekly")
 	})
@@ -267,7 +340,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("adding weekly cron job: %w", err)
 	}
 
-	// cron: reset token budget at midnight
+	// cron: reset token budget at midnight (Asia/Taipei)
 	_, err = cronScheduler.AddFunc("0 0 * * *", func() {
 		tokenBudget.Reset()
 		logger.Info("cron: daily token budget reset")
@@ -276,21 +349,94 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("adding budget reset cron job: %w", err)
 	}
 
+	// cron: clean up expired refresh tokens at 01:00 (Asia/Taipei)
+	_, err = cronScheduler.AddFunc("0 1 * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if delErr := authStore.DeleteExpiredTokens(ctx); delErr != nil {
+			logger.Error("cron: deleting expired tokens", "error", delErr)
+		} else {
+			logger.Info("cron: expired tokens cleaned up")
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding token cleanup cron job: %w", err)
+	}
+
+	// cron: morning brief at 07:30 (Asia/Taipei)
+	_, err = cronScheduler.AddFunc("30 7 * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if submitErr := runner.Submit(ctx, "morning-brief", nil, nil); submitErr != nil {
+			logger.Error("cron: submitting morning brief", "error", submitErr)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding morning brief cron job: %w", err)
+	}
+
+	// cron: weekly review at 09:00 Monday (Asia/Taipei)
+	_, err = cronScheduler.AddFunc("0 9 * * 1", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if submitErr := runner.Submit(ctx, "weekly-review", nil, nil); submitErr != nil {
+			logger.Error("cron: submitting weekly review", "error", submitErr)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding weekly review cron job: %w", err)
+	}
+
+	// cron: content strategy at 03:00 Monday (Asia/Taipei)
+	_, err = cronScheduler.AddFunc("0 3 * * 1", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if submitErr := runner.Submit(ctx, "content-strategy", nil, nil); submitErr != nil {
+			logger.Error("cron: submitting content strategy", "error", submitErr)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding content strategy cron job: %w", err)
+	}
+
+	// reconciler: weekly Obsidian + Notion comparison
+	recon := reconcile.New(
+		githubFetcher, contentStore,
+		projectStore, goalStore,
+		notionClient, notifier,
+		reconcile.Config{
+			NotionProjectsDB: cfg.NotionProjectsDB,
+			NotionGoalsDB:    cfg.NotionGoalsDB,
+		},
+		logger,
+	)
+
+	// cron: reconciliation at 04:00 Sunday (Asia/Taipei)
+	_, err = cronScheduler.AddFunc("0 4 * * 0", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if reconErr := recon.Run(ctx); reconErr != nil {
+			logger.Error("cron: reconciliation failed", "error", reconErr)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding reconciliation cron job: %w", err)
+	}
+
 	cronScheduler.Start()
 	defer cronScheduler.Stop()
 
 	// notion webhook handler
-	notionClient := notion.NewClient(cfg.NotionAPIKey)
-	notionHandler := notion.NewHandler(notionClient, projectStore, runner, notion.Config{
+	notionHandler := notion.NewHandler(notionClient, projectStore, goalStore, runner, notion.Config{
 		APIKey:        cfg.NotionAPIKey,
 		WebhookSecret: cfg.NotionWebhookSecret,
 		ProjectsDB:    cfg.NotionProjectsDB,
 		TasksDB:       cfg.NotionTasksDB,
 		BooksDB:       cfg.NotionBooksDB,
+		GoalsDB:       cfg.NotionGoalsDB,
 	}, logger)
 
 	// pipeline dependencies
-	githubFetcher := pipeline.NewGitHub(cfg.GitHubToken, cfg.GitHubRepo)
 	topicLookup := pipeline.NewTopicLookup(func(ctx context.Context, slug string) (uuid.UUID, error) {
 		t, err := topicStore.TopicBySlug(ctx, slug)
 		if err != nil {
@@ -300,21 +446,27 @@ func run(logger *slog.Logger) error {
 	})
 
 	// pipeline handler with collector
-	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, logger)
+	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
 	pipelineHandler.SetCollector(feedCollector, feedStore)
 
 	// flow admin handler
 	flowHandler := flow.NewHandler(
 		runner,
-		&runReaderAdapter{store: flowrunStore},
+		&runReader{store: flowrunStore},
 		contentStore,
 		contentStore,
 		logger,
 	)
 
-	// deps
 	deps := server.Deps{
-		Auth:      auth.NewHandler(authStore, cfg.JWTSecret, logger),
+		Pool: pool,
+		Auth: auth.NewHandler(authStore, cfg.JWTSecret, auth.GoogleConfig{
+			ClientID:     cfg.GoogleClientID,
+			ClientSecret: cfg.GoogleClientSecret,
+			RedirectURI:  cfg.GoogleRedirectURI,
+			AdminEmail:   cfg.AdminEmail,
+			FrontendURL:  cfg.CORSOrigin,
+		}, logger),
 		Topic:     topic.NewHandler(topicStore, contentStore, logger),
 		Content:   content.NewHandler(contentStore, cfg.SiteURL, logger),
 		Project:   project.NewHandler(projectStore, logger),
@@ -322,7 +474,7 @@ func run(logger *slog.Logger) error {
 		Collected: collected.NewHandler(collectedStore, logger),
 		Tracking:  tracking.NewHandler(trackingStore, logger),
 		Pipeline:  pipelineHandler,
-		FlowRun:   flowrun.NewHandler(flowrunStore, logger),
+		FlowRun:   flowrun.NewHandler(flowrunStore, runner, logger),
 		Upload:    upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
 		Flow:      flowHandler,
 		Feed:      feed.NewHandler(feedStore, feedCollector, logger),
@@ -374,6 +526,19 @@ func loadConfig(logger *slog.Logger) config {
 	cfg.NotionProjectsDB = os.Getenv("NOTION_PROJECTS_DB")
 	cfg.NotionTasksDB = os.Getenv("NOTION_TASKS_DB")
 	cfg.NotionBooksDB = os.Getenv("NOTION_BOOKS_DB")
+	cfg.NotionGoalsDB = os.Getenv("NOTION_GOALS_DB")
+
+	// Google OAuth
+	cfg.GoogleClientID = requireEnv("GOOGLE_CLIENT_ID", logger)
+	cfg.GoogleClientSecret = requireEnv("GOOGLE_CLIENT_SECRET", logger)
+	cfg.GoogleRedirectURI = requireEnv("GOOGLE_REDIRECT_URI", logger)
+	cfg.AdminEmail = requireEnv("ADMIN_EMAIL", logger)
+
+	// Notification providers (optional — empty means noop)
+	cfg.LINEChannelToken = os.Getenv("LINE_CHANNEL_TOKEN")
+	cfg.LINEUserID = os.Getenv("LINE_USER_ID")
+	cfg.TelegramBotToken = os.Getenv("TELEGRAM_BOT_TOKEN")
+	cfg.TelegramChatID = os.Getenv("TELEGRAM_CHAT_ID")
 
 	return cfg
 }
@@ -421,13 +586,12 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// runReaderAdapter bridges flowrun.Store to flow.RunReader,
-// converting flowrun.Run to flow.RunResult to avoid an import cycle.
-type runReaderAdapter struct {
+// runReader converts flowrun.Run to flow.RunResult, breaking the flow ↔ flowrun import cycle.
+type runReader struct {
 	store *flowrun.Store
 }
 
-func (a *runReaderAdapter) RunResult(ctx context.Context, id uuid.UUID) (*flow.RunResult, error) {
+func (a *runReader) RunResult(ctx context.Context, id uuid.UUID) (*flow.RunResult, error) {
 	run, err := a.store.Run(ctx, id)
 	if err != nil {
 		if errors.Is(err, flowrun.ErrNotFound) {
@@ -438,7 +602,7 @@ func (a *runReaderAdapter) RunResult(ctx context.Context, id uuid.UUID) (*flow.R
 	return toRunResult(run), nil
 }
 
-func (a *runReaderAdapter) LatestCompletedRunResult(ctx context.Context, flowName string, contentID uuid.UUID) (*flow.RunResult, error) {
+func (a *runReader) LatestCompletedRunResult(ctx context.Context, flowName string, contentID uuid.UUID) (*flow.RunResult, error) {
 	run, err := a.store.LatestCompletedRun(ctx, flowName, contentID)
 	if err != nil {
 		if errors.Is(err, flowrun.ErrNotFound) {
@@ -458,4 +622,25 @@ func toRunResult(r *flowrun.Run) *flow.RunResult {
 		Output:    r.Output,
 		EndedAt:   r.EndedAt,
 	}
+}
+
+// notifyAlerter adapts notify.Notifier to flowrun.Alerter.
+type notifyAlerter struct {
+	notifier notify.Notifier
+	logger   *slog.Logger
+}
+
+func (a *notifyAlerter) Alert(ctx context.Context, run flowrun.Run) error {
+	errMsg := ""
+	if run.Error != nil {
+		errMsg = *run.Error
+	}
+	text := fmt.Sprintf("[ALERT] Flow run failed\nFlow: %s\nRun ID: %s\nAttempt: %d\nError: %s",
+		run.FlowName, run.ID, run.Attempt, errMsg)
+
+	if err := a.notifier.Send(ctx, text); err != nil {
+		a.logger.Error("sending flow alert notification", "run_id", run.ID, "error", err)
+		return err
+	}
+	return nil
 }

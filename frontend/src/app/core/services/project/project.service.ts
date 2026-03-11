@@ -1,5 +1,5 @@
-import { Injectable, inject, signal } from '@angular/core';
-import { Observable, tap, catchError, throwError } from 'rxjs';
+import { Injectable, inject } from '@angular/core';
+import { Observable } from 'rxjs';
 import { ApiService } from '../api.service';
 import type {
   ApiProject,
@@ -11,40 +11,19 @@ import type {
 export class ProjectService {
   private readonly api = inject(ApiService);
 
-  private readonly _loading = signal(false);
-  private readonly _error = signal<string | null>(null);
-
-  readonly loading = this._loading.asReadonly();
-  readonly errorMessage = this._error.asReadonly();
-
-  /** Get all projects (public) */
+  /** Get all projects (public — filtered by backend WHERE public = true) */
   getAllProjects(): Observable<ApiProject[]> {
-    this._loading.set(true);
-    this._error.set(null);
+    return this.api.getData<ApiProject[]>('/api/projects');
+  }
 
-    return this.api.getData<ApiProject[]>('/api/projects').pipe(
-      tap(() => this._loading.set(false)),
-      catchError((err) => {
-        this._loading.set(false);
-        this._error.set('Failed to load projects');
-        return throwError(() => err);
-      }),
-    );
+  /** Admin — get all projects (including non-public) */
+  getAdminProjects(): Observable<ApiProject[]> {
+    return this.api.getData<ApiProject[]>('/api/admin/projects');
   }
 
   /** Get single project by slug (public) */
   getProjectBySlug(slug: string): Observable<ApiProject> {
-    this._loading.set(true);
-    this._error.set(null);
-
-    return this.api.getData<ApiProject>(`/api/projects/${slug}`).pipe(
-      tap(() => this._loading.set(false)),
-      catchError((err) => {
-        this._loading.set(false);
-        this._error.set('Project not found');
-        return throwError(() => err);
-      }),
-    );
+    return this.api.getData<ApiProject>(`/api/projects/${slug}`);
   }
 
   /** Admin — create project */

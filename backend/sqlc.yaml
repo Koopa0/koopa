@@ -11,6 +11,7 @@ sql:
       - "internal/tracking/query.sql"
       - "internal/flowrun/query.sql"
       - "internal/feed/query.sql"
+      - "internal/goal/query.sql"
     schema: "migrations/"
     gen:
       go:

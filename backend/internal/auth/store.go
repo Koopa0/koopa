@@ -33,31 +33,26 @@ func (s *Store) UserByID(ctx context.Context, id uuid.UUID) (*User, error) {
 		return nil, fmt.Errorf("querying user by id: %w", err)
 	}
 	return &User{
-		ID:           row.ID,
-		Email:        row.Email,
-		PasswordHash: row.PasswordHash,
-		Role:         row.Role,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
+		ID:        row.ID,
+		Email:     row.Email,
+		Role:      row.Role,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
 	}, nil
 }
 
-// UserByEmail returns the user with the given email.
-func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
-	row, err := s.q.UserByEmail(ctx, email)
+// UpsertUserByEmail creates a user or updates the timestamp if email exists.
+func (s *Store) UpsertUserByEmail(ctx context.Context, email string) (*User, error) {
+	row, err := s.q.UpsertUserByEmail(ctx, email)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying user by email: %w", err)
+		return nil, fmt.Errorf("upserting user by email: %w", err)
 	}
 	return &User{
-		ID:           row.ID,
-		Email:        row.Email,
-		PasswordHash: row.PasswordHash,
-		Role:         row.Role,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
+		ID:        row.ID,
+		Email:     row.Email,
+		Role:      row.Role,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
 	}, nil
 }
 

@@ -3,9 +3,10 @@ import {
   ChangeDetectionStrategy,
   inject,
   signal,
+  input,
   OnInit,
 } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import {
   LucideAngularModule,
@@ -31,7 +32,9 @@ import type { ApiContent } from '../../core/models';
   host: { '[@fadeInUp]': '' },
 })
 export class TagComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+  /** Route param: tags/:tag */
+  readonly tag = input<string>();
+
   private readonly tagService = inject(TagService);
   private readonly seoService = inject(SeoService);
 
@@ -47,15 +50,15 @@ export class TagComponent implements OnInit {
   protected readonly FileTextIcon = FileText;
 
   ngOnInit(): void {
-    const tag = this.route.snapshot.paramMap.get('tag');
-    if (tag) {
-      this.tagName.set(tag);
-      this.loadContents(tag);
+    const tagValue = this.tag();
+    if (tagValue) {
+      this.tagName.set(tagValue);
+      this.loadContents(tagValue);
 
       this.seoService.updateMeta({
-        title: `Tag: ${tag}`,
-        description: `All content tagged with ${tag}`,
-        ogUrl: `https://koopa0.dev/tags/${tag}`,
+        title: `Tag: ${tagValue}`,
+        description: `All content tagged with ${tagValue}`,
+        ogUrl: `https://koopa0.dev/tags/${tagValue}`,
       });
     }
   }

@@ -1,4 +1,4 @@
-// Package auth provides JWT authentication, login, and refresh token rotation.
+// Package auth provides Google OAuth 2.0 login, JWT access tokens, and refresh token rotation.
 package auth
 
 import (
@@ -11,12 +11,11 @@ import (
 
 // User represents an admin user.
 type User struct {
-	ID           uuid.UUID `json:"id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"-"`
-	Role         string    `json:"role"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // RefreshToken represents a stored refresh token.
@@ -30,16 +29,8 @@ type RefreshToken struct {
 
 // Claims are the JWT claims for an access token.
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	Email string `json:"email"`
 	jwt.RegisteredClaims
-}
-
-// LoginRequest is the payload for POST /api/auth/login.
-type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
 }
 
 // RefreshRequest is the payload for POST /api/auth/refresh.
@@ -53,16 +44,16 @@ type TokenPair struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// GoogleConfig holds Google OAuth 2.0 settings.
+type GoogleConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURI  string
+	AdminEmail   string
+	FrontendURL  string
+}
+
 var (
-	// ErrInvalidCredentials indicates wrong email or password.
-	ErrInvalidCredentials = errors.New("invalid credentials")
-
-	// ErrTokenExpired indicates the token has expired.
-	ErrTokenExpired = errors.New("token expired")
-
-	// ErrInvalidToken indicates the token is malformed or invalid.
-	ErrInvalidToken = errors.New("invalid token")
-
 	// ErrNotFound indicates the requested record does not exist.
 	ErrNotFound = errors.New("not found")
 )

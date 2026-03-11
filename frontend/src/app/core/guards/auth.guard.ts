@@ -6,37 +6,29 @@ import { AuthService } from '../services/auth.service';
 export const authGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
-  
+
   if (authService.isAuthenticated()) {
     return true;
   }
-  
-  // Redirect to login page and preserve the originally requested URL
-  router.navigate(['/login'], { 
-    queryParams: { returnUrl: state.url } 
+
+  router.navigate(['/login'], {
+    queryParams: { returnUrl: state.url },
   });
   return false;
 };
 
+/** Admin guard — backend validates email allowlist via OAuth, so authenticated = admin */
 export const adminGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
-  
-  if (authService.isAuthenticated() && authService.isAdmin()) {
+
+  if (authService.isAuthenticated()) {
     return true;
   }
-  
-  if (!authService.isAuthenticated()) {
-    router.navigate(['/login'], { 
-      queryParams: { returnUrl: state.url } 
-    });
-  } else {
-    // Authenticated but not an admin
-    router.navigate(['/'], {
-      queryParams: { error: 'unauthorized' }
-    });
-  }
-  
+
+  router.navigate(['/login'], {
+    queryParams: { returnUrl: state.url },
+  });
   return false;
 };
 

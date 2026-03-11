@@ -104,8 +104,7 @@ func (s *Store) CreateCollectedData(ctx context.Context, p CreateParams) (*Colle
 		FeedID:          p.FeedID,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating collected data: %w", err)

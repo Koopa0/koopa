@@ -64,9 +64,8 @@ describe('Auth Guards', () => {
   });
 
   describe('adminGuard', () => {
-    it('should allow access when authenticated and admin', () => {
+    it('should allow access when authenticated (backend validates allowlist)', () => {
       mockIsAuthenticated.set(true);
-      mockIsAdmin.set(true);
 
       const result = TestBed.runInInjectionContext(() =>
         adminGuard(route, state),
@@ -77,7 +76,6 @@ describe('Auth Guards', () => {
 
     it('should redirect to login when not authenticated', () => {
       mockIsAuthenticated.set(false);
-      mockIsAdmin.set(false);
 
       const result = TestBed.runInInjectionContext(() =>
         adminGuard(route, state),
@@ -86,20 +84,6 @@ describe('Auth Guards', () => {
       expect(result).toBe(false);
       expect(mockRouter.navigate).toHaveBeenCalledWith(['/login'], {
         queryParams: { returnUrl: '/admin/dashboard' },
-      });
-    });
-
-    it('should redirect to home when authenticated but not admin', () => {
-      mockIsAuthenticated.set(true);
-      mockIsAdmin.set(false);
-
-      const result = TestBed.runInInjectionContext(() =>
-        adminGuard(route, state),
-      );
-
-      expect(result).toBe(false);
-      expect(mockRouter.navigate).toHaveBeenCalledWith(['/'], {
-        queryParams: { error: 'unauthorized' },
       });
     });
   });
@@ -119,7 +103,6 @@ describe('Auth Guards', () => {
   describe('adminChildGuard', () => {
     it('should delegate to adminGuard', () => {
       mockIsAuthenticated.set(true);
-      mockIsAdmin.set(true);
 
       const result = TestBed.runInInjectionContext(() =>
         adminChildGuard(route, state),

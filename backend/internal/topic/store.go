@@ -91,8 +91,7 @@ func (s *Store) CreateTopic(ctx context.Context, p CreateParams) (*Topic, error)
 		SortOrder:   int32(p.SortOrder), // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating topic: %w", err)
@@ -128,8 +127,7 @@ func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p UpdateParams) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating topic %s: %w", id, err)

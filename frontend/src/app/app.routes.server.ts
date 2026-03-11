@@ -50,10 +50,6 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
   },
   {
-    path: 'resume',
-    renderMode: RenderMode.Prerender,
-  },
-  {
     path: 'uses',
     renderMode: RenderMode.Prerender,
   },
@@ -63,10 +59,14 @@ export const serverRoutes: ServerRoute[] = [
   },
   {
     path: 'login',
-    renderMode: RenderMode.Server,
+    renderMode: RenderMode.Client,
   },
   {
     path: 'error',
+    renderMode: RenderMode.Client,
+  },
+  {
+    path: 'admin/oauth-callback',
     renderMode: RenderMode.Client,
   },
   {

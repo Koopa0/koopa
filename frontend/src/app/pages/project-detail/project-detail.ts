@@ -2,10 +2,10 @@ import {
   Component,
   inject,
   signal,
+  input,
   ChangeDetectionStrategy,
   OnInit,
 } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
 import { Location } from '@angular/common';
 import {
   LucideAngularModule,
@@ -28,7 +28,9 @@ import type { ApiProject, ProjectStatus } from '../../core/models';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProjectDetailComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+  /** Route param: projects/:slug */
+  readonly slug = input<string>();
+
   private readonly location = inject(Location);
   private readonly projectService = inject(ProjectService);
   private readonly seoService = inject(SeoService);
@@ -45,9 +47,9 @@ export class ProjectDetailComponent implements OnInit {
   protected readonly Code2Icon = Code2;
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (slug) {
-      this.loadProject(slug);
+    const slugValue = this.slug();
+    if (slugValue) {
+      this.loadProject(slugValue);
     } else {
       this.isNotFound.set(true);
       this.isLoading.set(false);

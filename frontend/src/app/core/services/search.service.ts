@@ -1,13 +1,11 @@
-import { DestroyRef, Injectable, inject, signal, computed } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { tap, catchError, throwError } from 'rxjs';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import { catchError, throwError } from 'rxjs';
 import { ContentService } from './content.service';
 import type { ApiContent, ApiPaginationMeta } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class SearchService {
   private readonly content = inject(ContentService);
-  private readonly destroyRef = inject(DestroyRef);
 
   private readonly _query = signal('');
   private readonly _results = signal<ApiContent[]>([]);
@@ -35,18 +33,16 @@ export class SearchService {
     this.content
       .search(query, { page, perPage })
       .pipe(
-        tap((res) => {
-          this._results.set(res.data);
-          this._meta.set(res.meta);
-          this._searching.set(false);
-        }),
         catchError((err) => {
           this._searching.set(false);
           return throwError(() => err);
         }),
-        takeUntilDestroyed(this.destroyRef),
       )
-      .subscribe();
+      .subscribe((res) => {
+        this._results.set(res.data);
+        this._meta.set(res.meta);
+        this._searching.set(false);
+      });
   }
 
   clearSearch(): void {

@@ -63,14 +63,6 @@ describe('NoteService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('should have loading signal initialized to false', () => {
-    expect(service.loading()).toBe(false);
-  });
-
-  it('should have errorMessage signal initialized to null', () => {
-    expect(service.errorMessage()).toBeNull();
-  });
-
   describe('getNotes', () => {
     it('should fetch notes and map response correctly', () => {
       const mockNote = createMockContent();
@@ -88,16 +80,6 @@ describe('NoteService', () => {
       req.flush({ data: [mockNote], meta: mockMeta });
     });
 
-    it('should set loading to true when called and false after response', () => {
-      service.getNotes().subscribe();
-      expect(service.loading()).toBe(true);
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/type/note'));
-      req.flush({ data: [], meta: createMockMeta() });
-
-      expect(service.loading()).toBe(false);
-    });
-
     it('should pass page and perPage parameters', () => {
       service.getNotes(3, 15).subscribe();
 
@@ -109,18 +91,15 @@ describe('NoteService', () => {
       req.flush({ data: [], meta: createMockMeta({ page: 3, per_page: 15 }) });
     });
 
-    it('should set error message on failure', () => {
+    it('should propagate error to subscriber', () => {
       service.getNotes().subscribe({
-        error: () => {
-          // expected
+        error: (err) => {
+          expect(err).toBeTruthy();
         },
       });
 
       const req = httpMock.expectOne((r) => r.url.includes('/api/contents/type/note'));
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
-
-      expect(service.loading()).toBe(false);
-      expect(service.errorMessage()).toBe('Failed to load notes');
     });
   });
 
@@ -139,28 +118,15 @@ describe('NoteService', () => {
       req.flush({ data: mockNote });
     });
 
-    it('should set loading state during request', () => {
-      service.getBySlug('test').subscribe();
-      expect(service.loading()).toBe(true);
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/test'));
-      req.flush({ data: createMockContent() });
-
-      expect(service.loading()).toBe(false);
-    });
-
-    it('should set error on failure', () => {
+    it('should propagate error to subscriber on failure', () => {
       service.getBySlug('not-found').subscribe({
-        error: () => {
-          // expected
+        error: (err) => {
+          expect(err).toBeTruthy();
         },
       });
 
       const req = httpMock.expectOne((r) => r.url.includes('/api/contents/not-found'));
       req.flush('Not found', { status: 404, statusText: 'Not Found' });
-
-      expect(service.errorMessage()).toBe('Note not found');
-      expect(service.loading()).toBe(false);
     });
   });
 });

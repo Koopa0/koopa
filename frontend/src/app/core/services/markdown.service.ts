@@ -1,11 +1,42 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import DOMPurify from 'isomorphic-dompurify';
+
+/** Allowed HTML tags and attributes for sanitized markdown output */
+const PURIFY_CONFIG = {
+  RETURN_DOM_FRAGMENT: false,
+  RETURN_DOM: false,
+  ALLOWED_TAGS: [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p', 'br', 'hr',
+    'ul', 'ol', 'li',
+    'blockquote', 'pre', 'code',
+    'strong', 'em', 'del', 's', 'mark', 'sub', 'sup',
+    'a', 'img',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'div', 'span',
+    'details', 'summary',
+    'input',
+  ],
+  ALLOWED_ATTR: [
+    'id', 'class', 'href', 'src', 'alt', 'title', 'target', 'rel',
+    'data-mermaid-code',
+    'width', 'height',
+    'colspan', 'rowspan',
+    'type', 'checked', 'disabled',
+  ],
+  ALLOW_DATA_ATTR: false,
+};
 
 @Injectable({
   providedIn: 'root',
 })
 export class MarkdownService {
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly isBrowser = isPlatformBrowser(this.platformId);
+
   constructor() {
     marked.setOptions({
       gfm: true,
@@ -26,6 +57,9 @@ export class MarkdownService {
 
     // Apply syntax highlighting to code blocks
     html = this.highlightCode(html);
+
+    // Sanitize HTML to prevent XSS attacks
+    html = DOMPurify.sanitize(html, PURIFY_CONFIG) as string;
 
     return html;
   }
@@ -100,6 +134,11 @@ export class MarkdownService {
 
   // Render mermaid diagrams as placeholder (temporary solution before mermaid.js integration)
   initializeMermaid(): void {
+    // Guard against SSR — document is not available on the server
+    if (!this.isBrowser) {
+      return;
+    }
+
     setTimeout(() => {
       const mermaidElements = document.querySelectorAll<HTMLElement>('.mermaid-diagram');
       mermaidElements.forEach((element) => {

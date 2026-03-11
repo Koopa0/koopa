@@ -1,0 +1,337 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex items-center gap-4">
+        <div>
+          <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+            <lucide-icon [img]="ActivityIcon" [size]="24" />
+            Flow Runs
+          </h1>
+          <p class="mt-1 text-sm text-zinc-400">AI Pipeline 執行紀錄與監控</p>
+        </div>
+      </div>
+
+      <!-- Sync Actions -->
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          (click)="triggerSync()"
+          [disabled]="triggering() !== null"
+        >
+          @if (triggering() === 'sync') {
+            <lucide-icon [img]="Loader2Icon" [size]="16" class="animate-spin" />
+          } @else {
+            <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          }
+          Obsidian Sync
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          (click)="triggerCollect()"
+          [disabled]="triggering() !== null"
+        >
+          @if (triggering() === 'collect') {
+            <lucide-icon [img]="Loader2Icon" [size]="16" class="animate-spin" />
+          } @else {
+            <lucide-icon [img]="RotateCcwIcon" [size]="16" />
+          }
+          RSS Collect
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
+          (click)="loadRuns()"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          Refresh
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <!-- Filters -->
+    <div class="mb-6 flex flex-wrap items-center gap-4">
+      <!-- Flow Name Filter -->
+      <div class="flex items-center gap-2">
+        <label for="flow-name-filter" class="text-xs text-zinc-500">Flow:</label>
+        <select
+          id="flow-name-filter"
+          class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 focus:border-zinc-500 focus:outline-none"
+          (change)="onFlowNameFilter($event)"
+        >
+          <option value="">All Flows</option>
+          @for (name of allFlowNames; track name) {
+            <option [value]="name">{{ getFlowLabel(name) }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- Auto Refresh Toggle -->
+      <button
+        type="button"
+        class="flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs transition-colors"
+        [class]="isAutoRefresh()
+          ? 'border-emerald-700 bg-emerald-900/30 text-emerald-400'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="toggleAutoRefresh()"
+      >
+        <lucide-icon [img]="RefreshCwIcon" [size]="12" [class.animate-spin]="isAutoRefresh()" />
+        Auto (10s)
+      </button>
+
+      <span class="text-zinc-800">|</span>
+
+      <!-- Status Filters -->
+      <lucide-icon [img]="FilterIcon" [size]="16" class="text-zinc-500" />
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="statusFilter() === null
+          ? 'border-white bg-white text-zinc-900'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="onStatusFilter(null)"
+      >
+        All
+      </button>
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="statusFilter() === 'running'
+          ? 'border-sky-500 bg-sky-900/30 text-sky-400'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="onStatusFilter('running')"
+      >
+        Running
+      </button>
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="statusFilter() === 'pending'
+          ? 'border-zinc-400 bg-zinc-800 text-zinc-200'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="onStatusFilter('pending')"
+      >
+        Pending
+      </button>
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="statusFilter() === 'completed'
+          ? 'border-emerald-500 bg-emerald-900/30 text-emerald-400'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="onStatusFilter('completed')"
+      >
+        Completed
+      </button>
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="statusFilter() === 'failed'
+          ? 'border-red-500 bg-red-900/30 text-red-400'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="onStatusFilter('failed')"
+      >
+        Failed
+      </button>
+    </div>
+
+    <!-- Error -->
+    @if (error()) {
+      <div class="mb-4 rounded-sm border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+        {{ error() }}
+      </div>
+    }
+
+    <!-- Loading -->
+    @if (isLoading()) {
+      <div class="flex items-center justify-center py-16">
+        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+      </div>
+    } @else if (runs().length === 0) {
+      <div class="flex flex-col items-center gap-3 py-16 text-center">
+        <lucide-icon [img]="ActivityIcon" [size]="40" class="text-zinc-700" />
+        <h3 class="text-sm font-medium text-zinc-300">No flow runs</h3>
+        <p class="text-xs text-zinc-500">觸發一個 pipeline 來看執行紀錄</p>
+        <button
+          type="button"
+          class="mt-2 inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          (click)="triggerSync()"
+          [disabled]="triggering() !== null"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          觸發 Obsidian Sync
+        </button>
+      </div>
+    } @else {
+      <!-- Table -->
+      <div class="overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-900/50">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-zinc-800 text-left text-xs text-zinc-500">
+              <th class="px-4 py-3 font-medium">Status</th>
+              <th class="px-4 py-3 font-medium">Flow</th>
+              <th class="hidden px-4 py-3 font-medium sm:table-cell">Attempt</th>
+              <th class="hidden px-4 py-3 font-medium md:table-cell">Duration</th>
+              <th class="px-4 py-3 font-medium">Created</th>
+              <th class="px-4 py-3 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (run of runs(); track run.id) {
+              <tr
+                class="border-b border-zinc-800/50 transition-colors hover:bg-zinc-800/30"
+              >
+                <td class="px-4 py-3">
+                  <span
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
+                    [class]="getStatusConfig(run.status).classes"
+                  >
+                    @switch (run.status) {
+                      @case ('completed') {
+                        <lucide-icon [img]="CheckCircle2Icon" [size]="12" />
+                      }
+                      @case ('failed') {
+                        <lucide-icon [img]="XCircleIcon" [size]="12" />
+                      }
+                      @case ('running') {
+                        <lucide-icon [img]="Loader2Icon" [size]="12" class="animate-spin" />
+                      }
+                      @case ('pending') {
+                        <lucide-icon [img]="ClockIcon" [size]="12" />
+                      }
+                    }
+                    {{ getStatusConfig(run.status).label }}
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="text-sm font-medium text-zinc-200">
+                    {{ getFlowLabel(run.flow_name) }}
+                  </div>
+                  @if (run.error) {
+                    <div class="mt-0.5 line-clamp-1 text-xs text-red-400">
+                      {{ run.error }}
+                    </div>
+                  }
+                </td>
+                <td class="hidden px-4 py-3 text-xs text-zinc-400 sm:table-cell">
+                  {{ run.attempt }}/{{ run.max_attempts }}
+                </td>
+                <td class="hidden px-4 py-3 text-xs text-zinc-400 md:table-cell">
+                  {{ getDuration(run) ?? '—' }}
+                </td>
+                <td class="px-4 py-3 text-xs text-zinc-500">
+                  {{ run.created_at | date: 'MM/dd HH:mm:ss' }}
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                      aria-label="查看詳情"
+                      (click)="toggleExpand(run.id)"
+                    >
+                      <lucide-icon [img]="EyeIcon" [size]="14" />
+                    </button>
+                    @if (run.status === 'failed') {
+                      <button
+                        type="button"
+                        class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-amber-400 disabled:opacity-50"
+                        aria-label="重試"
+                        (click)="retryRun(run.id)"
+                        [disabled]="retryingId() === run.id"
+                      >
+                        @if (retryingId() === run.id) {
+                          <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+                        } @else {
+                          <lucide-icon [img]="RotateCcwIcon" [size]="14" />
+                        }
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Expanded Detail -->
+              @if (expandedRunId() === run.id) {
+                <tr>
+                  <td colspan="6" class="border-b border-zinc-800 bg-zinc-900 px-4 py-4">
+                    <div class="grid gap-4 sm:grid-cols-2">
+                      <!-- Input -->
+                      <div>
+                        <h4 class="mb-2 text-xs font-medium text-zinc-400">Input</h4>
+                        <pre class="max-h-48 overflow-auto rounded-sm bg-zinc-950 p-3 text-xs text-zinc-300">{{ formatJson(run.input) }}</pre>
+                      </div>
+                      <!-- Output -->
+                      <div>
+                        <h4 class="mb-2 text-xs font-medium text-zinc-400">Output</h4>
+                        <pre class="max-h-48 overflow-auto rounded-sm bg-zinc-950 p-3 text-xs text-zinc-300">{{ formatJson(run.output) }}</pre>
+                      </div>
+                    </div>
+                    @if (run.error) {
+                      <div class="mt-3">
+                        <h4 class="mb-1 text-xs font-medium text-red-400">Error</h4>
+                        <pre class="rounded-sm bg-red-950/30 p-3 text-xs text-red-300">{{ run.error }}</pre>
+                      </div>
+                    }
+                    <div class="mt-3 flex gap-4 text-xs text-zinc-500">
+                      <span>ID: {{ run.id }}</span>
+                      @if (run.content_id) {
+                        <span>Content: {{ run.content_id }}</span>
+                      }
+                      @if (run.started_at) {
+                        <span>Started: {{ run.started_at | date: 'yyyy/MM/dd HH:mm:ss' }}</span>
+                      }
+                      @if (run.ended_at) {
+                        <span>Ended: {{ run.ended_at | date: 'yyyy/MM/dd HH:mm:ss' }}</span>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      @if (totalPages() > 1) {
+        <div class="mt-6 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+            [disabled]="currentPage() === 1"
+            (click)="onPageChange(currentPage() - 1)"
+          >
+            <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
+          </button>
+          @for (page of pageArray(); track page) {
+            <button
+              type="button"
+              class="rounded-sm border px-3 py-1.5 text-xs transition-colors"
+              [class]="page === currentPage()
+                ? 'border-white bg-white text-zinc-900'
+                : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+              (click)="onPageChange(page)"
+            >
+              {{ page }}
+            </button>
+          }
+          <button
+            type="button"
+            class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+            [disabled]="currentPage() === totalPages()"
+            (click)="onPageChange(currentPage() + 1)"
+          >
+            <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+          </button>
+        </div>
+      }
+    }
+  </div>
+</section>

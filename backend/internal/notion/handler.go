@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
@@ -17,6 +18,11 @@ import (
 type ProjectWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error)
 	UpdateLastActivity(ctx context.Context, notionPageID string) error
+}
+
+// GoalWriter upserts goals from Notion data.
+type GoalWriter interface {
+	UpsertByNotionPageID(ctx context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error)
 }
 
 // JobSubmitter submits flow runs for async processing.
@@ -28,16 +34,18 @@ type JobSubmitter interface {
 type Handler struct {
 	client   *Client
 	projects ProjectWriter
+	goals    GoalWriter
 	jobs     JobSubmitter
 	config   Config
 	logger   *slog.Logger
 }
 
 // NewHandler returns a Notion webhook Handler.
-func NewHandler(client *Client, projects ProjectWriter, jobs JobSubmitter, cfg Config, logger *slog.Logger) *Handler {
+func NewHandler(client *Client, projects ProjectWriter, goals GoalWriter, jobs JobSubmitter, cfg Config, logger *slog.Logger) *Handler {
 	return &Handler{
 		client:   client,
 		projects: projects,
+		goals:    goals,
 		jobs:     jobs,
 		config:   cfg,
 		logger:   logger,
@@ -111,6 +119,11 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 			h.logger.Error("syncing book from notion", "page_id", pageID, "error", err)
 			// book sync is best-effort, still return 200
 		}
+	case dbGoals:
+		if err := h.syncGoal(r.Context(), pageID); err != nil {
+			h.logger.Error("syncing goal from notion", "page_id", pageID, "error", err)
+			// goal sync is best-effort, still return 200
+		}
 	default:
 		h.logger.Debug("notion webhook from unknown database, skipping",
 			"data_source_id", payload.Data.Parent.DataSourceID,
@@ -122,6 +135,9 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 
 // routeDatabase matches a data source ID to a known database.
 func (h *Handler) routeDatabase(dataSourceID string) database {
+	if dataSourceID == "" {
+		return dbUnknown
+	}
 	switch dataSourceID {
 	case h.config.ProjectsDB:
 		return dbProjects
@@ -129,6 +145,8 @@ func (h *Handler) routeDatabase(dataSourceID string) database {
 		return dbTasks
 	case h.config.BooksDB:
 		return dbBooks
+	case h.config.GoalsDB:
+		return dbGoals
 	default:
 		return dbUnknown
 	}

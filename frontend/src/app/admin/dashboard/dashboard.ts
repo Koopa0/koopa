@@ -5,7 +5,9 @@ import {
   computed,
   signal,
   OnInit,
+  DestroyRef,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import {
@@ -25,10 +27,16 @@ import {
   Eye,
   Trash2,
   AlertTriangle,
+  Activity,
+  RefreshCw,
+  Loader2,
+  RotateCcw,
 } from 'lucide-angular';
 import { ArticleService } from '../../core/services/article.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ProjectService } from '../../core/services/project/project.service';
+import { PipelineService } from '../../core/services/pipeline.service';
+import { NotificationService } from '../../core/services/notification.service';
 import type { ApiContent, ApiProject, ProjectStatus } from '../../core/models';
 
 interface DeleteTarget {
@@ -47,6 +55,9 @@ export class DashboardComponent implements OnInit {
   private readonly articleService = inject(ArticleService);
   private readonly authService = inject(AuthService);
   private readonly projectService = inject(ProjectService);
+  private readonly pipelineService = inject(PipelineService);
+  private readonly notificationService = inject(NotificationService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly articles = signal<ApiContent[]>([]);
   protected readonly projects = signal<ApiProject[]>([]);
@@ -99,15 +110,26 @@ export class DashboardComponent implements OnInit {
   protected readonly EyeIcon = Eye;
   protected readonly Trash2Icon = Trash2;
   protected readonly AlertTriangleIcon = AlertTriangle;
+  protected readonly ActivityIcon = Activity;
+  protected readonly RefreshCwIcon = RefreshCw;
+  protected readonly Loader2Icon = Loader2;
+  protected readonly RotateCcwIcon = RotateCcw;
+  protected readonly triggering = this.pipelineService.triggering;
 
   ngOnInit(): void {
-    this.articleService.getArticles().subscribe({
-      next: (response) => this.articles.set(response.articles),
-    });
+    this.articleService
+      .getArticles()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (response) => this.articles.set(response.articles),
+      });
 
-    this.projectService.getAllProjects().subscribe({
-      next: (projectList) => this.projects.set(projectList),
-    });
+    this.projectService
+      .getAdminProjects()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (projectList) => this.projects.set(projectList),
+      });
   }
 
   protected requestDeleteArticle(id: string, title: string): void {
@@ -137,25 +159,51 @@ export class DashboardComponent implements OnInit {
         ? this.articleService.deleteArticle(target.id)
         : this.projectService.deleteProject(target.id);
 
-    deleteObs.subscribe({
+    deleteObs.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.deleteTarget.set(null);
         this.isDeleting.set(false);
         // Reload data
         if (this.deleteType() === 'article') {
-          this.articleService.getArticles().subscribe({
-            next: (response) => this.articles.set(response.articles),
-          });
+          this.articleService
+            .getArticles()
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe({
+              next: (response) => this.articles.set(response.articles),
+            });
         } else {
-          this.projectService.getAllProjects().subscribe({
-            next: (projectList) => this.projects.set(projectList),
-          });
+          this.projectService
+            .getAdminProjects()
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe({
+              next: (projectList) => this.projects.set(projectList),
+            });
         }
       },
       error: () => {
         this.isDeleting.set(false);
       },
     });
+  }
+
+  protected toggleProjectPublic(project: ApiProject): void {
+    const newPublic = !project.public;
+    this.projectService
+      .updateProject(project.id, { public: newPublic })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.projects.update((list) =>
+            list.map((p) =>
+              p.id === project.id ? { ...p, public: newPublic } : p,
+            ),
+          );
+          this.notificationService.success(
+            newPublic ? '已設為公開' : '已設為非公開',
+          );
+        },
+        error: () => this.notificationService.error('更新失敗'),
+      });
   }
 
   protected getProjectStatusLabel(status: ProjectStatus): string {
@@ -191,6 +239,56 @@ export class DashboardComponent implements OnInit {
       default:
         return status;
     }
+  }
+
+  protected triggerSync(): void {
+    this.pipelineService
+      .triggerSync()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.notificationService.success('Obsidian 同步已觸發'),
+        error: () => this.notificationService.error('同步觸發失敗'),
+      });
+  }
+
+  protected triggerCollect(): void {
+    this.pipelineService
+      .triggerCollect()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.notificationService.success('RSS 收集已觸發'),
+        error: () => this.notificationService.error('收集觸發失敗'),
+      });
+  }
+
+  protected triggerNotionSync(): void {
+    this.pipelineService
+      .triggerNotionSync()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.notificationService.success('Notion 同步已觸發'),
+        error: () => this.notificationService.error('Notion 同步失敗'),
+      });
+  }
+
+  protected triggerReconcile(): void {
+    this.pipelineService
+      .triggerReconcile()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.notificationService.success('全量比對已觸發'),
+        error: () => this.notificationService.error('比對觸發失敗'),
+      });
+  }
+
+  protected triggerBookmark(): void {
+    this.pipelineService
+      .triggerBookmark()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.notificationService.success('書籤生成已觸發'),
+        error: () => this.notificationService.error('書籤生成失敗'),
+      });
   }
 
   protected getStatusClass(status: string): string {

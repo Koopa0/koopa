@@ -17,7 +17,7 @@ import (
 const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC
@@ -51,6 +51,7 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 			&i.SortOrder,
 			&i.Status,
 			&i.NotionPageID,
+			&i.Repo,
 			&i.Area,
 			&i.Deadline,
 			&i.LastActivityAt,
@@ -431,6 +432,22 @@ func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlug
 	return i, err
 }
 
+const contentEmbeddingBySlug = `-- name: ContentEmbeddingBySlug :one
+SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published'
+`
+
+type ContentEmbeddingBySlugRow struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+func (q *Queries) ContentEmbeddingBySlug(ctx context.Context, slug string) (ContentEmbeddingBySlugRow, error) {
+	row := q.db.QueryRow(ctx, contentEmbeddingBySlug, slug)
+	var i ContentEmbeddingBySlugRow
+	err := row.Scan(&i.ID, &i.Embedding)
+	return i, err
+}
+
 const contentsByTopicID = `-- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status, c.tags,
        c.source, c.source_type, c.series_id, c.series_order, c.review_level,
@@ -749,7 +766,7 @@ INSERT INTO projects (slug, title, description, long_description, role, tech_sta
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at
 `
 
@@ -811,6 +828,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
+		&i.Repo,
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
@@ -1242,6 +1260,63 @@ func (q *Queries) FlowRunsCount(ctx context.Context, status NullFlowStatus) (int
 	return count, err
 }
 
+const goalByNotionPageID = `-- name: GoalByNotionPageID :one
+SELECT id, title, description, status, area, quarter, deadline, notion_page_id, created_at, updated_at FROM goals WHERE notion_page_id = $1
+`
+
+func (q *Queries) GoalByNotionPageID(ctx context.Context, notionPageID *string) (Goal, error) {
+	row := q.db.QueryRow(ctx, goalByNotionPageID, notionPageID)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Area,
+		&i.Quarter,
+		&i.Deadline,
+		&i.NotionPageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const goals = `-- name: Goals :many
+SELECT id, title, description, status, area, quarter, deadline, notion_page_id, created_at, updated_at FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC
+`
+
+func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
+	rows, err := q.db.Query(ctx, goals)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Goal{}
+	for rows.Next() {
+		var i Goal
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Area,
+			&i.Quarter,
+			&i.Deadline,
+			&i.NotionPageID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const highScoreCollectedData = `-- name: HighScoreCollectedData :many
 SELECT id, source_url, source_name, title, original_content, ai_summary,
        relevance_score, topics, status, curated_content_id, collected_at,
@@ -1361,6 +1436,78 @@ func (q *Queries) LatestCompletedRunByContentAndFlow(ctx context.Context, arg La
 	return i, err
 }
 
+const notionGoalPageIDs = `-- name: NotionGoalPageIDs :many
+SELECT notion_page_id FROM goals WHERE notion_page_id IS NOT NULL ORDER BY title
+`
+
+func (q *Queries) NotionGoalPageIDs(ctx context.Context) ([]*string, error) {
+	rows, err := q.db.Query(ctx, notionGoalPageIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*string{}
+	for rows.Next() {
+		var notion_page_id *string
+		if err := rows.Scan(&notion_page_id); err != nil {
+			return nil, err
+		}
+		items = append(items, notion_page_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const notionProjectPageIDs = `-- name: NotionProjectPageIDs :many
+SELECT notion_page_id FROM projects WHERE notion_page_id IS NOT NULL ORDER BY title
+`
+
+func (q *Queries) NotionProjectPageIDs(ctx context.Context) ([]*string, error) {
+	rows, err := q.db.Query(ctx, notionProjectPageIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*string{}
+	for rows.Next() {
+		var notion_page_id *string
+		if err := rows.Scan(&notion_page_id); err != nil {
+			return nil, err
+		}
+		items = append(items, notion_page_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const obsidianContentSlugs = `-- name: ObsidianContentSlugs :many
+SELECT slug FROM contents WHERE source_type = 'obsidian' ORDER BY slug
+`
+
+func (q *Queries) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, obsidianContentSlugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pendingReviews = `-- name: PendingReviews :many
 SELECT rq.id, rq.content_id, rq.review_level::text AS rq_review_level,
        rq.status::text AS rq_status, rq.reviewer_notes, rq.submitted_at, rq.reviewed_at,
@@ -1434,10 +1581,50 @@ func (q *Queries) PendingRunExists(ctx context.Context, arg PendingRunExistsPara
 	return exists, err
 }
 
+const projectByRepo = `-- name: ProjectByRepo :one
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       created_at, updated_at
+FROM projects WHERE repo = $1
+`
+
+func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, error) {
+	row := q.db.QueryRow(ctx, projectByRepo, repo)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.LongDescription,
+		&i.Role,
+		&i.TechStack,
+		&i.Highlights,
+		&i.Problem,
+		&i.Solution,
+		&i.Architecture,
+		&i.Results,
+		&i.GithubUrl,
+		&i.LiveUrl,
+		&i.Featured,
+		&i.SortOrder,
+		&i.Status,
+		&i.NotionPageID,
+		&i.Repo,
+		&i.Area,
+		&i.Deadline,
+		&i.LastActivityAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const projectBySlug = `-- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE slug = $1
 `
@@ -1464,6 +1651,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
+		&i.Repo,
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
@@ -1476,7 +1664,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title
 `
@@ -1509,6 +1697,7 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.SortOrder,
 			&i.Status,
 			&i.NotionPageID,
+			&i.Repo,
 			&i.Area,
 			&i.Deadline,
 			&i.LastActivityAt,
@@ -1580,6 +1769,18 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const publishedContentCountSince = `-- name: PublishedContentCountSince :one
+SELECT count(*) FROM contents
+WHERE status = 'published' AND published_at >= $1
+`
+
+func (q *Queries) PublishedContentCountSince(ctx context.Context, publishedAt *time.Time) (int64, error) {
+	row := q.db.QueryRow(ctx, publishedContentCountSince, publishedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const publishedContents = `-- name: PublishedContents :many
@@ -1798,6 +1999,46 @@ func (q *Queries) PublishedForRSS(ctx context.Context, limit int32) ([]Published
 			&i.Type,
 			&i.PublishedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const publishedWithEmbeddings = `-- name: PublishedWithEmbeddings :many
+SELECT id, slug, title, type, embedding
+FROM contents
+WHERE status = 'published' AND embedding IS NOT NULL
+`
+
+type PublishedWithEmbeddingsRow struct {
+	ID        uuid.UUID           `json:"id"`
+	Slug      string              `json:"slug"`
+	Title     string              `json:"title"`
+	Type      ContentType         `json:"type"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+func (q *Queries) PublishedWithEmbeddings(ctx context.Context) ([]PublishedWithEmbeddingsRow, error) {
+	rows, err := q.db.Query(ctx, publishedWithEmbeddings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PublishedWithEmbeddingsRow{}
+	for rows.Next() {
+		var i PublishedWithEmbeddingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Type,
+			&i.Embedding,
 		); err != nil {
 			return nil, err
 		}
@@ -2035,6 +2276,59 @@ DELETE FROM content_topics WHERE content_id = $1
 func (q *Queries) SetContentTopics(ctx context.Context, contentID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, setContentTopics, contentID)
 	return err
+}
+
+const similarContents = `-- name: SimilarContents :many
+SELECT c.id, c.slug, c.title, c.excerpt, c.type,
+       (1 - (c.embedding <=> $1::vector))::float8 AS similarity
+FROM contents c
+WHERE c.status = 'published'
+  AND c.id != $2
+  AND c.embedding IS NOT NULL
+ORDER BY c.embedding <=> $1::vector
+LIMIT $3
+`
+
+type SimilarContentsParams struct {
+	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
+	ExcludeID       uuid.UUID          `json:"exclude_id"`
+	MaxResults      int32              `json:"max_results"`
+}
+
+type SimilarContentsRow struct {
+	ID         uuid.UUID   `json:"id"`
+	Slug       string      `json:"slug"`
+	Title      string      `json:"title"`
+	Excerpt    string      `json:"excerpt"`
+	Type       ContentType `json:"type"`
+	Similarity float64     `json:"similarity"`
+}
+
+func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams) ([]SimilarContentsRow, error) {
+	rows, err := q.db.Query(ctx, similarContents, arg.TargetEmbedding, arg.ExcludeID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SimilarContentsRow{}
+	for rows.Next() {
+		var i SimilarContentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Excerpt,
+			&i.Type,
+			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const topicBySlug = `-- name: TopicBySlug :one
@@ -2493,7 +2787,7 @@ UPDATE projects SET
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at
 `
 
@@ -2557,6 +2851,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
+		&i.Repo,
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
@@ -2664,6 +2959,56 @@ func (q *Queries) UpdateTrackingTopic(ctx context.Context, arg UpdateTrackingTop
 	return i, err
 }
 
+const upsertGoalByNotionPageID = `-- name: UpsertGoalByNotionPageID :one
+INSERT INTO goals (title, description, status, area, quarter, deadline, notion_page_id)
+VALUES ($1, $2, $3::goal_status, $4, $5, $6, $7)
+ON CONFLICT (notion_page_id) DO UPDATE SET
+    title       = EXCLUDED.title,
+    description = EXCLUDED.description,
+    status      = EXCLUDED.status,
+    area        = EXCLUDED.area,
+    quarter     = EXCLUDED.quarter,
+    deadline    = EXCLUDED.deadline,
+    updated_at  = now()
+RETURNING id, title, description, status, area, quarter, deadline, notion_page_id, created_at, updated_at
+`
+
+type UpsertGoalByNotionPageIDParams struct {
+	Title        string     `json:"title"`
+	Description  string     `json:"description"`
+	Status       GoalStatus `json:"status"`
+	Area         string     `json:"area"`
+	Quarter      string     `json:"quarter"`
+	Deadline     *time.Time `json:"deadline"`
+	NotionPageID *string    `json:"notion_page_id"`
+}
+
+func (q *Queries) UpsertGoalByNotionPageID(ctx context.Context, arg UpsertGoalByNotionPageIDParams) (Goal, error) {
+	row := q.db.QueryRow(ctx, upsertGoalByNotionPageID,
+		arg.Title,
+		arg.Description,
+		arg.Status,
+		arg.Area,
+		arg.Quarter,
+		arg.Deadline,
+		arg.NotionPageID,
+	)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Area,
+		&i.Quarter,
+		&i.Deadline,
+		&i.NotionPageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const upsertProjectByNotionPageID = `-- name: UpsertProjectByNotionPageID :one
 INSERT INTO projects (slug, title, description, status, area, deadline, notion_page_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -2676,7 +3021,7 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     updated_at = now()
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, area, deadline, last_activity_at,
+          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at
 `
 
@@ -2720,6 +3065,7 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
+		&i.Repo,
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
@@ -2729,19 +3075,54 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 	return i, err
 }
 
+const upsertUserByEmail = `-- name: UpsertUserByEmail :one
+INSERT INTO users (email, role)
+VALUES ($1, 'admin')
+ON CONFLICT (email) DO UPDATE SET updated_at = now()
+RETURNING id, email, role, created_at, updated_at
+`
+
+type UpsertUserByEmailRow struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (UpsertUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, upsertUserByEmail, email)
+	var i UpsertUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const userByEmail = `-- name: UserByEmail :one
-SELECT id, email, password_hash, role, created_at, updated_at
+SELECT id, email, role, created_at, updated_at
 FROM users
 WHERE email = $1
 `
 
-func (q *Queries) UserByEmail(ctx context.Context, email string) (User, error) {
+type UserByEmailRow struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, userByEmail, email)
-	var i User
+	var i UserByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
-		&i.PasswordHash,
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2750,18 +3131,25 @@ func (q *Queries) UserByEmail(ctx context.Context, email string) (User, error) {
 }
 
 const userByID = `-- name: UserByID :one
-SELECT id, email, password_hash, role, created_at, updated_at
+SELECT id, email, role, created_at, updated_at
 FROM users
 WHERE id = $1
 `
 
-func (q *Queries) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
+type UserByIDRow struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UserByID(ctx context.Context, id uuid.UUID) (UserByIDRow, error) {
 	row := q.db.QueryRow(ctx, userByID, id)
-	var i User
+	var i UserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
-		&i.PasswordHash,
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,

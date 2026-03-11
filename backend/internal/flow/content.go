@@ -242,6 +242,9 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 			resp, err := genkit.Embed(gctx, cr.g,
 				ai.WithEmbedder(cr.embedder),
 				ai.WithTextDocs(c.Body),
+				ai.WithConfig(&genai.EmbedContentConfig{
+					OutputDimensionality: genai.Ptr[int32](768),
+				}),
 			)
 			if err != nil {
 				return nil, fmt.Errorf("generating embedding: %w", err)

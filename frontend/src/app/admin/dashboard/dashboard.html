@@ -10,19 +10,84 @@
         </h1>
         <p class="mt-1 text-sm text-zinc-400">Manage your blog content</p>
       </div>
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          (click)="triggerSync()"
+          [disabled]="triggering() !== null"
+        >
+          @if (triggering() === 'sync') {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+          } @else {
+            <lucide-icon [img]="RefreshCwIcon" [size]="14" />
+          }
+          Sync
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          (click)="triggerCollect()"
+          [disabled]="triggering() !== null"
+        >
+          @if (triggering() === 'collect') {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+          } @else {
+            <lucide-icon [img]="RotateCcwIcon" [size]="14" />
+          }
+          Collect
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          (click)="triggerNotionSync()"
+          [disabled]="triggering() !== null"
+        >
+          @if (triggering() === 'notion-sync') {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+          } @else {
+            <lucide-icon [img]="RefreshCwIcon" [size]="14" />
+          }
+          Notion
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          (click)="triggerReconcile()"
+          [disabled]="triggering() !== null"
+        >
+          @if (triggering() === 'reconcile') {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+          } @else {
+            <lucide-icon [img]="RotateCcwIcon" [size]="14" />
+          }
+          Reconcile
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          (click)="triggerBookmark()"
+          [disabled]="triggering() !== null"
+        >
+          @if (triggering() === 'bookmark') {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+          } @else {
+            <lucide-icon [img]="ActivityIcon" [size]="14" />
+          }
+          Bookmark
+        </button>
         <a
           routerLink="/admin/project-editor"
-          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 no-underline transition-colors hover:bg-zinc-800"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-800"
         >
-          <lucide-icon [img]="PlusIcon" [size]="16" />
+          <lucide-icon [img]="PlusIcon" [size]="14" />
           New Project
         </a>
         <a
           routerLink="/admin/editor"
-          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-3 py-2 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
         >
-          <lucide-icon [img]="PlusIcon" [size]="16" />
+          <lucide-icon [img]="PlusIcon" [size]="14" />
           New Article
         </a>
       </div>
@@ -116,28 +181,28 @@
           class="flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-3 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:bg-zinc-800"
         >
           <lucide-icon [img]="PenSquareIcon" [size]="16" />
-          Write New Article
+          Write Article
+        </a>
+        <a
+          routerLink="/admin/flow-runs"
+          class="flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-3 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:bg-zinc-800"
+        >
+          <lucide-icon [img]="ActivityIcon" [size]="16" />
+          Flow Runs
+        </a>
+        <a
+          routerLink="/admin/project-editor"
+          class="flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-3 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:bg-zinc-800"
+        >
+          <lucide-icon [img]="FolderOpenIcon" [size]="16" />
+          New Project
         </a>
         <button
           type="button"
           class="flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-3 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800"
         >
-          <lucide-icon [img]="FolderOpenIcon" [size]="16" />
-          Manage Categories
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-3 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800"
-        >
-          <lucide-icon [img]="TagIcon" [size]="16" />
-          Manage Tags
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-3 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800"
-        >
           <lucide-icon [img]="SettingsIcon" [size]="16" />
-          System Settings
+          Settings
         </button>
       </div>
     </div>
@@ -272,6 +337,7 @@
             >
               <th class="px-6 py-3 font-medium">Project Name</th>
               <th class="px-6 py-3 font-medium">Status</th>
+              <th class="px-6 py-3 font-medium">Public</th>
               <th class="hidden px-6 py-3 font-medium sm:table-cell">Tech</th>
               <th class="px-6 py-3 font-medium">Actions</th>
             </tr>
@@ -296,6 +362,22 @@
                 >
                   {{ getProjectStatusLabel(project.status) }}
                 </span>
+              </td>
+              <td class="px-6 py-4">
+                <button
+                  type="button"
+                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
+                  [class]="project.public ? 'bg-emerald-600' : 'bg-zinc-700'"
+                  role="switch"
+                  [attr.aria-checked]="project.public"
+                  aria-label="Toggle public visibility"
+                  (click)="toggleProjectPublic(project)"
+                >
+                  <span
+                    class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-xs ring-0 transition duration-200"
+                    [class]="project.public ? 'translate-x-4' : 'translate-x-0'"
+                  ></span>
+                </button>
               </td>
               <td class="hidden px-6 py-4 sm:table-cell">
                 <div class="flex flex-wrap gap-1">

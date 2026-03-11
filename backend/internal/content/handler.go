@@ -1,12 +1,15 @@
 package content
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +22,10 @@ type Handler struct {
 	store   *Store
 	siteURL string
 	logger  *slog.Logger
+
+	graphMu    sync.Mutex
+	graphCache *KnowledgeGraph
+	graphAt    time.Time
 }
 
 // NewHandler returns a content Handler.
@@ -310,13 +317,244 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
 }
 
+const maxSlugLength = 200
+
+// Related handles GET /api/contents/{slug}/related.
+func (h *Handler) Related(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if len(slug) > maxSlugLength {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid slug")
+		return
+	}
+
+	limit := 5
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 20 {
+			limit = v
+		}
+	}
+
+	id, embedding, err := h.store.ContentEmbeddingBySlug(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
+			return
+		}
+		h.logger.Error("querying embedding", "slug", slug, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get content")
+		return
+	}
+
+	if embedding == nil {
+		api.Encode(w, http.StatusOK, api.Response{Data: []RelatedContent{}})
+		return
+	}
+
+	related, err := h.store.SimilarContents(r.Context(), id, *embedding, limit)
+	if err != nil {
+		h.logger.Error("querying similar contents", "slug", slug, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get related contents")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: related})
+}
+
+const graphCacheTTL = 10 * time.Minute
+
+// KnowledgeGraph handles GET /api/knowledge-graph.
+func (h *Handler) KnowledgeGraph(w http.ResponseWriter, r *http.Request) {
+	h.graphMu.Lock()
+	if h.graphCache != nil && time.Since(h.graphAt) < graphCacheTTL {
+		cached := h.graphCache
+		h.graphMu.Unlock()
+		api.Encode(w, http.StatusOK, api.Response{Data: cached})
+		return
+	}
+	h.graphMu.Unlock()
+
+	graph, err := h.buildKnowledgeGraph(r.Context())
+	if err != nil {
+		h.logger.Error("building knowledge graph", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to build knowledge graph")
+		return
+	}
+
+	h.graphMu.Lock()
+	h.graphCache = graph
+	h.graphAt = time.Now()
+	h.graphMu.Unlock()
+
+	api.Encode(w, http.StatusOK, api.Response{Data: graph})
+}
+
+const (
+	// similarityThreshold is the minimum cosine similarity (0-1 scale) to create a "similar" edge.
+	// 0.75 is conservative — only highly related content gets linked.
+	similarityThreshold = 0.75
+	// maxGraphNodes caps content nodes to bound the O(n²) pairwise computation.
+	maxGraphNodes = 500
+	// maxSimilarPerNode limits similarity edges per node to keep the graph readable.
+	maxSimilarPerNode = 3
+)
+
+func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, error) {
+	rows, err := h.store.PublishedWithEmbeddings(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type contentNode struct {
+		slug      string
+		title     string
+		typ       string
+		embedding []float32
+		topics    []TopicRef
+	}
+
+	// Cap the number of nodes to avoid excessive computation.
+	if len(rows) > maxGraphNodes {
+		rows = rows[:maxGraphNodes]
+	}
+
+	nodes := make([]contentNode, 0, len(rows))
+	for _, r := range rows {
+		if len(r.Embedding) == 0 {
+			continue
+		}
+		topics, topicErr := h.store.TopicsForContent(ctx, r.ID)
+		if topicErr != nil {
+			return nil, topicErr
+		}
+		nodes = append(nodes, contentNode{
+			slug:      r.Slug,
+			title:     r.Title,
+			typ:       string(r.Type),
+			embedding: r.Embedding,
+			topics:    topics,
+		})
+	}
+
+	// Build graph nodes and topic links.
+	topicCounts := make(map[string]int)
+	topicNames := make(map[string]string)
+	var graphNodes []GraphNode
+	var graphLinks []GraphLink
+
+	for _, n := range nodes {
+		firstTopic := ""
+		if len(n.topics) > 0 {
+			firstTopic = n.topics[0].Slug
+		}
+		graphNodes = append(graphNodes, GraphNode{
+			ID:          n.slug,
+			Label:       n.title,
+			Type:        "content",
+			ContentType: n.typ,
+			Topic:       firstTopic,
+		})
+		for _, t := range n.topics {
+			topicID := "topic-" + t.Slug
+			topicCounts[topicID]++
+			topicNames[topicID] = t.Name
+			graphLinks = append(graphLinks, GraphLink{
+				Source: n.slug,
+				Target: topicID,
+				Type:   "topic",
+			})
+		}
+	}
+
+	// Add topic nodes.
+	for id, count := range topicCounts {
+		graphNodes = append(graphNodes, GraphNode{
+			ID:    id,
+			Label: topicNames[id],
+			Type:  "topic",
+			Count: count,
+		})
+	}
+
+	// Compute pairwise cosine similarity, keeping top-N per node.
+	topEdges := make([][]simEdge, len(nodes))
+
+	for i := range len(nodes) {
+		for j := i + 1; j < len(nodes); j++ {
+			sim := cosineSimilarity(nodes[i].embedding, nodes[j].embedding)
+			if sim < similarityThreshold {
+				continue
+			}
+			topEdges[i] = appendTopN(topEdges[i], simEdge{peer: j, sim: sim}, maxSimilarPerNode)
+			topEdges[j] = appendTopN(topEdges[j], simEdge{peer: i, sim: sim}, maxSimilarPerNode)
+		}
+	}
+
+	// Deduplicate edges (each pair kept once).
+	type edgeKey struct{ a, b int }
+	seen := make(map[edgeKey]bool)
+	for i, edges := range topEdges {
+		for _, e := range edges {
+			key := edgeKey{min(i, e.peer), max(i, e.peer)}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			sim := e.sim
+			graphLinks = append(graphLinks, GraphLink{
+				Source:     nodes[i].slug,
+				Target:     nodes[e.peer].slug,
+				Type:       "similar",
+				Similarity: &sim,
+			})
+		}
+	}
+
+	return &KnowledgeGraph{Nodes: graphNodes, Links: graphLinks}, nil
+}
+
+type simEdge struct {
+	peer int
+	sim  float64
+}
+
+// appendTopN keeps the top-n highest similarity edges in a sorted slice.
+func appendTopN(edges []simEdge, e simEdge, n int) []simEdge {
+	edges = append(edges, e)
+	// Sort descending by similarity using insertion sort (n is small).
+	for i := len(edges) - 1; i > 0 && edges[i].sim > edges[i-1].sim; i-- {
+		edges[i], edges[i-1] = edges[i-1], edges[i]
+	}
+	if len(edges) > n {
+		edges = edges[:n]
+	}
+	return edges
+}
+
+func cosineSimilarity(a, b []float32) float64 {
+	if len(a) != len(b) || len(a) == 0 {
+		return 0
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		ai, bi := float64(a[i]), float64(b[i])
+		dot += ai * bi
+		normA += ai * ai
+		normB += bi * bi
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
 func (h *Handler) parseFilter(r *http.Request) Filter {
 	page, perPage := parsePagination(r)
 	f := Filter{Page: page, PerPage: perPage}
 
 	if t := r.URL.Query().Get("type"); t != "" {
 		ct := Type(t)
-		f.Type = &ct
+		if ct.Valid() {
+			f.Type = &ct
+		}
 	}
 	if tag := r.URL.Query().Get("tag"); tag != "" {
 		f.Tag = &tag

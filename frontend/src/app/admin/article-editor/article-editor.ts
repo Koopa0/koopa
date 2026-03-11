@@ -4,6 +4,7 @@ import {
   ChangeDetectionStrategy,
   OnInit,
   signal,
+  input,
 } from '@angular/core';
 import {
   FormBuilder,
@@ -11,7 +12,7 @@ import {
   Validators,
   ReactiveFormsModule,
 } from '@angular/forms';
-import { Router, ActivatedRoute } from '@angular/router';
+import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
@@ -39,6 +40,7 @@ import {
 import { ArticleService } from '../../core/services/article.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { UploadService } from '../../core/services/upload.service';
+import { NotificationService } from '../../core/services/notification.service';
 import type {
   ContentStatus,
   ApiCreateContentRequest,
@@ -59,12 +61,15 @@ const STATUS_OPTIONS: { value: ContentStatus; label: string }[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArticleEditorComponent implements OnInit {
+  /** Route param: admin/editor/:id (undefined for new articles) */
+  readonly id = input<string>();
+
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
   private readonly articleService = inject(ArticleService);
   private readonly markdownService = inject(MarkdownService);
   private readonly uploadService = inject(UploadService);
+  private readonly notificationService = inject(NotificationService);
 
   protected readonly isLoading = signal(false);
   protected readonly isSaving = signal(false);
@@ -72,10 +77,6 @@ export class ArticleEditorComponent implements OnInit {
   protected readonly previewHtml = signal('');
   protected readonly selectedTab = signal<'edit' | 'preview' | 'split'>('edit');
   protected readonly isUploading = signal(false);
-  protected readonly notification = signal<{
-    message: string;
-    type: 'success' | 'error';
-  } | null>(null);
 
   /** Article ID stored in edit mode */
   private articleId: string | null = null;
@@ -139,10 +140,10 @@ export class ArticleEditorComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (slug) {
+    const idValue = this.id();
+    if (idValue) {
       this.isNewArticle.set(false);
-      this.loadArticle(slug);
+      this.loadArticle(idValue);
     } else {
       const defaultContent = this.getDefaultMarkdown();
       this.articleForm.patchValue({ body: defaultContent });
@@ -150,10 +151,10 @@ export class ArticleEditorComponent implements OnInit {
     }
   }
 
-  private loadArticle(slug: string): void {
+  private loadArticle(id: string): void {
     this.isLoading.set(true);
 
-    this.articleService.getArticleBySlug(slug).subscribe({
+    this.articleService.getArticleBySlug(id).subscribe({
       next: (article) => {
         this.articleId = article.id;
         this.articleForm.patchValue({
@@ -169,7 +170,7 @@ export class ArticleEditorComponent implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        this.showNotification('Failed to load article', 'error');
+        this.notificationService.error('Failed to load article');
         this.isLoading.set(false);
       },
     });
@@ -249,7 +250,7 @@ Summarize your thoughts here...
   private saveArticle(status: ContentStatus): void {
     if (this.articleForm.invalid) {
       this.markFormGroupTouched();
-      this.showNotification('Please fill in all required fields', 'error');
+      this.notificationService.error('Please fill in all required fields');
       return;
     }
 
@@ -273,19 +274,25 @@ Summarize your thoughts here...
 
       this.articleService.createArticle(request).subscribe({
         next: () => {
-          this.showNotification(
+          this.notificationService.success(
             status === 'published' ? 'Article published!' : 'Draft saved!',
-            'success',
           );
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('Failed to save', 'error');
+          this.notificationService.error('Failed to save');
           this.isSaving.set(false);
         },
       });
     } else {
+      const articleId = this.articleId;
+      if (!articleId) {
+        this.notificationService.error('Article ID is missing');
+        this.isSaving.set(false);
+        return;
+      }
+
       const request: ApiUpdateContentRequest = {
         title: formValue.title,
         slug: formValue.slug,
@@ -296,26 +303,20 @@ Summarize your thoughts here...
         cover_image: formValue.cover_image || undefined,
       };
 
-      this.articleService.updateArticle(this.articleId!, request).subscribe({
+      this.articleService.updateArticle(articleId, request).subscribe({
         next: () => {
-          this.showNotification(
+          this.notificationService.success(
             status === 'published' ? 'Article published!' : 'Draft saved!',
-            'success',
           );
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
         error: () => {
-          this.showNotification('Failed to update', 'error');
+          this.notificationService.error('Failed to update');
           this.isSaving.set(false);
         },
       });
     }
-  }
-
-  private showNotification(message: string, type: 'success' | 'error'): void {
-    this.notification.set({ message, type });
-    setTimeout(() => this.notification.set(null), 3000);
   }
 
   private generateExcerpt(body: string): string {
@@ -360,9 +361,9 @@ Summarize your thoughts here...
       return;
     }
 
-    const error = this.uploadService.validate(file);
-    if (error) {
-      this.showNotification(error, 'error');
+    const validationError = this.uploadService.validate(file);
+    if (validationError) {
+      this.notificationService.error(validationError);
       input.value = '';
       return;
     }
@@ -372,12 +373,12 @@ Summarize your thoughts here...
       next: (result) => {
         this.articleForm.patchValue({ cover_image: result.url });
         this.isUploading.set(false);
-        this.showNotification('封面圖片上傳成功', 'success');
+        this.notificationService.success('封面圖片上傳成功');
         input.value = '';
       },
       error: () => {
         this.isUploading.set(false);
-        this.showNotification('圖片上傳失敗', 'error');
+        this.notificationService.error('圖片上傳失敗');
         input.value = '';
       },
     });

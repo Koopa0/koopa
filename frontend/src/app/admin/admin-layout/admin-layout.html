@@ -1,0 +1,130 @@
+<!-- 手機版側邊欄觸發按鈕 -->
+<button
+  type="button"
+  (click)="toggleMobileSidebar()"
+  class="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 shadow-lg transition-colors hover:bg-zinc-700 hover:text-white md:hidden"
+  aria-label="開啟選單"
+>
+  <lucide-icon [img]="MenuIcon" [size]="20" />
+</button>
+
+<!-- 手機版背景遮罩 -->
+@if (isMobileSidebarOpen()) {
+<div
+  class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+  (click)="closeMobileSidebar()"
+  role="presentation"
+></div>
+}
+
+<!-- 側邊欄 -->
+<aside
+  class="z-50 flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 transition-all duration-200"
+  [class]="
+    isMobileSidebarOpen()
+      ? 'fixed inset-y-0 left-0 w-64 top-[57px]'
+      : 'hidden md:flex ' + (isSidebarOpen() ? 'w-64' : 'w-16')
+  "
+  role="navigation"
+  aria-label="Admin navigation"
+>
+  <!-- 側邊欄頂部 -->
+  <div class="flex h-12 items-center justify-between border-b border-zinc-800 px-3">
+    @if (isSidebarOpen() || isMobileSidebarOpen()) {
+    <span class="text-sm font-semibold text-zinc-300">Admin</span>
+    }
+    <button
+      type="button"
+      (click)="toggleSidebar()"
+      class="hidden rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 md:flex"
+      [attr.aria-label]="isSidebarOpen() ? '收合側邊欄' : '展開側邊欄'"
+    >
+      @if (isSidebarOpen()) {
+      <lucide-icon [img]="PanelLeftCloseIcon" [size]="16" />
+      } @else {
+      <lucide-icon [img]="PanelLeftIcon" [size]="16" />
+      }
+    </button>
+  </div>
+
+  <!-- 導航群組 -->
+  <nav class="flex-1 overflow-y-auto px-2 py-3">
+    @for (group of navGroups; track group.title) {
+    <div class="mb-4">
+      @if (isSidebarOpen() || isMobileSidebarOpen()) {
+      <p
+        class="mb-1 px-2 text-[11px] font-semibold tracking-wider text-zinc-600 uppercase"
+      >
+        {{ group.title }}
+      </p>
+      }
+
+      @for (item of group.items; track item.route) {
+      @if (item.disabled) {
+      <span
+        class="flex items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-600 cursor-not-allowed"
+        [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
+        [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (即將推出)' : '即將推出'"
+      >
+        <lucide-icon [img]="item.icon" [size]="18" class="shrink-0" />
+        @if (isSidebarOpen() || isMobileSidebarOpen()) {
+        <span>{{ item.label }}</span>
+        <span class="ml-auto rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">
+          Soon
+        </span>
+        }
+      </span>
+      } @else {
+      <a
+        [routerLink]="item.route"
+        routerLinkActive="bg-zinc-800 text-white"
+        [routerLinkActiveOptions]="{ exact: item.exact }"
+        class="flex items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
+        [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
+        [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label : null"
+      >
+        <lucide-icon [img]="item.icon" [size]="18" class="shrink-0" />
+        @if (isSidebarOpen() || isMobileSidebarOpen()) {
+        <span>{{ item.label }}</span>
+        }
+      </a>
+      }
+      }
+    </div>
+    }
+  </nav>
+
+  <!-- 側邊欄底部 -->
+  <div class="border-t border-zinc-800 px-2 py-3">
+    <a
+      routerLink="/"
+      class="flex items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
+      [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
+      [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? '回到網站' : null"
+    >
+      <lucide-icon [img]="HomeIcon" [size]="18" class="shrink-0" />
+      @if (isSidebarOpen() || isMobileSidebarOpen()) {
+      <span>回到網站</span>
+      }
+    </a>
+    <button
+      type="button"
+      (click)="logout()"
+      class="flex w-full items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
+      [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
+      [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? '登出' : null"
+    >
+      <lucide-icon [img]="LogOutIcon" [size]="18" class="shrink-0" />
+      @if (isSidebarOpen() || isMobileSidebarOpen()) {
+      <span>登出</span>
+      }
+    </button>
+  </div>
+</aside>
+
+<!-- 主要內容區 -->
+<div class="flex-1 overflow-y-auto">
+  <router-outlet />
+</div>
+
+<app-toast />
