@@ -1,0 +1,70 @@
+// Alloy 負責收集所有 Docker container 的 log，轉送到 Loki。
+// Metrics scraping 由 Prometheus 自己做，Alloy 不管 metrics。
+
+// === Docker container 自動發現 ===
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// === Relabel：從 Docker metadata 提取有用的 label ===
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  // container name（去掉前綴 /）
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // compose service name（backend, frontend, postgres, grafana...）
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  // compose project name（blog, observability...）
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
+}
+
+// === 讀取 Docker container log ===
+loki.source.docker "docker_logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.pipeline.receiver]
+}
+
+// === Log 處理 Pipeline ===
+loki.process "pipeline" {
+  // 嘗試解析 JSON（Go backend 輸出 JSON log）。
+  // 非 JSON 的 log（frontend console.error、postgres log）會跳過，保留原始文字。
+  stage.json {
+    expressions = {
+      level    = "level",
+      msg      = "msg",
+      method   = "method",
+      path     = "path",
+      status   = "status",
+      duration = "duration",
+    }
+  }
+
+  // 把 level 提升為 Loki label，方便用 {level="ERROR"} 查詢。
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+// === 寫入 Loki ===
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

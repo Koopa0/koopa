@@ -1,0 +1,117 @@
+# observability/docker-compose.observability.yml
+#
+# 啟動方式：
+#   cd observability
+#   docker compose -f docker-compose.observability.yml --env-file .env up -d
+#
+# 這個 compose file 獨立於 blog 的 docker-compose.yml，
+# 但透過 external network 與 blog stack 共用同一個 Docker network。
+
+services:
+
+  grafana:
+    image: grafana/grafana-oss:12.4.1
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_ROOT_URL=https://grafana.koopa0.dev
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID_CRITICAL=${TELEGRAM_CHAT_ID_CRITICAL}
+      - TELEGRAM_CHAT_ID_WARNING=${TELEGRAM_CHAT_ID_WARNING}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - blog-internal
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  loki:
+    image: grafana/loki:3.6.7
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - loki-data:/loki
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+    networks:
+      - blog-internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=14d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - blog-internal
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  alloy:
+    image: grafana/alloy:v1.13.1
+    container_name: alloy
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - blog-internal
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+
+  node-exporter:
+    image: prom/node-exporter:v1.10.2
+    container_name: node-exporter
+    restart: unless-stopped
+    command:
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+    pid: host
+    networks:
+      - blog-internal
+    deploy:
+      resources:
+        limits:
+          memory: 30M
+
+volumes:
+  grafana-data:
+  loki-data:
+  prometheus-data:
+
+networks:
+  blog-internal:
+    external: true
+    name: blog_internal

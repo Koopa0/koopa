@@ -23,14 +23,17 @@ func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error 
 	rlMid := rateLimitMiddleware(logger)
 
 	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", MetricsHandler())
 	RegisterRoutes(mux, deps, authMid, rlMid)
 
 	// Middleware chain (outermost first):
-	// logging → security headers → CORS → CSRF → mux
-	handler := loggingMiddleware(logger)(
-		securityHeaders(
-			corsMiddleware(cfg.CORSOrigin)(
-				csrfMiddleware(cfg.CORSOrigin, logger)(mux),
+	// prometheus → logging → security headers → CORS → CSRF → mux
+	handler := prometheusMiddleware(
+		loggingMiddleware(logger)(
+			securityHeaders(
+				corsMiddleware(cfg.CORSOrigin)(
+					csrfMiddleware(cfg.CORSOrigin, logger)(mux),
+				),
 			),
 		),
 	)

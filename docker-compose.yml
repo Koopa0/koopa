@@ -18,6 +18,12 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg17
+    command:
+      - "postgres"
+      - "-c"
+      - "log_min_duration_statement=500"
+      - "-c"
+      - "log_statement=none"
     environment:
       POSTGRES_DB: blog
       POSTGRES_USER: koopa
