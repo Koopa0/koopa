@@ -319,7 +319,7 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 
 const maxSlugLength = 200
 
-// Related handles GET /api/contents/{slug}/related.
+// Related handles GET /api/contents/related/{slug}.
 func (h *Handler) Related(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if len(slug) > maxSlugLength {
