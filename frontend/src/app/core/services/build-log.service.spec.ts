@@ -74,7 +74,7 @@ describe('BuildLogService', () => {
       });
 
       const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents/type/build-log'),
+        r.url.includes('/api/contents/by-type/build-log'),
       );
       expect(req.request.method).toBe('GET');
       req.flush({ data: [mockBuildLog], meta: mockMeta });
@@ -84,7 +84,7 @@ describe('BuildLogService', () => {
       service.getBuildLogs(2, 5).subscribe();
 
       const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents/type/build-log') &&
+        r.url.includes('/api/contents/by-type/build-log') &&
         r.params.get('page') === '2' &&
         r.params.get('per_page') === '5',
       );
@@ -98,7 +98,7 @@ describe('BuildLogService', () => {
         },
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/type/build-log'));
+      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/by-type/build-log'));
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
     });
   });

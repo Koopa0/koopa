@@ -68,7 +68,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	// public
 	mux.HandleFunc("GET /api/contents", d.Content.List)
 	mux.HandleFunc("GET /api/contents/{slug}", d.Content.BySlug)
-	mux.HandleFunc("GET /api/contents/type/{type}", d.Content.ByType)
+	mux.HandleFunc("GET /api/contents/by-type/{type}", d.Content.ByType)
 	mux.HandleFunc("GET /api/topics", d.Topic.List)
 	mux.HandleFunc("GET /api/topics/{slug}", d.Topic.BySlug)
 	mux.HandleFunc("GET /api/projects", d.Project.List)

@@ -142,7 +142,7 @@ describe('ContentService', () => {
         expect(response.data).toEqual([mockContent]);
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/type/til'));
+      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/by-type/til'));
       expect(req.request.method).toBe('GET');
       req.flush({ data: [mockContent], meta: createMockMeta() });
     });
@@ -151,7 +151,7 @@ describe('ContentService', () => {
       service.listByType('bookmark', { page: 2, perPage: 5 }).subscribe();
 
       const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents/type/bookmark') &&
+        r.url.includes('/api/contents/by-type/bookmark') &&
         r.params.get('page') === '2' &&
         r.params.get('per_page') === '5',
       );

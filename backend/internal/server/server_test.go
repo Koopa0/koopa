@@ -585,7 +585,7 @@ func TestContentCRUD(t *testing.T) {
 	})
 
 	t.Run("get content by type", func(t *testing.T) {
-		resp := doRequest(t, http.MethodGet, ts.URL+"/api/contents/type/article", "", "")
+		resp := doRequest(t, http.MethodGet, ts.URL+"/api/contents/by-type/article", "", "")
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}

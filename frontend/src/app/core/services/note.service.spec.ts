@@ -74,7 +74,7 @@ describe('NoteService', () => {
       });
 
       const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents/type/note'),
+        r.url.includes('/api/contents/by-type/note'),
       );
       expect(req.request.method).toBe('GET');
       req.flush({ data: [mockNote], meta: mockMeta });
@@ -84,7 +84,7 @@ describe('NoteService', () => {
       service.getNotes(3, 15).subscribe();
 
       const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents/type/note') &&
+        r.url.includes('/api/contents/by-type/note') &&
         r.params.get('page') === '3' &&
         r.params.get('per_page') === '15',
       );
@@ -98,7 +98,7 @@ describe('NoteService', () => {
         },
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/type/note'));
+      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/by-type/note'));
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
     });
   });

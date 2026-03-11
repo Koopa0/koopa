@@ -42,7 +42,7 @@ export class ContentService {
     const query: Record<string, string | number> = {};
     if (params?.page) query['page'] = params.page;
     if (params?.perPage) query['per_page'] = params.perPage;
-    return this.api.getListData<ApiContent>(`/api/contents/type/${type}`, query);
+    return this.api.getListData<ApiContent>(`/api/contents/by-type/${type}`, query);
   }
 
   /** Full-text search (public) */

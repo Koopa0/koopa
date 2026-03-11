@@ -74,7 +74,7 @@ describe('TilService', () => {
       });
 
       const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents/type/til'),
+        r.url.includes('/api/contents/by-type/til'),
       );
       expect(req.request.method).toBe('GET');
       req.flush({ data: [mockTil], meta: mockMeta });
@@ -84,7 +84,7 @@ describe('TilService', () => {
       service.getTils(2, 10).subscribe();
 
       const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents/type/til') &&
+        r.url.includes('/api/contents/by-type/til') &&
         r.params.get('page') === '2' &&
         r.params.get('per_page') === '10',
       );
@@ -98,7 +98,7 @@ describe('TilService', () => {
         },
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/type/til'));
+      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/by-type/til'));
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
     });
   });

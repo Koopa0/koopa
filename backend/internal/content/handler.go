@@ -61,7 +61,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
 }
 
-// ByType handles GET /api/contents/type/{type}.
+// ByType handles GET /api/contents/by-type/{type}.
 func (h *Handler) ByType(w http.ResponseWriter, r *http.Request) {
 	t := Type(r.PathValue("type"))
 	if !t.Valid() {
