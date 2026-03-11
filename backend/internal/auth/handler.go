@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -117,7 +118,7 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	q := url.Values{}
 	q.Set("access_token", pair.AccessToken)
 	q.Set("refresh_token", pair.RefreshToken)
-	http.Redirect(w, r, h.frontendURL+"/admin/oauth-callback?"+q.Encode(), http.StatusFound)
+	h.jsRedirect(w, h.frontendURL+"/admin/oauth-callback?"+q.Encode())
 }
 
 // Refresh handles POST /api/auth/refresh.
@@ -290,5 +291,13 @@ func (h *Handler) fetchGoogleEmail(ctx context.Context, token *oauth2.Token) (st
 func (h *Handler) redirectError(w http.ResponseWriter, r *http.Request, msg string) {
 	q := url.Values{}
 	q.Set("error", msg)
-	http.Redirect(w, r, h.frontendURL+"/login?"+q.Encode(), http.StatusFound)
+	h.jsRedirect(w, h.frontendURL+"/login?"+q.Encode())
+}
+
+// jsRedirect writes an HTML page that redirects via JavaScript.
+// This avoids 302 redirects that BFF proxies may follow server-side.
+func (h *Handler) jsRedirect(w http.ResponseWriter, target string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=%s"></head><body><script>window.location.href=%q;</script></body></html>`, template.HTMLEscapeString(target), target)
 }
