@@ -80,6 +80,7 @@ func StatusFromScore(score int16) collected.Status {
 
 // CollectScore implements the collect-and-score flow using Genkit.
 type CollectScore struct {
+	gf      *genkitFlow
 	g       *genkit.Genkit
 	model   ai.Model
 	reader  CollectedReader
@@ -97,7 +98,7 @@ func NewCollectScore(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *CollectScore {
-	return &CollectScore{
+	cs := &CollectScore{
 		g:       g,
 		model:   model,
 		reader:  reader,
@@ -105,22 +106,26 @@ func NewCollectScore(
 		budget:  budget,
 		logger:  logger,
 	}
+	cs.gf = genkit.DefineFlow(g, "collect-and-score", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in CollectScoreInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parsing collect-and-score input: %w", err)
+		}
+		out, err := cs.run(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return cs
 }
 
 // Name returns the flow name for registry lookup.
 func (cs *CollectScore) Name() string { return "collect-and-score" }
 
-// Run implements Flow.Run.
+// Run implements Flow.Run — delegates to the registered Genkit flow.
 func (cs *CollectScore) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-	var in CollectScoreInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return nil, fmt.Errorf("parsing collect-and-score input: %w", err)
-	}
-	out, err := cs.run(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+	return cs.gf.Run(ctx, input)
 }
 
 // estimatedScoreTokens is a rough estimate of tokens for scoring one article.

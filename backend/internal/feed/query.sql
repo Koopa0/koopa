@@ -12,6 +12,13 @@ SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
        filter_config, created_at, updated_at
 FROM feeds WHERE id = $1;
 
+-- name: EnabledFeeds :many
+SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
+       last_fetched_at, consecutive_failures, last_error, disabled_reason,
+       filter_config, created_at, updated_at
+FROM feeds WHERE enabled = true
+ORDER BY created_at;
+
 -- name: EnabledFeedsBySchedule :many
 SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,

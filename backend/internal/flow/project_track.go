@@ -39,6 +39,7 @@ type projectTrackInput struct {
 
 // ProjectTrack implements the project-track flow.
 type ProjectTrack struct {
+	gf       *genkitFlow
 	g        *genkit.Genkit
 	model    ai.Model
 	projects ProjectByRepoFinder
@@ -58,7 +59,7 @@ func NewProjectTrack(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *ProjectTrack {
-	return &ProjectTrack{
+	pt := &ProjectTrack{
 		g:        g,
 		model:    model,
 		projects: projects,
@@ -67,18 +68,22 @@ func NewProjectTrack(
 		budget:   budget,
 		logger:   logger,
 	}
+	pt.gf = genkit.DefineFlow(g, "project-track", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		out, err := pt.run(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return pt
 }
 
 // Name returns the flow name for registry lookup.
 func (pt *ProjectTrack) Name() string { return "project-track" }
 
-// Run implements Flow.Run.
-func (pt *ProjectTrack) Run(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	out, err := pt.run(ctx, raw)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+// Run implements Flow.Run — delegates to the registered Genkit flow.
+func (pt *ProjectTrack) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	return pt.gf.Run(ctx, input)
 }
 
 const estimatedTrackTokens int64 = 1000

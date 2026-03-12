@@ -71,6 +71,25 @@ export function buildBlogPostingSchema(article: {
   };
 }
 
+export function buildCollectionPageSchema(collection: {
+  name: string;
+  description: string;
+  url: string;
+}): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: collection.name,
+    description: collection.description,
+    url: collection.url,
+    isPartOf: {
+      '@type': 'WebSite',
+      name: 'koopa0.dev',
+      url: SITE_URL,
+    },
+  };
+}
+
 export function buildBreadcrumbSchema(
   items: { name: string; url: string }[],
 ): Record<string, unknown> {

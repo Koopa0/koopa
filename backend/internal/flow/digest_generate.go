@@ -45,6 +45,7 @@ type DigestGenerateOutput struct {
 
 // DigestGenerate implements the digest-generate flow using Genkit.
 type DigestGenerate struct {
+	gf       *genkitFlow
 	g        *genkit.Genkit
 	model    ai.Model
 	contents PublishedContentLister
@@ -64,7 +65,7 @@ func NewDigestGenerate(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *DigestGenerate {
-	return &DigestGenerate{
+	dg := &DigestGenerate{
 		g:        g,
 		model:    model,
 		contents: contents,
@@ -73,22 +74,26 @@ func NewDigestGenerate(
 		budget:   budget,
 		logger:   logger,
 	}
+	dg.gf = genkit.DefineFlow(g, "digest-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in DigestGenerateInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parsing digest-generate input: %w", err)
+		}
+		out, err := dg.run(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return dg
 }
 
 // Name returns the flow name for registry lookup.
 func (dg *DigestGenerate) Name() string { return "digest-generate" }
 
-// Run implements Flow.Run.
+// Run implements Flow.Run — delegates to the registered Genkit flow.
 func (dg *DigestGenerate) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-	var in DigestGenerateInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return nil, fmt.Errorf("parsing digest-generate input: %w", err)
-	}
-	out, err := dg.run(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+	return dg.gf.Run(ctx, input)
 }
 
 const estimatedDigestTokens int64 = 5000

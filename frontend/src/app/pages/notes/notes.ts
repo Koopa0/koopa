@@ -14,6 +14,7 @@ import {
 } from 'lucide-angular';
 import { NoteService } from '../../core/services/note.service';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiContent } from '../../core/models';
 
@@ -42,6 +43,11 @@ export class NotesComponent implements OnInit {
       title: 'Notes',
       description: 'Code snippets, config notes, and reading notes.',
       ogUrl: 'https://koopa0.dev/notes',
+      jsonLd: buildCollectionPageSchema({
+        name: 'Notes',
+        description: 'Code snippets, config notes, and reading notes.',
+        url: 'https://koopa0.dev/notes',
+      }),
     });
     this.loadNotes();
   }

@@ -93,8 +93,8 @@
                         </span>
                       }
                       @for (pattern of feed.filter_config.deny_title_patterns ?? []; track $index) {
-                        <span class="rounded-sm border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
-                          −{{ pattern }}
+                        <span class="rounded-sm border border-amber-800/40 bg-amber-900/15 px-1.5 py-0.5 text-[10px] text-amber-400">
+                          −{{ formatPattern(pattern) }}
                         </span>
                       }
                       @for (tag of feed.filter_config.allow_tags ?? []; track $index) {

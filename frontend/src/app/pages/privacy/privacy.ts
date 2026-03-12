@@ -20,8 +20,8 @@ export class PrivacyComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '隱私權政策',
-      description: 'koopa0.dev 的隱私權政策，說明我們如何收集、使用和保護您的資訊。',
+      title: 'Privacy Policy',
+      description: 'Privacy policy for koopa0.dev — how we collect, use, and protect your information.',
       ogUrl: 'https://koopa0.dev/privacy',
     });
   }

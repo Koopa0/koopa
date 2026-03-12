@@ -16,6 +16,7 @@ import {
 } from 'lucide-angular';
 import { BuildLogService } from '../../core/services/build-log.service';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiContent } from '../../core/models';
 
@@ -43,9 +44,14 @@ export class BuildLogsComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: 'Build Log',
+      title: 'Build Logs',
       description: 'Development logs — process, decisions, and lessons learned.',
       ogUrl: 'https://koopa0.dev/build-logs',
+      jsonLd: buildCollectionPageSchema({
+        name: 'Build Logs',
+        description: 'Development logs — process, decisions, and lessons learned.',
+        url: 'https://koopa0.dev/build-logs',
+      }),
     });
     this.loadBuildLogs();
   }

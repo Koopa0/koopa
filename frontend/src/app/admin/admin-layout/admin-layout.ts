@@ -76,10 +76,10 @@ export class AdminLayoutComponent {
 
   protected readonly navGroups: NavGroup[] = [
     {
-      title: '總覽',
+      title: 'Overview',
       items: [
         {
-          label: '儀表板',
+          label: 'Dashboard',
           route: '/admin',
           icon: LayoutDashboard,
           exact: true,
@@ -95,7 +95,7 @@ export class AdminLayoutComponent {
       ],
     },
     {
-      title: '資料管線',
+      title: 'Pipeline',
       items: [
         {
           label: 'RSS Feeds',
@@ -105,14 +105,14 @@ export class AdminLayoutComponent {
           disabled: false,
         },
         {
-          label: '收集資料',
+          label: 'Collected',
           route: '/admin/collected',
           icon: Database,
           exact: false,
           disabled: false,
         },
         {
-          label: '審核佇列',
+          label: 'Review Queue',
           route: '/admin/review',
           icon: ClipboardCheck,
           exact: false,

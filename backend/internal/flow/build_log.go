@@ -53,6 +53,7 @@ type BuildLogOutput struct {
 
 // BuildLog implements the build-log-generate flow.
 type BuildLog struct {
+	gf       *genkitFlow
 	g        *genkit.Genkit
 	model    ai.Model
 	projects ProjectBySlugFinder
@@ -72,7 +73,7 @@ func NewBuildLog(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *BuildLog {
-	return &BuildLog{
+	bl := &BuildLog{
 		g:        g,
 		model:    model,
 		projects: projects,
@@ -81,18 +82,22 @@ func NewBuildLog(
 		budget:   budget,
 		logger:   logger,
 	}
+	bl.gf = genkit.DefineFlow(g, "build-log-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		out, err := bl.run(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return bl
 }
 
 // Name returns the flow name for registry lookup.
 func (bl *BuildLog) Name() string { return "build-log-generate" }
 
-// Run implements Flow.Run.
-func (bl *BuildLog) Run(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	out, err := bl.run(ctx, raw)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+// Run implements Flow.Run — delegates to the registered Genkit flow.
+func (bl *BuildLog) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	return bl.gf.Run(ctx, input)
 }
 
 const estimatedBuildLogTokens int64 = 3000

@@ -16,6 +16,11 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 		return fmt.Errorf("fetching notion page: %w", err)
 	}
 
+	if page.InTrash {
+		h.logger.Debug("skipping trashed page", "page_id", pageID)
+		return ErrSkipped
+	}
+
 	title := titleProperty(page.Properties["Name"])
 	if title == "" {
 		return fmt.Errorf("notion page %s has no title", pageID)
@@ -64,6 +69,10 @@ func (h *Handler) syncTaskActivity(ctx context.Context, pageID string) error {
 		return fmt.Errorf("fetching notion task page: %w", err)
 	}
 
+	if page.InTrash {
+		return ErrSkipped
+	}
+
 	status := statusProperty(page.Properties["Status"])
 	if status != "Done" {
 		h.logger.Debug("task not done, skipping", "page_id", pageID, "status", status)
@@ -93,6 +102,10 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("fetching notion book page: %w", err)
+	}
+
+	if page.InTrash {
+		return ErrSkipped
 	}
 
 	status := statusProperty(page.Properties["Status"])
@@ -142,6 +155,10 @@ func (h *Handler) syncGoal(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("fetching notion goal page: %w", err)
+	}
+
+	if page.InTrash {
+		return ErrSkipped
 	}
 
 	title := titleProperty(page.Properties["Name"])

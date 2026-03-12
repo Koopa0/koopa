@@ -16,6 +16,7 @@ import {
 } from 'lucide-angular';
 import { TilService } from '../../core/services/til.service';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiContent } from '../../core/models';
 
@@ -64,6 +65,11 @@ export class TilsComponent implements OnInit {
       title: 'Today I Learned',
       description: 'Daily learning notes — bite-sized technical discoveries.',
       ogUrl: 'https://koopa0.dev/til',
+      jsonLd: buildCollectionPageSchema({
+        name: 'Today I Learned',
+        description: 'Daily learning notes — bite-sized technical discoveries.',
+        url: 'https://koopa0.dev/til',
+      }),
     });
     this.loadTils();
   }

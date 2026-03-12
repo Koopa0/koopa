@@ -1068,6 +1068,50 @@ func (q *Queries) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const enabledFeeds = `-- name: EnabledFeeds :many
+SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
+       last_fetched_at, consecutive_failures, last_error, disabled_reason,
+       filter_config, created_at, updated_at
+FROM feeds WHERE enabled = true
+ORDER BY created_at
+`
+
+func (q *Queries) EnabledFeeds(ctx context.Context) ([]Feed, error) {
+	rows, err := q.db.Query(ctx, enabledFeeds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Feed{}
+	for rows.Next() {
+		var i Feed
+		if err := rows.Scan(
+			&i.ID,
+			&i.Url,
+			&i.Name,
+			&i.Schedule,
+			&i.Topics,
+			&i.Enabled,
+			&i.Etag,
+			&i.LastModified,
+			&i.LastFetchedAt,
+			&i.ConsecutiveFailures,
+			&i.LastError,
+			&i.DisabledReason,
+			&i.FilterConfig,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const enabledFeedsBySchedule = `-- name: EnabledFeedsBySchedule :many
 SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,

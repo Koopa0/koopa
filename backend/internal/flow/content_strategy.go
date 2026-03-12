@@ -25,6 +25,7 @@ type ContentStrategyOutput struct {
 
 // ContentStrategy implements the content-strategy flow.
 type ContentStrategy struct {
+	gf        *genkitFlow
 	g         *genkit.Genkit
 	model     ai.Model
 	contents  PublishedContentLister
@@ -46,7 +47,7 @@ func NewContentStrategy(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *ContentStrategy {
-	return &ContentStrategy{
+	cs := &ContentStrategy{
 		g:         g,
 		model:     model,
 		contents:  contents,
@@ -56,18 +57,22 @@ func NewContentStrategy(
 		budget:    budget,
 		logger:    logger,
 	}
+	cs.gf = genkit.DefineFlow(g, "content-strategy", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		out, err := cs.run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return cs
 }
 
 // Name returns the flow name for registry lookup.
 func (cs *ContentStrategy) Name() string { return "content-strategy" }
 
-// Run implements Flow.Run.
-func (cs *ContentStrategy) Run(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	out, err := cs.run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+// Run implements Flow.Run — delegates to the registered Genkit flow.
+func (cs *ContentStrategy) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	return cs.gf.Run(ctx, input)
 }
 
 const (

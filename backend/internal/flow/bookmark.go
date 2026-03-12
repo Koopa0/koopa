@@ -35,6 +35,7 @@ type BookmarkGenerateOutput struct {
 
 // BookmarkGenerate implements the bookmark-generate flow using Genkit.
 type BookmarkGenerate struct {
+	gf     *genkitFlow
 	g      *genkit.Genkit
 	model  ai.Model
 	reader CollectedReader
@@ -50,29 +51,33 @@ func NewBookmarkGenerate(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *BookmarkGenerate {
-	return &BookmarkGenerate{
+	bg := &BookmarkGenerate{
 		g:      g,
 		model:  model,
 		reader: reader,
 		budget: budget,
 		logger: logger,
 	}
+	bg.gf = genkit.DefineFlow(g, "bookmark-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in BookmarkGenerateInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parsing bookmark-generate input: %w", err)
+		}
+		out, err := bg.run(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return bg
 }
 
 // Name returns the flow name for registry lookup.
 func (bg *BookmarkGenerate) Name() string { return "bookmark-generate" }
 
-// Run implements Flow.Run.
+// Run implements Flow.Run — delegates to the registered Genkit flow.
 func (bg *BookmarkGenerate) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-	var in BookmarkGenerateInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return nil, fmt.Errorf("parsing bookmark-generate input: %w", err)
-	}
-	out, err := bg.run(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+	return bg.gf.Run(ctx, input)
 }
 
 const estimatedBookmarkTokens int64 = 2000

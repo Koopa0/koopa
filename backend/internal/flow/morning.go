@@ -44,6 +44,7 @@ type MorningBriefOutput struct {
 
 // MorningBrief implements the morning-brief flow.
 type MorningBrief struct {
+	gf        *genkitFlow
 	g         *genkit.Genkit
 	model     ai.Model
 	tasks     TaskQuerier
@@ -65,7 +66,7 @@ func NewMorningBrief(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *MorningBrief {
-	return &MorningBrief{
+	mb := &MorningBrief{
 		g:         g,
 		model:     model,
 		tasks:     tasks,
@@ -75,18 +76,22 @@ func NewMorningBrief(
 		budget:    budget,
 		logger:    logger,
 	}
+	mb.gf = genkit.DefineFlow(g, "morning-brief", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		out, err := mb.run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return mb
 }
 
 // Name returns the flow name for registry lookup.
 func (mb *MorningBrief) Name() string { return "morning-brief" }
 
-// Run implements Flow.Run.
-func (mb *MorningBrief) Run(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	out, err := mb.run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+// Run implements Flow.Run — delegates to the registered Genkit flow.
+func (mb *MorningBrief) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	return mb.gf.Run(ctx, input)
 }
 
 const (

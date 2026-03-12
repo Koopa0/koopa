@@ -59,6 +59,7 @@ type FeedCollector interface {
 
 // FeedLister lists feeds by schedule.
 type FeedLister interface {
+	EnabledFeeds(ctx context.Context) ([]feed.Feed, error)
 	EnabledFeedsBySchedule(ctx context.Context, schedule string) ([]feed.Feed, error)
 }
 
@@ -212,15 +213,15 @@ type collectRequest struct {
 }
 
 // Collect handles POST /api/pipeline/collect.
-// Fetches all enabled feeds for the given schedule (default: hourly_4),
-// then submits collect-and-score jobs for each new item.
+// When a schedule is provided, fetches enabled feeds for that schedule only.
+// When no schedule is provided, fetches all enabled feeds.
 func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 	if h.collector == nil || h.feeds == nil {
 		http.Error(w, "collector not configured", http.StatusNotImplemented)
 		return
 	}
 
-	schedule := feed.ScheduleHourly4
+	var schedule string
 	if r.Body != nil && r.ContentLength > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		var req collectRequest
@@ -229,7 +230,16 @@ func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	feeds, err := h.feeds.EnabledFeedsBySchedule(r.Context(), schedule)
+	var (
+		feeds []feed.Feed
+		err   error
+	)
+	if schedule != "" {
+		feeds, err = h.feeds.EnabledFeedsBySchedule(r.Context(), schedule)
+	} else {
+		schedule = "all"
+		feeds, err = h.feeds.EnabledFeeds(r.Context())
+	}
 	if err != nil {
 		h.logger.Error("listing feeds for collect", "schedule", schedule, "error", err)
 		http.Error(w, "failed to list feeds", http.StatusInternalServerError)

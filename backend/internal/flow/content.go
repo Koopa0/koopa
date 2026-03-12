@@ -67,6 +67,7 @@ type ReviewResult struct {
 
 // ContentReview implements the content-review flow using Genkit.
 type ContentReview struct {
+	gf          *genkitFlow
 	g           *genkit.Genkit
 	model       ai.Model
 	embedder    ai.Embedder
@@ -90,7 +91,7 @@ func NewContentReview(
 	topics TopicLister,
 	logger *slog.Logger,
 ) *ContentReview {
-	return &ContentReview{
+	cr := &ContentReview{
 		g:           g,
 		model:       model,
 		embedder:    embedder,
@@ -101,22 +102,26 @@ func NewContentReview(
 		topics:      topics,
 		logger:      logger,
 	}
+	cr.gf = genkit.DefineFlow(g, "content-review", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in ContentReviewInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parsing content-review input: %w", err)
+		}
+		out, err := cr.run(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return cr
 }
 
 // Name returns the flow name for registry lookup.
 func (cr *ContentReview) Name() string { return "content-review" }
 
-// Run implements Flow.Run — unmarshals input, executes, marshals output.
+// Run implements Flow.Run — delegates to the registered Genkit flow.
 func (cr *ContentReview) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-	var in ContentReviewInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return nil, fmt.Errorf("parsing content-review input: %w", err)
-	}
-	out, err := cr.run(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+	return cr.gf.Run(ctx, input)
 }
 
 // run is the typed internal implementation.

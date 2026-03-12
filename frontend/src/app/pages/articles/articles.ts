@@ -33,6 +33,7 @@ import {
 import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import type { ApiContent } from '../../core/models';
 
 const ARTICLES_PER_PAGE = 12;
@@ -103,6 +104,11 @@ export class ArticlesComponent implements OnInit {
       title: 'Articles',
       description: 'Technical articles, dev notes, and lessons learned.',
       ogUrl: 'https://koopa0.dev/articles',
+      jsonLd: buildCollectionPageSchema({
+        name: 'Articles',
+        description: 'Technical articles, dev notes, and lessons learned.',
+        url: 'https://koopa0.dev/articles',
+      }),
     });
     this.loadArticles();
   }

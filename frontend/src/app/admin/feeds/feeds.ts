@@ -367,6 +367,10 @@ export class FeedsComponent implements OnInit {
     return SCHEDULE_LABELS[schedule];
   }
 
+  protected formatPattern(pattern: string): string {
+    return pattern.replace(/\(\?i\)/g, '');
+  }
+
   protected getScheduleClass(schedule: FeedSchedule): string {
     switch (schedule) {
       case 'hourly_4':

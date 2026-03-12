@@ -28,6 +28,7 @@ type ContentPolishOutput struct {
 
 // ContentPolish implements the content-polish flow using Genkit + Claude.
 type ContentPolish struct {
+	gf      *genkitFlow
 	g       *genkit.Genkit
 	model   ai.Model
 	content ContentReader
@@ -36,28 +37,32 @@ type ContentPolish struct {
 
 // NewContentPolish returns a ContentPolish flow.
 func NewContentPolish(g *genkit.Genkit, model ai.Model, content ContentReader, logger *slog.Logger) *ContentPolish {
-	return &ContentPolish{
+	cp := &ContentPolish{
 		g:       g,
 		model:   model,
 		content: content,
 		logger:  logger,
 	}
+	cp.gf = genkit.DefineFlow(g, "content-polish", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in ContentPolishInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parsing content-polish input: %w", err)
+		}
+		out, err := cp.run(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return cp
 }
 
 // Name returns the flow name for registry lookup.
 func (cp *ContentPolish) Name() string { return "content-polish" }
 
-// Run implements Flow.Run — unmarshals input, executes, marshals output.
+// Run implements Flow.Run — delegates to the registered Genkit flow.
 func (cp *ContentPolish) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-	var in ContentPolishInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return nil, fmt.Errorf("parsing content-polish input: %w", err)
-	}
-	out, err := cp.run(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+	return cp.gf.Run(ctx, input)
 }
 
 // run is the typed internal implementation.

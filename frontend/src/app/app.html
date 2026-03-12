@@ -26,6 +26,7 @@
       <a
         routerLink="/"
         routerLinkActive="bg-zinc-800 text-white"
+        [routerLinkActiveOptions]="{ exact: true }"
         class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
       >
         Home
@@ -129,13 +130,6 @@
         >
           <lucide-icon [img]="DashboardIcon" [size]="18" />
         </a>
-        <a
-          routerLink="/admin/editor"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 no-underline"
-          aria-label="New article"
-        >
-          <lucide-icon [img]="EditIcon" [size]="18" />
-        </a>
         <button
           type="button"
           (click)="logout()"
@@ -176,6 +170,7 @@
       <a
         routerLink="/"
         routerLinkActive="bg-zinc-800 text-white"
+        [routerLinkActiveOptions]="{ exact: true }"
         class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
       >
         Home
@@ -276,8 +271,8 @@
       </div>
       <span class="hidden text-zinc-800 sm:inline">|</span>
       <div class="flex items-center gap-3">
-        <a routerLink="/privacy" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">隱私權政策</a>
-        <a routerLink="/terms" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">服務條款</a>
+        <a routerLink="/privacy" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">Privacy</a>
+        <a routerLink="/terms" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">Terms</a>
       </div>
     </div>
     <div class="flex items-center gap-1">

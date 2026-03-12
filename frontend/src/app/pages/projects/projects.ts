@@ -16,6 +16,7 @@ import {
 } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiProject, ProjectStatus } from '../../core/models';
 
@@ -67,6 +68,11 @@ export class ProjectsComponent implements OnInit {
       title: 'Projects',
       description: 'Open-source and personal projects — backend services, CLI tools, and full-stack apps.',
       ogUrl: 'https://koopa0.dev/projects',
+      jsonLd: buildCollectionPageSchema({
+        name: 'Projects',
+        description: 'Open-source and personal projects — backend services, CLI tools, and full-stack apps.',
+        url: 'https://koopa0.dev/projects',
+      }),
     });
     this.loadProjects();
   }

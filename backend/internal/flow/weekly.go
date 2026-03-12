@@ -31,6 +31,7 @@ type WeeklyReviewOutput struct {
 
 // WeeklyReview implements the weekly-review flow.
 type WeeklyReview struct {
+	gf        *genkitFlow
 	g         *genkit.Genkit
 	model     ai.Model
 	tasks     TaskQuerier
@@ -56,7 +57,7 @@ func NewWeeklyReview(
 	budget BudgetChecker,
 	logger *slog.Logger,
 ) *WeeklyReview {
-	return &WeeklyReview{
+	wr := &WeeklyReview{
 		g:         g,
 		model:     model,
 		tasks:     tasks,
@@ -68,18 +69,22 @@ func NewWeeklyReview(
 		budget:    budget,
 		logger:    logger,
 	}
+	wr.gf = genkit.DefineFlow(g, "weekly-review", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		out, err := wr.run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+	return wr
 }
 
 // Name returns the flow name for registry lookup.
 func (wr *WeeklyReview) Name() string { return "weekly-review" }
 
-// Run implements Flow.Run.
-func (wr *WeeklyReview) Run(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	out, err := wr.run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(out)
+// Run implements Flow.Run — delegates to the registered Genkit flow.
+func (wr *WeeklyReview) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	return wr.gf.Run(ctx, input)
 }
 
 const (

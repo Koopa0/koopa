@@ -37,6 +37,7 @@ func NewClient(apiKey string) *Client {
 type PageResponse struct {
 	ID         string                     `json:"id"`
 	Archived   bool                       `json:"archived"`
+	InTrash    bool                       `json:"in_trash"`
 	Properties map[string]json.RawMessage `json:"properties"`
 }
 

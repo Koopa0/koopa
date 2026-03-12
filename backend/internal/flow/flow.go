@@ -6,7 +6,13 @@ package flow
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/firebase/genkit/go/core"
 )
+
+// genkitFlow is a type alias for a Genkit flow that takes and returns raw JSON.
+// Every concrete flow stores one of these, created via genkit.DefineFlow in its constructor.
+type genkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
 
 // Flow executes a named AI processing pipeline.
 // Each concrete flow struct implements this interface directly,

@@ -96,27 +96,16 @@
 
   <!-- 側邊欄底部 -->
   <div class="border-t border-zinc-800 px-2 py-3">
-    <a
-      routerLink="/"
-      class="flex items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
-      [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-      [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? '回到網站' : null"
-    >
-      <lucide-icon [img]="HomeIcon" [size]="18" class="shrink-0" />
-      @if (isSidebarOpen() || isMobileSidebarOpen()) {
-      <span>回到網站</span>
-      }
-    </a>
     <button
       type="button"
       (click)="logout()"
       class="flex w-full items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
       [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-      [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? '登出' : null"
+      [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? 'Sign out' : null"
     >
       <lucide-icon [img]="LogOutIcon" [size]="18" class="shrink-0" />
       @if (isSidebarOpen() || isMobileSidebarOpen()) {
-      <span>登出</span>
+      <span>Sign out</span>
       }
     </button>
   </div>
