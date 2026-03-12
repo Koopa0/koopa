@@ -54,9 +54,19 @@ export class CollectedComponent implements OnInit {
   protected readonly totalPages = computed(() =>
     Math.ceil(this.totalItems() / ITEMS_PER_PAGE),
   );
-  protected readonly pageArray = computed(() =>
-    Array.from({ length: this.totalPages() }, (_, i) => i + 1),
-  );
+  protected readonly visiblePages = computed(() => {
+    const total = this.totalPages();
+    const current = this.currentPage();
+    const windowSize = 10;
+    const half = Math.floor(windowSize / 2);
+    let start = Math.max(1, current - half);
+    let end = start + windowSize - 1;
+    if (end > total) {
+      end = total;
+      start = Math.max(1, end - windowSize + 1);
+    }
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  });
 
   // Icons
   protected readonly DatabaseIcon = Database;

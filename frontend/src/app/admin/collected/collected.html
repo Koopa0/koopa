@@ -105,16 +105,6 @@
             [class.opacity-50]="item.status === 'ignored'"
           >
             <div class="flex items-start gap-4">
-              <!-- Score Badge -->
-              <div class="shrink-0">
-                <span
-                  class="inline-flex h-10 w-10 items-center justify-center rounded-sm border text-sm font-bold"
-                  [class]="getScoreClass(item.ai_score)"
-                >
-                  {{ item.ai_score ?? '—' }}
-                </span>
-              </div>
-
               <!-- Content -->
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
@@ -132,12 +122,6 @@
                 @if (getDisplaySummary(item)) {
                   <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-400">
                     {{ getDisplaySummary(item) }}
-                  </p>
-                }
-
-                @if (item.ai_score_reason) {
-                  <p class="mt-1 line-clamp-1 text-xs text-zinc-500 italic">
-                    {{ item.ai_score_reason }}
                   </p>
                 }
 
@@ -200,10 +184,23 @@
             class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
             [disabled]="currentPage() === 1"
             (click)="onPageChange(currentPage() - 1)"
+            aria-label="Previous page"
           >
             <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
           </button>
-          @for (page of pageArray(); track page) {
+          @if (visiblePages()[0] > 1) {
+            <button
+              type="button"
+              class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
+              (click)="onPageChange(1)"
+            >
+              1
+            </button>
+            @if (visiblePages()[0] > 2) {
+              <span class="px-1 text-xs text-zinc-600">…</span>
+            }
+          }
+          @for (page of visiblePages(); track page) {
             <button
               type="button"
               class="rounded-sm border px-3 py-1.5 text-xs transition-colors"
@@ -215,14 +212,28 @@
               {{ page }}
             </button>
           }
+          @if (visiblePages()[visiblePages().length - 1] < totalPages()) {
+            @if (visiblePages()[visiblePages().length - 1] < totalPages() - 1) {
+              <span class="px-1 text-xs text-zinc-600">…</span>
+            }
+            <button
+              type="button"
+              class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
+              (click)="onPageChange(totalPages())"
+            >
+              {{ totalPages() }}
+            </button>
+          }
           <button
             type="button"
             class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
             [disabled]="currentPage() === totalPages()"
             (click)="onPageChange(currentPage() + 1)"
+            aria-label="Next page"
           >
             <lucide-icon [img]="ChevronRightIcon" [size]="16" />
           </button>
+          <span class="ml-2 text-xs text-zinc-500">{{ currentPage() }} / {{ totalPages() }}</span>
         </div>
       }
     }

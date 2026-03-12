@@ -251,6 +251,34 @@ CREATE TABLE goals (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Seed topics
+INSERT INTO topics (slug, name, sort_order) VALUES
+('go',             'Go',              1),
+('rust',           'Rust',            2),
+('angular',        'Angular',         3),
+('flutter',        'Flutter',         4),
+('dart',           'Dart',            5),
+('frontend',       'Frontend',        6),
+('mobile',         'Mobile',          7),
+('ai',             'AI',              8),
+('llm',            'LLM',             9),
+('ml',             'Machine Learning', 10),
+('claude',         'Claude',          11),
+('kubernetes',     'Kubernetes',      12),
+('docker',         'Docker',          13),
+('infra',          'Infrastructure',  14),
+('networking',     'Networking',      15),
+('workers',        'Workers',         16),
+('devops',         'DevOps',          17),
+('system-design',  'System Design',   18),
+('database',       'Database',        19),
+('security',       'Security',        20),
+('performance',    'Performance',     21),
+('design',         'Design',          22),
+('career',         'Career',          23),
+('open-source',    'Open Source',     24)
+ON CONFLICT (slug) DO NOTHING;
+
 -- Seed feeds
 INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
 ('https://www.ardanlabs.com/index.xml', 'Ardan Labs', 'daily',
@@ -300,9 +328,6 @@ INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
 ('https://huggingface.co/blog/feed.xml', 'Hugging Face Blog', 'daily',
  '{"ai","llm","ml"}',
  '{"deny_title_patterns":["(?i)community update","(?i)partnership"],"deny_tags":["community","partnerships"]}'),
-
-('https://stratechery.com/feed/', 'Stratechery', 'weekly',
- '{"strategy","tech-business"}', '{}'),
 
 ('https://blog.bytebytego.com/feed', 'ByteByteGo', 'weekly',
  '{"system-design"}',

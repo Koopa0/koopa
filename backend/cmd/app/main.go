@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -170,7 +169,6 @@ func run(logger *slog.Logger) error {
 		registry := flow.NewRegistry(
 			flow.NewMockContentReview(),
 			flow.NewMockContentPolish(),
-			flow.NewMockCollectScore(),
 			flow.NewMockDigestGenerate(),
 			flow.NewMockBookmarkGenerate(),
 			flow.NewMockMorningBrief(),
@@ -219,7 +217,6 @@ func run(logger *slog.Logger) error {
 			logger,
 		)
 		contentPolish := flow.NewContentPolish(g, claudeModel, contentStore, logger)
-		collectScore := flow.NewCollectScore(g, geminiModel, collectedStore, collectedStore, tokenBudget, logger)
 		digestGenerate := flow.NewDigestGenerate(g, geminiModel, contentStore, collectedStore, projectStore, tokenBudget, logger)
 		bookmarkGenerate := flow.NewBookmarkGenerate(g, geminiModel, collectedStore, tokenBudget, logger)
 		notionTasks := notion.NewTaskDB(notionClient, cfg.NotionTasksDB)
@@ -244,7 +241,7 @@ func run(logger *slog.Logger) error {
 			g, geminiModel, projectStore, githubFetcher, contentStore,
 			tokenBudget, logger,
 		)
-		registry := flow.NewRegistry(contentReview, contentPolish, collectScore, digestGenerate, bookmarkGenerate, morningBrief, weeklyReview, projectTrack, contentStrategy, buildLog)
+		registry := flow.NewRegistry(contentReview, contentPolish, digestGenerate, bookmarkGenerate, morningBrief, weeklyReview, projectTrack, contentStrategy, buildLog)
 		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	}
 
@@ -305,12 +302,6 @@ func run(logger *slog.Logger) error {
 				continue
 			}
 			totalNew += len(ids)
-			for _, id := range ids {
-				input, _ := json.Marshal(map[string]string{"collected_data_id": id.String()})
-				if submitErr := runner.Submit(ctx, "collect-and-score", input, nil); submitErr != nil {
-					logger.Error("cron: submitting score job", "collected_id", id, "error", submitErr)
-				}
-			}
 		}
 		if len(feeds) > 0 {
 			logger.Info("cron: "+label+" collect complete", "feeds", len(feeds), "new_items", totalNew)

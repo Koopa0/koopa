@@ -164,6 +164,36 @@ func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const archiveOrphanNotionGoals = `-- name: ArchiveOrphanNotionGoals :execrows
+UPDATE goals SET status = 'abandoned', updated_at = now()
+WHERE notion_page_id IS NOT NULL
+  AND notion_page_id != ALL($1::text[])
+  AND status != 'abandoned'
+`
+
+func (q *Queries) ArchiveOrphanNotionGoals(ctx context.Context, activeIds []string) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveOrphanNotionGoals, activeIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const archiveOrphanNotionProjects = `-- name: ArchiveOrphanNotionProjects :execrows
+UPDATE projects SET status = 'archived', updated_at = now()
+WHERE notion_page_id IS NOT NULL
+  AND notion_page_id != ALL($1::text[])
+  AND status != 'archived'
+`
+
+func (q *Queries) ArchiveOrphanNotionProjects(ctx context.Context, activeIds []string) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveOrphanNotionProjects, activeIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const autoDisableFeed = `-- name: AutoDisableFeed :exec
 UPDATE feeds SET
     enabled = false,

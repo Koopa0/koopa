@@ -19,11 +19,13 @@ import (
 type ProjectWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error)
 	UpdateLastActivity(ctx context.Context, notionPageID string) error
+	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
 // GoalWriter upserts goals from Notion data.
 type GoalWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error)
+	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
 // JobSubmitter submits flow runs for async processing.
@@ -184,6 +186,12 @@ func (h *Handler) SyncAll(ctx context.Context) {
 				}
 				synced++
 			}
+			// archive projects whose notion_page_id is no longer in Notion
+			if archived, err := h.projects.ArchiveOrphanNotion(ctx, pageIDs); err != nil {
+				h.logger.Error("notion sync: archiving orphan projects", "error", err)
+			} else if archived > 0 {
+				h.logger.Info("notion sync: archived orphan projects", "count", archived)
+			}
 		}
 	}
 
@@ -200,6 +208,12 @@ func (h *Handler) SyncAll(ctx context.Context) {
 					continue
 				}
 				synced++
+			}
+			// archive goals whose notion_page_id is no longer in Notion
+			if archived, err := h.goals.ArchiveOrphanNotion(ctx, pageIDs); err != nil {
+				h.logger.Error("notion sync: archiving orphan goals", "error", err)
+			} else if archived > 0 {
+				h.logger.Info("notion sync: archived orphan goals", "count", archived)
 			}
 		}
 	}

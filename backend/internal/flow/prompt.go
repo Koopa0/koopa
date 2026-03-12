@@ -14,9 +14,6 @@ var tagsSystemPrompt string
 //go:embed prompts/polish.txt
 var polishSystemPrompt string
 
-//go:embed prompts/score.txt
-var scoreSystemPrompt string
-
 //go:embed prompts/digest.txt
 var digestSystemPrompt string
 

@@ -116,7 +116,6 @@ func testServer(t *testing.T) *httptest.Server {
 	registry := flow.NewRegistry(
 		flow.NewMockContentReview(),
 		flow.NewMockContentPolish(),
-		flow.NewMockCollectScore(),
 		flow.NewMockDigestGenerate(),
 		flow.NewMockBookmarkGenerate(),
 	)

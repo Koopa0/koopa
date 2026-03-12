@@ -145,10 +145,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		}
 
 		// extract tags from RSS categories
-		var tags []string
-		for _, cat := range item.Categories {
-			tags = append(tags, cat)
-		}
+		tags := append([]string{}, item.Categories...)
 
 		if f.Filter.Skip(item.Link, item.Title, tags) {
 			continue

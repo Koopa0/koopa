@@ -94,3 +94,9 @@ WHERE notion_page_id = $1;
 
 -- name: NotionProjectPageIDs :many
 SELECT notion_page_id FROM projects WHERE notion_page_id IS NOT NULL ORDER BY title;
+
+-- name: ArchiveOrphanNotionProjects :execrows
+UPDATE projects SET status = 'archived', updated_at = now()
+WHERE notion_page_id IS NOT NULL
+  AND notion_page_id != ALL(@active_ids::text[])
+  AND status != 'archived';

@@ -19,3 +19,9 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     deadline    = EXCLUDED.deadline,
     updated_at  = now()
 RETURNING *;
+
+-- name: ArchiveOrphanNotionGoals :execrows
+UPDATE goals SET status = 'abandoned', updated_at = now()
+WHERE notion_page_id IS NOT NULL
+  AND notion_page_id != ALL(@active_ids::text[])
+  AND status != 'abandoned';

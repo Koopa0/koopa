@@ -8,11 +8,25 @@ import (
 	"encoding/json"
 
 	"github.com/firebase/genkit/go/core"
+	"github.com/google/uuid"
+
+	"github.com/koopa0/blog-backend/internal/collected"
 )
 
 // genkitFlow is a type alias for a Genkit flow that takes and returns raw JSON.
 // Every concrete flow stores one of these, created via genkit.DefineFlow in its constructor.
 type genkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
+
+// BudgetChecker checks whether token usage is within budget.
+type BudgetChecker interface {
+	Check(tokens int64) error
+	Add(tokens int64)
+}
+
+// CollectedReader reads collected data by ID.
+type CollectedReader interface {
+	CollectedDataByID(ctx context.Context, id uuid.UUID) (*collected.CollectedData, error)
+}
 
 // Flow executes a named AI processing pipeline.
 // Each concrete flow struct implements this interface directly,

@@ -80,6 +80,16 @@ func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// ArchiveOrphanNotion marks goals as abandoned if their notion_page_id
+// is not in the given list of active IDs. Returns the number of archived goals.
+func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
+	n, err := s.q.ArchiveOrphanNotionGoals(ctx, activeIDs)
+	if err != nil {
+		return 0, fmt.Errorf("archiving orphan notion goals: %w", err)
+	}
+	return n, nil
+}
+
 func rowToGoal(r db.Goal) Goal {
 	return Goal{
 		ID:           r.ID,

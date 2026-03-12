@@ -234,6 +234,16 @@ func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// ArchiveOrphanNotion marks projects as archived if their notion_page_id
+// is not in the given list of active IDs. Returns the number of archived projects.
+func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
+	n, err := s.q.ArchiveOrphanNotionProjects(ctx, activeIDs)
+	if err != nil {
+		return 0, fmt.Errorf("archiving orphan notion projects: %w", err)
+	}
+	return n, nil
+}
+
 func rowToProject(r db.Project) Project {
 	return Project{
 		ID:              r.ID,

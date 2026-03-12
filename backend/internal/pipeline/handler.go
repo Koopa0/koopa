@@ -252,7 +252,7 @@ func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 	go h.collectFeeds(context.WithoutCancel(r.Context()), feeds, schedule)
 }
 
-// collectFeeds fetches each feed and submits score jobs for new items.
+// collectFeeds fetches each feed and stores new items.
 func (h *Handler) collectFeeds(ctx context.Context, feeds []feed.Feed, schedule string) {
 	var totalNew int
 	for _, f := range feeds {
@@ -262,18 +262,6 @@ func (h *Handler) collectFeeds(ctx context.Context, feeds []feed.Feed, schedule 
 			continue
 		}
 		totalNew += len(ids)
-
-		// submit collect-and-score flow for each new item
-		for _, id := range ids {
-			input, err := json.Marshal(map[string]string{"collected_data_id": id.String()})
-			if err != nil {
-				h.logger.Error("marshaling score input", "collected_id", id, "error", err)
-				continue
-			}
-			if err := h.jobs.Submit(ctx, "collect-and-score", input, nil); err != nil {
-				h.logger.Error("submitting collect-and-score", "collected_id", id, "error", err)
-			}
-		}
 	}
 	h.logger.Info("collect pipeline complete",
 		"schedule", schedule,
