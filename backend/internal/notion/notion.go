@@ -7,10 +7,16 @@ import "errors"
 type Config struct {
 	APIKey        string
 	WebhookSecret string
-	ProjectsDB    string // data_source_id for C1 Projects
-	TasksDB       string // data_source_id for C2 Tasks
-	BooksDB       string // data_source_id for C5 Books
-	GoalsDB       string // data_source_id for Goals
+	// Database (View) IDs — used for Notion API calls (QueryDatabase, etc.).
+	ProjectsDB string
+	TasksDB    string
+	BooksDB    string
+	GoalsDB    string
+	// Data Source (Collection) IDs — used for webhook routing.
+	ProjectsDS string
+	TasksDS    string
+	BooksDS    string
+	GoalsDS    string
 }
 
 // WebhookPayload is the Notion webhook event structure (API version 2025-09-03).

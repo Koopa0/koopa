@@ -207,19 +207,19 @@ func (h *Handler) SyncAll(ctx context.Context) {
 	h.logger.Info("notion sync: complete", "synced", synced, "failed", failed)
 }
 
-// routeDatabase matches a data source ID to a known database.
+// routeDatabase matches a webhook data source ID to a known database.
 func (h *Handler) routeDatabase(dataSourceID string) database {
 	if dataSourceID == "" {
 		return dbUnknown
 	}
 	switch dataSourceID {
-	case h.config.ProjectsDB:
+	case h.config.ProjectsDS:
 		return dbProjects
-	case h.config.TasksDB:
+	case h.config.TasksDS:
 		return dbTasks
-	case h.config.BooksDB:
+	case h.config.BooksDS:
 		return dbBooks
-	case h.config.GoalsDB:
+	case h.config.GoalsDS:
 		return dbGoals
 	default:
 		return dbUnknown
