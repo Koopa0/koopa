@@ -480,6 +480,7 @@ type Feed struct {
 	ConsecutiveFailures int32      `json:"consecutive_failures"`
 	LastError           string     `json:"last_error"`
 	DisabledReason      string     `json:"disabled_reason"`
+	FilterConfig        []byte     `json:"filter_config"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
 }

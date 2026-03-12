@@ -503,6 +503,16 @@ func run(logger *slog.Logger) error {
 		Logger:    logger,
 	}
 
+	// sync on startup: catch anything missed while the server was down
+	go func() {
+		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		logger.Info("startup sync: starting")
+		pipelineHandler.SyncAllFromGitHub(syncCtx)
+		notionHandler.SyncAll(syncCtx)
+		logger.Info("startup sync: complete")
+	}()
+
 	return server.Run(ctx, server.Config{
 		Port:       cfg.Port,
 		CORSOrigin: cfg.CORSOrigin,

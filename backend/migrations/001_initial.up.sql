@@ -165,6 +165,7 @@ CREATE TABLE feeds (
     consecutive_failures INT NOT NULL DEFAULT 0,
     last_error           TEXT NOT NULL DEFAULT '',
     disabled_reason      TEXT NOT NULL DEFAULT '',
+    filter_config        JSONB NOT NULL DEFAULT '{}',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -249,4 +250,63 @@ CREATE TABLE goals (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Seed feeds
+INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
+('https://www.ardanlabs.com/index.xml', 'Ardan Labs', 'daily',
+ '{"go","rust","kubernetes","ai","devops","design"}',
+ '{"deny_paths":["/news","/events"]}'),
+
+('https://go.dev/blog/feed.atom', 'The Go Blog', 'daily',
+ '{"go"}', '{}'),
+
+('https://golangweekly.com/rss/', 'Golang Weekly', 'weekly',
+ '{"go"}',
+ '{"deny_title_patterns":["(?i)sponsored"]}'),
+
+('https://www.alexedwards.net/blog/feed', 'Alex Edwards', 'daily',
+ '{"go"}', '{}'),
+
+('https://blog.rust-lang.org/feed.xml', 'Rust Blog', 'daily',
+ '{"rust"}', '{}'),
+
+('https://this-week-in-rust.org/atom.xml', 'This Week in Rust', 'weekly',
+ '{"rust"}', '{}'),
+
+('https://blog.angular.dev/feed', 'Angular Blog', 'daily',
+ '{"angular","frontend"}', '{}'),
+
+('https://blog.flutter.dev/feed', 'Flutter Blog', 'daily',
+ '{"flutter","dart","mobile"}', '{}'),
+
+('https://blog.cloudflare.com/rss/', 'Cloudflare Blog', 'daily',
+ '{"infra","networking","workers"}',
+ '{"deny_title_patterns":["(?i)birthday week","(?i)speed week","(?i)developer week","(?i)security week","(?i)innovation week","(?i)impact week","(?i)welcome to .* week","(?i)new pricing","(?i)announcing .* plan"],"deny_tags":["product-news","partners","case-study","legal"]}'),
+
+('https://simonwillison.net/atom/everything/', 'Simon Willison''s Weblog', 'daily',
+ '{"ai","llm"}', '{}'),
+
+('https://research.google/blog/rss/', 'Google Research Blog', 'daily',
+ '{"ai","ml"}',
+ '{"deny_title_patterns":["(?i)health","(?i)medical","(?i)quantum","(?i)biology","(?i)climate","(?i)flood","(?i)wildfire"]}'),
+
+('https://www.latent.space/feed', 'Latent Space', 'weekly',
+ '{"ai","llm"}', '{}'),
+
+('https://www.anthropic.com/blog/rss', 'Anthropic Blog', 'daily',
+ '{"ai","llm","claude"}',
+ '{"deny_title_patterns":["(?i)career","(?i)hiring","(?i)join our team"],"deny_tags":["careers"]}'),
+
+('https://huggingface.co/blog/feed.xml', 'Hugging Face Blog', 'daily',
+ '{"ai","llm","ml"}',
+ '{"deny_title_patterns":["(?i)community update","(?i)partnership"],"deny_tags":["community","partnerships"]}'),
+
+('https://stratechery.com/feed/', 'Stratechery', 'weekly',
+ '{"strategy","tech-business"}', '{}'),
+
+('https://blog.bytebytego.com/feed', 'ByteByteGo', 'weekly',
+ '{"system-design"}',
+ '{"deny_title_patterns":["(?i)black friday","(?i)discount","(?i)course launch"]}')
+
+ON CONFLICT (url) DO NOTHING;
 

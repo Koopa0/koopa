@@ -204,6 +204,13 @@ export interface ApiReviewItem {
 }
 
 /** Admin — RSS Feed */
+export interface FeedFilterConfig {
+  deny_paths?: string[];
+  deny_title_patterns?: string[];
+  allow_tags?: string[];
+  deny_tags?: string[];
+}
+
 export interface ApiFeed {
   id: string;
   url: string;
@@ -217,6 +224,7 @@ export interface ApiFeed {
   consecutive_failures: number;
   last_error: string;
   disabled_reason: string;
+  filter_config: FeedFilterConfig;
   created_at: string;
   updated_at: string;
 }
@@ -228,6 +236,7 @@ export interface ApiCreateFeedRequest {
   name: string;
   schedule: FeedSchedule;
   topics?: string[];
+  filter_config?: FeedFilterConfig;
 }
 
 export interface ApiUpdateFeedRequest {
@@ -236,6 +245,7 @@ export interface ApiUpdateFeedRequest {
   schedule?: string;
   topics?: string[];
   enabled?: boolean;
+  filter_config?: FeedFilterConfig;
 }
 
 /** Admin — Collected items */

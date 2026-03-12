@@ -102,7 +102,11 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 			return nil, fmt.Errorf("rate limiter: %w", err)
 		}
 
-		body := map[string]any{"page_size": 100}
+		body := map[string]any{
+			"page_size": 100,
+			"in_trash":  false,
+			"archived":  false,
+		}
 		if filter != nil {
 			body["filter"] = json.RawMessage(filter)
 		}

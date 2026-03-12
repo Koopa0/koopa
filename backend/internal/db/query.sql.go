@@ -688,18 +688,19 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 }
 
 const createFeed = `-- name: CreateFeed :one
-INSERT INTO feeds (url, name, schedule, topics)
-VALUES ($1, $2, $3, $4)
+INSERT INTO feeds (url, name, schedule, topics, filter_config)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING id, url, name, schedule, topics, enabled, etag, last_modified,
           last_fetched_at, consecutive_failures, last_error, disabled_reason,
-          created_at, updated_at
+          filter_config, created_at, updated_at
 `
 
 type CreateFeedParams struct {
-	Url      string   `json:"url"`
-	Name     string   `json:"name"`
-	Schedule string   `json:"schedule"`
-	Topics   []string `json:"topics"`
+	Url          string   `json:"url"`
+	Name         string   `json:"name"`
+	Schedule     string   `json:"schedule"`
+	Topics       []string `json:"topics"`
+	FilterConfig []byte   `json:"filter_config"`
 }
 
 func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error) {
@@ -708,6 +709,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		arg.Name,
 		arg.Schedule,
 		arg.Topics,
+		arg.FilterConfig,
 	)
 	var i Feed
 	err := row.Scan(
@@ -723,6 +725,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.ConsecutiveFailures,
 		&i.LastError,
 		&i.DisabledReason,
+		&i.FilterConfig,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1068,7 +1071,7 @@ func (q *Queries) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 const enabledFeedsBySchedule = `-- name: EnabledFeedsBySchedule :many
 SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       created_at, updated_at
+       filter_config, created_at, updated_at
 FROM feeds WHERE enabled = true AND schedule = $1
 `
 
@@ -1094,6 +1097,7 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 			&i.ConsecutiveFailures,
 			&i.LastError,
 			&i.DisabledReason,
+			&i.FilterConfig,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1110,7 +1114,7 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 const feedByID = `-- name: FeedByID :one
 SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       created_at, updated_at
+       filter_config, created_at, updated_at
 FROM feeds WHERE id = $1
 `
 
@@ -1130,6 +1134,7 @@ func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (Feed, error) {
 		&i.ConsecutiveFailures,
 		&i.LastError,
 		&i.DisabledReason,
+		&i.FilterConfig,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1139,7 +1144,7 @@ func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (Feed, error) {
 const feeds = `-- name: Feeds :many
 SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       created_at, updated_at
+       filter_config, created_at, updated_at
 FROM feeds
 WHERE ($1::text IS NULL OR schedule = $1)
 ORDER BY created_at DESC
@@ -1167,6 +1172,7 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 			&i.ConsecutiveFailures,
 			&i.LastError,
 			&i.DisabledReason,
+			&i.FilterConfig,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -2742,20 +2748,22 @@ UPDATE feeds SET
     schedule = COALESCE($4, schedule),
     topics = COALESCE($5, topics),
     enabled = COALESCE($6, enabled),
+    filter_config = COALESCE($7, filter_config),
     updated_at = now()
 WHERE id = $1
 RETURNING id, url, name, schedule, topics, enabled, etag, last_modified,
           last_fetched_at, consecutive_failures, last_error, disabled_reason,
-          created_at, updated_at
+          filter_config, created_at, updated_at
 `
 
 type UpdateFeedParams struct {
-	ID       uuid.UUID `json:"id"`
-	Url      *string   `json:"url"`
-	Name     *string   `json:"name"`
-	Schedule *string   `json:"schedule"`
-	Topics   []string  `json:"topics"`
-	Enabled  *bool     `json:"enabled"`
+	ID           uuid.UUID       `json:"id"`
+	Url          *string         `json:"url"`
+	Name         *string         `json:"name"`
+	Schedule     *string         `json:"schedule"`
+	Topics       []string        `json:"topics"`
+	Enabled      *bool           `json:"enabled"`
+	FilterConfig json.RawMessage `json:"filter_config"`
 }
 
 func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error) {
@@ -2766,6 +2774,7 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 		arg.Schedule,
 		arg.Topics,
 		arg.Enabled,
+		arg.FilterConfig,
 	)
 	var i Feed
 	err := row.Scan(
@@ -2781,6 +2790,7 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 		&i.ConsecutiveFailures,
 		&i.LastError,
 		&i.DisabledReason,
+		&i.FilterConfig,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

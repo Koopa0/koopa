@@ -95,25 +95,6 @@ export class AdminLayoutComponent {
       ],
     },
     {
-      title: '內容管理',
-      items: [
-        {
-          label: '新增文章',
-          route: '/admin/editor',
-          icon: FileText,
-          exact: true,
-          disabled: false,
-        },
-        {
-          label: '新增專案',
-          route: '/admin/project-editor',
-          icon: FolderOpen,
-          exact: true,
-          disabled: false,
-        },
-      ],
-    },
-    {
       title: '資料管線',
       items: [
         {

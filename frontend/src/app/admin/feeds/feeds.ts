@@ -31,6 +31,7 @@ import type {
   ApiCreateFeedRequest,
   ApiUpdateFeedRequest,
   FeedSchedule,
+  FeedFilterConfig,
   ApiTopic,
 } from '../../core/models';
 
@@ -71,6 +72,10 @@ export class FeedsComponent implements OnInit {
   protected readonly formUrl = signal('');
   protected readonly formSchedule = signal<FeedSchedule>('daily');
   protected readonly formTopics = signal<string[]>([]);
+  protected readonly formDenyPaths = signal<string[]>([]);
+  protected readonly formDenyTitlePatterns = signal<string[]>([]);
+  protected readonly formAllowTags = signal<string[]>([]);
+  protected readonly formDenyTags = signal<string[]>([]);
 
   // Delete confirmation
   protected readonly deleteTarget = signal<ApiFeed | null>(null);
@@ -135,6 +140,7 @@ export class FeedsComponent implements OnInit {
     this.formUrl.set('');
     this.formSchedule.set('daily');
     this.formTopics.set([]);
+    this.resetFilterConfig({});
     this.isDialogOpen.set(true);
   }
 
@@ -145,6 +151,7 @@ export class FeedsComponent implements OnInit {
     this.formUrl.set(feed.url);
     this.formSchedule.set(feed.schedule);
     this.formTopics.set([...feed.topics]);
+    this.resetFilterConfig(feed.filter_config);
     this.isDialogOpen.set(true);
   }
 
@@ -174,12 +181,73 @@ export class FeedsComponent implements OnInit {
     }
   }
 
+  protected addFilterItem(field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags', value: string): void {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+    const signalMap = {
+      denyPaths: this.formDenyPaths,
+      denyTitlePatterns: this.formDenyTitlePatterns,
+      allowTags: this.formAllowTags,
+      denyTags: this.formDenyTags,
+    } as const;
+    const sig = signalMap[field];
+    if (!sig().includes(trimmed)) {
+      sig.update((list) => [...list, trimmed]);
+    }
+  }
+
+  protected removeFilterItem(field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags', index: number): void {
+    const signalMap = {
+      denyPaths: this.formDenyPaths,
+      denyTitlePatterns: this.formDenyTitlePatterns,
+      allowTags: this.formAllowTags,
+      denyTags: this.formDenyTags,
+    } as const;
+    signalMap[field].update((list) => list.filter((_, i) => i !== index));
+  }
+
+  protected onFilterKeydown(event: KeyboardEvent, field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags'): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const input = event.target as HTMLInputElement;
+      this.addFilterItem(field, input.value);
+      input.value = '';
+    }
+  }
+
+  private resetFilterConfig(config: FeedFilterConfig): void {
+    this.formDenyPaths.set([...(config.deny_paths ?? [])]);
+    this.formDenyTitlePatterns.set([...(config.deny_title_patterns ?? [])]);
+    this.formAllowTags.set([...(config.allow_tags ?? [])]);
+    this.formDenyTags.set([...(config.deny_tags ?? [])]);
+  }
+
+  private buildFilterConfig(): FeedFilterConfig {
+    const config: FeedFilterConfig = {};
+    if (this.formDenyPaths().length > 0) {
+      config.deny_paths = this.formDenyPaths();
+    }
+    if (this.formDenyTitlePatterns().length > 0) {
+      config.deny_title_patterns = this.formDenyTitlePatterns();
+    }
+    if (this.formAllowTags().length > 0) {
+      config.allow_tags = this.formAllowTags();
+    }
+    if (this.formDenyTags().length > 0) {
+      config.deny_tags = this.formDenyTags();
+    }
+    return config;
+  }
+
   protected saveFeed(): void {
     if (!this.formName() || !this.formUrl()) {
       return;
     }
 
     this.isSaving.set(true);
+    const filterConfig = this.buildFilterConfig();
 
     if (this.dialogMode() === 'create') {
       const body: ApiCreateFeedRequest = {
@@ -187,6 +255,7 @@ export class FeedsComponent implements OnInit {
         name: this.formName(),
         schedule: this.formSchedule(),
         topics: this.formTopics(),
+        filter_config: filterConfig,
       };
       this.feedService
         .createFeed(body)
@@ -213,6 +282,7 @@ export class FeedsComponent implements OnInit {
         name: this.formName(),
         schedule: this.formSchedule(),
         topics: this.formTopics(),
+        filter_config: filterConfig,
       };
       this.feedService
         .updateFeed(feed.id, body)

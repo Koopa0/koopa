@@ -75,20 +75,6 @@
           }
           Bookmark
         </button>
-        <a
-          routerLink="/admin/project-editor"
-          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-800"
-        >
-          <lucide-icon [img]="PlusIcon" [size]="14" />
-          New Project
-        </a>
-        <a
-          routerLink="/admin/editor"
-          class="inline-flex items-center gap-2 rounded-sm bg-white px-3 py-2 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
-        >
-          <lucide-icon [img]="PlusIcon" [size]="14" />
-          New Article
-        </a>
       </div>
     </div>
   </div>
@@ -230,13 +216,6 @@
               <td class="px-6 py-4">
                 <div class="flex items-center gap-1">
                   <a
-                    [routerLink]="['/admin/editor', article.id]"
-                    class="rounded-sm p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-                    aria-label="Edit article"
-                  >
-                    <lucide-icon [img]="EditIcon" [size]="14" />
-                  </a>
-                  <a
                     [routerLink]="['/articles', article.id]"
                     class="rounded-sm p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                     aria-label="Preview article"
@@ -262,14 +241,7 @@
       <div class="flex flex-col items-center gap-3 py-16 text-center">
         <lucide-icon [img]="FileTextIcon" [size]="40" class="text-zinc-700" />
         <h3 class="text-sm font-medium text-zinc-300">No articles yet</h3>
-        <p class="text-xs text-zinc-500">Start writing your first article!</p>
-        <a
-          routerLink="/admin/editor"
-          class="mt-2 inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
-        >
-          <lucide-icon [img]="PlusIcon" [size]="16" />
-          New Article
-        </a>
+        <p class="text-xs text-zinc-500">透過 Obsidian 或 Notion 同步來新增內容</p>
       </div>
       }
     </div>
@@ -283,13 +255,6 @@
           <lucide-icon [img]="FolderOpenIcon" [size]="16" />
           Project Management
         </h2>
-        <a
-          routerLink="/admin/project-editor"
-          class="inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-300"
-        >
-          <lucide-icon [img]="PlusIcon" [size]="14" />
-          New Project
-        </a>
       </div>
 
       @if (projects().length > 0) {
@@ -361,13 +326,6 @@
               <td class="px-6 py-4">
                 <div class="flex items-center gap-1">
                   <a
-                    [routerLink]="['/admin/project-editor', project.id]"
-                    class="rounded-sm p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-                    aria-label="Edit project"
-                  >
-                    <lucide-icon [img]="EditIcon" [size]="14" />
-                  </a>
-                  <a
                     [routerLink]="['/projects', project.slug]"
                     class="rounded-sm p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                     aria-label="Preview project"
@@ -393,14 +351,7 @@
       <div class="flex flex-col items-center gap-3 py-16 text-center">
         <lucide-icon [img]="FolderOpenIcon" [size]="40" class="text-zinc-700" />
         <h3 class="text-sm font-medium text-zinc-300">No projects yet</h3>
-        <p class="text-xs text-zinc-500">Add your first project!</p>
-        <a
-          routerLink="/admin/project-editor"
-          class="mt-2 inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
-        >
-          <lucide-icon [img]="PlusIcon" [size]="16" />
-          New Project
-        </a>
+        <p class="text-xs text-zinc-500">透過 Notion 同步來新增專案</p>
       </div>
       }
     </div>

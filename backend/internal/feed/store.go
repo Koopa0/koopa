@@ -2,6 +2,7 @@ package feed
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -80,11 +81,16 @@ func (s *Store) CreateFeed(ctx context.Context, p CreateParams) (*Feed, error) {
 	if topics == nil {
 		topics = []string{}
 	}
+	filterJSON, err := json.Marshal(p.Filter)
+	if err != nil {
+		filterJSON = []byte("{}")
+	}
 	r, err := s.q.CreateFeed(ctx, db.CreateFeedParams{
-		Url:      p.URL,
-		Name:     p.Name,
-		Schedule: p.Schedule,
-		Topics:   topics,
+		Url:          p.URL,
+		Name:         p.Name,
+		Schedule:     p.Schedule,
+		Topics:       topics,
+		FilterConfig: filterJSON,
 	})
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
@@ -98,13 +104,18 @@ func (s *Store) CreateFeed(ctx context.Context, p CreateParams) (*Feed, error) {
 
 // UpdateFeed updates a feed.
 func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p UpdateParams) (*Feed, error) {
+	var filterJSON json.RawMessage
+	if p.Filter != nil {
+		filterJSON, _ = json.Marshal(p.Filter)
+	}
 	r, err := s.q.UpdateFeed(ctx, db.UpdateFeedParams{
-		ID:       id,
-		Url:      p.URL,
-		Name:     p.Name,
-		Schedule: p.Schedule,
-		Topics:   p.Topics,
-		Enabled:  p.Enabled,
+		ID:           id,
+		Url:          p.URL,
+		Name:         p.Name,
+		Schedule:     p.Schedule,
+		Topics:       p.Topics,
+		Enabled:      p.Enabled,
+		FilterConfig: filterJSON,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -187,6 +198,7 @@ func dbToFeed(r db.Feed) Feed {
 		ConsecutiveFailures: int(r.ConsecutiveFailures),
 		LastError:           r.LastError,
 		DisabledReason:      r.DisabledReason,
+		Filter:              ParseFilterConfig(r.FilterConfig),
 		CreatedAt:           r.CreatedAt,
 		UpdatedAt:           r.UpdatedAt,
 	}

@@ -85,6 +85,30 @@
                       }
                     </div>
                   }
+                  @if ((feed.filter_config.deny_paths?.length ?? 0) + (feed.filter_config.deny_title_patterns?.length ?? 0) + (feed.filter_config.allow_tags?.length ?? 0) + (feed.filter_config.deny_tags?.length ?? 0) > 0) {
+                    <div class="mt-1 flex flex-wrap gap-1">
+                      @for (path of feed.filter_config.deny_paths ?? []; track $index) {
+                        <span class="rounded-sm border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
+                          −{{ path }}
+                        </span>
+                      }
+                      @for (pattern of feed.filter_config.deny_title_patterns ?? []; track $index) {
+                        <span class="rounded-sm border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
+                          −{{ pattern }}
+                        </span>
+                      }
+                      @for (tag of feed.filter_config.allow_tags ?? []; track $index) {
+                        <span class="rounded-sm border border-emerald-800/40 bg-emerald-900/15 px-1.5 py-0.5 text-[10px] text-emerald-400">
+                          +{{ tag }}
+                        </span>
+                      }
+                      @for (tag of feed.filter_config.deny_tags ?? []; track $index) {
+                        <span class="rounded-sm border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
+                          −{{ tag }}
+                        </span>
+                      }
+                    </div>
+                  }
                 </td>
                 <td class="hidden px-4 py-3 sm:table-cell">
                   <span
@@ -255,6 +279,95 @@
             </div>
           </div>
         }
+
+        <!-- Filter Config -->
+        <div class="space-y-3 rounded-sm border border-zinc-800 bg-zinc-800/30 p-4">
+          <p class="text-sm font-medium text-zinc-300">過濾規則</p>
+
+          <!-- Deny Paths -->
+          <div>
+            <label class="mb-1 block text-xs text-zinc-400">排除路徑 (deny_paths)</label>
+            <div class="flex flex-wrap gap-1.5">
+              @for (path of formDenyPaths(); track $index) {
+                <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
+                  {{ path }}
+                  <button type="button" class="hover:text-red-300" (click)="removeFilterItem('denyPaths', $index)" aria-label="移除">
+                    <lucide-icon [img]="XIcon" [size]="12" />
+                  </button>
+                </span>
+              }
+            </div>
+            <input
+              type="text"
+              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              placeholder="/news, /events … 按 Enter 新增"
+              (keydown)="onFilterKeydown($event, 'denyPaths')"
+            />
+          </div>
+
+          <!-- Deny Title Patterns -->
+          <div>
+            <label class="mb-1 block text-xs text-zinc-400">排除標題 (regex)</label>
+            <div class="flex flex-wrap gap-1.5">
+              @for (pattern of formDenyTitlePatterns(); track $index) {
+                <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
+                  {{ pattern }}
+                  <button type="button" class="hover:text-red-300" (click)="removeFilterItem('denyTitlePatterns', $index)" aria-label="移除">
+                    <lucide-icon [img]="XIcon" [size]="12" />
+                  </button>
+                </span>
+              }
+            </div>
+            <input
+              type="text"
+              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              placeholder="(?i)sponsored … 按 Enter 新增"
+              (keydown)="onFilterKeydown($event, 'denyTitlePatterns')"
+            />
+          </div>
+
+          <!-- Allow Tags -->
+          <div>
+            <label class="mb-1 block text-xs text-zinc-400">允許標籤 (allow_tags)</label>
+            <div class="flex flex-wrap gap-1.5">
+              @for (tag of formAllowTags(); track $index) {
+                <span class="inline-flex items-center gap-1 rounded-sm border border-emerald-800/50 bg-emerald-900/20 px-2 py-0.5 text-xs text-emerald-400">
+                  {{ tag }}
+                  <button type="button" class="hover:text-emerald-300" (click)="removeFilterItem('allowTags', $index)" aria-label="移除">
+                    <lucide-icon [img]="XIcon" [size]="12" />
+                  </button>
+                </span>
+              }
+            </div>
+            <input
+              type="text"
+              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              placeholder="go, rust … 按 Enter 新增"
+              (keydown)="onFilterKeydown($event, 'allowTags')"
+            />
+          </div>
+
+          <!-- Deny Tags -->
+          <div>
+            <label class="mb-1 block text-xs text-zinc-400">排除標籤 (deny_tags)</label>
+            <div class="flex flex-wrap gap-1.5">
+              @for (tag of formDenyTags(); track $index) {
+                <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
+                  {{ tag }}
+                  <button type="button" class="hover:text-red-300" (click)="removeFilterItem('denyTags', $index)" aria-label="移除">
+                    <lucide-icon [img]="XIcon" [size]="12" />
+                  </button>
+                </span>
+              }
+            </div>
+            <input
+              type="text"
+              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              placeholder="careers, legal … 按 Enter 新增"
+              (keydown)="onFilterKeydown($event, 'denyTags')"
+            />
+          </div>
+        </div>
       </div>
 
       <div class="flex justify-end gap-3 border-t border-zinc-800 px-6 py-4">

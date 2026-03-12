@@ -126,34 +126,6 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'editor',
-        loadComponent: () =>
-          import('./admin/article-editor/article-editor').then(
-            (m) => m.ArticleEditorComponent,
-          ),
-      },
-      {
-        path: 'editor/:id',
-        loadComponent: () =>
-          import('./admin/article-editor/article-editor').then(
-            (m) => m.ArticleEditorComponent,
-          ),
-      },
-      {
-        path: 'project-editor',
-        loadComponent: () =>
-          import('./admin/project-editor/project-editor').then(
-            (m) => m.ProjectEditorComponent,
-          ),
-      },
-      {
-        path: 'project-editor/:id',
-        loadComponent: () =>
-          import('./admin/project-editor/project-editor').then(
-            (m) => m.ProjectEditorComponent,
-          ),
-      },
-      {
         path: 'flow-runs',
         loadComponent: () =>
           import('./admin/flow-runs/flow-runs').then(
