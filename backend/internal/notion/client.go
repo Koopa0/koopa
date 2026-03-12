@@ -91,9 +91,9 @@ type databaseQueryResponse struct {
 	NextCursor *string               `json:"next_cursor"`
 }
 
-// QueryDatabase queries a Notion database with an optional filter.
-// filter should be a JSON-serializable filter object, or nil for no filter.
-func (c *Client) QueryDatabase(ctx context.Context, databaseID string, filter json.RawMessage) ([]DatabaseQueryResult, error) {
+// QueryDataSource queries a Notion data source with an optional filter.
+// Uses the 2025-09-03 endpoint: POST /v1/data_sources/{data_source_id}/query.
+func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filter json.RawMessage) ([]DatabaseQueryResult, error) {
 	var allResults []DatabaseQueryResult
 	var cursor *string
 
@@ -115,7 +115,7 @@ func (c *Client) QueryDatabase(ctx context.Context, databaseID string, filter js
 			return nil, fmt.Errorf("marshaling query body: %w", err)
 		}
 
-		endpoint := fmt.Sprintf("%s/v1/databases/%s/query", notionBaseURL, databaseID)
+		endpoint := fmt.Sprintf("%s/v1/data_sources/%s/query", notionBaseURL, dataSourceID)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		if err != nil {
 			return nil, fmt.Errorf("creating query request: %w", err)
@@ -124,7 +124,7 @@ func (c *Client) QueryDatabase(ctx context.Context, databaseID string, filter js
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("querying database %s: %w", databaseID, err)
+			return nil, fmt.Errorf("querying data source %s: %w", dataSourceID, err)
 		}
 
 		// Decode before status check: body is consumed regardless, avoiding a separate drain step.
@@ -133,10 +133,10 @@ func (c *Client) QueryDatabase(ctx context.Context, databaseID string, filter js
 		decodeErr := json.NewDecoder(resp.Body).Decode(&qr)
 		resp.Body.Close() //nolint:errcheck,gosec // best-effort close on read-only HTTP response
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("notion api returned %d for database query %s", resp.StatusCode, databaseID)
+			return nil, fmt.Errorf("notion api returned %d for data source query %s", resp.StatusCode, dataSourceID)
 		}
 		if decodeErr != nil {
-			return nil, fmt.Errorf("decoding database query response: %w", decodeErr)
+			return nil, fmt.Errorf("decoding data source query response: %w", decodeErr)
 		}
 
 		allResults = append(allResults, qr.Results...)
@@ -150,9 +150,9 @@ func (c *Client) QueryDatabase(ctx context.Context, databaseID string, filter js
 	return allResults, nil
 }
 
-// QueryPageIDs queries a database and returns just the page IDs.
-func (c *Client) QueryPageIDs(ctx context.Context, databaseID string) ([]string, error) {
-	results, err := c.QueryDatabase(ctx, databaseID, nil)
+// QueryPageIDs queries a data source and returns just the page IDs.
+func (c *Client) QueryPageIDs(ctx context.Context, dataSourceID string) ([]string, error) {
+	results, err := c.QueryDataSource(ctx, dataSourceID, nil)
 	if err != nil {
 		return nil, err
 	}

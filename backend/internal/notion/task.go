@@ -29,7 +29,7 @@ func (t *TaskDB) PendingTasks(ctx context.Context) ([]flow.PendingTask, error) {
 		}
 	}`)
 
-	results, err := t.client.QueryDatabase(ctx, t.databaseID, filter)
+	results, err := t.client.QueryDataSource(ctx, t.databaseID, filter)
 	if err != nil {
 		return nil, fmt.Errorf("querying notion tasks: %w", err)
 	}

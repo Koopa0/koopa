@@ -4,19 +4,15 @@ package notion
 import "errors"
 
 // Config holds Notion integration configuration.
+// All database IDs are Data Source (Collection) IDs, used for both
+// API queries (POST /v1/data_sources/{id}/query) and webhook routing.
 type Config struct {
 	APIKey        string
 	WebhookSecret string
-	// Database (View) IDs — used for Notion API calls (QueryDatabase, etc.).
-	ProjectsDB string
-	TasksDB    string
-	BooksDB    string
-	GoalsDB    string
-	// Data Source (Collection) IDs — used for webhook routing.
-	ProjectsDS string
-	TasksDS    string
-	BooksDS    string
-	GoalsDS    string
+	ProjectsDB    string // Data Source ID for C1 Projects
+	TasksDB       string // Data Source ID for C2 Tasks
+	BooksDB       string // Data Source ID for C5 Books
+	GoalsDB       string // Data Source ID for Goals
 }
 
 // WebhookPayload is the Notion webhook event structure (API version 2025-09-03).

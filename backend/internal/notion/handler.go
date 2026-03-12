@@ -213,13 +213,13 @@ func (h *Handler) routeDatabase(dataSourceID string) database {
 		return dbUnknown
 	}
 	switch dataSourceID {
-	case h.config.ProjectsDS:
+	case h.config.ProjectsDB:
 		return dbProjects
-	case h.config.TasksDS:
+	case h.config.TasksDB:
 		return dbTasks
-	case h.config.BooksDS:
+	case h.config.BooksDB:
 		return dbBooks
-	case h.config.GoalsDS:
+	case h.config.GoalsDB:
 		return dbGoals
 	default:
 		return dbUnknown

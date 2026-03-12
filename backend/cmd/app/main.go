@@ -66,10 +66,6 @@ type config struct {
 	NotionTasksDB       string
 	NotionBooksDB       string
 	NotionGoalsDB       string
-	NotionProjectsDS    string
-	NotionTasksDS       string
-	NotionBooksDS       string
-	NotionGoalsDS       string
 	LINEChannelToken    string
 	LINEUserID          string
 	TelegramBotToken    string
@@ -443,10 +439,6 @@ func run(logger *slog.Logger) error {
 		TasksDB:       cfg.NotionTasksDB,
 		BooksDB:       cfg.NotionBooksDB,
 		GoalsDB:       cfg.NotionGoalsDB,
-		ProjectsDS:    cfg.NotionProjectsDS,
-		TasksDS:       cfg.NotionTasksDS,
-		BooksDS:       cfg.NotionBooksDS,
-		GoalsDS:       cfg.NotionGoalsDS,
 	}, logger)
 	notionHandler.SetDedup(webhookDedup)
 
@@ -556,10 +548,6 @@ func loadConfig(logger *slog.Logger) config {
 	cfg.NotionTasksDB = os.Getenv("NOTION_TASKS_DB")
 	cfg.NotionBooksDB = os.Getenv("NOTION_BOOKS_DB")
 	cfg.NotionGoalsDB = os.Getenv("NOTION_GOALS_DB")
-	cfg.NotionProjectsDS = os.Getenv("NOTION_PROJECTS_DS")
-	cfg.NotionTasksDS = os.Getenv("NOTION_TASKS_DS")
-	cfg.NotionBooksDS = os.Getenv("NOTION_BOOKS_DS")
-	cfg.NotionGoalsDS = os.Getenv("NOTION_GOALS_DS")
 
 	// Google OAuth
 	cfg.GoogleClientID = requireEnv("GOOGLE_CLIENT_ID", logger)
