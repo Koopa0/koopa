@@ -17,7 +17,7 @@ import (
 const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC
@@ -48,6 +48,7 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 			&i.GithubUrl,
 			&i.LiveUrl,
 			&i.Featured,
+			&i.Public,
 			&i.SortOrder,
 			&i.Status,
 			&i.NotionPageID,
@@ -762,11 +763,11 @@ func (q *Queries) CreateFlowRun(ctx context.Context, arg CreateFlowRunParams) (F
 
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
-                      problem, solution, architecture, results, github_url, live_url, featured, sort_order, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                      problem, solution, architecture, results, github_url, live_url, featured, public, sort_order, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at
 `
 
@@ -785,6 +786,7 @@ type CreateProjectParams struct {
 	GithubUrl       *string       `json:"github_url"`
 	LiveUrl         *string       `json:"live_url"`
 	Featured        bool          `json:"featured"`
+	Public          bool          `json:"public"`
 	SortOrder       int32         `json:"sort_order"`
 	Status          ProjectStatus `json:"status"`
 }
@@ -805,6 +807,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.GithubUrl,
 		arg.LiveUrl,
 		arg.Featured,
+		arg.Public,
 		arg.SortOrder,
 		arg.Status,
 	)
@@ -825,6 +828,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
+		&i.Public,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -1584,7 +1588,7 @@ func (q *Queries) PendingRunExists(ctx context.Context, arg PendingRunExistsPara
 const projectByRepo = `-- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE repo = $1
 `
@@ -1608,6 +1612,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
+		&i.Public,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -1624,7 +1629,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 const projectBySlug = `-- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE slug = $1
 `
@@ -1648,6 +1653,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
+		&i.Public,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -1664,7 +1670,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title
 `
@@ -1694,6 +1700,62 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.GithubUrl,
 			&i.LiveUrl,
 			&i.Featured,
+			&i.Public,
+			&i.SortOrder,
+			&i.Status,
+			&i.NotionPageID,
+			&i.Repo,
+			&i.Area,
+			&i.Deadline,
+			&i.LastActivityAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const publicProjects = `-- name: PublicProjects :many
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       created_at, updated_at
+FROM projects WHERE public = true
+ORDER BY featured DESC, sort_order, title
+`
+
+func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
+	rows, err := q.db.Query(ctx, publicProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Project{}
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Description,
+			&i.LongDescription,
+			&i.Role,
+			&i.TechStack,
+			&i.Highlights,
+			&i.Problem,
+			&i.Solution,
+			&i.Architecture,
+			&i.Results,
+			&i.GithubUrl,
+			&i.LiveUrl,
+			&i.Featured,
+			&i.Public,
 			&i.SortOrder,
 			&i.Status,
 			&i.NotionPageID,
@@ -2781,13 +2843,14 @@ UPDATE projects SET
     github_url = COALESCE($13, github_url),
     live_url = COALESCE($14, live_url),
     featured = COALESCE($15, featured),
-    sort_order = COALESCE($16, sort_order),
-    status = COALESCE($17::project_status, status),
+    public = COALESCE($16, public),
+    sort_order = COALESCE($17, sort_order),
+    status = COALESCE($18::project_status, status),
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at
 `
 
@@ -2807,6 +2870,7 @@ type UpdateProjectParams struct {
 	GithubUrl       *string           `json:"github_url"`
 	LiveUrl         *string           `json:"live_url"`
 	Featured        *bool             `json:"featured"`
+	Public          *bool             `json:"public"`
 	SortOrder       *int32            `json:"sort_order"`
 	Status          NullProjectStatus `json:"status"`
 }
@@ -2828,6 +2892,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.GithubUrl,
 		arg.LiveUrl,
 		arg.Featured,
+		arg.Public,
 		arg.SortOrder,
 		arg.Status,
 	)
@@ -2848,6 +2913,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
+		&i.Public,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -3021,7 +3087,7 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     updated_at = now()
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at
 `
 
@@ -3062,6 +3128,7 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
+		&i.Public,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,

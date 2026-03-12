@@ -44,6 +44,19 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
+// PublicProjects returns only public projects ordered by featured status and sort order.
+func (s *Store) PublicProjects(ctx context.Context) ([]Project, error) {
+	rows, err := s.q.PublicProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing public projects: %w", err)
+	}
+	projects := make([]Project, len(rows))
+	for i, r := range rows {
+		projects[i] = rowToProject(r)
+	}
+	return projects, nil
+}
+
 // ProjectBySlug returns a single project by slug.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error) {
 	r, err := s.q.ProjectBySlug(ctx, slug)
@@ -80,6 +93,7 @@ func (s *Store) CreateProject(ctx context.Context, p CreateParams) (*Project, er
 		GithubUrl:       p.GithubURL,
 		LiveUrl:         p.LiveURL,
 		Featured:        p.Featured,
+		Public:          p.Public,
 		SortOrder:       int32(p.SortOrder), // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 		Status:          db.ProjectStatus(p.Status),
 	})
@@ -116,6 +130,7 @@ func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p UpdateParams)
 		GithubUrl:       p.GithubURL,
 		LiveUrl:         p.LiveURL,
 		Featured:        p.Featured,
+		Public:          p.Public,
 		SortOrder:       sortOrder,
 		Status:          nullProjectStatus(p.Status),
 	})
@@ -236,6 +251,7 @@ func rowToProject(r db.Project) Project {
 		GithubURL:       r.GithubUrl,
 		LiveURL:         r.LiveUrl,
 		Featured:        r.Featured,
+		Public:          r.Public,
 		SortOrder:       int(r.SortOrder),
 		Status:          Status(r.Status),
 		NotionPageID:    r.NotionPageID,

@@ -1,31 +1,39 @@
 -- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title;
+
+-- name: PublicProjects :many
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       created_at, updated_at
+FROM projects WHERE public = true
+ORDER BY featured DESC, sort_order, title;
 
 -- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE slug = $1;
 
 -- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE repo = $1;
 
 -- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
-                      problem, solution, architecture, results, github_url, live_url, featured, sort_order, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                      problem, solution, architecture, results, github_url, live_url, featured, public, sort_order, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at;
 
 -- name: UpdateProject :one
@@ -44,19 +52,20 @@ UPDATE projects SET
     github_url = COALESCE(sqlc.narg('github_url'), github_url),
     live_url = COALESCE(sqlc.narg('live_url'), live_url),
     featured = COALESCE(sqlc.narg('featured'), featured),
+    public = COALESCE(sqlc.narg('public'), public),
     sort_order = COALESCE(sqlc.narg('sort_order'), sort_order),
     status = COALESCE(sqlc.narg('status')::project_status, status),
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at;
 
 -- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC;
@@ -76,7 +85,7 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     updated_at = now()
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
           created_at, updated_at;
 
 -- name: UpdateProjectLastActivity :exec

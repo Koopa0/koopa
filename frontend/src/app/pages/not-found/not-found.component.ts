@@ -22,7 +22,7 @@ import { SeoService } from '../../core/services/seo/seo.service';
         <p class="mt-2 text-sm text-zinc-400">The page you are looking for does not exist or has been removed.</p>
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           <a
-            routerLink="/home"
+            routerLink="/"
             class="inline-flex items-center gap-2 rounded-sm bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
           >
             <lucide-icon [img]="HomeIcon" [size]="16" />

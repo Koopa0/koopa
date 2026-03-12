@@ -125,6 +125,7 @@ CREATE TABLE projects (
     github_url       TEXT,
     live_url         TEXT,
     featured         BOOLEAN NOT NULL DEFAULT false,
+    public           BOOLEAN NOT NULL DEFAULT false,
     sort_order       INT NOT NULL DEFAULT 0,
     status           project_status NOT NULL DEFAULT 'in-progress',
     notion_page_id   TEXT UNIQUE,

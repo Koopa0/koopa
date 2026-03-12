@@ -37,6 +37,7 @@ type Project struct {
 	GithubURL       *string    `json:"github_url,omitempty"`
 	LiveURL         *string    `json:"live_url,omitempty"`
 	Featured        bool       `json:"featured"`
+	Public          bool       `json:"public"`
 	SortOrder       int        `json:"sort_order"`
 	Status          Status     `json:"status"`
 	NotionPageID    *string    `json:"notion_page_id,omitempty"`
@@ -64,6 +65,7 @@ type CreateParams struct {
 	GithubURL       *string  `json:"github_url,omitempty"`
 	LiveURL         *string  `json:"live_url,omitempty"`
 	Featured        bool     `json:"featured"`
+	Public          bool     `json:"public"`
 	SortOrder       int      `json:"sort_order"`
 	Status          Status   `json:"status"`
 }
@@ -84,6 +86,7 @@ type UpdateParams struct {
 	GithubURL       *string  `json:"github_url,omitempty"`
 	LiveURL         *string  `json:"live_url,omitempty"`
 	Featured        *bool    `json:"featured,omitempty"`
+	Public          *bool    `json:"public,omitempty"`
 	SortOrder       *int     `json:"sort_order,omitempty"`
 	Status          *Status  `json:"status,omitempty"`
 }

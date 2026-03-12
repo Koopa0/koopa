@@ -42,7 +42,7 @@ export class HomeComponent implements OnInit {
       title: 'Home',
       description:
         'Koopa — Software Engineer. Technical articles and personal projects.',
-      ogUrl: 'https://koopa0.dev/home',
+      ogUrl: 'https://koopa0.dev/',
       jsonLd: buildWebSiteSchema(),
     });
   }

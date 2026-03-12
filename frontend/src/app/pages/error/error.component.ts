@@ -37,7 +37,7 @@ import { SeoService } from '../../core/services/seo/seo.service';
             Reload
           </button>
           <a
-            routerLink="/home"
+            routerLink="/"
             class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-5 py-2.5 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:text-white"
           >
             <lucide-icon [img]="HomeIcon" [size]="16" />

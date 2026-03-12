@@ -41,6 +41,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
 	"github.com/koopa0/blog-backend/internal/upload"
+	"github.com/koopa0/blog-backend/internal/webhook"
 )
 
 type config struct {
@@ -426,6 +427,10 @@ func run(logger *slog.Logger) error {
 	cronScheduler.Start()
 	defer cronScheduler.Stop()
 
+	// webhook replay protection: shared dedup cache with 10-minute TTL
+	webhookDedup := webhook.NewDeduplicationCache(10 * time.Minute)
+	defer webhookDedup.Stop()
+
 	// notion webhook handler
 	notionHandler := notion.NewHandler(notionClient, projectStore, goalStore, runner, notion.Config{
 		APIKey:        cfg.NotionAPIKey,
@@ -435,6 +440,7 @@ func run(logger *slog.Logger) error {
 		BooksDB:       cfg.NotionBooksDB,
 		GoalsDB:       cfg.NotionGoalsDB,
 	}, logger)
+	notionHandler.SetDedup(webhookDedup)
 
 	// pipeline dependencies
 	topicLookup := pipeline.NewTopicLookup(func(ctx context.Context, slug string) (uuid.UUID, error) {
@@ -449,6 +455,7 @@ func run(logger *slog.Logger) error {
 	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
 	pipelineHandler.SetCollector(feedCollector, feedStore)
 	pipelineHandler.SetReconciler(recon)
+	pipelineHandler.SetDedup(webhookDedup)
 
 	// flow admin handler
 	flowHandler := flow.NewHandler(
@@ -458,6 +465,18 @@ func run(logger *slog.Logger) error {
 		contentStore,
 		logger,
 	)
+
+	// cron: hourly full sync — GitHub Obsidian content + Notion projects/goals
+	// Safety net for missed webhooks; runs at :15 past each hour.
+	_, err = cronScheduler.AddFunc("15 * * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		pipelineHandler.SyncAllFromGitHub(ctx)
+		notionHandler.SyncAll(ctx)
+	})
+	if err != nil {
+		return fmt.Errorf("adding hourly sync cron job: %w", err)
+	}
 
 	deps := server.Deps{
 		Pool: pool,

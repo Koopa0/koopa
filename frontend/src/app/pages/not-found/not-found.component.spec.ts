@@ -56,7 +56,7 @@ describe('NotFoundComponent', () => {
     const hrefs = Array.from(links).map((a: unknown) =>
       (a as HTMLAnchorElement).getAttribute('href'),
     );
-    expect(hrefs).toContain('/home');
+    expect(hrefs).toContain('/');
     expect(hrefs).toContain('/articles');
     expect(hrefs).toContain('/about');
   });

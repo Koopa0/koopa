@@ -21,11 +21,22 @@ func NewHandler(store *Store, logger *slog.Logger) *Handler {
 	return &Handler{store: store, logger: logger}
 }
 
-// List handles GET /api/projects.
+// List handles GET /api/admin/projects — returns all projects.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	projects, err := h.store.Projects(r.Context())
 	if err != nil {
 		h.logger.Error("listing projects", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list projects")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: projects})
+}
+
+// PublicList handles GET /api/projects — returns only public projects.
+func (h *Handler) PublicList(w http.ResponseWriter, r *http.Request) {
+	projects, err := h.store.PublicProjects(r.Context())
+	if err != nil {
+		h.logger.Error("listing public projects", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list projects")
 		return
 	}

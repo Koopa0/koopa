@@ -71,7 +71,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.HandleFunc("GET /api/contents/by-type/{type}", d.Content.ByType)
 	mux.HandleFunc("GET /api/topics", d.Topic.List)
 	mux.HandleFunc("GET /api/topics/{slug}", d.Topic.BySlug)
-	mux.HandleFunc("GET /api/projects", d.Project.List)
+	mux.HandleFunc("GET /api/projects", d.Project.PublicList)
 	mux.HandleFunc("GET /api/projects/{slug}", d.Project.BySlug)
 	mux.HandleFunc("GET /api/contents/related/{slug}", d.Content.Related)
 	mux.Handle("GET /api/knowledge-graph", rlMid(http.HandlerFunc(d.Content.KnowledgeGraph)))

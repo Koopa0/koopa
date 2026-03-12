@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -36,6 +37,7 @@ type Handler struct {
 	projects ProjectWriter
 	goals    GoalWriter
 	jobs     JobSubmitter
+	dedup    *webhook.DeduplicationCache
 	config   Config
 	logger   *slog.Logger
 }
@@ -50,6 +52,11 @@ func NewHandler(client *Client, projects ProjectWriter, goals GoalWriter, jobs J
 		config:   cfg,
 		logger:   logger,
 	}
+}
+
+// SetDedup sets the deduplication cache for webhook replay protection.
+func (h *Handler) SetDedup(c *webhook.DeduplicationCache) {
+	h.dedup = c
 }
 
 // Webhook handles POST /api/webhook/notion.
@@ -92,6 +99,26 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// replay protection: timestamp ±5min + entity dedup
+	if h.dedup != nil {
+		if payload.Timestamp != "" {
+			if err := webhook.ValidateTimestamp(payload.Timestamp, 5*time.Minute); err != nil {
+				h.logger.Warn("notion webhook timestamp rejected", "error", err)
+				http.Error(w, "request expired", http.StatusBadRequest)
+				return
+			}
+		}
+		dedupKey := payload.Entity.ID + "|" + payload.Timestamp
+		if h.dedup.Seen(dedupKey) {
+			h.logger.Warn("notion webhook replay detected",
+				"entity_id", payload.Entity.ID,
+				"timestamp", payload.Timestamp,
+			)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
+
 	db := h.routeDatabase(payload.Data.Parent.DataSourceID)
 	pageID := payload.Entity.ID
 
@@ -131,6 +158,53 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// SyncAll fetches all pages from configured Notion databases and upserts them.
+// Used by the hourly cron to catch any missed webhook events.
+func (h *Handler) SyncAll(ctx context.Context) {
+	if h.config.APIKey == "" {
+		h.logger.Debug("notion sync: no API key configured, skipping")
+		return
+	}
+
+	var synced, failed int
+
+	// sync projects
+	if h.config.ProjectsDB != "" {
+		pageIDs, err := h.client.QueryPageIDs(ctx, h.config.ProjectsDB)
+		if err != nil {
+			h.logger.Error("notion sync: querying projects db", "error", err)
+		} else {
+			for _, id := range pageIDs {
+				if err := h.syncProject(ctx, id); err != nil {
+					h.logger.Error("notion sync: syncing project", "page_id", id, "error", err)
+					failed++
+					continue
+				}
+				synced++
+			}
+		}
+	}
+
+	// sync goals
+	if h.config.GoalsDB != "" {
+		pageIDs, err := h.client.QueryPageIDs(ctx, h.config.GoalsDB)
+		if err != nil {
+			h.logger.Error("notion sync: querying goals db", "error", err)
+		} else {
+			for _, id := range pageIDs {
+				if err := h.syncGoal(ctx, id); err != nil {
+					h.logger.Error("notion sync: syncing goal", "page_id", id, "error", err)
+					failed++
+					continue
+				}
+				synced++
+			}
+		}
+	}
+
+	h.logger.Info("notion sync: complete", "synced", synced, "failed", failed)
 }
 
 // routeDatabase matches a data source ID to a known database.

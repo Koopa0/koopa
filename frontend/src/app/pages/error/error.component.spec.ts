@@ -37,7 +37,7 @@ describe('ErrorComponent', () => {
 
   it('should have home link', () => {
     const compiled = fixture.nativeElement as HTMLElement;
-    const homeLink = compiled.querySelector('a[href="/home"]');
+    const homeLink = compiled.querySelector('a[href="/"]');
     expect(homeLink).toBeTruthy();
   });
 });

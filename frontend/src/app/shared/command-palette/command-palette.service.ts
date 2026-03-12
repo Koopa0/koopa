@@ -23,7 +23,7 @@ export class CommandPaletteService {
   /** All available actions based on auth state */
   readonly actions = computed<CommandAction[]>(() => {
     const pages: CommandAction[] = [
-      { id: 'home', label: 'Home', group: 'Pages', keywords: ['index', 'main'], action: () => this.navigate('/home') },
+      { id: 'home', label: 'Home', group: 'Pages', keywords: ['index', 'main'], action: () => this.navigate('/') },
       { id: 'articles', label: 'Articles', group: 'Pages', keywords: ['blog', 'post', 'writing'], action: () => this.navigate('/articles') },
       { id: 'build-logs', label: 'Build Log', group: 'Pages', keywords: ['dev', 'journal'], action: () => this.navigate('/build-logs') },
       { id: 'til', label: 'TIL', group: 'Pages', keywords: ['today', 'learned', 'learning'], action: () => this.navigate('/til') },

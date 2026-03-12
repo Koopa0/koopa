@@ -15,6 +15,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/obsidian"
+	"github.com/koopa0/blog-backend/internal/webhook"
 )
 
 // ContentWriter creates, updates, or archives content in the database.
@@ -45,9 +46,10 @@ type JobSubmitter interface {
 	Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error
 }
 
-// GitHubFetcher retrieves raw file content from a GitHub repository.
+// GitHubFetcher retrieves raw file content and directory listings from a GitHub repository.
 type GitHubFetcher interface {
 	FileContent(ctx context.Context, path string) ([]byte, error)
+	ListDirectory(ctx context.Context, path string) ([]string, error)
 }
 
 // FeedCollector fetches new items from feeds and scores them.
@@ -76,6 +78,7 @@ type Handler struct {
 	collector     FeedCollector
 	feeds         FeedLister
 	reconciler    Reconciler
+	dedup         *webhook.DeduplicationCache
 	webhookSecret string
 	obsidianRepo  string // "owner/repo" for Obsidian content sync
 	logger        *slog.Logger
@@ -105,27 +108,58 @@ func (h *Handler) SetReconciler(r Reconciler) {
 	h.reconciler = r
 }
 
+// SetDedup sets the deduplication cache for webhook replay protection.
+func (h *Handler) SetDedup(c *webhook.DeduplicationCache) {
+	h.dedup = c
+}
+
 // NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
 func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
 	return &topicLookupFunc{fn: fn}
 }
 
-// Sync handles POST /api/pipeline/sync — Obsidian/GitHub reconciliation.
+// Sync handles POST /api/pipeline/sync — full Obsidian sync from GitHub.
+// Lists all .md files in 10-Public-Content/, compares with DB,
+// and syncs any missing or updated files.
 func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
-	if h.reconciler == nil {
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
 	go func() {
-		// Detach from HTTP request lifecycle; reconciler calls external APIs.
 		ctx := context.WithoutCancel(r.Context())
-		if err := h.reconciler.ReconcileObsidian(ctx); err != nil {
-			h.logger.Error("obsidian reconciliation failed", "error", err)
-		}
+		h.SyncAllFromGitHub(ctx)
 	}()
+}
+
+// SyncAllFromGitHub lists 10-Public-Content/ on GitHub and syncs each file.
+func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
+	slugs, err := h.fetcher.ListDirectory(ctx, "10-Public-Content")
+	if err != nil {
+		h.logger.Error("sync: listing github directory", "error", err)
+		return
+	}
+
+	var synced, skipped, failed int
+	for _, slug := range slugs {
+		path := "10-Public-Content/" + slug + ".md"
+
+		// check if content already exists — skip if up-to-date
+		// (syncFile handles create-or-update, so we always call it
+		// to pick up any changes in the markdown content)
+		if err := h.syncFile(ctx, path); err != nil {
+			h.logger.Error("sync: syncing file", "path", path, "error", err)
+			failed++
+			continue
+		}
+		synced++
+	}
+
+	h.logger.Info("sync: complete",
+		"total", len(slugs),
+		"synced", synced,
+		"skipped", skipped,
+		"failed", failed,
+	)
 }
 
 // NotionSync handles POST /api/pipeline/notion-sync — Notion reconciliation.
@@ -329,6 +363,16 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("invalid webhook signature")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
+	}
+
+	// replay protection: reject duplicate deliveries
+	if h.dedup != nil {
+		deliveryID := r.Header.Get("X-GitHub-Delivery")
+		if deliveryID != "" && h.dedup.Seen(deliveryID) {
+			h.logger.Warn("github webhook replay detected", "delivery_id", deliveryID)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 	}
 
 	// only process push events

@@ -528,6 +528,7 @@ type Project struct {
 	GithubUrl       *string       `json:"github_url"`
 	LiveUrl         *string       `json:"live_url"`
 	Featured        bool          `json:"featured"`
+	Public          bool          `json:"public"`
 	SortOrder       int32         `json:"sort_order"`
 	Status          ProjectStatus `json:"status"`
 	NotionPageID    *string       `json:"notion_page_id"`

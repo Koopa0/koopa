@@ -13,7 +13,7 @@ services:
     depends_on:
       - backend
     networks:
-      - internal
+      - frontend
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -37,7 +37,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - internal
+      - backend
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U koopa -d blog"]
@@ -83,7 +83,8 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - internal
+      - frontend
+      - backend
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -96,4 +97,7 @@ volumes:
   pgdata:
 
 networks:
-  internal:
+  frontend:
+    name: blog_frontend
+  backend:
+    name: blog_backend
