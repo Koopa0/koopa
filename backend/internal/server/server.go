@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/koopa0/blog-backend/internal/auth"
 )
 
@@ -19,6 +21,8 @@ type Config struct {
 // Run creates and starts the HTTP server with graceful shutdown.
 // It blocks until ctx is cancelled, then drains connections.
 func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error {
+	RegisterMetrics(prometheus.DefaultRegisterer)
+
 	authMid := auth.Middleware(cfg.JWTSecret)
 	rlMid := rateLimitMiddleware(logger)
 

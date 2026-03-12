@@ -22,6 +22,16 @@ const angularApp = new AngularNodeAppEngine();
 const app = express();
 app.disable('x-powered-by');
 
+// Reject malformed URLs early (e.g. %c0 from scanners)
+app.use((req, res, next) => {
+  try {
+    decodeURIComponent(req.originalUrl);
+    next();
+  } catch {
+    res.status(400).end('Bad Request');
+  }
+});
+
 // Security headers
 app.use((_req, res, next) => {
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -293,7 +303,10 @@ app.get('/{*path}', (req, res, next) => {
         next();
       }
     })
-    .catch(next);
+    .catch((err) => {
+      console.error(`SSR error on ${req.method} ${req.originalUrl}:`, err);
+      next(err);
+    });
 });
 
 if (isMainModule(import.meta.url)) {

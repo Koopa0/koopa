@@ -3,6 +3,7 @@ package flowrun
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -68,11 +69,14 @@ func (r *Runner) Start(ctx context.Context) {
 			case runID := <-r.jobs:
 				// Acquire semaphore with ctx + hard timeout to prevent
 				// shutdown deadlock if a flow hangs and never releases.
+				t := time.NewTimer(semaphoreTimeout)
 				select {
 				case <-ctx.Done():
+					t.Stop()
 					return
 				case r.sem <- struct{}{}:
-				case <-time.After(semaphoreTimeout):
+					t.Stop()
+				case <-t.C:
 					r.logger.Warn("semaphore acquire timed out, skipping job", "run_id", runID)
 					continue
 				}
@@ -99,6 +103,11 @@ func (r *Runner) Stop() {
 // If the channel is full, the job is still persisted and will be picked up
 // by the cron retry scanner.
 func (r *Runner) Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error {
+	// default nil input to empty JSON object to satisfy NOT NULL constraint
+	if input == nil {
+		input = json.RawMessage("{}")
+	}
+
 	// dedup: skip if a pending/running run already exists for this content
 	if contentID != nil {
 		exists, err := r.store.PendingRunExists(ctx, flowName, contentID)
@@ -113,7 +122,7 @@ func (r *Runner) Submit(ctx context.Context, flowName string, input json.RawMess
 
 	run, err := r.store.CreateRun(ctx, flowName, input, contentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("submitting flow %s: %w", flowName, err)
 	}
 
 	r.logger.Info("flow run submitted", "id", run.ID, "flow", flowName)

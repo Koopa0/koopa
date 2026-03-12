@@ -15,6 +15,11 @@ services:
     networks:
       - internal
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -77,6 +82,11 @@ services:
     networks:
       - internal
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   pgdata:

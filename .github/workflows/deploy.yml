@@ -22,5 +22,25 @@ jobs:
           script: |
             cd ~/blog
             git pull origin main
+
+            # Silence Grafana alerts during deploy (5 min)
+            export $(grep GRAFANA_ADMIN_PASSWORD ~/server/observability/.env)
+            SILENCE_ID=$(curl -sf -X POST http://localhost:3000/api/alertmanager/grafana/api/v2/silences \
+              -H "Authorization: Basic $(echo -n admin:${GRAFANA_ADMIN_PASSWORD} | base64)" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"matchers\": [{\"name\": \"severity\", \"value\": \".*\", \"isRegex\": true}],
+                \"startsAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+                \"endsAt\": \"$(date -u -d '+5 min' +%Y-%m-%dT%H:%M:%SZ)\",
+                \"createdBy\": \"ci-cd\",
+                \"comment\": \"Deploy silence\"
+              }" 2>/dev/null | jq -r '.silenceID' 2>/dev/null) || true
+
             docker compose up -d --build
             docker image prune -f
+
+            # Expire silence early after deploy completes
+            if [ -n "$SILENCE_ID" ] && [ "$SILENCE_ID" != "null" ]; then
+              curl -sf -X DELETE "http://localhost:3000/api/alertmanager/grafana/api/v2/silence/${SILENCE_ID}" \
+                -H "Authorization: Basic $(echo -n admin:${GRAFANA_ADMIN_PASSWORD} | base64)" 2>/dev/null || true
+            fi

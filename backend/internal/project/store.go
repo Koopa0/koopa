@@ -168,21 +168,32 @@ func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error
 }
 
 // UpsertByNotionPageID upserts a project by its Notion page ID.
+// If the generated slug conflicts with an existing project, a numeric
+// suffix is appended (e.g. "-2", "-3") up to 5 attempts.
 func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams) (*Project, error) {
-	r, err := s.q.UpsertProjectByNotionPageID(ctx, db.UpsertProjectByNotionPageIDParams{
-		Slug:         p.Slug,
-		Title:        p.Title,
-		Description:  p.Description,
-		Status:       db.ProjectStatus(p.Status),
-		Area:         p.Area,
-		Deadline:     p.Deadline,
-		NotionPageID: &p.NotionPageID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("upserting project by notion page %s: %w", p.NotionPageID, err)
+	slug := p.Slug
+	for i := range 5 {
+		r, err := s.q.UpsertProjectByNotionPageID(ctx, db.UpsertProjectByNotionPageIDParams{
+			Slug:         slug,
+			Title:        p.Title,
+			Description:  p.Description,
+			Status:       db.ProjectStatus(p.Status),
+			Area:         p.Area,
+			Deadline:     p.Deadline,
+			NotionPageID: &p.NotionPageID,
+		})
+		if err != nil {
+			if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" && pgErr.ConstraintName == "projects_slug_key" {
+				// suffix: "title-2", "title-3", … "title-6"
+				slug = fmt.Sprintf("%s-%d", p.Slug, i+2)
+				continue
+			}
+			return nil, fmt.Errorf("upserting project by notion page %s: %w", p.NotionPageID, err)
+		}
+		proj := rowToProject(r)
+		return &proj, nil
 	}
-	proj := rowToProject(r)
-	return &proj, nil
+	return nil, fmt.Errorf("upserting project by notion page %s: slug conflict after retries", p.NotionPageID)
 }
 
 // UpdateLastActivity sets last_activity_at to now for the project identified by Notion page ID.

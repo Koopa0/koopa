@@ -37,8 +37,10 @@ var (
 	})
 )
 
-func init() {
-	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration, httpRequestsInFlight)
+// RegisterMetrics registers HTTP metrics with the given registerer.
+// Called once from the server constructor; avoids init() side effects.
+func RegisterMetrics(reg prometheus.Registerer) {
+	reg.MustRegister(httpRequestsTotal, httpRequestDuration, httpRequestsInFlight)
 }
 
 // MetricsHandler returns the Prometheus metrics HTTP handler.
