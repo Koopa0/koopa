@@ -69,6 +69,11 @@ type Reconciler interface {
 	Run(ctx context.Context) error
 }
 
+// NotionSyncer fetches all Notion pages and upserts them locally.
+type NotionSyncer interface {
+	SyncAll(ctx context.Context)
+}
+
 // Handler handles pipeline and webhook HTTP requests.
 type Handler struct {
 	content       ContentWriter
@@ -78,6 +83,7 @@ type Handler struct {
 	collector     FeedCollector
 	feeds         FeedLister
 	reconciler    Reconciler
+	notionSync    NotionSyncer
 	dedup         *webhook.DeduplicationCache
 	webhookSecret string
 	obsidianRepo  string // "owner/repo" for Obsidian content sync
@@ -106,6 +112,11 @@ func (h *Handler) SetCollector(c FeedCollector, f FeedLister) {
 // SetReconciler sets the reconciler for manual sync endpoints.
 func (h *Handler) SetReconciler(r Reconciler) {
 	h.reconciler = r
+}
+
+// SetNotionSync sets the Notion syncer for full sync.
+func (h *Handler) SetNotionSync(n NotionSyncer) {
+	h.notionSync = n
 }
 
 // SetDedup sets the deduplication cache for webhook replay protection.
@@ -162,9 +173,9 @@ func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
 	)
 }
 
-// NotionSync handles POST /api/pipeline/notion-sync — Notion reconciliation.
+// NotionSync handles POST /api/pipeline/notion-sync — full Notion sync.
 func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
-	if h.reconciler == nil {
+	if h.notionSync == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -172,11 +183,8 @@ func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
 	go func() {
-		// Detach from HTTP request lifecycle; reconciler calls external APIs.
 		ctx := context.WithoutCancel(r.Context())
-		if err := h.reconciler.ReconcileNotion(ctx); err != nil {
-			h.logger.Error("notion reconciliation failed", "error", err)
-		}
+		h.notionSync.SyncAll(ctx)
 	}()
 }
 

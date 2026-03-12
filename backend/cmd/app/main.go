@@ -455,6 +455,7 @@ func run(logger *slog.Logger) error {
 	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
 	pipelineHandler.SetCollector(feedCollector, feedStore)
 	pipelineHandler.SetReconciler(recon)
+	pipelineHandler.SetNotionSync(notionHandler)
 	pipelineHandler.SetDedup(webhookDedup)
 
 	// flow admin handler

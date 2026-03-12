@@ -144,6 +144,10 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 			continue
 		}
 
+		if skipURL(item.Link) {
+			continue
+		}
+
 		urlHash := hashURL(item.Link)
 
 		// dedup by URL hash
@@ -183,6 +187,31 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 
 	logger.Info("feed fetched", "total_items", len(parsed.Items), "new_items", len(newIDs))
 	return newIDs, nil
+}
+
+// skipRules defines URL patterns to ignore during collection.
+// Each rule matches a host suffix and a path prefix.
+var skipRules = []struct {
+	host string
+	path string
+}{
+	{"ardanlabs.com", "/news"},
+	{"ardanlabs.com", "/events"},
+}
+
+// skipURL reports whether the item URL should be skipped.
+func skipURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Host)
+	for _, rule := range skipRules {
+		if strings.HasSuffix(host, rule.host) && strings.HasPrefix(u.Path, rule.path) {
+			return true
+		}
+	}
+	return false
 }
 
 // hashURL returns the SHA-256 hex hash of a normalized URL.
