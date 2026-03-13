@@ -55,11 +55,11 @@ type Handler struct {
 }
 
 // NewHandler returns a flow Handler.
-func NewHandler(jobs JobSubmitter, runs RunReader, checker ContentReader, updater ContentUpdater, logger *slog.Logger) *Handler {
+func NewHandler(jobs JobSubmitter, runs RunReader, content ContentReader, updater ContentUpdater, logger *slog.Logger) *Handler {
 	return &Handler{
 		jobs:    jobs,
 		runs:    runs,
-		content: checker,
+		content: content,
 		updater: updater,
 		logger:  logger,
 	}

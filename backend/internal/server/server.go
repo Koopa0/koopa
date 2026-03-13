@@ -30,7 +30,7 @@ func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error 
 	rlMid := rateLimitMiddleware(logger, rlDone)
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", authMid(MetricsHandler()))
+	mux.Handle("GET /metrics", MetricsHandler())
 	RegisterRoutes(mux, deps, authMid, rlMid)
 
 	csrfMid, err := csrfMiddleware(cfg.CORSOrigin, logger)
