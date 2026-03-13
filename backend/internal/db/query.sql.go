@@ -1605,6 +1605,20 @@ func (q *Queries) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const pendingReviewExistsForContent = `-- name: PendingReviewExistsForContent :one
+SELECT EXISTS(
+    SELECT 1 FROM review_queue
+    WHERE content_id = $1 AND status = 'pending'
+) AS exists
+`
+
+func (q *Queries) PendingReviewExistsForContent(ctx context.Context, contentID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, pendingReviewExistsForContent, contentID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const pendingReviews = `-- name: PendingReviews :many
 SELECT rq.id, rq.content_id, rq.review_level::text AS rq_review_level,
        rq.status::text AS rq_status, rq.reviewer_notes, rq.submitted_at, rq.reviewed_at,

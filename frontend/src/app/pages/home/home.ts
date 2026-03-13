@@ -26,26 +26,10 @@ import { ContactCtaComponent } from './sections/contact-cta.component';
   ],
   template: `
     <app-hero-section />
-    @defer (on viewport) {
-      <app-featured-projects />
-    } @placeholder {
-      <div class="h-96 animate-pulse bg-zinc-900/50"></div>
-    }
-    @defer (on viewport) {
-      <app-tech-stack />
-    } @placeholder {
-      <div class="h-64 animate-pulse bg-zinc-900/50"></div>
-    }
-    @defer (on viewport) {
-      <app-latest-feed />
-    } @placeholder {
-      <div class="h-96 animate-pulse bg-zinc-900/50"></div>
-    }
-    @defer (on viewport) {
-      <app-contact-cta />
-    } @placeholder {
-      <div class="h-48 animate-pulse bg-zinc-900/50"></div>
-    }
+    <app-featured-projects />
+    <app-tech-stack />
+    <app-latest-feed />
+    <app-contact-cta />
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [fadeInUp],

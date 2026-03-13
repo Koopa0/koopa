@@ -15,7 +15,7 @@ import {
   RouterLinkActive,
   NavigationEnd,
 } from '@angular/router';
-import { isPlatformBrowser, NgOptimizedImage } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { filter } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -50,7 +50,6 @@ import { slideDown } from './shared/animations/fade-in.animation';
     BackToTopComponent,
     CommandPaletteComponent,
     ToastComponent,
-    NgOptimizedImage,
   ],
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

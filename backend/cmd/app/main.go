@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/anthropic"
@@ -136,6 +137,40 @@ func run(logger *slog.Logger) error {
 	// collector + budget
 	feedCollector := collector.New(collectedStore, feedStore, logger)
 	tokenBudget := budget.New(500_000)
+
+	// caches (Ristretto v2 — TinyLFU admission, per-item TTL)
+	// Cost model: count-based (1 item max) for single-key caches.
+	graphCache, err := ristretto.NewCache(&ristretto.Config[string, *content.KnowledgeGraph]{
+		NumCounters: 10, // 10× expected items (1 key: "graph")
+		MaxCost:     1,  // count-based: 1 item max
+		BufferItems: 64,
+	})
+	if err != nil {
+		return fmt.Errorf("creating graph cache: %w", err)
+	}
+	defer graphCache.Close()
+
+	// Cost model: byte-based for serialized XML payloads (rss, sitemap).
+	feedCache, err := ristretto.NewCache(&ristretto.Config[string, []byte]{
+		NumCounters: 100,     // 10× expected items (2 keys: "rss", "sitemap")
+		MaxCost:     1 << 20, // 1 MB byte budget
+		BufferItems: 64,
+	})
+	if err != nil {
+		return fmt.Errorf("creating feed cache: %w", err)
+	}
+	defer feedCache.Close()
+
+	// Cost model: count-based (1 item max) for single-key cache.
+	topicCache, err := ristretto.NewCache(&ristretto.Config[string, []topic.Topic]{
+		NumCounters: 10, // 10× expected items (1 key: "topics")
+		MaxCost:     1,  // count-based: 1 item max
+		BufferItems: 64,
+	})
+	if err != nil {
+		return fmt.Errorf("creating topic cache: %w", err)
+	}
+	defer topicCache.Close()
 
 	// upload
 	s3Client := upload.NewS3Client(ctx, cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey)
@@ -482,8 +517,8 @@ func run(logger *slog.Logger) error {
 			AdminEmail:   cfg.AdminEmail,
 			FrontendURL:  cfg.CORSOrigin,
 		}, logger),
-		Topic:     topic.NewHandler(topicStore, contentStore, logger),
-		Content:   content.NewHandler(contentStore, cfg.SiteURL, logger),
+		Topic:     topic.NewHandler(topicStore, contentStore, topicCache, logger),
+		Content:   content.NewHandler(contentStore, cfg.SiteURL, graphCache, feedCache, logger),
 		Project:   project.NewHandler(projectStore, logger),
 		Review:    review.NewHandler(reviewStore, logger),
 		Collected: collected.NewHandler(collectedStore, logger),

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/api"
@@ -17,26 +19,37 @@ type ContentReader interface {
 	ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, perPage int) ([]content.Content, int, error)
 }
 
+// topicsTTL is the cache duration for the full topics list.
+const topicsTTL = 10 * time.Minute
+
 // Handler handles topic HTTP requests.
 type Handler struct {
-	store   *Store
-	content ContentReader
-	logger  *slog.Logger
+	store      *Store
+	content    ContentReader
+	logger     *slog.Logger
+	topicCache *ristretto.Cache[string, []Topic]
 }
 
 // NewHandler returns a topic Handler.
-func NewHandler(store *Store, content ContentReader, logger *slog.Logger) *Handler {
-	return &Handler{store: store, content: content, logger: logger}
+func NewHandler(store *Store, content ContentReader, topicCache *ristretto.Cache[string, []Topic], logger *slog.Logger) *Handler {
+	return &Handler{store: store, content: content, topicCache: topicCache, logger: logger}
 }
 
 // List handles GET /api/topics.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	if topics, ok := h.topicCache.Get("topics"); ok {
+		api.Encode(w, http.StatusOK, api.Response{Data: topics})
+		return
+	}
+
 	topics, err := h.store.Topics(r.Context())
 	if err != nil {
 		h.logger.Error("listing topics", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list topics")
 		return
 	}
+
+	h.topicCache.SetWithTTL("topics", topics, 1, topicsTTL)
 	api.Encode(w, http.StatusOK, api.Response{Data: topics})
 }
 
@@ -98,6 +111,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create topic")
 		return
 	}
+	h.topicCache.Del("topics")
 	api.Encode(w, http.StatusCreated, api.Response{Data: t})
 }
 
@@ -129,6 +143,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update topic")
 		return
 	}
+	h.topicCache.Del("topics")
 	api.Encode(w, http.StatusOK, api.Response{Data: t})
 }
 
@@ -145,5 +160,6 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete topic")
 		return
 	}
+	h.topicCache.Del("topics")
 	w.WriteHeader(http.StatusNoContent)
 }

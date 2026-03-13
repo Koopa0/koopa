@@ -1,6 +1,7 @@
 package content
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -9,13 +10,22 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/koopa0/blog-backend/internal/api"
+)
+
+// Cache TTLs for pre-serialized feed responses and knowledge graph.
+// These caches expire on TTL only — no active invalidation on content writes.
+// This is intentional: content mutations are infrequent and eventual consistency is acceptable.
+const (
+	graphTTL   = 10 * time.Minute
+	rssTTL     = 10 * time.Minute
+	sitemapTTL = 30 * time.Minute
 )
 
 // Handler handles content HTTP requests.
@@ -24,15 +34,26 @@ type Handler struct {
 	siteURL string
 	logger  *slog.Logger
 
-	graphMu    sync.RWMutex
-	graphCache *KnowledgeGraph
-	graphAt    time.Time
+	graphCache *ristretto.Cache[string, *KnowledgeGraph]
 	graphSF    singleflight.Group
+	feedCache  *ristretto.Cache[string, []byte]
 }
 
 // NewHandler returns a content Handler.
-func NewHandler(store *Store, siteURL string, logger *slog.Logger) *Handler {
-	return &Handler{store: store, siteURL: siteURL, logger: logger}
+func NewHandler(
+	store *Store,
+	siteURL string,
+	graphCache *ristretto.Cache[string, *KnowledgeGraph],
+	feedCache *ristretto.Cache[string, []byte],
+	logger *slog.Logger,
+) *Handler {
+	return &Handler{
+		store:      store,
+		siteURL:    siteURL,
+		graphCache: graphCache,
+		feedCache:  feedCache,
+		logger:     logger,
+	}
 }
 
 // List handles GET /api/contents.
@@ -100,6 +121,12 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 
 // RSS handles GET /api/feed/rss.
 func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
+	if data, ok := h.feedCache.Get("rss"); ok {
+		w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+		_, _ = w.Write(data) // best-effort
+		return
+	}
+
 	contents, err := h.store.PublishedForRSS(r.Context(), 20)
 	if err != nil {
 		h.logger.Error("generating rss", "error", err)
@@ -157,21 +184,33 @@ func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	if _, err := fmt.Fprint(w, xml.Header); err != nil {
-		h.logger.Error("writing rss header", "error", err)
-		return
-	}
-	enc := xml.NewEncoder(w)
+	var buf bytes.Buffer
+	buf.WriteString(xml.Header)
+	enc := xml.NewEncoder(&buf)
 	enc.Indent("", "  ")
 	if err := enc.Encode(feed); err != nil {
 		h.logger.Error("encoding rss", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
+
+	data := buf.Bytes()
+	if !h.feedCache.SetWithTTL("rss", data, int64(len(data)), rssTTL) {
+		h.logger.Warn("rss cache set rejected", "size", len(data))
+	}
+
+	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	_, _ = w.Write(data) // best-effort
 }
 
 // Sitemap handles GET /api/feed/sitemap.
 func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
+	if data, ok := h.feedCache.Get("sitemap"); ok {
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		_, _ = w.Write(data) // best-effort
+		return
+	}
+
 	contents, err := h.store.AllPublishedSlugs(r.Context())
 	if err != nil {
 		h.logger.Error("generating sitemap", "error", err)
@@ -204,17 +243,23 @@ func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
 		URLs:  urls,
 	}
 
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	if _, err := fmt.Fprint(w, xml.Header); err != nil {
-		h.logger.Error("writing sitemap header", "error", err)
-		return
-	}
-	enc := xml.NewEncoder(w)
+	var buf bytes.Buffer
+	buf.WriteString(xml.Header)
+	enc := xml.NewEncoder(&buf)
 	enc.Indent("", "  ")
 	if err := enc.Encode(sitemap); err != nil {
 		h.logger.Error("encoding sitemap", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
+
+	data := buf.Bytes()
+	if !h.feedCache.SetWithTTL("sitemap", data, int64(len(data)), sitemapTTL) {
+		h.logger.Warn("sitemap cache set rejected", "size", len(data))
+	}
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	_, _ = w.Write(data) // best-effort
 }
 
 // Create handles POST /api/admin/contents.
@@ -361,23 +406,27 @@ func (h *Handler) Related(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: related})
 }
 
-const graphCacheTTL = 10 * time.Minute
-
 // KnowledgeGraph handles GET /api/knowledge-graph.
 func (h *Handler) KnowledgeGraph(w http.ResponseWriter, r *http.Request) {
-	h.graphMu.RLock()
-	if h.graphCache != nil && time.Since(h.graphAt) < graphCacheTTL {
-		cached := h.graphCache
-		h.graphMu.RUnlock()
-		api.Encode(w, http.StatusOK, api.Response{Data: cached})
+	if graph, ok := h.graphCache.Get("graph"); ok {
+		api.Encode(w, http.StatusOK, api.Response{Data: graph})
 		return
 	}
-	h.graphMu.RUnlock()
 
 	// singleflight prevents thundering herd — only one goroutine builds the graph.
-	// Use context.WithoutCancel so a cancelled request doesn't fail all waiters.
+	// Use independent context so no single caller's timeout aborts the shared build.
 	v, err, _ := h.graphSF.Do("graph", func() (any, error) {
-		return h.buildKnowledgeGraph(context.WithoutCancel(r.Context()))
+		buildCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		graph, buildErr := h.buildKnowledgeGraph(buildCtx)
+		if buildErr != nil {
+			return nil, buildErr
+		}
+		if !h.graphCache.SetWithTTL("graph", graph, 1, graphTTL) {
+			h.logger.Warn("graph cache set rejected")
+		}
+		h.graphCache.Wait()
+		return graph, nil
 	})
 	if err != nil {
 		h.logger.Error("building knowledge graph", "error", err)
@@ -385,13 +434,7 @@ func (h *Handler) KnowledgeGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	graph := v.(*KnowledgeGraph)
-	h.graphMu.Lock()
-	h.graphCache = graph
-	h.graphAt = time.Now()
-	h.graphMu.Unlock()
-
-	api.Encode(w, http.StatusOK, api.Response{Data: graph})
+	api.Encode(w, http.StatusOK, api.Response{Data: v.(*KnowledgeGraph)})
 }
 
 const (

@@ -23,7 +23,15 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 // Create inserts a new review queue entry.
+// If a pending review already exists for this content, it returns nil (no-op).
 func (s *Store) Create(ctx context.Context, contentID uuid.UUID, reviewLevel string, notes *string) (*Review, error) {
+	exists, err := s.q.PendingReviewExistsForContent(ctx, contentID)
+	if err != nil {
+		return nil, fmt.Errorf("checking pending review for content %s: %w", contentID, err)
+	}
+	if exists {
+		return nil, nil
+	}
 	r, err := s.q.CreateReview(ctx, db.CreateReviewParams{
 		ContentID:     contentID,
 		ReviewLevel:   db.ReviewLevel(reviewLevel),

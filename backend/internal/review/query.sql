@@ -1,3 +1,9 @@
+-- name: PendingReviewExistsForContent :one
+SELECT EXISTS(
+    SELECT 1 FROM review_queue
+    WHERE content_id = $1 AND status = 'pending'
+) AS exists;
+
 -- name: CreateReview :one
 INSERT INTO review_queue (content_id, review_level, reviewer_notes)
 VALUES ($1, $2, $3)
