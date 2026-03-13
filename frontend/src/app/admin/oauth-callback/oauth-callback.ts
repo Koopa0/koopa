@@ -23,9 +23,12 @@ export default class OAuthCallbackComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
 
   ngOnInit(): void {
-    const params = this.route.snapshot.queryParams;
-    const accessToken = params['access_token'];
-    const refreshToken = params['refresh_token'];
+    // Backend redirects with tokens in the URL fragment (#) to prevent them
+    // from appearing in server logs and Referer headers.
+    // Fall back to query params for error redirects (?error=...).
+    const fragment = new URLSearchParams(window.location.hash.replace('#', ''));
+    const accessToken = fragment.get('access_token');
+    const refreshToken = fragment.get('refresh_token');
 
     // 清除 URL 中的 token 避免洩漏至瀏覽器歷史和 Referer header
     window.history.replaceState({}, '', '/admin/oauth-callback');
@@ -34,8 +37,9 @@ export default class OAuthCallbackComponent implements OnInit {
       this.authService.handleOAuthCallback(accessToken, refreshToken);
       this.router.navigate(['/admin'], { replaceUrl: true });
     } else {
+      const queryParams = this.route.snapshot.queryParams;
       this.router.navigate(['/login'], {
-        queryParams: { error: params['error'] || 'missing_tokens' },
+        queryParams: { error: queryParams['error'] || 'missing_tokens' },
         replaceUrl: true,
       });
     }
