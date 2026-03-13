@@ -24,11 +24,12 @@ type AlertSender interface {
 type Store struct {
 	q      *db.Queries
 	alerts AlertSender
+	logger *slog.Logger
 }
 
 // NewStore returns a Store backed by the given pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{q: db.New(pool)}
+func NewStore(pool *pgxpool.Pool, logger *slog.Logger) *Store {
+	return &Store{q: db.New(pool), logger: logger}
 }
 
 // SetAlerts sets the alert sender for auto-disable notifications.
@@ -96,7 +97,7 @@ func (s *Store) CreateFeed(ctx context.Context, p CreateParams) (*Feed, error) {
 	}
 	filterJSON, err := json.Marshal(p.Filter)
 	if err != nil {
-		filterJSON = []byte("{}")
+		return nil, fmt.Errorf("marshaling filter config: %w", err)
 	}
 	r, err := s.q.CreateFeed(ctx, db.CreateFeedParams{
 		Url:          p.URL,
@@ -119,7 +120,11 @@ func (s *Store) CreateFeed(ctx context.Context, p CreateParams) (*Feed, error) {
 func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p UpdateParams) (*Feed, error) {
 	var filterJSON json.RawMessage
 	if p.Filter != nil {
-		filterJSON, _ = json.Marshal(p.Filter)
+		var err error
+		filterJSON, err = json.Marshal(p.Filter)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling filter config: %w", err)
+		}
 	}
 	r, err := s.q.UpdateFeed(ctx, db.UpdateFeedParams{
 		ID:           id,
@@ -164,7 +169,7 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 
 	if failures >= MaxConsecutiveFailures {
 		reason := fmt.Sprintf("auto-disabled: %d consecutive failures", MaxConsecutiveFailures)
-		slog.Warn("auto-disabling feed", "feed_id", id, "failures", failures)
+		s.logger.Warn("auto-disabling feed", "feed_id", id, "failures", failures)
 		if err := s.q.AutoDisableFeed(ctx, db.AutoDisableFeedParams{
 			ID:             id,
 			DisabledReason: reason,
@@ -176,7 +181,7 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 			msg := fmt.Sprintf("[ALERT] Feed auto-disabled\nFeed ID: %s\nFailures: %d\nLast error: %s",
 				id, failures, errMsg)
 			if sendErr := s.alerts.Send(ctx, msg); sendErr != nil {
-				slog.Error("sending feed disable alert", "feed_id", id, "error", sendErr)
+				s.logger.Error("sending feed disable alert", "feed_id", id, "error", sendErr)
 			}
 		}
 	}

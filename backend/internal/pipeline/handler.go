@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -77,6 +78,7 @@ type NotionSyncer interface {
 
 // Handler handles pipeline and webhook HTTP requests.
 type Handler struct {
+	wg            sync.WaitGroup
 	content       ContentWriter
 	topics        TopicLookup
 	fetcher       GitHubFetcher
@@ -125,6 +127,17 @@ func (h *Handler) SetDedup(c *webhook.DeduplicationCache) {
 	h.dedup = c
 }
 
+// Go runs fn in a tracked goroutine. Wait will block until fn returns.
+func (h *Handler) Go(fn func()) {
+	h.wg.Go(fn)
+}
+
+// Wait blocks until all in-flight background operations complete.
+// Call during graceful shutdown to drain work before exiting.
+func (h *Handler) Wait() {
+	h.wg.Wait()
+}
+
 // NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
 func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
 	return &topicLookupFunc{fn: fn}
@@ -137,10 +150,10 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
-	go func() {
+	h.wg.Go(func() {
 		ctx := context.WithoutCancel(r.Context())
 		h.SyncAllFromGitHub(ctx)
-	}()
+	})
 }
 
 // SyncAllFromGitHub lists 10-Public-Content/ on GitHub and syncs each file.
@@ -151,13 +164,9 @@ func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
 		return
 	}
 
-	var synced, skipped, failed int
+	var synced, failed int
 	for _, slug := range slugs {
 		path := "10-Public-Content/" + slug + ".md"
-
-		// check if content already exists — skip if up-to-date
-		// (syncFile handles create-or-update, so we always call it
-		// to pick up any changes in the markdown content)
 		if err := h.syncFile(ctx, path); err != nil {
 			h.logger.Error("sync: syncing file", "path", path, "error", err)
 			failed++
@@ -169,7 +178,6 @@ func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
 	h.logger.Info("sync: complete",
 		"total", len(slugs),
 		"synced", synced,
-		"skipped", skipped,
 		"failed", failed,
 	)
 }
@@ -183,10 +191,10 @@ func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
-	go func() {
+	h.wg.Go(func() {
 		ctx := context.WithoutCancel(r.Context())
 		h.notionSync.SyncAll(ctx)
-	}()
+	})
 }
 
 // Reconcile handles POST /api/pipeline/reconcile — full Obsidian + Notion reconciliation.
@@ -198,13 +206,13 @@ func (h *Handler) Reconcile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
-	go func() {
+	h.wg.Go(func() {
 		// Detach from HTTP request lifecycle; reconciler calls external APIs.
 		ctx := context.WithoutCancel(r.Context())
 		if err := h.reconciler.Run(ctx); err != nil {
 			h.logger.Error("full reconciliation failed", "error", err)
 		}
-	}()
+	})
 }
 
 // collectRequest is the optional request body for POST /api/pipeline/collect.
@@ -249,7 +257,9 @@ func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 	// respond 202 immediately, collect in background
 	w.WriteHeader(http.StatusAccepted)
 
-	go h.collectFeeds(context.WithoutCancel(r.Context()), feeds, schedule)
+	h.wg.Go(func() {
+		h.collectFeeds(context.WithoutCancel(r.Context()), feeds, schedule)
+	})
 }
 
 // collectFeeds fetches each feed and stores new items.
@@ -349,11 +359,6 @@ func (h *Handler) Bookmark(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`) // best-effort
 }
 
-// WebhookObsidian handles POST /api/webhook/obsidian.
-func (h *Handler) WebhookObsidian(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
-
 // WebhookGithub handles POST /api/webhook/github.
 func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
@@ -365,7 +370,7 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sig := r.Header.Get("X-Hub-Signature-256")
-	if err := VerifySignature(body, sig, h.webhookSecret); err != nil {
+	if err := webhook.VerifySignature(body, sig, h.webhookSecret); err != nil {
 		h.logger.Warn("invalid webhook signature")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -418,11 +423,11 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 	// respond 202 immediately, process in background
 	w.WriteHeader(http.StatusAccepted)
 
-	go func() {
+	h.wg.Go(func() {
 		ctx := context.WithoutCancel(r.Context())
 		h.syncFiles(ctx, files)
 		h.archiveRemovedFiles(ctx, removed)
-	}()
+	})
 }
 
 // handleProjectTrack submits a project-track flow job for non-Obsidian repos.

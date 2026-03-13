@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/google/uuid"
 
@@ -62,7 +61,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, perPage := parsePagination(r)
+	page, perPage := api.ParsePagination(r)
 
 	contents, total, err := h.content.ContentsByTopicID(r.Context(), t.ID, page, perPage)
 	if err != nil {
@@ -79,7 +78,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/admin/topics.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	p, err := api.Decode[CreateParams](r)
+	p, err := api.Decode[CreateParams](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -110,7 +109,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := api.Decode[UpdateParams](r)
+	p, err := api.Decode[UpdateParams](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -147,20 +146,4 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func parsePagination(r *http.Request) (page, perPage int) {
-	page = 1
-	perPage = 20
-	if v := r.URL.Query().Get("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
-		}
-	}
-	if v := r.URL.Query().Get("per_page"); v != "" {
-		if pp, err := strconv.Atoi(v); err == nil && pp > 0 && pp <= 100 {
-			perPage = pp
-		}
-	}
-	return page, perPage
 }

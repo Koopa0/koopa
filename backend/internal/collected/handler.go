@@ -62,7 +62,7 @@ func (h *Handler) Curate(w http.ResponseWriter, r *http.Request) {
 	type curateRequest struct {
 		ContentID uuid.UUID `json:"content_id"`
 	}
-	req, err := api.Decode[curateRequest](r)
+	req, err := api.Decode[curateRequest](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -103,7 +103,7 @@ func (h *Handler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 	type feedbackRequest struct {
 		Feedback string `json:"feedback"`
 	}
-	req, err := api.Decode[feedbackRequest](r)
+	req, err := api.Decode[feedbackRequest](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return

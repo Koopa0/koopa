@@ -12,7 +12,7 @@ import { AuthService } from '../../core/services/auth.service';
   standalone: true,
   template: `
     <div class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950">
-      <div class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200"></div>
+      <div class="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200"></div>
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -26,6 +26,9 @@ export default class OAuthCallbackComponent implements OnInit {
     const params = this.route.snapshot.queryParams;
     const accessToken = params['access_token'];
     const refreshToken = params['refresh_token'];
+
+    // 清除 URL 中的 token 避免洩漏至瀏覽器歷史和 Referer header
+    window.history.replaceState({}, '', '/admin/oauth-callback');
 
     if (accessToken && refreshToken) {
       this.authService.handleOAuthCallback(accessToken, refreshToken);

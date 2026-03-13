@@ -1042,6 +1042,15 @@ func (q *Queries) CurateCollected(ctx context.Context, arg CurateCollectedParams
 	return i, err
 }
 
+const deleteContentTopics = `-- name: DeleteContentTopics :exec
+DELETE FROM content_topics WHERE content_id = $1
+`
+
+func (q *Queries) DeleteContentTopics(ctx context.Context, contentID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteContentTopics, contentID)
+	return err
+}
+
 const deleteExpiredTokens = `-- name: DeleteExpiredTokens :exec
 DELETE FROM refresh_tokens
 WHERE expires_at < now()
@@ -1345,7 +1354,9 @@ func (q *Queries) FlowRunsCount(ctx context.Context, status NullFlowStatus) (int
 }
 
 const goalByNotionPageID = `-- name: GoalByNotionPageID :one
-SELECT id, title, description, status, area, quarter, deadline, notion_page_id, created_at, updated_at FROM goals WHERE notion_page_id = $1
+SELECT id, title, description, status, area, quarter, deadline,
+       notion_page_id, created_at, updated_at
+FROM goals WHERE notion_page_id = $1
 `
 
 func (q *Queries) GoalByNotionPageID(ctx context.Context, notionPageID *string) (Goal, error) {
@@ -1367,7 +1378,9 @@ func (q *Queries) GoalByNotionPageID(ctx context.Context, notionPageID *string) 
 }
 
 const goals = `-- name: Goals :many
-SELECT id, title, description, status, area, quarter, deadline, notion_page_id, created_at, updated_at FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC
+SELECT id, title, description, status, area, quarter, deadline,
+       notion_page_id, created_at, updated_at
+FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC
 `
 
 func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
@@ -2411,15 +2424,6 @@ func (q *Queries) SearchContentsCount(ctx context.Context, websearchToTsquery st
 	return count, err
 }
 
-const setContentTopics = `-- name: SetContentTopics :exec
-DELETE FROM content_topics WHERE content_id = $1
-`
-
-func (q *Queries) SetContentTopics(ctx context.Context, contentID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, setContentTopics, contentID)
-	return err
-}
-
 const similarContents = `-- name: SimilarContents :many
 SELECT c.id, c.slug, c.title, c.excerpt, c.type,
        (1 - (c.embedding <=> $1::vector))::float8 AS similarity
@@ -2565,8 +2569,9 @@ func (q *Queries) Topics(ctx context.Context) ([]TopicsRow, error) {
 }
 
 const topicsForContent = `-- name: TopicsForContent :many
-SELECT t.id, t.slug, t.name FROM topics t
-JOIN content_topics ct ON ct.topic_id = t.id
+SELECT t.id, t.slug, t.name
+FROM content_topics ct
+JOIN topics t ON t.id = ct.topic_id
 WHERE ct.content_id = $1
 `
 
@@ -2586,6 +2591,45 @@ func (q *Queries) TopicsForContent(ctx context.Context, contentID uuid.UUID) ([]
 	for rows.Next() {
 		var i TopicsForContentRow
 		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topicsForContents = `-- name: TopicsForContents :many
+SELECT ct.content_id, t.id, t.slug, t.name
+FROM content_topics ct
+JOIN topics t ON t.id = ct.topic_id
+WHERE ct.content_id = ANY($1::uuid[])
+`
+
+type TopicsForContentsRow struct {
+	ContentID uuid.UUID `json:"content_id"`
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+}
+
+func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) ([]TopicsForContentsRow, error) {
+	rows, err := q.db.Query(ctx, topicsForContents, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TopicsForContentsRow{}
+	for rows.Next() {
+		var i TopicsForContentsRow
+		if err := rows.Scan(
+			&i.ContentID,
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -3120,7 +3164,8 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     quarter     = EXCLUDED.quarter,
     deadline    = EXCLUDED.deadline,
     updated_at  = now()
-RETURNING id, title, description, status, area, quarter, deadline, notion_page_id, created_at, updated_at
+RETURNING id, title, description, status, area, quarter, deadline,
+          notion_page_id, created_at, updated_at
 `
 
 type UpsertGoalByNotionPageIDParams struct {

@@ -1,8 +1,12 @@
 -- name: Goals :many
-SELECT * FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC;
+SELECT id, title, description, status, area, quarter, deadline,
+       notion_page_id, created_at, updated_at
+FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC;
 
 -- name: GoalByNotionPageID :one
-SELECT * FROM goals WHERE notion_page_id = @notion_page_id;
+SELECT id, title, description, status, area, quarter, deadline,
+       notion_page_id, created_at, updated_at
+FROM goals WHERE notion_page_id = @notion_page_id;
 
 -- name: NotionGoalPageIDs :many
 SELECT notion_page_id FROM goals WHERE notion_page_id IS NOT NULL ORDER BY title;
@@ -18,7 +22,8 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     quarter     = EXCLUDED.quarter,
     deadline    = EXCLUDED.deadline,
     updated_at  = now()
-RETURNING *;
+RETURNING id, title, description, status, area, quarter, deadline,
+          notion_page_id, created_at, updated_at;
 
 -- name: ArchiveOrphanNotionGoals :execrows
 UPDATE goals SET status = 'abandoned', updated_at = now()

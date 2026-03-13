@@ -46,7 +46,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/admin/feeds.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	p, err := api.Decode[CreateParams](r)
+	p, err := api.Decode[CreateParams](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -81,7 +81,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := api.Decode[UpdateParams](r)
+	p, err := api.Decode[UpdateParams](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return

@@ -5,6 +5,7 @@ import {
   inject,
 } from '@angular/core';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { environment } from '../../../environments/environment';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 @Component({
@@ -22,7 +23,7 @@ export class PrivacyComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Privacy Policy',
       description: 'Privacy policy for koopa0.dev — how we collect, use, and protect your information.',
-      ogUrl: 'https://koopa0.dev/privacy',
+      ogUrl: `${environment.siteUrl}/privacy`,
     });
   }
 }

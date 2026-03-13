@@ -1,10 +1,12 @@
 import {
   Component,
   ChangeDetectionStrategy,
+  DestroyRef,
   inject,
   signal,
   OnInit,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import {
@@ -12,7 +14,8 @@ import {
   Calendar,
   StickyNote,
 } from 'lucide-angular';
-import { NoteService } from '../../core/services/note.service';
+import { environment } from '../../../environments/environment';
+import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
@@ -28,8 +31,9 @@ import type { ApiContent } from '../../core/models';
   host: { '[@fadeInUp]': '' },
 })
 export class NotesComponent implements OnInit {
-  private readonly noteService = inject(NoteService);
+  private readonly contentService = inject(ContentService);
   private readonly seoService = inject(SeoService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly notes = signal<ApiContent[]>([]);
   protected readonly isLoading = signal(true);
@@ -42,20 +46,20 @@ export class NotesComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Notes',
       description: 'Code snippets, config notes, and reading notes.',
-      ogUrl: 'https://koopa0.dev/notes',
+      ogUrl: `${environment.siteUrl}/notes`,
       jsonLd: buildCollectionPageSchema({
         name: 'Notes',
         description: 'Code snippets, config notes, and reading notes.',
-        url: 'https://koopa0.dev/notes',
+        url: `${environment.siteUrl}/notes`,
       }),
     });
     this.loadNotes();
   }
 
-  private loadNotes(): void {
-    this.noteService.getNotes(1, 100).subscribe({
+  protected loadNotes(): void {
+    this.contentService.listByType('note', { page: 1, perPage: 100 }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (response) => {
-        this.notes.set(response.notes);
+        this.notes.set(response.data);
         this.isLoading.set(false);
       },
       error: () => {

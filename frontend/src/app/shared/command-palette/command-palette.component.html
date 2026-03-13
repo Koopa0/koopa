@@ -27,7 +27,7 @@
       <!-- Search Input -->
       <div class="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
         <svg
-          class="h-5 w-5 shrink-0 text-zinc-500"
+          class="size-5 shrink-0 text-zinc-500"
           fill="none"
           viewBox="0 0 24 24"
           stroke-width="2"
@@ -49,6 +49,10 @@
           (keydown)="onKeydown($event)"
           autocomplete="off"
           spellcheck="false"
+          role="combobox"
+          aria-controls="command-palette-listbox"
+          [attr.aria-activedescendant]="'cp-item-' + activeIndex()"
+          aria-expanded="true"
           data-testid="command-palette-input"
         />
         <kbd
@@ -63,6 +67,7 @@
         class="max-h-80 overflow-y-auto overscroll-contain py-2"
         #resultsList
         role="listbox"
+        id="command-palette-listbox"
         data-testid="command-palette-results"
       >
         @if (isSearchMode()) {
@@ -70,7 +75,7 @@
           @if (isSearching()) {
             <div class="flex items-center justify-center gap-2 px-4 py-8 text-zinc-500">
               <div
-                class="h-4 w-4 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+                class="size-4 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
               ></div>
               <span class="text-sm">搜尋中...</span>
             </div>
@@ -87,12 +92,13 @@
                   [class.text-zinc-100]="activeIndex() === i + filteredActions().length"
                   [class.text-zinc-400]="activeIndex() !== i + filteredActions().length"
                   [attr.data-index]="i + filteredActions().length"
+                  [id]="'cp-item-' + (i + filteredActions().length)"
                   (mouseenter)="activeIndex.set(i + filteredActions().length)"
                   (click)="selectSearchResult(result)"
                   role="option"
                   [attr.aria-selected]="activeIndex() === i + filteredActions().length"
                 >
-                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-zinc-700/50 bg-zinc-800/50">
+                  <div class="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-700/50 bg-zinc-800/50">
                     <span class="text-xs text-zinc-500">{{ getTypeLabel(result.type) }}</span>
                   </div>
                   <div class="min-w-0 flex-1">
@@ -127,13 +133,14 @@
                   [class.text-zinc-100]="activeIndex() === item.flatIndex"
                   [class.text-zinc-400]="activeIndex() !== item.flatIndex"
                   [attr.data-index]="item.flatIndex"
+                  [id]="'cp-item-' + item.flatIndex"
                   (mouseenter)="activeIndex.set(item.flatIndex)"
                   (click)="executeAction(item.action)"
                   role="option"
                   [attr.aria-selected]="activeIndex() === item.flatIndex"
                 >
-                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-zinc-700/50 bg-zinc-800/50 text-zinc-500">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <div class="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-700/50 bg-zinc-800/50 text-zinc-500">
+                    <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
                     </svg>
                   </div>

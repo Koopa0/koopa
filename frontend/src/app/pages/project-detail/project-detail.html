@@ -38,7 +38,7 @@
       </button>
     </div>
 
-    <h1 class="mb-4 text-3xl font-bold text-zinc-100 sm:text-4xl">
+    <h1 class="mb-4 text-3xl font-bold text-balance text-zinc-100 sm:text-4xl">
       {{ project()!.title }}
     </h1>
 
@@ -137,7 +137,7 @@
             @for (highlight of project()!.highlights; track highlight) {
             <li class="flex items-start gap-3 text-sm text-zinc-400">
               <span
-                class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-600"
+                class="mt-1.5 size-1.5 shrink-0 rounded-full bg-zinc-600"
               ></span>
               {{ highlight }}
             </li>

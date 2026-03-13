@@ -5,9 +5,12 @@ import {
   OnInit,
   signal,
   input,
+  viewChild,
+  ElementRef,
 } from '@angular/core';
 import {
   FormBuilder,
+  FormControl,
   FormGroup,
   Validators,
   ReactiveFormsModule,
@@ -46,6 +49,8 @@ import type {
   ApiCreateContentRequest,
   ApiUpdateContentRequest,
 } from '../../core/models';
+import { TextFieldModule } from '@angular/cdk/text-field';
+import type { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 
 const STATUS_OPTIONS: { value: ContentStatus; label: string }[] = [
   { value: 'draft', label: 'Draft' },
@@ -56,11 +61,11 @@ const STATUS_OPTIONS: { value: ContentStatus; label: string }[] = [
 @Component({
   selector: 'app-article-editor',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule],
+  imports: [ReactiveFormsModule, LucideAngularModule, TextFieldModule],
   templateUrl: './article-editor.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ArticleEditorComponent implements OnInit {
+export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
   /** Route param: admin/editor/:id (undefined for new articles) */
   readonly id = input<string>();
 
@@ -77,6 +82,7 @@ export class ArticleEditorComponent implements OnInit {
   protected readonly previewHtml = signal('');
   protected readonly selectedTab = signal<'edit' | 'preview' | 'split'>('edit');
   protected readonly isUploading = signal(false);
+  private readonly isFormDirty = signal(false);
 
   /** Article ID stored in edit mode */
   private articleId: string | null = null;
@@ -118,6 +124,12 @@ export class ArticleEditorComponent implements OnInit {
   protected readonly Loader2Icon = Loader2;
   protected readonly Trash2Icon = Trash2;
 
+  private readonly bodyTextarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('bodyTextarea');
+
+  protected get bodyControl(): FormControl<string> {
+    return this.articleForm.get('body') as FormControl<string>;
+  }
+
   constructor() {
     this.articleForm = this.fb.group({
       title: ['', [Validators.required, Validators.minLength(5)]],
@@ -137,6 +149,16 @@ export class ArticleEditorComponent implements OnInit {
           this.updatePreview(body);
         }
       });
+
+    this.articleForm.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        this.isFormDirty.set(true);
+      });
+  }
+
+  hasUnsavedChanges(): boolean {
+    return this.isFormDirty() && !this.isSaving();
   }
 
   ngOnInit(): void {
@@ -277,6 +299,7 @@ Summarize your thoughts here...
           this.notificationService.success(
             status === 'published' ? 'Article published!' : 'Draft saved!',
           );
+          this.isFormDirty.set(false);
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
@@ -308,6 +331,7 @@ Summarize your thoughts here...
           this.notificationService.success(
             status === 'published' ? 'Article published!' : 'Draft saved!',
           );
+          this.isFormDirty.set(false);
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
@@ -386,6 +410,52 @@ Summarize your thoughts here...
 
   protected removeCoverImage(): void {
     this.articleForm.patchValue({ cover_image: '' });
+  }
+
+  protected insertFormatting(prefix: string, suffix: string, placeholder: string): void {
+    const textarea = this.bodyTextarea().nativeElement;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const selected = text.substring(start, end);
+
+    const insertion = selected || placeholder;
+    const newText = text.substring(0, start) + prefix + insertion + suffix + text.substring(end);
+
+    this.articleForm.patchValue({ body: newText });
+    this.updatePreview(newText);
+
+    setTimeout(() => {
+      textarea.focus();
+      const cursorPos = selected
+        ? start + prefix.length + selected.length + suffix.length
+        : start + prefix.length;
+      const selEnd = selected
+        ? cursorPos
+        : cursorPos + placeholder.length;
+      textarea.setSelectionRange(cursorPos, selected ? cursorPos : selEnd);
+    }, 0);
+  }
+
+  protected insertBold(): void {
+    this.insertFormatting('**', '**', 'bold text');
+  }
+
+  protected insertItalic(): void {
+    this.insertFormatting('*', '*', 'italic text');
+  }
+
+  protected insertLink(): void {
+    this.insertFormatting('[', '](url)', 'link text');
+  }
+
+  protected insertCode(): void {
+    this.insertFormatting('`', '`', 'code');
+  }
+
+  protected insertImage(): void {
+    this.insertFormatting('![', '](url)', 'alt text');
   }
 
   protected cancel(): void {

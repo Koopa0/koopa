@@ -105,8 +105,8 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 		return ProjectTrackOutput{Skipped: true, Text: "project not found for repo"}, nil
 	}
 
-	if err := pt.budget.Check(estimatedTrackTokens); err != nil {
-		return ProjectTrackOutput{}, fmt.Errorf("budget check: %w", err)
+	if err := pt.budget.Reserve(estimatedTrackTokens); err != nil {
+		return ProjectTrackOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	pt.logger.Info("project-track starting", "repo", input.Repo, "project", proj.Title, "commits", len(input.Commits))
@@ -131,8 +131,6 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 	if err != nil {
 		return ProjectTrackOutput{}, err
 	}
-
-	pt.budget.Add(estimatedTrackTokens)
 
 	// Update project's long description with the progress update
 	_, err = pt.updater.UpdateProject(ctx, proj.ID, project.UpdateParams{
@@ -172,13 +170,8 @@ func buildProjectTrackPrompt(proj *project.Project, commits []string) string {
 
 // NewMockProjectTrack returns a mock Flow for MOCK_MODE.
 func NewMockProjectTrack() Flow {
-	return &mockProjectTrackFlow{}
-}
-
-type mockProjectTrackFlow struct{}
-
-func (m *mockProjectTrackFlow) Name() string { return "project-track" }
-
-func (m *mockProjectTrackFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	return json.Marshal(ProjectTrackOutput{Text: "Mock project track", Skipped: true})
+	return &mockFlow{
+		name:   "project-track",
+		output: ProjectTrackOutput{Text: "Mock project track", Skipped: true},
+	}
 }

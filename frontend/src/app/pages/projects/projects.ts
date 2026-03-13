@@ -1,11 +1,13 @@
 import {
   Component,
   ChangeDetectionStrategy,
+  DestroyRef,
   inject,
   signal,
   computed,
   OnInit,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
@@ -16,6 +18,7 @@ import {
 } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { environment } from '../../../environments/environment';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiProject, ProjectStatus } from '../../core/models';
@@ -32,6 +35,7 @@ import type { ApiProject, ProjectStatus } from '../../core/models';
 export class ProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly seoService = inject(SeoService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly projects = signal<ApiProject[]>([]);
   protected readonly isLoading = signal(true);
@@ -67,11 +71,11 @@ export class ProjectsComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Projects',
       description: 'Open-source and personal projects — backend services, CLI tools, and full-stack apps.',
-      ogUrl: 'https://koopa0.dev/projects',
+      ogUrl: `${environment.siteUrl}/projects`,
       jsonLd: buildCollectionPageSchema({
         name: 'Projects',
         description: 'Open-source and personal projects — backend services, CLI tools, and full-stack apps.',
-        url: 'https://koopa0.dev/projects',
+        url: `${environment.siteUrl}/projects`,
       }),
     });
     this.loadProjects();
@@ -101,8 +105,8 @@ export class ProjectsComponent implements OnInit {
     return classes[status];
   }
 
-  private loadProjects(): void {
-    this.projectService.getAllProjects().subscribe({
+  protected loadProjects(): void {
+    this.projectService.getAllProjects().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (projects) => {
         this.projects.set(projects);
         this.isLoading.set(false);

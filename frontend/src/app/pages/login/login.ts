@@ -71,7 +71,15 @@ export class LoginComponent implements OnInit {
     this.http
       .get<{ data: { url: string } }>('/bff/api/auth/google')
       .subscribe({
-        next: (res) => (window.location.href = res.data.url),
+        next: (res) => {
+          const redirectUrl = new URL(res.data.url);
+          const allowedOrigins = ['https://accounts.google.com', 'https://github.com'];
+          if (allowedOrigins.some(origin => redirectUrl.origin === origin)) {
+            window.location.href = res.data.url;
+          } else {
+            this.errorMessage.set('Invalid redirect URL');
+          }
+        },
         error: () => this.errorMessage.set('無法取得登入連結，請稍後再試'),
       });
   }

@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/collected"
@@ -33,6 +35,7 @@ type ContentStrategy struct {
 	projects  ActiveProjectLister
 	notifier  Sender
 	budget    BudgetChecker
+	loc       *time.Location
 	logger    *slog.Logger
 }
 
@@ -45,6 +48,7 @@ func NewContentStrategy(
 	projects ActiveProjectLister,
 	notifier Sender,
 	budget BudgetChecker,
+	loc *time.Location,
 	logger *slog.Logger,
 ) *ContentStrategy {
 	cs := &ContentStrategy{
@@ -55,6 +59,7 @@ func NewContentStrategy(
 		projects:  projects,
 		notifier:  notifier,
 		budget:    budget,
+		loc:       loc,
 		logger:    logger,
 	}
 	cs.gf = genkit.DefineFlow(g, "content-strategy", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
@@ -81,13 +86,13 @@ const (
 )
 
 func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, error) {
-	if err := cs.budget.Check(estimatedStrategyTokens); err != nil {
-		return ContentStrategyOutput{}, fmt.Errorf("budget check: %w", err)
+	if err := cs.budget.Reserve(estimatedStrategyTokens); err != nil {
+		return ContentStrategyOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	cs.logger.Info("content-strategy starting")
 
-	now := time.Now()
+	now := time.Now().In(cs.loc)
 	monthAgo := now.Add(-30 * 24 * time.Hour)
 	weekAgo := now.Add(-7 * 24 * time.Hour)
 
@@ -100,20 +105,17 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 		projErr   error
 	)
 
-	g := new(errgroup.Group)
-	g.Go(func() error {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		published, pubErr = cs.contents.PublishedByDateRange(ctx, monthAgo, now)
-		return nil // never fail the group
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		rssItems, rssErr = cs.collected.HighScoreCollectedData(ctx, weekAgo, now, strategyMinScore)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		projects, projErr = cs.projects.ActiveProjects(ctx)
-		return nil
 	})
-	_ = g.Wait()
+	wg.Wait()
 
 	userPrompt := buildContentStrategyPrompt(published, pubErr, rssItems, rssErr, projects, projErr, monthAgo, now)
 
@@ -135,8 +137,6 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 	if err != nil {
 		return ContentStrategyOutput{}, err
 	}
-
-	cs.budget.Add(estimatedStrategyTokens)
 
 	if err := cs.notifier.Send(ctx, "[Content Strategy]\n"+text); err != nil {
 		cs.logger.Error("sending content-strategy notification", "error", err)
@@ -175,8 +175,8 @@ func buildContentStrategyPrompt(
 			typeCounts[c.Type]++
 		}
 		fmt.Fprintf(&b, "共 %d 篇\n", len(published))
-		for t, count := range typeCounts {
-			fmt.Fprintf(&b, "- %s: %d 篇\n", t, count)
+		for _, t := range slices.Sorted(maps.Keys(typeCounts)) {
+			fmt.Fprintf(&b, "- %s: %d 篇\n", t, typeCounts[t])
 		}
 		b.WriteString("\n最近發佈：\n")
 		limit := min(len(published), 5)
@@ -237,8 +237,8 @@ func buildContentStrategyPrompt(
 		if len(ownTags) == 0 {
 			b.WriteString("（無標籤資料）\n")
 		} else {
-			for tag, count := range ownTags {
-				fmt.Fprintf(&b, "- %s: %d 篇\n", tag, count)
+			for _, tag := range slices.Sorted(maps.Keys(ownTags)) {
+				fmt.Fprintf(&b, "- %s: %d 篇\n", tag, ownTags[tag])
 			}
 		}
 
@@ -246,14 +246,14 @@ func buildContentStrategyPrompt(
 		if len(rssTags) == 0 {
 			b.WriteString("（無標籤資料）\n")
 		} else {
-			for tag, count := range rssTags {
-				fmt.Fprintf(&b, "- %s: %d 篇\n", tag, count)
+			for _, tag := range slices.Sorted(maps.Keys(rssTags)) {
+				fmt.Fprintf(&b, "- %s: %d 篇\n", tag, rssTags[tag])
 			}
 		}
 
 		// Find gaps: topics in RSS but not in own content
 		var gaps []string
-		for tag := range rssTags {
+		for _, tag := range slices.Sorted(maps.Keys(rssTags)) {
 			if ownTags[tag] == 0 {
 				gaps = append(gaps, tag)
 			}
@@ -271,13 +271,8 @@ func buildContentStrategyPrompt(
 
 // NewMockContentStrategy returns a mock Flow for MOCK_MODE.
 func NewMockContentStrategy() Flow {
-	return &mockContentStrategyFlow{}
-}
-
-type mockContentStrategyFlow struct{}
-
-func (m *mockContentStrategyFlow) Name() string { return "content-strategy" }
-
-func (m *mockContentStrategyFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	return json.Marshal(ContentStrategyOutput{Text: "Mock content strategy"})
+	return &mockFlow{
+		name:   "content-strategy",
+		output: ContentStrategyOutput{Text: "Mock content strategy"},
+	}
 }

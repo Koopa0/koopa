@@ -1,18 +1,6 @@
 // Package pipeline handles webhook processing and content sync orchestration.
 package pipeline
 
-import (
-	"github.com/koopa0/blog-backend/internal/webhook"
-)
-
-// ErrInvalidSignature is an alias for webhook.ErrInvalidSignature for backward compatibility.
-var ErrInvalidSignature = webhook.ErrInvalidSignature
-
-// VerifySignature delegates to webhook.VerifySignature.
-func VerifySignature(payload []byte, signature, secret string) error {
-	return webhook.VerifySignature(payload, signature, secret)
-}
-
 // PushEvent represents a GitHub push webhook payload.
 type PushEvent struct {
 	Ref        string         `json:"ref"`

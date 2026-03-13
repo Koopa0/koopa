@@ -20,17 +20,18 @@ func New(dailyLimit int64) *Budget {
 	return &Budget{limit: dailyLimit}
 }
 
-// Check returns nil if spending tokens would stay within budget, or ErrOverBudget.
-func (b *Budget) Check(tokens int64) error {
-	if b.used.Load()+tokens > b.limit {
-		return ErrOverBudget
+// Reserve atomically checks and adds tokens in a single operation.
+// Returns ErrOverBudget if the reservation would exceed the daily limit.
+func (b *Budget) Reserve(tokens int64) error {
+	for {
+		current := b.used.Load()
+		if current+tokens > b.limit {
+			return ErrOverBudget
+		}
+		if b.used.CompareAndSwap(current, current+tokens) {
+			return nil
+		}
 	}
-	return nil
-}
-
-// Add records token usage.
-func (b *Budget) Add(tokens int64) {
-	b.used.Add(tokens)
 }
 
 // Reset resets the counter to zero. Called by midnight cron.

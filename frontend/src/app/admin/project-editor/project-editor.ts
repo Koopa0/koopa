@@ -13,6 +13,7 @@ import {
   ReactiveFormsModule,
 } from '@angular/forms';
 import { Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LucideAngularModule, ArrowLeft, Save, Plus, X } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { NotificationService } from '../../core/services/notification.service';
@@ -21,6 +22,7 @@ import type {
   ApiCreateProjectRequest,
   ApiUpdateProjectRequest,
 } from '../../core/models';
+import type { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 
 @Component({
   selector: 'app-project-editor',
@@ -29,7 +31,7 @@ import type {
   templateUrl: './project-editor.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ProjectEditorComponent implements OnInit {
+export class ProjectEditorComponent implements OnInit, HasUnsavedChanges {
   /** Route param: admin/project-editor/:id (undefined for new projects) */
   readonly id = input<string>();
 
@@ -41,6 +43,7 @@ export class ProjectEditorComponent implements OnInit {
   protected readonly isLoading = signal(false);
   protected readonly isSaving = signal(false);
   protected readonly isNewProject = signal(true);
+  private readonly isFormDirty = signal(false);
 
   /** Project ID stored in edit mode */
   private projectId: string | null = null;
@@ -82,6 +85,16 @@ export class ProjectEditorComponent implements OnInit {
       sort_order: [0],
       status: ['in-progress' as ProjectStatus, Validators.required],
     });
+
+    this.projectForm.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        this.isFormDirty.set(true);
+      });
+  }
+
+  hasUnsavedChanges(): boolean {
+    return this.isFormDirty() && !this.isSaving();
   }
 
   ngOnInit(): void {
@@ -220,6 +233,7 @@ export class ProjectEditorComponent implements OnInit {
       this.projectService.createProject(request).subscribe({
         next: () => {
           this.notificationService.success('Project created!');
+          this.isFormDirty.set(false);
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },
@@ -255,6 +269,7 @@ export class ProjectEditorComponent implements OnInit {
       this.projectService.updateProject(projectId, request).subscribe({
         next: () => {
           this.notificationService.success('Project updated!');
+          this.isFormDirty.set(false);
           this.isSaving.set(false);
           this.router.navigate(['/admin']);
         },

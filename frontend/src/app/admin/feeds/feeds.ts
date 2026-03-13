@@ -8,6 +8,7 @@ import {
   DestroyRef,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { A11yModule } from '@angular/cdk/a11y';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
@@ -46,7 +47,7 @@ const SCHEDULE_LABELS: Record<FeedSchedule, string> = {
 @Component({
   selector: 'app-feeds',
   standalone: true,
-  imports: [DatePipe, LucideAngularModule],
+  imports: [DatePipe, LucideAngularModule, A11yModule],
   templateUrl: './feeds.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

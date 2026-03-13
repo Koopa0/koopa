@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { adminGuard } from './core/guards/auth.guard';
+import { unsavedChangesGuard } from './core/guards/unsaved-changes.guard';
 
 export const routes: Routes = [
   {
@@ -148,6 +149,38 @@ export const routes: Routes = [
         path: 'review',
         loadComponent: () =>
           import('./admin/review/review').then((m) => m.ReviewComponent),
+      },
+      {
+        path: 'editor',
+        loadComponent: () =>
+          import('./admin/article-editor/article-editor').then(
+            (m) => m.ArticleEditorComponent,
+          ),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: 'editor/:id',
+        loadComponent: () =>
+          import('./admin/article-editor/article-editor').then(
+            (m) => m.ArticleEditorComponent,
+          ),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: 'project-editor',
+        loadComponent: () =>
+          import('./admin/project-editor/project-editor').then(
+            (m) => m.ProjectEditorComponent,
+          ),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: 'project-editor/:id',
+        loadComponent: () =>
+          import('./admin/project-editor/project-editor').then(
+            (m) => m.ProjectEditorComponent,
+          ),
+        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },

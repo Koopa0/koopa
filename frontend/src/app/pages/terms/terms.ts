@@ -5,6 +5,7 @@ import {
   inject,
 } from '@angular/core';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { environment } from '../../../environments/environment';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 @Component({
@@ -22,7 +23,7 @@ export class TermsComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Terms of Service',
       description: 'Terms of service for koopa0.dev — rules and conditions for using this website.',
-      ogUrl: 'https://koopa0.dev/terms',
+      ogUrl: `${environment.siteUrl}/terms`,
     });
   }
 }

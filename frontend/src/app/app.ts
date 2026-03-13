@@ -6,6 +6,7 @@ import {
   PLATFORM_ID,
   signal,
   afterNextRender,
+  viewChild,
 } from '@angular/core';
 import {
   Router,
@@ -14,7 +15,7 @@ import {
   RouterLinkActive,
   NavigationEnd,
 } from '@angular/router';
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgOptimizedImage } from '@angular/common';
 import { filter } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -49,6 +50,7 @@ import { slideDown } from './shared/animations/fade-in.animation';
     BackToTopComponent,
     CommandPaletteComponent,
     ToastComponent,
+    NgOptimizedImage,
   ],
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -64,7 +66,6 @@ export class AppComponent {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly elementRef = inject(ElementRef);
   private readonly keyboardShortcuts = inject(KeyboardShortcutsService);
   protected readonly commandPalette = inject(CommandPaletteService);
 
@@ -74,6 +75,8 @@ export class AppComponent {
   protected readonly isMobileMenuOpen = signal(false);
   protected readonly isWritingMenuOpen = signal(false);
   protected readonly currentYear = new Date().getFullYear();
+
+  private readonly writingDropdown = viewChild.required<ElementRef>('writingDropdown');
 
   // Lucide icons
   protected readonly MenuIcon = Menu;
@@ -121,8 +124,8 @@ export class AppComponent {
       return;
     }
     const target = event.target as HTMLElement;
-    const writingDropdown = this.elementRef.nativeElement.querySelector('.writing-dropdown');
-    if (writingDropdown && !writingDropdown.contains(target)) {
+    const dropdownEl = this.writingDropdown().nativeElement;
+    if (!dropdownEl.contains(target)) {
       this.isWritingMenuOpen.set(false);
     }
   }

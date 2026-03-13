@@ -11,6 +11,7 @@ import {
   Wrench,
 } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { environment } from '../../../environments/environment';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 interface UseItem {
@@ -86,7 +87,7 @@ export class UsesComponent {
     this.seoService.updateMeta({
       title: 'Uses',
       description: 'Tools, hardware, and software I use for development.',
-      ogUrl: 'https://koopa0.dev/uses',
+      ogUrl: `${environment.siteUrl}/uses`,
     });
   }
 }

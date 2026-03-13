@@ -311,29 +311,17 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 	}, nil
 }
 
-// mockFlow implements Flow with canned responses for MOCK_MODE.
-// Completely separate from ContentReview — no nil dependency risk.
-type mockFlow struct {
-	name string
-}
-
 // NewMockContentReview returns a mock Flow that returns canned output without calling any AI or database.
 func NewMockContentReview() Flow {
-	return &mockFlow{name: "content-review"}
-}
-
-// Name returns the flow name for registry lookup.
-func (m *mockFlow) Name() string { return m.name }
-
-// Run returns a fixed JSON output simulating a successful content review.
-func (m *mockFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	out := ContentReviewOutput{
-		Proofread:   &ReviewResult{Level: "auto", Notes: "mock mode", Corrections: []string{}},
-		Excerpt:     "Mock excerpt for testing.",
-		Tags:        []string{},
-		ReadingTime: 1,
+	return &mockFlow{
+		name: "content-review",
+		output: ContentReviewOutput{
+			Proofread:   &ReviewResult{Level: "auto", Notes: "mock mode", Corrections: []string{}},
+			Excerpt:     "Mock excerpt for testing.",
+			Tags:        []string{},
+			ReadingTime: 1,
+		},
 	}
-	return json.Marshal(out)
 }
 
 // buildUserPrompt assembles the user prompt from content fields.

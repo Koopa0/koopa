@@ -59,12 +59,12 @@
         <table class="w-full">
           <thead>
             <tr class="border-b border-zinc-800 text-left text-xs text-zinc-500">
-              <th class="px-4 py-3 font-medium">名稱</th>
-              <th class="hidden px-4 py-3 font-medium sm:table-cell">排程</th>
-              <th class="hidden px-4 py-3 font-medium md:table-cell">上次抓取</th>
-              <th class="hidden px-4 py-3 font-medium lg:table-cell">錯誤</th>
-              <th class="px-4 py-3 font-medium">狀態</th>
-              <th class="px-4 py-3 font-medium">操作</th>
+              <th scope="col" class="px-4 py-3 font-medium">名稱</th>
+              <th scope="col" class="hidden px-4 py-3 font-medium sm:table-cell">排程</th>
+              <th scope="col" class="hidden px-4 py-3 font-medium md:table-cell">上次抓取</th>
+              <th scope="col" class="hidden px-4 py-3 font-medium lg:table-cell">錯誤</th>
+              <th scope="col" class="px-4 py-3 font-medium">狀態</th>
+              <th scope="col" class="px-4 py-3 font-medium">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -193,19 +193,17 @@
 
 <!-- Create/Edit Dialog -->
 @if (isDialogOpen()) {
+  <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" aria-hidden="true" (click)="closeDialog()"></div>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs"
-    (click)="closeDialog()"
-    (keydown.escape)="closeDialog()"
-    tabindex="-1"
+    class="fixed inset-0 z-50 flex items-center justify-center"
     role="dialog"
     aria-modal="true"
+    (keydown.escape)="closeDialog()"
   >
     <div
       class="mx-4 w-full max-w-lg rounded-sm border border-zinc-700 bg-zinc-900 shadow-xl"
-      (click)="$event.stopPropagation()"
-      (keydown.escape)="closeDialog()"
-      tabindex="-1"
+      cdkTrapFocus
+      cdkTrapFocusAutoCapture
     >
       <div class="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
         <h2 class="text-lg font-semibold text-zinc-100">
@@ -286,7 +284,7 @@
 
           <!-- Deny Paths -->
           <div>
-            <label class="mb-1 block text-xs text-zinc-400">排除路徑 (deny_paths)</label>
+            <label for="filter-deny-paths" class="mb-1 block text-xs text-zinc-400">排除路徑 (deny_paths)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (path of formDenyPaths(); track $index) {
                 <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
@@ -298,6 +296,7 @@
               }
             </div>
             <input
+              id="filter-deny-paths"
               type="text"
               class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
               placeholder="/news, /events … 按 Enter 新增"
@@ -307,7 +306,7 @@
 
           <!-- Deny Title Patterns -->
           <div>
-            <label class="mb-1 block text-xs text-zinc-400">排除標題 (regex)</label>
+            <label for="filter-deny-title" class="mb-1 block text-xs text-zinc-400">排除標題 (regex)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (pattern of formDenyTitlePatterns(); track $index) {
                 <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
@@ -319,6 +318,7 @@
               }
             </div>
             <input
+              id="filter-deny-title"
               type="text"
               class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
               placeholder="(?i)sponsored … 按 Enter 新增"
@@ -328,7 +328,7 @@
 
           <!-- Allow Tags -->
           <div>
-            <label class="mb-1 block text-xs text-zinc-400">允許標籤 (allow_tags)</label>
+            <label for="filter-allow-tags" class="mb-1 block text-xs text-zinc-400">允許標籤 (allow_tags)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (tag of formAllowTags(); track $index) {
                 <span class="inline-flex items-center gap-1 rounded-sm border border-emerald-800/50 bg-emerald-900/20 px-2 py-0.5 text-xs text-emerald-400">
@@ -340,6 +340,7 @@
               }
             </div>
             <input
+              id="filter-allow-tags"
               type="text"
               class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
               placeholder="go, rust … 按 Enter 新增"
@@ -349,7 +350,7 @@
 
           <!-- Deny Tags -->
           <div>
-            <label class="mb-1 block text-xs text-zinc-400">排除標籤 (deny_tags)</label>
+            <label for="filter-deny-tags" class="mb-1 block text-xs text-zinc-400">排除標籤 (deny_tags)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (tag of formDenyTags(); track $index) {
                 <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
@@ -361,6 +362,7 @@
               }
             </div>
             <input
+              id="filter-deny-tags"
               type="text"
               class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
               placeholder="careers, legal … 按 Enter 新增"
@@ -396,19 +398,17 @@
 
 <!-- Delete Confirmation Dialog -->
 @if (deleteTarget()) {
+  <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" aria-hidden="true" (click)="cancelDelete()"></div>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs"
-    (click)="cancelDelete()"
-    (keydown.escape)="cancelDelete()"
-    tabindex="-1"
+    class="fixed inset-0 z-50 flex items-center justify-center"
     role="dialog"
     aria-modal="true"
+    (keydown.escape)="cancelDelete()"
   >
     <div
       class="mx-4 w-full max-w-sm rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-xl"
-      (click)="$event.stopPropagation()"
-      (keydown.escape)="cancelDelete()"
-      tabindex="-1"
+      cdkTrapFocus
+      cdkTrapFocusAutoCapture
     >
       <div class="flex items-center gap-3 text-red-400">
         <lucide-icon [img]="AlertTriangleIcon" [size]="20" />

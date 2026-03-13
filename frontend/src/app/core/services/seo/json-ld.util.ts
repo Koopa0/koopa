@@ -4,7 +4,9 @@
  * Generate structured data to help search engines understand page content.
  */
 
-const SITE_URL = 'https://koopa0.dev';
+import { environment } from '../../../../environments/environment';
+
+const SITE_URL = environment.siteUrl;
 const AUTHOR_NAME = 'Koopa';
 
 export function buildWebSiteSchema(): Record<string, unknown> {

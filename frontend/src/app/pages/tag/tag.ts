@@ -20,6 +20,7 @@ import { TagService } from '../../core/services/tag.service';
 import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { environment } from '../../../environments/environment';
 import type { ApiContent } from '../../core/models';
 
 @Component({
@@ -33,7 +34,7 @@ import type { ApiContent } from '../../core/models';
 })
 export class TagComponent implements OnInit {
   /** Route param: tags/:tag */
-  readonly tag = input<string>();
+  readonly tag = input.required<string>();
 
   private readonly tagService = inject(TagService);
   private readonly seoService = inject(SeoService);
@@ -51,16 +52,14 @@ export class TagComponent implements OnInit {
 
   ngOnInit(): void {
     const tagValue = this.tag();
-    if (tagValue) {
-      this.tagName.set(tagValue);
-      this.loadContents(tagValue);
+    this.tagName.set(tagValue);
+    this.loadContents(tagValue);
 
-      this.seoService.updateMeta({
-        title: `Tag: ${tagValue}`,
-        description: `All content tagged with ${tagValue}`,
-        ogUrl: `https://koopa0.dev/tags/${tagValue}`,
-      });
-    }
+    this.seoService.updateMeta({
+      title: `Tag: ${tagValue}`,
+      description: `All content tagged with ${tagValue}`,
+      ogUrl: `${environment.siteUrl}/tags/${tagValue}`,
+    });
   }
 
   private loadContents(tag: string): void {

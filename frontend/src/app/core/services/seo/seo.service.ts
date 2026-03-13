@@ -1,6 +1,7 @@
-import { Injectable, inject, PLATFORM_ID } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { DOCUMENT } from '@angular/common';
+import { environment } from '../../../../environments/environment';
 
 export interface PageMeta {
   title: string;
@@ -16,17 +17,16 @@ export interface PageMeta {
   jsonLd?: Record<string, unknown>;
 }
 
-const SITE_NAME = 'koopa0.dev';
+const SITE_NAME = environment.siteName;
 const DEFAULT_DESCRIPTION =
   'Software Engineer - Technical articles and personal projects';
-const DEFAULT_IMAGE = 'https://koopa0.dev/og-image.png';
+const DEFAULT_IMAGE = `${environment.siteUrl}/og-image.png`;
 
 @Injectable({ providedIn: 'root' })
 export class SeoService {
   private readonly meta = inject(Meta);
   private readonly titleService = inject(Title);
   private readonly document = inject(DOCUMENT);
-  private readonly platformId = inject(PLATFORM_ID);
 
   updateMeta(pageMeta: PageMeta): void {
     const title = `${pageMeta.title} | ${SITE_NAME}`;

@@ -173,11 +173,11 @@ export class CommandPaletteComponent {
 
         // Lock body scroll
         if (isPlatformBrowser(this.platformId)) {
-          document.body.style.overflow = 'hidden';
+          document.documentElement.classList.add('overflow-hidden');
         }
       } else {
         if (isPlatformBrowser(this.platformId)) {
-          document.body.style.overflow = '';
+          document.documentElement.classList.remove('overflow-hidden');
         }
       }
     });

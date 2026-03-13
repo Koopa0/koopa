@@ -4,7 +4,7 @@
     <div class="flex items-center gap-3">
       <lucide-icon [img]="LightbulbIcon" [size]="28" class="text-zinc-500" />
       <div>
-        <h1 class="text-3xl font-bold text-zinc-100">Today I Learned</h1>
+        <h1 class="text-3xl font-bold text-balance text-zinc-100">Today I Learned</h1>
         <p class="mt-1 text-zinc-400">
           Daily learning notes — bite-sized technical discoveries
         </p>
@@ -21,10 +21,11 @@
       <button
         type="button"
         (click)="selectTag(null)"
-        class="rounded-sm px-3 py-1 text-xs font-medium transition-colors"
+        class="rounded-sm px-3 py-1.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none"
         [class]="selectedTag() === null
           ? 'bg-zinc-100 text-zinc-900'
           : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'"
+        [attr.aria-pressed]="selectedTag() === null"
       >
         All
       </button>
@@ -32,10 +33,11 @@
       <button
         type="button"
         (click)="selectTag(tag)"
-        class="rounded-sm px-3 py-1 text-xs font-medium transition-colors"
+        class="rounded-sm px-3 py-1.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none"
         [class]="selectedTag() === tag
           ? 'bg-zinc-100 text-zinc-900'
           : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'"
+        [attr.aria-pressed]="selectedTag() === tag"
       >
         {{ tag }}
       </button>

@@ -20,6 +20,8 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     mem_limit: 256m
 
   postgres:
@@ -45,6 +47,16 @@ services:
       timeout: 3s
       retries: 5
     shm_size: 256mb
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     mem_limit: 512m
 
   backend:
@@ -92,6 +104,8 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     mem_limit: 256m
 
 volumes:

@@ -13,6 +13,7 @@ import {
   MapPin,
 } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { environment } from '../../../environments/environment';
 import { buildPersonSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
@@ -60,7 +61,7 @@ export class AboutComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'About',
       description: 'Koopa — Software Engineer. Go, Angular, and cloud-native technologies.',
-      ogUrl: 'https://koopa0.dev/about',
+      ogUrl: `${environment.siteUrl}/about`,
       ogType: 'profile',
       jsonLd: buildPersonSchema(),
     });

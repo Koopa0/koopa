@@ -25,6 +25,7 @@ import {
   ChevronRight,
   FileText,
 } from 'lucide-angular';
+import { environment } from '../../../environments/environment';
 import {
   ArticleService,
   ArticlesResponse,
@@ -103,11 +104,11 @@ export class ArticlesComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Articles',
       description: 'Technical articles, dev notes, and lessons learned.',
-      ogUrl: 'https://koopa0.dev/articles',
+      ogUrl: `${environment.siteUrl}/articles`,
       jsonLd: buildCollectionPageSchema({
         name: 'Articles',
         description: 'Technical articles, dev notes, and lessons learned.',
-        url: 'https://koopa0.dev/articles',
+        url: `${environment.siteUrl}/articles`,
       }),
     });
     this.loadArticles();

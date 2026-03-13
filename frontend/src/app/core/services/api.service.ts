@@ -23,18 +23,14 @@ export class ApiService {
   }
 
   get<T>(path: string, params?: Record<string, string | number>): Observable<ApiResponse<T>> {
-    let httpParams = new HttpParams();
-    if (params) {
-      for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null) {
-          httpParams = httpParams.set(key, String(value));
-        }
-      }
-    }
-    return this.http.get<ApiResponse<T>>(this.url(path), { params: httpParams });
+    return this.http.get<ApiResponse<T>>(this.url(path), { params: this.buildParams(params) });
   }
 
   getList<T>(path: string, params?: Record<string, string | number>): Observable<ApiListResponse<T>> {
+    return this.http.get<ApiListResponse<T>>(this.url(path), { params: this.buildParams(params) });
+  }
+
+  private buildParams(params?: Record<string, string | number>): HttpParams {
     let httpParams = new HttpParams();
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -43,7 +39,7 @@ export class ApiService {
         }
       }
     }
-    return this.http.get<ApiListResponse<T>>(this.url(path), { params: httpParams });
+    return httpParams;
   }
 
   post<T>(path: string, body: unknown): Observable<ApiResponse<T>> {

@@ -18,8 +18,12 @@ COPY --from=builder /app/dist/koopa-blog/ ./dist/koopa-blog/
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
+RUN addgroup -S app && adduser -S app -G app
+
 ENV NODE_ENV=production
 ENV PORT=4000
+
+USER app
 
 EXPOSE 4000
 

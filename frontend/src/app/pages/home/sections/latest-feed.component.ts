@@ -68,44 +68,63 @@ const PATH_PREFIX_MAP: Record<FeedEntry['type'], string> = {
           </a>
         </div>
 
-        <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          @for (entry of feedEntries(); track entry.id) {
-            <a
-              [routerLink]="entry.path"
-              class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
-            >
-              <div class="mb-3 flex items-center gap-2">
-                <span
-                  class="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-medium"
-                  [class]="getTypeClass(entry.type)"
-                >
-                  <lucide-icon [img]="getTypeIcon(entry.type)" [size]="10" />
-                  {{ getTypeLabel(entry.type) }}
-                </span>
-                @for (tag of entry.tags.slice(0, 2); track tag) {
+        @if (isLoading()) {
+          <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            @for (_ of [1, 2, 3]; track _) {
+              <div class="animate-pulse rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+                <div class="mb-3 flex gap-2">
+                  <div class="h-5 w-16 rounded-sm bg-zinc-800"></div>
+                  <div class="h-5 w-12 rounded-sm bg-zinc-800"></div>
+                </div>
+                <div class="mb-3 h-6 w-3/4 rounded-sm bg-zinc-800"></div>
+                <div class="mb-4 space-y-2">
+                  <div class="h-4 w-full rounded-sm bg-zinc-800"></div>
+                  <div class="h-4 w-2/3 rounded-sm bg-zinc-800"></div>
+                </div>
+                <div class="h-3 w-24 rounded-sm bg-zinc-800"></div>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            @for (entry of feedEntries(); track entry.id) {
+              <a
+                [routerLink]="entry.path"
+                class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+              >
+                <div class="mb-3 flex items-center gap-2">
                   <span
-                    class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500"
+                    class="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-medium"
+                    [class]="getTypeClass(entry.type)"
                   >
-                    {{ tag }}
+                    <lucide-icon [img]="getTypeIcon(entry.type)" [size]="10" />
+                    {{ getTypeLabel(entry.type) }}
                   </span>
-                }
-              </div>
-              <h3
-                class="mb-3 text-lg font-semibold text-zinc-100 group-hover:text-white"
-              >
-                {{ entry.title }}
-              </h3>
-              <p
-                class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400"
-              >
-                {{ entry.excerpt }}
-              </p>
-              <div class="text-xs text-zinc-500">
-                {{ entry.publishedAt | date: 'yyyy/MM/dd' }}
-              </div>
-            </a>
-          }
-        </div>
+                  @for (tag of entry.tags.slice(0, 2); track tag) {
+                    <span
+                      class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500"
+                    >
+                      {{ tag }}
+                    </span>
+                  }
+                </div>
+                <h3
+                  class="mb-3 text-lg font-semibold text-zinc-100 group-hover:text-white"
+                >
+                  {{ entry.title }}
+                </h3>
+                <p
+                  class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400"
+                >
+                  {{ entry.excerpt }}
+                </p>
+                <div class="text-xs text-zinc-500">
+                  {{ entry.publishedAt | date: 'yyyy/MM/dd' }}
+                </div>
+              </a>
+            }
+          </div>
+        }
 
         <div class="mt-8 text-center sm:hidden">
           <a
@@ -131,6 +150,7 @@ export class LatestFeedComponent implements OnInit {
   protected readonly LightbulbIcon = Lightbulb;
   protected readonly ClockIcon = Clock;
 
+  protected readonly isLoading = signal(true);
   private readonly allContent = signal<ApiContent[]>([]);
 
   protected readonly feedEntries = computed<FeedEntry[]>(() => {
@@ -156,8 +176,12 @@ export class LatestFeedComponent implements OnInit {
     this.contentService
       .listPublished({ perPage: FEED_LIMIT * 3 })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((response) => {
-        this.allContent.set(response.data);
+      .subscribe({
+        next: (response) => {
+          this.allContent.set(response.data);
+          this.isLoading.set(false);
+        },
+        error: () => this.isLoading.set(false),
       });
   }
 

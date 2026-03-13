@@ -1,7 +1,7 @@
 @if (isLoading()) {
 <div class="flex flex-col items-center justify-center gap-3 py-20">
   <div
-    class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+    class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
   ></div>
   <p class="text-sm text-zinc-400">Loading article...</p>
 </div>
@@ -44,7 +44,7 @@
       >
         @if (isSaving()) {
         <div
-          class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
+          class="size-3.5 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
         ></div>
         } @else {
         <lucide-icon [img]="SendIcon" [size]="14" />
@@ -158,13 +158,16 @@
                 <img
                   [src]="articleForm.get('cover_image')?.value"
                   alt="Cover preview"
-                  class="h-36 w-full rounded-sm border border-zinc-700 object-cover"
+                  class="w-full rounded-sm border border-zinc-700 aspect-video object-cover"
+                  width="640"
+                  height="360"
                 />
                 <button
                   type="button"
                   class="absolute right-1.5 top-1.5 rounded-sm bg-zinc-900/80 p-1 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-red-400"
                   (click)="removeCoverImage()"
                   title="移除封面圖片"
+                  aria-label="移除封面圖片"
                 >
                   <lucide-icon [img]="Trash2Icon" [size]="14" />
                 </button>
@@ -246,12 +249,13 @@
       <div class="min-w-0 flex-1">
         <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
           <!-- Tab Bar -->
+          @let tab = selectedTab();
           <div class="flex items-center border-b border-zinc-800">
             <button
               type="button"
               class="flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors"
               [class]="
-                selectedTab() === 'edit'
+                tab === 'edit'
                   ? 'border-b-2 border-zinc-100 text-zinc-100'
                   : 'text-zinc-500 hover:text-zinc-300'
               "
@@ -264,7 +268,7 @@
               type="button"
               class="flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors"
               [class]="
-                selectedTab() === 'preview'
+                tab === 'preview'
                   ? 'border-b-2 border-zinc-100 text-zinc-100'
                   : 'text-zinc-500 hover:text-zinc-300'
               "
@@ -277,7 +281,7 @@
               type="button"
               class="flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors"
               [class]="
-                selectedTab() === 'split'
+                tab === 'split'
                   ? 'border-b-2 border-zinc-100 text-zinc-100'
                   : 'text-zinc-500 hover:text-zinc-300'
               "
@@ -289,7 +293,7 @@
           </div>
 
           <!-- Edit Tab -->
-          @if (selectedTab() === 'edit') {
+          @if (tab === 'edit') {
           <div>
             <!-- Mini Toolbar -->
             <div
@@ -299,6 +303,8 @@
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Bold"
+                aria-label="Bold"
+                (click)="insertBold()"
               >
                 <lucide-icon [img]="BoldIcon" [size]="14" />
               </button>
@@ -306,6 +312,8 @@
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Italic"
+                aria-label="Italic"
+                (click)="insertItalic()"
               >
                 <lucide-icon [img]="ItalicIcon" [size]="14" />
               </button>
@@ -313,6 +321,8 @@
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Link"
+                aria-label="Link"
+                (click)="insertLink()"
               >
                 <lucide-icon [img]="LinkIcon" [size]="14" />
               </button>
@@ -320,6 +330,8 @@
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Code"
+                aria-label="Code"
+                (click)="insertCode()"
               >
                 <lucide-icon [img]="CodeIcon" [size]="14" />
               </button>
@@ -327,16 +339,22 @@
                 type="button"
                 class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Image"
+                aria-label="Image"
+                (click)="insertImage()"
               >
                 <lucide-icon [img]="ImageIcon" [size]="14" />
               </button>
             </div>
 
             <textarea
-              [formControl]="$any(articleForm.get('body'))"
+              #bodyTextarea
+              [formControl]="bodyControl"
               rows="30"
               placeholder="Write your article using Markdown..."
               class="w-full resize-y bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
+              cdkTextareaAutosize
+              [cdkAutosizeMinRows]="15"
+              [cdkAutosizeMaxRows]="40"
               (input)="onContentChange($event)"
             ></textarea>
             @if (getFieldError('body')) {
@@ -348,14 +366,14 @@
           }
 
           <!-- Preview Tab -->
-          @if (selectedTab() === 'preview') {
+          @if (tab === 'preview') {
           <div class="p-6">
             <article class="prose" [innerHTML]="previewHtml()"></article>
           </div>
           }
 
           <!-- Split Tab -->
-          @if (selectedTab() === 'split') {
+          @if (tab === 'split') {
           <div class="flex h-[600px]">
             <div class="flex-1 border-r border-zinc-800">
               <div
@@ -365,7 +383,7 @@
                 Markdown Editor
               </div>
               <textarea
-                [formControl]="$any(articleForm.get('body'))"
+                [formControl]="bodyControl"
                 rows="20"
                 placeholder="Markdown content..."
                 class="h-[calc(100%-2.5rem)] w-full resize-none bg-transparent px-4 py-3 font-mono text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"

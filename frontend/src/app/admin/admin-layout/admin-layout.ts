@@ -3,9 +3,8 @@ import {
   ChangeDetectionStrategy,
   inject,
   signal,
-  PLATFORM_ID,
 } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
+import { BreakpointObserver } from '@angular/cdk/layout';
 import {
   Router,
   RouterOutlet,
@@ -19,8 +18,6 @@ import {
   LucideAngularModule,
   LayoutDashboard,
   Activity,
-  FileText,
-  FolderOpen,
   Rss,
   Database,
   ClipboardCheck,
@@ -63,7 +60,7 @@ interface NavGroup {
 export class AdminLayoutComponent {
   private readonly router = inject(Router);
   private readonly authService = inject(AuthService);
-  private readonly platformId = inject(PLATFORM_ID);
+  private readonly breakpointObserver = inject(BreakpointObserver);
 
   protected readonly isSidebarOpen = signal(true);
   protected readonly isMobileSidebarOpen = signal(false);
@@ -135,12 +132,15 @@ export class AdminLayoutComponent {
         this.isMobileSidebarOpen.set(false);
       });
 
-    // 預設手機版收合
-    if (isPlatformBrowser(this.platformId)) {
-      if (window.innerWidth < 768) {
-        this.isSidebarOpen.set(false);
-      }
-    }
+    // 預設手機版收合（使用 CDK BreakpointObserver 取代 window.innerWidth）
+    this.breakpointObserver
+      .observe(['(max-width: 767.98px)'])
+      .pipe(takeUntilDestroyed())
+      .subscribe((result) => {
+        if (result.matches) {
+          this.isSidebarOpen.set(false);
+        }
+      });
   }
 
   protected toggleSidebar(): void {

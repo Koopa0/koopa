@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/collected"
@@ -52,6 +52,7 @@ type MorningBrief struct {
 	contents  PublishedCounter
 	notifier  Sender
 	budget    BudgetChecker
+	loc       *time.Location
 	logger    *slog.Logger
 }
 
@@ -64,6 +65,7 @@ func NewMorningBrief(
 	contents PublishedCounter,
 	notifier Sender,
 	budget BudgetChecker,
+	loc *time.Location,
 	logger *slog.Logger,
 ) *MorningBrief {
 	mb := &MorningBrief{
@@ -74,6 +76,7 @@ func NewMorningBrief(
 		contents:  contents,
 		notifier:  notifier,
 		budget:    budget,
+		loc:       loc,
 		logger:    logger,
 	}
 	mb.gf = genkit.DefineFlow(g, "morning-brief", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
@@ -100,8 +103,8 @@ const (
 )
 
 func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
-	if err := mb.budget.Check(estimatedBriefTokens); err != nil {
-		return MorningBriefOutput{}, fmt.Errorf("budget check: %w", err)
+	if err := mb.budget.Reserve(estimatedBriefTokens); err != nil {
+		return MorningBriefOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	mb.logger.Info("morning-brief starting")
@@ -116,27 +119,24 @@ func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
 		pubErr   error
 	)
 
-	now := time.Now()
+	now := time.Now().In(mb.loc)
 	yesterday := now.Add(-24 * time.Hour)
 	weekAgo := now.Add(-7 * 24 * time.Hour)
 
-	g := new(errgroup.Group)
-	g.Go(func() error {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		tasks, taskErr = mb.tasks.PendingTasks(ctx)
-		return nil // never fail the group
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		rssItems, rssErr = mb.collected.HighScoreCollectedData(ctx, yesterday, now, briefMinScore)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		pubCount, pubErr = mb.contents.PublishedContentCountSince(ctx, weekAgo)
-		return nil
 	})
-	_ = g.Wait() // always nil since goroutines never return errors
+	wg.Wait()
 
 	// Build user prompt with degraded sections
-	userPrompt := buildMorningBriefPrompt(tasks, taskErr, rssItems, rssErr, pubCount, pubErr)
+	userPrompt := buildMorningBriefPrompt(now, tasks, taskErr, rssItems, rssErr, pubCount, pubErr)
 
 	text, err := genkit.Run(ctx, "generate-morning-brief", func() (string, error) {
 		resp, err := genkit.Generate(ctx, mb.g,
@@ -157,8 +157,6 @@ func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
 		return MorningBriefOutput{}, err
 	}
 
-	mb.budget.Add(estimatedBriefTokens)
-
 	// Send notification
 	if err := mb.notifier.Send(ctx, text); err != nil {
 		mb.logger.Error("sending morning brief notification", "error", err)
@@ -176,13 +174,14 @@ func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
 
 // buildMorningBriefPrompt builds the user prompt with degraded sections for failures.
 func buildMorningBriefPrompt(
+	now time.Time,
 	tasks []PendingTask, taskErr error,
 	rssItems []collected.CollectedData, rssErr error,
 	pubCount int64, pubErr error,
 ) string {
 	var b strings.Builder
 
-	b.WriteString("今天日期：" + time.Now().Format("2006-01-02") + "\n\n")
+	b.WriteString("今天日期：" + now.Format("2006-01-02") + "\n\n")
 
 	// Tasks section
 	b.WriteString("== 待辦事項 ==\n")
@@ -235,13 +234,8 @@ func buildMorningBriefPrompt(
 
 // NewMockMorningBrief returns a mock Flow for MOCK_MODE.
 func NewMockMorningBrief() Flow {
-	return &mockMorningBriefFlow{}
-}
-
-type mockMorningBriefFlow struct{}
-
-func (m *mockMorningBriefFlow) Name() string { return "morning-brief" }
-
-func (m *mockMorningBriefFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	return json.Marshal(MorningBriefOutput{Text: "Mock morning brief"})
+	return &mockFlow{
+		name:   "morning-brief",
+		output: MorningBriefOutput{Text: "Mock morning brief"},
+	}
 }

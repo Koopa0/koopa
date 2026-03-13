@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   inject,
   signal,
   input,
@@ -8,9 +9,9 @@ import {
   computed,
   PLATFORM_ID,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
 import { Location, DatePipe } from '@angular/common';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import {
   LucideAngularModule,
   ArrowLeft,
@@ -21,6 +22,7 @@ import {
   Copy,
   Check,
 } from 'lucide-angular';
+import { environment } from '../../../environments/environment';
 import { ArticleService } from '../../core/services/article.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import type { ApiContent } from '../../core/models';
@@ -46,14 +48,14 @@ import { fadeInUp } from '../../shared/animations/fade-in.animation';
 })
 export class ArticleDetailComponent implements OnInit {
   /** Route param: articles/:id */
-  readonly id = input<string>();
+  readonly id = input.required<string>();
 
   private readonly location = inject(Location);
   private readonly articleService = inject(ArticleService);
   private readonly markdownService = inject(MarkdownService);
-  private readonly sanitizer = inject(DomSanitizer);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly seoService = inject(SeoService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly article = signal<ApiContent | null>(null);
   protected readonly isLoading = signal(true);
@@ -70,17 +72,8 @@ export class ArticleDetailComponent implements OnInit {
     return this.markdownService.parse(body);
   });
 
-  // SECURITY_REVIEW: bypassSecurityTrustHtml is used to render markdown-generated HTML.
-  // Safety is guaranteed by MarkdownService: marked parsing + highlight.js syntax highlighting.
-  // No user-injectable raw HTML is included. If user-submitted markdown is accepted in the future,
-  // DOMPurify or similar sanitizer must be added to MarkdownService.
-  protected readonly parsedContent = computed<SafeHtml>(() => {
-    const html = this.rawHtml();
-    if (!html) {
-      return '';
-    }
-    return this.sanitizer.bypassSecurityTrustHtml(html);
-  });
+  /** Sanitized HTML — MarkdownService uses DOMPurify, safe for [innerHTML] */
+  protected readonly parsedContent = this.rawHtml;
 
   protected readonly ArrowLeftIcon = ArrowLeft;
   protected readonly Share2Icon = Share2;
@@ -91,20 +84,14 @@ export class ArticleDetailComponent implements OnInit {
   protected readonly CheckIcon = Check;
 
   ngOnInit(): void {
-    const slug = this.id();
-    if (slug) {
-      this.loadArticle(slug);
-    } else {
-      this.error.set('Article not found');
-      this.isLoading.set(false);
-    }
+    this.loadArticle(this.id());
   }
 
   protected loadArticle(slug: string): void {
     this.isLoading.set(true);
     this.error.set(null);
 
-    this.articleService.getArticleBySlug(slug).subscribe({
+    this.articleService.getArticleBySlug(slug).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (article) => {
         this.article.set(article);
         this.isLoading.set(false);
@@ -122,7 +109,7 @@ export class ArticleDetailComponent implements OnInit {
   }
 
   private updateSeo(article: ApiContent): void {
-    const articleUrl = `https://koopa0.dev/articles/${article.slug}`;
+    const articleUrl = `${environment.siteUrl}/articles/${article.slug}`;
     this.seoService.updateMeta({
       title: article.title,
       description: article.excerpt,

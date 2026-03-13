@@ -156,9 +156,6 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	// webhooks — Notion (HMAC-verified)
 	mux.HandleFunc("POST /api/webhook/notion", d.Notion.Webhook)
 
-	// webhooks — stubs (JWT-protected until implemented)
-	mux.Handle("POST /api/webhook/obsidian", authMid(http.HandlerFunc(d.Pipeline.WebhookObsidian)))
-
 	// admin stats
 	mux.Handle("GET /api/admin/stats", authMid(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

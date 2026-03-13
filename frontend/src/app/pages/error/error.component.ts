@@ -20,7 +20,7 @@ import { SeoService } from '../../core/services/seo/seo.service';
       class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950 px-4"
     >
       <div class="text-center">
-        <div class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900">
+        <div class="mx-auto mb-6 flex size-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900">
           <lucide-icon [img]="AlertTriangleIcon" [size]="32" class="text-zinc-500" />
         </div>
         <h1 class="text-2xl font-bold text-zinc-100">Something went wrong</h1>

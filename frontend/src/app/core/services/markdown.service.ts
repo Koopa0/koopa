@@ -123,8 +123,11 @@ export class MarkdownService {
     return html.replace(
       /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
       (match, code) => {
-        // Generate a unique ID for each diagram
-        const diagramId = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+        // Generate a unique ID for each diagram using crypto when available
+        const randomId = typeof crypto !== 'undefined'
+          ? Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('')
+          : Math.floor(Math.random() * 1e12).toString(36);
+        const diagramId = 'mermaid-' + randomId;
 
         // Return a div that will be processed by mermaid.js
         return `<div class="mermaid-diagram" id="${diagramId}" data-mermaid-code="${encodeURIComponent(code.trim())}">${code.trim()}</div>`;

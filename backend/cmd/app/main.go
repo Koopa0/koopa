@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -76,7 +77,6 @@ type config struct {
 	MockMode            bool
 }
 
-// main
 func main() {
 	logger := slog.New(server.NewSanitizingHandler(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(logger); err != nil {
@@ -124,8 +124,14 @@ func run(logger *slog.Logger) error {
 	collectedStore := collected.NewStore(pool)
 	trackingStore := tracking.NewStore(pool)
 	flowrunStore := flowrun.NewStore(pool)
-	feedStore := feed.NewStore(pool)
+	feedStore := feed.NewStore(pool, logger)
 	goalStore := goal.NewStore(pool)
+
+	// timezone: all flows and cron jobs run in Asia/Taipei
+	taipeiLoc, err := time.LoadLocation("Asia/Taipei")
+	if err != nil {
+		return fmt.Errorf("loading Asia/Taipei timezone: %w", err)
+	}
 
 	// collector + budget
 	feedCollector := collector.New(collectedStore, feedStore, logger)
@@ -217,17 +223,17 @@ func run(logger *slog.Logger) error {
 			logger,
 		)
 		contentPolish := flow.NewContentPolish(g, claudeModel, contentStore, logger)
-		digestGenerate := flow.NewDigestGenerate(g, geminiModel, contentStore, collectedStore, projectStore, tokenBudget, logger)
+		digestGenerate := flow.NewDigestGenerate(g, geminiModel, contentStore, collectedStore, projectStore, tokenBudget, taipeiLoc, logger)
 		bookmarkGenerate := flow.NewBookmarkGenerate(g, geminiModel, collectedStore, tokenBudget, logger)
 		notionTasks := notion.NewTaskDB(notionClient, cfg.NotionTasksDB)
 		morningBrief := flow.NewMorningBrief(
 			g, geminiModel, notionTasks,
-			collectedStore, contentStore, notifier, tokenBudget, logger,
+			collectedStore, contentStore, notifier, tokenBudget, taipeiLoc, logger,
 		)
 		weeklyReview := flow.NewWeeklyReview(
 			g, geminiModel, notionTasks,
 			collectedStore, contentStore, projectStore, githubFetcher,
-			notifier, tokenBudget, logger,
+			notifier, tokenBudget, taipeiLoc, logger,
 		)
 		projectTrack := flow.NewProjectTrack(
 			g, geminiModel, projectStore, projectStore,
@@ -235,11 +241,11 @@ func run(logger *slog.Logger) error {
 		)
 		contentStrategy := flow.NewContentStrategy(
 			g, geminiModel, contentStore, collectedStore, projectStore,
-			notifier, tokenBudget, logger,
+			notifier, tokenBudget, taipeiLoc, logger,
 		)
 		buildLog := flow.NewBuildLog(
 			g, geminiModel, projectStore, githubFetcher, contentStore,
-			tokenBudget, logger,
+			tokenBudget, taipeiLoc, logger,
 		)
 		registry := flow.NewRegistry(contentReview, contentPolish, digestGenerate, bookmarkGenerate, morningBrief, weeklyReview, projectTrack, contentStrategy, buildLog)
 		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
@@ -249,10 +255,6 @@ func run(logger *slog.Logger) error {
 	defer runner.Stop()
 
 	// cron: all jobs run in Asia/Taipei timezone
-	taipeiLoc, err := time.LoadLocation("Asia/Taipei")
-	if err != nil {
-		return fmt.Errorf("loading Asia/Taipei timezone: %w", err)
-	}
 	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
 
 	// cron: retry failed/stuck flow runs every 2 minutes
@@ -444,6 +446,7 @@ func run(logger *slog.Logger) error {
 
 	// pipeline handler with collector and reconciler
 	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
+	defer pipelineHandler.Wait() // drain in-flight background operations before exit
 	pipelineHandler.SetCollector(feedCollector, feedStore)
 	pipelineHandler.SetReconciler(recon)
 	pipelineHandler.SetNotionSync(notionHandler)
@@ -495,14 +498,15 @@ func run(logger *slog.Logger) error {
 	}
 
 	// sync on startup: catch anything missed while the server was down
-	go func() {
+	// Tracked by pipelineHandler.Wait() so graceful shutdown drains this work.
+	pipelineHandler.Go(func() {
 		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		logger.Info("startup sync: starting")
 		pipelineHandler.SyncAllFromGitHub(syncCtx)
 		notionHandler.SyncAll(syncCtx)
 		logger.Info("startup sync: complete")
-	}()
+	})
 
 	return server.Run(ctx, server.Config{
 		Port:       cfg.Port,
@@ -566,7 +570,16 @@ func loadConfig(logger *slog.Logger) config {
 }
 
 func runMigrations(databaseURL string, logger *slog.Logger) error {
-	m, err := migrate.New("file://migrations", "pgx5://"+databaseURL[len("postgres://"):])
+	// Strip postgres:// or postgresql:// prefix and replace with pgx5://
+	connStr := databaseURL
+	if after, ok := strings.CutPrefix(connStr, "postgres://"); ok {
+		connStr = "pgx5://" + after
+	} else if after, ok := strings.CutPrefix(connStr, "postgresql://"); ok {
+		connStr = "pgx5://" + after
+	} else {
+		return fmt.Errorf("unsupported database URL scheme: %s", connStr)
+	}
+	m, err := migrate.New("file://migrations", connStr)
 	if err != nil {
 		return fmt.Errorf("creating migrator: %w", err)
 	}

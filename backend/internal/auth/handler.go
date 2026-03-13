@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -115,15 +114,19 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use URL fragment (#) instead of query string (?) to prevent tokens from
+	// appearing in server logs and Referer headers. Note: fragments ARE stored
+	// in browser history — the Angular callback page should call
+	// history.replaceState to clear them after reading.
 	q := url.Values{}
 	q.Set("access_token", pair.AccessToken)
 	q.Set("refresh_token", pair.RefreshToken)
-	h.jsRedirect(w, h.frontendURL+"/admin/oauth-callback?"+q.Encode())
+	h.jsRedirect(w, h.frontendURL+"/admin/oauth-callback#"+q.Encode())
 }
 
 // Refresh handles POST /api/auth/refresh.
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	req, err := api.Decode[RefreshRequest](r)
+	req, err := api.Decode[RefreshRequest](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -297,7 +300,13 @@ func (h *Handler) redirectError(w http.ResponseWriter, r *http.Request, msg stri
 // jsRedirect writes an HTML page that redirects via JavaScript.
 // This avoids 302 redirects that BFF proxies may follow server-side.
 func (h *Handler) jsRedirect(w http.ResponseWriter, target string) {
+	// Use json.Marshal for safe JS string escaping (handles </script>, quotes, etc.)
+	jsStr, err := json.Marshal(target)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=%s"></head><body><script>window.location.href=%q;</script></body></html>`, template.HTMLEscapeString(target), target)
+	_, _ = fmt.Fprintf(w, `<!DOCTYPE html><html><body><script>window.location.href=%s;</script></body></html>`, jsStr)
 }

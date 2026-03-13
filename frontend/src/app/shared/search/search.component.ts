@@ -73,7 +73,7 @@ const TYPE_ROUTE_MAP: Record<ContentType, string> = {
               class="flex items-center justify-center gap-2 p-8 text-zinc-400"
             >
               <div
-                class="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300"
+                class="size-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300"
               ></div>
               <span class="text-sm">Searching...</span>
             </div>

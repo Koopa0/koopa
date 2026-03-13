@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/collected"
@@ -41,6 +41,7 @@ type WeeklyReview struct {
 	commits   CommitLister
 	notifier  Sender
 	budget    BudgetChecker
+	loc       *time.Location
 	logger    *slog.Logger
 }
 
@@ -55,6 +56,7 @@ func NewWeeklyReview(
 	commits CommitLister,
 	notifier Sender,
 	budget BudgetChecker,
+	loc *time.Location,
 	logger *slog.Logger,
 ) *WeeklyReview {
 	wr := &WeeklyReview{
@@ -67,6 +69,7 @@ func NewWeeklyReview(
 		commits:   commits,
 		notifier:  notifier,
 		budget:    budget,
+		loc:       loc,
 		logger:    logger,
 	}
 	wr.gf = genkit.DefineFlow(g, "weekly-review", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
@@ -93,13 +96,13 @@ const (
 )
 
 func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
-	if err := wr.budget.Check(estimatedReviewTokens); err != nil {
-		return WeeklyReviewOutput{}, fmt.Errorf("budget check: %w", err)
+	if err := wr.budget.Reserve(estimatedReviewTokens); err != nil {
+		return WeeklyReviewOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	wr.logger.Info("weekly-review starting")
 
-	now := time.Now()
+	now := time.Now().In(wr.loc)
 	weekAgo := now.Add(-7 * 24 * time.Hour)
 
 	// Gather data sources in parallel — individual failures are degraded, not fatal
@@ -116,28 +119,23 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 		commitErr error
 	)
 
-	g := new(errgroup.Group)
-	g.Go(func() error {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		tasks, taskErr = wr.tasks.PendingTasks(ctx)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		rssItems, rssErr = wr.collected.HighScoreCollectedData(ctx, weekAgo, now, reviewMinScore)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		published, pubErr = wr.contents.PublishedByDateRange(ctx, weekAgo, now)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		projects, projErr = wr.projects.ActiveProjects(ctx)
-		return nil
 	})
-	g.Go(func() error {
+	wg.Go(func() {
 		commits, commitErr = wr.commits.RecentCommits(ctx, weekAgo)
-		return nil
 	})
-	_ = g.Wait()
+	wg.Wait()
 
 	userPrompt := buildWeeklyReviewPrompt(
 		tasks, taskErr,
@@ -166,8 +164,6 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 	if err != nil {
 		return WeeklyReviewOutput{}, err
 	}
-
-	wr.budget.Add(estimatedReviewTokens)
 
 	if err := wr.notifier.Send(ctx, text); err != nil {
 		wr.logger.Error("sending weekly review notification", "error", err)
@@ -279,13 +275,8 @@ func buildWeeklyReviewPrompt(
 
 // NewMockWeeklyReview returns a mock Flow for MOCK_MODE.
 func NewMockWeeklyReview() Flow {
-	return &mockWeeklyReviewFlow{}
-}
-
-type mockWeeklyReviewFlow struct{}
-
-func (m *mockWeeklyReviewFlow) Name() string { return "weekly-review" }
-
-func (m *mockWeeklyReviewFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	return json.Marshal(WeeklyReviewOutput{Text: "Mock weekly review"})
+	return &mockFlow{
+		name:   "weekly-review",
+		output: WeeklyReviewOutput{Text: "Mock weekly review"},
+	}
 }

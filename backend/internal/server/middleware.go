@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -41,6 +42,8 @@ func corsMiddleware(origin string) func(http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			w.Header().Add("Vary", "Origin")
 
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
@@ -62,54 +65,79 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// ipEntry holds a rate limiter and the time it was last used.
+type ipEntry struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
 // ipRateLimiter tracks per-IP rate limiters.
 type ipRateLimiter struct {
-	mu       sync.Mutex
-	limiters map[string]*rate.Limiter
-	rate     rate.Limit
-	burst    int
+	mu      sync.Mutex
+	entries map[string]*ipEntry
+	rate    rate.Limit
+	burst   int
 }
 
 func newIPRateLimiter(r rate.Limit, burst int) *ipRateLimiter {
 	return &ipRateLimiter{
-		limiters: make(map[string]*rate.Limiter),
-		rate:     r,
-		burst:    burst,
+		entries: make(map[string]*ipEntry),
+		rate:    r,
+		burst:   burst,
 	}
 }
 
 func (l *ipRateLimiter) limiter(ip string) *rate.Limiter {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	lim, ok := l.limiters[ip]
+	e, ok := l.entries[ip]
 	if !ok {
-		lim = rate.NewLimiter(l.rate, l.burst)
-		l.limiters[ip] = lim
+		e = &ipEntry{limiter: rate.NewLimiter(l.rate, l.burst)}
+		l.entries[ip] = e
 	}
-	return lim
+	e.lastSeen = time.Now()
+	return e.limiter
+}
+
+// evictStale removes entries that have not been seen for the given duration.
+func (l *ipRateLimiter) evictStale(maxAge time.Duration) {
+	cutoff := time.Now().Add(-maxAge)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for ip, e := range l.entries {
+		if e.lastSeen.Before(cutoff) {
+			delete(l.entries, ip)
+		}
+	}
 }
 
 // rateLimitMiddleware returns a per-IP rate limiter for specific routes.
 // 10 requests per minute per IP, burst of 10.
-func rateLimitMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+// The done channel stops the background cleanup goroutine on server shutdown.
+func rateLimitMiddleware(logger *slog.Logger, done <-chan struct{}) func(http.Handler) http.Handler {
 	lim := newIPRateLimiter(rate.Every(6*time.Second), 10)
 
-	// Clean up stale entries every 10 minutes.
+	// Evict IPs not seen for 10+ minutes, check every 5 minutes.
 	go func() {
-		ticker := time.NewTicker(10 * time.Minute)
+		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			lim.mu.Lock()
-			clear(lim.limiters)
-			lim.mu.Unlock()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				lim.evictStale(10 * time.Minute)
+			}
 		}
 	}()
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Prefer CF-Connecting-IP (set by Cloudflare Tunnel, cannot be spoofed).
+			// Fall back to RemoteAddr for non-Tunnel requests (Docker internal).
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-				ip = fwd
+			if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
+				ip = cfIP
 			}
 			if !lim.limiter(ip).Allow() {
 				logger.Warn("rate limit exceeded", "ip", ip, "path", r.URL.Path)
@@ -125,17 +153,20 @@ func rateLimitMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 // It uses Go 1.25+ http.CrossOriginProtection to reject cross-origin mutating
 // browser requests. Non-browser requests (no Sec-Fetch-Site header) are allowed,
 // which permits server-to-server calls from the BFF proxy.
-func csrfMiddleware(corsOrigin string, logger *slog.Logger) func(http.Handler) http.Handler {
+func csrfMiddleware(corsOrigin string, logger *slog.Logger) (func(http.Handler) http.Handler, error) {
 	cop := http.NewCrossOriginProtection()
 	if corsOrigin != "" {
 		if err := cop.AddTrustedOrigin(corsOrigin); err != nil {
-			logger.Error("csrf: adding trusted origin", "origin", corsOrigin, "error", err)
+			return nil, fmt.Errorf("csrf: adding trusted origin %q: %w", corsOrigin, err)
 		}
 	}
 
 	// Webhooks are server-to-server and carry HMAC signatures, not browser cookies.
 	// Bypass CSRF checks so they are not rejected when an Origin header is present.
-	cop.AddInsecureBypassPattern("POST /api/webhook/{path...}")
+	// List specific routes rather than a wildcard to avoid covering future endpoints.
+	// Note: /api/webhook/obsidian uses authMid (JWT) so it does not need a bypass.
+	cop.AddInsecureBypassPattern("POST /api/webhook/github")
+	cop.AddInsecureBypassPattern("POST /api/webhook/notion")
 
 	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("csrf: blocked cross-origin request",
@@ -149,5 +180,5 @@ func csrfMiddleware(corsOrigin string, logger *slog.Logger) func(http.Handler) h
 
 	return func(next http.Handler) http.Handler {
 		return cop.Handler(next)
-	}
+	}, nil
 }

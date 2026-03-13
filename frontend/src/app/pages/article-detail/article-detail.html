@@ -4,7 +4,7 @@
     class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-3 px-4 py-20 text-zinc-400"
   >
     <div
-      class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      class="size-8 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
     ></div>
     <p class="text-sm">Loading article...</p>
   </div>
@@ -15,7 +15,7 @@
     class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-4 px-4 py-20 text-center"
   >
     <lucide-icon [img]="AlertCircleIcon" [size]="48" class="text-red-500" />
-    <h2 class="text-xl font-semibold text-zinc-100">Failed to Load</h2>
+    <p class="text-xl font-semibold text-zinc-100">Failed to Load</p>
     <p class="text-sm text-zinc-400">{{ error() }}</p>
     <button
       type="button"
@@ -66,7 +66,7 @@
     </div>
 
     <!-- Title -->
-    <h1 class="mb-6 text-3xl font-bold sm:text-4xl text-zinc-100">
+    <h1 class="mb-6 text-3xl font-bold text-balance sm:text-4xl text-zinc-100">
       {{ article()!.title }}
     </h1>
 

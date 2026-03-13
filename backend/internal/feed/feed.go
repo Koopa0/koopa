@@ -21,7 +21,7 @@ type FilterConfig struct {
 }
 
 // MatchURL reports whether the given item URL should be skipped by this filter.
-func (fc FilterConfig) MatchURL(rawURL string) bool {
+func (fc *FilterConfig) MatchURL(rawURL string) bool {
 	if len(fc.DenyPaths) == 0 {
 		return false
 	}
@@ -39,14 +39,14 @@ func (fc FilterConfig) MatchURL(rawURL string) bool {
 
 // MatchTitle reports whether the given title should be skipped by this filter.
 // Patterns are Go regexp strings (e.g. "(?i)sponsored").
-func (fc FilterConfig) MatchTitle(title string) bool {
+func (fc *FilterConfig) MatchTitle(title string) bool {
 	if len(fc.DenyTitlePatterns) == 0 {
 		return false
 	}
 	for _, pattern := range fc.DenyTitlePatterns {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
-			// fall back to case-insensitive substring match
+			// fall back to case-insensitive substring match for invalid patterns
 			if strings.Contains(strings.ToLower(title), strings.ToLower(pattern)) {
 				return true
 			}
@@ -63,7 +63,7 @@ func (fc FilterConfig) MatchTitle(title string) bool {
 // Returns true (skip) if:
 //   - AllowTags is set and none of the item tags match
 //   - DenyTags is set and any of the item tags match
-func (fc FilterConfig) MatchTags(tags []string) bool {
+func (fc *FilterConfig) MatchTags(tags []string) bool {
 	if len(fc.AllowTags) > 0 {
 		found := false
 		for _, tag := range tags {
@@ -94,7 +94,7 @@ func (fc FilterConfig) MatchTags(tags []string) bool {
 }
 
 // Skip reports whether an item should be skipped based on all filter rules.
-func (fc FilterConfig) Skip(itemURL, title string, tags []string) bool {
+func (fc *FilterConfig) Skip(itemURL, title string, tags []string) bool {
 	return fc.MatchURL(itemURL) || fc.MatchTitle(title) || fc.MatchTags(tags)
 }
 

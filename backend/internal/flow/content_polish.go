@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/google/uuid"
+	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/content"
 )
@@ -88,8 +88,9 @@ func (cp *ContentPolish) run(ctx context.Context, in ContentPolishInput) (Conten
 			ai.WithModel(cp.model),
 			ai.WithSystem(polishSystemPrompt),
 			ai.WithPrompt(userPrompt),
-			ai.WithConfig(&anthropic.MessageNewParams{
-				MaxTokens: 8192,
+			ai.WithConfig(&genai.GenerateContentConfig{
+				Temperature:     genai.Ptr[float32](0.3),
+				MaxOutputTokens: 8192,
 			}),
 		)
 		if err != nil {
@@ -111,18 +112,11 @@ func (cp *ContentPolish) run(ctx context.Context, in ContentPolishInput) (Conten
 
 // NewMockContentPolish returns a mock Flow that returns canned polish output.
 func NewMockContentPolish() Flow {
-	return &mockPolishFlow{}
-}
-
-// mockPolishFlow returns canned ContentPolishOutput for MOCK_MODE.
-type mockPolishFlow struct{}
-
-func (m *mockPolishFlow) Name() string { return "content-polish" }
-
-func (m *mockPolishFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	out := ContentPolishOutput{
-		OriginalBody: "Mock original body.",
-		PolishedBody: "Mock polished body.",
+	return &mockFlow{
+		name: "content-polish",
+		output: ContentPolishOutput{
+			OriginalBody: "Mock original body.",
+			PolishedBody: "Mock polished body.",
+		},
 	}
-	return json.Marshal(out)
 }

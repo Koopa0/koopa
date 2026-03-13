@@ -1,3 +1,11 @@
+<!-- Skip to main content (WCAG 2.4.1) -->
+<a
+  href="#main-content"
+  class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-sm focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-zinc-900 focus:shadow-lg"
+>
+  Skip to content
+</a>
+
 <!-- Navigation Header -->
 <header
   class="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md"
@@ -12,11 +20,12 @@
       class="flex items-center gap-2 text-lg font-semibold text-zinc-100 no-underline hover:text-white"
     >
       <img
-        src="/logo.png"
+        ngSrc="/logo.png"
         alt="Koopa"
         width="32"
         height="32"
-        class="h-8 w-8 rounded-sm"
+        priority
+        class="size-8 rounded-sm"
       />
       <span class="hidden sm:inline">{{ title }}</span>
     </a>
@@ -33,10 +42,13 @@
       </a>
 
       <!-- Writing Dropdown -->
-      <div class="writing-dropdown relative">
+      <div class="writing-dropdown relative" #writingDropdown>
         <button
           type="button"
           (click)="toggleWritingMenu()"
+          [attr.aria-expanded]="isWritingMenuOpen()"
+          aria-haspopup="true"
+          aria-controls="writing-menu"
           class="flex items-center gap-1 rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
           [class.bg-zinc-800]="isWritingMenuOpen()"
           [class.text-white]="isWritingMenuOpen()"
@@ -52,28 +64,34 @@
         @if (isWritingMenuOpen()) {
         <div
           @slideDown
+          id="writing-menu"
+          role="menu"
           class="absolute left-0 top-full mt-1 w-48 rounded-sm border border-zinc-800 bg-zinc-950 py-1 shadow-lg"
         >
           <a
             routerLink="/articles"
+            role="menuitem"
             class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
           >
             Articles
           </a>
           <a
             routerLink="/build-logs"
+            role="menuitem"
             class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
           >
             Build Log
           </a>
           <a
             routerLink="/til"
+            role="menuitem"
             class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
           >
             TIL
           </a>
           <a
             routerLink="/notes"
+            role="menuitem"
             class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
           >
             Notes
@@ -117,7 +135,7 @@
       >
         <lucide-icon [img]="SearchIcon" [size]="18" />
         <kbd
-          class="hidden rounded-xs border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 sm:inline"
+          class="hidden rounded-xs border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 sm:inline"
         >⌘K</kbd>
       </button>
 
@@ -176,7 +194,7 @@
         Home
       </a>
 
-      <p class="px-3 pt-2 text-xs font-semibold tracking-wider text-zinc-600 uppercase">
+      <p class="px-3 pt-2 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
         Writing
       </p>
       <a
@@ -257,7 +275,7 @@
 </header>
 
 <!-- Main Content -->
-<main class="flex-1">
+<main id="main-content" class="flex-1">
   <router-outlet />
 </main>
 
@@ -266,26 +284,26 @@
   <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-6 sm:flex-row sm:px-6 lg:px-8">
     <div class="flex items-center gap-4">
       <div class="flex items-center gap-3">
-        <img src="/logo.png" alt="Koopa" width="24" height="24" class="h-6 w-6 rounded-full" />
-        <span class="text-sm text-zinc-600">&copy; {{ currentYear }} koopa0.dev</span>
+        <img ngSrc="/logo.png" alt="Koopa" width="24" height="24" class="size-6 rounded-full" />
+        <span class="text-sm text-zinc-400">&copy; {{ currentYear }} koopa0.dev</span>
       </div>
-      <span class="hidden text-zinc-800 sm:inline">|</span>
+      <span class="hidden text-zinc-700 sm:inline">|</span>
       <div class="flex items-center gap-3">
-        <a routerLink="/privacy" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">Privacy</a>
-        <a routerLink="/terms" class="text-xs text-zinc-600 no-underline hover:text-zinc-400">Terms</a>
+        <a routerLink="/privacy" class="text-xs text-zinc-400 no-underline hover:text-zinc-300">Privacy</a>
+        <a routerLink="/terms" class="text-xs text-zinc-400 no-underline hover:text-zinc-300">Terms</a>
       </div>
     </div>
     <div class="flex items-center gap-1">
-      <a href="https://github.com/koopa0" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="GitHub">
+      <a href="https://github.com/koopa0" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-400 transition-colors hover:text-zinc-300" aria-label="GitHub">
         <lucide-icon [img]="GithubIcon" [size]="18" />
       </a>
-      <a href="https://www.linkedin.com/in/koopa-chen-70a4651ba/" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="LinkedIn">
+      <a href="https://www.linkedin.com/in/koopa-chen-70a4651ba/" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-400 transition-colors hover:text-zinc-300" aria-label="LinkedIn">
         <lucide-icon [img]="LinkedinIcon" [size]="18" />
       </a>
-      <a href="https://x.com/Koopa012426" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="X">
-        <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      <a href="https://x.com/Koopa012426" target="_blank" rel="noopener noreferrer" class="rounded-sm p-2 text-zinc-400 transition-colors hover:text-zinc-300" aria-label="X">
+        <svg class="size-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
       </a>
-      <a href="mailto:contact@koopa0.dev" class="rounded-sm p-2 text-zinc-600 transition-colors hover:text-zinc-300" aria-label="Email">
+      <a href="mailto:contact@koopa0.dev" class="rounded-sm p-2 text-zinc-400 transition-colors hover:text-zinc-300" aria-label="Email">
         <lucide-icon [img]="MailIcon" [size]="18" />
       </a>
     </div>

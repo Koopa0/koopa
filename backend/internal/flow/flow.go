@@ -17,10 +17,9 @@ import (
 // Every concrete flow stores one of these, created via genkit.DefineFlow in its constructor.
 type genkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
 
-// BudgetChecker checks whether token usage is within budget.
+// BudgetChecker atomically reserves token budget.
 type BudgetChecker interface {
-	Check(tokens int64) error
-	Add(tokens int64)
+	Reserve(tokens int64) error
 }
 
 // CollectedReader reads collected data by ID.
@@ -53,4 +52,18 @@ func NewRegistry(flows ...Flow) *Registry {
 // Flow returns the flow for the given name, or nil if not found.
 func (r *Registry) Flow(name string) Flow {
 	return r.flows[name]
+}
+
+// mockFlow implements Flow with canned responses for MOCK_MODE.
+type mockFlow struct {
+	name   string
+	output any
+}
+
+// Name returns the flow name for registry lookup.
+func (m *mockFlow) Name() string { return m.name }
+
+// Run returns the canned output as JSON.
+func (m *mockFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	return json.Marshal(m.output)
 }

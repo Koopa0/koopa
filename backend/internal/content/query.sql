@@ -127,15 +127,22 @@ SELECT count(*) FROM contents
 WHERE status = 'published' AND published_at >= $1;
 
 -- name: TopicsForContent :many
-SELECT t.id, t.slug, t.name FROM topics t
-JOIN content_topics ct ON ct.topic_id = t.id
+SELECT t.id, t.slug, t.name
+FROM content_topics ct
+JOIN topics t ON t.id = ct.topic_id
 WHERE ct.content_id = $1;
+
+-- name: TopicsForContents :many
+SELECT ct.content_id, t.id, t.slug, t.name
+FROM content_topics ct
+JOIN topics t ON t.id = ct.topic_id
+WHERE ct.content_id = ANY($1::uuid[]);
 
 -- name: AddContentTopic :exec
 INSERT INTO content_topics (content_id, topic_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING;
 
--- name: SetContentTopics :exec
+-- name: DeleteContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1;
 
 -- name: ObsidianContentSlugs :many

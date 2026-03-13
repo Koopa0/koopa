@@ -52,6 +52,7 @@ type DigestGenerate struct {
 	collects HighScoreLister
 	projects ActiveProjectLister
 	budget   BudgetChecker
+	loc      *time.Location
 	logger   *slog.Logger
 }
 
@@ -63,6 +64,7 @@ func NewDigestGenerate(
 	collects HighScoreLister,
 	projects ActiveProjectLister,
 	budget BudgetChecker,
+	loc *time.Location,
 	logger *slog.Logger,
 ) *DigestGenerate {
 	dg := &DigestGenerate{
@@ -72,6 +74,7 @@ func NewDigestGenerate(
 		collects: collects,
 		projects: projects,
 		budget:   budget,
+		loc:      loc,
 		logger:   logger,
 	}
 	dg.gf = genkit.DefineFlow(g, "digest-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
@@ -96,26 +99,27 @@ func (dg *DigestGenerate) Run(ctx context.Context, input json.RawMessage) (json.
 	return dg.gf.Run(ctx, input)
 }
 
-const estimatedDigestTokens int64 = 5000
-const digestMinScore int16 = 50
+const (
+	estimatedDigestTokens int64 = 5000
+	digestMinScore        int16 = 50
+)
 
 func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (DigestGenerateOutput, error) {
-	start, err := time.Parse("2006-01-02", in.StartDate)
+	start, err := time.ParseInLocation("2006-01-02", in.StartDate, dg.loc)
 	if err != nil {
 		return DigestGenerateOutput{}, fmt.Errorf("parsing start date: %w", err)
 	}
-	end, err := time.Parse("2006-01-02", in.EndDate)
+	end, err := time.ParseInLocation("2006-01-02", in.EndDate, dg.loc)
 	if err != nil {
 		return DigestGenerateOutput{}, fmt.Errorf("parsing end date: %w", err)
 	}
 
-	if err := dg.budget.Check(estimatedDigestTokens); err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("budget check: %w", err)
+	if err := dg.budget.Reserve(estimatedDigestTokens); err != nil {
+		return DigestGenerateOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	dg.logger.Info("digest-generate starting", "start", in.StartDate, "end", in.EndDate)
 
-	// Gather all materials in parallel
 	var (
 		published      []content.Content
 		highScoreItems []collected.CollectedData
@@ -160,8 +164,6 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 	if err != nil {
 		return DigestGenerateOutput{}, fmt.Errorf("generating digest: %w", err)
 	}
-
-	dg.budget.Add(estimatedDigestTokens)
 
 	dg.logger.Info("digest-generate complete",
 		"published_count", len(published),
@@ -224,16 +226,8 @@ func scoreValue(s *int16) int16 {
 
 // NewMockDigestGenerate returns a mock Flow for MOCK_MODE.
 func NewMockDigestGenerate() Flow {
-	return &mockDigestFlow{}
-}
-
-type mockDigestFlow struct{}
-
-func (m *mockDigestFlow) Name() string { return "digest-generate" }
-
-func (m *mockDigestFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	out := DigestGenerateOutput{
-		Markdown: "## Mock Digest\n\nThis is a mock weekly digest.",
+	return &mockFlow{
+		name:   "digest-generate",
+		output: DigestGenerateOutput{Markdown: "## Mock Digest\n\nThis is a mock weekly digest."},
 	}
-	return json.Marshal(out)
 }

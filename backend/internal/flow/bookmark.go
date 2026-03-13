@@ -88,8 +88,8 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 		return BookmarkGenerateOutput{}, fmt.Errorf("parsing collected data ID: %w", err)
 	}
 
-	if err := bg.budget.Check(estimatedBookmarkTokens); err != nil {
-		return BookmarkGenerateOutput{}, fmt.Errorf("budget check: %w", err)
+	if err := bg.budget.Reserve(estimatedBookmarkTokens); err != nil {
+		return BookmarkGenerateOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	cd, err := genkit.Run(ctx, "fetch-collected", func() (*collected.CollectedData, error) {
@@ -122,8 +122,6 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 		return BookmarkGenerateOutput{}, fmt.Errorf("generating bookmark for %s: %w", id, err)
 	}
 
-	bg.budget.Add(estimatedBookmarkTokens)
-
 	bg.logger.Info("bookmark-generate complete", "collected_id", id, "title", result.Title)
 
 	return BookmarkGenerateOutput{
@@ -154,18 +152,12 @@ func buildBookmarkUserPrompt(cd *collected.CollectedData) string {
 
 // NewMockBookmarkGenerate returns a mock Flow for MOCK_MODE.
 func NewMockBookmarkGenerate() Flow {
-	return &mockBookmarkFlow{}
-}
-
-type mockBookmarkFlow struct{}
-
-func (m *mockBookmarkFlow) Name() string { return "bookmark-generate" }
-
-func (m *mockBookmarkFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	out := BookmarkGenerateOutput{
-		Title: "模擬書籤標題",
-		Body:  "這是一個模擬的書籤推薦內容。",
-		Tags:  []string{"mock"},
+	return &mockFlow{
+		name: "bookmark-generate",
+		output: BookmarkGenerateOutput{
+			Title: "模擬書籤標題",
+			Body:  "這是一個模擬的書籤推薦內容。",
+			Tags:  []string{"mock"},
+		},
 	}
-	return json.Marshal(out)
 }

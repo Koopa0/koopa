@@ -16,27 +16,17 @@ import {
   Send,
   FileEdit,
   TrendingUp,
-  Plus,
-  PenSquare,
   FolderOpen,
-  Tag,
-  Settings,
   Clock,
-  MoreHorizontal,
-  Edit,
   Eye,
   Trash2,
-  AlertTriangle,
-  Activity,
-  RefreshCw,
-  Loader2,
-  RotateCcw,
 } from 'lucide-angular';
 import { ArticleService } from '../../core/services/article.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ProjectService } from '../../core/services/project/project.service';
-import { PipelineService } from '../../core/services/pipeline.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { PipelineActionsComponent } from '../shared/pipeline-actions.component';
+import { DeleteConfirmDialogComponent } from '../shared/delete-confirm-dialog.component';
 import type { ApiContent, ApiProject, ProjectStatus } from '../../core/models';
 
 interface DeleteTarget {
@@ -44,10 +34,44 @@ interface DeleteTarget {
   title: string;
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  published: 'Published',
+  draft: 'Draft',
+  review: 'Under Review',
+  archived: 'Archived',
+};
+
+const STATUS_CLASSES: Record<string, string> = {
+  published: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
+  draft: 'border-amber-800 bg-amber-900/30 text-amber-400',
+  review: 'border-sky-800 bg-sky-900/30 text-sky-400',
+  archived: 'border-zinc-700 bg-zinc-800 text-zinc-400',
+};
+
+const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  completed: 'Completed',
+  'in-progress': 'In Progress',
+  maintained: 'Maintained',
+  archived: 'Archived',
+};
+
+const PROJECT_STATUS_CLASSES: Record<ProjectStatus, string> = {
+  completed: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
+  'in-progress': 'border-amber-800 bg-amber-900/30 text-amber-400',
+  maintained: 'border-sky-800 bg-sky-900/30 text-sky-400',
+  archived: 'border-zinc-700 bg-zinc-800 text-zinc-400',
+};
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DatePipe, RouterLink, LucideAngularModule],
+  imports: [
+    DatePipe,
+    RouterLink,
+    LucideAngularModule,
+    PipelineActionsComponent,
+    DeleteConfirmDialogComponent,
+  ],
   templateUrl: './dashboard.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -55,7 +79,6 @@ export class DashboardComponent implements OnInit {
   private readonly articleService = inject(ArticleService);
   private readonly authService = inject(AuthService);
   private readonly projectService = inject(ProjectService);
-  private readonly pipelineService = inject(PipelineService);
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -70,14 +93,11 @@ export class DashboardComponent implements OnInit {
   protected readonly totalArticles = computed(() => this.articles().length);
 
   protected readonly publishedArticles = computed(
-    () =>
-      this.articles().filter((article) => article.status === 'published')
-        .length,
+    () => this.articles().filter((a) => a.status === 'published').length,
   );
 
   protected readonly draftArticles = computed(
-    () =>
-      this.articles().filter((article) => article.status === 'draft').length,
+    () => this.articles().filter((a) => a.status === 'draft').length,
   );
 
   protected readonly publishRate = computed(() => {
@@ -99,36 +119,33 @@ export class DashboardComponent implements OnInit {
   protected readonly SendIcon = Send;
   protected readonly FileEditIcon = FileEdit;
   protected readonly TrendingUpIcon = TrendingUp;
-  protected readonly PlusIcon = Plus;
-  protected readonly PenSquareIcon = PenSquare;
   protected readonly FolderOpenIcon = FolderOpen;
-  protected readonly TagIcon = Tag;
-  protected readonly SettingsIcon = Settings;
   protected readonly ClockIcon = Clock;
-  protected readonly MoreHorizontalIcon = MoreHorizontal;
-  protected readonly EditIcon = Edit;
   protected readonly EyeIcon = Eye;
   protected readonly Trash2Icon = Trash2;
-  protected readonly AlertTriangleIcon = AlertTriangle;
-  protected readonly ActivityIcon = Activity;
-  protected readonly RefreshCwIcon = RefreshCw;
-  protected readonly Loader2Icon = Loader2;
-  protected readonly RotateCcwIcon = RotateCcw;
-  protected readonly triggering = this.pipelineService.triggering;
 
   ngOnInit(): void {
+    this.loadArticles();
+    this.loadProjects();
+  }
+
+  private loadArticles(): void {
     this.articleService
       .getArticles()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => this.articles.set(response.articles),
+        error: () => this.notificationService.error('無法載入文章'),
       });
+  }
 
+  private loadProjects(): void {
     this.projectService
       .getAdminProjects()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (projectList) => this.projects.set(projectList),
+        error: () => this.notificationService.error('無法載入專案'),
       });
   }
 
@@ -163,25 +180,15 @@ export class DashboardComponent implements OnInit {
       next: () => {
         this.deleteTarget.set(null);
         this.isDeleting.set(false);
-        // Reload data
         if (this.deleteType() === 'article') {
-          this.articleService
-            .getArticles()
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe({
-              next: (response) => this.articles.set(response.articles),
-            });
+          this.loadArticles();
         } else {
-          this.projectService
-            .getAdminProjects()
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe({
-              next: (projectList) => this.projects.set(projectList),
-            });
+          this.loadProjects();
         }
       },
       error: () => {
         this.isDeleting.set(false);
+        this.notificationService.error('刪除失敗');
       },
     });
   }
@@ -207,102 +214,18 @@ export class DashboardComponent implements OnInit {
   }
 
   protected getProjectStatusLabel(status: ProjectStatus): string {
-    const labels: Record<ProjectStatus, string> = {
-      completed: 'Completed',
-      'in-progress': 'In Progress',
-      maintained: 'Maintained',
-      archived: 'Archived',
-    };
-    return labels[status];
+    return PROJECT_STATUS_LABELS[status];
   }
 
   protected getProjectStatusClass(status: ProjectStatus): string {
-    const classes: Record<ProjectStatus, string> = {
-      completed: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
-      'in-progress': 'border-amber-800 bg-amber-900/30 text-amber-400',
-      maintained: 'border-sky-800 bg-sky-900/30 text-sky-400',
-      archived: 'border-zinc-700 bg-zinc-800 text-zinc-400',
-    };
-    return classes[status];
+    return PROJECT_STATUS_CLASSES[status];
   }
 
   protected getStatusLabel(status: string): string {
-    switch (status) {
-      case 'published':
-        return 'Published';
-      case 'draft':
-        return 'Draft';
-      case 'review':
-        return 'Under Review';
-      case 'archived':
-        return 'Archived';
-      default:
-        return status;
-    }
-  }
-
-  protected triggerSync(): void {
-    this.pipelineService
-      .triggerSync()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => this.notificationService.success('Obsidian 同步已觸發'),
-        error: () => this.notificationService.error('同步觸發失敗'),
-      });
-  }
-
-  protected triggerCollect(): void {
-    this.pipelineService
-      .triggerCollect()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => this.notificationService.success('RSS 收集已觸發'),
-        error: () => this.notificationService.error('收集觸發失敗'),
-      });
-  }
-
-  protected triggerNotionSync(): void {
-    this.pipelineService
-      .triggerNotionSync()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => this.notificationService.success('Notion 同步已觸發'),
-        error: () => this.notificationService.error('Notion 同步失敗'),
-      });
-  }
-
-  protected triggerReconcile(): void {
-    this.pipelineService
-      .triggerReconcile()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => this.notificationService.success('全量比對已觸發'),
-        error: () => this.notificationService.error('比對觸發失敗'),
-      });
-  }
-
-  protected triggerBookmark(): void {
-    this.pipelineService
-      .triggerBookmark()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => this.notificationService.success('書籤生成已觸發'),
-        error: () => this.notificationService.error('書籤生成失敗'),
-      });
+    return STATUS_LABELS[status] ?? status;
   }
 
   protected getStatusClass(status: string): string {
-    switch (status) {
-      case 'published':
-        return 'border-emerald-800 bg-emerald-900/30 text-emerald-400';
-      case 'draft':
-        return 'border-amber-800 bg-amber-900/30 text-amber-400';
-      case 'review':
-        return 'border-sky-800 bg-sky-900/30 text-sky-400';
-      case 'archived':
-        return 'border-zinc-700 bg-zinc-800 text-zinc-400';
-      default:
-        return 'border-zinc-700 bg-zinc-800 text-zinc-400';
-    }
+    return STATUS_CLASSES[status] ?? STATUS_CLASSES['archived'];
   }
 }

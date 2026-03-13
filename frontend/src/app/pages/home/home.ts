@@ -4,6 +4,7 @@ import {
   ChangeDetectionStrategy,
   OnInit,
 } from '@angular/core';
+import { environment } from '../../../environments/environment';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import { buildWebSiteSchema } from '../../core/services/seo/json-ld.util';
@@ -25,10 +26,26 @@ import { ContactCtaComponent } from './sections/contact-cta.component';
   ],
   template: `
     <app-hero-section />
-    <app-featured-projects />
-    <app-tech-stack />
-    <app-latest-feed />
-    <app-contact-cta />
+    @defer (on viewport) {
+      <app-featured-projects />
+    } @placeholder {
+      <div class="h-96 animate-pulse bg-zinc-900/50"></div>
+    }
+    @defer (on viewport) {
+      <app-tech-stack />
+    } @placeholder {
+      <div class="h-64 animate-pulse bg-zinc-900/50"></div>
+    }
+    @defer (on viewport) {
+      <app-latest-feed />
+    } @placeholder {
+      <div class="h-96 animate-pulse bg-zinc-900/50"></div>
+    }
+    @defer (on viewport) {
+      <app-contact-cta />
+    } @placeholder {
+      <div class="h-48 animate-pulse bg-zinc-900/50"></div>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [fadeInUp],
@@ -42,7 +59,7 @@ export class HomeComponent implements OnInit {
       title: 'Home',
       description:
         'Koopa — Software Engineer. Technical articles and personal projects.',
-      ogUrl: 'https://koopa0.dev/',
+      ogUrl: `${environment.siteUrl}/`,
       jsonLd: buildWebSiteSchema(),
     });
   }

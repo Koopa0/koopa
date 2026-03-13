@@ -1,11 +1,13 @@
 import {
   Component,
+  DestroyRef,
   inject,
   signal,
   input,
   ChangeDetectionStrategy,
   OnInit,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Location } from '@angular/common';
 import {
   LucideAngularModule,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { environment } from '../../../environments/environment';
 import type { ApiProject, ProjectStatus } from '../../core/models';
 
 @Component({
@@ -29,11 +32,12 @@ import type { ApiProject, ProjectStatus } from '../../core/models';
 })
 export class ProjectDetailComponent implements OnInit {
   /** Route param: projects/:slug */
-  readonly slug = input<string>();
+  readonly slug = input.required<string>();
 
   private readonly location = inject(Location);
   private readonly projectService = inject(ProjectService);
   private readonly seoService = inject(SeoService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly project = signal<ApiProject | null>(null);
   protected readonly isLoading = signal(true);
@@ -47,17 +51,11 @@ export class ProjectDetailComponent implements OnInit {
   protected readonly Code2Icon = Code2;
 
   ngOnInit(): void {
-    const slugValue = this.slug();
-    if (slugValue) {
-      this.loadProject(slugValue);
-    } else {
-      this.isNotFound.set(true);
-      this.isLoading.set(false);
-    }
+    this.loadProject(this.slug());
   }
 
   private loadProject(slug: string): void {
-    this.projectService.getProjectBySlug(slug).subscribe({
+    this.projectService.getProjectBySlug(slug).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (project) => {
         this.project.set(project);
         this.isLoading.set(false);
@@ -71,7 +69,7 @@ export class ProjectDetailComponent implements OnInit {
   }
 
   private updateSeo(project: ApiProject): void {
-    const projectUrl = `https://koopa0.dev/projects/${project.slug}`;
+    const projectUrl = `${environment.siteUrl}/projects/${project.slug}`;
     this.seoService.updateMeta({
       title: `${project.title} | Koopa`,
       description: project.description,

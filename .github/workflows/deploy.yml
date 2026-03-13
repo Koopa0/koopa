@@ -6,7 +6,7 @@ on:
 
 concurrency:
   group: deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -38,6 +38,21 @@ jobs:
 
             docker compose up -d --build
             docker image prune -f
+
+            # Post-deploy health check
+            echo "Waiting for services to be ready..."
+            for i in $(seq 1 30); do
+              if docker compose exec -T backend wget -qO- http://localhost:8080/healthz > /dev/null 2>&1; then
+                echo "Backend healthy after ${i}s"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "ERROR: Backend failed health check after 30s"
+                docker compose logs backend --tail 20
+                exit 1
+              fi
+              sleep 1
+            done
 
             # Expire silence early after deploy completes
             if [ -n "$SILENCE_ID" ] && [ "$SILENCE_ID" != "null" ]; then

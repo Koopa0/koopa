@@ -14,7 +14,8 @@ import {
   Lightbulb,
   Tag,
 } from 'lucide-angular';
-import { TilService } from '../../core/services/til.service';
+import { environment } from '../../../environments/environment';
+import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
@@ -30,7 +31,7 @@ import type { ApiContent } from '../../core/models';
   host: { '[@fadeInUp]': '' },
 })
 export class TilsComponent implements OnInit {
-  private readonly tilService = inject(TilService);
+  private readonly contentService = inject(ContentService);
   private readonly seoService = inject(SeoService);
 
   protected readonly tils = signal<ApiContent[]>([]);
@@ -64,11 +65,11 @@ export class TilsComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Today I Learned',
       description: 'Daily learning notes — bite-sized technical discoveries.',
-      ogUrl: 'https://koopa0.dev/til',
+      ogUrl: `${environment.siteUrl}/til`,
       jsonLd: buildCollectionPageSchema({
         name: 'Today I Learned',
         description: 'Daily learning notes — bite-sized technical discoveries.',
-        url: 'https://koopa0.dev/til',
+        url: `${environment.siteUrl}/til`,
       }),
     });
     this.loadTils();
@@ -79,9 +80,9 @@ export class TilsComponent implements OnInit {
   }
 
   private loadTils(): void {
-    this.tilService.getTils(1, 100).subscribe({
+    this.contentService.listByType('til', { page: 1, perPage: 100 }).subscribe({
       next: (response) => {
-        this.tils.set(response.tils);
+        this.tils.set(response.data);
         this.isLoading.set(false);
       },
       error: () => {

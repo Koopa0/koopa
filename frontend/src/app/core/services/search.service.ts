@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { catchError, throwError } from 'rxjs';
+import type { Subscription } from 'rxjs';
 import { ContentService } from './content.service';
 import type { ApiContent, ApiPaginationMeta } from '../models';
 
@@ -18,6 +18,8 @@ export class SearchService {
   readonly searching = this._searching.asReadonly();
   readonly hasResults = computed(() => this._results().length > 0);
 
+  private searchSub: Subscription | null = null;
+
   /** Full-text search — calls backend /api/search */
   search(query: string, page = 1, perPage = 20): void {
     this._query.set(query);
@@ -30,18 +32,18 @@ export class SearchService {
 
     this._searching.set(true);
 
-    this.content
+    this.searchSub?.unsubscribe();
+    this.searchSub = this.content
       .search(query, { page, perPage })
-      .pipe(
-        catchError((err) => {
+      .subscribe({
+        next: (res) => {
+          this._results.set(res.data);
+          this._meta.set(res.meta);
           this._searching.set(false);
-          return throwError(() => err);
-        }),
-      )
-      .subscribe((res) => {
-        this._results.set(res.data);
-        this._meta.set(res.meta);
-        this._searching.set(false);
+        },
+        error: () => {
+          this._searching.set(false);
+        },
       });
   }
 

@@ -34,10 +34,10 @@ interface SocialLink {
               target="_blank"
               rel="noopener noreferrer"
               [title]="link.name"
-              class="flex h-11 w-11 items-center justify-center rounded-sm border border-zinc-700 text-zinc-400 no-underline transition-colors hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+              class="flex size-11 items-center justify-center rounded-sm border border-zinc-700 text-zinc-400 no-underline transition-colors hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
             >
               @if (link.isX) {
-                <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                <svg class="size-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
               } @else {
                 <lucide-icon [img]="link.icon!" [size]="18" />
               }

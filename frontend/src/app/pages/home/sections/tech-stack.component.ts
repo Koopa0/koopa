@@ -25,7 +25,7 @@ interface TechCategory {
             <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
               <div class="mb-5 flex items-center gap-3">
                 <div
-                  class="flex h-9 w-9 items-center justify-center rounded-sm bg-zinc-800"
+                  class="flex size-9 items-center justify-center rounded-sm bg-zinc-800"
                 >
                   <lucide-icon
                     [img]="category.icon"

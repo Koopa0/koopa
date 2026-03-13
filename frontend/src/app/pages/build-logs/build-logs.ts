@@ -1,10 +1,12 @@
 import {
   Component,
   ChangeDetectionStrategy,
+  DestroyRef,
   inject,
   signal,
   OnInit,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import {
@@ -14,7 +16,8 @@ import {
   ArrowRight,
   Hammer,
 } from 'lucide-angular';
-import { BuildLogService } from '../../core/services/build-log.service';
+import { environment } from '../../../environments/environment';
+import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
@@ -30,8 +33,9 @@ import type { ApiContent } from '../../core/models';
   host: { '[@fadeInUp]': '' },
 })
 export class BuildLogsComponent implements OnInit {
-  private readonly buildLogService = inject(BuildLogService);
+  private readonly contentService = inject(ContentService);
   private readonly seoService = inject(SeoService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly buildLogs = signal<ApiContent[]>([]);
   protected readonly isLoading = signal(true);
@@ -46,20 +50,20 @@ export class BuildLogsComponent implements OnInit {
     this.seoService.updateMeta({
       title: 'Build Logs',
       description: 'Development logs — process, decisions, and lessons learned.',
-      ogUrl: 'https://koopa0.dev/build-logs',
+      ogUrl: `${environment.siteUrl}/build-logs`,
       jsonLd: buildCollectionPageSchema({
         name: 'Build Logs',
         description: 'Development logs — process, decisions, and lessons learned.',
-        url: 'https://koopa0.dev/build-logs',
+        url: `${environment.siteUrl}/build-logs`,
       }),
     });
     this.loadBuildLogs();
   }
 
-  private loadBuildLogs(): void {
-    this.buildLogService.getBuildLogs(1, 20).subscribe({
+  protected loadBuildLogs(): void {
+    this.contentService.listByType('build-log', { page: 1, perPage: 20 }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (response) => {
-        this.buildLogs.set(response.buildLogs);
+        this.buildLogs.set(response.data);
         this.isLoading.set(false);
       },
       error: () => {

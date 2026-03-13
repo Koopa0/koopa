@@ -59,7 +59,7 @@ func (h *Handler) Reject(w http.ResponseWriter, r *http.Request) {
 	type rejectRequest struct {
 		Notes string `json:"notes"`
 	}
-	req, err := api.Decode[rejectRequest](r)
+	req, err := api.Decode[rejectRequest](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return

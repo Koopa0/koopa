@@ -60,6 +60,7 @@ type BuildLog struct {
 	commits  RepoCommitLister
 	content  ContentCreator
 	budget   BudgetChecker
+	loc      *time.Location
 	logger   *slog.Logger
 }
 
@@ -71,6 +72,7 @@ func NewBuildLog(
 	commits RepoCommitLister,
 	content ContentCreator,
 	budget BudgetChecker,
+	loc *time.Location,
 	logger *slog.Logger,
 ) *BuildLog {
 	bl := &BuildLog{
@@ -80,6 +82,7 @@ func NewBuildLog(
 		commits:  commits,
 		content:  content,
 		budget:   budget,
+		loc:      loc,
 		logger:   logger,
 	}
 	bl.gf = genkit.DefineFlow(g, "build-log-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
@@ -124,8 +127,8 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 		return BuildLogOutput{}, fmt.Errorf("project %s has no linked repo", input.ProjectSlug)
 	}
 
-	if err := bl.budget.Check(estimatedBuildLogTokens); err != nil {
-		return BuildLogOutput{}, fmt.Errorf("budget check: %w", err)
+	if err := bl.budget.Reserve(estimatedBuildLogTokens); err != nil {
+		return BuildLogOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	bl.logger.Info("build-log-generate starting",
@@ -134,7 +137,8 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 		"days", input.Days,
 	)
 
-	since := time.Now().Add(-time.Duration(input.Days) * 24 * time.Hour)
+	now := time.Now().In(bl.loc)
+	since := now.Add(-time.Duration(input.Days) * 24 * time.Hour)
 	commits, err := bl.commits.CommitsForRepo(ctx, *proj.Repo, since)
 	if err != nil {
 		return BuildLogOutput{}, fmt.Errorf("fetching commits for %s: %w", *proj.Repo, err)
@@ -165,15 +169,13 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 		return BuildLogOutput{}, err
 	}
 
-	bl.budget.Add(estimatedBuildLogTokens)
-
 	var llmOut buildLogLLMOutput
 	if err := parseJSONLoose(respText, &llmOut); err != nil {
 		return BuildLogOutput{}, fmt.Errorf("parsing build-log LLM output: %w", err)
 	}
 
 	// Generate slug from project slug + date
-	slug := fmt.Sprintf("%s-build-log-%s", proj.Slug, time.Now().Format("2006-01-02"))
+	slug := fmt.Sprintf("%s-build-log-%s", proj.Slug, now.Format("2006-01-02"))
 	sourceType := content.SourceAIGenerated
 	source := fmt.Sprintf("build-log-generate:%s", *proj.Repo)
 
@@ -225,13 +227,8 @@ func buildBuildLogPrompt(proj *project.Project, commits []pipeline.Commit, days 
 
 // NewMockBuildLog returns a mock Flow for MOCK_MODE.
 func NewMockBuildLog() Flow {
-	return &mockBuildLogFlow{}
-}
-
-type mockBuildLogFlow struct{}
-
-func (m *mockBuildLogFlow) Name() string { return "build-log-generate" }
-
-func (m *mockBuildLogFlow) Run(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-	return json.Marshal(BuildLogOutput{ContentID: "mock-id", Title: "Mock build log"})
+	return &mockFlow{
+		name:   "build-log-generate",
+		output: BuildLogOutput{ContentID: "mock-id", Title: "Mock build log"},
+	}
 }

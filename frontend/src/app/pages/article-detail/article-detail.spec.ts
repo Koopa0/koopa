@@ -24,10 +24,11 @@ describe('ArticleDetailComponent', () => {
 
     fixture = TestBed.createComponent(ArticleDetailComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
   });
 
   it('should create', () => {
+    fixture.componentRef.setInput('id', 'test-article');
+    fixture.detectChanges();
     expect(component).toBeTruthy();
   });
 });

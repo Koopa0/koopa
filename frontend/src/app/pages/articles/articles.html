@@ -1,7 +1,7 @@
 <!-- Header -->
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-    <h1 class="text-3xl font-bold text-zinc-100">Articles</h1>
+    <h1 class="text-3xl font-bold text-balance text-zinc-100">Articles</h1>
     <p class="mt-2 text-zinc-400">Exploring the latest tech trends and in-depth analysis</p>
   </div>
 </section>
@@ -18,6 +18,7 @@
         <input
           type="text"
           placeholder="Search articles..."
+          aria-label="Search articles"
           class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500"
           [value]="searchQuery()"
           (input)="onSearchChange($event)"
@@ -81,11 +82,11 @@
           </div>
 
           <!-- Title -->
-          <h3
+          <h2
             class="mb-2 text-lg font-semibold text-zinc-100 group-hover:text-white"
           >
             {{ article.title }}
-          </h3>
+          </h2>
 
           <!-- Excerpt -->
           <p class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400">
@@ -111,14 +112,17 @@
     </div>
 
     <!-- Pagination -->
-    @if (totalPages() > 1) {
-    <div class="mt-12 flex flex-col items-center gap-4">
+    @let cp = currentPage();
+    @let tp = totalPages();
+    @if (tp > 1) {
+    <nav aria-label="Pagination" class="mt-12 flex flex-col items-center gap-4">
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
-          [disabled]="currentPage() === 1"
-          (click)="onPageChange(currentPage() - 1)"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none disabled:opacity-30"
+          [disabled]="cp === 1"
+          (click)="onPageChange(cp - 1)"
+          aria-label="Previous page"
         >
           <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
         </button>
@@ -126,13 +130,15 @@
         @for (page of pageArray(); track page) {
         <button
           type="button"
-          class="rounded-sm px-3 py-1 text-sm transition-colors"
+          class="rounded-sm px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none"
           [class]="
-                    currentPage() === page
+                    cp === page
                       ? 'bg-zinc-700 text-white'
                       : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
                   "
           (click)="onPageChange(page)"
+          [attr.aria-current]="cp === page ? 'page' : null"
+          [attr.aria-label]="'Page ' + page"
         >
           {{ page }}
         </button>
@@ -140,22 +146,23 @@
 
         <button
           type="button"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
-          [disabled]="currentPage() === totalPages()"
-          (click)="onPageChange(currentPage() + 1)"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none disabled:opacity-30"
+          [disabled]="cp === tp"
+          (click)="onPageChange(cp + 1)"
+          aria-label="Next page"
         >
           <lucide-icon [img]="ChevronRightIcon" [size]="16" />
         </button>
       </div>
       <div class="text-xs text-zinc-500">
-        Page {{ currentPage() }} of {{ totalPages() }}
+        Page {{ cp }} of {{ tp }}
       </div>
-    </div>
+    </nav>
     } } @else {
     <!-- Empty State -->
     <div class="flex flex-col items-center gap-4 py-20 text-center">
       <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
-      <h3 class="text-lg font-medium text-zinc-300">No articles found</h3>
+      <h2 class="text-lg font-medium text-zinc-300">No articles found</h2>
       <p class="text-sm text-zinc-500">Try adjusting your search or clearing filters</p>
       @if (hasFilters()) {
       <button

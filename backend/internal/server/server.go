@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -24,11 +26,17 @@ func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error 
 	RegisterMetrics(prometheus.DefaultRegisterer)
 
 	authMid := auth.Middleware(cfg.JWTSecret)
-	rlMid := rateLimitMiddleware(logger)
+	rlDone := make(chan struct{})
+	rlMid := rateLimitMiddleware(logger, rlDone)
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", MetricsHandler())
+	mux.Handle("GET /metrics", authMid(MetricsHandler()))
 	RegisterRoutes(mux, deps, authMid, rlMid)
+
+	csrfMid, err := csrfMiddleware(cfg.CORSOrigin, logger)
+	if err != nil {
+		return fmt.Errorf("setting up CSRF middleware: %w", err)
+	}
 
 	// Middleware chain (outermost first):
 	// prometheus → logging → security headers → CORS → CSRF → mux
@@ -36,24 +44,25 @@ func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error 
 		loggingMiddleware(logger)(
 			securityHeaders(
 				corsMiddleware(cfg.CORSOrigin)(
-					csrfMiddleware(cfg.CORSOrigin, logger)(mux),
+					csrfMid(mux),
 				),
 			),
 		),
 	)
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      handler,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":" + cfg.Port,
+		Handler:           handler,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("server starting", "port", cfg.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
@@ -65,6 +74,7 @@ func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error 
 	}
 
 	logger.Info("shutting down")
+	close(rlDone) // stop rate limiter cleanup goroutine
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

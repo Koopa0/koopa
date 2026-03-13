@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
@@ -23,9 +24,10 @@ type Handler struct {
 	siteURL string
 	logger  *slog.Logger
 
-	graphMu    sync.Mutex
+	graphMu    sync.RWMutex
 	graphCache *KnowledgeGraph
 	graphAt    time.Time
+	graphSF    singleflight.Group
 }
 
 // NewHandler returns a content Handler.
@@ -86,7 +88,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "query parameter q is required")
 		return
 	}
-	page, perPage := parsePagination(r)
+	page, perPage := api.ParsePagination(r)
 	contents, total, err := h.store.Search(r.Context(), q, page, perPage)
 	if err != nil {
 		h.logger.Error("searching contents", "query", q, "error", err)
@@ -217,7 +219,7 @@ func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/admin/contents.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	p, err := api.Decode[CreateParams](r)
+	p, err := api.Decode[CreateParams](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -257,7 +259,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := api.Decode[UpdateParams](r)
+	p, err := api.Decode[UpdateParams](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -363,22 +365,27 @@ const graphCacheTTL = 10 * time.Minute
 
 // KnowledgeGraph handles GET /api/knowledge-graph.
 func (h *Handler) KnowledgeGraph(w http.ResponseWriter, r *http.Request) {
-	h.graphMu.Lock()
+	h.graphMu.RLock()
 	if h.graphCache != nil && time.Since(h.graphAt) < graphCacheTTL {
 		cached := h.graphCache
-		h.graphMu.Unlock()
+		h.graphMu.RUnlock()
 		api.Encode(w, http.StatusOK, api.Response{Data: cached})
 		return
 	}
-	h.graphMu.Unlock()
+	h.graphMu.RUnlock()
 
-	graph, err := h.buildKnowledgeGraph(r.Context())
+	// singleflight prevents thundering herd — only one goroutine builds the graph.
+	// Use context.WithoutCancel so a cancelled request doesn't fail all waiters.
+	v, err, _ := h.graphSF.Do("graph", func() (any, error) {
+		return h.buildKnowledgeGraph(context.WithoutCancel(r.Context()))
+	})
 	if err != nil {
 		h.logger.Error("building knowledge graph", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to build knowledge graph")
 		return
 	}
 
+	graph := v.(*KnowledgeGraph)
 	h.graphMu.Lock()
 	h.graphCache = graph
 	h.graphAt = time.Now()
@@ -416,21 +423,27 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 		rows = rows[:maxGraphNodes]
 	}
 
+	// Batch fetch topics for all rows in a single query
+	ids := make([]uuid.UUID, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	topicMap, topicErr := h.store.topicsForContents(ctx, ids)
+	if topicErr != nil {
+		return nil, topicErr
+	}
+
 	nodes := make([]contentNode, 0, len(rows))
 	for _, r := range rows {
 		if len(r.Embedding) == 0 {
 			continue
-		}
-		topics, topicErr := h.store.TopicsForContent(ctx, r.ID)
-		if topicErr != nil {
-			return nil, topicErr
 		}
 		nodes = append(nodes, contentNode{
 			slug:      r.Slug,
 			title:     r.Title,
 			typ:       string(r.Type),
 			embedding: r.Embedding,
-			topics:    topics,
+			topics:    topicMap[r.ID],
 		})
 	}
 
@@ -547,7 +560,7 @@ func cosineSimilarity(a, b []float32) float64 {
 }
 
 func (h *Handler) parseFilter(r *http.Request) Filter {
-	page, perPage := parsePagination(r)
+	page, perPage := api.ParsePagination(r)
 	f := Filter{Page: page, PerPage: perPage}
 
 	if t := r.URL.Query().Get("type"); t != "" {
@@ -560,21 +573,4 @@ func (h *Handler) parseFilter(r *http.Request) Filter {
 		f.Tag = &tag
 	}
 	return f
-}
-
-func parsePagination(r *http.Request) (page, perPage int) {
-	page = 1
-	perPage = 20
-
-	if p := r.URL.Query().Get("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
-	}
-	if pp := r.URL.Query().Get("per_page"); pp != "" {
-		if v, err := strconv.Atoi(pp); err == nil && v > 0 && v <= 100 {
-			perPage = v
-		}
-	}
-	return page, perPage
 }

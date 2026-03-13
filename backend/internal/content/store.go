@@ -115,20 +115,22 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	}
 
 	contents := make([]Content, len(rows))
+	ids := make([]uuid.UUID, len(rows))
 	for i, r := range rows {
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
 			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		ids[i] = r.ID
 	}
 
-	// populate topics for each content
+	// batch fetch topics for all contents in a single query
+	topicMap, err := s.topicsForContents(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
 	for i := range contents {
-		topics, err := s.TopicsForContent(ctx, contents[i].ID)
-		if err != nil {
-			return nil, 0, err
-		}
-		contents[i].Topics = topics
+		contents[i].Topics = topicMap[contents[i].ID]
 	}
 
 	return contents, int(countRow), nil
@@ -400,7 +402,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams)
 	}
 
 	if p.TopicIDs != nil {
-		if err := qtx.SetContentTopics(ctx, id); err != nil {
+		if err := qtx.DeleteContentTopics(ctx, id); err != nil {
 			return nil, fmt.Errorf("clearing content topics: %w", err)
 		}
 		for _, topicID := range p.TopicIDs {
@@ -453,19 +455,24 @@ func (s *Store) SimilarContents(ctx context.Context, excludeID uuid.UUID, embedd
 	if err != nil {
 		return nil, fmt.Errorf("querying similar contents: %w", err)
 	}
+	ids := make([]uuid.UUID, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	topicMap, err := s.topicsForContents(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
 	results := make([]RelatedContent, len(rows))
 	for i, r := range rows {
-		topics, topicErr := s.TopicsForContent(ctx, r.ID)
-		if topicErr != nil {
-			return nil, topicErr
-		}
 		results[i] = RelatedContent{
 			Slug:       r.Slug,
 			Title:      r.Title,
 			Excerpt:    r.Excerpt,
 			Type:       Type(r.Type),
 			Similarity: r.Similarity,
-			Topics:     topics,
+			Topics:     topicMap[r.ID],
 		}
 	}
 	return results, nil
@@ -547,6 +554,23 @@ func (s *Store) TopicsForContent(ctx context.Context, contentID uuid.UUID) ([]To
 		refs[i] = TopicRef{ID: r.ID, Slug: r.Slug, Name: r.Name}
 	}
 	return refs, nil
+}
+
+// topicsForContents fetches topics for multiple content IDs in a single query,
+// returning a map from content ID to topic refs.
+func (s *Store) topicsForContents(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]TopicRef, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID][]TopicRef{}, nil
+	}
+	rows, err := s.q.TopicsForContents(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("batch querying topics: %w", err)
+	}
+	result := make(map[uuid.UUID][]TopicRef, len(ids))
+	for _, r := range rows {
+		result[r.ContentID] = append(result[r.ContentID], TopicRef{ID: r.ID, Slug: r.Slug, Name: r.Name})
+	}
+	return result, nil
 }
 
 func rowToContent(
