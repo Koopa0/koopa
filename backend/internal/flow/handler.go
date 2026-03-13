@@ -45,27 +45,17 @@ type RunReader interface {
 	LatestCompletedRunResult(ctx context.Context, flowName string, contentID uuid.UUID) (*RunResult, error)
 }
 
-// BodyUpdater updates content body.
-type BodyUpdater interface {
-	UpdateContent(ctx context.Context, id uuid.UUID, p content.UpdateParams) (*content.Content, error)
-}
-
-// ContentChecker checks if content exists.
-type ContentChecker interface {
-	Content(ctx context.Context, id uuid.UUID) (*content.Content, error)
-}
-
 // Handler handles flow admin HTTP requests (trigger, result, approve).
 type Handler struct {
 	jobs    JobSubmitter
 	runs    RunReader
-	content ContentChecker
-	updater BodyUpdater
+	content ContentReader
+	updater ContentUpdater
 	logger  *slog.Logger
 }
 
 // NewHandler returns a flow Handler.
-func NewHandler(jobs JobSubmitter, runs RunReader, checker ContentChecker, updater BodyUpdater, logger *slog.Logger) *Handler {
+func NewHandler(jobs JobSubmitter, runs RunReader, checker ContentReader, updater ContentUpdater, logger *slog.Logger) *Handler {
 	return &Handler{
 		jobs:    jobs,
 		runs:    runs,

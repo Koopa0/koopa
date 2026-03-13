@@ -445,7 +445,7 @@ func run(logger *slog.Logger) error {
 	})
 
 	// pipeline handler with collector and reconciler
-	pipelineHandler := pipeline.NewHandler(contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
+	pipelineHandler := pipeline.NewHandler(contentStore, contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
 	defer pipelineHandler.Wait() // drain in-flight background operations before exit
 	pipelineHandler.SetCollector(feedCollector, feedStore)
 	pipelineHandler.SetReconciler(recon)

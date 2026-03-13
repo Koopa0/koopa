@@ -19,9 +19,13 @@ import (
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
 
+// ContentReader reads content by slug.
+type ContentReader interface {
+	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
+}
+
 // ContentWriter creates, updates, or archives content in the database.
 type ContentWriter interface {
-	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
 	CreateContent(ctx context.Context, p content.CreateParams) (*content.Content, error)
 	UpdateContent(ctx context.Context, id uuid.UUID, p content.UpdateParams) (*content.Content, error)
 	PublishContent(ctx context.Context, id uuid.UUID) (*content.Content, error)
@@ -64,10 +68,8 @@ type FeedLister interface {
 	EnabledFeedsBySchedule(ctx context.Context, schedule string) ([]feed.Feed, error)
 }
 
-// Reconciler runs Obsidian and Notion reconciliation.
+// Reconciler runs the full reconciliation check.
 type Reconciler interface {
-	ReconcileObsidian(ctx context.Context) error
-	ReconcileNotion(ctx context.Context) error
 	Run(ctx context.Context) error
 }
 
@@ -79,7 +81,8 @@ type NotionSyncer interface {
 // Handler handles pipeline and webhook HTTP requests.
 type Handler struct {
 	wg            sync.WaitGroup
-	content       ContentWriter
+	contentReader ContentReader
+	contentWriter ContentWriter
 	topics        TopicLookup
 	fetcher       GitHubFetcher
 	jobs          JobSubmitter
@@ -94,9 +97,10 @@ type Handler struct {
 }
 
 // NewHandler returns a pipeline Handler.
-func NewHandler(cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, webhookSecret, obsidianRepo string, logger *slog.Logger) *Handler {
+func NewHandler(cr ContentReader, cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, webhookSecret, obsidianRepo string, logger *slog.Logger) *Handler {
 	return &Handler{
-		content:       cw,
+		contentReader: cr,
+		contentWriter: cw,
 		topics:        tl,
 		fetcher:       fetcher,
 		jobs:          jobs,
@@ -472,13 +476,13 @@ func (h *Handler) handleProjectTrack(w http.ResponseWriter, r *http.Request, eve
 func (h *Handler) archiveRemovedFiles(ctx context.Context, files []string) {
 	for _, path := range files {
 		slug := slugFromPath(path)
-		existing, err := h.content.ContentBySlug(ctx, slug)
+		existing, err := h.contentReader.ContentBySlug(ctx, slug)
 		if err != nil {
 			// not found — already deleted or never synced, skip
 			h.logger.Debug("removed file not found in db, skipping", "path", path, "slug", slug)
 			continue
 		}
-		if err := h.content.DeleteContent(ctx, existing.ID); err != nil {
+		if err := h.contentWriter.DeleteContent(ctx, existing.ID); err != nil {
 			h.logger.Error("archiving removed file", "path", path, "slug", slug, "error", err)
 			continue
 		}
@@ -523,14 +527,14 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 	sourceType := content.SourceObsidian
 
 	// check if content already exists
-	existing, err := h.content.ContentBySlug(ctx, slug)
+	existing, err := h.contentReader.ContentBySlug(ctx, slug)
 	if err == nil && existing != nil {
 		// update existing content — status reflects frontmatter published field
 		status := content.StatusDraft
 		if parsed.Published {
 			status = content.StatusPublished
 		}
-		_, err := h.content.UpdateContent(ctx, existing.ID, content.UpdateParams{
+		_, err := h.contentWriter.UpdateContent(ctx, existing.ID, content.UpdateParams{
 			Title:      &parsed.Title,
 			Body:       &body,
 			Type:       &contentType,
@@ -546,7 +550,7 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 
 		// publish if the obsidian file is marked as published and not yet published
 		if parsed.Published && existing.Status != content.StatusPublished {
-			if _, err := h.content.PublishContent(ctx, existing.ID); err != nil {
+			if _, err := h.contentWriter.PublishContent(ctx, existing.ID); err != nil {
 				return fmt.Errorf("publishing content %s: %w", slug, err)
 			}
 		}
@@ -556,7 +560,7 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 	}
 
 	// create new content
-	created, err := h.content.CreateContent(ctx, content.CreateParams{
+	created, err := h.contentWriter.CreateContent(ctx, content.CreateParams{
 		Slug:        slug,
 		Title:       parsed.Title,
 		Body:        body,
@@ -574,7 +578,7 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 
 	// publish if the obsidian file is marked as published
 	if parsed.Published {
-		if _, err := h.content.PublishContent(ctx, created.ID); err != nil {
+		if _, err := h.contentWriter.PublishContent(ctx, created.ID); err != nil {
 			return fmt.Errorf("publishing content %s: %w", slug, err)
 		}
 	}
