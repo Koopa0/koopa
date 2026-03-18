@@ -443,6 +443,11 @@ export interface ApiNotionSource {
 
 export type NotionSyncMode = 'full' | 'events';
 
+export interface ApiDiscoveredDatabase {
+  id: string;
+  title: string;
+}
+
 export type NotionPollInterval =
   | '5 minutes'
   | '10 minutes'

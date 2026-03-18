@@ -83,7 +83,7 @@ func (ct *ContentTags) run(ctx context.Context, in ContentTagsInput) (ContentTag
 		topicList.String(), in.ContentType, in.Title, truncateBodyRunes(in.Body))
 
 	tags, err := genkit.Run(ctx, "tags", func() ([]string, error) {
-		suggestedPtr, resp, err := genkit.GenerateData[[]string](ctx, ct.g,
+		resp, err := genkit.Generate(ctx, ct.g,
 			ai.WithModel(ct.model),
 			ai.WithSystem(tagsSystemPrompt),
 			ai.WithPrompt(userPrompt),
@@ -100,8 +100,8 @@ func (ct *ContentTags) run(ctx context.Context, in ContentTagsInput) (ContentTag
 		}
 
 		var suggested []string
-		if suggestedPtr != nil {
-			suggested = *suggestedPtr
+		if err := parseJSONLoose(resp.Text(), &suggested); err != nil {
+			return nil, fmt.Errorf("parsing tags response: %w", err)
 		}
 
 		// Filter to only existing slugs.

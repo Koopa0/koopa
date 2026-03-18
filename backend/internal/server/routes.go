@@ -165,6 +165,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("POST /api/admin/collected/{id}/feedback", authMid(http.HandlerFunc(d.Collected.SubmitFeedback)))
 
 	// admin — notion sources
+	mux.Handle("GET /api/admin/notion-sources/discover", authMid(http.HandlerFunc(d.NotionSource.Discover)))
 	mux.Handle("GET /api/admin/notion-sources", authMid(http.HandlerFunc(d.NotionSource.List)))
 	mux.Handle("GET /api/admin/notion-sources/{id}", authMid(http.HandlerFunc(d.NotionSource.ByID)))
 	mux.Handle("POST /api/admin/notion-sources", authMid(http.HandlerFunc(d.NotionSource.Create)))

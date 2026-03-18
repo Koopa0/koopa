@@ -5,12 +5,17 @@ import type {
   ApiNotionSource,
   ApiCreateNotionSourceRequest,
   ApiUpdateNotionSourceRequest,
+  ApiDiscoveredDatabase,
 } from '../models';
 
 /** Admin CRUD for Notion source databases */
 @Injectable({ providedIn: 'root' })
 export class NotionSourceService {
   private readonly api = inject(ApiService);
+
+  discover(): Observable<ApiDiscoveredDatabase[]> {
+    return this.api.getData<ApiDiscoveredDatabase[]>('/api/admin/notion-sources/discover');
+  }
 
   list(): Observable<ApiNotionSource[]> {
     return this.api.getData<ApiNotionSource[]>('/api/admin/notion-sources');

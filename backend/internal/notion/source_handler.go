@@ -14,12 +14,30 @@ import (
 // SourceHandler handles admin HTTP requests for notion source CRUD.
 type SourceHandler struct {
 	store  *Store
+	client *Client
 	logger *slog.Logger
 }
 
 // NewSourceHandler returns a SourceHandler.
-func NewSourceHandler(store *Store, logger *slog.Logger) *SourceHandler {
-	return &SourceHandler{store: store, logger: logger}
+func NewSourceHandler(store *Store, client *Client, logger *slog.Logger) *SourceHandler {
+	return &SourceHandler{store: store, client: client, logger: logger}
+}
+
+// Discover handles GET /api/admin/notion-sources/discover.
+// Lists all Notion databases accessible by the integration token.
+func (h *SourceHandler) Discover(w http.ResponseWriter, r *http.Request) {
+	if h.client == nil {
+		api.Error(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "notion API not configured")
+		return
+	}
+
+	dbs, err := h.client.SearchDatabases(r.Context())
+	if err != nil {
+		h.logger.Error("discovering notion databases", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to discover databases")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: dbs})
 }
 
 // List handles GET /api/admin/notion-sources.

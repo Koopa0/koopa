@@ -29,7 +29,6 @@ import {
   PanelLeft,
   Brain,
   BookOpen,
-  Radar,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -126,13 +125,14 @@ export class AdminLayoutComponent {
           exact: false,
           disabled: false,
         },
-        {
-          label: 'Tracking',
-          route: '/admin/tracking',
-          icon: Radar,
-          exact: false,
-          disabled: false,
-        },
+        // Tracking 暫時隱藏 — tracking_topics 表尚無 cron 消費
+        // {
+        //   label: 'Tracking',
+        //   route: '/admin/tracking',
+        //   icon: Radar,
+        //   exact: false,
+        //   disabled: false,
+        // },
       ],
     },
     {

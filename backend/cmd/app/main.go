@@ -493,6 +493,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// cron: spaced repetition reminder at 09:00 (Asia/Taipei)
+	// Sends LINE/Telegram notification + creates Notion reminder task.
 	_, err = cronScheduler.AddFunc("0 9 * * *", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -505,6 +506,21 @@ func run(logger *slog.Logger) error {
 			msg := fmt.Sprintf("📚 你有 %d 個筆記要複習\nhttps://koopa0.dev/admin/spaced", count)
 			if sendErr := notifier.Send(ctx, msg); sendErr != nil {
 				logger.Error("cron: sending spaced reminder", "error", sendErr)
+			}
+			// Create a single Notion reminder task for today's reviews.
+			if cfg.NotionTasksDB != "" && cfg.NotionAPIKey != "" {
+				today := time.Now().In(taipeiLoc).Format("2006-01-02")
+				title := fmt.Sprintf("📚 複習 %d 篇筆記", count)
+				if createErr := notionClient.CreateTask(ctx, notion.CreateTaskParams{
+					DatabaseID:  cfg.NotionTasksDB,
+					Title:       title,
+					DueDate:     today,
+					Description: "https://koopa0.dev/admin/spaced",
+				}); createErr != nil {
+					logger.Error("cron: creating spaced reminder task in notion", "error", createErr)
+				} else {
+					logger.Info("cron: spaced reminder task created in notion", "count", count)
+				}
 			}
 		}
 	})
@@ -630,7 +646,7 @@ func run(logger *slog.Logger) error {
 		Notion:       notionHandler,
 		Tag:          tag.NewHandler(tagStore, pool, logger),
 		Spaced:       spaced.NewHandler(spacedStore, logger),
-		NotionSource: notion.NewSourceHandler(notionSourceStore, logger),
+		NotionSource: notion.NewSourceHandler(notionSourceStore, notionClient, logger),
 		Stats:        stats.NewHandler(stats.NewStore(pool), logger),
 		Activity:     activity.NewHandler(activityStore, logger),
 		Logger:       logger,

@@ -215,6 +215,141 @@ func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) er
 	return nil
 }
 
+// CreateTaskParams holds parameters for creating a task in the Notion Tasks database.
+type CreateTaskParams struct {
+	DatabaseID  string
+	Title       string
+	DueDate     string // YYYY-MM-DD
+	Description string // optional rich text body
+}
+
+// CreateTask creates a new task page in the given Notion database.
+func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) error {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limiter: %w", err)
+	}
+
+	properties := map[string]any{
+		"Task Name": map[string]any{
+			"title": []map[string]any{
+				{"text": map[string]string{"content": p.Title}},
+			},
+		},
+		"Status": map[string]any{
+			"status": map[string]string{"name": "To Do"},
+		},
+	}
+	if p.DueDate != "" {
+		properties["Due"] = map[string]any{
+			"date": map[string]string{"start": p.DueDate},
+		}
+	}
+
+	body := map[string]any{
+		"parent":     map[string]string{"database_id": p.DatabaseID},
+		"properties": properties,
+	}
+
+	// Add description as page content block if provided
+	if p.Description != "" {
+		body["children"] = []map[string]any{
+			{
+				"object": "block",
+				"type":   "paragraph",
+				"paragraph": map[string]any{
+					"rich_text": []map[string]any{
+						{"type": "text", "text": map[string]string{"content": p.Description}},
+					},
+				},
+			},
+		}
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshaling create task: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notionBaseURL+"/v1/pages", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("creating task request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("creating notion task: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("notion api returned %d for create task", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// DiscoveredDatabase is a Notion database returned by the Search API.
+type DiscoveredDatabase struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// SearchDatabases calls the Notion Search API to list all databases accessible by the integration.
+func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, error) {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit: %w", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"filter": map[string]string{
+			"value":    "database",
+			"property": "object",
+		},
+		"page_size": 100,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notionBaseURL+"/v1/search", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating search request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("calling notion search: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("notion search returned %d: %s", resp.StatusCode, respBody)
+	}
+
+	var result struct {
+		Results []struct {
+			ID    string `json:"id"`
+			Title []struct {
+				PlainText string `json:"plain_text"`
+			} `json:"title"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding search response: %w", err)
+	}
+
+	dbs := make([]DiscoveredDatabase, 0, len(result.Results))
+	for _, r := range result.Results {
+		title := r.ID
+		if len(r.Title) > 0 {
+			title = r.Title[0].PlainText
+		}
+		dbs = append(dbs, DiscoveredDatabase{ID: r.ID, Title: title})
+	}
+	return dbs, nil
+}
+
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Notion-Version", apiVersion)

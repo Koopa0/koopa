@@ -153,17 +153,49 @@
         <!-- Database ID -->
         <div>
           <label for="source-db-id" class="mb-1 block text-sm font-medium text-zinc-300">
-            Database ID <span class="text-red-400">*</span>
+            Database <span class="text-red-400">*</span>
           </label>
-          <input
-            id="source-db-id"
-            type="text"
-            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none disabled:opacity-50"
-            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            [value]="form().database_id"
-            [disabled]="dialogMode() === 'edit'"
-            (input)="updateFormField('database_id', $any($event.target).value)"
-          />
+          @if (dialogMode() === 'create') {
+            @if (isDiscovering()) {
+              <div class="flex items-center gap-2 rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-500">
+                <span class="size-3.5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-400"></span>
+                正在探索 Notion Databases...
+              </div>
+            } @else if (discoveredDatabases().length > 0) {
+              <select
+                id="source-db-id"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+                [ngModel]="form().database_id"
+                (ngModelChange)="onDiscoverSelect($event)"
+              >
+                <option value="" disabled>選擇 Notion Database...</option>
+                @for (db of discoveredDatabases(); track db.id) {
+                  <option [value]="db.id">{{ db.title || '(Untitled)' }}</option>
+                }
+              </select>
+              @if (form().database_id) {
+                <p class="mt-1 text-xs text-zinc-600">
+                  <code>{{ form().database_id }}</code>
+                </p>
+              }
+            } @else {
+              <!-- Fallback: 手動輸入 -->
+              <input
+                id="source-db-id"
+                type="text"
+                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                [value]="form().database_id"
+                (input)="updateFormField('database_id', $any($event.target).value)"
+              />
+              <p class="mt-1 text-xs text-zinc-500">無法探索 — 請手動輸入 Database ID</p>
+            }
+          } @else {
+            <!-- Edit mode: readonly -->
+            <div class="rounded-sm border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-400">
+              <code>{{ form().database_id }}</code>
+            </div>
+          }
         </div>
 
         <!-- Name -->

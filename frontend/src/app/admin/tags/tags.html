@@ -76,19 +76,14 @@
         type="button"
         class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
         [class]="activeTab() === 'aliases'
-          ? 'border-white text-white'
-          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
+          ? 'border-zinc-500 text-zinc-300'
+          : 'border-transparent text-zinc-500 hover:text-zinc-400'"
         (click)="switchTab('aliases')"
       >
-        Tag Aliases
+        Aliases (Fallback)
         @if (unmappedCount() > 0) {
-          <span class="ml-1.5 rounded-full bg-amber-900/50 px-2 py-0.5 text-xs text-amber-400">
-            {{ unmappedCount() }} unmapped
-          </span>
-        }
-        @if (pendingCount() > 0) {
-          <span class="ml-1.5 rounded-full bg-sky-900/50 px-2 py-0.5 text-xs text-sky-400">
-            {{ pendingCount() }} pending
+          <span class="ml-1.5 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500">
+            {{ unmappedCount() }}
           </span>
         }
       </button>
@@ -180,6 +175,9 @@
 
     <!-- ═══ Aliases Tab ═══ -->
     @if (activeTab() === 'aliases') {
+      <div class="mb-4 rounded-sm border border-zinc-800 bg-zinc-900/30 px-4 py-3 text-xs text-zinc-500">
+        Alias 映射主要由 Genkit AI 自動處理。此頁面為手動 fallback，僅在自動映射失敗時使用。
+      </div>
       <!-- Alias Filters -->
       <div class="mb-6 flex flex-wrap items-center gap-2">
         <lucide-icon [img]="FilterIcon" [size]="16" class="text-zinc-500" />

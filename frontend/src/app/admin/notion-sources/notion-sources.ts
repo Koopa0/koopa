@@ -26,6 +26,7 @@ import type {
   ApiNotionSource,
   ApiCreateNotionSourceRequest,
   ApiUpdateNotionSourceRequest,
+  ApiDiscoveredDatabase,
   NotionSyncMode,
   NotionPollInterval,
 } from '../../core/models';
@@ -81,6 +82,10 @@ export class NotionSourcesComponent implements OnInit {
   protected readonly sources = signal<ApiNotionSource[]>([]);
   protected readonly isLoading = signal(false);
 
+  // ─── Discover ───
+  protected readonly discoveredDatabases = signal<ApiDiscoveredDatabase[]>([]);
+  protected readonly isDiscovering = signal(false);
+
   // ─── Dialog ───
   protected readonly isDialogOpen = signal(false);
   protected readonly dialogMode = signal<DialogMode>('create');
@@ -132,6 +137,35 @@ export class NotionSourcesComponent implements OnInit {
     this.editingId.set(null);
     this.form.set({ ...EMPTY_FORM });
     this.isDialogOpen.set(true);
+    this.loadDiscoveredDatabases();
+  }
+
+  private loadDiscoveredDatabases(): void {
+    this.isDiscovering.set(true);
+    this.sourceService
+      .discover()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (dbs) => {
+          this.discoveredDatabases.set(dbs);
+          this.isDiscovering.set(false);
+        },
+        error: () => {
+          this.discoveredDatabases.set([]);
+          this.isDiscovering.set(false);
+        },
+      });
+  }
+
+  protected onDiscoverSelect(dbId: string): void {
+    const db = this.discoveredDatabases().find((d) => d.id === dbId);
+    if (db) {
+      this.form.update((f) => ({
+        ...f,
+        database_id: db.id,
+        name: f.name || db.title,
+      }));
+    }
   }
 
   protected openEditDialog(source: ApiNotionSource): void {
