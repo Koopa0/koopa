@@ -292,7 +292,7 @@ INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
  '{"go"}',
  '{"deny_title_patterns":["(?i)sponsored"]}'),
 
-('https://www.alexedwards.net/blog/feed', 'Alex Edwards', 'daily',
+('https://www.alexedwards.net/static/feed.rss', 'Alex Edwards', 'daily',
  '{"go"}', '{}'),
 
 ('https://blog.rust-lang.org/feed.xml', 'Rust Blog', 'daily',
@@ -321,9 +321,23 @@ INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
 ('https://www.latent.space/feed', 'Latent Space', 'weekly',
  '{"ai","llm"}', '{}'),
 
-('https://www.anthropic.com/blog/rss', 'Anthropic Blog', 'daily',
- '{"ai","llm","claude"}',
- '{"deny_title_patterns":["(?i)career","(?i)hiring","(?i)join our team"],"deny_tags":["careers"]}'),
+('https://blog.google/technology/ai/rss/', 'Google AI Blog', 'daily',
+ '{"ai","llm","ml"}',
+ '{"deny_title_patterns":["(?i)health","(?i)medical","(?i)quantum"]}'),
+
+('https://deepmind.google/blog/rss.xml', 'DeepMind Blog', 'weekly',
+ '{"ai","ml"}', '{}'),
+
+('https://developers.googleblog.com/feeds/posts/default', 'Google Developers Blog', 'daily',
+ '{"go","angular","flutter","ai","mobile","frontend"}',
+ '{"deny_title_patterns":["(?i)devfest","(?i)women techmakers","(?i)student"]}'),
+
+('https://cloud.google.com/blog/rss', 'Google Cloud Blog', 'daily',
+ '{"kubernetes","docker","infra","database","ai"}',
+ '{"deny_title_patterns":["(?i)customer story","(?i)case study","(?i)partner","(?i)pricing","(?i)event recap"]}'),
+
+('https://blog.google/technology/developers/rss/', 'Google Dev Updates', 'weekly',
+ '{"go","angular","flutter","ai"}', '{}'),
 
 ('https://huggingface.co/blog/feed.xml', 'Hugging Face Blog', 'daily',
  '{"ai","llm","ml"}',
