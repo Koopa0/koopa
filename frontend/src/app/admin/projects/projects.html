@@ -14,22 +14,14 @@
           }
         </p>
       </div>
-      <div class="flex items-center gap-2">
-        <a
-          routerLink="/admin/project-editor"
-          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
-        >
-          <lucide-icon [img]="PlusIcon" [size]="16" />
-          新增專案
-        </a>
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
-          (click)="loadProjects()"
-        >
-          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
-        </button>
-      </div>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+        (click)="loadProjects()"
+      >
+        <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+        重新整理
+      </button>
     </div>
   </div>
 </section>

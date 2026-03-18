@@ -239,10 +239,12 @@ func (h *Handler) SyncAll(ctx context.Context) {
 
 	// sync projects
 	if src, err := h.store.SourceByRole(ctx, RoleProjects); err == nil {
+		h.logger.Info("notion sync: starting projects", "database_id", src.DatabaseID)
 		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
 		if err != nil {
 			h.logger.Error("notion sync: querying projects db", "error", err)
 		} else {
+			h.logger.Info("notion sync: fetched project pages", "count", len(pageIDs))
 			for _, id := range pageIDs {
 				if err := h.syncProject(ctx, id); err != nil {
 					h.logger.Error("notion sync: syncing project", "page_id", id, "error", err)
@@ -257,6 +259,10 @@ func (h *Handler) SyncAll(ctx context.Context) {
 			} else if archived > 0 {
 				h.logger.Info("notion sync: archived orphan projects", "count", archived)
 			}
+			// best-effort: update last_synced_at
+			if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
+				h.logger.Error("notion sync: updating last_synced_at for projects", "error", updateErr)
+			}
 		}
 	} else if !errors.Is(err, ErrNotFound) {
 		h.logger.Error("notion sync: looking up projects source", "error", err)
@@ -264,10 +270,12 @@ func (h *Handler) SyncAll(ctx context.Context) {
 
 	// sync goals
 	if src, err := h.store.SourceByRole(ctx, RoleGoals); err == nil {
+		h.logger.Info("notion sync: starting goals", "database_id", src.DatabaseID)
 		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
 		if err != nil {
 			h.logger.Error("notion sync: querying goals db", "error", err)
 		} else {
+			h.logger.Info("notion sync: fetched goal pages", "count", len(pageIDs))
 			for _, id := range pageIDs {
 				if err := h.syncGoal(ctx, id); err != nil {
 					h.logger.Error("notion sync: syncing goal", "page_id", id, "error", err)
@@ -282,6 +290,9 @@ func (h *Handler) SyncAll(ctx context.Context) {
 			} else if archived > 0 {
 				h.logger.Info("notion sync: archived orphan goals", "count", archived)
 			}
+			if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
+				h.logger.Error("notion sync: updating last_synced_at for goals", "error", updateErr)
+			}
 		}
 	} else if !errors.Is(err, ErrNotFound) {
 		h.logger.Error("notion sync: looking up goals source", "error", err)
@@ -289,10 +300,12 @@ func (h *Handler) SyncAll(ctx context.Context) {
 
 	// sync tasks
 	if src, err := h.store.SourceByRole(ctx, RoleTasks); err == nil {
+		h.logger.Info("notion sync: starting tasks", "database_id", src.DatabaseID)
 		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
 		if err != nil {
 			h.logger.Error("notion sync: querying tasks db", "error", err)
 		} else {
+			h.logger.Info("notion sync: fetched task pages", "count", len(pageIDs))
 			for _, id := range pageIDs {
 				if err := h.syncTask(ctx, id); err != nil {
 					h.logger.Error("notion sync: syncing task", "page_id", id, "error", err)
@@ -306,6 +319,9 @@ func (h *Handler) SyncAll(ctx context.Context) {
 				h.logger.Error("notion sync: archiving orphan tasks", "error", err)
 			} else if archived > 0 {
 				h.logger.Info("notion sync: archived orphan tasks", "count", archived)
+			}
+			if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
+				h.logger.Error("notion sync: updating last_synced_at for tasks", "error", updateErr)
 			}
 		}
 	} else if !errors.Is(err, ErrNotFound) {
