@@ -126,15 +126,18 @@ export class DashboardComponent implements OnInit {
     if (!s) {
       return [];
     }
+    const notesSub = this.formatByType(s.notes.by_type);
+    const contentSub = this.formatByStatus(s.contents.by_status, s.contents.published, 'published');
+    const collectedSub = this.formatByStatus(s.collected.by_status, s.collected.by_status?.['unread'] ?? 0, 'unread');
     return [
-      { label: 'Contents', value: s.contents.total, sub: `${s.contents.published} published`, icon: FileText, iconBg: 'bg-zinc-800', iconColor: 'text-zinc-300' },
-      { label: 'Collected', value: s.collected.total, sub: `${s.collected.by_status?.['unread'] ?? 0} unread`, icon: Rss, iconBg: 'bg-amber-900/30', iconColor: 'text-amber-400' },
+      { label: 'Contents', value: s.contents.total, sub: contentSub, icon: FileText, iconBg: 'bg-zinc-800', iconColor: 'text-zinc-300' },
+      { label: 'Collected', value: s.collected.total, sub: collectedSub, icon: Rss, iconBg: 'bg-amber-900/30', iconColor: 'text-amber-400' },
       { label: 'Feeds', value: s.feeds.total, sub: `${s.feeds.enabled} enabled`, icon: Rss, iconBg: 'bg-sky-900/30', iconColor: 'text-sky-400' },
       { label: 'Flow Runs', value: s.flow_runs.total, sub: `${s.flow_runs.by_status?.['failed'] ?? 0} failed`, icon: Zap, iconBg: 'bg-violet-900/30', iconColor: 'text-violet-400' },
       { label: 'Projects', value: s.projects.total, sub: `${s.projects.by_status?.['in-progress'] ?? 0} active`, icon: FolderOpen, iconBg: 'bg-emerald-900/30', iconColor: 'text-emerald-400' },
       { label: 'Review', value: s.reviews.total, sub: `${s.reviews.pending} pending`, icon: FileEdit, iconBg: 'bg-amber-900/30', iconColor: 'text-amber-400' },
-      { label: 'Notes', value: s.notes.total, sub: `${Object.keys(s.notes.by_type).length} types`, icon: BookOpen, iconBg: 'bg-sky-900/30', iconColor: 'text-sky-400' },
-      { label: 'Activity', value: s.activity.total, sub: `${s.activity.last_24h} today`, icon: Activity, iconBg: 'bg-emerald-900/30', iconColor: 'text-emerald-400' },
+      { label: 'Notes', value: s.notes.total, sub: notesSub, icon: BookOpen, iconBg: 'bg-sky-900/30', iconColor: 'text-sky-400' },
+      { label: 'Activity', value: s.activity.total, sub: `${s.activity.last_24h} last 24h · ${s.activity.last_7d} last 7d`, icon: Activity, iconBg: 'bg-emerald-900/30', iconColor: 'text-emerald-400' },
       { label: 'Spaced', value: s.spaced.enrolled, sub: `${s.spaced.due} due`, icon: Brain, iconBg: 'bg-violet-900/30', iconColor: 'text-violet-400' },
       { label: 'Sources', value: s.sources.total, sub: `${s.sources.enabled} enabled`, icon: Database, iconBg: 'bg-zinc-800', iconColor: 'text-zinc-300' },
       { label: 'Tags', value: s.tags.canonical, sub: `${s.tags.unconfirmed} unconfirmed`, icon: Tags, iconBg: 'bg-amber-900/30', iconColor: 'text-amber-400' },
@@ -307,5 +310,27 @@ export class DashboardComponent implements OnInit {
 
   protected getStatusClass(status: string): string {
     return STATUS_CLASSES[status] ?? STATUS_CLASSES['archived'];
+  }
+
+  /** 從 by_type map 取前 3 個 type 摘要，例如 "5 til · 3 note · 2 article" */
+  private formatByType(byType: Record<string, number>): string {
+    const entries = Object.entries(byType)
+      .filter(([, count]) => count > 0)
+      .sort(([, a], [, b]) => b - a);
+    if (entries.length === 0) {
+      return 'Obsidian 同步後顯示';
+    }
+    return entries
+      .slice(0, 3)
+      .map(([type, count]) => `${count} ${type}`)
+      .join(' · ');
+  }
+
+  /** 格式化 by_status 摘要 */
+  private formatByStatus(byStatus: Record<string, number>, highlight: number, label: string): string {
+    if (!byStatus || Object.keys(byStatus).length === 0) {
+      return `${highlight} ${label}`;
+    }
+    return `${highlight} ${label}`;
   }
 }
