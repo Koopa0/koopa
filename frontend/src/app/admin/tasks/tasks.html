@@ -1,0 +1,97 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+          <lucide-icon [img]="ListTodoIcon" [size]="24" />
+          Tasks
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">
+          {{ tasks().length }} 個任務（Notion 同步）
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs transition-colors"
+          [class]="showDone()
+            ? 'border-white bg-white text-zinc-900'
+            : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+          (click)="toggleShowDone()"
+        >
+          {{ showDone() ? '隱藏已完成' : '顯示已完成' }}
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="loadTasks()"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Kanban -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+      <div class="flex items-center justify-center py-16">
+        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+      </div>
+    } @else {
+      <div class="grid gap-4" [style.grid-template-columns]="'repeat(' + visibleColumns().length + ', minmax(0, 1fr))'">
+        @for (col of visibleColumns(); track col.status) {
+          <div class="min-w-0">
+            <!-- Column header -->
+            <div class="mb-3 flex items-center gap-2">
+              <lucide-icon [img]="col.icon" [size]="16" [class]="col.headerClass" />
+              <span class="text-sm font-medium" [class]="col.headerClass">{{ col.label }}</span>
+              <span class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500">
+                {{ getColumnCount(col.status) }}
+              </span>
+            </div>
+
+            <!-- Cards -->
+            <div class="space-y-2">
+              @for (task of tasksByStatus()[col.status]; track task.id) {
+                <div
+                  class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-3 transition-colors hover:border-zinc-700"
+                  [class.border-red-900/50]="isOverdue(task)"
+                >
+                  <div class="text-sm text-zinc-200">{{ task.title }}</div>
+                  <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                    @if (task.due) {
+                      <span
+                        class="flex items-center gap-1"
+                        [class]="isOverdue(task) ? 'text-red-400' : 'text-zinc-500'"
+                      >
+                        {{ task.due | date: 'MM/dd' }}
+                      </span>
+                    }
+                    @if (getProjectName(task.project_id); as projectName) {
+                      <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400">
+                        {{ projectName }}
+                      </span>
+                    }
+                    @if (task.completed_at) {
+                      <span class="text-zinc-600">
+                        Done {{ task.completed_at | date: 'MM/dd' }}
+                      </span>
+                    }
+                  </div>
+                </div>
+              } @empty {
+                <div class="rounded-sm border border-dashed border-zinc-800 py-8 text-center text-xs text-zinc-600">
+                  No tasks
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</section>

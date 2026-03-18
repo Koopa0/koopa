@@ -244,114 +244,38 @@
       }
     </div>
 
-    <!-- Projects Management -->
-    <div class="mt-8 rounded-sm border border-zinc-800 bg-zinc-900/50">
-      <div
-        class="flex items-center justify-between border-b border-zinc-800 px-6 py-4"
+    <!-- Quick links -->
+    <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <a
+        routerLink="/admin/projects"
+        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
       >
-        <h2 class="flex items-center gap-2 text-sm font-medium text-zinc-300">
-          <lucide-icon [img]="FolderOpenIcon" [size]="16" />
-          Project Management
-        </h2>
-      </div>
-
-      @if (projects().length > 0) {
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead>
-            <tr
-              class="border-b border-zinc-800 text-left text-xs text-zinc-500"
-            >
-              <th scope="col" class="px-6 py-3 font-medium">Project Name</th>
-              <th scope="col" class="px-6 py-3 font-medium">Status</th>
-              <th scope="col" class="px-6 py-3 font-medium">Public</th>
-              <th scope="col" class="hidden px-6 py-3 font-medium sm:table-cell">Tech</th>
-              <th scope="col" class="px-6 py-3 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (project of projects(); track project.id) {
-            <tr
-              class="border-b border-zinc-800/50 transition-colors hover:bg-zinc-800/30"
-            >
-              <td class="px-6 py-4">
-                <div class="text-sm font-medium text-zinc-200">
-                  {{ project.title }}
-                </div>
-                <div class="mt-0.5 line-clamp-1 text-xs text-zinc-500">
-                  {{ project.description }}
-                </div>
-              </td>
-              <td class="px-6 py-4">
-                <span
-                  class="inline-block rounded-full border px-2 py-0.5 text-xs"
-                  [class]="getProjectStatusClass(project.status)"
-                >
-                  {{ getProjectStatusLabel(project.status) }}
-                </span>
-              </td>
-              <td class="px-6 py-4">
-                <button
-                  type="button"
-                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
-                  [class]="project.public ? 'bg-emerald-600' : 'bg-zinc-700'"
-                  role="switch"
-                  [attr.aria-checked]="project.public"
-                  aria-label="Toggle public visibility"
-                  (click)="toggleProjectPublic(project)"
-                >
-                  <span
-                    class="pointer-events-none inline-block size-4 rounded-full bg-white shadow-xs ring-0 transition duration-200"
-                    [class]="project.public ? 'translate-x-4' : 'translate-x-0'"
-                  ></span>
-                </button>
-              </td>
-              <td class="hidden px-6 py-4 sm:table-cell">
-                <div class="flex flex-wrap gap-1">
-                  @for (tech of project.tech_stack.slice(0, 3); track tech) {
-                  <span
-                    class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
-                  >
-                    {{ tech }}
-                  </span>
-                  } @if (project.tech_stack.length > 3) {
-                  <span class="text-xs text-zinc-500">
-                    +{{ project.tech_stack.length - 3 }}
-                  </span>
-                  }
-                </div>
-              </td>
-              <td class="px-6 py-4">
-                <div class="flex items-center gap-1">
-                  <a
-                    [routerLink]="['/projects', project.slug]"
-                    class="rounded-sm p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-                    aria-label="Preview project"
-                  >
-                    <lucide-icon [img]="EyeIcon" [size]="14" />
-                  </a>
-                  <button
-                    type="button"
-                    class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-red-900/30 hover:text-red-400"
-                    aria-label="Delete project"
-                    (click)="requestDeleteProject(project.id, project.title)"
-                  >
-                    <lucide-icon [img]="Trash2Icon" [size]="14" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-      } @else {
-      <div class="flex flex-col items-center gap-3 py-16 text-center">
-        <lucide-icon [img]="FolderOpenIcon" [size]="40" class="text-zinc-700" />
-        <h3 class="text-sm font-medium text-zinc-300">No projects yet</h3>
-        <p class="text-xs text-zinc-500">透過 Notion 同步來新增專案</p>
-      </div>
-      }
+        <lucide-icon [img]="FolderOpenIcon" [size]="20" class="text-zinc-400" />
+        <div>
+          <div class="text-sm font-medium text-zinc-200">Projects</div>
+          <div class="text-xs text-zinc-500">{{ projects().length }} 個專案</div>
+        </div>
+      </a>
+      <a
+        routerLink="/admin/tasks"
+        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
+      >
+        <lucide-icon [img]="ClockIcon" [size]="20" class="text-zinc-400" />
+        <div>
+          <div class="text-sm font-medium text-zinc-200">Tasks</div>
+          <div class="text-xs text-zinc-500">Notion 任務看板</div>
+        </div>
+      </a>
+      <a
+        routerLink="/admin/goals"
+        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
+      >
+        <lucide-icon [img]="TrendingUpIcon" [size]="20" class="text-zinc-400" />
+        <div>
+          <div class="text-sm font-medium text-zinc-200">Goals</div>
+          <div class="text-xs text-zinc-500">目標追蹤</div>
+        </div>
+      </a>
     </div>
   </div>
 </section>

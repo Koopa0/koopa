@@ -82,6 +82,8 @@ func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error)
 // DatabaseQueryResult holds a single page from a database query response.
 type DatabaseQueryResult struct {
 	ID         string                     `json:"id"`
+	Archived   bool                       `json:"archived"`
+	InTrash    bool                       `json:"in_trash"`
 	Properties map[string]json.RawMessage `json:"properties"`
 }
 
@@ -105,8 +107,6 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 
 		body := map[string]any{
 			"page_size": 100,
-			"in_trash":  false,
-			"archived":  false,
 		}
 		if filter != nil {
 			body["filter"] = json.RawMessage(filter)
@@ -144,7 +144,11 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 			return nil, fmt.Errorf("decoding data source query response: %w", decodeErr)
 		}
 
-		allResults = append(allResults, qr.Results...)
+		for _, r := range qr.Results {
+			if !r.Archived && !r.InTrash {
+				allResults = append(allResults, r)
+			}
+		}
 
 		if !qr.HasMore || qr.NextCursor == nil {
 			break
@@ -331,14 +335,16 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 
 	var result struct {
 		Results []struct {
-			ID    string `json:"id"`
-			Title []struct {
+			Object string `json:"object"`
+			ID     string `json:"id"`
+			Title  []struct {
 				PlainText string `json:"plain_text"`
 			} `json:"title"`
-			Parent struct {
+			// data_source parent is always database_id; database_parent is the page/workspace above
+			DatabaseParent struct {
 				Type   string `json:"type"`
 				PageID string `json:"page_id"`
-			} `json:"parent"`
+			} `json:"database_parent"`
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -348,8 +354,8 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 	// collect unique parent page IDs to resolve titles
 	parentIDs := make(map[string]struct{})
 	for _, r := range result.Results {
-		if r.Parent.Type == "page_id" && r.Parent.PageID != "" {
-			parentIDs[r.Parent.PageID] = struct{}{}
+		if r.DatabaseParent.Type == "page_id" && r.DatabaseParent.PageID != "" {
+			parentIDs[r.DatabaseParent.PageID] = struct{}{}
 		}
 	}
 
@@ -360,7 +366,12 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 		if pageErr != nil {
 			continue // best-effort: skip unresolvable parents
 		}
-		parentTitles[pid] = titleProperty(page.Properties["title"])
+		// page title can be under "title" or "Name" property
+		t := titleProperty(page.Properties["title"])
+		if t == "" {
+			t = titleProperty(page.Properties["Name"])
+		}
+		parentTitles[pid] = t
 	}
 
 	dbs := make([]DiscoveredDatabase, 0, len(result.Results))
@@ -369,7 +380,7 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 		if len(r.Title) > 0 {
 			title = r.Title[0].PlainText
 		}
-		parent := parentTitles[r.Parent.PageID] // empty string if workspace-level or unresolved
+		parent := parentTitles[r.DatabaseParent.PageID] // empty if workspace-level or unresolved
 		dbs = append(dbs, DiscoveredDatabase{ID: r.ID, Title: title, Parent: parent})
 	}
 	return dbs, nil

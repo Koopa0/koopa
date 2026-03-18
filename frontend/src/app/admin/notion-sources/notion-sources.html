@@ -45,7 +45,10 @@
         <p class="text-xs text-zinc-500">註冊 Notion Database 開始同步</p>
       </div>
     } @else {
-      <div class="overflow-x-auto rounded-sm border border-zinc-800">
+      <div
+        class="rounded-sm border border-zinc-800"
+        [class]="roleEditingId() ? 'overflow-visible' : 'overflow-x-auto'"
+      >
         <table class="w-full text-left text-sm">
           <thead class="border-b border-zinc-800 bg-zinc-900/50">
             <tr>
@@ -86,6 +89,8 @@
                     </button>
                     <!-- Dropdown -->
                     @if (roleEditingId() === source.id) {
+                      <!-- backdrop to close on outside click -->
+                      <div class="fixed inset-0 z-[9]" (click)="roleEditingId.set(null)" aria-hidden="true"></div>
                       <div class="absolute left-0 top-full z-10 mt-1 w-48 rounded-sm border border-zinc-700 bg-zinc-900 py-1 shadow-lg">
                         <button
                           type="button"

@@ -93,15 +93,53 @@ export interface ApiProject {
   public: boolean;
   sort_order: number;
   status: ProjectStatus;
+  notion_page_id: string | null;
+  repo: string | null;
+  area: string;
+  deadline: string | null;
+  last_activity_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export type ProjectStatus =
+  | 'planned'
   | 'in-progress'
+  | 'on-hold'
   | 'completed'
   | 'maintained'
   | 'archived';
+
+/** Admin — Goal (Notion synced) */
+export interface ApiGoal {
+  id: string;
+  title: string;
+  description: string;
+  status: GoalStatus;
+  area: string;
+  quarter: string;
+  deadline: string | null;
+  notion_page_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GoalStatus = 'not-started' | 'in-progress' | 'done' | 'abandoned';
+
+/** Admin — Task (Notion synced) */
+export interface ApiTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  due: string | null;
+  project_id: string | null;
+  notion_page_id: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskStatus = 'todo' | 'in-progress' | 'done';
 
 /** Backend Auth response */
 export interface ApiTokenResponse {

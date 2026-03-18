@@ -138,8 +138,10 @@ export class FeaturedProjectsComponent implements OnInit {
 
   protected getStatusLabel(status: ProjectStatus): string {
     const labels: Record<ProjectStatus, string> = {
-      completed: 'Completed',
+      planned: 'Planned',
       'in-progress': 'In Progress',
+      'on-hold': 'On Hold',
+      completed: 'Completed',
       maintained: 'Maintained',
       archived: 'Archived',
     };
@@ -148,8 +150,10 @@ export class FeaturedProjectsComponent implements OnInit {
 
   protected getStatusClass(status: ProjectStatus): string {
     const classes: Record<ProjectStatus, string> = {
-      completed: 'bg-emerald-900/50 text-emerald-400',
+      planned: 'bg-zinc-800 text-zinc-300',
       'in-progress': 'bg-amber-900/50 text-amber-400',
+      'on-hold': 'bg-orange-900/50 text-orange-400',
+      completed: 'bg-emerald-900/50 text-emerald-400',
       maintained: 'bg-sky-900/50 text-sky-400',
       archived: 'bg-zinc-700/50 text-zinc-400',
     };

@@ -175,6 +175,23 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'projects',
+        loadComponent: () =>
+          import('./admin/projects/projects').then(
+            (m) => m.AdminProjectsComponent,
+          ),
+      },
+      {
+        path: 'tasks',
+        loadComponent: () =>
+          import('./admin/tasks/tasks').then((m) => m.TasksComponent),
+      },
+      {
+        path: 'goals',
+        loadComponent: () =>
+          import('./admin/goals/goals').then((m) => m.GoalsComponent),
+      },
+      {
         path: 'tracking',
         loadComponent: () =>
           import('./admin/tracking/tracking').then(

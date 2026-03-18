@@ -1,6 +1,7 @@
 package notion
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -12,17 +13,28 @@ import (
 	"github.com/koopa0/blog-backend/internal/api"
 )
 
+// SyncTrigger triggers a full sync for a specific role.
+type SyncTrigger interface {
+	SyncAll(ctx context.Context)
+}
+
 // SourceHandler handles admin HTTP requests for notion source CRUD.
 type SourceHandler struct {
 	store       *Store
 	client      *Client
 	sourceCache *ristretto.Cache[string, string]
+	syncer      SyncTrigger
 	logger      *slog.Logger
 }
 
 // NewSourceHandler returns a SourceHandler.
 func NewSourceHandler(store *Store, client *Client, sourceCache *ristretto.Cache[string, string], logger *slog.Logger) *SourceHandler {
 	return &SourceHandler{store: store, client: client, sourceCache: sourceCache, logger: logger}
+}
+
+// SetSyncer sets the sync trigger for immediate sync after role assignment.
+func (h *SourceHandler) SetSyncer(s SyncTrigger) {
+	h.syncer = s
 }
 
 // Discover handles GET /api/admin/notion-sources/discover.
@@ -285,6 +297,11 @@ func (h *SourceHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 
 	// invalidate all cached entries — role change can affect multiple sources
 	h.sourceCache.Clear()
+
+	// trigger immediate sync in background so new role takes effect right away
+	if h.syncer != nil && req.Role != nil && *req.Role != "" {
+		go h.syncer.SyncAll(context.WithoutCancel(r.Context()))
+	}
 
 	src, err := h.store.Source(r.Context(), id)
 	if errors.Is(err, ErrNotFound) {

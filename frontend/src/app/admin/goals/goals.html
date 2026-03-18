@@ -1,0 +1,113 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+          <lucide-icon [img]="TargetIcon" [size]="24" />
+          Goals
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">
+          {{ activeCounts().total }} 個目標 · {{ activeCounts().active }} active · {{ activeCounts().done }} done
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <!-- Group by buttons -->
+        <div class="flex rounded-sm border border-zinc-700">
+          @for (opt of [
+            { value: 'area', label: 'Area' },
+            { value: 'quarter', label: 'Quarter' },
+            { value: 'status', label: 'Status' }
+          ]; track opt.value) {
+            <button
+              type="button"
+              class="px-3 py-1 text-xs transition-colors first:rounded-l-sm last:rounded-r-sm"
+              [class]="groupBy() === opt.value
+                ? 'bg-zinc-700 text-zinc-100'
+                : 'text-zinc-500 hover:text-zinc-300'"
+              (click)="setGroupBy($any(opt.value))"
+            >
+              {{ opt.label }}
+            </button>
+          }
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="loadGoals()"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Content -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+      <div class="flex items-center justify-center py-16">
+        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+      </div>
+    } @else if (goals().length === 0) {
+      <div class="flex flex-col items-center gap-3 py-16 text-center">
+        <lucide-icon [img]="TargetIcon" [size]="40" class="text-zinc-700" />
+        <h3 class="text-sm font-medium text-zinc-300">尚無目標</h3>
+        <p class="text-xs text-zinc-500">從 Notion Goals database 同步後顯示</p>
+      </div>
+    } @else {
+      <div class="space-y-8">
+        @for (group of groupedGoals(); track group.key) {
+          <!-- Group header -->
+          <div>
+            <div class="mb-3 flex items-center gap-2">
+              <h2 class="text-sm font-medium text-zinc-300">{{ group.key }}</h2>
+              <span class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500">
+                {{ group.goals.length }}
+              </span>
+            </div>
+
+            <!-- Goal cards grid -->
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              @for (goal of group.goals; track goal.id) {
+                <div
+                  class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+                  [class.border-red-900/50]="isOverdue(goal)"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <h3 class="text-sm font-medium text-zinc-200">{{ goal.title }}</h3>
+                    <span
+                      class="shrink-0 rounded-full border px-2 py-0.5 text-xs"
+                      [class]="getStatusClass(goal.status)"
+                    >
+                      {{ getStatusLabel(goal.status) }}
+                    </span>
+                  </div>
+
+                  @if (goal.description) {
+                    <p class="mt-2 line-clamp-2 text-xs text-zinc-500">{{ goal.description }}</p>
+                  }
+
+                  <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+                    @if (goal.area && groupBy() !== 'area') {
+                      <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{{ goal.area }}</span>
+                    }
+                    @if (goal.quarter && groupBy() !== 'quarter') {
+                      <span>{{ goal.quarter }}</span>
+                    }
+                    @if (goal.deadline) {
+                      <span [class]="isOverdue(goal) ? 'text-red-400' : ''">
+                        {{ goal.deadline | date: 'yyyy-MM-dd' }}
+                      </span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</section>

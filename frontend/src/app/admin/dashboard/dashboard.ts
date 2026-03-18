@@ -74,15 +74,19 @@ const STATUS_CLASSES: Record<string, string> = {
 };
 
 const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
-  completed: 'Completed',
+  planned: 'Planned',
   'in-progress': 'In Progress',
+  'on-hold': 'On Hold',
+  completed: 'Completed',
   maintained: 'Maintained',
   archived: 'Archived',
 };
 
 const PROJECT_STATUS_CLASSES: Record<ProjectStatus, string> = {
-  completed: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
+  planned: 'border-zinc-600 bg-zinc-800 text-zinc-300',
   'in-progress': 'border-amber-800 bg-amber-900/30 text-amber-400',
+  'on-hold': 'border-orange-800 bg-orange-900/30 text-orange-400',
+  completed: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
   maintained: 'border-sky-800 bg-sky-900/30 text-sky-400',
   archived: 'border-zinc-700 bg-zinc-800 text-zinc-400',
 };

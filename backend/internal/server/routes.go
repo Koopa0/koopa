@@ -14,6 +14,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -21,6 +22,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/spaced"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/tag"
+	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
 	"github.com/koopa0/blog-backend/internal/upload"
@@ -49,6 +51,8 @@ type Deps struct {
 	Tag          *tag.Handler
 	Spaced       *spaced.Handler
 	NotionSource *notion.SourceHandler
+	Goal         *goal.Handler
+	Task         *task.Handler
 	Stats        *stats.Handler
 	Activity     *activity.Handler
 	Pool         Pinger
@@ -115,6 +119,13 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("POST /api/admin/projects", authMid(http.HandlerFunc(d.Project.Create)))
 	mux.Handle("PUT /api/admin/projects/{id}", authMid(http.HandlerFunc(d.Project.Update)))
 	mux.Handle("DELETE /api/admin/projects/{id}", authMid(http.HandlerFunc(d.Project.Delete)))
+
+	// admin — goals (read-only, synced from Notion)
+	mux.Handle("GET /api/admin/goals", authMid(http.HandlerFunc(d.Goal.List)))
+
+	// admin — tasks (read-only, synced from Notion)
+	mux.Handle("GET /api/admin/tasks", authMid(http.HandlerFunc(d.Task.List)))
+	mux.Handle("GET /api/admin/tasks/pending", authMid(http.HandlerFunc(d.Task.Pending)))
 
 	// admin — topics
 	mux.Handle("POST /api/admin/topics", authMid(http.HandlerFunc(d.Topic.Create)))

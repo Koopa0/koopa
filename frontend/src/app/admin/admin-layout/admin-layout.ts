@@ -29,6 +29,9 @@ import {
   PanelLeft,
   Brain,
   BookOpen,
+  FolderOpen,
+  ListTodo,
+  Target,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -136,15 +139,41 @@ export class AdminLayoutComponent {
       ],
     },
     {
-      title: 'Knowledge',
+      title: 'Notion',
       items: [
         {
-          label: 'Notion Sources',
+          label: 'Projects',
+          route: '/admin/projects',
+          icon: FolderOpen,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Tasks',
+          route: '/admin/tasks',
+          icon: ListTodo,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Goals',
+          route: '/admin/goals',
+          icon: Target,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Sources',
           route: '/admin/notion-sources',
           icon: BookOpen,
           exact: false,
           disabled: false,
         },
+      ],
+    },
+    {
+      title: 'Knowledge',
+      items: [
         {
           label: 'Spaced Review',
           route: '/admin/spaced',
