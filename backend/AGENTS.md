@@ -490,6 +490,7 @@ The following Go reference skills are available in `.agents/skills/` (symlinked 
 | `docker-deploy` | Dockerfile, Docker Compose, K8s manifests |
 | `error-patterns` | Error handling: sentinels, wrapping, domain-to-HTTP mapping |
 | `genkit-go` | Genkit Go flows, tools, structured output |
+| `devil-advocate` | Adversarial retroactive review: challenge existing decisions, detect drift |
 | `go-compliance-test` | AI compliance traps, detection commands, self-check |
 | `go-concurrency` | Goroutine lifecycle, errgroup, worker pools, channels |
 | `go-doc` | Go 1.19+ doc comments, links, headings |
@@ -499,7 +500,8 @@ The following Go reference skills are available in `.agents/skills/` (symlinked 
 | `go-middleware` | Middleware ordering, chain composition |
 | `go-modules` | go.mod, MVS, vendoring, go.work, build tags |
 | `go-performance` | Pre-allocation, escape analysis, sync.Pool, pprof |
-| `go-project-init` | Project initialization workflow |
+| `go-project-init` | Project init: feature scaffold or new project bootstrap |
+| `manage-spec` | Add, list, validate skills/rules/hooks/agents |
 | `go-reflection` | When to avoid reflect, struct tags, DeepEqual |
 | `go-slog` | slog setup, logger injection, key naming, OTel correlation |
 | `go-stdlib-patterns` | io, json, time, sort/slices, strings, context advanced |
@@ -517,7 +519,7 @@ The following Go reference skills are available in `.agents/skills/` (symlinked 
 | `sqlc-guide` | sqlc configuration and query generation |
 | `testcontainers` | testcontainers-go integration testing |
 
-Claude Code has additional tool-specific skills (`verify`, `checkpoint`) in `.claude/skills/`.
+Claude Code has additional tool-specific skills (`verify`, `checkpoint`, `manage-spec`) in `.claude/skills/`.
 
 ---
 
@@ -525,6 +527,6 @@ Claude Code has additional tool-specific skills (`verify`, `checkpoint`) in `.cl
 
 | Tool | Instructions | Skills | Hooks |
 |------|-------------|--------|-------|
-| **Claude Code** | `CLAUDE.md` (primary, richest) | `.claude/skills/` (34 skills) | `.claude/settings.json` |
-| **Gemini CLI** | `AGENTS.md` (via `.gemini/settings.json`) | `.agents/skills/` (32 skills) | `.gemini/settings.json` |
-| **Codex CLI** | `AGENTS.md` (native) | `.agents/skills/` (32 skills) | Not supported |
+| **Claude Code** | `CLAUDE.md` (primary, richest) | `.claude/skills/` (36 skills) | `.claude/settings.json` |
+| **Gemini CLI** | `AGENTS.md` (via `.gemini/settings.json`) | `.agents/skills/` (33 skills) | `.gemini/settings.json` |
+| **Codex CLI** | `AGENTS.md` (native) | `.agents/skills/` (33 skills) | Not supported |

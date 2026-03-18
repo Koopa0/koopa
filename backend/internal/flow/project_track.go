@@ -126,6 +126,9 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 		if err != nil {
 			return "", fmt.Errorf("generating project track: %w", err)
 		}
+		if err := checkFinishReason(resp); err != nil {
+			return "", err
+		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {

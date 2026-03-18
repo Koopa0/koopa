@@ -168,6 +168,53 @@ func (c *Client) QueryPageIDs(ctx context.Context, dataSourceID string) ([]strin
 	return ids, nil
 }
 
+// UpdatePageStatus sets the Status property on a Notion page.
+// pageID must be a UUID in 8-4-4-4-12 format (36 chars).
+// Idempotent: setting a page to a status it already has is a no-op from Notion's perspective.
+func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) error {
+	if len(pageID) != 36 {
+		return fmt.Errorf("invalid page id length %d: %q", len(pageID), pageID)
+	}
+	if err := c.limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limiter: %w", err)
+	}
+
+	body := map[string]any{
+		"properties": map[string]any{
+			"Status": map[string]any{
+				"status": map[string]string{
+					"name": status,
+				},
+			},
+		},
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshaling page update: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/pages/%s", notionBaseURL, pageID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("creating update request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("updating page %s: %w", pageID, err)
+	}
+	defer resp.Body.Close()               //nolint:errcheck // best-effort close on read-only HTTP response
+	_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("notion api returned %d for page update %s", resp.StatusCode, pageID)
+	}
+
+	return nil
+}
+
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Notion-Version", apiVersion)

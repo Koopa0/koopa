@@ -34,3 +34,6 @@ var contentStrategySystemPrompt string
 
 //go:embed prompts/build_log.txt
 var buildLogSystemPrompt string
+
+//go:embed prompts/daily_dev_log.txt
+var dailyDevLogSystemPrompt string

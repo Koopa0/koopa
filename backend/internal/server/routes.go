@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
@@ -17,6 +18,9 @@ import (
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
+	"github.com/koopa0/blog-backend/internal/spaced"
+	"github.com/koopa0/blog-backend/internal/stats"
+	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
 	"github.com/koopa0/blog-backend/internal/upload"
@@ -29,21 +33,26 @@ type Pinger interface {
 
 // Deps holds all handler dependencies for route registration.
 type Deps struct {
-	Auth      *auth.Handler
-	Topic     *topic.Handler
-	Content   *content.Handler
-	Project   *project.Handler
-	Review    *review.Handler
-	Collected *collected.Handler
-	Tracking  *tracking.Handler
-	Pipeline  *pipeline.Handler
-	FlowRun   *flowrun.Handler
-	Flow      *flow.Handler
-	Upload    *upload.Handler
-	Feed      *feed.Handler
-	Notion    *notion.Handler
-	Pool      Pinger
-	Logger    *slog.Logger
+	Auth         *auth.Handler
+	Topic        *topic.Handler
+	Content      *content.Handler
+	Project      *project.Handler
+	Review       *review.Handler
+	Collected    *collected.Handler
+	Tracking     *tracking.Handler
+	Pipeline     *pipeline.Handler
+	FlowRun      *flowrun.Handler
+	Flow         *flow.Handler
+	Upload       *upload.Handler
+	Feed         *feed.Handler
+	Notion       *notion.Handler
+	Tag          *tag.Handler
+	Spaced       *spaced.Handler
+	NotionSource *notion.SourceHandler
+	Stats        *stats.Handler
+	Activity     *activity.Handler
+	Pool         Pinger
+	Logger       *slog.Logger
 }
 
 // RegisterRoutes registers all API routes on the given mux.
@@ -112,6 +121,23 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("PUT /api/admin/topics/{id}", authMid(http.HandlerFunc(d.Topic.Update)))
 	mux.Handle("DELETE /api/admin/topics/{id}", authMid(http.HandlerFunc(d.Topic.Delete)))
 
+	// admin — tags
+	mux.Handle("GET /api/admin/tags", authMid(http.HandlerFunc(d.Tag.List)))
+	mux.Handle("POST /api/admin/tags", authMid(http.HandlerFunc(d.Tag.Create)))
+	mux.Handle("PUT /api/admin/tags/{id}", authMid(http.HandlerFunc(d.Tag.Update)))
+	mux.Handle("DELETE /api/admin/tags/{id}", authMid(http.HandlerFunc(d.Tag.Delete)))
+
+	// admin — aliases
+	mux.Handle("GET /api/admin/aliases", authMid(http.HandlerFunc(d.Tag.ListAliases)))
+	mux.Handle("POST /api/admin/aliases/{id}/map", authMid(http.HandlerFunc(d.Tag.MapAlias)))
+	mux.Handle("POST /api/admin/aliases/{id}/confirm", authMid(http.HandlerFunc(d.Tag.ConfirmAlias)))
+	mux.Handle("POST /api/admin/aliases/{id}/reject", authMid(http.HandlerFunc(d.Tag.RejectAlias)))
+	mux.Handle("DELETE /api/admin/aliases/{id}", authMid(http.HandlerFunc(d.Tag.DeleteAlias)))
+
+	// admin — tag operations
+	mux.Handle("POST /api/admin/tags/backfill", authMid(http.HandlerFunc(d.Tag.Backfill)))
+	mux.Handle("POST /api/admin/tags/merge", authMid(http.HandlerFunc(d.Tag.Merge)))
+
 	// admin — tracking
 	mux.Handle("GET /api/admin/tracking", authMid(http.HandlerFunc(d.Tracking.List)))
 	mux.Handle("POST /api/admin/tracking", authMid(http.HandlerFunc(d.Tracking.Create)))
@@ -138,6 +164,23 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	// admin — collected feedback
 	mux.Handle("POST /api/admin/collected/{id}/feedback", authMid(http.HandlerFunc(d.Collected.SubmitFeedback)))
 
+	// admin — notion sources
+	mux.Handle("GET /api/admin/notion-sources", authMid(http.HandlerFunc(d.NotionSource.List)))
+	mux.Handle("GET /api/admin/notion-sources/{id}", authMid(http.HandlerFunc(d.NotionSource.ByID)))
+	mux.Handle("POST /api/admin/notion-sources", authMid(http.HandlerFunc(d.NotionSource.Create)))
+	mux.Handle("PUT /api/admin/notion-sources/{id}", authMid(http.HandlerFunc(d.NotionSource.Update)))
+	mux.Handle("DELETE /api/admin/notion-sources/{id}", authMid(http.HandlerFunc(d.NotionSource.Delete)))
+	mux.Handle("POST /api/admin/notion-sources/{id}/toggle", authMid(http.HandlerFunc(d.NotionSource.Toggle)))
+
+	// admin — spaced repetition
+	mux.Handle("GET /api/admin/spaced/due", authMid(http.HandlerFunc(d.Spaced.ListDue)))
+	mux.Handle("POST /api/admin/spaced/review", authMid(http.HandlerFunc(d.Spaced.SubmitReview)))
+	mux.Handle("POST /api/admin/spaced/enroll", authMid(http.HandlerFunc(d.Spaced.Enroll)))
+
+	// admin — activity
+	mux.Handle("GET /api/admin/activity/sessions", authMid(http.HandlerFunc(d.Activity.Sessions)))
+	mux.Handle("GET /api/admin/activity/changelog", authMid(http.HandlerFunc(d.Activity.Changelog)))
+
 	// admin — upload
 	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))
 
@@ -157,10 +200,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.HandleFunc("POST /api/webhook/notion", d.Notion.Webhook)
 
 	// admin stats
-	mux.Handle("GET /api/admin/stats", authMid(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := fmt.Fprint(w, `{"data":{"status":"ok"}}`); err != nil {
-			d.Logger.Error("writing stats response", "error", err)
-		}
-	})))
+	mux.Handle("GET /api/admin/stats", authMid(http.HandlerFunc(d.Stats.Overview)))
+	mux.Handle("GET /api/admin/stats/drift", authMid(http.HandlerFunc(d.Stats.Drift)))
+	mux.Handle("GET /api/admin/stats/learning", authMid(http.HandlerFunc(d.Stats.Learning)))
 }

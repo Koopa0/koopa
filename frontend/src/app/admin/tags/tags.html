@@ -1,0 +1,572 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+          <lucide-icon [img]="TagsIcon" [size]="24" />
+          Tag 管理
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">管理 Canonical Tags 與 Alias 映射</p>
+      </div>
+      <div class="flex items-center gap-2">
+        @if (activeTab() === 'tags') {
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+            (click)="openMergeDialog()"
+          >
+            <lucide-icon [img]="MergeIcon" [size]="16" />
+            合併 Tags
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+            [disabled]="isBackfilling()"
+            (click)="runBackfill()"
+          >
+            @if (isBackfilling()) {
+              <lucide-icon [img]="Loader2Icon" [size]="16" class="animate-spin" />
+              回填中...
+            } @else {
+              <lucide-icon [img]="DatabaseIcon" [size]="16" />
+              回填 Tags
+            }
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+            (click)="openCreateTagDialog()"
+          >
+            <lucide-icon [img]="PlusIcon" [size]="16" />
+            新增 Tag
+          </button>
+        }
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="activeTab() === 'tags' ? loadTags() : loadAliases()"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          重新整理
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Tabs -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <nav class="flex gap-6" aria-label="Tabs">
+      <button
+        type="button"
+        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
+        [class]="activeTab() === 'tags'
+          ? 'border-white text-white'
+          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
+        (click)="switchTab('tags')"
+      >
+        Canonical Tags
+        <span class="ml-1.5 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+          {{ tags().length }}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
+        [class]="activeTab() === 'aliases'
+          ? 'border-white text-white'
+          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
+        (click)="switchTab('aliases')"
+      >
+        Tag Aliases
+        @if (unmappedCount() > 0) {
+          <span class="ml-1.5 rounded-full bg-amber-900/50 px-2 py-0.5 text-xs text-amber-400">
+            {{ unmappedCount() }} unmapped
+          </span>
+        }
+        @if (pendingCount() > 0) {
+          <span class="ml-1.5 rounded-full bg-sky-900/50 px-2 py-0.5 text-xs text-sky-400">
+            {{ pendingCount() }} pending
+          </span>
+        }
+      </button>
+    </nav>
+  </div>
+</section>
+
+<!-- Content -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+
+    <!-- ═══ Tags Tab ═══ -->
+    @if (activeTab() === 'tags') {
+      @if (isLoading()) {
+        <div class="flex items-center justify-center py-16">
+          <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+        </div>
+      } @else if (sortedTags().length === 0) {
+        <div class="flex flex-col items-center gap-3 py-16 text-center">
+          <lucide-icon [img]="TagsIcon" [size]="40" class="text-zinc-700" />
+          <h3 class="text-sm font-medium text-zinc-300">尚無 Tag</h3>
+          <p class="text-xs text-zinc-500">建立第一個 Canonical Tag 開始管理</p>
+        </div>
+      } @else {
+        <!-- Tags Table -->
+        <div class="overflow-x-auto rounded-sm border border-zinc-800">
+          <table class="w-full text-left text-sm">
+            <thead class="border-b border-zinc-800 bg-zinc-900/50">
+              <tr>
+                <th class="px-4 py-3 font-medium text-zinc-400">Name</th>
+                <th class="px-4 py-3 font-medium text-zinc-400">Slug</th>
+                <th class="hidden px-4 py-3 font-medium text-zinc-400 sm:table-cell">Parent</th>
+                <th class="hidden px-4 py-3 font-medium text-zinc-400 md:table-cell">Description</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800/50">
+              @for (tag of sortedTags(); track tag.id) {
+                <tr class="transition-colors hover:bg-zinc-900/30">
+                  <td class="px-4 py-3">
+                    <span
+                      class="font-medium text-zinc-200"
+                      [class.pl-6]="tag.parent_id !== null"
+                    >
+                      @if (tag.parent_id !== null) {
+                        <span class="mr-1 text-zinc-600">└</span>
+                      }
+                      {{ tag.name }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3">
+                    <code class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400">
+                      {{ tag.slug }}
+                    </code>
+                  </td>
+                  <td class="hidden px-4 py-3 text-zinc-400 sm:table-cell">
+                    {{ getParentName(tag.parent_id) }}
+                  </td>
+                  <td class="hidden max-w-xs truncate px-4 py-3 text-zinc-500 md:table-cell">
+                    {{ tag.description || '—' }}
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                        aria-label="編輯"
+                        (click)="openEditTagDialog(tag)"
+                      >
+                        <lucide-icon [img]="PencilIcon" [size]="16" />
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
+                        aria-label="刪除"
+                        (click)="requestDeleteTag(tag)"
+                      >
+                        <lucide-icon [img]="Trash2Icon" [size]="16" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+
+    <!-- ═══ Aliases Tab ═══ -->
+    @if (activeTab() === 'aliases') {
+      <!-- Alias Filters -->
+      <div class="mb-6 flex flex-wrap items-center gap-2">
+        <lucide-icon [img]="FilterIcon" [size]="16" class="text-zinc-500" />
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs transition-colors"
+          [class]="aliasFilter() === 'all'
+            ? 'border-white bg-white text-zinc-900'
+            : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+          (click)="setAliasFilter('all')"
+        >
+          All
+        </button>
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs transition-colors"
+          [class]="aliasFilter() === 'unmapped'
+            ? 'border-amber-500 bg-amber-900/30 text-amber-400'
+            : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+          (click)="setAliasFilter('unmapped')"
+        >
+          Unmapped ({{ unmappedCount() }})
+        </button>
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs transition-colors"
+          [class]="aliasFilter() === 'pending'
+            ? 'border-sky-500 bg-sky-900/30 text-sky-400'
+            : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+          (click)="setAliasFilter('pending')"
+        >
+          Pending ({{ pendingCount() }})
+        </button>
+      </div>
+
+      @if (isLoadingAliases()) {
+        <div class="flex items-center justify-center py-16">
+          <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+        </div>
+      } @else if (filteredAliases().length === 0) {
+        <div class="flex flex-col items-center gap-3 py-16 text-center">
+          <lucide-icon [img]="LinkIcon" [size]="40" class="text-zinc-700" />
+          <h3 class="text-sm font-medium text-zinc-300">
+            @if (aliasFilter() === 'unmapped') {
+              沒有 Unmapped Aliases
+            } @else if (aliasFilter() === 'pending') {
+              沒有 Pending Aliases
+            } @else {
+              尚無 Alias 資料
+            }
+          </h3>
+          <p class="text-xs text-zinc-500">Obsidian sync 時會自動產生 aliases</p>
+        </div>
+      } @else {
+        <!-- Alias Cards -->
+        <div class="space-y-3">
+          @for (alias of filteredAliases(); track alias.id) {
+            <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <!-- Alias info -->
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <code class="text-sm font-medium text-zinc-200">{{ alias.raw_tag }}</code>
+                    <span
+                      class="inline-flex rounded-full border px-2 py-0.5 text-xs"
+                      [class]="getMatchMethodClass(alias.match_method)"
+                    >
+                      {{ getMatchMethodLabel(alias.match_method) }}
+                    </span>
+                    @if (alias.confirmed) {
+                      <span class="inline-flex items-center gap-1 text-xs text-emerald-400">
+                        <lucide-icon [img]="CheckIcon" [size]="12" />
+                        Confirmed
+                      </span>
+                    }
+                  </div>
+                  @if (alias.tag_id) {
+                    <div class="mt-1 flex items-center gap-1 text-xs text-zinc-500">
+                      <lucide-icon [img]="ArrowRightIcon" [size]="12" />
+                      <span>{{ getTagName(alias.tag_id) }}</span>
+                    </div>
+                  }
+                  <div class="mt-1 text-xs text-zinc-600">
+                    {{ alias.created_at | date: 'yyyy-MM-dd HH:mm' }}
+                  </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex shrink-0 flex-wrap items-center gap-2">
+                  <!-- Unmapped: show map dropdown -->
+                  @if (alias.tag_id === null && alias.match_method !== 'rejected') {
+                    <select
+                      class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-300 focus:border-zinc-500 focus:outline-none"
+                      [ngModel]="aliasMapSelections()[alias.id] || ''"
+                      (ngModelChange)="setAliasMapSelection(alias.id, $event)"
+                    >
+                      <option value="" disabled>選擇 Tag...</option>
+                      @for (tag of tags(); track tag.id) {
+                        <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
+                      }
+                    </select>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-sm bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+                      [disabled]="!aliasMapSelections()[alias.id]"
+                      (click)="mapAlias(alias)"
+                    >
+                      <lucide-icon [img]="LinkIcon" [size]="12" />
+                      Map
+                    </button>
+                  }
+
+                  <!-- Rejected: same as unmapped, can re-map -->
+                  @if (alias.match_method === 'rejected') {
+                    <select
+                      class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-300 focus:border-zinc-500 focus:outline-none"
+                      [ngModel]="aliasMapSelections()[alias.id] || ''"
+                      (ngModelChange)="setAliasMapSelection(alias.id, $event)"
+                    >
+                      <option value="" disabled>重新選擇 Tag...</option>
+                      @for (tag of tags(); track tag.id) {
+                        <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
+                      }
+                    </select>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-sm bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+                      [disabled]="!aliasMapSelections()[alias.id]"
+                      (click)="mapAlias(alias)"
+                    >
+                      <lucide-icon [img]="LinkIcon" [size]="12" />
+                      Re-map
+                    </button>
+                  }
+
+                  <!-- Pending (has tag_id, not confirmed): confirm / reject -->
+                  @if (alias.tag_id !== null && !alias.confirmed) {
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-sm border border-emerald-800 bg-emerald-900/30 px-3 py-1.5 text-xs text-emerald-400 transition-colors hover:bg-emerald-900/50"
+                      (click)="confirmAlias(alias)"
+                    >
+                      <lucide-icon [img]="CheckIcon" [size]="12" />
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-sm border border-red-800 bg-red-900/30 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-900/50"
+                      (click)="rejectAlias(alias)"
+                    >
+                      <lucide-icon [img]="XIcon" [size]="12" />
+                      Reject
+                    </button>
+                  }
+
+                  <!-- Delete (always available) -->
+                  <button
+                    type="button"
+                    class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
+                    aria-label="刪除"
+                    (click)="requestDeleteAlias(alias)"
+                  >
+                    <lucide-icon [img]="Trash2Icon" [size]="16" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
+  </div>
+</section>
+
+<!-- Tag Create/Edit Dialog -->
+@if (isTagDialogOpen()) {
+  <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" aria-hidden="true"></div>
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="tag-dialog-title"
+    (keydown.escape)="closeTagDialog()"
+  >
+    <div class="mx-4 w-full max-w-md rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-lg">
+      <h3 id="tag-dialog-title" class="mb-4 text-lg font-semibold text-zinc-100">
+        {{ editingTagId() ? '編輯 Tag' : '新增 Tag' }}
+      </h3>
+
+      <div class="space-y-4">
+        <!-- Slug -->
+        <div>
+          <label for="tag-slug" class="mb-1 block text-sm font-medium text-zinc-300">
+            Slug <span class="text-red-400">*</span>
+          </label>
+          <input
+            id="tag-slug"
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="golang"
+            [value]="tagForm().slug"
+            (input)="updateTagFormField('slug', $any($event.target).value)"
+          />
+          @if (tagSlugError()) {
+            <p class="mt-1 text-xs text-red-400">{{ tagSlugError() }}</p>
+          }
+        </div>
+
+        <!-- Name -->
+        <div>
+          <label for="tag-name" class="mb-1 block text-sm font-medium text-zinc-300">
+            Name <span class="text-red-400">*</span>
+          </label>
+          <input
+            id="tag-name"
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="Go"
+            [value]="tagForm().name"
+            (input)="updateTagFormField('name', $any($event.target).value)"
+          />
+        </div>
+
+        <!-- Parent -->
+        <div>
+          <label for="tag-parent" class="mb-1 block text-sm font-medium text-zinc-300">
+            Parent Tag
+          </label>
+          <select
+            id="tag-parent"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="tagForm().parent_id || ''"
+            (ngModelChange)="updateTagFormField('parent_id', $event || null)"
+          >
+            <option value="">無（Root Tag）</option>
+            @for (tag of rootTags(); track tag.id) {
+              @if (tag.id !== editingTagId()) {
+                <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
+              }
+            }
+          </select>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label for="tag-description" class="mb-1 block text-sm font-medium text-zinc-300">
+            Description
+          </label>
+          <textarea
+            id="tag-description"
+            rows="2"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="選填說明"
+            [value]="tagForm().description"
+            (input)="updateTagFormField('description', $any($event.target).value)"
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Dialog Actions -->
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="closeTagDialog()"
+          [disabled]="isSavingTag()"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          [disabled]="isSavingTag() || !tagForm().slug.trim() || !tagForm().name.trim()"
+          (click)="saveTag()"
+        >
+          @if (isSavingTag()) {
+            <span class="flex items-center gap-2">
+              <span class="size-3.5 animate-spin rounded-full border-2 border-zinc-400/30 border-t-zinc-900"></span>
+              儲存中...
+            </span>
+          } @else {
+            {{ editingTagId() ? '更新' : '建立' }}
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Merge Dialog -->
+@if (isMergeDialogOpen()) {
+  <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" aria-hidden="true"></div>
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="merge-dialog-title"
+    (keydown.escape)="closeMergeDialog()"
+  >
+    <div class="mx-4 w-full max-w-md rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-lg">
+      <h3 id="merge-dialog-title" class="mb-2 text-lg font-semibold text-zinc-100">
+        合併 Tags
+      </h3>
+      <p class="mb-4 text-xs text-zinc-400">
+        將 Source Tag 的所有 aliases、notes、events 移轉到 Target Tag，然後刪除 Source Tag。
+      </p>
+
+      <div class="space-y-4">
+        <!-- Source -->
+        <div>
+          <label for="merge-source" class="mb-1 block text-sm font-medium text-zinc-300">
+            Source（要被合併的）
+          </label>
+          <select
+            id="merge-source"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="mergeSourceId()"
+            (ngModelChange)="mergeSourceId.set($event)"
+          >
+            <option value="" disabled>選擇 Source Tag...</option>
+            @for (tag of tags(); track tag.id) {
+              <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
+            }
+          </select>
+        </div>
+
+        <!-- Target -->
+        <div>
+          <label for="merge-target" class="mb-1 block text-sm font-medium text-zinc-300">
+            Target（保留的）
+          </label>
+          <select
+            id="merge-target"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="mergeTargetId()"
+            (ngModelChange)="mergeTargetId.set($event)"
+          >
+            <option value="" disabled>選擇 Target Tag...</option>
+            @for (tag of tags(); track tag.id) {
+              @if (tag.id !== mergeSourceId()) {
+                <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
+              }
+            }
+          </select>
+        </div>
+      </div>
+
+      @if (mergeSourceId() && mergeTargetId() && mergeSourceId() === mergeTargetId()) {
+        <p class="mt-2 text-xs text-red-400">Source 和 Target 不能相同</p>
+      }
+
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="closeMergeDialog()"
+          [disabled]="isMerging()"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="rounded-sm bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
+          [disabled]="isMerging() || !mergeSourceId() || !mergeTargetId() || mergeSourceId() === mergeTargetId()"
+          (click)="executeMerge()"
+        >
+          @if (isMerging()) {
+            <span class="flex items-center gap-2">
+              <span class="size-3.5 animate-spin rounded-full border-2 border-amber-300/30 border-t-white"></span>
+              合併中...
+            </span>
+          } @else {
+            確認合併
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Delete Confirm Dialog -->
+@if (deleteTarget()) {
+  <app-delete-confirm-dialog
+    [entityType]="deleteTarget()!.type === 'tag' ? 'Tag' : 'Alias'"
+    [entityTitle]="deleteTarget()!.label"
+    [isDeleting]="isDeleting()"
+    (confirmed)="confirmDelete()"
+    (cancelled)="cancelDelete()"
+  />
+}

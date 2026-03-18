@@ -70,6 +70,16 @@ SELECT id, slug, title, description, long_description, role, tech_stack, highlig
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC;
 
+-- name: ProjectSlugByNotionPageID :one
+-- Resolve a Notion page ID to a project slug.
+SELECT slug FROM projects WHERE notion_page_id = $1;
+
+-- name: ActiveProjectSlugsWithRepo :many
+-- List slugs of active projects that have a linked repository.
+SELECT slug FROM projects
+WHERE status IN ('in-progress', 'maintained') AND repo IS NOT NULL AND repo != ''
+ORDER BY title;
+
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;
 
@@ -100,3 +110,14 @@ UPDATE projects SET status = 'archived', updated_at = now()
 WHERE notion_page_id IS NOT NULL
   AND notion_page_id != ALL(@active_ids::text[])
   AND status != 'archived';
+
+-- name: ProjectByAlias :one
+-- Resolve a project alias to a project via the project_aliases table.
+SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
+       p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
+       p.results, p.github_url, p.live_url, p.featured, p.public, p.sort_order,
+       p.status, p.notion_page_id, p.repo, p.area, p.deadline, p.last_activity_at,
+       p.created_at, p.updated_at
+FROM project_aliases pa
+JOIN projects p ON LOWER(p.title) = LOWER(pa.canonical_name)
+WHERE LOWER(pa.alias) = LOWER(@alias);

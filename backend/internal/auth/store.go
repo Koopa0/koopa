@@ -87,6 +87,25 @@ func (s *Store) RefreshTokenByHash(ctx context.Context, tokenHash string) (*Refr
 	}, nil
 }
 
+// ConsumeRefreshToken atomically deletes a refresh token by hash and returns it.
+// Returns ErrNotFound if the token does not exist (already consumed or never existed).
+func (s *Store) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error) {
+	row, err := s.q.ConsumeRefreshToken(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("consuming refresh token: %w", err)
+	}
+	return &RefreshToken{
+		ID:        row.ID,
+		UserID:    row.UserID,
+		TokenHash: row.TokenHash,
+		ExpiresAt: row.ExpiresAt,
+		CreatedAt: row.CreatedAt,
+	}, nil
+}
+
 // DeleteRefreshToken removes a refresh token by hash.
 func (s *Store) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
 	err := s.q.DeleteRefreshToken(ctx, tokenHash)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/webhook"
@@ -33,15 +34,27 @@ type JobSubmitter interface {
 	Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error
 }
 
+// EventRecorder records activity events for Notion sync tracking.
+type EventRecorder interface {
+	CreateEvent(ctx context.Context, p activity.RecordParams) (int64, error)
+}
+
+// ProjectSlugResolver resolves a Notion page ID to a project slug.
+type ProjectSlugResolver interface {
+	SlugByNotionPageID(ctx context.Context, notionPageID string) (string, error)
+}
+
 // Handler handles Notion webhook events.
 type Handler struct {
-	client   *Client
-	projects ProjectWriter
-	goals    GoalWriter
-	jobs     JobSubmitter
-	dedup    *webhook.DeduplicationCache
-	config   Config
-	logger   *slog.Logger
+	client       *Client
+	projects     ProjectWriter
+	goals        GoalWriter
+	jobs         JobSubmitter
+	events       EventRecorder
+	projectSlugs ProjectSlugResolver
+	dedup        *webhook.DeduplicationCache
+	config       Config
+	logger       *slog.Logger
 }
 
 // NewHandler returns a Notion webhook Handler.
@@ -54,6 +67,16 @@ func NewHandler(client *Client, projects ProjectWriter, goals GoalWriter, jobs J
 		config:   cfg,
 		logger:   logger,
 	}
+}
+
+// SetEventRecorder sets the activity event recorder for Notion sync tracking.
+func (h *Handler) SetEventRecorder(e EventRecorder) {
+	h.events = e
+}
+
+// SetProjectSlugResolver sets the project slug resolver for task event project attribution.
+func (h *Handler) SetProjectSlugResolver(r ProjectSlugResolver) {
+	h.projectSlugs = r
 }
 
 // SetDedup sets the deduplication cache for webhook replay protection.

@@ -152,12 +152,15 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 			ai.WithSystem(weeklyReviewSystemPrompt),
 			ai.WithPrompt(userPrompt),
 			ai.WithConfig(&genai.GenerateContentConfig{
-				Temperature:     genai.Ptr[float32](0.6),
+				Temperature:     genai.Ptr[float32](0.3),
 				MaxOutputTokens: 2048,
 			}),
 		)
 		if err != nil {
 			return "", fmt.Errorf("generating weekly review: %w", err)
+		}
+		if err := checkFinishReason(resp); err != nil {
+			return "", err
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})

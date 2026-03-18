@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/robfig/cron/v3"
 
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/collected"
@@ -32,6 +34,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
@@ -39,6 +42,9 @@ import (
 	"github.com/koopa0/blog-backend/internal/reconcile"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/server"
+	"github.com/koopa0/blog-backend/internal/spaced"
+	"github.com/koopa0/blog-backend/internal/stats"
+	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
 	"github.com/koopa0/blog-backend/internal/upload"
@@ -54,6 +60,7 @@ type config struct {
 	GitHubWebhookSecret string
 	GitHubToken         string
 	GitHubRepo          string
+	GitHubBotLogin      string
 	R2Endpoint          string
 	R2AccessKeyID       string
 	R2SecretAccessKey   string
@@ -127,6 +134,11 @@ func run(logger *slog.Logger) error {
 	flowrunStore := flowrun.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)
 	goalStore := goal.NewStore(pool)
+	tagStore := tag.NewStore(pool)
+	spacedStore := spaced.NewStore(pool)
+	notionSourceStore := notion.NewStore(pool)
+
+	activityStore := activity.NewStore(pool)
 
 	// timezone: all flows and cron jobs run in Asia/Taipei
 	taipeiLoc, err := time.LoadLocation("Asia/Taipei")
@@ -209,6 +221,9 @@ func run(logger *slog.Logger) error {
 		logger.Info("starting in MOCK MODE — AI calls disabled")
 		registry := flow.NewRegistry(
 			flow.NewMockContentReview(),
+			flow.NewMockContentProofread(),
+			flow.NewMockContentExcerpt(),
+			flow.NewMockContentTags(),
 			flow.NewMockContentPolish(),
 			flow.NewMockDigestGenerate(),
 			flow.NewMockBookmarkGenerate(),
@@ -217,6 +232,7 @@ func run(logger *slog.Logger) error {
 			flow.NewMockProjectTrack(),
 			flow.NewMockContentStrategy(),
 			flow.NewMockBuildLog(),
+			flow.NewMockDailyDevLog(),
 		)
 		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	} else {
@@ -252,9 +268,13 @@ func run(logger *slog.Logger) error {
 			return fmt.Errorf("defining embedder: %w", embedErr)
 		}
 
+		contentProofread := flow.NewContentProofread(g, geminiModel, logger)
+		contentExcerpt := flow.NewContentExcerpt(g, geminiModel, logger)
+		contentTags := flow.NewContentTags(g, geminiModel, logger)
 		contentReview := flow.NewContentReview(
-			g, geminiModel, embedder,
+			g, embedder,
 			contentStore, contentStore, contentStore, reviewStore, topicStore,
+			contentProofread, contentExcerpt, contentTags,
 			logger,
 		)
 		contentPolish := flow.NewContentPolish(g, claudeModel, contentStore, logger)
@@ -282,7 +302,16 @@ func run(logger *slog.Logger) error {
 			g, geminiModel, projectStore, githubFetcher, contentStore,
 			tokenBudget, taipeiLoc, logger,
 		)
-		registry := flow.NewRegistry(contentReview, contentPolish, digestGenerate, bookmarkGenerate, morningBrief, weeklyReview, projectTrack, contentStrategy, buildLog)
+		dailyDevLog := flow.NewDailyDevLog(
+			g, geminiModel, activityStore,
+			notifier, tokenBudget, taipeiLoc, logger,
+		)
+		registry := flow.NewRegistry(
+			contentReview, contentProofread, contentExcerpt, contentTags,
+			contentPolish, digestGenerate, bookmarkGenerate,
+			morningBrief, weeklyReview, projectTrack,
+			contentStrategy, buildLog, dailyDevLog,
+		)
 		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	}
 
@@ -428,6 +457,61 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("adding content strategy cron job: %w", err)
 	}
 
+	// cron: daily dev log at 23:00 (Asia/Taipei) — summarize the day's activity
+	_, err = cronScheduler.AddFunc("0 23 * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if submitErr := runner.Submit(ctx, "daily-dev-log", nil, nil); submitErr != nil {
+			logger.Error("cron: submitting daily dev log", "error", submitErr)
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding daily dev log cron job: %w", err)
+	}
+
+	// cron: build-log generation at 10:00 Monday (Asia/Taipei) — per active project with repo
+	_, err = cronScheduler.AddFunc("0 10 * * 1", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		slugs, slugErr := projectStore.ActiveSlugsWithRepo(ctx)
+		if slugErr != nil {
+			logger.Error("cron: listing active projects for build-log", "error", slugErr)
+			return
+		}
+		for _, slug := range slugs {
+			input, _ := json.Marshal(map[string]any{"project_slug": slug, "days": 7}) //nolint:errchkjson // static map
+			if submitErr := runner.Submit(ctx, "build-log-generate", input, nil); submitErr != nil {
+				logger.Error("cron: submitting build-log", "project", slug, "error", submitErr)
+			}
+		}
+		if len(slugs) > 0 {
+			logger.Info("cron: build-log submitted", "projects", len(slugs))
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding build-log cron job: %w", err)
+	}
+
+	// cron: spaced repetition reminder at 09:00 (Asia/Taipei)
+	_, err = cronScheduler.AddFunc("0 9 * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		count, countErr := spacedStore.DueCount(ctx)
+		if countErr != nil {
+			logger.Error("cron: checking spaced due count", "error", countErr)
+			return
+		}
+		if count > 0 {
+			msg := fmt.Sprintf("📚 你有 %d 個筆記要複習\nhttps://koopa0.dev/admin/spaced", count)
+			if sendErr := notifier.Send(ctx, msg); sendErr != nil {
+				logger.Error("cron: sending spaced reminder", "error", sendErr)
+			}
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("adding spaced reminder cron job: %w", err)
+	}
+
 	// reconciler: weekly Obsidian + Notion comparison
 	recon := reconcile.New(
 		githubFetcher, contentStore,
@@ -469,6 +553,8 @@ func run(logger *slog.Logger) error {
 		GoalsDB:       cfg.NotionGoalsDB,
 	}, logger)
 	notionHandler.SetDedup(webhookDedup)
+	notionHandler.SetEventRecorder(activityStore)
+	notionHandler.SetProjectSlugResolver(projectStore)
 
 	// pipeline dependencies
 	topicLookup := pipeline.NewTopicLookup(func(ctx context.Context, slug string) (uuid.UUID, error) {
@@ -480,11 +566,18 @@ func run(logger *slog.Logger) error {
 	})
 
 	// pipeline handler with collector and reconciler
-	pipelineHandler := pipeline.NewHandler(contentStore, contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, logger)
+	pipelineHandler := pipeline.NewHandler(pool, contentStore, contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, cfg.GitHubBotLogin, logger)
 	defer pipelineHandler.Wait() // drain in-flight background operations before exit
 	pipelineHandler.SetCollector(feedCollector, feedStore)
 	pipelineHandler.SetReconciler(recon)
 	pipelineHandler.SetNotionSync(notionHandler)
+	noteStore := note.NewStore(pool)
+	pipelineHandler.SetNoteSync(noteStore, tagStore)
+	pipelineHandler.SetActivityRecorder(activityStore, githubFetcher)
+	pipelineHandler.SetNoteEventRecorder(activityStore)
+	pipelineHandler.SetProjectRepoResolver(projectStore)
+	pipelineHandler.SetNoteLinkSync(noteStore)
+	pipelineHandler.SetNotionTaskUpdater(notionClient)
 	pipelineHandler.SetDedup(webhookDedup)
 
 	// flow admin handler
@@ -498,7 +591,13 @@ func run(logger *slog.Logger) error {
 
 	// cron: hourly full sync — GitHub Obsidian content + Notion projects/goals
 	// Safety net for missed webhooks; runs at :15 past each hour.
+	var syncRunning atomic.Bool
 	_, err = cronScheduler.AddFunc("15 * * * *", func() {
+		if !syncRunning.CompareAndSwap(false, true) {
+			logger.Info("cron: skipping hourly sync, previous run still active")
+			return
+		}
+		defer syncRunning.Store(false)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		pipelineHandler.SyncAllFromGitHub(ctx)
@@ -517,19 +616,24 @@ func run(logger *slog.Logger) error {
 			AdminEmail:   cfg.AdminEmail,
 			FrontendURL:  cfg.CORSOrigin,
 		}, logger),
-		Topic:     topic.NewHandler(topicStore, contentStore, topicCache, logger),
-		Content:   content.NewHandler(contentStore, cfg.SiteURL, graphCache, feedCache, logger),
-		Project:   project.NewHandler(projectStore, logger),
-		Review:    review.NewHandler(reviewStore, logger),
-		Collected: collected.NewHandler(collectedStore, logger),
-		Tracking:  tracking.NewHandler(trackingStore, logger),
-		Pipeline:  pipelineHandler,
-		FlowRun:   flowrun.NewHandler(flowrunStore, runner, logger),
-		Upload:    upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
-		Flow:      flowHandler,
-		Feed:      feed.NewHandler(feedStore, feedCollector, logger),
-		Notion:    notionHandler,
-		Logger:    logger,
+		Topic:        topic.NewHandler(topicStore, contentStore, topicCache, logger),
+		Content:      content.NewHandler(contentStore, cfg.SiteURL, graphCache, feedCache, logger),
+		Project:      project.NewHandler(projectStore, logger),
+		Review:       review.NewHandler(reviewStore, logger),
+		Collected:    collected.NewHandler(collectedStore, logger),
+		Tracking:     tracking.NewHandler(trackingStore, logger),
+		Pipeline:     pipelineHandler,
+		FlowRun:      flowrun.NewHandler(flowrunStore, runner, logger),
+		Upload:       upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
+		Flow:         flowHandler,
+		Feed:         feed.NewHandler(feedStore, feedCollector, logger),
+		Notion:       notionHandler,
+		Tag:          tag.NewHandler(tagStore, pool, logger),
+		Spaced:       spaced.NewHandler(spacedStore, logger),
+		NotionSource: notion.NewSourceHandler(notionSourceStore, logger),
+		Stats:        stats.NewHandler(stats.NewStore(pool), logger),
+		Activity:     activity.NewHandler(activityStore, logger),
+		Logger:       logger,
 	}
 
 	// sync on startup: catch anything missed while the server was down
@@ -566,6 +670,7 @@ func loadConfig(logger *slog.Logger) config {
 	cfg.GitHubWebhookSecret = requireEnv("GITHUB_WEBHOOK_SECRET", logger)
 	cfg.GitHubToken = os.Getenv("GITHUB_TOKEN")
 	cfg.GitHubRepo = envOr("GITHUB_REPO", "Koopa0/obsidian")
+	cfg.GitHubBotLogin = os.Getenv("GITHUB_BOT_LOGIN")
 
 	cfg.R2Endpoint = requireEnv("R2_ENDPOINT", logger)
 	cfg.R2AccessKeyID = requireEnv("R2_ACCESS_KEY_ID", logger)

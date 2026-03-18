@@ -139,23 +139,16 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	tokenHash := hashToken(req.RefreshToken)
 
-	stored, err := h.store.RefreshTokenByHash(r.Context(), tokenHash)
+	// Atomic consume: DELETE ... RETURNING ensures only one concurrent
+	// request can successfully consume a given refresh token.
+	stored, err := h.store.ConsumeRefreshToken(r.Context(), tokenHash)
 	if err != nil {
 		api.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid refresh token")
 		return
 	}
 
 	if time.Now().After(stored.ExpiresAt) {
-		// best-effort: delete expired token
-		_ = h.store.DeleteRefreshToken(r.Context(), tokenHash)
 		api.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "refresh token expired")
-		return
-	}
-
-	// rotate: delete old token
-	if err := h.store.DeleteRefreshToken(r.Context(), tokenHash); err != nil {
-		h.logger.Error("deleting old refresh token", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to rotate token")
 		return
 	}
 

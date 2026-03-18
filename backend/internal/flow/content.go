@@ -52,54 +52,58 @@ type ContentReviewInput struct {
 
 // ContentReviewOutput is the JSON output of the content-review flow.
 type ContentReviewOutput struct {
-	Proofread   *ReviewResult `json:"proofread"`
-	Excerpt     string        `json:"excerpt"`
-	Tags        []string      `json:"tags"`
-	ReadingTime int           `json:"reading_time"`
+	Proofread   *ContentProofreadOutput `json:"proofread"`
+	Excerpt     string                  `json:"excerpt"`
+	Tags        []string                `json:"tags"`
+	ReadingTime int                     `json:"reading_time"`
 }
 
-// ReviewResult is the structured output from the review prompt.
-type ReviewResult struct {
-	Level       string   `json:"level"`
-	Notes       string   `json:"notes"`
-	Corrections []string `json:"corrections"`
-}
+// ReviewResult is an alias for ContentProofreadOutput.
+// Kept for backward compatibility: referenced by cmd/calibrate and internal/flowrun tests.
+type ReviewResult = ContentProofreadOutput
 
-// ContentReview implements the content-review flow using Genkit.
+// ContentReview is the orchestrator flow that calls sub-flows (proofread, excerpt, tags)
+// and handles persistence (embedding, content update, review queue).
 type ContentReview struct {
 	gf          *genkitFlow
 	g           *genkit.Genkit
-	model       ai.Model
 	embedder    ai.Embedder
 	content     ContentReader
 	updater     ContentUpdater
 	embedWriter EmbeddingWriter
 	review      ReviewCreator
 	topics      TopicLister
+	proofread   *ContentProofread
+	excerpt     *ContentExcerpt
+	tags        *ContentTags
 	logger      *slog.Logger
 }
 
-// NewContentReview returns a ContentReview flow.
+// NewContentReview returns a ContentReview orchestrator flow.
 func NewContentReview(
 	g *genkit.Genkit,
-	model ai.Model,
 	embedder ai.Embedder,
 	contentReader ContentReader,
 	updater ContentUpdater,
 	embedWriter EmbeddingWriter,
 	review ReviewCreator,
 	topics TopicLister,
+	proofread *ContentProofread,
+	excerpt *ContentExcerpt,
+	tags *ContentTags,
 	logger *slog.Logger,
 ) *ContentReview {
 	cr := &ContentReview{
 		g:           g,
-		model:       model,
 		embedder:    embedder,
 		content:     contentReader,
 		updater:     updater,
 		embedWriter: embedWriter,
 		review:      review,
 		topics:      topics,
+		proofread:   proofread,
+		excerpt:     excerpt,
+		tags:        tags,
 		logger:      logger,
 	}
 	cr.gf = genkit.DefineFlow(g, "content-review", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
@@ -141,99 +145,64 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 
 	cr.logger.Info("content-review starting", "content_id", contentID, "title", c.Title)
 
-	userPrompt := buildUserPrompt(c)
-
-	// Step 1 (sequential): proofread via GenerateData[ReviewResult]
-	reviewResult, err := genkit.Run(ctx, "proofread", func() (*ReviewResult, error) {
-		result, _, err := genkit.GenerateData[ReviewResult](ctx, cr.g,
-			ai.WithModel(cr.model),
-			ai.WithSystem(reviewSystemPrompt),
-			ai.WithPrompt(userPrompt),
-			ai.WithConfig(&genai.GenerateContentConfig{
-				Temperature:     genai.Ptr[float32](0.3),
-				MaxOutputTokens: 4096,
-			}),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("generating review: %w", err)
-		}
-		return result, nil
+	// Step 1 (sequential): proofread via sub-flow
+	proofreadResult, err := cr.proofread.run(ctx, ContentProofreadInput{
+		ContentType: string(c.Type),
+		Title:       c.Title,
+		Body:        c.Body,
 	})
 	if err != nil {
 		return ContentReviewOutput{}, fmt.Errorf("proofreading content %s: %w", contentID, err)
 	}
 
-	cr.logger.Info("proofread complete", "content_id", contentID, "level", reviewResult.Level)
+	cr.logger.Info("proofread complete", "content_id", contentID, "level", proofreadResult.Level)
 
-	// Steps 2-5 (parallel)
+	// Steps 2-5 (parallel): excerpt, tags, reading time, embedding
 	var (
-		excerpt     string
-		tags        []string
-		readingTime int
+		excerptResult ContentExcerptOutput
+		tagsResult    ContentTagsOutput
+		readingTime   int
 	)
 
-	g, gctx := errgroup.WithContext(ctx)
+	eg, gctx := errgroup.WithContext(ctx)
 
-	// Step 2: excerpt
-	g.Go(func() error {
-		resp, err := genkit.Generate(gctx, cr.g,
-			ai.WithModel(cr.model),
-			ai.WithSystem(excerptSystemPrompt),
-			ai.WithPrompt(userPrompt),
-			ai.WithConfig(&genai.GenerateContentConfig{
-				Temperature:     genai.Ptr[float32](0.5),
-				MaxOutputTokens: 256,
-			}),
-		)
-		if err != nil {
-			return fmt.Errorf("generating excerpt: %w", err)
-		}
-		excerpt = strings.TrimSpace(resp.Text())
-		return nil
+	// Step 2: excerpt via sub-flow
+	eg.Go(func() error {
+		var err error
+		excerptResult, err = cr.excerpt.run(gctx, ContentExcerptInput{
+			ContentType: string(c.Type),
+			Title:       c.Title,
+			Body:        c.Body,
+		})
+		return err
 	})
 
-	// Step 3: tags (constrained to existing topics)
-	g.Go(func() error {
+	// Step 3: tags via sub-flow (fetch topics first, pass as input)
+	eg.Go(func() error {
 		slugs, err := cr.topics.AllTopicSlugs(gctx)
 		if err != nil {
 			return fmt.Errorf("listing topics: %w", err)
 		}
 
-		tagsUserPrompt := buildTagsUserPrompt(c, slugs)
-
-		resp, err := genkit.Generate(gctx, cr.g,
-			ai.WithModel(cr.model),
-			ai.WithSystem(tagsSystemPrompt),
-			ai.WithPrompt(tagsUserPrompt),
-			ai.WithConfig(&genai.GenerateContentConfig{
-				Temperature:     genai.Ptr[float32](0.2),
-				MaxOutputTokens: 512,
-			}),
-		)
-		if err != nil {
-			return fmt.Errorf("generating tags: %w", err)
+		topicSlugs := make([]string, len(slugs))
+		topicNames := make([]string, len(slugs))
+		for i, s := range slugs {
+			topicSlugs[i] = s.Slug
+			topicNames[i] = s.Name
 		}
 
-		var suggested []string
-		if err := parseJSONLoose(resp.Text(), &suggested); err != nil {
-			return fmt.Errorf("parsing tags response: %w", err)
-		}
-
-		// Filter to only existing slugs
-		existing := make(map[string]bool, len(slugs))
-		for _, s := range slugs {
-			existing[s.Slug] = true
-		}
-		for _, tag := range suggested {
-			if existing[tag] {
-				tags = append(tags, tag)
-			}
-		}
-		return nil
+		tagsResult, err = cr.tags.run(gctx, ContentTagsInput{
+			ContentType: string(c.Type),
+			Title:       c.Title,
+			Body:        c.Body,
+			TopicSlugs:  topicSlugs,
+			TopicNames:  topicNames,
+		})
+		return err
 	})
 
 	// Step 4: reading time (pure computation, traced)
-	g.Go(func() error {
+	eg.Go(func() error {
 		var err error
 		readingTime, err = genkit.Run(gctx, "reading-time", func() (int, error) {
 			return estimateReadingTime(c.Body), nil
@@ -242,7 +211,7 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 	})
 
 	// Step 5: generate embedding
-	g.Go(func() error {
+	eg.Go(func() error {
 		_, err := genkit.Run(gctx, "generate-embedding", func() (any, error) {
 			resp, err := genkit.Embed(gctx, cr.g,
 				ai.WithEmbedder(cr.embedder),
@@ -268,32 +237,32 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 		return err
 	})
 
-	if err := g.Wait(); err != nil {
+	if err := eg.Wait(); err != nil {
 		return ContentReviewOutput{}, fmt.Errorf("parallel steps for content %s: %w", contentID, err)
 	}
 
 	// Step: update content with AI results (traced)
 	_, err = genkit.Run(ctx, "update-content", func() (any, error) {
-		aiMetadata, _ := json.Marshal(reviewResult)
+		aiMetadata, _ := json.Marshal(proofreadResult) // safe: struct contains only JSON-compatible types
 		updateParams := content.UpdateParams{
-			Excerpt:     &excerpt,
+			Excerpt:     &excerptResult.Excerpt,
 			ReadingTime: &readingTime,
 			AIMetadata:  aiMetadata,
 		}
-		if len(tags) > 0 {
-			updateParams.Tags = tags
+		if len(tagsResult.Tags) > 0 {
+			updateParams.Tags = tagsResult.Tags
 		}
 		if _, err := cr.updater.UpdateContent(ctx, contentID, updateParams); err != nil {
 			return nil, fmt.Errorf("updating content: %w", err)
 		}
 
 		// Create review queue entry if not auto-publishable
-		if reviewResult.Level != "auto" {
-			notes := reviewResult.Notes
-			if _, err := cr.review.Create(ctx, contentID, reviewResult.Level, &notes); err != nil {
+		if proofreadResult.Level != "auto" {
+			notes := proofreadResult.Notes
+			if _, err := cr.review.Create(ctx, contentID, proofreadResult.Level, &notes); err != nil {
 				return nil, fmt.Errorf("creating review: %w", err)
 			}
-			cr.logger.Info("content sent to review queue", "content_id", contentID, "level", reviewResult.Level)
+			cr.logger.Info("content sent to review queue", "content_id", contentID, "level", proofreadResult.Level)
 		} else {
 			cr.logger.Info("content auto-approved", "content_id", contentID)
 		}
@@ -304,9 +273,9 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 	}
 
 	return ContentReviewOutput{
-		Proofread:   reviewResult,
-		Excerpt:     excerpt,
-		Tags:        tags,
+		Proofread:   &proofreadResult,
+		Excerpt:     excerptResult.Excerpt,
+		Tags:        tagsResult.Tags,
 		ReadingTime: readingTime,
 	}, nil
 }
@@ -316,7 +285,7 @@ func NewMockContentReview() Flow {
 	return &mockFlow{
 		name: "content-review",
 		output: ContentReviewOutput{
-			Proofread:   &ReviewResult{Level: "auto", Notes: "mock mode", Corrections: []string{}},
+			Proofread:   &ContentProofreadOutput{Level: "auto", Notes: "mock mode", Corrections: []string{}},
 			Excerpt:     "Mock excerpt for testing.",
 			Tags:        []string{},
 			ReadingTime: 1,
@@ -324,21 +293,21 @@ func NewMockContentReview() Flow {
 	}
 }
 
+// maxPromptBodyRunes caps prompt body length to prevent excessive token consumption.
+const maxPromptBodyRunes = 50000
+
+// truncateBodyRunes truncates body to maxPromptBodyRunes runes for LLM prompt safety.
+func truncateBodyRunes(body string) string {
+	runes := []rune(body)
+	if len(runes) <= maxPromptBodyRunes {
+		return body
+	}
+	return string(runes[:maxPromptBodyRunes]) + "\n...[truncated]"
+}
+
 // buildUserPrompt assembles the user prompt from content fields.
 func buildUserPrompt(c *content.Content) string {
 	return fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", c.Type, c.Title, c.Body)
-}
-
-// buildTagsUserPrompt assembles the user prompt with content + topic list.
-func buildTagsUserPrompt(c *content.Content, topics []topic.TopicSlug) string {
-	var b strings.Builder
-	b.WriteString("Existing tags:\n")
-	for _, t := range topics {
-		fmt.Fprintf(&b, "- %s (%s)\n", t.Slug, t.Name)
-	}
-	b.WriteString("\n")
-	b.WriteString(buildUserPrompt(c))
-	return b.String()
 }
 
 // estimateReadingTime calculates reading time in minutes.

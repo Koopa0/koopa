@@ -6,12 +6,35 @@ package flow
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
+	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/collected"
 )
+
+// ErrContentBlocked indicates the model refused to generate due to safety or policy filters.
+// This is a permanent failure — retrying will not help.
+var ErrContentBlocked = errors.New("content blocked by model safety filter")
+
+// checkFinishReason returns ErrContentBlocked if the model response was blocked
+// by safety filters. Callers should treat this as a permanent failure (no retry).
+func checkFinishReason(resp *ai.ModelResponse) error {
+	if resp == nil {
+		return nil
+	}
+	switch resp.FinishReason {
+	case ai.FinishReasonBlocked:
+		return fmt.Errorf("%w: %s", ErrContentBlocked, resp.FinishMessage)
+	case ai.FinishReasonOther:
+		return fmt.Errorf("%w: unexpected finish reason: %s", ErrContentBlocked, resp.FinishMessage)
+	default:
+		return nil
+	}
+}
 
 // genkitFlow is a type alias for a Genkit flow that takes and returns raw JSON.
 // Every concrete flow stores one of these, created via genkit.DefineFlow in its constructor.

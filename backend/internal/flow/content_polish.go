@@ -96,6 +96,9 @@ func (cp *ContentPolish) run(ctx context.Context, in ContentPolishInput) (Conten
 		if err != nil {
 			return "", fmt.Errorf("generating polish: %w", err)
 		}
+		if err := checkFinishReason(resp); err != nil {
+			return "", err
+		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {

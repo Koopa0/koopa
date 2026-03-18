@@ -27,6 +27,22 @@
     </div>
 
     <div class="flex items-center gap-2">
+      @if (!isNewArticle()) {
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-sm border border-violet-700 px-3 py-1.5 text-sm text-violet-300 transition-colors hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50"
+          (click)="triggerPolish()"
+          [disabled]="isPolishing() || isSaving() || polishState() === 'ready'"
+        >
+          @if (isPolishing()) {
+            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+            AI 潤稿中...
+          } @else {
+            <lucide-icon [img]="SparklesIcon" [size]="14" />
+            AI 潤稿
+          }
+        </button>
+      }
       <button
         type="button"
         class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800 disabled:opacity-50"
@@ -53,6 +69,46 @@
     </div>
   </div>
 </section>
+
+<!-- AI Polish Result Banner -->
+@if (polishState() === 'ready') {
+  <section class="border-b border-violet-800 bg-violet-950/30">
+    <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="SparklesIcon" [size]="18" class="text-violet-400" />
+          <span class="text-sm font-medium text-violet-200">AI 潤稿結果已就緒</span>
+          <span class="text-xs text-violet-400">請檢視差異後決定套用或捨棄</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-sm border border-emerald-700 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-400 transition-colors hover:bg-emerald-900/50"
+            (click)="approvePolish()"
+          >
+            <lucide-icon [img]="CheckIcon" [size]="14" />
+            核准並儲存
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+            (click)="applyPolish()"
+          >
+            僅套用到編輯器
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-sm border border-red-800 px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-900/30"
+            (click)="discardPolish()"
+          >
+            <lucide-icon [img]="RotateCcwIcon" [size]="14" />
+            捨棄
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+}
 
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

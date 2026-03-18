@@ -244,11 +244,24 @@ app.get('/api/health', (_req, res) => {
 });
 
 // BFF Proxy — 轉發 /bff/* 到後端，後端零暴露
+const BFF_MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+
 app.use('/bff', (req, res) => {
   const targetUrl = `${BACKEND_URL}${req.originalUrl.replace(/^\/bff/, '')}`;
   const headers: Record<string, string> = {
     'content-type': req.headers['content-type'] || 'application/json',
   };
+
+  // 轉發真實 client IP，讓後端 rate limiter 按用戶限流
+  const clientIp =
+    (req.headers['cf-connecting-ip'] as string) ||
+    (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+    req.socket.remoteAddress ||
+    '';
+  if (clientIp) {
+    headers['x-forwarded-for'] = clientIp;
+  }
+
   const forwardHeaders = ['authorization', 'cookie', 'x-hub-signature-256', 'x-github-event', 'x-github-delivery', 'x-notion-signature'];
   for (const h of forwardHeaders) {
     if (req.headers[h]) {
@@ -256,9 +269,24 @@ app.use('/bff', (req, res) => {
     }
   }
 
+  // 限制 body 大小，防止記憶體 DoS
+  let receivedBytes = 0;
   const bodyChunks: Buffer[] = [];
-  req.on('data', (chunk: Buffer) => bodyChunks.push(chunk));
+
+  req.on('data', (chunk: Buffer) => {
+    receivedBytes += chunk.length;
+    if (receivedBytes > BFF_MAX_BODY_BYTES) {
+      req.destroy();
+      res.status(413).json({ error: 'Payload too large' });
+      return;
+    }
+    bodyChunks.push(chunk);
+  });
+
   req.on('end', () => {
+    if (receivedBytes > BFF_MAX_BODY_BYTES) {
+      return;
+    }
     const body = bodyChunks.length > 0 ? Buffer.concat(bodyChunks) : undefined;
     fetch(targetUrl, {
       method: req.method,

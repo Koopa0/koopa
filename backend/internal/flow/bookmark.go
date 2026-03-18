@@ -104,17 +104,20 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 	userPrompt := buildBookmarkUserPrompt(cd)
 
 	result, err := genkit.Run(ctx, "generate-bookmark", func() (*BookmarkResult, error) {
-		r, _, err := genkit.GenerateData[BookmarkResult](ctx, bg.g,
+		r, resp, err := genkit.GenerateData[BookmarkResult](ctx, bg.g,
 			ai.WithModel(bg.model),
 			ai.WithSystem(bookmarkSystemPrompt),
 			ai.WithPrompt(userPrompt),
 			ai.WithConfig(&genai.GenerateContentConfig{
-				Temperature:     genai.Ptr[float32](0.5),
+				Temperature:     genai.Ptr[float32](0.3),
 				MaxOutputTokens: 1024,
 			}),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("generating bookmark: %w", err)
+		}
+		if err := checkFinishReason(resp); err != nil {
+			return nil, err
 		}
 		return r, nil
 	})

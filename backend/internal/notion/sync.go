@@ -4,10 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 )
+
+// buildSourceID creates a dedup key for Notion activity events.
+// Format: pageID:status:YYYY-MM-DD — same page+status+day deduplicates.
+func buildSourceID(pageID, status string) string {
+	return pageID + ":" + status + ":" + time.Now().Format("2006-01-02")
+}
 
 // syncProject handles C1: fetch Notion page properties, upsert to projects table.
 func (h *Handler) syncProject(ctx context.Context, pageID string) error {
@@ -59,10 +67,31 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 		"status", localStatus,
 	)
 
+	// Record activity event (best-effort)
+	if h.events != nil {
+		sourceID := buildSourceID(pageID, string(localStatus))
+		metadata, _ := json.Marshal(map[string]string{
+			"status": string(localStatus),
+			"title":  title,
+			"area":   area,
+		}) // best-effort
+		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+			SourceID:  &sourceID,
+			Timestamp: time.Now(),
+			EventType: "project_update",
+			Source:    "notion",
+			Project:   &p.Slug,
+			Title:     &title,
+			Metadata:  metadata,
+		}); evErr != nil {
+			h.logger.Error("recording project activity event", "page_id", pageID, "error", evErr)
+		}
+	}
+
 	return nil
 }
 
-// syncTaskActivity handles C2: if task is Done with a project relation, update project last_activity_at.
+// syncTaskActivity handles C2: record task status changes and update project last_activity_at on Done.
 func (h *Handler) syncTaskActivity(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
@@ -74,30 +103,73 @@ func (h *Handler) syncTaskActivity(ctx context.Context, pageID string) error {
 	}
 
 	status := statusProperty(page.Properties["Status"])
-	if status != "Done" {
-		h.logger.Debug("task not done, skipping", "page_id", pageID, "status", status)
-		return nil
+	title := titleProperty(page.Properties["Task Name"])
+	if title == "" {
+		title = titleProperty(page.Properties["Name"])
 	}
 
+	// Resolve project slug via fallback chain: task Project → parent task Project
+	var projectSlug *string
 	projectPageID := relationProperty(page.Properties["Project"])
+
+	// Fallback: if task has no direct Project, check Parent Task
 	if projectPageID == "" {
-		h.logger.Debug("done task has no project relation, skipping", "page_id", pageID)
-		return nil
+		parentTaskID := relationProperty(page.Properties["Parent Task"])
+		if parentTaskID != "" {
+			parentPage, parentErr := h.client.Page(ctx, parentTaskID)
+			if parentErr == nil {
+				projectPageID = relationProperty(parentPage.Properties["Project"])
+			}
+		}
 	}
 
-	if err := h.projects.UpdateLastActivity(ctx, projectPageID); err != nil {
-		return fmt.Errorf("updating project last activity: %w", err)
+	// Resolve project page ID → slug
+	if projectPageID != "" && h.projectSlugs != nil {
+		slug, slugErr := h.projectSlugs.SlugByNotionPageID(ctx, projectPageID)
+		if slugErr == nil {
+			projectSlug = &slug
+		}
 	}
 
-	h.logger.Info("project activity updated from task",
-		"task_page_id", pageID,
-		"project_page_id", projectPageID,
-	)
+	// Record activity event for ALL status changes (best-effort)
+	if h.events != nil {
+		sourceID := buildSourceID(pageID, status)
+		meta := map[string]string{
+			"status": status,
+			"title":  title,
+		}
+		if projectSlug != nil {
+			meta["project"] = *projectSlug
+		}
+		metadata, _ := json.Marshal(meta) // best-effort
+		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+			SourceID:  &sourceID,
+			Timestamp: time.Now(),
+			EventType: "task_status_change",
+			Source:    "notion",
+			Project:   projectSlug,
+			Title:     &title,
+			Metadata:  metadata,
+		}); evErr != nil {
+			h.logger.Error("recording task activity event", "page_id", pageID, "error", evErr)
+		}
+	}
+
+	// Only update project last_activity_at on Done (existing behavior preserved)
+	if status == "Done" && projectPageID != "" {
+		if err := h.projects.UpdateLastActivity(ctx, projectPageID); err != nil {
+			return fmt.Errorf("updating project last activity: %w", err)
+		}
+		h.logger.Info("project activity updated from task",
+			"task_page_id", pageID,
+			"project_page_id", projectPageID,
+		)
+	}
 
 	return nil
 }
 
-// syncBook handles C5: if book Status=="Read", submit bookmark-generate flow job.
+// syncBook handles C5: record book progress and submit bookmark-generate on "Read".
 func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
@@ -109,15 +181,37 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 	}
 
 	status := statusProperty(page.Properties["Status"])
-	if status != "Read" {
-		h.logger.Debug("book not read, skipping", "page_id", pageID, "status", status)
-		return nil
-	}
-
 	title := titleProperty(page.Properties["Title"])
 	author := richTextProperty(page.Properties["Author"])
 	description := richTextProperty(page.Properties["Description"])
 	rating := selectProperty(page.Properties["Rating"])
+
+	// Record activity event for ALL book status changes (best-effort)
+	if h.events != nil {
+		sourceID := buildSourceID(pageID, status)
+		metadata, _ := json.Marshal(map[string]string{
+			"status": status,
+			"title":  title,
+			"author": author,
+			"rating": rating,
+		}) // best-effort
+		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+			SourceID:  &sourceID,
+			Timestamp: time.Now(),
+			EventType: "book_progress",
+			Source:    "notion",
+			Title:     &title,
+			Metadata:  metadata,
+		}); evErr != nil {
+			h.logger.Error("recording book activity event", "page_id", pageID, "error", evErr)
+		}
+	}
+
+	// Only submit bookmark-generate on "Read" (existing behavior preserved)
+	if status != "Read" {
+		h.logger.Debug("book not read, skipping bookmark", "page_id", pageID, "status", status)
+		return nil
+	}
 
 	if h.jobs == nil {
 		h.logger.Warn("no job submitter configured, cannot submit bookmark-generate")
@@ -193,6 +287,26 @@ func (h *Handler) syncGoal(ctx context.Context, pageID string) error {
 		"title", title,
 		"status", localStatus,
 	)
+
+	// Record activity event (best-effort)
+	if h.events != nil {
+		sourceID := buildSourceID(pageID, string(localStatus))
+		metadata, _ := json.Marshal(map[string]string{
+			"status": string(localStatus),
+			"area":   area,
+			"title":  title,
+		}) // best-effort
+		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+			SourceID:  &sourceID,
+			Timestamp: time.Now(),
+			EventType: "goal_update",
+			Source:    "notion",
+			Title:     &title,
+			Metadata:  metadata,
+		}); evErr != nil {
+			h.logger.Error("recording goal activity event", "page_id", pageID, "error", evErr)
+		}
+	}
 
 	return nil
 }

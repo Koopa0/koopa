@@ -159,6 +159,9 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 		if err != nil {
 			return "", fmt.Errorf("generating digest: %w", err)
 		}
+		if err := checkFinishReason(resp); err != nil {
+			return "", err
+		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {

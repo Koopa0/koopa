@@ -3,6 +3,7 @@ package flowrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -181,6 +182,11 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 		logger.Error("flow execution failed", "error", err)
 		if uerr := r.store.UpdateFailed(ctx, runID, err.Error()); uerr != nil {
 			logger.Error("marking flow run failed", "error", uerr)
+		}
+		// Content blocked by safety filter is permanent — alert immediately, no retry.
+		if errors.Is(err, flow.ErrContentBlocked) {
+			r.alertAlways(ctx, run, err.Error())
+			return
 		}
 		// attempt was incremented by UpdateRunning, so current attempt = run.Attempt + 1
 		r.alertIfFinal(ctx, run, err.Error())

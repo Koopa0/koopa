@@ -169,6 +169,19 @@ func (s *Store) ActiveProjects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
+// ProjectByAlias resolves a project alias to a project via the project_aliases table.
+func (s *Store) ProjectByAlias(ctx context.Context, alias string) (*Project, error) {
+	r, err := s.q.ProjectByAlias(ctx, alias)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying project by alias %s: %w", alias, err)
+	}
+	p := rowToProject(r)
+	return &p, nil
+}
+
 // ProjectByRepo returns a project by its GitHub repository full name (e.g. "owner/repo").
 func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error) {
 	r, err := s.q.ProjectByRepo(ctx, &repo)
@@ -242,6 +255,27 @@ func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (in
 		return 0, fmt.Errorf("archiving orphan notion projects: %w", err)
 	}
 	return n, nil
+}
+
+// SlugByNotionPageID returns the slug of a project identified by its Notion page ID.
+func (s *Store) SlugByNotionPageID(ctx context.Context, notionPageID string) (string, error) {
+	slug, err := s.q.ProjectSlugByNotionPageID(ctx, &notionPageID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("querying project slug by notion page id %s: %w", notionPageID, err)
+	}
+	return slug, nil
+}
+
+// ActiveSlugsWithRepo returns slugs of active projects that have a linked repository.
+func (s *Store) ActiveSlugsWithRepo(ctx context.Context) ([]string, error) {
+	slugs, err := s.q.ActiveProjectSlugsWithRepo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing active project slugs with repo: %w", err)
+	}
+	return slugs, nil
 }
 
 func rowToProject(r db.Project) Project {

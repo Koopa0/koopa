@@ -21,11 +21,15 @@ import {
   Rss,
   Database,
   ClipboardCheck,
+  Tags,
   Menu,
   LogOut,
   Home,
   PanelLeftClose,
   PanelLeft,
+  Brain,
+  BookOpen,
+  Radar,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -112,6 +116,46 @@ export class AdminLayoutComponent {
           label: 'Review Queue',
           route: '/admin/review',
           icon: ClipboardCheck,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Tags',
+          route: '/admin/tags',
+          icon: Tags,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Tracking',
+          route: '/admin/tracking',
+          icon: Radar,
+          exact: false,
+          disabled: false,
+        },
+      ],
+    },
+    {
+      title: 'Knowledge',
+      items: [
+        {
+          label: 'Notion Sources',
+          route: '/admin/notion-sources',
+          icon: BookOpen,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Spaced Review',
+          route: '/admin/spaced',
+          icon: Brain,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Activity',
+          route: '/admin/activity',
+          icon: Activity,
           exact: false,
           disabled: false,
         },

@@ -1,0 +1,272 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+          <lucide-icon [img]="DatabaseIcon" [size]="24" />
+          Notion Sources
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">管理已註冊的 Notion Databases</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+          (click)="openCreateDialog()"
+        >
+          <lucide-icon [img]="PlusIcon" [size]="16" />
+          新增 Source
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="loadSources()"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          重新整理
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Content -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+      <div class="flex items-center justify-center py-16">
+        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+      </div>
+    } @else if (sources().length === 0) {
+      <div class="flex flex-col items-center gap-3 py-16 text-center">
+        <lucide-icon [img]="DatabaseIcon" [size]="40" class="text-zinc-700" />
+        <h3 class="text-sm font-medium text-zinc-300">尚無 Notion Source</h3>
+        <p class="text-xs text-zinc-500">註冊 Notion Database 開始同步</p>
+      </div>
+    } @else {
+      <div class="overflow-x-auto rounded-sm border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-zinc-800 bg-zinc-900/50">
+            <tr>
+              <th class="px-4 py-3 font-medium text-zinc-400">Name</th>
+              <th class="hidden px-4 py-3 font-medium text-zinc-400 sm:table-cell">Sync Mode</th>
+              <th class="hidden px-4 py-3 font-medium text-zinc-400 md:table-cell">Poll Interval</th>
+              <th class="px-4 py-3 font-medium text-zinc-400">Enabled</th>
+              <th class="hidden px-4 py-3 font-medium text-zinc-400 lg:table-cell">Last Synced</th>
+              <th class="px-4 py-3 text-right font-medium text-zinc-400">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-800/50">
+            @for (source of sources(); track source.id) {
+              <tr class="transition-colors hover:bg-zinc-900/30">
+                <td class="px-4 py-3">
+                  <div class="font-medium text-zinc-200">{{ source.name }}</div>
+                  <div class="mt-0.5 text-xs text-zinc-600">
+                    <code class="rounded-sm bg-zinc-800 px-1 py-0.5">{{ source.database_id }}</code>
+                  </div>
+                  @if (source.description) {
+                    <div class="mt-0.5 max-w-xs truncate text-xs text-zinc-500">{{ source.description }}</div>
+                  }
+                </td>
+                <td class="hidden px-4 py-3 sm:table-cell">
+                  <span
+                    class="inline-block rounded-full border px-2 py-0.5 text-xs"
+                    [class]="source.sync_mode === 'full'
+                      ? 'border-sky-800 bg-sky-900/30 text-sky-400'
+                      : 'border-violet-800 bg-violet-900/30 text-violet-400'"
+                  >
+                    {{ source.sync_mode }}
+                  </span>
+                </td>
+                <td class="hidden px-4 py-3 text-zinc-400 md:table-cell">
+                  {{ source.poll_interval }}
+                </td>
+                <td class="px-4 py-3">
+                  <button
+                    type="button"
+                    class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
+                    [class]="source.enabled ? 'bg-emerald-600' : 'bg-zinc-700'"
+                    role="switch"
+                    [attr.aria-checked]="source.enabled"
+                    aria-label="Toggle source"
+                    (click)="toggleSource(source)"
+                  >
+                    <span
+                      class="pointer-events-none inline-block size-4 rounded-full bg-white shadow-xs ring-0 transition duration-200"
+                      [class]="source.enabled ? 'translate-x-4' : 'translate-x-0'"
+                    ></span>
+                  </button>
+                </td>
+                <td class="hidden px-4 py-3 text-xs text-zinc-500 lg:table-cell">
+                  @if (source.last_synced_at) {
+                    {{ source.last_synced_at | date: 'yyyy-MM-dd HH:mm' }}
+                  } @else {
+                    <span class="text-zinc-600">Never</span>
+                  }
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                      aria-label="編輯"
+                      (click)="openEditDialog(source)"
+                    >
+                      <lucide-icon [img]="PencilIcon" [size]="16" />
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
+                      aria-label="刪除"
+                      (click)="requestDelete(source)"
+                    >
+                      <lucide-icon [img]="Trash2Icon" [size]="16" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</section>
+
+<!-- Create/Edit Dialog -->
+@if (isDialogOpen()) {
+  <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" aria-hidden="true"></div>
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="source-dialog-title"
+    (keydown.escape)="closeDialog()"
+  >
+    <div class="mx-4 w-full max-w-md rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-lg">
+      <h3 id="source-dialog-title" class="mb-4 text-lg font-semibold text-zinc-100">
+        {{ dialogMode() === 'create' ? '新增 Notion Source' : '編輯 Notion Source' }}
+      </h3>
+
+      <div class="space-y-4">
+        <!-- Database ID -->
+        <div>
+          <label for="source-db-id" class="mb-1 block text-sm font-medium text-zinc-300">
+            Database ID <span class="text-red-400">*</span>
+          </label>
+          <input
+            id="source-db-id"
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none disabled:opacity-50"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            [value]="form().database_id"
+            [disabled]="dialogMode() === 'edit'"
+            (input)="updateFormField('database_id', $any($event.target).value)"
+          />
+        </div>
+
+        <!-- Name -->
+        <div>
+          <label for="source-name" class="mb-1 block text-sm font-medium text-zinc-300">
+            Name <span class="text-red-400">*</span>
+          </label>
+          <input
+            id="source-name"
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="Tasks DB"
+            [value]="form().name"
+            (input)="updateFormField('name', $any($event.target).value)"
+          />
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label for="source-desc" class="mb-1 block text-sm font-medium text-zinc-300">
+            Description
+          </label>
+          <textarea
+            id="source-desc"
+            rows="2"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="選填說明"
+            [value]="form().description"
+            (input)="updateFormField('description', $any($event.target).value)"
+          ></textarea>
+        </div>
+
+        <!-- Sync Mode -->
+        <div>
+          <label for="source-sync" class="mb-1 block text-sm font-medium text-zinc-300">
+            Sync Mode
+          </label>
+          <select
+            id="source-sync"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="form().sync_mode"
+            (ngModelChange)="updateFormField('sync_mode', $event)"
+          >
+            <option value="full">Full</option>
+            <option value="events">Events</option>
+          </select>
+        </div>
+
+        <!-- Poll Interval -->
+        <div>
+          <label for="source-poll" class="mb-1 block text-sm font-medium text-zinc-300">
+            Poll Interval
+          </label>
+          <select
+            id="source-poll"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="form().poll_interval"
+            (ngModelChange)="updateFormField('poll_interval', $event)"
+          >
+            @for (opt of pollIntervalOptions; track opt) {
+              <option [value]="opt">{{ opt }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <!-- Dialog Actions -->
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="closeDialog()"
+          [disabled]="isSaving()"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          [disabled]="isSaving() || !form().database_id.trim() || !form().name.trim()"
+          (click)="saveSource()"
+        >
+          @if (isSaving()) {
+            <span class="flex items-center gap-2">
+              <span class="size-3.5 animate-spin rounded-full border-2 border-zinc-400/30 border-t-zinc-900"></span>
+              儲存中...
+            </span>
+          } @else {
+            {{ dialogMode() === 'create' ? '建立' : '更新' }}
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Delete Confirm Dialog -->
+@if (deleteTarget(); as target) {
+  <app-delete-confirm-dialog
+    entityType="Notion Source"
+    [entityTitle]="target.name"
+    [isDeleting]="isDeleting()"
+    (confirmed)="confirmDelete()"
+    (cancelled)="cancelDelete()"
+  />
+}

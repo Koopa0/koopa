@@ -62,6 +62,7 @@ Every code change follows one of three tiers:
 | `go-reviewer` | sonnet | project | Code review for Go idioms and conventions |
 | `db-reviewer` | sonnet | project | Review SQL, migrations, pgx usage, sqlc config |
 | `security-reviewer` | sonnet | project | Security review (OWASP, SQL injection, secrets) |
+| `review-code` | opus | project | **L2 quality gate** — paranoid 7-dimension deep review |
 | `perf-reviewer` | sonnet | — | Performance review (allocations, N+1, hot paths) |
 | `test-writer` | sonnet | — | Generate table-driven, bench, fuzz, integration tests |
 | `scaffold` | sonnet | — | Create new feature package in `internal/` |
@@ -85,7 +86,8 @@ Agents with `memory: project` persist learnings in `.claude/agent-memory/`.
 | `otel-guide` | `/otel-guide` | OpenTelemetry progressive adoption |
 | `http-server` | `/http-server` | net/http Go 1.22+ server patterns |
 | `migrations` | `/migrations` | golang-migrate patterns, safe migration SQL |
-| `go-project-init` | `/go-project-init` | Project initialization workflow |
+| `go-project-init` | `/go-project-init` | Project init: feature scaffold or new project bootstrap |
+| `manage-spec` | `/manage-spec` | Add, list, validate skills/rules/hooks/agents |
 | `ristretto` | `/ristretto` | In-memory cache patterns (single machine) |
 | `nats` | `/nats` | NATS Core + JetStream messaging patterns |
 | `error-patterns` | `/error-patterns` | Error handling: sentinels, wrapping, domain→HTTP mapping |
@@ -109,6 +111,7 @@ Agents with `memory: project` persist learnings in `.claude/agent-memory/`.
 | `go-reflection` | `/go-reflection` | When to avoid reflect, struct tags, DeepEqual |
 | `go-unsafe` | `/go-unsafe` | When to avoid unsafe/cgo, cost analysis, safe alternatives |
 | `go-compliance-test` | `/go-compliance-test` | AI compliance traps, detection commands, self-check checklist |
+| `devil-advocate` | `/devil-advocate` | Adversarial retroactive review: challenge existing decisions, find over-engineering, detect AI echo chamber drift |
 
 ## Infrastructure & Secrets
 

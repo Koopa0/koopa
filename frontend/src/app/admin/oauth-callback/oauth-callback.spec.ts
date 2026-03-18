@@ -33,7 +33,7 @@ describe('OAuthCallbackComponent', () => {
     const router = TestBed.inject(Router);
     const authService = TestBed.inject(AuthService);
     vi.spyOn(router, 'navigate');
-    vi.spyOn(window.history, 'replaceState').mockImplementation(() => {});
+    vi.spyOn(window.history, 'replaceState').mockReturnValue(undefined);
     return { fixture, router, authService };
   }
 

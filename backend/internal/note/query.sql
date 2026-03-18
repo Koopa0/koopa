@@ -1,0 +1,84 @@
+-- name: UpsertNote :one
+INSERT INTO obsidian_notes (
+    file_path, title, type, source, context, status, tags,
+    difficulty, leetcode_id, book, chapter, notion_task_id,
+    content_text, search_text, content_hash, synced_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, $12,
+    $13, $14, $15, now()
+)
+ON CONFLICT (file_path) DO UPDATE SET
+    title = EXCLUDED.title,
+    type = EXCLUDED.type,
+    source = EXCLUDED.source,
+    context = EXCLUDED.context,
+    status = EXCLUDED.status,
+    tags = EXCLUDED.tags,
+    difficulty = EXCLUDED.difficulty,
+    leetcode_id = EXCLUDED.leetcode_id,
+    book = EXCLUDED.book,
+    chapter = EXCLUDED.chapter,
+    notion_task_id = EXCLUDED.notion_task_id,
+    content_text = EXCLUDED.content_text,
+    search_text = EXCLUDED.search_text,
+    content_hash = EXCLUDED.content_hash,
+    synced_at = now()
+RETURNING *;
+
+-- name: NoteByFilePath :one
+SELECT * FROM obsidian_notes WHERE file_path = $1;
+
+-- name: NoteContentHash :one
+SELECT content_hash FROM obsidian_notes WHERE file_path = $1;
+
+-- name: ArchiveNote :exec
+UPDATE obsidian_notes SET status = 'archived', synced_at = now()
+WHERE file_path = $1 AND status != 'archived';
+
+-- name: SearchNotesByText :many
+-- Full-text search on obsidian_notes using the search_vector GIN index.
+-- Uses websearch_to_tsquery('simple', ...) for user-friendly query syntax.
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at,
+       ts_rank(search_vector, websearch_to_tsquery('simple', @query)) AS rank
+FROM obsidian_notes
+WHERE search_vector @@ websearch_to_tsquery('simple', @query)
+  AND (status IS NULL OR status != 'archived')
+ORDER BY rank DESC
+LIMIT @max_results;
+
+-- name: SearchNotesByFilters :many
+-- Filter notes by frontmatter fields. NULL parameters are ignored.
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at
+FROM obsidian_notes
+WHERE (status IS NULL OR status != 'archived')
+  AND (sqlc.narg('filter_type')::text IS NULL OR type = sqlc.narg('filter_type'))
+  AND (sqlc.narg('filter_source')::text IS NULL OR source = sqlc.narg('filter_source'))
+  AND (sqlc.narg('filter_context')::text IS NULL OR context = sqlc.narg('filter_context'))
+  AND (sqlc.narg('filter_book')::text IS NULL OR book = sqlc.narg('filter_book'))
+ORDER BY synced_at DESC
+LIMIT @max_results;
+
+-- name: NotesByTypeAndContext :many
+-- List notes by type, optionally filtered by context. Used for decision-log retrieval.
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at
+FROM obsidian_notes
+WHERE type = @note_type
+  AND (status IS NULL OR status != 'archived')
+  AND (sqlc.narg('filter_context')::text IS NULL OR context = sqlc.narg('filter_context'))
+ORDER BY synced_at DESC
+LIMIT @max_results;
+
+-- name: DeleteNoteLinksByNoteID :exec
+-- Remove all wikilink edges for a note before re-sync.
+DELETE FROM note_links WHERE source_note_id = $1;
+
+-- name: UpsertNoteLink :exec
+-- Insert or update a wikilink edge.
+INSERT INTO note_links (source_note_id, target_path, link_text)
+VALUES ($1, $2, $3)
+ON CONFLICT (source_note_id, target_path) DO UPDATE SET
+    link_text = EXCLUDED.link_text;

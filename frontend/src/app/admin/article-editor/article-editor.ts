@@ -39,10 +39,14 @@ import {
   Upload,
   Loader2,
   Trash2,
+  Sparkles,
+  Check,
+  RotateCcw,
 } from 'lucide-angular';
 import { ArticleService } from '../../core/services/article.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { UploadService } from '../../core/services/upload.service';
+import { FlowPolishService } from '../../core/services/flow-polish.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type {
   ContentStatus,
@@ -74,6 +78,7 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
   private readonly articleService = inject(ArticleService);
   private readonly markdownService = inject(MarkdownService);
   private readonly uploadService = inject(UploadService);
+  private readonly flowPolishService = inject(FlowPolishService);
   private readonly notificationService = inject(NotificationService);
 
   protected readonly isLoading = signal(false);
@@ -83,6 +88,12 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
   protected readonly selectedTab = signal<'edit' | 'preview' | 'split'>('edit');
   protected readonly isUploading = signal(false);
   private readonly isFormDirty = signal(false);
+
+  // ─── AI Polish ───
+  protected readonly isPolishing = signal(false);
+  protected readonly polishState = signal<'idle' | 'triggered' | 'ready' | 'error'>('idle');
+  protected readonly polishedBody = signal<string | null>(null);
+  protected readonly originalBody = signal<string | null>(null);
 
   /** Article ID stored in edit mode */
   private articleId: string | null = null;
@@ -123,6 +134,9 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
   protected readonly UploadIcon = Upload;
   protected readonly Loader2Icon = Loader2;
   protected readonly Trash2Icon = Trash2;
+  protected readonly SparklesIcon = Sparkles;
+  protected readonly CheckIcon = Check;
+  protected readonly RotateCcwIcon = RotateCcw;
 
   private readonly bodyTextarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('bodyTextarea');
 
@@ -456,6 +470,93 @@ Summarize your thoughts here...
 
   protected insertImage(): void {
     this.insertFormatting('![', '](url)', 'alt text');
+  }
+
+  // ─── AI Polish ───
+
+  protected triggerPolish(): void {
+    const contentId = this.articleId;
+    if (!contentId || this.isNewArticle()) {
+      this.notificationService.error('請先儲存文章再使用 AI 潤稿');
+      return;
+    }
+
+    this.isPolishing.set(true);
+    this.polishState.set('triggered');
+
+    this.flowPolishService.triggerPolish(contentId).subscribe({
+      next: () => {
+        this.notificationService.success('AI 潤稿已觸發，正在處理...');
+        this.pollPolishResult(contentId);
+      },
+      error: () => {
+        this.isPolishing.set(false);
+        this.polishState.set('error');
+        this.notificationService.error('觸發 AI 潤稿失敗');
+      },
+    });
+  }
+
+  private pollPolishResult(contentId: string): void {
+    const maxAttempts = 30;
+    let attempt = 0;
+    const poll = (): void => {
+      attempt++;
+      this.flowPolishService.getResult(contentId).subscribe({
+        next: (result) => {
+          this.originalBody.set(result.original_body);
+          this.polishedBody.set(result.polished_body);
+          this.polishState.set('ready');
+          this.isPolishing.set(false);
+          this.notificationService.success('AI 潤稿完成，請檢視結果');
+        },
+        error: () => {
+          if (attempt < maxAttempts) {
+            setTimeout(poll, 3000);
+          } else {
+            this.isPolishing.set(false);
+            this.polishState.set('error');
+            this.notificationService.error('AI 潤稿超時，請稍後重試');
+          }
+        },
+      });
+    };
+    setTimeout(poll, 3000);
+  }
+
+  protected applyPolish(): void {
+    const polished = this.polishedBody();
+    if (!polished) {
+      return;
+    }
+
+    this.articleForm.patchValue({ body: polished });
+    this.updatePreview(polished);
+    this.polishState.set('idle');
+    this.polishedBody.set(null);
+    this.originalBody.set(null);
+    this.notificationService.success('已套用潤稿結果');
+  }
+
+  protected approvePolish(): void {
+    const contentId = this.articleId;
+    if (!contentId) {
+      return;
+    }
+
+    this.flowPolishService.approve(contentId).subscribe({
+      next: () => {
+        this.applyPolish();
+        this.notificationService.success('潤稿已核准並儲存至後端');
+      },
+      error: () => this.notificationService.error('核准失敗'),
+    });
+  }
+
+  protected discardPolish(): void {
+    this.polishState.set('idle');
+    this.polishedBody.set(null);
+    this.originalBody.set(null);
   }
 
   protected cancel(): void {

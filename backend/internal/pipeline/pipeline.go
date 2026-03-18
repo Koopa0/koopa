@@ -3,9 +3,17 @@ package pipeline
 
 // PushEvent represents a GitHub push webhook payload.
 type PushEvent struct {
+	Before     string         `json:"before"` // SHA before push (all zeros for new branch)
+	After      string         `json:"after"`  // head SHA after push
 	Ref        string         `json:"ref"`
 	Repository PushRepository `json:"repository"`
+	Sender     PushSender     `json:"sender"`
 	Commits    []PushCommit   `json:"commits"`
+}
+
+// PushSender identifies the user who triggered the push.
+type PushSender struct {
+	Login string `json:"login"`
 }
 
 // PushRepository identifies the repository in a push event.
@@ -42,6 +50,22 @@ func (e PushEvent) ChangedFiles() []string {
 	}
 
 	return files
+}
+
+// PullRequestEvent represents a GitHub pull_request webhook payload.
+type PullRequestEvent struct {
+	Action      string          `json:"action"`
+	PullRequest PullRequestData `json:"pull_request"`
+	Repository  PushRepository  `json:"repository"`
+	Sender      PushSender      `json:"sender"`
+}
+
+// PullRequestData holds the pull request details from a webhook payload.
+type PullRequestData struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	Merged bool   `json:"merged"`
 }
 
 // RemovedFiles returns deduplicated file paths from all commits that were removed.

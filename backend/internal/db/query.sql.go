@@ -14,6 +14,33 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
+const activeProjectSlugsWithRepo = `-- name: ActiveProjectSlugsWithRepo :many
+SELECT slug FROM projects
+WHERE status IN ('in-progress', 'maintained') AND repo IS NOT NULL AND repo != ''
+ORDER BY title
+`
+
+// List slugs of active projects that have a linked repository.
+func (q *Queries) ActiveProjectSlugsWithRepo(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, activeProjectSlugsWithRepo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
@@ -82,6 +109,59 @@ type AddContentTopicParams struct {
 func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams) error {
 	_, err := q.db.Exec(ctx, addContentTopic, arg.ContentID, arg.TopicID)
 	return err
+}
+
+const aliasByCaseInsensitiveRawTag = `-- name: AliasByCaseInsensitiveRawTag :one
+SELECT id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at FROM tag_aliases WHERE LOWER(raw_tag) = LOWER($1) AND tag_id IS NOT NULL
+LIMIT 1
+`
+
+// Step 2: case-insensitive match on raw_tag with a mapped tag_id.
+func (q *Queries) AliasByCaseInsensitiveRawTag(ctx context.Context, rawTag string) (TagAlias, error) {
+	row := q.db.QueryRow(ctx, aliasByCaseInsensitiveRawTag, rawTag)
+	var i TagAlias
+	err := row.Scan(
+		&i.ID,
+		&i.RawTag,
+		&i.TagID,
+		&i.MatchMethod,
+		&i.Confirmed,
+		&i.ConfirmedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const aliasByExactRawTag = `-- name: AliasByExactRawTag :one
+SELECT id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at FROM tag_aliases WHERE raw_tag = $1 AND tag_id IS NOT NULL
+`
+
+// Step 1: exact match on raw_tag with a mapped tag_id.
+func (q *Queries) AliasByExactRawTag(ctx context.Context, rawTag string) (TagAlias, error) {
+	row := q.db.QueryRow(ctx, aliasByExactRawTag, rawTag)
+	var i TagAlias
+	err := row.Scan(
+		&i.ID,
+		&i.RawTag,
+		&i.TagID,
+		&i.MatchMethod,
+		&i.Confirmed,
+		&i.ConfirmedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const aliasCountByTagID = `-- name: AliasCountByTagID :one
+SELECT COUNT(*)::int AS count FROM tag_aliases WHERE tag_id = $1
+`
+
+// Admin: count aliases referencing a tag.
+func (q *Queries) AliasCountByTagID(ctx context.Context, tagID *uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, aliasCountByTagID, tagID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
 }
 
 const allPublishedSlugs = `-- name: AllPublishedSlugs :many
@@ -161,6 +241,16 @@ UPDATE contents SET status = 'archived', updated_at = now() WHERE id = $1
 
 func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, archiveContent, id)
+	return err
+}
+
+const archiveNote = `-- name: ArchiveNote :exec
+UPDATE obsidian_notes SET status = 'archived', synced_at = now()
+WHERE file_path = $1 AND status != 'archived'
+`
+
+func (q *Queries) ArchiveNote(ctx context.Context, filePath string) error {
+	_, err := q.db.Exec(ctx, archiveNote, filePath)
 	return err
 }
 
@@ -349,6 +439,49 @@ func (q *Queries) CollectedDataCount(ctx context.Context, status NullCollectedSt
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const confirmAlias = `-- name: ConfirmAlias :one
+UPDATE tag_aliases SET
+    confirmed = true,
+    confirmed_at = now()
+WHERE id = $1
+RETURNING id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at
+`
+
+// Admin: confirm an alias mapping.
+func (q *Queries) ConfirmAlias(ctx context.Context, id uuid.UUID) (TagAlias, error) {
+	row := q.db.QueryRow(ctx, confirmAlias, id)
+	var i TagAlias
+	err := row.Scan(
+		&i.ID,
+		&i.RawTag,
+		&i.TagID,
+		&i.MatchMethod,
+		&i.Confirmed,
+		&i.ConfirmedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
+DELETE FROM refresh_tokens
+WHERE token_hash = $1
+RETURNING id, user_id, token_hash, expires_at, created_at
+`
+
+func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, consumeRefreshToken, tokenHash)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const contentByID = `-- name: ContentByID :one
@@ -717,6 +850,53 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 	return i, err
 }
 
+const createEvent = `-- name: CreateEvent :one
+INSERT INTO activity_events (
+    source_id, timestamp, event_type, source,
+    project, repo, ref, title, body, metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)
+ON CONFLICT (source, event_type, source_id) WHERE source_id IS NOT NULL
+DO UPDATE SET id = activity_events.id
+RETURNING id
+`
+
+type CreateEventParams struct {
+	SourceID  *string         `json:"source_id"`
+	Timestamp time.Time       `json:"timestamp"`
+	EventType string          `json:"event_type"`
+	Source    string          `json:"source"`
+	Project   *string         `json:"project"`
+	Repo      *string         `json:"repo"`
+	Ref       *string         `json:"ref"`
+	Title     *string         `json:"title"`
+	Body      *string         `json:"body"`
+	Metadata  json.RawMessage `json:"metadata"`
+}
+
+// Insert an activity event. Dedup on (source, event_type, source_id) for events
+// with a non-null source_id; null-source_id events are always inserted.
+// Returns the event ID on both fresh insert and dedup hit.
+// The DO UPDATE SET id = id is a no-op that forces RETURNING to work on conflict.
+func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createEvent,
+		arg.SourceID,
+		arg.Timestamp,
+		arg.EventType,
+		arg.Source,
+		arg.Project,
+		arg.Repo,
+		arg.Ref,
+		arg.Title,
+		arg.Body,
+		arg.Metadata,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (url, name, schedule, topics, filter_config)
 VALUES ($1, $2, $3, $4, $5)
@@ -929,6 +1109,83 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Cre
 	return i, err
 }
 
+const createSource = `-- name: CreateSource :one
+INSERT INTO notion_sources (database_id, name, description, sync_mode, property_map, poll_interval)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, database_id, name, description, sync_mode, property_map,
+          poll_interval, enabled, last_synced_at, created_at, updated_at
+`
+
+type CreateSourceParams struct {
+	DatabaseID   string `json:"database_id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	SyncMode     string `json:"sync_mode"`
+	PropertyMap  []byte `json:"property_map"`
+	PollInterval string `json:"poll_interval"`
+}
+
+// Register a new Notion database source.
+func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (NotionSource, error) {
+	row := q.db.QueryRow(ctx, createSource,
+		arg.DatabaseID,
+		arg.Name,
+		arg.Description,
+		arg.SyncMode,
+		arg.PropertyMap,
+		arg.PollInterval,
+	)
+	var i NotionSource
+	err := row.Scan(
+		&i.ID,
+		&i.DatabaseID,
+		&i.Name,
+		&i.Description,
+		&i.SyncMode,
+		&i.PropertyMap,
+		&i.PollInterval,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createTag = `-- name: CreateTag :one
+INSERT INTO tags (slug, name, parent_id, description)
+VALUES ($1, $2, $3, $4)
+RETURNING id, slug, name, parent_id, description, created_at, updated_at
+`
+
+type CreateTagParams struct {
+	Slug        string     `json:"slug"`
+	Name        string     `json:"name"`
+	ParentID    *uuid.UUID `json:"parent_id"`
+	Description string     `json:"description"`
+}
+
+// Admin: create a canonical tag.
+func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, error) {
+	row := q.db.QueryRow(ctx, createTag,
+		arg.Slug,
+		arg.Name,
+		arg.ParentID,
+		arg.Description,
+	)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ParentID,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createTopic = `-- name: CreateTopic :one
 INSERT INTO topics (slug, name, description, icon, sort_order)
 VALUES ($1, $2, $3, $4, $5)
@@ -1042,6 +1299,16 @@ func (q *Queries) CurateCollected(ctx context.Context, arg CurateCollectedParams
 	return i, err
 }
 
+const deleteAlias = `-- name: DeleteAlias :exec
+DELETE FROM tag_aliases WHERE id = $1
+`
+
+// Admin: delete an alias.
+func (q *Queries) DeleteAlias(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAlias, id)
+	return err
+}
+
 const deleteContentTopics = `-- name: DeleteContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1
 `
@@ -1049,6 +1316,69 @@ DELETE FROM content_topics WHERE content_id = $1
 func (q *Queries) DeleteContentTopics(ctx context.Context, contentID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteContentTopics, contentID)
 	return err
+}
+
+const deleteDuplicateAliases = `-- name: DeleteDuplicateAliases :execrows
+DELETE FROM tag_aliases
+WHERE tag_aliases.tag_id = $1
+  AND tag_aliases.raw_tag IN (SELECT ta.raw_tag FROM tag_aliases ta WHERE ta.tag_id = $2)
+`
+
+type DeleteDuplicateAliasesParams struct {
+	TagID   *uuid.UUID `json:"tag_id"`
+	TagID_2 *uuid.UUID `json:"tag_id_2"`
+}
+
+// Merge: delete duplicate aliases before reassignment (source aliases whose raw_tag already exists under target).
+// $1 = source_id, $2 = target_id
+func (q *Queries) DeleteDuplicateAliases(ctx context.Context, arg DeleteDuplicateAliasesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDuplicateAliases, arg.TagID, arg.TagID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteDuplicateEventTags = `-- name: DeleteDuplicateEventTags :execrows
+DELETE FROM activity_event_tags
+WHERE activity_event_tags.tag_id = $1
+  AND activity_event_tags.event_id IN (SELECT aet.event_id FROM activity_event_tags aet WHERE aet.tag_id = $2)
+`
+
+type DeleteDuplicateEventTagsParams struct {
+	TagID   uuid.UUID `json:"tag_id"`
+	TagID_2 uuid.UUID `json:"tag_id_2"`
+}
+
+// Merge: delete duplicate event-tags before reassignment.
+// $1 = source_id, $2 = target_id
+func (q *Queries) DeleteDuplicateEventTags(ctx context.Context, arg DeleteDuplicateEventTagsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDuplicateEventTags, arg.TagID, arg.TagID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteDuplicateNoteTags = `-- name: DeleteDuplicateNoteTags :execrows
+DELETE FROM obsidian_note_tags
+WHERE obsidian_note_tags.tag_id = $1
+  AND obsidian_note_tags.note_id IN (SELECT ont.note_id FROM obsidian_note_tags ont WHERE ont.tag_id = $2)
+`
+
+type DeleteDuplicateNoteTagsParams struct {
+	TagID   uuid.UUID `json:"tag_id"`
+	TagID_2 uuid.UUID `json:"tag_id_2"`
+}
+
+// Merge: delete duplicate note-tags before reassignment.
+// $1 = source_id, $2 = target_id
+func (q *Queries) DeleteDuplicateNoteTags(ctx context.Context, arg DeleteDuplicateNoteTagsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDuplicateNoteTags, arg.TagID, arg.TagID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteExpiredTokens = `-- name: DeleteExpiredTokens :exec
@@ -1067,6 +1397,25 @@ DELETE FROM feeds WHERE id = $1
 
 func (q *Queries) DeleteFeed(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteFeed, id)
+	return err
+}
+
+const deleteNoteLinksByNoteID = `-- name: DeleteNoteLinksByNoteID :exec
+DELETE FROM note_links WHERE source_note_id = $1
+`
+
+// Remove all wikilink edges for a note before re-sync.
+func (q *Queries) DeleteNoteLinksByNoteID(ctx context.Context, sourceNoteID int64) error {
+	_, err := q.db.Exec(ctx, deleteNoteLinksByNoteID, sourceNoteID)
+	return err
+}
+
+const deleteNoteTagsByNoteID = `-- name: DeleteNoteTagsByNoteID :exec
+DELETE FROM obsidian_note_tags WHERE note_id = $1
+`
+
+func (q *Queries) DeleteNoteTagsByNoteID(ctx context.Context, noteID int64) error {
+	_, err := q.db.Exec(ctx, deleteNoteTagsByNoteID, noteID)
 	return err
 }
 
@@ -1089,6 +1438,29 @@ func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash string) erro
 	return err
 }
 
+const deleteSource = `-- name: DeleteSource :execrows
+DELETE FROM notion_sources WHERE id = $1
+`
+
+// Remove a Notion source registration. Returns rows affected.
+func (q *Queries) DeleteSource(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSource, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteTag = `-- name: DeleteTag :exec
+DELETE FROM tags WHERE id = $1
+`
+
+// Admin: delete a canonical tag (only if no aliases reference it).
+func (q *Queries) DeleteTag(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTag, id)
+	return err
+}
+
 const deleteTopic = `-- name: DeleteTopic :exec
 DELETE FROM topics WHERE id = $1
 `
@@ -1105,6 +1477,81 @@ DELETE FROM tracking_topics WHERE id = $1
 func (q *Queries) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTrackingTopic, id)
 	return err
+}
+
+const dueCount = `-- name: DueCount :one
+SELECT count(*) FROM spaced_intervals si
+JOIN obsidian_notes n ON n.id = si.note_id
+WHERE si.due_at <= now()
+  AND (n.status IS NULL OR n.status != 'archived')
+`
+
+func (q *Queries) DueCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, dueCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const dueIntervals = `-- name: DueIntervals :many
+SELECT si.note_id, si.easiness_factor, si.interval_days, si.repetitions,
+       si.last_quality, si.due_at, si.reviewed_at, si.created_at,
+       n.title, n.file_path, n.type, n.context
+FROM spaced_intervals si
+JOIN obsidian_notes n ON n.id = si.note_id
+WHERE si.due_at <= now()
+  AND (n.status IS NULL OR n.status != 'archived')
+ORDER BY si.due_at ASC
+LIMIT $1
+`
+
+type DueIntervalsRow struct {
+	NoteID         int64      `json:"note_id"`
+	EasinessFactor float64    `json:"easiness_factor"`
+	IntervalDays   int32      `json:"interval_days"`
+	Repetitions    int32      `json:"repetitions"`
+	LastQuality    *int32     `json:"last_quality"`
+	DueAt          time.Time  `json:"due_at"`
+	ReviewedAt     *time.Time `json:"reviewed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	Title          *string    `json:"title"`
+	FilePath       string     `json:"file_path"`
+	Type           *string    `json:"type"`
+	Context        *string    `json:"context"`
+}
+
+// List notes due for review, ordered by most overdue first.
+func (q *Queries) DueIntervals(ctx context.Context, maxResults int32) ([]DueIntervalsRow, error) {
+	rows, err := q.db.Query(ctx, dueIntervals, maxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DueIntervalsRow{}
+	for rows.Next() {
+		var i DueIntervalsRow
+		if err := rows.Scan(
+			&i.NoteID,
+			&i.EasinessFactor,
+			&i.IntervalDays,
+			&i.Repetitions,
+			&i.LastQuality,
+			&i.DueAt,
+			&i.ReviewedAt,
+			&i.CreatedAt,
+			&i.Title,
+			&i.FilePath,
+			&i.Type,
+			&i.Context,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const enabledFeeds = `-- name: EnabledFeeds :many
@@ -1183,6 +1630,161 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 			&i.FilterConfig,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const eventsByFilters = `-- name: EventsByFilters :many
+SELECT id, source_id, timestamp, event_type, source,
+       project, repo, ref, title, body, metadata, created_at
+FROM activity_events
+WHERE timestamp >= $1 AND timestamp < $2
+  AND ($3::text IS NULL OR source = $3)
+  AND ($4::text IS NULL OR project = $4)
+ORDER BY timestamp DESC
+LIMIT $5
+`
+
+type EventsByFiltersParams struct {
+	StartTime     time.Time `json:"start_time"`
+	EndTime       time.Time `json:"end_time"`
+	FilterSource  *string   `json:"filter_source"`
+	FilterProject *string   `json:"filter_project"`
+	MaxResults    int32     `json:"max_results"`
+}
+
+// List activity events within a time range with optional source and project filters.
+func (q *Queries) EventsByFilters(ctx context.Context, arg EventsByFiltersParams) ([]ActivityEvent, error) {
+	rows, err := q.db.Query(ctx, eventsByFilters,
+		arg.StartTime,
+		arg.EndTime,
+		arg.FilterSource,
+		arg.FilterProject,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ActivityEvent{}
+	for rows.Next() {
+		var i ActivityEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.Timestamp,
+			&i.EventType,
+			&i.Source,
+			&i.Project,
+			&i.Repo,
+			&i.Ref,
+			&i.Title,
+			&i.Body,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const eventsByProject = `-- name: EventsByProject :many
+SELECT id, source_id, timestamp, event_type, source,
+       project, repo, ref, title, body, metadata, created_at
+FROM activity_events
+WHERE project = $1
+ORDER BY timestamp DESC
+LIMIT $2
+`
+
+type EventsByProjectParams struct {
+	ProjectName *string `json:"project_name"`
+	MaxResults  int32   `json:"max_results"`
+}
+
+// List recent activity events for a specific project name.
+func (q *Queries) EventsByProject(ctx context.Context, arg EventsByProjectParams) ([]ActivityEvent, error) {
+	rows, err := q.db.Query(ctx, eventsByProject, arg.ProjectName, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ActivityEvent{}
+	for rows.Next() {
+		var i ActivityEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.Timestamp,
+			&i.EventType,
+			&i.Source,
+			&i.Project,
+			&i.Repo,
+			&i.Ref,
+			&i.Title,
+			&i.Body,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const eventsByTimeRange = `-- name: EventsByTimeRange :many
+SELECT id, source_id, timestamp, event_type, source,
+       project, repo, ref, title, body, metadata, created_at
+FROM activity_events
+WHERE timestamp >= $1 AND timestamp < $2
+ORDER BY timestamp DESC
+`
+
+type EventsByTimeRangeParams struct {
+	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time"`
+}
+
+// List activity events within a time range, ordered by timestamp descending.
+// Used by the daily-dev-log flow to gather a day's activity.
+func (q *Queries) EventsByTimeRange(ctx context.Context, arg EventsByTimeRangeParams) ([]ActivityEvent, error) {
+	rows, err := q.db.Query(ctx, eventsByTimeRange, arg.StartTime, arg.EndTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ActivityEvent{}
+	for rows.Next() {
+		var i ActivityEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.Timestamp,
+			&i.EventType,
+			&i.Source,
+			&i.Project,
+			&i.Repo,
+			&i.Ref,
+			&i.Title,
+			&i.Body,
+			&i.Metadata,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1500,6 +2102,139 @@ func (q *Queries) IncrementFeedFailure(ctx context.Context, arg IncrementFeedFai
 	return consecutive_failures, err
 }
 
+const insertAliasWithTag = `-- name: InsertAliasWithTag :exec
+INSERT INTO tag_aliases (raw_tag, tag_id, match_method, confirmed)
+VALUES ($1, $2, $3, false)
+ON CONFLICT (raw_tag) DO NOTHING
+`
+
+type InsertAliasWithTagParams struct {
+	RawTag      string     `json:"raw_tag"`
+	TagID       *uuid.UUID `json:"tag_id"`
+	MatchMethod string     `json:"match_method"`
+}
+
+// Record a resolved alias mapping (steps 2-3 auto-create alias for future exact match).
+func (q *Queries) InsertAliasWithTag(ctx context.Context, arg InsertAliasWithTagParams) error {
+	_, err := q.db.Exec(ctx, insertAliasWithTag, arg.RawTag, arg.TagID, arg.MatchMethod)
+	return err
+}
+
+const insertEventTag = `-- name: InsertEventTag :exec
+INSERT INTO activity_event_tags (event_id, tag_id)
+VALUES ($1, $2)
+ON CONFLICT (event_id, tag_id) DO NOTHING
+`
+
+type InsertEventTagParams struct {
+	EventID int64     `json:"event_id"`
+	TagID   uuid.UUID `json:"tag_id"`
+}
+
+// Link an activity event to a canonical tag. Silently ignores duplicates.
+func (q *Queries) InsertEventTag(ctx context.Context, arg InsertEventTagParams) error {
+	_, err := q.db.Exec(ctx, insertEventTag, arg.EventID, arg.TagID)
+	return err
+}
+
+const insertInterval = `-- name: InsertInterval :one
+INSERT INTO spaced_intervals (note_id, easiness_factor, interval_days, repetitions, due_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (note_id) DO NOTHING
+RETURNING note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at, created_at
+`
+
+type InsertIntervalParams struct {
+	NoteID         int64     `json:"note_id"`
+	EasinessFactor float64   `json:"easiness_factor"`
+	IntervalDays   int32     `json:"interval_days"`
+	Repetitions    int32     `json:"repetitions"`
+	DueAt          time.Time `json:"due_at"`
+}
+
+// Insert a new interval; returns nothing if the note is already enrolled.
+func (q *Queries) InsertInterval(ctx context.Context, arg InsertIntervalParams) (SpacedInterval, error) {
+	row := q.db.QueryRow(ctx, insertInterval,
+		arg.NoteID,
+		arg.EasinessFactor,
+		arg.IntervalDays,
+		arg.Repetitions,
+		arg.DueAt,
+	)
+	var i SpacedInterval
+	err := row.Scan(
+		&i.NoteID,
+		&i.EasinessFactor,
+		&i.IntervalDays,
+		&i.Repetitions,
+		&i.LastQuality,
+		&i.DueAt,
+		&i.ReviewedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertNoteTag = `-- name: InsertNoteTag :exec
+INSERT INTO obsidian_note_tags (note_id, tag_id)
+VALUES ($1, $2)
+ON CONFLICT (note_id, tag_id) DO NOTHING
+`
+
+type InsertNoteTagParams struct {
+	NoteID int64     `json:"note_id"`
+	TagID  uuid.UUID `json:"tag_id"`
+}
+
+func (q *Queries) InsertNoteTag(ctx context.Context, arg InsertNoteTagParams) error {
+	_, err := q.db.Exec(ctx, insertNoteTag, arg.NoteID, arg.TagID)
+	return err
+}
+
+const insertUnmappedAlias = `-- name: InsertUnmappedAlias :exec
+INSERT INTO tag_aliases (raw_tag, tag_id, match_method, confirmed)
+VALUES ($1, NULL, 'unmapped', false)
+ON CONFLICT (raw_tag) DO NOTHING
+`
+
+// Step 4: record unmapped raw tag for admin review.
+func (q *Queries) InsertUnmappedAlias(ctx context.Context, rawTag string) error {
+	_, err := q.db.Exec(ctx, insertUnmappedAlias, rawTag)
+	return err
+}
+
+const intervalByNoteID = `-- name: IntervalByNoteID :one
+SELECT note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at, created_at FROM spaced_intervals WHERE note_id = $1
+`
+
+func (q *Queries) IntervalByNoteID(ctx context.Context, noteID int64) (SpacedInterval, error) {
+	row := q.db.QueryRow(ctx, intervalByNoteID, noteID)
+	var i SpacedInterval
+	err := row.Scan(
+		&i.NoteID,
+		&i.EasinessFactor,
+		&i.IntervalDays,
+		&i.Repetitions,
+		&i.LastQuality,
+		&i.DueAt,
+		&i.ReviewedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const isAliasRejected = `-- name: IsAliasRejected :one
+SELECT EXISTS(SELECT 1 FROM tag_aliases WHERE raw_tag = $1 AND match_method = 'rejected') AS rejected
+`
+
+// Check if a raw_tag has been explicitly rejected by admin.
+func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, error) {
+	row := q.db.QueryRow(ctx, isAliasRejected, rawTag)
+	var rejected bool
+	err := row.Scan(&rejected)
+	return rejected, err
+}
+
 const latestCompletedRunByContentAndFlow = `-- name: LatestCompletedRunByContentAndFlow :one
 SELECT id, flow_name, content_id, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
 FROM flow_runs
@@ -1531,6 +2266,292 @@ func (q *Queries) LatestCompletedRunByContentAndFlow(ctx context.Context, arg La
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listAliases = `-- name: ListAliases :many
+SELECT id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at FROM tag_aliases ORDER BY created_at DESC
+`
+
+// Admin: list aliases with optional unmapped filter.
+func (q *Queries) ListAliases(ctx context.Context) ([]TagAlias, error) {
+	rows, err := q.db.Query(ctx, listAliases)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TagAlias{}
+	for rows.Next() {
+		var i TagAlias
+		if err := rows.Scan(
+			&i.ID,
+			&i.RawTag,
+			&i.TagID,
+			&i.MatchMethod,
+			&i.Confirmed,
+			&i.ConfirmedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTags = `-- name: ListTags :many
+SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags ORDER BY name
+`
+
+// Admin: list all canonical tags ordered by name.
+func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
+	rows, err := q.db.Query(ctx, listTags)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Tag{}
+	for rows.Next() {
+		var i Tag
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.ParentID,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnmappedAliases = `-- name: ListUnmappedAliases :many
+SELECT id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at FROM tag_aliases WHERE tag_id IS NULL ORDER BY created_at DESC
+`
+
+// Admin: list only unmapped aliases (tag_id IS NULL).
+func (q *Queries) ListUnmappedAliases(ctx context.Context) ([]TagAlias, error) {
+	rows, err := q.db.Query(ctx, listUnmappedAliases)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TagAlias{}
+	for rows.Next() {
+		var i TagAlias
+		if err := rows.Scan(
+			&i.ID,
+			&i.RawTag,
+			&i.TagID,
+			&i.MatchMethod,
+			&i.Confirmed,
+			&i.ConfirmedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const mapAlias = `-- name: MapAlias :one
+UPDATE tag_aliases SET
+    tag_id = $2,
+    match_method = 'manual',
+    confirmed = true,
+    confirmed_at = now()
+WHERE id = $1
+RETURNING id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at
+`
+
+type MapAliasParams struct {
+	ID    uuid.UUID  `json:"id"`
+	TagID *uuid.UUID `json:"tag_id"`
+}
+
+// Admin: map an alias to a canonical tag.
+func (q *Queries) MapAlias(ctx context.Context, arg MapAliasParams) (TagAlias, error) {
+	row := q.db.QueryRow(ctx, mapAlias, arg.ID, arg.TagID)
+	var i TagAlias
+	err := row.Scan(
+		&i.ID,
+		&i.RawTag,
+		&i.TagID,
+		&i.MatchMethod,
+		&i.Confirmed,
+		&i.ConfirmedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const noteByFilePath = `-- name: NoteByFilePath :one
+SELECT id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, search_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
+`
+
+func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (ObsidianNote, error) {
+	row := q.db.QueryRow(ctx, noteByFilePath, filePath)
+	var i ObsidianNote
+	err := row.Scan(
+		&i.ID,
+		&i.FilePath,
+		&i.Title,
+		&i.Type,
+		&i.Source,
+		&i.Context,
+		&i.Status,
+		&i.Tags,
+		&i.Difficulty,
+		&i.LeetcodeID,
+		&i.Book,
+		&i.Chapter,
+		&i.NotionTaskID,
+		&i.ContentText,
+		&i.SearchText,
+		&i.ContentHash,
+		&i.Embedding,
+		&i.SearchVector,
+		&i.GitCreatedAt,
+		&i.GitUpdatedAt,
+		&i.SyncedAt,
+	)
+	return i, err
+}
+
+const noteContentHash = `-- name: NoteContentHash :one
+SELECT content_hash FROM obsidian_notes WHERE file_path = $1
+`
+
+func (q *Queries) NoteContentHash(ctx context.Context, filePath string) (*string, error) {
+	row := q.db.QueryRow(ctx, noteContentHash, filePath)
+	var content_hash *string
+	err := row.Scan(&content_hash)
+	return content_hash, err
+}
+
+const noteTagCountByTagID = `-- name: NoteTagCountByTagID :one
+SELECT COUNT(*)::int AS count FROM obsidian_note_tags WHERE tag_id = $1
+`
+
+// Admin: count note-tag junctions referencing a tag.
+func (q *Queries) NoteTagCountByTagID(ctx context.Context, tagID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, noteTagCountByTagID, tagID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const notesByTypeAndContext = `-- name: NotesByTypeAndContext :many
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at
+FROM obsidian_notes
+WHERE type = $1
+  AND (status IS NULL OR status != 'archived')
+  AND ($2::text IS NULL OR context = $2)
+ORDER BY synced_at DESC
+LIMIT $3
+`
+
+type NotesByTypeAndContextParams struct {
+	NoteType      *string `json:"note_type"`
+	FilterContext *string `json:"filter_context"`
+	MaxResults    int32   `json:"max_results"`
+}
+
+type NotesByTypeAndContextRow struct {
+	ID          int64           `json:"id"`
+	FilePath    string          `json:"file_path"`
+	Title       *string         `json:"title"`
+	Type        *string         `json:"type"`
+	Source      *string         `json:"source"`
+	Context     *string         `json:"context"`
+	Status      *string         `json:"status"`
+	Tags        json.RawMessage `json:"tags"`
+	Difficulty  *string         `json:"difficulty"`
+	Book        *string         `json:"book"`
+	Chapter     *string         `json:"chapter"`
+	ContentText *string         `json:"content_text"`
+	SyncedAt    *time.Time      `json:"synced_at"`
+}
+
+// List notes by type, optionally filtered by context. Used for decision-log retrieval.
+func (q *Queries) NotesByTypeAndContext(ctx context.Context, arg NotesByTypeAndContextParams) ([]NotesByTypeAndContextRow, error) {
+	rows, err := q.db.Query(ctx, notesByTypeAndContext, arg.NoteType, arg.FilterContext, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotesByTypeAndContextRow{}
+	for rows.Next() {
+		var i NotesByTypeAndContextRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FilePath,
+			&i.Title,
+			&i.Type,
+			&i.Source,
+			&i.Context,
+			&i.Status,
+			&i.Tags,
+			&i.Difficulty,
+			&i.Book,
+			&i.Chapter,
+			&i.ContentText,
+			&i.SyncedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const notesWithRawTags = `-- name: NotesWithRawTags :many
+SELECT id, tags FROM obsidian_notes
+WHERE tags IS NOT NULL AND tags::text != 'null' AND tags::text != '[]'
+ORDER BY id
+`
+
+type NotesWithRawTagsRow struct {
+	ID   int64           `json:"id"`
+	Tags json.RawMessage `json:"tags"`
+}
+
+// Backfill: list notes that have raw tags in JSONB.
+func (q *Queries) NotesWithRawTags(ctx context.Context) ([]NotesWithRawTagsRow, error) {
+	rows, err := q.db.Query(ctx, notesWithRawTags)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotesWithRawTagsRow{}
+	for rows.Next() {
+		var i NotesWithRawTagsRow
+		if err := rows.Scan(&i.ID, &i.Tags); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const notionGoalPageIDs = `-- name: NotionGoalPageIDs :many
@@ -1692,6 +2713,51 @@ func (q *Queries) PendingRunExists(ctx context.Context, arg PendingRunExistsPara
 	return exists, err
 }
 
+const projectByAlias = `-- name: ProjectByAlias :one
+SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
+       p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
+       p.results, p.github_url, p.live_url, p.featured, p.public, p.sort_order,
+       p.status, p.notion_page_id, p.repo, p.area, p.deadline, p.last_activity_at,
+       p.created_at, p.updated_at
+FROM project_aliases pa
+JOIN projects p ON LOWER(p.title) = LOWER(pa.canonical_name)
+WHERE LOWER(pa.alias) = LOWER($1)
+`
+
+// Resolve a project alias to a project via the project_aliases table.
+func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, error) {
+	row := q.db.QueryRow(ctx, projectByAlias, alias)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.LongDescription,
+		&i.Role,
+		&i.TechStack,
+		&i.Highlights,
+		&i.Problem,
+		&i.Solution,
+		&i.Architecture,
+		&i.Results,
+		&i.GithubUrl,
+		&i.LiveUrl,
+		&i.Featured,
+		&i.Public,
+		&i.SortOrder,
+		&i.Status,
+		&i.NotionPageID,
+		&i.Repo,
+		&i.Area,
+		&i.Deadline,
+		&i.LastActivityAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const projectByRepo = `-- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
@@ -1772,6 +2838,18 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const projectSlugByNotionPageID = `-- name: ProjectSlugByNotionPageID :one
+SELECT slug FROM projects WHERE notion_page_id = $1
+`
+
+// Resolve a Notion page ID to a project slug.
+func (q *Queries) ProjectSlugByNotionPageID(ctx context.Context, notionPageID *string) (string, error) {
+	row := q.db.QueryRow(ctx, projectSlugByNotionPageID, notionPageID)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
 }
 
 const projects = `-- name: Projects :many
@@ -2219,6 +3297,63 @@ func (q *Queries) PublishedWithEmbeddings(ctx context.Context) ([]PublishedWithE
 	return items, nil
 }
 
+const reassignAliases = `-- name: ReassignAliases :execrows
+UPDATE tag_aliases SET tag_id = $1 WHERE tag_aliases.tag_id = $2
+`
+
+type ReassignAliasesParams struct {
+	TagID   *uuid.UUID `json:"tag_id"`
+	TagID_2 *uuid.UUID `json:"tag_id_2"`
+}
+
+// Merge: reassign remaining aliases from source to target.
+// $1 = target_id, $2 = source_id
+func (q *Queries) ReassignAliases(ctx context.Context, arg ReassignAliasesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reassignAliases, arg.TagID, arg.TagID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reassignEventTags = `-- name: ReassignEventTags :execrows
+UPDATE activity_event_tags SET tag_id = $1 WHERE activity_event_tags.tag_id = $2
+`
+
+type ReassignEventTagsParams struct {
+	TagID   uuid.UUID `json:"tag_id"`
+	TagID_2 uuid.UUID `json:"tag_id_2"`
+}
+
+// Merge: reassign remaining event-tags from source to target.
+// $1 = target_id, $2 = source_id
+func (q *Queries) ReassignEventTags(ctx context.Context, arg ReassignEventTagsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reassignEventTags, arg.TagID, arg.TagID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reassignNoteTags = `-- name: ReassignNoteTags :execrows
+UPDATE obsidian_note_tags SET tag_id = $1 WHERE obsidian_note_tags.tag_id = $2
+`
+
+type ReassignNoteTagsParams struct {
+	TagID   uuid.UUID `json:"tag_id"`
+	TagID_2 uuid.UUID `json:"tag_id_2"`
+}
+
+// Merge: reassign remaining note-tags from source to target.
+// $1 = target_id, $2 = source_id
+func (q *Queries) ReassignNoteTags(ctx context.Context, arg ReassignNoteTagsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reassignNoteTags, arg.TagID, arg.TagID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const refreshTokenByHash = `-- name: RefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens
@@ -2233,6 +3368,32 @@ func (q *Queries) RefreshTokenByHash(ctx context.Context, tokenHash string) (Ref
 		&i.UserID,
 		&i.TokenHash,
 		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const rejectAlias = `-- name: RejectAlias :one
+UPDATE tag_aliases SET
+    tag_id = NULL,
+    match_method = 'rejected',
+    confirmed = false,
+    confirmed_at = NULL
+WHERE id = $1
+RETURNING id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at
+`
+
+// Admin: reject an alias — set tag_id to NULL and match_method to 'rejected'.
+func (q *Queries) RejectAlias(ctx context.Context, id uuid.UUID) (TagAlias, error) {
+	row := q.db.QueryRow(ctx, rejectAlias, id)
+	var i TagAlias
+	err := row.Scan(
+		&i.ID,
+		&i.RawTag,
+		&i.TagID,
+		&i.MatchMethod,
+		&i.Confirmed,
+		&i.ConfirmedAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -2438,6 +3599,154 @@ func (q *Queries) SearchContentsCount(ctx context.Context, websearchToTsquery st
 	return count, err
 }
 
+const searchNotesByFilters = `-- name: SearchNotesByFilters :many
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at
+FROM obsidian_notes
+WHERE (status IS NULL OR status != 'archived')
+  AND ($1::text IS NULL OR type = $1)
+  AND ($2::text IS NULL OR source = $2)
+  AND ($3::text IS NULL OR context = $3)
+  AND ($4::text IS NULL OR book = $4)
+ORDER BY synced_at DESC
+LIMIT $5
+`
+
+type SearchNotesByFiltersParams struct {
+	FilterType    *string `json:"filter_type"`
+	FilterSource  *string `json:"filter_source"`
+	FilterContext *string `json:"filter_context"`
+	FilterBook    *string `json:"filter_book"`
+	MaxResults    int32   `json:"max_results"`
+}
+
+type SearchNotesByFiltersRow struct {
+	ID          int64           `json:"id"`
+	FilePath    string          `json:"file_path"`
+	Title       *string         `json:"title"`
+	Type        *string         `json:"type"`
+	Source      *string         `json:"source"`
+	Context     *string         `json:"context"`
+	Status      *string         `json:"status"`
+	Tags        json.RawMessage `json:"tags"`
+	Difficulty  *string         `json:"difficulty"`
+	Book        *string         `json:"book"`
+	Chapter     *string         `json:"chapter"`
+	ContentText *string         `json:"content_text"`
+	SyncedAt    *time.Time      `json:"synced_at"`
+}
+
+// Filter notes by frontmatter fields. NULL parameters are ignored.
+func (q *Queries) SearchNotesByFilters(ctx context.Context, arg SearchNotesByFiltersParams) ([]SearchNotesByFiltersRow, error) {
+	rows, err := q.db.Query(ctx, searchNotesByFilters,
+		arg.FilterType,
+		arg.FilterSource,
+		arg.FilterContext,
+		arg.FilterBook,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchNotesByFiltersRow{}
+	for rows.Next() {
+		var i SearchNotesByFiltersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FilePath,
+			&i.Title,
+			&i.Type,
+			&i.Source,
+			&i.Context,
+			&i.Status,
+			&i.Tags,
+			&i.Difficulty,
+			&i.Book,
+			&i.Chapter,
+			&i.ContentText,
+			&i.SyncedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchNotesByText = `-- name: SearchNotesByText :many
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at,
+       ts_rank(search_vector, websearch_to_tsquery('simple', $1)) AS rank
+FROM obsidian_notes
+WHERE search_vector @@ websearch_to_tsquery('simple', $1)
+  AND (status IS NULL OR status != 'archived')
+ORDER BY rank DESC
+LIMIT $2
+`
+
+type SearchNotesByTextParams struct {
+	Query      string `json:"query"`
+	MaxResults int32  `json:"max_results"`
+}
+
+type SearchNotesByTextRow struct {
+	ID          int64           `json:"id"`
+	FilePath    string          `json:"file_path"`
+	Title       *string         `json:"title"`
+	Type        *string         `json:"type"`
+	Source      *string         `json:"source"`
+	Context     *string         `json:"context"`
+	Status      *string         `json:"status"`
+	Tags        json.RawMessage `json:"tags"`
+	Difficulty  *string         `json:"difficulty"`
+	Book        *string         `json:"book"`
+	Chapter     *string         `json:"chapter"`
+	ContentText *string         `json:"content_text"`
+	SyncedAt    *time.Time      `json:"synced_at"`
+	Rank        float32         `json:"rank"`
+}
+
+// Full-text search on obsidian_notes using the search_vector GIN index.
+// Uses websearch_to_tsquery('simple', ...) for user-friendly query syntax.
+func (q *Queries) SearchNotesByText(ctx context.Context, arg SearchNotesByTextParams) ([]SearchNotesByTextRow, error) {
+	rows, err := q.db.Query(ctx, searchNotesByText, arg.Query, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchNotesByTextRow{}
+	for rows.Next() {
+		var i SearchNotesByTextRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FilePath,
+			&i.Title,
+			&i.Type,
+			&i.Source,
+			&i.Context,
+			&i.Status,
+			&i.Tags,
+			&i.Difficulty,
+			&i.Book,
+			&i.Chapter,
+			&i.ContentText,
+			&i.SyncedAt,
+			&i.Rank,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const similarContents = `-- name: SimilarContents :many
 SELECT c.id, c.slug, c.title, c.excerpt, c.type,
        (1 - (c.embedding <=> $1::vector))::float8 AS similarity
@@ -2489,6 +3798,141 @@ func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const sourceByID = `-- name: SourceByID :one
+SELECT id, database_id, name, description, sync_mode, property_map,
+       poll_interval, enabled, last_synced_at, created_at, updated_at
+FROM notion_sources WHERE id = $1
+`
+
+// Get a single Notion source by primary key.
+func (q *Queries) SourceByID(ctx context.Context, id uuid.UUID) (NotionSource, error) {
+	row := q.db.QueryRow(ctx, sourceByID, id)
+	var i NotionSource
+	err := row.Scan(
+		&i.ID,
+		&i.DatabaseID,
+		&i.Name,
+		&i.Description,
+		&i.SyncMode,
+		&i.PropertyMap,
+		&i.PollInterval,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const sources = `-- name: Sources :many
+SELECT id, database_id, name, description, sync_mode, property_map,
+       poll_interval, enabled, last_synced_at, created_at, updated_at
+FROM notion_sources
+ORDER BY created_at DESC
+`
+
+// List all registered Notion sources, newest first.
+func (q *Queries) Sources(ctx context.Context) ([]NotionSource, error) {
+	rows, err := q.db.Query(ctx, sources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotionSource{}
+	for rows.Next() {
+		var i NotionSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.DatabaseID,
+			&i.Name,
+			&i.Description,
+			&i.SyncMode,
+			&i.PropertyMap,
+			&i.PollInterval,
+			&i.Enabled,
+			&i.LastSyncedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const tagByID = `-- name: TagByID :one
+SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags WHERE id = $1
+`
+
+// Admin: get a single tag by ID.
+func (q *Queries) TagByID(ctx context.Context, id uuid.UUID) (Tag, error) {
+	row := q.db.QueryRow(ctx, tagByID, id)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ParentID,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const tagBySlug = `-- name: TagBySlug :one
+SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags WHERE slug = $1
+`
+
+// Step 3: match canonical tag by slug.
+func (q *Queries) TagBySlug(ctx context.Context, slug string) (Tag, error) {
+	row := q.db.QueryRow(ctx, tagBySlug, slug)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ParentID,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const toggleSourceEnabled = `-- name: ToggleSourceEnabled :one
+UPDATE notion_sources SET
+    enabled = NOT enabled,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, database_id, name, description, sync_mode, property_map,
+          poll_interval, enabled, last_synced_at, created_at, updated_at
+`
+
+// Flip the enabled flag on a source.
+func (q *Queries) ToggleSourceEnabled(ctx context.Context, id uuid.UUID) (NotionSource, error) {
+	row := q.db.QueryRow(ctx, toggleSourceEnabled, id)
+	var i NotionSource
+	err := row.Scan(
+		&i.ID,
+		&i.DatabaseID,
+		&i.Name,
+		&i.Description,
+		&i.SyncMode,
+		&i.PropertyMap,
+		&i.PollInterval,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const topicBySlug = `-- name: TopicBySlug :one
@@ -3079,6 +4523,112 @@ func (q *Queries) UpdateProjectLastActivity(ctx context.Context, notionPageID *s
 	return err
 }
 
+const updateSource = `-- name: UpdateSource :one
+UPDATE notion_sources SET
+    name = COALESCE($1, name),
+    description = COALESCE($2, description),
+    sync_mode = COALESCE($3, sync_mode),
+    property_map = COALESCE($4, property_map),
+    poll_interval = COALESCE($5, poll_interval),
+    enabled = COALESCE($6, enabled),
+    updated_at = now()
+WHERE id = $7
+RETURNING id, database_id, name, description, sync_mode, property_map,
+          poll_interval, enabled, last_synced_at, created_at, updated_at
+`
+
+type UpdateSourceParams struct {
+	Name         *string         `json:"name"`
+	Description  *string         `json:"description"`
+	SyncMode     *string         `json:"sync_mode"`
+	PropertyMap  json.RawMessage `json:"property_map"`
+	PollInterval *string         `json:"poll_interval"`
+	Enabled      *bool           `json:"enabled"`
+	ID           uuid.UUID       `json:"id"`
+}
+
+// Update a source's mutable fields. Only non-NULL args override.
+func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (NotionSource, error) {
+	row := q.db.QueryRow(ctx, updateSource,
+		arg.Name,
+		arg.Description,
+		arg.SyncMode,
+		arg.PropertyMap,
+		arg.PollInterval,
+		arg.Enabled,
+		arg.ID,
+	)
+	var i NotionSource
+	err := row.Scan(
+		&i.ID,
+		&i.DatabaseID,
+		&i.Name,
+		&i.Description,
+		&i.SyncMode,
+		&i.PropertyMap,
+		&i.PollInterval,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSourceLastSynced = `-- name: UpdateSourceLastSynced :exec
+UPDATE notion_sources SET
+    last_synced_at = now(),
+    updated_at = now()
+WHERE id = $1
+`
+
+// Record a successful sync timestamp.
+func (q *Queries) UpdateSourceLastSynced(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, updateSourceLastSynced, id)
+	return err
+}
+
+const updateTag = `-- name: UpdateTag :one
+UPDATE tags SET
+    slug = COALESCE($2, slug),
+    name = COALESCE($3, name),
+    parent_id = $4,
+    description = COALESCE($5, description),
+    updated_at = now()
+WHERE id = $1
+RETURNING id, slug, name, parent_id, description, created_at, updated_at
+`
+
+type UpdateTagParams struct {
+	ID          uuid.UUID  `json:"id"`
+	Slug        *string    `json:"slug"`
+	Name        *string    `json:"name"`
+	ParentID    *uuid.UUID `json:"parent_id"`
+	Description *string    `json:"description"`
+}
+
+// Admin: update a canonical tag.
+func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error) {
+	row := q.db.QueryRow(ctx, updateTag,
+		arg.ID,
+		arg.Slug,
+		arg.Name,
+		arg.ParentID,
+		arg.Description,
+	)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ParentID,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateTopic = `-- name: UpdateTopic :one
 UPDATE topics SET
     slug = COALESCE($2, slug),
@@ -3216,6 +4766,164 @@ func (q *Queries) UpsertGoalByNotionPageID(ctx context.Context, arg UpsertGoalBy
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const upsertInterval = `-- name: UpsertInterval :one
+INSERT INTO spaced_intervals (note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (note_id) DO UPDATE SET
+    easiness_factor = EXCLUDED.easiness_factor,
+    interval_days = EXCLUDED.interval_days,
+    repetitions = EXCLUDED.repetitions,
+    last_quality = EXCLUDED.last_quality,
+    due_at = EXCLUDED.due_at,
+    reviewed_at = EXCLUDED.reviewed_at
+RETURNING note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at, created_at
+`
+
+type UpsertIntervalParams struct {
+	NoteID         int64      `json:"note_id"`
+	EasinessFactor float64    `json:"easiness_factor"`
+	IntervalDays   int32      `json:"interval_days"`
+	Repetitions    int32      `json:"repetitions"`
+	LastQuality    *int32     `json:"last_quality"`
+	DueAt          time.Time  `json:"due_at"`
+	ReviewedAt     *time.Time `json:"reviewed_at"`
+}
+
+func (q *Queries) UpsertInterval(ctx context.Context, arg UpsertIntervalParams) (SpacedInterval, error) {
+	row := q.db.QueryRow(ctx, upsertInterval,
+		arg.NoteID,
+		arg.EasinessFactor,
+		arg.IntervalDays,
+		arg.Repetitions,
+		arg.LastQuality,
+		arg.DueAt,
+		arg.ReviewedAt,
+	)
+	var i SpacedInterval
+	err := row.Scan(
+		&i.NoteID,
+		&i.EasinessFactor,
+		&i.IntervalDays,
+		&i.Repetitions,
+		&i.LastQuality,
+		&i.DueAt,
+		&i.ReviewedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertNote = `-- name: UpsertNote :one
+INSERT INTO obsidian_notes (
+    file_path, title, type, source, context, status, tags,
+    difficulty, leetcode_id, book, chapter, notion_task_id,
+    content_text, search_text, content_hash, synced_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, $12,
+    $13, $14, $15, now()
+)
+ON CONFLICT (file_path) DO UPDATE SET
+    title = EXCLUDED.title,
+    type = EXCLUDED.type,
+    source = EXCLUDED.source,
+    context = EXCLUDED.context,
+    status = EXCLUDED.status,
+    tags = EXCLUDED.tags,
+    difficulty = EXCLUDED.difficulty,
+    leetcode_id = EXCLUDED.leetcode_id,
+    book = EXCLUDED.book,
+    chapter = EXCLUDED.chapter,
+    notion_task_id = EXCLUDED.notion_task_id,
+    content_text = EXCLUDED.content_text,
+    search_text = EXCLUDED.search_text,
+    content_hash = EXCLUDED.content_hash,
+    synced_at = now()
+RETURNING id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, search_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at
+`
+
+type UpsertNoteParams struct {
+	FilePath     string          `json:"file_path"`
+	Title        *string         `json:"title"`
+	Type         *string         `json:"type"`
+	Source       *string         `json:"source"`
+	Context      *string         `json:"context"`
+	Status       *string         `json:"status"`
+	Tags         json.RawMessage `json:"tags"`
+	Difficulty   *string         `json:"difficulty"`
+	LeetcodeID   *int32          `json:"leetcode_id"`
+	Book         *string         `json:"book"`
+	Chapter      *string         `json:"chapter"`
+	NotionTaskID *string         `json:"notion_task_id"`
+	ContentText  *string         `json:"content_text"`
+	SearchText   *string         `json:"search_text"`
+	ContentHash  *string         `json:"content_hash"`
+}
+
+func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (ObsidianNote, error) {
+	row := q.db.QueryRow(ctx, upsertNote,
+		arg.FilePath,
+		arg.Title,
+		arg.Type,
+		arg.Source,
+		arg.Context,
+		arg.Status,
+		arg.Tags,
+		arg.Difficulty,
+		arg.LeetcodeID,
+		arg.Book,
+		arg.Chapter,
+		arg.NotionTaskID,
+		arg.ContentText,
+		arg.SearchText,
+		arg.ContentHash,
+	)
+	var i ObsidianNote
+	err := row.Scan(
+		&i.ID,
+		&i.FilePath,
+		&i.Title,
+		&i.Type,
+		&i.Source,
+		&i.Context,
+		&i.Status,
+		&i.Tags,
+		&i.Difficulty,
+		&i.LeetcodeID,
+		&i.Book,
+		&i.Chapter,
+		&i.NotionTaskID,
+		&i.ContentText,
+		&i.SearchText,
+		&i.ContentHash,
+		&i.Embedding,
+		&i.SearchVector,
+		&i.GitCreatedAt,
+		&i.GitUpdatedAt,
+		&i.SyncedAt,
+	)
+	return i, err
+}
+
+const upsertNoteLink = `-- name: UpsertNoteLink :exec
+INSERT INTO note_links (source_note_id, target_path, link_text)
+VALUES ($1, $2, $3)
+ON CONFLICT (source_note_id, target_path) DO UPDATE SET
+    link_text = EXCLUDED.link_text
+`
+
+type UpsertNoteLinkParams struct {
+	SourceNoteID int64   `json:"source_note_id"`
+	TargetPath   string  `json:"target_path"`
+	LinkText     *string `json:"link_text"`
+}
+
+// Insert or update a wikilink edge.
+func (q *Queries) UpsertNoteLink(ctx context.Context, arg UpsertNoteLinkParams) error {
+	_, err := q.db.Exec(ctx, upsertNoteLink, arg.SourceNoteID, arg.TargetPath, arg.LinkText)
+	return err
 }
 
 const upsertProjectByNotionPageID = `-- name: UpsertProjectByNotionPageID :one

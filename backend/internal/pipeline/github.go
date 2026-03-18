@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/koopa0/blog-backend/internal/activity"
 )
 
 // Commit represents a single GitHub commit.
@@ -123,6 +126,73 @@ func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, erro
 		}
 	}
 	return names, nil
+}
+
+// githubCompareResponse represents the relevant fields from the GitHub Compare API.
+type githubCompareResponse struct {
+	TotalCommits int                 `json:"total_commits"`
+	Files        []githubCompareFile `json:"files"`
+}
+
+// githubCompareFile represents a single file in a compare response.
+type githubCompareFile struct {
+	Additions int `json:"additions"`
+	Deletions int `json:"deletions"`
+}
+
+// Compare fetches diff stats between two commits using the GitHub Compare API.
+// repo is "owner/repo", base and head are commit SHAs.
+func (g *GitHub) Compare(ctx context.Context, repo, base, head string) (*activity.DiffStats, error) {
+	parts := strings.SplitN(repo, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, fmt.Errorf("invalid repo format %q: expected owner/repo", repo)
+	}
+	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/%s/compare/%s...%s",
+		url.PathEscape(parts[0]), url.PathEscape(parts[1]),
+		url.PathEscape(base), url.PathEscape(head))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating compare request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching compare: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		return nil, fmt.Errorf("github compare api returned %d for %s...%s", resp.StatusCode, shortSHA(base), shortSHA(head))
+	}
+
+	var cmp githubCompareResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cmp); err != nil {
+		return nil, fmt.Errorf("decoding compare response: %w", err)
+	}
+
+	var added, removed int
+	for _, f := range cmp.Files {
+		added += f.Additions
+		removed += f.Deletions
+	}
+
+	return &activity.DiffStats{
+		LinesAdded:   added,
+		LinesRemoved: removed,
+		FilesChanged: len(cmp.Files),
+	}, nil
+}
+
+// shortSHA returns the first 7 characters of a SHA, or the full string if shorter.
+func shortSHA(s string) string {
+	if len(s) > 7 {
+		return s[:7]
+	}
+	return s
 }
 
 // githubCommitResponse represents a single commit from the GitHub Commits API.

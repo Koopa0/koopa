@@ -1,0 +1,72 @@
+// Package mcpserver provides an MCP (Model Context Protocol) server exposing
+// read-only tools for querying obsidian notes, projects, and activity events.
+package mcpserver
+
+import (
+	"cmp"
+	"context"
+	"slices"
+	"time"
+
+	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/note"
+	"github.com/koopa0/blog-backend/internal/project"
+)
+
+// NoteSearcher provides note search and retrieval for MCP tools.
+type NoteSearcher interface {
+	SearchByText(ctx context.Context, query string, limit int) ([]note.SearchResult, error)
+	SearchByFilters(ctx context.Context, f note.SearchFilter, limit int) ([]note.Note, error)
+	NotesByType(ctx context.Context, noteType string, filterContext *string, limit int) ([]note.Note, error)
+}
+
+// ActivityReader provides activity event queries for MCP tools.
+type ActivityReader interface {
+	EventsByFilters(ctx context.Context, start, end time.Time, source, project *string, limit int) ([]activity.Event, error)
+	EventsByProject(ctx context.Context, project string, limit int) ([]activity.Event, error)
+}
+
+// ProjectReader provides project lookup for MCP tools.
+type ProjectReader interface {
+	ProjectBySlug(ctx context.Context, slug string) (*project.Project, error)
+	ProjectByAlias(ctx context.Context, alias string) (*project.Project, error)
+}
+
+// searchResultEntry is a note with a combined RRF score for merged search results.
+type searchResultEntry struct {
+	Note  note.Note
+	Score float64
+}
+
+// rrfMerge combines text search results and filter results using Reciprocal Rank Fusion.
+// k is the RRF constant (typically 60). Returns merged results sorted by combined score.
+func rrfMerge(textResults []note.SearchResult, filterResults []note.Note, limit int) []searchResultEntry {
+	const k = 60.0
+	scores := make(map[int64]float64)
+	notes := make(map[int64]note.Note)
+
+	for rank, r := range textResults {
+		scores[r.ID] += 1.0 / (k + float64(rank))
+		notes[r.ID] = r.Note
+	}
+	for rank, n := range filterResults {
+		scores[n.ID] += 1.0 / (k + float64(rank))
+		if _, ok := notes[n.ID]; !ok {
+			notes[n.ID] = n
+		}
+	}
+
+	// Collect and sort by score descending.
+	entries := make([]searchResultEntry, 0, len(scores))
+	for id, score := range scores {
+		entries = append(entries, searchResultEntry{Note: notes[id], Score: score})
+	}
+	slices.SortFunc(entries, func(a, b searchResultEntry) int {
+		return cmp.Compare(b.Score, a.Score) // descending
+	})
+
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries
+}

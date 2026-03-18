@@ -18,4 +18,8 @@ export class ReviewService {
   rejectReview(id: string, notes?: string): Observable<void> {
     return this.api.postVoid(`/api/admin/review/${id}/reject`, { notes: notes ?? '' });
   }
+
+  editReview(id: string, notes: string): Observable<void> {
+    return this.api.putData<void>(`/api/admin/review/${id}/edit`, { notes });
+  }
 }

@@ -151,6 +151,9 @@ func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
 		if err != nil {
 			return "", fmt.Errorf("generating morning brief: %w", err)
 		}
+		if err := checkFinishReason(resp); err != nil {
+			return "", err
+		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {

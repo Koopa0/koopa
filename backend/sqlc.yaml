@@ -12,6 +12,11 @@ sql:
       - "internal/flowrun/query.sql"
       - "internal/feed/query.sql"
       - "internal/goal/query.sql"
+      - "internal/tag/query.sql"
+      - "internal/note/query.sql"
+      - "internal/activity/query.sql"
+      - "internal/spaced/query.sql"
+      - "internal/notion/query.sql"
     schema: "migrations/"
     gen:
       go:

@@ -416,6 +416,26 @@ func (ns NullSourceType) Value() (driver.Value, error) {
 	return string(ns.SourceType), nil
 }
 
+type ActivityEvent struct {
+	ID        int64           `json:"id"`
+	SourceID  *string         `json:"source_id"`
+	Timestamp time.Time       `json:"timestamp"`
+	EventType string          `json:"event_type"`
+	Source    string          `json:"source"`
+	Project   *string         `json:"project"`
+	Repo      *string         `json:"repo"`
+	Ref       *string         `json:"ref"`
+	Title     *string         `json:"title"`
+	Body      *string         `json:"body"`
+	Metadata  json.RawMessage `json:"metadata"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+type ActivityEventTag struct {
+	EventID int64     `json:"event_id"`
+	TagID   uuid.UUID `json:"tag_id"`
+}
+
 type CollectedDatum struct {
 	ID               uuid.UUID       `json:"id"`
 	SourceUrl        string          `json:"source_url"`
@@ -459,6 +479,7 @@ type Content struct {
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`
 	Embedding    *pgvector_go.Vector `json:"embedding"`
+	SearchText   *string             `json:"search_text"`
 	SearchVector interface{}         `json:"search_vector"`
 }
 
@@ -513,6 +534,57 @@ type Goal struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
+type NoteLink struct {
+	ID           int64     `json:"id"`
+	SourceNoteID int64     `json:"source_note_id"`
+	TargetPath   string    `json:"target_path"`
+	LinkText     *string   `json:"link_text"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type NotionSource struct {
+	ID           uuid.UUID  `json:"id"`
+	DatabaseID   string     `json:"database_id"`
+	Name         string     `json:"name"`
+	Description  string     `json:"description"`
+	SyncMode     string     `json:"sync_mode"`
+	PropertyMap  []byte     `json:"property_map"`
+	PollInterval string     `json:"poll_interval"`
+	Enabled      bool       `json:"enabled"`
+	LastSyncedAt *time.Time `json:"last_synced_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+type ObsidianNote struct {
+	ID           int64               `json:"id"`
+	FilePath     string              `json:"file_path"`
+	Title        *string             `json:"title"`
+	Type         *string             `json:"type"`
+	Source       *string             `json:"source"`
+	Context      *string             `json:"context"`
+	Status       *string             `json:"status"`
+	Tags         json.RawMessage     `json:"tags"`
+	Difficulty   *string             `json:"difficulty"`
+	LeetcodeID   *int32              `json:"leetcode_id"`
+	Book         *string             `json:"book"`
+	Chapter      *string             `json:"chapter"`
+	NotionTaskID *string             `json:"notion_task_id"`
+	ContentText  *string             `json:"content_text"`
+	SearchText   *string             `json:"search_text"`
+	ContentHash  *string             `json:"content_hash"`
+	Embedding    *pgvector_go.Vector `json:"embedding"`
+	SearchVector interface{}         `json:"search_vector"`
+	GitCreatedAt *time.Time          `json:"git_created_at"`
+	GitUpdatedAt *time.Time          `json:"git_updated_at"`
+	SyncedAt     *time.Time          `json:"synced_at"`
+}
+
+type ObsidianNoteTag struct {
+	NoteID int64     `json:"note_id"`
+	TagID  uuid.UUID `json:"tag_id"`
+}
+
 type Project struct {
 	ID              uuid.UUID     `json:"id"`
 	Slug            string        `json:"slug"`
@@ -541,6 +613,14 @@ type Project struct {
 	UpdatedAt       time.Time     `json:"updated_at"`
 }
 
+type ProjectAlias struct {
+	ID            uuid.UUID `json:"id"`
+	Alias         string    `json:"alias"`
+	CanonicalName string    `json:"canonical_name"`
+	Source        string    `json:"source"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID        uuid.UUID `json:"id"`
 	UserID    uuid.UUID `json:"user_id"`
@@ -557,6 +637,37 @@ type ReviewQueue struct {
 	ReviewerNotes *string      `json:"reviewer_notes"`
 	SubmittedAt   time.Time    `json:"submitted_at"`
 	ReviewedAt    *time.Time   `json:"reviewed_at"`
+}
+
+type SpacedInterval struct {
+	NoteID         int64      `json:"note_id"`
+	EasinessFactor float64    `json:"easiness_factor"`
+	IntervalDays   int32      `json:"interval_days"`
+	Repetitions    int32      `json:"repetitions"`
+	LastQuality    *int32     `json:"last_quality"`
+	DueAt          time.Time  `json:"due_at"`
+	ReviewedAt     *time.Time `json:"reviewed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
+type Tag struct {
+	ID          uuid.UUID  `json:"id"`
+	Slug        string     `json:"slug"`
+	Name        string     `json:"name"`
+	ParentID    *uuid.UUID `json:"parent_id"`
+	Description string     `json:"description"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type TagAlias struct {
+	ID          uuid.UUID  `json:"id"`
+	RawTag      string     `json:"raw_tag"`
+	TagID       *uuid.UUID `json:"tag_id"`
+	MatchMethod string     `json:"match_method"`
+	Confirmed   bool       `json:"confirmed"`
+	ConfirmedAt *time.Time `json:"confirmed_at"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 type Topic struct {

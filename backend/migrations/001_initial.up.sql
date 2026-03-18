@@ -85,10 +85,10 @@ CREATE TABLE contents (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     embedding     vector(768),
+    search_text   TEXT,
     search_vector TSVECTOR GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(excerpt, '')), 'B') ||
-        setweight(to_tsvector('english', coalesce(body, '')), 'C')
+        setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('simple', coalesce(search_text, '')), 'C')
     ) STORED
 );
 
@@ -335,6 +335,120 @@ INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
 
 ON CONFLICT (url) DO NOTHING;
 
+-- === Phase 1: Knowledge Engine ===
+
+-- Activity events — unified event log from all sources
+CREATE TABLE activity_events (
+    id          BIGSERIAL PRIMARY KEY,
+    source_id   TEXT,
+    timestamp   TIMESTAMPTZ NOT NULL,
+    event_type  TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    project     TEXT,
+    repo        TEXT,
+    ref         TEXT,
+    title       TEXT,
+    body        TEXT,
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_activity_events_timestamp ON activity_events (timestamp DESC);
+CREATE INDEX idx_activity_events_project ON activity_events (project);
+CREATE INDEX idx_activity_events_type ON activity_events (event_type);
+CREATE UNIQUE INDEX idx_activity_events_dedup
+    ON activity_events (source, event_type, source_id)
+    WHERE source_id IS NOT NULL;
+
+-- Obsidian notes — knowledge notes from vault
+CREATE TABLE obsidian_notes (
+    id              BIGSERIAL PRIMARY KEY,
+    file_path       TEXT UNIQUE NOT NULL,
+    title           TEXT,
+    type            TEXT,
+    source          TEXT,
+    context         TEXT,
+    status          TEXT DEFAULT 'seed',
+    tags            JSONB,
+    difficulty      TEXT,
+    leetcode_id     INT,
+    book            TEXT,
+    chapter         TEXT,
+    notion_task_id  TEXT,
+    content_text    TEXT,
+    search_text     TEXT,
+    content_hash    TEXT,
+    embedding       vector(768),
+    search_vector   TSVECTOR GENERATED ALWAYS AS (
+        setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('simple', coalesce(search_text, '')), 'C')
+    ) STORED,
+    git_created_at  TIMESTAMPTZ,
+    git_updated_at  TIMESTAMPTZ,
+    synced_at       TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_obsidian_notes_type ON obsidian_notes (type);
+CREATE INDEX idx_obsidian_notes_context ON obsidian_notes (context);
+CREATE INDEX idx_obsidian_notes_search ON obsidian_notes USING GIN(search_vector);
+CREATE INDEX idx_obsidian_notes_embedding ON obsidian_notes
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+
+-- Tags — canonical tag registry with hierarchy
+CREATE TABLE tags (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    parent_id   UUID REFERENCES tags(id),
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_tags_parent ON tags(parent_id);
+
+-- Tag aliases — maps raw tags to canonical tags
+CREATE TABLE tag_aliases (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    raw_tag       TEXT NOT NULL UNIQUE,
+    tag_id        UUID REFERENCES tags(id),
+    match_method  TEXT NOT NULL DEFAULT 'manual',
+    confirmed     BOOLEAN NOT NULL DEFAULT false,
+    confirmed_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_tag_aliases_tag ON tag_aliases(tag_id);
+CREATE INDEX idx_tag_aliases_confirmed ON tag_aliases(confirmed);
+CREATE INDEX idx_tag_aliases_lower_raw_tag ON tag_aliases (LOWER(raw_tag));
+
+-- Junction: obsidian notes ↔ tags
+CREATE TABLE obsidian_note_tags (
+    note_id  BIGINT NOT NULL REFERENCES obsidian_notes(id) ON DELETE CASCADE,
+    tag_id   UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (note_id, tag_id)
+);
+
+CREATE INDEX idx_obsidian_note_tags_tag ON obsidian_note_tags(tag_id);
+
+-- Junction: activity events ↔ tags
+CREATE TABLE activity_event_tags (
+    event_id  BIGINT NOT NULL REFERENCES activity_events(id) ON DELETE CASCADE,
+    tag_id    UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (event_id, tag_id)
+);
+
+CREATE INDEX idx_activity_event_tags_tag ON activity_event_tags(tag_id);
+
+-- Project aliases — maps variant project names to canonical
+CREATE TABLE project_aliases (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alias          TEXT NOT NULL UNIQUE,
+    canonical_name TEXT NOT NULL,
+    source         TEXT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Partial indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_contents_published_at_pub
     ON contents (published_at DESC NULLS LAST)
@@ -347,4 +461,51 @@ CREATE INDEX IF NOT EXISTS idx_contents_source_obsidian
 CREATE INDEX IF NOT EXISTS idx_flow_runs_completed
     ON flow_runs (content_id, flow_name, ended_at DESC)
     WHERE status = 'completed';
+
+-- === Spaced Repetition ===
+
+CREATE TABLE spaced_intervals (
+    note_id         BIGINT PRIMARY KEY REFERENCES obsidian_notes(id) ON DELETE CASCADE,
+    easiness_factor DOUBLE PRECISION NOT NULL DEFAULT 2.5,
+    interval_days   INT NOT NULL DEFAULT 0,
+    repetitions     INT NOT NULL DEFAULT 0,
+    last_quality    INT,
+    due_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reviewed_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_spaced_intervals_due ON spaced_intervals (due_at);
+
+-- === Notion Source Registry ===
+
+CREATE TABLE notion_sources (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    database_id     TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    sync_mode       TEXT NOT NULL DEFAULT 'full',
+    property_map    JSONB NOT NULL DEFAULT '{}',
+    poll_interval   TEXT NOT NULL DEFAULT '15 minutes',
+    enabled         BOOLEAN NOT NULL DEFAULT true,
+    last_synced_at  TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_notion_sources_enabled ON notion_sources (id) WHERE enabled = true;
+
+-- === Wikilink Edges ===
+
+CREATE TABLE note_links (
+    id              BIGSERIAL PRIMARY KEY,
+    source_note_id  BIGINT NOT NULL REFERENCES obsidian_notes(id) ON DELETE CASCADE,
+    target_path     TEXT NOT NULL,
+    link_text       TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_note_links_source ON note_links (source_note_id);
+CREATE INDEX idx_note_links_target ON note_links (target_path);
+CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_path);
 

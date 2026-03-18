@@ -3,7 +3,9 @@ package server
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,10 +136,21 @@ func rateLimitMiddleware(logger *slog.Logger, done <-chan struct{}) func(http.Ha
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Prefer CF-Connecting-IP (set by Cloudflare Tunnel, cannot be spoofed).
-			// Fall back to RemoteAddr for non-Tunnel requests (Docker internal).
+			// Fall back to X-Forwarded-For (set by BFF proxy), then RemoteAddr.
 			ip := r.RemoteAddr
 			if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
 				ip = cfIP
+			} else if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				if idx := strings.Index(xff, ","); idx != -1 {
+					ip = strings.TrimSpace(xff[:idx])
+				} else {
+					ip = strings.TrimSpace(xff)
+				}
+			}
+			// Strip port from RemoteAddr ("192.168.1.1:12345" → "192.168.1.1")
+			// so rate limiting keys on IP, not on connection.
+			if host, _, err := net.SplitHostPort(ip); err == nil {
+				ip = host
 			}
 			if !lim.limiter(ip).Allow() {
 				logger.Warn("rate limit exceeded", "ip", ip, "path", r.URL.Path)

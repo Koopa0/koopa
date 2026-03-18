@@ -151,6 +151,37 @@ export const routes: Routes = [
           import('./admin/review/review').then((m) => m.ReviewComponent),
       },
       {
+        path: 'tags',
+        loadComponent: () =>
+          import('./admin/tags/tags').then((m) => m.TagsComponent),
+      },
+      {
+        path: 'notion-sources',
+        loadComponent: () =>
+          import('./admin/notion-sources/notion-sources').then(
+            (m) => m.NotionSourcesComponent,
+          ),
+      },
+      {
+        path: 'spaced',
+        loadComponent: () =>
+          import('./admin/spaced/spaced').then((m) => m.SpacedComponent),
+      },
+      {
+        path: 'activity',
+        loadComponent: () =>
+          import('./admin/activity/activity').then(
+            (m) => m.ActivityComponent,
+          ),
+      },
+      {
+        path: 'tracking',
+        loadComponent: () =>
+          import('./admin/tracking/tracking').then(
+            (m) => m.TrackingComponent,
+          ),
+      },
+      {
         path: 'editor',
         loadComponent: () =>
           import('./admin/article-editor/article-editor').then(

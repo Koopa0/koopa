@@ -1,0 +1,263 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+          <lucide-icon [img]="RadarIcon" [size]="24" />
+          Tracking Topics
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">管理主動追蹤的主題與關鍵字</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+          (click)="openCreateDialog()"
+        >
+          <lucide-icon [img]="PlusIcon" [size]="16" />
+          新增 Topic
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="loadTopics()"
+        >
+          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          重新整理
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Content -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+      <div class="flex items-center justify-center py-16">
+        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+      </div>
+    } @else if (topics().length === 0) {
+      <div class="flex flex-col items-center gap-3 py-16 text-center">
+        <lucide-icon [img]="RadarIcon" [size]="40" class="text-zinc-700" />
+        <h3 class="text-sm font-medium text-zinc-300">尚無追蹤主題</h3>
+        <p class="text-xs text-zinc-500">建立主題來自動追蹤相關內容</p>
+      </div>
+    } @else {
+      <div class="overflow-x-auto rounded-sm border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-zinc-800 bg-zinc-900/50">
+            <tr>
+              <th class="px-4 py-3 font-medium text-zinc-400">Name</th>
+              <th class="hidden px-4 py-3 font-medium text-zinc-400 sm:table-cell">Keywords</th>
+              <th class="hidden px-4 py-3 font-medium text-zinc-400 md:table-cell">Sources</th>
+              <th class="px-4 py-3 font-medium text-zinc-400">Schedule</th>
+              <th class="px-4 py-3 font-medium text-zinc-400">Enabled</th>
+              <th class="px-4 py-3 text-right font-medium text-zinc-400">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-800/50">
+            @for (topic of topics(); track topic.id) {
+              <tr class="transition-colors hover:bg-zinc-900/30">
+                <td class="px-4 py-3 font-medium text-zinc-200">
+                  {{ topic.name }}
+                </td>
+                <td class="hidden px-4 py-3 sm:table-cell">
+                  <div class="flex flex-wrap gap-1">
+                    @for (kw of topic.keywords.slice(0, 5); track kw) {
+                      <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400">
+                        {{ kw }}
+                      </span>
+                    }
+                    @if (topic.keywords.length > 5) {
+                      <span class="text-xs text-zinc-600">+{{ topic.keywords.length - 5 }}</span>
+                    }
+                  </div>
+                </td>
+                <td class="hidden px-4 py-3 md:table-cell">
+                  <div class="flex flex-wrap gap-1">
+                    @for (src of topic.sources; track src) {
+                      <span class="rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">
+                        {{ src }}
+                      </span>
+                    }
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-xs text-zinc-400">
+                  {{ getScheduleLabel(topic.schedule) }}
+                </td>
+                <td class="px-4 py-3">
+                  <span
+                    class="inline-block size-2 rounded-full"
+                    [class]="topic.enabled ? 'bg-emerald-500' : 'bg-zinc-600'"
+                  ></span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                      aria-label="編輯"
+                      (click)="openEditDialog(topic)"
+                    >
+                      <lucide-icon [img]="PencilIcon" [size]="16" />
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
+                      aria-label="刪除"
+                      (click)="requestDelete(topic)"
+                    >
+                      <lucide-icon [img]="Trash2Icon" [size]="16" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</section>
+
+<!-- Create/Edit Dialog -->
+@if (isDialogOpen()) {
+  <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" aria-hidden="true"></div>
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="tracking-dialog-title"
+    (keydown.escape)="closeDialog()"
+  >
+    <div class="mx-4 w-full max-w-md rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-lg">
+      <h3 id="tracking-dialog-title" class="mb-4 text-lg font-semibold text-zinc-100">
+        {{ dialogMode() === 'create' ? '新增 Tracking Topic' : '編輯 Tracking Topic' }}
+      </h3>
+
+      <div class="space-y-4">
+        <!-- Name -->
+        <div>
+          <label for="track-name" class="mb-1 block text-sm font-medium text-zinc-300">
+            Name <span class="text-red-400">*</span>
+          </label>
+          <input
+            id="track-name"
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="Go ecosystem"
+            [value]="form().name"
+            (input)="updateFormField('name', $any($event.target).value)"
+          />
+        </div>
+
+        <!-- Keywords -->
+        <div>
+          <label for="track-keywords" class="mb-1 block text-sm font-medium text-zinc-300">
+            Keywords
+          </label>
+          <input
+            id="track-keywords"
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="golang, go modules, go concurrency"
+            [value]="form().keywords"
+            (input)="updateFormField('keywords', $any($event.target).value)"
+          />
+          <p class="mt-1 text-xs text-zinc-600">以逗號分隔</p>
+        </div>
+
+        <!-- Sources -->
+        <div>
+          <label for="track-sources" class="mb-1 block text-sm font-medium text-zinc-300">
+            Sources
+          </label>
+          <input
+            id="track-sources"
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="rss, github, twitter"
+            [value]="form().sources"
+            (input)="updateFormField('sources', $any($event.target).value)"
+          />
+          <p class="mt-1 text-xs text-zinc-600">以逗號分隔</p>
+        </div>
+
+        <!-- Schedule -->
+        <div>
+          <label for="track-schedule" class="mb-1 block text-sm font-medium text-zinc-300">
+            Schedule
+          </label>
+          <select
+            id="track-schedule"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="form().schedule"
+            (ngModelChange)="updateFormField('schedule', $event)"
+          >
+            @for (opt of scheduleOptions; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Enabled -->
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
+            [class]="form().enabled ? 'bg-emerald-600' : 'bg-zinc-700'"
+            role="switch"
+            [attr.aria-checked]="form().enabled"
+            (click)="updateFormField('enabled', !form().enabled)"
+          >
+            <span
+              class="pointer-events-none inline-block size-4 rounded-full bg-white shadow-xs ring-0 transition duration-200"
+              [class]="form().enabled ? 'translate-x-4' : 'translate-x-0'"
+            ></span>
+          </button>
+          <span class="text-sm text-zinc-300">Enabled</span>
+        </div>
+      </div>
+
+      <!-- Dialog Actions -->
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="closeDialog()"
+          [disabled]="isSaving()"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          [disabled]="isSaving() || !form().name.trim()"
+          (click)="saveTopic()"
+        >
+          @if (isSaving()) {
+            <span class="flex items-center gap-2">
+              <span class="size-3.5 animate-spin rounded-full border-2 border-zinc-400/30 border-t-zinc-900"></span>
+              儲存中...
+            </span>
+          } @else {
+            {{ dialogMode() === 'create' ? '建立' : '更新' }}
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Delete Confirm Dialog -->
+@if (deleteTarget(); as target) {
+  <app-delete-confirm-dialog
+    entityType="Tracking Topic"
+    [entityTitle]="target.name"
+    [isDeleting]="isDeleting()"
+    (confirmed)="confirmDelete()"
+    (cancelled)="cancelDelete()"
+  />
+}

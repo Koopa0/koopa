@@ -132,6 +132,9 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 		if err != nil {
 			return "", fmt.Errorf("generating content strategy: %w", err)
 		}
+		if err := checkFinishReason(resp); err != nil {
+			return "", err
+		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {

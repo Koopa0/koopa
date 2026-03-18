@@ -6,6 +6,8 @@ import type {
   ApiListResponse,
   ApiCreateContentRequest,
   ApiUpdateContentRequest,
+  ApiRelatedContent,
+  ApiKnowledgeGraph,
   ContentType,
 } from '../models';
 
@@ -77,5 +79,15 @@ export class ContentService {
       `/api/admin/contents/${id}/publish`,
       {},
     );
+  }
+
+  /** Public — get related content by slug */
+  getRelated(slug: string): Observable<ApiRelatedContent[]> {
+    return this.api.getData<ApiRelatedContent[]>(`/api/contents/related/${slug}`);
+  }
+
+  /** Public — get knowledge graph (rate-limited) */
+  getKnowledgeGraph(): Observable<ApiKnowledgeGraph> {
+    return this.api.getData<ApiKnowledgeGraph>('/api/knowledge-graph');
   }
 }

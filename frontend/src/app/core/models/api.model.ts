@@ -303,3 +303,278 @@ export interface ApiTrackingTopic {
   created_at: string;
   updated_at: string;
 }
+
+export interface ApiCreateTrackingTopicRequest {
+  name: string;
+  keywords: string[];
+  sources: string[];
+  enabled?: boolean;
+  schedule: string;
+}
+
+export interface ApiUpdateTrackingTopicRequest {
+  name?: string;
+  keywords?: string[];
+  sources?: string[];
+  enabled?: boolean;
+  schedule?: string;
+}
+
+/** Admin — Flow Polish */
+export interface ApiPolishResult {
+  original_body: string;
+  polished_body: string;
+}
+
+/** Public — Knowledge Graph */
+export interface ApiKnowledgeGraph {
+  nodes: ApiGraphNode[];
+  links: ApiGraphLink[];
+}
+
+export interface ApiGraphNode {
+  id: string;
+  label: string;
+  type: string;
+  content_type: string | null;
+  topic: string | null;
+  count: number | null;
+}
+
+export interface ApiGraphLink {
+  source: string;
+  target: string;
+  type: string;
+  similarity: number | null;
+}
+
+/** Public — Related Content */
+export interface ApiRelatedContent {
+  slug: string;
+  title: string;
+  excerpt: string;
+  type: ContentType;
+  similarity: number;
+  topics: ApiTopicRef[];
+}
+
+export interface ApiTopicRef {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+/** Admin — Canonical Tag */
+export interface ApiTag {
+  id: string;
+  slug: string;
+  name: string;
+  parent_id: string | null;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiCreateTagRequest {
+  slug: string;
+  name: string;
+  parent_id?: string | null;
+  description?: string;
+}
+
+export interface ApiUpdateTagRequest {
+  slug?: string;
+  name?: string;
+  parent_id?: string | null;
+  description?: string;
+}
+
+/** Admin — Tag Alias */
+export type AliasMatchMethod =
+  | 'exact'
+  | 'case_insensitive'
+  | 'slug'
+  | 'manual'
+  | 'rejected'
+  | 'unmapped';
+
+export interface ApiTagAlias {
+  id: string;
+  raw_tag: string;
+  tag_id: string | null;
+  match_method: AliasMatchMethod;
+  confirmed: boolean;
+  confirmed_at: string | null;
+  created_at: string;
+}
+
+/** Admin — Tag Operations */
+export interface ApiMergeTagsRequest {
+  source_id: string;
+  target_id: string;
+}
+
+export interface ApiMergeResult {
+  aliases_moved: number;
+  notes_moved: number;
+  events_moved: number;
+}
+
+export interface ApiBackfillResult {
+  notes_processed: number;
+  tags_mapped: number;
+  tags_unmapped: number;
+}
+
+/** Admin — Notion Source */
+export interface ApiNotionSource {
+  id: string;
+  database_id: string;
+  name: string;
+  description: string;
+  sync_mode: NotionSyncMode;
+  property_map: Record<string, unknown>;
+  poll_interval: string;
+  enabled: boolean;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type NotionSyncMode = 'full' | 'events';
+
+export type NotionPollInterval =
+  | '5 minutes'
+  | '10 minutes'
+  | '15 minutes'
+  | '30 minutes'
+  | '1 hour'
+  | '2 hours'
+  | '4 hours'
+  | '6 hours'
+  | '12 hours'
+  | '24 hours';
+
+export interface ApiCreateNotionSourceRequest {
+  database_id: string;
+  name: string;
+  description?: string;
+  sync_mode?: NotionSyncMode;
+  property_map?: Record<string, unknown>;
+  poll_interval?: NotionPollInterval;
+}
+
+export interface ApiUpdateNotionSourceRequest {
+  name?: string;
+  description?: string;
+  sync_mode?: NotionSyncMode;
+  property_map?: Record<string, unknown>;
+  poll_interval?: NotionPollInterval;
+  enabled?: boolean;
+}
+
+/** Admin — Spaced Repetition */
+export interface ApiSpacedDueResponse {
+  intervals: ApiDueInterval[];
+  total_due: number;
+}
+
+export interface ApiDueInterval {
+  note_id: number;
+  file_path: string;
+  title: string | null;
+  type: string | null;
+  context: string | null;
+  easiness_factor: number;
+  interval_days: number;
+  repetitions: number;
+  last_quality: number | null;
+  due_at: string;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface ApiSpacedInterval {
+  note_id: number;
+  easiness_factor: number;
+  interval_days: number;
+  repetitions: number;
+  last_quality: number | null;
+  due_at: string;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface ApiSubmitReviewRequest {
+  note_id: number;
+  quality: number;
+}
+
+export interface ApiEnrollRequest {
+  note_id: number;
+}
+
+/** Admin — Stats */
+export interface ApiStatsOverview {
+  contents: { total: number; by_status: Record<string, number>; by_type: Record<string, number>; published: number };
+  collected: { total: number; by_status: Record<string, number> };
+  feeds: { total: number; enabled: number };
+  flow_runs: { total: number; by_status: Record<string, number> };
+  projects: { total: number; by_status: Record<string, number> };
+  reviews: { pending: number; total: number };
+  notes: { total: number; by_type: Record<string, number> };
+  activity: { total: number; last_24h: number; last_7d: number; by_source: Record<string, number> };
+  spaced: { enrolled: number; due: number };
+  sources: { total: number; enabled: number };
+  tags: { canonical: number; aliases: number; unconfirmed: number };
+}
+
+export interface ApiDriftReport {
+  period: string;
+  areas: ApiAreaDrift[];
+}
+
+export interface ApiAreaDrift {
+  area: string;
+  active_goals: number;
+  event_count: number;
+  event_percent: number;
+  goal_percent: number;
+  drift_percent: number;
+}
+
+export interface ApiLearningDashboard {
+  spaced: { enrolled: number; due: number };
+  notes: { total: number; last_week: number; last_month: number; by_type: Record<string, number> };
+  activity: { this_week: number; last_week: number; trend: 'up' | 'down' | 'stable' };
+  top_tags: ApiTagCount[];
+}
+
+export interface ApiTagCount {
+  name: string;
+  count: number;
+}
+
+/** Admin — Activity */
+export interface ApiSession {
+  start: string;
+  end: string;
+  duration: string;
+  event_count: number;
+  sources: string[];
+  projects: string[];
+}
+
+export interface ApiChangelogDay {
+  date: string;
+  event_count: number;
+  events: ApiChangelogEvent[];
+}
+
+export interface ApiChangelogEvent {
+  source: string;
+  event_type: string;
+  project: string | null;
+  title: string | null;
+  timestamp: string;
+}
