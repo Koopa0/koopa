@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/api"
@@ -13,14 +14,15 @@ import (
 
 // SourceHandler handles admin HTTP requests for notion source CRUD.
 type SourceHandler struct {
-	store  *Store
-	client *Client
-	logger *slog.Logger
+	store       *Store
+	client      *Client
+	sourceCache *ristretto.Cache[string, string]
+	logger      *slog.Logger
 }
 
 // NewSourceHandler returns a SourceHandler.
-func NewSourceHandler(store *Store, client *Client, logger *slog.Logger) *SourceHandler {
-	return &SourceHandler{store: store, client: client, logger: logger}
+func NewSourceHandler(store *Store, client *Client, sourceCache *ristretto.Cache[string, string], logger *slog.Logger) *SourceHandler {
+	return &SourceHandler{store: store, client: client, sourceCache: sourceCache, logger: logger}
 }
 
 // Discover handles GET /api/admin/notion-sources/discover.
@@ -91,6 +93,10 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name exceeds 255 characters")
 		return
 	}
+	if p.Role != nil && !ValidRole(*p.Role) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid role, must be 'projects', 'tasks', 'books', or 'goals'")
+		return
+	}
 	if p.SyncMode == "" {
 		p.SyncMode = SyncModeFull
 	}
@@ -127,6 +133,7 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create notion source")
 		return
 	}
+	h.invalidateCache(src.DatabaseID)
 	api.Encode(w, http.StatusCreated, api.Response{Data: src})
 }
 
@@ -178,6 +185,7 @@ func (h *SourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update notion source")
 		return
 	}
+	h.invalidateCache(src.DatabaseID)
 	api.Encode(w, http.StatusOK, api.Response{Data: src})
 }
 
@@ -189,6 +197,9 @@ func (h *SourceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// look up database_id for cache invalidation before deleting
+	src, lookupErr := h.store.Source(r.Context(), id)
+
 	if err := h.store.DeleteSource(r.Context(), id); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
@@ -197,6 +208,9 @@ func (h *SourceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("deleting notion source", "id", id, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete notion source")
 		return
+	}
+	if lookupErr == nil {
+		h.invalidateCache(src.DatabaseID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -219,5 +233,73 @@ func (h *SourceHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to toggle notion source")
 		return
 	}
+	h.invalidateCache(src.DatabaseID)
 	api.Encode(w, http.StatusOK, api.Response{Data: src})
+}
+
+// setRoleRequest is the JSON body for the SetRole endpoint.
+type setRoleRequest struct {
+	Role *string `json:"role"`
+}
+
+// SetRole handles PUT /api/admin/notion-sources/{id}/role.
+func (h *SourceHandler) SetRole(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid source id")
+		return
+	}
+
+	req, err := api.Decode[setRoleRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+
+	if req.Role != nil && !ValidRole(*req.Role) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid role, must be 'projects', 'tasks', 'books', or 'goals'")
+		return
+	}
+
+	if req.Role == nil || *req.Role == "" {
+		// clear role
+		if err := h.store.ClearSourceRole(r.Context(), id); errors.Is(err, ErrNotFound) {
+			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
+			return
+		} else if err != nil {
+			h.logger.Error("clearing notion source role", "id", id, "error", err)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to clear role")
+			return
+		}
+	} else {
+		// set role (clears from any existing holder atomically)
+		if err := h.store.SetRole(r.Context(), id, *req.Role); errors.Is(err, ErrNotFound) {
+			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
+			return
+		} else if err != nil {
+			h.logger.Error("setting notion source role", "id", id, "role", *req.Role, "error", err)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to set role")
+			return
+		}
+	}
+
+	// invalidate all cached entries — role change can affect multiple sources
+	h.sourceCache.Clear()
+
+	src, err := h.store.Source(r.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
+		return
+	}
+	if err != nil {
+		h.logger.Error("querying notion source after role change", "id", id, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "role updated but failed to return source")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: src})
+}
+
+// invalidateCache removes a database_id from the source cache.
+func (h *SourceHandler) invalidateCache(databaseID string) {
+	h.sourceCache.Del(databaseID)
 }

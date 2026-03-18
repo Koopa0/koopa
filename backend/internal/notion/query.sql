@@ -1,21 +1,33 @@
 -- name: Sources :many
 -- List all registered Notion sources, newest first.
-SELECT id, database_id, name, description, sync_mode, property_map,
+SELECT id, database_id, name, description, role, sync_mode, property_map,
        poll_interval, enabled, last_synced_at, created_at, updated_at
 FROM notion_sources
 ORDER BY created_at DESC;
 
 -- name: SourceByID :one
 -- Get a single Notion source by primary key.
-SELECT id, database_id, name, description, sync_mode, property_map,
+SELECT id, database_id, name, description, role, sync_mode, property_map,
        poll_interval, enabled, last_synced_at, created_at, updated_at
 FROM notion_sources WHERE id = $1;
 
+-- name: SourceByRole :one
+-- Get the enabled source assigned to a system role.
+SELECT id, database_id, name, description, role, sync_mode, property_map,
+       poll_interval, enabled, last_synced_at, created_at, updated_at
+FROM notion_sources WHERE role = $1 AND enabled = true;
+
+-- name: SourceByDatabaseID :one
+-- Get an enabled source by its Notion database_id (for webhook routing).
+SELECT id, database_id, name, description, role, sync_mode, property_map,
+       poll_interval, enabled, last_synced_at, created_at, updated_at
+FROM notion_sources WHERE database_id = $1 AND enabled = true;
+
 -- name: CreateSource :one
 -- Register a new Notion database source.
-INSERT INTO notion_sources (database_id, name, description, sync_mode, property_map, poll_interval)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, database_id, name, description, sync_mode, property_map,
+INSERT INTO notion_sources (database_id, name, description, role, sync_mode, property_map, poll_interval)
+VALUES ($1, $2, $3, sqlc.narg('role'), $4, $5, $6)
+RETURNING id, database_id, name, description, role, sync_mode, property_map,
           poll_interval, enabled, last_synced_at, created_at, updated_at;
 
 -- name: UpdateSource :one
@@ -29,7 +41,7 @@ UPDATE notion_sources SET
     enabled = COALESCE(sqlc.narg('enabled'), enabled),
     updated_at = now()
 WHERE id = @id
-RETURNING id, database_id, name, description, sync_mode, property_map,
+RETURNING id, database_id, name, description, role, sync_mode, property_map,
           poll_interval, enabled, last_synced_at, created_at, updated_at;
 
 -- name: DeleteSource :execrows
@@ -42,7 +54,7 @@ UPDATE notion_sources SET
     enabled = NOT enabled,
     updated_at = now()
 WHERE id = $1
-RETURNING id, database_id, name, description, sync_mode, property_map,
+RETURNING id, database_id, name, description, role, sync_mode, property_map,
           poll_interval, enabled, last_synced_at, created_at, updated_at;
 
 -- name: UpdateSourceLastSynced :exec
@@ -51,3 +63,15 @@ UPDATE notion_sources SET
     last_synced_at = now(),
     updated_at = now()
 WHERE id = $1;
+
+-- name: SetSourceRole :execrows
+-- Assign a role to a source. Returns rows affected (0 if id not found).
+UPDATE notion_sources SET role = $2, updated_at = now() WHERE id = $1;
+
+-- name: ClearRole :exec
+-- Remove a role from whichever source currently holds it.
+UPDATE notion_sources SET role = NULL, updated_at = now() WHERE role = $1;
+
+-- name: ClearSourceRole :execrows
+-- Remove the role from a specific source. Returns rows affected (0 if id not found).
+UPDATE notion_sources SET role = NULL, updated_at = now() WHERE id = $1;

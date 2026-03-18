@@ -24,6 +24,19 @@ type CommitLister interface {
 	RecentCommits(ctx context.Context, since time.Time) ([]pipeline.Commit, error)
 }
 
+// TaskCompletionCounter counts tasks completed since a given time.
+// ProjectCompletion holds a per-project completion count.
+type ProjectCompletion struct {
+	ProjectTitle string
+	Completed    int64
+}
+
+// TaskCompletionCounter counts tasks completed since a given time.
+type TaskCompletionCounter interface {
+	CompletedSince(ctx context.Context, since time.Time) (int64, error)
+	CompletedByProjectSince(ctx context.Context, since time.Time) ([]ProjectCompletion, error)
+}
+
 // WeeklyReviewOutput is the JSON output of the weekly-review flow.
 type WeeklyReviewOutput struct {
 	Text string `json:"text"`
@@ -31,18 +44,19 @@ type WeeklyReviewOutput struct {
 
 // WeeklyReview implements the weekly-review flow.
 type WeeklyReview struct {
-	gf        *genkitFlow
-	g         *genkit.Genkit
-	model     ai.Model
-	tasks     TaskQuerier
-	collected HighScoreLister
-	contents  PublishedContentLister
-	projects  ActiveProjectLister
-	commits   CommitLister
-	notifier  Sender
-	budget    BudgetChecker
-	loc       *time.Location
-	logger    *slog.Logger
+	gf             *genkitFlow
+	g              *genkit.Genkit
+	model          ai.Model
+	tasks          TaskQuerier
+	taskCompletion TaskCompletionCounter
+	collected      HighScoreLister
+	contents       PublishedContentLister
+	projects       ActiveProjectLister
+	commits        CommitLister
+	notifier       Sender
+	budget         BudgetChecker
+	loc            *time.Location
+	logger         *slog.Logger
 }
 
 // NewWeeklyReview returns a WeeklyReview flow.
@@ -50,6 +64,7 @@ func NewWeeklyReview(
 	g *genkit.Genkit,
 	model ai.Model,
 	tasks TaskQuerier,
+	taskCompletion TaskCompletionCounter,
 	collects HighScoreLister,
 	contents PublishedContentLister,
 	projects ActiveProjectLister,
@@ -60,17 +75,18 @@ func NewWeeklyReview(
 	logger *slog.Logger,
 ) *WeeklyReview {
 	wr := &WeeklyReview{
-		g:         g,
-		model:     model,
-		tasks:     tasks,
-		collected: collects,
-		contents:  contents,
-		projects:  projects,
-		commits:   commits,
-		notifier:  notifier,
-		budget:    budget,
-		loc:       loc,
-		logger:    logger,
+		g:              g,
+		model:          model,
+		tasks:          tasks,
+		taskCompletion: taskCompletion,
+		collected:      collects,
+		contents:       contents,
+		projects:       projects,
+		commits:        commits,
+		notifier:       notifier,
+		budget:         budget,
+		loc:            loc,
+		logger:         logger,
 	}
 	wr.gf = genkit.DefineFlow(g, "weekly-review", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		out, err := wr.run(ctx)
@@ -107,21 +123,31 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 
 	// Gather data sources in parallel — individual failures are degraded, not fatal
 	var (
-		tasks     []PendingTask
-		taskErr   error
-		rssItems  []collected.CollectedData
-		rssErr    error
-		published []content.Content
-		pubErr    error
-		projects  []project.Project
-		projErr   error
-		commits   []pipeline.Commit
-		commitErr error
+		tasks            []PendingTask
+		taskErr          error
+		completedCount   int64
+		completedErr     error
+		completedByProj  []ProjectCompletion
+		completedProjErr error
+		rssItems         []collected.CollectedData
+		rssErr           error
+		published        []content.Content
+		pubErr           error
+		projects         []project.Project
+		projErr          error
+		commits          []pipeline.Commit
+		commitErr        error
 	)
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		tasks, taskErr = wr.tasks.PendingTasks(ctx)
+	})
+	wg.Go(func() {
+		completedCount, completedErr = wr.taskCompletion.CompletedSince(ctx, weekAgo)
+	})
+	wg.Go(func() {
+		completedByProj, completedProjErr = wr.taskCompletion.CompletedByProjectSince(ctx, weekAgo)
 	})
 	wg.Go(func() {
 		rssItems, rssErr = wr.collected.HighScoreCollectedData(ctx, weekAgo, now, reviewMinScore)
@@ -139,6 +165,8 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 
 	userPrompt := buildWeeklyReviewPrompt(
 		tasks, taskErr,
+		completedCount, completedErr,
+		completedByProj, completedProjErr,
 		rssItems, rssErr,
 		published, pubErr,
 		projects, projErr,
@@ -185,6 +213,8 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 
 func buildWeeklyReviewPrompt(
 	tasks []PendingTask, taskErr error,
+	completedCount int64, completedErr error,
+	completedByProj []ProjectCompletion, completedProjErr error,
 	rssItems []collected.CollectedData, rssErr error,
 	published []content.Content, pubErr error,
 	projects []project.Project, projErr error,
@@ -256,11 +286,25 @@ func buildWeeklyReviewPrompt(
 		}
 	}
 
+	// Task completion stats
+	b.WriteString("\n== 任務完成統計 ==\n")
+	if completedErr != nil {
+		b.WriteString("完成統計不可用\n")
+	} else {
+		fmt.Fprintf(&b, "本週完成 %d 個任務\n", completedCount)
+	}
+	if completedProjErr == nil && len(completedByProj) > 0 {
+		b.WriteString("按專案分佈：\n")
+		for _, pc := range completedByProj {
+			fmt.Fprintf(&b, "  - %s：%d 個\n", pc.ProjectTitle, pc.Completed)
+		}
+	}
+
 	// Pending tasks
 	b.WriteString("\n== 待辦事項 ==\n")
 	switch {
 	case taskErr != nil:
-		b.WriteString("Notion 資料不可用\n")
+		b.WriteString("任務資料不可用\n")
 	case len(tasks) == 0:
 		b.WriteString("無待辦事項\n")
 	default:

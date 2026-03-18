@@ -17,6 +17,7 @@ sql:
       - "internal/activity/query.sql"
       - "internal/spaced/query.sql"
       - "internal/notion/query.sql"
+      - "internal/task/query.sql"
     schema: "migrations/"
     gen:
       go:
@@ -40,6 +41,16 @@ sql:
               type: "Time"
               import: "time"
           - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+            nullable: true
+          - db_type: "date"
+            go_type:
+              type: "Time"
+              import: "time"
+          - db_type: "date"
             go_type:
               import: "time"
               type: "Time"

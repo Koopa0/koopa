@@ -172,6 +172,7 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("PUT /api/admin/notion-sources/{id}", authMid(http.HandlerFunc(d.NotionSource.Update)))
 	mux.Handle("DELETE /api/admin/notion-sources/{id}", authMid(http.HandlerFunc(d.NotionSource.Delete)))
 	mux.Handle("POST /api/admin/notion-sources/{id}/toggle", authMid(http.HandlerFunc(d.NotionSource.Toggle)))
+	mux.Handle("PUT /api/admin/notion-sources/{id}/role", authMid(http.HandlerFunc(d.NotionSource.SetRole)))
 
 	// admin — spaced repetition
 	mux.Handle("GET /api/admin/spaced/due", authMid(http.HandlerFunc(d.Spaced.ListDue)))

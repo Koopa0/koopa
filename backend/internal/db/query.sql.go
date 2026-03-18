@@ -284,6 +284,22 @@ func (q *Queries) ArchiveOrphanNotionProjects(ctx context.Context, activeIds []s
 	return result.RowsAffected(), nil
 }
 
+const archiveOrphanNotionTasks = `-- name: ArchiveOrphanNotionTasks :execrows
+UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
+WHERE notion_page_id IS NOT NULL
+  AND notion_page_id != ALL($1::text[])
+  AND status != 'done'
+`
+
+// Mark tasks as done if their notion_page_id is not in the active set.
+func (q *Queries) ArchiveOrphanNotionTasks(ctx context.Context, activeIds []string) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveOrphanNotionTasks, activeIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const autoDisableFeed = `-- name: AutoDisableFeed :exec
 UPDATE feeds SET
     enabled = false,
@@ -300,6 +316,29 @@ type AutoDisableFeedParams struct {
 func (q *Queries) AutoDisableFeed(ctx context.Context, arg AutoDisableFeedParams) error {
 	_, err := q.db.Exec(ctx, autoDisableFeed, arg.ID, arg.DisabledReason)
 	return err
+}
+
+const clearRole = `-- name: ClearRole :exec
+UPDATE notion_sources SET role = NULL, updated_at = now() WHERE role = $1
+`
+
+// Remove a role from whichever source currently holds it.
+func (q *Queries) ClearRole(ctx context.Context, role *string) error {
+	_, err := q.db.Exec(ctx, clearRole, role)
+	return err
+}
+
+const clearSourceRole = `-- name: ClearSourceRole :execrows
+UPDATE notion_sources SET role = NULL, updated_at = now() WHERE id = $1
+`
+
+// Remove the role from a specific source. Returns rows affected (0 if id not found).
+func (q *Queries) ClearSourceRole(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, clearSourceRole, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const collectedData = `-- name: CollectedData :many
@@ -436,6 +475,53 @@ WHERE ($1::collected_status IS NULL OR status = $1)
 
 func (q *Queries) CollectedDataCount(ctx context.Context, status NullCollectedStatus) (int64, error) {
 	row := q.db.QueryRow(ctx, collectedDataCount, status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const completedTasksByProjectSince = `-- name: CompletedTasksByProjectSince :many
+SELECT COALESCE(p.title, '(no project)') AS project_title, count(*) AS completed
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.status = 'done' AND t.completed_at >= $1
+GROUP BY p.title
+ORDER BY completed DESC
+`
+
+type CompletedTasksByProjectSinceRow struct {
+	ProjectTitle string `json:"project_title"`
+	Completed    int64  `json:"completed"`
+}
+
+// Count tasks completed per project since a given time. NULL project grouped as '(no project)'.
+func (q *Queries) CompletedTasksByProjectSince(ctx context.Context, since *time.Time) ([]CompletedTasksByProjectSinceRow, error) {
+	rows, err := q.db.Query(ctx, completedTasksByProjectSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CompletedTasksByProjectSinceRow{}
+	for rows.Next() {
+		var i CompletedTasksByProjectSinceRow
+		if err := rows.Scan(&i.ProjectTitle, &i.Completed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completedTasksSince = `-- name: CompletedTasksSince :one
+SELECT count(*) FROM tasks WHERE status = 'done' AND completed_at >= $1
+`
+
+// Count tasks completed since a given time.
+func (q *Queries) CompletedTasksSince(ctx context.Context, since *time.Time) (int64, error) {
+	row := q.db.QueryRow(ctx, completedTasksSince, since)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -1110,19 +1196,20 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Cre
 }
 
 const createSource = `-- name: CreateSource :one
-INSERT INTO notion_sources (database_id, name, description, sync_mode, property_map, poll_interval)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, database_id, name, description, sync_mode, property_map,
+INSERT INTO notion_sources (database_id, name, description, role, sync_mode, property_map, poll_interval)
+VALUES ($1, $2, $3, $7, $4, $5, $6)
+RETURNING id, database_id, name, description, role, sync_mode, property_map,
           poll_interval, enabled, last_synced_at, created_at, updated_at
 `
 
 type CreateSourceParams struct {
-	DatabaseID   string `json:"database_id"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	SyncMode     string `json:"sync_mode"`
-	PropertyMap  []byte `json:"property_map"`
-	PollInterval string `json:"poll_interval"`
+	DatabaseID   string  `json:"database_id"`
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	SyncMode     string  `json:"sync_mode"`
+	PropertyMap  []byte  `json:"property_map"`
+	PollInterval string  `json:"poll_interval"`
+	Role         *string `json:"role"`
 }
 
 // Register a new Notion database source.
@@ -1134,6 +1221,7 @@ func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (Not
 		arg.SyncMode,
 		arg.PropertyMap,
 		arg.PollInterval,
+		arg.Role,
 	)
 	var i NotionSource
 	err := row.Scan(
@@ -1141,6 +1229,7 @@ func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (Not
 		&i.DatabaseID,
 		&i.Name,
 		&i.Description,
+		&i.Role,
 		&i.SyncMode,
 		&i.PropertyMap,
 		&i.PollInterval,
@@ -2602,6 +2691,31 @@ func (q *Queries) NotionProjectPageIDs(ctx context.Context) ([]*string, error) {
 	return items, nil
 }
 
+const notionTaskPageIDs = `-- name: NotionTaskPageIDs :many
+SELECT notion_page_id FROM tasks WHERE notion_page_id IS NOT NULL ORDER BY title
+`
+
+// List all Notion page IDs for tasks.
+func (q *Queries) NotionTaskPageIDs(ctx context.Context) ([]*string, error) {
+	rows, err := q.db.Query(ctx, notionTaskPageIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*string{}
+	for rows.Next() {
+		var notion_page_id *string
+		if err := rows.Scan(&notion_page_id); err != nil {
+			return nil, err
+		}
+		items = append(items, notion_page_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const obsidianContentSlugs = `-- name: ObsidianContentSlugs :many
 SELECT slug FROM contents WHERE source_type = 'obsidian' ORDER BY slug
 `
@@ -2711,6 +2825,44 @@ func (q *Queries) PendingRunExists(ctx context.Context, arg PendingRunExistsPara
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const pendingTasks = `-- name: PendingTasks :many
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, created_at, updated_at
+FROM tasks WHERE status != 'done'
+ORDER BY due NULLS LAST, created_at
+`
+
+// List tasks that are not done, ordered by due date.
+func (q *Queries) PendingTasks(ctx context.Context) ([]Task, error) {
+	rows, err := q.db.Query(ctx, pendingTasks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Task{}
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.NotionPageID,
+			&i.CompletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const projectByAlias = `-- name: ProjectByAlias :one
@@ -2838,6 +2990,18 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const projectIDByNotionPageID = `-- name: ProjectIDByNotionPageID :one
+SELECT id FROM projects WHERE notion_page_id = $1
+`
+
+// Resolve a Notion page ID to a project UUID.
+func (q *Queries) ProjectIDByNotionPageID(ctx context.Context, notionPageID *string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, projectIDByNotionPageID, notionPageID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const projectSlugByNotionPageID = `-- name: ProjectSlugByNotionPageID :one
@@ -3747,6 +3911,24 @@ func (q *Queries) SearchNotesByText(ctx context.Context, arg SearchNotesByTextPa
 	return items, nil
 }
 
+const setSourceRole = `-- name: SetSourceRole :execrows
+UPDATE notion_sources SET role = $2, updated_at = now() WHERE id = $1
+`
+
+type SetSourceRoleParams struct {
+	ID   uuid.UUID `json:"id"`
+	Role *string   `json:"role"`
+}
+
+// Assign a role to a source. Returns rows affected (0 if id not found).
+func (q *Queries) SetSourceRole(ctx context.Context, arg SetSourceRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setSourceRole, arg.ID, arg.Role)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const similarContents = `-- name: SimilarContents :many
 SELECT c.id, c.slug, c.title, c.excerpt, c.type,
        (1 - (c.embedding <=> $1::vector))::float8 AS similarity
@@ -3800,8 +3982,35 @@ func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams
 	return items, nil
 }
 
+const sourceByDatabaseID = `-- name: SourceByDatabaseID :one
+SELECT id, database_id, name, description, role, sync_mode, property_map,
+       poll_interval, enabled, last_synced_at, created_at, updated_at
+FROM notion_sources WHERE database_id = $1 AND enabled = true
+`
+
+// Get an enabled source by its Notion database_id (for webhook routing).
+func (q *Queries) SourceByDatabaseID(ctx context.Context, databaseID string) (NotionSource, error) {
+	row := q.db.QueryRow(ctx, sourceByDatabaseID, databaseID)
+	var i NotionSource
+	err := row.Scan(
+		&i.ID,
+		&i.DatabaseID,
+		&i.Name,
+		&i.Description,
+		&i.Role,
+		&i.SyncMode,
+		&i.PropertyMap,
+		&i.PollInterval,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const sourceByID = `-- name: SourceByID :one
-SELECT id, database_id, name, description, sync_mode, property_map,
+SELECT id, database_id, name, description, role, sync_mode, property_map,
        poll_interval, enabled, last_synced_at, created_at, updated_at
 FROM notion_sources WHERE id = $1
 `
@@ -3815,6 +4024,34 @@ func (q *Queries) SourceByID(ctx context.Context, id uuid.UUID) (NotionSource, e
 		&i.DatabaseID,
 		&i.Name,
 		&i.Description,
+		&i.Role,
+		&i.SyncMode,
+		&i.PropertyMap,
+		&i.PollInterval,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const sourceByRole = `-- name: SourceByRole :one
+SELECT id, database_id, name, description, role, sync_mode, property_map,
+       poll_interval, enabled, last_synced_at, created_at, updated_at
+FROM notion_sources WHERE role = $1 AND enabled = true
+`
+
+// Get the enabled source assigned to a system role.
+func (q *Queries) SourceByRole(ctx context.Context, role *string) (NotionSource, error) {
+	row := q.db.QueryRow(ctx, sourceByRole, role)
+	var i NotionSource
+	err := row.Scan(
+		&i.ID,
+		&i.DatabaseID,
+		&i.Name,
+		&i.Description,
+		&i.Role,
 		&i.SyncMode,
 		&i.PropertyMap,
 		&i.PollInterval,
@@ -3827,7 +4064,7 @@ func (q *Queries) SourceByID(ctx context.Context, id uuid.UUID) (NotionSource, e
 }
 
 const sources = `-- name: Sources :many
-SELECT id, database_id, name, description, sync_mode, property_map,
+SELECT id, database_id, name, description, role, sync_mode, property_map,
        poll_interval, enabled, last_synced_at, created_at, updated_at
 FROM notion_sources
 ORDER BY created_at DESC
@@ -3848,6 +4085,7 @@ func (q *Queries) Sources(ctx context.Context) ([]NotionSource, error) {
 			&i.DatabaseID,
 			&i.Name,
 			&i.Description,
+			&i.Role,
 			&i.SyncMode,
 			&i.PropertyMap,
 			&i.PollInterval,
@@ -3906,12 +4144,49 @@ func (q *Queries) TagBySlug(ctx context.Context, slug string) (Tag, error) {
 	return i, err
 }
 
+const tasks = `-- name: Tasks :many
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, created_at, updated_at
+FROM tasks ORDER BY status, due NULLS LAST, created_at DESC
+`
+
+// List all tasks ordered by status and due date.
+func (q *Queries) Tasks(ctx context.Context) ([]Task, error) {
+	rows, err := q.db.Query(ctx, tasks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Task{}
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.NotionPageID,
+			&i.CompletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const toggleSourceEnabled = `-- name: ToggleSourceEnabled :one
 UPDATE notion_sources SET
     enabled = NOT enabled,
     updated_at = now()
 WHERE id = $1
-RETURNING id, database_id, name, description, sync_mode, property_map,
+RETURNING id, database_id, name, description, role, sync_mode, property_map,
           poll_interval, enabled, last_synced_at, created_at, updated_at
 `
 
@@ -3924,6 +4199,7 @@ func (q *Queries) ToggleSourceEnabled(ctx context.Context, id uuid.UUID) (Notion
 		&i.DatabaseID,
 		&i.Name,
 		&i.Description,
+		&i.Role,
 		&i.SyncMode,
 		&i.PropertyMap,
 		&i.PollInterval,
@@ -4533,7 +4809,7 @@ UPDATE notion_sources SET
     enabled = COALESCE($6, enabled),
     updated_at = now()
 WHERE id = $7
-RETURNING id, database_id, name, description, sync_mode, property_map,
+RETURNING id, database_id, name, description, role, sync_mode, property_map,
           poll_interval, enabled, last_synced_at, created_at, updated_at
 `
 
@@ -4564,6 +4840,7 @@ func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (Not
 		&i.DatabaseID,
 		&i.Name,
 		&i.Description,
+		&i.Role,
 		&i.SyncMode,
 		&i.PropertyMap,
 		&i.PollInterval,
@@ -4987,6 +5264,56 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertTaskByNotionPageID = `-- name: UpsertTaskByNotionPageID :one
+INSERT INTO tasks (title, status, due, project_id, notion_page_id, completed_at)
+VALUES ($1, $2::task_status, $3, $4, $5,
+        CASE WHEN $2::task_status = 'done' THEN now() ELSE NULL END)
+ON CONFLICT (notion_page_id) DO UPDATE SET
+    title        = EXCLUDED.title,
+    status       = EXCLUDED.status,
+    due          = EXCLUDED.due,
+    project_id   = EXCLUDED.project_id,
+    completed_at = CASE
+        WHEN EXCLUDED.status = 'done' AND tasks.completed_at IS NULL THEN now()
+        ELSE tasks.completed_at
+    END,
+    updated_at   = now()
+RETURNING id, title, status, due, project_id, notion_page_id,
+          completed_at, created_at, updated_at
+`
+
+type UpsertTaskByNotionPageIDParams struct {
+	Title        string     `json:"title"`
+	Status       TaskStatus `json:"status"`
+	Due          *time.Time `json:"due"`
+	ProjectID    *uuid.UUID `json:"project_id"`
+	NotionPageID *string    `json:"notion_page_id"`
+}
+
+// Upsert a task from Notion sync. completed_at is set by the DB on first transition to done.
+func (q *Queries) UpsertTaskByNotionPageID(ctx context.Context, arg UpsertTaskByNotionPageIDParams) (Task, error) {
+	row := q.db.QueryRow(ctx, upsertTaskByNotionPageID,
+		arg.Title,
+		arg.Status,
+		arg.Due,
+		arg.ProjectID,
+		arg.NotionPageID,
+	)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.Due,
+		&i.ProjectID,
+		&i.NotionPageID,
+		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

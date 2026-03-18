@@ -304,7 +304,7 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 
 	body, _ := json.Marshal(map[string]any{
 		"filter": map[string]string{
-			"value":    "database",
+			"value":    "data_source",
 			"property": "object",
 		},
 		"page_size": 100,

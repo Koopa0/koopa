@@ -54,6 +54,7 @@ type Source struct {
 	DatabaseID   string          `json:"database_id"`
 	Name         string          `json:"name"`
 	Description  string          `json:"description"`
+	Role         *string         `json:"role,omitempty"`
 	SyncMode     string          `json:"sync_mode"`
 	PropertyMap  json.RawMessage `json:"property_map"`
 	PollInterval string          `json:"poll_interval"`
@@ -68,6 +69,7 @@ type CreateSourceParams struct {
 	DatabaseID   string          `json:"database_id"`
 	Name         string          `json:"name"`
 	Description  string          `json:"description"`
+	Role         *string         `json:"role,omitempty"`
 	SyncMode     string          `json:"sync_mode"`
 	PropertyMap  json.RawMessage `json:"property_map"`
 	PollInterval string          `json:"poll_interval"`
@@ -84,15 +86,9 @@ type UpdateSourceParams struct {
 }
 
 // Config holds Notion integration configuration.
-// All database IDs are Data Source (Collection) IDs, used for both
-// API queries (POST /v1/data_sources/{id}/query) and webhook routing.
 type Config struct {
 	APIKey        string
 	WebhookSecret string
-	ProjectsDB    string // Data Source ID for C1 Projects
-	TasksDB       string // Data Source ID for C2 Tasks
-	BooksDB       string // Data Source ID for C5 Books
-	GoalsDB       string // Data Source ID for Goals
 }
 
 // WebhookPayload is the Notion webhook event structure (API version 2025-09-03).
@@ -120,16 +116,23 @@ type Entity struct {
 	Type string `json:"type"`
 }
 
-// database identifies which sync path to take.
-type database int
-
+// Role constants for system-assigned Notion source roles.
 const (
-	dbUnknown  database = iota
-	dbProjects          // C1: project sync
-	dbTasks             // C2: task activity
-	dbBooks             // C5: book bookmark
-	dbGoals             // goals sync
+	RoleProjects = "projects"
+	RoleTasks    = "tasks"
+	RoleBooks    = "books"
+	RoleGoals    = "goals"
 )
+
+// ValidRole reports whether s is a valid source role.
+// Empty string is valid (means no role assigned).
+func ValidRole(s string) bool {
+	switch s {
+	case "", RoleProjects, RoleTasks, RoleBooks, RoleGoals:
+		return true
+	}
+	return false
+}
 
 var (
 	// ErrSkipped indicates the event was intentionally skipped.

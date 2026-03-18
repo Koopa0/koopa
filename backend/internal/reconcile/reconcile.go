@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+
+	"github.com/koopa0/blog-backend/internal/notion"
 )
 
 // DirectoryLister lists markdown file slugs in a directory.
@@ -57,10 +59,9 @@ func (r Report) HasIssues() bool {
 		len(r.GoalsMissing) > 0 || len(r.GoalsOrphaned) > 0
 }
 
-// Config holds the configuration for reconciliation.
-type Config struct {
-	NotionProjectsDB string
-	NotionGoalsDB    string
+// RoleLookup resolves a Notion database ID by system role.
+type RoleLookup interface {
+	DatabaseIDByRole(ctx context.Context, role string) (string, error)
 }
 
 // Reconciler runs weekly reconciliation checks.
@@ -71,7 +72,7 @@ type Reconciler struct {
 	goals    NotionPageIDLister
 	notion   NotionDBQuerier
 	notifier Sender
-	config   Config
+	roles    RoleLookup
 	logger   *slog.Logger
 }
 
@@ -83,7 +84,7 @@ func New(
 	goals NotionPageIDLister,
 	notion NotionDBQuerier,
 	notifier Sender,
-	cfg Config,
+	roles RoleLookup,
 	logger *slog.Logger,
 ) *Reconciler {
 	return &Reconciler{
@@ -93,7 +94,7 @@ func New(
 		goals:    goals,
 		notion:   notion,
 		notifier: notifier,
-		config:   cfg,
+		roles:    roles,
 		logger:   logger,
 	}
 }
@@ -188,19 +189,23 @@ func (r *Reconciler) reconcileNotion(ctx context.Context) Report {
 		localProjIDs, localProjErr = r.projects.NotionPageIDs(ctx)
 	})
 	wg.Go(func() {
-		if r.config.NotionProjectsDB == "" {
+		projDBID, err := r.roles.DatabaseIDByRole(ctx, notion.RoleProjects)
+		if err != nil {
+			r.logger.Warn("reconcile: skipping projects, role lookup failed", "error", err)
 			return
 		}
-		notionProjIDs, notionProjErr = r.notion.QueryPageIDs(ctx, r.config.NotionProjectsDB)
+		notionProjIDs, notionProjErr = r.notion.QueryPageIDs(ctx, projDBID)
 	})
 	wg.Go(func() {
 		localGoalIDs, localGoalErr = r.goals.NotionPageIDs(ctx)
 	})
 	wg.Go(func() {
-		if r.config.NotionGoalsDB == "" {
+		goalsDBID, err := r.roles.DatabaseIDByRole(ctx, notion.RoleGoals)
+		if err != nil {
+			r.logger.Warn("reconcile: skipping goals, role lookup failed", "error", err)
 			return
 		}
-		notionGoalIDs, notionGoalErr = r.notion.QueryPageIDs(ctx, r.config.NotionGoalsDB)
+		notionGoalIDs, notionGoalErr = r.notion.QueryPageIDs(ctx, goalsDBID)
 	})
 	wg.Wait()
 

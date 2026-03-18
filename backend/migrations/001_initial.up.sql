@@ -251,6 +251,26 @@ CREATE TABLE goals (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- === Tasks (synced from Notion) ===
+
+CREATE TYPE task_status AS ENUM ('todo', 'in-progress', 'done');
+
+CREATE TABLE tasks (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title          TEXT NOT NULL,
+    status         task_status NOT NULL DEFAULT 'todo',
+    due            DATE,
+    project_id     UUID REFERENCES projects(id),
+    notion_page_id TEXT UNIQUE,
+    completed_at   TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_tasks_status ON tasks (status) WHERE status != 'done';
+CREATE INDEX idx_tasks_project ON tasks (project_id) WHERE project_id IS NOT NULL;
+CREATE INDEX idx_tasks_completed ON tasks (completed_at) WHERE status = 'done';
+
 -- Seed topics
 INSERT INTO topics (slug, name, sort_order) VALUES
 ('go',             'Go',              1),
@@ -283,7 +303,7 @@ ON CONFLICT (slug) DO NOTHING;
 INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
 ('https://www.ardanlabs.com/index.xml', 'Ardan Labs', 'daily',
  '{"go","rust","kubernetes","ai","devops","design"}',
- '{"deny_paths":["/news","/events","/team-live-training-courses","/self-paced-courses"]}'),
+ '{"deny_paths":["/news","/events","/team-live-training-courses","/self-paced-courses","/training","/self-paced-teams"]}'),
 
 ('https://go.dev/blog/feed.atom', 'The Go Blog', 'daily',
  '{"go"}', '{}'),
@@ -498,6 +518,7 @@ CREATE TABLE notion_sources (
     database_id     TEXT NOT NULL UNIQUE,
     name            TEXT NOT NULL,
     description     TEXT NOT NULL DEFAULT '',
+    role            TEXT CHECK (role IN ('projects', 'tasks', 'books', 'goals')),
     sync_mode       TEXT NOT NULL DEFAULT 'full',
     property_map    JSONB NOT NULL DEFAULT '{}',
     poll_interval   TEXT NOT NULL DEFAULT '15 minutes',
@@ -508,6 +529,7 @@ CREATE TABLE notion_sources (
 );
 
 CREATE INDEX idx_notion_sources_enabled ON notion_sources (id) WHERE enabled = true;
+CREATE UNIQUE INDEX idx_notion_sources_role ON notion_sources (role) WHERE role IS NOT NULL;
 
 -- === Wikilink Edges ===
 

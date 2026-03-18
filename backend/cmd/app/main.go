@@ -45,6 +45,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/spaced"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/tag"
+	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
 	"github.com/koopa0/blog-backend/internal/upload"
@@ -70,10 +71,6 @@ type config struct {
 	ClaudeModel         string
 	NotionAPIKey        string
 	NotionWebhookSecret string
-	NotionProjectsDB    string
-	NotionTasksDB       string
-	NotionBooksDB       string
-	NotionGoalsDB       string
 	LINEChannelToken    string
 	LINEUserID          string
 	TelegramBotToken    string
@@ -137,6 +134,7 @@ func run(logger *slog.Logger) error {
 	tagStore := tag.NewStore(pool)
 	spacedStore := spaced.NewStore(pool)
 	notionSourceStore := notion.NewStore(pool)
+	taskStore := task.NewStore(pool)
 
 	activityStore := activity.NewStore(pool)
 
@@ -183,6 +181,17 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("creating topic cache: %w", err)
 	}
 	defer topicCache.Close()
+
+	// Cost model: count-based for notion source role lookup (max ~10 entries).
+	sourceCache, err := ristretto.NewCache(&ristretto.Config[string, string]{
+		NumCounters: 50, // 10× expected items (~4 sources)
+		MaxCost:     10, // count-based: max 10 items
+		BufferItems: 64,
+	})
+	if err != nil {
+		return fmt.Errorf("creating source cache: %w", err)
+	}
+	defer sourceCache.Close()
 
 	// upload
 	s3Client := upload.NewS3Client(ctx, cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey)
@@ -280,13 +289,12 @@ func run(logger *slog.Logger) error {
 		contentPolish := flow.NewContentPolish(g, claudeModel, contentStore, logger)
 		digestGenerate := flow.NewDigestGenerate(g, geminiModel, contentStore, collectedStore, projectStore, tokenBudget, taipeiLoc, logger)
 		bookmarkGenerate := flow.NewBookmarkGenerate(g, geminiModel, collectedStore, tokenBudget, logger)
-		notionTasks := notion.NewTaskDB(notionClient, cfg.NotionTasksDB)
 		morningBrief := flow.NewMorningBrief(
-			g, geminiModel, notionTasks,
+			g, geminiModel, taskStore,
 			collectedStore, contentStore, notifier, tokenBudget, taipeiLoc, logger,
 		)
 		weeklyReview := flow.NewWeeklyReview(
-			g, geminiModel, notionTasks,
+			g, geminiModel, taskStore, taskStore,
 			collectedStore, contentStore, projectStore, githubFetcher,
 			notifier, tokenBudget, taipeiLoc, logger,
 		)
@@ -508,18 +516,20 @@ func run(logger *slog.Logger) error {
 				logger.Error("cron: sending spaced reminder", "error", sendErr)
 			}
 			// Create a single Notion reminder task for today's reviews.
-			if cfg.NotionTasksDB != "" && cfg.NotionAPIKey != "" {
-				today := time.Now().In(taipeiLoc).Format("2006-01-02")
-				title := fmt.Sprintf("📚 複習 %d 篇筆記", count)
-				if createErr := notionClient.CreateTask(ctx, notion.CreateTaskParams{
-					DatabaseID:  cfg.NotionTasksDB,
-					Title:       title,
-					DueDate:     today,
-					Description: "https://koopa0.dev/admin/spaced",
-				}); createErr != nil {
-					logger.Error("cron: creating spaced reminder task in notion", "error", createErr)
-				} else {
-					logger.Info("cron: spaced reminder task created in notion", "count", count)
+			if cfg.NotionAPIKey != "" {
+				if tasksSrc, lookupErr := notionSourceStore.SourceByRole(ctx, notion.RoleTasks); lookupErr == nil {
+					today := time.Now().In(taipeiLoc).Format("2006-01-02")
+					title := fmt.Sprintf("📚 複習 %d 篇筆記", count)
+					if createErr := notionClient.CreateTask(ctx, notion.CreateTaskParams{
+						DatabaseID:  tasksSrc.DatabaseID,
+						Title:       title,
+						DueDate:     today,
+						Description: "https://koopa0.dev/admin/spaced",
+					}); createErr != nil {
+						logger.Error("cron: creating spaced reminder task in notion", "error", createErr)
+					} else {
+						logger.Info("cron: spaced reminder task created in notion", "count", count)
+					}
 				}
 			}
 		}
@@ -533,10 +543,7 @@ func run(logger *slog.Logger) error {
 		githubFetcher, contentStore,
 		projectStore, goalStore,
 		notionClient, notifier,
-		reconcile.Config{
-			NotionProjectsDB: cfg.NotionProjectsDB,
-			NotionGoalsDB:    cfg.NotionGoalsDB,
-		},
+		notionSourceStore,
 		logger,
 	)
 
@@ -560,17 +567,15 @@ func run(logger *slog.Logger) error {
 	defer webhookDedup.Stop()
 
 	// notion webhook handler
-	notionHandler := notion.NewHandler(notionClient, projectStore, goalStore, runner, notion.Config{
-		APIKey:        cfg.NotionAPIKey,
-		WebhookSecret: cfg.NotionWebhookSecret,
-		ProjectsDB:    cfg.NotionProjectsDB,
-		TasksDB:       cfg.NotionTasksDB,
-		BooksDB:       cfg.NotionBooksDB,
-		GoalsDB:       cfg.NotionGoalsDB,
-	}, logger)
-	notionHandler.SetDedup(webhookDedup)
-	notionHandler.SetEventRecorder(activityStore)
-	notionHandler.SetProjectSlugResolver(projectStore)
+	notionHandler := notion.NewHandler(
+		notionClient, notionSourceStore, sourceCache,
+		projectStore, goalStore, taskStore, runner,
+		cfg.NotionWebhookSecret, logger,
+		notion.WithDedup(webhookDedup),
+		notion.WithEventRecorder(activityStore),
+		notion.WithProjectSlugResolver(projectStore),
+		notion.WithProjectIDResolver(projectStore),
+	)
 
 	// pipeline dependencies
 	topicLookup := pipeline.NewTopicLookup(func(ctx context.Context, slug string) (uuid.UUID, error) {
@@ -646,7 +651,7 @@ func run(logger *slog.Logger) error {
 		Notion:       notionHandler,
 		Tag:          tag.NewHandler(tagStore, pool, logger),
 		Spaced:       spaced.NewHandler(spacedStore, logger),
-		NotionSource: notion.NewSourceHandler(notionSourceStore, notionClient, logger),
+		NotionSource: notion.NewSourceHandler(notionSourceStore, notionClient, sourceCache, logger),
 		Stats:        stats.NewHandler(stats.NewStore(pool), logger),
 		Activity:     activity.NewHandler(activityStore, logger),
 		Logger:       logger,
@@ -705,10 +710,6 @@ func loadConfig(logger *slog.Logger) config {
 	// Notion integration (optional — empty means disabled)
 	cfg.NotionAPIKey = os.Getenv("NOTION_API_KEY")
 	cfg.NotionWebhookSecret = os.Getenv("NOTION_WEBHOOK_SECRET")
-	cfg.NotionProjectsDB = os.Getenv("NOTION_PROJECTS_DB")
-	cfg.NotionTasksDB = os.Getenv("NOTION_TASKS_DB")
-	cfg.NotionBooksDB = os.Getenv("NOTION_BOOKS_DB")
-	cfg.NotionGoalsDB = os.Getenv("NOTION_GOALS_DB")
 
 	// Google OAuth
 	cfg.GoogleClientID = requireEnv("GOOGLE_CLIENT_ID", logger)

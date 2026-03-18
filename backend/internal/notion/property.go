@@ -7,6 +7,7 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // titleProperty extracts the plain text from a Notion title property.
@@ -147,6 +148,20 @@ func mapNotionGoalStatus(notionStatus string) goal.Status {
 		return goal.StatusAbandoned
 	default:
 		return goal.StatusNotStarted
+	}
+}
+
+// mapNotionTaskStatus maps a Notion task status to the local enum.
+func mapNotionTaskStatus(notionStatus string) task.Status {
+	switch notionStatus {
+	case "Not Started", "To Do":
+		return task.StatusTodo
+	case "In Progress", "Doing":
+		return task.StatusInProgress
+	case "Done":
+		return task.StatusDone
+	default:
+		return task.StatusTodo
 	}
 }
 

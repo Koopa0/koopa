@@ -74,6 +74,10 @@ ORDER BY updated_at DESC;
 -- Resolve a Notion page ID to a project slug.
 SELECT slug FROM projects WHERE notion_page_id = $1;
 
+-- name: ProjectIDByNotionPageID :one
+-- Resolve a Notion page ID to a project UUID.
+SELECT id FROM projects WHERE notion_page_id = $1;
+
 -- name: ActiveProjectSlugsWithRepo :many
 -- List slugs of active projects that have a linked repository.
 SELECT slug FROM projects

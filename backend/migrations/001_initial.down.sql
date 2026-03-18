@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS note_links;
 DROP TABLE IF EXISTS notion_sources;
+DROP TABLE IF EXISTS tasks;
 DROP TABLE IF EXISTS spaced_intervals;
 DROP TABLE IF EXISTS project_aliases;
 DROP TABLE IF EXISTS activity_event_tags;
@@ -30,5 +31,6 @@ DROP TYPE IF EXISTS content_status;
 DROP TYPE IF EXISTS flow_status;
 DROP TYPE IF EXISTS content_type;
 DROP TYPE IF EXISTS goal_status;
+DROP TYPE IF EXISTS task_status;
 
 DROP EXTENSION IF EXISTS vector;

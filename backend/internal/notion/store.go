@@ -15,12 +15,13 @@ import (
 
 // Store manages notion_sources in the database.
 type Store struct {
-	q *db.Queries
+	dbtx db.DBTX
+	q    *db.Queries
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{q: db.New(dbtx)}
+	return &Store{dbtx: dbtx, q: db.New(dbtx)}
 }
 
 // WithTx returns a Store that uses the given transaction.
@@ -54,12 +55,51 @@ func (s *Store) Source(ctx context.Context, id uuid.UUID) (*Source, error) {
 	return &src, nil
 }
 
+// SourceByRole returns the enabled source assigned to the given system role.
+// Returns ErrNotFound if no source has this role or the source is disabled.
+func (s *Store) SourceByRole(ctx context.Context, role string) (*Source, error) {
+	row, err := s.q.SourceByRole(ctx, &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying notion source by role %s: %w", role, err)
+	}
+	src := dbToSource(row)
+	return &src, nil
+}
+
+// SourceByDatabaseID returns the source matching a Notion database_id.
+// Returns ErrNotFound if not registered.
+func (s *Store) SourceByDatabaseID(ctx context.Context, databaseID string) (*Source, error) {
+	row, err := s.q.SourceByDatabaseID(ctx, databaseID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying notion source by database_id %s: %w", databaseID, err)
+	}
+	src := dbToSource(row)
+	return &src, nil
+}
+
+// DatabaseIDByRole returns the Notion database_id for the given system role.
+// Returns ErrNotFound if no enabled source has this role.
+func (s *Store) DatabaseIDByRole(ctx context.Context, role string) (string, error) {
+	src, err := s.SourceByRole(ctx, role)
+	if err != nil {
+		return "", err
+	}
+	return src.DatabaseID, nil
+}
+
 // CreateSource inserts a new source. Returns ErrConflict if database_id is taken.
 func (s *Store) CreateSource(ctx context.Context, p CreateSourceParams) (*Source, error) {
 	row, err := s.q.CreateSource(ctx, db.CreateSourceParams{
 		DatabaseID:   p.DatabaseID,
 		Name:         p.Name,
 		Description:  p.Description,
+		Role:         p.Role,
 		SyncMode:     p.SyncMode,
 		PropertyMap:  p.PropertyMap,
 		PollInterval: p.PollInterval,
@@ -93,6 +133,55 @@ func (s *Store) UpdateSource(ctx context.Context, id uuid.UUID, p UpdateSourcePa
 	}
 	src := dbToSource(row)
 	return &src, nil
+}
+
+// SetRole assigns a system role to a source, clearing it from any other source first.
+// Both operations run in a single transaction for atomicity.
+func (s *Store) SetRole(ctx context.Context, id uuid.UUID, role string) error {
+	pool, ok := s.dbtx.(interface {
+		Begin(ctx context.Context) (pgx.Tx, error)
+	})
+	if !ok {
+		return fmt.Errorf("SetRole requires a pool with Begin support")
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // best-effort rollback on failure
+
+	qtx := s.q.WithTx(tx)
+
+	// clear the role from any existing holder
+	if err := qtx.ClearRole(ctx, &role); err != nil {
+		return fmt.Errorf("clearing existing role %s: %w", role, err)
+	}
+	n, err := qtx.SetSourceRole(ctx, db.SetSourceRoleParams{ID: id, Role: &role})
+	if err != nil {
+		return fmt.Errorf("setting role %s on source %s: %w", role, id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing role assignment: %w", err)
+	}
+	return nil
+}
+
+// ClearSourceRole removes the system role from a source.
+// Returns ErrNotFound if the source does not exist.
+func (s *Store) ClearSourceRole(ctx context.Context, id uuid.UUID) error {
+	n, err := s.q.ClearSourceRole(ctx, id)
+	if err != nil {
+		return fmt.Errorf("clearing role on source %s: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteSource removes a source by ID. Returns ErrNotFound if the ID does not exist.
@@ -135,6 +224,7 @@ func dbToSource(r db.NotionSource) Source {
 		DatabaseID:   r.DatabaseID,
 		Name:         r.Name,
 		Description:  r.Description,
+		Role:         r.Role,
 		SyncMode:     r.SyncMode,
 		PropertyMap:  json.RawMessage(r.PropertyMap),
 		PollInterval: r.PollInterval,

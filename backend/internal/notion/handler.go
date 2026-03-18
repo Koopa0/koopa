@@ -3,18 +3,24 @@ package notion
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
+
+// sourceCacheTTL is how long a database_id → role mapping stays in cache.
+const sourceCacheTTL = 10 * time.Minute
 
 // ProjectWriter upserts projects from Notion data.
 type ProjectWriter interface {
@@ -26,6 +32,12 @@ type ProjectWriter interface {
 // GoalWriter upserts goals from Notion data.
 type GoalWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error)
+	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
+}
+
+// TaskWriter upserts tasks from Notion data.
+type TaskWriter interface {
+	UpsertByNotionPageID(ctx context.Context, p task.UpsertByNotionParams) (*task.Task, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
@@ -44,44 +56,79 @@ type ProjectSlugResolver interface {
 	SlugByNotionPageID(ctx context.Context, notionPageID string) (string, error)
 }
 
+// ProjectIDResolver resolves a Notion page ID to a local project UUID.
+type ProjectIDResolver interface {
+	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
+}
+
 // Handler handles Notion webhook events.
 type Handler struct {
-	client       *Client
-	projects     ProjectWriter
-	goals        GoalWriter
-	jobs         JobSubmitter
-	events       EventRecorder
-	projectSlugs ProjectSlugResolver
-	dedup        *webhook.DeduplicationCache
-	config       Config
-	logger       *slog.Logger
+	client        *Client
+	store         *Store
+	sourceCache   *ristretto.Cache[string, string]
+	projects      ProjectWriter
+	goals         GoalWriter
+	tasks         TaskWriter
+	jobs          JobSubmitter
+	events        EventRecorder
+	projectSlugs  ProjectSlugResolver
+	projectIDs    ProjectIDResolver
+	dedup         *webhook.DeduplicationCache
+	webhookSecret string
+	logger        *slog.Logger
+}
+
+// HandlerOption configures optional Handler dependencies.
+type HandlerOption func(*Handler)
+
+// WithEventRecorder sets the activity event recorder for Notion sync tracking.
+func WithEventRecorder(e EventRecorder) HandlerOption {
+	return func(h *Handler) { h.events = e }
+}
+
+// WithProjectSlugResolver sets the project slug resolver for task event project attribution.
+func WithProjectSlugResolver(r ProjectSlugResolver) HandlerOption {
+	return func(h *Handler) { h.projectSlugs = r }
+}
+
+// WithProjectIDResolver sets the project ID resolver for task → project FK resolution.
+func WithProjectIDResolver(r ProjectIDResolver) HandlerOption {
+	return func(h *Handler) { h.projectIDs = r }
+}
+
+// WithDedup sets the deduplication cache for webhook replay protection.
+func WithDedup(c *webhook.DeduplicationCache) HandlerOption {
+	return func(h *Handler) { h.dedup = c }
 }
 
 // NewHandler returns a Notion webhook Handler.
-func NewHandler(client *Client, projects ProjectWriter, goals GoalWriter, jobs JobSubmitter, cfg Config, logger *slog.Logger) *Handler {
-	return &Handler{
-		client:   client,
-		projects: projects,
-		goals:    goals,
-		jobs:     jobs,
-		config:   cfg,
-		logger:   logger,
+func NewHandler(
+	client *Client,
+	store *Store,
+	sourceCache *ristretto.Cache[string, string],
+	projects ProjectWriter,
+	goals GoalWriter,
+	tasks TaskWriter,
+	jobs JobSubmitter,
+	webhookSecret string,
+	logger *slog.Logger,
+	opts ...HandlerOption,
+) *Handler {
+	h := &Handler{
+		client:        client,
+		store:         store,
+		sourceCache:   sourceCache,
+		projects:      projects,
+		goals:         goals,
+		tasks:         tasks,
+		jobs:          jobs,
+		webhookSecret: webhookSecret,
+		logger:        logger,
 	}
-}
-
-// SetEventRecorder sets the activity event recorder for Notion sync tracking.
-func (h *Handler) SetEventRecorder(e EventRecorder) {
-	h.events = e
-}
-
-// SetProjectSlugResolver sets the project slug resolver for task event project attribution.
-func (h *Handler) SetProjectSlugResolver(r ProjectSlugResolver) {
-	h.projectSlugs = r
-}
-
-// SetDedup sets the deduplication cache for webhook replay protection.
-func (h *Handler) SetDedup(c *webhook.DeduplicationCache) {
-	h.dedup = c
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // Webhook handles POST /api/webhook/notion.
@@ -105,13 +152,13 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.config.WebhookSecret == "" {
+	if h.webhookSecret == "" {
 		http.Error(w, "not implemented", http.StatusNotImplemented)
 		return
 	}
 
 	sig := r.Header.Get("X-Notion-Signature")
-	if err := webhook.VerifySignature(body, sig, h.config.WebhookSecret); err != nil {
+	if err := webhook.VerifySignature(body, sig, h.webhookSecret); err != nil {
 		h.logger.Warn("invalid notion webhook signature")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -144,34 +191,34 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	db := h.routeDatabase(payload.Data.Parent.DataSourceID)
+	role := h.resolveRole(r.Context(), payload.Data.Parent.DataSourceID)
 	pageID := payload.Entity.ID
 
 	h.logger.Info("notion webhook received",
 		"type", payload.Type,
 		"page_id", pageID,
 		"data_source_id", payload.Data.Parent.DataSourceID,
-		"route", db,
+		"role", role,
 	)
 
-	switch db {
-	case dbProjects:
+	switch role {
+	case RoleProjects:
 		if err := h.syncProject(r.Context(), pageID); err != nil {
 			h.logger.Error("syncing project from notion", "page_id", pageID, "error", err)
 			http.Error(w, "sync failed", http.StatusInternalServerError)
 			return
 		}
-	case dbTasks:
-		if err := h.syncTaskActivity(r.Context(), pageID); err != nil {
-			h.logger.Error("syncing task activity from notion", "page_id", pageID, "error", err)
-			// task activity is best-effort, still return 200
+	case RoleTasks:
+		if err := h.syncTask(r.Context(), pageID); err != nil {
+			h.logger.Error("syncing task from notion", "page_id", pageID, "error", err)
+			// task sync is best-effort, still return 200
 		}
-	case dbBooks:
+	case RoleBooks:
 		if err := h.syncBook(r.Context(), pageID); err != nil {
 			h.logger.Error("syncing book from notion", "page_id", pageID, "error", err)
 			// book sync is best-effort, still return 200
 		}
-	case dbGoals:
+	case RoleGoals:
 		if err := h.syncGoal(r.Context(), pageID); err != nil {
 			h.logger.Error("syncing goal from notion", "page_id", pageID, "error", err)
 			// goal sync is best-effort, still return 200
@@ -188,16 +235,11 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 // SyncAll fetches all pages from configured Notion databases and upserts them.
 // Used by the hourly cron to catch any missed webhook events.
 func (h *Handler) SyncAll(ctx context.Context) {
-	if h.config.APIKey == "" {
-		h.logger.Debug("notion sync: no API key configured, skipping")
-		return
-	}
-
 	var synced, failed int
 
 	// sync projects
-	if h.config.ProjectsDB != "" {
-		pageIDs, err := h.client.QueryPageIDs(ctx, h.config.ProjectsDB)
+	if src, err := h.store.SourceByRole(ctx, RoleProjects); err == nil {
+		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
 		if err != nil {
 			h.logger.Error("notion sync: querying projects db", "error", err)
 		} else {
@@ -216,11 +258,13 @@ func (h *Handler) SyncAll(ctx context.Context) {
 				h.logger.Info("notion sync: archived orphan projects", "count", archived)
 			}
 		}
+	} else if !errors.Is(err, ErrNotFound) {
+		h.logger.Error("notion sync: looking up projects source", "error", err)
 	}
 
 	// sync goals
-	if h.config.GoalsDB != "" {
-		pageIDs, err := h.client.QueryPageIDs(ctx, h.config.GoalsDB)
+	if src, err := h.store.SourceByRole(ctx, RoleGoals); err == nil {
+		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
 		if err != nil {
 			h.logger.Error("notion sync: querying goals db", "error", err)
 		} else {
@@ -239,26 +283,65 @@ func (h *Handler) SyncAll(ctx context.Context) {
 				h.logger.Info("notion sync: archived orphan goals", "count", archived)
 			}
 		}
+	} else if !errors.Is(err, ErrNotFound) {
+		h.logger.Error("notion sync: looking up goals source", "error", err)
+	}
+
+	// sync tasks
+	if src, err := h.store.SourceByRole(ctx, RoleTasks); err == nil {
+		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
+		if err != nil {
+			h.logger.Error("notion sync: querying tasks db", "error", err)
+		} else {
+			for _, id := range pageIDs {
+				if err := h.syncTask(ctx, id); err != nil {
+					h.logger.Error("notion sync: syncing task", "page_id", id, "error", err)
+					failed++
+					continue
+				}
+				synced++
+			}
+			// archive tasks whose notion_page_id is no longer in Notion
+			if archived, err := h.tasks.ArchiveOrphanNotion(ctx, pageIDs); err != nil {
+				h.logger.Error("notion sync: archiving orphan tasks", "error", err)
+			} else if archived > 0 {
+				h.logger.Info("notion sync: archived orphan tasks", "count", archived)
+			}
+		}
+	} else if !errors.Is(err, ErrNotFound) {
+		h.logger.Error("notion sync: looking up tasks source", "error", err)
 	}
 
 	h.logger.Info("notion sync: complete", "synced", synced, "failed", failed)
 }
 
-// routeDatabase matches a webhook data source ID to a known database.
-func (h *Handler) routeDatabase(dataSourceID string) database {
+// resolveRole looks up the role for a webhook data source ID.
+// Uses Ristretto cache with TTL to avoid querying DB on every webhook.
+func (h *Handler) resolveRole(ctx context.Context, dataSourceID string) string {
 	if dataSourceID == "" {
-		return dbUnknown
+		return ""
 	}
-	switch dataSourceID {
-	case h.config.ProjectsDB:
-		return dbProjects
-	case h.config.TasksDB:
-		return dbTasks
-	case h.config.BooksDB:
-		return dbBooks
-	case h.config.GoalsDB:
-		return dbGoals
-	default:
-		return dbUnknown
+
+	// check cache first
+	if role, ok := h.sourceCache.Get(dataSourceID); ok {
+		return role
 	}
+
+	// cache miss — query store
+	src, err := h.store.SourceByDatabaseID(ctx, dataSourceID)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			h.logger.Error("resolving notion source role", "database_id", dataSourceID, "error", err)
+		}
+		// cache empty string to avoid repeated DB misses for unknown sources
+		h.sourceCache.SetWithTTL(dataSourceID, "", 1, sourceCacheTTL)
+		return ""
+	}
+
+	role := ""
+	if src.Role != nil {
+		role = *src.Role
+	}
+	h.sourceCache.SetWithTTL(dataSourceID, role, 1, sourceCacheTTL)
+	return role
 }

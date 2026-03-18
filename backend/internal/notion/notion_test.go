@@ -7,32 +7,25 @@ import (
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
-func TestRouteDatabase(t *testing.T) {
-	h := &Handler{
-		config: Config{
-			ProjectsDB: "proj-db-id",
-			TasksDB:    "task-db-id",
-			BooksDB:    "book-db-id",
-		},
-	}
-
+func TestValidRole(t *testing.T) {
 	tests := []struct {
-		name         string
-		dataSourceID string
-		want         database
+		name  string
+		input string
+		want  bool
 	}{
-		{name: "projects", dataSourceID: "proj-db-id", want: dbProjects},
-		{name: "tasks", dataSourceID: "task-db-id", want: dbTasks},
-		{name: "books", dataSourceID: "book-db-id", want: dbBooks},
-		{name: "unknown", dataSourceID: "other-id", want: dbUnknown},
-		{name: "empty", dataSourceID: "", want: dbUnknown},
+		{name: "projects", input: "projects", want: true},
+		{name: "tasks", input: "tasks", want: true},
+		{name: "books", input: "books", want: true},
+		{name: "goals", input: "goals", want: true},
+		{name: "empty", input: "", want: true},
+		{name: "invalid", input: "unknown", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := h.routeDatabase(tt.dataSourceID)
+			got := ValidRole(tt.input)
 			if got != tt.want {
-				t.Errorf("routeDatabase(%q) = %d, want %d", tt.dataSourceID, got, tt.want)
+				t.Errorf("ValidRole(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}

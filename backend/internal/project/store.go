@@ -269,6 +269,18 @@ func (s *Store) SlugByNotionPageID(ctx context.Context, notionPageID string) (st
 	return slug, nil
 }
 
+// IDByNotionPageID returns the UUID of a project identified by its Notion page ID.
+func (s *Store) IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error) {
+	id, err := s.q.ProjectIDByNotionPageID(ctx, &notionPageID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.UUID{}, ErrNotFound
+		}
+		return uuid.UUID{}, fmt.Errorf("querying project id by notion page id %s: %w", notionPageID, err)
+	}
+	return id, nil
+}
+
 // ActiveSlugsWithRepo returns slugs of active projects that have a linked repository.
 func (s *Store) ActiveSlugsWithRepo(ctx context.Context) ([]string, error) {
 	slugs, err := s.q.ActiveProjectSlugsWithRepo(ctx)

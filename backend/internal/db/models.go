@@ -416,6 +416,49 @@ func (ns NullSourceType) Value() (driver.Value, error) {
 	return string(ns.SourceType), nil
 }
 
+type TaskStatus string
+
+const (
+	TaskStatusTodo       TaskStatus = "todo"
+	TaskStatusInProgress TaskStatus = "in-progress"
+	TaskStatusDone       TaskStatus = "done"
+)
+
+func (e *TaskStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TaskStatus(s)
+	case string:
+		*e = TaskStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TaskStatus: %T", src)
+	}
+	return nil
+}
+
+type NullTaskStatus struct {
+	TaskStatus TaskStatus `json:"task_status"`
+	Valid      bool       `json:"valid"` // Valid is true if TaskStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTaskStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.TaskStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TaskStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTaskStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TaskStatus), nil
+}
+
 type ActivityEvent struct {
 	ID        int64           `json:"id"`
 	SourceID  *string         `json:"source_id"`
@@ -547,6 +590,7 @@ type NotionSource struct {
 	DatabaseID   string     `json:"database_id"`
 	Name         string     `json:"name"`
 	Description  string     `json:"description"`
+	Role         *string    `json:"role"`
 	SyncMode     string     `json:"sync_mode"`
 	PropertyMap  []byte     `json:"property_map"`
 	PollInterval string     `json:"poll_interval"`
@@ -668,6 +712,18 @@ type TagAlias struct {
 	Confirmed   bool       `json:"confirmed"`
 	ConfirmedAt *time.Time `json:"confirmed_at"`
 	CreatedAt   time.Time  `json:"created_at"`
+}
+
+type Task struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	Status       TaskStatus `json:"status"`
+	Due          *time.Time `json:"due"`
+	ProjectID    *uuid.UUID `json:"project_id"`
+	NotionPageID *string    `json:"notion_page_id"`
+	CompletedAt  *time.Time `json:"completed_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 type Topic struct {

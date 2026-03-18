@@ -16,7 +16,10 @@ import (
 	"github.com/koopa0/blog-backend/internal/collected"
 )
 
-// TaskQuerier queries pending tasks from an external source.
+// TaskQuerier queries pending tasks from the local database.
+// Data freshness depends on the hourly Notion sync (SyncAll).
+// Staleness window: ≤1 hour. If Notion is unreachable, tasks degrade gracefully
+// with stale data rather than failing outright.
 type TaskQuerier interface {
 	PendingTasks(ctx context.Context) ([]PendingTask, error)
 }

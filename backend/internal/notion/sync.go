@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // buildSourceID creates a dedup key for Notion activity events.
@@ -91,8 +93,8 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 	return nil
 }
 
-// syncTaskActivity handles C2: record task status changes and update project last_activity_at on Done.
-func (h *Handler) syncTaskActivity(ctx context.Context, pageID string) error {
+// syncTask handles C2: upsert task to local DB, record activity event, update project last_activity_at on Done.
+func (h *Handler) syncTask(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("fetching notion task page: %w", err)
@@ -108,8 +110,12 @@ func (h *Handler) syncTaskActivity(ctx context.Context, pageID string) error {
 		title = titleProperty(page.Properties["Name"])
 	}
 
-	// Resolve project slug via fallback chain: task Project → parent task Project
+	localStatus := mapNotionTaskStatus(status)
+	due := dateProperty(page.Properties["Due"])
+
+	// Resolve project via fallback chain: task Project → parent task Project
 	var projectSlug *string
+	var projectID *uuid.UUID
 	projectPageID := relationProperty(page.Properties["Project"])
 
 	// Fallback: if task has no direct Project, check Parent Task
@@ -117,19 +123,52 @@ func (h *Handler) syncTaskActivity(ctx context.Context, pageID string) error {
 		parentTaskID := relationProperty(page.Properties["Parent Task"])
 		if parentTaskID != "" {
 			parentPage, parentErr := h.client.Page(ctx, parentTaskID)
-			if parentErr == nil {
+			if parentErr != nil {
+				h.logger.Warn("resolving parent task project",
+					"task_page_id", pageID,
+					"parent_task_id", parentTaskID,
+					"error", parentErr,
+				)
+			} else {
 				projectPageID = relationProperty(parentPage.Properties["Project"])
 			}
 		}
 	}
 
-	// Resolve project page ID → slug
+	// Resolve project page ID → slug (for activity events)
 	if projectPageID != "" && h.projectSlugs != nil {
 		slug, slugErr := h.projectSlugs.SlugByNotionPageID(ctx, projectPageID)
 		if slugErr == nil {
 			projectSlug = &slug
 		}
 	}
+
+	// Resolve project page ID → UUID (for tasks table FK)
+	if projectPageID != "" && h.projectIDs != nil {
+		id, idErr := h.projectIDs.IDByNotionPageID(ctx, projectPageID)
+		if idErr == nil {
+			projectID = &id
+		}
+	}
+
+	// Upsert task to local DB (completed_at is managed by the DB via CASE expression)
+	t, err := h.tasks.UpsertByNotionPageID(ctx, task.UpsertByNotionParams{
+		Title:        title,
+		Status:       localStatus,
+		Due:          due,
+		ProjectID:    projectID,
+		NotionPageID: pageID,
+	})
+	if err != nil {
+		return fmt.Errorf("upserting task: %w", err)
+	}
+
+	h.logger.Info("task synced from notion",
+		"page_id", pageID,
+		"task_id", t.ID,
+		"title", title,
+		"status", localStatus,
+	)
 
 	// Record activity event for ALL status changes (best-effort)
 	if h.events != nil {
@@ -155,15 +194,11 @@ func (h *Handler) syncTaskActivity(ctx context.Context, pageID string) error {
 		}
 	}
 
-	// Only update project last_activity_at on Done (existing behavior preserved)
-	if status == "Done" && projectPageID != "" {
+	// Update project last_activity_at on Done
+	if localStatus == task.StatusDone && projectPageID != "" {
 		if err := h.projects.UpdateLastActivity(ctx, projectPageID); err != nil {
 			return fmt.Errorf("updating project last activity: %w", err)
 		}
-		h.logger.Info("project activity updated from task",
-			"task_page_id", pageID,
-			"project_page_id", projectPageID,
-		)
 	}
 
 	return nil
