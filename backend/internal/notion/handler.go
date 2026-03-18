@@ -245,21 +245,23 @@ func (h *Handler) SyncAll(ctx context.Context) {
 			h.logger.Error("notion sync: querying projects db", "error", err)
 		} else {
 			h.logger.Info("notion sync: fetched project pages", "count", len(pageIDs))
+			activeIDs := make([]string, 0, len(pageIDs))
 			for _, id := range pageIDs {
-				if err := h.syncProject(ctx, id); err != nil {
+				if err := h.syncProject(ctx, id); errors.Is(err, ErrSkipped) {
+					continue // trashed/archived — exclude from active set
+				} else if err != nil {
 					h.logger.Error("notion sync: syncing project", "page_id", id, "error", err)
 					failed++
 					continue
 				}
+				activeIDs = append(activeIDs, id)
 				synced++
 			}
-			// archive projects whose notion_page_id is no longer in Notion
-			if archived, err := h.projects.ArchiveOrphanNotion(ctx, pageIDs); err != nil {
+			if archived, err := h.projects.ArchiveOrphanNotion(ctx, activeIDs); err != nil {
 				h.logger.Error("notion sync: archiving orphan projects", "error", err)
 			} else if archived > 0 {
 				h.logger.Info("notion sync: archived orphan projects", "count", archived)
 			}
-			// best-effort: update last_synced_at
 			if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
 				h.logger.Error("notion sync: updating last_synced_at for projects", "error", updateErr)
 			}
@@ -276,16 +278,19 @@ func (h *Handler) SyncAll(ctx context.Context) {
 			h.logger.Error("notion sync: querying goals db", "error", err)
 		} else {
 			h.logger.Info("notion sync: fetched goal pages", "count", len(pageIDs))
+			activeIDs := make([]string, 0, len(pageIDs))
 			for _, id := range pageIDs {
-				if err := h.syncGoal(ctx, id); err != nil {
+				if err := h.syncGoal(ctx, id); errors.Is(err, ErrSkipped) {
+					continue
+				} else if err != nil {
 					h.logger.Error("notion sync: syncing goal", "page_id", id, "error", err)
 					failed++
 					continue
 				}
+				activeIDs = append(activeIDs, id)
 				synced++
 			}
-			// archive goals whose notion_page_id is no longer in Notion
-			if archived, err := h.goals.ArchiveOrphanNotion(ctx, pageIDs); err != nil {
+			if archived, err := h.goals.ArchiveOrphanNotion(ctx, activeIDs); err != nil {
 				h.logger.Error("notion sync: archiving orphan goals", "error", err)
 			} else if archived > 0 {
 				h.logger.Info("notion sync: archived orphan goals", "count", archived)
@@ -306,16 +311,19 @@ func (h *Handler) SyncAll(ctx context.Context) {
 			h.logger.Error("notion sync: querying tasks db", "error", err)
 		} else {
 			h.logger.Info("notion sync: fetched task pages", "count", len(pageIDs))
+			activeIDs := make([]string, 0, len(pageIDs))
 			for _, id := range pageIDs {
-				if err := h.syncTask(ctx, id); err != nil {
+				if err := h.syncTask(ctx, id); errors.Is(err, ErrSkipped) {
+					continue
+				} else if err != nil {
 					h.logger.Error("notion sync: syncing task", "page_id", id, "error", err)
 					failed++
 					continue
 				}
+				activeIDs = append(activeIDs, id)
 				synced++
 			}
-			// archive tasks whose notion_page_id is no longer in Notion
-			if archived, err := h.tasks.ArchiveOrphanNotion(ctx, pageIDs); err != nil {
+			if archived, err := h.tasks.ArchiveOrphanNotion(ctx, activeIDs); err != nil {
 				h.logger.Error("notion sync: archiving orphan tasks", "error", err)
 			} else if archived > 0 {
 				h.logger.Info("notion sync: archived orphan tasks", "count", archived)
