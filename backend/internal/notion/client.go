@@ -292,11 +292,13 @@ func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) error {
 
 // DiscoveredDatabase is a Notion database returned by the Search API.
 type DiscoveredDatabase struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Parent string `json:"parent"` // immediate parent page title (empty for workspace-level)
 }
 
 // SearchDatabases calls the Notion Search API to list all databases accessible by the integration.
+// For each database, it fetches the immediate parent page title for disambiguation.
 func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit: %w", err)
@@ -333,10 +335,32 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 			Title []struct {
 				PlainText string `json:"plain_text"`
 			} `json:"title"`
+			Parent struct {
+				Type   string `json:"type"`
+				PageID string `json:"page_id"`
+			} `json:"parent"`
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding search response: %w", err)
+	}
+
+	// collect unique parent page IDs to resolve titles
+	parentIDs := make(map[string]struct{})
+	for _, r := range result.Results {
+		if r.Parent.Type == "page_id" && r.Parent.PageID != "" {
+			parentIDs[r.Parent.PageID] = struct{}{}
+		}
+	}
+
+	// resolve parent page titles (best-effort, rate-limited)
+	parentTitles := make(map[string]string, len(parentIDs))
+	for pid := range parentIDs {
+		page, pageErr := c.Page(ctx, pid)
+		if pageErr != nil {
+			continue // best-effort: skip unresolvable parents
+		}
+		parentTitles[pid] = titleProperty(page.Properties["title"])
 	}
 
 	dbs := make([]DiscoveredDatabase, 0, len(result.Results))
@@ -345,7 +369,8 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 		if len(r.Title) > 0 {
 			title = r.Title[0].PlainText
 		}
-		dbs = append(dbs, DiscoveredDatabase{ID: r.ID, Title: title})
+		parent := parentTitles[r.Parent.PageID] // empty string if workspace-level or unresolved
+		dbs = append(dbs, DiscoveredDatabase{ID: r.ID, Title: title, Parent: parent})
 	}
 	return dbs, nil
 }

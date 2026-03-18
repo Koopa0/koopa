@@ -50,6 +50,7 @@
           <thead class="border-b border-zinc-800 bg-zinc-900/50">
             <tr>
               <th class="px-4 py-3 font-medium text-zinc-400">Name</th>
+              <th class="px-4 py-3 font-medium text-zinc-400">Role</th>
               <th class="hidden px-4 py-3 font-medium text-zinc-400 sm:table-cell">Sync Mode</th>
               <th class="hidden px-4 py-3 font-medium text-zinc-400 md:table-cell">Poll Interval</th>
               <th class="px-4 py-3 font-medium text-zinc-400">Enabled</th>
@@ -68,6 +69,44 @@
                   @if (source.description) {
                     <div class="mt-0.5 max-w-xs truncate text-xs text-zinc-500">{{ source.description }}</div>
                   }
+                </td>
+                <!-- Role badge with inline dropdown -->
+                <td class="px-4 py-3">
+                  <div class="relative">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors hover:brightness-125"
+                      [class]="source.role
+                        ? getRoleBadgeClass(source.role)
+                        : 'border-zinc-700 bg-zinc-800 text-zinc-500'"
+                      (click)="openRoleDropdown(source.id)"
+                    >
+                      {{ source.role || '—' }}
+                      <lucide-icon [img]="ChevronDownIcon" [size]="10" />
+                    </button>
+                    <!-- Dropdown -->
+                    @if (roleEditingId() === source.id) {
+                      <div class="absolute left-0 top-full z-10 mt-1 w-48 rounded-sm border border-zinc-700 bg-zinc-900 py-1 shadow-lg">
+                        <button
+                          type="button"
+                          class="w-full px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-800"
+                          (click)="setRole(source, null)"
+                        >
+                          — 不指定 —
+                        </button>
+                        @for (opt of roleOptions; track opt.value) {
+                          <button
+                            type="button"
+                            class="w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-zinc-800"
+                            [class]="source.role === opt.value ? 'text-white font-medium' : 'text-zinc-300'"
+                            (click)="setRole(source, opt.value)"
+                          >
+                            {{ opt.label }}
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
                 </td>
                 <td class="hidden px-4 py-3 sm:table-cell">
                   <span
@@ -150,7 +189,7 @@
       </h3>
 
       <div class="space-y-4">
-        <!-- Database ID -->
+        <!-- Database -->
         <div>
           <label for="source-db-id" class="mb-1 block text-sm font-medium text-zinc-300">
             Database <span class="text-red-400">*</span>
@@ -170,7 +209,7 @@
               >
                 <option value="" disabled>選擇 Notion Database...</option>
                 @for (db of discoveredDatabases(); track db.id) {
-                  <option [value]="db.id">{{ db.title || '(Untitled)' }}</option>
+                  <option [value]="db.id">{{ getDiscoverLabel(db) }}</option>
                 }
               </select>
               @if (form().database_id) {
@@ -179,7 +218,6 @@
                 </p>
               }
             } @else {
-              <!-- Fallback: 手動輸入 -->
               <input
                 id="source-db-id"
                 type="text"
@@ -191,7 +229,6 @@
               <p class="mt-1 text-xs text-zinc-500">無法探索 — 請手動輸入 Database ID</p>
             }
           } @else {
-            <!-- Edit mode: readonly -->
             <div class="rounded-sm border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-400">
               <code>{{ form().database_id }}</code>
             </div>
@@ -212,6 +249,27 @@
             (input)="updateFormField('name', $any($event.target).value)"
           />
         </div>
+
+        <!-- Role (create only — edit uses inline badge) -->
+        @if (dialogMode() === 'create') {
+          <div>
+            <label for="source-role" class="mb-1 block text-sm font-medium text-zinc-300">
+              Role
+            </label>
+            <select
+              id="source-role"
+              class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
+              [ngModel]="form().role ?? ''"
+              (ngModelChange)="updateFormField('role', $event || null)"
+            >
+              <option value="">— 不指定 —</option>
+              @for (opt of roleOptions; track opt.value) {
+                <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            <p class="mt-1 text-xs text-zinc-600">每個 role 全系統只能有一個 source</p>
+          </div>
+        }
 
         <!-- Description -->
         <div>

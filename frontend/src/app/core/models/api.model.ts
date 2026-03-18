@@ -432,6 +432,7 @@ export interface ApiNotionSource {
   database_id: string;
   name: string;
   description: string;
+  role: NotionRole | null;
   sync_mode: NotionSyncMode;
   property_map: Record<string, unknown>;
   poll_interval: string;
@@ -446,7 +447,10 @@ export type NotionSyncMode = 'full' | 'events';
 export interface ApiDiscoveredDatabase {
   id: string;
   title: string;
+  parent: string;
 }
+
+export type NotionRole = 'projects' | 'tasks' | 'books' | 'goals';
 
 export type NotionPollInterval =
   | '5 minutes'
@@ -464,9 +468,14 @@ export interface ApiCreateNotionSourceRequest {
   database_id: string;
   name: string;
   description?: string;
+  role?: NotionRole | null;
   sync_mode?: NotionSyncMode;
   property_map?: Record<string, unknown>;
   poll_interval?: NotionPollInterval;
+}
+
+export interface ApiSetRoleRequest {
+  role: NotionRole | null;
 }
 
 export interface ApiUpdateNotionSourceRequest {

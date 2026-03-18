@@ -303,7 +303,7 @@ ON CONFLICT (slug) DO NOTHING;
 INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
 ('https://www.ardanlabs.com/index.xml', 'Ardan Labs', 'daily',
  '{"go","rust","kubernetes","ai","devops","design"}',
- '{"deny_paths":["/news","/events","/team-live-training-courses","/self-paced-courses","/training","/self-paced-teams"]}'),
+ '{"deny_paths":["/news","/events","/team-live-training-courses","/self-paced-courses","/training","/self-paced-teams","/self-paced-individuals"]}'),
 
 ('https://go.dev/blog/feed.atom', 'The Go Blog', 'daily',
  '{"go"}', '{}'),

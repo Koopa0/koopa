@@ -5,6 +5,7 @@ import type {
   ApiNotionSource,
   ApiCreateNotionSourceRequest,
   ApiUpdateNotionSourceRequest,
+  ApiSetRoleRequest,
   ApiDiscoveredDatabase,
 } from '../models';
 
@@ -39,5 +40,9 @@ export class NotionSourceService {
 
   toggle(id: string): Observable<ApiNotionSource> {
     return this.api.postData<ApiNotionSource>(`/api/admin/notion-sources/${id}/toggle`, {});
+  }
+
+  setRole(id: string, body: ApiSetRoleRequest): Observable<ApiNotionSource> {
+    return this.api.putData<ApiNotionSource>(`/api/admin/notion-sources/${id}/role`, body);
   }
 }

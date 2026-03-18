@@ -18,6 +18,7 @@ import {
   Loader2,
   RefreshCw,
   X,
+  ChevronDown,
 } from 'lucide-angular';
 import { NotionSourceService } from '../../core/services/notion-source.service';
 import { NotificationService } from '../../core/services/notification.service';
@@ -29,6 +30,7 @@ import type {
   ApiDiscoveredDatabase,
   NotionSyncMode,
   NotionPollInterval,
+  NotionRole,
 } from '../../core/models';
 
 type DialogMode = 'create' | 'edit';
@@ -37,9 +39,29 @@ interface SourceFormData {
   database_id: string;
   name: string;
   description: string;
+  role: NotionRole | null;
   sync_mode: NotionSyncMode;
   poll_interval: NotionPollInterval;
 }
+
+interface RoleOption {
+  value: NotionRole;
+  label: string;
+}
+
+const NOTION_ROLES: RoleOption[] = [
+  { value: 'projects', label: 'Projects（專案同步）' },
+  { value: 'tasks', label: 'Tasks（任務同步）' },
+  { value: 'books', label: 'Books（書籍同步）' },
+  { value: 'goals', label: 'Goals（目標同步）' },
+];
+
+const ROLE_BADGE_CLASSES: Record<NotionRole, string> = {
+  projects: 'border-sky-800 bg-sky-900/30 text-sky-400',
+  tasks: 'border-amber-800 bg-amber-900/30 text-amber-400',
+  books: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
+  goals: 'border-violet-800 bg-violet-900/30 text-violet-400',
+};
 
 const POLL_INTERVAL_OPTIONS: NotionPollInterval[] = [
   '5 minutes',
@@ -58,6 +80,7 @@ const EMPTY_FORM: SourceFormData = {
   database_id: '',
   name: '',
   description: '',
+  role: null,
   sync_mode: 'full',
   poll_interval: '15 minutes',
 };
@@ -93,12 +116,16 @@ export class NotionSourcesComponent implements OnInit {
   protected readonly form = signal<SourceFormData>({ ...EMPTY_FORM });
   protected readonly isSaving = signal(false);
 
+  // ─── Role inline edit ───
+  protected readonly roleEditingId = signal<string | null>(null);
+
   // ─── Delete ───
   protected readonly deleteTarget = signal<{ id: string; name: string } | null>(null);
   protected readonly isDeleting = signal(false);
 
   // ─── Constants ───
   protected readonly pollIntervalOptions = POLL_INTERVAL_OPTIONS;
+  protected readonly roleOptions = NOTION_ROLES;
 
   // ─── Icons ───
   protected readonly DatabaseIcon = Database;
@@ -108,6 +135,7 @@ export class NotionSourcesComponent implements OnInit {
   protected readonly Loader2Icon = Loader2;
   protected readonly RefreshCwIcon = RefreshCw;
   protected readonly XIcon = X;
+  protected readonly ChevronDownIcon = ChevronDown;
 
   ngOnInit(): void {
     this.loadSources();
@@ -130,15 +158,7 @@ export class NotionSourcesComponent implements OnInit {
       });
   }
 
-  // ─── Dialog ───
-
-  protected openCreateDialog(): void {
-    this.dialogMode.set('create');
-    this.editingId.set(null);
-    this.form.set({ ...EMPTY_FORM });
-    this.isDialogOpen.set(true);
-    this.loadDiscoveredDatabases();
-  }
+  // ─── Discover ───
 
   private loadDiscoveredDatabases(): void {
     this.isDiscovering.set(true);
@@ -157,6 +177,13 @@ export class NotionSourcesComponent implements OnInit {
       });
   }
 
+  protected getDiscoverLabel(db: ApiDiscoveredDatabase): string {
+    const suffix = db.id.slice(-8);
+    return db.parent
+      ? `${db.title} (in: ${db.parent}) · ${suffix}`
+      : `${db.title} · ${suffix}`;
+  }
+
   protected onDiscoverSelect(dbId: string): void {
     const db = this.discoveredDatabases().find((d) => d.id === dbId);
     if (db) {
@@ -168,6 +195,16 @@ export class NotionSourcesComponent implements OnInit {
     }
   }
 
+  // ─── Dialog ───
+
+  protected openCreateDialog(): void {
+    this.dialogMode.set('create');
+    this.editingId.set(null);
+    this.form.set({ ...EMPTY_FORM });
+    this.isDialogOpen.set(true);
+    this.loadDiscoveredDatabases();
+  }
+
   protected openEditDialog(source: ApiNotionSource): void {
     this.dialogMode.set('edit');
     this.editingId.set(source.id);
@@ -175,6 +212,7 @@ export class NotionSourcesComponent implements OnInit {
       database_id: source.database_id,
       name: source.name,
       description: source.description,
+      role: source.role,
       sync_mode: source.sync_mode,
       poll_interval: source.poll_interval as NotionPollInterval,
     });
@@ -185,7 +223,7 @@ export class NotionSourcesComponent implements OnInit {
     this.isDialogOpen.set(false);
   }
 
-  protected updateFormField(field: keyof SourceFormData, value: string): void {
+  protected updateFormField(field: keyof SourceFormData, value: string | null): void {
     this.form.update((f) => ({ ...f, [field]: value }));
   }
 
@@ -227,6 +265,7 @@ export class NotionSourcesComponent implements OnInit {
         database_id: f.database_id.trim(),
         name: f.name.trim(),
         description: f.description.trim() || undefined,
+        role: f.role ?? undefined,
         sync_mode: f.sync_mode,
         poll_interval: f.poll_interval,
       };
@@ -246,6 +285,35 @@ export class NotionSourcesComponent implements OnInit {
           },
         });
     }
+  }
+
+  // ─── Role inline ───
+
+  protected openRoleDropdown(sourceId: string): void {
+    this.roleEditingId.set(
+      this.roleEditingId() === sourceId ? null : sourceId,
+    );
+  }
+
+  protected setRole(source: ApiNotionSource, role: NotionRole | null): void {
+    this.roleEditingId.set(null);
+    this.sourceService
+      .setRole(source.id, { role })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          // 後端會自動清除舊 source 的同一 role，重載整個列表
+          this.loadSources();
+          this.notificationService.success(
+            role ? `Role 已設為 ${role}` : 'Role 已清除',
+          );
+        },
+        error: () => this.notificationService.error('設定 Role 失敗'),
+      });
+  }
+
+  protected getRoleBadgeClass(role: NotionRole): string {
+    return ROLE_BADGE_CLASSES[role];
   }
 
   // ─── Toggle ───
