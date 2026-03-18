@@ -146,6 +146,10 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.invalidateCache(src.DatabaseID)
+	// trigger immediate sync if a role was assigned during creation
+	if src.Role != nil && *src.Role != "" && h.syncer != nil {
+		go h.syncer.SyncAll(context.WithoutCancel(r.Context()))
+	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: src})
 }
 
