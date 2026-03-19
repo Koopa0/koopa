@@ -125,6 +125,11 @@ func NewServer(
 	return s
 }
 
+// MCPServer returns the underlying mcp.Server for use with HTTP transports.
+func (s *Server) MCPServer() *mcp.Server {
+	return s.server
+}
+
 // Run starts the MCP server over stdio transport, blocking until the client disconnects.
 func (s *Server) Run(ctx context.Context) error {
 	return s.server.Run(ctx, &mcp.StdioTransport{})

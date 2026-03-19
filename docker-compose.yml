@@ -108,6 +108,32 @@ services:
       - ALL
     mem_limit: 256m
 
+  mcp:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp
+    environment:
+      DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/blog?sslmode=disable
+      MCP_TOKEN: ${MCP_TOKEN}
+      MCP_TRANSPORT: http
+      MCP_PORT: "8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:8081:8081'
+    networks:
+      - backend
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+
 volumes:
   pgdata:
 
