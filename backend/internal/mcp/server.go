@@ -139,12 +139,12 @@ func (s *Server) Run(ctx context.Context) error {
 
 // SearchNotesInput is the input for the search_notes tool.
 type SearchNotesInput struct {
-	Query   string `json:"query,omitempty" jsonschema:"description=free-text search query"`
-	Type    string `json:"type,omitempty" jsonschema:"description=filter by note type (e.g. til article note build-log)"`
-	Source  string `json:"source,omitempty" jsonschema:"description=filter by source"`
-	Context string `json:"context,omitempty" jsonschema:"description=filter by context (e.g. project name)"`
-	Book    string `json:"book,omitempty" jsonschema:"description=filter by book name"`
-	Limit   int    `json:"limit,omitempty" jsonschema:"description=max results (default 10 max 50)"`
+	Query   string `json:"query,omitempty" jsonschema_description:"free-text search query"`
+	Type    string `json:"type,omitempty" jsonschema_description:"filter by note type (e.g. til article note build-log)"`
+	Source  string `json:"source,omitempty" jsonschema_description:"filter by source"`
+	Context string `json:"context,omitempty" jsonschema_description:"filter by context (e.g. project name)"`
+	Book    string `json:"book,omitempty" jsonschema_description:"filter by book name"`
+	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 50)"`
 }
 
 // SearchNotesOutput is the output for the search_notes tool.
@@ -239,7 +239,7 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 
 // ProjectContextInput is the input for the get_project_context tool.
 type ProjectContextInput struct {
-	Project string `json:"project" jsonschema:"description=project name slug or alias (required)"`
+	Project string `json:"project" jsonschema_description:"project name slug or alias (required)"`
 }
 
 // ProjectContextOutput is the output for the get_project_context tool.
@@ -316,9 +316,9 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // RecentActivityInput is the input for the get_recent_activity tool.
 type RecentActivityInput struct {
-	Days    int    `json:"days,omitempty" jsonschema:"description=number of days to look back (default 7 max 30)"`
-	Source  string `json:"source,omitempty" jsonschema:"description=filter by source (e.g. github obsidian notion)"`
-	Project string `json:"project,omitempty" jsonschema:"description=filter by project name"`
+	Days    int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
+	Source  string `json:"source,omitempty" jsonschema_description:"filter by source (e.g. github obsidian notion)"`
+	Project string `json:"project,omitempty" jsonschema_description:"filter by project name"`
 }
 
 // RecentActivityOutput is the output for the get_recent_activity tool.
@@ -361,8 +361,8 @@ func (s *Server) getRecentActivity(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // DecisionLogInput is the input for the get_decision_log tool.
 type DecisionLogInput struct {
-	Project string `json:"project,omitempty" jsonschema:"description=filter by project context"`
-	Limit   int    `json:"limit,omitempty" jsonschema:"description=max results (default 20 max 50)"`
+	Project string `json:"project,omitempty" jsonschema_description:"filter by project context"`
+	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
 // DecisionLogOutput is the output for the get_decision_log tool.
@@ -399,9 +399,9 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // RSSHighlightsInput is the input for the get_rss_highlights tool.
 type RSSHighlightsInput struct {
-	Days     int `json:"days,omitempty" jsonschema:"description=number of days to look back (default 7 max 30)"`
-	MinScore int `json:"min_score,omitempty" jsonschema:"description=minimum AI score threshold 0-100 (default 70)"`
-	Limit    int `json:"limit,omitempty" jsonschema:"description=max results (default 20 max 50)"`
+	Days     int `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
+	MinScore int `json:"min_score,omitempty" jsonschema_description:"minimum AI score threshold 0-100 (default 70)"`
+	Limit    int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
 // RSSHighlightsOutput is the output for the get_rss_highlights tool.
@@ -468,8 +468,8 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // PlatformStatsInput is the input for the get_platform_stats tool.
 type PlatformStatsInput struct {
-	IncludeDrift bool `json:"include_drift,omitempty" jsonschema:"description=include goal vs activity drift analysis (default true)"`
-	DriftDays    int  `json:"drift_days,omitempty" jsonschema:"description=number of days for drift analysis (default 30 max 90)"`
+	IncludeDrift bool `json:"include_drift,omitempty" jsonschema_description:"include goal vs activity drift analysis (default true)"`
+	DriftDays    int  `json:"drift_days,omitempty" jsonschema_description:"number of days for drift analysis (default 30 max 90)"`
 }
 
 // PlatformStatsOutput is the output for the get_platform_stats tool.
@@ -500,8 +500,8 @@ func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // PendingTasksInput is the input for the get_pending_tasks tool.
 type PendingTasksInput struct {
-	Project string `json:"project,omitempty" jsonschema:"description=filter by project slug"`
-	Limit   int    `json:"limit,omitempty" jsonschema:"description=max results (default 20 max 100)"`
+	Project string `json:"project,omitempty" jsonschema_description:"filter by project slug"`
+	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 }
 
 // PendingTasksOutput is the output for the get_pending_tasks tool.
@@ -554,8 +554,8 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.
 type SearchKnowledgeInput struct {
-	Query string `json:"query" jsonschema:"description=search query (required)"`
-	Limit int    `json:"limit,omitempty" jsonschema:"description=max results (default 10 max 30)"`
+	Query string `json:"query" jsonschema_description:"search query (required)"`
+	Limit int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
 }
 
 // SearchKnowledgeOutput is the output for the search_knowledge tool.
@@ -657,7 +657,7 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 // ContentDetailInput is the input for the get_content_detail tool.
 type ContentDetailInput struct {
-	Slug string `json:"slug" jsonschema:"description=content slug (required)"`
+	Slug string `json:"slug" jsonschema_description:"content slug (required)"`
 }
 
 // ContentDetailOutput is the output for the get_content_detail tool.
@@ -707,7 +707,7 @@ func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // ListProjectsInput is the input for the list_projects tool.
 type ListProjectsInput struct {
-	Limit int `json:"limit,omitempty" jsonschema:"description=max results (default 20 max 50)"`
+	Limit int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
 // ListProjectsOutput is the output for the list_projects tool.
@@ -738,9 +738,9 @@ func (s *Server) listProjects(ctx context.Context, _ *mcp.CallToolRequest, input
 
 // GetGoalsInput is the input for the get_goals tool.
 type GetGoalsInput struct {
-	Area   string `json:"area,omitempty" jsonschema:"description=filter by area"`
-	Status string `json:"status,omitempty" jsonschema:"description=filter by status (not-started in-progress done abandoned)"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"description=max results (default 20 max 50)"`
+	Area   string `json:"area,omitempty" jsonschema_description:"filter by area"`
+	Status string `json:"status,omitempty" jsonschema_description:"filter by status (not-started in-progress done abandoned)"`
+	Limit  int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
 // GetGoalsOutput is the output for the get_goals tool.

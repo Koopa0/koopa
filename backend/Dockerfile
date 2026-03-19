@@ -7,7 +7,6 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 go build -o /app/server ./cmd/app
-RUN CGO_ENABLED=0 go build -o /app/mcp ./cmd/mcp
 
 FROM alpine:3.21
 
@@ -15,7 +14,6 @@ RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S app && adduser -S app -G app
 
 COPY --from=builder /app/server /usr/local/bin/server
-COPY --from=builder /app/mcp /usr/local/bin/mcp
 COPY --from=builder /app/migrations /migrations
 
 USER app
