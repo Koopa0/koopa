@@ -114,6 +114,9 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, "ok")
 		})
+		mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://koopa0.dev/favicon.ico", http.StatusMovedPermanently)
+		})
 		mux.HandleFunc("GET /.well-known/oauth-authorization-server", oauth.metadata)
 		mux.HandleFunc("/oauth/authorize", oauth.authorize)
 		mux.HandleFunc("POST /oauth/token", oauth.token)
