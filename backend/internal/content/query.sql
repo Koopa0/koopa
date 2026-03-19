@@ -72,8 +72,10 @@ ORDER BY updated_at DESC;
 
 -- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status, tags, source, source_type,
-                      series_id, series_order, review_level, ai_metadata, reading_time, cover_image)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                      series_id, series_order, review_level, ai_metadata, reading_time, cover_image,
+                      search_text)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+        left($3, 10000))
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
           series_id, series_order, review_level, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at;
@@ -95,6 +97,7 @@ UPDATE contents SET
     ai_metadata = COALESCE(sqlc.narg('ai_metadata'), ai_metadata),
     reading_time = COALESCE(sqlc.narg('reading_time'), reading_time),
     cover_image = COALESCE(sqlc.narg('cover_image'), cover_image),
+    search_text = left(COALESCE(sqlc.narg('body'), body), 10000),
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,

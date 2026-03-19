@@ -114,13 +114,18 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input C
 		return nil, CreateTaskOutput{}, fmt.Errorf("title is required")
 	}
 
-	if s.notionTasks == nil || s.taskDBID == "" {
+	if s.notionTasks == nil {
 		return nil, CreateTaskOutput{}, fmt.Errorf("notion task writer not configured")
+	}
+
+	taskDBID, err := s.resolveTaskDBID(ctx)
+	if err != nil {
+		return nil, CreateTaskOutput{}, err
 	}
 
 	// Create in Notion (webhook will sync back to local DB)
 	if err := s.notionTasks.CreateTask(ctx, NotionCreateTaskParams{
-		DatabaseID:  s.taskDBID,
+		DatabaseID:  taskDBID,
 		Title:       input.Title,
 		DueDate:     input.Due,
 		Description: input.Notes,
@@ -413,6 +418,17 @@ func (s *Server) resolveTask(ctx context.Context, taskID, taskTitle string) (*ta
 			len(matches), taskTitle, joinLines(titles))
 	}
 	return &matches[0], nil
+}
+
+func (s *Server) resolveTaskDBID(ctx context.Context) (string, error) {
+	if s.taskDBResolver == nil {
+		return "", fmt.Errorf("task database resolver not configured")
+	}
+	dbID, err := s.taskDBResolver.DatabaseIDByRole(ctx, "tasks")
+	if err != nil {
+		return "", fmt.Errorf("resolving tasks database id: %w", err)
+	}
+	return dbID, nil
 }
 
 func (s *Server) resolveProject(ctx context.Context, input string) (*project.Project, error) {

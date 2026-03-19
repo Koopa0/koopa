@@ -146,13 +146,14 @@ func mapNotionProjectStatus(notionStatus string) project.Status {
 }
 
 // mapNotionGoalStatus maps a Notion goal status to the local enum.
+// UB 3.0 uses: Dream, Active, Achieved (mapped from status groups: to_do, in_progress, complete).
 func mapNotionGoalStatus(notionStatus string) goal.Status {
 	switch notionStatus {
-	case "Not Started":
+	case "Not Started", "Dream":
 		return goal.StatusNotStarted
-	case "In Progress", "Doing":
+	case "In Progress", "Doing", "Active":
 		return goal.StatusInProgress
-	case "Done":
+	case "Done", "Achieved":
 		return goal.StatusDone
 	case "Abandoned":
 		return goal.StatusAbandoned

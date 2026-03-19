@@ -82,6 +82,11 @@ type NotionCreateTaskParams struct {
 	Description string
 }
 
+// TaskDBIDResolver resolves the Notion database ID for tasks on demand.
+type TaskDBIDResolver interface {
+	DatabaseIDByRole(ctx context.Context, role string) (string, error)
+}
+
 // ContentReader provides content search and retrieval for MCP tools.
 type ContentReader interface {
 	Search(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)

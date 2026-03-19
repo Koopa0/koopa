@@ -28,8 +28,8 @@ type Server struct {
 	contents      ContentReader
 	contentWriter ContentWriter
 	goals         GoalReader
-	notionTasks   NotionTaskWriter
-	taskDBID      string // Notion database ID for tasks (for creating new tasks)
+	notionTasks    NotionTaskWriter
+	taskDBResolver TaskDBIDResolver
 	logger        *slog.Logger
 }
 
@@ -37,10 +37,10 @@ type Server struct {
 type ServerOption func(*Server)
 
 // WithNotionTaskWriter sets the Notion task writer for complete/create operations.
-func WithNotionTaskWriter(n NotionTaskWriter, taskDBID string) ServerOption {
+func WithNotionTaskWriter(n NotionTaskWriter, resolver TaskDBIDResolver) ServerOption {
 	return func(s *Server) {
 		s.notionTasks = n
-		s.taskDBID = taskDBID
+		s.taskDBResolver = resolver
 	}
 }
 

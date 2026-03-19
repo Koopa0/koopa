@@ -79,13 +79,13 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	contentStore := content.NewStore(pool)
 	taskStore := task.NewStore(pool)
 
+	notionStore := notion.NewStore(pool)
 	var opts []mcpserver.ServerOption
 	notionKey := os.Getenv("NOTION_API_KEY")
-	taskDBID := os.Getenv("NOTION_TASKS_DB_ID")
-	if notionKey != "" && taskDBID != "" {
+	if notionKey != "" {
 		opts = append(opts, mcpserver.WithNotionTaskWriter(
 			notionAdapter{apiKey: notionKey},
-			taskDBID,
+			notionStore,
 		))
 	}
 

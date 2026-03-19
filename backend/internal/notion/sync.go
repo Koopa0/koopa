@@ -140,7 +140,7 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 	localStatus := mapNotionTaskStatus(status)
 	due := dateProperty(props["Due"])
 	energy := selectProperty(props["Energy"])
-	priority := selectProperty(props["Priority"])
+	priority := statusProperty(props["Priority"])
 	recurInterval := numberProperty(props["Recur Interval"])
 	recurUnit := selectProperty(props["Recur Unit"])
 	myDay := checkboxProperty(props["My Day"])
