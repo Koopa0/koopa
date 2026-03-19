@@ -43,7 +43,7 @@
     <div class="space-y-6">
       @for (log of buildLogs(); track log.id) {
       <a
-        [routerLink]="'/build-logs/' + log.slug"
+        [routerLink]="'/admin/build-logs/' + log.slug"
         class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all hover:border-zinc-600 hover:bg-zinc-900"
       >
         <h2
