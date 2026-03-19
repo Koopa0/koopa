@@ -50,6 +50,9 @@ type Block struct {
 
 // Page fetches a page by ID (GET /v1/pages/{id}).
 func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error) {
+	if !validPageID(pageID) {
+		return nil, fmt.Errorf("invalid page id: %q", pageID)
+	}
 	if err := c.limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
@@ -96,11 +99,17 @@ type databaseQueryResponse struct {
 
 // QueryDataSource queries a Notion data source with an optional filter.
 // Uses the 2025-09-03 endpoint: POST /v1/data_sources/{data_source_id}/query.
+// maxPages limits the number of pagination requests to prevent unbounded growth.
+const maxPages = 100 // 100 pages × 100 items = 10,000 max results
+
 func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filter json.RawMessage) ([]DatabaseQueryResult, error) {
+	if dataSourceID == "" {
+		return nil, fmt.Errorf("empty data source id")
+	}
 	var allResults []DatabaseQueryResult
 	var cursor *string
 
-	for {
+	for range maxPages {
 		if err := c.limiter.Wait(ctx); err != nil {
 			return nil, fmt.Errorf("rate limiter: %w", err)
 		}
@@ -176,8 +185,8 @@ func (c *Client) QueryPageIDs(ctx context.Context, dataSourceID string) ([]strin
 // pageID must be a UUID in 8-4-4-4-12 format (36 chars).
 // Idempotent: setting a page to a status it already has is a no-op from Notion's perspective.
 func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) error {
-	if len(pageID) != 36 {
-		return fmt.Errorf("invalid page id length %d: %q", len(pageID), pageID)
+	if !validPageID(pageID) {
+		return fmt.Errorf("invalid page id: %q", pageID)
 	}
 	if err := c.limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("rate limiter: %w", err)
@@ -308,13 +317,16 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 		return nil, fmt.Errorf("rate limit: %w", err)
 	}
 
-	body, _ := json.Marshal(map[string]any{
+	body, err := json.Marshal(map[string]any{
 		"filter": map[string]string{
 			"value":    "data_source",
 			"property": "object",
 		},
 		"page_size": 100,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling search body: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notionBaseURL+"/v1/search", bytes.NewReader(body))
 	if err != nil {
@@ -329,7 +341,7 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("notion search returned %d: %s", resp.StatusCode, respBody)
 	}
 
@@ -384,6 +396,26 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 		dbs = append(dbs, DiscoveredDatabase{ID: r.ID, Title: title, Parent: parent})
 	}
 	return dbs, nil
+}
+
+// validPageID checks that a page ID is a 36-character UUID (8-4-4-4-12 hex).
+// Prevents path traversal via crafted pageID values.
+func validPageID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for i, r := range id {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if r != '-' {
+				return false
+			}
+			continue
+		}
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) setHeaders(req *http.Request) {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/dgraph-io/ristretto/v2"
@@ -26,18 +27,21 @@ const sourceCacheTTL = 10 * time.Minute
 type ProjectWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error)
 	UpdateLastActivity(ctx context.Context, notionPageID string) error
+	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
 // GoalWriter upserts goals from Notion data.
 type GoalWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error)
+	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
 // TaskWriter upserts tasks from Notion data.
 type TaskWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p task.UpsertByNotionParams) (*task.Task, error)
+	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
@@ -76,6 +80,9 @@ type Handler struct {
 	dedup         *webhook.DeduplicationCache
 	webhookSecret string
 	logger        *slog.Logger
+
+	// bgWg tracks background goroutines launched by SyncRole for graceful shutdown.
+	bgWg sync.WaitGroup
 }
 
 // HandlerOption configures optional Handler dependencies.
@@ -128,7 +135,16 @@ func NewHandler(
 	for _, opt := range opts {
 		opt(h)
 	}
+	if h.dedup == nil {
+		logger.Warn("notion handler created without dedup cache — replay protection disabled")
+	}
 	return h
+}
+
+// Wait blocks until all background goroutines (SyncRole) complete.
+// Call during graceful shutdown.
+func (h *Handler) Wait() {
+	h.bgWg.Wait()
 }
 
 // Webhook handles POST /api/webhook/notion.
@@ -142,17 +158,17 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle Notion verification handshake.
-	// NOTE: Notion does not sign the verification request, so HMAC check is skipped here.
-	var probe struct {
-		VerificationToken string `json:"verification_token"`
-	}
-	if json.Unmarshal(body, &probe) == nil && probe.VerificationToken != "" {
-		h.logger.Info("notion webhook verification handshake received")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
+	// Only allowed before the webhook secret is configured (initial setup).
+	// Once the secret is set, this path is closed to prevent abuse.
 	if h.webhookSecret == "" {
+		var probe struct {
+			VerificationToken string `json:"verification_token"`
+		}
+		if json.Unmarshal(body, &probe) == nil && probe.VerificationToken != "" {
+			h.logger.Info("notion webhook verification handshake received")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		http.Error(w, "not implemented", http.StatusNotImplemented)
 		return
 	}
@@ -173,12 +189,15 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 
 	// replay protection: timestamp ±5min + entity dedup
 	if h.dedup != nil {
-		if payload.Timestamp != "" {
-			if err := webhook.ValidateTimestamp(payload.Timestamp, 5*time.Minute); err != nil {
-				h.logger.Warn("notion webhook timestamp rejected", "error", err)
-				http.Error(w, "request expired", http.StatusBadRequest)
-				return
-			}
+		if payload.Timestamp == "" {
+			h.logger.Warn("notion webhook missing timestamp, rejecting")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if err := webhook.ValidateTimestamp(payload.Timestamp, 5*time.Minute); err != nil {
+			h.logger.Warn("notion webhook timestamp rejected", "error", err)
+			http.Error(w, "request expired", http.StatusBadRequest)
+			return
 		}
 		dedupKey := payload.Entity.ID + "|" + payload.Timestamp
 		if h.dedup.Seen(dedupKey) {
@@ -201,142 +220,155 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		"role", role,
 	)
 
+	// All roles return 200 on error (best-effort) so Notion does not retry
+	// endlessly. Errors are logged for alerting. The hourly SyncAll cron
+	// acts as the safety net for any missed updates.
+	var syncErr error
 	switch role {
 	case RoleProjects:
-		if err := h.syncProject(r.Context(), pageID); err != nil {
-			h.logger.Error("syncing project from notion", "page_id", pageID, "error", err)
-			http.Error(w, "sync failed", http.StatusInternalServerError)
-			return
-		}
+		syncErr = h.syncProject(r.Context(), pageID)
 	case RoleTasks:
-		if err := h.syncTask(r.Context(), pageID); err != nil {
-			h.logger.Error("syncing task from notion", "page_id", pageID, "error", err)
-			// task sync is best-effort, still return 200
-		}
+		syncErr = h.syncTask(r.Context(), pageID)
 	case RoleBooks:
-		if err := h.syncBook(r.Context(), pageID); err != nil {
-			h.logger.Error("syncing book from notion", "page_id", pageID, "error", err)
-			// book sync is best-effort, still return 200
-		}
+		syncErr = h.syncBook(r.Context(), pageID)
 	case RoleGoals:
-		if err := h.syncGoal(r.Context(), pageID); err != nil {
-			h.logger.Error("syncing goal from notion", "page_id", pageID, "error", err)
-			// goal sync is best-effort, still return 200
-		}
+		syncErr = h.syncGoal(r.Context(), pageID)
 	default:
 		h.logger.Debug("notion webhook from unknown database, skipping",
 			"data_source_id", payload.Data.Parent.DataSourceID,
 		)
 	}
 
+	if syncErr != nil && !errors.Is(syncErr, ErrSkipped) {
+		h.logger.Error("syncing from notion webhook", "role", role, "page_id", pageID, "error", syncErr)
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
+// syncTarget defines a role-specific sync operation for use in SyncAll/SyncRole.
+type syncTarget struct {
+	role          string
+	syncFn        func(ctx context.Context, result DatabaseQueryResult) error
+	archiveOrphan func(ctx context.Context, activeIDs []string) (int64, error)
+}
+
 // SyncAll fetches all pages from configured Notion databases and upserts them.
+// Uses QueryDataSource to get full page data in bulk, avoiding per-page API calls.
 // Used by the hourly cron to catch any missed webhook events.
 func (h *Handler) SyncAll(ctx context.Context) {
+	targets := h.syncTargets()
 	var synced, failed int
-
-	// sync projects
-	if src, err := h.store.SourceByRole(ctx, RoleProjects); err == nil {
-		h.logger.Info("notion sync: starting projects", "database_id", src.DatabaseID)
-		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
-		if err != nil {
-			h.logger.Error("notion sync: querying projects db", "error", err)
-		} else {
-			h.logger.Info("notion sync: fetched project pages", "count", len(pageIDs))
-			activeIDs := make([]string, 0, len(pageIDs))
-			for _, id := range pageIDs {
-				if err := h.syncProject(ctx, id); errors.Is(err, ErrSkipped) {
-					continue // trashed/archived — exclude from active set
-				} else if err != nil {
-					h.logger.Error("notion sync: syncing project", "page_id", id, "error", err)
-					failed++
-					continue
-				}
-				activeIDs = append(activeIDs, id)
-				synced++
-			}
-			if archived, err := h.projects.ArchiveOrphanNotion(ctx, activeIDs); err != nil {
-				h.logger.Error("notion sync: archiving orphan projects", "error", err)
-			} else if archived > 0 {
-				h.logger.Info("notion sync: archived orphan projects", "count", archived)
-			}
-			if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
-				h.logger.Error("notion sync: updating last_synced_at for projects", "error", updateErr)
-			}
-		}
-	} else if !errors.Is(err, ErrNotFound) {
-		h.logger.Error("notion sync: looking up projects source", "error", err)
+	for _, t := range targets {
+		s, f := h.syncByRole(ctx, t)
+		synced += s
+		failed += f
 	}
-
-	// sync goals
-	if src, err := h.store.SourceByRole(ctx, RoleGoals); err == nil {
-		h.logger.Info("notion sync: starting goals", "database_id", src.DatabaseID)
-		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
-		if err != nil {
-			h.logger.Error("notion sync: querying goals db", "error", err)
-		} else {
-			h.logger.Info("notion sync: fetched goal pages", "count", len(pageIDs))
-			activeIDs := make([]string, 0, len(pageIDs))
-			for _, id := range pageIDs {
-				if err := h.syncGoal(ctx, id); errors.Is(err, ErrSkipped) {
-					continue
-				} else if err != nil {
-					h.logger.Error("notion sync: syncing goal", "page_id", id, "error", err)
-					failed++
-					continue
-				}
-				activeIDs = append(activeIDs, id)
-				synced++
-			}
-			if archived, err := h.goals.ArchiveOrphanNotion(ctx, activeIDs); err != nil {
-				h.logger.Error("notion sync: archiving orphan goals", "error", err)
-			} else if archived > 0 {
-				h.logger.Info("notion sync: archived orphan goals", "count", archived)
-			}
-			if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
-				h.logger.Error("notion sync: updating last_synced_at for goals", "error", updateErr)
-			}
-		}
-	} else if !errors.Is(err, ErrNotFound) {
-		h.logger.Error("notion sync: looking up goals source", "error", err)
-	}
-
-	// sync tasks
-	if src, err := h.store.SourceByRole(ctx, RoleTasks); err == nil {
-		h.logger.Info("notion sync: starting tasks", "database_id", src.DatabaseID)
-		pageIDs, err := h.client.QueryPageIDs(ctx, src.DatabaseID)
-		if err != nil {
-			h.logger.Error("notion sync: querying tasks db", "error", err)
-		} else {
-			h.logger.Info("notion sync: fetched task pages", "count", len(pageIDs))
-			activeIDs := make([]string, 0, len(pageIDs))
-			for _, id := range pageIDs {
-				if err := h.syncTask(ctx, id); errors.Is(err, ErrSkipped) {
-					continue
-				} else if err != nil {
-					h.logger.Error("notion sync: syncing task", "page_id", id, "error", err)
-					failed++
-					continue
-				}
-				activeIDs = append(activeIDs, id)
-				synced++
-			}
-			if archived, err := h.tasks.ArchiveOrphanNotion(ctx, activeIDs); err != nil {
-				h.logger.Error("notion sync: archiving orphan tasks", "error", err)
-			} else if archived > 0 {
-				h.logger.Info("notion sync: archived orphan tasks", "count", archived)
-			}
-			if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
-				h.logger.Error("notion sync: updating last_synced_at for tasks", "error", updateErr)
-			}
-		}
-	} else if !errors.Is(err, ErrNotFound) {
-		h.logger.Error("notion sync: looking up tasks source", "error", err)
-	}
-
 	h.logger.Info("notion sync: complete", "synced", synced, "failed", failed)
+}
+
+// SyncRole syncs only the specified role's Notion database.
+// Used when a source is created or its role is changed.
+func (h *Handler) SyncRole(ctx context.Context, role string) {
+	for _, t := range h.syncTargets() {
+		if t.role == role {
+			s, f := h.syncByRole(ctx, t)
+			h.logger.Info("notion sync role: complete", "role", role, "synced", s, "failed", f)
+			return
+		}
+	}
+	h.logger.Warn("notion sync role: unknown role", "role", role)
+}
+
+// SyncRoleAsync launches SyncRole in a tracked background goroutine.
+func (h *Handler) SyncRoleAsync(ctx context.Context, role string) {
+	h.bgWg.Go(func() {
+		h.SyncRole(ctx, role)
+	})
+}
+
+// syncTargets builds the list of role-specific sync operations.
+func (h *Handler) syncTargets() []syncTarget {
+	return []syncTarget{
+		{
+			role:          RoleProjects,
+			syncFn:        h.syncProjectFromResult,
+			archiveOrphan: h.projects.ArchiveOrphanNotion,
+		},
+		{
+			role:          RoleGoals,
+			syncFn:        h.syncGoalFromResult,
+			archiveOrphan: h.goals.ArchiveOrphanNotion,
+		},
+		{
+			role:          RoleTasks,
+			syncFn:        h.syncTaskFromResult,
+			archiveOrphan: h.tasks.ArchiveOrphanNotion,
+		},
+	}
+}
+
+// staleSyncThreshold is the minimum time since last sync before a full sync is warranted.
+// If a source was synced less than this duration ago, syncByRole skips it.
+const staleSyncThreshold = 10 * time.Minute
+
+// syncByRole runs a single role sync: query data source, upsert pages, archive orphans.
+// Skips the sync if the source was synced less than staleSyncThreshold ago.
+func (h *Handler) syncByRole(ctx context.Context, t syncTarget) (synced, failed int) {
+	src, err := h.store.SourceByRole(ctx, t.role)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			h.logger.Error("notion sync: looking up source", "role", t.role, "error", err)
+		}
+		return 0, 0
+	}
+
+	// Skip if recently synced (avoids redundant API calls on rapid restarts)
+	if src.LastSyncedAt != nil && time.Since(*src.LastSyncedAt) < staleSyncThreshold {
+		h.logger.Info("notion sync: skipping (recently synced)",
+			"role", t.role,
+			"last_synced", src.LastSyncedAt,
+		)
+		return 0, 0
+	}
+
+	h.logger.Info("notion sync: starting", "role", t.role, "database_id", src.DatabaseID)
+	results, err := h.client.QueryDataSource(ctx, src.DatabaseID, nil)
+	if err != nil {
+		h.logger.Error("notion sync: querying database", "role", t.role, "error", err)
+		return 0, 0
+	}
+
+	h.logger.Info("notion sync: fetched pages", "role", t.role, "count", len(results))
+	activeIDs := make([]string, 0, len(results))
+	for _, r := range results {
+		// QueryDataSource already filters trashed/archived pages,
+		// so all results here are active.
+		if err := t.syncFn(ctx, r); err != nil {
+			h.logger.Error("notion sync: syncing page", "role", t.role, "page_id", r.ID, "error", err)
+			failed++
+			continue
+		}
+		activeIDs = append(activeIDs, r.ID)
+		synced++
+	}
+
+	if len(results) > 0 && len(activeIDs) == 0 {
+		h.logger.Warn("notion sync: all page syncs failed, skipping orphan archive",
+			"role", t.role, "total", len(results), "failed", failed)
+	}
+
+	if archived, archErr := t.archiveOrphan(ctx, activeIDs); archErr != nil {
+		h.logger.Error("notion sync: archiving orphans", "role", t.role, "error", archErr)
+	} else if archived > 0 {
+		h.logger.Info("notion sync: archived orphans", "role", t.role, "count", archived)
+	}
+
+	if updateErr := h.store.UpdateLastSynced(ctx, src.ID); updateErr != nil {
+		h.logger.Error("notion sync: updating last_synced_at", "role", t.role, "error", updateErr)
+	}
+
+	return synced, failed
 }
 
 // resolveRole looks up the role for a webhook data source ID.

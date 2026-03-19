@@ -1,5 +1,5 @@
 // Package mcpserver provides an MCP (Model Context Protocol) server exposing
-// read-only tools for querying obsidian notes, projects, and activity events.
+// read-only tools for querying the koopa0.dev knowledge engine.
 package mcpserver
 
 import (
@@ -9,8 +9,13 @@ import (
 	"time"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/stats"
+	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // NoteSearcher provides note search and retrieval for MCP tools.
@@ -30,6 +35,35 @@ type ActivityReader interface {
 type ProjectReader interface {
 	ProjectBySlug(ctx context.Context, slug string) (*project.Project, error)
 	ProjectByAlias(ctx context.Context, alias string) (*project.Project, error)
+	ActiveProjects(ctx context.Context) ([]project.Project, error)
+}
+
+// CollectedReader provides high-score collected data for MCP tools.
+type CollectedReader interface {
+	HighScoreCollectedData(ctx context.Context, start, end time.Time, minScore int16) ([]collected.CollectedData, error)
+}
+
+// StatsReader provides platform statistics for MCP tools.
+type StatsReader interface {
+	Overview(ctx context.Context) (*stats.Overview, error)
+	Drift(ctx context.Context, days int) (*stats.DriftReport, error)
+	Learning(ctx context.Context) (*stats.LearningDashboard, error)
+}
+
+// TaskReader provides task queries for MCP tools.
+type TaskReader interface {
+	PendingTasksWithProject(ctx context.Context, projectSlug *string, limit int32) ([]task.PendingTaskDetail, error)
+}
+
+// ContentReader provides content search and retrieval for MCP tools.
+type ContentReader interface {
+	Search(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)
+	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
+}
+
+// GoalReader provides goal queries for MCP tools.
+type GoalReader interface {
+	Goals(ctx context.Context) ([]goal.Goal, error)
 }
 
 // searchResultEntry is a note with a combined RRF score for merged search results.

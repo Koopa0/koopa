@@ -15,33 +15,46 @@ import (
 
 // buildSourceID creates a dedup key for Notion activity events.
 // Format: pageID:status:YYYY-MM-DD — same page+status+day deduplicates.
-func buildSourceID(pageID, status string) string {
-	return pageID + ":" + status + ":" + time.Now().Format("2006-01-02")
+func buildSourceID(pageID, status string, now time.Time) string {
+	return pageID + ":" + status + ":" + now.Format("2006-01-02")
 }
 
-// syncProject handles C1: fetch Notion page properties, upsert to projects table.
+// syncProject fetches a Notion page by ID and upserts it. Used by webhooks.
 func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("fetching notion page: %w", err)
 	}
 
-	if page.InTrash {
-		h.logger.Debug("skipping trashed page", "page_id", pageID)
+	if page.InTrash || page.Archived {
+		if _, archErr := h.projects.ArchiveByNotionPageID(ctx, pageID); archErr != nil {
+			return fmt.Errorf("archiving trashed project %s: %w", pageID, archErr)
+		}
 		return ErrSkipped
 	}
 
-	title := titleProperty(page.Properties["Name"])
+	return h.upsertProject(ctx, pageID, page.Properties)
+}
+
+// syncProjectFromResult upserts a project from a pre-fetched QueryDataSource result.
+// Used by SyncAll to avoid per-page API calls.
+func (h *Handler) syncProjectFromResult(ctx context.Context, result DatabaseQueryResult) error {
+	return h.upsertProject(ctx, result.ID, result.Properties)
+}
+
+// upsertProject contains the shared project sync logic.
+func (h *Handler) upsertProject(ctx context.Context, pageID string, props map[string]json.RawMessage) error {
+	title := titleProperty(props["Name"])
 	if title == "" {
 		return fmt.Errorf("notion page %s has no title", pageID)
 	}
 
-	status := statusProperty(page.Properties["Status"])
-	localStatus := mapNotionProjectStatus(status, page.Archived)
+	status := statusProperty(props["Status"])
+	localStatus := mapNotionProjectStatus(status)
 
-	description := richTextProperty(page.Properties["Review Notes"])
-	area := selectProperty(page.Properties["Tag"])
-	deadline := dateProperty(page.Properties["Target Deadline"])
+	description := richTextProperty(props["Review Notes"])
+	area := selectProperty(props["Tag"])
+	deadline := dateProperty(props["Target Deadline"])
 
 	idSuffix := pageID
 	if len(idSuffix) > 8 {
@@ -71,7 +84,8 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 
 	// Record activity event (best-effort)
 	if h.events != nil {
-		sourceID := buildSourceID(pageID, string(localStatus))
+		now := time.Now()
+		sourceID := buildSourceID(pageID, string(localStatus), now)
 		metadata, _ := json.Marshal(map[string]string{
 			"status": string(localStatus),
 			"title":  title,
@@ -79,7 +93,7 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 		}) // best-effort
 		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
 			SourceID:  &sourceID,
-			Timestamp: time.Now(),
+			Timestamp: now,
 			EventType: "project_update",
 			Source:    "notion",
 			Project:   &p.Slug,
@@ -93,34 +107,48 @@ func (h *Handler) syncProject(ctx context.Context, pageID string) error {
 	return nil
 }
 
-// syncTask handles C2: upsert task to local DB, record activity event, update project last_activity_at on Done.
+// syncTask fetches a Notion page by ID and upserts it. Used by webhooks.
 func (h *Handler) syncTask(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("fetching notion task page: %w", err)
 	}
 
-	if page.InTrash {
+	if page.InTrash || page.Archived {
+		if _, archErr := h.tasks.ArchiveByNotionPageID(ctx, pageID); archErr != nil {
+			return fmt.Errorf("archiving trashed task %s: %w", pageID, archErr)
+		}
 		return ErrSkipped
 	}
 
-	status := statusProperty(page.Properties["Status"])
-	title := titleProperty(page.Properties["Task Name"])
+	return h.upsertTask(ctx, pageID, page.Properties)
+}
+
+// syncTaskFromResult upserts a task from a pre-fetched QueryDataSource result.
+func (h *Handler) syncTaskFromResult(ctx context.Context, result DatabaseQueryResult) error {
+	return h.upsertTask(ctx, result.ID, result.Properties)
+}
+
+// upsertTask contains the shared task sync logic.
+func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[string]json.RawMessage) error {
+	status := statusProperty(props["Status"])
+	title := titleProperty(props["Task Name"])
 	if title == "" {
-		title = titleProperty(page.Properties["Name"])
+		title = titleProperty(props["Name"])
 	}
 
 	localStatus := mapNotionTaskStatus(status)
-	due := dateProperty(page.Properties["Due"])
+	due := dateProperty(props["Due"])
 
 	// Resolve project via fallback chain: task Project → parent task Project
 	var projectSlug *string
 	var projectID *uuid.UUID
-	projectPageID := relationProperty(page.Properties["Project"])
+	projectPageID := relationProperty(props["Project"])
 
-	// Fallback: if task has no direct Project, check Parent Task
+	// Fallback: if task has no direct Project, check Parent Task.
+	// This requires an extra API call per subtask — acceptable at personal-project scale.
 	if projectPageID == "" {
-		parentTaskID := relationProperty(page.Properties["Parent Task"])
+		parentTaskID := relationProperty(props["Parent Task"])
 		if parentTaskID != "" {
 			parentPage, parentErr := h.client.Page(ctx, parentTaskID)
 			if parentErr != nil {
@@ -172,7 +200,8 @@ func (h *Handler) syncTask(ctx context.Context, pageID string) error {
 
 	// Record activity event for ALL status changes (best-effort)
 	if h.events != nil {
-		sourceID := buildSourceID(pageID, status)
+		now := time.Now()
+		sourceID := buildSourceID(pageID, status, now)
 		meta := map[string]string{
 			"status": status,
 			"title":  title,
@@ -183,7 +212,7 @@ func (h *Handler) syncTask(ctx context.Context, pageID string) error {
 		metadata, _ := json.Marshal(meta) // best-effort
 		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
 			SourceID:  &sourceID,
-			Timestamp: time.Now(),
+			Timestamp: now,
 			EventType: "task_status_change",
 			Source:    "notion",
 			Project:   projectSlug,
@@ -204,14 +233,14 @@ func (h *Handler) syncTask(ctx context.Context, pageID string) error {
 	return nil
 }
 
-// syncBook handles C5: record book progress and submit bookmark-generate on "Read".
+// syncBook fetches a Notion page by ID and processes book progress. Used by webhooks.
 func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("fetching notion book page: %w", err)
 	}
 
-	if page.InTrash {
+	if page.InTrash || page.Archived {
 		return ErrSkipped
 	}
 
@@ -223,7 +252,8 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 
 	// Record activity event for ALL book status changes (best-effort)
 	if h.events != nil {
-		sourceID := buildSourceID(pageID, status)
+		now := time.Now()
+		sourceID := buildSourceID(pageID, status, now)
 		metadata, _ := json.Marshal(map[string]string{
 			"status": status,
 			"title":  title,
@@ -232,7 +262,7 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 		}) // best-effort
 		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
 			SourceID:  &sourceID,
-			Timestamp: time.Now(),
+			Timestamp: now,
 			EventType: "book_progress",
 			Source:    "notion",
 			Title:     &title,
@@ -279,29 +309,42 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 	return nil
 }
 
-// syncGoal handles goal sync: fetch Notion page properties, upsert to goals table.
+// syncGoal fetches a Notion page by ID and upserts it. Used by webhooks.
 func (h *Handler) syncGoal(ctx context.Context, pageID string) error {
 	page, err := h.client.Page(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("fetching notion goal page: %w", err)
 	}
 
-	if page.InTrash {
+	if page.InTrash || page.Archived {
+		if _, archErr := h.goals.ArchiveByNotionPageID(ctx, pageID); archErr != nil {
+			return fmt.Errorf("archiving trashed goal %s: %w", pageID, archErr)
+		}
 		return ErrSkipped
 	}
 
-	title := titleProperty(page.Properties["Name"])
+	return h.upsertGoal(ctx, pageID, page.Properties)
+}
+
+// syncGoalFromResult upserts a goal from a pre-fetched QueryDataSource result.
+func (h *Handler) syncGoalFromResult(ctx context.Context, result DatabaseQueryResult) error {
+	return h.upsertGoal(ctx, result.ID, result.Properties)
+}
+
+// upsertGoal contains the shared goal sync logic.
+func (h *Handler) upsertGoal(ctx context.Context, pageID string, props map[string]json.RawMessage) error {
+	title := titleProperty(props["Name"])
 	if title == "" {
 		return fmt.Errorf("notion goal page %s has no title", pageID)
 	}
 
-	status := statusProperty(page.Properties["Status"])
+	status := statusProperty(props["Status"])
 	localStatus := mapNotionGoalStatus(status)
 
-	description := richTextProperty(page.Properties["Description"])
-	area := selectProperty(page.Properties["Area"])
-	quarter := selectProperty(page.Properties["Quarter"])
-	deadline := dateProperty(page.Properties["Deadline"])
+	description := richTextProperty(props["Description"])
+	area := selectProperty(props["Area"])
+	quarter := selectProperty(props["Quarter"])
+	deadline := dateProperty(props["Deadline"])
 
 	g, err := h.goals.UpsertByNotionPageID(ctx, goal.UpsertByNotionParams{
 		Title:        title,
@@ -325,7 +368,8 @@ func (h *Handler) syncGoal(ctx context.Context, pageID string) error {
 
 	// Record activity event (best-effort)
 	if h.events != nil {
-		sourceID := buildSourceID(pageID, string(localStatus))
+		now := time.Now()
+		sourceID := buildSourceID(pageID, string(localStatus), now)
 		metadata, _ := json.Marshal(map[string]string{
 			"status": string(localStatus),
 			"area":   area,
@@ -333,7 +377,7 @@ func (h *Handler) syncGoal(ctx context.Context, pageID string) error {
 		}) // best-effort
 		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
 			SourceID:  &sourceID,
-			Timestamp: time.Now(),
+			Timestamp: now,
 			EventType: "goal_update",
 			Source:    "notion",
 			Title:     &title,

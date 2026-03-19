@@ -13,9 +13,10 @@ import (
 	"github.com/koopa0/blog-backend/internal/api"
 )
 
-// SyncTrigger triggers a full sync for a specific role.
+// SyncTrigger triggers a sync for a specific role or all roles.
 type SyncTrigger interface {
 	SyncAll(ctx context.Context)
+	SyncRoleAsync(ctx context.Context, role string)
 }
 
 // SourceHandler handles admin HTTP requests for notion source CRUD.
@@ -105,6 +106,10 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name exceeds 255 characters")
 		return
 	}
+	if len([]rune(p.Description)) > 1024 {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description exceeds 1024 characters")
+		return
+	}
 	if p.Role != nil && !ValidRole(*p.Role) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid role, must be 'projects', 'tasks', 'books', or 'goals'")
 		return
@@ -146,9 +151,9 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.invalidateCache(src.DatabaseID)
-	// trigger immediate sync if a role was assigned during creation
+	// trigger immediate sync for the assigned role only (not all databases)
 	if src.Role != nil && *src.Role != "" && h.syncer != nil {
-		go h.syncer.SyncAll(context.WithoutCancel(r.Context()))
+		h.syncer.SyncRoleAsync(context.WithoutCancel(r.Context()), *src.Role)
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: src})
 }
@@ -302,9 +307,9 @@ func (h *SourceHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 	// invalidate all cached entries — role change can affect multiple sources
 	h.sourceCache.Clear()
 
-	// trigger immediate sync in background so new role takes effect right away
+	// trigger immediate sync for the assigned role only
 	if h.syncer != nil && req.Role != nil && *req.Role != "" {
-		go h.syncer.SyncAll(context.WithoutCancel(r.Context()))
+		h.syncer.SyncRoleAsync(context.WithoutCancel(r.Context()), *req.Role)
 	}
 
 	src, err := h.store.Source(r.Context(), id)

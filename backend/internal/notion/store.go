@@ -26,7 +26,7 @@ func NewStore(dbtx db.DBTX) *Store {
 
 // WithTx returns a Store that uses the given transaction.
 func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{q: s.q.WithTx(tx)}
+	return &Store{dbtx: tx, q: s.q.WithTx(tx)}
 }
 
 // Sources returns all registered Notion sources.

@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/koopa0/blog-backend/internal/db"
@@ -59,13 +58,13 @@ func nullReviewLevel(rl *ReviewLevel) db.NullReviewLevel {
 
 // Store handles database operations for content.
 type Store struct {
-	pool *pgxpool.Pool
+	dbtx db.DBTX
 	q    *db.Queries
 }
 
-// NewStore returns a Store backed by the given pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool, q: db.New(pool)}
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX) *Store {
+	return &Store{dbtx: dbtx, q: db.New(dbtx)}
 }
 
 // Content returns a single content by ID.
@@ -293,7 +292,14 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 		seriesOrder = &v
 	}
 
-	tx, err := s.pool.Begin(ctx)
+	pool, ok := s.dbtx.(interface {
+		Begin(ctx context.Context) (pgx.Tx, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("CreateContent requires a connection with Begin support")
+	}
+
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
@@ -365,7 +371,14 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams)
 		seriesOrder = &v
 	}
 
-	tx, err := s.pool.Begin(ctx)
+	pool, ok := s.dbtx.(interface {
+		Begin(ctx context.Context) (pgx.Tx, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("UpdateContent requires a connection with Begin support")
+	}
+
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}

@@ -33,6 +33,11 @@ RETURNING id, title, status, due, project_id, notion_page_id,
 -- List all Notion page IDs for tasks.
 SELECT notion_page_id FROM tasks WHERE notion_page_id IS NOT NULL ORDER BY title;
 
+-- name: ArchiveTaskByNotionPageID :execrows
+-- Mark a single task as done by its Notion page ID (used when Notion page is trashed).
+UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
+WHERE notion_page_id = $1 AND status != 'done';
+
 -- name: ArchiveOrphanNotionTasks :execrows
 -- Mark tasks as done if their notion_page_id is not in the active set.
 UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
@@ -43,6 +48,22 @@ WHERE notion_page_id IS NOT NULL
 -- name: CompletedTasksSince :one
 -- Count tasks completed since a given time.
 SELECT count(*) FROM tasks WHERE status = 'done' AND completed_at >= @since;
+
+-- name: PendingTasksWithProject :many
+-- List pending tasks with project info, sorted by deadline priority then last-touched.
+SELECT t.id, t.title, t.status, t.due, t.project_id,
+       t.created_at, t.updated_at,
+       COALESCE(p.title, '') AS project_title,
+       COALESCE(p.slug, '') AS project_slug
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.status != 'done'
+  AND (sqlc.narg('project_slug')::text IS NULL OR p.slug = sqlc.narg('project_slug'))
+ORDER BY
+    (t.due IS NOT NULL) DESC,
+    t.due ASC NULLS LAST,
+    t.updated_at ASC
+LIMIT sqlc.arg('max_results');
 
 -- name: CompletedTasksByProjectSince :many
 -- Count tasks completed per project since a given time. NULL project grouped as '(no project)'.

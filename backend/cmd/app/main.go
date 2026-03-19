@@ -576,6 +576,7 @@ func run(logger *slog.Logger) error {
 		notion.WithProjectSlugResolver(projectStore),
 		notion.WithProjectIDResolver(projectStore),
 	)
+	defer notionHandler.Wait() // drain background SyncRole goroutines
 
 	// pipeline dependencies
 	topicLookup := pipeline.NewTopicLookup(func(ctx context.Context, slug string) (uuid.UUID, error) {

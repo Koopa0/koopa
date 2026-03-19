@@ -29,6 +29,18 @@ type Task struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
+// PendingTaskDetail represents a pending task with project context for MCP tools.
+type PendingTaskDetail struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	Status       Status     `json:"status"`
+	Due          *time.Time `json:"due,omitempty"`
+	ProjectTitle string     `json:"project_title"`
+	ProjectSlug  string     `json:"project_slug"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
 // UpsertByNotionParams are the parameters for upserting a task from Notion.
 // CompletedAt is managed by the DB: set on first transition to done, preserved thereafter.
 type UpsertByNotionParams struct {

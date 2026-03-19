@@ -109,6 +109,11 @@ WHERE notion_page_id = $1;
 -- name: NotionProjectPageIDs :many
 SELECT notion_page_id FROM projects WHERE notion_page_id IS NOT NULL ORDER BY title;
 
+-- name: ArchiveProjectByNotionPageID :execrows
+-- Archive a single project by its Notion page ID (used when Notion page is trashed).
+UPDATE projects SET status = 'archived', updated_at = now()
+WHERE notion_page_id = $1 AND status != 'archived';
+
 -- name: ArchiveOrphanNotionProjects :execrows
 UPDATE projects SET status = 'archived', updated_at = now()
 WHERE notion_page_id IS NOT NULL

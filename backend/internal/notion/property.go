@@ -115,10 +115,7 @@ func relationProperty(raw json.RawMessage) string {
 }
 
 // mapNotionProjectStatus maps a Notion UB 3.0 project status to the local enum.
-func mapNotionProjectStatus(notionStatus string, archived bool) project.Status {
-	if archived {
-		return project.StatusArchived
-	}
+func mapNotionProjectStatus(notionStatus string) project.Status {
 	switch notionStatus {
 	case "Planned":
 		return project.StatusPlanned

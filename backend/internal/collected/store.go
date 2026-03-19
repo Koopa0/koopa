@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -27,9 +26,9 @@ type Store struct {
 	q *db.Queries
 }
 
-// NewStore returns a Store backed by the given pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{q: db.New(pool)}
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX) *Store {
+	return &Store{q: db.New(dbtx)}
 }
 
 // CollectedData returns a paginated list of collected data.

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/koopa0/blog-backend/internal/db"
 	"github.com/koopa0/blog-backend/internal/flow"
 )
@@ -16,9 +14,9 @@ type Store struct {
 	q *db.Queries
 }
 
-// NewStore returns a Store backed by the given pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{q: db.New(pool)}
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX) *Store {
+	return &Store{q: db.New(dbtx)}
 }
 
 // Tasks returns all tasks ordered by status and due date.
@@ -85,9 +83,22 @@ func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// ArchiveByNotionPageID marks a single task as done by its Notion page ID.
+func (s *Store) ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error) {
+	n, err := s.q.ArchiveTaskByNotionPageID(ctx, &notionPageID)
+	if err != nil {
+		return 0, fmt.Errorf("archiving task by notion page %s: %w", notionPageID, err)
+	}
+	return n, nil
+}
+
 // ArchiveOrphanNotion marks tasks as done if their notion_page_id
 // is not in the given list of active IDs. Returns the number of archived tasks.
+// Returns 0 immediately if activeIDs is empty to avoid archiving all records.
 func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
+	if len(activeIDs) == 0 {
+		return 0, nil
+	}
 	n, err := s.q.ArchiveOrphanNotionTasks(ctx, activeIDs)
 	if err != nil {
 		return 0, fmt.Errorf("archiving orphan notion tasks: %w", err)
@@ -118,6 +129,31 @@ func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([
 		}
 	}
 	return result, nil
+}
+
+// PendingTasksWithProject returns pending tasks with project context for MCP tools.
+func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug *string, maxResults int32) ([]PendingTaskDetail, error) {
+	rows, err := s.q.PendingTasksWithProject(ctx, db.PendingTasksWithProjectParams{
+		ProjectSlug: projectSlug,
+		MaxResults:  maxResults,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing pending tasks with project: %w", err)
+	}
+	tasks := make([]PendingTaskDetail, len(rows))
+	for i, r := range rows {
+		tasks[i] = PendingTaskDetail{
+			ID:           r.ID,
+			Title:        r.Title,
+			Status:       Status(r.Status),
+			Due:          r.Due,
+			ProjectTitle: r.ProjectTitle,
+			ProjectSlug:  r.ProjectSlug,
+			CreatedAt:    r.CreatedAt,
+			UpdatedAt:    r.UpdatedAt,
+		}
+	}
+	return tasks, nil
 }
 
 func rowToTask(r db.Task) Task {

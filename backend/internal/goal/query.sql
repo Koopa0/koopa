@@ -25,6 +25,11 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
 RETURNING id, title, description, status, area, quarter, deadline,
           notion_page_id, created_at, updated_at;
 
+-- name: ArchiveGoalByNotionPageID :execrows
+-- Archive a single goal by its Notion page ID (used when Notion page is trashed).
+UPDATE goals SET status = 'abandoned', updated_at = now()
+WHERE notion_page_id = $1 AND status != 'abandoned';
+
 -- name: ArchiveOrphanNotionGoals :execrows
 UPDATE goals SET status = 'abandoned', updated_at = now()
 WHERE notion_page_id IS NOT NULL

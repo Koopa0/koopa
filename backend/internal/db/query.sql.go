@@ -244,6 +244,20 @@ func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const archiveGoalByNotionPageID = `-- name: ArchiveGoalByNotionPageID :execrows
+UPDATE goals SET status = 'abandoned', updated_at = now()
+WHERE notion_page_id = $1 AND status != 'abandoned'
+`
+
+// Archive a single goal by its Notion page ID (used when Notion page is trashed).
+func (q *Queries) ArchiveGoalByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveGoalByNotionPageID, notionPageID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const archiveNote = `-- name: ArchiveNote :exec
 UPDATE obsidian_notes SET status = 'archived', synced_at = now()
 WHERE file_path = $1 AND status != 'archived'
@@ -294,6 +308,34 @@ WHERE notion_page_id IS NOT NULL
 // Mark tasks as done if their notion_page_id is not in the active set.
 func (q *Queries) ArchiveOrphanNotionTasks(ctx context.Context, activeIds []string) (int64, error) {
 	result, err := q.db.Exec(ctx, archiveOrphanNotionTasks, activeIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const archiveProjectByNotionPageID = `-- name: ArchiveProjectByNotionPageID :execrows
+UPDATE projects SET status = 'archived', updated_at = now()
+WHERE notion_page_id = $1 AND status != 'archived'
+`
+
+// Archive a single project by its Notion page ID (used when Notion page is trashed).
+func (q *Queries) ArchiveProjectByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveProjectByNotionPageID, notionPageID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const archiveTaskByNotionPageID = `-- name: ArchiveTaskByNotionPageID :execrows
+UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
+WHERE notion_page_id = $1 AND status != 'done'
+`
+
+// Mark a single task as done by its Notion page ID (used when Notion page is trashed).
+func (q *Queries) ArchiveTaskByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveTaskByNotionPageID, notionPageID)
 	if err != nil {
 		return 0, err
 	}
@@ -2854,6 +2896,70 @@ func (q *Queries) PendingTasks(ctx context.Context) ([]Task, error) {
 			&i.CompletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pendingTasksWithProject = `-- name: PendingTasksWithProject :many
+SELECT t.id, t.title, t.status, t.due, t.project_id,
+       t.created_at, t.updated_at,
+       COALESCE(p.title, '') AS project_title,
+       COALESCE(p.slug, '') AS project_slug
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.status != 'done'
+  AND ($1::text IS NULL OR p.slug = $1)
+ORDER BY
+    (t.due IS NOT NULL) DESC,
+    t.due ASC NULLS LAST,
+    t.updated_at ASC
+LIMIT $2
+`
+
+type PendingTasksWithProjectParams struct {
+	ProjectSlug *string `json:"project_slug"`
+	MaxResults  int32   `json:"max_results"`
+}
+
+type PendingTasksWithProjectRow struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	Status       TaskStatus `json:"status"`
+	Due          *time.Time `json:"due"`
+	ProjectID    *uuid.UUID `json:"project_id"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	ProjectTitle string     `json:"project_title"`
+	ProjectSlug  string     `json:"project_slug"`
+}
+
+// List pending tasks with project info, sorted by deadline priority then last-touched.
+func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksWithProjectParams) ([]PendingTasksWithProjectRow, error) {
+	rows, err := q.db.Query(ctx, pendingTasksWithProject, arg.ProjectSlug, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PendingTasksWithProjectRow{}
+	for rows.Next() {
+		var i PendingTasksWithProjectRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectTitle,
+			&i.ProjectSlug,
 		); err != nil {
 			return nil, err
 		}

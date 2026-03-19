@@ -1,5 +1,5 @@
 // Command mcp runs a Model Context Protocol server over stdio, exposing
-// read-only tools for querying obsidian notes, projects, and activity events.
+// read-only tools for querying the koopa0.dev knowledge engine.
 //
 // Usage:
 //
@@ -16,9 +16,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/goal"
 	mcpserver "github.com/koopa0/blog-backend/internal/mcp"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/stats"
+	"github.com/koopa0/blog-backend/internal/task"
 )
 
 func main() {
@@ -58,11 +63,17 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		return fmt.Errorf("pinging database: %w", err)
 	}
 
-	noteStore := note.NewStore(pool)
-	activityStore := activity.NewStore(pool)
-	projectStore := project.NewStore(pool)
-
-	server := mcpserver.NewServer(noteStore, activityStore, projectStore, logger)
+	server := mcpserver.NewServer(
+		note.NewStore(pool),
+		activity.NewStore(pool),
+		project.NewStore(pool),
+		collected.NewStore(pool),
+		stats.NewStore(pool),
+		task.NewStore(pool),
+		content.NewStore(pool),
+		goal.NewStore(pool),
+		logger,
+	)
 
 	logger.Info("starting MCP server over stdio")
 	return server.Run(ctx)

@@ -199,25 +199,23 @@ func TestRelationProperty(t *testing.T) {
 
 func TestMapNotionProjectStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		status   string
-		archived bool
-		want     project.Status
+		name   string
+		status string
+		want   project.Status
 	}{
 		{name: "planned", status: "Planned", want: project.StatusPlanned},
 		{name: "on hold", status: "On Hold", want: project.StatusOnHold},
 		{name: "doing", status: "Doing", want: project.StatusInProgress},
 		{name: "ongoing", status: "Ongoing", want: project.StatusMaintained},
 		{name: "done", status: "Done", want: project.StatusCompleted},
-		{name: "archived overrides", status: "Doing", archived: true, want: project.StatusArchived},
 		{name: "unknown defaults to in-progress", status: "SomeNewStatus", want: project.StatusInProgress},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mapNotionProjectStatus(tt.status, tt.archived)
+			got := mapNotionProjectStatus(tt.status)
 			if got != tt.want {
-				t.Errorf("mapNotionProjectStatus(%q, %v) = %q, want %q", tt.status, tt.archived, got, tt.want)
+				t.Errorf("mapNotionProjectStatus(%q) = %q, want %q", tt.status, got, tt.want)
 			}
 		})
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -26,9 +25,9 @@ type Store struct {
 	q *db.Queries
 }
 
-// NewStore returns a Store backed by the given pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{q: db.New(pool)}
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX) *Store {
+	return &Store{q: db.New(dbtx)}
 }
 
 // Projects returns all projects ordered by featured status and sort order.
@@ -247,9 +246,23 @@ func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// ArchiveByNotionPageID marks a single project as archived by its Notion page ID.
+// Used when a Notion page is trashed. Returns rows affected (0 if not found or already archived).
+func (s *Store) ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error) {
+	n, err := s.q.ArchiveProjectByNotionPageID(ctx, &notionPageID)
+	if err != nil {
+		return 0, fmt.Errorf("archiving project by notion page %s: %w", notionPageID, err)
+	}
+	return n, nil
+}
+
 // ArchiveOrphanNotion marks projects as archived if their notion_page_id
 // is not in the given list of active IDs. Returns the number of archived projects.
+// Returns 0 immediately if activeIDs is empty to avoid archiving all records.
 func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
+	if len(activeIDs) == 0 {
+		return 0, nil
+	}
 	n, err := s.q.ArchiveOrphanNotionProjects(ctx, activeIDs)
 	if err != nil {
 		return 0, fmt.Errorf("archiving orphan notion projects: %w", err)

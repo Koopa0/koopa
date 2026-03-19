@@ -2,11 +2,7 @@ package goal
 
 import (
 	"context"
-	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -16,9 +12,9 @@ type Store struct {
 	q *db.Queries
 }
 
-// NewStore returns a Store backed by the given pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{q: db.New(pool)}
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX) *Store {
+	return &Store{q: db.New(dbtx)}
 }
 
 // Goals returns all goals ordered by status and deadline.
@@ -52,19 +48,6 @@ func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams
 	return &g, nil
 }
 
-// GoalByNotionPageID returns a goal by its Notion page ID.
-func (s *Store) GoalByNotionPageID(ctx context.Context, notionPageID string) (*Goal, error) {
-	r, err := s.q.GoalByNotionPageID(ctx, &notionPageID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying goal by notion page %s: %w", notionPageID, err)
-	}
-	g := rowToGoal(r)
-	return &g, nil
-}
-
 // NotionPageIDs returns all notion page IDs for goals synced from Notion.
 func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
 	ptrs, err := s.q.NotionGoalPageIDs(ctx)
@@ -80,9 +63,22 @@ func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// ArchiveByNotionPageID marks a single goal as abandoned by its Notion page ID.
+func (s *Store) ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error) {
+	n, err := s.q.ArchiveGoalByNotionPageID(ctx, &notionPageID)
+	if err != nil {
+		return 0, fmt.Errorf("archiving goal by notion page %s: %w", notionPageID, err)
+	}
+	return n, nil
+}
+
 // ArchiveOrphanNotion marks goals as abandoned if their notion_page_id
 // is not in the given list of active IDs. Returns the number of archived goals.
+// Returns 0 immediately if activeIDs is empty to avoid archiving all records.
 func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
+	if len(activeIDs) == 0 {
+		return 0, nil
+	}
 	n, err := s.q.ArchiveOrphanNotionGoals(ctx, activeIDs)
 	if err != nil {
 		return 0, fmt.Errorf("archiving orphan notion goals: %w", err)
