@@ -25,7 +25,6 @@ export class CommandPaletteService {
     const pages: CommandAction[] = [
       { id: 'home', label: 'Home', group: 'Pages', keywords: ['index', 'main'], action: () => this.navigate('/') },
       { id: 'articles', label: 'Articles', group: 'Pages', keywords: ['blog', 'post', 'writing'], action: () => this.navigate('/articles') },
-      { id: 'build-logs', label: 'Build Log', group: 'Pages', keywords: ['dev', 'journal'], action: () => this.navigate('/build-logs') },
       { id: 'til', label: 'TIL', group: 'Pages', keywords: ['today', 'learned', 'learning'], action: () => this.navigate('/til') },
       { id: 'notes', label: 'Notes', group: 'Pages', keywords: ['memo', 'snippet'], action: () => this.navigate('/notes') },
       { id: 'projects', label: 'Projects', group: 'Pages', keywords: ['portfolio', 'work'], action: () => this.navigate('/projects') },
@@ -38,6 +37,7 @@ export class CommandPaletteService {
         { id: 'admin-dashboard', label: 'Dashboard', group: 'Admin', keywords: ['admin', 'manage'], action: () => this.navigate('/admin') },
         { id: 'admin-new-article', label: 'New Article', group: 'Admin', keywords: ['create', 'write'], action: () => this.navigate('/admin/editor') },
         { id: 'admin-new-project', label: 'New Project', group: 'Admin', keywords: ['create', 'add'], action: () => this.navigate('/admin/project-editor') },
+        { id: 'admin-build-logs', label: 'Build Logs', group: 'Admin', keywords: ['dev', 'journal', 'session'], action: () => this.navigate('/admin/build-logs') },
       ];
       return [...pages, ...admin];
     }

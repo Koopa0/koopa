@@ -41,17 +41,23 @@ jobs:
 
             # Post-deploy health check
             echo "Waiting for services to be ready..."
-            for i in $(seq 1 30); do
-              if docker compose exec -T backend wget -qO- http://localhost:8080/healthz > /dev/null 2>&1; then
-                echo "Backend healthy after ${i}s"
-                break
-              fi
-              if [ "$i" -eq 30 ]; then
-                echo "ERROR: Backend failed health check after 30s"
-                docker compose logs backend --tail 20
-                exit 1
-              fi
-              sleep 1
+            for svc in backend mcp; do
+              case $svc in
+                backend) endpoint="http://localhost:8080/healthz" ;;
+                mcp)     endpoint="http://localhost:8081/healthz" ;;
+              esac
+              for i in $(seq 1 30); do
+                if docker compose exec -T $svc wget -qO- $endpoint > /dev/null 2>&1; then
+                  echo "$svc healthy after ${i}s"
+                  break
+                fi
+                if [ "$i" -eq 30 ]; then
+                  echo "ERROR: $svc failed health check after 30s"
+                  docker compose logs $svc --tail 20
+                  exit 1
+                fi
+                sleep 1
+              done
             done
 
             # Expire silence early after deploy completes

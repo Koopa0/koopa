@@ -39,20 +39,6 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/tag/tag').then((m) => m.TagComponent),
   },
   {
-    path: 'build-logs',
-    loadComponent: () =>
-      import('./pages/build-logs/build-logs').then(
-        (m) => m.BuildLogsComponent,
-      ),
-  },
-  {
-    path: 'build-logs/:slug',
-    loadComponent: () =>
-      import('./pages/build-log-detail/build-log-detail').then(
-        (m) => m.BuildLogDetailComponent,
-      ),
-  },
-  {
     path: 'til',
     loadComponent: () =>
       import('./pages/tils/tils').then((m) => m.TilsComponent),
@@ -196,6 +182,20 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./admin/tracking/tracking').then(
             (m) => m.TrackingComponent,
+          ),
+      },
+      {
+        path: 'build-logs',
+        loadComponent: () =>
+          import('./pages/build-logs/build-logs').then(
+            (m) => m.BuildLogsComponent,
+          ),
+      },
+      {
+        path: 'build-logs/:slug',
+        loadComponent: () =>
+          import('./pages/build-log-detail/build-log-detail').then(
+            (m) => m.BuildLogDetailComponent,
           ),
       },
       {

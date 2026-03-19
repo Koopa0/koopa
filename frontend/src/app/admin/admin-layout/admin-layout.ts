@@ -32,6 +32,7 @@ import {
   FolderOpen,
   ListTodo,
   Target,
+  FileCode,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -185,6 +186,13 @@ export class AdminLayoutComponent {
           label: 'Activity',
           route: '/admin/activity',
           icon: Activity,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Build Logs',
+          route: '/admin/build-logs',
+          icon: FileCode,
           exact: false,
           disabled: false,
         },
