@@ -710,15 +710,21 @@ type TagAlias struct {
 }
 
 type Task struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	Status       TaskStatus `json:"status"`
-	Due          *time.Time `json:"due"`
-	ProjectID    *uuid.UUID `json:"project_id"`
-	NotionPageID *string    `json:"notion_page_id"`
-	CompletedAt  *time.Time `json:"completed_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID            uuid.UUID  `json:"id"`
+	Title         string     `json:"title"`
+	Status        TaskStatus `json:"status"`
+	Due           *time.Time `json:"due"`
+	ProjectID     *uuid.UUID `json:"project_id"`
+	NotionPageID  *string    `json:"notion_page_id"`
+	CompletedAt   *time.Time `json:"completed_at"`
+	Energy        string     `json:"energy"`
+	Priority      string     `json:"priority"`
+	RecurInterval *int32     `json:"recur_interval"`
+	RecurUnit     string     `json:"recur_unit"`
+	MyDay         bool       `json:"my_day"`
+	Description   string     `json:"description"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type Topic struct {

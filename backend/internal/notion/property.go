@@ -101,6 +101,19 @@ func checkboxProperty(raw json.RawMessage) bool {
 	return prop.Checkbox
 }
 
+// numberProperty extracts an integer from a Notion number property.
+// Returns nil if the property is missing, null, or not a number.
+func numberProperty(raw json.RawMessage) *int32 {
+	var prop struct {
+		Number *float64 `json:"number"`
+	}
+	if err := json.Unmarshal(raw, &prop); err != nil || prop.Number == nil {
+		return nil
+	}
+	v := int32(*prop.Number)
+	return &v
+}
+
 // relationProperty extracts the first relation page ID from a Notion relation property.
 func relationProperty(raw json.RawMessage) string {
 	var prop struct {

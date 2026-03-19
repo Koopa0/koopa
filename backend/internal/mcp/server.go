@@ -24,10 +24,24 @@ type Server struct {
 	collected     CollectedReader
 	stats         StatsReader
 	tasks         TaskReader
+	taskWriter    TaskWriter
 	contents      ContentReader
 	contentWriter ContentWriter
 	goals         GoalReader
+	notionTasks   NotionTaskWriter
+	taskDBID      string // Notion database ID for tasks (for creating new tasks)
 	logger        *slog.Logger
+}
+
+// ServerOption configures optional Server dependencies.
+type ServerOption func(*Server)
+
+// WithNotionTaskWriter sets the Notion task writer for complete/create operations.
+func WithNotionTaskWriter(n NotionTaskWriter, taskDBID string) ServerOption {
+	return func(s *Server) {
+		s.notionTasks = n
+		s.taskDBID = taskDBID
+	}
 }
 
 // NewServer creates an MCP server with all tools registered.
@@ -38,10 +52,12 @@ func NewServer(
 	collected CollectedReader,
 	stats StatsReader,
 	tasks TaskReader,
+	taskWriter TaskWriter,
 	contents ContentReader,
 	contentWriter ContentWriter,
 	goals GoalReader,
 	logger *slog.Logger,
+	opts ...ServerOption,
 ) *Server {
 	s := &Server{
 		notes:         notes,
@@ -50,10 +66,14 @@ func NewServer(
 		collected:     collected,
 		stats:         stats,
 		tasks:         tasks,
+		taskWriter:    taskWriter,
 		contents:      contents,
 		contentWriter: contentWriter,
 		goals:         goals,
 		logger:        logger,
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	s.server = mcp.NewServer(&mcp.Implementation{
@@ -131,6 +151,31 @@ func NewServer(
 		Name:        "log_dev_session",
 		Description: "Log a development session as a build-log entry. Use at the end of a coding session or after completing a feature/bugfix/refactor/research milestone to record what was done, why, and what decisions were made. This creates a draft content record that the user can review and publish. The body should be in Markdown format with sections like: what was done, decisions made, problems solved, impact scope.",
 	}, s.logDevSession)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "complete_task",
+		Description: "Mark a task as done. Use when the user says they've finished something: 'done', 'completed', '做完了', '這題寫完了', 'OK next', or any phrase indicating task completion. Always confirm the specific task before calling. Returns next recurrence date for recurring tasks.",
+	}, s.completeTask)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "create_task",
+		Description: "Create a new task in Notion. Use during morning planning when the user confirms a suggested schedule, or when the user says 'add a task', 'remind me to', '幫我建一個任務'. Supports project linking, priority, energy level, and My Day assignment.",
+	}, s.createTask)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "update_task",
+		Description: "Update any task property — due date, priority, energy, project, My Day, or status. Use when the user says 'move this to tomorrow', 'change priority to high', '這個改成下週', 'put this on my day'. For marking tasks complete, prefer complete_task instead.",
+	}, s.updateTask)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "batch_my_day",
+		Description: "Set today's planned tasks on Notion My Day. Use at the end of morning planning after the user confirms the daily schedule. Optionally clears previous My Day selections first.",
+	}, s.batchMyDay)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "log_learning_session",
+		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Use after completing a learning discussion when the user gained new insight, finished a problem, or completed study material. Captures the knowledge for future retrieval via search_knowledge.",
+	}, s.logLearningSession)
 
 	return s
 }
@@ -415,8 +460,8 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // RSSHighlightsInput is the input for the get_rss_highlights tool.
 type RSSHighlightsInput struct {
-	Days  int `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
-	Limit int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
+	Days  int `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 365)"`
+	Limit int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 }
 
 // RSSHighlightsOutput is the output for the get_rss_highlights tool.
@@ -434,8 +479,8 @@ type rssItem struct {
 }
 
 func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, input RSSHighlightsInput) (*mcp.CallToolResult, RSSHighlightsOutput, error) {
-	days := clamp(input.Days, 1, 30, 7)
-	limit := clamp(input.Limit, 1, 50, 20)
+	days := clamp(input.Days, 1, 365, 7)
+	limit := clamp(input.Limit, 1, 100, 20)
 
 	now := time.Now()
 	start := now.AddDate(0, 0, -days)
@@ -510,6 +555,11 @@ type taskResult struct {
 	Due          string `json:"due,omitempty"`
 	ProjectTitle string `json:"project_title,omitempty"`
 	ProjectSlug  string `json:"project_slug,omitempty"`
+	Energy       string `json:"energy,omitempty"`
+	Priority     string `json:"priority,omitempty"`
+	IsRecurring  bool   `json:"is_recurring"`
+	OverdueDays  int    `json:"overdue_days,omitempty"`
+	MyDay        bool   `json:"my_day"`
 	UpdatedAt    string `json:"updated_at"`
 }
 
@@ -526,6 +576,8 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, PendingTasksOutput{}, fmt.Errorf("querying pending tasks: %w", err)
 	}
 
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	results := make([]taskResult, len(tasks))
 	for i, t := range tasks {
 		r := taskResult{
@@ -534,10 +586,18 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 			Status:       string(t.Status),
 			ProjectTitle: t.ProjectTitle,
 			ProjectSlug:  t.ProjectSlug,
+			Energy:       t.Energy,
+			Priority:     t.Priority,
+			IsRecurring:  t.RecurInterval != nil && *t.RecurInterval > 0,
+			MyDay:        t.MyDay,
 			UpdatedAt:    t.UpdatedAt.Format(time.RFC3339),
 		}
 		if t.Due != nil {
 			r.Due = t.Due.Format(time.DateOnly)
+			dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
+			if dueDate.Before(today) {
+				r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
+			}
 		}
 		results[i] = r
 	}

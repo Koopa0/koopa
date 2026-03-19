@@ -139,6 +139,12 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 
 	localStatus := mapNotionTaskStatus(status)
 	due := dateProperty(props["Due"])
+	energy := selectProperty(props["Energy"])
+	priority := selectProperty(props["Priority"])
+	recurInterval := numberProperty(props["Recur Interval"])
+	recurUnit := selectProperty(props["Recur Unit"])
+	myDay := checkboxProperty(props["My Day"])
+	description := richTextProperty(props["Description"])
 
 	// Resolve project via fallback chain: task Project → parent task Project
 	var projectSlug *string
@@ -181,11 +187,17 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 
 	// Upsert task to local DB (completed_at is managed by the DB via CASE expression)
 	t, err := h.tasks.UpsertByNotionPageID(ctx, task.UpsertByNotionParams{
-		Title:        title,
-		Status:       localStatus,
-		Due:          due,
-		ProjectID:    projectID,
-		NotionPageID: pageID,
+		Title:         title,
+		Status:        localStatus,
+		Due:           due,
+		ProjectID:     projectID,
+		NotionPageID:  pageID,
+		Energy:        energy,
+		Priority:      priority,
+		RecurInterval: recurInterval,
+		RecurUnit:     recurUnit,
+		MyDay:         myDay,
+		Description:   description,
 	})
 	if err != nil {
 		return fmt.Errorf("upserting task: %w", err)
@@ -332,6 +344,7 @@ func (h *Handler) syncGoalFromResult(ctx context.Context, result DatabaseQueryRe
 }
 
 // upsertGoal contains the shared goal sync logic.
+// UB 3.0 Goals DB properties: Name (title), Status, Tag (relation→area), Target Deadline (date).
 func (h *Handler) upsertGoal(ctx context.Context, pageID string, props map[string]json.RawMessage) error {
 	title := titleProperty(props["Name"])
 	if title == "" {
@@ -341,17 +354,14 @@ func (h *Handler) upsertGoal(ctx context.Context, pageID string, props map[strin
 	status := statusProperty(props["Status"])
 	localStatus := mapNotionGoalStatus(status)
 
-	description := richTextProperty(props["Description"])
-	area := selectProperty(props["Area"])
-	quarter := selectProperty(props["Quarter"])
-	deadline := dateProperty(props["Deadline"])
+	// UB 3.0: Area is a Tag relation (not select), Deadline is "Target Deadline" (not "Deadline")
+	area := h.resolveRelationTitle(ctx, props["Tag"])
+	deadline := dateProperty(props["Target Deadline"])
 
 	g, err := h.goals.UpsertByNotionPageID(ctx, goal.UpsertByNotionParams{
 		Title:        title,
-		Description:  description,
 		Status:       localStatus,
 		Area:         area,
-		Quarter:      quarter,
 		Deadline:     deadline,
 		NotionPageID: pageID,
 	})

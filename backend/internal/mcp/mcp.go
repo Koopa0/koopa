@@ -1,5 +1,5 @@
 // Package mcpserver provides an MCP (Model Context Protocol) server exposing
-// read-only tools for querying the koopa0.dev knowledge engine.
+// tools for querying and managing the koopa0.dev knowledge engine.
 package mcpserver
 
 import (
@@ -7,6 +7,8 @@ import (
 	"context"
 	"slices"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/collected"
@@ -54,6 +56,30 @@ type StatsReader interface {
 // TaskReader provides task queries for MCP tools.
 type TaskReader interface {
 	PendingTasksWithProject(ctx context.Context, projectSlug *string, limit int32) ([]task.PendingTaskDetail, error)
+	TaskByID(ctx context.Context, id uuid.UUID) (*task.Task, error)
+	PendingTasksByTitle(ctx context.Context, title string) ([]task.Task, error)
+}
+
+// TaskWriter provides task mutations for MCP tools.
+type TaskWriter interface {
+	UpdateStatus(ctx context.Context, id uuid.UUID, status task.Status) (*task.Task, error)
+	UpdateMyDay(ctx context.Context, id uuid.UUID, myDay bool) error
+	ClearAllMyDay(ctx context.Context) (int64, error)
+	Update(ctx context.Context, p task.UpdateParams) (*task.Task, error)
+}
+
+// NotionTaskWriter creates and updates tasks in Notion.
+type NotionTaskWriter interface {
+	UpdatePageStatus(ctx context.Context, pageID, status string) error
+	CreateTask(ctx context.Context, p NotionCreateTaskParams) error
+}
+
+// NotionCreateTaskParams holds parameters for creating a task in Notion.
+type NotionCreateTaskParams struct {
+	DatabaseID  string
+	Title       string
+	DueDate     string
+	Description string
 }
 
 // ContentReader provides content search and retrieval for MCP tools.

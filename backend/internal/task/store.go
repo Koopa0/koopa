@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/koopa0/blog-backend/internal/db"
 	"github.com/koopa0/blog-backend/internal/flow"
 )
@@ -55,11 +57,17 @@ func (s *Store) PendingTasks(ctx context.Context) ([]flow.PendingTask, error) {
 // UpsertByNotionPageID upserts a task by its Notion page ID.
 func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams) (*Task, error) {
 	r, err := s.q.UpsertTaskByNotionPageID(ctx, db.UpsertTaskByNotionPageIDParams{
-		Title:        p.Title,
-		Status:       db.TaskStatus(p.Status),
-		Due:          p.Due,
-		ProjectID:    p.ProjectID,
-		NotionPageID: &p.NotionPageID,
+		Title:         p.Title,
+		Status:        db.TaskStatus(p.Status),
+		Due:           p.Due,
+		ProjectID:     p.ProjectID,
+		NotionPageID:  &p.NotionPageID,
+		Energy:        p.Energy,
+		Priority:      p.Priority,
+		RecurInterval: p.RecurInterval,
+		RecurUnit:     p.RecurUnit,
+		MyDay:         p.MyDay,
+		Description:   p.Description,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upserting task by notion page %s: %w", p.NotionPageID, err)
@@ -143,29 +151,145 @@ func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug *string
 	tasks := make([]PendingTaskDetail, len(rows))
 	for i, r := range rows {
 		tasks[i] = PendingTaskDetail{
-			ID:           r.ID,
-			Title:        r.Title,
-			Status:       Status(r.Status),
-			Due:          r.Due,
-			ProjectTitle: r.ProjectTitle,
-			ProjectSlug:  r.ProjectSlug,
-			CreatedAt:    r.CreatedAt,
-			UpdatedAt:    r.UpdatedAt,
+			ID:            r.ID,
+			Title:         r.Title,
+			Status:        Status(r.Status),
+			Due:           r.Due,
+			ProjectTitle:  r.ProjectTitle,
+			ProjectSlug:   r.ProjectSlug,
+			Energy:        r.Energy,
+			Priority:      r.Priority,
+			RecurInterval: r.RecurInterval,
+			RecurUnit:     r.RecurUnit,
+			MyDay:         r.MyDay,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
 		}
 	}
 	return tasks, nil
 }
 
+// TaskByID returns a single task by its ID.
+func (s *Store) TaskByID(ctx context.Context, id uuid.UUID) (*Task, error) {
+	r, err := s.q.TaskByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("querying task %s: %w", id, err)
+	}
+	t := rowToTask(r)
+	return &t, nil
+}
+
+// TaskByNotionPageID returns a task by its Notion page ID.
+func (s *Store) TaskByNotionPageID(ctx context.Context, notionPageID string) (*Task, error) {
+	r, err := s.q.TaskByNotionPageID(ctx, &notionPageID)
+	if err != nil {
+		return nil, fmt.Errorf("querying task by notion page %s: %w", notionPageID, err)
+	}
+	t := rowToTask(r)
+	return &t, nil
+}
+
+// PendingTasksByTitle finds pending tasks matching a title (case-insensitive contains).
+func (s *Store) PendingTasksByTitle(ctx context.Context, title string) ([]Task, error) {
+	rows, err := s.q.PendingTasksByTitle(ctx, &title)
+	if err != nil {
+		return nil, fmt.Errorf("searching pending tasks by title %q: %w", title, err)
+	}
+	tasks := make([]Task, len(rows))
+	for i, r := range rows {
+		tasks[i] = rowToTask(r)
+	}
+	return tasks, nil
+}
+
+// UpdateStatus updates a task's status and returns the updated task.
+func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (*Task, error) {
+	r, err := s.q.UpdateTaskStatus(ctx, db.UpdateTaskStatusParams{
+		ID:     id,
+		Status: db.TaskStatus(status),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("updating task %s status to %s: %w", id, status, err)
+	}
+	t := rowToTask(r)
+	return &t, nil
+}
+
+// UpdateMyDay sets or clears My Day for a task.
+func (s *Store) UpdateMyDay(ctx context.Context, id uuid.UUID, myDay bool) error {
+	n, err := s.q.UpdateTaskMyDay(ctx, db.UpdateTaskMyDayParams{
+		ID:    id,
+		MyDay: myDay,
+	})
+	if err != nil {
+		return fmt.Errorf("updating task %s my_day: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("task %s not found or already done", id)
+	}
+	return nil
+}
+
+// ClearAllMyDay clears My Day for all pending tasks.
+func (s *Store) ClearAllMyDay(ctx context.Context) (int64, error) {
+	n, err := s.q.ClearAllMyDay(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("clearing all my day: %w", err)
+	}
+	return n, nil
+}
+
+// UpdateParams holds optional fields for updating a task.
+type UpdateParams struct {
+	ID          uuid.UUID
+	Status      *Status
+	Due         *time.Time
+	Energy      *string
+	Priority    *string
+	MyDay       *bool
+	ProjectID   *uuid.UUID
+	Description *string
+}
+
+// Update updates arbitrary task fields.
+func (s *Store) Update(ctx context.Context, p UpdateParams) (*Task, error) {
+	params := db.UpdateTaskParams{ID: p.ID}
+	if p.Status != nil {
+		params.Status = db.NullTaskStatus{
+			TaskStatus: db.TaskStatus(*p.Status),
+			Valid:      true,
+		}
+	}
+	params.Due = p.Due
+	params.Energy = p.Energy
+	params.Priority = p.Priority
+	params.MyDay = p.MyDay
+	params.NewProjectID = p.ProjectID
+	params.NewDescription = p.Description
+	r, err := s.q.UpdateTask(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("updating task %s: %w", p.ID, err)
+	}
+	t := rowToTask(r)
+	return &t, nil
+}
+
 func rowToTask(r db.Task) Task {
 	return Task{
-		ID:           r.ID,
-		Title:        r.Title,
-		Status:       Status(r.Status),
-		Due:          r.Due,
-		ProjectID:    r.ProjectID,
-		NotionPageID: r.NotionPageID,
-		CompletedAt:  r.CompletedAt,
-		CreatedAt:    r.CreatedAt,
-		UpdatedAt:    r.UpdatedAt,
+		ID:            r.ID,
+		Title:         r.Title,
+		Status:        Status(r.Status),
+		Due:           r.Due,
+		ProjectID:     r.ProjectID,
+		NotionPageID:  r.NotionPageID,
+		CompletedAt:   r.CompletedAt,
+		Energy:        r.Energy,
+		Priority:      r.Priority,
+		RecurInterval: r.RecurInterval,
+		RecurUnit:     r.RecurUnit,
+		MyDay:         r.MyDay,
+		Description:   r.Description,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
 	}
 }

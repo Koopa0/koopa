@@ -34,6 +34,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/goal"
 	mcpserver "github.com/koopa0/blog-backend/internal/mcp"
 	"github.com/koopa0/blog-backend/internal/note"
+	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -76,17 +77,31 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	}
 
 	contentStore := content.NewStore(pool)
+	taskStore := task.NewStore(pool)
+
+	var opts []mcpserver.ServerOption
+	notionKey := os.Getenv("NOTION_API_KEY")
+	taskDBID := os.Getenv("NOTION_TASKS_DB_ID")
+	if notionKey != "" && taskDBID != "" {
+		opts = append(opts, mcpserver.WithNotionTaskWriter(
+			notionAdapter{apiKey: notionKey},
+			taskDBID,
+		))
+	}
+
 	server := mcpserver.NewServer(
 		note.NewStore(pool),
 		activity.NewStore(pool),
 		project.NewStore(pool),
 		collected.NewStore(pool),
 		stats.NewStore(pool),
-		task.NewStore(pool),
+		taskStore,
+		taskStore,
 		contentStore,
 		contentStore,
 		goal.NewStore(pool),
 		logger,
+		opts...,
 	)
 
 	transport := envOr("MCP_TRANSPORT", "http")
@@ -342,4 +357,22 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// notionAdapter bridges the Notion client to mcpserver.NotionTaskWriter.
+type notionAdapter struct {
+	apiKey string
+}
+
+func (a notionAdapter) UpdatePageStatus(ctx context.Context, pageID, status string) error {
+	return notion.NewClient(a.apiKey).UpdatePageStatus(ctx, pageID, status)
+}
+
+func (a notionAdapter) CreateTask(ctx context.Context, p mcpserver.NotionCreateTaskParams) error {
+	return notion.NewClient(a.apiKey).CreateTask(ctx, notion.CreateTaskParams{
+		DatabaseID:  p.DatabaseID,
+		Title:       p.Title,
+		DueDate:     p.DueDate,
+		Description: p.Description,
+	})
 }

@@ -250,20 +250,27 @@ CREATE TABLE goals (
 CREATE TYPE task_status AS ENUM ('todo', 'in-progress', 'done');
 
 CREATE TABLE tasks (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title          TEXT NOT NULL,
-    status         task_status NOT NULL DEFAULT 'todo',
-    due            DATE,
-    project_id     UUID REFERENCES projects(id),
-    notion_page_id TEXT UNIQUE,
-    completed_at   TIMESTAMPTZ,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title           TEXT NOT NULL,
+    status          task_status NOT NULL DEFAULT 'todo',
+    due             DATE,
+    project_id      UUID REFERENCES projects(id),
+    notion_page_id  TEXT UNIQUE,
+    completed_at    TIMESTAMPTZ,
+    energy          TEXT NOT NULL DEFAULT '',
+    priority        TEXT NOT NULL DEFAULT '',
+    recur_interval  INT,
+    recur_unit      TEXT NOT NULL DEFAULT '',
+    my_day          BOOLEAN NOT NULL DEFAULT false,
+    description     TEXT NOT NULL DEFAULT '',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_tasks_status ON tasks (status) WHERE status != 'done';
 CREATE INDEX idx_tasks_project ON tasks (project_id) WHERE project_id IS NOT NULL;
 CREATE INDEX idx_tasks_completed ON tasks (completed_at) WHERE status = 'done';
+CREATE INDEX idx_tasks_my_day ON tasks (my_day) WHERE my_day = true AND status != 'done';
 
 -- Seed topics
 INSERT INTO topics (slug, name, sort_order) VALUES
@@ -538,4 +545,3 @@ CREATE TABLE note_links (
 CREATE INDEX idx_note_links_source ON note_links (source_note_id);
 CREATE INDEX idx_note_links_target ON note_links (target_path);
 CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_path);
-
