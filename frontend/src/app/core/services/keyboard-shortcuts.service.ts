@@ -1,5 +1,6 @@
 import { DestroyRef, Injectable, inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { fromEvent } from 'rxjs';
 import { filter } from 'rxjs/operators';
@@ -10,6 +11,7 @@ import { filter } from 'rxjs/operators';
 export class KeyboardShortcutsService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
   private isInitialized = false;
 
   init(): void {
@@ -33,6 +35,13 @@ export class KeyboardShortcutsService {
             top: document.body.scrollHeight,
             behavior: 'smooth',
           });
+        }
+
+        // Shift+A → navigate to /admin
+        if (event.key === 'A' && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+          event.preventDefault();
+          this.router.navigate(['/admin']);
+          return;
         }
 
         if (event.key === 'j') {

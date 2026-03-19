@@ -13,12 +13,16 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -97,6 +101,11 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		}
 		port := envOr("MCP_PORT", "8081")
 
+		clientID := envOr("MCP_OAUTH_CLIENT_ID", "claude-ai")
+		clientSecret := envOr("MCP_OAUTH_CLIENT_SECRET", token)
+
+		oauth := newOAuthProvider(clientID, clientSecret, port)
+
 		handler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 			return server.MCPServer()
 		}, nil)
@@ -105,7 +114,11 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, "ok")
 		})
-		mux.Handle("/mcp", bearerAuth(handler, token))
+		mux.HandleFunc("GET /.well-known/oauth-authorization-server", oauth.metadata)
+		mux.HandleFunc("/oauth/authorize", oauth.authorize)
+		mux.HandleFunc("POST /oauth/token", oauth.token)
+		mux.HandleFunc("POST /oauth/register", oauth.register)
+		mux.Handle("/mcp", bearerAuth(handler, oauth))
 
 		httpServer := &http.Server{
 			Addr:              ":" + port,
@@ -129,9 +142,9 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	}
 }
 
-// bearerAuth wraps an http.Handler with bearer token authentication.
-func bearerAuth(next http.Handler, token string) http.Handler {
-	tokenBytes := []byte(token)
+// bearerAuth wraps an http.Handler, accepting either the static MCP_TOKEN
+// or any OAuth-issued access token.
+func bearerAuth(next http.Handler, oauth *oauthProvider) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		const prefix = "Bearer "
@@ -139,12 +152,182 @@ func bearerAuth(next http.Handler, token string) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if subtle.ConstantTimeCompare([]byte(auth[len(prefix):]), tokenBytes) != 1 {
+		tok := auth[len(prefix):]
+		if !oauth.validToken(tok) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// --- Minimal OAuth 2.0 provider (client_credentials + authorization_code) ---
+
+type oauthProvider struct {
+	clientID     string
+	clientSecret string
+	baseURL      string
+
+	mu     sync.Mutex
+	tokens map[string]time.Time // access_token → expiry
+	codes  map[string]time.Time // authorization_code → expiry
+}
+
+func newOAuthProvider(clientID, clientSecret, port string) *oauthProvider {
+	return &oauthProvider{
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		baseURL:      "https://mcp.koopa0.dev",
+		tokens:       make(map[string]time.Time),
+		codes:        make(map[string]time.Time),
+	}
+}
+
+func (o *oauthProvider) validToken(tok string) bool {
+	// Accept static MCP_TOKEN (backwards compat with Claude Code).
+	if subtle.ConstantTimeCompare([]byte(tok), []byte(o.clientSecret)) == 1 {
+		return true
+	}
+	// Accept OAuth-issued tokens.
+	o.mu.Lock()
+	exp, ok := o.tokens[tok]
+	o.mu.Unlock()
+	return ok && time.Now().Before(exp)
+}
+
+func (o *oauthProvider) issueToken() (string, time.Duration) {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	tok := hex.EncodeToString(b)
+	ttl := 24 * time.Hour
+	o.mu.Lock()
+	o.tokens[tok] = time.Now().Add(ttl)
+	o.mu.Unlock()
+	return tok, ttl
+}
+
+func (o *oauthProvider) issueCode() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	code := hex.EncodeToString(b)
+	o.mu.Lock()
+	o.codes[code] = time.Now().Add(5 * time.Minute)
+	o.mu.Unlock()
+	return code
+}
+
+func (o *oauthProvider) consumeCode(code string) bool {
+	o.mu.Lock()
+	exp, ok := o.codes[code]
+	if ok {
+		delete(o.codes, code)
+	}
+	o.mu.Unlock()
+	return ok && time.Now().Before(exp)
+}
+
+// GET /.well-known/oauth-authorization-server
+func (o *oauthProvider) metadata(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"issuer":                 o.baseURL,
+		"authorization_endpoint": o.baseURL + "/oauth/authorize",
+		"token_endpoint":         o.baseURL + "/oauth/token",
+		"registration_endpoint":  o.baseURL + "/oauth/register",
+		"response_types_supported":         []string{"code"},
+		"grant_types_supported":            []string{"authorization_code", "client_credentials"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_post"},
+		"code_challenge_methods_supported":      []string{"S256"},
+	})
+}
+
+// GET/POST /oauth/authorize — simplified: auto-approve and redirect with code.
+func (o *oauthProvider) authorize(w http.ResponseWriter, r *http.Request) {
+	redirectURI := r.FormValue("redirect_uri")
+	state := r.FormValue("state")
+	if redirectURI == "" {
+		http.Error(w, "redirect_uri required", http.StatusBadRequest)
+		return
+	}
+	code := o.issueCode()
+	loc := redirectURI + "?code=" + code
+	if state != "" {
+		loc += "&state=" + state
+	}
+	http.Redirect(w, r, loc, http.StatusFound)
+}
+
+// POST /oauth/token
+func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	grantType := r.FormValue("grant_type")
+
+	switch grantType {
+	case "client_credentials":
+		if !o.checkClientCredentials(r) {
+			jsonError(w, "invalid_client", http.StatusUnauthorized)
+			return
+		}
+	case "authorization_code":
+		code := r.FormValue("code")
+		if !o.consumeCode(code) {
+			jsonError(w, "invalid_grant", http.StatusBadRequest)
+			return
+		}
+	default:
+		jsonError(w, "unsupported_grant_type", http.StatusBadRequest)
+		return
+	}
+
+	tok, ttl := o.issueToken()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"access_token": tok,
+		"token_type":   "Bearer",
+		"expires_in":   int(ttl.Seconds()),
+	})
+}
+
+// POST /oauth/register — dynamic client registration (MCP spec requirement).
+// For a personal server we just echo back the client_id.
+func (o *oauthProvider) register(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RedirectURIs []string `json:"redirect_uris"`
+		ClientName   string   `json:"client_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"client_id":     o.clientID,
+		"client_secret": o.clientSecret,
+		"redirect_uris": req.RedirectURIs,
+		"client_name":   req.ClientName,
+	})
+}
+
+func (o *oauthProvider) checkClientCredentials(r *http.Request) bool {
+	cid := r.FormValue("client_id")
+	csec := r.FormValue("client_secret")
+	if cid == "" || csec == "" {
+		// Try HTTP Basic Auth.
+		cid, csec, _ = r.BasicAuth()
+	}
+	return subtle.ConstantTimeCompare([]byte(cid), []byte(o.clientID)) == 1 &&
+		subtle.ConstantTimeCompare([]byte(csec), []byte(o.clientSecret)) == 1
+}
+
+func jsonError(w http.ResponseWriter, errCode string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": errCode})
 }
 
 func envOr(key, fallback string) string {
