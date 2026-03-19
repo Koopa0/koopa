@@ -58,7 +58,6 @@ const STATIC_ROUTES: Array<{
   { path: '/', changefreq: 'daily', priority: '1.0' },
   { path: '/articles', changefreq: 'daily', priority: '0.9' },
   { path: '/projects', changefreq: 'weekly', priority: '0.8' },
-  { path: '/build-logs', changefreq: 'weekly', priority: '0.7' },
   { path: '/til', changefreq: 'daily', priority: '0.7' },
   { path: '/notes', changefreq: 'weekly', priority: '0.6' },
   { path: '/resume', changefreq: 'monthly', priority: '0.7' },
@@ -85,7 +84,6 @@ interface ApiListResponse {
 const TYPE_ROUTE_PREFIX: Record<string, string> = {
   article: '/articles',
   essay: '/essays',
-  'build-log': '/build-logs',
   til: '/til',
   note: '/notes',
 };
@@ -154,7 +152,6 @@ app.get('/sitemap.xml', async (_req, res) => {
   const priorityMap: Record<string, string> = {
     article: '0.7',
     essay: '0.6',
-    'build-log': '0.5',
     til: '0.4',
     note: '0.4',
   };

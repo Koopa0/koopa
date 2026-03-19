@@ -26,14 +26,6 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
   },
   {
-    path: 'build-logs',
-    renderMode: RenderMode.Server,
-  },
-  {
-    path: 'build-logs/:slug',
-    renderMode: RenderMode.Server,
-  },
-  {
     path: 'til',
     renderMode: RenderMode.Server,
   },
