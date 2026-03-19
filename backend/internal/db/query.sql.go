@@ -384,10 +384,9 @@ func (q *Queries) ClearSourceRole(ctx context.Context, id uuid.UUID) (int64, err
 }
 
 const collectedData = `-- name: CollectedData :many
-SELECT id, source_url, source_name, title, original_content, ai_summary,
+SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, ai_score, ai_score_reason, ai_summary_zh, ai_title_zh,
-       user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data
 WHERE ($3::collected_status IS NULL OR status = $3)
 ORDER BY collected_at DESC
@@ -415,17 +414,12 @@ func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([
 			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
-			&i.AiSummary,
 			&i.RelevanceScore,
 			&i.Topics,
 			&i.Status,
 			&i.CuratedContentID,
 			&i.CollectedAt,
 			&i.UrlHash,
-			&i.AiScore,
-			&i.AiScoreReason,
-			&i.AiSummaryZh,
-			&i.AiTitleZh,
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
@@ -441,10 +435,9 @@ func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([
 }
 
 const collectedDataByID = `-- name: CollectedDataByID :one
-SELECT id, source_url, source_name, title, original_content, ai_summary,
+SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, ai_score, ai_score_reason, ai_summary_zh, ai_title_zh,
-       user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data WHERE id = $1
 `
 
@@ -457,17 +450,12 @@ func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (Collecte
 		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
-		&i.AiSummary,
 		&i.RelevanceScore,
 		&i.Topics,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.AiScore,
-		&i.AiScoreReason,
-		&i.AiSummaryZh,
-		&i.AiTitleZh,
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
@@ -476,10 +464,9 @@ func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (Collecte
 }
 
 const collectedDataByURLHash = `-- name: CollectedDataByURLHash :one
-SELECT id, source_url, source_name, title, original_content, ai_summary,
+SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, ai_score, ai_score_reason, ai_summary_zh, ai_title_zh,
-       user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data WHERE url_hash = $1
 `
 
@@ -492,17 +479,12 @@ func (q *Queries) CollectedDataByURLHash(ctx context.Context, urlHash string) (C
 		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
-		&i.AiSummary,
 		&i.RelevanceScore,
 		&i.Topics,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.AiScore,
-		&i.AiScoreReason,
-		&i.AiSummaryZh,
-		&i.AiTitleZh,
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
@@ -835,10 +817,9 @@ func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID)
 const createCollectedData = `-- name: CreateCollectedData :one
 INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, source_url, source_name, title, original_content, ai_summary,
+RETURNING id, source_url, source_name, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
-          url_hash, ai_score, ai_score_reason, ai_summary_zh, ai_title_zh,
-          user_feedback, feedback_at, feed_id
+          url_hash, user_feedback, feedback_at, feed_id
 `
 
 type CreateCollectedDataParams struct {
@@ -868,17 +849,12 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
-		&i.AiSummary,
 		&i.RelevanceScore,
 		&i.Topics,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.AiScore,
-		&i.AiScoreReason,
-		&i.AiSummaryZh,
-		&i.AiTitleZh,
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
@@ -1392,10 +1368,9 @@ func (q *Queries) CreateTrackingTopic(ctx context.Context, arg CreateTrackingTop
 const curateCollected = `-- name: CurateCollected :one
 UPDATE collected_data SET status = 'curated', curated_content_id = $2
 WHERE id = $1
-RETURNING id, source_url, source_name, title, original_content, ai_summary,
+RETURNING id, source_url, source_name, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
-          url_hash, ai_score, ai_score_reason, ai_summary_zh, ai_title_zh,
-          user_feedback, feedback_at, feed_id
+          url_hash, user_feedback, feedback_at, feed_id
 `
 
 type CurateCollectedParams struct {
@@ -1412,17 +1387,12 @@ func (q *Queries) CurateCollected(ctx context.Context, arg CurateCollectedParams
 		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
-		&i.AiSummary,
 		&i.RelevanceScore,
 		&i.Topics,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.AiScore,
-		&i.AiScoreReason,
-		&i.AiSummaryZh,
-		&i.AiTitleZh,
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
@@ -2136,62 +2106,6 @@ func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
 			&i.NotionPageID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const highScoreCollectedData = `-- name: HighScoreCollectedData :many
-SELECT id, source_url, source_name, title, original_content, ai_summary,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, ai_score, ai_score_reason, ai_summary_zh, ai_title_zh,
-       user_feedback, feedback_at, feed_id
-FROM collected_data
-WHERE ai_score >= $1 AND collected_at >= $2 AND collected_at < $3
-ORDER BY ai_score DESC
-`
-
-type HighScoreCollectedDataParams struct {
-	AiScore       *int16    `json:"ai_score"`
-	CollectedAt   time.Time `json:"collected_at"`
-	CollectedAt_2 time.Time `json:"collected_at_2"`
-}
-
-func (q *Queries) HighScoreCollectedData(ctx context.Context, arg HighScoreCollectedDataParams) ([]CollectedDatum, error) {
-	rows, err := q.db.Query(ctx, highScoreCollectedData, arg.AiScore, arg.CollectedAt, arg.CollectedAt_2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []CollectedDatum{}
-	for rows.Next() {
-		var i CollectedDatum
-		if err := rows.Scan(
-			&i.ID,
-			&i.SourceUrl,
-			&i.SourceName,
-			&i.Title,
-			&i.OriginalContent,
-			&i.AiSummary,
-			&i.RelevanceScore,
-			&i.Topics,
-			&i.Status,
-			&i.CuratedContentID,
-			&i.CollectedAt,
-			&i.UrlHash,
-			&i.AiScore,
-			&i.AiScoreReason,
-			&i.AiSummaryZh,
-			&i.AiTitleZh,
-			&i.UserFeedback,
-			&i.FeedbackAt,
-			&i.FeedID,
 		); err != nil {
 			return nil, err
 		}
@@ -3098,6 +3012,48 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 	return i, err
 }
 
+const projectByTitle = `-- name: ProjectByTitle :one
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       created_at, updated_at
+FROM projects WHERE LOWER(title) = LOWER($1)
+`
+
+// Resolve a project by case-insensitive title match.
+func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, error) {
+	row := q.db.QueryRow(ctx, projectByTitle, lower)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.LongDescription,
+		&i.Role,
+		&i.TechStack,
+		&i.Highlights,
+		&i.Problem,
+		&i.Solution,
+		&i.Architecture,
+		&i.Results,
+		&i.GithubUrl,
+		&i.LiveUrl,
+		&i.Featured,
+		&i.Public,
+		&i.SortOrder,
+		&i.Status,
+		&i.NotionPageID,
+		&i.Repo,
+		&i.Area,
+		&i.Deadline,
+		&i.LastActivityAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const projectIDByNotionPageID = `-- name: ProjectIDByNotionPageID :one
 SELECT id FROM projects WHERE notion_page_id = $1
 `
@@ -3624,6 +3580,57 @@ func (q *Queries) ReassignNoteTags(ctx context.Context, arg ReassignNoteTagsPara
 	return result.RowsAffected(), nil
 }
 
+const recentCollectedData = `-- name: RecentCollectedData :many
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE collected_at >= $1 AND collected_at < $2
+ORDER BY collected_at DESC
+LIMIT $3
+`
+
+type RecentCollectedDataParams struct {
+	CollectedAt   time.Time `json:"collected_at"`
+	CollectedAt_2 time.Time `json:"collected_at_2"`
+	Limit         int32     `json:"limit"`
+}
+
+func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDataParams) ([]CollectedDatum, error) {
+	rows, err := q.db.Query(ctx, recentCollectedData, arg.CollectedAt, arg.CollectedAt_2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CollectedDatum{}
+	for rows.Next() {
+		var i CollectedDatum
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceUrl,
+			&i.SourceName,
+			&i.Title,
+			&i.OriginalContent,
+			&i.RelevanceScore,
+			&i.Topics,
+			&i.Status,
+			&i.CuratedContentID,
+			&i.CollectedAt,
+			&i.UrlHash,
+			&i.UserFeedback,
+			&i.FeedbackAt,
+			&i.FeedID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const refreshTokenByHash = `-- name: RefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens
@@ -3783,8 +3790,8 @@ SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
-  AND search_vector @@ websearch_to_tsquery('english', $1)
-ORDER BY ts_rank(search_vector, websearch_to_tsquery('english', $1)) DESC
+  AND search_vector @@ websearch_to_tsquery('simple', $1)
+ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3
 `
 
@@ -3859,7 +3866,7 @@ func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) 
 const searchContentsCount = `-- name: SearchContentsCount :one
 SELECT COUNT(*) FROM contents
 WHERE status = 'published'
-  AND search_vector @@ websearch_to_tsquery('english', $1)
+  AND search_vector @@ websearch_to_tsquery('simple', $1)
 `
 
 func (q *Queries) SearchContentsCount(ctx context.Context, websearchToTsquery string) (int64, error) {
@@ -4546,33 +4553,6 @@ type UpdateCollectedFeedbackParams struct {
 
 func (q *Queries) UpdateCollectedFeedback(ctx context.Context, arg UpdateCollectedFeedbackParams) error {
 	_, err := q.db.Exec(ctx, updateCollectedFeedback, arg.ID, arg.UserFeedback)
-	return err
-}
-
-const updateCollectedScoring = `-- name: UpdateCollectedScoring :exec
-UPDATE collected_data
-SET ai_score = $2, ai_score_reason = $3, ai_summary_zh = $4, ai_title_zh = $5, status = $6
-WHERE id = $1
-`
-
-type UpdateCollectedScoringParams struct {
-	ID            uuid.UUID       `json:"id"`
-	AiScore       *int16          `json:"ai_score"`
-	AiScoreReason *string         `json:"ai_score_reason"`
-	AiSummaryZh   *string         `json:"ai_summary_zh"`
-	AiTitleZh     *string         `json:"ai_title_zh"`
-	Status        CollectedStatus `json:"status"`
-}
-
-func (q *Queries) UpdateCollectedScoring(ctx context.Context, arg UpdateCollectedScoringParams) error {
-	_, err := q.db.Exec(ctx, updateCollectedScoring,
-		arg.ID,
-		arg.AiScore,
-		arg.AiScoreReason,
-		arg.AiSummaryZh,
-		arg.AiTitleZh,
-		arg.Status,
-	)
 	return err
 }
 

@@ -75,6 +75,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		return fmt.Errorf("pinging database: %w", err)
 	}
 
+	contentStore := content.NewStore(pool)
 	server := mcpserver.NewServer(
 		note.NewStore(pool),
 		activity.NewStore(pool),
@@ -82,7 +83,8 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		collected.NewStore(pool),
 		stats.NewStore(pool),
 		task.NewStore(pool),
-		content.NewStore(pool),
+		contentStore,
+		contentStore,
 		goal.NewStore(pool),
 		logger,
 	)
@@ -233,12 +235,12 @@ func (o *oauthProvider) consumeCode(code string) bool {
 func (o *oauthProvider) metadata(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"issuer":                 o.baseURL,
-		"authorization_endpoint": o.baseURL + "/oauth/authorize",
-		"token_endpoint":         o.baseURL + "/oauth/token",
-		"registration_endpoint":  o.baseURL + "/oauth/register",
-		"response_types_supported":         []string{"code"},
-		"grant_types_supported":            []string{"authorization_code", "client_credentials"},
+		"issuer":                                o.baseURL,
+		"authorization_endpoint":                o.baseURL + "/oauth/authorize",
+		"token_endpoint":                        o.baseURL + "/oauth/token",
+		"registration_endpoint":                 o.baseURL + "/oauth/register",
+		"response_types_supported":              []string{"code"},
+		"grant_types_supported":                 []string{"authorization_code", "client_credentials"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post"},
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
@@ -246,6 +248,7 @@ func (o *oauthProvider) metadata(w http.ResponseWriter, _ *http.Request) {
 
 // GET/POST /oauth/authorize — simplified: auto-approve and redirect with code.
 func (o *oauthProvider) authorize(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64 KB
 	redirectURI := r.FormValue("redirect_uri")
 	state := r.FormValue("state")
 	if redirectURI == "" {
@@ -262,6 +265,7 @@ func (o *oauthProvider) authorize(w http.ResponseWriter, r *http.Request) {
 
 // POST /oauth/token
 func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64 KB
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return

@@ -22,9 +22,9 @@ type PublishedContentLister interface {
 	PublishedByDateRange(ctx context.Context, start, end time.Time) ([]content.Content, error)
 }
 
-// HighScoreLister lists high-score collected data in a date range.
-type HighScoreLister interface {
-	HighScoreCollectedData(ctx context.Context, start, end time.Time, minScore int16) ([]collected.CollectedData, error)
+// RecentCollectedLister lists recently collected data in a date range.
+type RecentCollectedLister interface {
+	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]collected.CollectedData, error)
 }
 
 // ActiveProjectLister lists active projects.
@@ -49,7 +49,7 @@ type DigestGenerate struct {
 	g        *genkit.Genkit
 	model    ai.Model
 	contents PublishedContentLister
-	collects HighScoreLister
+	collects RecentCollectedLister
 	projects ActiveProjectLister
 	budget   BudgetChecker
 	loc      *time.Location
@@ -61,7 +61,7 @@ func NewDigestGenerate(
 	g *genkit.Genkit,
 	model ai.Model,
 	contents PublishedContentLister,
-	collects HighScoreLister,
+	collects RecentCollectedLister,
 	projects ActiveProjectLister,
 	budget BudgetChecker,
 	loc *time.Location,
@@ -101,7 +101,7 @@ func (dg *DigestGenerate) Run(ctx context.Context, input json.RawMessage) (json.
 
 const (
 	estimatedDigestTokens int64 = 5000
-	digestMinScore        int16 = 50
+	digestCollectedLimit  int32 = 50
 )
 
 func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (DigestGenerateOutput, error) {
@@ -132,10 +132,10 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 		return DigestGenerateOutput{}, fmt.Errorf("listing published contents: %w", err)
 	}
 
-	// Fetch high-score collected data
-	highScoreItems, err = dg.collects.HighScoreCollectedData(ctx, start, end, digestMinScore)
+	// Fetch recent collected data
+	highScoreItems, err = dg.collects.RecentCollectedData(ctx, start, end, digestCollectedLimit)
 	if err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("listing high score collected data: %w", err)
+		return DigestGenerateOutput{}, fmt.Errorf("listing recent collected data: %w", err)
 	}
 
 	// Fetch active projects
@@ -197,16 +197,8 @@ func buildDigestUserPrompt(
 	if len(collected) > 0 {
 		b.WriteString("## 高評分收集文章\n\n")
 		for _, cd := range collected {
-			title := cd.Title
-			if cd.AITitleZH != nil {
-				title = *cd.AITitleZH
-			}
-			summary := ""
-			if cd.AISummaryZH != nil {
-				summary = *cd.AISummaryZH
-			}
-			fmt.Fprintf(&b, "- **%s** (分數: %d)\n  來源: %s\n  URL: %s\n  摘要: %s\n\n",
-				title, scoreValue(cd.AIScore), cd.SourceName, cd.SourceURL, summary)
+			fmt.Fprintf(&b, "- **%s**\n  來源: %s\n  URL: %s\n\n",
+				cd.Title, cd.SourceName, cd.SourceURL)
 		}
 	}
 
@@ -218,13 +210,6 @@ func buildDigestUserPrompt(
 	}
 
 	return b.String()
-}
-
-func scoreValue(s *int16) int16 {
-	if s == nil {
-		return 0
-	}
-	return *s
 }
 
 // NewMockDigestGenerate returns a mock Flow for MOCK_MODE.

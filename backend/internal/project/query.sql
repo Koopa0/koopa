@@ -130,3 +130,11 @@ SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
 FROM project_aliases pa
 JOIN projects p ON LOWER(p.title) = LOWER(pa.canonical_name)
 WHERE LOWER(pa.alias) = LOWER(@alias);
+
+-- name: ProjectByTitle :one
+-- Resolve a project by case-insensitive title match.
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       created_at, updated_at
+FROM projects WHERE LOWER(title) = LOWER($1);

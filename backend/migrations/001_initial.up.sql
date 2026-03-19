@@ -178,17 +178,12 @@ CREATE TABLE collected_data (
     source_name        TEXT NOT NULL,
     title              TEXT NOT NULL,
     original_content   TEXT,
-    ai_summary         TEXT,
     relevance_score    REAL NOT NULL DEFAULT 0,
     topics             TEXT[] NOT NULL DEFAULT '{}',
     status             collected_status NOT NULL DEFAULT 'unread',
     curated_content_id UUID REFERENCES contents(id) ON DELETE SET NULL,
     collected_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     url_hash           TEXT NOT NULL DEFAULT '',
-    ai_score           SMALLINT,
-    ai_score_reason    TEXT,
-    ai_summary_zh      TEXT,
-    ai_title_zh        TEXT,
     user_feedback      TEXT,
     feedback_at        TIMESTAMPTZ,
     feed_id            UUID REFERENCES feeds(id) ON DELETE SET NULL
@@ -197,7 +192,6 @@ CREATE TABLE collected_data (
 CREATE INDEX idx_collected_data_status ON collected_data(status);
 CREATE INDEX idx_collected_data_relevance ON collected_data(relevance_score DESC);
 CREATE UNIQUE INDEX idx_collected_data_url_hash ON collected_data (url_hash) WHERE url_hash != '';
-CREATE INDEX idx_collected_data_ai_score ON collected_data (ai_score DESC) WHERE ai_score IS NOT NULL;
 CREATE INDEX idx_collected_data_feed_id ON collected_data (feed_id) WHERE feed_id IS NOT NULL;
 
 CREATE TABLE tracking_topics (

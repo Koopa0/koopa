@@ -136,21 +136,8 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 
 // buildBookmarkUserPrompt assembles the user prompt for bookmark generation.
 func buildBookmarkUserPrompt(cd *collected.CollectedData) string {
-	title := cd.Title
-	if cd.AITitleZH != nil {
-		title = *cd.AITitleZH
-	}
-	summary := ""
-	if cd.AISummaryZH != nil {
-		summary = *cd.AISummaryZH
-	}
-	reason := ""
-	if cd.AIScoreReason != nil {
-		reason = *cd.AIScoreReason
-	}
-
-	return fmt.Sprintf("標題：%s\n來源：%s\nURL：%s\nAI 摘要：%s\n評分理由：%s",
-		title, cd.SourceName, cd.SourceURL, summary, reason)
+	return fmt.Sprintf("標題：%s\n來源：%s\nURL：%s",
+		cd.Title, cd.SourceName, cd.SourceURL)
 }
 
 // NewMockBookmarkGenerate returns a mock Flow for MOCK_MODE.

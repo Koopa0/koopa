@@ -31,7 +31,7 @@ type ContentStrategy struct {
 	g         *genkit.Genkit
 	model     ai.Model
 	contents  PublishedContentLister
-	collected HighScoreLister
+	collected RecentCollectedLister
 	projects  ActiveProjectLister
 	notifier  Sender
 	budget    BudgetChecker
@@ -44,7 +44,7 @@ func NewContentStrategy(
 	g *genkit.Genkit,
 	model ai.Model,
 	contents PublishedContentLister,
-	collects HighScoreLister,
+	collects RecentCollectedLister,
 	projects ActiveProjectLister,
 	notifier Sender,
 	budget BudgetChecker,
@@ -82,7 +82,7 @@ func (cs *ContentStrategy) Run(ctx context.Context, input json.RawMessage) (json
 
 const (
 	estimatedStrategyTokens int64 = 2000
-	strategyMinScore        int16 = 60
+	strategyCollectedLimit  int32 = 30
 )
 
 func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, error) {
@@ -110,7 +110,7 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 		published, pubErr = cs.contents.PublishedByDateRange(ctx, monthAgo, now)
 	})
 	wg.Go(func() {
-		rssItems, rssErr = cs.collected.HighScoreCollectedData(ctx, weekAgo, now, strategyMinScore)
+		rssItems, rssErr = cs.collected.RecentCollectedData(ctx, weekAgo, now, strategyCollectedLimit)
 	})
 	wg.Go(func() {
 		projects, projErr = cs.projects.ActiveProjects(ctx)
@@ -198,11 +198,7 @@ func buildContentStrategyPrompt(
 	default:
 		limit := min(len(rssItems), 10)
 		for _, item := range rssItems[:limit] {
-			title := item.Title
-			if item.AITitleZH != nil {
-				title = *item.AITitleZH
-			}
-			fmt.Fprintf(&b, "- %s（%s）\n", title, item.SourceName)
+			fmt.Fprintf(&b, "- %s（%s）\n", item.Title, item.SourceName)
 		}
 	}
 

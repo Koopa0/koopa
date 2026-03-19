@@ -181,6 +181,19 @@ func (s *Store) ProjectByAlias(ctx context.Context, alias string) (*Project, err
 	return &p, nil
 }
 
+// ProjectByTitle returns a single project by case-insensitive title match.
+func (s *Store) ProjectByTitle(ctx context.Context, title string) (*Project, error) {
+	r, err := s.q.ProjectByTitle(ctx, title)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying project by title %s: %w", title, err)
+	}
+	p := rowToProject(r)
+	return &p, nil
+}
+
 // ProjectByRepo returns a project by its GitHub repository full name (e.g. "owner/repo").
 func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error) {
 	r, err := s.q.ProjectByRepo(ctx, &repo)

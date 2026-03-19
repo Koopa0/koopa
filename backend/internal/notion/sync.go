@@ -53,7 +53,7 @@ func (h *Handler) upsertProject(ctx context.Context, pageID string, props map[st
 	localStatus := mapNotionProjectStatus(status)
 
 	description := richTextProperty(props["Review Notes"])
-	area := selectProperty(props["Tag"])
+	area := h.resolveRelationTitle(ctx, props["Tag"])
 	deadline := dateProperty(props["Target Deadline"])
 
 	idSuffix := pageID
@@ -388,4 +388,20 @@ func (h *Handler) upsertGoal(ctx context.Context, pageID string, props map[strin
 	}
 
 	return nil
+}
+
+// resolveRelationTitle extracts the first relation page ID from a property
+// and fetches the page title via the Notion API. Returns "" on any failure
+// (missing relation, API error, etc.) — best-effort.
+func (h *Handler) resolveRelationTitle(ctx context.Context, raw json.RawMessage) string {
+	pageID := relationProperty(raw)
+	if pageID == "" {
+		return ""
+	}
+	page, err := h.client.Page(ctx, pageID)
+	if err != nil {
+		h.logger.Warn("resolving relation page title", "page_id", pageID, "error", err)
+		return ""
+	}
+	return titleProperty(page.Properties["Name"])
 }

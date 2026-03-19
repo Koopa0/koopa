@@ -51,7 +51,7 @@ type MorningBrief struct {
 	g         *genkit.Genkit
 	model     ai.Model
 	tasks     TaskQuerier
-	collected HighScoreLister
+	collected RecentCollectedLister
 	contents  PublishedCounter
 	notifier  Sender
 	budget    BudgetChecker
@@ -64,7 +64,7 @@ func NewMorningBrief(
 	g *genkit.Genkit,
 	model ai.Model,
 	tasks TaskQuerier,
-	collects HighScoreLister,
+	collects RecentCollectedLister,
 	contents PublishedCounter,
 	notifier Sender,
 	budget BudgetChecker,
@@ -102,7 +102,7 @@ func (mb *MorningBrief) Run(ctx context.Context, input json.RawMessage) (json.Ra
 
 const (
 	estimatedBriefTokens int64 = 2000
-	briefMinScore        int16 = 70
+	briefCollectedLimit  int32 = 20
 )
 
 func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
@@ -131,7 +131,7 @@ func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
 		tasks, taskErr = mb.tasks.PendingTasks(ctx)
 	})
 	wg.Go(func() {
-		rssItems, rssErr = mb.collected.HighScoreCollectedData(ctx, yesterday, now, briefMinScore)
+		rssItems, rssErr = mb.collected.RecentCollectedData(ctx, yesterday, now, briefCollectedLimit)
 	})
 	wg.Go(func() {
 		pubCount, pubErr = mb.contents.PublishedContentCountSince(ctx, weekAgo)
@@ -207,7 +207,7 @@ func buildMorningBriefPrompt(
 	}
 
 	// RSS section
-	b.WriteString("\n== 值得關注的文章（昨日，ai_score >= 70）==\n")
+	b.WriteString("\n== 值得關注的文章（昨日）==\n")
 	switch {
 	case rssErr != nil:
 		b.WriteString("RSS 資料不可用\n")
@@ -215,15 +215,7 @@ func buildMorningBriefPrompt(
 		b.WriteString("無符合條件的文章\n")
 	default:
 		for _, item := range rssItems {
-			title := item.Title
-			if item.AITitleZH != nil {
-				title = *item.AITitleZH
-			}
-			summary := ""
-			if item.AISummaryZH != nil {
-				summary = *item.AISummaryZH
-			}
-			fmt.Fprintf(&b, "- %s（%s）\n  %s\n", title, item.SourceName, summary)
+			fmt.Fprintf(&b, "- %s（%s）\n", item.Title, item.SourceName)
 		}
 	}
 

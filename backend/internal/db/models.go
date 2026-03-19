@@ -485,17 +485,12 @@ type CollectedDatum struct {
 	SourceName       string          `json:"source_name"`
 	Title            string          `json:"title"`
 	OriginalContent  *string         `json:"original_content"`
-	AiSummary        *string         `json:"ai_summary"`
 	RelevanceScore   float32         `json:"relevance_score"`
 	Topics           []string        `json:"topics"`
 	Status           CollectedStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	AiScore          *int16          `json:"ai_score"`
-	AiScoreReason    *string         `json:"ai_score_reason"`
-	AiSummaryZh      *string         `json:"ai_summary_zh"`
-	AiTitleZh        *string         `json:"ai_title_zh"`
 	UserFeedback     *string         `json:"user_feedback"`
 	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`

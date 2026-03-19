@@ -35,12 +35,13 @@ type ActivityReader interface {
 type ProjectReader interface {
 	ProjectBySlug(ctx context.Context, slug string) (*project.Project, error)
 	ProjectByAlias(ctx context.Context, alias string) (*project.Project, error)
+	ProjectByTitle(ctx context.Context, title string) (*project.Project, error)
 	ActiveProjects(ctx context.Context) ([]project.Project, error)
 }
 
-// CollectedReader provides high-score collected data for MCP tools.
+// CollectedReader provides recent collected data for MCP tools.
 type CollectedReader interface {
-	HighScoreCollectedData(ctx context.Context, start, end time.Time, minScore int16) ([]collected.CollectedData, error)
+	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]collected.CollectedData, error)
 }
 
 // StatsReader provides platform statistics for MCP tools.
@@ -59,6 +60,11 @@ type TaskReader interface {
 type ContentReader interface {
 	Search(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)
 	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
+}
+
+// ContentWriter creates content records via MCP tools.
+type ContentWriter interface {
+	CreateContent(ctx context.Context, p content.CreateParams) (*content.Content, error)
 }
 
 // GoalReader provides goal queries for MCP tools.

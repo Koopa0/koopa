@@ -125,21 +125,6 @@ func (s *Store) CollectedDataByURLHash(ctx context.Context, urlHash string) (*Co
 	return &d, nil
 }
 
-// UpdateScoring updates the AI scoring fields for a collected data item.
-func (s *Store) UpdateScoring(ctx context.Context, id uuid.UUID, p ScoringParams) error {
-	if err := s.q.UpdateCollectedScoring(ctx, db.UpdateCollectedScoringParams{
-		ID:            id,
-		AiScore:       &p.Score,
-		AiScoreReason: &p.Reason,
-		AiSummaryZh:   &p.SummaryZH,
-		AiTitleZh:     &p.TitleZH,
-		Status:        db.CollectedStatus(p.Status),
-	}); err != nil {
-		return fmt.Errorf("updating collected scoring %s: %w", id, err)
-	}
-	return nil
-}
-
 // UpdateFeedback updates the user feedback for a collected data item.
 func (s *Store) UpdateFeedback(ctx context.Context, id uuid.UUID, feedback Feedback) error {
 	fb := string(feedback)
@@ -152,15 +137,15 @@ func (s *Store) UpdateFeedback(ctx context.Context, id uuid.UUID, feedback Feedb
 	return nil
 }
 
-// HighScoreCollectedData returns collected data with AI score >= minScore in a time range.
-func (s *Store) HighScoreCollectedData(ctx context.Context, start, end time.Time, minScore int16) ([]CollectedData, error) {
-	rows, err := s.q.HighScoreCollectedData(ctx, db.HighScoreCollectedDataParams{
-		AiScore:       &minScore,
+// RecentCollectedData returns recently collected data in a time range, ordered by collected_at DESC.
+func (s *Store) RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]CollectedData, error) {
+	rows, err := s.q.RecentCollectedData(ctx, db.RecentCollectedDataParams{
 		CollectedAt:   start,
 		CollectedAt_2: end,
+		Limit:         limit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing high score collected data: %w", err)
+		return nil, fmt.Errorf("listing recent collected data: %w", err)
 	}
 	data := make([]CollectedData, len(rows))
 	for i, r := range rows {
@@ -177,17 +162,12 @@ func datumToCollectedData(r db.CollectedDatum) CollectedData {
 		SourceName:       r.SourceName,
 		Title:            r.Title,
 		OriginalContent:  r.OriginalContent,
-		AISummary:        r.AiSummary,
 		RelevanceScore:   r.RelevanceScore,
 		Topics:           r.Topics,
 		Status:           Status(r.Status),
 		CuratedContentID: r.CuratedContentID,
 		CollectedAt:      r.CollectedAt,
 		URLHash:          r.UrlHash,
-		AIScore:          r.AiScore,
-		AIScoreReason:    r.AiScoreReason,
-		AISummaryZH:      r.AiSummaryZh,
-		AITitleZH:        r.AiTitleZh,
 		UserFeedback:     r.UserFeedback,
 		FeedbackAt:       r.FeedbackAt,
 		FeedID:           r.FeedID,

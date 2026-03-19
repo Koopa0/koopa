@@ -48,14 +48,14 @@ SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
-  AND search_vector @@ websearch_to_tsquery('english', $1)
-ORDER BY ts_rank(search_vector, websearch_to_tsquery('english', $1)) DESC
+  AND search_vector @@ websearch_to_tsquery('simple', $1)
+ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3;
 
 -- name: SearchContentsCount :one
 SELECT COUNT(*) FROM contents
 WHERE status = 'published'
-  AND search_vector @@ websearch_to_tsquery('english', $1);
+  AND search_vector @@ websearch_to_tsquery('simple', $1);
 
 -- name: PublishedForRSS :many
 SELECT id, slug, title, excerpt, type, published_at, updated_at

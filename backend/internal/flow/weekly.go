@@ -49,7 +49,7 @@ type WeeklyReview struct {
 	model          ai.Model
 	tasks          TaskQuerier
 	taskCompletion TaskCompletionCounter
-	collected      HighScoreLister
+	collected      RecentCollectedLister
 	contents       PublishedContentLister
 	projects       ActiveProjectLister
 	commits        CommitLister
@@ -65,7 +65,7 @@ func NewWeeklyReview(
 	model ai.Model,
 	tasks TaskQuerier,
 	taskCompletion TaskCompletionCounter,
-	collects HighScoreLister,
+	collects RecentCollectedLister,
 	contents PublishedContentLister,
 	projects ActiveProjectLister,
 	commits CommitLister,
@@ -108,7 +108,7 @@ func (wr *WeeklyReview) Run(ctx context.Context, input json.RawMessage) (json.Ra
 
 const (
 	estimatedReviewTokens int64 = 3000
-	reviewMinScore        int16 = 60
+	reviewCollectedLimit  int32 = 30
 )
 
 func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
@@ -150,7 +150,7 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 		completedByProj, completedProjErr = wr.taskCompletion.CompletedByProjectSince(ctx, weekAgo)
 	})
 	wg.Go(func() {
-		rssItems, rssErr = wr.collected.HighScoreCollectedData(ctx, weekAgo, now, reviewMinScore)
+		rssItems, rssErr = wr.collected.RecentCollectedData(ctx, weekAgo, now, reviewCollectedLimit)
 	})
 	wg.Go(func() {
 		published, pubErr = wr.contents.PublishedByDateRange(ctx, weekAgo, now)
@@ -257,7 +257,7 @@ func buildWeeklyReviewPrompt(
 	}
 
 	// High-score articles
-	b.WriteString("\n== 本週值得關注的文章（ai_score >= 60）==\n")
+	b.WriteString("\n== 本週值得關注的文章 ==\n")
 	switch {
 	case rssErr != nil:
 		b.WriteString("RSS 資料不可用\n")
@@ -265,11 +265,7 @@ func buildWeeklyReviewPrompt(
 		b.WriteString("無符合條件的文章\n")
 	default:
 		for _, item := range rssItems {
-			title := item.Title
-			if item.AITitleZH != nil {
-				title = *item.AITitleZH
-			}
-			fmt.Fprintf(&b, "- %s（%s）\n", title, item.SourceName)
+			fmt.Fprintf(&b, "- %s（%s）\n", item.Title, item.SourceName)
 		}
 	}
 

@@ -15,18 +15,19 @@ import (
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
-// Server is the MCP server exposing read-only knowledge tools.
+// Server is the MCP server exposing knowledge tools.
 type Server struct {
-	server    *mcp.Server
-	notes     NoteSearcher
-	activity  ActivityReader
-	projects  ProjectReader
-	collected CollectedReader
-	stats     StatsReader
-	tasks     TaskReader
-	contents  ContentReader
-	goals     GoalReader
-	logger    *slog.Logger
+	server        *mcp.Server
+	notes         NoteSearcher
+	activity      ActivityReader
+	projects      ProjectReader
+	collected     CollectedReader
+	stats         StatsReader
+	tasks         TaskReader
+	contents      ContentReader
+	contentWriter ContentWriter
+	goals         GoalReader
+	logger        *slog.Logger
 }
 
 // NewServer creates an MCP server with all tools registered.
@@ -38,19 +39,21 @@ func NewServer(
 	stats StatsReader,
 	tasks TaskReader,
 	contents ContentReader,
+	contentWriter ContentWriter,
 	goals GoalReader,
 	logger *slog.Logger,
 ) *Server {
 	s := &Server{
-		notes:     notes,
-		activity:  activity,
-		projects:  projects,
-		collected: collected,
-		stats:     stats,
-		tasks:     tasks,
-		contents:  contents,
-		goals:     goals,
-		logger:    logger,
+		notes:         notes,
+		activity:      activity,
+		projects:      projects,
+		collected:     collected,
+		stats:         stats,
+		tasks:         tasks,
+		contents:      contents,
+		contentWriter: contentWriter,
+		goals:         goals,
+		logger:        logger,
 	}
 
 	s.server = mcp.NewServer(&mcp.Implementation{
@@ -84,7 +87,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_rss_highlights",
-		Description: "Get high-quality RSS articles collected and scored by AI. Returns curated external content with AI summaries, Chinese translations, and relevance scores. Use when the user asks about recent tech news, wants reading recommendations, or needs to know what's trending in their tracked topics.",
+		Description: "Get recently collected RSS articles from tracked feeds, ordered by most recent first. Use when the user asks about recent tech news, wants reading recommendations, or needs to know what's trending in their tracked topics.",
 	}, s.getRSSHighlights)
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -121,6 +124,13 @@ func NewServer(
 		Name:        "get_learning_progress",
 		Description: "Get learning metrics: spaced repetition stats (enrolled, due), note growth trends, weekly activity comparison, and top knowledge tags. Use when the user asks about their learning progress, wants to know what topics they've been studying, or needs motivation data.",
 	}, s.getLearningProgress)
+
+	// --- write tools ---
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "log_dev_session",
+		Description: "Log a development session as a build-log entry. Use at the end of a coding session or after completing a feature/bugfix/refactor/research milestone to record what was done, why, and what decisions were made. This creates a draft content record that the user can review and publish. The body should be in Markdown format with sections like: what was done, decisions made, problems solved, impact scope.",
+	}, s.logDevSession)
 
 	return s
 }
@@ -283,7 +293,13 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 		proj, err = s.projects.ProjectByAlias(ctx, input.Project)
 		if err != nil {
-			return nil, ProjectContextOutput{}, fmt.Errorf("project %q not found by slug or alias", input.Project)
+			if !errors.Is(err, project.ErrNotFound) {
+				return nil, ProjectContextOutput{}, fmt.Errorf("querying project by alias: %w", err)
+			}
+			proj, err = s.projects.ProjectByTitle(ctx, input.Project)
+			if err != nil {
+				return nil, ProjectContextOutput{}, fmt.Errorf("project %q not found by slug, alias, or title", input.Project)
+			}
 		}
 	}
 
@@ -399,9 +415,8 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // RSSHighlightsInput is the input for the get_rss_highlights tool.
 type RSSHighlightsInput struct {
-	Days     int `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
-	MinScore int `json:"min_score,omitempty" jsonschema_description:"minimum AI score threshold 0-100 (default 70)"`
-	Limit    int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
+	Days  int `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
+	Limit int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
 // RSSHighlightsOutput is the output for the get_rss_highlights tool.
@@ -412,55 +427,33 @@ type RSSHighlightsOutput struct {
 
 type rssItem struct {
 	Title       string   `json:"title"`
-	TitleZH     string   `json:"title_zh,omitempty"`
 	SourceName  string   `json:"source_name"`
 	URL         string   `json:"url"`
-	AIScore     int      `json:"ai_score"`
-	Summary     string   `json:"summary,omitempty"`
-	SummaryZH   string   `json:"summary_zh,omitempty"`
 	Topics      []string `json:"topics"`
 	CollectedAt string   `json:"collected_at"`
 }
 
 func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, input RSSHighlightsInput) (*mcp.CallToolResult, RSSHighlightsOutput, error) {
 	days := clamp(input.Days, 1, 30, 7)
-	minScore := clamp(input.MinScore, 0, 100, 70)
 	limit := clamp(input.Limit, 1, 50, 20)
 
 	now := time.Now()
 	start := now.AddDate(0, 0, -days)
 
-	data, err := s.collected.HighScoreCollectedData(ctx, start, now, int16(minScore)) // #nosec G115 -- minScore is clamped 0-100
+	data, err := s.collected.RecentCollectedData(ctx, start, now, int32(limit)) // #nosec G115 -- limit is clamped 1-50
 	if err != nil {
 		return nil, RSSHighlightsOutput{}, fmt.Errorf("querying rss highlights: %w", err)
 	}
 
-	if len(data) > limit {
-		data = data[:limit]
-	}
-
 	items := make([]rssItem, len(data))
 	for i, d := range data {
-		item := rssItem{
+		items[i] = rssItem{
 			Title:       d.Title,
 			SourceName:  d.SourceName,
 			URL:         d.SourceURL,
 			Topics:      d.Topics,
 			CollectedAt: d.CollectedAt.Format(time.RFC3339),
 		}
-		if d.AIScore != nil {
-			item.AIScore = int(*d.AIScore)
-		}
-		if d.AISummary != nil {
-			item.Summary = *d.AISummary
-		}
-		if d.AISummaryZH != nil {
-			item.SummaryZH = *d.AISummaryZH
-		}
-		if d.AITitleZH != nil {
-			item.TitleZH = *d.AITitleZH
-		}
-		items[i] = item
 	}
 
 	return nil, RSSHighlightsOutput{Items: items, Total: len(items)}, nil
@@ -820,6 +813,135 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 		Notes:    ld.Notes,
 		Activity: ld.Activity,
 		TopTags:  ld.TopTags,
+	}, nil
+}
+
+// --- write tools ---
+
+// DevSessionInput is the input for the log_dev_session tool.
+type DevSessionInput struct {
+	Project     string   `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
+	SessionType string   `json:"session_type" jsonschema_description:"type of work: feature, refactor, bugfix, research, infra (required)"`
+	Title       string   `json:"title" jsonschema_description:"short summary of what was done (required)"`
+	Body        string   `json:"body" jsonschema_description:"markdown body with sections: what was done, decisions, problems solved, impact (required)"`
+	Tags        []string `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
+}
+
+// DevSessionOutput is the output of the log_dev_session tool.
+type DevSessionOutput struct {
+	ContentID string `json:"content_id"`
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+}
+
+func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, input DevSessionInput) (*mcp.CallToolResult, DevSessionOutput, error) {
+	if input.Project == "" {
+		return nil, DevSessionOutput{}, fmt.Errorf("project is required")
+	}
+	if input.Title == "" {
+		return nil, DevSessionOutput{}, fmt.Errorf("title is required")
+	}
+	if input.Body == "" {
+		return nil, DevSessionOutput{}, fmt.Errorf("body is required")
+	}
+	if input.SessionType == "" {
+		input.SessionType = "feature"
+	}
+
+	validTypes := map[string]bool{
+		"feature": true, "refactor": true, "bugfix": true,
+		"research": true, "infra": true,
+	}
+	if !validTypes[input.SessionType] {
+		return nil, DevSessionOutput{}, fmt.Errorf("invalid session_type %q (must be feature, refactor, bugfix, research, or infra)", input.SessionType)
+	}
+
+	// Resolve project (slug → alias → title)
+	proj, err := s.projects.ProjectBySlug(ctx, input.Project)
+	if err != nil {
+		if !errors.Is(err, project.ErrNotFound) {
+			return nil, DevSessionOutput{}, fmt.Errorf("querying project: %w", err)
+		}
+		proj, err = s.projects.ProjectByAlias(ctx, input.Project)
+		if err != nil {
+			if !errors.Is(err, project.ErrNotFound) {
+				return nil, DevSessionOutput{}, fmt.Errorf("querying project by alias: %w", err)
+			}
+			proj, err = s.projects.ProjectByTitle(ctx, input.Project)
+			if err != nil {
+				return nil, DevSessionOutput{}, fmt.Errorf("project %q not found", input.Project)
+			}
+		}
+	}
+
+	now := time.Now()
+	slug := fmt.Sprintf("%s-dev-log-%s", proj.Slug, now.Format("2006-01-02"))
+	source := fmt.Sprintf("claude-code:%s", input.SessionType)
+	sourceType := content.SourceAIGenerated
+
+	tags := input.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	// Ensure session_type is in tags
+	hasType := false
+	for _, t := range tags {
+		if t == input.SessionType {
+			hasType = true
+			break
+		}
+	}
+	if !hasType {
+		tags = append(tags, input.SessionType)
+	}
+
+	created, err := s.contentWriter.CreateContent(ctx, content.CreateParams{
+		Slug:        slug,
+		Title:       input.Title,
+		Body:        input.Body,
+		Type:        content.TypeBuildLog,
+		Status:      content.StatusDraft,
+		Tags:        tags,
+		Source:      &source,
+		SourceType:  &sourceType,
+		ReviewLevel: content.ReviewLight,
+	})
+	if err != nil {
+		if errors.Is(err, content.ErrConflict) {
+			// Slug conflict: append timestamp to make unique
+			slug = fmt.Sprintf("%s-dev-log-%s-%d", proj.Slug, now.Format("2006-01-02"), now.Unix()%10000)
+			created, err = s.contentWriter.CreateContent(ctx, content.CreateParams{
+				Slug:        slug,
+				Title:       input.Title,
+				Body:        input.Body,
+				Type:        content.TypeBuildLog,
+				Status:      content.StatusDraft,
+				Tags:        tags,
+				Source:      &source,
+				SourceType:  &sourceType,
+				ReviewLevel: content.ReviewLight,
+			})
+			if err != nil {
+				return nil, DevSessionOutput{}, fmt.Errorf("creating dev session log: %w", err)
+			}
+		} else {
+			return nil, DevSessionOutput{}, fmt.Errorf("creating dev session log: %w", err)
+		}
+	}
+
+	s.logger.Info("dev session logged",
+		"project", proj.Title,
+		"content_id", created.ID,
+		"session_type", input.SessionType,
+		"title", input.Title,
+	)
+
+	return nil, DevSessionOutput{
+		ContentID: created.ID.String(),
+		Slug:      created.Slug,
+		Title:     created.Title,
+		Status:    string(created.Status),
 	}, nil
 }
 
