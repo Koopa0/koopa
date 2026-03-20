@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/ristretto/v2"
@@ -22,7 +20,6 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/robfig/cron/v3"
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
@@ -326,218 +323,6 @@ func run(logger *slog.Logger) error {
 	runner.Start(ctx)
 	defer runner.Stop()
 
-	// cron: all jobs run in Asia/Taipei timezone
-	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
-
-	// cron: retry failed/stuck flow runs every 2 minutes
-	_, err = cronScheduler.AddFunc("@every 2m", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-		defer cancel()
-		runs, retryErr := flowrunStore.RetryableRuns(ctx)
-		if retryErr != nil {
-			logger.Error("cron: scanning retryable flow runs", "error", retryErr)
-			return
-		}
-		for _, r := range runs {
-			runner.Requeue(r.ID)
-		}
-		if len(runs) > 0 {
-			logger.Info("cron: requeued flow runs", "count", len(runs))
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding cron job: %w", err)
-	}
-
-	// overlap guard for feed collection cron jobs
-	var collectRunning atomic.Bool
-
-	// collectFeedsCron runs feed collection with timeout and overlap protection.
-	collectFeedsCron := func(schedule, label string) {
-		if !collectRunning.CompareAndSwap(false, true) {
-			logger.Info("cron: skipping " + label + ", previous run still active")
-			return
-		}
-		defer collectRunning.Store(false)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
-		feeds, feedErr := feedStore.EnabledFeedsBySchedule(ctx, schedule)
-		if feedErr != nil {
-			logger.Error("cron: listing "+label+" feeds", "error", feedErr)
-			return
-		}
-		var totalNew int
-		for _, f := range feeds {
-			ids, fetchErr := feedCollector.FetchFeed(ctx, f)
-			if fetchErr != nil {
-				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
-				continue
-			}
-			totalNew += len(ids)
-		}
-		if len(feeds) > 0 {
-			logger.Info("cron: "+label+" collect complete", "feeds", len(feeds), "new_items", totalNew)
-		}
-	}
-
-	// cron: collect feeds every 4 hours (hourly_4 schedule)
-	_, err = cronScheduler.AddFunc("0 */4 * * *", func() {
-		collectFeedsCron(feed.ScheduleHourly4, "hourly_4")
-	})
-	if err != nil {
-		return fmt.Errorf("adding hourly_4 cron job: %w", err)
-	}
-
-	// cron: collect daily feeds at 06:00 (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("0 6 * * *", func() {
-		collectFeedsCron(feed.ScheduleDaily, "daily")
-	})
-	if err != nil {
-		return fmt.Errorf("adding daily cron job: %w", err)
-	}
-
-	// cron: collect weekly feeds at 06:00 Monday (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("0 6 * * 1", func() {
-		collectFeedsCron(feed.ScheduleWeekly, "weekly")
-	})
-	if err != nil {
-		return fmt.Errorf("adding weekly cron job: %w", err)
-	}
-
-	// cron: reset token budget at midnight (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("0 0 * * *", func() {
-		tokenBudget.Reset()
-		logger.Info("cron: daily token budget reset")
-	})
-	if err != nil {
-		return fmt.Errorf("adding budget reset cron job: %w", err)
-	}
-
-	// cron: clean up expired refresh tokens at 01:00 (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("0 1 * * *", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if delErr := authStore.DeleteExpiredTokens(ctx); delErr != nil {
-			logger.Error("cron: deleting expired tokens", "error", delErr)
-		} else {
-			logger.Info("cron: expired tokens cleaned up")
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding token cleanup cron job: %w", err)
-	}
-
-	// cron: morning brief at 07:30 (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("30 7 * * *", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		if submitErr := runner.Submit(ctx, "morning-brief", nil, nil); submitErr != nil {
-			logger.Error("cron: submitting morning brief", "error", submitErr)
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding morning brief cron job: %w", err)
-	}
-
-	// cron: weekly review at 09:00 Monday (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("0 9 * * 1", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		if submitErr := runner.Submit(ctx, "weekly-review", nil, nil); submitErr != nil {
-			logger.Error("cron: submitting weekly review", "error", submitErr)
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding weekly review cron job: %w", err)
-	}
-
-	// cron: content strategy at 03:00 Monday (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("0 3 * * 1", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		if submitErr := runner.Submit(ctx, "content-strategy", nil, nil); submitErr != nil {
-			logger.Error("cron: submitting content strategy", "error", submitErr)
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding content strategy cron job: %w", err)
-	}
-
-	// cron: daily dev log at 23:00 (Asia/Taipei) — summarize the day's activity
-	_, err = cronScheduler.AddFunc("0 23 * * *", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		if submitErr := runner.Submit(ctx, "daily-dev-log", nil, nil); submitErr != nil {
-			logger.Error("cron: submitting daily dev log", "error", submitErr)
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding daily dev log cron job: %w", err)
-	}
-
-	// cron: build-log generation at 10:00 Monday (Asia/Taipei) — per active project with repo
-	_, err = cronScheduler.AddFunc("0 10 * * 1", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		slugs, slugErr := projectStore.ActiveSlugsWithRepo(ctx)
-		if slugErr != nil {
-			logger.Error("cron: listing active projects for build-log", "error", slugErr)
-			return
-		}
-		for _, slug := range slugs {
-			input, _ := json.Marshal(map[string]any{"project_slug": slug, "days": 7}) //nolint:errchkjson // static map
-			if submitErr := runner.Submit(ctx, "build-log-generate", input, nil); submitErr != nil {
-				logger.Error("cron: submitting build-log", "project", slug, "error", submitErr)
-			}
-		}
-		if len(slugs) > 0 {
-			logger.Info("cron: build-log submitted", "projects", len(slugs))
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding build-log cron job: %w", err)
-	}
-
-	// cron: spaced repetition reminder at 09:00 (Asia/Taipei)
-	// Sends LINE/Telegram notification + creates Notion reminder task.
-	_, err = cronScheduler.AddFunc("0 9 * * *", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		count, countErr := spacedStore.DueCount(ctx)
-		if countErr != nil {
-			logger.Error("cron: checking spaced due count", "error", countErr)
-			return
-		}
-		if count > 0 {
-			msg := fmt.Sprintf("📚 你有 %d 個筆記要複習\nhttps://koopa0.dev/admin/spaced", count)
-			if sendErr := notifier.Send(ctx, msg); sendErr != nil {
-				logger.Error("cron: sending spaced reminder", "error", sendErr)
-			}
-			// Create a single Notion reminder task for today's reviews.
-			if cfg.NotionAPIKey != "" {
-				if tasksSrc, lookupErr := notionSourceStore.SourceByRole(ctx, notion.RoleTasks); lookupErr == nil {
-					today := time.Now().In(taipeiLoc).Format("2006-01-02")
-					title := fmt.Sprintf("📚 複習 %d 篇筆記", count)
-					if _, createErr := notionClient.CreateTask(ctx, notion.CreateTaskParams{
-						DatabaseID:  tasksSrc.DatabaseID,
-						Title:       title,
-						DueDate:     today,
-						Description: "https://koopa0.dev/admin/spaced",
-					}); createErr != nil {
-						logger.Error("cron: creating spaced reminder task in notion", "error", createErr)
-					} else {
-						logger.Info("cron: spaced reminder task created in notion", "count", count)
-					}
-				}
-			}
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding spaced reminder cron job: %w", err)
-	}
-
 	// reconciler: weekly Obsidian + Notion comparison
 	recon := reconcile.New(
 		githubFetcher, contentStore,
@@ -546,21 +331,6 @@ func run(logger *slog.Logger) error {
 		notionSourceStore,
 		logger,
 	)
-
-	// cron: reconciliation at 04:00 Sunday (Asia/Taipei)
-	_, err = cronScheduler.AddFunc("0 4 * * 0", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		if reconErr := recon.Run(ctx); reconErr != nil {
-			logger.Error("cron: reconciliation failed", "error", reconErr)
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("adding reconciliation cron job: %w", err)
-	}
-
-	cronScheduler.Start()
-	defer cronScheduler.Stop()
 
 	// webhook replay protection: shared dedup cache with 10-minute TTL
 	webhookDedup := webhook.NewDeduplicationCache(10 * time.Minute)
@@ -611,23 +381,30 @@ func run(logger *slog.Logger) error {
 		logger,
 	)
 
-	// cron: hourly full sync — GitHub Obsidian content + Notion projects/goals
-	// Safety net for missed webhooks; runs at :15 past each hour.
-	var syncRunning atomic.Bool
-	_, err = cronScheduler.AddFunc("15 * * * *", func() {
-		if !syncRunning.CompareAndSwap(false, true) {
-			logger.Info("cron: skipping hourly sync, previous run still active")
-			return
-		}
-		defer syncRunning.Store(false)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		pipelineHandler.SyncAllFromGitHub(ctx)
-		notionHandler.SyncAll(ctx)
+	// cron: register all scheduled jobs
+	cronScheduler, err := setupCrons(cronDeps{
+		FlowrunStore:      flowrunStore,
+		Runner:            runner,
+		FeedStore:         feedStore,
+		FeedCollector:     feedCollector,
+		TokenBudget:       tokenBudget,
+		AuthStore:         authStore,
+		SpacedStore:       spacedStore,
+		ProjectStore:      projectStore,
+		NotionClient:      notionClient,
+		NotionSourceStore: notionSourceStore,
+		NotionHandler:     notionHandler,
+		PipelineHandler:   pipelineHandler,
+		Reconciler:        recon,
+		Notifier:          notifier,
+		NotionAPIKey:      cfg.NotionAPIKey,
+		TaipeiLoc:         taipeiLoc,
+		Logger:            logger,
 	})
 	if err != nil {
-		return fmt.Errorf("adding hourly sync cron job: %w", err)
+		return fmt.Errorf("setting up cron jobs: %w", err)
 	}
+	defer cronScheduler.Stop()
 
 	deps := server.Deps{
 		Pool: pool,

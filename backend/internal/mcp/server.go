@@ -1013,10 +1013,13 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		tags = append(tags, input.SessionType)
 	}
 
+	// Prepend metadata header so the frontend can parse project/session_type
+	body := fmt.Sprintf("project: %s\nsession_type: %s\n\n%s", proj.Title, input.SessionType, input.Body)
+
 	created, err := s.contentWriter.CreateContent(ctx, content.CreateParams{
 		Slug:        slug,
 		Title:       input.Title,
-		Body:        input.Body,
+		Body:        body,
 		Type:        content.TypeBuildLog,
 		Status:      content.StatusPublished,
 		Tags:        tags,
@@ -1031,7 +1034,7 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 			created, err = s.contentWriter.CreateContent(ctx, content.CreateParams{
 				Slug:        slug,
 				Title:       input.Title,
-				Body:        input.Body,
+				Body:        body,
 				Type:        content.TypeBuildLog,
 				Status:      content.StatusPublished,
 				Tags:        tags,
