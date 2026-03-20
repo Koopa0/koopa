@@ -243,7 +243,7 @@ func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) error {
 	}
 
 	properties := map[string]any{
-		"Task Name": map[string]any{
+		"Name": map[string]any{
 			"title": []map[string]any{
 				{"text": map[string]string{"content": p.Title}},
 			},
