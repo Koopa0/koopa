@@ -551,3 +551,18 @@ CREATE TABLE note_links (
 CREATE INDEX idx_note_links_source ON note_links (source_note_id);
 CREATE INDEX idx_note_links_target ON note_links (target_path);
 CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_path);
+
+-- === Session Notes (cross-environment context bridge) ===
+
+CREATE TABLE session_notes (
+    id          BIGSERIAL PRIMARY KEY,
+    note_date   DATE NOT NULL,
+    note_type   TEXT NOT NULL,  -- plan, reflection, context, metrics
+    source      TEXT NOT NULL,  -- claude, claude-code, manual
+    content     TEXT NOT NULL,
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_session_notes_date ON session_notes (note_date DESC);
+CREATE INDEX idx_session_notes_type ON session_notes (note_date, note_type);

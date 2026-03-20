@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -565,8 +566,8 @@ type PlatformStatsInput struct {
 
 // PlatformStatsOutput is the output for the get_platform_stats tool.
 type PlatformStatsOutput struct {
-	Overview interface{} `json:"overview"`
-	Drift    interface{} `json:"drift,omitempty"`
+	Overview json.RawMessage `json:"overview"`
+	Drift    json.RawMessage `json:"drift,omitempty"`
 }
 
 func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, input PlatformStatsInput) (*mcp.CallToolResult, PlatformStatsOutput, error) {
@@ -575,7 +576,8 @@ func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, i
 		return nil, PlatformStatsOutput{}, fmt.Errorf("querying platform stats: %w", err)
 	}
 
-	out := PlatformStatsOutput{Overview: overview}
+	overviewJSON, _ := json.Marshal(overview)
+	out := PlatformStatsOutput{Overview: overviewJSON}
 
 	driftDays := clamp(input.DriftDays, 1, 90, 30)
 	drift, err := s.stats.Drift(ctx, driftDays)
@@ -583,7 +585,8 @@ func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, i
 		s.logger.Error("querying drift report", "error", err)
 		// best-effort: return overview without drift
 	} else {
-		out.Drift = drift
+		driftJSON, _ := json.Marshal(drift)
+		out.Drift = driftJSON
 	}
 
 	return nil, out, nil
@@ -913,10 +916,10 @@ type LearningProgressInput struct{}
 
 // LearningProgressOutput is the output for the get_learning_progress tool.
 type LearningProgressOutput struct {
-	Spaced   interface{} `json:"spaced"`
-	Notes    interface{} `json:"notes"`
-	Activity interface{} `json:"activity"`
-	TopTags  interface{} `json:"top_tags"`
+	Spaced   json.RawMessage `json:"spaced"`
+	Notes    json.RawMessage `json:"notes"`
+	Activity json.RawMessage `json:"activity"`
+	TopTags  json.RawMessage `json:"top_tags"`
 }
 
 func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest, _ LearningProgressInput) (*mcp.CallToolResult, LearningProgressOutput, error) {
@@ -925,11 +928,16 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, LearningProgressOutput{}, fmt.Errorf("querying learning progress: %w", err)
 	}
 
+	spacedJSON, _ := json.Marshal(ld.Spaced)
+	notesJSON, _ := json.Marshal(ld.Notes)
+	activityJSON, _ := json.Marshal(ld.Activity)
+	topTagsJSON, _ := json.Marshal(ld.TopTags)
+
 	return nil, LearningProgressOutput{
-		Spaced:   ld.Spaced,
-		Notes:    ld.Notes,
-		Activity: ld.Activity,
-		TopTags:  ld.TopTags,
+		Spaced:   spacedJSON,
+		Notes:    notesJSON,
+		Activity: activityJSON,
+		TopTags:  topTagsJSON,
 	}, nil
 }
 
