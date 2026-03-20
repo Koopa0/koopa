@@ -10,8 +10,10 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/budget"
+	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/flowrun"
@@ -25,6 +27,8 @@ import (
 
 // cronDeps holds all dependencies needed by cron jobs.
 type cronDeps struct {
+	ActivityStore    *activity.Store
+	CollectedStore   *collected.Store
 	FlowrunStore     *flowrun.Store
 	Runner           *flowrun.Runner
 	FeedStore        *feed.Store
@@ -76,6 +80,17 @@ func setupCrons(deps cronDeps) (*cron.Cron, error) {
 	}
 	if _, err := c.AddFunc("0 1 * * *", cronCleanExpiredTokens(deps)); err != nil {
 		return nil, fmt.Errorf("adding token cleanup cron: %w", err)
+	}
+
+	// data retention cleanup
+	if _, err := c.AddFunc("0 3 * * *", cronRetentionEvents(deps)); err != nil {
+		return nil, fmt.Errorf("adding event retention cron: %w", err)
+	}
+	if _, err := c.AddFunc("15 3 * * *", cronRetentionIgnored(deps)); err != nil {
+		return nil, fmt.Errorf("adding ignored retention cron: %w", err)
+	}
+	if _, err := c.AddFunc("30 3 * * *", cronRetentionFlowRuns(deps)); err != nil {
+		return nil, fmt.Errorf("adding flow run retention cron: %w", err)
 	}
 
 	// flow submissions
@@ -258,6 +273,54 @@ func cronSpacedReminder(d cronDeps) func() {
 			d.Logger.Error("cron: creating spaced reminder task in notion", "error", createErr)
 		} else {
 			d.Logger.Info("cron: spaced reminder task created in notion", "count", count)
+		}
+	}
+}
+
+func cronRetentionEvents(d cronDeps) func() {
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		cutoff := time.Now().AddDate(0, -12, 0)
+		n, err := d.ActivityStore.DeleteOldEvents(ctx, cutoff)
+		if err != nil {
+			d.Logger.Error("cron: deleting old activity events", "error", err)
+			return
+		}
+		if n > 0 {
+			d.Logger.Info("cron: deleted old activity events", "count", n)
+		}
+	}
+}
+
+func cronRetentionIgnored(d cronDeps) func() {
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		cutoff := time.Now().AddDate(0, 0, -30)
+		n, err := d.CollectedStore.DeleteOldIgnored(ctx, cutoff)
+		if err != nil {
+			d.Logger.Error("cron: deleting old ignored collected data", "error", err)
+			return
+		}
+		if n > 0 {
+			d.Logger.Info("cron: deleted old ignored collected data", "count", n)
+		}
+	}
+}
+
+func cronRetentionFlowRuns(d cronDeps) func() {
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		cutoff := time.Now().AddDate(0, 0, -90)
+		n, err := d.FlowrunStore.DeleteOldCompletedRuns(ctx, cutoff)
+		if err != nil {
+			d.Logger.Error("cron: deleting old completed flow runs", "error", err)
+			return
+		}
+		if n > 0 {
+			d.Logger.Info("cron: deleted old completed flow runs", "count", n)
 		}
 	}
 }

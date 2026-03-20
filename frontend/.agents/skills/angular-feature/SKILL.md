@@ -469,6 +469,16 @@ describe('{FeatureName}Service', () => {
 
 ## 建立流程
 
+### Step 0: 查詢可複用的 Shared Components
+
+建立 Feature 任何 UI 前：
+1. 執行 `ls src/app/shared/components/` 確認現有元件
+2. 查閱 `component-catalog` skill 的完整 API 文件
+3. 評估現有元件是否可組合達成需求
+4. 如果現有元件不完全符合 → 提出擴展提案（非新建元件）
+
+### Step 1: 建立功能模組
+
 1. 建立目錄結構
 2. 建立資料模型（`models/{model-name}.model.ts`）
 3. 建立功能服務（`services/{service-name}.service.ts`）
@@ -500,6 +510,7 @@ describe('{FeatureName}Service', () => {
 
 ## 檢查清單
 
+- [ ] 已查詢現有 shared components，評估複用或擴展方案
 - [ ] 目錄結構完整（components / services / models）
 - [ ] 所有元件 `standalone: true` + `OnPush`
 - [ ] 路由使用 `loadComponent` 延遲載入

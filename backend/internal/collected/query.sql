@@ -62,3 +62,7 @@ FROM collected_data
 WHERE (sqlc.narg('since')::timestamptz IS NULL OR collected_at >= sqlc.narg('since'))
 ORDER BY collected_at DESC
 LIMIT @max_results;
+
+-- name: DeleteOldIgnored :execrows
+-- Cleanup: delete ignored collected data older than the given cutoff.
+DELETE FROM collected_data WHERE status = 'ignored' AND collected_at < @cutoff;

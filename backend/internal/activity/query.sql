@@ -28,6 +28,12 @@ INSERT INTO activity_event_tags (event_id, tag_id)
 VALUES ($1, $2)
 ON CONFLICT (event_id, tag_id) DO NOTHING;
 
+-- name: InsertEventTags :exec
+-- Bulk-link an activity event to multiple canonical tags. Silently ignores duplicates.
+INSERT INTO activity_event_tags (event_id, tag_id)
+SELECT @event_id, unnest(@tag_ids::uuid[])
+ON CONFLICT DO NOTHING;
+
 -- name: EventsByFilters :many
 -- List activity events within a time range with optional source and project filters.
 SELECT id, source_id, timestamp, event_type, source,
@@ -47,3 +53,7 @@ FROM activity_events
 WHERE project = @project_name
 ORDER BY timestamp DESC
 LIMIT @max_results;
+
+-- name: DeleteOldEvents :execrows
+-- Cleanup: delete activity events older than the given cutoff.
+DELETE FROM activity_events WHERE timestamp < @cutoff;

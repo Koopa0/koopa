@@ -138,18 +138,27 @@ func (s *Store) EventsByProject(ctx context.Context, projectName string, limit i
 	return events, nil
 }
 
-// SyncEventTags links an activity event to canonical tags.
-// Duplicate associations are silently ignored via ON CONFLICT DO NOTHING.
-// Best-effort: inserts as many as possible, returns the first non-conflict error.
-func (s *Store) SyncEventTags(ctx context.Context, eventID int64, tagIDs []uuid.UUID) error {
-	var firstErr error
-	for _, tagID := range tagIDs {
-		if err := s.q.InsertEventTag(ctx, db.InsertEventTagParams{
-			EventID: eventID,
-			TagID:   tagID,
-		}); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("inserting event tag (event %d, tag %s): %w", eventID, tagID, err)
-		}
+// DeleteOldEvents deletes activity events with a timestamp before cutoff.
+// Returns the number of rows deleted.
+func (s *Store) DeleteOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	n, err := s.q.DeleteOldEvents(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("deleting old events: %w", err)
 	}
-	return firstErr
+	return n, nil
+}
+
+// SyncEventTags links an activity event to canonical tags via a single bulk insert.
+// Duplicate associations are silently ignored via ON CONFLICT DO NOTHING.
+func (s *Store) SyncEventTags(ctx context.Context, eventID int64, tagIDs []uuid.UUID) error {
+	if len(tagIDs) == 0 {
+		return nil
+	}
+	if err := s.q.InsertEventTags(ctx, db.InsertEventTagsParams{
+		EventID: eventID,
+		TagIds:  tagIDs,
+	}); err != nil {
+		return fmt.Errorf("inserting event tags for event %d: %w", eventID, err)
+	}
+	return nil
 }

@@ -68,6 +68,12 @@ func New(writer CollectedWriter, feeds FeedUpdater, logger *slog.Logger) *Collec
 	}
 }
 
+// Stop releases resources held by the Collector, including the background
+// cleanup goroutine in the domain rate limiter.
+func (c *Collector) Stop() {
+	c.limiter.Stop()
+}
+
 // FetchFeed fetches a single feed and returns IDs of newly created collected_data rows.
 func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, error) {
 	logger := c.logger.With("feed_id", f.ID, "feed_name", f.Name)

@@ -36,13 +36,13 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize+1024) // extra room for multipart headers
 
 	if err := r.ParseMultipartForm(maxFileSize); err != nil {
-		api.Error(w, http.StatusBadRequest, "file_too_large", "file exceeds 5MB limit")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "file exceeds 5MB limit")
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		api.Error(w, http.StatusBadRequest, "missing_file", "file field is required")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "file field is required")
 		return
 	}
 	defer file.Close() //nolint:errcheck // best-effort close on upload file
@@ -51,21 +51,21 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	buf := make([]byte, 512)
 	n, err := file.Read(buf)
 	if err != nil {
-		api.Error(w, http.StatusBadRequest, "read_error", "unable to read file")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "unable to read file")
 		return
 	}
 	contentType := http.DetectContentType(buf[:n])
 
 	ext, ok := allowedTypes[contentType]
 	if !ok {
-		api.Error(w, http.StatusBadRequest, "unsupported_type",
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST",
 			fmt.Sprintf("file type %s is not supported; allowed: jpeg, png, webp, gif", contentType))
 		return
 	}
 
 	// reset reader to beginning
 	if _, err := file.Seek(0, 0); err != nil {
-		api.Error(w, http.StatusInternalServerError, "seek_error", "unable to process file")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "unable to process file")
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		h.logger.Error("uploading to r2", "key", key, "error", err)
-		api.Error(w, http.StatusInternalServerError, "upload_failed", "failed to upload file")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to upload file")
 		return
 	}
 

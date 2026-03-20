@@ -103,8 +103,8 @@ type databaseQueryResponse struct {
 const maxPages = 100 // 100 pages × 100 items = 10,000 max results
 
 func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filter json.RawMessage) ([]DatabaseQueryResult, error) {
-	if dataSourceID == "" {
-		return nil, fmt.Errorf("empty data source id")
+	if !validPageID(dataSourceID) {
+		return nil, fmt.Errorf("invalid data source id: %q", dataSourceID)
 	}
 	var allResults []DatabaseQueryResult
 	var cursor *string

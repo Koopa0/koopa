@@ -164,6 +164,39 @@ func (q *Queries) AliasCountByTagID(ctx context.Context, tagID *uuid.UUID) (int3
 	return count, err
 }
 
+const aliasesByExactRawTags = `-- name: AliasesByExactRawTags :many
+SELECT id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at FROM tag_aliases WHERE raw_tag = ANY($1::text[]) AND tag_id IS NOT NULL
+`
+
+// Batch resolve: find all exact alias matches for a list of raw tags.
+func (q *Queries) AliasesByExactRawTags(ctx context.Context, rawTags []string) ([]TagAlias, error) {
+	rows, err := q.db.Query(ctx, aliasesByExactRawTags, rawTags)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TagAlias{}
+	for rows.Next() {
+		var i TagAlias
+		if err := rows.Scan(
+			&i.ID,
+			&i.RawTag,
+			&i.TagID,
+			&i.MatchMethod,
+			&i.Confirmed,
+			&i.ConfirmedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const allPublishedSlugs = `-- name: AllPublishedSlugs :many
 SELECT slug, type, updated_at
 FROM contents
@@ -1536,6 +1569,45 @@ func (q *Queries) DeleteNoteTagsByNoteID(ctx context.Context, noteID int64) erro
 	return err
 }
 
+const deleteOldCompletedRuns = `-- name: DeleteOldCompletedRuns :execrows
+DELETE FROM flow_runs WHERE status IN ('completed', 'failed') AND created_at < $1
+`
+
+// Cleanup: delete completed/failed flow runs older than the given cutoff.
+func (q *Queries) DeleteOldCompletedRuns(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldCompletedRuns, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOldEvents = `-- name: DeleteOldEvents :execrows
+DELETE FROM activity_events WHERE timestamp < $1
+`
+
+// Cleanup: delete activity events older than the given cutoff.
+func (q *Queries) DeleteOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldEvents, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOldIgnored = `-- name: DeleteOldIgnored :execrows
+DELETE FROM collected_data WHERE status = 'ignored' AND collected_at < $1
+`
+
+// Cleanup: delete ignored collected data older than the given cutoff.
+func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldIgnored, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteProject = `-- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1
 `
@@ -2223,6 +2295,23 @@ func (q *Queries) InsertEventTag(ctx context.Context, arg InsertEventTagParams) 
 	return err
 }
 
+const insertEventTags = `-- name: InsertEventTags :exec
+INSERT INTO activity_event_tags (event_id, tag_id)
+SELECT $1, unnest($2::uuid[])
+ON CONFLICT DO NOTHING
+`
+
+type InsertEventTagsParams struct {
+	EventID int64       `json:"event_id"`
+	TagIds  []uuid.UUID `json:"tag_ids"`
+}
+
+// Bulk-link an activity event to multiple canonical tags. Silently ignores duplicates.
+func (q *Queries) InsertEventTags(ctx context.Context, arg InsertEventTagsParams) error {
+	_, err := q.db.Exec(ctx, insertEventTags, arg.EventID, arg.TagIds)
+	return err
+}
+
 const insertInterval = `-- name: InsertInterval :one
 INSERT INTO spaced_intervals (note_id, easiness_factor, interval_days, repetitions, due_at)
 VALUES ($1, $2, $3, $4, $5)
@@ -2274,6 +2363,22 @@ type InsertNoteTagParams struct {
 
 func (q *Queries) InsertNoteTag(ctx context.Context, arg InsertNoteTagParams) error {
 	_, err := q.db.Exec(ctx, insertNoteTag, arg.NoteID, arg.TagID)
+	return err
+}
+
+const insertNoteTags = `-- name: InsertNoteTags :exec
+INSERT INTO obsidian_note_tags (note_id, tag_id)
+SELECT $1, unnest($2::uuid[])
+ON CONFLICT DO NOTHING
+`
+
+type InsertNoteTagsParams struct {
+	NoteID int64       `json:"note_id"`
+	TagIds []uuid.UUID `json:"tag_ids"`
+}
+
+func (q *Queries) InsertNoteTags(ctx context.Context, arg InsertNoteTagsParams) error {
+	_, err := q.db.Exec(ctx, insertNoteTags, arg.NoteID, arg.TagIds)
 	return err
 }
 
@@ -3778,6 +3883,86 @@ func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDa
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recentContentsByType = `-- name: RecentContentsByType :many
+SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
+       series_id, series_order, review_level, ai_metadata, reading_time,
+       cover_image, published_at, created_at, updated_at
+FROM contents
+WHERE type = $1::content_type
+  AND created_at >= $2
+ORDER BY created_at DESC
+LIMIT $3
+`
+
+type RecentContentsByTypeParams struct {
+	ContentType ContentType `json:"content_type"`
+	Since       time.Time   `json:"since"`
+	MaxResults  int32       `json:"max_results"`
+}
+
+type RecentContentsByTypeRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Excerpt     string          `json:"excerpt"`
+	Type        ContentType     `json:"type"`
+	Status      ContentStatus   `json:"status"`
+	Tags        []string        `json:"tags"`
+	Source      *string         `json:"source"`
+	SourceType  NullSourceType  `json:"source_type"`
+	SeriesID    *string         `json:"series_id"`
+	SeriesOrder *int32          `json:"series_order"`
+	ReviewLevel ReviewLevel     `json:"review_level"`
+	AiMetadata  json.RawMessage `json:"ai_metadata"`
+	ReadingTime int32           `json:"reading_time"`
+	CoverImage  *string         `json:"cover_image"`
+	PublishedAt *time.Time      `json:"published_at"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+// Get recent contents of a specific type, ordered by creation date.
+func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsByTypeParams) ([]RecentContentsByTypeRow, error) {
+	rows, err := q.db.Query(ctx, recentContentsByType, arg.ContentType, arg.Since, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RecentContentsByTypeRow{}
+	for rows.Next() {
+		var i RecentContentsByTypeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Body,
+			&i.Excerpt,
+			&i.Type,
+			&i.Status,
+			&i.Tags,
+			&i.Source,
+			&i.SourceType,
+			&i.SeriesID,
+			&i.SeriesOrder,
+			&i.ReviewLevel,
+			&i.AiMetadata,
+			&i.ReadingTime,
+			&i.CoverImage,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

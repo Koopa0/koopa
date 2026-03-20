@@ -143,6 +143,7 @@ func run(logger *slog.Logger) error {
 
 	// collector + budget
 	feedCollector := collector.New(collectedStore, feedStore, logger)
+	defer feedCollector.Stop()
 	tokenBudget := budget.New(500_000)
 
 	// caches (Ristretto v2 — TinyLFU admission, per-item TTL)
@@ -383,6 +384,8 @@ func run(logger *slog.Logger) error {
 
 	// cron: register all scheduled jobs
 	cronScheduler, err := setupCrons(cronDeps{
+		ActivityStore:     activityStore,
+		CollectedStore:    collectedStore,
 		FlowrunStore:      flowrunStore,
 		Runner:            runner,
 		FeedStore:         feedStore,

@@ -49,3 +49,7 @@ FROM flow_runs
 WHERE flow_name = $1 AND content_id = $2 AND status = 'completed'
 ORDER BY ended_at DESC
 LIMIT 1;
+
+-- name: DeleteOldCompletedRuns :execrows
+-- Cleanup: delete completed/failed flow runs older than the given cutoff.
+DELETE FROM flow_runs WHERE status IN ('completed', 'failed') AND created_at < @cutoff;

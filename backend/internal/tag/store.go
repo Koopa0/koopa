@@ -87,9 +87,38 @@ func (s *Store) ResolveTag(ctx context.Context, rawTag string) Resolved {
 }
 
 // ResolveTags normalizes a slice of raw tags through the 4-step pipeline.
+// Uses a batch exact-match lookup first to resolve the majority in one query,
+// then falls back to per-tag resolution for the unresolved remainder.
 func (s *Store) ResolveTags(ctx context.Context, rawTags []string) []Resolved {
+	if len(rawTags) == 0 {
+		return nil
+	}
+
 	results := make([]Resolved, 0, len(rawTags))
+
+	// Step 1: batch exact alias match — resolves majority of tags in one query.
+	aliases, err := s.q.AliasesByExactRawTags(ctx, rawTags)
+	if err != nil {
+		// Fall back to per-tag resolution on batch query failure.
+		for _, raw := range rawTags {
+			results = append(results, s.ResolveTag(ctx, raw))
+		}
+		return results
+	}
+
+	// Index matched aliases by raw_tag for O(1) lookup.
+	matched := make(map[string]*uuid.UUID, len(aliases))
+	for _, a := range aliases {
+		matched[a.RawTag] = a.TagID
+	}
+
+	// Resolve each tag: use batch result if available, fall back to per-tag.
 	for _, raw := range rawTags {
+		if tagID, ok := matched[raw]; ok {
+			results = append(results, Resolved{RawTag: raw, TagID: tagID, MatchMethod: "exact"})
+			continue
+		}
+		// Not in batch result — run the full 4-step pipeline for this tag only.
 		results = append(results, s.ResolveTag(ctx, raw))
 	}
 	return results
@@ -102,13 +131,14 @@ func (s *Store) SyncNoteTags(ctx context.Context, noteID int64, tagIDs []uuid.UU
 	if err := s.q.DeleteNoteTagsByNoteID(ctx, noteID); err != nil {
 		return fmt.Errorf("deleting note tags for note %d: %w", noteID, err)
 	}
-	for _, id := range tagIDs {
-		if err := s.q.InsertNoteTag(ctx, db.InsertNoteTagParams{
-			NoteID: noteID,
-			TagID:  id,
-		}); err != nil {
-			return fmt.Errorf("inserting note tag (note %d, tag %s): %w", noteID, id, err)
-		}
+	if len(tagIDs) == 0 {
+		return nil
+	}
+	if err := s.q.InsertNoteTags(ctx, db.InsertNoteTagsParams{
+		NoteID: noteID,
+		TagIds: tagIDs,
+	}); err != nil {
+		return fmt.Errorf("inserting note tags for note %d: %w", noteID, err)
 	}
 	return nil
 }
@@ -303,16 +333,20 @@ func (s *Store) BackfillNoteTags(ctx context.Context) (*BackfillResult, error) {
 
 		result.NotesProcessed++
 		resolved := s.ResolveTags(ctx, rawTags)
+		var mappedIDs []uuid.UUID
 		for _, r := range resolved {
 			if r.TagID != nil {
 				result.TagsMapped++
-				_ = s.q.InsertNoteTag(ctx, db.InsertNoteTagParams{
-					NoteID: row.ID,
-					TagID:  *r.TagID,
-				}) // best-effort, ON CONFLICT DO NOTHING
+				mappedIDs = append(mappedIDs, *r.TagID)
 			} else {
 				result.TagsUnmapped++
 			}
+		}
+		if len(mappedIDs) > 0 {
+			_ = s.q.InsertNoteTags(ctx, db.InsertNoteTagsParams{
+				NoteID: row.ID,
+				TagIds: mappedIDs,
+			}) // best-effort, ON CONFLICT DO NOTHING
 		}
 	}
 	return result, nil

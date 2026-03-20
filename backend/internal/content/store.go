@@ -235,6 +235,26 @@ func (s *Store) SearchOR(ctx context.Context, query string, page, perPage int) (
 	return contents, len(contents), nil
 }
 
+// RecentByType returns recent contents of a specific type since a given time.
+func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.Time, limit int) ([]Content, error) {
+	rows, err := s.q.RecentContentsByType(ctx, db.RecentContentsByTypeParams{
+		ContentType: db.ContentType(contentType),
+		Since:       since,
+		MaxResults:  int32(limit), // #nosec G115 -- limit is bounded by caller
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing recent %s: %w", contentType, err)
+	}
+	contents := make([]Content, len(rows))
+	for i, r := range rows {
+		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
+			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
+			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	}
+	return contents, nil
+}
+
 // PublishedForRSS returns recent published content for RSS feed.
 func (s *Store) PublishedForRSS(ctx context.Context, limit int) ([]Content, error) {
 	rows, err := s.q.PublishedForRSS(ctx, int32(limit)) // #nosec G115 -- RSS limit is a small constant, not user-controlled

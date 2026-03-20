@@ -1,3 +1,7 @@
+-- name: AliasesByExactRawTags :many
+-- Batch resolve: find all exact alias matches for a list of raw tags.
+SELECT * FROM tag_aliases WHERE raw_tag = ANY(@raw_tags::text[]) AND tag_id IS NOT NULL;
+
 -- name: AliasByExactRawTag :one
 -- Step 1: exact match on raw_tag with a mapped tag_id.
 SELECT * FROM tag_aliases WHERE raw_tag = $1 AND tag_id IS NOT NULL;
@@ -34,6 +38,11 @@ DELETE FROM obsidian_note_tags WHERE note_id = $1;
 INSERT INTO obsidian_note_tags (note_id, tag_id)
 VALUES ($1, $2)
 ON CONFLICT (note_id, tag_id) DO NOTHING;
+
+-- name: InsertNoteTags :exec
+INSERT INTO obsidian_note_tags (note_id, tag_id)
+SELECT @note_id, unnest(@tag_ids::uuid[])
+ON CONFLICT DO NOTHING;
 
 -- Admin: list all canonical tags ordered by name.
 -- name: ListTags :many

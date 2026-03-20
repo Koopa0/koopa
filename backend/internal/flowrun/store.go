@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -149,6 +150,16 @@ func (s *Store) RetryableRuns(ctx context.Context) ([]Run, error) {
 		runs[i] = *dbToRun(r)
 	}
 	return runs, nil
+}
+
+// DeleteOldCompletedRuns deletes completed/failed flow runs with created_at before cutoff.
+// Returns the number of rows deleted.
+func (s *Store) DeleteOldCompletedRuns(ctx context.Context, cutoff time.Time) (int64, error) {
+	n, err := s.q.DeleteOldCompletedRuns(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("deleting old completed flow runs: %w", err)
+	}
+	return n, nil
 }
 
 func dbToRun(r db.FlowRun) *Run {

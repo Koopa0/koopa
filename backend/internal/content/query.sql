@@ -179,3 +179,14 @@ LIMIT @max_results;
 SELECT id, slug, title, type, embedding
 FROM contents
 WHERE status = 'published' AND embedding IS NOT NULL;
+
+-- name: RecentContentsByType :many
+-- Get recent contents of a specific type, ordered by creation date.
+SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
+       series_id, series_order, review_level, ai_metadata, reading_time,
+       cover_image, published_at, created_at, updated_at
+FROM contents
+WHERE type = @content_type::content_type
+  AND created_at >= @since
+ORDER BY created_at DESC
+LIMIT @max_results;

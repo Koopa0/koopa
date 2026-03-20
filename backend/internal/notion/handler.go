@@ -83,6 +83,10 @@ type Handler struct {
 
 	// bgWg tracks background goroutines launched by SyncRole for graceful shutdown.
 	bgWg sync.WaitGroup
+
+	// syncInFlight tracks page IDs currently being synced to prevent
+	// concurrent syncs of the same page (e.g. webhook vs cron race).
+	syncInFlight sync.Map
 }
 
 // HandlerOption configures optional Handler dependencies.
@@ -145,6 +149,17 @@ func NewHandler(
 // Call during graceful shutdown.
 func (h *Handler) Wait() {
 	h.bgWg.Wait()
+}
+
+// trySync attempts to sync a page, skipping if another goroutine is already syncing it.
+// Returns ErrSkipped if the page is already being synced.
+func (h *Handler) trySync(ctx context.Context, pageID string, syncFn func(context.Context, string) error) error {
+	if _, loaded := h.syncInFlight.LoadOrStore(pageID, struct{}{}); loaded {
+		h.logger.Debug("skipping concurrent sync for page", "page_id", pageID)
+		return ErrSkipped
+	}
+	defer h.syncInFlight.Delete(pageID)
+	return syncFn(ctx, pageID)
 }
 
 // Webhook handles POST /api/webhook/notion.
@@ -226,13 +241,13 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	var syncErr error
 	switch role {
 	case RoleProjects:
-		syncErr = h.syncProject(r.Context(), pageID)
+		syncErr = h.trySync(r.Context(), pageID, h.syncProject)
 	case RoleTasks:
-		syncErr = h.syncTask(r.Context(), pageID)
+		syncErr = h.trySync(r.Context(), pageID, h.syncTask)
 	case RoleBooks:
-		syncErr = h.syncBook(r.Context(), pageID)
+		syncErr = h.trySync(r.Context(), pageID, h.syncBook)
 	case RoleGoals:
-		syncErr = h.syncGoal(r.Context(), pageID)
+		syncErr = h.trySync(r.Context(), pageID, h.syncGoal)
 	default:
 		h.logger.Debug("notion webhook from unknown database, skipping",
 			"data_source_id", payload.Data.Parent.DataSourceID,
@@ -342,13 +357,21 @@ func (h *Handler) syncByRole(ctx context.Context, t syncTarget) (synced, failed 
 	h.logger.Info("notion sync: fetched pages", "role", t.role, "count", len(results))
 	activeIDs := make([]string, 0, len(results))
 	for _, r := range results {
-		// QueryDataSource already filters trashed/archived pages,
-		// so all results here are active.
+		// Skip if a webhook is actively syncing this page to avoid
+		// overwriting fresh webhook data with potentially stale cron data.
+		if _, busy := h.syncInFlight.LoadOrStore(r.ID, struct{}{}); busy {
+			h.logger.Debug("notion sync: skipping page (webhook in progress)",
+				"role", t.role, "page_id", r.ID)
+			activeIDs = append(activeIDs, r.ID) // still active for orphan check
+			continue
+		}
 		if err := t.syncFn(ctx, r); err != nil {
+			h.syncInFlight.Delete(r.ID)
 			h.logger.Error("notion sync: syncing page", "role", t.role, "page_id", r.ID, "error", err)
 			failed++
 			continue
 		}
+		h.syncInFlight.Delete(r.ID)
 		activeIDs = append(activeIDs, r.ID)
 		synced++
 	}

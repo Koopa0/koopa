@@ -130,7 +130,7 @@ func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
 	contents, err := h.store.PublishedForRSS(r.Context(), 20)
 	if err != nil {
 		h.logger.Error("generating rss", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -190,7 +190,7 @@ func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
 	enc.Indent("", "  ")
 	if err := enc.Encode(feed); err != nil {
 		h.logger.Error("encoding rss", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -214,7 +214,7 @@ func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
 	contents, err := h.store.AllPublishedSlugs(r.Context())
 	if err != nil {
 		h.logger.Error("generating sitemap", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -249,7 +249,7 @@ func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
 	enc.Indent("", "  ")
 	if err := enc.Encode(sitemap); err != nil {
 		h.logger.Error("encoding sitemap", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 

@@ -1,8 +1,9 @@
 ---
 name: angular-ssr
 description: >-
-  Angular SSR and SSG configuration — RenderMode per route, platform
-  detection, TransferState, and hydration strategies.
+  Angular SSR and SSG configuration — RenderMode per route, platform detection,
+  TransferState, hydration, Tailwind CSS v4 + SSR integration, dark mode FOUC
+  prevention, BFF proxy, and common SSR error troubleshooting.
 metadata:
   author: koopa
   version: "1.0"
@@ -23,7 +24,107 @@ metadata:
 - 優化 LCP、FCP 等效能指標
 - 解決 SSR 相關的 hydration 問題
 
-## 配置
+## angular.json 必要配置
+
+> **⚠️ 關鍵：`outputMode: "server"` 是必填的。** 沒有這個設定，`AngularNodeAppEngine` 無法初始化。
+
+```json
+{
+  "architect": {
+    "build": {
+      "builder": "@angular/build:application",
+      "options": {
+        "outputMode": "server",
+        "server": "src/main.server.ts",
+        "ssr": {
+          "entry": "server.ts"
+        },
+        "security": {
+          "allowedHosts": ["localhost", "your-domain.com"]
+        }
+      }
+    }
+  }
+}
+```
+
+### 為什麼 `outputMode: "server"` 是必要的？
+
+| 設定 | 行為 | 結果 |
+|------|------|------|
+| 未設定 `outputMode` | 舊路徑：`server.ts` 併入 `main.server.mjs`，**不注入 manifest** | `AngularNodeAppEngine` 拋出 "manifest is not set" 錯誤 |
+| `outputMode: "server"` | 新路徑：`server.ts` 單獨打包為 `server.mjs`，**自動注入 manifest** | SSR 正常運作 |
+
+Build 系統會在 `server.mjs` 前自動注入：
+```javascript
+import manifest from './angular-app-engine-manifest.mjs';
+import { ɵsetAngularAppEngineManifest } from '@angular/ssr';
+ɵsetAngularAppEngineManifest(manifest);
+```
+
+### `allowedHosts`（SSRF 防護）
+
+沒有 `allowedHosts` 會收到 `URL with hostname "X" is not allowed` 錯誤。
+列出所有合法的主機名稱（localhost + 生產域名）。
+
+## server.ts 配置（AngularNodeAppEngine）
+
+```typescript
+// server.ts — Angular 21 官方推薦模式
+import {
+  AngularNodeAppEngine,
+  createNodeRequestHandler,
+  isMainModule,
+  writeResponseToNodeResponse,
+} from '@angular/ssr/node';
+import express from 'express';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const serverDistFolder = dirname(fileURLToPath(import.meta.url));
+const browserDistFolder = resolve(serverDistFolder, '../browser');
+
+const angularApp = new AngularNodeAppEngine();
+const app = express();
+
+// 靜態檔案必須在 Angular SSR 之前
+app.use(
+  express.static(browserDistFolder, {
+    maxAge: '1y',
+    index: false,
+    redirect: false,
+  }),
+);
+
+// Angular SSR — Express 5 必須使用 /{*path} 語法
+app.get('/{*path}', (req, res, next) => {
+  angularApp
+    .handle(req)
+    .then((response) =>
+      response ? writeResponseToNodeResponse(response, res) : next(),
+    )
+    .catch(next);
+});
+
+if (isMainModule(import.meta.url)) {
+  const port = process.env['PORT'] || 4000;
+  app.listen(port, () => {
+    console.log(`Node Express server listening on http://localhost:${port}`);
+  });
+}
+
+export default createNodeRequestHandler(app);
+```
+
+### Express 5 路由語法
+
+| 語法 | Express 4 | Express 5 |
+|------|-----------|-----------|
+| `'*'` | ✅ | ❌ 錯誤 |
+| `'/**'` | ✅ | ❌ 錯誤 |
+| `'/{*path}'` | ❌ | ✅ 正確 |
+
+## app.config.server.ts
 
 ```typescript
 // app.config.server.ts
@@ -41,6 +142,16 @@ const serverConfig: ApplicationConfig = {
 };
 
 export default mergeApplicationConfig(appConfig, serverConfig);
+```
+
+## Build 驗證
+
+```bash
+# 建置後驗證 manifest 注入
+grep -c "angular-app-engine-manifest" dist/your-app/server/server.mjs
+# 應輸出 1+（表示 manifest import 存在）
+
+# Build 應顯示 "Prerendered N static routes"（N > 0 如果有 RenderMode.Prerender 路由）
 ```
 
 ## Server Routes
@@ -351,6 +462,105 @@ describe('ItemService (TransferState)', () => {
 });
 ```
 
+## Tailwind CSS v4 + SSR 整合
+
+### 正確的載入方式
+
+```css
+/* src/styles.css */
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --color-brand: oklch(0.55 0.2 260);
+}
+```
+
+```json
+/* .postcssrc.json */
+{
+  "plugins": {
+    "@tailwindcss/postcss": {}
+  }
+}
+```
+
+### 樣式架構：全域 + 零元件 CSS
+
+- 一個 `styles.css`，不用元件級 `.css` 檔案
+- 所有樣式用 Tailwind utility classes 寫在 template 裡
+- `angular.json` 的 `styles` 陣列只放 `"src/styles.css"`
+- 沒有 FOUC 風險（SSR 輸出的 HTML 已帶 class）
+
+**為什麼不用元件 CSS？** Angular SSR 會把元件 CSS inline 到 `<head>`。但 Tailwind utility classes 全在全域 CSS 裡，元件 CSS 會是空的。多餘的 `<style>` 標籤徒增 SSR HTML 大小。
+
+### Dark Mode + SSR 防 FOUC
+
+`index.html` 必須在 `<html>` 上預設 dark：
+
+```html
+<html lang="zh-TW" data-theme="dark">
+<body class="bg-zinc-950 text-zinc-100 font-sans antialiased">
+```
+
+這樣 SSR 輸出的 HTML 已帶深色背景，瀏覽器 hydrate 時不會閃白。
+
+ThemeService 只在瀏覽器端執行：
+
+```typescript
+constructor() {
+  if (isPlatformBrowser(this.platformId)) {
+    this.ensureDarkTheme();
+  }
+}
+```
+
+## BFF Proxy + API URL 切換
+
+### server.ts BFF Proxy 模式
+
+```typescript
+// 1. BFF Proxy（API 轉發，後端零暴露）
+app.use('/bff', (req, res) => {
+  const targetUrl = `${BACKEND_URL}${req.originalUrl.replace(/^\/bff/, '')}`;
+  // proxy logic...
+});
+
+// 2. Static files（1-year cache）
+app.use(express.static(browserDistFolder, { maxAge: '1y', index: false }));
+
+// 3. Angular SSR fallback
+app.get('/{*path}', (req, res, next) => {
+  angularApp.handle(req).then((response) =>
+    response ? writeResponseToNodeResponse(response, res) : next()
+  );
+});
+```
+
+### API URL 切換
+
+```typescript
+// Service 中根據平台切換 API base URL
+private get baseUrl(): string {
+  return isPlatformServer(this.platformId)
+    ? environment.ssrApiUrl        // 'http://backend:8080'（內部網路）
+    : environment.apiUrl;          // '/bff'（瀏覽器端走 proxy）
+}
+```
+
+## 常見錯誤對照
+
+| 錯誤訊息 | 原因 | 修正 |
+|---------|------|------|
+| "Angular app engine manifest is not set" | 缺 `outputMode: "server"` | 加到 `angular.json` |
+| "URL with hostname X is not allowed" | 缺 `allowedHosts` | 加域名到 `security.allowedHosts` |
+| `ReferenceError: document is not defined` | SSR 端操作 DOM | 加 `isPlatformBrowser` guard |
+| `ReferenceError: window is not defined` | SSR 端存取 window | 加 `isPlatformBrowser` guard |
+| Express 5 route error | 用了 `*` catch-all | 改成 `/{*path}` |
+| Hydration mismatch | SSR/client 渲染不一致 | 檢查條件渲染邏輯 |
+| `@tailwind` directive error | Tailwind v3 語法 | 改成 `@import 'tailwindcss'` |
+| FOUC（白閃） | `<html>` 未預設 dark | 加 `data-theme="dark"` + dark body classes |
+
 ## 效能指標
 
 ### SSR 的 Web Vitals 目標
@@ -442,6 +652,11 @@ export class ProductPageComponent {}
 
 ## 檢查清單
 
+- [ ] `angular.json` 設定 `outputMode: "server"`（沒有這個 AngularNodeAppEngine 會失敗）
+- [ ] `angular.json` 設定 `security.allowedHosts`
+- [ ] `server.ts` 使用 `AngularNodeAppEngine`（非 CommonEngine）
+- [ ] Express 5 路由使用 `/{*path}` 語法
+- [ ] Build 後 `server.mjs` 包含 `angular-app-engine-manifest` import
 - [ ] `RenderMode` 正確配置：首頁 `Prerender`、動態頁 `Server`、非關鍵頁 `Client`
 - [ ] 元件不在伺服器端直接存取 `window`、`document`、`localStorage`
 - [ ] 使用 `isPlatformBrowser()` 進行平台檢測
@@ -458,6 +673,13 @@ export class ProductPageComponent {}
 - [ ] 客戶端測試（`PLATFORM_ID: 'browser'`）通過
 - [ ] TransferState 測試確認資料傳遞正確
 - [ ] Hydration 無 mismatch 警告
+- [ ] `styles.css` 使用 `@import 'tailwindcss'`（不是 `@tailwind`）
+- [ ] `.postcssrc.json` 配置 `@tailwindcss/postcss`
+- [ ] 元件不使用獨立 `.css` 檔案（全域 Tailwind utilities）
+- [ ] `index.html` 的 `<html>` 有 `data-theme="dark"` 防 FOUC
+- [ ] `<body>` 有 `bg-zinc-950 text-zinc-100` 預設深色背景
+- [ ] ThemeService 只在 `isPlatformBrowser` 時執行
+- [ ] API base URL 在 SSR 時切換為內部 URL
 
 ## 參考資源
 

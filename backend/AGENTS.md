@@ -1,4 +1,4 @@
-# blog — Cross-Agent Project Conventions
+# go-spec — Cross-Agent Project Conventions
 
 This file defines universal project conventions for all AI coding agents. Tool-specific configuration (Claude agents/skills, Gemini extensions, Codex overrides) lives in their respective directories.
 
@@ -518,8 +518,12 @@ The following Go reference skills are available in `.agents/skills/` (symlinked 
 | `ristretto` | Ristretto in-memory cache patterns |
 | `sqlc-guide` | sqlc configuration and query generation |
 | `testcontainers` | testcontainers-go integration testing |
-
-Claude Code has additional tool-specific skills (`verify`, `checkpoint`, `manage-spec`) in `.claude/skills/`.
+| `checkpoint` | Create git checkpoint before risky changes |
+| `debug` | Structured 4-phase debugging (reproduce, diagnose, fix, verify) |
+| `execute-plan` | Execute approved plan task-by-task with fresh subagents |
+| `reflect` | Review session learnings, promote to memory/rules/skills |
+| `tdd` | Strict RED-GREEN-REFACTOR test-driven development cycle |
+| `verify` | Run full verification chain: build → vet → lint → test |
 
 ---
 

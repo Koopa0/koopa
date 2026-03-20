@@ -32,6 +32,10 @@ import (
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
 
+// maxConcurrentOps limits the number of concurrent background operations
+// to prevent resource exhaustion from webhook floods.
+const maxConcurrentOps = 10
+
 // ContentReader reads content by slug.
 type ContentReader interface {
 	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
@@ -141,6 +145,7 @@ type NotionSyncer interface {
 // Handler handles pipeline and webhook HTTP requests.
 type Handler struct {
 	wg            sync.WaitGroup
+	sem           chan struct{}
 	pool          *pgxpool.Pool
 	contentReader ContentReader
 	contentWriter ContentWriter
@@ -172,6 +177,7 @@ type Handler struct {
 // Pass "" to disable self-loop protection.
 func NewHandler(pool *pgxpool.Pool, cr ContentReader, cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, webhookSecret, obsidianRepo, botLogin string, logger *slog.Logger) *Handler {
 	return &Handler{
+		sem:           make(chan struct{}, maxConcurrentOps),
 		pool:          pool,
 		contentReader: cr,
 		contentWriter: cw,
@@ -249,6 +255,20 @@ func (h *Handler) Wait() {
 	h.wg.Wait()
 }
 
+// goBackground runs fn in a tracked goroutine with backpressure.
+// If all semaphore slots are busy, the operation is dropped and logged.
+func (h *Handler) goBackground(name string, fn func()) {
+	select {
+	case h.sem <- struct{}{}:
+		h.wg.Go(func() {
+			defer func() { <-h.sem }()
+			fn()
+		})
+	default:
+		h.logger.Warn("pipeline: dropping background operation (at capacity)", "operation", name)
+	}
+}
+
 // NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
 func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
 	return &topicLookupFunc{fn: fn}
@@ -261,7 +281,7 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
-	h.wg.Go(func() {
+	h.goBackground("sync", func() {
 		ctx := context.WithoutCancel(r.Context())
 		h.SyncAllFromGitHub(ctx)
 	})
@@ -302,7 +322,7 @@ func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
-	h.wg.Go(func() {
+	h.goBackground("notion-sync", func() {
 		ctx := context.WithoutCancel(r.Context())
 		h.notionSync.SyncAll(ctx)
 	})
@@ -317,7 +337,7 @@ func (h *Handler) Reconcile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
-	h.wg.Go(func() {
+	h.goBackground("reconcile", func() {
 		// Detach from HTTP request lifecycle; reconciler calls external APIs.
 		ctx := context.WithoutCancel(r.Context())
 		if err := h.reconciler.Run(ctx); err != nil {
@@ -368,7 +388,7 @@ func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 	// respond 202 immediately, collect in background
 	w.WriteHeader(http.StatusAccepted)
 
-	h.wg.Go(func() {
+	h.goBackground("collect", func() {
 		h.collectFeeds(context.WithoutCancel(r.Context()), feeds, schedule)
 	})
 }
@@ -556,7 +576,7 @@ func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
 	// respond 202 immediately, process in background
 	w.WriteHeader(http.StatusAccepted)
 
-	h.wg.Go(func() {
+	h.goBackground("webhook-push", func() {
 		ctx := context.WithoutCancel(r.Context())
 
 		// A1: public content sync
@@ -591,7 +611,7 @@ func (h *Handler) handleProjectTrack(w http.ResponseWriter, r *http.Request, eve
 	w.WriteHeader(http.StatusAccepted)
 
 	ctx := context.WithoutCancel(r.Context())
-	h.wg.Go(func() {
+	h.goBackground("project-track", func() {
 		// submit project-track flow job (best-effort)
 		if h.jobs != nil {
 			input, err := json.Marshal(map[string]any{
@@ -754,7 +774,7 @@ func (h *Handler) handlePullRequest(w http.ResponseWriter, r *http.Request, body
 	// respond 202 immediately, process in background
 	w.WriteHeader(http.StatusAccepted)
 
-	h.wg.Go(func() {
+	h.goBackground("pr-merge", func() {
 		ctx := context.WithoutCancel(r.Context())
 		h.handlePRMerge(ctx, event)
 	})

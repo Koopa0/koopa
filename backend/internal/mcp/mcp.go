@@ -92,6 +92,7 @@ type TaskDBIDResolver interface {
 type ContentReader interface {
 	Search(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)
 	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
+	RecentByType(ctx context.Context, contentType content.Type, since time.Time, limit int) ([]content.Content, error)
 }
 
 // ContentWriter creates content records via MCP tools.

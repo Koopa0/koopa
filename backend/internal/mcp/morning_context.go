@@ -159,17 +159,12 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	// --- Build logs (recent content type=build-log) ---
 	buildLogStart := now.AddDate(0, 0, -buildLogDays)
-	buildLogs, _, err := s.contents.Search(ctx, "build-log", 1, 10)
+	buildLogs, err := s.contents.RecentByType(ctx, "build-log", buildLogStart, 10)
 	if err != nil {
-		s.logger.Error("morning_context: build logs search", "error", err)
+		s.logger.Error("morning_context: build logs", "error", err)
 	}
-	// Fallback: if search didn't find build logs, they might not have "build-log" in search_text.
-	// The type filter isn't available via Search, so we just log what we found.
-	out.RecentBuildLogs = make([]buildLogBrief, 0)
+	out.RecentBuildLogs = make([]buildLogBrief, 0, len(buildLogs))
 	for _, c := range buildLogs {
-		if c.CreatedAt.Before(buildLogStart) {
-			continue
-		}
 		excerpt := c.Excerpt
 		if excerpt == "" {
 			excerpt = truncate(c.Body, 300)

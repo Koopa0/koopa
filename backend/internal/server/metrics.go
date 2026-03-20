@@ -43,6 +43,39 @@ func RegisterMetrics(reg prometheus.Registerer) {
 	reg.MustRegister(httpRequestsTotal, httpRequestDuration, httpRequestsInFlight)
 }
 
+// Metrics holds business-level Prometheus counters.
+type Metrics struct {
+	FlowRuns         *prometheus.CounterVec
+	NotionSync       *prometheus.HistogramVec
+	WebhookEvents    *prometheus.CounterVec
+	ContentPublished prometheus.Counter
+}
+
+// NewMetrics creates and registers business-level Prometheus metrics.
+func NewMetrics() *Metrics {
+	m := &Metrics{
+		FlowRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "flow_runs_total",
+			Help: "Total flow run completions by flow name and status.",
+		}, []string{"flow_name", "status"}),
+		NotionSync: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "notion_sync_duration_seconds",
+			Help:    "Duration of Notion sync operations by role.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"role"}),
+		WebhookEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "webhook_events_total",
+			Help: "Total webhook events by source and outcome.",
+		}, []string{"source", "outcome"}),
+		ContentPublished: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "content_published_total",
+			Help: "Total content items published.",
+		}),
+	}
+	prometheus.MustRegister(m.FlowRuns, m.NotionSync, m.WebhookEvents, m.ContentPublished)
+	return m
+}
+
 // MetricsHandler returns the Prometheus metrics HTTP handler.
 func MetricsHandler() http.Handler {
 	return promhttp.Handler()

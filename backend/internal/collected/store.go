@@ -171,6 +171,16 @@ func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxRe
 	return data, nil
 }
 
+// DeleteOldIgnored deletes ignored collected data with collected_at before cutoff.
+// Returns the number of rows deleted.
+func (s *Store) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, error) {
+	n, err := s.q.DeleteOldIgnored(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("deleting old ignored collected data: %w", err)
+	}
+	return n, nil
+}
+
 // datumToCollectedData converts a db.CollectedDatum to CollectedData.
 func datumToCollectedData(r db.CollectedDatum) CollectedData {
 	return CollectedData{

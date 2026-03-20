@@ -111,7 +111,7 @@ func (h *Handler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 
 	fb := Feedback(req.Feedback)
 	if fb != FeedbackUp && fb != FeedbackDown {
-		api.Error(w, http.StatusUnprocessableEntity, "INVALID_INPUT", "feedback must be \"up\" or \"down\"")
+		api.Error(w, http.StatusUnprocessableEntity, "BAD_REQUEST", "feedback must be \"up\" or \"down\"")
 		return
 	}
 
