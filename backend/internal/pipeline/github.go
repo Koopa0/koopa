@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/activity"
 )
+
+// ErrGitHubNotFound indicates a 404 from the GitHub API (permanent — file deleted or missing).
+var ErrGitHubNotFound = errors.New("github: not found")
 
 // Commit represents a single GitHub commit.
 type Commit struct {
@@ -64,6 +68,9 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("github %s: %w", path, ErrGitHubNotFound)
+		}
 		return nil, fmt.Errorf("github api returned %d for %s", resp.StatusCode, path)
 	}
 
@@ -111,6 +118,9 @@ func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, erro
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("github directory %s: %w", path, ErrGitHubNotFound)
+		}
 		return nil, fmt.Errorf("github api returned %d for directory %s", resp.StatusCode, path)
 	}
 

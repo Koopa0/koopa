@@ -16,11 +16,13 @@ RETURNING id;
 -- name: EventsByTimeRange :many
 -- List activity events within a time range, ordered by timestamp descending.
 -- Used by the daily-dev-log flow to gather a day's activity.
+-- Hard cap prevents unbounded result sets from wide time ranges.
 SELECT id, source_id, timestamp, event_type, source,
        project, repo, ref, title, body, metadata, created_at
 FROM activity_events
 WHERE timestamp >= @start_time AND timestamp < @end_time
-ORDER BY timestamp DESC;
+ORDER BY timestamp DESC
+LIMIT 5000;
 
 -- name: InsertEventTag :exec
 -- Link an activity event to a canonical tag. Silently ignores duplicates.

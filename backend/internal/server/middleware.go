@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -9,8 +10,38 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/time/rate"
 )
+
+// requestIDKey is the context key for the per-request correlation ID.
+type requestIDKey struct{}
+
+// RequestIDFrom extracts the request ID from the context, or empty string.
+func RequestIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey{}).(string)
+	return id
+}
+
+// requestIDMiddleware generates or reads a unique ID for each request,
+// sets it in the context and response header, and enriches the logger.
+func requestIDMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := r.Header.Get("X-Request-ID")
+			if id == "" {
+				// Prefer Cloudflare Ray ID if behind tunnel.
+				id = r.Header.Get("CF-Ray")
+			}
+			if id == "" {
+				id = uuid.New().String()
+			}
+			w.Header().Set("X-Request-ID", id)
+			ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
 
 func loggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -23,6 +54,7 @@ func loggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 				"path", r.URL.Path,
 				"status", sw.status,
 				"duration", time.Since(start),
+				"request_id", RequestIDFrom(r.Context()),
 			)
 		})
 	}
@@ -188,7 +220,7 @@ func csrfMiddleware(corsOrigin string, logger *slog.Logger) (func(http.Handler) 
 			"origin", r.Header.Get("Origin"),
 			"sec-fetch-site", r.Header.Get("Sec-Fetch-Site"),
 		)
-		http.Error(w, `{"error":{"code":"forbidden","message":"cross-origin request blocked"}}`, http.StatusForbidden)
+		http.Error(w, `{"error":{"code":"FORBIDDEN","message":"cross-origin request blocked"}}`, http.StatusForbidden)
 	}))
 
 	return func(next http.Handler) http.Handler {

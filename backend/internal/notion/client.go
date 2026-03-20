@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -29,7 +31,7 @@ func NewClient(apiKey string) *Client {
 	return &Client{
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 		apiKey:     apiKey,
-		limiter:    rate.NewLimiter(rate.Limit(3), 1),
+		limiter:    rate.NewLimiter(rate.Limit(3), 3),
 	}
 }
 
@@ -53,26 +55,16 @@ func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error)
 	if !validPageID(pageID) {
 		return nil, fmt.Errorf("invalid page id: %q", pageID)
 	}
-	if err := c.limiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
 
 	url := fmt.Sprintf("%s/v1/pages/%s", notionBaseURL, pageID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(ctx, http.MethodGet, url, emptyBody)
 	if err != nil {
 		return nil, fmt.Errorf("fetching page %s: %w", pageID, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
 
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
-		return nil, fmt.Errorf("notion api returned %d for page %s", resp.StatusCode, pageID)
+		return nil, notionError(resp, "page "+pageID)
 	}
 
 	var page PageResponse
@@ -81,6 +73,9 @@ func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error)
 	}
 	return &page, nil
 }
+
+// emptyBody returns a nil reader for GET requests.
+func emptyBody() io.Reader { return nil }
 
 // DatabaseQueryResult holds a single page from a database query response.
 type DatabaseQueryResult struct {
@@ -109,11 +104,9 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 	var allResults []DatabaseQueryResult
 	var cursor *string
 
-	for range maxPages {
-		if err := c.limiter.Wait(ctx); err != nil {
-			return nil, fmt.Errorf("rate limiter: %w", err)
-		}
+	endpoint := fmt.Sprintf("%s/v1/data_sources/%s/query", notionBaseURL, dataSourceID)
 
+	for range maxPages {
 		body := map[string]any{
 			"page_size": 100,
 		}
@@ -129,26 +122,21 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 			return nil, fmt.Errorf("marshaling query body: %w", err)
 		}
 
-		endpoint := fmt.Sprintf("%s/v1/data_sources/%s/query", notionBaseURL, dataSourceID)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-		if err != nil {
-			return nil, fmt.Errorf("creating query request: %w", err)
-		}
-		c.setHeaders(req)
-
-		resp, err := c.httpClient.Do(req)
+		resp, err := c.doWithRetry(ctx, http.MethodPost, endpoint, func() io.Reader {
+			return bytes.NewReader(payload)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("querying data source %s: %w", dataSourceID, err)
 		}
 
-		// Decode before status check: body is consumed regardless, avoiding a separate drain step.
-		// If decode fails on an error response, the status error below takes precedence.
+		if resp.StatusCode != http.StatusOK {
+			err := notionError(resp, "data source query "+dataSourceID)
+			resp.Body.Close() //nolint:errcheck,gosec // best-effort close
+			return nil, err
+		}
 		var qr databaseQueryResponse
 		decodeErr := json.NewDecoder(resp.Body).Decode(&qr)
 		resp.Body.Close() //nolint:errcheck,gosec // best-effort close on read-only HTTP response
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("notion api returned %d for data source query %s", resp.StatusCode, dataSourceID)
-		}
 		if decodeErr != nil {
 			return nil, fmt.Errorf("decoding data source query response: %w", decodeErr)
 		}
@@ -188,9 +176,6 @@ func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) er
 	if !validPageID(pageID) {
 		return fmt.Errorf("invalid page id: %q", pageID)
 	}
-	if err := c.limiter.Wait(ctx); err != nil {
-		return fmt.Errorf("rate limiter: %w", err)
-	}
 
 	body := map[string]any{
 		"properties": map[string]any{
@@ -208,21 +193,17 @@ func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) er
 	}
 
 	url := fmt.Sprintf("%s/v1/pages/%s", notionBaseURL, pageID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("creating update request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(ctx, http.MethodPatch, url, func() io.Reader {
+		return bytes.NewReader(payload)
+	})
 	if err != nil {
 		return fmt.Errorf("updating page %s: %w", pageID, err)
 	}
-	defer resp.Body.Close()               //nolint:errcheck // best-effort close on read-only HTTP response
+	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
 	_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("notion api returned %d for page update %s", resp.StatusCode, pageID)
+		return notionError(resp, "page update "+pageID)
 	}
 
 	return nil
@@ -239,10 +220,6 @@ type CreateTaskParams struct {
 // CreateTask creates a new task page in the given Notion database.
 // Returns the created page ID on success.
 func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) (string, error) {
-	if err := c.limiter.Wait(ctx); err != nil {
-		return "", fmt.Errorf("rate limiter: %w", err)
-	}
-
 	properties := map[string]any{
 		"Name": map[string]any{
 			"title": []map[string]any{
@@ -284,21 +261,16 @@ func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) (string, er
 		return "", fmt.Errorf("marshaling create task: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notionBaseURL+"/v1/pages", bytes.NewReader(payload))
-	if err != nil {
-		return "", fmt.Errorf("creating task request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(ctx, http.MethodPost, notionBaseURL+"/v1/pages", func() io.Reader {
+		return bytes.NewReader(payload)
+	})
 	if err != nil {
 		return "", fmt.Errorf("creating notion task: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return "", fmt.Errorf("notion api returned %d for create task: %s", resp.StatusCode, respBody)
+		return "", notionError(resp, "create task")
 	}
 
 	var created struct {
@@ -321,10 +293,6 @@ type DiscoveredDatabase struct {
 // SearchDatabases calls the Notion Search API to list all databases accessible by the integration.
 // For each database, it fetches the immediate parent page title for disambiguation.
 func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, error) {
-	if err := c.limiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limit: %w", err)
-	}
-
 	body, err := json.Marshal(map[string]any{
 		"filter": map[string]string{
 			"value":    "data_source",
@@ -336,21 +304,16 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 		return nil, fmt.Errorf("marshaling search body: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notionBaseURL+"/v1/search", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("creating search request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(ctx, http.MethodPost, notionBaseURL+"/v1/search", func() io.Reader {
+		return bytes.NewReader(body)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("calling notion search: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("notion search returned %d: %s", resp.StatusCode, respBody)
+		return nil, notionError(resp, "search")
 	}
 
 	var result struct {
@@ -430,4 +393,95 @@ func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Notion-Version", apiVersion)
 	req.Header.Set("Content-Type", "application/json")
+}
+
+// retryableStatusCode reports whether an HTTP status code is transient
+// and the request should be retried.
+func retryableStatusCode(code int) bool {
+	return code == http.StatusTooManyRequests || code >= 500
+}
+
+// notionError reads up to 512 bytes of the response body and returns a
+// descriptive error including the Notion error message.
+func notionError(resp *http.Response, operation string) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	if len(body) > 0 {
+		return fmt.Errorf("notion api %s: %d: %s", operation, resp.StatusCode, body)
+	}
+	return fmt.Errorf("notion api %s: %d", operation, resp.StatusCode)
+}
+
+const maxRetries = 3
+
+// doWithRetry executes an HTTP request with exponential backoff on transient errors.
+// On 429 responses, it respects the Retry-After header.
+// The bodyFunc recreates the request body for each attempt (required because
+// the body is consumed on each attempt).
+func (c *Client) doWithRetry(ctx context.Context, method, url string, bodyFunc func() io.Reader) (*http.Response, error) {
+	var lastErr error
+	for attempt := range maxRetries {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, url, bodyFunc())
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		c.setHeaders(req)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			c.backoff(ctx, attempt, nil)
+			continue
+		}
+
+		if !retryableStatusCode(resp.StatusCode) {
+			return resp, nil
+		}
+
+		// Read Retry-After header before draining the body.
+		retryAfter := resp.Header.Get("Retry-After")
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close() //nolint:errcheck,gosec // best-effort close before retry
+		lastErr = fmt.Errorf("notion api returned %d", resp.StatusCode)
+
+		if attempt < maxRetries-1 {
+			c.backoff(ctx, attempt, parseRetryAfter(retryAfter))
+		}
+	}
+	return nil, fmt.Errorf("notion api: %d retries exhausted: %w", maxRetries, lastErr)
+}
+
+// backoff sleeps for exponential backoff with jitter, or the server-specified
+// duration if provided. Returns early if ctx is cancelled.
+func (c *Client) backoff(ctx context.Context, attempt int, serverDelay *time.Duration) {
+	delay := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+	// Add jitter: 0-50% of delay using crypto/rand via time-based seed.
+	// Jitter precision is not security-sensitive — it prevents thundering herd.
+	jitter := time.Duration(time.Now().UnixNano()%int64(delay/2+1)) //nolint:gosec // jitter, not security
+	delay += jitter
+	if serverDelay != nil && *serverDelay > delay {
+		delay = *serverDelay
+	}
+	t := time.NewTimer(delay)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
+// parseRetryAfter parses the Retry-After header value (seconds).
+func parseRetryAfter(val string) *time.Duration {
+	if val == "" {
+		return nil
+	}
+	secs, err := strconv.Atoi(val)
+	if err != nil || secs <= 0 {
+		return nil
+	}
+	d := time.Duration(secs) * time.Second
+	return &d
 }

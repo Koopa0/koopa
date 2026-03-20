@@ -133,19 +133,29 @@ func (s *Store) NotesByType(ctx context.Context, noteType string, filterContext 
 }
 
 // SyncNoteLinks replaces all wikilink edges for a note.
-// Deletes existing links, then inserts the new set.
+// Deletes existing links, then bulk-inserts the new set using unnest
+// to avoid N+1 individual INSERT statements.
 func (s *Store) SyncNoteLinks(ctx context.Context, noteID int64, links []NoteLink) error {
 	if err := s.q.DeleteNoteLinksByNoteID(ctx, noteID); err != nil {
 		return fmt.Errorf("deleting note links for note %d: %w", noteID, err)
 	}
-	for _, l := range links {
-		if err := s.q.UpsertNoteLink(ctx, db.UpsertNoteLinkParams{
-			SourceNoteID: noteID,
-			TargetPath:   l.TargetPath,
-			LinkText:     l.LinkText,
-		}); err != nil {
-			return fmt.Errorf("upserting note link (note %d → %s): %w", noteID, l.TargetPath, err)
+	if len(links) == 0 {
+		return nil
+	}
+	paths := make([]string, len(links))
+	texts := make([]string, len(links))
+	for i, l := range links {
+		paths[i] = l.TargetPath
+		if l.LinkText != nil {
+			texts[i] = *l.LinkText
 		}
+	}
+	if err := s.q.BulkUpsertNoteLinks(ctx, db.BulkUpsertNoteLinksParams{
+		SourceNoteID: noteID,
+		TargetPaths:  paths,
+		LinkTexts:    texts,
+	}); err != nil {
+		return fmt.Errorf("bulk upserting note links for note %d: %w", noteID, err)
 	}
 	return nil
 }

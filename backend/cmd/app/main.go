@@ -79,6 +79,14 @@ type config struct {
 	MockMode            bool
 }
 
+// shutdownHardDeadline is the maximum time allowed for the entire graceful
+// shutdown sequence (HTTP drain + defer cleanup chain). If shutdown takes
+// longer, the process is forcibly terminated. This prevents a single hung
+// component (e.g. a Notion API call that ignores context cancellation)
+// from keeping the process alive indefinitely.
+// Budget: 10s HTTP drain + 3min flow timeout + 5min sync timeout + margin.
+const shutdownHardDeadline = 5 * time.Minute
+
 func main() {
 	logger := slog.New(server.NewSanitizingHandler(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(logger); err != nil {
@@ -92,6 +100,17 @@ func run(logger *slog.Logger) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+
+	// Hard deadline: if graceful shutdown (HTTP drain + defer cleanup) takes
+	// longer than shutdownHardDeadline, force-exit the process. This prevents
+	// a single hung component from keeping the process alive indefinitely.
+	context.AfterFunc(ctx, func() {
+		time.AfterFunc(shutdownHardDeadline, func() {
+			logger.Error("graceful shutdown timed out, forcing exit",
+				"deadline", shutdownHardDeadline)
+			os.Exit(1) //nolint:revive // intentional force-exit on shutdown timeout
+		})
+	})
 
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
@@ -321,6 +340,8 @@ func run(logger *slog.Logger) error {
 		runner = flowrun.New(flowrunStore, registry, 3, alerter, logger)
 	}
 
+	bizMetrics := server.NewMetrics()
+	runner.SetObserver(&flowObserver{m: bizMetrics})
 	runner.Start(ctx)
 	defer runner.Stop()
 
@@ -601,6 +622,15 @@ func toRunResult(r *flowrun.Run) *flow.RunResult {
 		Output:    r.Output,
 		EndedAt:   r.EndedAt,
 	}
+}
+
+// flowObserver adapts server.Metrics to flowrun.FlowObserver.
+type flowObserver struct {
+	m *server.Metrics
+}
+
+func (o *flowObserver) ObserveFlowDuration(flowName, status string, d time.Duration) {
+	o.m.FlowDuration.WithLabelValues(flowName, status).Observe(d.Seconds())
 }
 
 // notifyAlerter adapts notify.Notifier to flowrun.Alerter.

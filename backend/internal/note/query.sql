@@ -82,3 +82,11 @@ INSERT INTO note_links (source_note_id, target_path, link_text)
 VALUES ($1, $2, $3)
 ON CONFLICT (source_note_id, target_path) DO UPDATE SET
     link_text = EXCLUDED.link_text;
+
+-- name: BulkUpsertNoteLinks :exec
+-- Batch insert/update wikilink edges using unnest for performance.
+-- Replaces the N+1 loop pattern in SyncNoteLinks.
+INSERT INTO note_links (source_note_id, target_path, link_text)
+SELECT @source_note_id, unnest(@target_paths::text[]), unnest(@link_texts::text[])
+ON CONFLICT (source_note_id, target_path) DO UPDATE SET
+    link_text = EXCLUDED.link_text;

@@ -197,14 +197,14 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	// admin — upload
 	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))
 
-	// pipeline
-	mux.Handle("POST /api/pipeline/sync", authMid(http.HandlerFunc(d.Pipeline.Sync)))
-	mux.Handle("POST /api/pipeline/notion-sync", authMid(http.HandlerFunc(d.Pipeline.NotionSync)))
-	mux.Handle("POST /api/pipeline/reconcile", authMid(http.HandlerFunc(d.Pipeline.Reconcile)))
-	mux.Handle("POST /api/pipeline/collect", authMid(http.HandlerFunc(d.Pipeline.Collect)))
-	mux.Handle("POST /api/pipeline/generate", authMid(http.HandlerFunc(d.Pipeline.Generate)))
-	mux.Handle("POST /api/pipeline/digest", authMid(http.HandlerFunc(d.Pipeline.Digest)))
-	mux.Handle("POST /api/pipeline/bookmark", authMid(http.HandlerFunc(d.Pipeline.Bookmark)))
+	// admin — pipeline
+	mux.Handle("POST /api/admin/pipeline/sync", authMid(http.HandlerFunc(d.Pipeline.Sync)))
+	mux.Handle("POST /api/admin/pipeline/notion-sync", authMid(http.HandlerFunc(d.Pipeline.NotionSync)))
+	mux.Handle("POST /api/admin/pipeline/reconcile", authMid(http.HandlerFunc(d.Pipeline.Reconcile)))
+	mux.Handle("POST /api/admin/pipeline/collect", authMid(http.HandlerFunc(d.Pipeline.Collect)))
+	mux.Handle("POST /api/admin/pipeline/generate", authMid(http.HandlerFunc(d.Pipeline.Generate)))
+	mux.Handle("POST /api/admin/pipeline/digest", authMid(http.HandlerFunc(d.Pipeline.Digest)))
+	mux.Handle("POST /api/admin/pipeline/bookmark", authMid(http.HandlerFunc(d.Pipeline.Bookmark)))
 
 	// webhooks — HMAC-verified, not JWT
 	mux.HandleFunc("POST /api/webhook/github", d.Pipeline.WebhookGithub)

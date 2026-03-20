@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,7 +91,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	if notionKey != "" {
 		logger.Info("notion write tools enabled")
 		opts = append(opts, mcpserver.WithNotionTaskWriter(
-			notionAdapter{apiKey: notionKey},
+			notionAdapter{client: notion.NewClient(notionKey)},
 			notionStore,
 		))
 	} else {
@@ -166,11 +168,15 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		httpServer := &http.Server{
 			Addr:              ":" + port,
 			Handler:           mux,
-			ReadHeaderTimeout: 10 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      120 * time.Second, // long: MCP uses SSE streaming
+			IdleTimeout:       60 * time.Second,
 		}
 
 		go func() {
 			<-ctx.Done()
+			close(oauth.done)
 			_ = httpServer.Close()
 		}()
 
@@ -214,15 +220,45 @@ type oauthProvider struct {
 	mu     sync.Mutex
 	tokens map[string]time.Time // access_token → expiry
 	codes  map[string]time.Time // authorization_code → expiry
+
+	done chan struct{} // signals cleanup goroutine to stop
 }
 
 func newOAuthProvider(clientID, clientSecret, port string) *oauthProvider {
-	return &oauthProvider{
+	o := &oauthProvider{
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		baseURL:      "https://mcp.koopa0.dev",
 		tokens:       make(map[string]time.Time),
 		codes:        make(map[string]time.Time),
+		done:         make(chan struct{}),
+	}
+	go o.cleanup()
+	return o
+}
+
+// cleanup periodically evicts expired tokens and codes to prevent memory leaks.
+func (o *oauthProvider) cleanup() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-o.done:
+			return
+		case now := <-ticker.C:
+			o.mu.Lock()
+			for tok, exp := range o.tokens {
+				if now.After(exp) {
+					delete(o.tokens, tok)
+				}
+			}
+			for code, exp := range o.codes {
+				if now.After(exp) {
+					delete(o.codes, code)
+				}
+			}
+			o.mu.Unlock()
+		}
 	}
 }
 
@@ -242,7 +278,7 @@ func (o *oauthProvider) issueToken() (string, time.Duration) {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	tok := hex.EncodeToString(b)
-	ttl := 24 * time.Hour
+	ttl := 1 * time.Hour
 	o.mu.Lock()
 	o.tokens[tok] = time.Now().Add(ttl)
 	o.mu.Unlock()
@@ -272,7 +308,7 @@ func (o *oauthProvider) consumeCode(code string) bool {
 // GET /.well-known/oauth-authorization-server
 func (o *oauthProvider) metadata(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"issuer":                                o.baseURL,
 		"authorization_endpoint":                o.baseURL + "/oauth/authorize",
 		"token_endpoint":                        o.baseURL + "/oauth/token",
@@ -284,19 +320,46 @@ func (o *oauthProvider) metadata(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// allowedRedirectPrefixes lists the accepted redirect_uri prefixes.
+// Only Claude.ai and local dev are permitted.
+var allowedRedirectPrefixes = []string{
+	"https://claude.ai/",
+	"http://localhost:",
+	"http://127.0.0.1:",
+}
+
+// validRedirectURI checks that the redirect_uri starts with an allowed prefix.
+func validRedirectURI(uri string) bool {
+	for _, prefix := range allowedRedirectPrefixes {
+		if strings.HasPrefix(uri, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // GET/POST /oauth/authorize — simplified: auto-approve and redirect with code.
 func (o *oauthProvider) authorize(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64 KB
 	redirectURI := r.FormValue("redirect_uri")
 	state := r.FormValue("state")
+	clientID := r.FormValue("client_id")
 	if redirectURI == "" {
 		http.Error(w, "redirect_uri required", http.StatusBadRequest)
 		return
 	}
+	if !validRedirectURI(redirectURI) {
+		http.Error(w, "redirect_uri not allowed", http.StatusBadRequest)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(clientID), []byte(o.clientID)) != 1 {
+		http.Error(w, "invalid client_id", http.StatusBadRequest)
+		return
+	}
 	code := o.issueCode()
-	loc := redirectURI + "?code=" + code
+	loc := redirectURI + "?code=" + url.QueryEscape(code)
 	if state != "" {
-		loc += "&state=" + state
+		loc += "&state=" + url.QueryEscape(state)
 	}
 	http.Redirect(w, r, loc, http.StatusFound)
 }
@@ -318,6 +381,11 @@ func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "authorization_code":
+		// RFC 6749 Section 4.1.3: authenticate the client when exchanging codes.
+		if !o.checkClientCredentials(r) {
+			jsonError(w, "invalid_client", http.StatusUnauthorized)
+			return
+		}
 		code := r.FormValue("code")
 		if !o.consumeCode(code) {
 			jsonError(w, "invalid_grant", http.StatusBadRequest)
@@ -330,7 +398,7 @@ func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
 
 	tok, ttl := o.issueToken()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"access_token": tok,
 		"token_type":   "Bearer",
 		"expires_in":   int(ttl.Seconds()),
@@ -339,7 +407,9 @@ func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
 
 // POST /oauth/register — dynamic client registration (MCP spec requirement).
 // For a personal server we just echo back the client_id.
+// NOTE: client_secret is intentionally NOT returned — it was leaked previously.
 func (o *oauthProvider) register(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64 KB
 	var req struct {
 		RedirectURIs []string `json:"redirect_uris"`
 		ClientName   string   `json:"client_name"`
@@ -350,9 +420,8 @@ func (o *oauthProvider) register(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"client_id":     o.clientID,
-		"client_secret": o.clientSecret,
 		"redirect_uris": req.RedirectURIs,
 		"client_name":   req.ClientName,
 	})
@@ -383,16 +452,17 @@ func envOr(key, fallback string) string {
 }
 
 // notionAdapter bridges the Notion client to mcpserver.NotionTaskWriter.
+// Stores a single Client instance so the rate limiter is shared across calls.
 type notionAdapter struct {
-	apiKey string
+	client *notion.Client
 }
 
 func (a notionAdapter) UpdatePageStatus(ctx context.Context, pageID, status string) error {
-	return notion.NewClient(a.apiKey).UpdatePageStatus(ctx, pageID, status)
+	return a.client.UpdatePageStatus(ctx, pageID, status)
 }
 
 func (a notionAdapter) CreateTask(ctx context.Context, p mcpserver.NotionCreateTaskParams) (string, error) {
-	return notion.NewClient(a.apiKey).CreateTask(ctx, notion.CreateTaskParams{
+	return a.client.CreateTask(ctx, notion.CreateTaskParams{
 		DatabaseID:  p.DatabaseID,
 		Title:       p.Title,
 		DueDate:     p.DueDate,

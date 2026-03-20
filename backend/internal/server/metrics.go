@@ -46,6 +46,9 @@ func RegisterMetrics(reg prometheus.Registerer) {
 // Metrics holds business-level Prometheus counters.
 type Metrics struct {
 	FlowRuns         *prometheus.CounterVec
+	FlowDuration     *prometheus.HistogramVec
+	CronRuns         *prometheus.CounterVec
+	CronDuration     *prometheus.HistogramVec
 	NotionSync       *prometheus.HistogramVec
 	WebhookEvents    *prometheus.CounterVec
 	ContentPublished prometheus.Counter
@@ -58,10 +61,24 @@ func NewMetrics() *Metrics {
 			Name: "flow_runs_total",
 			Help: "Total flow run completions by flow name and status.",
 		}, []string{"flow_name", "status"}),
+		FlowDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "flow_run_duration_seconds",
+			Help:    "Duration of AI flow execution by flow name and status.",
+			Buckets: []float64{1, 5, 10, 30, 60, 120, 300},
+		}, []string{"flow_name", "status"}),
+		CronRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cron_job_runs_total",
+			Help: "Total cron job executions by job name and status.",
+		}, []string{"job_name", "status"}),
+		CronDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cron_job_duration_seconds",
+			Help:    "Duration of cron job execution by job name.",
+			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 300},
+		}, []string{"job_name"}),
 		NotionSync: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "notion_sync_duration_seconds",
 			Help:    "Duration of Notion sync operations by role.",
-			Buckets: prometheus.DefBuckets,
+			Buckets: []float64{0.5, 1, 2, 5, 10, 20, 30, 60, 120},
 		}, []string{"role"}),
 		WebhookEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "webhook_events_total",
@@ -72,7 +89,7 @@ func NewMetrics() *Metrics {
 			Help: "Total content items published.",
 		}),
 	}
-	prometheus.MustRegister(m.FlowRuns, m.NotionSync, m.WebhookEvents, m.ContentPublished)
+	prometheus.MustRegister(m.FlowRuns, m.FlowDuration, m.CronRuns, m.CronDuration, m.NotionSync, m.WebhookEvents, m.ContentPublished)
 	return m
 }
 
@@ -121,6 +138,9 @@ var pathPatterns = []struct {
 	{"/api/admin/tracking/", 4},
 	{"/api/admin/flow-runs/", 4},
 	{"/api/admin/feeds/", 4},
+	{"/api/admin/tags/", 4},
+	{"/api/admin/aliases/", 4},
+	{"/api/admin/notion-sources/", 4},
 	{"/api/contents/related/", 4},
 	{"/api/contents/by-type/", 4},
 	{"/api/contents/", 3},

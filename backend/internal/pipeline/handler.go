@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/api"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/note"
@@ -299,7 +300,11 @@ func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
 	for _, slug := range slugs {
 		path := "10-Public-Content/" + slug + ".md"
 		if err := h.syncFile(ctx, path); err != nil {
-			h.logger.Error("sync: syncing file", "path", path, "error", err)
+			if errors.Is(err, ErrGitHubNotFound) {
+				h.logger.Warn("sync: file not found (deleted?)", "path", path)
+			} else {
+				h.logger.Error("sync: syncing file", "path", path, "error", err)
+			}
 			failed++
 			continue
 		}
@@ -316,7 +321,7 @@ func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
 // NotionSync handles POST /api/pipeline/notion-sync — full Notion sync.
 func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
 	if h.notionSync == nil {
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		api.Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "notion sync not configured")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -331,7 +336,7 @@ func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
 // Reconcile handles POST /api/pipeline/reconcile — full Obsidian + Notion reconciliation.
 func (h *Handler) Reconcile(w http.ResponseWriter, r *http.Request) {
 	if h.reconciler == nil {
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		api.Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "reconciler not configured")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -356,7 +361,7 @@ type collectRequest struct {
 // When no schedule is provided, fetches all enabled feeds.
 func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 	if h.collector == nil || h.feeds == nil {
-		http.Error(w, "collector not configured", http.StatusNotImplemented)
+		api.Error(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "collector not configured")
 		return
 	}
 
@@ -381,7 +386,7 @@ func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		h.logger.Error("listing feeds for collect", "schedule", schedule, "error", err)
-		http.Error(w, "failed to list feeds", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list feeds")
 		return
 	}
 
@@ -413,7 +418,7 @@ func (h *Handler) collectFeeds(ctx context.Context, feeds []feed.Feed, schedule 
 
 // Generate handles POST /api/pipeline/generate.
 func (h *Handler) Generate(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	api.Error(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "not implemented")
 }
 
 // digestRequest is the request body for POST /api/pipeline/digest.
@@ -428,24 +433,24 @@ func (h *Handler) Digest(w http.ResponseWriter, r *http.Request) {
 	var req digestRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
 	if req.StartDate == "" || req.EndDate == "" {
-		http.Error(w, "start_date and end_date are required", http.StatusBadRequest)
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "start_date and end_date are required")
 		return
 	}
 
 	input, err := json.Marshal(req)
 	if err != nil {
 		h.logger.Error("marshaling digest input", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
 	if err := h.jobs.Submit(r.Context(), "digest-generate", input, nil); err != nil {
 		h.logger.Error("submitting digest-generate", "error", err)
-		http.Error(w, "failed to submit digest job", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to submit digest job")
 		return
 	}
 
@@ -464,25 +469,25 @@ func (h *Handler) Bookmark(w http.ResponseWriter, r *http.Request) {
 	var req bookmarkRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
 
 	if _, err := uuid.Parse(req.CollectedDataID); err != nil {
-		http.Error(w, "invalid collected_data_id", http.StatusBadRequest)
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid collected_data_id")
 		return
 	}
 
 	input, err := json.Marshal(req)
 	if err != nil {
 		h.logger.Error("marshaling bookmark input", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
 	if err := h.jobs.Submit(r.Context(), "bookmark-generate", input, nil); err != nil {
 		h.logger.Error("submitting bookmark-generate", "error", err)
-		http.Error(w, "failed to submit bookmark job", http.StatusInternalServerError)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to submit bookmark job")
 		return
 	}
 

@@ -132,6 +132,7 @@ func setupCrons(deps cronDeps) (*cron.Cron, error) {
 		defer cancel()
 		if err := deps.Reconciler.Run(ctx); err != nil {
 			deps.Logger.Error("cron: reconciliation failed", "error", err)
+			cronAlert(deps, "reconciliation", err)
 		}
 	}); err != nil {
 		return nil, fmt.Errorf("adding reconciliation cron: %w", err)
@@ -164,6 +165,7 @@ func cronRetryFlows(d cronDeps) func() {
 		runs, err := d.FlowrunStore.RetryableRuns(ctx)
 		if err != nil {
 			d.Logger.Error("cron: scanning retryable flow runs", "error", err)
+			cronAlert(d, "flow-retry-scan", err)
 			return
 		}
 		for _, r := range runs {
@@ -189,6 +191,7 @@ func cronCollectFeeds(d cronDeps, running *atomic.Bool) func(schedule, label str
 		feeds, err := d.FeedStore.EnabledFeedsBySchedule(ctx, schedule)
 		if err != nil {
 			d.Logger.Error("cron: listing "+label+" feeds", "error", err)
+			cronAlert(d, "feed-collect-"+label, err)
 			return
 		}
 		var totalNew int
@@ -306,6 +309,17 @@ func cronRetentionIgnored(d cronDeps) func() {
 		if n > 0 {
 			d.Logger.Info("cron: deleted old ignored collected data", "count", n)
 		}
+	}
+}
+
+// cronAlert sends a notification when a critical cron job fails.
+// Best-effort: errors from the notifier are logged but not propagated.
+func cronAlert(d cronDeps, jobName string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	msg := fmt.Sprintf("[CRON ALERT] %s failed: %s", jobName, err)
+	if sendErr := d.Notifier.Send(ctx, msg); sendErr != nil {
+		d.Logger.Error("cron: sending alert notification", "job", jobName, "error", sendErr)
 	}
 }
 

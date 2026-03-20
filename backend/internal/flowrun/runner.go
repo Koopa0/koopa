@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/flow"
 )
 
@@ -18,6 +19,19 @@ import (
 // If a flow hangs and never releases its semaphore, the dispatch loop
 // will abandon the job after this duration rather than blocking shutdown.
 const semaphoreTimeout = 30 * time.Second
+
+// defaultFlowTimeout is the hard deadline for a single flow execution.
+// Flows that implement FlowTimeouter can override this per-flow.
+// Set to 3 minutes: safely above the longest observed flow (weekly-review ~120s)
+// while preventing a hung AI API from holding a semaphore slot forever.
+const defaultFlowTimeout = 3 * time.Minute
+
+// FlowTimeouter is an optional interface that flows can implement
+// to declare a custom execution timeout. Flows that do not implement
+// this interface use defaultFlowTimeout.
+type FlowTimeouter interface {
+	Timeout() time.Duration
+}
 
 // runnerStore is the minimal store interface the Runner needs.
 // Defined here (consumer side) so unit tests can substitute a mock.
@@ -30,6 +44,12 @@ type runnerStore interface {
 	UpdateFailed(ctx context.Context, id uuid.UUID, errMsg string) error
 }
 
+// FlowObserver receives timing data for flow executions.
+// Implement this with Prometheus histograms and wire via SetObserver.
+type FlowObserver interface {
+	ObserveFlowDuration(flowName, status string, duration time.Duration)
+}
+
 // Runner manages a pool of workers that execute AI flows.
 // Jobs are persisted to the flow_runs table before being dispatched
 // to the channel, ensuring recoverability via cron retry.
@@ -37,12 +57,16 @@ type Runner struct {
 	store    runnerStore
 	registry *flow.Registry
 	alerter  Alerter
+	observer FlowObserver // optional: records execution metrics
 	jobs     chan uuid.UUID
 	sem      chan struct{} // concurrency semaphore
 	logger   *slog.Logger
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 }
+
+// SetObserver sets the optional flow execution metrics observer.
+func (r *Runner) SetObserver(o FlowObserver) { r.observer = o }
 
 // New returns a Runner with the given concurrency limit.
 // Channel buffer is set to workers * 2 to avoid blocking callers
@@ -177,9 +201,22 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 		return
 	}
 
-	output, err := f.Run(ctx, run.Input)
+	// Apply per-job timeout so a hung AI API cannot hold a semaphore slot
+	// forever. Flows may implement FlowTimeouter to override the default.
+	timeout := defaultFlowTimeout
+	if ft, ok := f.(FlowTimeouter); ok {
+		timeout = ft.Timeout()
+	}
+	execCtx, execCancel := context.WithTimeout(ctx, timeout)
+	defer execCancel()
+
+	start := time.Now()
+	output, err := f.Run(execCtx, run.Input)
+	elapsed := time.Since(start)
+
 	if err != nil {
-		logger.Error("flow execution failed", "error", err)
+		logger.Error("flow execution failed", "error", err, "duration", elapsed)
+		r.observeFlow(run.FlowName, "failed", elapsed)
 		if uerr := r.store.UpdateFailed(ctx, runID, err.Error()); uerr != nil {
 			logger.Error("marking flow run failed", "error", uerr)
 		}
@@ -188,17 +225,32 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 			r.alertAlways(ctx, run, err.Error())
 			return
 		}
+		// Budget exhaustion is permanent until the daily reset — retrying wastes
+		// all attempts with the same error. Alert immediately.
+		if errors.Is(err, budget.ErrOverBudget) {
+			r.alertAlways(ctx, run, err.Error())
+			return
+		}
 		// attempt was incremented by UpdateRunning, so current attempt = run.Attempt + 1
 		r.alertIfFinal(ctx, run, err.Error())
 		return
 	}
+
+	r.observeFlow(run.FlowName, "completed", elapsed)
 
 	if err := r.store.UpdateCompleted(ctx, runID, output); err != nil {
 		logger.Error("marking flow run completed", "error", err)
 		return
 	}
 
-	logger.Info("flow run completed")
+	logger.Info("flow run completed", "duration", elapsed)
+}
+
+// observeFlow records flow execution duration if an observer is configured.
+func (r *Runner) observeFlow(flowName, status string, d time.Duration) {
+	if r.observer != nil {
+		r.observer.ObserveFlowDuration(flowName, status, d)
+	}
 }
 
 // alertIfFinal sends an alert if this was the last attempt.

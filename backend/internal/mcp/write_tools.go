@@ -12,6 +12,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
 )
 
@@ -358,7 +359,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	}
 
 	now := time.Now()
-	topicSlug := Slugify(input.Topic)
+	topicSlug := tag.Slugify(input.Topic)
 	slug := fmt.Sprintf("%s-til-%s", topicSlug, now.Format("2006-01-02"))
 	source := fmt.Sprintf("claude:%s", input.Source)
 	sourceType := content.SourceAIGenerated
@@ -634,31 +635,3 @@ func joinLines(lines []string) string {
 	return string(b)
 }
 
-// Slugify converts a title to a URL-safe slug. Duplicated from notion package
-// to avoid circular imports — this is a pure function with no dependencies.
-func Slugify(title string) string {
-	var result []rune
-	prevDash := false
-	for _, r := range title {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			result = append(result, r)
-			prevDash = false
-		case r >= 'A' && r <= 'Z':
-			result = append(result, r+32) // lowercase
-			prevDash = false
-		case r == '-' || r == '_' || r == ' ':
-			if !prevDash && len(result) > 0 {
-				result = append(result, '-')
-				prevDash = true
-			}
-		case r > 127:
-			result = append(result, r)
-			prevDash = false
-		}
-	}
-	if len(result) > 0 && result[len(result)-1] == '-' {
-		result = result[:len(result)-1]
-	}
-	return string(result)
-}

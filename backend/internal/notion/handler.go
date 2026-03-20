@@ -295,9 +295,18 @@ func (h *Handler) SyncRole(ctx context.Context, role string) {
 	h.logger.Warn("notion sync role: unknown role", "role", role)
 }
 
+// syncRoleTimeout bounds SyncRoleAsync execution so a hung Notion API
+// cannot block shutdown indefinitely via bgWg.Wait(). Matches the cron
+// hourly sync's 5-minute timeout.
+const syncRoleTimeout = 5 * time.Minute
+
 // SyncRoleAsync launches SyncRole in a tracked background goroutine.
+// Detaches from the caller's context (which may be an HTTP request) so the
+// sync outlives the request, then applies syncRoleTimeout to bound execution.
 func (h *Handler) SyncRoleAsync(ctx context.Context, role string) {
 	h.bgWg.Go(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncRoleTimeout)
+		defer cancel()
 		h.SyncRole(ctx, role)
 	})
 }

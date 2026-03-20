@@ -7,6 +7,7 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
 )
 
@@ -177,33 +178,5 @@ func mapNotionTaskStatus(notionStatus string) task.Status {
 }
 
 // Slugify converts a title to a URL-safe slug.
-func Slugify(title string) string {
-	s := strings.ToLower(title)
-	s = strings.TrimSpace(s)
-
-	var result []rune
-	prevDash := false
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			result = append(result, r)
-			prevDash = false
-		case r == '-' || r == '_' || r == ' ':
-			if !prevDash && len(result) > 0 {
-				result = append(result, '-')
-				prevDash = true
-			}
-		case r > 127:
-			// keep CJK and other unicode characters
-			result = append(result, r)
-			prevDash = false
-		}
-	}
-
-	// trim trailing dash
-	if len(result) > 0 && result[len(result)-1] == '-' {
-		result = result[:len(result)-1]
-	}
-
-	return string(result)
-}
+// Delegates to the canonical tag.Slugify implementation.
+func Slugify(title string) string { return tag.Slugify(title) }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/google/uuid"
 
@@ -24,19 +23,7 @@ func NewHandler(store *Store, logger *slog.Logger) *Handler {
 
 // List handles GET /api/admin/collected.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	page := 1
-	perPage := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
-	}
-	if pp := r.URL.Query().Get("per_page"); pp != "" {
-		if v, err := strconv.Atoi(pp); err == nil && v > 0 && v <= 100 {
-			perPage = v
-		}
-	}
-
+	page, perPage := api.ParsePagination(r)
 	f := Filter{Page: page, PerPage: perPage}
 	if s := r.URL.Query().Get("status"); s != "" {
 		f.Status = &s
@@ -111,7 +98,7 @@ func (h *Handler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 
 	fb := Feedback(req.Feedback)
 	if fb != FeedbackUp && fb != FeedbackDown {
-		api.Error(w, http.StatusUnprocessableEntity, "BAD_REQUEST", "feedback must be \"up\" or \"down\"")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "feedback must be \"up\" or \"down\"")
 		return
 	}
 

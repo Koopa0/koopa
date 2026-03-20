@@ -128,7 +128,7 @@ SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.status, p.notion_page_id, p.repo, p.area, p.deadline, p.last_activity_at,
        p.created_at, p.updated_at
 FROM project_aliases pa
-JOIN projects p ON LOWER(p.title) = LOWER(pa.canonical_name)
+JOIN projects p ON p.id = pa.project_id
 WHERE LOWER(pa.alias) = LOWER(@alias);
 
 -- name: ProjectByTitle :one

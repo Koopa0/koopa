@@ -39,12 +39,14 @@ func Run(ctx context.Context, cfg Config, deps Deps, logger *slog.Logger) error 
 	}
 
 	// Middleware chain (outermost first):
-	// prometheus → logging → security headers → CORS → CSRF → mux
+	// prometheus → request-id → logging → security headers → CORS → CSRF → mux
 	handler := prometheusMiddleware(
-		loggingMiddleware(logger)(
-			securityHeaders(
-				corsMiddleware(cfg.CORSOrigin)(
-					csrfMid(mux),
+		requestIDMiddleware(logger)(
+			loggingMiddleware(logger)(
+				securityHeaders(
+					corsMiddleware(cfg.CORSOrigin)(
+						csrfMid(mux),
+					),
 				),
 			),
 		),

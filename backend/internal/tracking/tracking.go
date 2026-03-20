@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// TrackingTopic represents a topic to track for data collection.
-type TrackingTopic struct {
+// Topic represents a topic to track for data collection.
+type Topic struct {
 	ID        uuid.UUID `json:"id"`
 	Name      string    `json:"name"`
 	Keywords  []string  `json:"keywords"`

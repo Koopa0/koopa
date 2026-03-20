@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -26,6 +27,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/collector"
@@ -33,11 +35,16 @@ import (
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/server"
+	"github.com/koopa0/blog-backend/internal/spaced"
+	"github.com/koopa0/blog-backend/internal/stats"
+	"github.com/koopa0/blog-backend/internal/tag"
+	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/tracking"
 	"github.com/koopa0/blog-backend/internal/upload"
@@ -109,8 +116,15 @@ func testServer(t *testing.T) *httptest.Server {
 	reviewStore := review.NewStore(pool)
 	collectedStore := collected.NewStore(pool)
 	trackingStore := tracking.NewStore(pool)
-	feedStore := feed.NewStore(pool)
+	feedStore := feed.NewStore(pool, logger)
 	flowrunStore := flowrun.NewStore(pool)
+	notionStore := notion.NewStore(pool)
+	goalStore := goal.NewStore(pool)
+	taskStore := task.NewStore(pool)
+	statsStore := stats.NewStore(pool)
+	activityStore := activity.NewStore(pool)
+	tagStore := tag.NewStore(pool)
+	spacedStore := spaced.NewStore(pool)
 
 	// mock flows + runner for pipeline endpoints
 	registry := flow.NewRegistry(
@@ -126,55 +140,63 @@ func testServer(t *testing.T) *httptest.Server {
 
 	feedCollector := collector.New(collectedStore, feedStore, logger)
 
-	pipelineHandler := pipeline.NewHandler(contentStore, nil, nil, runner, "", logger)
+	pipelineHandler := pipeline.NewHandler(pool, contentStore, contentStore, nil, nil, runner, "", "", "", logger)
 	pipelineHandler.SetCollector(feedCollector, feedStore)
 
+	notionClient := notion.NewClient("")
+
 	deps := server.Deps{
-		Auth:      auth.NewHandler(authStore, testJWTSecret, logger),
-		Topic:     topic.NewHandler(topicStore, contentStore, logger),
-		Content:   content.NewHandler(contentStore, "http://localhost:8080", logger),
-		Project:   project.NewHandler(projectStore, logger),
-		Review:    review.NewHandler(reviewStore, logger),
-		Collected: collected.NewHandler(collectedStore, logger),
-		Tracking:  tracking.NewHandler(trackingStore, logger),
-		Pipeline:  pipelineHandler,
-		FlowRun:   flowrun.NewHandler(flowrunStore, logger),
-		Flow:      flow.NewHandler(runner, nil, contentStore, contentStore, logger),
-		Upload:    upload.NewHandler(nil, "test-bucket", "http://localhost", logger),
-		Feed:      feed.NewHandler(feedStore, feedCollector, logger),
-		Notion:    notion.NewHandler(notion.NewClient(""), projectStore, runner, notion.Config{}, logger),
-		Logger:    logger,
+		Auth:         auth.NewHandler(authStore, testJWTSecret, auth.GoogleConfig{}, logger),
+		Topic:        topic.NewHandler(topicStore, contentStore, nil, logger),
+		Content:      content.NewHandler(contentStore, "http://localhost:8080", nil, nil, logger),
+		Project:      project.NewHandler(projectStore, logger),
+		Review:       review.NewHandler(reviewStore, logger),
+		Collected:    collected.NewHandler(collectedStore, logger),
+		Tracking:     tracking.NewHandler(trackingStore, logger),
+		Pipeline:     pipelineHandler,
+		FlowRun:      flowrun.NewHandler(flowrunStore, runner, logger),
+		Flow:         flow.NewHandler(runner, nil, contentStore, contentStore, logger),
+		Upload:       upload.NewHandler(nil, "test-bucket", "http://localhost", logger),
+		Feed:         feed.NewHandler(feedStore, feedCollector, logger),
+		Notion:       notion.NewHandler(notionClient, notionStore, nil, projectStore, goalStore, taskStore, runner, "", logger),
+		Tag:          tag.NewHandler(tagStore, pool, logger),
+		Spaced:       spaced.NewHandler(spacedStore, logger),
+		NotionSource: notion.NewSourceHandler(notionStore, notionClient, nil, logger),
+		Goal:         goal.NewHandler(goalStore, logger),
+		Task:         task.NewHandler(taskStore, logger),
+		Stats:        stats.NewHandler(statsStore, logger),
+		Activity:     activity.NewHandler(activityStore, logger),
+		Pool:         pool,
+		Logger:       logger,
 	}
 
 	// build handler the same way server.Run does
 	authMid := auth.Middleware(testJWTSecret)
+	noopMid := func(next http.Handler) http.Handler { return next }
 	mux := http.NewServeMux()
-	server.RegisterRoutes(mux, deps, authMid)
+	server.RegisterRoutes(mux, deps, authMid, noopMid)
 
 	return httptest.NewServer(mux)
 }
 
-// login authenticates as the seed admin user and returns an access token.
-func login(t *testing.T, base string) string {
+// login generates a JWT access token directly (bypasses OAuth flow).
+// The auth system now uses Google OAuth, so password-based login is no longer available.
+func login(t *testing.T, _ string) string {
 	t.Helper()
-	body := `{"email":"admin@koopa0.dev","password":"changeme"}`
-	resp := doRequest(t, http.MethodPost, base+"/api/auth/login", body, "")
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("login: expected 200, got %d", resp.StatusCode)
+	claims := auth.Claims{
+		Email: "admin@koopa0.dev",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "admin@koopa0.dev",
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+		},
 	}
-
-	var result struct {
-		Data struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
-		} `json:"data"`
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte(testJWTSecret))
+	if err != nil {
+		t.Fatalf("signing test JWT: %v", err)
 	}
-	decodeBody(t, resp, &result)
-	if result.Data.AccessToken == "" {
-		t.Fatal("login: empty access token")
-	}
-	return result.Data.AccessToken
+	return signed
 }
 
 func doRequest(t *testing.T, method, url, body, token string) *http.Response {
@@ -210,86 +232,16 @@ func decodeBody(t *testing.T, resp *http.Response, v any) {
 
 // --- Auth Tests ---
 
+// TODO: TestAuthFlow disabled — auth system migrated from password login to Google OAuth.
+// The old subtests tested /api/auth/login (password-based) which no longer exists.
+// Rewrite these tests to cover the OAuth callback flow when test infrastructure
+// supports mocking the Google OAuth exchange.
+//
+// Subtests that remain valid without OAuth (protected endpoint checks) are preserved below.
+
 func TestAuthFlow(t *testing.T) {
 	ts := testServer(t)
 	defer ts.Close()
-
-	t.Run("login with valid credentials", func(t *testing.T) {
-		body := `{"email":"admin@koopa0.dev","password":"changeme"}`
-		resp := doRequest(t, http.MethodPost, ts.URL+"/api/auth/login", body, "")
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		var result struct {
-			Data struct {
-				AccessToken  string `json:"access_token"`
-				RefreshToken string `json:"refresh_token"`
-			} `json:"data"`
-		}
-		decodeBody(t, resp, &result)
-		if result.Data.AccessToken == "" {
-			t.Error("access_token is empty")
-		}
-		if result.Data.RefreshToken == "" {
-			t.Error("refresh_token is empty")
-		}
-	})
-
-	t.Run("login with wrong password", func(t *testing.T) {
-		body := `{"email":"admin@koopa0.dev","password":"wrong"}`
-		resp := doRequest(t, http.MethodPost, ts.URL+"/api/auth/login", body, "")
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("expected 401, got %d", resp.StatusCode)
-		}
-	})
-
-	t.Run("login with missing fields", func(t *testing.T) {
-		body := `{"email":"admin@koopa0.dev"}`
-		resp := doRequest(t, http.MethodPost, ts.URL+"/api/auth/login", body, "")
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d", resp.StatusCode)
-		}
-	})
-
-	t.Run("refresh token rotation", func(t *testing.T) {
-		// login first
-		loginBody := `{"email":"admin@koopa0.dev","password":"changeme"}`
-		loginResp := doRequest(t, http.MethodPost, ts.URL+"/api/auth/login", loginBody, "")
-		var loginResult struct {
-			Data struct {
-				RefreshToken string `json:"refresh_token"`
-			} `json:"data"`
-		}
-		decodeBody(t, loginResp, &loginResult)
-
-		// refresh
-		refreshBody := fmt.Sprintf(`{"refresh_token":"%s"}`, loginResult.Data.RefreshToken)
-		refreshResp := doRequest(t, http.MethodPost, ts.URL+"/api/auth/refresh", refreshBody, "")
-		if refreshResp.StatusCode != http.StatusOK {
-			t.Fatalf("refresh: expected 200, got %d", refreshResp.StatusCode)
-		}
-		var refreshResult struct {
-			Data struct {
-				AccessToken  string `json:"access_token"`
-				RefreshToken string `json:"refresh_token"`
-			} `json:"data"`
-		}
-		decodeBody(t, refreshResp, &refreshResult)
-
-		if refreshResult.Data.RefreshToken == loginResult.Data.RefreshToken {
-			t.Error("refresh token was not rotated")
-		}
-
-		// old refresh token should be invalid
-		reuse := doRequest(t, http.MethodPost, ts.URL+"/api/auth/refresh", refreshBody, "")
-		reuse.Body.Close()
-		if reuse.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("reuse old refresh token: expected 401, got %d", reuse.StatusCode)
-		}
-	})
 
 	t.Run("protected endpoint without token", func(t *testing.T) {
 		resp := doRequest(t, http.MethodGet, ts.URL+"/api/admin/stats", "", "")
@@ -916,8 +868,8 @@ func TestPipelineStubs(t *testing.T) {
 
 	// Endpoints still returning 501 (not yet implemented, JWT-protected)
 	stubEndpoints := []string{
-		"/api/pipeline/sync",
-		"/api/pipeline/generate",
+		"/api/admin/pipeline/sync",
+		"/api/admin/pipeline/generate",
 		"/api/webhook/obsidian",
 	}
 
@@ -941,19 +893,19 @@ func TestPipelineStubs(t *testing.T) {
 	})
 
 	// Implemented endpoints: collect returns 202, digest returns 400 (missing dates)
-	t.Run("/api/pipeline/collect", func(t *testing.T) {
-		resp := doRequest(t, http.MethodPost, ts.URL+"/api/pipeline/collect", `{"schedule":"daily"}`, token)
+	t.Run("/api/admin/pipeline/collect", func(t *testing.T) {
+		resp := doRequest(t, http.MethodPost, ts.URL+"/api/admin/pipeline/collect", `{"schedule":"daily"}`, token)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusAccepted {
-			t.Errorf("/api/pipeline/collect: expected 202, got %d", resp.StatusCode)
+			t.Errorf("/api/admin/pipeline/collect: expected 202, got %d", resp.StatusCode)
 		}
 	})
 
-	t.Run("/api/pipeline/digest_missing_dates", func(t *testing.T) {
-		resp := doRequest(t, http.MethodPost, ts.URL+"/api/pipeline/digest", `{}`, token)
+	t.Run("/api/admin/pipeline/digest_missing_dates", func(t *testing.T) {
+		resp := doRequest(t, http.MethodPost, ts.URL+"/api/admin/pipeline/digest", `{}`, token)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
-			t.Errorf("/api/pipeline/digest: expected 400, got %d", resp.StatusCode)
+			t.Errorf("/api/admin/pipeline/digest: expected 400, got %d", resp.StatusCode)
 		}
 	})
 }

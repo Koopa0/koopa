@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -37,6 +38,12 @@ func (s *Store) Create(ctx context.Context, contentID uuid.UUID, reviewLevel str
 		ReviewerNotes: notes,
 	})
 	if err != nil {
+		// Unique partial index idx_review_queue_pending_content catches the
+		// TOCTOU race between PendingReviewExistsForContent and CreateReview.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("creating review for content %s: %w", contentID, err)
 	}
 	return &Review{

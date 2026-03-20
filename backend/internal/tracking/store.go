@@ -22,12 +22,12 @@ func NewStore(dbtx db.DBTX) *Store {
 }
 
 // TrackingTopics returns all tracking topics.
-func (s *Store) TrackingTopics(ctx context.Context) ([]TrackingTopic, error) {
+func (s *Store) TrackingTopics(ctx context.Context) ([]Topic, error) {
 	rows, err := s.q.TrackingTopics(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing tracking topics: %w", err)
 	}
-	topics := make([]TrackingTopic, len(rows))
+	topics := make([]Topic, len(rows))
 	for i, r := range rows {
 		topics[i] = dbToTrackingTopic(r)
 	}
@@ -35,7 +35,7 @@ func (s *Store) TrackingTopics(ctx context.Context) ([]TrackingTopic, error) {
 }
 
 // TrackingTopicByID returns a single tracking topic by ID.
-func (s *Store) TrackingTopicByID(ctx context.Context, id uuid.UUID) (*TrackingTopic, error) {
+func (s *Store) TrackingTopicByID(ctx context.Context, id uuid.UUID) (*Topic, error) {
 	r, err := s.q.TrackingTopicByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -48,7 +48,7 @@ func (s *Store) TrackingTopicByID(ctx context.Context, id uuid.UUID) (*TrackingT
 }
 
 // CreateTrackingTopic inserts a new tracking topic.
-func (s *Store) CreateTrackingTopic(ctx context.Context, p CreateParams) (*TrackingTopic, error) {
+func (s *Store) CreateTrackingTopic(ctx context.Context, p CreateParams) (*Topic, error) {
 	if p.Keywords == nil {
 		p.Keywords = []string{}
 	}
@@ -77,7 +77,7 @@ func (s *Store) CreateTrackingTopic(ctx context.Context, p CreateParams) (*Track
 }
 
 // UpdateTrackingTopic updates a tracking topic.
-func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p UpdateParams) (*TrackingTopic, error) {
+func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p UpdateParams) (*Topic, error) {
 	r, err := s.q.UpdateTrackingTopic(ctx, db.UpdateTrackingTopicParams{
 		ID:       id,
 		Name:     p.Name,
@@ -105,9 +105,9 @@ func (s *Store) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// dbToTrackingTopic converts a db.TrackingTopic to TrackingTopic.
-func dbToTrackingTopic(r db.TrackingTopic) TrackingTopic {
-	return TrackingTopic{
+// dbToTrackingTopic converts a db.TrackingTopic to Topic.
+func dbToTrackingTopic(r db.TrackingTopic) Topic {
+	return Topic{
 		ID:        r.ID,
 		Name:      r.Name,
 		Keywords:  r.Keywords,

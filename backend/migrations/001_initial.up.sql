@@ -138,6 +138,7 @@ CREATE TABLE projects (
 );
 
 CREATE INDEX idx_projects_featured ON projects(featured DESC, sort_order);
+CREATE INDEX idx_projects_lower_title ON projects (LOWER(title));
 
 CREATE TABLE review_queue (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -151,6 +152,8 @@ CREATE TABLE review_queue (
 
 CREATE INDEX idx_review_queue_status ON review_queue(status);
 CREATE INDEX idx_review_queue_content_id ON review_queue(content_id);
+CREATE UNIQUE INDEX idx_review_queue_pending_content
+    ON review_queue (content_id) WHERE status = 'pending';
 
 CREATE TABLE feeds (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -245,6 +248,8 @@ CREATE TABLE goals (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
+
 -- === Tasks (synced from Notion) ===
 
 CREATE TYPE task_status AS ENUM ('todo', 'in-progress', 'done');
@@ -254,7 +259,7 @@ CREATE TABLE tasks (
     title           TEXT NOT NULL,
     status          task_status NOT NULL DEFAULT 'todo',
     due             DATE,
-    project_id      UUID REFERENCES projects(id),
+    project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
     notion_page_id  TEXT UNIQUE,
     completed_at    TIMESTAMPTZ,
     energy          TEXT NOT NULL DEFAULT '',
@@ -480,6 +485,7 @@ CREATE TABLE project_aliases (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     alias          TEXT NOT NULL UNIQUE,
     canonical_name TEXT NOT NULL,
+    project_id     UUID REFERENCES projects(id) ON DELETE CASCADE,
     source         TEXT NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );

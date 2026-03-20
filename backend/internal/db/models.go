@@ -653,11 +653,12 @@ type Project struct {
 }
 
 type ProjectAlias struct {
-	ID            uuid.UUID `json:"id"`
-	Alias         string    `json:"alias"`
-	CanonicalName string    `json:"canonical_name"`
-	Source        string    `json:"source"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            uuid.UUID  `json:"id"`
+	Alias         string     `json:"alias"`
+	CanonicalName string     `json:"canonical_name"`
+	ProjectID     *uuid.UUID `json:"project_id"`
+	Source        string     `json:"source"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type RefreshToken struct {

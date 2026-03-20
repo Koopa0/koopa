@@ -393,6 +393,26 @@ func (q *Queries) AutoDisableFeed(ctx context.Context, arg AutoDisableFeedParams
 	return err
 }
 
+const bulkUpsertNoteLinks = `-- name: BulkUpsertNoteLinks :exec
+INSERT INTO note_links (source_note_id, target_path, link_text)
+SELECT $1, unnest($2::text[]), unnest($3::text[])
+ON CONFLICT (source_note_id, target_path) DO UPDATE SET
+    link_text = EXCLUDED.link_text
+`
+
+type BulkUpsertNoteLinksParams struct {
+	SourceNoteID int64    `json:"source_note_id"`
+	TargetPaths  []string `json:"target_paths"`
+	LinkTexts    []string `json:"link_texts"`
+}
+
+// Batch insert/update wikilink edges using unnest for performance.
+// Replaces the N+1 loop pattern in SyncNoteLinks.
+func (q *Queries) BulkUpsertNoteLinks(ctx context.Context, arg BulkUpsertNoteLinksParams) error {
+	_, err := q.db.Exec(ctx, bulkUpsertNoteLinks, arg.SourceNoteID, arg.TargetPaths, arg.LinkTexts)
+	return err
+}
+
 const clearAllMyDay = `-- name: ClearAllMyDay :execrows
 UPDATE tasks SET my_day = false, updated_at = now()
 WHERE my_day = true AND status != 'done'
@@ -1943,6 +1963,7 @@ SELECT id, source_id, timestamp, event_type, source,
 FROM activity_events
 WHERE timestamp >= $1 AND timestamp < $2
 ORDER BY timestamp DESC
+LIMIT 5000
 `
 
 type EventsByTimeRangeParams struct {
@@ -1952,6 +1973,7 @@ type EventsByTimeRangeParams struct {
 
 // List activity events within a time range, ordered by timestamp descending.
 // Used by the daily-dev-log flow to gather a day's activity.
+// Hard cap prevents unbounded result sets from wide time ranges.
 func (q *Queries) EventsByTimeRange(ctx context.Context, arg EventsByTimeRangeParams) ([]ActivityEvent, error) {
 	rows, err := q.db.Query(ctx, eventsByTimeRange, arg.StartTime, arg.EndTime)
 	if err != nil {
@@ -3155,7 +3177,7 @@ SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.status, p.notion_page_id, p.repo, p.area, p.deadline, p.last_activity_at,
        p.created_at, p.updated_at
 FROM project_aliases pa
-JOIN projects p ON LOWER(p.title) = LOWER(pa.canonical_name)
+JOIN projects p ON p.id = pa.project_id
 WHERE LOWER(pa.alias) = LOWER($1)
 `
 
