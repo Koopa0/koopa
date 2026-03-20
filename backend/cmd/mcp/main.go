@@ -83,10 +83,13 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	var opts []mcpserver.ServerOption
 	notionKey := os.Getenv("NOTION_API_KEY")
 	if notionKey != "" {
+		logger.Info("notion write tools enabled")
 		opts = append(opts, mcpserver.WithNotionTaskWriter(
 			notionAdapter{apiKey: notionKey},
 			notionStore,
 		))
+	} else {
+		logger.Warn("NOTION_API_KEY not set — create_task and complete_task will be unavailable")
 	}
 
 	server := mcpserver.NewServer(

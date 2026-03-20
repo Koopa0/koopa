@@ -957,28 +957,30 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	}
 
 	created, err := s.contentWriter.CreateContent(ctx, content.CreateParams{
-		Slug:       slug,
-		Title:      input.Title,
-		Body:       input.Body,
-		Type:       content.TypeBuildLog,
-		Status:     content.StatusPublished,
-		Tags:       tags,
-		Source:     &source,
-		SourceType: &sourceType,
+		Slug:        slug,
+		Title:       input.Title,
+		Body:        input.Body,
+		Type:        content.TypeBuildLog,
+		Status:      content.StatusPublished,
+		Tags:        tags,
+		Source:      &source,
+		SourceType:  &sourceType,
+		ReviewLevel: content.ReviewAuto,
 	})
 	if err != nil {
 		if errors.Is(err, content.ErrConflict) {
 			// Slug conflict: append timestamp to make unique
 			slug = fmt.Sprintf("%s-dev-log-%s-%d", proj.Slug, now.Format("2006-01-02"), now.Unix()%10000)
 			created, err = s.contentWriter.CreateContent(ctx, content.CreateParams{
-				Slug:       slug,
-				Title:      input.Title,
-				Body:       input.Body,
-				Type:       content.TypeBuildLog,
-				Status:     content.StatusPublished,
-				Tags:       tags,
-				Source:     &source,
-				SourceType: &sourceType,
+				Slug:        slug,
+				Title:       input.Title,
+				Body:        input.Body,
+				Type:        content.TypeBuildLog,
+				Status:      content.StatusPublished,
+				Tags:        tags,
+				Source:      &source,
+				SourceType:  &sourceType,
+				ReviewLevel: content.ReviewAuto,
 			})
 			if err != nil {
 				return nil, DevSessionOutput{}, fmt.Errorf("creating dev session log: %w", err)

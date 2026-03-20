@@ -342,27 +342,29 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	}
 
 	created, err := s.contentWriter.CreateContent(ctx, content.CreateParams{
-		Slug:       slug,
-		Title:      input.Title,
-		Body:       body,
-		Type:       content.TypeTIL,
-		Status:     content.StatusPublished,
-		Tags:       tags,
-		Source:     &source,
-		SourceType: &sourceType,
+		Slug:        slug,
+		Title:       input.Title,
+		Body:        body,
+		Type:        content.TypeTIL,
+		Status:      content.StatusPublished,
+		Tags:        tags,
+		Source:      &source,
+		SourceType:  &sourceType,
+		ReviewLevel: content.ReviewAuto,
 	})
 	if err != nil {
 		if errors.Is(err, content.ErrConflict) {
 			slug = fmt.Sprintf("%s-til-%s-%d", topicSlug, now.Format("2006-01-02"), now.Unix()%10000)
 			created, err = s.contentWriter.CreateContent(ctx, content.CreateParams{
-				Slug:       slug,
-				Title:      input.Title,
-				Body:       body,
-				Type:       content.TypeTIL,
-				Status:     content.StatusPublished,
-				Tags:       tags,
-				Source:     &source,
-				SourceType: &sourceType,
+				Slug:        slug,
+				Title:       input.Title,
+				Body:        body,
+				Type:        content.TypeTIL,
+				Status:      content.StatusPublished,
+				Tags:        tags,
+				Source:      &source,
+				SourceType:  &sourceType,
+				ReviewLevel: content.ReviewAuto,
 			})
 			if err != nil {
 				return nil, LogLearningSessionOutput{}, fmt.Errorf("creating learning session: %w", err)
