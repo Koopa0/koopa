@@ -259,7 +259,7 @@ func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) error {
 	}
 
 	body := map[string]any{
-		"parent":     map[string]string{"database_id": p.DatabaseID},
+		"parent":     map[string]string{"data_source_id": p.DatabaseID},
 		"properties": properties,
 	}
 

@@ -118,7 +118,6 @@ services:
       MCP_TRANSPORT: http
       MCP_PORT: "8081"
       NOTION_API_KEY: ${NOTION_API_KEY}
-      NOTION_TASKS_DB: ${NOTION_TASKS_DB}
     depends_on:
       postgres:
         condition: service_healthy
