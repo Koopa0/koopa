@@ -520,7 +520,7 @@ func run(logger *slog.Logger) error {
 				if tasksSrc, lookupErr := notionSourceStore.SourceByRole(ctx, notion.RoleTasks); lookupErr == nil {
 					today := time.Now().In(taipeiLoc).Format("2006-01-02")
 					title := fmt.Sprintf("📚 複習 %d 篇筆記", count)
-					if createErr := notionClient.CreateTask(ctx, notion.CreateTaskParams{
+					if _, createErr := notionClient.CreateTask(ctx, notion.CreateTaskParams{
 						DatabaseID:  tasksSrc.DatabaseID,
 						Title:       title,
 						DueDate:     today,

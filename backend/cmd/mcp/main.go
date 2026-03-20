@@ -371,7 +371,7 @@ func (a notionAdapter) UpdatePageStatus(ctx context.Context, pageID, status stri
 	return notion.NewClient(a.apiKey).UpdatePageStatus(ctx, pageID, status)
 }
 
-func (a notionAdapter) CreateTask(ctx context.Context, p mcpserver.NotionCreateTaskParams) error {
+func (a notionAdapter) CreateTask(ctx context.Context, p mcpserver.NotionCreateTaskParams) (string, error) {
 	return notion.NewClient(a.apiKey).CreateTask(ctx, notion.CreateTaskParams{
 		DatabaseID:  p.DatabaseID,
 		Title:       p.Title,

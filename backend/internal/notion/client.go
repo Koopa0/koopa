@@ -237,9 +237,10 @@ type CreateTaskParams struct {
 }
 
 // CreateTask creates a new task page in the given Notion database.
-func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) error {
+// Returns the created page ID on success.
+func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) (string, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
-		return fmt.Errorf("rate limiter: %w", err)
+		return "", fmt.Errorf("rate limiter: %w", err)
 	}
 
 	properties := map[string]any{
@@ -280,28 +281,34 @@ func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) error {
 
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf("marshaling create task: %w", err)
+		return "", fmt.Errorf("marshaling create task: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notionBaseURL+"/v1/pages", bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("creating task request: %w", err)
+		return "", fmt.Errorf("creating task request: %w", err)
 	}
 	c.setHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("creating notion task: %w", err)
+		return "", fmt.Errorf("creating notion task: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("notion api returned %d for create task: %s", resp.StatusCode, respBody)
+		return "", fmt.Errorf("notion api returned %d for create task: %s", resp.StatusCode, respBody)
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
 
-	return nil
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return "", fmt.Errorf("decoding create task response: %w", err)
+	}
+
+	return created.ID, nil
 }
 
 // DiscoveredDatabase is a Notion database returned by the Search API.

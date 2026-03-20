@@ -71,7 +71,7 @@ type TaskWriter interface {
 // NotionTaskWriter creates and updates tasks in Notion.
 type NotionTaskWriter interface {
 	UpdatePageStatus(ctx context.Context, pageID, status string) error
-	CreateTask(ctx context.Context, p NotionCreateTaskParams) error
+	CreateTask(ctx context.Context, p NotionCreateTaskParams) (string, error)
 }
 
 // NotionCreateTaskParams holds parameters for creating a task in Notion.

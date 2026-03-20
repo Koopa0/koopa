@@ -124,18 +124,20 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input C
 	}
 
 	// Create in Notion (webhook will sync back to local DB)
-	if err := s.notionTasks.CreateTask(ctx, NotionCreateTaskParams{
+	pageID, err := s.notionTasks.CreateTask(ctx, NotionCreateTaskParams{
 		DatabaseID:  taskDBID,
 		Title:       input.Title,
 		DueDate:     input.Due,
 		Description: input.Notes,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, CreateTaskOutput{}, fmt.Errorf("creating notion task: %w", err)
 	}
 
 	out := CreateTaskOutput{
-		Title: input.Title,
-		Due:   input.Due,
+		TaskID: pageID,
+		Title:  input.Title,
+		Due:    input.Due,
 	}
 
 	// Resolve project name for output
