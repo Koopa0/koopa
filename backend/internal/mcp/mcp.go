@@ -62,6 +62,7 @@ type TaskReader interface {
 
 // TaskWriter provides task mutations for MCP tools.
 type TaskWriter interface {
+	UpsertByNotionPageID(ctx context.Context, p task.UpsertByNotionParams) (*task.Task, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status task.Status) (*task.Task, error)
 	UpdateMyDay(ctx context.Context, id uuid.UUID, myDay bool) error
 	ClearAllMyDay(ctx context.Context) (int64, error)

@@ -134,23 +134,56 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input C
 		return nil, CreateTaskOutput{}, fmt.Errorf("creating notion task: %w", err)
 	}
 
+	// Upsert to local DB immediately (don't wait for webhook)
+	var due *time.Time
+	if input.Due != "" {
+		d, parseErr := time.Parse(time.DateOnly, input.Due)
+		if parseErr == nil {
+			due = &d
+		}
+	}
+	var projectID *uuid.UUID
+	var projectTitle string
+	if input.Project != "" {
+		proj, projErr := s.resolveProject(ctx, input.Project)
+		if projErr == nil {
+			projectID = &proj.ID
+			projectTitle = proj.Title
+		}
+	}
+
+	upsertParams := task.UpsertByNotionParams{
+		Title:        input.Title,
+		Status:       task.StatusTodo,
+		Due:          due,
+		ProjectID:    projectID,
+		NotionPageID: pageID,
+		Energy:       input.Energy,
+		Priority:     input.Priority,
+		MyDay:        input.MyDay,
+		Description:  input.Notes,
+	}
+	localTask, upsertErr := s.taskWriter.UpsertByNotionPageID(ctx, upsertParams)
+
 	out := CreateTaskOutput{
 		TaskID: pageID,
 		Title:  input.Title,
 		Due:    input.Due,
 	}
-
-	// Resolve project name for output
-	if input.Project != "" {
-		proj, projErr := s.resolveProject(ctx, input.Project)
-		if projErr != nil {
-			out.Warning = fmt.Sprintf("task created but project %q not found", input.Project)
-		} else {
-			out.Project = proj.Title
-		}
+	if projectTitle != "" {
+		out.Project = projectTitle
+	} else if input.Project != "" {
+		out.Warning = fmt.Sprintf("task created but project %q not found", input.Project)
+	}
+	if localTask != nil {
+		out.TaskID = localTask.ID.String()
+	}
+	if upsertErr != nil {
+		s.logger.Error("create_task: local upsert failed (webhook will retry)", "error", upsertErr)
 	}
 
 	s.logger.Info("task created via mcp",
+		"notion_page_id", pageID,
 		"title", input.Title,
 		"due", input.Due,
 		"project", out.Project,
