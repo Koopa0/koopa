@@ -34,9 +34,15 @@ paths:
 | `rounded` | `rounded-sm` |
 | `outline-none` | `outline-hidden` |
 | `ring` | `ring-3` |
-| `space-x-*` / `space-y-*` | `gap-*`（flex/grid 中） |
-| `@apply` | CSS variables / `--spacing()` |
+| `space-x-*` / `space-y-*` | flex/grid 中優先使用 `gap-*` |
+| `!flex`（important modifier） | `flex!` |
+| `bg-[--brand]`（任意 CSS 變數） | `bg-(--brand)` |
+| `flex-shrink-*` | `shrink-*` |
+| `flex-grow-*` | `grow-*` |
+| `@apply`（獨立樣式表中） | 需搭配 `@reference` 使用（專案慣例：限制使用，優先 CSS variables） |
 | `min-h-screen` | `min-h-dvh` |
+
+**注意**：Tailwind v4 預設 border 顏色從 `gray-200` 改為 `currentColor`，如需舊行為請明確指定 `border-zinc-200`。
 
 ## 色彩系統
 

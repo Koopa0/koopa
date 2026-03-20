@@ -1100,7 +1100,7 @@ func (h *Handler) syncKnowledgeNote(ctx context.Context, path string) error {
 		p.Difficulty = &parsed.Difficulty
 	}
 	if parsed.LeetcodeID != 0 && parsed.LeetcodeID <= math.MaxInt32 {
-		id := int32(parsed.LeetcodeID) //nolint:gosec // bounds checked above
+		id := int32(parsed.LeetcodeID) // #nosec G115 -- bounds checked above
 		p.LeetcodeID = &id
 	}
 	if parsed.Book != "" {

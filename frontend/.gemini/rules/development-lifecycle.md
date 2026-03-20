@@ -8,7 +8,7 @@
 → 修復 → `/angular-verify` → `@code-reviewer`
 
 **Tier 2: 既有功能** — 在現有 feature 內、不改元件 public API、不引入新依賴
-→ 輕量 comprehend（3-5 行摘要）→ 實作 → `/angular-verify` + reviewers
+→ 輕量 comprehend（3-5 行摘要，必須含現有元件評估）→ 實作 → `/angular-verify` + reviewers
 
 **Tier 3: 完整流程** — 新 feature/shared component、重大重構、設計決策、改 core 介面、新依賴
 → comprehend → `@planner` → 實作 → `/angular-verify` + reviewers + 語意檢查
@@ -22,25 +22,61 @@
 
 關鍵規則：絕不在驗證前說「好主意」、絕不在需求模糊時繼續、絕不假設使用者意思、違反 rules 立即說明
 
+**Tier 2 輕量 comprehend 最低要求**：
+- `ls src/app/shared/components/` 確認相關可複用元件
+- 3-5 行摘要包含：變更範圍、影響的元件/服務、可複用的現有元件
+- 如發現可複用元件但使用者要求新建 → 升級為 Tier 3
+
 ## Phase 2: 規劃（Tier 3）
 
 Agent `@planner` 設計：元件階層、Signal 類型、路由、設計資源參考、測試策略、範圍外事項。計畫**必須經使用者核准**。
 
 ## Phase 3: 實作
 
-按計畫逐一實作邏輯單元。每單元完成後：`npx tsc --noEmit && npx ng lint`。不加計畫外功能，不改善相鄰程式碼。
+**執行者**：直接實作、scaffold 命令、或 `/execute-plan` skill（4+ 任務的 Tier 3 feature）
+
+按計畫（持久化於 `.claude/plans/<feature>.md`）逐一實作邏輯單元。每單元完成後：`npx tsc --noEmit && npx ng lint`。不加計畫外功能，不改善相鄰程式碼。
+
+### 任務 Context 模板（for subagent dispatch）
+
+當透過 Agent tool 分派 subagent 實作任務時，使用此模板構造 context：
+
+```markdown
+## Task: [任務名稱]
+## Plan file: .claude/plans/<feature>.md — Task N
+## 要建立/修改的檔案: [明確列表]
+## 此任務依賴的型別/介面:
+[從現有程式碼讀取相關型別定義，逐字貼入]
+## 範圍: [此任務做什麼]
+## 不在範圍內: [此任務不做什麼]
+## 驗證: [完成後執行的確切指令]
+## 專案慣例:
+- Standalone Components + OnPush
+- Signal 狀態管理：signal()、computed()、linkedSignal()、resource()
+- inject() 注入、input()/output()/model() 信號
+- Tailwind CSS v4 語法（見 rules/tailwind-patterns.md）
+- Vitest 測試、data-testid 屬性
+```
+
+**Context 構造規則**：
+- 只提供相關任務的計畫段落，不是整份計畫
+- 逐字包含依賴的型別定義（讀取後貼入）
+- 明確列出檔案路徑——不讓 subagent 猜測
+- 說明什麼不在範圍內以防止 scope creep
 
 ### 計畫變更協議
 
 **小變更**（相同檔案、相同元件、不同實作細節）：
-- 向使用者說明偏離，繼續實作
+- 向使用者說明偏離
+- 更新計畫檔案（`.claude/plans/<feature>.md`）in-place
+- 繼續實作
 - 例：「計畫用 signal()，但這裡更適合 linkedSignal()。改用 linkedSignal()。」
 
 **大變更**（新元件、新 service、路由變更、store 結構變更）：
 1. **立即停止**實作
 2. 執行 `/checkpoint` 儲存進度
 3. 描述什麼變了、為什麼
-4. 回到 Phase 2：產出更新後的計畫
+4. 回到 Phase 2：更新計畫檔案（`.claude/plans/<feature>.md`）in-place
 5. 取得使用者核准
 6. 從 checkpoint 繼續
 
@@ -57,7 +93,7 @@ npx tsc --noEmit && npx ng lint && npx vitest run && npx ng build
 - 效能疑慮 → `@performance-auditor`（條件）
 
 ### Step 3: 語意檢查（僅 Tier 3）
-對照計畫驗證：元件階層、Signal 類型、路由、元件 API、職責、範圍外
+讀取 `.claude/plans/<feature>.md` 持久化計畫檔案，對照實作驗證：元件階層、Signal 類型、路由、元件 API、職責、範圍外
 
 ### 完成標準
 全部通過才宣告完成：tsc、lint（零問題）、vitest、build、@code-reviewer 無 Critical、語意檢查（Tier 3）

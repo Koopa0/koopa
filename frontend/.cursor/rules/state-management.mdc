@@ -17,6 +17,7 @@ alwaysApply: false
 | 衍生狀態 | `computed()` | 篩選結果、計數 |
 | 可編輯衍生狀態 | `linkedSignal()` | 預設選項（可手動覆蓋） |
 | 功能/全域共享狀態 | NgRx Signals Store | 產品列表、使用者、主題 |
+| 非同步資料載入 | `resource()`（experimental） | API 回應載入（Developer Preview，API 可能變更） |
 | 伺服器快取 | `signal()` + HTTP | API 回應快取 |
 
 ## 何時用 Store

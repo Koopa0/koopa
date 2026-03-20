@@ -133,10 +133,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		}
 		port := envOr("MCP_PORT", "8081")
 
-		clientID := envOr("MCP_OAUTH_CLIENT_ID", "claude-ai")
-		clientSecret := envOr("MCP_OAUTH_CLIENT_SECRET", token)
-
-		oauth := newOAuthProvider(clientID, clientSecret, port)
+		oauth := newOAuthProvider(token)
 
 		handler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 			return server.MCPServer()
@@ -213,25 +210,25 @@ func bearerAuth(next http.Handler, oauth *oauthProvider) http.Handler {
 // --- Minimal OAuth 2.0 provider (client_credentials + authorization_code) ---
 
 type oauthProvider struct {
-	clientID     string
-	clientSecret string
-	baseURL      string
+	staticToken string // MCP_TOKEN — accepted directly as Bearer token
+	baseURL     string
 
-	mu     sync.Mutex
-	tokens map[string]time.Time // access_token → expiry
-	codes  map[string]time.Time // authorization_code → expiry
+	mu      sync.Mutex
+	clients map[string]string    // client_id → client_secret (dynamic registrations)
+	tokens  map[string]time.Time // access_token → expiry
+	codes   map[string]time.Time // authorization_code → expiry
 
 	done chan struct{} // signals cleanup goroutine to stop
 }
 
-func newOAuthProvider(clientID, clientSecret, port string) *oauthProvider {
+func newOAuthProvider(staticToken string) *oauthProvider {
 	o := &oauthProvider{
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		baseURL:      "https://mcp.koopa0.dev",
-		tokens:       make(map[string]time.Time),
-		codes:        make(map[string]time.Time),
-		done:         make(chan struct{}),
+		staticToken: staticToken,
+		baseURL:     "https://mcp.koopa0.dev",
+		clients:     make(map[string]string),
+		tokens:      make(map[string]time.Time),
+		codes:       make(map[string]time.Time),
+		done:        make(chan struct{}),
 	}
 	go o.cleanup()
 	return o
@@ -263,8 +260,8 @@ func (o *oauthProvider) cleanup() {
 }
 
 func (o *oauthProvider) validToken(tok string) bool {
-	// Accept static MCP_TOKEN (backwards compat with Claude Code).
-	if subtle.ConstantTimeCompare([]byte(tok), []byte(o.clientSecret)) == 1 {
+	// Accept static MCP_TOKEN (Bearer token from .mcp.json headers).
+	if subtle.ConstantTimeCompare([]byte(tok), []byte(o.staticToken)) == 1 {
 		return true
 	}
 	// Accept OAuth-issued tokens.
@@ -352,7 +349,10 @@ func (o *oauthProvider) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "redirect_uri not allowed", http.StatusBadRequest)
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(clientID), []byte(o.clientID)) != 1 {
+	o.mu.Lock()
+	_, knownClient := o.clients[clientID]
+	o.mu.Unlock()
+	if !knownClient {
 		http.Error(w, "invalid client_id", http.StatusBadRequest)
 		return
 	}
@@ -406,8 +406,7 @@ func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /oauth/register — dynamic client registration (MCP spec requirement).
-// For a personal server we just echo back the client_id.
-// NOTE: client_secret is intentionally NOT returned — it was leaked previously.
+// Each registration gets a unique client_id + client_secret pair.
 func (o *oauthProvider) register(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64 KB
 	var req struct {
@@ -418,10 +417,24 @@ func (o *oauthProvider) register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+
+	// Generate unique credentials per registration.
+	cidBytes := make([]byte, 16)
+	csecBytes := make([]byte, 32)
+	_, _ = rand.Read(cidBytes)
+	_, _ = rand.Read(csecBytes)
+	cid := hex.EncodeToString(cidBytes)
+	csec := hex.EncodeToString(csecBytes)
+
+	o.mu.Lock()
+	o.clients[cid] = csec
+	o.mu.Unlock()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"client_id":     o.clientID,
+		"client_id":     cid,
+		"client_secret": csec,
 		"redirect_uris": req.RedirectURIs,
 		"client_name":   req.ClientName,
 	})
@@ -434,8 +447,13 @@ func (o *oauthProvider) checkClientCredentials(r *http.Request) bool {
 		// Try HTTP Basic Auth.
 		cid, csec, _ = r.BasicAuth()
 	}
-	return subtle.ConstantTimeCompare([]byte(cid), []byte(o.clientID)) == 1 &&
-		subtle.ConstantTimeCompare([]byte(csec), []byte(o.clientSecret)) == 1
+	if cid == "" || csec == "" {
+		return false
+	}
+	o.mu.Lock()
+	storedSecret, ok := o.clients[cid]
+	o.mu.Unlock()
+	return ok && subtle.ConstantTimeCompare([]byte(csec), []byte(storedSecret)) == 1
 }
 
 func jsonError(w http.ResponseWriter, errCode string, status int) {

@@ -20,7 +20,7 @@ paths:
 
 | 項目 | 要求 |
 |------|------|
-| 變更偵測 | 所有元件 `ChangeDetectionStrategy.OnPush` |
+| 變更偵測 | 所有元件 `ChangeDetectionStrategy.OnPush`（v21 預設 zoneless，行為接近 OnPush，但仍明確標註以確保意圖明確） |
 | 路由載入 | 所有功能模組 `loadComponent` / `loadChildren` |
 | 非首屏內容 | 使用 `@defer` 延遲載入 |
 | 長列表（>50 筆） | CDK Virtual Scrolling |

@@ -131,12 +131,12 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 
 		if resp.StatusCode != http.StatusOK {
 			err := notionError(resp, "data source query "+dataSourceID)
-			resp.Body.Close() //nolint:errcheck,gosec // best-effort close
+			_ = resp.Body.Close() // #nosec G104 -- best-effort close
 			return nil, err
 		}
 		var qr databaseQueryResponse
 		decodeErr := json.NewDecoder(resp.Body).Decode(&qr)
-		resp.Body.Close() //nolint:errcheck,gosec // best-effort close on read-only HTTP response
+		_ = resp.Body.Close() // #nosec G104 -- best-effort close
 		if decodeErr != nil {
 			return nil, fmt.Errorf("decoding data source query response: %w", decodeErr)
 		}
@@ -444,7 +444,7 @@ func (c *Client) doWithRetry(ctx context.Context, method, url string, bodyFunc f
 		// Read Retry-After header before draining the body.
 		retryAfter := resp.Header.Get("Retry-After")
 		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close() //nolint:errcheck,gosec // best-effort close before retry
+		_ = resp.Body.Close() // #nosec G104 -- best-effort close before retry
 		lastErr = fmt.Errorf("notion api returned %d", resp.StatusCode)
 
 		if attempt < maxRetries-1 {

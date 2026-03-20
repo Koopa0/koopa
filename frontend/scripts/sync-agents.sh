@@ -21,7 +21,7 @@
 #
 # Source of truth:
 #   - .claude/rules/*.md       （13 個規範檔案）
-#   - .claude/skills/*/SKILL.md（22 個技能檔案）
+#   - .claude/skills/*/SKILL.md（27 個技能檔案）
 #
 # 修改 rules 或 skills 後執行此腳本即可同步所有平台。
 
@@ -134,6 +134,11 @@ CURSOR_ALWAYS_APPLY=(
 
 # 定義 skills 的合併順序（核心 → 元件 → 功能 → 工具）
 SKILL_ORDER=(
+  "checkpoint"
+  "debug"
+  "execute-plan"
+  "reflect"
+  "tdd"
   "angular-component"
   "angular-signals"
   "angular-forms"
@@ -165,6 +170,11 @@ SKILL_ORDER=(
 # Skills 顯示名稱對應
 declare -A SKILL_TITLES
 SKILL_TITLES=(
+  ["checkpoint"]="Git Checkpoint for WIP"
+  ["debug"]="Structured 4-Phase Debugging"
+  ["execute-plan"]="Execute Approved Plan"
+  ["reflect"]="Session Learnings Review"
+  ["tdd"]="Test-Driven Development Cycle"
   ["angular-component"]="Angular Component Creation"
   ["angular-signals"]="Angular Signal Primitives"
   ["angular-forms"]="Angular Reactive Forms"
@@ -217,7 +227,7 @@ for skill in "${SKILL_ORDER[@]}"; do
   skill_file="$SKILLS_DIR/$skill/SKILL.md"
   if [ -f "$skill_file" ]; then
     mkdir -p "$GEMINI_SKILLS_DIR/$skill"
-    cp "$skill_file" "$GEMINI_SKILLS_DIR/$skill/SKILL.md"
+    cp -f "$skill_file" "$GEMINI_SKILLS_DIR/$skill/SKILL.md" 2>/dev/null || true
     skill_sync_count=$((skill_sync_count + 1))
   else
     echo "   ⚠️  Warning: $skill_file not found" >&2
@@ -233,7 +243,7 @@ for skill in "${SKILL_ORDER[@]}"; do
   skill_file="$SKILLS_DIR/$skill/SKILL.md"
   if [ -f "$skill_file" ]; then
     mkdir -p "$AGENTS_SKILLS_DIR/$skill"
-    cp "$skill_file" "$AGENTS_SKILLS_DIR/$skill/SKILL.md"
+    cp -f "$skill_file" "$AGENTS_SKILLS_DIR/$skill/SKILL.md" 2>/dev/null || true
     agents_skill_count=$((agents_skill_count + 1))
   else
     echo "   ⚠️  Warning: $skill_file not found" >&2

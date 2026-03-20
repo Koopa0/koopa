@@ -66,6 +66,12 @@ Claude **必須**在以下情況自動委派：
 | `@architect` | opus | 重大架構決策（模組結構、狀態管理策略） |
 | `@doc-updater` | sonnet | 更新文件和 README |
 
+## Agent Memory
+
+Memory-enabled agents（comprehend、planner、code-reviewer、security-auditor、build-error-resolver）有 Write 工具權限，直接寫入自己的 `.claude/agent-memory/<agent>/` 檔案。無需委派。Planner 另可寫入 `.claude/plans/`。
+
+詳見 `.claude/agent-memory/README.md`。
+
 ## Context 管理
 
 - 複雜任務避免使用 context window 最後 20%

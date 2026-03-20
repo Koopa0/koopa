@@ -1,4 +1,4 @@
-# blog — Gemini CLI
+# go-spec — Gemini CLI
 
 This project uses `AGENTS.md` as the single source of truth for cross-agent Go conventions. Gemini CLI loads it via `.gemini/settings.json`.
 

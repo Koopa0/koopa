@@ -23,6 +23,7 @@ alwaysApply: true
 | 變更偵測 | `ChangeDetectionStrategy.OnPush` | Default |
 | Guard | `CanActivateFn` 等函式型 | class-based Guard |
 | Interceptor | `HttpInterceptorFn` | class-based Interceptor |
+| 查詢 | `viewChild()` / `viewChildren()` / `contentChild()` / `contentChildren()` | `@ViewChild` / `@ViewChildren` / `@ContentChild` / `@ContentChildren` |
 | RxJS 清理 | `takeUntilDestroyed()` | 手動 unsubscribe |
 
 ## 關鍵範例
@@ -52,6 +53,27 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   return next(token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req);
 };
 ```
+
+// Signal queries
+formEl = viewChild<ElementRef>('form');
+items = viewChildren(ItemComponent);
+header = contentChild(HeaderComponent);
+tabs = contentChildren(TabComponent);
+```
+
+## 實驗性 API（Developer Preview）
+
+以下 API 在 Angular v21 仍為 experimental，生產程式碼請謹慎使用：
+
+| API | 狀態 | 說明 |
+|-----|------|------|
+| `resource()` / `rxResource()` | Developer Preview | 非同步資料載入，API 可能變更 |
+| `httpResource()` | Developer Preview | HTTP 專用 resource，API 可能變更 |
+| Signal Forms (`@angular/forms/signals`) | Developer Preview | Signal-based 表單，API 可能變更 |
+
+> **注意**：v19+ `standalone: true` 為預設值，本專案明確寫出為專案慣例以確保一致性。
+
+> **注意**：v21 預設 zoneless（無 Zone.js），所有元件的變更偵測行為接近 OnPush。本專案仍要求明確標註 `ChangeDetectionStrategy.OnPush` 以確保向下相容和意圖明確。
 
 ```html
 <!-- 控制流 + @defer -->
