@@ -138,3 +138,15 @@ SELECT id, slug, title, description, long_description, role, tech_stack, highlig
        featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
        created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1);
+
+-- name: UpdateProjectStatus :one
+-- Update a project's status and optionally its description (review notes).
+UPDATE projects SET
+    status = @status::project_status,
+    description = COALESCE(sqlc.narg('description'), description),
+    updated_at = now()
+WHERE id = @id
+RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
+          problem, solution, architecture, results, github_url, live_url,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          created_at, updated_at;

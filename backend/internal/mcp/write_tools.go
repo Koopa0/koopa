@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/task"
 )
@@ -455,6 +456,131 @@ func (s *Server) resolveTask(ctx context.Context, taskID, taskTitle string) (*ta
 			len(matches), taskTitle, joinLines(titles))
 	}
 	return &matches[0], nil
+}
+
+// --- update_project_status ---
+
+// UpdateProjectStatusInput is the input for the update_project_status tool.
+type UpdateProjectStatusInput struct {
+	Project     string  `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
+	Status      string  `json:"status" jsonschema_description:"Planned, Doing, Ongoing, On Hold, or Done (required)"`
+	ReviewNotes *string `json:"review_notes,omitempty" jsonschema_description:"optional review notes to update description"`
+}
+
+// UpdateProjectStatusOutput is the output of the update_project_status tool.
+type UpdateProjectStatusOutput struct {
+	Slug   string `json:"slug"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
+
+func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest, input UpdateProjectStatusInput) (*mcp.CallToolResult, UpdateProjectStatusOutput, error) {
+	if input.Project == "" {
+		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("project is required")
+	}
+	if input.Status == "" {
+		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("status is required")
+	}
+
+	if s.projectWriter == nil {
+		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("project writer not configured")
+	}
+
+	proj, err := s.resolveProject(ctx, input.Project)
+	if err != nil {
+		return nil, UpdateProjectStatusOutput{}, err
+	}
+
+	status := mapInputProjectStatus(input.Status)
+	updated, err := s.projectWriter.UpdateStatus(ctx, proj.ID, status, input.ReviewNotes)
+	if err != nil {
+		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("updating project status: %w", err)
+	}
+
+	return nil, UpdateProjectStatusOutput{
+		Slug:   updated.Slug,
+		Title:  updated.Title,
+		Status: string(updated.Status),
+	}, nil
+}
+
+// --- update_goal_status ---
+
+// UpdateGoalStatusInput is the input for the update_goal_status tool.
+type UpdateGoalStatusInput struct {
+	GoalTitle string `json:"goal_title" jsonschema_description:"goal title (case-insensitive match, required)"`
+	Status    string `json:"status" jsonschema_description:"Dream, Active, Achieved, or Abandoned (required)"`
+}
+
+// UpdateGoalStatusOutput is the output of the update_goal_status tool.
+type UpdateGoalStatusOutput struct {
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Area   string `json:"area,omitempty"`
+}
+
+func (s *Server) updateGoalStatus(ctx context.Context, _ *mcp.CallToolRequest, input UpdateGoalStatusInput) (*mcp.CallToolResult, UpdateGoalStatusOutput, error) {
+	if input.GoalTitle == "" {
+		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("goal_title is required")
+	}
+	if input.Status == "" {
+		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("status is required")
+	}
+
+	if s.goalWriter == nil {
+		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("goal writer not configured")
+	}
+
+	g, err := s.goals.GoalByTitle(ctx, input.GoalTitle)
+	if err != nil {
+		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("goal %q not found", input.GoalTitle)
+	}
+
+	status := mapInputGoalStatus(input.Status)
+	updated, err := s.goalWriter.UpdateStatus(ctx, g.ID, status)
+	if err != nil {
+		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("updating goal status: %w", err)
+	}
+
+	return nil, UpdateGoalStatusOutput{
+		Title:  updated.Title,
+		Status: string(updated.Status),
+		Area:   updated.Area,
+	}, nil
+}
+
+func mapInputProjectStatus(s string) project.Status {
+	switch s {
+	case "Planned", "planned":
+		return project.StatusPlanned
+	case "Doing", "In Progress", "in-progress":
+		return project.StatusInProgress
+	case "On Hold", "on-hold":
+		return project.StatusOnHold
+	case "Ongoing", "maintained":
+		return project.StatusMaintained
+	case "Done", "Completed", "completed":
+		return project.StatusCompleted
+	case "Archived", "archived":
+		return project.StatusArchived
+	default:
+		return project.StatusInProgress
+	}
+}
+
+func mapInputGoalStatus(s string) goal.Status {
+	switch s {
+	case "Dream", "Not Started", "not-started":
+		return goal.StatusNotStarted
+	case "Active", "In Progress", "in-progress":
+		return goal.StatusInProgress
+	case "Achieved", "Done", "done":
+		return goal.StatusDone
+	case "Abandoned", "abandoned":
+		return goal.StatusAbandoned
+	default:
+		return goal.StatusNotStarted
+	}
 }
 
 func (s *Server) resolveTaskDBID(ctx context.Context) (string, error) {

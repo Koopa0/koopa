@@ -2096,6 +2096,31 @@ func (q *Queries) GoalByNotionPageID(ctx context.Context, notionPageID *string) 
 	return i, err
 }
 
+const goalByTitle = `-- name: GoalByTitle :one
+SELECT id, title, description, status, area, quarter, deadline,
+       notion_page_id, created_at, updated_at
+FROM goals WHERE LOWER(title) = LOWER($1)
+`
+
+// Find a goal by case-insensitive title match.
+func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
+	row := q.db.QueryRow(ctx, goalByTitle, title)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Area,
+		&i.Quarter,
+		&i.Deadline,
+		&i.NotionPageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const goals = `-- name: Goals :many
 SELECT id, title, description, status, area, quarter, deadline,
        notion_page_id, created_at, updated_at
@@ -2294,6 +2319,58 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 	var rejected bool
 	err := row.Scan(&rejected)
 	return rejected, err
+}
+
+const latestCollectedData = `-- name: LatestCollectedData :many
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE ($1::timestamptz IS NULL OR collected_at >= $1)
+ORDER BY collected_at DESC
+LIMIT $2
+`
+
+type LatestCollectedDataParams struct {
+	Since      *time.Time `json:"since"`
+	MaxResults int32      `json:"max_results"`
+}
+
+// Get latest collected data, optionally filtered by time range.
+// When days is NULL, returns the latest N items regardless of time.
+func (q *Queries) LatestCollectedData(ctx context.Context, arg LatestCollectedDataParams) ([]CollectedDatum, error) {
+	rows, err := q.db.Query(ctx, latestCollectedData, arg.Since, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CollectedDatum{}
+	for rows.Next() {
+		var i CollectedDatum
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceUrl,
+			&i.SourceName,
+			&i.Title,
+			&i.OriginalContent,
+			&i.RelevanceScore,
+			&i.Topics,
+			&i.Status,
+			&i.CuratedContentID,
+			&i.CollectedAt,
+			&i.UrlHash,
+			&i.UserFeedback,
+			&i.FeedbackAt,
+			&i.FeedID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const latestCompletedRunByContentAndFlow = `-- name: LatestCompletedRunByContentAndFlow :one
@@ -3957,6 +4034,86 @@ func (q *Queries) SearchContentsCount(ctx context.Context, websearchToTsquery st
 	return count, err
 }
 
+const searchContentsOR = `-- name: SearchContentsOR :many
+SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
+       series_id, series_order, review_level, ai_metadata, reading_time,
+       cover_image, published_at, created_at, updated_at
+FROM contents
+WHERE status = 'published'
+  AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
+ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
+LIMIT $2 OFFSET $3
+`
+
+type SearchContentsORParams struct {
+	PlaintoTsquery string `json:"plainto_tsquery"`
+	Limit          int32  `json:"limit"`
+	Offset         int32  `json:"offset"`
+}
+
+type SearchContentsORRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Excerpt     string          `json:"excerpt"`
+	Type        ContentType     `json:"type"`
+	Status      ContentStatus   `json:"status"`
+	Tags        []string        `json:"tags"`
+	Source      *string         `json:"source"`
+	SourceType  NullSourceType  `json:"source_type"`
+	SeriesID    *string         `json:"series_id"`
+	SeriesOrder *int32          `json:"series_order"`
+	ReviewLevel ReviewLevel     `json:"review_level"`
+	AiMetadata  json.RawMessage `json:"ai_metadata"`
+	ReadingTime int32           `json:"reading_time"`
+	CoverImage  *string         `json:"cover_image"`
+	PublishedAt *time.Time      `json:"published_at"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+// Fallback search using OR semantics: splits query into words and matches any.
+func (q *Queries) SearchContentsOR(ctx context.Context, arg SearchContentsORParams) ([]SearchContentsORRow, error) {
+	rows, err := q.db.Query(ctx, searchContentsOR, arg.PlaintoTsquery, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchContentsORRow{}
+	for rows.Next() {
+		var i SearchContentsORRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Body,
+			&i.Excerpt,
+			&i.Type,
+			&i.Status,
+			&i.Tags,
+			&i.Source,
+			&i.SourceType,
+			&i.SeriesID,
+			&i.SeriesOrder,
+			&i.ReviewLevel,
+			&i.AiMetadata,
+			&i.ReadingTime,
+			&i.CoverImage,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchNotesByFilters = `-- name: SearchNotesByFilters :many
 SELECT id, file_path, title, type, source, context, status, tags,
        difficulty, book, chapter, content_text, synced_at
@@ -4926,6 +5083,39 @@ func (q *Queries) UpdateFlowRunRunning(ctx context.Context, id uuid.UUID) error 
 	return err
 }
 
+const updateGoalStatus = `-- name: UpdateGoalStatus :one
+UPDATE goals SET
+    status = $1::goal_status,
+    updated_at = now()
+WHERE id = $2
+RETURNING id, title, description, status, area, quarter, deadline,
+          notion_page_id, created_at, updated_at
+`
+
+type UpdateGoalStatusParams struct {
+	Status GoalStatus `json:"status"`
+	ID     uuid.UUID  `json:"id"`
+}
+
+// Update a goal's status.
+func (q *Queries) UpdateGoalStatus(ctx context.Context, arg UpdateGoalStatusParams) (Goal, error) {
+	row := q.db.QueryRow(ctx, updateGoalStatus, arg.Status, arg.ID)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Area,
+		&i.Quarter,
+		&i.Deadline,
+		&i.NotionPageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateProject = `-- name: UpdateProject :one
 UPDATE projects SET
     slug = COALESCE($2, slug),
@@ -5034,6 +5224,58 @@ WHERE notion_page_id = $1
 func (q *Queries) UpdateProjectLastActivity(ctx context.Context, notionPageID *string) error {
 	_, err := q.db.Exec(ctx, updateProjectLastActivity, notionPageID)
 	return err
+}
+
+const updateProjectStatus = `-- name: UpdateProjectStatus :one
+UPDATE projects SET
+    status = $1::project_status,
+    description = COALESCE($2, description),
+    updated_at = now()
+WHERE id = $3
+RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
+          problem, solution, architecture, results, github_url, live_url,
+          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          created_at, updated_at
+`
+
+type UpdateProjectStatusParams struct {
+	Status      ProjectStatus `json:"status"`
+	Description *string       `json:"description"`
+	ID          uuid.UUID     `json:"id"`
+}
+
+// Update a project's status and optionally its description (review notes).
+func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStatusParams) (Project, error) {
+	row := q.db.QueryRow(ctx, updateProjectStatus, arg.Status, arg.Description, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.LongDescription,
+		&i.Role,
+		&i.TechStack,
+		&i.Highlights,
+		&i.Problem,
+		&i.Solution,
+		&i.Architecture,
+		&i.Results,
+		&i.GithubUrl,
+		&i.LiveUrl,
+		&i.Featured,
+		&i.Public,
+		&i.SortOrder,
+		&i.Status,
+		&i.NotionPageID,
+		&i.Repo,
+		&i.Area,
+		&i.Deadline,
+		&i.LastActivityAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateSource = `-- name: UpdateSource :one

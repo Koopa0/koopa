@@ -57,6 +57,17 @@ SELECT COUNT(*) FROM contents
 WHERE status = 'published'
   AND search_vector @@ websearch_to_tsquery('simple', $1);
 
+-- name: SearchContentsOR :many
+-- Fallback search using OR semantics: splits query into words and matches any.
+SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
+       series_id, series_order, review_level, ai_metadata, reading_time,
+       cover_image, published_at, created_at, updated_at
+FROM contents
+WHERE status = 'published'
+  AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
+ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
+LIMIT $2 OFFSET $3;
+
 -- name: PublishedForRSS :many
 SELECT id, slug, title, excerpt, type, published_at, updated_at
 FROM contents

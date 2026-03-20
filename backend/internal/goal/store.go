@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/koopa0/blog-backend/internal/db"
 )
 
@@ -84,6 +86,29 @@ func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (in
 		return 0, fmt.Errorf("archiving orphan notion goals: %w", err)
 	}
 	return n, nil
+}
+
+// GoalByTitle returns a goal by case-insensitive title match.
+func (s *Store) GoalByTitle(ctx context.Context, title string) (*Goal, error) {
+	r, err := s.q.GoalByTitle(ctx, title)
+	if err != nil {
+		return nil, fmt.Errorf("querying goal by title %q: %w", title, err)
+	}
+	g := rowToGoal(r)
+	return &g, nil
+}
+
+// UpdateStatus updates a goal's status.
+func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (*Goal, error) {
+	r, err := s.q.UpdateGoalStatus(ctx, db.UpdateGoalStatusParams{
+		ID:     id,
+		Status: db.GoalStatus(status),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("updating goal %s status: %w", id, err)
+	}
+	g := rowToGoal(r)
+	return &g, nil
 }
 
 func rowToGoal(r db.Goal) Goal {

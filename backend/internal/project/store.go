@@ -316,6 +316,23 @@ func (s *Store) ActiveSlugsWithRepo(ctx context.Context) ([]string, error) {
 	return slugs, nil
 }
 
+// UpdateStatus updates a project's status and optionally its description.
+func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, description *string) (*Project, error) {
+	r, err := s.q.UpdateProjectStatus(ctx, db.UpdateProjectStatusParams{
+		ID:          id,
+		Status:      db.ProjectStatus(status),
+		Description: description,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("updating project %s status: %w", id, err)
+	}
+	p := rowToProject(r)
+	return &p, nil
+}
+
 func rowToProject(r db.Project) Project {
 	return Project{
 		ID:              r.ID,

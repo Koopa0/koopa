@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -17,20 +18,24 @@ import (
 
 // Server is the MCP server exposing knowledge tools.
 type Server struct {
-	server        *mcp.Server
-	notes         NoteSearcher
-	activity      ActivityReader
-	projects      ProjectReader
-	collected     CollectedReader
-	stats         StatsReader
-	tasks         TaskReader
-	taskWriter    TaskWriter
-	contents      ContentReader
-	contentWriter ContentWriter
-	goals         GoalReader
-	notionTasks    NotionTaskWriter
-	taskDBResolver TaskDBIDResolver
-	logger        *slog.Logger
+	server          *mcp.Server
+	notes           NoteSearcher
+	activity        ActivityReader
+	projects        ProjectReader
+	collected       CollectedReader
+	collectedLatest CollectedLatestReader
+	stats           StatsReader
+	tasks           TaskReader
+	taskWriter      TaskWriter
+	contents        ContentReader
+	contentSearcher ContentSearcher
+	contentWriter   ContentWriter
+	goals           GoalReader
+	goalWriter      GoalWriter
+	projectWriter   ProjectWriter
+	notionTasks     NotionTaskWriter
+	taskDBResolver  TaskDBIDResolver
+	logger          *slog.Logger
 }
 
 // ServerOption configures optional Server dependencies.
@@ -42,6 +47,26 @@ func WithNotionTaskWriter(n NotionTaskWriter, resolver TaskDBIDResolver) ServerO
 		s.notionTasks = n
 		s.taskDBResolver = resolver
 	}
+}
+
+// WithGoalWriter enables goal status update tools.
+func WithGoalWriter(w GoalWriter) ServerOption {
+	return func(s *Server) { s.goalWriter = w }
+}
+
+// WithProjectWriter enables project status update tools.
+func WithProjectWriter(w ProjectWriter) ServerOption {
+	return func(s *Server) { s.projectWriter = w }
+}
+
+// WithCollectedLatest enables time-optional collected data queries.
+func WithCollectedLatest(r CollectedLatestReader) ServerOption {
+	return func(s *Server) { s.collectedLatest = r }
+}
+
+// WithContentSearcher enables OR-fallback search.
+func WithContentSearcher(cs ContentSearcher) ServerOption {
+	return func(s *Server) { s.contentSearcher = cs }
 }
 
 // NewServer creates an MCP server with all tools registered.
@@ -176,6 +201,21 @@ func NewServer(
 		Name:        "log_learning_session",
 		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Use after completing a learning discussion when the user gained new insight, finished a problem, or completed study material. Captures the knowledge for future retrieval via search_knowledge.",
 	}, s.logLearningSession)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "update_project_status",
+		Description: "Update a project's status during weekly or monthly review. Use when the user says 'put this project on hold', 'mark as done', '這個 project 暫停', or discusses project lifecycle changes. Supports optional review notes.",
+	}, s.updateProjectStatus)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "update_goal_status",
+		Description: "Update a goal's status. Use when the user says 'this goal is now active', 'achieved', '這個目標完成了', or discusses goal progress changes. Maps to Dream (not-started), Active (in-progress), Achieved (done), Abandoned.",
+	}, s.updateGoalStatus)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_morning_context",
+		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, and active goals. Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session.",
+	}, s.getMorningContext)
 
 	return s
 }
@@ -482,10 +522,23 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	days := clamp(input.Days, 1, 365, 7)
 	limit := clamp(input.Limit, 1, 100, 20)
 
-	now := time.Now()
-	start := now.AddDate(0, 0, -days)
+	// Prefer LatestCollectedData (no mandatory time constraint) if available.
+	// Falls back to RecentCollectedData with time range if not.
+	var data []collected.CollectedData
+	var err error
 
-	data, err := s.collected.RecentCollectedData(ctx, start, now, int32(limit)) // #nosec G115 -- limit is clamped 1-50
+	if s.collectedLatest != nil {
+		since := time.Now().AddDate(0, 0, -days)
+		data, err = s.collectedLatest.LatestCollectedData(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
+		// If time-filtered query returns nothing, retry without time constraint
+		if err == nil && len(data) == 0 {
+			data, err = s.collectedLatest.LatestCollectedData(ctx, nil, int32(limit)) // #nosec G115
+		}
+	} else {
+		now := time.Now()
+		start := now.AddDate(0, 0, -days)
+		data, err = s.collected.RecentCollectedData(ctx, start, now, int32(limit)) // #nosec G115
+	}
 	if err != nil {
 		return nil, RSSHighlightsOutput{}, fmt.Errorf("querying rss highlights: %w", err)
 	}
@@ -652,6 +705,10 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	go func() {
 		contents, _, err := s.contents.Search(ctx, input.Query, 1, limit)
+		// AND→OR fallback: if AND search returns 0 results, try OR semantics
+		if err == nil && len(contents) == 0 && s.contentSearcher != nil {
+			contents, _, err = s.contentSearcher.SearchOR(ctx, input.Query, 1, limit)
+		}
 		contentCh <- contentResult{contents, err}
 	}()
 

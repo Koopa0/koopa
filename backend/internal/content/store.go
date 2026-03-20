@@ -213,6 +213,28 @@ func (s *Store) Search(ctx context.Context, query string, page, perPage int) ([]
 	return contents, int(count), nil
 }
 
+// SearchOR performs full-text search using OR semantics (any word matches).
+func (s *Store) SearchOR(ctx context.Context, query string, page, perPage int) ([]Content, int, error) {
+	rows, err := s.q.SearchContentsOR(ctx, db.SearchContentsORParams{
+		PlaintoTsquery: query,
+		Limit:          int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
+		Offset:         int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("searching contents (OR): %w", err)
+	}
+
+	contents := make([]Content, len(rows))
+	for i, r := range rows {
+		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
+			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
+			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	}
+
+	return contents, len(contents), nil
+}
+
 // PublishedForRSS returns recent published content for RSS feed.
 func (s *Store) PublishedForRSS(ctx context.Context, limit int) ([]Content, error) {
 	rows, err := s.q.PublishedForRSS(ctx, int32(limit)) // #nosec G115 -- RSS limit is a small constant, not user-controlled

@@ -80,6 +80,10 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	taskStore := task.NewStore(pool)
 
 	notionStore := notion.NewStore(pool)
+	projectStore := project.NewStore(pool)
+	goalStore := goal.NewStore(pool)
+	collectedStore := collected.NewStore(pool)
+
 	var opts []mcpserver.ServerOption
 	notionKey := os.Getenv("NOTION_API_KEY")
 	if notionKey != "" {
@@ -91,18 +95,24 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	} else {
 		logger.Warn("NOTION_API_KEY not set — create_task and complete_task will be unavailable")
 	}
+	opts = append(opts,
+		mcpserver.WithGoalWriter(goalStore),
+		mcpserver.WithProjectWriter(projectStore),
+		mcpserver.WithCollectedLatest(collectedStore),
+		mcpserver.WithContentSearcher(contentStore),
+	)
 
 	server := mcpserver.NewServer(
 		note.NewStore(pool),
 		activity.NewStore(pool),
-		project.NewStore(pool),
-		collected.NewStore(pool),
+		projectStore,
+		collectedStore,
 		stats.NewStore(pool),
 		taskStore,
 		taskStore,
 		contentStore,
 		contentStore,
-		goal.NewStore(pool),
+		goalStore,
 		logger,
 		opts...,
 	)
@@ -137,7 +147,17 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "https://koopa0.dev/favicon.ico", http.StatusMovedPermanently)
 		})
-		mux.HandleFunc("GET /.well-known/oauth-authorization-server", oauth.metadata)
+		mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+			// Claude Code CLI sends Authorization header — it already has a Bearer token
+			// and doesn't need OAuth discovery. Return 404 so it skips OAuth flow
+			// and uses the Bearer token directly. Claude.ai web doesn't send
+			// Authorization on this endpoint, so OAuth flow works normally for it.
+			if r.Header.Get("Authorization") != "" {
+				http.NotFound(w, r)
+				return
+			}
+			oauth.metadata(w, r)
+		})
 		mux.HandleFunc("/oauth/authorize", oauth.authorize)
 		mux.HandleFunc("POST /oauth/token", oauth.token)
 		mux.HandleFunc("POST /oauth/register", oauth.register)

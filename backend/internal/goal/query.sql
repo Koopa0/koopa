@@ -35,3 +35,18 @@ UPDATE goals SET status = 'abandoned', updated_at = now()
 WHERE notion_page_id IS NOT NULL
   AND notion_page_id != ALL(@active_ids::text[])
   AND status != 'abandoned';
+
+-- name: UpdateGoalStatus :one
+-- Update a goal's status.
+UPDATE goals SET
+    status = @status::goal_status,
+    updated_at = now()
+WHERE id = @id
+RETURNING id, title, description, status, area, quarter, deadline,
+          notion_page_id, created_at, updated_at;
+
+-- name: GoalByTitle :one
+-- Find a goal by case-insensitive title match.
+SELECT id, title, description, status, area, quarter, deadline,
+       notion_page_id, created_at, updated_at
+FROM goals WHERE LOWER(title) = LOWER(@title);

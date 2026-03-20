@@ -154,6 +154,23 @@ func (s *Store) RecentCollectedData(ctx context.Context, start, end time.Time, l
 	return data, nil
 }
 
+// LatestCollectedData returns the latest collected data, optionally filtered by a since timestamp.
+// When since is nil, returns the latest maxResults items regardless of time.
+func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]CollectedData, error) {
+	rows, err := s.q.LatestCollectedData(ctx, db.LatestCollectedDataParams{
+		Since:      since,
+		MaxResults: maxResults,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing latest collected data: %w", err)
+	}
+	data := make([]CollectedData, len(rows))
+	for i, r := range rows {
+		data[i] = datumToCollectedData(r)
+	}
+	return data, nil
+}
+
 // datumToCollectedData converts a db.CollectedDatum to CollectedData.
 func datumToCollectedData(r db.CollectedDatum) CollectedData {
 	return CollectedData{

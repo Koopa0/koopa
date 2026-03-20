@@ -51,3 +51,14 @@ FROM collected_data
 WHERE collected_at >= $1 AND collected_at < $2
 ORDER BY collected_at DESC
 LIMIT $3;
+
+-- name: LatestCollectedData :many
+-- Get latest collected data, optionally filtered by time range.
+-- When days is NULL, returns the latest N items regardless of time.
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE (sqlc.narg('since')::timestamptz IS NULL OR collected_at >= sqlc.narg('since'))
+ORDER BY collected_at DESC
+LIMIT @max_results;

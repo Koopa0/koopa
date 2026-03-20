@@ -102,6 +102,27 @@ type ContentWriter interface {
 // GoalReader provides goal queries for MCP tools.
 type GoalReader interface {
 	Goals(ctx context.Context) ([]goal.Goal, error)
+	GoalByTitle(ctx context.Context, title string) (*goal.Goal, error)
+}
+
+// GoalWriter provides goal mutations for MCP tools.
+type GoalWriter interface {
+	UpdateStatus(ctx context.Context, id uuid.UUID, status goal.Status) (*goal.Goal, error)
+}
+
+// ProjectWriter provides project mutations for MCP tools.
+type ProjectWriter interface {
+	UpdateStatus(ctx context.Context, id uuid.UUID, status project.Status, description *string) (*project.Project, error)
+}
+
+// CollectedLatestReader provides latest collected data without mandatory time bounds.
+type CollectedLatestReader interface {
+	LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]collected.CollectedData, error)
+}
+
+// ContentSearcher extends ContentReader with OR-fallback search.
+type ContentSearcher interface {
+	SearchOR(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)
 }
 
 // searchResultEntry is a note with a combined RRF score for merged search results.
