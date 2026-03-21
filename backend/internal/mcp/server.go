@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -421,13 +422,13 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 	}
 
-	events, err := s.activity.EventsByProject(ctx, proj.Title, 20)
+	events, err := s.activity.EventsByProject(ctx, proj.Slug, 20)
 	if err != nil {
-		s.logger.Error("fetching project activity", "project", proj.Title, "error", err)
+		s.logger.Error("fetching project activity", "project", proj.Slug, "error", err)
 		events = nil
 	}
 
-	relatedNotes, err := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &proj.Title}, 10)
+	relatedNotes, err := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &proj.Slug}, 10)
 	if err != nil {
 		s.logger.Error("fetching related notes", "project", proj.Title, "error", err)
 		relatedNotes = nil
@@ -1279,6 +1280,25 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// extractFrontmatter extracts a value from loose frontmatter lines like "key: value".
+// Returns empty string if the key is not found — safe for bodies without frontmatter.
+func extractFrontmatter(body, key string) string {
+	for _, line := range strings.SplitN(body, "\n", 20) {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "---" {
+			continue
+		}
+		// Stop at first markdown heading — past frontmatter zone
+		if len(line) > 0 && line[0] == '#' {
+			break
+		}
+		if k, v, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(k) == key {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func truncate(s string, maxLen int) string {

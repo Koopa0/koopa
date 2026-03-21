@@ -6,7 +6,7 @@ import {
   OnInit,
   DestroyRef,
 } from '@angular/core';
-import { DatePipe } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -56,7 +56,6 @@ const SCHEDULE_OPTIONS = [
   selector: 'app-tracking',
   standalone: true,
   imports: [
-    DatePipe,
     FormsModule,
     LucideAngularModule,
     DeleteConfirmDialogComponent,

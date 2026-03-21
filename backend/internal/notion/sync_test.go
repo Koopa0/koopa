@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/dgraph-io/ristretto/v2"
 	"github.com/google/go-cmp/cmp"
@@ -241,45 +240,34 @@ func TestBuildSourceID(t *testing.T) {
 		name   string
 		pageID string
 		status string
-		now    time.Time
 		want   string
 	}{
 		{
 			name:   "basic",
 			pageID: "abc",
 			status: "done",
-			now:    time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC),
-			want:   "abc:done:2026-03-19",
+			want:   "abc:done",
 		},
 		{
 			name:   "same page different status",
 			pageID: "abc",
 			status: "in-progress",
-			now:    time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC),
-			want:   "abc:in-progress:2026-03-19",
-		},
-		{
-			name:   "same page same status next day",
-			pageID: "abc",
-			status: "done",
-			now:    time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC),
-			want:   "abc:done:2026-03-20",
+			want:   "abc:in-progress",
 		},
 		{
 			name:   "uuid page id",
 			pageID: validPageIDForTest,
 			status: "planned",
-			now:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			want:   validPageIDForTest + ":planned:2026-01-01",
+			want:   validPageIDForTest + ":planned",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildSourceID(tt.pageID, tt.status, tt.now)
+			got := buildSourceID(tt.pageID, tt.status)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("buildSourceID(%q, %q, %v) mismatch (-want +got):\n%s", tt.pageID, tt.status, tt.now, diff)
+				t.Errorf("buildSourceID(%q, %q) mismatch (-want +got):\n%s", tt.pageID, tt.status, diff)
 			}
 		})
 	}

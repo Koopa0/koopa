@@ -14,9 +14,10 @@ import (
 )
 
 // buildSourceID creates a dedup key for Notion activity events.
-// Format: pageID:status:YYYY-MM-DD — same page+status+day deduplicates.
-func buildSourceID(pageID, status string, now time.Time) string {
-	return pageID + ":" + status + ":" + now.Format("2006-01-02")
+// Format: pageID:status — only status changes produce new events.
+// The DB unique index (source, event_type, source_id) handles dedup.
+func buildSourceID(pageID, status string) string {
+	return pageID + ":" + status
 }
 
 // syncProject fetches a Notion page by ID and upserts it. Used by webhooks.
@@ -85,7 +86,7 @@ func (h *Handler) upsertProject(ctx context.Context, pageID string, props map[st
 	// Record activity event (best-effort)
 	if h.events != nil {
 		now := time.Now()
-		sourceID := buildSourceID(pageID, string(localStatus), now)
+		sourceID := buildSourceID(pageID, string(localStatus))
 		metadata, _ := json.Marshal(map[string]string{
 			"status": string(localStatus),
 			"title":  title,
@@ -213,7 +214,7 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 	// Record activity event for ALL status changes (best-effort)
 	if h.events != nil {
 		now := time.Now()
-		sourceID := buildSourceID(pageID, status, now)
+		sourceID := buildSourceID(pageID, status)
 		meta := map[string]string{
 			"status": status,
 			"title":  title,
@@ -265,7 +266,7 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 	// Record activity event for ALL book status changes (best-effort)
 	if h.events != nil {
 		now := time.Now()
-		sourceID := buildSourceID(pageID, status, now)
+		sourceID := buildSourceID(pageID, status)
 		metadata, _ := json.Marshal(map[string]string{
 			"status": status,
 			"title":  title,
@@ -379,7 +380,7 @@ func (h *Handler) upsertGoal(ctx context.Context, pageID string, props map[strin
 	// Record activity event (best-effort)
 	if h.events != nil {
 		now := time.Now()
-		sourceID := buildSourceID(pageID, string(localStatus), now)
+		sourceID := buildSourceID(pageID, string(localStatus))
 		metadata, _ := json.Marshal(map[string]string{
 			"status": string(localStatus),
 			"area":   area,

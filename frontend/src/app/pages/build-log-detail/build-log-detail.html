@@ -43,7 +43,7 @@
           class="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-400 ring-1 ring-indigo-500/20"
         >
           <lucide-icon [img]="HammerIcon" [size]="12" />
-          {{ sessionTypeLabels[sessionType] ?? sessionType }}
+          {{ sessionTypeLabels[sessionType] || sessionType }}
         </span>
         } @if (meta().project; as project) {
         <span

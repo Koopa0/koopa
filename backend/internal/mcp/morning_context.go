@@ -59,10 +59,11 @@ type activitySummary struct {
 }
 
 type buildLogBrief struct {
-	Slug      string `json:"slug"`
-	Title     string `json:"title"`
-	CreatedAt string `json:"created_at"`
-	Excerpt   string `json:"excerpt"`
+	Slug        string `json:"slug"`
+	Title       string `json:"title"`
+	Project     string `json:"project,omitempty"`
+	SessionType string `json:"session_type,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type projectHealth struct {
@@ -169,23 +170,20 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		out.RecentActivity = summary
 	}
 
-	// --- Build logs (recent content type=build-log) ---
+	// --- Build logs (recent content type=build-log, slim for morning planning) ---
 	buildLogStart := now.AddDate(0, 0, -buildLogDays)
-	buildLogs, err := s.contents.RecentByType(ctx, "build-log", buildLogStart, 10)
+	buildLogs, err := s.contents.RecentByType(ctx, "build-log", buildLogStart, 3)
 	if err != nil {
 		s.logger.Error("morning_context: build logs", "error", err)
 	}
 	out.RecentBuildLogs = make([]buildLogBrief, 0, len(buildLogs))
 	for _, c := range buildLogs {
-		excerpt := c.Excerpt
-		if excerpt == "" {
-			excerpt = truncate(c.Body, 300)
-		}
 		out.RecentBuildLogs = append(out.RecentBuildLogs, buildLogBrief{
-			Slug:      c.Slug,
-			Title:     c.Title,
-			CreatedAt: c.CreatedAt.Format(time.DateOnly),
-			Excerpt:   excerpt,
+			Slug:        c.Slug,
+			Title:       c.Title,
+			Project:     extractFrontmatter(c.Body, "project"),
+			SessionType: extractFrontmatter(c.Body, "session_type"),
+			CreatedAt:   c.CreatedAt.Format(time.DateOnly),
 		})
 	}
 

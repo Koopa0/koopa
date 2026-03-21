@@ -89,7 +89,8 @@ export class TodayComponent implements OnInit {
     if (!task.due) return 0;
     const due = new Date(task.due + 'T00:00:00');
     const now = new Date(this.today + 'T00:00:00');
-    return Math.floor((now.getTime() - due.getTime()) / 86400000);
+    const days = Math.floor((now.getTime() - due.getTime()) / 86400000);
+    return Number.isNaN(days) ? 0 : days;
   }
 
   protected priorityClass(priority: string): string {

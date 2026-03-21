@@ -295,8 +295,8 @@ type BatchMyDayOutput struct {
 }
 
 func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input BatchMyDayInput) (*mcp.CallToolResult, BatchMyDayOutput, error) {
-	if len(input.TaskIDs) == 0 {
-		return nil, BatchMyDayOutput{}, fmt.Errorf("task_ids is required")
+	if len(input.TaskIDs) == 0 && !input.Clear {
+		return nil, BatchMyDayOutput{}, fmt.Errorf("task_ids is required (or set clear: true)")
 	}
 
 	var out BatchMyDayOutput
@@ -430,12 +430,14 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 // --- save_session_note ---
 
 // SaveSessionNoteInput is the input for the save_session_note tool.
+// Metadata uses map[string]any so the MCP JSON Schema renders as an object
+// (json.RawMessage would serialize as array[integer] — a bare byte slice).
 type SaveSessionNoteInput struct {
-	NoteType string          `json:"note_type" jsonschema_description:"plan, reflection, context, or metrics (required)"`
-	Content  string          `json:"content" jsonschema_description:"note content text (required)"`
-	Source   string          `json:"source" jsonschema_description:"claude, claude-code, or manual (required)"`
-	Date     string          `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
-	Metadata json.RawMessage `json:"metadata,omitempty" jsonschema_description:"optional JSON metadata (e.g. plan metrics)"`
+	NoteType string         `json:"note_type" jsonschema_description:"plan, reflection, context, or metrics (required)"`
+	Content  string         `json:"content" jsonschema_description:"note content text (required)"`
+	Source   string         `json:"source" jsonschema_description:"claude, claude-code, or manual (required)"`
+	Date     string         `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
+	Metadata map[string]any `json:"metadata,omitempty" jsonschema_description:"optional JSON metadata object (e.g. {tasks_planned: 3, tasks_completed: 1, completion_rate: 33})"`
 }
 
 // SaveSessionNoteOutput is the output of the save_session_note tool.
@@ -483,12 +485,21 @@ func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, in
 		noteDate = parsed
 	}
 
+	var metadataJSON json.RawMessage
+	if len(input.Metadata) > 0 {
+		var marshalErr error
+		metadataJSON, marshalErr = json.Marshal(input.Metadata)
+		if marshalErr != nil {
+			return nil, SaveSessionNoteOutput{}, fmt.Errorf("marshaling metadata: %w", marshalErr)
+		}
+	}
+
 	created, err := s.sessionWriter.CreateNote(ctx, session.CreateParams{
 		NoteDate: noteDate,
 		NoteType: input.NoteType,
 		Source:   input.Source,
 		Content:  input.Content,
-		Metadata: input.Metadata,
+		Metadata: metadataJSON,
 	})
 	if err != nil {
 		return nil, SaveSessionNoteOutput{}, fmt.Errorf("saving session note: %w", err)
