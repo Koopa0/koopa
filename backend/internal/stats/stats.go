@@ -11,7 +11,6 @@ type Overview struct {
 	Reviews   ReviewStats    `json:"reviews"`
 	Notes     NoteStats      `json:"notes"`
 	Activity  ActivityStats  `json:"activity"`
-	Spaced    SpacedStats    `json:"spaced"`
 	Sources   SourceStats    `json:"sources"`
 	Tags      TagStats       `json:"tags"`
 }
@@ -68,12 +67,6 @@ type ActivityStats struct {
 	BySource map[string]int `json:"by_source"`
 }
 
-// SpacedStats holds spaced repetition stats.
-type SpacedStats struct {
-	Enrolled int `json:"enrolled"`
-	Due      int `json:"due"`
-}
-
 // SourceStats holds Notion source registry stats.
 type SourceStats struct {
 	Total   int `json:"total"`
@@ -105,7 +98,6 @@ type AreaDrift struct {
 
 // LearningDashboard aggregates learning-related metrics.
 type LearningDashboard struct {
-	Spaced   SpacedStats    `json:"spaced"`
 	Notes    NoteGrowth     `json:"notes"`
 	Activity WeeklyActivity `json:"activity"`
 	TopTags  []TagCount     `json:"top_tags"`

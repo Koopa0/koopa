@@ -50,6 +50,17 @@ WHERE flow_name = $1 AND content_id = $2 AND status = 'completed'
 ORDER BY ended_at DESC
 LIMIT 1;
 
+-- name: FlowFailureStats :many
+-- Per-flow failure counts since a given time (for health checks).
+SELECT flow_name,
+       COUNT(*) AS total,
+       COUNT(*) FILTER (WHERE status = 'failed') AS failed
+FROM flow_runs
+WHERE created_at >= @since
+GROUP BY flow_name
+HAVING COUNT(*) FILTER (WHERE status = 'failed') > 0
+ORDER BY failed DESC;
+
 -- name: DeleteOldCompletedRuns :execrows
 -- Cleanup: delete completed/failed flow runs older than the given cutoff.
 DELETE FROM flow_runs WHERE status IN ('completed', 'failed') AND created_at < @cutoff;

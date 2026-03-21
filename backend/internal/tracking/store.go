@@ -105,6 +105,24 @@ func (s *Store) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// Keywords returns a deduplicated, lowercased list of all keywords
+// from enabled tracking topics. Satisfies collector.KeywordLoader.
+func (s *Store) Keywords(ctx context.Context) ([]string, error) {
+	topics, err := s.TrackingTopics(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var all []string
+	for i := range topics {
+		if !topics[i].Enabled {
+			continue
+		}
+		all = append(all, topics[i].Keywords...)
+	}
+	// Deduplicate and lowercase in caller (collector.NormalizeKeywords).
+	return all, nil
+}
+
 // dbToTrackingTopic converts a db.TrackingTopic to Topic.
 func dbToTrackingTopic(r db.TrackingTopic) Topic {
 	return Topic{

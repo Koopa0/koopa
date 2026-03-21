@@ -36,7 +36,11 @@ type Server struct {
 	projectWriter   ProjectWriter
 	notionTasks     NotionTaskWriter
 	taskDBResolver  TaskDBIDResolver
-	logger          *slog.Logger
+	sessionReader    SessionNoteReader
+	sessionWriter    SessionNoteWriter
+	semanticNotes    NoteSemanticSearcher
+	queryEmbedder    QueryEmbedder
+	logger           *slog.Logger
 }
 
 // ServerOption configures optional Server dependencies.
@@ -68,6 +72,22 @@ func WithCollectedLatest(r CollectedLatestReader) ServerOption {
 // WithContentSearcher enables OR-fallback search.
 func WithContentSearcher(cs ContentSearcher) ServerOption {
 	return func(s *Server) { s.contentSearcher = cs }
+}
+
+// WithSemanticSearch enables embedding-based semantic search for notes.
+func WithSemanticSearch(ns NoteSemanticSearcher, qe QueryEmbedder) ServerOption {
+	return func(s *Server) {
+		s.semanticNotes = ns
+		s.queryEmbedder = qe
+	}
+}
+
+// WithSessionNotes enables session note read/write tools.
+func WithSessionNotes(r SessionNoteReader, w SessionNoteWriter) ServerOption {
+	return func(s *Server) {
+		s.sessionReader = r
+		s.sessionWriter = w
+	}
 }
 
 // NewServer creates an MCP server with all tools registered.
@@ -138,7 +158,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_platform_stats",
-		Description: "Get a full snapshot of the koopa0.dev knowledge engine: content counts, project stats, activity trends, spaced repetition status, goal alignment drift, and learning progress. Use when the user wants an overview of their system, asks 'how is everything going', or needs to assess platform health.",
+		Description: "Get a full snapshot of the koopa0.dev knowledge engine: content counts, project stats, activity trends, goal alignment drift, and learning progress. Use when the user wants an overview of their system, asks 'how is everything going', or needs to assess platform health.",
 	}, s.getPlatformStats)
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -168,7 +188,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_learning_progress",
-		Description: "Get learning metrics: spaced repetition stats (enrolled, due), note growth trends, weekly activity comparison, and top knowledge tags. Use when the user asks about their learning progress, wants to know what topics they've been studying, or needs motivation data.",
+		Description: "Get learning metrics: note growth trends, weekly activity comparison, and top knowledge tags. Use when the user asks about their learning progress, wants to know what topics they've been studying, or needs motivation data.",
 	}, s.getLearningProgress)
 
 	// --- write tools ---
@@ -215,8 +235,20 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_morning_context",
-		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, and active goals. Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session.",
+		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, active goals, yesterday's reflection, and planning history (completion rates). Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session.",
 	}, s.getMorningContext)
+
+	// --- session notes tools ---
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "save_session_note",
+		Description: "Save a session note for cross-environment context sharing. Use during morning planning (type=plan, source=claude), development sessions (type=context, source=claude-code), evening reflection (type=reflection, source=claude), or metrics recording (type=metrics with metadata). This bridges context between claude.ai and Claude Code.",
+	}, s.saveSessionNote)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_session_notes",
+		Description: "Retrieve session notes for a date or date range, optionally filtered by type. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Types: plan, reflection, context, metrics.",
+	}, s.getSessionNotes)
 
 	return s
 }
@@ -693,7 +725,7 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	limit := clamp(input.Limit, 1, 30, 10)
 
-	// Search content (articles, build logs, TILs) and notes concurrently.
+	// Search content, notes (text), and notes (semantic) concurrently.
 	type contentResult struct {
 		contents []content.Content
 		err      error
@@ -702,9 +734,14 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		notes []note.SearchResult
 		err   error
 	}
+	type semanticResult struct {
+		notes []note.SimilarityResult
+		err   error
+	}
 
 	contentCh := make(chan contentResult, 1)
 	noteCh := make(chan noteSearchResult, 1)
+	semanticCh := make(chan semanticResult, 1)
 
 	go func() {
 		contents, _, err := s.contents.Search(ctx, input.Query, 1, limit)
@@ -720,8 +757,23 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		noteCh <- noteSearchResult{notes, err}
 	}()
 
+	go func() {
+		if s.queryEmbedder == nil || s.semanticNotes == nil {
+			semanticCh <- semanticResult{}
+			return
+		}
+		vec, err := s.queryEmbedder.EmbedQuery(ctx, input.Query)
+		if err != nil {
+			semanticCh <- semanticResult{err: err}
+			return
+		}
+		notes, err := s.semanticNotes.SearchBySimilarity(ctx, vec, limit)
+		semanticCh <- semanticResult{notes, err}
+	}()
+
 	cr := <-contentCh
 	nr := <-noteCh
+	sr := <-semanticCh
 
 	var results []knowledgeResult
 
@@ -745,11 +797,33 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 	}
 
-	// Note results second.
+	// Note text search results second.
+	seen := make(map[string]bool) // dedup by file_path across text and semantic results
 	if nr.err != nil {
 		s.logger.Error("search_knowledge: note search failed", "error", nr.err)
 	} else {
 		for _, n := range nr.notes {
+			seen[n.FilePath] = true
+			results = append(results, knowledgeResult{
+				SourceType: "note",
+				FilePath:   n.FilePath,
+				Title:      deref(n.Title),
+				Excerpt:    truncate(deref(n.ContentText), 300),
+				Type:       deref(n.Type),
+				Tags:       n.Tags,
+			})
+		}
+	}
+
+	// Semantic note results third (deduped against text results).
+	if sr.err != nil {
+		s.logger.Error("search_knowledge: semantic search failed", "error", sr.err)
+	} else {
+		for _, n := range sr.notes {
+			if seen[n.FilePath] {
+				continue
+			}
+			seen[n.FilePath] = true
 			results = append(results, knowledgeResult{
 				SourceType: "note",
 				FilePath:   n.FilePath,
@@ -916,7 +990,6 @@ type LearningProgressInput struct{}
 
 // LearningProgressOutput is the output for the get_learning_progress tool.
 type LearningProgressOutput struct {
-	Spaced   json.RawMessage `json:"spaced"`
 	Notes    json.RawMessage `json:"notes"`
 	Activity json.RawMessage `json:"activity"`
 	TopTags  json.RawMessage `json:"top_tags"`
@@ -928,17 +1001,87 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, LearningProgressOutput{}, fmt.Errorf("querying learning progress: %w", err)
 	}
 
-	spacedJSON, _ := json.Marshal(ld.Spaced)
 	notesJSON, _ := json.Marshal(ld.Notes)
 	activityJSON, _ := json.Marshal(ld.Activity)
 	topTagsJSON, _ := json.Marshal(ld.TopTags)
 
 	return nil, LearningProgressOutput{
-		Spaced:   spacedJSON,
 		Notes:    notesJSON,
 		Activity: activityJSON,
 		TopTags:  topTagsJSON,
 	}, nil
+}
+
+// --- session notes (read) ---
+
+// GetSessionNotesInput is the input for the get_session_notes tool.
+type GetSessionNotesInput struct {
+	Date     string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
+	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics"`
+	Days     int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
+}
+
+// GetSessionNotesOutput is the output of the get_session_notes tool.
+type GetSessionNotesOutput struct {
+	Notes []sessionNoteResult `json:"notes"`
+}
+
+type sessionNoteResult struct {
+	ID        int64           `json:"id"`
+	NoteDate  string          `json:"note_date"`
+	NoteType  string          `json:"note_type"`
+	Source    string          `json:"source"`
+	Content   string          `json:"content"`
+	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt string          `json:"created_at"`
+}
+
+func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input GetSessionNotesInput) (*mcp.CallToolResult, GetSessionNotesOutput, error) {
+	if s.sessionReader == nil {
+		return nil, GetSessionNotesOutput{}, fmt.Errorf("session notes not configured")
+	}
+
+	days := clamp(input.Days, 1, 30, 1)
+
+	endDate := time.Now()
+	if input.Date != "" {
+		parsed, err := time.Parse(time.DateOnly, input.Date)
+		if err != nil {
+			return nil, GetSessionNotesOutput{}, fmt.Errorf("invalid date %q (expected YYYY-MM-DD)", input.Date)
+		}
+		endDate = parsed
+	}
+	startDate := endDate.AddDate(0, 0, -(days - 1))
+
+	var noteType *string
+	if input.NoteType != "" {
+		switch input.NoteType {
+		case "plan", "reflection", "context", "metrics":
+			noteType = &input.NoteType
+		default:
+			return nil, GetSessionNotesOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, or metrics)", input.NoteType)
+		}
+	}
+
+	notes, err := s.sessionReader.NotesByDate(ctx, startDate, endDate, noteType)
+	if err != nil {
+		return nil, GetSessionNotesOutput{}, fmt.Errorf("querying session notes: %w", err)
+	}
+
+	results := make([]sessionNoteResult, len(notes))
+	for i, n := range notes {
+		results[i] = sessionNoteResult{
+			ID:        n.ID,
+			NoteDate:  n.NoteDate.Format(time.DateOnly),
+			NoteType:  n.NoteType,
+			Source:    n.Source,
+			Content:   n.Content,
+			Metadata:  n.Metadata,
+			CreatedAt: n.CreatedAt.Format(time.RFC3339),
+		}
+	}
+
+	return nil, GetSessionNotesOutput{Notes: results}, nil
 }
 
 // --- write tools ---

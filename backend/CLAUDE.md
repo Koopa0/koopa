@@ -1,4 +1,4 @@
-# blog — Project Memory
+# go-spec — Project Memory
 
 ## Tech Stack
 
@@ -6,6 +6,9 @@
 - **HTTP**: net/http (std lib, Go 1.22+ routing)
 - **Database**: PostgreSQL via pgx/v5 (pgxpool)
 - **Query Generation**: sqlc
+- **AI Framework**: Genkit Go (flows, tools, structured output)
+- **Cache**: Ristretto (in-memory, single machine)
+- **Messaging**: NATS (Core + JetStream)
 - **Logging**: log/slog (std lib)
 - **Tracing**: OpenTelemetry (progressive adoption)
 - **Testing**: std testing + go-cmp, testcontainers-go for integration
@@ -24,11 +27,33 @@
 ```
 cmd/app/          → Entry point, wiring only (middleware goes here when needed)
 internal/         → All application code, organized by feature
-  <feature>/      → <feature>.go, handler.go, store.go, query.sql, <feature>_test.go
+  <feature>/      → <feature>.go, handler.go, store.go, query.sql, <feature>_test.go, flow.go*, tool.go*
   db/             → sqlc-generated code (NEVER edit by hand)
 migrations/       → Numbered SQL: NNN_desc.up.sql / NNN_desc.down.sql
+prompts/          → Genkit dotprompt files: <feature>/*.prompt
 sqlc.yaml         → sqlc configuration (pgx/v5)
 ```
+
+## Make Targets
+
+| Target | Description |
+|--------|-------------|
+| `make build` | Build binary to bin/ |
+| `make run` | Run the application |
+| `make test` | Run unit tests |
+| `make test-integration` | Run integration tests (requires Docker) |
+| `make test-all` | Run all tests |
+| `make lint` | Run golangci-lint |
+| `make fmt` | Format code (goimports + gofmt) |
+| `make vet` | Run go vet |
+| `make sqlc` | Generate sqlc code |
+| `make bench` | Run benchmarks |
+| `make fuzz PKG=./internal/order` | Run fuzz tests (30s, single package) |
+| `make coverage` | Generate coverage report |
+| `make sqlc-check` | Check sqlc generated code is up to date |
+| `make verify-spec` | Run all automated spec validation (hooks + consistency + build) |
+| `make docker-build` | Build Docker image |
+| `make clean` | Remove build artifacts |
 
 ## Key Patterns
 
@@ -69,9 +94,9 @@ Every code change follows one of three tiers:
 | `refactor` | sonnet | — | Simplify code, flatten abstractions, remove DDD |
 | `build-resolver` | sonnet | — | Fix build, vet, and lint errors |
 
-Agents with `memory: project` persist learnings in `.claude/agent-memory/`.
+Agents with `memory: project` write directly to their `.claude/agent-memory/` files (no delegation).
 
-**Invocation**: Use `Task` tool with `subagent_type="<agent-name>"`. See `.claude/QUICKSTART.md`.
+**Invocation**: Use `Agent` tool with `subagent_type="<agent-name>"`. See `.claude/QUICKSTART.md`.
 
 ## Available Skills
 
@@ -88,6 +113,7 @@ Agents with `memory: project` persist learnings in `.claude/agent-memory/`.
 | `migrations` | `/migrations` | golang-migrate patterns, safe migration SQL |
 | `go-project-init` | `/go-project-init` | Project init: feature scaffold or new project bootstrap |
 | `manage-spec` | `/manage-spec` | Add, list, validate skills/rules/hooks/agents |
+| `genkit-go` | `/genkit-go` | Genkit Go flows, tools, prompts, integration |
 | `ristretto` | `/ristretto` | In-memory cache patterns (single machine) |
 | `nats` | `/nats` | NATS Core + JetStream messaging patterns |
 | `error-patterns` | `/error-patterns` | Error handling: sentinels, wrapping, domain→HTTP mapping |
@@ -112,71 +138,12 @@ Agents with `memory: project` persist learnings in `.claude/agent-memory/`.
 | `go-unsafe` | `/go-unsafe` | When to avoid unsafe/cgo, cost analysis, safe alternatives |
 | `go-compliance-test` | `/go-compliance-test` | AI compliance traps, detection commands, self-check checklist |
 | `devil-advocate` | `/devil-advocate` | Adversarial retroactive review: challenge existing decisions, find over-engineering, detect AI echo chamber drift |
-
-## Infrastructure & Secrets
-
-### 部署架構
-
-```
-瀏覽器 → Cloudflare Tunnel → SSR Server (:4000) → Go Backend (:8080) → PostgreSQL (:5432)
-                                    ↑ BFF proxy /bff/*                        ↓
-                                    └── 後端零暴露，不對外                Cloudflare R2
-```
-
-- **VPS**: Hostinger KVM 2 (2 vCPU / 8GB RAM / 96GB), Ubuntu 24.04
-- **流量入口**: Cloudflare Tunnel（無 nginx/caddy），只有 SSH port 對外
-- **前端**: Angular 21 SSR (port 4000)，同時作為 BFF proxy
-- **後端**: Go API (port 8080)，只在 Docker 內網可達
-- **資料庫**: PostgreSQL 17 (Docker)，只在 Docker 內網可達
-- **物件儲存**: Cloudflare R2 (S3 兼容)
-
-### 環境變數
-
-Production `.env` 存放在 VPS `~/blog/.env`，由 docker-compose 讀取。
-
-| 變數 | 用途 | 來源 |
-|------|------|------|
-| `DATABASE_URL` | PostgreSQL 連線字串 | docker-compose 組合 |
-| `JWT_SECRET` | JWT 簽發密鑰 | VPS `~/blog/.env` (隨機生成) |
-| `POSTGRES_PASSWORD` | PG 密碼 | VPS `~/blog/.env` (隨機生成) |
-| `R2_ACCESS_KEY_ID` | R2 S3 存取金鑰 | VPS `~/blog/.env` |
-| `R2_SECRET_ACCESS_KEY` | R2 S3 秘密金鑰 | VPS `~/blog/.env` |
-| `R2_ENDPOINT` | R2 S3 端點 | `https://d0ec7a1b2a7e00da142c766e7263dd3f.r2.cloudflarestorage.com` |
-| `R2_BUCKET` | R2 Bucket 名稱 | `blog` |
-| `CORS_ORIGIN` | 允許的 CORS 來源 | `https://koopa0.dev` |
-
-### R2 使用方式
-
-R2 走 S3 兼容 API，用 AWS SDK for Go：
-
-```go
-import (
-    "github.com/aws/aws-sdk-go-v2/config"
-    "github.com/aws/aws-sdk-go-v2/credentials"
-    "github.com/aws/aws-sdk-go-v2/service/s3"
-)
-
-cfg, _ := config.LoadDefaultConfig(ctx,
-    config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-        os.Getenv("R2_ACCESS_KEY_ID"),
-        os.Getenv("R2_SECRET_ACCESS_KEY"),
-        "",
-    )),
-    config.WithRegion("auto"),
-)
-client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-    o.BaseEndpoint = aws.String(os.Getenv("R2_ENDPOINT"))
-})
-```
-
-R2 API Token 已鎖定 IP `46.202.155.7`（VPS），只能從 VPS 存取。
-
-### Docker Network
-
-所有服務都在 `internal` network，**不對外暴露 port**（除了前端 4000 給 Tunnel）。
-- `postgres:5432` — 只有 backend 能連
-- `backend:8080` — 只有 frontend (BFF proxy) 能連
-- `frontend:4000` — Cloudflare Tunnel 連入
+| `tdd` | `/tdd` | Strict RED-GREEN-REFACTOR test-driven development cycle |
+| `debug` | `/debug` | Structured 4-phase debugging (reproduce, diagnose, fix, verify) |
+| `reflect` | `/reflect` | Review session learnings, promote to memory/rules/skills with human gate |
+| `execute-plan` | `/execute-plan` | Execute approved plan task-by-task with fresh subagents + crafted context |
+| `test-strategy` | `/test-strategy` | Test type decision tree (Q0-Q6): determines WHICH tests to write per function |
+| `research` | `/research` | Targeted external research before planning (triggered by comprehend's "Research Needed") |
 
 ## Verification Workflow
 
@@ -184,3 +151,21 @@ Before any commit or PR, run `/verify` or:
 ```bash
 go build ./... && go vet ./... && golangci-lint run ./... && go test ./...
 ```
+
+## Built-in Commands Reference
+
+| Command | Purpose | When |
+|---------|---------|------|
+| `/loop 10m <cmd>` | Recurring monitoring (session-scoped) | Long Tier 3 implementation |
+| `/batch <instruction>` | Parallel changes across files (worktrees) | 5-30 files, same pattern |
+| `/simplify` | Post-implementation cleanup (3 parallel reviewers) | After Phase 3, before Phase 4 |
+| `/btw <question>` | Side question without context pollution | Quick lookup during work |
+| `/diff` | Interactive uncommitted changes viewer | Pre-commit review |
+| `/context` | Context window usage visualization | Debug degraded responses |
+| `/branch [name]` | Branch conversation at current point | Explore alternatives |
+| `/effort [level]` | Set model effort (low/medium/high/max) | Adjust quality vs speed |
+| `/security-review` | Built-in security vulnerability scan | Pre-PR security check |
+| `/stats` | Usage statistics and session history | Observability |
+| `/insights` | Session pattern analysis | Meta-analysis |
+| `/voice` | Push-to-talk voice dictation | Hands-free input |
+| `/remote-control` | Mobile/browser bridge to local session | Remote work |

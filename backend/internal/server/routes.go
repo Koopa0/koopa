@@ -19,7 +19,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
-	"github.com/koopa0/blog-backend/internal/spaced"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -49,12 +49,12 @@ type Deps struct {
 	Feed         *feed.Handler
 	Notion       *notion.Handler
 	Tag          *tag.Handler
-	Spaced       *spaced.Handler
 	NotionSource *notion.SourceHandler
 	Goal         *goal.Handler
 	Task         *task.Handler
 	Stats        *stats.Handler
 	Activity     *activity.Handler
+	Session      *session.Handler
 	Pool         Pinger
 	Logger       *slog.Logger
 }
@@ -185,14 +185,12 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("POST /api/admin/notion-sources/{id}/toggle", authMid(http.HandlerFunc(d.NotionSource.Toggle)))
 	mux.Handle("PUT /api/admin/notion-sources/{id}/role", authMid(http.HandlerFunc(d.NotionSource.SetRole)))
 
-	// admin — spaced repetition
-	mux.Handle("GET /api/admin/spaced/due", authMid(http.HandlerFunc(d.Spaced.ListDue)))
-	mux.Handle("POST /api/admin/spaced/review", authMid(http.HandlerFunc(d.Spaced.SubmitReview)))
-	mux.Handle("POST /api/admin/spaced/enroll", authMid(http.HandlerFunc(d.Spaced.Enroll)))
-
 	// admin — activity
 	mux.Handle("GET /api/admin/activity/sessions", authMid(http.HandlerFunc(d.Activity.Sessions)))
 	mux.Handle("GET /api/admin/activity/changelog", authMid(http.HandlerFunc(d.Activity.Changelog)))
+
+	// admin — session notes
+	mux.Handle("GET /api/admin/session-notes", authMid(http.HandlerFunc(d.Session.List)))
 
 	// admin — upload
 	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))

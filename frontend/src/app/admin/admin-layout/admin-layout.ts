@@ -17,6 +17,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
   LayoutDashboard,
+  Calendar,
   Activity,
   Rss,
   Database,
@@ -27,7 +28,6 @@ import {
   Home,
   PanelLeftClose,
   PanelLeft,
-  Brain,
   BookOpen,
   FolderOpen,
   ListTodo,
@@ -87,6 +87,13 @@ export class AdminLayoutComponent {
           route: '/admin',
           icon: LayoutDashboard,
           exact: true,
+          disabled: false,
+        },
+        {
+          label: 'Today',
+          route: '/admin/today',
+          icon: Calendar,
+          exact: false,
           disabled: false,
         },
         {
@@ -175,13 +182,6 @@ export class AdminLayoutComponent {
     {
       title: 'Knowledge',
       items: [
-        {
-          label: 'Spaced Review',
-          route: '/admin/spaced',
-          icon: Brain,
-          exact: false,
-          disabled: false,
-        },
         {
           label: 'Activity',
           route: '/admin/activity',

@@ -27,8 +27,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	pgvector "github.com/pgvector/pgvector-go"
+	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/collected"
@@ -37,6 +42,7 @@ import (
 	mcpserver "github.com/koopa0/blog-backend/internal/mcp"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notion"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -85,6 +91,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	projectStore := project.NewStore(pool)
 	goalStore := goal.NewStore(pool)
 	collectedStore := collected.NewStore(pool)
+	sessionStore := session.NewStore(pool)
 
 	var opts []mcpserver.ServerOption
 	notionKey := os.Getenv("NOTION_API_KEY")
@@ -102,10 +109,23 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mcpserver.WithProjectWriter(projectStore),
 		mcpserver.WithCollectedLatest(collectedStore),
 		mcpserver.WithContentSearcher(contentStore),
+		mcpserver.WithSessionNotes(sessionStore, sessionStore),
 	)
 
+	// Optional semantic search (requires GEMINI_API_KEY)
+	noteStore := note.NewStore(pool)
+	if geminiKey := os.Getenv("GEMINI_API_KEY"); geminiKey != "" {
+		qe, embedErr := newGeminiQueryEmbedder(ctx, logger)
+		if embedErr != nil {
+			logger.Warn("semantic search unavailable", "error", embedErr)
+		} else {
+			opts = append(opts, mcpserver.WithSemanticSearch(noteStore, qe))
+			logger.Info("semantic search enabled for notes")
+		}
+	}
+
 	server := mcpserver.NewServer(
-		note.NewStore(pool),
+		noteStore,
 		activity.NewStore(pool),
 		projectStore,
 		collectedStore,
@@ -486,4 +506,39 @@ func (a notionAdapter) CreateTask(ctx context.Context, p mcpserver.NotionCreateT
 		DueDate:     p.DueDate,
 		Description: p.Description,
 	})
+}
+
+// geminiQueryEmbedder generates query embedding vectors via Gemini.
+type geminiQueryEmbedder struct {
+	g        *genkit.Genkit
+	embedder ai.Embedder
+}
+
+func newGeminiQueryEmbedder(ctx context.Context, logger *slog.Logger) (*geminiQueryEmbedder, error) {
+	googleAI := &googlegenai.GoogleAI{}
+	g := genkit.Init(ctx, genkit.WithPlugins(googleAI))
+
+	embedder, err := googleAI.DefineEmbedder(g, "gemini-embedding-2-preview", &ai.EmbedderOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("defining embedder: %w", err)
+	}
+	logger.Info("gemini embedder initialized for semantic search")
+	return &geminiQueryEmbedder{g: g, embedder: embedder}, nil
+}
+
+func (e *geminiQueryEmbedder) EmbedQuery(ctx context.Context, text string) (pgvector.Vector, error) {
+	resp, err := genkit.Embed(ctx, e.g,
+		ai.WithEmbedder(e.embedder),
+		ai.WithTextDocs(text),
+		ai.WithConfig(&genai.EmbedContentConfig{
+			OutputDimensionality: genai.Ptr[int32](768),
+		}),
+	)
+	if err != nil {
+		return pgvector.Vector{}, fmt.Errorf("embedding query: %w", err)
+	}
+	if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
+		return pgvector.Vector{}, fmt.Errorf("empty embedding response")
+	}
+	return pgvector.NewVector(resp.Embeddings[0].Embedding), nil
 }

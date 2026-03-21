@@ -101,6 +101,7 @@ func (s *Store) CreateCollectedData(ctx context.Context, p CreateParams) (*Colle
 		Topics:          p.Topics,
 		UrlHash:         p.URLHash,
 		FeedID:          p.FeedID,
+		RelevanceScore:  p.RelevanceScore,
 	})
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {

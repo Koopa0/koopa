@@ -68,4 +68,18 @@ type NoteLink struct {
 	LinkText   *string
 }
 
+// SimilarityResult is a note with a cosine similarity score from semantic search.
+type SimilarityResult struct {
+	Note
+	Similarity float64
+}
+
+// EmbeddingCandidate is a note that needs embedding generation.
+type EmbeddingCandidate struct {
+	ID          int64
+	FilePath    string
+	Title       *string
+	ContentText *string
+}
+
 var ErrNotFound = errors.New("not found")

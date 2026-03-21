@@ -2,7 +2,6 @@ DROP TABLE IF EXISTS session_notes;
 DROP TABLE IF EXISTS note_links;
 DROP TABLE IF EXISTS notion_sources;
 DROP TABLE IF EXISTS tasks;
-DROP TABLE IF EXISTS spaced_intervals;
 DROP TABLE IF EXISTS project_aliases;
 DROP TABLE IF EXISTS activity_event_tags;
 DROP TABLE IF EXISTS obsidian_note_tags;

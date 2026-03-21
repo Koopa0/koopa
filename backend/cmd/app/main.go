@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/ristretto/v2"
+	"github.com/robfig/cron/v3"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/anthropic"
@@ -20,6 +22,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgvector "github.com/pgvector/pgvector-go"
+	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
@@ -39,7 +43,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/reconcile"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/server"
-	"github.com/koopa0/blog-backend/internal/spaced"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -148,7 +152,7 @@ func run(logger *slog.Logger) error {
 	feedStore := feed.NewStore(pool, logger)
 	goalStore := goal.NewStore(pool)
 	tagStore := tag.NewStore(pool)
-	spacedStore := spaced.NewStore(pool)
+	sessionStore := session.NewStore(pool)
 	notionSourceStore := notion.NewStore(pool)
 	taskStore := task.NewStore(pool)
 
@@ -161,7 +165,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// collector + budget
-	feedCollector := collector.New(collectedStore, feedStore, logger)
+	feedCollector := collector.New(collectedStore, feedStore, trackingStore, logger)
 	defer feedCollector.Stop()
 	tokenBudget := budget.New(500_000)
 
@@ -243,6 +247,8 @@ func run(logger *slog.Logger) error {
 	// AI pipeline — Genkit + flow registry + runner
 	alerter := &notifyAlerter{notifier: notifier, logger: logger}
 	var runner *flowrun.Runner
+	var g *genkit.Genkit
+	var noteEmbedder ai.Embedder // set when not in mock mode
 	if cfg.MockMode {
 		logger.Info("starting in MOCK MODE — AI calls disabled")
 		registry := flow.NewRegistry(
@@ -264,7 +270,7 @@ func run(logger *slog.Logger) error {
 	} else {
 		googleAI := &googlegenai.GoogleAI{}
 		anthropicPlugin := &anthropic.Anthropic{}
-		g := genkit.Init(ctx, genkit.WithPlugins(googleAI, anthropicPlugin))
+		g = genkit.Init(ctx, genkit.WithPlugins(googleAI, anthropicPlugin))
 
 		geminiModel, modelErr := googleAI.DefineModel(g, cfg.GeminiModel, &ai.ModelOptions{
 			Label: "Gemini Review",
@@ -293,6 +299,7 @@ func run(logger *slog.Logger) error {
 		if embedErr != nil {
 			return fmt.Errorf("defining embedder: %w", embedErr)
 		}
+		noteEmbedder = embedder
 
 		contentProofread := flow.NewContentProofread(g, geminiModel, logger)
 		contentExcerpt := flow.NewContentExcerpt(g, geminiModel, logger)
@@ -306,10 +313,7 @@ func run(logger *slog.Logger) error {
 		contentPolish := flow.NewContentPolish(g, claudeModel, contentStore, logger)
 		digestGenerate := flow.NewDigestGenerate(g, geminiModel, contentStore, collectedStore, projectStore, tokenBudget, taipeiLoc, logger)
 		bookmarkGenerate := flow.NewBookmarkGenerate(g, geminiModel, collectedStore, tokenBudget, logger)
-		morningBrief := flow.NewMorningBrief(
-			g, geminiModel, taskStore,
-			collectedStore, contentStore, notifier, tokenBudget, taipeiLoc, logger,
-		)
+		morningBrief := flow.NewMorningBrief(g, taskStore, notifier, taipeiLoc, logger)
 		weeklyReview := flow.NewWeeklyReview(
 			g, geminiModel, taskStore, taskStore,
 			collectedStore, contentStore, projectStore, githubFetcher,
@@ -404,31 +408,181 @@ func run(logger *slog.Logger) error {
 	)
 
 	// cron: register all scheduled jobs
-	cronScheduler, err := setupCrons(cronDeps{
-		ActivityStore:     activityStore,
-		CollectedStore:    collectedStore,
-		FlowrunStore:      flowrunStore,
-		Runner:            runner,
-		FeedStore:         feedStore,
-		FeedCollector:     feedCollector,
-		TokenBudget:       tokenBudget,
-		AuthStore:         authStore,
-		SpacedStore:       spacedStore,
-		ProjectStore:      projectStore,
-		NotionClient:      notionClient,
-		NotionSourceStore: notionSourceStore,
-		NotionHandler:     notionHandler,
-		PipelineHandler:   pipelineHandler,
-		Reconciler:        recon,
-		Notifier:          notifier,
-		NotionAPIKey:      cfg.NotionAPIKey,
-		TaipeiLoc:         taipeiLoc,
-		Logger:            logger,
-	})
-	if err != nil {
-		return fmt.Errorf("setting up cron jobs: %w", err)
-	}
+	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
 	defer cronScheduler.Stop()
+
+	addCron := func(schedule, name string, fn func()) {
+		if _, err := cronScheduler.AddFunc(schedule, fn); err != nil {
+			logger.Error("cron: failed to register", "job", name, "error", err)
+		}
+	}
+
+	// flow retries (every 2 min)
+	addCron("@every 2m", "retry-flows", retryFlows(flowrunStore, runner, notifier, logger))
+
+	// feed collection (overlap guarded)
+	var collectRunning atomic.Bool
+	collectFn := collectFeeds(feedStore, feedCollector, &collectRunning, notifier, logger)
+	addCron("0 */4 * * *", "feed-hourly_4", func() { collectFn(feed.ScheduleHourly4, "hourly_4") })
+	addCron("0 6 * * *", "feed-daily", func() { collectFn(feed.ScheduleDaily, "daily") })
+	addCron("0 6 * * 1", "feed-weekly", func() { collectFn(feed.ScheduleWeekly, "weekly") })
+
+	// daily resets
+	addCron("0 0 * * *", "budget-reset", func() {
+		tokenBudget.Reset()
+		logger.Info("cron: daily token budget reset")
+	})
+	addCron("0 1 * * *", "token-cleanup", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := authStore.DeleteExpiredTokens(ctx); err != nil {
+			logger.Error("cron: deleting expired tokens", "error", err)
+		}
+	})
+
+	// data retention cleanup
+	addCron("0 3 * * *", "retention-events", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		cutoff := time.Now().AddDate(0, -12, 0)
+		if n, err := activityStore.DeleteOldEvents(ctx, cutoff); err != nil {
+			logger.Error("cron: deleting old activity events", "error", err)
+		} else if n > 0 {
+			logger.Info("cron: deleted old activity events", "count", n)
+		}
+	})
+	addCron("15 3 * * *", "retention-ignored", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		cutoff := time.Now().AddDate(0, 0, -30)
+		if n, err := collectedStore.DeleteOldIgnored(ctx, cutoff); err != nil {
+			logger.Error("cron: deleting old ignored collected data", "error", err)
+		} else if n > 0 {
+			logger.Info("cron: deleted old ignored collected data", "count", n)
+		}
+	})
+	addCron("30 3 * * *", "retention-flowruns", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		cutoff := time.Now().AddDate(0, 0, -90)
+		if n, err := flowrunStore.DeleteOldCompletedRuns(ctx, cutoff); err != nil {
+			logger.Error("cron: deleting old completed flow runs", "error", err)
+		} else if n > 0 {
+			logger.Info("cron: deleted old completed flow runs", "count", n)
+		}
+	})
+	addCron("45 3 * * *", "retention-session-notes", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		cutoff := time.Now().AddDate(0, 0, -30)
+		if n, err := sessionStore.DeleteOldNotes(ctx, cutoff); err != nil {
+			logger.Error("cron: deleting old session notes", "error", err)
+		} else if n > 0 {
+			logger.Info("cron: deleted old session notes", "count", n)
+		}
+	})
+
+	// flow submissions
+	for _, job := range []struct {
+		schedule, flow string
+		timeout        time.Duration
+	}{
+		{"30 7 * * *", "morning-brief", 2 * time.Minute},
+		{"0 3 * * 1", "content-strategy", 3 * time.Minute},
+		{"0 23 * * *", "daily-dev-log", 2 * time.Minute},
+	} {
+		addCron(job.schedule, job.flow, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), job.timeout)
+			defer cancel()
+			if err := runner.Submit(ctx, job.flow, nil, nil); err != nil {
+				logger.Error("cron: submitting flow", "flow", job.flow, "error", err)
+			}
+		})
+	}
+
+	// weekly review with health data (Monday 09:00)
+	addCron("0 9 * * 1", "weekly-review", submitWeeklyReview(flowrunStore, feedStore, runner, logger))
+
+	// build-log generation (Monday 10:00)
+	addCron("0 10 * * 1", "build-log-generate", submitBuildLogs(projectStore, runner, logger))
+
+	// reconciliation (Sunday 04:00)
+	addCron("0 4 * * 0", "reconciliation", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if err := recon.Run(ctx); err != nil {
+			logger.Error("cron: reconciliation failed", "error", err)
+			alertCron(notifier, logger, "reconciliation", err)
+		}
+	})
+
+	// hourly full sync — GitHub + Notion (at :15 past each hour)
+	var syncRunning atomic.Bool
+	addCron("15 * * * *", "hourly-sync", func() {
+		if !syncRunning.CompareAndSwap(false, true) {
+			logger.Info("cron: skipping hourly sync, previous run still active")
+			return
+		}
+		defer syncRunning.Store(false)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		pipelineHandler.SyncAllFromGitHub(ctx)
+		notionHandler.SyncAll(ctx)
+	})
+
+	// note embedding generation (hourly at :30, after sync at :15)
+	if noteEmbedder != nil {
+		addCron("30 * * * *", "note-embedding", func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			candidates, err := noteStore.NotesWithoutEmbedding(ctx, 20)
+			if err != nil {
+				logger.Error("cron: listing notes without embedding", "error", err)
+				return
+			}
+			if len(candidates) == 0 {
+				return
+			}
+			var embedded int
+			for _, c := range candidates {
+				text := ""
+				if c.Title != nil {
+					text = *c.Title + "\n"
+				}
+				if c.ContentText != nil {
+					text += *c.ContentText
+				}
+				if text == "" {
+					continue
+				}
+				resp, embedErr := genkit.Embed(ctx, g,
+					ai.WithEmbedder(noteEmbedder),
+					ai.WithTextDocs(text),
+					ai.WithConfig(&genai.EmbedContentConfig{
+						OutputDimensionality: genai.Ptr[int32](768),
+					}),
+				)
+				if embedErr != nil {
+					logger.Error("cron: generating note embedding", "note_id", c.ID, "error", embedErr)
+					continue
+				}
+				if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
+					continue
+				}
+				vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
+				if storeErr := noteStore.UpdateEmbedding(ctx, c.ID, vec); storeErr != nil {
+					logger.Error("cron: storing note embedding", "note_id", c.ID, "error", storeErr)
+					continue
+				}
+				embedded++
+			}
+			if embedded > 0 {
+				logger.Info("cron: note embeddings generated", "count", embedded, "candidates", len(candidates))
+			}
+		})
+	}
+
+	cronScheduler.Start()
 
 	deps := server.Deps{
 		Pool: pool,
@@ -452,7 +606,6 @@ func run(logger *slog.Logger) error {
 		Feed:      feed.NewHandler(feedStore, feedCollector, logger),
 		Notion:    notionHandler,
 		Tag:       tag.NewHandler(tagStore, pool, logger),
-		Spaced:    spaced.NewHandler(spacedStore, logger),
 		NotionSource: func() *notion.SourceHandler {
 			sh := notion.NewSourceHandler(notionSourceStore, notionClient, sourceCache, logger)
 			sh.SetSyncer(notionHandler)
@@ -462,6 +615,7 @@ func run(logger *slog.Logger) error {
 		Task:     task.NewHandler(taskStore, logger),
 		Stats:    stats.NewHandler(stats.NewStore(pool), logger),
 		Activity: activity.NewHandler(activityStore, logger),
+		Session:  session.NewHandler(sessionStore, logger),
 		Logger:   logger,
 	}
 

@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
 )
@@ -422,6 +424,88 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		Slug:      created.Slug,
 		Title:     created.Title,
 		Status:    string(created.Status),
+	}, nil
+}
+
+// --- save_session_note ---
+
+// SaveSessionNoteInput is the input for the save_session_note tool.
+type SaveSessionNoteInput struct {
+	NoteType string          `json:"note_type" jsonschema_description:"plan, reflection, context, or metrics (required)"`
+	Content  string          `json:"content" jsonschema_description:"note content text (required)"`
+	Source   string          `json:"source" jsonschema_description:"claude, claude-code, or manual (required)"`
+	Date     string          `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
+	Metadata json.RawMessage `json:"metadata,omitempty" jsonschema_description:"optional JSON metadata (e.g. plan metrics)"`
+}
+
+// SaveSessionNoteOutput is the output of the save_session_note tool.
+type SaveSessionNoteOutput struct {
+	ID        int64  `json:"id"`
+	NoteDate  string `json:"note_date"`
+	NoteType  string `json:"note_type"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, input SaveSessionNoteInput) (*mcp.CallToolResult, SaveSessionNoteOutput, error) {
+	if s.sessionWriter == nil {
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("session notes not configured")
+	}
+	if input.NoteType == "" {
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("note_type is required")
+	}
+	if input.Content == "" {
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("content is required")
+	}
+	if input.Source == "" {
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("source is required")
+	}
+
+	switch input.NoteType {
+	case "plan", "reflection", "context", "metrics":
+		// valid
+	default:
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, or metrics)", input.NoteType)
+	}
+
+	switch input.Source {
+	case "claude", "claude-code", "manual":
+		// valid
+	default:
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("invalid source %q (must be claude, claude-code, or manual)", input.Source)
+	}
+
+	noteDate := time.Now()
+	if input.Date != "" {
+		parsed, err := time.Parse(time.DateOnly, input.Date)
+		if err != nil {
+			return nil, SaveSessionNoteOutput{}, fmt.Errorf("invalid date %q (expected YYYY-MM-DD)", input.Date)
+		}
+		noteDate = parsed
+	}
+
+	created, err := s.sessionWriter.CreateNote(ctx, session.CreateParams{
+		NoteDate: noteDate,
+		NoteType: input.NoteType,
+		Source:   input.Source,
+		Content:  input.Content,
+		Metadata: input.Metadata,
+	})
+	if err != nil {
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("saving session note: %w", err)
+	}
+
+	s.logger.Info("session note saved",
+		"id", created.ID,
+		"type", created.NoteType,
+		"source", created.Source,
+		"date", created.NoteDate.Format(time.DateOnly),
+	)
+
+	return nil, SaveSessionNoteOutput{
+		ID:        created.ID,
+		NoteDate:  created.NoteDate.Format(time.DateOnly),
+		NoteType:  created.NoteType,
+		CreatedAt: created.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
 

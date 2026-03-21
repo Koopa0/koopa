@@ -2,12 +2,104 @@ version: "2"
 
 linters:
   enable:
-    - errcheck
-    - gosec
-    - govet
-    - staticcheck
-    - gocritic
+    # Error handling
+    - errcheck          # Detect unchecked errors
+    - errorlint         # Error wrapping and comparison
+    - errname           # Sentinel error naming
+
+    # Static analysis
+    - staticcheck       # Comprehensive static analysis (SA*, S*, ST*, QF*)
+    - govet             # Official go vet
+    - gocritic          # Additional code checks
+
+    # Security
+    - gosec             # Security vulnerability scan
+
+    # Code quality
+    - ineffassign       # Ineffectual assignments
+    - unused            # Unused variables/functions
+    - unconvert         # Unnecessary type conversions
+    - unparam           # Unused function parameters
+    - wastedassign      # Wasted assignments
+
+    # Style
+    - misspell          # Spelling errors
+    - whitespace        # Whitespace issues
+
+    # Go version specific
+    - copyloopvar       # Go 1.22+ loop variable copy
+    - intrange          # Go 1.22+ integer range
+
+    # Complexity
+    - gocyclo           # Cyclomatic complexity
+    - gocognit          # Cognitive complexity
+    - nestif            # Nested if depth
+
+    # Other
+    - exhaustive        # Switch exhaustiveness
+    - prealloc          # Slice pre-allocation suggestions
+    - nolintlint        # nolint directive format
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (io.Closer).Close
+        - (net/http.ResponseWriter).Write
+
+    staticcheck:
+      checks:
+        - "all"
+        - "-SA1019"  # Allow deprecated APIs for incremental migration
+
+    govet:
+      enable-all: true
+
+    gosec:
+      excludes:
+        - G104  # Handled by errcheck
+      config:
+        G306: "0644"  # File permissions
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+      disabled-checks:
+        - whyNoLint  # Handled by nolintlint
+
+    gocyclo:
+      min-complexity: 15
+
+    gocognit:
+      min-complexity: 20
+
+    nestif:
+      min-complexity: 4
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
 
 issues:
   exclude-dirs:
-    - internal/db
+    - vendor
+
+  exclude-rules:
+    # Test files allow higher complexity
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - gocognit
+        - errcheck
+
+    # Generated code skipped
+    - path: internal/db/
+      linters:
+        - all

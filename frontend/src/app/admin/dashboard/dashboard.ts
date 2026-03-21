@@ -24,7 +24,6 @@ import {
   Zap,
   BookOpen,
   Activity,
-  Brain,
   Database,
   Tags,
   Loader2,
@@ -142,7 +141,6 @@ export class DashboardComponent implements OnInit {
       { label: 'Review', value: s.reviews.total, sub: `${s.reviews.pending} pending`, icon: FileEdit, iconBg: 'bg-amber-900/30', iconColor: 'text-amber-400' },
       { label: 'Notes', value: s.notes.total, sub: notesSub, icon: BookOpen, iconBg: 'bg-sky-900/30', iconColor: 'text-sky-400' },
       { label: 'Activity', value: s.activity.total, sub: `${s.activity.last_24h} last 24h · ${s.activity.last_7d} last 7d`, icon: Activity, iconBg: 'bg-emerald-900/30', iconColor: 'text-emerald-400' },
-      { label: 'Spaced', value: s.spaced.enrolled, sub: `${s.spaced.due} due`, icon: Brain, iconBg: 'bg-violet-900/30', iconColor: 'text-violet-400' },
       { label: 'Sources', value: s.sources.total, sub: `${s.sources.enabled} enabled`, icon: Database, iconBg: 'bg-zinc-800', iconColor: 'text-zinc-300' },
       { label: 'Tags', value: s.tags.canonical, sub: `${s.tags.unconfirmed} unconfirmed`, icon: Tags, iconBg: 'bg-amber-900/30', iconColor: 'text-amber-400' },
     ];

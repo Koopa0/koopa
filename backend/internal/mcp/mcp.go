@@ -10,12 +10,15 @@ import (
 
 	"github.com/google/uuid"
 
+	pgvector "github.com/pgvector/pgvector-go"
+
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/task"
 )
@@ -25,6 +28,16 @@ type NoteSearcher interface {
 	SearchByText(ctx context.Context, query string, limit int) ([]note.SearchResult, error)
 	SearchByFilters(ctx context.Context, f note.SearchFilter, limit int) ([]note.Note, error)
 	NotesByType(ctx context.Context, noteType string, filterContext *string, limit int) ([]note.Note, error)
+}
+
+// NoteSemanticSearcher provides embedding-based semantic search for notes.
+type NoteSemanticSearcher interface {
+	SearchBySimilarity(ctx context.Context, queryVec pgvector.Vector, limit int) ([]note.SimilarityResult, error)
+}
+
+// QueryEmbedder generates an embedding vector for a search query string.
+type QueryEmbedder interface {
+	EmbedQuery(ctx context.Context, text string) (pgvector.Vector, error)
 }
 
 // ActivityReader provides activity event queries for MCP tools.
@@ -124,6 +137,18 @@ type CollectedLatestReader interface {
 // ContentSearcher extends ContentReader with OR-fallback search.
 type ContentSearcher interface {
 	SearchOR(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)
+}
+
+// SessionNoteReader provides session note queries for MCP tools.
+type SessionNoteReader interface {
+	NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType *string) ([]session.Note, error)
+	LatestNoteByType(ctx context.Context, noteType string) (*session.Note, error)
+	MetricsHistory(ctx context.Context, sinceDate time.Time) ([]session.Note, error)
+}
+
+// SessionNoteWriter provides session note mutations for MCP tools.
+type SessionNoteWriter interface {
+	CreateNote(ctx context.Context, p session.CreateParams) (*session.Note, error)
 }
 
 // searchResultEntry is a note with a combined RRF score for merged search results.

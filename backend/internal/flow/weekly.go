@@ -24,6 +24,12 @@ type CommitLister interface {
 	RecentCommits(ctx context.Context, since time.Time) ([]pipeline.Commit, error)
 }
 
+// WeeklyReviewInput is optional JSON input passed via Runner.Submit.
+// Health data is gathered at the cron layer and passed in as input.
+type WeeklyReviewInput struct {
+	HealthIssues []string `json:"health_issues,omitempty"`
+}
+
 // TaskCompletionCounter counts tasks completed since a given time.
 // ProjectCompletion holds a per-project completion count.
 type ProjectCompletion struct {
@@ -88,8 +94,8 @@ func NewWeeklyReview(
 		loc:            loc,
 		logger:         logger,
 	}
-	wr.gf = genkit.DefineFlow(g, "weekly-review", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
-		out, err := wr.run(ctx)
+	wr.gf = genkit.DefineFlow(g, "weekly-review", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		out, err := wr.run(ctx, input)
 		if err != nil {
 			return nil, err
 		}
@@ -111,12 +117,18 @@ const (
 	reviewCollectedLimit  int32 = 30
 )
 
-func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
+func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (WeeklyReviewOutput, error) {
 	if err := wr.budget.Reserve(estimatedReviewTokens); err != nil {
 		return WeeklyReviewOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	wr.logger.Info("weekly-review starting")
+
+	// Parse optional input (health data from cron layer).
+	var input WeeklyReviewInput
+	if len(rawInput) > 0 {
+		_ = json.Unmarshal(rawInput, &input) // best-effort: empty input is fine
+	}
 
 	now := time.Now().In(wr.loc)
 	weekAgo := now.Add(-7 * 24 * time.Hour)
@@ -171,6 +183,7 @@ func (wr *WeeklyReview) run(ctx context.Context) (WeeklyReviewOutput, error) {
 		published, pubErr,
 		projects, projErr,
 		commits, commitErr,
+		input.HealthIssues,
 		weekAgo, now,
 	)
 
@@ -219,9 +232,19 @@ func buildWeeklyReviewPrompt(
 	published []content.Content, pubErr error,
 	projects []project.Project, projErr error,
 	commits []pipeline.Commit, commitErr error,
+	healthIssues []string,
 	start, end time.Time,
 ) string {
 	var b strings.Builder
+
+	// Health issues at the top (most important)
+	if len(healthIssues) > 0 {
+		b.WriteString("⚠️ == 系統健康警告 ==\n")
+		for _, issue := range healthIssues {
+			fmt.Fprintf(&b, "- %s\n", issue)
+		}
+		b.WriteByte('\n')
+	}
 
 	fmt.Fprintf(&b, "回顧期間：%s 至 %s\n\n", start.Format("2006-01-02"), end.Format("2006-01-02"))
 

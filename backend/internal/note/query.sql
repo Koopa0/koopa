@@ -72,6 +72,29 @@ WHERE type = @note_type
 ORDER BY synced_at DESC
 LIMIT @max_results;
 
+-- name: UpdateNoteEmbedding :exec
+-- Store embedding vector for a note.
+UPDATE obsidian_notes SET embedding = $2 WHERE id = $1;
+
+-- name: NotesWithoutEmbedding :many
+-- Find notes that need embedding generation.
+SELECT id, file_path, title, content_text
+FROM obsidian_notes
+WHERE embedding IS NULL AND (status IS NULL OR status != 'archived')
+ORDER BY synced_at DESC
+LIMIT @batch_size;
+
+-- name: SearchNotesBySimilarity :many
+-- Semantic search: find notes closest to a query embedding vector.
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at,
+       (1 - (embedding <=> @query_embedding::vector))::float8 AS similarity
+FROM obsidian_notes
+WHERE embedding IS NOT NULL
+  AND (status IS NULL OR status != 'archived')
+ORDER BY embedding <=> @query_embedding::vector
+LIMIT @max_results;
+
 -- name: DeleteNoteLinksByNoteID :exec
 -- Remove all wikilink edges for a note before re-sync.
 DELETE FROM note_links WHERE source_note_id = $1;

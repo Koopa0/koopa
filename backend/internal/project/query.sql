@@ -79,9 +79,11 @@ SELECT slug FROM projects WHERE notion_page_id = $1;
 SELECT id FROM projects WHERE notion_page_id = $1;
 
 -- name: ActiveProjectSlugsWithRepo :many
--- List slugs of active projects that have a linked repository.
+-- List slugs of active projects that have a linked repository and recent activity.
 SELECT slug FROM projects
-WHERE status IN ('in-progress', 'maintained') AND repo IS NOT NULL AND repo != ''
+WHERE status IN ('in-progress', 'maintained')
+  AND repo IS NOT NULL AND repo != ''
+  AND last_activity_at >= @since
 ORDER BY title;
 
 -- name: DeleteProject :exec

@@ -2,10 +2,13 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/koopa0/blog-backend/internal/session"
 )
 
 // MorningContextInput is the input for the get_morning_context tool.
@@ -16,15 +19,24 @@ type MorningContextInput struct {
 
 // MorningContextOutput is the aggregated output for daily planning.
 type MorningContextOutput struct {
-	Date           string           `json:"date"`
-	OverdueTasks   []morningTask    `json:"overdue_tasks"`
-	TodayTasks     []morningTask    `json:"today_tasks"`
-	UpcomingTasks  []morningTask    `json:"upcoming_tasks"`
-	MyDayTasks     []morningTask    `json:"my_day_tasks"`
-	RecentActivity activitySummary  `json:"recent_activity"`
-	RecentBuildLogs []buildLogBrief `json:"recent_build_logs"`
-	Projects       []projectHealth  `json:"projects"`
-	Goals          []goalBrief      `json:"goals"`
+	Date                string           `json:"date"`
+	OverdueTasks        []morningTask    `json:"overdue_tasks"`
+	TodayTasks          []morningTask    `json:"today_tasks"`
+	UpcomingTasks       []morningTask    `json:"upcoming_tasks"`
+	MyDayTasks          []morningTask    `json:"my_day_tasks"`
+	RecentActivity      activitySummary  `json:"recent_activity"`
+	RecentBuildLogs     []buildLogBrief  `json:"recent_build_logs"`
+	Projects            []projectHealth  `json:"projects"`
+	Goals               []goalBrief      `json:"goals"`
+	YesterdayReflection string           `json:"yesterday_reflection,omitempty"`
+	PlanningHistory     []dailyMetrics   `json:"planning_history"`
+}
+
+type dailyMetrics struct {
+	Date           string  `json:"date"`
+	TasksPlanned   int     `json:"tasks_planned"`
+	TasksCompleted int     `json:"tasks_completed"`
+	CompletionRate float64 `json:"completion_rate"`
 }
 
 type morningTask struct {
@@ -227,5 +239,52 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 	}
 
+	// --- Session notes (yesterday reflection + planning history) ---
+	if s.sessionReader != nil {
+		refl, reflErr := s.sessionReader.LatestNoteByType(ctx, "reflection")
+		if reflErr != nil {
+			s.logger.Error("morning_context: yesterday reflection", "error", reflErr)
+		} else {
+			out.YesterdayReflection = refl.Content
+		}
+
+		since := now.AddDate(0, 0, -7)
+		metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
+		if metricsErr != nil {
+			s.logger.Error("morning_context: planning history", "error", metricsErr)
+		} else {
+			out.PlanningHistory = make([]dailyMetrics, 0, len(metricsNotes))
+			for _, mn := range metricsNotes {
+				if dm := parseDailyMetrics(mn); dm != nil {
+					out.PlanningHistory = append(out.PlanningHistory, *dm)
+				}
+			}
+		}
+	}
+	if out.PlanningHistory == nil {
+		out.PlanningHistory = []dailyMetrics{}
+	}
+
 	return nil, out, nil
+}
+
+// parseDailyMetrics extracts daily metrics from a session note's metadata.
+func parseDailyMetrics(n session.Note) *dailyMetrics {
+	if len(n.Metadata) == 0 {
+		return nil
+	}
+	var meta struct {
+		TasksPlanned   int     `json:"tasks_planned"`
+		TasksCompleted int     `json:"tasks_completed"`
+		CompletionRate float64 `json:"completion_rate"`
+	}
+	if err := json.Unmarshal(n.Metadata, &meta); err != nil {
+		return nil // best-effort: skip notes with unparseable metadata
+	}
+	return &dailyMetrics{
+		Date:           n.NoteDate.Format(time.DateOnly),
+		TasksPlanned:   meta.TasksPlanned,
+		TasksCompleted: meta.TasksCompleted,
+		CompletionRate: meta.CompletionRate,
+	}
 }

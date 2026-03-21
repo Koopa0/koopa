@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -307,9 +308,10 @@ func (s *Store) IDByNotionPageID(ctx context.Context, notionPageID string) (uuid
 	return id, nil
 }
 
-// ActiveSlugsWithRepo returns slugs of active projects that have a linked repository.
-func (s *Store) ActiveSlugsWithRepo(ctx context.Context) ([]string, error) {
-	slugs, err := s.q.ActiveProjectSlugsWithRepo(ctx)
+// ActiveSlugsWithRepo returns slugs of active projects that have a linked
+// repository and activity since the given time.
+func (s *Store) ActiveSlugsWithRepo(ctx context.Context, since time.Time) ([]string, error) {
+	slugs, err := s.q.ActiveProjectSlugsWithRepo(ctx, &since)
 	if err != nil {
 		return nil, fmt.Errorf("listing active project slugs with repo: %w", err)
 	}

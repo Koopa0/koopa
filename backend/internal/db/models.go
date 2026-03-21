@@ -679,15 +679,14 @@ type ReviewQueue struct {
 	ReviewedAt    *time.Time   `json:"reviewed_at"`
 }
 
-type SpacedInterval struct {
-	NoteID         int64      `json:"note_id"`
-	EasinessFactor float64    `json:"easiness_factor"`
-	IntervalDays   int32      `json:"interval_days"`
-	Repetitions    int32      `json:"repetitions"`
-	LastQuality    *int32     `json:"last_quality"`
-	DueAt          time.Time  `json:"due_at"`
-	ReviewedAt     *time.Time `json:"reviewed_at"`
-	CreatedAt      time.Time  `json:"created_at"`
+type SessionNote struct {
+	ID        int64           `json:"id"`
+	NoteDate  time.Time       `json:"note_date"`
+	NoteType  string          `json:"note_type"`
+	Source    string          `json:"source"`
+	Content   string          `json:"content"`
+	Metadata  json.RawMessage `json:"metadata"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 type Tag struct {

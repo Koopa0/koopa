@@ -162,6 +162,30 @@ func (s *Store) DeleteOldCompletedRuns(ctx context.Context, cutoff time.Time) (i
 	return n, nil
 }
 
+// FlowFailureStat holds per-flow failure counts.
+type FlowFailureStat struct {
+	FlowName string
+	Total    int64
+	Failed   int64
+}
+
+// FailureStats returns per-flow failure counts since the given time.
+func (s *Store) FailureStats(ctx context.Context, since time.Time) ([]FlowFailureStat, error) {
+	rows, err := s.q.FlowFailureStats(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("querying flow failure stats: %w", err)
+	}
+	stats := make([]FlowFailureStat, len(rows))
+	for i, r := range rows {
+		stats[i] = FlowFailureStat{
+			FlowName: r.FlowName,
+			Total:    r.Total,
+			Failed:   r.Failed,
+		}
+	}
+	return stats, nil
+}
+
 func dbToRun(r db.FlowRun) *Run {
 	return &Run{
 		ID:          r.ID,

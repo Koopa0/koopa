@@ -503,21 +503,6 @@ CREATE INDEX IF NOT EXISTS idx_flow_runs_completed
     ON flow_runs (content_id, flow_name, ended_at DESC)
     WHERE status = 'completed';
 
--- === Spaced Repetition ===
-
-CREATE TABLE spaced_intervals (
-    note_id         BIGINT PRIMARY KEY REFERENCES obsidian_notes(id) ON DELETE CASCADE,
-    easiness_factor DOUBLE PRECISION NOT NULL DEFAULT 2.5,
-    interval_days   INT NOT NULL DEFAULT 0,
-    repetitions     INT NOT NULL DEFAULT 0,
-    last_quality    INT,
-    due_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    reviewed_at     TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_spaced_intervals_due ON spaced_intervals (due_at);
-
 -- === Notion Source Registry ===
 
 CREATE TABLE notion_sources (

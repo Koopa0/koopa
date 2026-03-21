@@ -24,8 +24,8 @@ SELECT id, source_url, source_name, title, original_content,
 FROM collected_data WHERE url_hash = $1;
 
 -- name: CreateCollectedData :one
-INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id)
-VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('feed_id'))
+INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id, relevance_score)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('feed_id'), @relevance_score)
 RETURNING id, source_url, source_name, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
           url_hash, user_feedback, feedback_at, feed_id;
@@ -49,7 +49,7 @@ SELECT id, source_url, source_name, title, original_content,
        url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data
 WHERE collected_at >= $1 AND collected_at < $2
-ORDER BY collected_at DESC
+ORDER BY relevance_score DESC, collected_at DESC
 LIMIT $3;
 
 -- name: LatestCollectedData :many
@@ -60,7 +60,7 @@ SELECT id, source_url, source_name, title, original_content,
        url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data
 WHERE (sqlc.narg('since')::timestamptz IS NULL OR collected_at >= sqlc.narg('since'))
-ORDER BY collected_at DESC
+ORDER BY relevance_score DESC, collected_at DESC
 LIMIT @max_results;
 
 -- name: DeleteOldIgnored :execrows

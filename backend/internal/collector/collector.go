@@ -39,17 +39,24 @@ type FeedUpdater interface {
 	ResetFailure(ctx context.Context, id uuid.UUID, etag, lastModified string) error
 }
 
+// KeywordLoader provides tracking keywords for relevance scoring.
+// Returns nil/empty when no keywords are configured.
+type KeywordLoader interface {
+	Keywords(ctx context.Context) ([]string, error)
+}
+
 // Collector fetches RSS feeds and writes new items to collected_data.
 type Collector struct {
-	writer  CollectedWriter
-	feeds   FeedUpdater
-	client  *http.Client
-	limiter *DomainLimiter
-	logger  *slog.Logger
+	writer   CollectedWriter
+	feeds    FeedUpdater
+	keywords KeywordLoader
+	client   *http.Client
+	limiter  *DomainLimiter
+	logger   *slog.Logger
 }
 
 // New returns a Collector.
-func New(writer CollectedWriter, feeds FeedUpdater, logger *slog.Logger) *Collector {
+func New(writer CollectedWriter, feeds FeedUpdater, keywords KeywordLoader, logger *slog.Logger) *Collector {
 	client := &http.Client{
 		Timeout: requestTimeout,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
@@ -60,11 +67,12 @@ func New(writer CollectedWriter, feeds FeedUpdater, logger *slog.Logger) *Collec
 		},
 	}
 	return &Collector{
-		writer:  writer,
-		feeds:   feeds,
-		client:  client,
-		limiter: NewDomainLimiter(2 * time.Second),
-		logger:  logger,
+		writer:   writer,
+		feeds:    feeds,
+		keywords: keywords,
+		client:   client,
+		limiter:  NewDomainLimiter(2 * time.Second),
+		logger:   logger,
 	}
 }
 
@@ -144,6 +152,8 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		logger.Error("resetting failure after successful fetch", "error", rErr)
 	}
 
+	keywords := c.loadKeywords(ctx, logger)
+
 	var newIDs []uuid.UUID
 	for _, item := range parsed.Items {
 		if item.Link == "" {
@@ -174,6 +184,8 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 			content = content[:maxContentLen]
 		}
 
+		score := Score(item.Title, content, tags, keywords)
+
 		cd, err := c.writer.CreateCollectedData(ctx, collected.CreateParams{
 			SourceURL:       item.Link,
 			SourceName:      f.Name,
@@ -182,6 +194,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 			Topics:          f.Topics,
 			URLHash:         urlHash,
 			FeedID:          &f.ID,
+			RelevanceScore:  score,
 		})
 		if err != nil {
 			// skip duplicates from race conditions
@@ -227,6 +240,19 @@ func normalizeURL(rawURL string) string {
 	u.RawQuery = q.Encode()
 
 	return u.String()
+}
+
+// loadKeywords returns normalized tracking keywords for scoring (best-effort, never fails).
+func (c *Collector) loadKeywords(ctx context.Context, logger *slog.Logger) []string {
+	if c.keywords == nil {
+		return nil
+	}
+	kw, err := c.keywords.Keywords(ctx)
+	if err != nil {
+		logger.Error("loading tracking keywords", "error", err)
+		return nil
+	}
+	return NormalizeKeywords(kw)
 }
 
 // itemContent extracts the best available content from a feed item.

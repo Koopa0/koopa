@@ -6,14 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"google.golang.org/genai"
-
-	"github.com/koopa0/blog-backend/internal/collected"
 )
 
 // TaskQuerier queries pending tasks from the local database.
@@ -45,42 +40,31 @@ type MorningBriefOutput struct {
 	Text string `json:"text"`
 }
 
-// MorningBrief implements the morning-brief flow.
+// MorningBrief implements the morning-brief flow as a zero-LLM deterministic nudge.
+// It computes overdue/today task counts and sends a short notification
+// reminding the user to open Claude for full planning.
 type MorningBrief struct {
-	gf        *genkitFlow
-	g         *genkit.Genkit
-	model     ai.Model
-	tasks     TaskQuerier
-	collected RecentCollectedLister
-	contents  PublishedCounter
-	notifier  Sender
-	budget    BudgetChecker
-	loc       *time.Location
-	logger    *slog.Logger
+	gf       *genkitFlow
+	tasks    TaskQuerier
+	notifier Sender
+	loc      *time.Location
+	logger   *slog.Logger
 }
 
 // NewMorningBrief returns a MorningBrief flow.
+// No AI model or token budget needed — this is a deterministic nudge.
 func NewMorningBrief(
 	g *genkit.Genkit,
-	model ai.Model,
 	tasks TaskQuerier,
-	collects RecentCollectedLister,
-	contents PublishedCounter,
 	notifier Sender,
-	budget BudgetChecker,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *MorningBrief {
 	mb := &MorningBrief{
-		g:         g,
-		model:     model,
-		tasks:     tasks,
-		collected: collects,
-		contents:  contents,
-		notifier:  notifier,
-		budget:    budget,
-		loc:       loc,
-		logger:    logger,
+		tasks:    tasks,
+		notifier: notifier,
+		loc:      loc,
+		logger:   logger,
 	}
 	mb.gf = genkit.DefineFlow(g, "morning-brief", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		out, err := mb.run(ctx)
@@ -100,132 +84,89 @@ func (mb *MorningBrief) Run(ctx context.Context, input json.RawMessage) (json.Ra
 	return mb.gf.Run(ctx, input)
 }
 
-const (
-	estimatedBriefTokens int64 = 2000
-	briefCollectedLimit  int32 = 20
-)
-
-func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) {
-	if err := mb.budget.Reserve(estimatedBriefTokens); err != nil {
-		return MorningBriefOutput{}, fmt.Errorf("budget reserve: %w", err)
-	}
-
+func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) { //nolint:unparam // error required by Genkit flow signature
 	mb.logger.Info("morning-brief starting")
 
-	// Gather data sources in parallel — individual failures are degraded, not fatal
-	var (
-		tasks    []PendingTask
-		taskErr  error
-		rssItems []collected.CollectedData
-		rssErr   error
-		pubCount int64
-		pubErr   error
-	)
-
 	now := time.Now().In(mb.loc)
-	yesterday := now.Add(-24 * time.Hour)
-	weekAgo := now.Add(-7 * 24 * time.Hour)
+	today := now.Format(time.DateOnly)
 
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		tasks, taskErr = mb.tasks.PendingTasks(ctx)
-	})
-	wg.Go(func() {
-		rssItems, rssErr = mb.collected.RecentCollectedData(ctx, yesterday, now, briefCollectedLimit)
-	})
-	wg.Go(func() {
-		pubCount, pubErr = mb.contents.PublishedContentCountSince(ctx, weekAgo)
-	})
-	wg.Wait()
-
-	// Build user prompt with degraded sections
-	userPrompt := buildMorningBriefPrompt(now, tasks, taskErr, rssItems, rssErr, pubCount, pubErr)
-
-	text, err := genkit.Run(ctx, "generate-morning-brief", func() (string, error) {
-		resp, err := genkit.Generate(ctx, mb.g,
-			ai.WithModel(mb.model),
-			ai.WithSystem(morningBriefSystemPrompt),
-			ai.WithPrompt(userPrompt),
-			ai.WithConfig(&genai.GenerateContentConfig{
-				Temperature:     genai.Ptr[float32](0.5),
-				MaxOutputTokens: 1024,
-			}),
-		)
-		if err != nil {
-			return "", fmt.Errorf("generating morning brief: %w", err)
-		}
-		if err := checkFinishReason(resp); err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(resp.Text()), nil
-	})
+	tasks, err := mb.tasks.PendingTasks(ctx)
 	if err != nil {
-		return MorningBriefOutput{}, err
+		mb.logger.Error("morning-brief: pending tasks", "error", err)
+		// degrade: send a minimal nudge without task data
+		text := buildNudge(now, 0, 0, 0, nil)
+		if sendErr := mb.notifier.Send(ctx, text); sendErr != nil {
+			mb.logger.Error("sending morning brief notification", "error", sendErr)
+		}
+		return MorningBriefOutput{Text: text}, nil
 	}
 
-	// Send notification
+	var total, overdueCount, todayCount int
+	var severelyOverdue []string // tasks overdue > 3 days
+	for _, t := range tasks {
+		total++
+		if t.Due == "" {
+			continue
+		}
+		due, parseErr := time.Parse(time.DateOnly, t.Due)
+		if parseErr != nil {
+			continue
+		}
+		daysOverdue := int(now.Sub(due).Hours() / 24)
+		switch {
+		case t.Due == today:
+			todayCount++
+		case daysOverdue > 0:
+			overdueCount++
+			if daysOverdue > 3 {
+				severelyOverdue = append(severelyOverdue, fmt.Sprintf("• %s（逾期 %d 天）", t.Title, daysOverdue))
+			}
+		}
+	}
+
+	text := buildNudge(now, total, overdueCount, todayCount, severelyOverdue)
+
 	if err := mb.notifier.Send(ctx, text); err != nil {
 		mb.logger.Error("sending morning brief notification", "error", err)
-		// still return success — the brief was generated, notification failure is non-fatal
 	}
 
 	mb.logger.Info("morning-brief complete",
-		"tasks", len(tasks),
-		"rss_items", len(rssItems),
-		"published_count", pubCount,
+		"total", total,
+		"overdue", overdueCount,
+		"today", todayCount,
 	)
 
 	return MorningBriefOutput{Text: text}, nil
 }
 
-// buildMorningBriefPrompt builds the user prompt with degraded sections for failures.
-func buildMorningBriefPrompt(
-	now time.Time,
-	tasks []PendingTask, taskErr error,
-	rssItems []collected.CollectedData, rssErr error,
-	pubCount int64, pubErr error,
-) string {
+// buildNudge constructs a deterministic morning nudge message.
+func buildNudge(now time.Time, total, overdue, today int, severelyOverdue []string) string {
+	weekday := [...]string{"日", "一", "二", "三", "四", "五", "六"}[now.Weekday()]
+
 	var b strings.Builder
+	fmt.Fprintf(&b, "📋 早安！今天是 %s（%s）\n", now.Format("2006-01-02"), weekday)
 
-	b.WriteString("今天日期：" + now.Format("2006-01-02") + "\n\n")
-
-	// Tasks section
-	b.WriteString("== 待辦事項 ==\n")
-	switch {
-	case taskErr != nil:
-		b.WriteString("Notion 資料不可用\n")
-	case len(tasks) == 0:
-		b.WriteString("無待辦事項\n")
-	default:
-		for _, t := range tasks {
-			if t.Due != "" {
-				fmt.Fprintf(&b, "- %s（截止：%s）\n", t.Title, t.Due)
-			} else {
-				fmt.Fprintf(&b, "- %s\n", t.Title)
-			}
-		}
-	}
-
-	// RSS section
-	b.WriteString("\n== 值得關注的文章（昨日）==\n")
-	switch {
-	case rssErr != nil:
-		b.WriteString("RSS 資料不可用\n")
-	case len(rssItems) == 0:
-		b.WriteString("無符合條件的文章\n")
-	default:
-		for _, item := range rssItems {
-			fmt.Fprintf(&b, "- %s（%s）\n", item.Title, item.SourceName)
-		}
-	}
-
-	// Published stats section
-	b.WriteString("\n== 發佈統計（近 7 天）==\n")
-	if pubErr != nil {
-		b.WriteString("文章統計不可用\n")
+	if total == 0 {
+		b.WriteString("目前沒有待辦事項\n")
 	} else {
-		fmt.Fprintf(&b, "發佈 %d 篇文章\n", pubCount)
+		fmt.Fprintf(&b, "待辦：%d 件待完成", total)
+		if overdue > 0 {
+			fmt.Fprintf(&b, "（%d 件逾期）", overdue)
+		}
+		b.WriteByte('\n')
+
+		if today > 0 {
+			fmt.Fprintf(&b, "今日到期：%d 件\n", today)
+		}
 	}
+
+	if len(severelyOverdue) > 0 {
+		b.WriteString("\n⚠️ 嚴重逾期：\n")
+		b.WriteString(strings.Join(severelyOverdue, "\n"))
+		b.WriteByte('\n')
+	}
+
+	b.WriteString("\n👉 打開 Claude 做今日規劃")
 
 	return b.String()
 }

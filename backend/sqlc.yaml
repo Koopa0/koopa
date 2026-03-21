@@ -15,7 +15,7 @@ sql:
       - "internal/tag/query.sql"
       - "internal/note/query.sql"
       - "internal/activity/query.sql"
-      - "internal/spaced/query.sql"
+      - "internal/session/query.sql"
       - "internal/notion/query.sql"
       - "internal/task/query.sql"
     schema: "migrations/"

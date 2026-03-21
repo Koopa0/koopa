@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -242,6 +243,71 @@ func toNoteFromFilterRow(r db.SearchNotesByFiltersRow) Note {
 		n.Tags = []string{}
 	}
 	return n
+}
+
+// UpdateEmbedding stores an embedding vector for a note.
+func (s *Store) UpdateEmbedding(ctx context.Context, id int64, vec pgvector.Vector) error {
+	if err := s.q.UpdateNoteEmbedding(ctx, db.UpdateNoteEmbeddingParams{
+		ID:        id,
+		Embedding: &vec,
+	}); err != nil {
+		return fmt.Errorf("updating note embedding %d: %w", id, err)
+	}
+	return nil
+}
+
+// NotesWithoutEmbedding returns notes that need embedding generation.
+func (s *Store) NotesWithoutEmbedding(ctx context.Context, batchSize int32) ([]EmbeddingCandidate, error) {
+	rows, err := s.q.NotesWithoutEmbedding(ctx, batchSize)
+	if err != nil {
+		return nil, fmt.Errorf("listing notes without embedding: %w", err)
+	}
+	candidates := make([]EmbeddingCandidate, len(rows))
+	for i, r := range rows {
+		candidates[i] = EmbeddingCandidate{
+			ID:          r.ID,
+			FilePath:    r.FilePath,
+			Title:       r.Title,
+			ContentText: r.ContentText,
+		}
+	}
+	return candidates, nil
+}
+
+// SearchBySimilarity performs semantic search using cosine similarity.
+func (s *Store) SearchBySimilarity(ctx context.Context, queryVec pgvector.Vector, limit int) ([]SimilarityResult, error) {
+	rows, err := s.q.SearchNotesBySimilarity(ctx, db.SearchNotesBySimilarityParams{
+		QueryEmbedding: queryVec,
+		MaxResults:     int32(limit), // #nosec G115 -- bounded by caller
+	})
+	if err != nil {
+		return nil, fmt.Errorf("semantic search notes: %w", err)
+	}
+	results := make([]SimilarityResult, len(rows))
+	for i, r := range rows {
+		n := Note{
+			ID:          r.ID,
+			FilePath:    r.FilePath,
+			Title:       r.Title,
+			Type:        r.Type,
+			Source:      r.Source,
+			Context:     r.Context,
+			Status:      r.Status,
+			Difficulty:  r.Difficulty,
+			Book:        r.Book,
+			Chapter:     r.Chapter,
+			ContentText: r.ContentText,
+			SyncedAt:    r.SyncedAt,
+		}
+		if r.Tags != nil {
+			_ = json.Unmarshal(r.Tags, &n.Tags) // best-effort
+		}
+		if n.Tags == nil {
+			n.Tags = []string{}
+		}
+		results[i] = SimilarityResult{Note: n, Similarity: r.Similarity}
+	}
+	return results, nil
 }
 
 // toNoteFromTypeRow converts a NotesByTypeAndContextRow to a domain Note.

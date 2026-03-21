@@ -132,11 +132,26 @@ export interface ApiTask {
   title: string;
   status: TaskStatus;
   due: string | null;
+  energy: string;
+  priority: string;
+  my_day: boolean;
   project_id: string | null;
+  project_title: string;
   notion_page_id: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Admin — Session Note */
+export interface ApiSessionNote {
+  id: number;
+  note_date: string;
+  note_type: string;
+  source: string;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export type TaskStatus = 'todo' | 'in-progress' | 'done';
@@ -525,47 +540,6 @@ export interface ApiUpdateNotionSourceRequest {
   enabled?: boolean;
 }
 
-/** Admin — Spaced Repetition */
-export interface ApiSpacedDueResponse {
-  intervals: ApiDueInterval[];
-  total_due: number;
-}
-
-export interface ApiDueInterval {
-  note_id: number;
-  file_path: string;
-  title: string | null;
-  type: string | null;
-  context: string | null;
-  easiness_factor: number;
-  interval_days: number;
-  repetitions: number;
-  last_quality: number | null;
-  due_at: string;
-  reviewed_at: string | null;
-  created_at: string;
-}
-
-export interface ApiSpacedInterval {
-  note_id: number;
-  easiness_factor: number;
-  interval_days: number;
-  repetitions: number;
-  last_quality: number | null;
-  due_at: string;
-  reviewed_at: string | null;
-  created_at: string;
-}
-
-export interface ApiSubmitReviewRequest {
-  note_id: number;
-  quality: number;
-}
-
-export interface ApiEnrollRequest {
-  note_id: number;
-}
-
 /** Admin — Stats */
 export interface ApiStatsOverview {
   contents: { total: number; by_status: Record<string, number>; by_type: Record<string, number>; published: number };
@@ -576,7 +550,6 @@ export interface ApiStatsOverview {
   reviews: { pending: number; total: number };
   notes: { total: number; by_type: Record<string, number> };
   activity: { total: number; last_24h: number; last_7d: number; by_source: Record<string, number> };
-  spaced: { enrolled: number; due: number };
   sources: { total: number; enabled: number };
   tags: { canonical: number; aliases: number; unconfirmed: number };
 }
@@ -596,7 +569,6 @@ export interface ApiAreaDrift {
 }
 
 export interface ApiLearningDashboard {
-  spaced: { enrolled: number; due: number };
   notes: { total: number; last_week: number; last_month: number; by_type: Record<string, number> };
   activity: { this_week: number; last_week: number; trend: 'up' | 'down' | 'stable' };
   top_tags: ApiTagCount[];

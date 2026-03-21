@@ -59,9 +59,6 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 	if err := s.queryActivityStats(ctx, &o.Activity); err != nil {
 		return nil, fmt.Errorf("activity stats: %w", err)
 	}
-	if err := s.querySpacedStats(ctx, &o.Spaced); err != nil {
-		return nil, fmt.Errorf("spaced stats: %w", err)
-	}
 	if err := s.querySourceStats(ctx, &o.Sources); err != nil {
 		return nil, fmt.Errorf("source stats: %w", err)
 	}
@@ -212,14 +209,6 @@ func (s *Store) queryActivityStats(ctx context.Context, as *ActivityStats) error
 	return rows.Err()
 }
 
-func (s *Store) querySpacedStats(ctx context.Context, ss *SpacedStats) error {
-	return s.dbtx.QueryRow(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE due_at <= now())
-		FROM spaced_intervals`).Scan(&ss.Enrolled, &ss.Due)
-}
-
 func (s *Store) querySourceStats(ctx context.Context, ss *SourceStats) error {
 	return s.dbtx.QueryRow(ctx,
 		`SELECT COUNT(*), COUNT(*) FILTER (WHERE enabled) FROM notion_sources`,
@@ -350,10 +339,6 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 		Notes: NoteGrowth{ByType: map[string]int{}},
 	}
 
-	// Spaced stats
-	if err := s.querySpacedStats(ctx, &ld.Spaced); err != nil {
-		return nil, fmt.Errorf("spaced stats: %w", err)
-	}
 
 	// Note growth
 	err := s.dbtx.QueryRow(ctx, `

@@ -56,6 +56,7 @@ type CreateParams struct {
 	Topics          []string   `json:"topics"`
 	URLHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id,omitempty"`
+	RelevanceScore  float32    `json:"relevance_score"`
 }
 
 // Filter holds collected data listing parameters.

@@ -113,6 +113,11 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'today',
+        loadComponent: () =>
+          import('./admin/today/today').then((m) => m.TodayComponent),
+      },
+      {
         path: 'flow-runs',
         loadComponent: () =>
           import('./admin/flow-runs/flow-runs').then(
@@ -147,11 +152,6 @@ export const routes: Routes = [
           import('./admin/notion-sources/notion-sources').then(
             (m) => m.NotionSourcesComponent,
           ),
-      },
-      {
-        path: 'spaced',
-        loadComponent: () =>
-          import('./admin/spaced/spaced').then((m) => m.SpacedComponent),
       },
       {
         path: 'activity',

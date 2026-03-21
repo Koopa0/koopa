@@ -16,13 +16,15 @@ import (
 
 const activeProjectSlugsWithRepo = `-- name: ActiveProjectSlugsWithRepo :many
 SELECT slug FROM projects
-WHERE status IN ('in-progress', 'maintained') AND repo IS NOT NULL AND repo != ''
+WHERE status IN ('in-progress', 'maintained')
+  AND repo IS NOT NULL AND repo != ''
+  AND last_activity_at >= $1
 ORDER BY title
 `
 
-// List slugs of active projects that have a linked repository.
-func (q *Queries) ActiveProjectSlugsWithRepo(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, activeProjectSlugsWithRepo)
+// List slugs of active projects that have a linked repository and recent activity.
+func (q *Queries) ActiveProjectSlugsWithRepo(ctx context.Context, since *time.Time) ([]string, error) {
+	rows, err := q.db.Query(ctx, activeProjectSlugsWithRepo, since)
 	if err != nil {
 		return nil, err
 	}
@@ -882,8 +884,8 @@ func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID)
 }
 
 const createCollectedData = `-- name: CreateCollectedData :one
-INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id, relevance_score)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, source_url, source_name, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
           url_hash, user_feedback, feedback_at, feed_id
@@ -897,6 +899,7 @@ type CreateCollectedDataParams struct {
 	Topics          []string   `json:"topics"`
 	UrlHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id"`
+	RelevanceScore  float32    `json:"relevance_score"`
 }
 
 func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDataParams) (CollectedDatum, error) {
@@ -908,6 +911,7 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 		arg.Topics,
 		arg.UrlHash,
 		arg.FeedID,
+		arg.RelevanceScore,
 	)
 	var i CollectedDatum
 	err := row.Scan(
@@ -1142,6 +1146,42 @@ func (q *Queries) CreateFlowRun(ctx context.Context, arg CreateFlowRunParams) (F
 		&i.MaxAttempts,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createNote = `-- name: CreateNote :one
+INSERT INTO session_notes (note_date, note_type, source, content, metadata)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, note_date, note_type, source, content, metadata, created_at
+`
+
+type CreateNoteParams struct {
+	NoteDate time.Time       `json:"note_date"`
+	NoteType string          `json:"note_type"`
+	Source   string          `json:"source"`
+	Content  string          `json:"content"`
+	Metadata json.RawMessage `json:"metadata"`
+}
+
+// Insert a session note (plan, reflection, context, or metrics).
+func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (SessionNote, error) {
+	row := q.db.QueryRow(ctx, createNote,
+		arg.NoteDate,
+		arg.NoteType,
+		arg.Source,
+		arg.Content,
+		arg.Metadata,
+	)
+	var i SessionNote
+	err := row.Scan(
+		&i.ID,
+		&i.NoteDate,
+		&i.NoteType,
+		&i.Source,
+		&i.Content,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -1628,6 +1668,19 @@ func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64
 	return result.RowsAffected(), nil
 }
 
+const deleteOldNotes = `-- name: DeleteOldNotes :execrows
+DELETE FROM session_notes WHERE note_date < $1
+`
+
+// Cleanup: delete session notes older than the given cutoff.
+func (q *Queries) DeleteOldNotes(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldNotes, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteProject = `-- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1
 `
@@ -1686,81 +1739,6 @@ DELETE FROM tracking_topics WHERE id = $1
 func (q *Queries) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTrackingTopic, id)
 	return err
-}
-
-const dueCount = `-- name: DueCount :one
-SELECT count(*) FROM spaced_intervals si
-JOIN obsidian_notes n ON n.id = si.note_id
-WHERE si.due_at <= now()
-  AND (n.status IS NULL OR n.status != 'archived')
-`
-
-func (q *Queries) DueCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, dueCount)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const dueIntervals = `-- name: DueIntervals :many
-SELECT si.note_id, si.easiness_factor, si.interval_days, si.repetitions,
-       si.last_quality, si.due_at, si.reviewed_at, si.created_at,
-       n.title, n.file_path, n.type, n.context
-FROM spaced_intervals si
-JOIN obsidian_notes n ON n.id = si.note_id
-WHERE si.due_at <= now()
-  AND (n.status IS NULL OR n.status != 'archived')
-ORDER BY si.due_at ASC
-LIMIT $1
-`
-
-type DueIntervalsRow struct {
-	NoteID         int64      `json:"note_id"`
-	EasinessFactor float64    `json:"easiness_factor"`
-	IntervalDays   int32      `json:"interval_days"`
-	Repetitions    int32      `json:"repetitions"`
-	LastQuality    *int32     `json:"last_quality"`
-	DueAt          time.Time  `json:"due_at"`
-	ReviewedAt     *time.Time `json:"reviewed_at"`
-	CreatedAt      time.Time  `json:"created_at"`
-	Title          *string    `json:"title"`
-	FilePath       string     `json:"file_path"`
-	Type           *string    `json:"type"`
-	Context        *string    `json:"context"`
-}
-
-// List notes due for review, ordered by most overdue first.
-func (q *Queries) DueIntervals(ctx context.Context, maxResults int32) ([]DueIntervalsRow, error) {
-	rows, err := q.db.Query(ctx, dueIntervals, maxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []DueIntervalsRow{}
-	for rows.Next() {
-		var i DueIntervalsRow
-		if err := rows.Scan(
-			&i.NoteID,
-			&i.EasinessFactor,
-			&i.IntervalDays,
-			&i.Repetitions,
-			&i.LastQuality,
-			&i.DueAt,
-			&i.ReviewedAt,
-			&i.CreatedAt,
-			&i.Title,
-			&i.FilePath,
-			&i.Type,
-			&i.Context,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const enabledFeeds = `-- name: EnabledFeeds :many
@@ -2082,6 +2060,44 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 	return items, nil
 }
 
+const flowFailureStats = `-- name: FlowFailureStats :many
+SELECT flow_name,
+       COUNT(*) AS total,
+       COUNT(*) FILTER (WHERE status = 'failed') AS failed
+FROM flow_runs
+WHERE created_at >= $1
+GROUP BY flow_name
+HAVING COUNT(*) FILTER (WHERE status = 'failed') > 0
+ORDER BY failed DESC
+`
+
+type FlowFailureStatsRow struct {
+	FlowName string `json:"flow_name"`
+	Total    int64  `json:"total"`
+	Failed   int64  `json:"failed"`
+}
+
+// Per-flow failure counts since a given time (for health checks).
+func (q *Queries) FlowFailureStats(ctx context.Context, since time.Time) ([]FlowFailureStatsRow, error) {
+	rows, err := q.db.Query(ctx, flowFailureStats, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FlowFailureStatsRow{}
+	for rows.Next() {
+		var i FlowFailureStatsRow
+		if err := rows.Scan(&i.FlowName, &i.Total, &i.Failed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const flowRunByID = `-- name: FlowRunByID :one
 SELECT id, flow_name, content_id, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
 FROM flow_runs WHERE id = $1
@@ -2334,44 +2350,6 @@ func (q *Queries) InsertEventTags(ctx context.Context, arg InsertEventTagsParams
 	return err
 }
 
-const insertInterval = `-- name: InsertInterval :one
-INSERT INTO spaced_intervals (note_id, easiness_factor, interval_days, repetitions, due_at)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (note_id) DO NOTHING
-RETURNING note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at, created_at
-`
-
-type InsertIntervalParams struct {
-	NoteID         int64     `json:"note_id"`
-	EasinessFactor float64   `json:"easiness_factor"`
-	IntervalDays   int32     `json:"interval_days"`
-	Repetitions    int32     `json:"repetitions"`
-	DueAt          time.Time `json:"due_at"`
-}
-
-// Insert a new interval; returns nothing if the note is already enrolled.
-func (q *Queries) InsertInterval(ctx context.Context, arg InsertIntervalParams) (SpacedInterval, error) {
-	row := q.db.QueryRow(ctx, insertInterval,
-		arg.NoteID,
-		arg.EasinessFactor,
-		arg.IntervalDays,
-		arg.Repetitions,
-		arg.DueAt,
-	)
-	var i SpacedInterval
-	err := row.Scan(
-		&i.NoteID,
-		&i.EasinessFactor,
-		&i.IntervalDays,
-		&i.Repetitions,
-		&i.LastQuality,
-		&i.DueAt,
-		&i.ReviewedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const insertNoteTag = `-- name: InsertNoteTag :exec
 INSERT INTO obsidian_note_tags (note_id, tag_id)
 VALUES ($1, $2)
@@ -2416,26 +2394,6 @@ func (q *Queries) InsertUnmappedAlias(ctx context.Context, rawTag string) error 
 	return err
 }
 
-const intervalByNoteID = `-- name: IntervalByNoteID :one
-SELECT note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at, created_at FROM spaced_intervals WHERE note_id = $1
-`
-
-func (q *Queries) IntervalByNoteID(ctx context.Context, noteID int64) (SpacedInterval, error) {
-	row := q.db.QueryRow(ctx, intervalByNoteID, noteID)
-	var i SpacedInterval
-	err := row.Scan(
-		&i.NoteID,
-		&i.EasinessFactor,
-		&i.IntervalDays,
-		&i.Repetitions,
-		&i.LastQuality,
-		&i.DueAt,
-		&i.ReviewedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const isAliasRejected = `-- name: IsAliasRejected :one
 SELECT EXISTS(SELECT 1 FROM tag_aliases WHERE raw_tag = $1 AND match_method = 'rejected') AS rejected
 `
@@ -2454,7 +2412,7 @@ SELECT id, source_url, source_name, title, original_content,
        url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data
 WHERE ($1::timestamptz IS NULL OR collected_at >= $1)
-ORDER BY collected_at DESC
+ORDER BY relevance_score DESC, collected_at DESC
 LIMIT $2
 `
 
@@ -2528,6 +2486,30 @@ func (q *Queries) LatestCompletedRunByContentAndFlow(ctx context.Context, arg La
 		&i.MaxAttempts,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const latestNoteByType = `-- name: LatestNoteByType :one
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = $1
+ORDER BY note_date DESC, created_at DESC
+LIMIT 1
+`
+
+// Get the most recent note of a specific type (e.g., latest reflection).
+func (q *Queries) LatestNoteByType(ctx context.Context, noteType string) (SessionNote, error) {
+	row := q.db.QueryRow(ctx, latestNoteByType, noteType)
+	var i SessionNote
+	err := row.Scan(
+		&i.ID,
+		&i.NoteDate,
+		&i.NoteType,
+		&i.Source,
+		&i.Content,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -2663,6 +2645,43 @@ func (q *Queries) MapAlias(ctx context.Context, arg MapAliasParams) (TagAlias, e
 	return i, err
 }
 
+const metricsHistory = `-- name: MetricsHistory :many
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = 'metrics'
+  AND note_date >= $1
+ORDER BY note_date DESC
+`
+
+// Get metrics notes for the last N days (for planning_history).
+func (q *Queries) MetricsHistory(ctx context.Context, sinceDate time.Time) ([]SessionNote, error) {
+	rows, err := q.db.Query(ctx, metricsHistory, sinceDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionNote{}
+	for rows.Next() {
+		var i SessionNote
+		if err := rows.Scan(
+			&i.ID,
+			&i.NoteDate,
+			&i.NoteType,
+			&i.Source,
+			&i.Content,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const noteByFilePath = `-- name: NoteByFilePath :one
 SELECT id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, search_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
 `
@@ -2717,6 +2736,50 @@ func (q *Queries) NoteTagCountByTagID(ctx context.Context, tagID uuid.UUID) (int
 	var count int32
 	err := row.Scan(&count)
 	return count, err
+}
+
+const notesByDate = `-- name: NotesByDate :many
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_date >= $1
+  AND note_date <= $2
+  AND ($3::text IS NULL OR note_type = $3)
+ORDER BY created_at DESC
+`
+
+type NotesByDateParams struct {
+	StartDate time.Time `json:"start_date"`
+	EndDate   time.Time `json:"end_date"`
+	NoteType  *string   `json:"note_type"`
+}
+
+// List session notes for a date range, optionally filtered by type.
+func (q *Queries) NotesByDate(ctx context.Context, arg NotesByDateParams) ([]SessionNote, error) {
+	rows, err := q.db.Query(ctx, notesByDate, arg.StartDate, arg.EndDate, arg.NoteType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionNote{}
+	for rows.Next() {
+		var i SessionNote
+		if err := rows.Scan(
+			&i.ID,
+			&i.NoteDate,
+			&i.NoteType,
+			&i.Source,
+			&i.Content,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const notesByTypeAndContext = `-- name: NotesByTypeAndContext :many
@@ -2809,6 +2872,47 @@ func (q *Queries) NotesWithRawTags(ctx context.Context) ([]NotesWithRawTagsRow, 
 	for rows.Next() {
 		var i NotesWithRawTagsRow
 		if err := rows.Scan(&i.ID, &i.Tags); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const notesWithoutEmbedding = `-- name: NotesWithoutEmbedding :many
+SELECT id, file_path, title, content_text
+FROM obsidian_notes
+WHERE embedding IS NULL AND (status IS NULL OR status != 'archived')
+ORDER BY synced_at DESC
+LIMIT $1
+`
+
+type NotesWithoutEmbeddingRow struct {
+	ID          int64   `json:"id"`
+	FilePath    string  `json:"file_path"`
+	Title       *string `json:"title"`
+	ContentText *string `json:"content_text"`
+}
+
+// Find notes that need embedding generation.
+func (q *Queries) NotesWithoutEmbedding(ctx context.Context, batchSize int32) ([]NotesWithoutEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, notesWithoutEmbedding, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotesWithoutEmbeddingRow{}
+	for rows.Next() {
+		var i NotesWithoutEmbeddingRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FilePath,
+			&i.Title,
+			&i.ContentText,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -3871,7 +3975,7 @@ SELECT id, source_url, source_name, title, original_content,
        url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data
 WHERE collected_at >= $1 AND collected_at < $2
-ORDER BY collected_at DESC
+ORDER BY relevance_score DESC, collected_at DESC
 LIMIT $3
 `
 
@@ -4388,6 +4492,75 @@ func (q *Queries) SearchNotesByFilters(ctx context.Context, arg SearchNotesByFil
 			&i.Chapter,
 			&i.ContentText,
 			&i.SyncedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchNotesBySimilarity = `-- name: SearchNotesBySimilarity :many
+SELECT id, file_path, title, type, source, context, status, tags,
+       difficulty, book, chapter, content_text, synced_at,
+       (1 - (embedding <=> $1::vector))::float8 AS similarity
+FROM obsidian_notes
+WHERE embedding IS NOT NULL
+  AND (status IS NULL OR status != 'archived')
+ORDER BY embedding <=> $1::vector
+LIMIT $2
+`
+
+type SearchNotesBySimilarityParams struct {
+	QueryEmbedding pgvector_go.Vector `json:"query_embedding"`
+	MaxResults     int32              `json:"max_results"`
+}
+
+type SearchNotesBySimilarityRow struct {
+	ID          int64           `json:"id"`
+	FilePath    string          `json:"file_path"`
+	Title       *string         `json:"title"`
+	Type        *string         `json:"type"`
+	Source      *string         `json:"source"`
+	Context     *string         `json:"context"`
+	Status      *string         `json:"status"`
+	Tags        json.RawMessage `json:"tags"`
+	Difficulty  *string         `json:"difficulty"`
+	Book        *string         `json:"book"`
+	Chapter     *string         `json:"chapter"`
+	ContentText *string         `json:"content_text"`
+	SyncedAt    *time.Time      `json:"synced_at"`
+	Similarity  float64         `json:"similarity"`
+}
+
+// Semantic search: find notes closest to a query embedding vector.
+func (q *Queries) SearchNotesBySimilarity(ctx context.Context, arg SearchNotesBySimilarityParams) ([]SearchNotesBySimilarityRow, error) {
+	rows, err := q.db.Query(ctx, searchNotesBySimilarity, arg.QueryEmbedding, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchNotesBySimilarityRow{}
+	for rows.Next() {
+		var i SearchNotesBySimilarityRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FilePath,
+			&i.Title,
+			&i.Type,
+			&i.Source,
+			&i.Context,
+			&i.Status,
+			&i.Tags,
+			&i.Difficulty,
+			&i.Book,
+			&i.Chapter,
+			&i.ContentText,
+			&i.SyncedAt,
+			&i.Similarity,
 		); err != nil {
 			return nil, err
 		}
@@ -5323,6 +5496,21 @@ func (q *Queries) UpdateGoalStatus(ctx context.Context, arg UpdateGoalStatusPara
 	return i, err
 }
 
+const updateNoteEmbedding = `-- name: UpdateNoteEmbedding :exec
+UPDATE obsidian_notes SET embedding = $2 WHERE id = $1
+`
+
+type UpdateNoteEmbeddingParams struct {
+	ID        int64               `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+// Store embedding vector for a note.
+func (q *Queries) UpdateNoteEmbedding(ctx context.Context, arg UpdateNoteEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, updateNoteEmbedding, arg.ID, arg.Embedding)
+	return err
+}
+
 const updateProject = `-- name: UpdateProject :one
 UPDATE projects SET
     slug = COALESCE($2, slug),
@@ -5853,53 +6041,6 @@ func (q *Queries) UpsertGoalByNotionPageID(ctx context.Context, arg UpsertGoalBy
 		&i.NotionPageID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const upsertInterval = `-- name: UpsertInterval :one
-INSERT INTO spaced_intervals (note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (note_id) DO UPDATE SET
-    easiness_factor = EXCLUDED.easiness_factor,
-    interval_days = EXCLUDED.interval_days,
-    repetitions = EXCLUDED.repetitions,
-    last_quality = EXCLUDED.last_quality,
-    due_at = EXCLUDED.due_at,
-    reviewed_at = EXCLUDED.reviewed_at
-RETURNING note_id, easiness_factor, interval_days, repetitions, last_quality, due_at, reviewed_at, created_at
-`
-
-type UpsertIntervalParams struct {
-	NoteID         int64      `json:"note_id"`
-	EasinessFactor float64    `json:"easiness_factor"`
-	IntervalDays   int32      `json:"interval_days"`
-	Repetitions    int32      `json:"repetitions"`
-	LastQuality    *int32     `json:"last_quality"`
-	DueAt          time.Time  `json:"due_at"`
-	ReviewedAt     *time.Time `json:"reviewed_at"`
-}
-
-func (q *Queries) UpsertInterval(ctx context.Context, arg UpsertIntervalParams) (SpacedInterval, error) {
-	row := q.db.QueryRow(ctx, upsertInterval,
-		arg.NoteID,
-		arg.EasinessFactor,
-		arg.IntervalDays,
-		arg.Repetitions,
-		arg.LastQuality,
-		arg.DueAt,
-		arg.ReviewedAt,
-	)
-	var i SpacedInterval
-	err := row.Scan(
-		&i.NoteID,
-		&i.EasinessFactor,
-		&i.IntervalDays,
-		&i.Repetitions,
-		&i.LastQuality,
-		&i.DueAt,
-		&i.ReviewedAt,
-		&i.CreatedAt,
 	)
 	return i, err
 }

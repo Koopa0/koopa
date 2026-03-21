@@ -41,7 +41,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/server"
-	"github.com/koopa0/blog-backend/internal/spaced"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -124,7 +124,7 @@ func testServer(t *testing.T) *httptest.Server {
 	statsStore := stats.NewStore(pool)
 	activityStore := activity.NewStore(pool)
 	tagStore := tag.NewStore(pool)
-	spacedStore := spaced.NewStore(pool)
+	sessionStore := session.NewStore(pool)
 
 	// mock flows + runner for pipeline endpoints
 	registry := flow.NewRegistry(
@@ -160,7 +160,7 @@ func testServer(t *testing.T) *httptest.Server {
 		Feed:         feed.NewHandler(feedStore, feedCollector, logger),
 		Notion:       notion.NewHandler(notionClient, notionStore, nil, projectStore, goalStore, taskStore, runner, "", logger),
 		Tag:          tag.NewHandler(tagStore, pool, logger),
-		Spaced:       spaced.NewHandler(spacedStore, logger),
+		Session:      session.NewHandler(sessionStore, logger),
 		NotionSource: notion.NewSourceHandler(notionStore, notionClient, nil, logger),
 		Goal:         goal.NewHandler(goalStore, logger),
 		Task:         task.NewHandler(taskStore, logger),
