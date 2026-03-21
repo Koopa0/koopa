@@ -599,8 +599,8 @@ type PlatformStatsInput struct {
 
 // PlatformStatsOutput is the output for the get_platform_stats tool.
 type PlatformStatsOutput struct {
-	Overview json.RawMessage `json:"overview"`
-	Drift    json.RawMessage `json:"drift,omitempty"`
+	Overview map[string]any `json:"overview"`
+	Drift    map[string]any `json:"drift,omitempty"`
 }
 
 func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, input PlatformStatsInput) (*mcp.CallToolResult, PlatformStatsOutput, error) {
@@ -609,8 +609,7 @@ func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, i
 		return nil, PlatformStatsOutput{}, fmt.Errorf("querying platform stats: %w", err)
 	}
 
-	overviewJSON, _ := json.Marshal(overview)
-	out := PlatformStatsOutput{Overview: overviewJSON}
+	out := PlatformStatsOutput{Overview: toMapAny(overview)}
 
 	driftDays := clamp(input.DriftDays, 1, 90, 30)
 	drift, err := s.stats.Drift(ctx, driftDays)
@@ -618,8 +617,7 @@ func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, i
 		s.logger.Error("querying drift report", "error", err)
 		// best-effort: return overview without drift
 	} else {
-		driftJSON, _ := json.Marshal(drift)
-		out.Drift = driftJSON
+		out.Drift = toMapAny(drift)
 	}
 
 	return nil, out, nil
@@ -991,9 +989,9 @@ type LearningProgressInput struct{}
 
 // LearningProgressOutput is the output for the get_learning_progress tool.
 type LearningProgressOutput struct {
-	Notes    json.RawMessage `json:"notes"`
-	Activity json.RawMessage `json:"activity"`
-	TopTags  json.RawMessage `json:"top_tags"`
+	Notes    map[string]any `json:"notes"`
+	Activity map[string]any `json:"activity"`
+	TopTags  map[string]any `json:"top_tags"`
 }
 
 func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest, _ LearningProgressInput) (*mcp.CallToolResult, LearningProgressOutput, error) {
@@ -1002,14 +1000,10 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, LearningProgressOutput{}, fmt.Errorf("querying learning progress: %w", err)
 	}
 
-	notesJSON, _ := json.Marshal(ld.Notes)
-	activityJSON, _ := json.Marshal(ld.Activity)
-	topTagsJSON, _ := json.Marshal(ld.TopTags)
-
 	return nil, LearningProgressOutput{
-		Notes:    notesJSON,
-		Activity: activityJSON,
-		TopTags:  topTagsJSON,
+		Notes:    toMapAny(ld.Notes),
+		Activity: toMapAny(ld.Activity),
+		TopTags:  toMapAny(ld.TopTags),
 	}, nil
 }
 
@@ -1307,6 +1301,16 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+// toMapAny converts any struct/map to map[string]any via JSON round-trip.
+// This avoids jsonschema generating bare "true" (from interface{}) or
+// ["null","array"] (from json.RawMessage) for dynamic output fields.
+func toMapAny(v any) map[string]any {
+	b, _ := json.Marshal(v)
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	return m
 }
 
 func clamp(val, minVal, maxVal, defaultVal int) int {
