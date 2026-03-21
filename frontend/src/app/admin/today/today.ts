@@ -15,7 +15,7 @@ import {
   Calendar,
   Notebook,
   BarChart3,
-} from 'lucide-angular/icons';
+} from 'lucide-angular/src/icons';
 import { forkJoin } from 'rxjs';
 
 import { TaskService } from '../../core/services/task.service';
