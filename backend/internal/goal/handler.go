@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/koopa0/blog-backend/internal/api"
 )
 
@@ -27,4 +29,59 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: goals})
+}
+
+// updateStatusRequest is the JSON body for PUT /api/admin/goals/{id}/status.
+type updateStatusRequest struct {
+	Status string `json:"status"`
+}
+
+// UpdateStatus handles PUT /api/admin/goals/{id}/status — updates goal status.
+func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "INVALID_ID", "invalid goal id")
+		return
+	}
+
+	req, err := api.Decode[updateStatusRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "INVALID_BODY", "invalid request body")
+		return
+	}
+	if req.Status == "" {
+		api.Error(w, http.StatusBadRequest, "MISSING_STATUS", "status is required")
+		return
+	}
+
+	status := mapHTTPGoalStatus(req.Status)
+
+	updated, err := h.store.UpdateStatus(r.Context(), id, status)
+	if err != nil {
+		h.logger.Error("updating goal status", "id", id, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update goal status")
+		return
+	}
+
+	api.Encode(w, http.StatusOK, api.Response{Data: map[string]any{
+		"title":      updated.Title,
+		"status":     string(updated.Status),
+		"area":       updated.Area,
+		"updated_at": updated.UpdatedAt,
+	}})
+}
+
+func mapHTTPGoalStatus(s string) Status {
+	switch s {
+	case "not-started", "Not Started", "Dream":
+		return StatusNotStarted
+	case "in-progress", "In Progress", "Active":
+		return StatusInProgress
+	case "done", "Done", "Achieved":
+		return StatusDone
+	case "abandoned", "Abandoned":
+		return StatusAbandoned
+	default:
+		return StatusNotStarted
+	}
 }

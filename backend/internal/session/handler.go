@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -52,10 +53,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var noteType *string
 	if t := q.Get("type"); t != "" {
 		switch t {
-		case "plan", "reflection", "context", "metrics":
+		case "plan", "reflection", "context", "metrics", "insight":
 			noteType = &t
 		default:
-			api.Error(w, http.StatusBadRequest, "INVALID_TYPE", "type must be plan, reflection, context, or metrics")
+			api.Error(w, http.StatusBadRequest, "INVALID_TYPE", "type must be plan, reflection, context, metrics, or insight")
 			return
 		}
 	}
@@ -68,4 +69,243 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.Encode(w, http.StatusOK, api.Response{Data: notes})
+}
+
+// insightEntry is the JSON representation of an insight for HTTP responses.
+type insightEntry struct {
+	ID          int64    `json:"id"`
+	CreatedAt   string   `json:"created_at"`
+	Content     string   `json:"content"`
+	Hypothesis  string   `json:"hypothesis,omitempty"`
+	Status      string   `json:"status"`
+	Evidence    []string `json:"evidence"`
+	SourceDates []string `json:"source_dates"`
+	Project     string   `json:"project,omitempty"`
+	Tags        []string `json:"tags"`
+	Conclusion  string   `json:"conclusion,omitempty"`
+}
+
+// Insights handles GET /api/admin/insights?status=unverified&project=slug&limit=10
+func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	q := r.URL.Query()
+
+	// Lazy auto-archive stale insights (>14 days)
+	cutoff := time.Now().AddDate(0, 0, -14)
+	if n, err := h.store.ArchiveStaleInsights(ctx, cutoff); err != nil {
+		h.logger.Error("auto-archiving stale insights", "error", err)
+	} else if n > 0 {
+		h.logger.Info("auto-archived stale insights", "count", n)
+	}
+
+	status := q.Get("status")
+	if status == "" {
+		status = "unverified"
+	}
+	limit := 10
+	if v := q.Get("limit"); v != "" {
+		if l, err := strconv.Atoi(v); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	var statusFilter *string
+	if status != "all" {
+		statusFilter = &status
+	}
+	var projectFilter *string
+	if p := q.Get("project"); p != "" {
+		projectFilter = &p
+	}
+
+	notes, err := h.store.InsightsByStatus(ctx, statusFilter, projectFilter, int32(limit))
+	if err != nil {
+		h.logger.Error("listing insights", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list insights")
+		return
+	}
+
+	unverifiedStatus := "unverified"
+	unverifiedCount, countErr := h.store.CountInsightsByStatus(ctx, &unverifiedStatus)
+	if countErr != nil {
+		h.logger.Error("counting unverified insights", "error", countErr)
+	}
+
+	insights := make([]insightEntry, 0, len(notes))
+	for i := range notes {
+		insights = append(insights, parseInsightNote(&notes[i]))
+	}
+
+	api.Encode(w, http.StatusOK, api.Response{Data: map[string]any{
+		"insights":         insights,
+		"total":            len(insights),
+		"unverified_count": unverifiedCount,
+	}})
+}
+
+// updateInsightRequest is the JSON body for PUT /api/admin/insights/{id}.
+type updateInsightRequest struct {
+	Status         string `json:"status,omitempty"`
+	AppendEvidence string `json:"append_evidence,omitempty"`
+	Conclusion     string `json:"conclusion,omitempty"`
+}
+
+// UpdateInsight handles PUT /api/admin/insights/{id} — updates insight status/evidence.
+func (h *Handler) UpdateInsight(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "INVALID_ID", "invalid insight id")
+		return
+	}
+
+	req, err := api.Decode[updateInsightRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "INVALID_BODY", "invalid request body")
+		return
+	}
+	if req.Status == "" && req.AppendEvidence == "" && req.Conclusion == "" {
+		api.Error(w, http.StatusBadRequest, "MISSING_FIELDS", "at least one of status, append_evidence, or conclusion is required")
+		return
+	}
+
+	if req.Status != "" {
+		switch req.Status {
+		case "unverified", "verified", "invalidated", "archived":
+			// valid
+		default:
+			api.Error(w, http.StatusBadRequest, "INVALID_STATUS", "status must be unverified, verified, invalidated, or archived")
+			return
+		}
+	}
+
+	ctx := r.Context()
+
+	note, err := h.store.NoteByID(ctx, id)
+	if err != nil {
+		h.logger.Error("querying insight", "id", id, "error", err)
+		api.Error(w, http.StatusNotFound, "NOT_FOUND", "insight not found")
+		return
+	}
+	if note.NoteType != "insight" {
+		api.Error(w, http.StatusBadRequest, "NOT_INSIGHT", "note is not an insight")
+		return
+	}
+
+	// Parse existing metadata
+	meta := make(map[string]any)
+	if len(note.Metadata) > 0 {
+		if unmarshalErr := json.Unmarshal(note.Metadata, &meta); unmarshalErr != nil {
+			h.logger.Error("parsing insight metadata", "id", id, "error", unmarshalErr)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to parse insight metadata")
+			return
+		}
+	}
+
+	// Apply updates
+	if req.Status != "" {
+		meta["status"] = req.Status
+	}
+	if req.AppendEvidence != "" {
+		var evidence []any
+		if ev, ok := meta["evidence"].([]any); ok {
+			evidence = ev
+		}
+		evidence = append(evidence, req.AppendEvidence)
+		meta["evidence"] = evidence
+	}
+	if req.Conclusion != "" {
+		meta["conclusion"] = req.Conclusion
+	}
+
+	updatedMetadata, marshalErr := json.Marshal(meta)
+	if marshalErr != nil {
+		h.logger.Error("marshaling updated metadata", "error", marshalErr)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update insight")
+		return
+	}
+
+	updated, updateErr := h.store.UpdateNoteMetadata(ctx, UpdateMetadataParams{
+		ID:       id,
+		Metadata: updatedMetadata,
+	})
+	if updateErr != nil {
+		h.logger.Error("updating insight", "id", id, "error", updateErr)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update insight")
+		return
+	}
+
+	// Count evidence in the updated note
+	evidenceCount := 0
+	if updatedMeta := make(map[string]any); len(updated.Metadata) > 0 {
+		if json.Unmarshal(updated.Metadata, &updatedMeta) == nil {
+			if ev, ok := updatedMeta["evidence"].([]any); ok {
+				evidenceCount = len(ev)
+			}
+		}
+	}
+
+	var currentStatus, conclusion string
+	if s, ok := meta["status"].(string); ok {
+		currentStatus = s
+	}
+	if c, ok := meta["conclusion"].(string); ok {
+		conclusion = c
+	}
+
+	h.logger.Info("insight updated via http", "id", id, "status", currentStatus)
+
+	api.Encode(w, http.StatusOK, api.Response{Data: map[string]any{
+		"id":             updated.ID,
+		"status":         currentStatus,
+		"evidence_count": evidenceCount,
+		"conclusion":     conclusion,
+		"updated_at":     time.Now().Format(time.RFC3339),
+	}})
+}
+
+// parseInsightNote extracts structured fields from an insight note's metadata.
+func parseInsightNote(n *Note) insightEntry {
+	entry := insightEntry{
+		ID:        n.ID,
+		CreatedAt: n.CreatedAt.Format(time.DateOnly),
+		Content:   n.Content,
+		Evidence:  []string{},
+		Tags:      []string{},
+	}
+
+	if len(n.Metadata) == 0 {
+		return entry
+	}
+
+	var meta struct {
+		Hypothesis  string   `json:"hypothesis"`
+		Status      string   `json:"status"`
+		Evidence    []string `json:"evidence"`
+		SourceDates []string `json:"source_dates"`
+		Project     string   `json:"project"`
+		Tags        []string `json:"tags"`
+		Conclusion  string   `json:"conclusion"`
+	}
+	if err := json.Unmarshal(n.Metadata, &meta); err != nil {
+		return entry
+	}
+
+	entry.Hypothesis = meta.Hypothesis
+	entry.Status = meta.Status
+	entry.Project = meta.Project
+	entry.Conclusion = meta.Conclusion
+	if meta.Evidence != nil {
+		entry.Evidence = meta.Evidence
+	}
+	if meta.SourceDates != nil {
+		entry.SourceDates = meta.SourceDates
+	} else {
+		entry.SourceDates = []string{}
+	}
+	if meta.Tags != nil {
+		entry.Tags = meta.Tags
+	}
+
+	return entry
 }

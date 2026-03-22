@@ -120,12 +120,17 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("PUT /api/admin/projects/{id}", authMid(http.HandlerFunc(d.Project.Update)))
 	mux.Handle("DELETE /api/admin/projects/{id}", authMid(http.HandlerFunc(d.Project.Delete)))
 
-	// admin — goals (read-only, synced from Notion)
+	// admin — goals
 	mux.Handle("GET /api/admin/goals", authMid(http.HandlerFunc(d.Goal.List)))
+	mux.Handle("PUT /api/admin/goals/{id}/status", authMid(http.HandlerFunc(d.Goal.UpdateStatus)))
 
-	// admin — tasks (read-only, synced from Notion)
+	// admin — tasks
 	mux.Handle("GET /api/admin/tasks", authMid(http.HandlerFunc(d.Task.List)))
 	mux.Handle("GET /api/admin/tasks/pending", authMid(http.HandlerFunc(d.Task.Pending)))
+	mux.Handle("POST /api/admin/tasks", authMid(http.HandlerFunc(d.Task.Create)))
+	mux.Handle("PUT /api/admin/tasks/{id}", authMid(http.HandlerFunc(d.Task.Update)))
+	mux.Handle("POST /api/admin/tasks/{id}/complete", authMid(http.HandlerFunc(d.Task.Complete)))
+	mux.Handle("POST /api/admin/tasks/batch-my-day", authMid(http.HandlerFunc(d.Task.BatchMyDay)))
 
 	// admin — topics
 	mux.Handle("POST /api/admin/topics", authMid(http.HandlerFunc(d.Topic.Create)))
@@ -192,6 +197,10 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	// admin — session notes
 	mux.Handle("GET /api/admin/session-notes", authMid(http.HandlerFunc(d.Session.List)))
 
+	// admin — insights (session note subtype)
+	mux.Handle("GET /api/admin/insights", authMid(http.HandlerFunc(d.Session.Insights)))
+	mux.Handle("PUT /api/admin/insights/{id}", authMid(http.HandlerFunc(d.Session.UpdateInsight)))
+
 	// admin — upload
 	mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(d.Upload.Upload)))
 
@@ -209,6 +218,9 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 
 	// webhooks — Notion (HMAC-verified)
 	mux.HandleFunc("POST /api/webhook/notion", d.Notion.Webhook)
+
+	// admin — today
+	mux.Handle("GET /api/admin/today/summary", authMid(http.HandlerFunc(d.Task.DailySummary)))
 
 	// admin stats
 	mux.Handle("GET /api/admin/stats", authMid(http.HandlerFunc(d.Stats.Overview)))

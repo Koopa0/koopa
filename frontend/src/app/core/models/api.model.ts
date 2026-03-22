@@ -156,6 +156,64 @@ export interface ApiSessionNote {
 
 export type TaskStatus = 'todo' | 'in-progress' | 'done';
 
+/** Admin — Task write requests */
+export interface ApiCreateTaskRequest {
+  title: string;
+  project_slug?: string;
+  due?: string;
+  priority?: string;
+  energy?: string;
+  my_day?: boolean;
+  notes?: string;
+}
+
+export interface ApiUpdateTaskRequest {
+  status?: TaskStatus;
+  due?: string;
+  priority?: string;
+  energy?: string;
+  my_day?: boolean;
+  project_slug?: string;
+  notes?: string;
+}
+
+/** Admin — Insight (session note subtype) */
+export interface ApiInsight {
+  id: number;
+  created_at: string;
+  content: string;
+  hypothesis: string;
+  status: InsightStatus;
+  evidence: string[];
+  source_dates: string[];
+  project: string;
+  tags: string[];
+  conclusion: string;
+}
+
+export type InsightStatus = 'unverified' | 'verified' | 'invalidated' | 'archived';
+
+export interface ApiInsightsResponse {
+  insights: ApiInsight[];
+  total: number;
+  unverified_count: number;
+}
+
+export interface ApiUpdateInsightRequest {
+  status?: InsightStatus;
+  append_evidence?: string;
+  conclusion?: string;
+}
+
+/** Admin — Daily Summary */
+export interface ApiDailySummary {
+  my_day_tasks_total: number;
+  my_day_tasks_completed: number;
+  non_my_day_completed: number;
+  total_completed: number;
+  completed_titles: string[];
+}
+
 /** Backend Auth response */
 export interface ApiTokenResponse {
   access_token: string;

@@ -611,8 +611,26 @@ func run(logger *slog.Logger) error {
 			sh.SetSyncer(notionHandler)
 			return sh
 		}(),
-		Goal:     goal.NewHandler(goalStore, logger),
-		Task:     task.NewHandler(taskStore, logger),
+		Goal: goal.NewHandler(goalStore, logger),
+		Task: task.NewHandler(taskStore, logger,
+			task.WithNotion(
+				&notionTaskAdapter{client: notionClient},
+				&sourceDBResolver{store: notionSourceStore, cache: sourceCache},
+			),
+			task.WithProjectResolver(func(ctx context.Context, slug string) (uuid.UUID, string, error) {
+				proj, err := projectStore.ProjectBySlug(ctx, slug)
+				if err != nil {
+					proj, err = projectStore.ProjectByAlias(ctx, slug)
+				}
+				if err != nil {
+					proj, err = projectStore.ProjectByTitle(ctx, slug)
+				}
+				if err != nil {
+					return uuid.UUID{}, "", fmt.Errorf("project %q not found", slug)
+				}
+				return proj.ID, proj.Title, nil
+			}),
+		),
 		Stats:    stats.NewHandler(stats.NewStore(pool), logger),
 		Activity: activity.NewHandler(activityStore, logger),
 		Session:  session.NewHandler(sessionStore, logger),
@@ -785,6 +803,43 @@ type flowObserver struct {
 
 func (o *flowObserver) ObserveFlowDuration(flowName, status string, d time.Duration) {
 	o.m.FlowDuration.WithLabelValues(flowName, status).Observe(d.Seconds())
+}
+
+// notionTaskAdapter adapts notion.Client to task.NotionClient.
+type notionTaskAdapter struct {
+	client *notion.Client
+}
+
+func (a *notionTaskAdapter) UpdatePageStatus(ctx context.Context, pageID, status string) error {
+	return a.client.UpdatePageStatus(ctx, pageID, status)
+}
+
+func (a *notionTaskAdapter) CreateTaskPage(ctx context.Context, databaseID, title, dueDate, description string) (string, error) {
+	return a.client.CreateTask(ctx, notion.CreateTaskParams{
+		DatabaseID:  databaseID,
+		Title:       title,
+		DueDate:     dueDate,
+		Description: description,
+	})
+}
+
+// sourceDBResolver adapts notion.Store + cache to task.DBIDResolver.
+type sourceDBResolver struct {
+	store *notion.Store
+	cache *ristretto.Cache[string, string]
+}
+
+func (r *sourceDBResolver) DatabaseIDByRole(ctx context.Context, role string) (string, error) {
+	// Check cache first
+	if id, ok := r.cache.Get("role:" + role); ok {
+		return id, nil
+	}
+	src, err := r.store.SourceByRole(ctx, role)
+	if err != nil {
+		return "", err
+	}
+	r.cache.SetWithTTL("role:"+role, src.DatabaseID, 1, 10*time.Minute)
+	return src.DatabaseID, nil
 }
 
 // notifyAlerter adapts notify.Notifier to flowrun.Alerter.
