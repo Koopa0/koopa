@@ -27,12 +27,20 @@ import {
   Database,
   Tags,
   Loader2,
+  Lightbulb,
+  BarChart3,
+  Workflow,
+  ArrowUpRight,
 } from 'lucide-angular';
 import { ArticleService } from '../../core/services/article.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ProjectService } from '../../core/services/project/project.service';
 import { StatsService } from '../../core/services/stats.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { TaskService } from '../../core/services/task.service';
+import { InsightService } from '../../core/services/insight.service';
+import { SessionNoteService } from '../../core/services/session-note.service';
+import { PipelineService } from '../../core/services/pipeline.service';
 import { PipelineActionsComponent } from '../shared/pipeline-actions.component';
 import { DeleteConfirmDialogComponent } from '../shared/delete-confirm-dialog.component';
 import type {
@@ -41,6 +49,7 @@ import type {
   ApiStatsOverview,
   ApiDriftReport,
   ApiLearningDashboard,
+  ApiDailySummary,
   ProjectStatus,
 } from '../../core/models';
 
@@ -110,6 +119,10 @@ export class DashboardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly statsService = inject(StatsService);
   private readonly notificationService = inject(NotificationService);
+  private readonly taskService = inject(TaskService);
+  private readonly insightService = inject(InsightService);
+  private readonly sessionNoteService = inject(SessionNoteService);
+  private readonly pipelineService = inject(PipelineService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly articles = signal<ApiContent[]>([]);
@@ -119,6 +132,15 @@ export class DashboardComponent implements OnInit {
   protected readonly learning = signal<ApiLearningDashboard | null>(null);
   protected readonly isLoadingStats = signal(false);
   protected readonly currentUser = this.authService.currentUser;
+
+  protected readonly todaySummary = signal<ApiDailySummary | null>(null);
+  protected readonly insightCount = signal(0);
+  protected readonly latestHypothesis = signal('');
+  protected readonly weekCapacity = signal<number | null>(null);
+  protected readonly capacityTrend = signal<'up' | 'stable' | 'down'>('stable');
+  protected readonly isSyncingNotion = signal(false);
+  protected readonly isSyncingObsidian = signal(false);
+  protected readonly isSyncingCollect = signal(false);
 
   protected readonly deleteTarget = signal<DeleteTarget | null>(null);
   protected readonly isDeleting = signal(false);
@@ -164,6 +186,10 @@ export class DashboardComponent implements OnInit {
   protected readonly EyeIcon = Eye;
   protected readonly Trash2Icon = Trash2;
   protected readonly Loader2Icon = Loader2;
+  protected readonly LightbulbIcon = Lightbulb;
+  protected readonly BarChart3Icon = BarChart3;
+  protected readonly WorkflowIcon = Workflow;
+  protected readonly ArrowUpRightIcon = ArrowUpRight;
 
   ngOnInit(): void {
     this.loadStats();
@@ -171,6 +197,9 @@ export class DashboardComponent implements OnInit {
     this.loadLearning();
     this.loadArticles();
     this.loadProjects();
+    this.loadTodaySummary();
+    this.loadInsights();
+    this.loadWeekCapacity();
   }
 
   private loadStats(): void {
@@ -312,6 +341,126 @@ export class DashboardComponent implements OnInit {
 
   protected getStatusClass(status: string): string {
     return STATUS_CLASSES[status] ?? STATUS_CLASSES['archived'];
+  }
+
+  private loadTodaySummary(): void {
+    this.taskService
+      .dailySummary()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => this.todaySummary.set(data),
+        error: () => {
+          /* 非關鍵，靜默失敗 */
+        },
+      });
+  }
+
+  private loadInsights(): void {
+    this.insightService
+      .list({ status: 'unverified', limit: 1 })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.insightCount.set(data.unverified_count);
+          if (data.insights.length > 0) {
+            this.latestHypothesis.set(data.insights[0].hypothesis);
+          }
+        },
+        error: () => {
+          /* 非關鍵，靜默失敗 */
+        },
+      });
+  }
+
+  private loadWeekCapacity(): void {
+    this.sessionNoteService
+      .list(undefined, 'metrics', 7)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (notes) => {
+          if (notes.length === 0) return;
+          const capacities = notes
+            .map((n) => {
+              const meta = n.metadata as Record<string, number> | null;
+              if (!meta) return null;
+              return (meta['tasks_committed'] ?? 0) + (meta['tasks_pulled'] ?? 0);
+            })
+            .filter((v): v is number => v !== null);
+          if (capacities.length === 0) return;
+          const avg = capacities.reduce((sum, v) => sum + v, 0) / capacities.length;
+          this.weekCapacity.set(Math.round(avg * 10) / 10);
+
+          // 趨勢：最近 3 天 vs 前 4 天
+          const recent = capacities.slice(0, Math.min(3, capacities.length));
+          const previous = capacities.slice(3);
+          if (recent.length > 0 && previous.length > 0) {
+            const recentAvg = recent.reduce((s, v) => s + v, 0) / recent.length;
+            const prevAvg = previous.reduce((s, v) => s + v, 0) / previous.length;
+            const diff = recentAvg - prevAvg;
+            if (diff > 0.5) {
+              this.capacityTrend.set('up');
+            } else if (diff < -0.5) {
+              this.capacityTrend.set('down');
+            } else {
+              this.capacityTrend.set('stable');
+            }
+          }
+        },
+        error: () => {
+          /* 非關鍵，靜默失敗 */
+        },
+      });
+  }
+
+  protected syncNotion(): void {
+    this.isSyncingNotion.set(true);
+    this.pipelineService
+      .triggerNotionSync()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.isSyncingNotion.set(false);
+          this.notificationService.success('Notion 同步完成');
+        },
+        error: () => {
+          this.isSyncingNotion.set(false);
+          this.notificationService.error('Notion 同步失敗');
+        },
+      });
+  }
+
+  protected syncObsidian(): void {
+    this.isSyncingObsidian.set(true);
+    this.pipelineService
+      .triggerSync()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.isSyncingObsidian.set(false);
+          this.notificationService.success('Obsidian 同步完成');
+        },
+        error: () => {
+          this.isSyncingObsidian.set(false);
+          this.notificationService.error('Obsidian 同步失敗');
+        },
+      });
+  }
+
+  protected syncCollect(): void {
+    this.isSyncingCollect.set(true);
+    this.pipelineService
+      .triggerCollect()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.isSyncingCollect.set(false);
+          this.notificationService.success('RSS 收集完成');
+        },
+        error: () => {
+          this.isSyncingCollect.set(false);
+          this.notificationService.error('RSS 收集失敗');
+        },
+      });
   }
 
   /** 從 by_type map 取前 3 個 type 摘要，例如 "5 til · 3 note · 2 article" */

@@ -185,6 +185,27 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'insights',
+        loadComponent: () =>
+          import('./admin/insights/insights').then(
+            (m) => m.InsightsComponent,
+          ),
+      },
+      {
+        path: 'planning',
+        loadComponent: () =>
+          import('./admin/planning/planning').then(
+            (m) => m.PlanningComponent,
+          ),
+      },
+      {
+        path: 'pipeline',
+        loadComponent: () =>
+          import('./admin/pipeline/pipeline').then(
+            (m) => m.PipelineComponent,
+          ),
+      },
+      {
         path: 'build-logs',
         loadComponent: () =>
           import('./pages/build-logs/build-logs').then(

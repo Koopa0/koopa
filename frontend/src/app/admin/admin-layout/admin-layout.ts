@@ -33,6 +33,9 @@ import {
   ListTodo,
   Target,
   FileCode,
+  Lightbulb,
+  BarChart3,
+  Workflow,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -97,6 +100,13 @@ export class AdminLayoutComponent {
           disabled: false,
         },
         {
+          label: 'Insights',
+          route: '/admin/insights',
+          icon: Lightbulb,
+          exact: false,
+          disabled: false,
+        },
+        {
           label: 'Flow Runs',
           route: '/admin/flow-runs',
           icon: Activity,
@@ -106,8 +116,27 @@ export class AdminLayoutComponent {
       ],
     },
     {
+      title: 'Analytics',
+      items: [
+        {
+          label: 'Planning',
+          route: '/admin/planning',
+          icon: BarChart3,
+          exact: false,
+          disabled: false,
+        },
+      ],
+    },
+    {
       title: 'Pipeline',
       items: [
+        {
+          label: 'Pipeline',
+          route: '/admin/pipeline',
+          icon: Workflow,
+          exact: false,
+          disabled: false,
+        },
         {
           label: 'RSS Feeds',
           route: '/admin/feeds',

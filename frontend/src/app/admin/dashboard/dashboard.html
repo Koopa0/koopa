@@ -15,6 +15,102 @@
 
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <!-- Summary Cards -->
+    <div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <!-- Card 1: Today's Progress -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+        <div class="text-xs text-zinc-500">Today's Progress</div>
+        @if (todaySummary(); as ts) {
+          <div class="mt-1 text-sm font-medium text-zinc-100">
+            My Day: {{ ts.my_day_tasks_completed }}/{{ ts.my_day_tasks_total }}
+          </div>
+          <div class="mt-0.5 text-xs text-zinc-400">
+            {{ ts.my_day_tasks_total > 0 ? ((ts.my_day_tasks_completed / ts.my_day_tasks_total) * 100 | number: '1.0-0') + '%' : '0%' }} 完成率
+          </div>
+        } @else {
+          <div class="mt-1 text-sm text-zinc-600">載入中...</div>
+        }
+        <a routerLink="/admin/today" class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300">→ Today</a>
+      </div>
+
+      <!-- Card 2: Active Insights -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+        <div class="text-xs text-zinc-500">Active Insights</div>
+        <div class="mt-1 text-sm font-medium text-zinc-100">{{ insightCount() }} 個待驗證</div>
+        @if (latestHypothesis()) {
+          <div class="mt-0.5 truncate text-xs text-zinc-400">{{ latestHypothesis() }}</div>
+        }
+        <a routerLink="/admin/insights" class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300">→ Insights</a>
+      </div>
+
+      <!-- Card 3: 本週 Capacity -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+        <div class="text-xs text-zinc-500">本週 Capacity</div>
+        @if (weekCapacity() !== null) {
+          <div class="mt-1 flex items-center gap-1">
+            <span class="text-sm font-medium text-zinc-100">{{ weekCapacity() }}</span>
+            <span
+              class="text-xs"
+              [class]="capacityTrend() === 'up'
+                ? 'text-emerald-400'
+                : capacityTrend() === 'down'
+                  ? 'text-red-400'
+                  : 'text-zinc-500'"
+            >
+              {{ capacityTrend() === 'up' ? '↑' : capacityTrend() === 'down' ? '↓' : '→' }}
+            </span>
+          </div>
+          <div class="mt-0.5 text-xs text-zinc-400">avg tasks/day</div>
+        } @else {
+          <div class="mt-1 text-sm text-zinc-600">尚無資料</div>
+        }
+        <a routerLink="/admin/planning" class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300">→ Planning</a>
+      </div>
+
+      <!-- Card 4: Quick Sync -->
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+        <div class="text-xs text-zinc-500">Quick Sync</div>
+        <div class="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
+            [disabled]="isSyncingNotion()"
+            (click)="syncNotion()"
+          >
+            @if (isSyncingNotion()) {
+              <lucide-icon [img]="Loader2Icon" [size]="12" class="inline animate-spin" />
+            } @else {
+              Notion
+            }
+          </button>
+          <button
+            type="button"
+            class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
+            [disabled]="isSyncingObsidian()"
+            (click)="syncObsidian()"
+          >
+            @if (isSyncingObsidian()) {
+              <lucide-icon [img]="Loader2Icon" [size]="12" class="inline animate-spin" />
+            } @else {
+              Obsidian
+            }
+          </button>
+          <button
+            type="button"
+            class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
+            [disabled]="isSyncingCollect()"
+            (click)="syncCollect()"
+          >
+            @if (isSyncingCollect()) {
+              <lucide-icon [img]="Loader2Icon" [size]="12" class="inline animate-spin" />
+            } @else {
+              Collect
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Statistics Cards from API -->
     @if (isLoadingStats()) {
       <div class="mb-8 flex items-center justify-center py-8">
