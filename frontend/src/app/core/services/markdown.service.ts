@@ -2,30 +2,66 @@ import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
-import DOMPurify from 'isomorphic-dompurify';
+import DOMPurify from 'dompurify';
 
 /** Allowed HTML tags and attributes for sanitized markdown output */
 const PURIFY_CONFIG = {
   RETURN_DOM_FRAGMENT: false,
   RETURN_DOM: false,
   ALLOWED_TAGS: [
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'p', 'br', 'hr',
-    'ul', 'ol', 'li',
-    'blockquote', 'pre', 'code',
-    'strong', 'em', 'del', 's', 'mark', 'sub', 'sup',
-    'a', 'img',
-    'table', 'thead', 'tbody', 'tr', 'th', 'td',
-    'div', 'span',
-    'details', 'summary',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'p',
+    'br',
+    'hr',
+    'ul',
+    'ol',
+    'li',
+    'blockquote',
+    'pre',
+    'code',
+    'strong',
+    'em',
+    'del',
+    's',
+    'mark',
+    'sub',
+    'sup',
+    'a',
+    'img',
+    'table',
+    'thead',
+    'tbody',
+    'tr',
+    'th',
+    'td',
+    'div',
+    'span',
+    'details',
+    'summary',
     'input',
   ],
   ALLOWED_ATTR: [
-    'id', 'class', 'href', 'src', 'alt', 'title', 'target', 'rel',
+    'id',
+    'class',
+    'href',
+    'src',
+    'alt',
+    'title',
+    'target',
+    'rel',
     'data-mermaid-code',
-    'width', 'height',
-    'colspan', 'rowspan',
-    'type', 'checked', 'disabled',
+    'width',
+    'height',
+    'colspan',
+    'rowspan',
+    'type',
+    'checked',
+    'disabled',
   ],
   ALLOW_DATA_ATTR: false,
 };
@@ -59,7 +95,10 @@ export class MarkdownService {
     html = this.highlightCode(html);
 
     // Sanitize HTML to prevent XSS attacks
-    html = DOMPurify.sanitize(html, PURIFY_CONFIG) as string;
+    // SSR 端跳過：dompurify 需要瀏覽器 DOM，內容來自自有後端可信任，hydration 後瀏覽器端會重新 sanitize
+    if (this.isBrowser) {
+      html = DOMPurify.sanitize(html, PURIFY_CONFIG) as string;
+    }
 
     return html;
   }
@@ -124,9 +163,12 @@ export class MarkdownService {
       /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
       (match, code) => {
         // Generate a unique ID for each diagram using crypto when available
-        const randomId = typeof crypto !== 'undefined'
-          ? Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('')
-          : Math.floor(Math.random() * 1e12).toString(36);
+        const randomId =
+          typeof crypto !== 'undefined'
+            ? Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) =>
+                b.toString(16).padStart(2, '0'),
+              ).join('')
+            : Math.floor(Math.random() * 1e12).toString(36);
         const diagramId = 'mermaid-' + randomId;
 
         // Return a div that will be processed by mermaid.js
@@ -143,7 +185,8 @@ export class MarkdownService {
     }
 
     setTimeout(() => {
-      const mermaidElements = document.querySelectorAll<HTMLElement>('.mermaid-diagram');
+      const mermaidElements =
+        document.querySelectorAll<HTMLElement>('.mermaid-diagram');
       mermaidElements.forEach((element) => {
         const code = decodeURIComponent(
           element.getAttribute('data-mermaid-code') ?? '',
@@ -152,9 +195,18 @@ export class MarkdownService {
           // Clear and use DOM API to safely construct elements, avoiding innerHTML XSS risk
           element.textContent = '';
           element.classList.add(
-            'rounded-lg', 'border-2', 'border-dashed', 'border-zinc-600',
-            'bg-zinc-100', 'p-5', 'text-center', 'font-mono', 'text-zinc-600',
-            'dark:bg-zinc-800', 'dark:border-zinc-500', 'dark:text-zinc-400',
+            'rounded-lg',
+            'border-2',
+            'border-dashed',
+            'border-zinc-600',
+            'bg-zinc-100',
+            'p-5',
+            'text-center',
+            'font-mono',
+            'text-zinc-600',
+            'dark:bg-zinc-800',
+            'dark:border-zinc-500',
+            'dark:text-zinc-400',
           );
 
           const title = document.createElement('div');
@@ -164,11 +216,13 @@ export class MarkdownService {
 
           const subtitle = document.createElement('div');
           subtitle.className = 'mb-4 text-sm';
-          subtitle.textContent = 'Diagram type identified, waiting for Mermaid.js to load...';
+          subtitle.textContent =
+            'Diagram type identified, waiting for Mermaid.js to load...';
           element.appendChild(subtitle);
 
           const pre = document.createElement('pre');
-          pre.className = 'rounded-sm bg-white p-2.5 text-left dark:bg-zinc-900';
+          pre.className =
+            'rounded-sm bg-white p-2.5 text-left dark:bg-zinc-900';
           pre.textContent = code;
           element.appendChild(pre);
         }

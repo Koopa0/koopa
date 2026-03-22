@@ -34,19 +34,27 @@ app.use((req, res, next) => {
 
 // Security headers
 app.use((_req, res, next) => {
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains',
+  );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=()',
+  );
   next();
 });
 
 // security.txt (RFC 9116)
 app.get('/.well-known/security.txt', (_req, res) => {
-  res.type('text/plain').send(
-    `Contact: mailto:contact@koopa0.dev\nPreferred-Languages: zh-TW, en\nCanonical: https://koopa0.dev/.well-known/security.txt\nExpires: 2027-01-01T00:00:00.000Z\n`,
-  );
+  res
+    .type('text/plain')
+    .send(
+      `Contact: mailto:contact@koopa0.dev\nPreferred-Languages: zh-TW, en\nCanonical: https://koopa0.dev/.well-known/security.txt\nExpires: 2027-01-01T00:00:00.000Z\n`,
+    );
 });
 
 // 靜態頁面路由（用於 sitemap）
@@ -194,7 +202,9 @@ app.get('/feed.xml', async (_req, res) => {
 
   const latestDate =
     feedItems.length > 0
-      ? new Date(feedItems[0].published_at ?? feedItems[0].updated_at).toUTCString()
+      ? new Date(
+          feedItems[0].published_at ?? feedItems[0].updated_at,
+        ).toUTCString()
       : new Date().toUTCString();
 
   const items = feedItems
@@ -259,7 +269,14 @@ app.use('/bff', (req, res) => {
     headers['x-forwarded-for'] = clientIp;
   }
 
-  const forwardHeaders = ['authorization', 'cookie', 'x-hub-signature-256', 'x-github-event', 'x-github-delivery', 'x-notion-signature'];
+  const forwardHeaders = [
+    'authorization',
+    'cookie',
+    'x-hub-signature-256',
+    'x-github-event',
+    'x-github-delivery',
+    'x-notion-signature',
+  ];
   for (const h of forwardHeaders) {
     if (req.headers[h]) {
       headers[h] = req.headers[h] as string;
@@ -293,7 +310,11 @@ app.use('/bff', (req, res) => {
       .then(async (upstream) => {
         res.status(upstream.status);
         upstream.headers.forEach((value, key) => {
-          if (!['transfer-encoding', 'content-encoding'].includes(key.toLowerCase())) {
+          if (
+            !['transfer-encoding', 'content-encoding'].includes(
+              key.toLowerCase(),
+            )
+          ) {
             res.setHeader(key, value);
           }
         });
