@@ -114,6 +114,26 @@ code, pre {
 
 .prose strong { color: var(--color-zinc-100); }
 
+/* Compact prose for admin dashboard cards — inherits prose colors but smaller */
+.prose-compact {
+  font-size: 0.875rem;
+  line-height: 1.625;
+  max-width: none;
+}
+.prose-compact h1 { font-size: 1.125rem; margin-top: 0.75rem; margin-bottom: 0.375rem; }
+.prose-compact h2 { font-size: 1rem; margin-top: 0.75rem; margin-bottom: 0.375rem; }
+.prose-compact h3 { font-size: 0.9375rem; margin-top: 0.5rem; margin-bottom: 0.25rem; }
+.prose-compact h4 { font-size: 0.875rem; margin-top: 0.5rem; margin-bottom: 0.25rem; }
+.prose-compact p { margin-bottom: 0.625em; max-width: none; }
+.prose-compact blockquote { padding: 0.5rem 1rem; margin: 0.75rem 0; }
+.prose-compact ul, .prose-compact ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+.prose-compact li { margin: 0.125rem 0; }
+.prose-compact pre { padding: 0.75rem; margin: 0.75rem 0; border-radius: 0.375rem; }
+.prose-compact pre code { font-size: 0.8125rem; }
+.prose-compact table { margin: 0.75rem 0; }
+.prose-compact th, .prose-compact td { padding: 0.375rem 0.75rem; }
+.prose-compact hr { margin: 1rem 0; }
+
 /* Highlight.js theme (dark) */
 .hljs { color: #e1e4e8; background: transparent; }
 .hljs-comment, .hljs-quote { color: #6a737d; font-style: italic; }

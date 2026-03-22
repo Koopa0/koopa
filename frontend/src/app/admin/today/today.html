@@ -220,7 +220,7 @@
                   <!-- 展開的完整內容 -->
                   @if (isInsightExpanded(insight.id)) {
                     <div
-                      class="prose prose-invert prose-sm mt-2 max-w-none text-zinc-300"
+                      class="prose prose-compact mt-2 text-zinc-300"
                       [innerHTML]="parseMarkdown(insight.content)">
                     </div>
                   }
@@ -313,7 +313,7 @@
                   </button>
                   @if (isNoteExpanded(note.id)) {
                     <div
-                      class="prose prose-invert prose-sm max-w-none text-zinc-300"
+                      class="prose prose-compact text-zinc-300"
                       [innerHTML]="parseMarkdown(note.content)">
                     </div>
                   } @else {
