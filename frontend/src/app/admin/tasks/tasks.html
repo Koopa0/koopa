@@ -8,87 +8,448 @@
           Tasks
         </h1>
         <p class="mt-1 text-sm text-zinc-400">
-          {{ tasks().length }} 個任務（Notion 同步）
+          {{ taskCount() }} 個任務
         </p>
       </div>
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="rounded-full border px-3 py-1 text-xs transition-colors"
-          [class]="showDone()
-            ? 'border-white bg-white text-zinc-900'
-            : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
-          (click)="toggleShowDone()"
+          class="inline-flex items-center gap-2 rounded-sm border border-emerald-700 bg-emerald-900/30 px-4 py-2 text-sm text-emerald-400 transition-colors hover:bg-emerald-900/50"
+          (click)="toggleCreateForm()"
         >
-          {{ showDone() ? '隱藏已完成' : '顯示已完成' }}
-        </button>
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
-          (click)="loadTasks()"
-        >
-          <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+          @if (showCreateForm()) {
+            <lucide-icon [img]="XIcon" [size]="16" />
+            取消
+          } @else {
+            <lucide-icon [img]="PlusIcon" [size]="16" />
+            新增任務
+          }
         </button>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Kanban -->
+<!-- Create Form -->
+@if (showCreateForm()) {
+  <section class="border-b border-zinc-800 bg-zinc-900/50">
+    <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- Title (required) -->
+        <div class="sm:col-span-2 lg:col-span-3">
+          <label class="mb-1 block text-xs text-zinc-400">標題 *</label>
+          <input
+            type="text"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="任務標題"
+            [ngModel]="newTitle()"
+            (ngModelChange)="newTitle.set($event)"
+          />
+        </div>
+
+        <!-- Due Date -->
+        <div>
+          <label class="mb-1 block text-xs text-zinc-400">到期日</label>
+          <input
+            type="date"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="newDue()"
+            (ngModelChange)="newDue.set($event)"
+          />
+        </div>
+
+        <!-- Priority -->
+        <div>
+          <label class="mb-1 block text-xs text-zinc-400">優先級</label>
+          <select
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="newPriority()"
+            (ngModelChange)="newPriority.set($event)"
+          >
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+          </select>
+        </div>
+
+        <!-- Energy -->
+        <div>
+          <label class="mb-1 block text-xs text-zinc-400">Energy</label>
+          <select
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="newEnergy()"
+            (ngModelChange)="newEnergy.set($event)"
+          >
+            <option value="Low">Low</option>
+            <option value="High">High</option>
+          </select>
+        </div>
+
+        <!-- Project -->
+        <div>
+          <label class="mb-1 block text-xs text-zinc-400">專案</label>
+          <select
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="newProjectSlug()"
+            (ngModelChange)="newProjectSlug.set($event)"
+          >
+            <option value="">無</option>
+            @for (project of projects(); track project.id) {
+              <option [value]="project.slug">{{ project.title }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- My Day -->
+        <div class="flex items-end">
+          <label class="flex items-center gap-2 pb-2 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              class="rounded border-zinc-600 bg-zinc-800 text-amber-500 focus:ring-amber-500"
+              [ngModel]="newMyDay()"
+              (ngModelChange)="newMyDay.set($event)"
+            />
+            My Day
+          </label>
+        </div>
+
+        <!-- Notes -->
+        <div class="sm:col-span-2 lg:col-span-3">
+          <label class="mb-1 block text-xs text-zinc-400">備註</label>
+          <textarea
+            rows="2"
+            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            placeholder="備註（選填）"
+            [ngModel]="newNotes()"
+            (ngModelChange)="newNotes.set($event)"
+          ></textarea>
+        </div>
+
+        <!-- Submit -->
+        <div class="sm:col-span-2 lg:col-span-3">
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-sm border border-emerald-700 bg-emerald-900/30 px-4 py-2 text-sm text-emerald-400 transition-colors hover:bg-emerald-900/50 disabled:opacity-50"
+            [disabled]="!newTitle().trim() || isCreating()"
+            (click)="createTask()"
+          >
+            @if (isCreating()) {
+              <lucide-icon [img]="Loader2Icon" [size]="16" class="animate-spin" />
+            }
+            建立任務
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+}
+
+<!-- Filter & Sort Bar -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <!-- View Toggle -->
+      <div class="flex items-center gap-1 rounded-sm border border-zinc-800 p-0.5">
+        <button
+          type="button"
+          class="rounded-sm px-3 py-1.5 text-xs font-medium transition-colors"
+          [class]="viewMode() === 'all'
+            ? 'bg-zinc-700 text-zinc-100'
+            : 'text-zinc-400 hover:text-zinc-200'"
+          (click)="setViewMode('all')"
+        >
+          全部任務
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors"
+          [class]="viewMode() === 'my_day'
+            ? 'bg-amber-900/50 text-amber-300'
+            : 'text-zinc-400 hover:text-zinc-200'"
+          (click)="setViewMode('my_day')"
+        >
+          <lucide-icon [img]="SunIcon" [size]="14" />
+          My Day
+        </button>
+      </div>
+
+      <!-- Filters -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-1.5 text-xs text-zinc-500">
+          <lucide-icon [img]="FilterIcon" [size]="14" />
+        </div>
+
+        <!-- Project Filter -->
+        <select
+          class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-300 focus:border-zinc-500 focus:outline-none"
+          [ngModel]="filterProject()"
+          (ngModelChange)="setFilterProject($event)"
+        >
+          <option value="">所有專案</option>
+          @for (project of projects(); track project.id) {
+            <option [value]="project.id">{{ project.title }}</option>
+          }
+        </select>
+
+        <!-- Priority Filter -->
+        <select
+          class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-300 focus:border-zinc-500 focus:outline-none"
+          [ngModel]="filterPriority()"
+          (ngModelChange)="setFilterPriority($event)"
+        >
+          <option value="">所有優先級</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+
+        <!-- Overdue Only -->
+        <label class="flex items-center gap-1.5 text-xs text-zinc-400">
+          <input
+            type="checkbox"
+            class="rounded border-zinc-600 bg-zinc-800 text-red-500 focus:ring-red-500"
+            [ngModel]="filterOverdueOnly()"
+            (ngModelChange)="toggleOverdueFilter()"
+          />
+          僅顯示逾期
+        </label>
+
+        <!-- Sort -->
+        <div class="flex items-center gap-1.5">
+          <lucide-icon [img]="ArrowUpDownIcon" [size]="14" class="text-zinc-500" />
+          <select
+            class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-300 focus:border-zinc-500 focus:outline-none"
+            [ngModel]="sortField()"
+            (ngModelChange)="setSortField($event)"
+          >
+            <option value="due">到期日</option>
+            <option value="priority">優先級</option>
+            <option value="updated_at">更新時間</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Task List -->
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
     @if (isLoading()) {
       <div class="flex items-center justify-center py-16">
         <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
       </div>
+    } @else if (isEmptyState()) {
+      <!-- Empty: no tasks at all -->
+      <div class="rounded-sm border border-dashed border-zinc-800 py-16 text-center">
+        <lucide-icon [img]="CheckCircle2Icon" [size]="32" class="mx-auto text-zinc-600" />
+        <p class="mt-3 text-sm text-zinc-500">沒有待辦任務</p>
+      </div>
+    } @else if (isMyDayEmpty()) {
+      <!-- Empty: My Day view -->
+      <div class="rounded-sm border border-dashed border-amber-900/50 py-16 text-center">
+        <lucide-icon [img]="SunIcon" [size]="32" class="mx-auto text-amber-700" />
+        <p class="mt-3 text-sm text-zinc-500">還沒設定 My Day，從任務列表點 ☀️ 加入</p>
+      </div>
     } @else {
-      <div class="grid gap-4" [style.grid-template-columns]="'repeat(' + visibleColumns().length + ', minmax(0, 1fr))'">
-        @for (col of visibleColumns(); track col.status) {
-          <div class="min-w-0">
-            <!-- Column header -->
-            <div class="mb-3 flex items-center gap-2">
-              <lucide-icon [img]="col.icon" [size]="16" [class]="col.headerClass" />
-              <span class="text-sm font-medium" [class]="col.headerClass">{{ col.label }}</span>
-              <span class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500">
-                {{ getColumnCount(col.status) }}
-              </span>
+      <div class="space-y-1">
+        @for (task of filteredAndSortedTasks(); track task.id) {
+          <!-- Task Row -->
+          <div
+            class="rounded-sm border transition-colors"
+            [class]="isOverdue(task)
+              ? 'border-red-900/50 bg-red-950/20'
+              : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'"
+          >
+            <div class="flex items-center gap-3 px-4 py-3">
+              <!-- Complete Checkbox -->
+              <button
+                type="button"
+                class="shrink-0 text-zinc-600 transition-colors hover:text-emerald-400"
+                title="完成任務"
+                (click)="completeTask(task)"
+              >
+                <lucide-icon [img]="CheckCircle2Icon" [size]="20" />
+              </button>
+
+              <!-- Title (clickable to edit) -->
+              <button
+                type="button"
+                class="min-w-0 flex-1 text-left text-sm text-zinc-200 transition-colors hover:text-white"
+                (click)="openEdit(task)"
+              >
+                {{ task.title }}
+              </button>
+
+              <!-- Badges -->
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
+                <!-- Due Date -->
+                @if (task.due) {
+                  <span
+                    class="flex items-center gap-1 text-xs"
+                    [class]="isOverdue(task) ? 'text-red-400' : 'text-zinc-500'"
+                  >
+                    {{ task.due | date: 'MM/dd' }}
+                    @if (isOverdue(task)) {
+                      <span class="rounded-sm bg-red-900/50 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
+                        逾期 {{ getOverdueDays(task) }} 天
+                      </span>
+                    }
+                  </span>
+                }
+
+                <!-- Priority -->
+                @if (task.priority) {
+                  <span
+                    class="rounded-sm border px-1.5 py-0.5 text-[10px] font-medium"
+                    [class]="getPriorityClass(task.priority)"
+                  >
+                    {{ task.priority }}
+                  </span>
+                }
+
+                <!-- Energy -->
+                @if (task.energy) {
+                  <span
+                    class="rounded-sm border px-1.5 py-0.5 text-[10px] font-medium"
+                    [class]="getEnergyClass(task.energy)"
+                  >
+                    {{ task.energy }} ⚡
+                  </span>
+                }
+
+                <!-- Project Tag -->
+                @if (task.project_title) {
+                  <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                    {{ task.project_title }}
+                  </span>
+                }
+
+                <!-- My Day Toggle -->
+                <button
+                  type="button"
+                  class="shrink-0 transition-colors"
+                  [class]="task.my_day ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-600 hover:text-amber-400'"
+                  title="My Day"
+                  (click)="toggleMyDay(task); $event.stopPropagation()"
+                >
+                  <lucide-icon [img]="SunIcon" [size]="16" />
+                </button>
+              </div>
             </div>
 
-            <!-- Cards -->
-            <div class="space-y-2">
-              @for (task of tasksByStatus()[col.status]; track task.id) {
-                <div
-                  class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-3 transition-colors hover:border-zinc-700"
-                  [class.border-red-900/50]="isOverdue(task)"
-                >
-                  <div class="text-sm text-zinc-200">{{ task.title }}</div>
-                  <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                    @if (task.due) {
-                      <span
-                        class="flex items-center gap-1"
-                        [class]="isOverdue(task) ? 'text-red-400' : 'text-zinc-500'"
-                      >
-                        {{ task.due | date: 'MM/dd' }}
-                      </span>
-                    }
-                    @if (getProjectName(task.project_id); as projectName) {
-                      <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400">
-                        {{ projectName }}
-                      </span>
-                    }
-                    @if (task.completed_at) {
-                      <span class="text-zinc-600">
-                        Done {{ task.completed_at | date: 'MM/dd' }}
-                      </span>
-                    }
+            <!-- Inline Edit Panel -->
+            @if (editingTaskId() === task.id) {
+              <div class="border-t border-zinc-800 px-4 py-4">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <!-- Due Date -->
+                  <div>
+                    <label class="mb-1 block text-xs text-zinc-500">到期日</label>
+                    <input
+                      type="date"
+                      class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
+                      [ngModel]="editDue()"
+                      (ngModelChange)="editDue.set($event)"
+                    />
+                  </div>
+
+                  <!-- Priority -->
+                  <div>
+                    <label class="mb-1 block text-xs text-zinc-500">優先級</label>
+                    <select
+                      class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
+                      [ngModel]="editPriority()"
+                      (ngModelChange)="editPriority.set($event)"
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </div>
+
+                  <!-- Energy -->
+                  <div>
+                    <label class="mb-1 block text-xs text-zinc-500">Energy</label>
+                    <select
+                      class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
+                      [ngModel]="editEnergy()"
+                      (ngModelChange)="editEnergy.set($event)"
+                    >
+                      <option value="Low">Low</option>
+                      <option value="High">High</option>
+                    </select>
+                  </div>
+
+                  <!-- Project -->
+                  <div>
+                    <label class="mb-1 block text-xs text-zinc-500">專案</label>
+                    <select
+                      class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
+                      [ngModel]="editProjectSlug()"
+                      (ngModelChange)="editProjectSlug.set($event)"
+                    >
+                      <option value="">無</option>
+                      @for (project of projects(); track project.id) {
+                        <option [value]="project.slug">{{ project.title }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  <!-- My Day -->
+                  <div class="flex items-end">
+                    <label class="flex items-center gap-2 pb-1 text-xs text-zinc-300">
+                      <input
+                        type="checkbox"
+                        class="rounded border-zinc-600 bg-zinc-800 text-amber-500 focus:ring-amber-500"
+                        [ngModel]="editMyDay()"
+                        (ngModelChange)="editMyDay.set($event)"
+                      />
+                      My Day
+                    </label>
+                  </div>
+
+                  <!-- Notes -->
+                  <div class="sm:col-span-2 lg:col-span-3">
+                    <label class="mb-1 block text-xs text-zinc-500">備註</label>
+                    <textarea
+                      rows="2"
+                      class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+                      placeholder="附加備註（選填）"
+                      [ngModel]="editNotes()"
+                      (ngModelChange)="editNotes.set($event)"
+                    ></textarea>
                   </div>
                 </div>
-              } @empty {
-                <div class="rounded-sm border border-dashed border-zinc-800 py-8 text-center text-xs text-zinc-600">
-                  No tasks
+
+                <!-- Edit Actions -->
+                <div class="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-sm border border-emerald-700 bg-emerald-900/30 px-3 py-1.5 text-xs text-emerald-400 transition-colors hover:bg-emerald-900/50 disabled:opacity-50"
+                    [disabled]="isSaving()"
+                    (click)="saveEdit(task)"
+                  >
+                    @if (isSaving()) {
+                      <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+                    } @else {
+                      <lucide-icon [img]="Edit3Icon" [size]="14" />
+                    }
+                    儲存
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800"
+                    (click)="cancelEdit()"
+                  >
+                    取消
+                  </button>
                 </div>
-              }
-            </div>
+              </div>
+            }
+          </div>
+        } @empty {
+          <div class="rounded-sm border border-dashed border-zinc-800 py-12 text-center text-sm text-zinc-600">
+            沒有符合篩選條件的任務
           </div>
         }
       </div>
