@@ -98,18 +98,25 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 			gp.WeeklyTaskRate = float64(gp.RelatedTasksCompleted) / weeks
 		}
 
-		// On-track assessment
-		gp.OnTrackAssessment = "on_track"
-		if gp.RelatedTasksCompleted == 0 && gp.DaysRemaining > 0 && gp.DaysRemaining < 60 {
-			gp.OnTrackAssessment = "off_track"
-		} else if gp.RelatedTasksCompleted == 0 {
-			gp.OnTrackAssessment = "at_risk"
-		} else if gp.WeeklyTaskRate < 1 && gp.DaysRemaining > 0 && gp.DaysRemaining < 90 {
-			gp.OnTrackAssessment = "at_risk"
-		}
+		gp.OnTrackAssessment = assessOnTrack(gp.RelatedTasksCompleted, gp.WeeklyTaskRate, gp.DaysRemaining)
 
 		result = append(result, gp)
 	}
 
 	return nil, GoalProgressOutput{Goals: result}, nil
+}
+
+// assessOnTrack determines goal progress status based on task completions and deadline proximity.
+// Used by both get_goal_progress and get_weekly_summary for consistent assessment.
+func assessOnTrack(tasksCompleted int64, weeklyRate float64, daysRemaining int) string {
+	switch {
+	case tasksCompleted == 0 && daysRemaining > 0 && daysRemaining < 60:
+		return "off_track"
+	case tasksCompleted == 0:
+		return "at_risk"
+	case weeklyRate < 1 && daysRemaining > 0 && daysRemaining < 90:
+		return "at_risk"
+	default:
+		return "on_track"
+	}
 }

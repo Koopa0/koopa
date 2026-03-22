@@ -257,13 +257,15 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 			wg.RelatedTasksCompleted += completionsByProject[pTitle]
 		}
 
-		// On-track assessment
-		wg.OnTrack = "on_track"
-		if wg.RelatedTasksCompleted == 0 {
-			wg.OnTrack = "off_track"
-			out.Concerns = append(out.Concerns, fmt.Sprintf("Goal %q: zero related tasks completed this week", g.Title))
-		} else if wg.RelatedTasksCompleted < 2 {
-			wg.OnTrack = "at_risk"
+		// On-track assessment (shared logic with get_goal_progress)
+		var daysRemaining int
+		if g.Deadline != nil {
+			daysRemaining = int(g.Deadline.Sub(today).Hours() / 24)
+		}
+		weeklyRate := float64(wg.RelatedTasksCompleted) // 1 week = rate per week
+		wg.OnTrack = assessOnTrack(wg.RelatedTasksCompleted, weeklyRate, daysRemaining)
+		if wg.OnTrack != "on_track" {
+			out.Concerns = append(out.Concerns, fmt.Sprintf("Goal %q: %s (completed %d related tasks this week)", g.Title, wg.OnTrack, wg.RelatedTasksCompleted))
 		}
 
 		out.GoalAlignment = append(out.GoalAlignment, wg)

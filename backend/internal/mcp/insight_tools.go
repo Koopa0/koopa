@@ -34,7 +34,7 @@ type insightEntry struct {
 	Hypothesis            string   `json:"hypothesis,omitempty"`
 	Status                string   `json:"status"`
 	Category              string   `json:"category,omitempty"`
-	Evidence              []string `json:"evidence"`
+	SupportingEvidence    []string `json:"supporting_evidence"`
 	CounterEvidence       []string `json:"counter_evidence,omitempty"`
 	SourceDates           []string `json:"source_dates"`
 	Project               string   `json:"project,omitempty"`
@@ -100,11 +100,11 @@ func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, 
 // parseInsightNote extracts structured fields from an insight note's metadata.
 func parseInsightNote(n *session.Note) insightEntry {
 	entry := insightEntry{
-		ID:        n.ID,
-		CreatedAt: n.CreatedAt.Format(time.DateOnly),
-		Content:   n.Content,
-		Evidence:  []string{},
-		Tags:      []string{},
+		ID:                 n.ID,
+		CreatedAt:          n.CreatedAt.Format(time.DateOnly),
+		Content:            n.Content,
+		SupportingEvidence: []string{},
+		Tags:               []string{},
 	}
 
 	if len(n.Metadata) == 0 {
@@ -137,9 +137,9 @@ func parseInsightNote(n *session.Note) insightEntry {
 
 	// Backward compatible: prefer supporting_evidence, fallback to evidence
 	if meta.SupportingEvidence != nil {
-		entry.Evidence = meta.SupportingEvidence
+		entry.SupportingEvidence = meta.SupportingEvidence
 	} else if meta.Evidence != nil {
-		entry.Evidence = meta.Evidence
+		entry.SupportingEvidence = meta.Evidence
 	}
 	if meta.CounterEvidence != nil {
 		entry.CounterEvidence = meta.CounterEvidence

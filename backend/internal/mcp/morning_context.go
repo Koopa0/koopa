@@ -35,10 +35,10 @@ type MorningContextOutput struct {
 	YesterdayAdjustments   []string               `json:"yesterday_adjustments,omitempty"`
 	PlanningHistory        planningHistorySummary `json:"planning_history"`
 	ActiveInsights         []insightBrief         `json:"active_insights"`
-	PendingRecommendations []insightBrief         `json:"pending_recommendations,omitempty"`
+	PendingRecommendations []insightBrief         `json:"pending_recommendations"`
 	TotalUnverified        int64                  `json:"total_unverified"`
 	DailySummary           *dailySummaryHint      `json:"daily_summary,omitempty"`
-	RSSHighlightCount      int                    `json:"rss_highlight_count,omitempty"`
+	RSSHighlightCount      int                    `json:"rss_highlight_count"`
 	TopRSSHighlight        string                 `json:"top_rss_highlight,omitempty"`
 }
 
@@ -124,8 +124,8 @@ type projectHealth struct {
 	Status            string `json:"status"`
 	DaysSinceActivity int    `json:"days_since_activity"`
 	PendingTasks      int    `json:"pending_tasks"`
-	ExpectedCadence   string `json:"expected_cadence,omitempty"`
-	IsNeglected       bool   `json:"is_neglected,omitempty"`
+	ExpectedCadence   string `json:"expected_cadence"`
+	IsNeglected       bool   `json:"is_neglected"`
 }
 
 type goalBrief struct {
@@ -370,6 +370,9 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 	if out.ActiveInsights == nil {
 		out.ActiveInsights = []insightBrief{}
+	}
+	if out.PendingRecommendations == nil {
+		out.PendingRecommendations = []insightBrief{}
 	}
 
 	// --- RSS highlight summary ---
