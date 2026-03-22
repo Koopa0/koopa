@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,6 +32,17 @@ type MorningContextOutput struct {
 	YesterdayReflection string                 `json:"yesterday_reflection,omitempty"`
 	PlanningHistory     planningHistorySummary `json:"planning_history"`
 	ActiveInsights      []insightBrief         `json:"active_insights"`
+	TotalUnverified     int64                  `json:"total_unverified"`
+	DailySummary        *dailySummaryHint      `json:"daily_summary,omitempty"`
+}
+
+// dailySummaryHint provides computed task metrics for evening reflection.
+type dailySummaryHint struct {
+	MyDayTasksTotal     int      `json:"my_day_tasks_total"`
+	MyDayTasksCompleted int      `json:"my_day_tasks_completed"`
+	NonMyDayCompleted   int      `json:"non_my_day_completed"`
+	TotalCompleted      int      `json:"total_completed"`
+	CompletedTitles     []string `json:"completed_titles"`
 }
 
 type dailyMetrics struct {
@@ -45,12 +57,23 @@ type dailyMetrics struct {
 }
 
 type planningHistorySummary struct {
-	Days             int            `json:"days"`
-	Entries          []dailyMetrics `json:"entries"`
-	AvgCompletionRate float64       `json:"avg_completion_rate"`
-	AvgCommittedRate  float64       `json:"avg_committed_rate"`
-	AvgDailyCapacity  float64       `json:"avg_daily_capacity"`
-	Trend            string         `json:"trend"`
+	Days              int                `json:"days"`
+	Entries           []dailyMetrics     `json:"entries"`
+	AvgCompletionRate float64            `json:"avg_completion_rate"`
+	AvgCommittedRate  float64            `json:"avg_committed_rate"`
+	AvgDailyCapacity  float64            `json:"avg_daily_capacity"`
+	Trend             string             `json:"trend"`
+	CapacityVariance  float64            `json:"capacity_variance"`
+	CapacityByDayType map[string]float64 `json:"capacity_by_day_type"`
+	MonthlySummary    *monthlySummary    `json:"monthly_summary,omitempty"`
+}
+
+type monthlySummary struct {
+	TotalDaysTracked  int     `json:"total_days_tracked"`
+	AvgCompletionRate float64 `json:"avg_completion_rate"`
+	AvgDailyCapacity  float64 `json:"avg_daily_capacity"`
+	BestDayType       string  `json:"best_day_type"`
+	WorstDayType      string  `json:"worst_day_type"`
 }
 
 type insightBrief struct {
@@ -268,14 +291,25 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 			out.YesterdayReflection = refl.Content
 		}
 
-		since := now.AddDate(0, 0, -7)
+		// Fetch 30 days of metrics for monthly summary; recent 7 in entries
+		since := now.AddDate(0, 0, -30)
 		metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
 		if metricsErr != nil {
 			s.logger.Error("morning_context: planning history", "error", metricsErr)
 		}
 		out.PlanningHistory = buildPlanningHistory(metricsNotes, 7)
 
-		// Active insights (unverified, most recent 5)
+		// Lazy auto-archive stale insights before querying
+		if s.sessionWriter != nil {
+			cutoff := now.AddDate(0, 0, -14)
+			if n, err := s.sessionWriter.ArchiveStaleInsights(ctx, cutoff); err != nil {
+				s.logger.Error("morning_context: auto-archive insights", "error", err)
+			} else if n > 0 {
+				s.logger.Info("auto-archived stale insights", "count", n)
+			}
+		}
+
+		// Active insights (unverified, most recent 5) + total count
 		unverified := "unverified"
 		insightNotes, insightErr := s.sessionReader.InsightsByStatus(ctx, &unverified, nil, 5)
 		if insightErr != nil {
@@ -285,12 +319,35 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		for i := range insightNotes {
 			out.ActiveInsights = append(out.ActiveInsights, parseInsightBrief(&insightNotes[i]))
 		}
+
+		unverifiedCount, countErr := s.sessionReader.CountInsightsByStatus(ctx, &unverified)
+		if countErr != nil {
+			s.logger.Error("morning_context: counting unverified insights", "error", countErr)
+		}
+		out.TotalUnverified = unverifiedCount
 	}
 	if out.PlanningHistory.Entries == nil {
 		out.PlanningHistory.Entries = []dailyMetrics{}
 	}
 	if out.ActiveInsights == nil {
 		out.ActiveInsights = []insightBrief{}
+	}
+
+	// --- Daily summary hint (F3: computed metrics for evening reflection) ---
+	hint, hintErr := s.tasks.DailySummaryHintForDate(ctx, today, tomorrow)
+	if hintErr != nil {
+		s.logger.Error("morning_context: daily summary hint", "error", hintErr)
+	} else {
+		out.DailySummary = &dailySummaryHint{
+			MyDayTasksTotal:     hint.MyDayTasksTotal,
+			MyDayTasksCompleted: hint.MyDayTasksCompleted,
+			NonMyDayCompleted:   hint.NonMyDayCompleted,
+			TotalCompleted:      hint.TotalCompleted,
+			CompletedTitles:     hint.CompletedTitles,
+		}
+		if out.DailySummary.CompletedTitles == nil {
+			out.DailySummary.CompletedTitles = []string{}
+		}
 	}
 
 	return nil, out, nil
@@ -326,40 +383,156 @@ func parseDailyMetrics(n session.Note) *dailyMetrics {
 }
 
 // buildPlanningHistory aggregates metrics notes into a planning history summary.
-func buildPlanningHistory(notes []session.Note, days int) planningHistorySummary {
-	entries := make([]dailyMetrics, 0, len(notes))
+// recentDays controls how many entries are included in Entries (the rest feed monthly summary).
+func buildPlanningHistory(notes []session.Note, recentDays int) planningHistorySummary {
+	allEntries := make([]dailyMetrics, 0, len(notes))
 	for _, n := range notes {
 		if dm := parseDailyMetrics(n); dm != nil {
-			entries = append(entries, *dm)
+			allEntries = append(allEntries, *dm)
 		}
 	}
 
-	summary := planningHistorySummary{
-		Days:    days,
-		Entries: entries,
+	// Cap recent entries
+	recentEntries := allEntries
+	if len(recentEntries) > recentDays {
+		recentEntries = recentEntries[:recentDays]
 	}
 
-	if len(entries) == 0 {
+	summary := planningHistorySummary{
+		Days:              recentDays,
+		Entries:           recentEntries,
+		CapacityByDayType: make(map[string]float64),
+	}
+
+	if len(allEntries) == 0 {
 		summary.Trend = "no_data"
 		return summary
 	}
 
-	// Calculate averages
+	// Recent averages (from capped entries)
 	var totalRate, totalCommitted, totalCapacity float64
-	for _, e := range entries {
+	for _, e := range recentEntries {
 		totalRate += e.CompletionRate
 		totalCommitted += e.CommittedCompletionRate
 		totalCapacity += float64(e.TasksCompleted)
 	}
-	n := float64(len(entries))
+	n := float64(len(recentEntries))
 	summary.AvgCompletionRate = totalRate / n
 	summary.AvgCommittedRate = totalCommitted / n
 	summary.AvgDailyCapacity = totalCapacity / n
+	summary.Trend = computeTrend(recentEntries)
 
-	// Trend: compare recent 3 days vs older entries
-	summary.Trend = computeTrend(entries)
+	// F6: Capacity by day type + variance (from ALL entries)
+	summary.CapacityByDayType, summary.CapacityVariance = computeCapacityMetrics(allEntries)
+
+	// F4: Monthly summary (from ALL entries, only if more data than recent window)
+	if len(allEntries) > recentDays {
+		summary.MonthlySummary = computeMonthlySummary(allEntries, summary.CapacityByDayType)
+	}
 
 	return summary
+}
+
+// computeCapacityMetrics calculates per-weekday capacity averages and overall variance.
+func computeCapacityMetrics(entries []dailyMetrics) (byDay map[string]float64, variance float64) {
+	byDay = make(map[string]float64)
+	dayCounts := make(map[string]int)
+
+	var allCapacities []float64
+	for _, e := range entries {
+		cap := float64(e.TasksCompleted)
+		allCapacities = append(allCapacities, cap)
+
+		d, err := time.Parse(time.DateOnly, e.Date)
+		if err != nil {
+			continue
+		}
+		day := strings.ToLower(d.Weekday().String())
+		byDay[day] += cap
+		dayCounts[day]++
+	}
+
+	// Average per day type
+	for day, total := range byDay {
+		byDay[day] = total / float64(dayCounts[day])
+	}
+
+	// Add weekday_avg and weekend_avg
+	var weekdaySum float64
+	var weekdayCount int
+	var weekendSum float64
+	var weekendCount int
+	for day, avg := range byDay {
+		switch day {
+		case "saturday", "sunday":
+			weekendSum += avg
+			weekendCount++
+		default:
+			weekdaySum += avg
+			weekdayCount++
+		}
+	}
+	if weekdayCount > 0 {
+		byDay["weekday_avg"] = weekdaySum / float64(weekdayCount)
+	}
+	if weekendCount > 0 {
+		byDay["weekend_avg"] = weekendSum / float64(weekendCount)
+	}
+
+	// Variance (population)
+	if len(allCapacities) > 1 {
+		mean := 0.0
+		for _, c := range allCapacities {
+			mean += c
+		}
+		mean /= float64(len(allCapacities))
+		var sumSq float64
+		for _, c := range allCapacities {
+			diff := c - mean
+			sumSq += diff * diff
+		}
+		variance = sumSq / float64(len(allCapacities))
+	}
+
+	return byDay, variance
+}
+
+// computeMonthlySummary aggregates all entries into a monthly overview.
+func computeMonthlySummary(entries []dailyMetrics, capacityByDay map[string]float64) *monthlySummary {
+	var totalRate, totalCapacity float64
+	for _, e := range entries {
+		totalRate += e.CompletionRate
+		totalCapacity += float64(e.TasksCompleted)
+	}
+	n := float64(len(entries))
+
+	ms := &monthlySummary{
+		TotalDaysTracked:  len(entries),
+		AvgCompletionRate: totalRate / n,
+		AvgDailyCapacity:  totalCapacity / n,
+	}
+
+	// Best/worst day type (exclude aggregated keys)
+	var bestDay, worstDay string
+	bestCap := -1.0
+	worstCap := 1e9
+	for day, avg := range capacityByDay {
+		if day == "weekday_avg" || day == "weekend_avg" {
+			continue
+		}
+		if avg > bestCap {
+			bestCap = avg
+			bestDay = day
+		}
+		if avg < worstCap {
+			worstCap = avg
+			worstDay = day
+		}
+	}
+	ms.BestDayType = bestDay
+	ms.WorstDayType = worstDay
+
+	return ms
 }
 
 // computeTrend compares the average completion rate of the most recent 3 entries

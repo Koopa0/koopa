@@ -239,6 +239,34 @@ func (s *Store) ClearAllMyDay(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// DailySummaryHintForDate computes task counts for a single day (committed vs pulled).
+func (s *Store) DailySummaryHintForDate(ctx context.Context, dayStart, dayEnd time.Time) (*DailySummaryHint, error) {
+	row, err := s.q.DailySummaryHint(ctx, db.DailySummaryHintParams{
+		DayStart: &dayStart,
+		DayEnd:   &dayEnd,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying daily summary hint: %w", err)
+	}
+
+	titles, titleErr := s.q.CompletedTitlesSince(ctx, &dayStart)
+	if titleErr != nil {
+		return nil, fmt.Errorf("querying completed titles: %w", titleErr)
+	}
+	completedTitles := make([]string, len(titles))
+	for i, t := range titles {
+		completedTitles[i] = t
+	}
+
+	return &DailySummaryHint{
+		MyDayTasksTotal:     int(row.MyDayTotal),
+		MyDayTasksCompleted: int(row.MyDayCompleted),
+		NonMyDayCompleted:   int(row.NonMyDayCompleted),
+		TotalCompleted:      int(row.TotalCompleted),
+		CompletedTitles:     completedTitles,
+	}, nil
+}
+
 // UpdateParams holds optional fields for updating a task.
 type UpdateParams struct {
 	ID          uuid.UUID

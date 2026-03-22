@@ -363,6 +363,23 @@ func (q *Queries) ArchiveProjectByNotionPageID(ctx context.Context, notionPageID
 	return result.RowsAffected(), nil
 }
 
+const archiveStaleInsights = `-- name: ArchiveStaleInsights :execrows
+UPDATE session_notes
+SET metadata = jsonb_set(metadata, '{status}', '"archived"')
+WHERE note_type = 'insight'
+  AND metadata->>'status' IN ('verified', 'invalidated')
+  AND created_at < $1
+`
+
+// Archive verified/invalidated insights older than the cutoff by setting metadata status to 'archived'.
+func (q *Queries) ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveStaleInsights, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const archiveTaskByNotionPageID = `-- name: ArchiveTaskByNotionPageID :execrows
 UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
 WHERE notion_page_id = $1 AND status != 'done'
@@ -618,6 +635,34 @@ func (q *Queries) CompletedTasksSince(ctx context.Context, since *time.Time) (in
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const completedTitlesSince = `-- name: CompletedTitlesSince :many
+SELECT title FROM tasks
+WHERE status = 'done' AND completed_at >= $1
+ORDER BY completed_at DESC
+LIMIT 20
+`
+
+// Get titles of tasks completed since a given time (for metrics hint).
+func (q *Queries) CompletedTitlesSince(ctx context.Context, since *time.Time) ([]string, error) {
+	rows, err := q.db.Query(ctx, completedTitlesSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var title string
+		if err := rows.Scan(&title); err != nil {
+			return nil, err
+		}
+		items = append(items, title)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const confirmAlias = `-- name: ConfirmAlias :one
@@ -1519,6 +1564,43 @@ func (q *Queries) CurateCollected(ctx context.Context, arg CurateCollectedParams
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
+	)
+	return i, err
+}
+
+const dailySummaryHint = `-- name: DailySummaryHint :one
+SELECT
+    count(*) FILTER (WHERE my_day = true)::int AS my_day_total,
+    count(*) FILTER (WHERE my_day = true AND status = 'done'
+        AND completed_at >= $1 AND completed_at < $2)::int AS my_day_completed,
+    count(*) FILTER (WHERE my_day = false AND status = 'done'
+        AND completed_at >= $1 AND completed_at < $2)::int AS non_my_day_completed,
+    count(*) FILTER (WHERE status = 'done'
+        AND completed_at >= $1 AND completed_at < $2)::int AS total_completed
+FROM tasks
+`
+
+type DailySummaryHintParams struct {
+	DayStart *time.Time `json:"day_start"`
+	DayEnd   *time.Time `json:"day_end"`
+}
+
+type DailySummaryHintRow struct {
+	MyDayTotal        int32 `json:"my_day_total"`
+	MyDayCompleted    int32 `json:"my_day_completed"`
+	NonMyDayCompleted int32 `json:"non_my_day_completed"`
+	TotalCompleted    int32 `json:"total_completed"`
+}
+
+// Compute task metrics hint for a single day (committed/pulled/completed counts).
+func (q *Queries) DailySummaryHint(ctx context.Context, arg DailySummaryHintParams) (DailySummaryHintRow, error) {
+	row := q.db.QueryRow(ctx, dailySummaryHint, arg.DayStart, arg.DayEnd)
+	var i DailySummaryHintRow
+	err := row.Scan(
+		&i.MyDayTotal,
+		&i.MyDayCompleted,
+		&i.NonMyDayCompleted,
+		&i.TotalCompleted,
 	)
 	return i, err
 }

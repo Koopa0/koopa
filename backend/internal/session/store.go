@@ -137,6 +137,15 @@ func (s *Store) UpdateNoteMetadata(ctx context.Context, p UpdateMetadataParams) 
 	return &n, nil
 }
 
+// ArchiveStaleInsights sets verified/invalidated insights older than cutoff to archived.
+func (s *Store) ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error) {
+	n, err := s.q.ArchiveStaleInsights(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("archiving stale insights: %w", err)
+	}
+	return n, nil
+}
+
 // DeleteOldNotes deletes session notes with note_date before cutoff.
 func (s *Store) DeleteOldNotes(ctx context.Context, cutoff time.Time) (int64, error) {
 	n, err := s.q.DeleteOldNotes(ctx, cutoff)

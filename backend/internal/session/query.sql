@@ -58,6 +58,14 @@ SET metadata = @metadata
 WHERE id = @id
 RETURNING id, note_date, note_type, source, content, metadata, created_at;
 
+-- name: ArchiveStaleInsights :execrows
+-- Archive verified/invalidated insights older than the cutoff by setting metadata status to 'archived'.
+UPDATE session_notes
+SET metadata = jsonb_set(metadata, '{status}', '"archived"')
+WHERE note_type = 'insight'
+  AND metadata->>'status' IN ('verified', 'invalidated')
+  AND created_at < @cutoff;
+
 -- name: DeleteOldNotes :execrows
 -- Cleanup: delete session notes older than the given cutoff.
 DELETE FROM session_notes WHERE note_date < @cutoff;

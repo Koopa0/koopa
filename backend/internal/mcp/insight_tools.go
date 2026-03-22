@@ -45,6 +45,16 @@ func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, GetActiveInsightsOutput{}, fmt.Errorf("session notes not configured")
 	}
 
+	// Lazy auto-archive: verified/invalidated insights older than 14 days → archived
+	if s.sessionWriter != nil {
+		cutoff := time.Now().AddDate(0, 0, -14)
+		if n, err := s.sessionWriter.ArchiveStaleInsights(ctx, cutoff); err != nil {
+			s.logger.Error("get_active_insights: auto-archive", "error", err)
+		} else if n > 0 {
+			s.logger.Info("auto-archived stale insights", "count", n)
+		}
+	}
+
 	status := input.Status
 	if status == "" {
 		status = "unverified"

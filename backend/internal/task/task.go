@@ -82,6 +82,15 @@ type PendingTaskDetail struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+// DailySummaryHint holds computed task counts for metrics (replaces manual counting).
+type DailySummaryHint struct {
+	MyDayTasksTotal     int      `json:"my_day_tasks_total"`
+	MyDayTasksCompleted int      `json:"my_day_tasks_completed"`
+	NonMyDayCompleted   int      `json:"non_my_day_completed"`
+	TotalCompleted      int      `json:"total_completed"`
+	CompletedTitles     []string `json:"completed_titles"`
+}
+
 // UpsertByNotionParams are the parameters for upserting a task from Notion.
 // CompletedAt is managed by the DB: set on first transition to done, preserved thereafter.
 type UpsertByNotionParams struct {

@@ -71,6 +71,7 @@ type TaskReader interface {
 	PendingTasksWithProject(ctx context.Context, projectSlug *string, limit int32) ([]task.PendingTaskDetail, error)
 	TaskByID(ctx context.Context, id uuid.UUID) (*task.Task, error)
 	PendingTasksByTitle(ctx context.Context, title string) ([]task.Task, error)
+	DailySummaryHintForDate(ctx context.Context, dayStart, dayEnd time.Time) (*task.DailySummaryHint, error)
 }
 
 // TaskWriter provides task mutations for MCP tools.
@@ -153,6 +154,7 @@ type SessionNoteReader interface {
 type SessionNoteWriter interface {
 	CreateNote(ctx context.Context, p session.CreateParams) (*session.Note, error)
 	UpdateNoteMetadata(ctx context.Context, p session.UpdateMetadataParams) (*session.Note, error)
+	ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // searchResultEntry is a note with a combined RRF score for merged search results.

@@ -134,6 +134,25 @@ WHERE id = @id AND status != 'done';
 UPDATE tasks SET my_day = false, updated_at = now()
 WHERE my_day = true AND status != 'done';
 
+-- name: DailySummaryHint :one
+-- Compute task metrics hint for a single day (committed/pulled/completed counts).
+SELECT
+    count(*) FILTER (WHERE my_day = true)::int AS my_day_total,
+    count(*) FILTER (WHERE my_day = true AND status = 'done'
+        AND completed_at >= @day_start AND completed_at < @day_end)::int AS my_day_completed,
+    count(*) FILTER (WHERE my_day = false AND status = 'done'
+        AND completed_at >= @day_start AND completed_at < @day_end)::int AS non_my_day_completed,
+    count(*) FILTER (WHERE status = 'done'
+        AND completed_at >= @day_start AND completed_at < @day_end)::int AS total_completed
+FROM tasks;
+
+-- name: CompletedTitlesSince :many
+-- Get titles of tasks completed since a given time (for metrics hint).
+SELECT title FROM tasks
+WHERE status = 'done' AND completed_at >= @since
+ORDER BY completed_at DESC
+LIMIT 20;
+
 -- name: UpdateTask :one
 -- Update arbitrary task fields. Only non-null parameters are applied.
 UPDATE tasks SET
