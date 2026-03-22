@@ -15,6 +15,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -46,6 +47,11 @@ type ActivityReader interface {
 	EventsByProject(ctx context.Context, project string, limit int) ([]activity.Event, error)
 }
 
+// ActivityWriter records activity events for audit trail.
+type ActivityWriter interface {
+	CreateEvent(ctx context.Context, p activity.RecordParams) (int64, error)
+}
+
 // ProjectReader provides project lookup for MCP tools.
 type ProjectReader interface {
 	ProjectBySlug(ctx context.Context, slug string) (*project.Project, error)
@@ -72,6 +78,9 @@ type TaskReader interface {
 	TaskByID(ctx context.Context, id uuid.UUID) (*task.Task, error)
 	PendingTasksByTitle(ctx context.Context, title string) ([]task.Task, error)
 	DailySummaryHintForDate(ctx context.Context, dayStart, dayEnd time.Time) (*task.DailySummaryHint, error)
+	CompletedTasksDetailSince(ctx context.Context, since time.Time) ([]task.CompletedTaskDetail, error)
+	TasksCreatedSince(ctx context.Context, since time.Time) ([]task.CreatedTaskDetail, error)
+	CompletedByProjectSince(ctx context.Context, since time.Time) ([]flow.ProjectCompletion, error)
 }
 
 // TaskWriter provides task mutations for MCP tools.
@@ -127,12 +136,17 @@ type GoalWriter interface {
 
 // ProjectWriter provides project mutations for MCP tools.
 type ProjectWriter interface {
-	UpdateStatus(ctx context.Context, id uuid.UUID, status project.Status, description *string) (*project.Project, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status project.Status, description, expectedCadence *string) (*project.Project, error)
 }
 
 // CollectedLatestReader provides latest collected data without mandatory time bounds.
 type CollectedLatestReader interface {
 	LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]collected.CollectedData, error)
+}
+
+// CollectedHighlightReader provides high-relevance collected data for morning context.
+type CollectedHighlightReader interface {
+	TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]collected.CollectedData, error)
 }
 
 // ContentSearcher extends ContentReader with OR-fallback search.
@@ -144,9 +158,12 @@ type ContentSearcher interface {
 type SessionNoteReader interface {
 	NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType *string) ([]session.Note, error)
 	LatestNoteByType(ctx context.Context, noteType string) (*session.Note, error)
+	LatestNoteBySource(ctx context.Context, source string) (*session.Note, error)
 	MetricsHistory(ctx context.Context, sinceDate time.Time) ([]session.Note, error)
 	NoteByID(ctx context.Context, id int64) (*session.Note, error)
 	InsightsByStatus(ctx context.Context, status, project *string, limit int32) ([]session.Note, error)
+	InsightsByCategory(ctx context.Context, status, category string, limit int32) ([]session.Note, error)
+	InsightsSince(ctx context.Context, sinceDate time.Time) ([]session.Note, error)
 	CountInsightsByStatus(ctx context.Context, status *string) (int64, error)
 }
 

@@ -20,28 +20,30 @@ import (
 
 // Server is the MCP server exposing knowledge tools.
 type Server struct {
-	server          *mcp.Server
-	notes           NoteSearcher
-	activity        ActivityReader
-	projects        ProjectReader
-	collected       CollectedReader
-	collectedLatest CollectedLatestReader
-	stats           StatsReader
-	tasks           TaskReader
-	taskWriter      TaskWriter
-	contents        ContentReader
-	contentSearcher ContentSearcher
-	contentWriter   ContentWriter
-	goals           GoalReader
-	goalWriter      GoalWriter
-	projectWriter   ProjectWriter
-	notionTasks     NotionTaskWriter
-	taskDBResolver  TaskDBIDResolver
-	sessionReader    SessionNoteReader
-	sessionWriter    SessionNoteWriter
-	semanticNotes    NoteSemanticSearcher
-	queryEmbedder    QueryEmbedder
-	logger           *slog.Logger
+	server              *mcp.Server
+	notes               NoteSearcher
+	activity            ActivityReader
+	projects            ProjectReader
+	collected           CollectedReader
+	collectedLatest     CollectedLatestReader
+	stats               StatsReader
+	tasks               TaskReader
+	taskWriter          TaskWriter
+	contents            ContentReader
+	contentSearcher     ContentSearcher
+	contentWriter       ContentWriter
+	goals               GoalReader
+	goalWriter          GoalWriter
+	projectWriter       ProjectWriter
+	notionTasks         NotionTaskWriter
+	taskDBResolver      TaskDBIDResolver
+	sessionReader       SessionNoteReader
+	sessionWriter       SessionNoteWriter
+	activityWriter      ActivityWriter
+	collectedHighlights CollectedHighlightReader
+	semanticNotes       NoteSemanticSearcher
+	queryEmbedder       QueryEmbedder
+	logger              *slog.Logger
 }
 
 // ServerOption configures optional Server dependencies.
@@ -73,6 +75,16 @@ func WithCollectedLatest(r CollectedLatestReader) ServerOption {
 // WithContentSearcher enables OR-fallback search.
 func WithContentSearcher(cs ContentSearcher) ServerOption {
 	return func(s *Server) { s.contentSearcher = cs }
+}
+
+// WithActivityWriter enables activity event recording for task completion audit trail.
+func WithActivityWriter(w ActivityWriter) ServerOption {
+	return func(s *Server) { s.activityWriter = w }
+}
+
+// WithCollectedHighlights enables RSS highlight summary in morning context.
+func WithCollectedHighlights(r CollectedHighlightReader) ServerOption {
+	return func(s *Server) { s.collectedHighlights = r }
 }
 
 // WithSemanticSearch enables embedding-based semantic search for notes.
@@ -238,6 +250,21 @@ func NewServer(
 		Name:        "get_morning_context",
 		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, active goals, yesterday's reflection, and planning history (completion rates). Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session.",
 	}, s.getMorningContext)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_session_delta",
+		Description: "Show what changed since the last Claude.ai session: tasks completed, tasks created, tasks that became overdue, build logs, insight changes, session notes, and metrics trend. Use when resuming after a gap, e.g. 'what happened since last time', '上次之後有什麼變化', 'catch me up'. Defaults to changes since the last claude session note.",
+	}, s.getSessionDelta)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_weekly_summary",
+		Description: "Get a comprehensive weekly summary: task completion by project, metrics trends, project health, insight activity, goal alignment, auto-generated highlights and concerns. Use for weekly reviews, '這週做了什麼', 'weekly review', 'how was this week'. Set weeks_back=1 for last week.",
+	}, s.getWeeklySummary)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_goal_progress",
+		Description: "Show progress toward each active goal: related projects, tasks completed in the lookback period, weekly task rate, and on-track assessment. Use when reviewing goals, '目標進度', 'goal check', 'am I on track'.",
+	}, s.getGoalProgress)
 
 	// --- session notes tools ---
 

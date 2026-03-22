@@ -66,6 +66,35 @@ WHERE note_type = 'insight'
   AND metadata->>'status' IN ('verified', 'invalidated')
   AND created_at < @cutoff;
 
+-- name: LatestNoteBySource :one
+-- Get the most recent note from a specific source (e.g., "claude" for session gap calculation).
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE source = @source
+ORDER BY note_date DESC, created_at DESC
+LIMIT 1;
+
+-- name: InsightsByCategory :many
+-- Get insight notes filtered by status and category in metadata.
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = 'insight'
+  AND metadata->>'status' = @status::text
+  AND metadata->>'category' = @category::text
+ORDER BY created_at DESC
+LIMIT @max_results;
+
+-- name: InsightsSince :many
+-- Get all insight notes created since a given date (for session delta).
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = 'insight'
+  AND note_date >= @since_date
+ORDER BY created_at DESC;
+
 -- name: DeleteOldNotes :execrows
--- Cleanup: delete session notes older than the given cutoff.
-DELETE FROM session_notes WHERE note_date < @cutoff;
+-- Cleanup: delete short-lived notes (plan/reflection/context) after short_cutoff,
+-- and long-lived notes (metrics/insight) after long_cutoff.
+DELETE FROM session_notes
+WHERE (note_type NOT IN ('metrics', 'insight') AND note_date < @short_cutoff)
+   OR (note_type IN ('metrics', 'insight') AND note_date < @long_cutoff);

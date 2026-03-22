@@ -318,12 +318,13 @@ func (s *Store) ActiveSlugsWithRepo(ctx context.Context, since time.Time) ([]str
 	return slugs, nil
 }
 
-// UpdateStatus updates a project's status and optionally its description.
-func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, description *string) (*Project, error) {
+// UpdateStatus updates a project's status and optionally its description and expected cadence.
+func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, description, expectedCadence *string) (*Project, error) {
 	r, err := s.q.UpdateProjectStatus(ctx, db.UpdateProjectStatusParams{
-		ID:          id,
-		Status:      db.ProjectStatus(status),
-		Description: description,
+		ID:              id,
+		Status:          db.ProjectStatus(status),
+		Description:     description,
+		ExpectedCadence: expectedCadence,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -360,6 +361,7 @@ func rowToProject(r db.Project) Project {
 		Area:            r.Area,
 		Deadline:        r.Deadline,
 		LastActivityAt:  r.LastActivityAt,
+		ExpectedCadence: r.ExpectedCadence,
 		CreatedAt:       r.CreatedAt,
 		UpdatedAt:       r.UpdatedAt,
 	}

@@ -146,9 +146,58 @@ func (s *Store) ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int
 	return n, nil
 }
 
-// DeleteOldNotes deletes session notes with note_date before cutoff.
-func (s *Store) DeleteOldNotes(ctx context.Context, cutoff time.Time) (int64, error) {
-	n, err := s.q.DeleteOldNotes(ctx, cutoff)
+// LatestNoteBySource returns the most recent note from the given source.
+// Returns ErrNotFound when no note exists.
+func (s *Store) LatestNoteBySource(ctx context.Context, source string) (*Note, error) {
+	row, err := s.q.LatestNoteBySource(ctx, source)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying latest note by source %q: %w", source, err)
+	}
+	n := rowToNote(row)
+	return &n, nil
+}
+
+// InsightsByCategory returns insight notes filtered by status and category.
+func (s *Store) InsightsByCategory(ctx context.Context, status, category string, limit int32) ([]Note, error) {
+	rows, err := s.q.InsightsByCategory(ctx, db.InsightsByCategoryParams{
+		Status:     status,
+		Category:   category,
+		MaxResults: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying insights by category: %w", err)
+	}
+	notes := make([]Note, len(rows))
+	for i, r := range rows {
+		notes[i] = rowToNote(r)
+	}
+	return notes, nil
+}
+
+// InsightsSince returns all insight notes created since the given date.
+func (s *Store) InsightsSince(ctx context.Context, sinceDate time.Time) ([]Note, error) {
+	rows, err := s.q.InsightsSince(ctx, sinceDate)
+	if err != nil {
+		return nil, fmt.Errorf("querying insights since %s: %w", sinceDate.Format(time.DateOnly), err)
+	}
+	notes := make([]Note, len(rows))
+	for i, r := range rows {
+		notes[i] = rowToNote(r)
+	}
+	return notes, nil
+}
+
+// DeleteOldNotes deletes session notes with tiered retention:
+// plan/reflection/context are deleted after shortCutoff (30 days),
+// metrics/insight are deleted after longCutoff (365 days).
+func (s *Store) DeleteOldNotes(ctx context.Context, shortCutoff, longCutoff time.Time) (int64, error) {
+	n, err := s.q.DeleteOldNotes(ctx, db.DeleteOldNotesParams{
+		ShortCutoff: shortCutoff,
+		LongCutoff:  longCutoff,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("deleting old session notes: %w", err)
 	}

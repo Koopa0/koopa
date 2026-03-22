@@ -28,16 +28,19 @@ type GetActiveInsightsOutput struct {
 }
 
 type insightEntry struct {
-	ID          int64    `json:"id"`
-	CreatedAt   string   `json:"created_at"`
-	Content     string   `json:"content"`
-	Hypothesis  string   `json:"hypothesis,omitempty"`
-	Status      string   `json:"status"`
-	Evidence    []string `json:"evidence"`
-	SourceDates []string `json:"source_dates"`
-	Project     string   `json:"project,omitempty"`
-	Tags        []string `json:"tags"`
-	Conclusion  string   `json:"conclusion,omitempty"`
+	ID                    int64    `json:"id"`
+	CreatedAt             string   `json:"created_at"`
+	Content               string   `json:"content"`
+	Hypothesis            string   `json:"hypothesis,omitempty"`
+	Status                string   `json:"status"`
+	Category              string   `json:"category,omitempty"`
+	Evidence              []string `json:"evidence"`
+	CounterEvidence       []string `json:"counter_evidence,omitempty"`
+	SourceDates           []string `json:"source_dates"`
+	Project               string   `json:"project,omitempty"`
+	Tags                  []string `json:"tags"`
+	Conclusion            string   `json:"conclusion,omitempty"`
+	InvalidationCondition string   `json:"invalidation_condition,omitempty"`
 }
 
 func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, input GetActiveInsightsInput) (*mcp.CallToolResult, GetActiveInsightsOutput, error) {
@@ -109,13 +112,17 @@ func parseInsightNote(n *session.Note) insightEntry {
 	}
 
 	var meta struct {
-		Hypothesis  string   `json:"hypothesis"`
-		Status      string   `json:"status"`
-		Evidence    []string `json:"evidence"`
-		SourceDates []string `json:"source_dates"`
-		Project     string   `json:"project"`
-		Tags        []string `json:"tags"`
-		Conclusion  string   `json:"conclusion"`
+		Hypothesis            string   `json:"hypothesis"`
+		Status                string   `json:"status"`
+		Category              string   `json:"category"`
+		SupportingEvidence    []string `json:"supporting_evidence"`
+		Evidence              []string `json:"evidence"` // legacy fallback
+		CounterEvidence       []string `json:"counter_evidence"`
+		SourceDates           []string `json:"source_dates"`
+		Project               string   `json:"project"`
+		Tags                  []string `json:"tags"`
+		Conclusion            string   `json:"conclusion"`
+		InvalidationCondition string   `json:"invalidation_condition"`
 	}
 	if err := json.Unmarshal(n.Metadata, &meta); err != nil {
 		return entry
@@ -123,10 +130,19 @@ func parseInsightNote(n *session.Note) insightEntry {
 
 	entry.Hypothesis = meta.Hypothesis
 	entry.Status = meta.Status
+	entry.Category = meta.Category
 	entry.Project = meta.Project
 	entry.Conclusion = meta.Conclusion
-	if meta.Evidence != nil {
+	entry.InvalidationCondition = meta.InvalidationCondition
+
+	// Backward compatible: prefer supporting_evidence, fallback to evidence
+	if meta.SupportingEvidence != nil {
+		entry.Evidence = meta.SupportingEvidence
+	} else if meta.Evidence != nil {
 		entry.Evidence = meta.Evidence
+	}
+	if meta.CounterEvidence != nil {
+		entry.CounterEvidence = meta.CounterEvidence
 	}
 	if meta.SourceDates != nil {
 		entry.SourceDates = meta.SourceDates
@@ -144,10 +160,11 @@ func parseInsightNote(n *session.Note) insightEntry {
 
 // UpdateInsightInput is the input for the update_insight tool.
 type UpdateInsightInput struct {
-	InsightID      int64  `json:"insight_id" jsonschema_description:"session_note ID of the insight (required)"`
-	Status         string `json:"status,omitempty" jsonschema_description:"unverified, verified, invalidated, or archived"`
-	AppendEvidence string `json:"append_evidence,omitempty" jsonschema_description:"new evidence string to append to the evidence array"`
-	Conclusion     string `json:"conclusion,omitempty" jsonschema_description:"conclusion after verification"`
+	InsightID             int64  `json:"insight_id" jsonschema_description:"session_note ID of the insight (required)"`
+	Status                string `json:"status,omitempty" jsonschema_description:"unverified, verified, invalidated, or archived"`
+	AppendEvidence        string `json:"append_evidence,omitempty" jsonschema_description:"new supporting evidence to append"`
+	AppendCounterEvidence string `json:"append_counter_evidence,omitempty" jsonschema_description:"counter-evidence to append"`
+	Conclusion            string `json:"conclusion,omitempty" jsonschema_description:"conclusion after verification"`
 }
 
 // UpdateInsightOutput is the output of the update_insight tool.
@@ -166,8 +183,8 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	if input.InsightID == 0 {
 		return nil, UpdateInsightOutput{}, fmt.Errorf("insight_id is required")
 	}
-	if input.Status == "" && input.AppendEvidence == "" && input.Conclusion == "" {
-		return nil, UpdateInsightOutput{}, fmt.Errorf("at least one of status, append_evidence, or conclusion is required")
+	if input.Status == "" && input.AppendEvidence == "" && input.AppendCounterEvidence == "" && input.Conclusion == "" {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("at least one of status, append_evidence, append_counter_evidence, or conclusion is required")
 	}
 
 	if input.Status != "" {
@@ -201,12 +218,23 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		meta["status"] = input.Status
 	}
 	if input.AppendEvidence != "" {
+		// Write to supporting_evidence (new convention), fallback read from evidence (legacy)
 		var evidence []any
-		if ev, ok := meta["evidence"].([]any); ok {
+		if ev, ok := meta["supporting_evidence"].([]any); ok {
+			evidence = ev
+		} else if ev, ok := meta["evidence"].([]any); ok {
 			evidence = ev
 		}
 		evidence = append(evidence, input.AppendEvidence)
-		meta["evidence"] = evidence
+		meta["supporting_evidence"] = evidence
+	}
+	if input.AppendCounterEvidence != "" {
+		var ce []any
+		if ev, ok := meta["counter_evidence"].([]any); ok {
+			ce = ev
+		}
+		ce = append(ce, input.AppendCounterEvidence)
+		meta["counter_evidence"] = ce
 	}
 	if input.Conclusion != "" {
 		meta["conclusion"] = input.Conclusion
@@ -226,11 +254,13 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, UpdateInsightOutput{}, fmt.Errorf("updating insight: %w", updateErr)
 	}
 
-	// Count evidence in the updated note
+	// Count evidence in the updated note (supporting_evidence or legacy evidence)
 	evidenceCount := 0
 	if updatedMeta := make(map[string]any); len(updated.Metadata) > 0 {
 		if json.Unmarshal(updated.Metadata, &updatedMeta) == nil {
-			if ev, ok := updatedMeta["evidence"].([]any); ok {
+			if ev, ok := updatedMeta["supporting_evidence"].([]any); ok {
+				evidenceCount = len(ev)
+			} else if ev, ok := updatedMeta["evidence"].([]any); ok {
 				evidenceCount = len(ev)
 			}
 		}

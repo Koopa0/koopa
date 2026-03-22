@@ -47,7 +47,7 @@ const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
        featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-       created_at, updated_at
+       expected_cadence, created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC
 `
@@ -85,6 +85,7 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 			&i.Area,
 			&i.Deadline,
 			&i.LastActivityAt,
+			&i.ExpectedCadence,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -666,6 +667,50 @@ func (q *Queries) CompletedTasksByProjectSince(ctx context.Context, since *time.
 	for rows.Next() {
 		var i CompletedTasksByProjectSinceRow
 		if err := rows.Scan(&i.ProjectTitle, &i.Completed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completedTasksDetailSince = `-- name: CompletedTasksDetailSince :many
+SELECT t.id, t.title, t.completed_at, t.project_id,
+       COALESCE(p.title, '') AS project_title
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.status = 'done' AND t.completed_at >= $1
+ORDER BY t.completed_at DESC
+`
+
+type CompletedTasksDetailSinceRow struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	CompletedAt  *time.Time `json:"completed_at"`
+	ProjectID    *uuid.UUID `json:"project_id"`
+	ProjectTitle string     `json:"project_title"`
+}
+
+// Get tasks completed since a given time with project context.
+func (q *Queries) CompletedTasksDetailSince(ctx context.Context, since *time.Time) ([]CompletedTasksDetailSinceRow, error) {
+	rows, err := q.db.Query(ctx, completedTasksDetailSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CompletedTasksDetailSinceRow{}
+	for rows.Next() {
+		var i CompletedTasksDetailSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.CompletedAt,
+			&i.ProjectID,
+			&i.ProjectTitle,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1304,7 +1349,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
           featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-          created_at, updated_at
+          expected_cadence, created_at, updated_at
 `
 
 type CreateProjectParams struct {
@@ -1372,6 +1417,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1629,6 +1675,8 @@ SELECT
     count(*) FILTER (WHERE status = 'done'
         AND completed_at >= $1 AND completed_at < $2)::int AS total_completed
 FROM tasks
+WHERE my_day = true
+   OR (status = 'done' AND completed_at >= $1 AND completed_at < $2)
 `
 
 type DailySummaryHintParams struct {
@@ -1644,6 +1692,7 @@ type DailySummaryHintRow struct {
 }
 
 // Compute task metrics hint for a single day (committed/pulled/completed counts).
+// Scoped to relevant rows only: my_day tasks OR tasks completed today.
 func (q *Queries) DailySummaryHint(ctx context.Context, arg DailySummaryHintParams) (DailySummaryHintRow, error) {
 	row := q.db.QueryRow(ctx, dailySummaryHint, arg.DayStart, arg.DayEnd)
 	var i DailySummaryHintRow
@@ -1816,12 +1865,20 @@ func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64
 }
 
 const deleteOldNotes = `-- name: DeleteOldNotes :execrows
-DELETE FROM session_notes WHERE note_date < $1
+DELETE FROM session_notes
+WHERE (note_type NOT IN ('metrics', 'insight') AND note_date < $1)
+   OR (note_type IN ('metrics', 'insight') AND note_date < $2)
 `
 
-// Cleanup: delete session notes older than the given cutoff.
-func (q *Queries) DeleteOldNotes(ctx context.Context, cutoff time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteOldNotes, cutoff)
+type DeleteOldNotesParams struct {
+	ShortCutoff time.Time `json:"short_cutoff"`
+	LongCutoff  time.Time `json:"long_cutoff"`
+}
+
+// Cleanup: delete short-lived notes (plan/reflection/context) after short_cutoff,
+// and long-lived notes (metrics/insight) after long_cutoff.
+func (q *Queries) DeleteOldNotes(ctx context.Context, arg DeleteOldNotesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldNotes, arg.ShortCutoff, arg.LongCutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -2541,6 +2598,51 @@ func (q *Queries) InsertUnmappedAlias(ctx context.Context, rawTag string) error 
 	return err
 }
 
+const insightsByCategory = `-- name: InsightsByCategory :many
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = 'insight'
+  AND metadata->>'status' = $1::text
+  AND metadata->>'category' = $2::text
+ORDER BY created_at DESC
+LIMIT $3
+`
+
+type InsightsByCategoryParams struct {
+	Status     string `json:"status"`
+	Category   string `json:"category"`
+	MaxResults int32  `json:"max_results"`
+}
+
+// Get insight notes filtered by status and category in metadata.
+func (q *Queries) InsightsByCategory(ctx context.Context, arg InsightsByCategoryParams) ([]SessionNote, error) {
+	rows, err := q.db.Query(ctx, insightsByCategory, arg.Status, arg.Category, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionNote{}
+	for rows.Next() {
+		var i SessionNote
+		if err := rows.Scan(
+			&i.ID,
+			&i.NoteDate,
+			&i.NoteType,
+			&i.Source,
+			&i.Content,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insightsByStatus = `-- name: InsightsByStatus :many
 SELECT id, note_date, note_type, source, content, metadata, created_at
 FROM session_notes
@@ -2560,6 +2662,43 @@ type InsightsByStatusParams struct {
 // Get insight notes, optionally filtered by status and project in metadata.
 func (q *Queries) InsightsByStatus(ctx context.Context, arg InsightsByStatusParams) ([]SessionNote, error) {
 	rows, err := q.db.Query(ctx, insightsByStatus, arg.Status, arg.Project, arg.LimitVal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionNote{}
+	for rows.Next() {
+		var i SessionNote
+		if err := rows.Scan(
+			&i.ID,
+			&i.NoteDate,
+			&i.NoteType,
+			&i.Source,
+			&i.Content,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insightsSince = `-- name: InsightsSince :many
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = 'insight'
+  AND note_date >= $1
+ORDER BY created_at DESC
+`
+
+// Get all insight notes created since a given date (for session delta).
+func (q *Queries) InsightsSince(ctx context.Context, sinceDate time.Time) ([]SessionNote, error) {
+	rows, err := q.db.Query(ctx, insightsSince, sinceDate)
 	if err != nil {
 		return nil, err
 	}
@@ -2678,6 +2817,30 @@ func (q *Queries) LatestCompletedRunByContentAndFlow(ctx context.Context, arg La
 		&i.MaxAttempts,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const latestNoteBySource = `-- name: LatestNoteBySource :one
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE source = $1
+ORDER BY note_date DESC, created_at DESC
+LIMIT 1
+`
+
+// Get the most recent note from a specific source (e.g., "claude" for session gap calculation).
+func (q *Queries) LatestNoteBySource(ctx context.Context, source string) (SessionNote, error) {
+	row := q.db.QueryRow(ctx, latestNoteBySource, source)
+	var i SessionNote
+	err := row.Scan(
+		&i.ID,
+		&i.NoteDate,
+		&i.NoteType,
+		&i.Source,
+		&i.Content,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -3493,7 +3656,7 @@ SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
        p.results, p.github_url, p.live_url, p.featured, p.public, p.sort_order,
        p.status, p.notion_page_id, p.repo, p.area, p.deadline, p.last_activity_at,
-       p.created_at, p.updated_at
+       p.expected_cadence, p.created_at, p.updated_at
 FROM project_aliases pa
 JOIN projects p ON p.id = pa.project_id
 WHERE LOWER(pa.alias) = LOWER($1)
@@ -3527,6 +3690,7 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -3537,7 +3701,7 @@ const projectByRepo = `-- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
        featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-       created_at, updated_at
+       expected_cadence, created_at, updated_at
 FROM projects WHERE repo = $1
 `
 
@@ -3568,6 +3732,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -3578,7 +3743,7 @@ const projectBySlug = `-- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
        featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-       created_at, updated_at
+       expected_cadence, created_at, updated_at
 FROM projects WHERE slug = $1
 `
 
@@ -3609,6 +3774,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -3619,7 +3785,7 @@ const projectByTitle = `-- name: ProjectByTitle :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
        featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-       created_at, updated_at
+       expected_cadence, created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1)
 `
 
@@ -3651,6 +3817,7 @@ func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, er
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -3685,7 +3852,7 @@ const projects = `-- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
        featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-       created_at, updated_at
+       expected_cadence, created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title
 `
 
@@ -3722,6 +3889,7 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.Area,
 			&i.Deadline,
 			&i.LastActivityAt,
+			&i.ExpectedCadence,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -3739,7 +3907,7 @@ const publicProjects = `-- name: PublicProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
        featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-       created_at, updated_at
+       expected_cadence, created_at, updated_at
 FROM projects WHERE public = true
 ORDER BY featured DESC, sort_order, title
 `
@@ -3777,6 +3945,7 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 			&i.Area,
 			&i.Deadline,
 			&i.LastActivityAt,
+			&i.ExpectedCadence,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -5195,6 +5364,50 @@ func (q *Queries) Tasks(ctx context.Context) ([]Task, error) {
 	return items, nil
 }
 
+const tasksCreatedSince = `-- name: TasksCreatedSince :many
+SELECT t.id, t.title, t.created_at, t.project_id,
+       COALESCE(p.title, '') AS project_title
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.created_at >= $1
+ORDER BY t.created_at DESC
+`
+
+type TasksCreatedSinceRow struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	CreatedAt    time.Time  `json:"created_at"`
+	ProjectID    *uuid.UUID `json:"project_id"`
+	ProjectTitle string     `json:"project_title"`
+}
+
+// Get tasks created since a given time with project context.
+func (q *Queries) TasksCreatedSince(ctx context.Context, since time.Time) ([]TasksCreatedSinceRow, error) {
+	rows, err := q.db.Query(ctx, tasksCreatedSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TasksCreatedSinceRow{}
+	for rows.Next() {
+		var i TasksCreatedSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.CreatedAt,
+			&i.ProjectID,
+			&i.ProjectTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const toggleSourceEnabled = `-- name: ToggleSourceEnabled :one
 UPDATE notion_sources SET
     enabled = NOT enabled,
@@ -5223,6 +5436,59 @@ func (q *Queries) ToggleSourceEnabled(ctx context.Context, id uuid.UUID) (Notion
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const topRelevantCollected = `-- name: TopRelevantCollected :many
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE collected_at >= $1
+  AND status = 'unread'
+  AND relevance_score > 0.5
+ORDER BY relevance_score DESC
+LIMIT $2
+`
+
+type TopRelevantCollectedParams struct {
+	Since      time.Time `json:"since"`
+	MaxResults int32     `json:"max_results"`
+}
+
+// Get top unread collected data by relevance since a given time.
+func (q *Queries) TopRelevantCollected(ctx context.Context, arg TopRelevantCollectedParams) ([]CollectedDatum, error) {
+	rows, err := q.db.Query(ctx, topRelevantCollected, arg.Since, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CollectedDatum{}
+	for rows.Next() {
+		var i CollectedDatum
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceUrl,
+			&i.SourceName,
+			&i.Title,
+			&i.OriginalContent,
+			&i.RelevanceScore,
+			&i.Topics,
+			&i.Status,
+			&i.CuratedContentID,
+			&i.CollectedAt,
+			&i.UrlHash,
+			&i.UserFeedback,
+			&i.FeedbackAt,
+			&i.FeedID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const topicBySlug = `-- name: TopicBySlug :one
@@ -5777,7 +6043,7 @@ WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
           featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-          created_at, updated_at
+          expected_cadence, created_at, updated_at
 `
 
 type UpdateProjectParams struct {
@@ -5847,6 +6113,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5867,23 +6134,30 @@ const updateProjectStatus = `-- name: UpdateProjectStatus :one
 UPDATE projects SET
     status = $1::project_status,
     description = COALESCE($2, description),
+    expected_cadence = COALESCE($3, expected_cadence),
     updated_at = now()
-WHERE id = $3
+WHERE id = $4
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
           featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-          created_at, updated_at
+          expected_cadence, created_at, updated_at
 `
 
 type UpdateProjectStatusParams struct {
-	Status      ProjectStatus `json:"status"`
-	Description *string       `json:"description"`
-	ID          uuid.UUID     `json:"id"`
+	Status          ProjectStatus `json:"status"`
+	Description     *string       `json:"description"`
+	ExpectedCadence *string       `json:"expected_cadence"`
+	ID              uuid.UUID     `json:"id"`
 }
 
-// Update a project's status and optionally its description (review notes).
+// Update a project's status and optionally its description and expected cadence.
 func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStatusParams) (Project, error) {
-	row := q.db.QueryRow(ctx, updateProjectStatus, arg.Status, arg.Description, arg.ID)
+	row := q.db.QueryRow(ctx, updateProjectStatus,
+		arg.Status,
+		arg.Description,
+		arg.ExpectedCadence,
+		arg.ID,
+	)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -5909,6 +6183,7 @@ func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStat
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -6411,7 +6686,7 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
           featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-          created_at, updated_at
+          expected_cadence, created_at, updated_at
 `
 
 type UpsertProjectByNotionPageIDParams struct {
@@ -6459,6 +6734,7 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 		&i.Area,
 		&i.Deadline,
 		&i.LastActivityAt,
+		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

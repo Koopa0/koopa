@@ -133,6 +133,7 @@ CREATE TABLE projects (
     area             TEXT NOT NULL DEFAULT '',
     deadline         TIMESTAMPTZ,
     last_activity_at TIMESTAMPTZ,
+    expected_cadence TEXT NOT NULL DEFAULT 'weekly',
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -551,3 +552,4 @@ CREATE TABLE session_notes (
 
 CREATE INDEX idx_session_notes_date ON session_notes (note_date DESC);
 CREATE INDEX idx_session_notes_type ON session_notes (note_date, note_type);
+CREATE INDEX idx_session_notes_insight_status ON session_notes ((metadata->>'status')) WHERE note_type = 'insight';

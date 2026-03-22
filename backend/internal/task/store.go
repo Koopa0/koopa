@@ -267,6 +267,42 @@ func (s *Store) DailySummaryHintForDate(ctx context.Context, dayStart, dayEnd ti
 	}, nil
 }
 
+// CompletedTasksDetailSince returns tasks completed since the given time with project context.
+func (s *Store) CompletedTasksDetailSince(ctx context.Context, since time.Time) ([]CompletedTaskDetail, error) {
+	rows, err := s.q.CompletedTasksDetailSince(ctx, &since)
+	if err != nil {
+		return nil, fmt.Errorf("listing completed tasks since %s: %w", since.Format(time.DateOnly), err)
+	}
+	result := make([]CompletedTaskDetail, len(rows))
+	for i, r := range rows {
+		result[i] = CompletedTaskDetail{
+			ID:           r.ID,
+			Title:        r.Title,
+			CompletedAt:  r.CompletedAt,
+			ProjectTitle: r.ProjectTitle,
+		}
+	}
+	return result, nil
+}
+
+// TasksCreatedSince returns tasks created since the given time with project context.
+func (s *Store) TasksCreatedSince(ctx context.Context, since time.Time) ([]CreatedTaskDetail, error) {
+	rows, err := s.q.TasksCreatedSince(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("listing tasks created since %s: %w", since.Format(time.DateOnly), err)
+	}
+	result := make([]CreatedTaskDetail, len(rows))
+	for i, r := range rows {
+		result[i] = CreatedTaskDetail{
+			ID:           r.ID,
+			Title:        r.Title,
+			CreatedAt:    r.CreatedAt,
+			ProjectTitle: r.ProjectTitle,
+		}
+	}
+	return result, nil
+}
+
 // UpdateParams holds optional fields for updating a task.
 type UpdateParams struct {
 	ID          uuid.UUID

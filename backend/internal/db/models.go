@@ -648,6 +648,7 @@ type Project struct {
 	Area            string        `json:"area"`
 	Deadline        *time.Time    `json:"deadline"`
 	LastActivityAt  *time.Time    `json:"last_activity_at"`
+	ExpectedCadence string        `json:"expected_cadence"`
 	CreatedAt       time.Time     `json:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at"`
 }

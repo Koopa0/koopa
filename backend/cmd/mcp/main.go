@@ -42,8 +42,8 @@ import (
 	mcpserver "github.com/koopa0/blog-backend/internal/mcp"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notion"
-	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/task"
 )
@@ -91,6 +91,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	projectStore := project.NewStore(pool)
 	goalStore := goal.NewStore(pool)
 	collectedStore := collected.NewStore(pool)
+	activityStore := activity.NewStore(pool)
 	sessionStore := session.NewStore(pool)
 
 	var opts []mcpserver.ServerOption
@@ -108,8 +109,10 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mcpserver.WithGoalWriter(goalStore),
 		mcpserver.WithProjectWriter(projectStore),
 		mcpserver.WithCollectedLatest(collectedStore),
+		mcpserver.WithCollectedHighlights(collectedStore),
 		mcpserver.WithContentSearcher(contentStore),
 		mcpserver.WithSessionNotes(sessionStore, sessionStore),
+		mcpserver.WithActivityWriter(activityStore),
 	)
 
 	// Optional semantic search (requires GEMINI_API_KEY)
@@ -126,7 +129,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 
 	server := mcpserver.NewServer(
 		noteStore,
-		activity.NewStore(pool),
+		activityStore,
 		projectStore,
 		collectedStore,
 		stats.NewStore(pool),

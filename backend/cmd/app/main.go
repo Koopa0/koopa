@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dgraph-io/ristretto/v2"
-	"github.com/robfig/cron/v3"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/anthropic"
@@ -23,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgvector "github.com/pgvector/pgvector-go"
+	"github.com/robfig/cron/v3"
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
@@ -474,8 +474,9 @@ func run(logger *slog.Logger) error {
 	addCron("45 3 * * *", "retention-session-notes", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 		defer cancel()
-		cutoff := time.Now().AddDate(0, 0, -30)
-		if n, err := sessionStore.DeleteOldNotes(ctx, cutoff); err != nil {
+		shortCutoff := time.Now().AddDate(0, 0, -30) // plan/reflection/context: 30 days
+		longCutoff := time.Now().AddDate(0, 0, -365) // metrics/insight: 365 days
+		if n, err := sessionStore.DeleteOldNotes(ctx, shortCutoff, longCutoff); err != nil {
 			logger.Error("cron: deleting old session notes", "error", err)
 		} else if n > 0 {
 			logger.Info("cron: deleted old session notes", "count", n)

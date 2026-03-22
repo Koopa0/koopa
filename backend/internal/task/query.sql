@@ -136,6 +136,7 @@ WHERE my_day = true AND status != 'done';
 
 -- name: DailySummaryHint :one
 -- Compute task metrics hint for a single day (committed/pulled/completed counts).
+-- Scoped to relevant rows only: my_day tasks OR tasks completed today.
 SELECT
     count(*) FILTER (WHERE my_day = true)::int AS my_day_total,
     count(*) FILTER (WHERE my_day = true AND status = 'done'
@@ -144,7 +145,9 @@ SELECT
         AND completed_at >= @day_start AND completed_at < @day_end)::int AS non_my_day_completed,
     count(*) FILTER (WHERE status = 'done'
         AND completed_at >= @day_start AND completed_at < @day_end)::int AS total_completed
-FROM tasks;
+FROM tasks
+WHERE my_day = true
+   OR (status = 'done' AND completed_at >= @day_start AND completed_at < @day_end);
 
 -- name: CompletedTitlesSince :many
 -- Get titles of tasks completed since a given time (for metrics hint).
@@ -152,6 +155,24 @@ SELECT title FROM tasks
 WHERE status = 'done' AND completed_at >= @since
 ORDER BY completed_at DESC
 LIMIT 20;
+
+-- name: CompletedTasksDetailSince :many
+-- Get tasks completed since a given time with project context.
+SELECT t.id, t.title, t.completed_at, t.project_id,
+       COALESCE(p.title, '') AS project_title
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.status = 'done' AND t.completed_at >= @since
+ORDER BY t.completed_at DESC;
+
+-- name: TasksCreatedSince :many
+-- Get tasks created since a given time with project context.
+SELECT t.id, t.title, t.created_at, t.project_id,
+       COALESCE(p.title, '') AS project_title
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.created_at >= @since
+ORDER BY t.created_at DESC;
 
 -- name: UpdateTask :one
 -- Update arbitrary task fields. Only non-null parameters are applied.

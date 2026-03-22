@@ -20,20 +20,26 @@ type MorningContextInput struct {
 
 // MorningContextOutput is the aggregated output for daily planning.
 type MorningContextOutput struct {
-	Date                string                 `json:"date"`
-	OverdueTasks        []morningTask          `json:"overdue_tasks"`
-	TodayTasks          []morningTask          `json:"today_tasks"`
-	UpcomingTasks       []morningTask          `json:"upcoming_tasks"`
-	MyDayTasks          []morningTask          `json:"my_day_tasks"`
-	RecentActivity      activitySummary        `json:"recent_activity"`
-	RecentBuildLogs     []buildLogBrief        `json:"recent_build_logs"`
-	Projects            []projectHealth        `json:"projects"`
-	Goals               []goalBrief            `json:"goals"`
-	YesterdayReflection string                 `json:"yesterday_reflection,omitempty"`
-	PlanningHistory     planningHistorySummary `json:"planning_history"`
-	ActiveInsights      []insightBrief         `json:"active_insights"`
-	TotalUnverified     int64                  `json:"total_unverified"`
-	DailySummary        *dailySummaryHint      `json:"daily_summary,omitempty"`
+	Date                   string                 `json:"date"`
+	SessionGap             int                    `json:"session_gap"`
+	LastSessionDate        string                 `json:"last_session_date,omitempty"`
+	OverdueTasks           []morningTask          `json:"overdue_tasks"`
+	TodayTasks             []morningTask          `json:"today_tasks"`
+	UpcomingTasks          []morningTask          `json:"upcoming_tasks"`
+	MyDayTasks             []morningTask          `json:"my_day_tasks"`
+	RecentActivity         activitySummary        `json:"recent_activity"`
+	RecentBuildLogs        []buildLogBrief        `json:"recent_build_logs"`
+	Projects               []projectHealth        `json:"projects"`
+	Goals                  []goalBrief            `json:"goals"`
+	YesterdayReflection    string                 `json:"yesterday_reflection,omitempty"`
+	YesterdayAdjustments   []string               `json:"yesterday_adjustments,omitempty"`
+	PlanningHistory        planningHistorySummary `json:"planning_history"`
+	ActiveInsights         []insightBrief         `json:"active_insights"`
+	PendingRecommendations []insightBrief         `json:"pending_recommendations,omitempty"`
+	TotalUnverified        int64                  `json:"total_unverified"`
+	DailySummary           *dailySummaryHint      `json:"daily_summary,omitempty"`
+	RSSHighlightCount      int                    `json:"rss_highlight_count,omitempty"`
+	TopRSSHighlight        string                 `json:"top_rss_highlight,omitempty"`
 }
 
 // dailySummaryHint provides computed task metrics for evening reflection.
@@ -89,6 +95,7 @@ type morningTask struct {
 	Title       string `json:"title"`
 	Due         string `json:"due,omitempty"`
 	OverdueDays int    `json:"overdue_days,omitempty"`
+	SkipCount   int    `json:"skip_count,omitempty"`
 	Priority    string `json:"priority,omitempty"`
 	Energy      string `json:"energy,omitempty"`
 	Project     string `json:"project,omitempty"`
@@ -117,6 +124,8 @@ type projectHealth struct {
 	Status            string `json:"status"`
 	DaysSinceActivity int    `json:"days_since_activity"`
 	PendingTasks      int    `json:"pending_tasks"`
+	ExpectedCadence   string `json:"expected_cadence,omitempty"`
+	IsNeglected       bool   `json:"is_neglected,omitempty"`
 }
 
 type goalBrief struct {
@@ -159,6 +168,7 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 				switch {
 				case dueDate.Before(today):
 					mt.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
+					mt.SkipCount = computeSkipCount(mt.OverdueDays, mt.IsRecurring, t.RecurInterval)
 					out.OverdueTasks = append(out.OverdueTasks, mt)
 				case dueDate.Before(tomorrow):
 					out.TodayTasks = append(out.TodayTasks, mt)
@@ -248,14 +258,16 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		out.Projects = make([]projectHealth, 0, len(projects))
 		for _, p := range projects {
 			ph := projectHealth{
-				Slug:         p.Slug,
-				Title:        p.Title,
-				Status:       string(p.Status),
-				PendingTasks: tasksByProject[p.Slug],
+				Slug:            p.Slug,
+				Title:           p.Title,
+				Status:          string(p.Status),
+				PendingTasks:    tasksByProject[p.Slug],
+				ExpectedCadence: p.ExpectedCadence,
 			}
 			if p.LastActivityAt != nil {
 				ph.DaysSinceActivity = int(now.Sub(*p.LastActivityAt).Hours() / 24)
 			}
+			ph.IsNeglected = isProjectNeglected(ph.DaysSinceActivity, p.ExpectedCadence)
 			out.Projects = append(out.Projects, ph)
 		}
 	}
@@ -279,6 +291,16 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 				gb.Deadline = g.Deadline.Format(time.DateOnly)
 			}
 			out.Goals = append(out.Goals, gb)
+		}
+	}
+
+	// --- Session gap (days since last Claude.ai session) ---
+	if s.sessionReader != nil {
+		lastSession, gapErr := s.sessionReader.LatestNoteBySource(ctx, "claude")
+		if gapErr == nil {
+			sessionDate := time.Date(lastSession.NoteDate.Year(), lastSession.NoteDate.Month(), lastSession.NoteDate.Day(), 0, 0, 0, 0, lastSession.NoteDate.Location())
+			out.SessionGap = int(today.Sub(sessionDate).Hours() / 24)
+			out.LastSessionDate = lastSession.NoteDate.Format(time.DateOnly)
 		}
 	}
 
@@ -325,12 +347,41 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 			s.logger.Error("morning_context: counting unverified insights", "error", countErr)
 		}
 		out.TotalUnverified = unverifiedCount
+
+		// Pending action recommendations (category = action_recommendation)
+		recNotes, recErr := s.sessionReader.InsightsByCategory(ctx, "unverified", "action_recommendation", 3)
+		if recErr != nil {
+			s.logger.Error("morning_context: pending recommendations", "error", recErr)
+		}
+		if len(recNotes) > 0 {
+			out.PendingRecommendations = make([]insightBrief, 0, len(recNotes))
+			for i := range recNotes {
+				out.PendingRecommendations = append(out.PendingRecommendations, parseInsightBrief(&recNotes[i]))
+			}
+		}
+
+		// Yesterday adjustments from latest metrics note
+		if len(metricsNotes) > 0 {
+			out.YesterdayAdjustments = parseAdjustments(metricsNotes[0].Metadata)
+		}
 	}
 	if out.PlanningHistory.Entries == nil {
 		out.PlanningHistory.Entries = []dailyMetrics{}
 	}
 	if out.ActiveInsights == nil {
 		out.ActiveInsights = []insightBrief{}
+	}
+
+	// --- RSS highlight summary ---
+	if s.collectedHighlights != nil {
+		weekAgo := now.AddDate(0, 0, -7)
+		highlights, hlErr := s.collectedHighlights.TopRelevantCollected(ctx, weekAgo, 20)
+		if hlErr != nil {
+			s.logger.Error("morning_context: rss highlights", "error", hlErr)
+		} else if len(highlights) > 0 {
+			out.RSSHighlightCount = len(highlights)
+			out.TopRSSHighlight = highlights[0].Title
+		}
 	}
 
 	// --- Daily summary hint (F3: computed metrics for evening reflection) ---
@@ -569,6 +620,46 @@ func computeTrend(entries []dailyMetrics) string {
 	default:
 		return "stable"
 	}
+}
+
+// computeSkipCount estimates how many cycles a task has been pushed back.
+func computeSkipCount(overdueDays int, isRecurring bool, recurInterval *int32) int {
+	if overdueDays < 1 {
+		return 0
+	}
+	if isRecurring && recurInterval != nil && *recurInterval > 0 {
+		return overdueDays / int(*recurInterval)
+	}
+	if overdueDays >= 7 {
+		return overdueDays / 7
+	}
+	return 0
+}
+
+// isProjectNeglected checks if a project's inactivity exceeds its expected cadence.
+func isProjectNeglected(daysSinceActivity int, cadence string) bool {
+	cadenceDays := map[string]int{
+		"daily": 2, "weekly": 10, "biweekly": 21, "monthly": 45, "on_hold": 9999,
+	}
+	maxDays, ok := cadenceDays[cadence]
+	if !ok {
+		maxDays = 10 // default weekly
+	}
+	return daysSinceActivity > maxDays
+}
+
+// parseAdjustments extracts the adjustments array from metrics metadata.
+func parseAdjustments(metadata json.RawMessage) []string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var meta struct {
+		Adjustments []string `json:"adjustments"`
+	}
+	if err := json.Unmarshal(metadata, &meta); err != nil || len(meta.Adjustments) == 0 {
+		return nil
+	}
+	return meta.Adjustments
 }
 
 // parseInsightBrief extracts a brief insight summary from a session note.

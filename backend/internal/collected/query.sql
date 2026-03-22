@@ -72,6 +72,18 @@ WHERE (sqlc.narg('status')::collected_status IS NULL OR status = sqlc.narg('stat
 ORDER BY relevance_score DESC, collected_at DESC
 LIMIT $1 OFFSET $2;
 
+-- name: TopRelevantCollected :many
+-- Get top unread collected data by relevance since a given time.
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE collected_at >= @since
+  AND status = 'unread'
+  AND relevance_score > 0.5
+ORDER BY relevance_score DESC
+LIMIT @max_results;
+
 -- name: DeleteOldIgnored :execrows
 -- Cleanup: delete ignored collected data older than the given cutoff.
 DELETE FROM collected_data WHERE status = 'ignored' AND collected_at < @cutoff;

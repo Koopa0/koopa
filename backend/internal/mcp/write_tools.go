@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -87,6 +88,20 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 		"title", updated.Title,
 		"is_recurring", updated.IsRecurring(),
 	)
+
+	// Record activity event for audit trail (enables recurring task tracking)
+	if s.activityWriter != nil {
+		evTitle := fmt.Sprintf("Completed: %s", updated.Title)
+		sourceID := fmt.Sprintf("task-complete-%s-%s", updated.ID, time.Now().Format(time.DateOnly))
+		//nolint:errcheck // best-effort: don't fail task completion on event recording error
+		s.activityWriter.CreateEvent(ctx, activity.RecordParams{
+			SourceID:  &sourceID,
+			Timestamp: time.Now(),
+			Source:    "mcp",
+			EventType: "task_completed",
+			Title:     &evTitle,
+		})
+	}
 
 	return nil, out, nil
 }
@@ -494,6 +509,16 @@ func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 	}
 
+	// Soft validation for insight notes: warn if missing key fields
+	if input.NoteType == "insight" && len(input.Metadata) > 0 {
+		if _, ok := input.Metadata["hypothesis"]; !ok {
+			s.logger.Warn("insight saved without hypothesis")
+		}
+		if _, ok := input.Metadata["invalidation_condition"]; !ok {
+			s.logger.Warn("insight saved without invalidation_condition")
+		}
+	}
+
 	created, err := s.sessionWriter.CreateNote(ctx, session.CreateParams{
 		NoteDate: noteDate,
 		NoteType: input.NoteType,
@@ -558,9 +583,10 @@ func (s *Server) resolveTask(ctx context.Context, taskID, taskTitle string) (*ta
 
 // UpdateProjectStatusInput is the input for the update_project_status tool.
 type UpdateProjectStatusInput struct {
-	Project     string  `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
-	Status      string  `json:"status" jsonschema_description:"Planned, Doing, Ongoing, On Hold, or Done (required)"`
-	ReviewNotes *string `json:"review_notes,omitempty" jsonschema_description:"optional review notes to update description"`
+	Project         string  `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
+	Status          string  `json:"status" jsonschema_description:"Planned, Doing, Ongoing, On Hold, or Done (required)"`
+	ReviewNotes     *string `json:"review_notes,omitempty" jsonschema_description:"optional review notes to update description"`
+	ExpectedCadence *string `json:"expected_cadence,omitempty" jsonschema_description:"project activity cadence: daily, weekly, biweekly, monthly, or on_hold"`
 }
 
 // UpdateProjectStatusOutput is the output of the update_project_status tool.
@@ -588,7 +614,7 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	status := mapInputProjectStatus(input.Status)
-	updated, err := s.projectWriter.UpdateStatus(ctx, proj.ID, status, input.ReviewNotes)
+	updated, err := s.projectWriter.UpdateStatus(ctx, proj.ID, status, input.ReviewNotes, input.ExpectedCadence)
 	if err != nil {
 		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("updating project status: %w", err)
 	}
@@ -729,4 +755,3 @@ func joinLines(lines []string) string {
 	}
 	return string(b)
 }
-

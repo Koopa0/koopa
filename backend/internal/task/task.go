@@ -91,6 +91,22 @@ type DailySummaryHint struct {
 	CompletedTitles     []string `json:"completed_titles"`
 }
 
+// CompletedTaskDetail represents a completed task with project context.
+type CompletedTaskDetail struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	ProjectTitle string     `json:"project_title"`
+}
+
+// CreatedTaskDetail represents a recently created task with project context.
+type CreatedTaskDetail struct {
+	ID           uuid.UUID `json:"id"`
+	Title        string    `json:"title"`
+	CreatedAt    time.Time `json:"created_at"`
+	ProjectTitle string    `json:"project_title"`
+}
+
 // UpsertByNotionParams are the parameters for upserting a task from Notion.
 // CompletedAt is managed by the DB: set on first transition to done, preserved thereafter.
 type UpsertByNotionParams struct {

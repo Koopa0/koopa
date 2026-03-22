@@ -1,0 +1,293 @@
+package mcpserver
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// WeeklySummaryInput is the input for the get_weekly_summary tool.
+type WeeklySummaryInput struct {
+	WeeksBack int `json:"weeks_back,omitempty" jsonschema_description:"0 = current week, 1 = last week. Default 0, max 4."`
+}
+
+// WeeklySummaryOutput is the aggregated weekly report.
+type WeeklySummaryOutput struct {
+	Period           weeklyPeriod    `json:"period"`
+	Tasks            weeklyTasks     `json:"tasks"`
+	MetricsTrend     weeklyMetrics   `json:"metrics_trend"`
+	ProjectHealth    []projectHealth `json:"project_health"`
+	InsightsActivity weeklyInsights  `json:"insights_activity"`
+	GoalAlignment    []weeklyGoal    `json:"goal_alignment"`
+	Highlights       []string        `json:"highlights"`
+	Concerns         []string        `json:"concerns"`
+}
+
+type weeklyPeriod struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type weeklyTasks struct {
+	TotalCompleted int                `json:"total_completed"`
+	ByProject      []projectTaskCount `json:"by_project"`
+}
+
+type projectTaskCount struct {
+	Project   string `json:"project"`
+	Completed int64  `json:"completed"`
+}
+
+type weeklyMetrics struct {
+	DailyRates  []float64    `json:"daily_rates"`
+	AvgCapacity float64      `json:"avg_capacity"`
+	BestDay     *dayCapacity `json:"best_day,omitempty"`
+	WorstDay    *dayCapacity `json:"worst_day,omitempty"`
+}
+
+type dayCapacity struct {
+	Date     string `json:"date"`
+	DayType  string `json:"day_type"`
+	Capacity int    `json:"capacity"`
+}
+
+type weeklyInsights struct {
+	NewInsights            int `json:"new_insights"`
+	Verified               int `json:"verified"`
+	Invalidated            int `json:"invalidated"`
+	PendingRecommendations int `json:"pending_recommendations"`
+}
+
+type weeklyGoal struct {
+	Title                 string   `json:"title"`
+	Status                string   `json:"status"`
+	Deadline              string   `json:"deadline,omitempty"`
+	RelatedProjects       []string `json:"related_projects"`
+	RelatedTasksCompleted int64    `json:"related_tasks_completed"`
+	OnTrack               string   `json:"on_track"`
+}
+
+func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, input WeeklySummaryInput) (*mcp.CallToolResult, WeeklySummaryOutput, error) {
+	weeksBack := clamp(input.WeeksBack, 0, 4, 0)
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Calculate week boundaries (Monday-based)
+	weekday := int(today.Weekday())
+	if weekday == 0 {
+		weekday = 7 // Sunday = 7
+	}
+	thisMonday := today.AddDate(0, 0, -(weekday - 1))
+	weekStart := thisMonday.AddDate(0, 0, -7*weeksBack)
+	weekEnd := weekStart.AddDate(0, 0, 7)
+	if weekEnd.After(today) {
+		weekEnd = today.AddDate(0, 0, 1) // include today
+	}
+
+	out := WeeklySummaryOutput{
+		Period: weeklyPeriod{
+			From: weekStart.Format(time.DateOnly),
+			To:   weekEnd.AddDate(0, 0, -1).Format(time.DateOnly),
+		},
+		Highlights: []string{},
+		Concerns:   []string{},
+	}
+
+	// --- Tasks by project ---
+	byProject, err := s.tasks.CompletedByProjectSince(ctx, weekStart)
+	if err != nil {
+		s.logger.Error("weekly_summary: tasks by project", "error", err)
+	}
+	var totalCompleted int64
+	out.Tasks.ByProject = make([]projectTaskCount, 0, len(byProject))
+	for _, p := range byProject {
+		out.Tasks.ByProject = append(out.Tasks.ByProject, projectTaskCount{
+			Project:   p.ProjectTitle,
+			Completed: p.Completed,
+		})
+		totalCompleted += p.Completed
+	}
+	out.Tasks.TotalCompleted = int(totalCompleted)
+
+	// --- Metrics trend ---
+	if s.sessionReader != nil {
+		metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, weekStart)
+		if metricsErr != nil {
+			s.logger.Error("weekly_summary: metrics", "error", metricsErr)
+		}
+		entries := buildDailyMetricsList(metricsNotes)
+
+		out.MetricsTrend.DailyRates = make([]float64, 0, len(entries))
+		var totalCapacity float64
+		var bestDay, worstDay *dayCapacity
+		for _, e := range entries {
+			out.MetricsTrend.DailyRates = append(out.MetricsTrend.DailyRates, e.CompletionRate)
+			totalCapacity += float64(e.TasksCompleted)
+
+			d, parseErr := time.Parse(time.DateOnly, e.Date)
+			if parseErr != nil {
+				continue
+			}
+			dc := &dayCapacity{
+				Date:     e.Date,
+				DayType:  d.Weekday().String(),
+				Capacity: e.TasksCompleted,
+			}
+			if bestDay == nil || e.TasksCompleted > bestDay.Capacity {
+				bestDay = dc
+			}
+			if worstDay == nil || e.TasksCompleted < worstDay.Capacity {
+				worstDay = dc
+			}
+		}
+		if len(entries) > 0 {
+			out.MetricsTrend.AvgCapacity = totalCapacity / float64(len(entries))
+		}
+		out.MetricsTrend.BestDay = bestDay
+		out.MetricsTrend.WorstDay = worstDay
+
+		// Highlights from metrics
+		for _, e := range entries {
+			if e.CompletionRate > 0.9 {
+				out.Highlights = append(out.Highlights, fmt.Sprintf("%s: %.0f%% completion rate", e.Date, e.CompletionRate*100))
+			}
+		}
+	}
+
+	// --- Project health (reuse morning context logic) ---
+	projects, err := s.projects.ActiveProjects(ctx)
+	if err != nil {
+		s.logger.Error("weekly_summary: projects", "error", err)
+	}
+	allPending, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
+	if err != nil {
+		s.logger.Error("weekly_summary: pending tasks", "error", err)
+	}
+	tasksByProject := make(map[string]int)
+	for _, t := range allPending {
+		if t.ProjectSlug != "" {
+			tasksByProject[t.ProjectSlug]++
+		}
+	}
+	out.ProjectHealth = make([]projectHealth, 0, len(projects))
+	for _, p := range projects {
+		ph := projectHealth{
+			Slug:            p.Slug,
+			Title:           p.Title,
+			Status:          string(p.Status),
+			PendingTasks:    tasksByProject[p.Slug],
+			ExpectedCadence: p.ExpectedCadence,
+		}
+		if p.LastActivityAt != nil {
+			ph.DaysSinceActivity = int(now.Sub(*p.LastActivityAt).Hours() / 24)
+		}
+		ph.IsNeglected = isProjectNeglected(ph.DaysSinceActivity, p.ExpectedCadence)
+		out.ProjectHealth = append(out.ProjectHealth, ph)
+
+		if ph.IsNeglected {
+			out.Concerns = append(out.Concerns, fmt.Sprintf("Project %q neglected: %d days since activity (cadence: %s)", p.Title, ph.DaysSinceActivity, p.ExpectedCadence))
+		}
+	}
+
+	// --- Insights activity ---
+	if s.sessionReader != nil {
+		allInsights, insightErr := s.sessionReader.InsightsSince(ctx, weekStart)
+		if insightErr != nil {
+			s.logger.Error("weekly_summary: insights", "error", insightErr)
+		}
+		for _, n := range allInsights {
+			delta := parseInsightDelta(&n)
+			switch delta.CurrentStatus {
+			case "unverified":
+				out.InsightsActivity.NewInsights++
+			case "verified":
+				out.InsightsActivity.Verified++
+				out.Highlights = append(out.Highlights, fmt.Sprintf("Insight verified: %s", delta.Hypothesis))
+			case "invalidated":
+				out.InsightsActivity.Invalidated++
+			}
+		}
+
+		recNotes, recErr := s.sessionReader.InsightsByCategory(ctx, "unverified", "action_recommendation", 10)
+		if recErr == nil {
+			out.InsightsActivity.PendingRecommendations = len(recNotes)
+		}
+	}
+
+	// --- Goal alignment (area-based join) ---
+	goals, err := s.goals.Goals(ctx)
+	if err != nil {
+		s.logger.Error("weekly_summary: goals", "error", err)
+	}
+
+	// Build area → projects + completions mapping
+	projectsByArea := make(map[string][]string)
+	for _, p := range projects {
+		if p.Area != "" {
+			projectsByArea[p.Area] = append(projectsByArea[p.Area], p.Title)
+		}
+	}
+	completionsByProject := make(map[string]int64)
+	for _, p := range byProject {
+		completionsByProject[p.ProjectTitle] = p.Completed
+	}
+
+	out.GoalAlignment = make([]weeklyGoal, 0)
+	for _, g := range goals {
+		if string(g.Status) == "done" || string(g.Status) == "abandoned" {
+			continue
+		}
+		wg := weeklyGoal{
+			Title:           g.Title,
+			Status:          string(g.Status),
+			RelatedProjects: projectsByArea[g.Area],
+		}
+		if g.Deadline != nil {
+			wg.Deadline = g.Deadline.Format(time.DateOnly)
+		}
+		if wg.RelatedProjects == nil {
+			wg.RelatedProjects = []string{}
+		}
+
+		// Sum completions for related projects
+		for _, pTitle := range wg.RelatedProjects {
+			wg.RelatedTasksCompleted += completionsByProject[pTitle]
+		}
+
+		// On-track assessment
+		wg.OnTrack = "on_track"
+		if wg.RelatedTasksCompleted == 0 {
+			wg.OnTrack = "off_track"
+			out.Concerns = append(out.Concerns, fmt.Sprintf("Goal %q: zero related tasks completed this week", g.Title))
+		} else if wg.RelatedTasksCompleted < 2 {
+			wg.OnTrack = "at_risk"
+		}
+
+		out.GoalAlignment = append(out.GoalAlignment, wg)
+	}
+
+	// Build logs as highlights
+	buildLogs, blErr := s.contents.RecentByType(ctx, "build-log", weekStart, 10)
+	if blErr == nil {
+		for _, bl := range buildLogs {
+			out.Highlights = append(out.Highlights, fmt.Sprintf("Build log: %s", bl.Title))
+		}
+	}
+
+	// Completion trend concern
+	if s.sessionReader != nil {
+		trendNotes, trendErr := s.sessionReader.MetricsHistory(ctx, weekStart)
+		if trendErr != nil {
+			s.logger.Error("weekly_summary: trend metrics", "error", trendErr)
+		}
+		entries := buildDailyMetricsList(trendNotes)
+		if trend := computeTrend(entries); trend == "down" {
+			out.Concerns = append(out.Concerns, "Completion rate trend is declining")
+		}
+	}
+
+	return nil, out, nil
+}

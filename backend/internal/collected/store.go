@@ -34,7 +34,7 @@ func NewStore(dbtx db.DBTX) *Store {
 // CollectedData returns a paginated list of collected data.
 func (s *Store) CollectedData(ctx context.Context, f Filter) ([]CollectedData, int, error) {
 	status := nullCollectedStatus(f.Status)
-	limit := int32(f.PerPage)                // #nosec G115 -- pagination values are bounded by API layer
+	limit := int32(f.PerPage)                 // #nosec G115 -- pagination values are bounded by API layer
 	offset := int32((f.Page - 1) * f.PerPage) // #nosec G115 -- pagination values are bounded by API layer
 
 	var (
@@ -178,6 +178,22 @@ func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxRe
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing latest collected data: %w", err)
+	}
+	data := make([]CollectedData, len(rows))
+	for i, r := range rows {
+		data[i] = datumToCollectedData(r)
+	}
+	return data, nil
+}
+
+// TopRelevantCollected returns unread collected data with relevance > 0.5 since the given time.
+func (s *Store) TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]CollectedData, error) {
+	rows, err := s.q.TopRelevantCollected(ctx, db.TopRelevantCollectedParams{
+		Since:      since,
+		MaxResults: maxResults,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing top relevant collected data: %w", err)
 	}
 	data := make([]CollectedData, len(rows))
 	for i, r := range rows {
