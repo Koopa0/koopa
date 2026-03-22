@@ -144,11 +144,15 @@ type SessionNoteReader interface {
 	NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType *string) ([]session.Note, error)
 	LatestNoteByType(ctx context.Context, noteType string) (*session.Note, error)
 	MetricsHistory(ctx context.Context, sinceDate time.Time) ([]session.Note, error)
+	NoteByID(ctx context.Context, id int64) (*session.Note, error)
+	InsightsByStatus(ctx context.Context, status, project *string, limit int32) ([]session.Note, error)
+	CountInsightsByStatus(ctx context.Context, status *string) (int64, error)
 }
 
 // SessionNoteWriter provides session note mutations for MCP tools.
 type SessionNoteWriter interface {
 	CreateNote(ctx context.Context, p session.CreateParams) (*session.Note, error)
+	UpdateNoteMetadata(ctx context.Context, p session.UpdateMetadataParams) (*session.Note, error)
 }
 
 // searchResultEntry is a note with a combined RRF score for merged search results.

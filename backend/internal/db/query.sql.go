@@ -883,6 +883,20 @@ func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID)
 	return count, err
 }
 
+const countInsightsByStatus = `-- name: CountInsightsByStatus :one
+SELECT count(*) FROM session_notes
+WHERE note_type = 'insight'
+  AND ($1::text IS NULL OR metadata->>'status' = $1)
+`
+
+// Count insight notes by status in metadata.
+func (q *Queries) CountInsightsByStatus(ctx context.Context, status *string) (int64, error) {
+	row := q.db.QueryRow(ctx, countInsightsByStatus, status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCollectedData = `-- name: CreateCollectedData :one
 INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id, relevance_score)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -2394,6 +2408,51 @@ func (q *Queries) InsertUnmappedAlias(ctx context.Context, rawTag string) error 
 	return err
 }
 
+const insightsByStatus = `-- name: InsightsByStatus :many
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = 'insight'
+  AND ($1::text IS NULL OR metadata->>'status' = $1)
+  AND ($2::text IS NULL OR metadata->>'project' = $2)
+ORDER BY created_at DESC
+LIMIT $3
+`
+
+type InsightsByStatusParams struct {
+	Status   *string `json:"status"`
+	Project  *string `json:"project"`
+	LimitVal int32   `json:"limit_val"`
+}
+
+// Get insight notes, optionally filtered by status and project in metadata.
+func (q *Queries) InsightsByStatus(ctx context.Context, arg InsightsByStatusParams) ([]SessionNote, error) {
+	rows, err := q.db.Query(ctx, insightsByStatus, arg.Status, arg.Project, arg.LimitVal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionNote{}
+	for rows.Next() {
+		var i SessionNote
+		if err := rows.Scan(
+			&i.ID,
+			&i.NoteDate,
+			&i.NoteType,
+			&i.Source,
+			&i.Content,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const isAliasRejected = `-- name: IsAliasRejected :one
 SELECT EXISTS(SELECT 1 FROM tag_aliases WHERE raw_tag = $1 AND match_method = 'rejected') AS rejected
 `
@@ -2711,6 +2770,28 @@ func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (Obsidian
 		&i.GitCreatedAt,
 		&i.GitUpdatedAt,
 		&i.SyncedAt,
+	)
+	return i, err
+}
+
+const noteByID = `-- name: NoteByID :one
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE id = $1
+`
+
+// Get a single session note by ID.
+func (q *Queries) NoteByID(ctx context.Context, id int64) (SessionNote, error) {
+	row := q.db.QueryRow(ctx, noteByID, id)
+	var i SessionNote
+	err := row.Scan(
+		&i.ID,
+		&i.NoteDate,
+		&i.NoteType,
+		&i.Source,
+		&i.Content,
+		&i.Metadata,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -5509,6 +5590,34 @@ type UpdateNoteEmbeddingParams struct {
 func (q *Queries) UpdateNoteEmbedding(ctx context.Context, arg UpdateNoteEmbeddingParams) error {
 	_, err := q.db.Exec(ctx, updateNoteEmbedding, arg.ID, arg.Embedding)
 	return err
+}
+
+const updateNoteMetadata = `-- name: UpdateNoteMetadata :one
+UPDATE session_notes
+SET metadata = $1
+WHERE id = $2
+RETURNING id, note_date, note_type, source, content, metadata, created_at
+`
+
+type UpdateNoteMetadataParams struct {
+	Metadata json.RawMessage `json:"metadata"`
+	ID       int64           `json:"id"`
+}
+
+// Update metadata (and optionally content) of a session note.
+func (q *Queries) UpdateNoteMetadata(ctx context.Context, arg UpdateNoteMetadataParams) (SessionNote, error) {
+	row := q.db.QueryRow(ctx, updateNoteMetadata, arg.Metadata, arg.ID)
+	var i SessionNote
+	err := row.Scan(
+		&i.ID,
+		&i.NoteDate,
+		&i.NoteType,
+		&i.Source,
+		&i.Content,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const updateProject = `-- name: UpdateProject :one

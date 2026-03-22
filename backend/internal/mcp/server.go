@@ -248,8 +248,20 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_session_notes",
-		Description: "Retrieve session notes for a date or date range, optionally filtered by type. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Types: plan, reflection, context, metrics.",
+		Description: "Retrieve session notes for a date or date range, optionally filtered by type. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Types: plan, reflection, context, metrics, insight.",
 	}, s.getSessionNotes)
+
+	// --- insight tools ---
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_active_insights",
+		Description: "Get tracked insights (pattern observations and hypotheses) from past sessions. Use during morning planning to see unverified hypotheses that can inform today's schedule, or during evening reflection to review which insights have been confirmed or invalidated. Default returns unverified insights; use status='all' for everything.",
+	}, s.getActiveInsights)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "update_insight",
+		Description: "Update an insight's status or append evidence. Use during evening reflection when today's data supports or contradicts a hypothesis — append evidence, or change status to 'verified'/'invalidated'. Use 'archived' to retire old insights.",
+	}, s.updateInsight)
 
 	return s
 }

@@ -81,6 +81,62 @@ func (s *Store) MetricsHistory(ctx context.Context, sinceDate time.Time) ([]Note
 	return notes, nil
 }
 
+// NoteByID returns a single session note by ID.
+// Returns ErrNotFound when no note exists.
+func (s *Store) NoteByID(ctx context.Context, id int64) (*Note, error) {
+	row, err := s.q.NoteByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying session note %d: %w", id, err)
+	}
+	n := rowToNote(row)
+	return &n, nil
+}
+
+// InsightsByStatus returns insight notes filtered by optional status and project.
+func (s *Store) InsightsByStatus(ctx context.Context, status, project *string, limit int32) ([]Note, error) {
+	rows, err := s.q.InsightsByStatus(ctx, db.InsightsByStatusParams{
+		Status:   status,
+		Project:  project,
+		LimitVal: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying insights: %w", err)
+	}
+	notes := make([]Note, len(rows))
+	for i, r := range rows {
+		notes[i] = rowToNote(r)
+	}
+	return notes, nil
+}
+
+// CountInsightsByStatus returns the count of insight notes with the given status.
+func (s *Store) CountInsightsByStatus(ctx context.Context, status *string) (int64, error) {
+	n, err := s.q.CountInsightsByStatus(ctx, status)
+	if err != nil {
+		return 0, fmt.Errorf("counting insights: %w", err)
+	}
+	return n, nil
+}
+
+// UpdateNoteMetadata updates a note's metadata.
+func (s *Store) UpdateNoteMetadata(ctx context.Context, p UpdateMetadataParams) (*Note, error) {
+	row, err := s.q.UpdateNoteMetadata(ctx, db.UpdateNoteMetadataParams{
+		ID:       p.ID,
+		Metadata: p.Metadata,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("updating session note %d metadata: %w", p.ID, err)
+	}
+	n := rowToNote(row)
+	return &n, nil
+}
+
 // DeleteOldNotes deletes session notes with note_date before cutoff.
 func (s *Store) DeleteOldNotes(ctx context.Context, cutoff time.Time) (int64, error) {
 	n, err := s.q.DeleteOldNotes(ctx, cutoff)

@@ -19,24 +19,46 @@ type MorningContextInput struct {
 
 // MorningContextOutput is the aggregated output for daily planning.
 type MorningContextOutput struct {
-	Date                string           `json:"date"`
-	OverdueTasks        []morningTask    `json:"overdue_tasks"`
-	TodayTasks          []morningTask    `json:"today_tasks"`
-	UpcomingTasks       []morningTask    `json:"upcoming_tasks"`
-	MyDayTasks          []morningTask    `json:"my_day_tasks"`
-	RecentActivity      activitySummary  `json:"recent_activity"`
-	RecentBuildLogs     []buildLogBrief  `json:"recent_build_logs"`
-	Projects            []projectHealth  `json:"projects"`
-	Goals               []goalBrief      `json:"goals"`
-	YesterdayReflection string           `json:"yesterday_reflection,omitempty"`
-	PlanningHistory     []dailyMetrics   `json:"planning_history"`
+	Date                string                 `json:"date"`
+	OverdueTasks        []morningTask          `json:"overdue_tasks"`
+	TodayTasks          []morningTask          `json:"today_tasks"`
+	UpcomingTasks       []morningTask          `json:"upcoming_tasks"`
+	MyDayTasks          []morningTask          `json:"my_day_tasks"`
+	RecentActivity      activitySummary        `json:"recent_activity"`
+	RecentBuildLogs     []buildLogBrief        `json:"recent_build_logs"`
+	Projects            []projectHealth        `json:"projects"`
+	Goals               []goalBrief            `json:"goals"`
+	YesterdayReflection string                 `json:"yesterday_reflection,omitempty"`
+	PlanningHistory     planningHistorySummary `json:"planning_history"`
+	ActiveInsights      []insightBrief         `json:"active_insights"`
 }
 
 type dailyMetrics struct {
-	Date           string  `json:"date"`
-	TasksPlanned   int     `json:"tasks_planned"`
-	TasksCompleted int     `json:"tasks_completed"`
-	CompletionRate float64 `json:"completion_rate"`
+	Date                    string  `json:"date"`
+	TasksPlanned            int     `json:"tasks_planned"`
+	TasksCompleted          int     `json:"tasks_completed"`
+	TasksCommitted          int     `json:"tasks_committed,omitempty"`
+	TasksPulled             int     `json:"tasks_pulled,omitempty"`
+	CompletionRate          float64 `json:"completion_rate"`
+	CommittedCompletionRate float64 `json:"committed_completion_rate,omitempty"`
+	EnergyPattern           string  `json:"energy_pattern,omitempty"`
+}
+
+type planningHistorySummary struct {
+	Days             int            `json:"days"`
+	Entries          []dailyMetrics `json:"entries"`
+	AvgCompletionRate float64       `json:"avg_completion_rate"`
+	AvgCommittedRate  float64       `json:"avg_committed_rate"`
+	AvgDailyCapacity  float64       `json:"avg_daily_capacity"`
+	Trend            string         `json:"trend"`
+}
+
+type insightBrief struct {
+	ID         int64  `json:"id"`
+	Hypothesis string `json:"hypothesis"`
+	Status     string `json:"status"`
+	Project    string `json:"project,omitempty"`
+	CreatedAt  string `json:"created_at"`
 }
 
 type morningTask struct {
@@ -237,7 +259,7 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 	}
 
-	// --- Session notes (yesterday reflection + planning history) ---
+	// --- Session notes (yesterday reflection + planning history + active insights) ---
 	if s.sessionReader != nil {
 		refl, reflErr := s.sessionReader.LatestNoteByType(ctx, "reflection")
 		if reflErr != nil {
@@ -250,17 +272,25 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
 		if metricsErr != nil {
 			s.logger.Error("morning_context: planning history", "error", metricsErr)
-		} else {
-			out.PlanningHistory = make([]dailyMetrics, 0, len(metricsNotes))
-			for _, mn := range metricsNotes {
-				if dm := parseDailyMetrics(mn); dm != nil {
-					out.PlanningHistory = append(out.PlanningHistory, *dm)
-				}
-			}
+		}
+		out.PlanningHistory = buildPlanningHistory(metricsNotes, 7)
+
+		// Active insights (unverified, most recent 5)
+		unverified := "unverified"
+		insightNotes, insightErr := s.sessionReader.InsightsByStatus(ctx, &unverified, nil, 5)
+		if insightErr != nil {
+			s.logger.Error("morning_context: active insights", "error", insightErr)
+		}
+		out.ActiveInsights = make([]insightBrief, 0, len(insightNotes))
+		for i := range insightNotes {
+			out.ActiveInsights = append(out.ActiveInsights, parseInsightBrief(&insightNotes[i]))
 		}
 	}
-	if out.PlanningHistory == nil {
-		out.PlanningHistory = []dailyMetrics{}
+	if out.PlanningHistory.Entries == nil {
+		out.PlanningHistory.Entries = []dailyMetrics{}
+	}
+	if out.ActiveInsights == nil {
+		out.ActiveInsights = []insightBrief{}
 	}
 
 	return nil, out, nil
@@ -272,17 +302,124 @@ func parseDailyMetrics(n session.Note) *dailyMetrics {
 		return nil
 	}
 	var meta struct {
-		TasksPlanned   int     `json:"tasks_planned"`
-		TasksCompleted int     `json:"tasks_completed"`
-		CompletionRate float64 `json:"completion_rate"`
+		TasksPlanned            int     `json:"tasks_planned"`
+		TasksCompleted          int     `json:"tasks_completed"`
+		TasksCommitted          int     `json:"tasks_committed"`
+		TasksPulled             int     `json:"tasks_pulled"`
+		CompletionRate          float64 `json:"completion_rate"`
+		CommittedCompletionRate float64 `json:"committed_completion_rate"`
+		EnergyPattern           string  `json:"energy_pattern"`
 	}
 	if err := json.Unmarshal(n.Metadata, &meta); err != nil {
 		return nil // best-effort: skip notes with unparseable metadata
 	}
 	return &dailyMetrics{
-		Date:           n.NoteDate.Format(time.DateOnly),
-		TasksPlanned:   meta.TasksPlanned,
-		TasksCompleted: meta.TasksCompleted,
-		CompletionRate: meta.CompletionRate,
+		Date:                    n.NoteDate.Format(time.DateOnly),
+		TasksPlanned:            meta.TasksPlanned,
+		TasksCompleted:          meta.TasksCompleted,
+		TasksCommitted:          meta.TasksCommitted,
+		TasksPulled:             meta.TasksPulled,
+		CompletionRate:          meta.CompletionRate,
+		CommittedCompletionRate: meta.CommittedCompletionRate,
+		EnergyPattern:           meta.EnergyPattern,
 	}
+}
+
+// buildPlanningHistory aggregates metrics notes into a planning history summary.
+func buildPlanningHistory(notes []session.Note, days int) planningHistorySummary {
+	entries := make([]dailyMetrics, 0, len(notes))
+	for _, n := range notes {
+		if dm := parseDailyMetrics(n); dm != nil {
+			entries = append(entries, *dm)
+		}
+	}
+
+	summary := planningHistorySummary{
+		Days:    days,
+		Entries: entries,
+	}
+
+	if len(entries) == 0 {
+		summary.Trend = "no_data"
+		return summary
+	}
+
+	// Calculate averages
+	var totalRate, totalCommitted, totalCapacity float64
+	for _, e := range entries {
+		totalRate += e.CompletionRate
+		totalCommitted += e.CommittedCompletionRate
+		totalCapacity += float64(e.TasksCompleted)
+	}
+	n := float64(len(entries))
+	summary.AvgCompletionRate = totalRate / n
+	summary.AvgCommittedRate = totalCommitted / n
+	summary.AvgDailyCapacity = totalCapacity / n
+
+	// Trend: compare recent 3 days vs older entries
+	summary.Trend = computeTrend(entries)
+
+	return summary
+}
+
+// computeTrend compares the average completion rate of the most recent 3 entries
+// against the older entries. Returns "up", "stable", or "down".
+func computeTrend(entries []dailyMetrics) string {
+	if len(entries) < 4 {
+		return "insufficient_data"
+	}
+
+	// entries are ordered by date desc (most recent first)
+	recentCount := 3
+	if recentCount > len(entries) {
+		recentCount = len(entries)
+	}
+	olderStart := recentCount
+
+	var recentSum, olderSum float64
+	for i := range recentCount {
+		recentSum += entries[i].CompletionRate
+	}
+	for i := olderStart; i < len(entries); i++ {
+		olderSum += entries[i].CompletionRate
+	}
+
+	recentAvg := recentSum / float64(recentCount)
+	olderAvg := olderSum / float64(len(entries)-olderStart)
+
+	diff := recentAvg - olderAvg
+	switch {
+	case diff > 0.1:
+		return "up"
+	case diff < -0.1:
+		return "down"
+	default:
+		return "stable"
+	}
+}
+
+// parseInsightBrief extracts a brief insight summary from a session note.
+func parseInsightBrief(n *session.Note) insightBrief {
+	brief := insightBrief{
+		ID:        n.ID,
+		CreatedAt: n.CreatedAt.Format(time.DateOnly),
+	}
+
+	if len(n.Metadata) == 0 {
+		return brief
+	}
+
+	var meta struct {
+		Hypothesis string `json:"hypothesis"`
+		Status     string `json:"status"`
+		Project    string `json:"project"`
+	}
+	if err := json.Unmarshal(n.Metadata, &meta); err != nil {
+		return brief
+	}
+
+	brief.Hypothesis = meta.Hypothesis
+	brief.Status = meta.Status
+	brief.Project = meta.Project
+	return brief
 }

@@ -433,7 +433,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 // Metadata uses map[string]any so the MCP JSON Schema renders as an object
 // (json.RawMessage would serialize as array[integer] — a bare byte slice).
 type SaveSessionNoteInput struct {
-	NoteType string         `json:"note_type" jsonschema_description:"plan, reflection, context, or metrics (required)"`
+	NoteType string         `json:"note_type" jsonschema_description:"plan, reflection, context, metrics, or insight (required)"`
 	Content  string         `json:"content" jsonschema_description:"note content text (required)"`
 	Source   string         `json:"source" jsonschema_description:"claude, claude-code, or manual (required)"`
 	Date     string         `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
@@ -463,10 +463,10 @@ func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	switch input.NoteType {
-	case "plan", "reflection", "context", "metrics":
+	case "plan", "reflection", "context", "metrics", "insight":
 		// valid
 	default:
-		return nil, SaveSessionNoteOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, or metrics)", input.NoteType)
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
 	}
 
 	switch input.Source {

@@ -30,3 +30,9 @@ type CreateParams struct {
 	Content  string
 	Metadata json.RawMessage
 }
+
+// UpdateMetadataParams holds parameters for updating a note's metadata.
+type UpdateMetadataParams struct {
+	ID       int64
+	Metadata json.RawMessage
+}

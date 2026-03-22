@@ -1,0 +1,250 @@
+package mcpserver
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/koopa0/blog-backend/internal/session"
+)
+
+// --- get_active_insights ---
+
+// GetActiveInsightsInput is the input for the get_active_insights tool.
+type GetActiveInsightsInput struct {
+	Status  string `json:"status,omitempty" jsonschema_description:"unverified, verified, invalidated, or all (default unverified)"`
+	Project string `json:"project,omitempty" jsonschema_description:"filter by project slug"`
+	Limit   int    `json:"limit,omitempty" jsonschema_description:"max insights to return (default 10)"`
+}
+
+// GetActiveInsightsOutput is the output of the get_active_insights tool.
+type GetActiveInsightsOutput struct {
+	Insights        []insightEntry `json:"insights"`
+	Total           int            `json:"total"`
+	UnverifiedCount int64          `json:"unverified_count"`
+}
+
+type insightEntry struct {
+	ID          int64    `json:"id"`
+	CreatedAt   string   `json:"created_at"`
+	Content     string   `json:"content"`
+	Hypothesis  string   `json:"hypothesis,omitempty"`
+	Status      string   `json:"status"`
+	Evidence    []string `json:"evidence"`
+	SourceDates []string `json:"source_dates"`
+	Project     string   `json:"project,omitempty"`
+	Tags        []string `json:"tags"`
+	Conclusion  string   `json:"conclusion,omitempty"`
+}
+
+func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, input GetActiveInsightsInput) (*mcp.CallToolResult, GetActiveInsightsOutput, error) {
+	if s.sessionReader == nil {
+		return nil, GetActiveInsightsOutput{}, fmt.Errorf("session notes not configured")
+	}
+
+	status := input.Status
+	if status == "" {
+		status = "unverified"
+	}
+	limit := clamp(input.Limit, 1, 100, 10)
+
+	var statusFilter *string
+	if status != "all" {
+		statusFilter = &status
+	}
+
+	var projectFilter *string
+	if input.Project != "" {
+		projectFilter = &input.Project
+	}
+
+	notes, err := s.sessionReader.InsightsByStatus(ctx, statusFilter, projectFilter, int32(limit))
+	if err != nil {
+		return nil, GetActiveInsightsOutput{}, fmt.Errorf("querying insights: %w", err)
+	}
+
+	unverifiedStatus := "unverified"
+	unverifiedCount, countErr := s.sessionReader.CountInsightsByStatus(ctx, &unverifiedStatus)
+	if countErr != nil {
+		s.logger.Error("get_active_insights: counting unverified", "error", countErr)
+	}
+
+	insights := make([]insightEntry, 0, len(notes))
+	for i := range notes {
+		insights = append(insights, parseInsightNote(&notes[i]))
+	}
+
+	return nil, GetActiveInsightsOutput{
+		Insights:        insights,
+		Total:           len(insights),
+		UnverifiedCount: unverifiedCount,
+	}, nil
+}
+
+// parseInsightNote extracts structured fields from an insight note's metadata.
+func parseInsightNote(n *session.Note) insightEntry {
+	entry := insightEntry{
+		ID:        n.ID,
+		CreatedAt: n.CreatedAt.Format(time.DateOnly),
+		Content:   n.Content,
+		Evidence:  []string{},
+		Tags:      []string{},
+	}
+
+	if len(n.Metadata) == 0 {
+		return entry
+	}
+
+	var meta struct {
+		Hypothesis  string   `json:"hypothesis"`
+		Status      string   `json:"status"`
+		Evidence    []string `json:"evidence"`
+		SourceDates []string `json:"source_dates"`
+		Project     string   `json:"project"`
+		Tags        []string `json:"tags"`
+		Conclusion  string   `json:"conclusion"`
+	}
+	if err := json.Unmarshal(n.Metadata, &meta); err != nil {
+		return entry
+	}
+
+	entry.Hypothesis = meta.Hypothesis
+	entry.Status = meta.Status
+	entry.Project = meta.Project
+	entry.Conclusion = meta.Conclusion
+	if meta.Evidence != nil {
+		entry.Evidence = meta.Evidence
+	}
+	if meta.SourceDates != nil {
+		entry.SourceDates = meta.SourceDates
+	} else {
+		entry.SourceDates = []string{}
+	}
+	if meta.Tags != nil {
+		entry.Tags = meta.Tags
+	}
+
+	return entry
+}
+
+// --- update_insight ---
+
+// UpdateInsightInput is the input for the update_insight tool.
+type UpdateInsightInput struct {
+	InsightID      int64  `json:"insight_id" jsonschema_description:"session_note ID of the insight (required)"`
+	Status         string `json:"status,omitempty" jsonschema_description:"unverified, verified, invalidated, or archived"`
+	AppendEvidence string `json:"append_evidence,omitempty" jsonschema_description:"new evidence string to append to the evidence array"`
+	Conclusion     string `json:"conclusion,omitempty" jsonschema_description:"conclusion after verification"`
+}
+
+// UpdateInsightOutput is the output of the update_insight tool.
+type UpdateInsightOutput struct {
+	ID         int64  `json:"id"`
+	Status     string `json:"status"`
+	Evidence   int    `json:"evidence_count"`
+	Conclusion string `json:"conclusion,omitempty"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, input UpdateInsightInput) (*mcp.CallToolResult, UpdateInsightOutput, error) {
+	if s.sessionReader == nil || s.sessionWriter == nil {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("session notes not configured")
+	}
+	if input.InsightID == 0 {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("insight_id is required")
+	}
+	if input.Status == "" && input.AppendEvidence == "" && input.Conclusion == "" {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("at least one of status, append_evidence, or conclusion is required")
+	}
+
+	if input.Status != "" {
+		switch input.Status {
+		case "unverified", "verified", "invalidated", "archived":
+			// valid
+		default:
+			return nil, UpdateInsightOutput{}, fmt.Errorf("invalid status %q (must be unverified, verified, invalidated, or archived)", input.Status)
+		}
+	}
+
+	// Read current note
+	note, err := s.sessionReader.NoteByID(ctx, input.InsightID)
+	if err != nil {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("insight %d not found: %w", input.InsightID, err)
+	}
+	if note.NoteType != "insight" {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("note %d is type %q, not insight", input.InsightID, note.NoteType)
+	}
+
+	// Parse existing metadata
+	meta := make(map[string]any)
+	if len(note.Metadata) > 0 {
+		if unmarshalErr := json.Unmarshal(note.Metadata, &meta); unmarshalErr != nil {
+			return nil, UpdateInsightOutput{}, fmt.Errorf("parsing insight metadata: %w", unmarshalErr)
+		}
+	}
+
+	// Apply updates
+	if input.Status != "" {
+		meta["status"] = input.Status
+	}
+	if input.AppendEvidence != "" {
+		var evidence []any
+		if ev, ok := meta["evidence"].([]any); ok {
+			evidence = ev
+		}
+		evidence = append(evidence, input.AppendEvidence)
+		meta["evidence"] = evidence
+	}
+	if input.Conclusion != "" {
+		meta["conclusion"] = input.Conclusion
+	}
+
+	// Marshal and update
+	updatedMetadata, marshalErr := json.Marshal(meta)
+	if marshalErr != nil {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("marshaling updated metadata: %w", marshalErr)
+	}
+
+	updated, updateErr := s.sessionWriter.UpdateNoteMetadata(ctx, session.UpdateMetadataParams{
+		ID:       input.InsightID,
+		Metadata: updatedMetadata,
+	})
+	if updateErr != nil {
+		return nil, UpdateInsightOutput{}, fmt.Errorf("updating insight: %w", updateErr)
+	}
+
+	// Count evidence in the updated note
+	evidenceCount := 0
+	if updatedMeta := make(map[string]any); len(updated.Metadata) > 0 {
+		if json.Unmarshal(updated.Metadata, &updatedMeta) == nil {
+			if ev, ok := updatedMeta["evidence"].([]any); ok {
+				evidenceCount = len(ev)
+			}
+		}
+	}
+
+	var currentStatus, conclusion string
+	if s, ok := meta["status"].(string); ok {
+		currentStatus = s
+	}
+	if c, ok := meta["conclusion"].(string); ok {
+		conclusion = c
+	}
+
+	s.logger.Info("insight updated via mcp",
+		"id", input.InsightID,
+		"status", currentStatus,
+		"evidence_count", evidenceCount,
+	)
+
+	return nil, UpdateInsightOutput{
+		ID:         updated.ID,
+		Status:     currentStatus,
+		Evidence:   evidenceCount,
+		Conclusion: conclusion,
+		UpdatedAt:  time.Now().Format(time.RFC3339),
+	}, nil
+}
