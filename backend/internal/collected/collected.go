@@ -64,6 +64,7 @@ type Filter struct {
 	Page    int
 	PerPage int
 	Status  *string
+	Sort    string // "" or "relevance"
 }
 
 var (

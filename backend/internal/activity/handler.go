@@ -52,7 +52,7 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 }
 
 // Changelog handles GET /api/admin/activity/changelog.
-// Query params: days (default 30, max 90).
+// Query params: days (default 30, max 90), project, source.
 func (h *Handler) Changelog(w http.ResponseWriter, r *http.Request) {
 	days := 30
 	if v := r.URL.Query().Get("days"); v != "" {
@@ -64,16 +64,30 @@ func (h *Handler) Changelog(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	start := now.AddDate(0, 0, -days)
 
-	events, err := h.store.EventsByTimeRange(r.Context(), start, now)
+	var source, project *string
+	if v := r.URL.Query().Get("source"); v != "" {
+		source = &v
+	}
+	if v := r.URL.Query().Get("project"); v != "" {
+		project = &v
+	}
+
+	var (
+		events []Event
+		err    error
+	)
+	if source != nil || project != nil {
+		events, err = h.store.EventsByFilters(r.Context(), start, now, source, project, maxEvents)
+	} else {
+		events, err = h.store.EventsByTimeRange(r.Context(), start, now)
+		if err == nil && len(events) > maxEvents {
+			events = events[:maxEvents]
+		}
+	}
 	if err != nil {
 		h.logger.Error("querying activity events for changelog", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query activity")
 		return
-	}
-
-	const maxEvents = 10000
-	if len(events) > maxEvents {
-		events = events[:maxEvents]
 	}
 
 	changelog := GroupChangelog(events)

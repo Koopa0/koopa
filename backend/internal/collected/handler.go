@@ -22,11 +22,15 @@ func NewHandler(store *Store, logger *slog.Logger) *Handler {
 }
 
 // List handles GET /api/admin/collected.
+// Query params: page, per_page, status, sort (default "" or "relevance").
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	page, perPage := api.ParsePagination(r)
 	f := Filter{Page: page, PerPage: perPage}
 	if s := r.URL.Query().Get("status"); s != "" {
 		f.Status = &s
+	}
+	if s := r.URL.Query().Get("sort"); s == "relevance" {
+		f.Sort = s
 	}
 
 	data, total, err := h.store.CollectedData(r.Context(), f)

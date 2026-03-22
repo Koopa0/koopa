@@ -34,12 +34,26 @@ func NewStore(dbtx db.DBTX) *Store {
 // CollectedData returns a paginated list of collected data.
 func (s *Store) CollectedData(ctx context.Context, f Filter) ([]CollectedData, int, error) {
 	status := nullCollectedStatus(f.Status)
+	limit := int32(f.PerPage)                // #nosec G115 -- pagination values are bounded by API layer
+	offset := int32((f.Page - 1) * f.PerPage) // #nosec G115 -- pagination values are bounded by API layer
 
-	rows, err := s.q.CollectedData(ctx, db.CollectedDataParams{
-		Limit:  int32(f.PerPage),                // #nosec G115 -- pagination values are bounded by API layer
-		Offset: int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
-		Status: status,
-	})
+	var (
+		rows []db.CollectedDatum
+		err  error
+	)
+	if f.Sort == "relevance" {
+		rows, err = s.q.CollectedDataByRelevance(ctx, db.CollectedDataByRelevanceParams{
+			Limit:  limit,
+			Offset: offset,
+			Status: status,
+		})
+	} else {
+		rows, err = s.q.CollectedData(ctx, db.CollectedDataParams{
+			Limit:  limit,
+			Offset: offset,
+			Status: status,
+		})
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing collected data: %w", err)
 	}

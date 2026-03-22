@@ -549,6 +549,57 @@ func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (Collecte
 	return i, err
 }
 
+const collectedDataByRelevance = `-- name: CollectedDataByRelevance :many
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE ($3::collected_status IS NULL OR status = $3)
+ORDER BY relevance_score DESC, collected_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type CollectedDataByRelevanceParams struct {
+	Limit  int32               `json:"limit"`
+	Offset int32               `json:"offset"`
+	Status NullCollectedStatus `json:"status"`
+}
+
+func (q *Queries) CollectedDataByRelevance(ctx context.Context, arg CollectedDataByRelevanceParams) ([]CollectedDatum, error) {
+	rows, err := q.db.Query(ctx, collectedDataByRelevance, arg.Limit, arg.Offset, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CollectedDatum{}
+	for rows.Next() {
+		var i CollectedDatum
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceUrl,
+			&i.SourceName,
+			&i.Title,
+			&i.OriginalContent,
+			&i.RelevanceScore,
+			&i.Topics,
+			&i.Status,
+			&i.CuratedContentID,
+			&i.CollectedAt,
+			&i.UrlHash,
+			&i.UserFeedback,
+			&i.FeedbackAt,
+			&i.FeedID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const collectedDataByURLHash = `-- name: CollectedDataByURLHash :one
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,

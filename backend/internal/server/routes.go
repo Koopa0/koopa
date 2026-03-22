@@ -15,6 +15,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -53,6 +54,7 @@ type Deps struct {
 	Goal         *goal.Handler
 	Task         *task.Handler
 	Stats        *stats.Handler
+	Note         *note.Handler
 	Activity     *activity.Handler
 	Session      *session.Handler
 	Pool         Pinger
@@ -189,6 +191,10 @@ func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler
 	mux.Handle("DELETE /api/admin/notion-sources/{id}", authMid(http.HandlerFunc(d.NotionSource.Delete)))
 	mux.Handle("POST /api/admin/notion-sources/{id}/toggle", authMid(http.HandlerFunc(d.NotionSource.Toggle)))
 	mux.Handle("PUT /api/admin/notion-sources/{id}/role", authMid(http.HandlerFunc(d.NotionSource.SetRole)))
+
+	// admin — notes (knowledge search)
+	mux.Handle("GET /api/admin/notes", authMid(http.HandlerFunc(d.Note.Search)))
+	mux.Handle("GET /api/admin/decisions", authMid(http.HandlerFunc(d.Note.DecisionLog)))
 
 	// admin — activity
 	mux.Handle("GET /api/admin/activity/sessions", authMid(http.HandlerFunc(d.Activity.Sessions)))

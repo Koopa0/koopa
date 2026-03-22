@@ -632,6 +632,7 @@ func run(logger *slog.Logger) error {
 			}),
 		),
 		Stats:    stats.NewHandler(stats.NewStore(pool), logger),
+		Note:     note.NewHandler(noteStore, logger),
 		Activity: activity.NewHandler(activityStore, logger),
 		Session:  session.NewHandler(sessionStore, logger),
 		Logger:   logger,
