@@ -28,6 +28,7 @@ import { TaskService } from '../../core/services/task.service';
 import { InsightService } from '../../core/services/insight.service';
 import { SessionNoteService } from '../../core/services/session-note.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { MarkdownService } from '../../core/services/markdown.service';
 import type { ApiTask, ApiSessionNote, ApiInsight, ApiDailySummary } from '../../core/models';
 
 @Component({
@@ -42,6 +43,7 @@ export class TodayComponent implements OnInit {
   private readonly insightService = inject(InsightService);
   private readonly sessionNoteService = inject(SessionNoteService);
   private readonly notificationService = inject(NotificationService);
+  private readonly markdownService = inject(MarkdownService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly StarIcon = Star;
@@ -70,6 +72,10 @@ export class TodayComponent implements OnInit {
   // Evidence input
   protected readonly evidenceTarget = signal<number | null>(null);
   protected readonly evidenceText = signal('');
+
+  // Expanded content tracking
+  protected readonly expandedNotes = signal<Set<number>>(new Set());
+  protected readonly expandedInsights = signal<Set<number>>(new Set());
 
   private readonly today = new Date().toISOString().slice(0, 10);
 
@@ -270,6 +276,48 @@ export class TodayComponent implements OnInit {
           this.notificationService.error('補充 evidence 失敗');
         },
       });
+  }
+
+  // --- Content Display ---
+
+  protected parseMarkdown(content: string): string {
+    return this.markdownService.parse(content);
+  }
+
+  protected isNoteExpanded(noteId: number): boolean {
+    return this.expandedNotes().has(noteId);
+  }
+
+  protected toggleNote(noteId: number): void {
+    this.expandedNotes.update((set) => {
+      const next = new Set(set);
+      if (next.has(noteId)) {
+        next.delete(noteId);
+      } else {
+        next.add(noteId);
+      }
+      return next;
+    });
+  }
+
+  protected isInsightExpanded(insightId: number): boolean {
+    return this.expandedInsights().has(insightId);
+  }
+
+  protected toggleInsight(insightId: number): void {
+    this.expandedInsights.update((set) => {
+      const next = new Set(set);
+      if (next.has(insightId)) {
+        next.delete(insightId);
+      } else {
+        next.add(insightId);
+      }
+      return next;
+    });
+  }
+
+  protected formatDate(dateStr: string): string {
+    return dateStr.slice(5, 10);
   }
 
   // --- Helpers ---

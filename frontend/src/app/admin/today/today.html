@@ -205,10 +205,26 @@
             <div class="space-y-2">
               @for (insight of insights(); track insight.id) {
                 <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-                  @if (insight.hypothesis) {
-                    <div class="mb-1 text-sm font-medium text-zinc-200">{{ insight.hypothesis }}</div>
+                  <!-- 標題（可點擊展開） -->
+                  <button
+                    (click)="toggleInsight(insight.id)"
+                    class="w-full text-left">
+                    @if (insight.hypothesis) {
+                      <div class="text-sm font-medium text-zinc-200">{{ insight.hypothesis }}</div>
+                    }
+                    @if (!isInsightExpanded(insight.id)) {
+                      <div class="mt-1 text-xs text-zinc-400 line-clamp-2">{{ insight.content }}</div>
+                    }
+                  </button>
+
+                  <!-- 展開的完整內容 -->
+                  @if (isInsightExpanded(insight.id)) {
+                    <div
+                      class="prose prose-invert prose-sm mt-2 max-w-none text-zinc-300"
+                      [innerHTML]="parseMarkdown(insight.content)">
+                    </div>
                   }
-                  <div class="text-xs text-zinc-400 line-clamp-2">{{ insight.content }}</div>
+
                   <div class="mt-2 flex items-center gap-2 text-xs text-zinc-600">
                     @if (insight.project) {
                       <span class="rounded-full bg-zinc-800 px-1.5 py-0.5">{{ insight.project }}</span>
@@ -267,7 +283,7 @@
             <div class="grid grid-cols-7 gap-2">
               @for (day of planningHistory(); track day.note_date) {
                 <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-2 text-center">
-                  <div class="text-xs text-zinc-500">{{ day.note_date.slice(5) }}</div>
+                  <div class="text-xs text-zinc-500">{{ formatDate(day.note_date) }}</div>
                   <div class="mt-1 text-lg font-bold" [class]="rateClass(day)">
                     {{ rateDisplay(day) }}
                   </div>
@@ -288,11 +304,23 @@
             <div class="space-y-2">
               @for (note of yesterdayNotes(); track note.id) {
                 <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-                  <div class="mb-1 flex items-center gap-2 text-xs text-zinc-500">
+                  <button
+                    (click)="toggleNote(note.id)"
+                    class="mb-1 flex w-full items-center gap-2 text-left text-xs text-zinc-500">
                     <span class="rounded-full bg-zinc-800 px-1.5 py-0.5">{{ note.note_type }}</span>
                     <span>{{ note.source }}</span>
-                  </div>
-                  <div class="whitespace-pre-wrap text-sm text-zinc-300 line-clamp-6">{{ note.content }}</div>
+                    <span class="ml-auto text-zinc-600">{{ isNoteExpanded(note.id) ? '收合' : '展開' }}</span>
+                  </button>
+                  @if (isNoteExpanded(note.id)) {
+                    <div
+                      class="prose prose-invert prose-sm max-w-none text-zinc-300"
+                      [innerHTML]="parseMarkdown(note.content)">
+                    </div>
+                  } @else {
+                    <div class="text-sm text-zinc-300 line-clamp-3 cursor-pointer" (click)="toggleNote(note.id)">
+                      {{ note.content }}
+                    </div>
+                  }
                 </div>
               }
             </div>
