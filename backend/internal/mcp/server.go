@@ -1060,14 +1060,17 @@ type GetSessionNotesOutput struct {
 	Notes []sessionNoteResult `json:"notes"`
 }
 
+// sessionNoteResult uses map[string]any for Metadata (not json.RawMessage)
+// because the MCP SDK infers json.RawMessage as []byte → array[integer] in
+// the output schema, which fails validation against the actual JSON object.
 type sessionNoteResult struct {
-	ID        int64           `json:"id"`
-	NoteDate  string          `json:"note_date"`
-	NoteType  string          `json:"note_type"`
-	Source    string          `json:"source"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata,omitempty"`
-	CreatedAt string          `json:"created_at"`
+	ID        int64          `json:"id"`
+	NoteDate  string         `json:"note_date"`
+	NoteType  string         `json:"note_type"`
+	Source    string         `json:"source"`
+	Content   string         `json:"content"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt string         `json:"created_at"`
 }
 
 func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input GetSessionNotesInput) (*mcp.CallToolResult, GetSessionNotesOutput, error) {
@@ -1105,13 +1108,17 @@ func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	results := make([]sessionNoteResult, len(notes))
 	for i, n := range notes {
+		var meta map[string]any
+		if len(n.Metadata) > 0 {
+			_ = json.Unmarshal(n.Metadata, &meta) // best-effort
+		}
 		results[i] = sessionNoteResult{
 			ID:        n.ID,
 			NoteDate:  n.NoteDate.Format(time.DateOnly),
 			NoteType:  n.NoteType,
 			Source:    n.Source,
 			Content:   n.Content,
-			Metadata:  n.Metadata,
+			Metadata:  meta,
 			CreatedAt: n.CreatedAt.Format(time.RFC3339),
 		}
 	}
