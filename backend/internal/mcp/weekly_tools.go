@@ -75,8 +75,8 @@ type weeklyGoal struct {
 func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, input WeeklySummaryInput) (*mcp.CallToolResult, WeeklySummaryOutput, error) {
 	weeksBack := clamp(input.WeeksBack, 0, 4, 0)
 
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	now := time.Now().In(s.loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)
 
 	// Calculate week boundaries (Monday-based)
 	weekday := int(today.Weekday())

@@ -39,6 +39,7 @@ type MorningContextOutput struct {
 	PendingRecommendations []insightBrief         `json:"pending_recommendations"`
 	TotalUnverified        int64                  `json:"total_unverified"`
 	DailySummary           *dailySummaryHint      `json:"daily_summary,omitempty"`
+	TodayCompletions       []todayCompletion      `json:"today_completions"`
 	RSSHighlightCount      int                    `json:"rss_highlight_count"`
 	TopRSSHighlight        string                 `json:"top_rss_highlight,omitempty"`
 }
@@ -50,6 +51,15 @@ type dailySummaryHint struct {
 	NonMyDayCompleted   int      `json:"non_my_day_completed"`
 	TotalCompleted      int      `json:"total_completed"`
 	CompletedTitles     []string `json:"completed_titles"`
+}
+
+// todayCompletion represents a task completed today, sourced from activity_events.
+// This is the single source of truth for today's completions — more reliable than
+// tasks.completed_at which only records the first completion for recurring tasks.
+type todayCompletion struct {
+	Title        string `json:"title"`
+	Project      string `json:"project,omitempty"`
+	CompletedVia string `json:"completed_via"` // "mcp" or "notion"
 }
 
 type dailyMetrics struct {
@@ -140,8 +150,8 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	activityDays := clamp(input.ActivityDays, 1, 14, 3)
 	buildLogDays := clamp(input.BuildLogDays, 1, 30, 7)
 
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	now := time.Now().In(s.loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)
 	tomorrow := today.AddDate(0, 0, 1)
 
 	out := MorningContextOutput{
@@ -156,6 +166,7 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	s.fetchMorningSessionData(ctx, &out, today, now)
 	s.fetchMorningRSSHighlights(ctx, &out, now)
 	s.fetchMorningDailySummary(ctx, &out, today, tomorrow)
+	s.fetchTodayCompletions(ctx, &out, today, tomorrow)
 
 	return nil, out, nil
 }
@@ -464,6 +475,53 @@ func (s *Server) fetchMorningDailySummary(ctx context.Context, out *MorningConte
 	if out.DailySummary.CompletedTitles == nil {
 		out.DailySummary.CompletedTitles = []string{}
 	}
+}
+
+// fetchTodayCompletions queries activity_events for today's task completions.
+// Uses activity_events as source of truth (not tasks.completed_at) because:
+// - recurring tasks only record first completion in tasks.completed_at
+// - activity_events capture every completion with audit trail
+func (s *Server) fetchTodayCompletions(ctx context.Context, out *MorningContextOutput, today, tomorrow time.Time) {
+	events, err := s.activity.EventsByFilters(ctx, today, tomorrow, nil, nil, 200)
+	if err != nil {
+		s.logger.Error("morning_context: today completions", "error", err)
+		out.TodayCompletions = []todayCompletion{}
+		return
+	}
+
+	out.TodayCompletions = make([]todayCompletion, 0)
+	for i := range events {
+		e := &events[i]
+		if !isCompletionEvent(e.EventType, e.Source, e.Metadata) {
+			continue
+		}
+		tc := todayCompletion{
+			CompletedVia: e.Source,
+		}
+		if e.Title != nil {
+			tc.Title = *e.Title
+		}
+		if e.Project != nil {
+			tc.Project = *e.Project
+		}
+		out.TodayCompletions = append(out.TodayCompletions, tc)
+	}
+}
+
+// isCompletionEvent checks if an activity event represents a task completion.
+// MCP: event_type=task_completed
+// Notion: event_type=task_status_change with status=Done in metadata
+func isCompletionEvent(eventType, source string, metadata json.RawMessage) bool {
+	if eventType == "task_completed" {
+		return true
+	}
+	if eventType == "task_status_change" && source == "notion" {
+		var meta map[string]string
+		if json.Unmarshal(metadata, &meta) == nil {
+			return meta["status"] == "Done"
+		}
+	}
+	return false
 }
 
 // parseDailyMetrics extracts daily metrics from a session note's metadata.

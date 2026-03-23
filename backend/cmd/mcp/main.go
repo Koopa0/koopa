@@ -105,7 +105,12 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	} else {
 		logger.Warn("NOTION_API_KEY not set — create_task and complete_task will be unavailable")
 	}
+	taipeiLoc, locErr := time.LoadLocation("Asia/Taipei")
+	if locErr != nil {
+		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
+	}
 	opts = append(opts,
+		mcpserver.WithLocation(taipeiLoc),
 		mcpserver.WithGoalWriter(goalStore),
 		mcpserver.WithProjectWriter(projectStore),
 		mcpserver.WithCollectedLatest(collectedStore),

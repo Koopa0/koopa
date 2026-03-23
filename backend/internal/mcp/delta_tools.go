@@ -63,8 +63,8 @@ type metricsTrendBrief struct {
 }
 
 func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, input SessionDeltaInput) (*mcp.CallToolResult, SessionDeltaOutput, error) {
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	now := time.Now().In(s.loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)
 
 	since, err := s.resolveDeltaSince(ctx, input.Since, today)
 	if err != nil {

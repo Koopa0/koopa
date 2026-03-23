@@ -44,6 +44,7 @@ type Server struct {
 	semanticNotes       NoteSemanticSearcher
 	queryEmbedder       QueryEmbedder
 	logger              *slog.Logger
+	loc                 *time.Location // user timezone for day boundaries
 }
 
 // ServerOption configures optional Server dependencies.
@@ -55,6 +56,11 @@ func WithNotionTaskWriter(n NotionTaskWriter, resolver TaskDBIDResolver) ServerO
 		s.notionTasks = n
 		s.taskDBResolver = resolver
 	}
+}
+
+// WithLocation sets the user timezone for day boundary calculations.
+func WithLocation(loc *time.Location) ServerOption {
+	return func(s *Server) { s.loc = loc }
 }
 
 // WithGoalWriter enables goal status update tools.
@@ -130,6 +136,7 @@ func NewServer(
 		contentWriter: contentWriter,
 		goals:         goals,
 		logger:        logger,
+		loc:           time.UTC, // default; override with WithLocation
 	}
 	for _, opt := range opts {
 		opt(s)
