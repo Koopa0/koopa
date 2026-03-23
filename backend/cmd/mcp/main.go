@@ -301,13 +301,6 @@ func (o *oauthProvider) validToken(tok string) bool {
 	return ok && time.Now().Before(exp)
 }
 
-<<<<<<< HEAD
-func (o *oauthProvider) issueToken() (string, time.Duration) {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	tok := hex.EncodeToString(b)
-	ttl := 30 * 24 * time.Hour // 30 days — prevent Claude.ai frequent reconnections
-=======
 func (o *oauthProvider) issueToken() (accessToken string, accessTTL time.Duration, refreshToken string, refreshTTL time.Duration) {
 	ab := make([]byte, 32)
 	_, _ = rand.Read(ab)
@@ -319,7 +312,6 @@ func (o *oauthProvider) issueToken() (accessToken string, accessTTL time.Duratio
 	refreshToken = "rt_" + hex.EncodeToString(rb)
 	refreshTTL = 30 * 24 * time.Hour // 30 days
 
->>>>>>> d18bc54 (fix: implement OAuth refresh token for persistent MCP connections)
 	o.mu.Lock()
 	o.tokens[accessToken] = time.Now().Add(accessTTL)
 	o.refreshTokens[refreshToken] = time.Now().Add(refreshTTL)
