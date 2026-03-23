@@ -168,23 +168,16 @@ func (c *Client) QueryPageIDs(ctx context.Context, dataSourceID string) ([]strin
 	return ids, nil
 }
 
-// UpdatePageStatus sets the Status property on a Notion page.
-// pageID must be a UUID in 8-4-4-4-12 format (36 chars).
-// Idempotent: setting a page to a status it already has is a no-op from Notion's perspective.
-func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) error {
+// UpdatePageProperties sets arbitrary properties on a Notion page via PATCH /v1/pages/{id}.
+// properties is a map of property names to their Notion API values, e.g.:
+//
+//	{"Status": {"status": {"name": "Done"}}, "My Day": {"checkbox": true}}
+func (c *Client) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error {
 	if !validPageID(pageID) {
 		return fmt.Errorf("invalid page id: %q", pageID)
 	}
 
-	body := map[string]any{
-		"properties": map[string]any{
-			"Status": map[string]any{
-				"status": map[string]string{
-					"name": status,
-				},
-			},
-		},
-	}
+	body := map[string]any{"properties": properties}
 
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -208,17 +201,31 @@ func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) er
 	return nil
 }
 
+// UpdatePageStatus sets the Status property on a Notion page.
+// Convenience wrapper around UpdatePageProperties for the common status-only case.
+func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) error {
+	return c.UpdatePageProperties(ctx, pageID, map[string]any{
+		"Status": map[string]any{
+			"status": map[string]string{"name": status},
+		},
+	})
+}
+
 // CreateTaskParams holds parameters for creating a task in the Notion Tasks database.
 type CreateTaskParams struct {
 	DatabaseID  string
 	Title       string
 	DueDate     string // YYYY-MM-DD
 	Description string // optional rich text body
+	Priority    string // optional — maps to "Priority" Status property
+	Energy      string // optional — maps to "Energy" Select property
+	MyDay       bool   // maps to "My Day" Checkbox property
+	ProjectID   string // optional — Notion page ID for "Project" Relation property
 }
 
 // CreateTask creates a new task page in the given Notion database.
 // Returns the created page ID on success.
-func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) (string, error) {
+func (c *Client) CreateTask(ctx context.Context, p *CreateTaskParams) (string, error) {
 	properties := map[string]any{
 		"Name": map[string]any{
 			"title": []map[string]any{
@@ -232,6 +239,24 @@ func (c *Client) CreateTask(ctx context.Context, p CreateTaskParams) (string, er
 	if p.DueDate != "" {
 		properties["Due"] = map[string]any{
 			"date": map[string]string{"start": p.DueDate},
+		}
+	}
+	if p.Priority != "" {
+		properties["Priority"] = map[string]any{
+			"status": map[string]string{"name": p.Priority},
+		}
+	}
+	if p.Energy != "" {
+		properties["Energy"] = map[string]any{
+			"select": map[string]string{"name": p.Energy},
+		}
+	}
+	if p.MyDay {
+		properties["My Day"] = map[string]any{"checkbox": true}
+	}
+	if p.ProjectID != "" {
+		properties["Project"] = map[string]any{
+			"relation": []map[string]string{{"id": p.ProjectID}},
 		}
 	}
 

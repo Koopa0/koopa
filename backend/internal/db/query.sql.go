@@ -3037,6 +3037,37 @@ func (q *Queries) MetricsHistory(ctx context.Context, sinceDate time.Time) ([]Se
 	return items, nil
 }
 
+const myDayTasksWithNotionPageID = `-- name: MyDayTasksWithNotionPageID :many
+SELECT id, notion_page_id FROM tasks
+WHERE my_day = true AND status != 'done' AND notion_page_id IS NOT NULL
+`
+
+type MyDayTasksWithNotionPageIDRow struct {
+	ID           uuid.UUID `json:"id"`
+	NotionPageID *string   `json:"notion_page_id"`
+}
+
+// Get My Day tasks that have a Notion page ID (for Notion sync).
+func (q *Queries) MyDayTasksWithNotionPageID(ctx context.Context) ([]MyDayTasksWithNotionPageIDRow, error) {
+	rows, err := q.db.Query(ctx, myDayTasksWithNotionPageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MyDayTasksWithNotionPageIDRow{}
+	for rows.Next() {
+		var i MyDayTasksWithNotionPageIDRow
+		if err := rows.Scan(&i.ID, &i.NotionPageID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const noteByFilePath = `-- name: NoteByFilePath :one
 SELECT id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, search_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
 `

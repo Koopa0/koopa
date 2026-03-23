@@ -285,6 +285,13 @@ func NewServer(
 		Description: "Retrieve session notes for a date or date range, optionally filtered by type. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Types: plan, reflection, context, metrics, insight.",
 	}, s.getSessionNotes)
 
+	// --- reflection tool ---
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_reflection_context",
+		Description: "Get everything needed for evening reflection in one call: today's plan vs actual completions, My Day task status, daily summary metrics, unverified insights for review, planning history, and yesterday's adjustments. Use when doing evening reflection, '今天做了什麼', 'reflection time', 'how did today go'. This is the evening counterpart to get_morning_context.",
+	}, s.getReflectionContext)
+
 	// --- insight tools ---
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -422,6 +429,8 @@ type ProjectContextOutput struct {
 	Project        projectSummary   `json:"project"`
 	RecentActivity []activityResult `json:"recent_activity"`
 	RelatedNotes   []noteResult     `json:"related_notes"`
+	PendingTasks   []taskResult     `json:"pending_tasks"`
+	RelatedGoals   []goalBrief      `json:"related_goals"`
 }
 
 // projectSummary is a safe subset of project.Project for MCP output.
@@ -472,12 +481,66 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		Project:        toProjectSummary(proj),
 		RecentActivity: make([]activityResult, len(events)),
 		RelatedNotes:   make([]noteResult, len(relatedNotes)),
+		PendingTasks:   []taskResult{},
+		RelatedGoals:   []goalBrief{},
 	}
 	for i := range events {
 		out.RecentActivity[i] = eventToResult(&events[i])
 	}
 	for i := range relatedNotes {
 		out.RelatedNotes[i] = toNoteResult(&searchResultEntry{Note: relatedNotes[i]})
+	}
+
+	// Pending tasks for this project
+	pendingTasks, ptErr := s.tasks.PendingTasksWithProject(ctx, &proj.Slug, 10)
+	if ptErr != nil {
+		s.logger.Error("project_context: pending tasks", "project", proj.Slug, "error", ptErr)
+	} else {
+		now := time.Now()
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		out.PendingTasks = make([]taskResult, len(pendingTasks))
+		for i := range pendingTasks {
+			t := &pendingTasks[i]
+			r := taskResult{
+				ID:          t.ID.String(),
+				Title:       t.Title,
+				Status:      string(t.Status),
+				ProjectSlug: t.ProjectSlug,
+				Energy:      t.Energy,
+				Priority:    t.Priority,
+				IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
+				MyDay:       t.MyDay,
+				UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
+			}
+			if t.Due != nil {
+				r.Due = t.Due.Format(time.DateOnly)
+				dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
+				if dueDate.Before(today) {
+					r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
+				}
+			}
+			out.PendingTasks[i] = r
+		}
+	}
+
+	// Related goals (by area match)
+	if proj.Area != "" {
+		goals, goalsErr := s.goals.Goals(ctx)
+		if goalsErr != nil {
+			s.logger.Error("project_context: related goals", "error", goalsErr)
+		} else {
+			for i := range goals {
+				g := &goals[i]
+				if g.Area != proj.Area || string(g.Status) == "done" || string(g.Status) == "abandoned" {
+					continue
+				}
+				gb := goalBrief{Title: g.Title, Status: string(g.Status), Area: g.Area}
+				if g.Deadline != nil {
+					gb.Deadline = g.Deadline.Format(time.DateOnly)
+				}
+				out.RelatedGoals = append(out.RelatedGoals, gb)
+			}
+		}
 	}
 
 	return nil, out, nil
@@ -587,6 +650,7 @@ type rssItem struct {
 	URL         string   `json:"url"`
 	Topics      []string `json:"topics"`
 	CollectedAt string   `json:"collected_at"`
+	Excerpt     string   `json:"excerpt,omitempty"`
 }
 
 func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, input RSSHighlightsInput) (*mcp.CallToolResult, RSSHighlightsOutput, error) {
@@ -622,6 +686,7 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 			URL:         data[i].SourceURL,
 			Topics:      data[i].Topics,
 			CollectedAt: data[i].CollectedAt.Format(time.RFC3339),
+			Excerpt:     truncate(deref(data[i].OriginalContent), 200),
 		}
 	}
 

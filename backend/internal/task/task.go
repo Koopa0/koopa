@@ -107,6 +107,12 @@ type CreatedTaskDetail struct {
 	ProjectTitle string    `json:"project_title"`
 }
 
+// MyDayNotionTask holds the minimal fields needed for Notion My Day sync.
+type MyDayNotionTask struct {
+	ID           uuid.UUID
+	NotionPageID string
+}
+
 // UpsertByNotionParams are the parameters for upserting a task from Notion.
 // CompletedAt is managed by the DB: set on first transition to done, preserved thereafter.
 type UpsertByNotionParams struct {

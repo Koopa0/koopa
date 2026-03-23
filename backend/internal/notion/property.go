@@ -177,6 +177,54 @@ func mapNotionTaskStatus(notionStatus string) task.Status {
 	}
 }
 
+// LocalProjectStatusToNotion maps a local project status to the Notion status name.
+func LocalProjectStatusToNotion(s project.Status) string {
+	switch s {
+	case project.StatusPlanned:
+		return "Planned"
+	case project.StatusInProgress:
+		return "Doing"
+	case project.StatusOnHold:
+		return "On Hold"
+	case project.StatusMaintained:
+		return "Ongoing"
+	case project.StatusCompleted, project.StatusArchived:
+		return "Done"
+	default:
+		return "Doing"
+	}
+}
+
+// LocalGoalStatusToNotion maps a local goal status to the Notion status name.
+func LocalGoalStatusToNotion(s goal.Status) string {
+	switch s {
+	case goal.StatusNotStarted:
+		return "Dream"
+	case goal.StatusInProgress:
+		return "Active"
+	case goal.StatusDone:
+		return "Achieved"
+	case goal.StatusAbandoned:
+		return "Abandoned"
+	default:
+		return "Dream"
+	}
+}
+
+// NotionTaskStatusFromInput maps MCP display names to Notion task status names.
+func NotionTaskStatusFromInput(s string) string {
+	switch s {
+	case "To Do", "todo":
+		return "To Do"
+	case "Doing", "In Progress", "in-progress":
+		return "Doing"
+	case "Done", "done":
+		return "Done"
+	default:
+		return "To Do"
+	}
+}
+
 // Slugify converts a title to a URL-safe slug.
 // Delegates to the canonical tag.Slugify implementation.
 func Slugify(title string) string { return tag.Slugify(title) }

@@ -12,6 +12,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/tag"
@@ -141,18 +142,22 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		return nil, CreateTaskOutput{}, err
 	}
 
-	// Create in Notion (webhook will sync back to local DB)
-	pageID, err := s.notionTasks.CreateTask(ctx, NotionCreateTaskParams{
-		DatabaseID:  taskDBID,
-		Title:       input.Title,
-		DueDate:     input.Due,
-		Description: input.Notes,
-	})
-	if err != nil {
-		return nil, CreateTaskOutput{}, fmt.Errorf("creating notion task: %w", err)
+	// Resolve project before Notion create so we can pass the relation
+	var projectID *uuid.UUID
+	var projectTitle string
+	var projectNotionPageID string
+	if input.Project != "" {
+		proj, projErr := s.resolveProject(ctx, input.Project)
+		if projErr == nil {
+			projectID = &proj.ID
+			projectTitle = proj.Title
+			if proj.NotionPageID != nil {
+				projectNotionPageID = *proj.NotionPageID
+			}
+		}
 	}
 
-	// Upsert to local DB immediately (don't wait for webhook)
+	// Parse due date for local DB
 	var due *time.Time
 	if input.Due != "" {
 		d, parseErr := time.Parse(time.DateOnly, input.Due)
@@ -160,16 +165,23 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 			due = &d
 		}
 	}
-	var projectID *uuid.UUID
-	var projectTitle string
-	if input.Project != "" {
-		proj, projErr := s.resolveProject(ctx, input.Project)
-		if projErr == nil {
-			projectID = &proj.ID
-			projectTitle = proj.Title
-		}
+
+	// Create in Notion with all properties
+	pageID, err := s.notionTasks.CreateTask(ctx, &NotionCreateTaskParams{
+		DatabaseID:  taskDBID,
+		Title:       input.Title,
+		DueDate:     input.Due,
+		Description: input.Notes,
+		Priority:    input.Priority,
+		Energy:      input.Energy,
+		MyDay:       input.MyDay,
+		ProjectID:   projectNotionPageID,
+	})
+	if err != nil {
+		return nil, CreateTaskOutput{}, fmt.Errorf("creating notion task: %w", err)
 	}
 
+	// Upsert to local DB immediately (don't wait for webhook)
 	upsertParams := &task.UpsertByNotionParams{
 		Title:        input.Title,
 		Status:       task.StatusTodo,
@@ -276,6 +288,25 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		}
 	}
 
+	// Sync changed properties to Notion (best-effort, before local update)
+	if t.NotionPageID != nil && s.notionTasks != nil {
+		notionProps := buildNotionTaskProps(input)
+		// Handle project relation separately — needs resolved Notion page ID
+		if input.Project != nil {
+			proj, projErr := s.resolveProject(ctx, *input.Project)
+			if projErr == nil && proj.NotionPageID != nil {
+				notionProps["Project"] = map[string]any{
+					"relation": []map[string]string{{"id": *proj.NotionPageID}},
+				}
+			}
+		}
+		if len(notionProps) > 0 {
+			if notionErr := s.notionTasks.UpdatePageProperties(ctx, *t.NotionPageID, notionProps); notionErr != nil {
+				s.logger.Warn("update_task: notion write-back failed", "task_id", t.ID, "error", notionErr)
+			}
+		}
+	}
+
 	updated, err := s.taskWriter.Update(ctx, params)
 	if err != nil {
 		return nil, UpdateTaskOutput{}, fmt.Errorf("updating task: %w", err)
@@ -313,9 +344,24 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 		return nil, BatchMyDayOutput{}, fmt.Errorf("task_ids is required (or set clear: true)")
 	}
 
+	myDayFalse := map[string]any{"My Day": map[string]any{"checkbox": false}}
+	myDayTrue := map[string]any{"My Day": map[string]any{"checkbox": true}}
+
 	var out BatchMyDayOutput
 
 	if input.Clear {
+		// Sync to Notion before clearing local DB (best-effort)
+		if s.notionTasks != nil {
+			currentMyDay, myDayErr := s.tasks.MyDayTasksWithNotionPageID(ctx)
+			if myDayErr != nil {
+				s.logger.Warn("batch_my_day: fetching notion page ids for clear", "error", myDayErr)
+			}
+			for _, t := range currentMyDay {
+				//nolint:errcheck // best-effort: don't fail batch on individual Notion errors
+				s.notionTasks.UpdatePageProperties(ctx, t.NotionPageID, myDayFalse)
+			}
+		}
+
 		n, err := s.taskWriter.ClearAllMyDay(ctx)
 		if err != nil {
 			return nil, BatchMyDayOutput{}, fmt.Errorf("clearing my day: %w", err)
@@ -333,6 +379,16 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 			continue
 		}
 		out.Set++
+
+		// Sync to Notion (best-effort)
+		if s.notionTasks != nil {
+			t, taskErr := s.tasks.TaskByID(ctx, id)
+			if taskErr == nil && t.NotionPageID != nil {
+				if notionErr := s.notionTasks.UpdatePageProperties(ctx, *t.NotionPageID, myDayTrue); notionErr != nil {
+					s.logger.Warn("batch_my_day: notion sync failed", "task_id", idStr, "error", notionErr)
+				}
+			}
+		}
 	}
 
 	return nil, out, nil
@@ -602,6 +658,16 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("updating project status: %w", err)
 	}
 
+	// Sync to Notion (best-effort)
+	if proj.NotionPageID != nil && s.notionTasks != nil {
+		notionStatus := notion.LocalProjectStatusToNotion(status)
+		if notionErr := s.notionTasks.UpdatePageProperties(ctx, *proj.NotionPageID, map[string]any{
+			"Status": map[string]any{"status": map[string]string{"name": notionStatus}},
+		}); notionErr != nil {
+			s.logger.Warn("update_project_status: notion write-back failed", "project", proj.Slug, "error", notionErr)
+		}
+	}
+
 	return nil, UpdateProjectStatusOutput{
 		Slug:   updated.Slug,
 		Title:  updated.Title,
@@ -645,6 +711,16 @@ func (s *Server) updateGoalStatus(ctx context.Context, _ *mcp.CallToolRequest, i
 	updated, err := s.goalWriter.UpdateStatus(ctx, g.ID, status)
 	if err != nil {
 		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("updating goal status: %w", err)
+	}
+
+	// Sync to Notion (best-effort)
+	if g.NotionPageID != nil && s.notionTasks != nil {
+		notionStatus := notion.LocalGoalStatusToNotion(status)
+		if notionErr := s.notionTasks.UpdatePageProperties(ctx, *g.NotionPageID, map[string]any{
+			"Status": map[string]any{"status": map[string]string{"name": notionStatus}},
+		}); notionErr != nil {
+			s.logger.Warn("update_goal_status: notion write-back failed", "goal", g.Title, "error", notionErr)
+		}
 	}
 
 	return nil, UpdateGoalStatusOutput{
@@ -737,4 +813,41 @@ func joinLines(lines []string) string {
 		b = append(b, l...)
 	}
 	return string(b)
+}
+
+// buildNotionTaskProps builds a Notion properties map from changed task fields.
+// Only includes properties that were explicitly set in the input (non-nil pointers).
+// Project relation is handled separately by the caller (needs NotionPageID resolution).
+func buildNotionTaskProps(input *UpdateTaskInput) map[string]any {
+	props := make(map[string]any)
+	if input.Status != nil {
+		props["Status"] = map[string]any{
+			"status": map[string]string{"name": notion.NotionTaskStatusFromInput(*input.Status)},
+		}
+	}
+	if input.Due != nil {
+		if *input.Due == "" {
+			props["Due"] = map[string]any{"date": nil}
+		} else {
+			props["Due"] = map[string]any{"date": map[string]string{"start": *input.Due}}
+		}
+	}
+	if input.Priority != nil {
+		if *input.Priority == "" {
+			props["Priority"] = map[string]any{"status": nil}
+		} else {
+			props["Priority"] = map[string]any{"status": map[string]string{"name": *input.Priority}}
+		}
+	}
+	if input.Energy != nil {
+		if *input.Energy == "" {
+			props["Energy"] = map[string]any{"select": nil}
+		} else {
+			props["Energy"] = map[string]any{"select": map[string]string{"name": *input.Energy}}
+		}
+	}
+	if input.MyDay != nil {
+		props["My Day"] = map[string]any{"checkbox": *input.MyDay}
+	}
+	return props
 }

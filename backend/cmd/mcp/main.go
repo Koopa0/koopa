@@ -539,12 +539,20 @@ func (a notionAdapter) UpdatePageStatus(ctx context.Context, pageID, status stri
 	return a.client.UpdatePageStatus(ctx, pageID, status)
 }
 
-func (a notionAdapter) CreateTask(ctx context.Context, p mcpserver.NotionCreateTaskParams) (string, error) {
-	return a.client.CreateTask(ctx, notion.CreateTaskParams{
+func (a notionAdapter) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error {
+	return a.client.UpdatePageProperties(ctx, pageID, properties)
+}
+
+func (a notionAdapter) CreateTask(ctx context.Context, p *mcpserver.NotionCreateTaskParams) (string, error) {
+	return a.client.CreateTask(ctx, &notion.CreateTaskParams{
 		DatabaseID:  p.DatabaseID,
 		Title:       p.Title,
 		DueDate:     p.DueDate,
 		Description: p.Description,
+		Priority:    p.Priority,
+		Energy:      p.Energy,
+		MyDay:       p.MyDay,
+		ProjectID:   p.ProjectID,
 	})
 }
 

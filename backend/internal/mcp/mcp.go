@@ -81,6 +81,7 @@ type TaskReader interface {
 	CompletedTasksDetailSince(ctx context.Context, since time.Time) ([]task.CompletedTaskDetail, error)
 	TasksCreatedSince(ctx context.Context, since time.Time) ([]task.CreatedTaskDetail, error)
 	CompletedByProjectSince(ctx context.Context, since time.Time) ([]flow.ProjectCompletion, error)
+	MyDayTasksWithNotionPageID(ctx context.Context) ([]task.MyDayNotionTask, error)
 }
 
 // TaskWriter provides task mutations for MCP tools.
@@ -95,7 +96,8 @@ type TaskWriter interface {
 // NotionTaskWriter creates and updates tasks in Notion.
 type NotionTaskWriter interface {
 	UpdatePageStatus(ctx context.Context, pageID, status string) error
-	CreateTask(ctx context.Context, p NotionCreateTaskParams) (string, error)
+	UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error
+	CreateTask(ctx context.Context, p *NotionCreateTaskParams) (string, error)
 }
 
 // NotionCreateTaskParams holds parameters for creating a task in Notion.
@@ -104,6 +106,10 @@ type NotionCreateTaskParams struct {
 	Title       string
 	DueDate     string
 	Description string
+	Priority    string
+	Energy      string
+	MyDay       bool
+	ProjectID   string // Notion page ID for Project relation
 }
 
 // TaskDBIDResolver resolves the Notion database ID for tasks on demand.

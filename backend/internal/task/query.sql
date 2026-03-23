@@ -134,6 +134,11 @@ WHERE id = @id AND status != 'done';
 UPDATE tasks SET my_day = false, updated_at = now()
 WHERE my_day = true AND status != 'done';
 
+-- name: MyDayTasksWithNotionPageID :many
+-- Get My Day tasks that have a Notion page ID (for Notion sync).
+SELECT id, notion_page_id FROM tasks
+WHERE my_day = true AND status != 'done' AND notion_page_id IS NOT NULL;
+
 -- name: DailySummaryHint :one
 -- Compute task metrics hint for a single day (committed/pulled/completed counts).
 -- Scoped to relevant rows only: my_day tasks OR tasks completed today.

@@ -242,6 +242,25 @@ func (s *Store) ClearAllMyDay(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// MyDayTasksWithNotionPageID returns tasks marked as My Day that have a Notion page ID.
+func (s *Store) MyDayTasksWithNotionPageID(ctx context.Context) ([]MyDayNotionTask, error) {
+	rows, err := s.q.MyDayTasksWithNotionPageID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("querying my day tasks with notion page id: %w", err)
+	}
+	result := make([]MyDayNotionTask, 0, len(rows))
+	for _, r := range rows {
+		if r.NotionPageID == nil {
+			continue
+		}
+		result = append(result, MyDayNotionTask{
+			ID:           r.ID,
+			NotionPageID: *r.NotionPageID,
+		})
+	}
+	return result, nil
+}
+
 // DailySummaryHintForDate computes task counts for a single day (committed vs pulled).
 func (s *Store) DailySummaryHintForDate(ctx context.Context, dayStart, dayEnd time.Time) (*DailySummaryHint, error) {
 	row, err := s.q.DailySummaryHint(ctx, db.DailySummaryHintParams{
