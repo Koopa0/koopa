@@ -543,7 +543,7 @@ CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_p
 CREATE TABLE session_notes (
     id          BIGSERIAL PRIMARY KEY,
     note_date   DATE NOT NULL,
-    note_type   TEXT NOT NULL,  -- plan, reflection, context, metrics
+    note_type   TEXT NOT NULL,  -- plan, reflection, context, metrics, insight
     source      TEXT NOT NULL,  -- claude, claude-code, manual
     content     TEXT NOT NULL,
     metadata    JSONB,

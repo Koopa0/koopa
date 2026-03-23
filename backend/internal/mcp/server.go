@@ -1051,7 +1051,7 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 // GetSessionNotesInput is the input for the get_session_notes tool.
 type GetSessionNotesInput struct {
 	Date     string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
-	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics"`
+	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight"`
 	Days     int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
 }
 
@@ -1077,7 +1077,8 @@ func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	days := clamp(input.Days, 1, 30, 1)
 
-	endDate := time.Now()
+	now := time.Now().UTC()
+	endDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	if input.Date != "" {
 		parsed, err := time.Parse(time.DateOnly, input.Date)
 		if err != nil {
@@ -1090,10 +1091,10 @@ func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, in
 	var noteType *string
 	if input.NoteType != "" {
 		switch input.NoteType {
-		case "plan", "reflection", "context", "metrics":
+		case "plan", "reflection", "context", "metrics", "insight":
 			noteType = &input.NoteType
 		default:
-			return nil, GetSessionNotesOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, or metrics)", input.NoteType)
+			return nil, GetSessionNotesOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
 		}
 	}
 

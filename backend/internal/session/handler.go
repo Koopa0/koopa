@@ -25,7 +25,8 @@ func NewHandler(store *Store, logger *slog.Logger) *Handler {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	endDate := time.Now()
+	now := time.Now().UTC()
+	endDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	if d := q.Get("date"); d != "" {
 		parsed, err := time.Parse(time.DateOnly, d)
 		if err != nil {

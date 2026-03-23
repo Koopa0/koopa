@@ -11,7 +11,7 @@ import (
 // ErrNotFound indicates no session note exists for the given query.
 var ErrNotFound = errors.New("not found")
 
-// Note represents a single session note (plan, reflection, context, or metrics).
+// Note represents a single session note (plan, reflection, context, metrics, or insight).
 type Note struct {
 	ID        int64           `json:"id"`
 	NoteDate  time.Time       `json:"note_date"`
