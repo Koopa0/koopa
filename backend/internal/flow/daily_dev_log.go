@@ -140,7 +140,7 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 			ai.WithPrompt(userPrompt),
 			ai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.4),
-				MaxOutputTokens: 1024,
+				MaxOutputTokens: 2048,
 			}),
 		)
 		if err != nil {

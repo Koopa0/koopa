@@ -126,7 +126,7 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 			ai.WithPrompt(userPrompt),
 			ai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.7),
-				MaxOutputTokens: 1024,
+				MaxOutputTokens: 2048,
 			}),
 		)
 		if err != nil {

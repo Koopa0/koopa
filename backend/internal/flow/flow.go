@@ -20,13 +20,18 @@ import (
 // This is a permanent failure — retrying will not help.
 var ErrContentBlocked = errors.New("content blocked by model safety filter")
 
-// checkFinishReason returns ErrContentBlocked if the model response was blocked
-// by safety filters. Callers should treat this as a permanent failure (no retry).
+// ErrOutputTruncated indicates the model hit MaxOutputTokens before completing.
+// Callers should increase the token limit or simplify the prompt.
+var ErrOutputTruncated = errors.New("output truncated: hit max token limit")
+
+// checkFinishReason returns an error if the model response was blocked or truncated.
 func checkFinishReason(resp *ai.ModelResponse) error {
 	if resp == nil {
 		return nil
 	}
 	switch resp.FinishReason {
+	case ai.FinishReasonLength:
+		return fmt.Errorf("%w: model stopped at MaxOutputTokens (response is incomplete)", ErrOutputTruncated)
 	case ai.FinishReasonBlocked:
 		return fmt.Errorf("%w: %s", ErrContentBlocked, resp.FinishMessage)
 	case ai.FinishReasonOther:
