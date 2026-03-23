@@ -35,7 +35,7 @@ const defaultDir = "/Users/koopa/obsidian/10-Public-Content"
 
 // calibration topic slugs — hardcoded because we skip DB.
 // These match the topics in the production database.
-var calibrationTopics = []topic.TopicSlug{
+var calibrationTopics = []topic.Slug{
 	{Slug: "golang", Name: "Go"},
 	{Slug: "rust", Name: "Rust"},
 	{Slug: "docker", Name: "Docker"},
@@ -151,7 +151,7 @@ func run(dir, modelName string, logger *slog.Logger) error {
 	return nil
 }
 
-func processArticle(ctx context.Context, g *genkit.Genkit, model ai.Model, file string, logger *slog.Logger) articleResult {
+func processArticle(ctx context.Context, g *genkit.Genkit, model ai.Model, file string, _ *slog.Logger) articleResult {
 	name := filepath.Base(file)
 	start := time.Now()
 
@@ -170,7 +170,6 @@ func processArticle(ctx context.Context, g *genkit.Genkit, model ai.Model, file 
 		Title: parsed.Title,
 		Body:  body,
 		Type:  content.Type(parsed.ContentType),
-		Tags:  parsed.Tags,
 	}
 
 	userPrompt := fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", c.Type, c.Title, c.Body)
@@ -254,7 +253,7 @@ func runExcerpt(ctx context.Context, g *genkit.Genkit, model ai.Model, userPromp
 	return strings.TrimSpace(resp.Text()), nil
 }
 
-func runTags(ctx context.Context, g *genkit.Genkit, model ai.Model, userPrompt string, topics []topic.TopicSlug) ([]string, error) {
+func runTags(ctx context.Context, g *genkit.Genkit, model ai.Model, userPrompt string, topics []topic.Slug) ([]string, error) {
 	var b strings.Builder
 	b.WriteString("Existing tags:\n")
 	for _, t := range topics {
@@ -378,7 +377,8 @@ func printTable(results []articleResult) {
 	fmt.Println("| Title | Level | Excerpt | Tags | Reading Time | Corrections | Duration |")
 	fmt.Println("|-------|-------|---------|------|-------------|-------------|----------|")
 
-	for _, r := range results {
+	for i := range results {
+		r := results[i]
 		if r.Error != "" {
 			fmt.Printf("| %s | ERROR | %s | - | - | - | - |\n", truncate(r.Title, 40), truncate(r.Error, 50))
 			continue
@@ -401,7 +401,8 @@ func printTable(results []articleResult) {
 	fmt.Println()
 
 	// Print corrections detail for non-auto articles
-	for _, r := range results {
+	for i := range results {
+		r := results[i]
 		if r.Error != "" || r.Output.Proofread == nil {
 			continue
 		}

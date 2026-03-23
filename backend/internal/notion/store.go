@@ -36,8 +36,8 @@ func (s *Store) Sources(ctx context.Context) ([]Source, error) {
 		return nil, fmt.Errorf("listing notion sources: %w", err)
 	}
 	sources := make([]Source, len(rows))
-	for i, r := range rows {
-		sources[i] = dbToSource(r)
+	for i := range rows {
+		sources[i] = dbToSource(&rows[i])
 	}
 	return sources, nil
 }
@@ -51,7 +51,7 @@ func (s *Store) Source(ctx context.Context, id uuid.UUID) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying notion source %s: %w", id, err)
 	}
-	src := dbToSource(row)
+	src := dbToSource(&row)
 	return &src, nil
 }
 
@@ -65,7 +65,7 @@ func (s *Store) SourceByRole(ctx context.Context, role string) (*Source, error) 
 	if err != nil {
 		return nil, fmt.Errorf("querying notion source by role %s: %w", role, err)
 	}
-	src := dbToSource(row)
+	src := dbToSource(&row)
 	return &src, nil
 }
 
@@ -79,7 +79,7 @@ func (s *Store) SourceByDatabaseID(ctx context.Context, databaseID string) (*Sou
 	if err != nil {
 		return nil, fmt.Errorf("querying notion source by database_id %s: %w", databaseID, err)
 	}
-	src := dbToSource(row)
+	src := dbToSource(&row)
 	return &src, nil
 }
 
@@ -94,7 +94,7 @@ func (s *Store) DatabaseIDByRole(ctx context.Context, role string) (string, erro
 }
 
 // CreateSource inserts a new source. Returns ErrConflict if database_id is taken.
-func (s *Store) CreateSource(ctx context.Context, p CreateSourceParams) (*Source, error) {
+func (s *Store) CreateSource(ctx context.Context, p *CreateSourceParams) (*Source, error) {
 	row, err := s.q.CreateSource(ctx, db.CreateSourceParams{
 		DatabaseID:   p.DatabaseID,
 		Name:         p.Name,
@@ -110,12 +110,12 @@ func (s *Store) CreateSource(ctx context.Context, p CreateSourceParams) (*Source
 		}
 		return nil, fmt.Errorf("creating notion source: %w", err)
 	}
-	src := dbToSource(row)
+	src := dbToSource(&row)
 	return &src, nil
 }
 
 // UpdateSource modifies an existing source. Returns ErrNotFound if missing.
-func (s *Store) UpdateSource(ctx context.Context, id uuid.UUID, p UpdateSourceParams) (*Source, error) {
+func (s *Store) UpdateSource(ctx context.Context, id uuid.UUID, p *UpdateSourceParams) (*Source, error) {
 	row, err := s.q.UpdateSource(ctx, db.UpdateSourceParams{
 		ID:           id,
 		Name:         p.Name,
@@ -131,7 +131,7 @@ func (s *Store) UpdateSource(ctx context.Context, id uuid.UUID, p UpdateSourcePa
 	if err != nil {
 		return nil, fmt.Errorf("updating notion source %s: %w", id, err)
 	}
-	src := dbToSource(row)
+	src := dbToSource(&row)
 	return &src, nil
 }
 
@@ -154,8 +154,8 @@ func (s *Store) SetRole(ctx context.Context, id uuid.UUID, role string) error {
 	qtx := s.q.WithTx(tx)
 
 	// clear the role from any existing holder
-	if err := qtx.ClearRole(ctx, &role); err != nil {
-		return fmt.Errorf("clearing existing role %s: %w", role, err)
+	if clearErr := qtx.ClearRole(ctx, &role); clearErr != nil {
+		return fmt.Errorf("clearing existing role %s: %w", role, clearErr)
 	}
 	n, err := qtx.SetSourceRole(ctx, db.SetSourceRoleParams{ID: id, Role: &role})
 	if err != nil {
@@ -165,8 +165,8 @@ func (s *Store) SetRole(ctx context.Context, id uuid.UUID, role string) error {
 		return ErrNotFound
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing role assignment: %w", err)
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		return fmt.Errorf("committing role assignment: %w", commitErr)
 	}
 	return nil
 }
@@ -205,7 +205,7 @@ func (s *Store) ToggleEnabled(ctx context.Context, id uuid.UUID) (*Source, error
 	if err != nil {
 		return nil, fmt.Errorf("toggling notion source %s: %w", id, err)
 	}
-	src := dbToSource(row)
+	src := dbToSource(&row)
 	return &src, nil
 }
 
@@ -218,7 +218,7 @@ func (s *Store) UpdateLastSynced(ctx context.Context, id uuid.UUID) error {
 }
 
 // dbToSource converts the sqlc model to the domain type.
-func dbToSource(r db.NotionSource) Source {
+func dbToSource(r *db.NotionSource) Source {
 	return Source{
 		ID:           r.ID,
 		DatabaseID:   r.DatabaseID,

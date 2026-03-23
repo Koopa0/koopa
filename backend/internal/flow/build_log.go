@@ -29,7 +29,7 @@ type RepoCommitLister interface {
 
 // ContentCreator creates a new content record.
 type ContentCreator interface {
-	CreateContent(ctx context.Context, p content.CreateParams) (*content.Content, error)
+	CreateContent(ctx context.Context, p *content.CreateParams) (*content.Content, error)
 }
 
 // buildLogInput is the JSON input for the build-log-generate flow.
@@ -70,7 +70,7 @@ func NewBuildLog(
 	model ai.Model,
 	projects ProjectBySlugFinder,
 	commits RepoCommitLister,
-	content ContentCreator,
+	creator ContentCreator,
 	budget BudgetChecker,
 	loc *time.Location,
 	logger *slog.Logger,
@@ -80,7 +80,7 @@ func NewBuildLog(
 		model:    model,
 		projects: projects,
 		commits:  commits,
-		content:  content,
+		content:  creator,
 		budget:   budget,
 		loc:      loc,
 		logger:   logger,
@@ -127,8 +127,8 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 		return BuildLogOutput{}, fmt.Errorf("project %s has no linked repo", input.ProjectSlug)
 	}
 
-	if err := bl.budget.Reserve(estimatedBuildLogTokens); err != nil {
-		return BuildLogOutput{}, fmt.Errorf("budget reserve: %w", err)
+	if reserveErr := bl.budget.Reserve(estimatedBuildLogTokens); reserveErr != nil {
+		return BuildLogOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
 	}
 
 	bl.logger.Info("build-log-generate starting",
@@ -151,7 +151,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 	userPrompt := buildBuildLogPrompt(proj, commits, input.Days)
 
 	respText, err := genkit.Run(ctx, "generate-build-log", func() (string, error) {
-		resp, err := genkit.Generate(ctx, bl.g,
+		resp, genErr := genkit.Generate(ctx, bl.g,
 			ai.WithModel(bl.model),
 			ai.WithSystem(buildLogSystemPrompt),
 			ai.WithPrompt(userPrompt),
@@ -160,11 +160,11 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 				MaxOutputTokens: 2048,
 			}),
 		)
-		if err != nil {
-			return "", fmt.Errorf("generating build log: %w", err)
+		if genErr != nil {
+			return "", fmt.Errorf("generating build log: %w", genErr)
 		}
-		if err := checkFinishReason(resp); err != nil {
-			return "", err
+		if finishErr := checkFinishReason(resp); finishErr != nil {
+			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
@@ -173,8 +173,8 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 	}
 
 	var llmOut buildLogLLMOutput
-	if err := parseJSONLoose(respText, &llmOut); err != nil {
-		return BuildLogOutput{}, fmt.Errorf("parsing build-log LLM output: %w", err)
+	if parseErr := parseJSONLoose(respText, &llmOut); parseErr != nil {
+		return BuildLogOutput{}, fmt.Errorf("parsing build-log LLM output: %w", parseErr)
 	}
 
 	// Generate slug from project slug + date
@@ -182,7 +182,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 	sourceType := content.SourceAIGenerated
 	source := fmt.Sprintf("build-log-generate:%s", *proj.Repo)
 
-	created, err := bl.content.CreateContent(ctx, content.CreateParams{
+	created, err := bl.content.CreateContent(ctx, &content.CreateParams{
 		Slug:        slug,
 		Title:       llmOut.Title,
 		Body:        llmOut.Body,

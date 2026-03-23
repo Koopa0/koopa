@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/koopa0/blog-backend/internal/auth"
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/flowrun"
@@ -26,8 +28,8 @@ func retryFlows(store *flowrun.Store, runner *flowrun.Runner, notifier notify.No
 			alertCron(notifier, logger, "flow-retry-scan", err)
 			return
 		}
-		for _, r := range runs {
-			runner.Requeue(r.ID)
+		for i := range runs {
+			runner.Requeue(runs[i].ID)
 		}
 		if len(runs) > 0 {
 			logger.Info("cron: requeued flow runs", "count", len(runs))
@@ -60,10 +62,10 @@ func collectFeeds(
 			return
 		}
 		var totalNew int
-		for _, f := range feeds {
-			ids, fetchErr := coll.FetchFeed(ctx, f)
+		for i := range feeds {
+			ids, fetchErr := coll.FetchFeed(ctx, feeds[i])
 			if fetchErr != nil {
-				logger.Error("cron: collecting feed", "feed_id", f.ID, "error", fetchErr)
+				logger.Error("cron: collecting feed", "feed_id", feeds[i].ID, "error", fetchErr)
 				continue
 			}
 			totalNew += len(ids)
@@ -142,6 +144,42 @@ func submitBuildLogs(projectStore *project.Store, runner *flowrun.Runner, logger
 		}
 		if len(slugs) > 0 {
 			logger.Info("cron: build-log submitted", "projects", len(slugs))
+		}
+	}
+}
+
+// resetBudget resets the daily token budget counter.
+func resetBudget(b *budget.Budget, logger *slog.Logger) func() {
+	return func() {
+		b.Reset()
+		logger.Info("cron: daily token budget reset")
+	}
+}
+
+// cleanupExpiredTokens deletes expired auth tokens.
+func cleanupExpiredTokens(store *auth.Store, logger *slog.Logger) func() {
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := store.DeleteExpiredTokens(ctx); err != nil {
+			logger.Error("cron: deleting expired tokens", "error", err)
+		}
+	}
+}
+
+// retentionTimeout is the maximum duration for a single retention cleanup job.
+const retentionTimeout = 1 * time.Minute
+
+// retentionFunc returns a cron func that deletes old records via the provided delete function.
+func retentionFunc(name string, deleteFn func(ctx context.Context) (int64, error), logger *slog.Logger) func() {
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), retentionTimeout)
+		defer cancel()
+		n, err := deleteFn(ctx)
+		if err != nil {
+			logger.Error("cron: "+name, "error", err)
+		} else if n > 0 {
+			logger.Info("cron: "+name, "count", n)
 		}
 	}
 }

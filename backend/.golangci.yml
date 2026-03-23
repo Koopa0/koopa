@@ -43,10 +43,15 @@ linters:
   settings:
     errcheck:
       check-type-assertions: true
-      check-blank: true
+      check-blank: false
       exclude-functions:
         - (io.Closer).Close
         - (net/http.ResponseWriter).Write
+        - io.Copy
+        - io/io.Copy
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
 
     staticcheck:
       checks:
@@ -55,6 +60,8 @@ linters:
 
     govet:
       enable-all: true
+      disable:
+        - fieldalignment
 
     gosec:
       excludes:
@@ -88,16 +95,19 @@ linters:
       require-specific: true
 
 issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
   exclude-dirs:
     - vendor
 
   exclude-rules:
-    # Test files allow higher complexity
-    - path: _test\.go
+    # Test files allow higher complexity and flexible helpers
+    - path: _test\.go$
       linters:
         - gocyclo
         - gocognit
         - errcheck
+        - unparam
 
     # Generated code skipped
     - path: internal/db/

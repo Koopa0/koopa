@@ -19,7 +19,7 @@ import (
 const testSecret = "test-secret-for-auth-unit-tests"
 
 // signToken creates a signed JWT for testing.
-func signToken(t *testing.T, email string, secret string, expiresAt time.Time, method jwt.SigningMethod) string {
+func signToken(t *testing.T, email, secret string, expiresAt time.Time, method jwt.SigningMethod) string { //nolint:unparam // test helper designed for varied emails
 	t.Helper()
 	claims := Claims{
 		Email: email,
@@ -50,7 +50,7 @@ func callMiddleware(t *testing.T, authHeader string) *httptest.ResponseRecorder 
 	mid := Middleware(testSecret)
 	handler := mid(inner)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/test", http.NoBody)
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}

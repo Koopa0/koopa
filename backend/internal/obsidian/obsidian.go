@@ -96,7 +96,7 @@ func extractFrontmatter(raw []byte) (*frontmatter, string, error) {
 //   - "status/*" → ignored
 //   - "golang/memory" → topicSlug = "golang", tag = "golang/memory"
 //   - "docker" → tag = "docker" (no topic extraction for flat tags)
-func classifyTags(tags []string) (contentType string, remaining []string, topicSlugs []string) {
+func classifyTags(tags []string) (contentType string, remaining, topicSlugs []string) {
 	seen := make(map[string]bool)
 
 	for _, tag := range tags {

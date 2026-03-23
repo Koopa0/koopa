@@ -14,7 +14,7 @@ func TestBuildDigestUserPrompt(t *testing.T) {
 		{Title: "Go 1.26 Released", Type: content.TypeArticle, Excerpt: "New features overview"},
 	}
 
-	collectedItems := []collected.CollectedData{
+	collectedItems := []collected.Item{
 		{
 			Title:      "PG Performance",
 			SourceName: "PG Blog",

@@ -61,8 +61,7 @@ func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error)
 	if err != nil {
 		return nil, fmt.Errorf("fetching page %s: %w", pageID, err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
-
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return nil, notionError(resp, "page "+pageID)
 	}
@@ -111,7 +110,7 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 			"page_size": 100,
 		}
 		if filter != nil {
-			body["filter"] = json.RawMessage(filter)
+			body["filter"] = filter
 		}
 		if cursor != nil {
 			body["start_cursor"] = *cursor
@@ -199,7 +198,7 @@ func (c *Client) UpdatePageStatus(ctx context.Context, pageID, status string) er
 	if err != nil {
 		return fmt.Errorf("updating page %s: %w", pageID, err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
+	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 
 	if resp.StatusCode != http.StatusOK {
@@ -460,7 +459,7 @@ func (c *Client) backoff(ctx context.Context, attempt int, serverDelay *time.Dur
 	delay := time.Duration(math.Pow(2, float64(attempt))) * time.Second
 	// Add jitter: 0-50% of delay using crypto/rand via time-based seed.
 	// Jitter precision is not security-sensitive — it prevents thundering herd.
-	jitter := time.Duration(time.Now().UnixNano()%int64(delay/2+1)) //nolint:gosec // jitter, not security
+	jitter := time.Duration(time.Now().UnixNano() % int64(delay/2+1))
 	delay += jitter
 	if serverDelay != nil && *serverDelay > delay {
 		delay = *serverDelay

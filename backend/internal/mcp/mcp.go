@@ -49,7 +49,7 @@ type ActivityReader interface {
 
 // ActivityWriter records activity events for audit trail.
 type ActivityWriter interface {
-	CreateEvent(ctx context.Context, p activity.RecordParams) (int64, error)
+	CreateEvent(ctx context.Context, p *activity.RecordParams) (int64, error)
 }
 
 // ProjectReader provides project lookup for MCP tools.
@@ -62,7 +62,7 @@ type ProjectReader interface {
 
 // CollectedReader provides recent collected data for MCP tools.
 type CollectedReader interface {
-	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]collected.CollectedData, error)
+	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]collected.Item, error)
 }
 
 // StatsReader provides platform statistics for MCP tools.
@@ -85,11 +85,11 @@ type TaskReader interface {
 
 // TaskWriter provides task mutations for MCP tools.
 type TaskWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p task.UpsertByNotionParams) (*task.Task, error)
+	UpsertByNotionPageID(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status task.Status) (*task.Task, error)
 	UpdateMyDay(ctx context.Context, id uuid.UUID, myDay bool) error
 	ClearAllMyDay(ctx context.Context) (int64, error)
-	Update(ctx context.Context, p task.UpdateParams) (*task.Task, error)
+	Update(ctx context.Context, p *task.UpdateParams) (*task.Task, error)
 }
 
 // NotionTaskWriter creates and updates tasks in Notion.
@@ -120,7 +120,7 @@ type ContentReader interface {
 
 // ContentWriter creates content records via MCP tools.
 type ContentWriter interface {
-	CreateContent(ctx context.Context, p content.CreateParams) (*content.Content, error)
+	CreateContent(ctx context.Context, p *content.CreateParams) (*content.Content, error)
 }
 
 // GoalReader provides goal queries for MCP tools.
@@ -141,12 +141,12 @@ type ProjectWriter interface {
 
 // CollectedLatestReader provides latest collected data without mandatory time bounds.
 type CollectedLatestReader interface {
-	LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]collected.CollectedData, error)
+	LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]collected.Item, error)
 }
 
 // CollectedHighlightReader provides high-relevance collected data for morning context.
 type CollectedHighlightReader interface {
-	TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]collected.CollectedData, error)
+	TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]collected.Item, error)
 }
 
 // ContentSearcher extends ContentReader with OR-fallback search.
@@ -169,8 +169,8 @@ type SessionNoteReader interface {
 
 // SessionNoteWriter provides session note mutations for MCP tools.
 type SessionNoteWriter interface {
-	CreateNote(ctx context.Context, p session.CreateParams) (*session.Note, error)
-	UpdateNoteMetadata(ctx context.Context, p session.UpdateMetadataParams) (*session.Note, error)
+	CreateNote(ctx context.Context, p *session.CreateParams) (*session.Note, error)
+	UpdateNoteMetadata(ctx context.Context, p *session.UpdateMetadataParams) (*session.Note, error)
 	ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
@@ -187,14 +187,16 @@ func rrfMerge(textResults []note.SearchResult, filterResults []note.Note, limit 
 	scores := make(map[int64]float64)
 	notes := make(map[int64]note.Note)
 
-	for rank, r := range textResults {
+	for rank := range textResults {
+		r := textResults[rank]
 		scores[r.ID] += 1.0 / (k + float64(rank))
 		notes[r.ID] = r.Note
 	}
-	for rank, n := range filterResults {
+	for rank := range filterResults {
+		n := &filterResults[rank]
 		scores[n.ID] += 1.0 / (k + float64(rank))
 		if _, ok := notes[n.ID]; !ok {
-			notes[n.ID] = n
+			notes[n.ID] = *n
 		}
 	}
 

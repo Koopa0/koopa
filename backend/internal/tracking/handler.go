@@ -44,7 +44,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.CreateTrackingTopic(r.Context(), p)
+	t, err := h.store.CreateTrackingTopic(r.Context(), &p)
 	if err != nil {
 		h.logger.Error("creating tracking topic", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create tracking topic")
@@ -67,7 +67,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.UpdateTrackingTopic(r.Context(), id, p)
+	t, err := h.store.UpdateTrackingTopic(r.Context(), id, &p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "tracking topic not found")

@@ -106,7 +106,7 @@ func ParseKnowledge(raw []byte) (*Knowledge, string, error) {
 }
 
 // extractYAMLBlock extracts the raw YAML bytes and body from Markdown content.
-func extractYAMLBlock(raw []byte) ([]byte, string, error) {
+func extractYAMLBlock(raw []byte) (yamlBytes []byte, body string, err error) {
 	content := bytes.TrimSpace(raw)
 	if !bytes.HasPrefix(content, []byte("---")) {
 		return nil, "", fmt.Errorf("no frontmatter delimiter found")
@@ -118,17 +118,15 @@ func extractYAMLBlock(raw []byte) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("no closing frontmatter delimiter found")
 	}
 
-	yamlBlock := rest[:idx]
-	body := string(rest[idx+4:]) // skip \n---
+	yamlBytes = rest[:idx]
+	body = strings.TrimSpace(string(rest[idx+4:])) // skip \n---
 
-	return yamlBlock, strings.TrimSpace(body), nil
+	return yamlBytes, body, nil
 }
 
 // extractTypeFromTags scans tags for a "type/xxx" pattern, extracts the type,
 // and returns remaining tags (excluding the matched type tag and status tags).
-func extractTypeFromTags(tags []string) (string, []string) {
-	var typ string
-	var remaining []string
+func extractTypeFromTags(tags []string) (typ string, remaining []string) {
 
 	for _, tag := range tags {
 		parts := strings.SplitN(tag, "/", 2)

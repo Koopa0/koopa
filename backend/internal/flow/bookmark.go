@@ -88,12 +88,12 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 		return BookmarkGenerateOutput{}, fmt.Errorf("parsing collected data ID: %w", err)
 	}
 
-	if err := bg.budget.Reserve(estimatedBookmarkTokens); err != nil {
-		return BookmarkGenerateOutput{}, fmt.Errorf("budget reserve: %w", err)
+	if reserveErr := bg.budget.Reserve(estimatedBookmarkTokens); reserveErr != nil {
+		return BookmarkGenerateOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
 	}
 
-	cd, err := genkit.Run(ctx, "fetch-collected", func() (*collected.CollectedData, error) {
-		return bg.reader.CollectedDataByID(ctx, id)
+	cd, err := genkit.Run(ctx, "fetch-collected", func() (*collected.Item, error) {
+		return bg.reader.Item(ctx, id)
 	})
 	if err != nil {
 		return BookmarkGenerateOutput{}, fmt.Errorf("reading collected data %s: %w", id, err)
@@ -104,7 +104,7 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 	userPrompt := buildBookmarkUserPrompt(cd)
 
 	result, err := genkit.Run(ctx, "generate-bookmark", func() (*BookmarkResult, error) {
-		r, resp, err := genkit.GenerateData[BookmarkResult](ctx, bg.g,
+		r, resp, genErr := genkit.GenerateData[BookmarkResult](ctx, bg.g,
 			ai.WithModel(bg.model),
 			ai.WithSystem(bookmarkSystemPrompt),
 			ai.WithPrompt(userPrompt),
@@ -113,11 +113,11 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 				MaxOutputTokens: 2048,
 			}),
 		)
-		if err != nil {
-			return nil, fmt.Errorf("generating bookmark: %w", err)
+		if genErr != nil {
+			return nil, fmt.Errorf("generating bookmark: %w", genErr)
 		}
-		if err := checkFinishReason(resp); err != nil {
-			return nil, err
+		if finishErr := checkFinishReason(resp); finishErr != nil {
+			return nil, finishErr
 		}
 		return r, nil
 	})
@@ -135,7 +135,7 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 }
 
 // buildBookmarkUserPrompt assembles the user prompt for bookmark generation.
-func buildBookmarkUserPrompt(cd *collected.CollectedData) string {
+func buildBookmarkUserPrompt(cd *collected.Item) string {
 	return fmt.Sprintf("標題：%s\n來源：%s\nURL：%s",
 		cd.Title, cd.SourceName, cd.SourceURL)
 }

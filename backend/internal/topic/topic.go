@@ -39,8 +39,8 @@ type UpdateParams struct {
 	SortOrder   *int    `json:"sort_order,omitempty"`
 }
 
-// TopicSlug is a lightweight topic reference for AI classification.
-type TopicSlug struct {
+// Slug is a lightweight topic reference for AI classification.
+type Slug struct {
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 }

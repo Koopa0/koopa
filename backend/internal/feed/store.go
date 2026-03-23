@@ -44,8 +44,9 @@ func (s *Store) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 		return nil, fmt.Errorf("listing feeds: %w", err)
 	}
 	feeds := make([]Feed, len(rows))
-	for i, r := range rows {
-		feeds[i] = dbToFeed(r)
+	for i := range rows {
+		r := rows[i]
+		feeds[i] = dbToFeed(&r)
 	}
 	return feeds, nil
 }
@@ -59,7 +60,7 @@ func (s *Store) Feed(ctx context.Context, id uuid.UUID) (*Feed, error) {
 		}
 		return nil, fmt.Errorf("querying feed %s: %w", id, err)
 	}
-	f := dbToFeed(r)
+	f := dbToFeed(&r)
 	return &f, nil
 }
 
@@ -70,8 +71,9 @@ func (s *Store) EnabledFeeds(ctx context.Context) ([]Feed, error) {
 		return nil, fmt.Errorf("listing enabled feeds: %w", err)
 	}
 	feeds := make([]Feed, len(rows))
-	for i, r := range rows {
-		feeds[i] = dbToFeed(r)
+	for i := range rows {
+		r := rows[i]
+		feeds[i] = dbToFeed(&r)
 	}
 	return feeds, nil
 }
@@ -83,14 +85,15 @@ func (s *Store) EnabledFeedsBySchedule(ctx context.Context, schedule string) ([]
 		return nil, fmt.Errorf("listing enabled feeds for schedule %s: %w", schedule, err)
 	}
 	feeds := make([]Feed, len(rows))
-	for i, r := range rows {
-		feeds[i] = dbToFeed(r)
+	for i := range rows {
+		r := rows[i]
+		feeds[i] = dbToFeed(&r)
 	}
 	return feeds, nil
 }
 
 // CreateFeed inserts a new feed.
-func (s *Store) CreateFeed(ctx context.Context, p CreateParams) (*Feed, error) {
+func (s *Store) CreateFeed(ctx context.Context, p *CreateParams) (*Feed, error) {
 	topics := p.Topics
 	if topics == nil {
 		topics = []string{}
@@ -112,12 +115,12 @@ func (s *Store) CreateFeed(ctx context.Context, p CreateParams) (*Feed, error) {
 		}
 		return nil, fmt.Errorf("creating feed: %w", err)
 	}
-	f := dbToFeed(r)
+	f := dbToFeed(&r)
 	return &f, nil
 }
 
 // UpdateFeed updates a feed.
-func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p UpdateParams) (*Feed, error) {
+func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Feed, error) {
 	var filterJSON json.RawMessage
 	if p.Filter != nil {
 		var err error
@@ -144,7 +147,7 @@ func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p UpdateParams) (*
 		}
 		return nil, fmt.Errorf("updating feed %s: %w", id, err)
 	}
-	f := dbToFeed(r)
+	f := dbToFeed(&r)
 	return &f, nil
 }
 
@@ -202,7 +205,7 @@ func (s *Store) ResetFailure(ctx context.Context, id uuid.UUID, etag, lastModifi
 }
 
 // dbToFeed converts a db.Feed to Feed.
-func dbToFeed(r db.Feed) Feed {
+func dbToFeed(r *db.Feed) Feed {
 	return Feed{
 		ID:                  r.ID,
 		URL:                 r.Url,

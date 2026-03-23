@@ -64,7 +64,8 @@ func (s *Store) PendingReviews(ctx context.Context) ([]Review, error) {
 		return nil, fmt.Errorf("listing pending reviews: %w", err)
 	}
 	reviews := make([]Review, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := rows[i]
 		reviews[i] = Review{
 			ID:            r.ID,
 			ContentID:     r.ContentID,

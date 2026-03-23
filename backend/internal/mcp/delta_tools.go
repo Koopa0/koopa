@@ -66,22 +66,9 @@ func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, in
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	// Resolve since date
-	var since time.Time
-	if input.Since != "" {
-		var err error
-		since, err = time.Parse(time.DateOnly, input.Since)
-		if err != nil {
-			return nil, SessionDeltaOutput{}, fmt.Errorf("invalid date format: %s (expected YYYY-MM-DD)", input.Since)
-		}
-	} else if s.sessionReader != nil {
-		lastNote, err := s.sessionReader.LatestNoteBySource(ctx, "claude")
-		if err == nil {
-			since = time.Date(lastNote.NoteDate.Year(), lastNote.NoteDate.Month(), lastNote.NoteDate.Day(), 0, 0, 0, 0, lastNote.NoteDate.Location())
-		}
-	}
-	if since.IsZero() {
-		since = today.AddDate(0, 0, -3)
+	since, err := s.resolveDeltaSince(ctx, input.Since, today)
+	if err != nil {
+		return nil, SessionDeltaOutput{}, err
 	}
 
 	out := SessionDeltaOutput{
@@ -92,7 +79,38 @@ func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, in
 		},
 	}
 
-	// Tasks completed since
+	s.fetchDeltaCompletedTasks(ctx, &out, since)
+	s.fetchDeltaCreatedTasks(ctx, &out, since)
+	s.fetchDeltaOverdueTasks(ctx, &out, since, today)
+	s.fetchDeltaBuildLogs(ctx, &out, since)
+	s.fetchDeltaSessionData(ctx, &out, since, today)
+
+	return nil, out, nil
+}
+
+// resolveDeltaSince determines the start date for the delta computation.
+// Uses explicit input, falls back to last Claude session date, then defaults to 3 days ago.
+func (s *Server) resolveDeltaSince(ctx context.Context, sinceInput string, today time.Time) (time.Time, error) {
+	if sinceInput != "" {
+		since, err := time.Parse(time.DateOnly, sinceInput)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid date format: %s (expected YYYY-MM-DD)", sinceInput)
+		}
+		return since, nil
+	}
+
+	if s.sessionReader != nil {
+		lastNote, err := s.sessionReader.LatestNoteBySource(ctx, "claude")
+		if err == nil {
+			return time.Date(lastNote.NoteDate.Year(), lastNote.NoteDate.Month(), lastNote.NoteDate.Day(), 0, 0, 0, 0, lastNote.NoteDate.Location()), nil
+		}
+	}
+
+	return today.AddDate(0, 0, -3), nil
+}
+
+// fetchDeltaCompletedTasks fetches tasks completed since the given date.
+func (s *Server) fetchDeltaCompletedTasks(ctx context.Context, out *SessionDeltaOutput, since time.Time) {
 	completed, err := s.tasks.CompletedTasksDetailSince(ctx, since)
 	if err != nil {
 		s.logger.Error("session_delta: completed tasks", "error", err)
@@ -109,8 +127,10 @@ func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 		out.TasksCompleted = append(out.TasksCompleted, dt)
 	}
+}
 
-	// Tasks created since
+// fetchDeltaCreatedTasks fetches tasks created since the given date.
+func (s *Server) fetchDeltaCreatedTasks(ctx context.Context, out *SessionDeltaOutput, since time.Time) {
 	created, err := s.tasks.TasksCreatedSince(ctx, since)
 	if err != nil {
 		s.logger.Error("session_delta: created tasks", "error", err)
@@ -124,14 +144,17 @@ func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, in
 			Date:    t.CreatedAt.Format(time.DateOnly),
 		})
 	}
+}
 
-	// Tasks became overdue (due between since and today, still pending)
+// fetchDeltaOverdueTasks finds pending tasks whose due date fell between since and today.
+func (s *Server) fetchDeltaOverdueTasks(ctx context.Context, out *SessionDeltaOutput, since, today time.Time) {
 	allPending, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
 	if err != nil {
 		s.logger.Error("session_delta: pending tasks", "error", err)
 	}
 	out.TasksBecameOverdue = make([]deltaTask, 0)
-	for _, t := range allPending {
+	for tIdx := range allPending {
+		t := &allPending[tIdx]
 		if t.Due == nil {
 			continue
 		}
@@ -145,14 +168,17 @@ func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, in
 			})
 		}
 	}
+}
 
-	// Build logs
+// fetchDeltaBuildLogs fetches build log content entries since the given date.
+func (s *Server) fetchDeltaBuildLogs(ctx context.Context, out *SessionDeltaOutput, since time.Time) {
 	buildLogs, err := s.contents.RecentByType(ctx, "build-log", since, 10)
 	if err != nil {
 		s.logger.Error("session_delta: build logs", "error", err)
 	}
 	out.BuildLogs = make([]buildLogBrief, 0, len(buildLogs))
-	for _, c := range buildLogs {
+	for cIdx := range buildLogs {
+		c := &buildLogs[cIdx]
 		out.BuildLogs = append(out.BuildLogs, buildLogBrief{
 			Slug:        c.Slug,
 			Title:       c.Title,
@@ -161,59 +187,59 @@ func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, in
 			CreatedAt:   c.CreatedAt.Format(time.DateOnly),
 		})
 	}
+}
 
-	// Insights changed since
-	if s.sessionReader != nil {
-		insightNotes, insightErr := s.sessionReader.InsightsSince(ctx, since)
-		if insightErr != nil && !errors.Is(insightErr, session.ErrNotFound) {
-			s.logger.Error("session_delta: insights", "error", insightErr)
-		}
-		out.InsightsChanged = make([]insightDelta, 0, len(insightNotes))
-		for _, n := range insightNotes {
-			id := parseInsightDelta(&n)
-			out.InsightsChanged = append(out.InsightsChanged, id)
-		}
-
-		// Session notes since
-		notes, notesErr := s.sessionReader.NotesByDate(ctx, since, today, nil)
-		if notesErr != nil {
-			s.logger.Error("session_delta: session notes", "error", notesErr)
-		}
-		out.SessionNotes = make([]sessionNoteBrief, 0, len(notes))
-		for _, n := range notes {
-			excerpt := n.Content
-			if len(excerpt) > 150 {
-				excerpt = excerpt[:150] + "..."
-			}
-			out.SessionNotes = append(out.SessionNotes, sessionNoteBrief{
-				Date:    n.NoteDate.Format(time.DateOnly),
-				Type:    n.NoteType,
-				Source:  n.Source,
-				Excerpt: excerpt,
-			})
-		}
-
-		// Metrics trend since
-		metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
-		if metricsErr != nil {
-			s.logger.Error("session_delta: metrics", "error", metricsErr)
-		}
-		if len(metricsNotes) > 0 {
-			var totalRate float64
-			for _, n := range metricsNotes {
-				if dm := parseDailyMetrics(n); dm != nil {
-					totalRate += dm.CompletionRate
-				}
-			}
-			out.MetricsTrend = &metricsTrendBrief{
-				AvgCompletionRate: totalRate / float64(len(metricsNotes)),
-				Trend:             computeTrend(buildDailyMetricsList(metricsNotes)),
-				DaysTracked:       len(metricsNotes),
-			}
-		}
+// fetchDeltaSessionData fetches insights, session notes, and metrics trend since the given date.
+func (s *Server) fetchDeltaSessionData(ctx context.Context, out *SessionDeltaOutput, since, today time.Time) {
+	if s.sessionReader == nil {
+		return
 	}
 
-	return nil, out, nil
+	insightNotes, insightErr := s.sessionReader.InsightsSince(ctx, since)
+	if insightErr != nil && !errors.Is(insightErr, session.ErrNotFound) {
+		s.logger.Error("session_delta: insights", "error", insightErr)
+	}
+	out.InsightsChanged = make([]insightDelta, 0, len(insightNotes))
+	for i := range insightNotes {
+		out.InsightsChanged = append(out.InsightsChanged, parseInsightDelta(&insightNotes[i]))
+	}
+
+	notes, notesErr := s.sessionReader.NotesByDate(ctx, since, today, nil)
+	if notesErr != nil {
+		s.logger.Error("session_delta: session notes", "error", notesErr)
+	}
+	out.SessionNotes = make([]sessionNoteBrief, 0, len(notes))
+	for i := range notes {
+		n := &notes[i]
+		excerpt := n.Content
+		if len(excerpt) > 150 {
+			excerpt = excerpt[:150] + "..."
+		}
+		out.SessionNotes = append(out.SessionNotes, sessionNoteBrief{
+			Date:    n.NoteDate.Format(time.DateOnly),
+			Type:    n.NoteType,
+			Source:  n.Source,
+			Excerpt: excerpt,
+		})
+	}
+
+	metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
+	if metricsErr != nil {
+		s.logger.Error("session_delta: metrics", "error", metricsErr)
+	}
+	if len(metricsNotes) > 0 {
+		var totalRate float64
+		for i := range metricsNotes {
+			if dm := parseDailyMetrics(&metricsNotes[i]); dm != nil {
+				totalRate += dm.CompletionRate
+			}
+		}
+		out.MetricsTrend = &metricsTrendBrief{
+			AvgCompletionRate: totalRate / float64(len(metricsNotes)),
+			Trend:             computeTrend(buildDailyMetricsList(metricsNotes)),
+			DaysTracked:       len(metricsNotes),
+		}
+	}
 }
 
 // parseInsightDelta extracts delta information from an insight session note.
@@ -243,8 +269,8 @@ func parseInsightDelta(n *session.Note) insightDelta {
 // buildDailyMetricsList parses all metrics notes into dailyMetrics entries.
 func buildDailyMetricsList(notes []session.Note) []dailyMetrics {
 	entries := make([]dailyMetrics, 0, len(notes))
-	for _, n := range notes {
-		if dm := parseDailyMetrics(n); dm != nil {
+	for i := range notes {
+		if dm := parseDailyMetrics(&notes[i]); dm != nil {
 			entries = append(entries, *dm)
 		}
 	}

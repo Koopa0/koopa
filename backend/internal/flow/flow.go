@@ -48,9 +48,9 @@ type BudgetChecker interface {
 	Reserve(tokens int64) error
 }
 
-// CollectedReader reads collected data by ID.
+// CollectedReader reads collected items by ID.
 type CollectedReader interface {
-	CollectedDataByID(ctx context.Context, id uuid.UUID) (*collected.CollectedData, error)
+	Item(ctx context.Context, id uuid.UUID) (*collected.Item, error)
 }
 
 // Flow executes a named AI processing pipeline.

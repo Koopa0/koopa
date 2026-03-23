@@ -60,7 +60,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := h.store.CreateFeed(r.Context(), p)
+	f, err := h.store.CreateFeed(r.Context(), &p)
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
 			api.Error(w, http.StatusConflict, "CONFLICT", "feed url already exists")
@@ -91,7 +91,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := h.store.UpdateFeed(r.Context(), id, p)
+	f, err := h.store.UpdateFeed(r.Context(), id, &p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "feed not found")

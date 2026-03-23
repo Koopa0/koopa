@@ -1,4 +1,11 @@
-// Package reconcile compares Obsidian files and Notion records against local database state.
+// Package reconcile compares Obsidian files (via GitHub) and Notion records
+// against the local database to detect drift. It runs as a weekly cron job.
+//
+// This is a cross-feature orchestration package: it needs data from content,
+// project, goal, and notion to produce a diff report. All dependencies are
+// injected via consumer-defined interfaces to avoid import cycles.
+// It is intentionally a standalone package (not merged into pipeline or any
+// single feature) because reconciliation spans multiple feature boundaries.
 package reconcile
 
 import (
@@ -53,7 +60,7 @@ type Report struct {
 }
 
 // HasIssues reports whether the reconciliation found any discrepancies.
-func (r Report) HasIssues() bool {
+func (r *Report) HasIssues() bool {
 	return len(r.ObsidianMissing) > 0 || len(r.ObsidianOrphaned) > 0 ||
 		len(r.ProjectsMissing) > 0 || len(r.ProjectsOrphaned) > 0 ||
 		len(r.GoalsMissing) > 0 || len(r.GoalsOrphaned) > 0
@@ -70,7 +77,7 @@ type Reconciler struct {
 	content  ObsidianSlugLister
 	projects NotionPageIDLister
 	goals    NotionPageIDLister
-	notion   NotionDBQuerier
+	notionDB NotionDBQuerier
 	notifier Sender
 	roles    RoleLookup
 	logger   *slog.Logger
@@ -82,7 +89,7 @@ func New(
 	content ObsidianSlugLister,
 	projects NotionPageIDLister,
 	goals NotionPageIDLister,
-	notion NotionDBQuerier,
+	notionDB NotionDBQuerier,
 	notifier Sender,
 	roles RoleLookup,
 	logger *slog.Logger,
@@ -92,7 +99,7 @@ func New(
 		content:  content,
 		projects: projects,
 		goals:    goals,
-		notion:   notion,
+		notionDB: notionDB,
 		notifier: notifier,
 		roles:    roles,
 		logger:   logger,
@@ -122,21 +129,21 @@ func (r *Reconciler) Run(ctx context.Context) error {
 		GoalsOrphaned:    notionReport.GoalsOrphaned,
 	}
 
-	return r.sendReport(ctx, report)
+	return r.sendReport(ctx, &report)
 }
 
 // ReconcileObsidian compares GitHub 10-Public-Content/ against local contents and sends a report.
 func (r *Reconciler) ReconcileObsidian(ctx context.Context) error {
 	r.logger.Info("reconcile obsidian starting")
 	report := r.reconcileObsidian(ctx)
-	return r.sendReport(ctx, report)
+	return r.sendReport(ctx, &report)
 }
 
 // ReconcileNotion compares Notion Projects + Goals against local DB and sends a report.
 func (r *Reconciler) ReconcileNotion(ctx context.Context) error {
 	r.logger.Info("reconcile notion starting")
 	report := r.reconcileNotion(ctx)
-	return r.sendReport(ctx, report)
+	return r.sendReport(ctx, &report)
 }
 
 // reconcileObsidian fetches GitHub and local slugs, returns partial report.
@@ -194,7 +201,7 @@ func (r *Reconciler) reconcileNotion(ctx context.Context) Report {
 			r.logger.Warn("reconcile: skipping projects, role lookup failed", "error", err)
 			return
 		}
-		notionProjIDs, notionProjErr = r.notion.QueryPageIDs(ctx, projDBID)
+		notionProjIDs, notionProjErr = r.notionDB.QueryPageIDs(ctx, projDBID)
 	})
 	wg.Go(func() {
 		localGoalIDs, localGoalErr = r.goals.NotionPageIDs(ctx)
@@ -205,7 +212,7 @@ func (r *Reconciler) reconcileNotion(ctx context.Context) Report {
 			r.logger.Warn("reconcile: skipping goals, role lookup failed", "error", err)
 			return
 		}
-		notionGoalIDs, notionGoalErr = r.notion.QueryPageIDs(ctx, goalsDBID)
+		notionGoalIDs, notionGoalErr = r.notionDB.QueryPageIDs(ctx, goalsDBID)
 	})
 	wg.Wait()
 
@@ -235,7 +242,7 @@ func (r *Reconciler) reconcileNotion(ctx context.Context) Report {
 }
 
 // sendReport sends a notification if the report has issues.
-func (r *Reconciler) sendReport(ctx context.Context, report Report) error {
+func (r *Reconciler) sendReport(ctx context.Context, report *Report) error {
 	if !report.HasIssues() {
 		r.logger.Info("reconciliation complete, no issues found")
 		return nil
@@ -274,7 +281,7 @@ func diff(source, target []string) (missing, orphaned []string) {
 	return missing, orphaned
 }
 
-func formatReport(r Report) string {
+func formatReport(r *Report) string {
 	var b strings.Builder
 	b.WriteString("[Reconciliation Report]\n")
 

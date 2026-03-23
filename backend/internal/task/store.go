@@ -28,8 +28,9 @@ func (s *Store) Tasks(ctx context.Context) ([]Task, error) {
 		return nil, fmt.Errorf("listing tasks: %w", err)
 	}
 	tasks := make([]Task, len(rows))
-	for i, r := range rows {
-		tasks[i] = rowToTask(r)
+	for i := range rows {
+		r := rows[i]
+		tasks[i] = rowToTask(&r)
 	}
 	return tasks, nil
 }
@@ -41,7 +42,8 @@ func (s *Store) PendingTasks(ctx context.Context) ([]flow.PendingTask, error) {
 		return nil, fmt.Errorf("listing pending tasks: %w", err)
 	}
 	tasks := make([]flow.PendingTask, 0, len(rows))
-	for _, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		var due string
 		if r.Due != nil {
 			due = r.Due.Format(time.DateOnly)
@@ -55,7 +57,7 @@ func (s *Store) PendingTasks(ctx context.Context) ([]flow.PendingTask, error) {
 }
 
 // UpsertByNotionPageID upserts a task by its Notion page ID.
-func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams) (*Task, error) {
+func (s *Store) UpsertByNotionPageID(ctx context.Context, p *UpsertByNotionParams) (*Task, error) {
 	r, err := s.q.UpsertTaskByNotionPageID(ctx, db.UpsertTaskByNotionPageIDParams{
 		Title:         p.Title,
 		Status:        db.TaskStatus(p.Status),
@@ -72,7 +74,7 @@ func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams
 	if err != nil {
 		return nil, fmt.Errorf("upserting task by notion page %s: %w", p.NotionPageID, err)
 	}
-	t := rowToTask(r)
+	t := rowToTask(&r)
 	return &t, nil
 }
 
@@ -130,10 +132,10 @@ func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([
 		return nil, fmt.Errorf("counting completed tasks by project: %w", err)
 	}
 	result := make([]flow.ProjectCompletion, len(rows))
-	for i, r := range rows {
+	for i := range rows {
 		result[i] = flow.ProjectCompletion{
-			ProjectTitle: r.ProjectTitle,
-			Completed:    r.Completed,
+			ProjectTitle: rows[i].ProjectTitle,
+			Completed:    rows[i].Completed,
 		}
 	}
 	return result, nil
@@ -149,7 +151,8 @@ func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug *string
 		return nil, fmt.Errorf("listing pending tasks with project: %w", err)
 	}
 	tasks := make([]PendingTaskDetail, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		tasks[i] = PendingTaskDetail{
 			ID:            r.ID,
 			Title:         r.Title,
@@ -175,7 +178,7 @@ func (s *Store) TaskByID(ctx context.Context, id uuid.UUID) (*Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying task %s: %w", id, err)
 	}
-	t := rowToTask(r)
+	t := rowToTask(&r)
 	return &t, nil
 }
 
@@ -185,7 +188,7 @@ func (s *Store) TaskByNotionPageID(ctx context.Context, notionPageID string) (*T
 	if err != nil {
 		return nil, fmt.Errorf("querying task by notion page %s: %w", notionPageID, err)
 	}
-	t := rowToTask(r)
+	t := rowToTask(&r)
 	return &t, nil
 }
 
@@ -196,8 +199,8 @@ func (s *Store) PendingTasksByTitle(ctx context.Context, title string) ([]Task, 
 		return nil, fmt.Errorf("searching pending tasks by title %q: %w", title, err)
 	}
 	tasks := make([]Task, len(rows))
-	for i, r := range rows {
-		tasks[i] = rowToTask(r)
+	for i := range rows {
+		tasks[i] = rowToTask(&rows[i])
 	}
 	return tasks, nil
 }
@@ -211,7 +214,7 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (
 	if err != nil {
 		return nil, fmt.Errorf("updating task %s status to %s: %w", id, status, err)
 	}
-	t := rowToTask(r)
+	t := rowToTask(&r)
 	return &t, nil
 }
 
@@ -254,9 +257,7 @@ func (s *Store) DailySummaryHintForDate(ctx context.Context, dayStart, dayEnd ti
 		return nil, fmt.Errorf("querying completed titles: %w", titleErr)
 	}
 	completedTitles := make([]string, len(titles))
-	for i, t := range titles {
-		completedTitles[i] = t
-	}
+	copy(completedTitles, titles)
 
 	return &DailySummaryHint{
 		MyDayTasksTotal:     int(row.MyDayTotal),
@@ -316,7 +317,7 @@ type UpdateParams struct {
 }
 
 // Update updates arbitrary task fields.
-func (s *Store) Update(ctx context.Context, p UpdateParams) (*Task, error) {
+func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Task, error) {
 	params := db.UpdateTaskParams{ID: p.ID}
 	if p.Status != nil {
 		params.Status = db.NullTaskStatus{
@@ -334,11 +335,11 @@ func (s *Store) Update(ctx context.Context, p UpdateParams) (*Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("updating task %s: %w", p.ID, err)
 	}
-	t := rowToTask(r)
+	t := rowToTask(&r)
 	return &t, nil
 }
 
-func rowToTask(r db.Task) Task {
+func rowToTask(r *db.Task) Task {
 	return Task{
 		ID:            r.ID,
 		Title:         r.Title,

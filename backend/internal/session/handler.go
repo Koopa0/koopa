@@ -226,7 +226,7 @@ func (h *Handler) UpdateInsight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, updateErr := h.store.UpdateNoteMetadata(ctx, UpdateMetadataParams{
+	updated, updateErr := h.store.UpdateNoteMetadata(ctx, &UpdateMetadataParams{
 		ID:       id,
 		Metadata: updatedMetadata,
 	})

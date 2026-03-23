@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildBookmarkUserPrompt(t *testing.T) {
-	cd := &collected.CollectedData{
+	cd := &collected.Item{
 		Title:      "Understanding Go Memory Model",
 		SourceName: "Go Blog",
 		SourceURL:  "https://go.dev/blog/memory",

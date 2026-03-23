@@ -63,7 +63,7 @@ func (l *LINE) Send(ctx context.Context, text string) error {
 	if err != nil {
 		return fmt.Errorf("sending line notification: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort
+	defer resp.Body.Close()
 
 	_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 	if resp.StatusCode != http.StatusOK {

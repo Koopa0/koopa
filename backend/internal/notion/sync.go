@@ -63,7 +63,7 @@ func (h *Handler) upsertProject(ctx context.Context, pageID string, props map[st
 	}
 	slug := Slugify(title) + "-" + idSuffix
 
-	p, err := h.projects.UpsertByNotionPageID(ctx, project.UpsertByNotionParams{
+	p, err := h.projects.UpsertByNotionPageID(ctx, &project.UpsertByNotionParams{
 		Slug:         slug,
 		Title:        title,
 		Description:  description,
@@ -92,7 +92,7 @@ func (h *Handler) upsertProject(ctx context.Context, pageID string, props map[st
 			"title":  title,
 			"area":   area,
 		}) // best-effort
-		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+		if _, evErr := h.events.CreateEvent(ctx, &activity.RecordParams{
 			SourceID:  &sourceID,
 			Timestamp: now,
 			EventType: "project_update",
@@ -187,7 +187,7 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 	}
 
 	// Upsert task to local DB (completed_at is managed by the DB via CASE expression)
-	t, err := h.tasks.UpsertByNotionPageID(ctx, task.UpsertByNotionParams{
+	t, err := h.tasks.UpsertByNotionPageID(ctx, &task.UpsertByNotionParams{
 		Title:         title,
 		Status:        localStatus,
 		Due:           due,
@@ -223,7 +223,7 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 			meta["project"] = *projectSlug
 		}
 		metadata, _ := json.Marshal(meta) // best-effort
-		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+		if _, evErr := h.events.CreateEvent(ctx, &activity.RecordParams{
 			SourceID:  &sourceID,
 			Timestamp: now,
 			EventType: "task_status_change",
@@ -273,7 +273,7 @@ func (h *Handler) syncBook(ctx context.Context, pageID string) error {
 			"author": author,
 			"rating": rating,
 		}) // best-effort
-		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+		if _, evErr := h.events.CreateEvent(ctx, &activity.RecordParams{
 			SourceID:  &sourceID,
 			Timestamp: now,
 			EventType: "book_progress",
@@ -359,7 +359,7 @@ func (h *Handler) upsertGoal(ctx context.Context, pageID string, props map[strin
 	area := h.resolveRelationTitle(ctx, props["Tag"])
 	deadline := dateProperty(props["Target Deadline"])
 
-	g, err := h.goals.UpsertByNotionPageID(ctx, goal.UpsertByNotionParams{
+	g, err := h.goals.UpsertByNotionPageID(ctx, &goal.UpsertByNotionParams{
 		Title:        title,
 		Status:       localStatus,
 		Area:         area,
@@ -386,7 +386,7 @@ func (h *Handler) upsertGoal(ctx context.Context, pageID string, props map[strin
 			"area":   area,
 			"title":  title,
 		}) // best-effort
-		if _, evErr := h.events.CreateEvent(ctx, activity.RecordParams{
+		if _, evErr := h.events.CreateEvent(ctx, &activity.RecordParams{
 			SourceID:  &sourceID,
 			Timestamp: now,
 			EventType: "goal_update",

@@ -241,14 +241,14 @@ func (s *Store) Drift(ctx context.Context, days int) (*DriftReport, error) {
 	for goalRows.Next() {
 		var area string
 		var count int
-		if err := goalRows.Scan(&area, &count); err != nil {
-			return nil, err
+		if scanErr := goalRows.Scan(&area, &count); scanErr != nil {
+			return nil, scanErr
 		}
 		goalsByArea[area] = count
 		totalGoals += count
 	}
-	if err := goalRows.Err(); err != nil {
-		return nil, err
+	if rowsErr := goalRows.Err(); rowsErr != nil {
+		return nil, rowsErr
 	}
 
 	// Activity counts by project area (join through projects.area)
@@ -339,7 +339,6 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 		Notes: NoteGrowth{ByType: map[string]int{}},
 	}
 
-
 	// Note growth
 	err := s.dbtx.QueryRow(ctx, `
 		SELECT
@@ -359,13 +358,13 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	for noteRows.Next() {
 		var ntype string
 		var count int
-		if err := noteRows.Scan(&ntype, &count); err != nil {
-			return nil, err
+		if scanErr := noteRows.Scan(&ntype, &count); scanErr != nil {
+			return nil, scanErr
 		}
 		ld.Notes.ByType[ntype] = count
 	}
-	if err := noteRows.Err(); err != nil {
-		return nil, err
+	if rowsErr := noteRows.Err(); rowsErr != nil {
+		return nil, rowsErr
 	}
 
 	// Weekly activity comparison

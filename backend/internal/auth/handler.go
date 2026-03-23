@@ -40,7 +40,7 @@ type Handler struct {
 }
 
 // NewHandler returns an auth Handler configured for Google OAuth.
-func NewHandler(store *Store, jwtSecret string, gcfg GoogleConfig, logger *slog.Logger) *Handler {
+func NewHandler(store *Store, jwtSecret string, gcfg *GoogleConfig, logger *slog.Logger) *Handler {
 	return &Handler{
 		store:  store,
 		secret: []byte(jwtSecret),
@@ -94,7 +94,7 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 	email = strings.ToLower(email)
 
-	if email != strings.ToLower(h.adminEmail) {
+	if !strings.EqualFold(email, h.adminEmail) {
 		h.logger.Warn("unauthorized OAuth login attempt", "email", email)
 		h.redirectError(w, r, "unauthorized")
 		return
@@ -284,7 +284,7 @@ func (h *Handler) fetchGoogleEmail(ctx context.Context, token *oauth2.Token) (st
 }
 
 // redirectError redirects the user to the frontend login page with an error message.
-func (h *Handler) redirectError(w http.ResponseWriter, r *http.Request, msg string) {
+func (h *Handler) redirectError(w http.ResponseWriter, _ *http.Request, msg string) {
 	q := url.Values{}
 	q.Set("error", msg)
 	h.jsRedirect(w, h.frontendURL+"/login?"+q.Encode())

@@ -32,7 +32,7 @@ func (h *SanitizingHandler) Enabled(ctx context.Context, level slog.Level) bool 
 	return h.inner.Enabled(ctx, level)
 }
 
-func (h *SanitizingHandler) Handle(ctx context.Context, r slog.Record) error {
+func (h *SanitizingHandler) Handle(ctx context.Context, r slog.Record) error { //nolint:gocritic // slog.Handler interface requires value receiver
 	sanitized := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
 	r.Attrs(func(a slog.Attr) bool {
 		sanitized.AddAttrs(sanitizeAttr(a))

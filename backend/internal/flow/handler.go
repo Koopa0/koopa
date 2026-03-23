@@ -55,11 +55,11 @@ type Handler struct {
 }
 
 // NewHandler returns a flow Handler.
-func NewHandler(jobs JobSubmitter, runs RunReader, content ContentReader, updater ContentUpdater, logger *slog.Logger) *Handler {
+func NewHandler(jobs JobSubmitter, runs RunReader, contentReader ContentReader, updater ContentUpdater, logger *slog.Logger) *Handler {
 	return &Handler{
 		jobs:    jobs,
 		runs:    runs,
-		content: content,
+		content: contentReader,
 		updater: updater,
 		logger:  logger,
 	}
@@ -74,12 +74,12 @@ func (h *Handler) TriggerPolish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// verify content exists
-	if _, err := h.content.Content(r.Context(), contentID); err != nil {
-		if errors.Is(err, content.ErrNotFound) {
+	if _, checkErr := h.content.Content(r.Context(), contentID); checkErr != nil {
+		if errors.Is(checkErr, content.ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
 			return
 		}
-		h.logger.Error("checking content", "content_id", contentID, "error", err)
+		h.logger.Error("checking content", "content_id", contentID, "error", checkErr)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to check content")
 		return
 	}
@@ -149,7 +149,7 @@ func (h *Handler) ApprovePolish(w http.ResponseWriter, r *http.Request) {
 
 	var req approveRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
@@ -186,14 +186,14 @@ func (h *Handler) ApprovePolish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var output ContentPolishOutput
-	if err := json.Unmarshal(run.Output, &output); err != nil {
-		h.logger.Error("unmarshaling polish output", "run_id", runID, "error", err)
+	if unmarshalErr := json.Unmarshal(run.Output, &output); unmarshalErr != nil {
+		h.logger.Error("unmarshaling polish output", "run_id", runID, "error", unmarshalErr)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to parse polish output")
 		return
 	}
 
 	// apply polished body to content
-	updated, err := h.updater.UpdateContent(r.Context(), contentID, content.UpdateParams{
+	updated, err := h.updater.UpdateContent(r.Context(), contentID, &content.UpdateParams{
 		Body: &output.PolishedBody,
 	})
 	if err != nil {

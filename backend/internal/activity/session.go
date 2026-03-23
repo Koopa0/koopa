@@ -28,24 +28,23 @@ func GroupSessions(events []Event) []Session {
 	// events are DESC — reverse to process chronologically
 	n := len(events)
 	reversed := make([]Event, n)
-	for i, e := range events {
-		reversed[n-1-i] = e
+	for i := range events {
+		reversed[n-1-i] = events[i]
 	}
 
 	var sessions []Session
-	cur := newSessionBuilder(reversed[0])
+	cur := newSessionBuilder(&reversed[0])
 
-	for _, e := range reversed[1:] {
-		if e.Timestamp.Sub(cur.end) >= sessionGap {
+	for i := range reversed[1:] {
+		if reversed[1+i].Timestamp.Sub(cur.end) >= sessionGap {
 			sessions = append(sessions, cur.build())
-			cur = newSessionBuilder(e)
+			cur = newSessionBuilder(&reversed[1+i])
 		} else {
-			cur.add(e)
+			cur.add(&reversed[1+i])
 		}
 	}
 	sessions = append(sessions, cur.build())
 
-	// return newest-first
 	for i, j := 0, len(sessions)-1; i < j; i, j = i+1, j-1 {
 		sessions[i], sessions[j] = sessions[j], sessions[i]
 	}
@@ -60,7 +59,7 @@ type sessionBuilder struct {
 	projects map[string]struct{}
 }
 
-func newSessionBuilder(e Event) *sessionBuilder {
+func newSessionBuilder(e *Event) *sessionBuilder {
 	sb := &sessionBuilder{
 		start:    e.Timestamp,
 		end:      e.Timestamp,
@@ -74,7 +73,7 @@ func newSessionBuilder(e Event) *sessionBuilder {
 	return sb
 }
 
-func (sb *sessionBuilder) add(e Event) {
+func (sb *sessionBuilder) add(e *Event) {
 	if e.Timestamp.After(sb.end) {
 		sb.end = e.Timestamp
 	}

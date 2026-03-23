@@ -29,7 +29,7 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 // CreateEvent inserts an activity event and returns its ID.
 // Returns the existing event ID on dedup hit (via ON CONFLICT DO UPDATE no-op).
 // This is idempotent: re-inserting the same event returns the same ID.
-func (s *Store) CreateEvent(ctx context.Context, p RecordParams) (int64, error) {
+func (s *Store) CreateEvent(ctx context.Context, p *RecordParams) (int64, error) {
 	id, err := s.q.CreateEvent(ctx, db.CreateEventParams{
 		SourceID:  p.SourceID,
 		Timestamp: p.Timestamp,
@@ -58,7 +58,8 @@ func (s *Store) EventsByTimeRange(ctx context.Context, start, end time.Time) ([]
 		return nil, fmt.Errorf("querying events by time range: %w", err)
 	}
 	events := make([]Event, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		events[i] = Event{
 			ID:        r.ID,
 			SourceID:  r.SourceID,
@@ -90,7 +91,8 @@ func (s *Store) EventsByFilters(ctx context.Context, start, end time.Time, sourc
 		return nil, fmt.Errorf("querying events by filters: %w", err)
 	}
 	events := make([]Event, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		events[i] = Event{
 			ID:        r.ID,
 			SourceID:  r.SourceID,
@@ -119,7 +121,8 @@ func (s *Store) EventsByProject(ctx context.Context, projectName string, limit i
 		return nil, fmt.Errorf("querying events by project %s: %w", projectName, err)
 	}
 	events := make([]Event, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		events[i] = Event{
 			ID:        r.ID,
 			SourceID:  r.SourceID,

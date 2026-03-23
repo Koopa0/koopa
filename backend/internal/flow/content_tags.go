@@ -47,7 +47,7 @@ func NewContentTags(g *genkit.Genkit, model ai.Model, logger *slog.Logger) *Cont
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("parsing content-tags input: %w", err)
 		}
-		out, err := ct.run(ctx, in)
+		out, err := ct.run(ctx, &in)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +65,7 @@ func (ct *ContentTags) Run(ctx context.Context, input json.RawMessage) (json.Raw
 }
 
 // run is the typed internal implementation.
-func (ct *ContentTags) run(ctx context.Context, in ContentTagsInput) (ContentTagsOutput, error) {
+func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTagsOutput, error) {
 	ct.logger.Info("content-tags starting", "title", in.Title)
 
 	// Build topic list for the prompt.

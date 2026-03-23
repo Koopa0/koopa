@@ -74,7 +74,7 @@ func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, 
 		projectFilter = &input.Project
 	}
 
-	notes, err := s.sessionReader.InsightsByStatus(ctx, statusFilter, projectFilter, int32(limit))
+	notes, err := s.sessionReader.InsightsByStatus(ctx, statusFilter, projectFilter, int32(min(limit, 1000))) //nolint:gosec // limit is bounded by min()
 	if err != nil {
 		return nil, GetActiveInsightsOutput{}, fmt.Errorf("querying insights: %w", err)
 	}
@@ -246,7 +246,7 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, UpdateInsightOutput{}, fmt.Errorf("marshaling updated metadata: %w", marshalErr)
 	}
 
-	updated, updateErr := s.sessionWriter.UpdateNoteMetadata(ctx, session.UpdateMetadataParams{
+	updated, updateErr := s.sessionWriter.UpdateNoteMetadata(ctx, &session.UpdateMetadataParams{
 		ID:       input.InsightID,
 		Metadata: updatedMetadata,
 	})

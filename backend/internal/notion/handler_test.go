@@ -36,7 +36,7 @@ func signPayload(t *testing.T, payload []byte, secret string) string {
 }
 
 // webhookBody builds a JSON webhook payload. If timestamp is empty, uses now.
-func webhookBody(pageID, dataSourceID, timestamp string) []byte {
+func webhookBody(pageID, dataSourceID, timestamp string) []byte { //nolint:unparam // test helper designed for reuse with varied pageIDs
 	if timestamp == "" {
 		timestamp = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -324,7 +324,7 @@ func TestWebhook_Dedup(t *testing.T) {
 		client:      newTestClient(srv),
 		sourceCache: cache,
 		projects: &mockProjectWriter{
-			upsertFn: func(_ context.Context, _ project.UpsertByNotionParams) (*project.Project, error) {
+			upsertFn: func(_ context.Context, _ *project.UpsertByNotionParams) (*project.Project, error) {
 				upsertCount++
 				return &project.Project{ID: uuid.New()}, nil
 			},

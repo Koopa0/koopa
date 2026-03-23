@@ -51,9 +51,9 @@ type githubFileResponse struct {
 
 // FileContent fetches the raw content of a file from the repository's default branch.
 func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
+	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -64,8 +64,7 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetching file: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
-
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 		if resp.StatusCode == http.StatusNotFound {
@@ -75,8 +74,8 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	}
 
 	var fileResp githubFileResponse
-	if err := json.NewDecoder(resp.Body).Decode(&fileResp); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+	if decodeErr := json.NewDecoder(resp.Body).Decode(&fileResp); decodeErr != nil {
+		return nil, fmt.Errorf("decoding response: %w", decodeErr)
 	}
 
 	if fileResp.Encoding != "base64" {
@@ -103,7 +102,7 @@ type githubDirEntry struct {
 func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, error) {
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -114,8 +113,7 @@ func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, erro
 	if err != nil {
 		return nil, fmt.Errorf("listing directory: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
-
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 		if resp.StatusCode == http.StatusNotFound {
@@ -161,7 +159,7 @@ func (g *GitHub) Compare(ctx context.Context, repo, base, head string) (*activit
 		url.PathEscape(parts[0]), url.PathEscape(parts[1]),
 		url.PathEscape(base), url.PathEscape(head))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating compare request: %w", err)
 	}
@@ -172,8 +170,7 @@ func (g *GitHub) Compare(ctx context.Context, repo, base, head string) (*activit
 	if err != nil {
 		return nil, fmt.Errorf("fetching compare: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
-
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 		return nil, fmt.Errorf("github compare api returned %d for %s...%s", resp.StatusCode, shortSHA(base), shortSHA(head))
@@ -226,7 +223,7 @@ func (g *GitHub) CommitsForRepo(ctx context.Context, repo string, since time.Tim
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/commits?since=%s&per_page=100",
 		repo, since.Format(time.RFC3339))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -237,8 +234,7 @@ func (g *GitHub) CommitsForRepo(ctx context.Context, repo string, since time.Tim
 	if err != nil {
 		return nil, fmt.Errorf("fetching commits: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // best-effort close on read-only HTTP response
-
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
 		return nil, fmt.Errorf("github api returned %d for commits", resp.StatusCode)

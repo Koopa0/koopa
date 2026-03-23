@@ -31,8 +31,8 @@ type Handler struct {
 }
 
 // NewHandler returns a topic Handler.
-func NewHandler(store *Store, content ContentReader, topicCache *ristretto.Cache[string, []Topic], logger *slog.Logger) *Handler {
-	return &Handler{store: store, content: content, topicCache: topicCache, logger: logger}
+func NewHandler(store *Store, contentReader ContentReader, topicCache *ristretto.Cache[string, []Topic], logger *slog.Logger) *Handler {
+	return &Handler{store: store, content: contentReader, topicCache: topicCache, logger: logger}
 }
 
 // List handles GET /api/topics.
@@ -101,7 +101,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.CreateTopic(r.Context(), p)
+	t, err := h.store.CreateTopic(r.Context(), &p)
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
 			api.Error(w, http.StatusConflict, "CONFLICT", "topic slug already exists")
@@ -129,7 +129,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.UpdateTopic(r.Context(), id, p)
+	t, err := h.store.UpdateTopic(r.Context(), id, &p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "topic not found")

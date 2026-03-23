@@ -186,8 +186,8 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 	if f == nil {
 		errMsg := "unknown flow: " + run.FlowName
 		logger.Error(errMsg)
-		if err := r.store.UpdateFailed(ctx, runID, errMsg); err != nil {
-			logger.Error("marking flow run failed", "error", err)
+		if updateErr := r.store.UpdateFailed(ctx, runID, errMsg); updateErr != nil {
+			logger.Error("marking flow run failed", "error", updateErr)
 		}
 		// Unknown flow is a permanent failure — always alert regardless of attempt count.
 		r.alertAlways(ctx, run, errMsg)
@@ -196,8 +196,8 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 
 	logger = logger.With("flow", run.FlowName)
 
-	if err := r.store.UpdateRunning(ctx, runID); err != nil {
-		logger.Error("marking flow run running", "error", err)
+	if updateErr := r.store.UpdateRunning(ctx, runID); updateErr != nil {
+		logger.Error("marking flow run running", "error", updateErr)
 		return
 	}
 
@@ -267,7 +267,7 @@ func (r *Runner) alertIfFinal(ctx context.Context, run *Run, errMsg string) {
 func (r *Runner) alertAlways(ctx context.Context, run *Run, errMsg string) {
 	alertRun := *run
 	alertRun.Error = &errMsg
-	if err := r.alerter.Alert(ctx, alertRun); err != nil {
+	if err := r.alerter.Alert(ctx, &alertRun); err != nil {
 		r.logger.Error("sending failure alert", "run_id", run.ID, "error", err)
 	}
 }

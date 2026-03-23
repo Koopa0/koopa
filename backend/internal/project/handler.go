@@ -74,7 +74,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		p.Status = StatusInProgress
 	}
 
-	proj, err := h.store.CreateProject(r.Context(), p)
+	proj, err := h.store.CreateProject(r.Context(), &p)
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
 			api.Error(w, http.StatusConflict, "CONFLICT", "project slug already exists")
@@ -101,7 +101,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proj, err := h.store.UpdateProject(r.Context(), id, p)
+	proj, err := h.store.UpdateProject(r.Context(), id, &p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "project not found")

@@ -45,7 +45,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "file field is required")
 		return
 	}
-	defer file.Close() //nolint:errcheck // best-effort close on upload file
+	defer file.Close()
 
 	// detect content type from file header bytes
 	buf := make([]byte, 512)
@@ -64,7 +64,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// reset reader to beginning
-	if _, err := file.Seek(0, 0); err != nil {
+	if _, seekErr := file.Seek(0, 0); seekErr != nil {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "unable to process file")
 		return
 	}

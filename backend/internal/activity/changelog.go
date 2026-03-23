@@ -10,7 +10,8 @@ func GroupChangelog(events []Event) []ChangelogDay {
 	var days []ChangelogDay
 	var cur *ChangelogDay
 
-	for _, e := range events {
+	for eIdx := range events {
+		e := events[eIdx]
 		date := e.Timestamp.Format("2006-01-02")
 		if cur == nil || cur.Date != date {
 			if cur != nil {

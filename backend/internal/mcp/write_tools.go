@@ -94,7 +94,7 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 		evTitle := fmt.Sprintf("Completed: %s", updated.Title)
 		sourceID := fmt.Sprintf("task-complete-%s-%s", updated.ID, time.Now().Format(time.DateOnly))
 		//nolint:errcheck // best-effort: don't fail task completion on event recording error
-		s.activityWriter.CreateEvent(ctx, activity.RecordParams{
+		s.activityWriter.CreateEvent(ctx, &activity.RecordParams{
 			SourceID:  &sourceID,
 			Timestamp: time.Now(),
 			Source:    "mcp",
@@ -128,7 +128,7 @@ type CreateTaskOutput struct {
 	Warning string `json:"warning,omitempty"`
 }
 
-func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input CreateTaskInput) (*mcp.CallToolResult, CreateTaskOutput, error) {
+func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *CreateTaskInput) (*mcp.CallToolResult, CreateTaskOutput, error) {
 	if input.Title == "" {
 		return nil, CreateTaskOutput{}, fmt.Errorf("title is required")
 	}
@@ -171,7 +171,7 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input C
 		}
 	}
 
-	upsertParams := task.UpsertByNotionParams{
+	upsertParams := &task.UpsertByNotionParams{
 		Title:        input.Title,
 		Status:       task.StatusTodo,
 		Due:          due,
@@ -235,7 +235,7 @@ type UpdateTaskOutput struct {
 	Updated string `json:"updated_at"`
 }
 
-func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input UpdateTaskInput) (*mcp.CallToolResult, UpdateTaskOutput, error) {
+func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *UpdateTaskInput) (*mcp.CallToolResult, UpdateTaskOutput, error) {
 	if input.TaskID == "" && input.TaskTitle == "" {
 		return nil, UpdateTaskOutput{}, fmt.Errorf("either task_id or task_title is required")
 	}
@@ -245,7 +245,7 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input U
 		return nil, UpdateTaskOutput{}, err
 	}
 
-	params := task.UpdateParams{ID: t.ID}
+	params := &task.UpdateParams{ID: t.ID}
 
 	if input.Status != nil {
 		st := mapInputTaskStatus(*input.Status)
@@ -361,7 +361,7 @@ type LogLearningSessionOutput struct {
 	Status    string `json:"status"`
 }
 
-func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest, input LogLearningSessionInput) (*mcp.CallToolResult, LogLearningSessionOutput, error) {
+func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest, input *LogLearningSessionInput) (*mcp.CallToolResult, LogLearningSessionOutput, error) {
 	if input.Topic == "" {
 		return nil, LogLearningSessionOutput{}, fmt.Errorf("topic is required")
 	}
@@ -395,7 +395,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		body = fmt.Sprintf("**Difficulty**: %s\n\n%s", input.Difficulty, body)
 	}
 
-	created, err := s.contentWriter.CreateContent(ctx, content.CreateParams{
+	created, err := s.contentWriter.CreateContent(ctx, &content.CreateParams{
 		Slug:        slug,
 		Title:       input.Title,
 		Body:        body,
@@ -409,7 +409,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		if errors.Is(err, content.ErrConflict) {
 			slug = fmt.Sprintf("%s-til-%s-%d", topicSlug, now.Format("2006-01-02"), now.Unix()%10000)
-			created, err = s.contentWriter.CreateContent(ctx, content.CreateParams{
+			created, err = s.contentWriter.CreateContent(ctx, &content.CreateParams{
 				Slug:        slug,
 				Title:       input.Title,
 				Body:        body,
@@ -519,7 +519,7 @@ func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 	}
 
-	created, err := s.sessionWriter.CreateNote(ctx, session.CreateParams{
+	created, err := s.sessionWriter.CreateNote(ctx, &session.CreateParams{
 		NoteDate: noteDate,
 		NoteType: input.NoteType,
 		Source:   input.Source,
@@ -570,7 +570,8 @@ func (s *Server) resolveTask(ctx context.Context, taskID, taskTitle string) (*ta
 	}
 	if len(matches) > 1 {
 		titles := make([]string, len(matches))
-		for i, m := range matches {
+		for i := range matches {
+			m := matches[i]
 			titles[i] = fmt.Sprintf("- %s (id: %s)", m.Title, m.ID)
 		}
 		return nil, fmt.Errorf("ambiguous: %d tasks match %q, please specify task_id:\n%s",

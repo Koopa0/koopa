@@ -25,7 +25,7 @@ const sourceCacheTTL = 10 * time.Minute
 
 // ProjectWriter upserts projects from Notion data.
 type ProjectWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error)
+	UpsertByNotionPageID(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error)
 	UpdateLastActivity(ctx context.Context, notionPageID string) error
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
@@ -33,14 +33,14 @@ type ProjectWriter interface {
 
 // GoalWriter upserts goals from Notion data.
 type GoalWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error)
+	UpsertByNotionPageID(ctx context.Context, p *goal.UpsertByNotionParams) (*goal.Goal, error)
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
 // TaskWriter upserts tasks from Notion data.
 type TaskWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p task.UpsertByNotionParams) (*task.Task, error)
+	UpsertByNotionPageID(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error)
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
@@ -52,7 +52,7 @@ type JobSubmitter interface {
 
 // EventRecorder records activity events for Notion sync tracking.
 type EventRecorder interface {
-	CreateEvent(ctx context.Context, p activity.RecordParams) (int64, error)
+	CreateEvent(ctx context.Context, p *activity.RecordParams) (int64, error)
 }
 
 // ProjectSlugResolver resolves a Notion page ID to a project slug.
@@ -305,7 +305,7 @@ const syncRoleTimeout = 5 * time.Minute
 // sync outlives the request, then applies syncRoleTimeout to bound execution.
 func (h *Handler) SyncRoleAsync(ctx context.Context, role string) {
 	h.bgWg.Go(func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncRoleTimeout)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncRoleTimeout) //nolint:govet // intentional context narrowing for background sync
 		defer cancel()
 		h.SyncRole(ctx, role)
 	})

@@ -38,8 +38,8 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 		return nil, fmt.Errorf("listing projects: %w", err)
 	}
 	projects := make([]Project, len(rows))
-	for i, r := range rows {
-		projects[i] = rowToProject(r)
+	for i := range rows {
+		projects[i] = rowToProject(&rows[i])
 	}
 	return projects, nil
 }
@@ -51,8 +51,8 @@ func (s *Store) PublicProjects(ctx context.Context) ([]Project, error) {
 		return nil, fmt.Errorf("listing public projects: %w", err)
 	}
 	projects := make([]Project, len(rows))
-	for i, r := range rows {
-		projects[i] = rowToProject(r)
+	for i := range rows {
+		projects[i] = rowToProject(&rows[i])
 	}
 	return projects, nil
 }
@@ -66,12 +66,12 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error
 		}
 		return nil, fmt.Errorf("querying project %s: %w", slug, err)
 	}
-	p := rowToProject(r)
+	p := rowToProject(&r)
 	return &p, nil
 }
 
 // CreateProject inserts a new project.
-func (s *Store) CreateProject(ctx context.Context, p CreateParams) (*Project, error) {
+func (s *Store) CreateProject(ctx context.Context, p *CreateParams) (*Project, error) {
 	if p.TechStack == nil {
 		p.TechStack = []string{}
 	}
@@ -103,12 +103,12 @@ func (s *Store) CreateProject(ctx context.Context, p CreateParams) (*Project, er
 		}
 		return nil, fmt.Errorf("creating project: %w", err)
 	}
-	proj := rowToProject(r)
+	proj := rowToProject(&r)
 	return &proj, nil
 }
 
 // UpdateProject updates a project.
-func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p UpdateParams) (*Project, error) {
+func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Project, error) {
 	var sortOrder *int32
 	if p.SortOrder != nil {
 		v := int32(*p.SortOrder) // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
@@ -143,7 +143,7 @@ func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p UpdateParams)
 		}
 		return nil, fmt.Errorf("updating project %s: %w", id, err)
 	}
-	proj := rowToProject(r)
+	proj := rowToProject(&r)
 	return &proj, nil
 }
 
@@ -163,8 +163,8 @@ func (s *Store) ActiveProjects(ctx context.Context) ([]Project, error) {
 		return nil, fmt.Errorf("listing active projects: %w", err)
 	}
 	projects := make([]Project, len(rows))
-	for i, r := range rows {
-		projects[i] = rowToProject(r)
+	for i := range rows {
+		projects[i] = rowToProject(&rows[i])
 	}
 	return projects, nil
 }
@@ -178,7 +178,7 @@ func (s *Store) ProjectByAlias(ctx context.Context, alias string) (*Project, err
 		}
 		return nil, fmt.Errorf("querying project by alias %s: %w", alias, err)
 	}
-	p := rowToProject(r)
+	p := rowToProject(&r)
 	return &p, nil
 }
 
@@ -191,7 +191,7 @@ func (s *Store) ProjectByTitle(ctx context.Context, title string) (*Project, err
 		}
 		return nil, fmt.Errorf("querying project by title %s: %w", title, err)
 	}
-	p := rowToProject(r)
+	p := rowToProject(&r)
 	return &p, nil
 }
 
@@ -204,14 +204,14 @@ func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error
 		}
 		return nil, fmt.Errorf("querying project by repo %s: %w", repo, err)
 	}
-	p := rowToProject(r)
+	p := rowToProject(&r)
 	return &p, nil
 }
 
 // UpsertByNotionPageID upserts a project by its Notion page ID.
 // If the generated slug conflicts with an existing project, a numeric
 // suffix is appended (e.g. "-2", "-3") up to 5 attempts.
-func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams) (*Project, error) {
+func (s *Store) UpsertByNotionPageID(ctx context.Context, p *UpsertByNotionParams) (*Project, error) {
 	slug := p.Slug
 	for i := range 5 {
 		r, err := s.q.UpsertProjectByNotionPageID(ctx, db.UpsertProjectByNotionPageIDParams{
@@ -231,7 +231,7 @@ func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams
 			}
 			return nil, fmt.Errorf("upserting project by notion page %s: %w", p.NotionPageID, err)
 		}
-		proj := rowToProject(r)
+		proj := rowToProject(&r)
 		return &proj, nil
 	}
 	return nil, fmt.Errorf("upserting project by notion page %s: slug conflict after retries", p.NotionPageID)
@@ -332,11 +332,11 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, d
 		}
 		return nil, fmt.Errorf("updating project %s status: %w", id, err)
 	}
-	p := rowToProject(r)
+	p := rowToProject(&r)
 	return &p, nil
 }
 
-func rowToProject(r db.Project) Project {
+func rowToProject(r *db.Project) Project {
 	return Project{
 		ID:              r.ID,
 		Slug:            r.Slug,

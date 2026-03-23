@@ -28,8 +28,9 @@ func (s *Store) TrackingTopics(ctx context.Context) ([]Topic, error) {
 		return nil, fmt.Errorf("listing tracking topics: %w", err)
 	}
 	topics := make([]Topic, len(rows))
-	for i, r := range rows {
-		topics[i] = dbToTrackingTopic(r)
+	for i := range rows {
+		r := rows[i]
+		topics[i] = dbToTrackingTopic(&r)
 	}
 	return topics, nil
 }
@@ -43,12 +44,12 @@ func (s *Store) TrackingTopicByID(ctx context.Context, id uuid.UUID) (*Topic, er
 		}
 		return nil, fmt.Errorf("querying tracking topic %s: %w", id, err)
 	}
-	t := dbToTrackingTopic(r)
+	t := dbToTrackingTopic(&r)
 	return &t, nil
 }
 
 // CreateTrackingTopic inserts a new tracking topic.
-func (s *Store) CreateTrackingTopic(ctx context.Context, p CreateParams) (*Topic, error) {
+func (s *Store) CreateTrackingTopic(ctx context.Context, p *CreateParams) (*Topic, error) {
 	if p.Keywords == nil {
 		p.Keywords = []string{}
 	}
@@ -72,12 +73,12 @@ func (s *Store) CreateTrackingTopic(ctx context.Context, p CreateParams) (*Topic
 	if err != nil {
 		return nil, fmt.Errorf("creating tracking topic: %w", err)
 	}
-	t := dbToTrackingTopic(r)
+	t := dbToTrackingTopic(&r)
 	return &t, nil
 }
 
 // UpdateTrackingTopic updates a tracking topic.
-func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p UpdateParams) (*Topic, error) {
+func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Topic, error) {
 	r, err := s.q.UpdateTrackingTopic(ctx, db.UpdateTrackingTopicParams{
 		ID:       id,
 		Name:     p.Name,
@@ -92,7 +93,7 @@ func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p UpdateP
 		}
 		return nil, fmt.Errorf("updating tracking topic %s: %w", id, err)
 	}
-	t := dbToTrackingTopic(r)
+	t := dbToTrackingTopic(&r)
 	return &t, nil
 }
 
@@ -124,7 +125,7 @@ func (s *Store) Keywords(ctx context.Context) ([]string, error) {
 }
 
 // dbToTrackingTopic converts a db.TrackingTopic to Topic.
-func dbToTrackingTopic(r db.TrackingTopic) Topic {
+func dbToTrackingTopic(r *db.TrackingTopic) Topic {
 	return Topic{
 		ID:        r.ID,
 		Name:      r.Name,

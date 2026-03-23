@@ -134,7 +134,7 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 	userPrompt := buildDailyDevLogPrompt(dateStr, events)
 
 	markdown, err := genkit.Run(ctx, "generate-daily-dev-log", func() (string, error) {
-		resp, err := genkit.Generate(ctx, ddl.g,
+		resp, genErr := genkit.Generate(ctx, ddl.g,
 			ai.WithModel(ddl.model),
 			ai.WithSystem(dailyDevLogSystemPrompt),
 			ai.WithPrompt(userPrompt),
@@ -143,11 +143,11 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 				MaxOutputTokens: 2048,
 			}),
 		)
-		if err != nil {
-			return "", fmt.Errorf("generating daily dev log: %w", err)
+		if genErr != nil {
+			return "", fmt.Errorf("generating daily dev log: %w", genErr)
 		}
-		if err := checkFinishReason(resp); err != nil {
-			return "", err
+		if finishErr := checkFinishReason(resp); finishErr != nil {
+			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
@@ -184,7 +184,8 @@ func buildDailyDevLogPrompt(date string, events []activity.Event) string {
 
 	if len(github) > 0 {
 		b.WriteString("== GitHub Events ==\n")
-		for _, e := range github {
+		for i := range github {
+			e := github[i]
 			repo := deref(e.Repo)
 			title := deref(e.Title)
 			fmt.Fprintf(&b, "- [%s] %s: %s\n", e.EventType, repo, title)
@@ -194,7 +195,8 @@ func buildDailyDevLogPrompt(date string, events []activity.Event) string {
 
 	if len(obsidian) > 0 {
 		b.WriteString("== Obsidian Events ==\n")
-		for _, e := range obsidian {
+		for i := range obsidian {
+			e := &obsidian[i]
 			title := deref(e.Title)
 			fmt.Fprintf(&b, "- [%s] %s\n", e.EventType, title)
 		}
@@ -203,7 +205,8 @@ func buildDailyDevLogPrompt(date string, events []activity.Event) string {
 
 	if len(other) > 0 {
 		b.WriteString("== Other Events ==\n")
-		for _, e := range other {
+		for i := range other {
+			e := &other[i]
 			title := deref(e.Title)
 			fmt.Fprintf(&b, "- [%s/%s] %s\n", e.Source, e.EventType, title)
 		}
@@ -215,9 +218,9 @@ func buildDailyDevLogPrompt(date string, events []activity.Event) string {
 
 func groupBySource(events []activity.Event, source string) []activity.Event {
 	var result []activity.Event
-	for _, e := range events {
-		if e.Source == source {
-			result = append(result, e)
+	for i := range events {
+		if events[i].Source == source {
+			result = append(result, events[i])
 		}
 	}
 	return result
@@ -229,9 +232,9 @@ func excludeSources(events []activity.Event, sources ...string) []activity.Event
 		exclude[s] = true
 	}
 	var result []activity.Event
-	for _, e := range events {
-		if !exclude[e.Source] {
-			result = append(result, e)
+	for i := range events {
+		if !exclude[events[i].Source] {
+			result = append(result, events[i])
 		}
 	}
 	return result

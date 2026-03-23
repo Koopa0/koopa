@@ -36,13 +36,13 @@ type Task struct {
 }
 
 // IsRecurring reports whether the task has a recurrence schedule.
-func (t Task) IsRecurring() bool {
+func (t *Task) IsRecurring() bool {
 	return t.RecurInterval != nil && *t.RecurInterval > 0
 }
 
 // NextDue calculates the next due date based on recurrence settings.
 // Returns nil if the task is not recurring or has no due date.
-func (t Task) NextDue() *time.Time {
+func (t *Task) NextDue() *time.Time {
 	if !t.IsRecurring() || t.Due == nil {
 		return nil
 	}

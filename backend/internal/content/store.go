@@ -115,7 +115,8 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 
 	contents := make([]Content, len(rows))
 	ids := make([]uuid.UUID, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
 			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
@@ -176,7 +177,8 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 	}
 
 	contents := make([]Content, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
 			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
@@ -203,7 +205,8 @@ func (s *Store) Search(ctx context.Context, query string, page, perPage int) ([]
 	}
 
 	contents := make([]Content, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
 			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
@@ -225,7 +228,8 @@ func (s *Store) SearchOR(ctx context.Context, query string, page, perPage int) (
 	}
 
 	contents := make([]Content, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
 			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
@@ -246,7 +250,8 @@ func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.T
 		return nil, fmt.Errorf("listing recent %s: %w", contentType, err)
 	}
 	contents := make([]Content, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
 			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
@@ -286,7 +291,8 @@ func (s *Store) PublishedByDateRange(ctx context.Context, start, end time.Time) 
 		return nil, fmt.Errorf("listing published contents by date range: %w", err)
 	}
 	contents := make([]Content, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
 			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.AiMetadata,
@@ -327,7 +333,7 @@ func (s *Store) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
 }
 
 // CreateContent inserts a new content and associates topics within a transaction.
-func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, error) {
+func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, error) {
 	var seriesOrder *int32
 	if p.SeriesOrder != nil {
 		v := int32(*p.SeriesOrder) // #nosec G115 -- series order is a small sequential value, not user-controlled
@@ -374,16 +380,16 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 	}
 
 	for _, topicID := range p.TopicIDs {
-		if err := qtx.AddContentTopic(ctx, db.AddContentTopicParams{
+		if topicErr := qtx.AddContentTopic(ctx, db.AddContentTopicParams{
 			ContentID: r.ID,
 			TopicID:   topicID,
-		}); err != nil {
-			return nil, fmt.Errorf("adding content topic: %w", err)
+		}); topicErr != nil {
+			return nil, fmt.Errorf("adding content topic: %w", topicErr)
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing transaction: %w", err)
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		return nil, fmt.Errorf("committing transaction: %w", commitErr)
 	}
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
@@ -401,7 +407,7 @@ func (s *Store) CreateContent(ctx context.Context, p CreateParams) (*Content, er
 }
 
 // UpdateContent updates a content and replaces topic associations within a transaction.
-func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams) (*Content, error) {
+func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Content, error) {
 	var readingTime *int32
 	if p.ReadingTime != nil {
 		v := int32(*p.ReadingTime) // #nosec G115 -- reading time in minutes is bounded, not user-controlled
@@ -457,21 +463,21 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p UpdateParams)
 	}
 
 	if p.TopicIDs != nil {
-		if err := qtx.DeleteContentTopics(ctx, id); err != nil {
-			return nil, fmt.Errorf("clearing content topics: %w", err)
+		if deleteErr := qtx.DeleteContentTopics(ctx, id); deleteErr != nil {
+			return nil, fmt.Errorf("clearing content topics: %w", deleteErr)
 		}
 		for _, topicID := range p.TopicIDs {
-			if err := qtx.AddContentTopic(ctx, db.AddContentTopicParams{
+			if topicErr := qtx.AddContentTopic(ctx, db.AddContentTopicParams{
 				ContentID: id,
 				TopicID:   topicID,
-			}); err != nil {
-				return nil, fmt.Errorf("adding content topic: %w", err)
+			}); topicErr != nil {
+				return nil, fmt.Errorf("adding content topic: %w", topicErr)
 			}
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing transaction: %w", err)
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		return nil, fmt.Errorf("committing transaction: %w", commitErr)
 	}
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,

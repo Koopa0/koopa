@@ -24,7 +24,7 @@ type PublishedContentLister interface {
 
 // RecentCollectedLister lists recently collected data in a date range.
 type RecentCollectedLister interface {
-	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]collected.CollectedData, error)
+	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]collected.Item, error)
 }
 
 // ActiveProjectLister lists active projects.
@@ -114,15 +114,15 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 		return DigestGenerateOutput{}, fmt.Errorf("parsing end date: %w", err)
 	}
 
-	if err := dg.budget.Reserve(estimatedDigestTokens); err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("budget reserve: %w", err)
+	if reserveErr := dg.budget.Reserve(estimatedDigestTokens); reserveErr != nil {
+		return DigestGenerateOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
 	}
 
 	dg.logger.Info("digest-generate starting", "start", in.StartDate, "end", in.EndDate)
 
 	var (
 		published      []content.Content
-		highScoreItems []collected.CollectedData
+		highScoreItems []collected.Item
 		activeProjects []project.Project
 	)
 
@@ -147,7 +147,7 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 	userPrompt := buildDigestUserPrompt(published, highScoreItems, activeProjects, in.StartDate, in.EndDate)
 
 	markdown, err := genkit.Run(ctx, "generate-digest", func() (string, error) {
-		resp, err := genkit.Generate(ctx, dg.g,
+		resp, genErr := genkit.Generate(ctx, dg.g,
 			ai.WithModel(dg.model),
 			ai.WithSystem(digestSystemPrompt),
 			ai.WithPrompt(userPrompt),
@@ -156,11 +156,11 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 				MaxOutputTokens: 4096,
 			}),
 		)
-		if err != nil {
-			return "", fmt.Errorf("generating digest: %w", err)
+		if genErr != nil {
+			return "", fmt.Errorf("generating digest: %w", genErr)
 		}
-		if err := checkFinishReason(resp); err != nil {
-			return "", err
+		if finishErr := checkFinishReason(resp); finishErr != nil {
+			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
@@ -180,7 +180,7 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 // buildDigestUserPrompt assembles material for the digest prompt.
 func buildDigestUserPrompt(
 	published []content.Content,
-	collected []collected.CollectedData,
+	collectedData []collected.Item,
 	projects []project.Project,
 	startDate, endDate string,
 ) string {
@@ -189,14 +189,16 @@ func buildDigestUserPrompt(
 
 	if len(published) > 0 {
 		b.WriteString("## 本週發佈的內容\n\n")
-		for _, c := range published {
+		for i := range published {
+			c := &published[i]
 			fmt.Fprintf(&b, "- **%s** (%s)\n  摘要：%s\n\n", c.Title, c.Type, c.Excerpt)
 		}
 	}
 
-	if len(collected) > 0 {
+	if len(collectedData) > 0 {
 		b.WriteString("## 高評分收集文章\n\n")
-		for _, cd := range collected {
+		for i := range collectedData {
+			cd := &collectedData[i]
 			fmt.Fprintf(&b, "- **%s**\n  來源: %s\n  URL: %s\n\n",
 				cd.Title, cd.SourceName, cd.SourceURL)
 		}
@@ -204,7 +206,8 @@ func buildDigestUserPrompt(
 
 	if len(projects) > 0 {
 		b.WriteString("## 活躍專案\n\n")
-		for _, p := range projects {
+		for i := range projects {
+			p := &projects[i]
 			fmt.Fprintf(&b, "- **%s** (%s) — %s\n", p.Title, p.Status, p.Description)
 		}
 	}

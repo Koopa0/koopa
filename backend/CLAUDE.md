@@ -16,11 +16,12 @@
 
 ## Core Principles
 
-1. **Package-by-feature, not by layer** — no services/, repositories/, handlers/, models/ directories
-2. **Standard library first** — no frameworks (chi, gin, echo), no testify, no unnecessary abstractions
-3. **Simplicity over cleverness** — obvious code beats elegant code
-4. **No DDD** — no domain/, infrastructure/, application/ layering
-5. **Errors are values** — wrap with `%w`, handle once, lowercase messages
+1. **Design before mechanics** — understand WHY before changing WHAT (see `design-thinking.md`)
+2. **Package-by-feature, not by layer** — no services/, repositories/, handlers/, models/ directories
+3. **Standard library first** — no frameworks (chi, gin, echo), no testify, no unnecessary abstractions
+4. **Simplicity over cleverness** — obvious code beats elegant code
+5. **No DDD** — no domain/, infrastructure/, application/ layering
+6. **Errors are values** — wrap with `%w`, handle once, lowercase messages
 
 ## Project Layout
 
@@ -87,7 +88,7 @@ Every code change follows one of three tiers:
 | `go-reviewer` | sonnet | project | Code review for Go idioms and conventions |
 | `db-reviewer` | sonnet | project | Review SQL, migrations, pgx usage, sqlc config |
 | `security-reviewer` | sonnet | project | Security review (OWASP, SQL injection, secrets) |
-| `review-code` | opus | project | **L2 quality gate** — paranoid 7-dimension deep review |
+| `review-code` | opus | project | **L2 quality gate** — paranoid 8-dimension deep review (includes design intent) |
 | `perf-reviewer` | sonnet | — | Performance review (allocations, N+1, hot paths) |
 | `test-writer` | sonnet | — | Generate table-driven, bench, fuzz, integration tests |
 | `scaffold` | sonnet | — | Create new feature package in `internal/` |
@@ -144,6 +145,9 @@ Agents with `memory: project` write directly to their `.claude/agent-memory/` fi
 | `execute-plan` | `/execute-plan` | Execute approved plan task-by-task with fresh subagents + crafted context |
 | `test-strategy` | `/test-strategy` | Test type decision tree (Q0-Q6): determines WHICH tests to write per function |
 | `research` | `/research` | Targeted external research before planning (triggered by comprehend's "Research Needed") |
+| `design-review` | `/design-review` | Deep design review: package purpose, naming concepts, stdlib comparison, new-reader confusion |
+| `build-log` | `/build-log` | Record development session as a build log via MCP |
+| `claude-code-advanced` | `/claude-code-advanced` | Advanced Claude Code features reference (Teams, Tasks, /batch, /loop, worktrees) |
 
 ## Verification Workflow
 

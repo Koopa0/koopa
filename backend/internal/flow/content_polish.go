@@ -36,11 +36,11 @@ type ContentPolish struct {
 }
 
 // NewContentPolish returns a ContentPolish flow.
-func NewContentPolish(g *genkit.Genkit, model ai.Model, content ContentReader, logger *slog.Logger) *ContentPolish {
+func NewContentPolish(g *genkit.Genkit, model ai.Model, reader ContentReader, logger *slog.Logger) *ContentPolish {
 	cp := &ContentPolish{
 		g:       g,
 		model:   model,
-		content: content,
+		content: reader,
 		logger:  logger,
 	}
 	cp.gf = genkit.DefineFlow(g, "content-polish", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
@@ -84,7 +84,7 @@ func (cp *ContentPolish) run(ctx context.Context, in ContentPolishInput) (Conten
 	userPrompt := buildUserPrompt(c)
 
 	polished, err := genkit.Run(ctx, "polish", func() (string, error) {
-		resp, err := genkit.Generate(ctx, cp.g,
+		resp, genErr := genkit.Generate(ctx, cp.g,
 			ai.WithModel(cp.model),
 			ai.WithSystem(polishSystemPrompt),
 			ai.WithPrompt(userPrompt),
@@ -93,11 +93,11 @@ func (cp *ContentPolish) run(ctx context.Context, in ContentPolishInput) (Conten
 				MaxOutputTokens: 8192,
 			}),
 		)
-		if err != nil {
-			return "", fmt.Errorf("generating polish: %w", err)
+		if genErr != nil {
+			return "", fmt.Errorf("generating polish: %w", genErr)
 		}
-		if err := checkFinishReason(resp); err != nil {
-			return "", err
+		if finishErr := checkFinishReason(resp); finishErr != nil {
+			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})

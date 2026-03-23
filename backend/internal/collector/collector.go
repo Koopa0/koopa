@@ -29,8 +29,8 @@ const (
 
 // CollectedWriter creates collected data records.
 type CollectedWriter interface {
-	CreateCollectedData(ctx context.Context, p collected.CreateParams) (*collected.CollectedData, error)
-	CollectedDataByURLHash(ctx context.Context, urlHash string) (*collected.CollectedData, error)
+	CreateItem(ctx context.Context, p *collected.CreateParams) (*collected.Item, error)
+	ItemByURLHash(ctx context.Context, urlHash string) (*collected.Item, error)
 }
 
 // FeedUpdater updates feed status after fetch.
@@ -96,7 +96,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		return nil, fmt.Errorf("invalid feed url scheme: %s", f.URL)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -170,7 +170,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		urlHash := hashURL(item.Link)
 
 		// dedup by URL hash
-		if _, err := c.writer.CollectedDataByURLHash(ctx, urlHash); err == nil {
+		if _, err := c.writer.ItemByURLHash(ctx, urlHash); err == nil {
 			// already exists, skip
 			continue
 		} else if !errors.Is(err, collected.ErrNotFound) {
@@ -186,7 +186,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 
 		score := Score(item.Title, content, tags, keywords)
 
-		cd, err := c.writer.CreateCollectedData(ctx, collected.CreateParams{
+		cd, err := c.writer.CreateItem(ctx, &collected.CreateParams{
 			SourceURL:       item.Link,
 			SourceName:      f.Name,
 			Title:           item.Title,

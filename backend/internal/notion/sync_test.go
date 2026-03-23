@@ -26,13 +26,13 @@ import (
 // --------------------------------------------------------------------------
 
 type mockProjectWriter struct {
-	upsertFn             func(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error)
+	upsertFn             func(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error)
 	archiveFn            func(ctx context.Context, notionPageID string) (int64, error)
 	archiveOrphanFn      func(ctx context.Context, activeIDs []string) (int64, error)
 	updateLastActivityFn func(ctx context.Context, notionPageID string) error
 }
 
-func (m *mockProjectWriter) UpsertByNotionPageID(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error) {
+func (m *mockProjectWriter) UpsertByNotionPageID(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error) {
 	if m.upsertFn != nil {
 		return m.upsertFn(ctx, p)
 	}
@@ -61,12 +61,12 @@ func (m *mockProjectWriter) UpdateLastActivity(ctx context.Context, notionPageID
 }
 
 type mockGoalWriter struct {
-	upsertFn        func(ctx context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error)
+	upsertFn        func(ctx context.Context, p *goal.UpsertByNotionParams) (*goal.Goal, error)
 	archiveFn       func(ctx context.Context, notionPageID string) (int64, error)
 	archiveOrphanFn func(ctx context.Context, activeIDs []string) (int64, error)
 }
 
-func (m *mockGoalWriter) UpsertByNotionPageID(ctx context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error) {
+func (m *mockGoalWriter) UpsertByNotionPageID(ctx context.Context, p *goal.UpsertByNotionParams) (*goal.Goal, error) {
 	if m.upsertFn != nil {
 		return m.upsertFn(ctx, p)
 	}
@@ -88,12 +88,12 @@ func (m *mockGoalWriter) ArchiveOrphanNotion(ctx context.Context, activeIDs []st
 }
 
 type mockTaskWriter struct {
-	upsertFn        func(ctx context.Context, p task.UpsertByNotionParams) (*task.Task, error)
+	upsertFn        func(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error)
 	archiveFn       func(ctx context.Context, notionPageID string) (int64, error)
 	archiveOrphanFn func(ctx context.Context, activeIDs []string) (int64, error)
 }
 
-func (m *mockTaskWriter) UpsertByNotionPageID(ctx context.Context, p task.UpsertByNotionParams) (*task.Task, error) {
+func (m *mockTaskWriter) UpsertByNotionPageID(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error) {
 	if m.upsertFn != nil {
 		return m.upsertFn(ctx, p)
 	}
@@ -176,7 +176,7 @@ func newTestSourceCache(t *testing.T) *ristretto.Cache[string, string] {
 }
 
 // notionPageJSON builds a minimal Notion page JSON response for test servers.
-func notionPageJSON(id string, inTrash, archived bool, props map[string]string) string {
+func notionPageJSON(id string, inTrash, archived bool, props map[string]string) string { //nolint:unparam // test helper designed for varied page IDs
 	type titleItem struct {
 		PlainText string `json:"plain_text"`
 	}
@@ -369,7 +369,7 @@ func TestUpsertProject(t *testing.T) {
 		name        string
 		props       map[string]json.RawMessage
 		pageID      string
-		upsertFn    func(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error)
+		upsertFn    func(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error)
 		wantErr     bool
 		wantStatus  project.Status
 		wantSlugPfx string // slug must start with this prefix
@@ -445,7 +445,7 @@ func TestUpsertProject(t *testing.T) {
 				"Name":   mustMarshalTitle("Something"),
 				"Status": mustMarshalStatus("Doing"),
 			},
-			upsertFn: func(_ context.Context, _ project.UpsertByNotionParams) (*project.Project, error) {
+			upsertFn: func(_ context.Context, _ *project.UpsertByNotionParams) (*project.Project, error) {
 				return nil, errors.New("db unavailable")
 			},
 			wantErr: true,
@@ -461,8 +461,8 @@ func TestUpsertProject(t *testing.T) {
 			if tt.upsertFn != nil {
 				pw.upsertFn = tt.upsertFn
 			} else {
-				pw.upsertFn = func(_ context.Context, p project.UpsertByNotionParams) (*project.Project, error) {
-					capturedParams = p
+				pw.upsertFn = func(_ context.Context, p *project.UpsertByNotionParams) (*project.Project, error) {
+					capturedParams = *p
 					return &project.Project{ID: uuid.New(), Slug: p.Slug, Title: p.Title, Status: p.Status}, nil
 				}
 			}
@@ -506,7 +506,7 @@ func TestSyncProject(t *testing.T) {
 		name         string
 		notionResp   string
 		notionStatus int
-		upsertFn     func(ctx context.Context, p project.UpsertByNotionParams) (*project.Project, error)
+		upsertFn     func(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error)
 		archiveFn    func(ctx context.Context, notionPageID string) (int64, error)
 		wantErr      bool
 		wantErrIs    error
@@ -574,7 +574,7 @@ func TestSyncProject(t *testing.T) {
 				archiveFn: func(_ context.Context, _ string) (int64, error) {
 					archived = true
 					if tt.archiveFn != nil {
-						return tt.archiveFn(nil, "") //nolint:staticcheck // context unused in mock
+						return tt.archiveFn(nil, "")
 					}
 					return 1, nil
 				},
@@ -983,7 +983,7 @@ func TestUpsertGoalStatusMapping(t *testing.T) {
 
 			var capturedStatus goal.Status
 			gw := &mockGoalWriter{
-				upsertFn: func(_ context.Context, p goal.UpsertByNotionParams) (*goal.Goal, error) {
+				upsertFn: func(_ context.Context, p *goal.UpsertByNotionParams) (*goal.Goal, error) {
 					capturedStatus = p.Status
 					return &goal.Goal{ID: uuid.New(), Title: p.Title, Status: p.Status}, nil
 				},
@@ -1037,7 +1037,7 @@ func TestUpsertTaskStatusMapping(t *testing.T) {
 
 			var capturedStatus task.Status
 			tw := &mockTaskWriter{
-				upsertFn: func(_ context.Context, p task.UpsertByNotionParams) (*task.Task, error) {
+				upsertFn: func(_ context.Context, p *task.UpsertByNotionParams) (*task.Task, error) {
 					capturedStatus = p.Status
 					return &task.Task{ID: uuid.New(), Title: p.Title, Status: p.Status}, nil
 				},
@@ -1074,7 +1074,7 @@ func TestUpsertTaskTitleFallback(t *testing.T) {
 
 	var capturedTitle string
 	tw := &mockTaskWriter{
-		upsertFn: func(_ context.Context, p task.UpsertByNotionParams) (*task.Task, error) {
+		upsertFn: func(_ context.Context, p *task.UpsertByNotionParams) (*task.Task, error) {
 			capturedTitle = p.Title
 			return &task.Task{ID: uuid.New(), Title: p.Title, Status: p.Status}, nil
 		},

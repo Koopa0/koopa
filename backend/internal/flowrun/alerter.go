@@ -7,7 +7,7 @@ import (
 
 // Alerter sends alerts when flow runs fail permanently.
 type Alerter interface {
-	Alert(ctx context.Context, run Run) error
+	Alert(ctx context.Context, run *Run) error
 }
 
 // LogAlerter logs permanently failed flow runs using slog.
@@ -21,7 +21,7 @@ func NewLogAlerter(logger *slog.Logger) *LogAlerter {
 }
 
 // Alert logs a permanently failed flow run.
-func (a *LogAlerter) Alert(_ context.Context, run Run) error {
+func (a *LogAlerter) Alert(_ context.Context, run *Run) error {
 	a.logger.Error("flow run permanently failed",
 		"run_id", run.ID,
 		"flow_name", run.FlowName,

@@ -53,7 +53,8 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	// Build area → projects mapping
 	projectsByArea := make(map[string][]string)
-	for _, p := range projects {
+	for pIdx := range projects {
+		p := projects[pIdx]
 		if p.Area != "" {
 			projectsByArea[p.Area] = append(projectsByArea[p.Area], p.Title)
 		}
@@ -67,7 +68,8 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	// Build goal progress
 	result := make([]goalProgressDetail, 0)
-	for _, g := range goals {
+	for gIdx := range goals {
+		g := goals[gIdx]
 		if string(g.Status) == "done" || string(g.Status) == "abandoned" {
 			continue
 		}

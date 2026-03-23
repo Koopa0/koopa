@@ -62,7 +62,7 @@ type Deps struct {
 }
 
 // RegisterRoutes registers all API routes on the given mux.
-func RegisterRoutes(mux *http.ServeMux, d Deps, authMid, rlMid func(http.Handler) http.Handler) {
+func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handler) http.Handler) {
 	// health checks — no auth, no middleware
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

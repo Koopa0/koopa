@@ -57,7 +57,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.CreateTag(r.Context(), p)
+	t, err := h.store.CreateTag(r.Context(), &p)
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
 			api.Error(w, http.StatusConflict, "CONFLICT", "tag slug already exists")
@@ -95,7 +95,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.UpdateTag(r.Context(), id, p)
+	t, err := h.store.UpdateTag(r.Context(), id, &p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "tag not found")

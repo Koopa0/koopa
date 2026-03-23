@@ -26,14 +26,15 @@ func (s *Store) Goals(ctx context.Context) ([]Goal, error) {
 		return nil, fmt.Errorf("listing goals: %w", err)
 	}
 	goals := make([]Goal, len(rows))
-	for i, r := range rows {
-		goals[i] = rowToGoal(r)
+	for i := range rows {
+		r := rows[i]
+		goals[i] = rowToGoal(&r)
 	}
 	return goals, nil
 }
 
 // UpsertByNotionPageID upserts a goal by its Notion page ID.
-func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams) (*Goal, error) {
+func (s *Store) UpsertByNotionPageID(ctx context.Context, p *UpsertByNotionParams) (*Goal, error) {
 	r, err := s.q.UpsertGoalByNotionPageID(ctx, db.UpsertGoalByNotionPageIDParams{
 		Title:        p.Title,
 		Description:  p.Description,
@@ -46,7 +47,7 @@ func (s *Store) UpsertByNotionPageID(ctx context.Context, p UpsertByNotionParams
 	if err != nil {
 		return nil, fmt.Errorf("upserting goal by notion page %s: %w", p.NotionPageID, err)
 	}
-	g := rowToGoal(r)
+	g := rowToGoal(&r)
 	return &g, nil
 }
 
@@ -94,7 +95,7 @@ func (s *Store) GoalByTitle(ctx context.Context, title string) (*Goal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying goal by title %q: %w", title, err)
 	}
-	g := rowToGoal(r)
+	g := rowToGoal(&r)
 	return &g, nil
 }
 
@@ -107,11 +108,11 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (
 	if err != nil {
 		return nil, fmt.Errorf("updating goal %s status: %w", id, err)
 	}
-	g := rowToGoal(r)
+	g := rowToGoal(&r)
 	return &g, nil
 }
 
-func rowToGoal(r db.Goal) Goal {
+func rowToGoal(r *db.Goal) Goal {
 	return Goal{
 		ID:           r.ID,
 		Title:        r.Title,

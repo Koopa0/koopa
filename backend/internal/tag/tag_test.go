@@ -39,3 +39,43 @@ func TestSlugify(t *testing.T) {
 		})
 	}
 }
+
+// FuzzSlugify verifies Slugify never panics on arbitrary input and always
+// produces valid slug characters (lowercase letters, digits, hyphens, unicode letters).
+// Scene: user-supplied tags from Obsidian YAML can contain any UTF-8 string.
+func FuzzSlugify(f *testing.F) {
+	f.Add("golang")
+	f.Add("Dynamic Programming")
+	f.Add("C++")
+	f.Add("日本語")
+	f.Add("")
+	f.Add("---")
+	f.Add("a  b\tc\nd")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		result := Slugify(input)
+		// Must not end with hyphen
+		if result != "" && result[len(result)-1] == '-' {
+			t.Errorf("Slugify(%q) = %q ends with hyphen", input, result)
+		}
+		// Must not start with hyphen
+		if result != "" && result[0] == '-' {
+			t.Errorf("Slugify(%q) = %q starts with hyphen", input, result)
+		}
+		// Must not contain consecutive hyphens
+		for i := 1; i < len(result); i++ {
+			if result[i] == '-' && result[i-1] == '-' {
+				t.Errorf("Slugify(%q) = %q has consecutive hyphens", input, result)
+				break
+			}
+		}
+	})
+}
+
+// BenchmarkSlugify measures slug generation for a realistic tag.
+// Scene: ResolveTags processes N tags per content sync — slug perf matters at scale.
+func BenchmarkSlugify(b *testing.B) {
+	for b.Loop() {
+		Slugify("Dynamic Programming Algorithms")
+	}
+}

@@ -146,7 +146,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	localTask, upsertErr := h.store.UpsertByNotionPageID(ctx, UpsertByNotionParams{
+	localTask, upsertErr := h.store.UpsertByNotionPageID(ctx, &UpsertByNotionParams{
 		Title:        req.Title,
 		Status:       StatusTodo,
 		Due:          due,
@@ -206,7 +206,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	params := UpdateParams{ID: id}
+	params := &UpdateParams{ID: id}
 
 	if req.Status != nil {
 		st := mapHTTPTaskStatus(*req.Status)

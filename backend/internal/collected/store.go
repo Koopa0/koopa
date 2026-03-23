@@ -31,8 +31,8 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
-// CollectedData returns a paginated list of collected data.
-func (s *Store) CollectedData(ctx context.Context, f Filter) ([]CollectedData, int, error) {
+// Items returns a paginated list of collected items.
+func (s *Store) Items(ctx context.Context, f Filter) ([]Item, int, error) {
 	status := nullCollectedStatus(f.Status)
 	limit := int32(f.PerPage)                 // #nosec G115 -- pagination values are bounded by API layer
 	offset := int32((f.Page - 1) * f.PerPage) // #nosec G115 -- pagination values are bounded by API layer
@@ -63,16 +63,17 @@ func (s *Store) CollectedData(ctx context.Context, f Filter) ([]CollectedData, i
 		return nil, 0, fmt.Errorf("counting collected data: %w", err)
 	}
 
-	data := make([]CollectedData, len(rows))
-	for i, r := range rows {
-		data[i] = datumToCollectedData(r)
+	data := make([]Item, len(rows))
+	for i := range rows {
+		r := rows[i]
+		data[i] = datumToItem(&r)
 	}
 
 	return data, int(count), nil
 }
 
-// CollectedDataByID returns a single collected data item by ID.
-func (s *Store) CollectedDataByID(ctx context.Context, id uuid.UUID) (*CollectedData, error) {
+// Item returns a single collected item by ID.
+func (s *Store) Item(ctx context.Context, id uuid.UUID) (*Item, error) {
 	r, err := s.q.CollectedDataByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -80,7 +81,7 @@ func (s *Store) CollectedDataByID(ctx context.Context, id uuid.UUID) (*Collected
 		}
 		return nil, fmt.Errorf("querying collected data %s: %w", id, err)
 	}
-	d := datumToCollectedData(r)
+	d := datumToItem(&r)
 	return &d, nil
 }
 
@@ -105,8 +106,8 @@ func (s *Store) Ignore(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// CreateCollectedData inserts a new collected data item.
-func (s *Store) CreateCollectedData(ctx context.Context, p CreateParams) (*CollectedData, error) {
+// CreateItem inserts a new collected item.
+func (s *Store) CreateItem(ctx context.Context, p *CreateParams) (*Item, error) {
 	r, err := s.q.CreateCollectedData(ctx, db.CreateCollectedDataParams{
 		SourceUrl:       p.SourceURL,
 		SourceName:      p.SourceName,
@@ -123,12 +124,12 @@ func (s *Store) CreateCollectedData(ctx context.Context, p CreateParams) (*Colle
 		}
 		return nil, fmt.Errorf("creating collected data: %w", err)
 	}
-	d := datumToCollectedData(r)
+	d := datumToItem(&r)
 	return &d, nil
 }
 
-// CollectedDataByURLHash returns a single collected data item by URL hash.
-func (s *Store) CollectedDataByURLHash(ctx context.Context, urlHash string) (*CollectedData, error) {
+// ItemByURLHash returns a single collected item by URL hash.
+func (s *Store) ItemByURLHash(ctx context.Context, urlHash string) (*Item, error) {
 	r, err := s.q.CollectedDataByURLHash(ctx, urlHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -136,7 +137,7 @@ func (s *Store) CollectedDataByURLHash(ctx context.Context, urlHash string) (*Co
 		}
 		return nil, fmt.Errorf("querying collected data by url hash %s: %w", urlHash, err)
 	}
-	d := datumToCollectedData(r)
+	d := datumToItem(&r)
 	return &d, nil
 }
 
@@ -152,8 +153,8 @@ func (s *Store) UpdateFeedback(ctx context.Context, id uuid.UUID, feedback Feedb
 	return nil
 }
 
-// RecentCollectedData returns recently collected data in a time range, ordered by collected_at DESC.
-func (s *Store) RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]CollectedData, error) {
+// RecentCollectedData returns recently collected items in a time range, ordered by collected_at DESC.
+func (s *Store) RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]Item, error) {
 	rows, err := s.q.RecentCollectedData(ctx, db.RecentCollectedDataParams{
 		CollectedAt:   start,
 		CollectedAt_2: end,
@@ -162,16 +163,16 @@ func (s *Store) RecentCollectedData(ctx context.Context, start, end time.Time, l
 	if err != nil {
 		return nil, fmt.Errorf("listing recent collected data: %w", err)
 	}
-	data := make([]CollectedData, len(rows))
-	for i, r := range rows {
-		data[i] = datumToCollectedData(r)
+	data := make([]Item, len(rows))
+	for i := range rows {
+		data[i] = datumToItem(&rows[i])
 	}
 	return data, nil
 }
 
-// LatestCollectedData returns the latest collected data, optionally filtered by a since timestamp.
+// LatestCollectedData returns the latest collected items, optionally filtered by a since timestamp.
 // When since is nil, returns the latest maxResults items regardless of time.
-func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]CollectedData, error) {
+func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]Item, error) {
 	rows, err := s.q.LatestCollectedData(ctx, db.LatestCollectedDataParams{
 		Since:      since,
 		MaxResults: maxResults,
@@ -179,15 +180,15 @@ func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxRe
 	if err != nil {
 		return nil, fmt.Errorf("listing latest collected data: %w", err)
 	}
-	data := make([]CollectedData, len(rows))
-	for i, r := range rows {
-		data[i] = datumToCollectedData(r)
+	data := make([]Item, len(rows))
+	for i := range rows {
+		data[i] = datumToItem(&rows[i])
 	}
 	return data, nil
 }
 
-// TopRelevantCollected returns unread collected data with relevance > 0.5 since the given time.
-func (s *Store) TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]CollectedData, error) {
+// TopRelevantCollected returns unread collected items with relevance > 0.5 since the given time.
+func (s *Store) TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]Item, error) {
 	rows, err := s.q.TopRelevantCollected(ctx, db.TopRelevantCollectedParams{
 		Since:      since,
 		MaxResults: maxResults,
@@ -195,9 +196,9 @@ func (s *Store) TopRelevantCollected(ctx context.Context, since time.Time, maxRe
 	if err != nil {
 		return nil, fmt.Errorf("listing top relevant collected data: %w", err)
 	}
-	data := make([]CollectedData, len(rows))
-	for i, r := range rows {
-		data[i] = datumToCollectedData(r)
+	data := make([]Item, len(rows))
+	for i := range rows {
+		data[i] = datumToItem(&rows[i])
 	}
 	return data, nil
 }
@@ -212,9 +213,9 @@ func (s *Store) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, 
 	return n, nil
 }
 
-// datumToCollectedData converts a db.CollectedDatum to CollectedData.
-func datumToCollectedData(r db.CollectedDatum) CollectedData {
-	return CollectedData{
+// datumToItem converts a db.CollectedDatum to Item.
+func datumToItem(r *db.CollectedDatum) Item {
+	return Item{
 		ID:               r.ID,
 		SourceURL:        r.SourceUrl,
 		SourceName:       r.SourceName,

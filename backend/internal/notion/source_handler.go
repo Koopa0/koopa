@@ -140,7 +140,7 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := h.store.CreateSource(r.Context(), p)
+	src, err := h.store.CreateSource(r.Context(), &p)
 	if errors.Is(err, ErrConflict) {
 		api.Error(w, http.StatusConflict, "CONFLICT", "database_id already registered")
 		return
@@ -196,7 +196,7 @@ func (h *SourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := h.store.UpdateSource(r.Context(), id, p)
+	src, err := h.store.UpdateSource(r.Context(), id, &p)
 	if errors.Is(err, ErrNotFound) {
 		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
 		return
@@ -284,21 +284,21 @@ func (h *SourceHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 
 	if req.Role == nil || *req.Role == "" {
 		// clear role
-		if err := h.store.ClearSourceRole(r.Context(), id); errors.Is(err, ErrNotFound) {
+		if clearErr := h.store.ClearSourceRole(r.Context(), id); errors.Is(clearErr, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
 			return
-		} else if err != nil {
-			h.logger.Error("clearing notion source role", "id", id, "error", err)
+		} else if clearErr != nil {
+			h.logger.Error("clearing notion source role", "id", id, "error", clearErr)
 			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to clear role")
 			return
 		}
 	} else {
 		// set role (clears from any existing holder atomically)
-		if err := h.store.SetRole(r.Context(), id, *req.Role); errors.Is(err, ErrNotFound) {
+		if setErr := h.store.SetRole(r.Context(), id, *req.Role); errors.Is(setErr, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
 			return
-		} else if err != nil {
-			h.logger.Error("setting notion source role", "id", id, "role", *req.Role, "error", err)
+		} else if setErr != nil {
+			h.logger.Error("setting notion source role", "id", id, "role", *req.Role, "error", setErr)
 			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to set role")
 			return
 		}

@@ -62,8 +62,8 @@ type SearchFilter struct {
 	Book    *string
 }
 
-// NoteLink represents a wikilink edge from one note to a target path.
-type NoteLink struct {
+// Link represents a wikilink edge from one note to a target path.
+type Link struct {
 	TargetPath string
 	LinkText   *string
 }

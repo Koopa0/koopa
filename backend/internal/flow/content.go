@@ -27,7 +27,7 @@ type ContentReader interface {
 
 // ContentUpdater updates content fields.
 type ContentUpdater interface {
-	UpdateContent(ctx context.Context, id uuid.UUID, p content.UpdateParams) (*content.Content, error)
+	UpdateContent(ctx context.Context, id uuid.UUID, p *content.UpdateParams) (*content.Content, error)
 }
 
 // ReviewCreator creates a review queue entry.
@@ -42,7 +42,7 @@ type EmbeddingWriter interface {
 
 // TopicLister returns all topic slugs for constrained tag classification.
 type TopicLister interface {
-	AllTopicSlugs(ctx context.Context) ([]topic.TopicSlug, error)
+	AllTopicSlugs(ctx context.Context) ([]topic.Slug, error)
 }
 
 // ContentReviewInput is the JSON input for the content-review flow.
@@ -86,7 +86,7 @@ func NewContentReview(
 	contentReader ContentReader,
 	updater ContentUpdater,
 	embedWriter EmbeddingWriter,
-	review ReviewCreator,
+	reviewer ReviewCreator,
 	topics TopicLister,
 	proofread *ContentProofread,
 	excerpt *ContentExcerpt,
@@ -99,7 +99,7 @@ func NewContentReview(
 		content:     contentReader,
 		updater:     updater,
 		embedWriter: embedWriter,
-		review:      review,
+		review:      reviewer,
 		topics:      topics,
 		proofread:   proofread,
 		excerpt:     excerpt,
@@ -168,20 +168,20 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 
 	// Step 2: excerpt via sub-flow
 	eg.Go(func() error {
-		var err error
-		excerptResult, err = cr.excerpt.run(gctx, ContentExcerptInput{
+		var excerptErr error
+		excerptResult, excerptErr = cr.excerpt.run(gctx, ContentExcerptInput{
 			ContentType: string(c.Type),
 			Title:       c.Title,
 			Body:        c.Body,
 		})
-		return err
+		return excerptErr
 	})
 
 	// Step 3: tags via sub-flow (fetch topics first, pass as input)
 	eg.Go(func() error {
-		slugs, err := cr.topics.AllTopicSlugs(gctx)
-		if err != nil {
-			return fmt.Errorf("listing topics: %w", err)
+		slugs, slugsErr := cr.topics.AllTopicSlugs(gctx)
+		if slugsErr != nil {
+			return fmt.Errorf("listing topics: %w", slugsErr)
 		}
 
 		topicSlugs := make([]string, len(slugs))
@@ -191,60 +191,61 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 			topicNames[i] = s.Name
 		}
 
-		tagsResult, err = cr.tags.run(gctx, ContentTagsInput{
+		var tagsErr error
+		tagsResult, tagsErr = cr.tags.run(gctx, &ContentTagsInput{
 			ContentType: string(c.Type),
 			Title:       c.Title,
 			Body:        c.Body,
 			TopicSlugs:  topicSlugs,
 			TopicNames:  topicNames,
 		})
-		return err
+		return tagsErr
 	})
 
 	// Step 4: reading time (pure computation, traced)
 	eg.Go(func() error {
-		var err error
-		readingTime, err = genkit.Run(gctx, "reading-time", func() (int, error) {
+		var rtErr error
+		readingTime, rtErr = genkit.Run(gctx, "reading-time", func() (int, error) {
 			return estimateReadingTime(c.Body), nil
 		})
-		return err
+		return rtErr
 	})
 
 	// Step 5: generate embedding
 	eg.Go(func() error {
-		_, err := genkit.Run(gctx, "generate-embedding", func() (any, error) {
-			resp, err := genkit.Embed(gctx, cr.g,
+		_, embedRunErr := genkit.Run(gctx, "generate-embedding", func() (any, error) {
+			resp, embedErr := genkit.Embed(gctx, cr.g,
 				ai.WithEmbedder(cr.embedder),
 				ai.WithTextDocs(c.Body),
 				ai.WithConfig(&genai.EmbedContentConfig{
 					OutputDimensionality: genai.Ptr[int32](768),
 				}),
 			)
-			if err != nil {
-				return nil, fmt.Errorf("generating embedding: %w", err)
+			if embedErr != nil {
+				return nil, fmt.Errorf("generating embedding: %w", embedErr)
 			}
 			if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
 				cr.logger.Warn("empty embedding response", "content_id", contentID)
 				return nil, nil
 			}
 			vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
-			if err := cr.embedWriter.UpdateEmbedding(gctx, contentID, vec); err != nil {
-				return nil, fmt.Errorf("storing embedding: %w", err)
+			if storeErr := cr.embedWriter.UpdateEmbedding(gctx, contentID, vec); storeErr != nil {
+				return nil, fmt.Errorf("storing embedding: %w", storeErr)
 			}
 			cr.logger.Info("embedding stored", "content_id", contentID, "dimensions", len(resp.Embeddings[0].Embedding))
 			return nil, nil
 		})
-		return err
+		return embedRunErr
 	})
 
-	if err := eg.Wait(); err != nil {
-		return ContentReviewOutput{}, fmt.Errorf("parallel steps for content %s: %w", contentID, err)
+	if waitErr := eg.Wait(); waitErr != nil {
+		return ContentReviewOutput{}, fmt.Errorf("parallel steps for content %s: %w", contentID, waitErr)
 	}
 
 	// Step: update content with AI results (traced)
 	_, err = genkit.Run(ctx, "update-content", func() (any, error) {
 		aiMetadata, _ := json.Marshal(proofreadResult) // safe: struct contains only JSON-compatible types
-		updateParams := content.UpdateParams{
+		updateParams := &content.UpdateParams{
 			Excerpt:     &excerptResult.Excerpt,
 			ReadingTime: &readingTime,
 			AIMetadata:  aiMetadata,
@@ -252,15 +253,15 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 		if len(tagsResult.Tags) > 0 {
 			updateParams.Tags = tagsResult.Tags
 		}
-		if _, err := cr.updater.UpdateContent(ctx, contentID, updateParams); err != nil {
-			return nil, fmt.Errorf("updating content: %w", err)
+		if _, updateErr := cr.updater.UpdateContent(ctx, contentID, updateParams); updateErr != nil {
+			return nil, fmt.Errorf("updating content: %w", updateErr)
 		}
 
 		// Create review queue entry if not auto-publishable
 		if proofreadResult.Level != "auto" {
 			notes := proofreadResult.Notes
-			if _, err := cr.review.Create(ctx, contentID, proofreadResult.Level, &notes); err != nil {
-				return nil, fmt.Errorf("creating review: %w", err)
+			if _, reviewErr := cr.review.Create(ctx, contentID, proofreadResult.Level, &notes); reviewErr != nil {
+				return nil, fmt.Errorf("creating review: %w", reviewErr)
 			}
 			cr.logger.Info("content sent to review queue", "content_id", contentID, "level", proofreadResult.Level)
 		} else {

@@ -150,8 +150,8 @@ func (s *Store) Tags(ctx context.Context) ([]Tag, error) {
 		return nil, fmt.Errorf("listing tags: %w", err)
 	}
 	tags := make([]Tag, len(rows))
-	for i, r := range rows {
-		tags[i] = tagFromDB(r)
+	for i := range rows {
+		tags[i] = tagFromDB(&rows[i])
 	}
 	return tags, nil
 }
@@ -165,12 +165,12 @@ func (s *Store) Tag(ctx context.Context, id uuid.UUID) (*Tag, error) {
 		}
 		return nil, fmt.Errorf("querying tag %s: %w", id, err)
 	}
-	t := tagFromDB(row)
+	t := tagFromDB(&row)
 	return &t, nil
 }
 
 // CreateTag inserts a new canonical tag.
-func (s *Store) CreateTag(ctx context.Context, p CreateParams) (*Tag, error) {
+func (s *Store) CreateTag(ctx context.Context, p *CreateParams) (*Tag, error) {
 	row, err := s.q.CreateTag(ctx, db.CreateTagParams{
 		Slug:        p.Slug,
 		Name:        p.Name,
@@ -183,12 +183,12 @@ func (s *Store) CreateTag(ctx context.Context, p CreateParams) (*Tag, error) {
 		}
 		return nil, fmt.Errorf("creating tag: %w", err)
 	}
-	t := tagFromDB(row)
+	t := tagFromDB(&row)
 	return &t, nil
 }
 
 // UpdateTag modifies an existing canonical tag.
-func (s *Store) UpdateTag(ctx context.Context, id uuid.UUID, p UpdateParams) (*Tag, error) {
+func (s *Store) UpdateTag(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Tag, error) {
 	row, err := s.q.UpdateTag(ctx, db.UpdateTagParams{
 		ID:          id,
 		Slug:        p.Slug,
@@ -205,7 +205,7 @@ func (s *Store) UpdateTag(ctx context.Context, id uuid.UUID, p UpdateParams) (*T
 		}
 		return nil, fmt.Errorf("updating tag %s: %w", id, err)
 	}
-	t := tagFromDB(row)
+	t := tagFromDB(&row)
 	return &t, nil
 }
 
@@ -241,8 +241,8 @@ func (s *Store) Aliases(ctx context.Context) ([]Alias, error) {
 		return nil, fmt.Errorf("listing aliases: %w", err)
 	}
 	aliases := make([]Alias, len(rows))
-	for i, r := range rows {
-		aliases[i] = aliasFromDB(r)
+	for i := range rows {
+		aliases[i] = aliasFromDB(&rows[i])
 	}
 	return aliases, nil
 }
@@ -254,14 +254,14 @@ func (s *Store) UnmappedAliases(ctx context.Context) ([]Alias, error) {
 		return nil, fmt.Errorf("listing unmapped aliases: %w", err)
 	}
 	aliases := make([]Alias, len(rows))
-	for i, r := range rows {
-		aliases[i] = aliasFromDB(r)
+	for i := range rows {
+		aliases[i] = aliasFromDB(&rows[i])
 	}
 	return aliases, nil
 }
 
 // MapAlias maps an alias to a canonical tag.
-func (s *Store) MapAlias(ctx context.Context, aliasID uuid.UUID, tagID uuid.UUID) (*Alias, error) {
+func (s *Store) MapAlias(ctx context.Context, aliasID, tagID uuid.UUID) (*Alias, error) {
 	row, err := s.q.MapAlias(ctx, db.MapAliasParams{
 		ID:    aliasID,
 		TagID: &tagID,
@@ -272,7 +272,7 @@ func (s *Store) MapAlias(ctx context.Context, aliasID uuid.UUID, tagID uuid.UUID
 		}
 		return nil, fmt.Errorf("mapping alias %s: %w", aliasID, err)
 	}
-	a := aliasFromDB(row)
+	a := aliasFromDB(&row)
 	return &a, nil
 }
 
@@ -285,7 +285,7 @@ func (s *Store) ConfirmAlias(ctx context.Context, id uuid.UUID) (*Alias, error) 
 		}
 		return nil, fmt.Errorf("confirming alias %s: %w", id, err)
 	}
-	a := aliasFromDB(row)
+	a := aliasFromDB(&row)
 	return &a, nil
 }
 
@@ -298,7 +298,7 @@ func (s *Store) RejectAlias(ctx context.Context, id uuid.UUID) (*Alias, error) {
 		}
 		return nil, fmt.Errorf("rejecting alias %s: %w", id, err)
 	}
-	a := aliasFromDB(row)
+	a := aliasFromDB(&row)
 	return &a, nil
 }
 
@@ -373,10 +373,10 @@ func (s *Store) MergeTags(ctx context.Context, tx pgx.Tx, sourceID, targetID uui
 	}
 
 	// Delete duplicate note-tags then reassign (junction tag_id is NOT NULL → uuid.UUID)
-	if _, err := txQ.DeleteDuplicateNoteTags(ctx, db.DeleteDuplicateNoteTagsParams{
+	if _, delNoteErr := txQ.DeleteDuplicateNoteTags(ctx, db.DeleteDuplicateNoteTagsParams{
 		TagID: sourceID, TagID_2: targetID,
-	}); err != nil {
-		return nil, fmt.Errorf("deleting duplicate note tags: %w", err)
+	}); delNoteErr != nil {
+		return nil, fmt.Errorf("deleting duplicate note tags: %w", delNoteErr)
 	}
 	notesMoved, err := txQ.ReassignNoteTags(ctx, db.ReassignNoteTagsParams{
 		TagID: targetID, TagID_2: sourceID,
@@ -386,10 +386,10 @@ func (s *Store) MergeTags(ctx context.Context, tx pgx.Tx, sourceID, targetID uui
 	}
 
 	// Delete duplicate event-tags then reassign
-	if _, err := txQ.DeleteDuplicateEventTags(ctx, db.DeleteDuplicateEventTagsParams{
+	if _, delEventErr := txQ.DeleteDuplicateEventTags(ctx, db.DeleteDuplicateEventTagsParams{
 		TagID: sourceID, TagID_2: targetID,
-	}); err != nil {
-		return nil, fmt.Errorf("deleting duplicate event tags: %w", err)
+	}); delEventErr != nil {
+		return nil, fmt.Errorf("deleting duplicate event tags: %w", delEventErr)
 	}
 	eventsMoved, err := txQ.ReassignEventTags(ctx, db.ReassignEventTagsParams{
 		TagID: targetID, TagID_2: sourceID,
@@ -411,7 +411,7 @@ func (s *Store) MergeTags(ctx context.Context, tx pgx.Tx, sourceID, targetID uui
 }
 
 // tagFromDB converts a sqlc-generated db.Tag to the domain Tag.
-func tagFromDB(r db.Tag) Tag {
+func tagFromDB(r *db.Tag) Tag {
 	return Tag{
 		ID:          r.ID,
 		Slug:        r.Slug,
@@ -424,7 +424,7 @@ func tagFromDB(r db.Tag) Tag {
 }
 
 // aliasFromDB converts a sqlc-generated db.TagAlias to the domain Alias.
-func aliasFromDB(r db.TagAlias) Alias {
+func aliasFromDB(r *db.TagAlias) Alias {
 	return Alias{
 		ID:          r.ID,
 		RawTag:      r.RawTag,

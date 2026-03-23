@@ -99,7 +99,7 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 	var (
 		published []content.Content
 		pubErr    error
-		rssItems  []collected.CollectedData
+		rssItems  []collected.Item
 		rssErr    error
 		projects  []project.Project
 		projErr   error
@@ -156,15 +156,25 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 
 func buildContentStrategyPrompt(
 	published []content.Content, pubErr error,
-	rssItems []collected.CollectedData, rssErr error,
+	rssItems []collected.Item, rssErr error,
 	projects []project.Project, projErr error,
 	start, end time.Time,
 ) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "分析期間：%s 至 %s\n\n", start.Format("2006-01-02"), end.Format("2006-01-02"))
+	writePublishedSection(&b, published, pubErr)
+	writeTrendingSection(&b, rssItems, rssErr)
+	writeProjectsSection(&b, projects, projErr)
 
-	// Published content distribution
+	if pubErr == nil && rssErr == nil && (len(published) > 0 || len(rssItems) > 0) {
+		writeKnowledgeGapSection(&b, published, rssItems)
+	}
+
+	return b.String()
+}
+
+func writePublishedSection(b *strings.Builder, published []content.Content, pubErr error) {
 	b.WriteString("== 過去 30 天發佈記錄 ==\n")
 	switch {
 	case pubErr != nil:
@@ -172,23 +182,24 @@ func buildContentStrategyPrompt(
 	case len(published) == 0:
 		b.WriteString("過去 30 天無發佈\n")
 	default:
-		// Count by type
 		typeCounts := make(map[content.Type]int)
-		for _, c := range published {
-			typeCounts[c.Type]++
+		for i := range published {
+			typeCounts[published[i].Type]++
 		}
-		fmt.Fprintf(&b, "共 %d 篇\n", len(published))
+		fmt.Fprintf(b, "共 %d 篇\n", len(published))
 		for _, t := range slices.Sorted(maps.Keys(typeCounts)) {
-			fmt.Fprintf(&b, "- %s: %d 篇\n", t, typeCounts[t])
+			fmt.Fprintf(b, "- %s: %d 篇\n", t, typeCounts[t])
 		}
 		b.WriteString("\n最近發佈：\n")
 		limit := min(len(published), 5)
-		for _, c := range published[:limit] {
-			fmt.Fprintf(&b, "- %s（%s）\n", c.Title, c.Type)
+		for i := range published[:limit] {
+			c := &published[i]
+			fmt.Fprintf(b, "- %s（%s）\n", c.Title, c.Type)
 		}
 	}
+}
 
-	// Trending collected articles
+func writeTrendingSection(b *strings.Builder, rssItems []collected.Item, rssErr error) {
 	b.WriteString("\n== 本週高分收集文章（ai_score >= 60）==\n")
 	switch {
 	case rssErr != nil:
@@ -197,12 +208,13 @@ func buildContentStrategyPrompt(
 		b.WriteString("無符合條件的文章\n")
 	default:
 		limit := min(len(rssItems), 10)
-		for _, item := range rssItems[:limit] {
-			fmt.Fprintf(&b, "- %s（%s）\n", item.Title, item.SourceName)
+		for i := range rssItems[:limit] {
+			fmt.Fprintf(b, "- %s（%s）\n", rssItems[i].Title, rssItems[i].SourceName)
 		}
 	}
+}
 
-	// Active projects
+func writeProjectsSection(b *strings.Builder, projects []project.Project, projErr error) {
 	b.WriteString("\n== 活躍專案 ==\n")
 	switch {
 	case projErr != nil:
@@ -210,62 +222,55 @@ func buildContentStrategyPrompt(
 	case len(projects) == 0:
 		b.WriteString("無活躍專案\n")
 	default:
-		for _, p := range projects {
-			fmt.Fprintf(&b, "- %s: %s（%s）\n", p.Title, p.Description, p.Status)
+		for i := range projects {
+			p := &projects[i]
+			fmt.Fprintf(b, "- %s: %s（%s）\n", p.Title, p.Description, p.Status)
+		}
+	}
+}
+
+func writeKnowledgeGapSection(b *strings.Builder, published []content.Content, rssItems []collected.Item) {
+	b.WriteString("\n== 知識缺口分析 ==\n")
+
+	ownTags := make(map[string]int)
+	for i := range published {
+		for _, tag := range published[i].Tags {
+			ownTags[tag]++
+		}
+	}
+	rssTags := make(map[string]int)
+	for i := range rssItems {
+		for _, tag := range rssItems[i].Topics {
+			rssTags[tag]++
 		}
 	}
 
-	// Knowledge gap analysis: compare tag distributions
-	if pubErr == nil && rssErr == nil && (len(published) > 0 || len(rssItems) > 0) {
-		b.WriteString("\n== 知識缺口分析 ==\n")
+	writeTagDistribution(b, "自己的發佈主題分佈：\n", ownTags)
+	writeTagDistribution(b, "\nRSS 高分文章主題分佈：\n", rssTags)
 
-		ownTags := make(map[string]int)
-		for _, c := range published {
-			for _, tag := range c.Tags {
-				ownTags[tag]++
-			}
-		}
-		rssTags := make(map[string]int)
-		for _, item := range rssItems {
-			for _, tag := range item.Topics {
-				rssTags[tag]++
-			}
-		}
-
-		b.WriteString("自己的發佈主題分佈：\n")
-		if len(ownTags) == 0 {
-			b.WriteString("（無標籤資料）\n")
-		} else {
-			for _, tag := range slices.Sorted(maps.Keys(ownTags)) {
-				fmt.Fprintf(&b, "- %s: %d 篇\n", tag, ownTags[tag])
-			}
-		}
-
-		b.WriteString("\nRSS 高分文章主題分佈：\n")
-		if len(rssTags) == 0 {
-			b.WriteString("（無標籤資料）\n")
-		} else {
-			for _, tag := range slices.Sorted(maps.Keys(rssTags)) {
-				fmt.Fprintf(&b, "- %s: %d 篇\n", tag, rssTags[tag])
-			}
-		}
-
-		// Find gaps: topics in RSS but not in own content
-		var gaps []string
-		for _, tag := range slices.Sorted(maps.Keys(rssTags)) {
-			if ownTags[tag] == 0 {
-				gaps = append(gaps, tag)
-			}
-		}
-		if len(gaps) > 0 {
-			b.WriteString("\n潛在缺口（RSS 熱門但自己未涉獵）：\n")
-			for _, tag := range gaps {
-				fmt.Fprintf(&b, "- %s（RSS 出現 %d 次）\n", tag, rssTags[tag])
-			}
+	var gaps []string
+	for _, tag := range slices.Sorted(maps.Keys(rssTags)) {
+		if ownTags[tag] == 0 {
+			gaps = append(gaps, tag)
 		}
 	}
+	if len(gaps) > 0 {
+		b.WriteString("\n潛在缺口（RSS 熱門但自己未涉獵）：\n")
+		for _, tag := range gaps {
+			fmt.Fprintf(b, "- %s（RSS 出現 %d 次）\n", tag, rssTags[tag])
+		}
+	}
+}
 
-	return b.String()
+func writeTagDistribution(b *strings.Builder, header string, tags map[string]int) {
+	b.WriteString(header)
+	if len(tags) == 0 {
+		b.WriteString("（無標籤資料）\n")
+		return
+	}
+	for _, tag := range slices.Sorted(maps.Keys(tags)) {
+		fmt.Fprintf(b, "- %s: %d 篇\n", tag, tags[tag])
+	}
 }
 
 // NewMockContentStrategy returns a mock Flow for MOCK_MODE.

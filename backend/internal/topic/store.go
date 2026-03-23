@@ -23,14 +23,14 @@ func NewStore(dbtx db.DBTX) *Store {
 }
 
 // AllTopicSlugs returns all topic slugs and names, lightweight for AI tag classification.
-func (s *Store) AllTopicSlugs(ctx context.Context) ([]TopicSlug, error) {
+func (s *Store) AllTopicSlugs(ctx context.Context) ([]Slug, error) {
 	rows, err := s.q.AllTopicSlugs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing topic slugs: %w", err)
 	}
-	slugs := make([]TopicSlug, len(rows))
+	slugs := make([]Slug, len(rows))
 	for i, r := range rows {
-		slugs[i] = TopicSlug{Slug: r.Slug, Name: r.Name}
+		slugs[i] = Slug{Slug: r.Slug, Name: r.Name}
 	}
 	return slugs, nil
 }
@@ -42,7 +42,8 @@ func (s *Store) Topics(ctx context.Context) ([]Topic, error) {
 		return nil, fmt.Errorf("listing topics: %w", err)
 	}
 	topics := make([]Topic, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := rows[i]
 		topics[i] = Topic{
 			ID:           r.ID,
 			Slug:         r.Slug,
@@ -81,7 +82,7 @@ func (s *Store) TopicBySlug(ctx context.Context, slug string) (*Topic, error) {
 }
 
 // CreateTopic inserts a new topic.
-func (s *Store) CreateTopic(ctx context.Context, p CreateParams) (*Topic, error) {
+func (s *Store) CreateTopic(ctx context.Context, p *CreateParams) (*Topic, error) {
 	r, err := s.q.CreateTopic(ctx, db.CreateTopicParams{
 		Slug:        p.Slug,
 		Name:        p.Name,
@@ -108,7 +109,7 @@ func (s *Store) CreateTopic(ctx context.Context, p CreateParams) (*Topic, error)
 }
 
 // UpdateTopic updates a topic.
-func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p UpdateParams) (*Topic, error) {
+func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Topic, error) {
 	var sortOrder *int32
 	if p.SortOrder != nil {
 		v := int32(*p.SortOrder) // #nosec G115 -- sort order is a small UI ordering value, not user-controlled

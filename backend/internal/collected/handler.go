@@ -33,7 +33,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		f.Sort = s
 	}
 
-	data, total, err := h.store.CollectedData(r.Context(), f)
+	data, total, err := h.store.Items(r.Context(), f)
 	if err != nil {
 		h.logger.Error("listing collected data", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list collected data")

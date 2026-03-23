@@ -30,7 +30,6 @@ type WeeklyReviewInput struct {
 	HealthIssues []string `json:"health_issues,omitempty"`
 }
 
-// TaskCompletionCounter counts tasks completed since a given time.
 // ProjectCompletion holds a per-project completion count.
 type ProjectCompletion struct {
 	ProjectTitle string
@@ -141,7 +140,7 @@ func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (Week
 		completedErr     error
 		completedByProj  []ProjectCompletion
 		completedProjErr error
-		rssItems         []collected.CollectedData
+		rssItems         []collected.Item
 		rssErr           error
 		published        []content.Content
 		pubErr           error
@@ -228,7 +227,7 @@ func buildWeeklyReviewPrompt(
 	tasks []PendingTask, taskErr error,
 	completedCount int64, completedErr error,
 	completedByProj []ProjectCompletion, completedProjErr error,
-	rssItems []collected.CollectedData, rssErr error,
+	rssItems []collected.Item, rssErr error,
 	published []content.Content, pubErr error,
 	projects []project.Project, projErr error,
 	commits []pipeline.Commit, commitErr error,
@@ -256,7 +255,8 @@ func buildWeeklyReviewPrompt(
 	case len(published) == 0:
 		b.WriteString("本週無發佈\n")
 	default:
-		for _, c := range published {
+		for i := range published {
+			c := &published[i]
 			fmt.Fprintf(&b, "- %s（%s）\n", c.Title, c.Type)
 		}
 	}
@@ -287,7 +287,8 @@ func buildWeeklyReviewPrompt(
 	case len(rssItems) == 0:
 		b.WriteString("無符合條件的文章\n")
 	default:
-		for _, item := range rssItems {
+		for itemIdx := range rssItems {
+			item := rssItems[itemIdx]
 			fmt.Fprintf(&b, "- %s（%s）\n", item.Title, item.SourceName)
 		}
 	}
@@ -300,7 +301,8 @@ func buildWeeklyReviewPrompt(
 	case len(projects) == 0:
 		b.WriteString("無活躍專案\n")
 	default:
-		for _, p := range projects {
+		for i := range projects {
+			p := projects[i]
 			fmt.Fprintf(&b, "- %s（%s）\n", p.Title, p.Status)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/koopa0/blog-backend/internal/session"
+	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // MorningContextInput is the input for the get_morning_context tool.
@@ -142,47 +143,67 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	tomorrow := today.AddDate(0, 0, 1)
-	weekEnd := today.AddDate(0, 0, 7)
 
 	out := MorningContextOutput{
 		Date: now.Format("2006-01-02 (Monday)"),
 	}
 
-	// --- Tasks (all pending, sorted by deadline) ---
+	allTasks := s.fetchMorningTasks(ctx, &out, today, tomorrow)
+	s.fetchMorningActivity(ctx, &out, now, activityDays)
+	s.fetchMorningBuildLogs(ctx, &out, now, buildLogDays)
+	s.fetchMorningProjectHealth(ctx, &out, allTasks, now)
+	s.fetchMorningGoals(ctx, &out)
+	s.fetchMorningSessionData(ctx, &out, today, now)
+	s.fetchMorningRSSHighlights(ctx, &out, now)
+	s.fetchMorningDailySummary(ctx, &out, today, tomorrow)
+
+	return nil, out, nil
+}
+
+// fetchMorningTasks fetches pending tasks and categorizes them into overdue, today,
+// upcoming, and my-day buckets. Returns the raw task list for reuse by project health.
+func (s *Server) fetchMorningTasks(ctx context.Context, out *MorningContextOutput, today, tomorrow time.Time) []task.PendingTaskDetail {
+	weekEnd := today.AddDate(0, 0, 7)
+
 	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
 	if err != nil {
 		s.logger.Error("morning_context: pending tasks", "error", err)
-	} else {
-		for _, t := range allTasks {
-			mt := morningTask{
-				ID:          t.ID.String(),
-				Title:       t.Title,
-				Priority:    t.Priority,
-				Energy:      t.Energy,
-				Project:     t.ProjectTitle,
-				IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
+		out.OverdueTasks = []morningTask{}
+		out.TodayTasks = []morningTask{}
+		out.UpcomingTasks = []morningTask{}
+		out.MyDayTasks = []morningTask{}
+		return nil
+	}
+
+	for tIdx := range allTasks {
+		t := allTasks[tIdx]
+		mt := morningTask{
+			ID:          t.ID.String(),
+			Title:       t.Title,
+			Priority:    t.Priority,
+			Energy:      t.Energy,
+			Project:     t.ProjectTitle,
+			IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
+		}
+		if t.Due != nil {
+			mt.Due = t.Due.Format(time.DateOnly)
+			dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
+			switch {
+			case dueDate.Before(today):
+				mt.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
+				mt.SkipCount = computeSkipCount(mt.OverdueDays, mt.IsRecurring, t.RecurInterval)
+				out.OverdueTasks = append(out.OverdueTasks, mt)
+			case dueDate.Before(tomorrow):
+				out.TodayTasks = append(out.TodayTasks, mt)
+			case dueDate.Before(weekEnd):
+				out.UpcomingTasks = append(out.UpcomingTasks, mt)
 			}
-			if t.Due != nil {
-				mt.Due = t.Due.Format(time.DateOnly)
-				dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
-				switch {
-				case dueDate.Before(today):
-					mt.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
-					mt.SkipCount = computeSkipCount(mt.OverdueDays, mt.IsRecurring, t.RecurInterval)
-					out.OverdueTasks = append(out.OverdueTasks, mt)
-				case dueDate.Before(tomorrow):
-					out.TodayTasks = append(out.TodayTasks, mt)
-				case dueDate.Before(weekEnd):
-					out.UpcomingTasks = append(out.UpcomingTasks, mt)
-				}
-			}
-			if t.MyDay {
-				out.MyDayTasks = append(out.MyDayTasks, mt)
-			}
+		}
+		if t.MyDay {
+			out.MyDayTasks = append(out.MyDayTasks, mt)
 		}
 	}
 
-	// Ensure non-nil slices for JSON
 	if out.OverdueTasks == nil {
 		out.OverdueTasks = []morningTask{}
 	}
@@ -196,43 +217,52 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		out.MyDayTasks = []morningTask{}
 	}
 
-	// --- Activity summary ---
+	return allTasks
+}
+
+// fetchMorningActivity fetches recent activity events and summarizes them by source and project.
+func (s *Server) fetchMorningActivity(ctx context.Context, out *MorningContextOutput, now time.Time, activityDays int) {
 	actStart := now.AddDate(0, 0, -activityDays)
 	events, err := s.activity.EventsByFilters(ctx, actStart, now, nil, nil, 200)
 	if err != nil {
 		s.logger.Error("morning_context: activity", "error", err)
-	} else {
-		summary := activitySummary{
-			Period:    fmt.Sprintf("last %d days", activityDays),
-			BySource:  make(map[string]int),
-			ByProject: make(map[string]int),
-		}
-		for _, e := range events {
-			summary.BySource[e.Source]++
-			if e.Project != nil && *e.Project != "" {
-				summary.ByProject[*e.Project]++
-			}
-			if e.Source == "github" && e.EventType == "push" {
-				summary.GithubCommits++
-			}
-			if len(summary.TopEvents) < 5 && e.Title != nil {
-				summary.TopEvents = append(summary.TopEvents, *e.Title)
-			}
-		}
-		if summary.TopEvents == nil {
-			summary.TopEvents = []string{}
-		}
-		out.RecentActivity = summary
+		return
 	}
 
-	// --- Build logs (recent content type=build-log, slim for morning planning) ---
+	summary := activitySummary{
+		Period:    fmt.Sprintf("last %d days", activityDays),
+		BySource:  make(map[string]int),
+		ByProject: make(map[string]int),
+	}
+	for i := range events {
+		e := &events[i]
+		summary.BySource[e.Source]++
+		if e.Project != nil && *e.Project != "" {
+			summary.ByProject[*e.Project]++
+		}
+		if e.Source == "github" && e.EventType == "push" {
+			summary.GithubCommits++
+		}
+		if len(summary.TopEvents) < 5 && e.Title != nil {
+			summary.TopEvents = append(summary.TopEvents, *e.Title)
+		}
+	}
+	if summary.TopEvents == nil {
+		summary.TopEvents = []string{}
+	}
+	out.RecentActivity = summary
+}
+
+// fetchMorningBuildLogs fetches recent build log content entries.
+func (s *Server) fetchMorningBuildLogs(ctx context.Context, out *MorningContextOutput, now time.Time, buildLogDays int) {
 	buildLogStart := now.AddDate(0, 0, -buildLogDays)
 	buildLogs, err := s.contents.RecentByType(ctx, "build-log", buildLogStart, 3)
 	if err != nil {
 		s.logger.Error("morning_context: build logs", "error", err)
 	}
 	out.RecentBuildLogs = make([]buildLogBrief, 0, len(buildLogs))
-	for _, c := range buildLogs {
+	for i := range buildLogs {
+		c := &buildLogs[i]
 		out.RecentBuildLogs = append(out.RecentBuildLogs, buildLogBrief{
 			Slug:        c.Slug,
 			Title:       c.Title,
@@ -241,60 +271,71 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 			CreatedAt:   c.CreatedAt.Format(time.DateOnly),
 		})
 	}
+}
 
-	// --- Project health ---
+// fetchMorningProjectHealth fetches active projects and computes health metrics
+// using the pending task list for per-project task counts.
+func (s *Server) fetchMorningProjectHealth(ctx context.Context, out *MorningContextOutput, allTasks []task.PendingTaskDetail, now time.Time) {
 	projects, err := s.projects.ActiveProjects(ctx)
 	if err != nil {
 		s.logger.Error("morning_context: projects", "error", err)
-	} else {
-		// Count pending tasks per project
-		tasksByProject := make(map[string]int)
-		for _, t := range allTasks {
-			if t.ProjectSlug != "" {
-				tasksByProject[t.ProjectSlug]++
-			}
-		}
+		return
+	}
 
-		out.Projects = make([]projectHealth, 0, len(projects))
-		for _, p := range projects {
-			ph := projectHealth{
-				Slug:            p.Slug,
-				Title:           p.Title,
-				Status:          string(p.Status),
-				PendingTasks:    tasksByProject[p.Slug],
-				ExpectedCadence: p.ExpectedCadence,
-			}
-			if p.LastActivityAt != nil {
-				ph.DaysSinceActivity = int(now.Sub(*p.LastActivityAt).Hours() / 24)
-			}
-			ph.IsNeglected = isProjectNeglected(ph.DaysSinceActivity, p.ExpectedCadence)
-			out.Projects = append(out.Projects, ph)
+	tasksByProject := make(map[string]int)
+	for i := range allTasks {
+		if allTasks[i].ProjectSlug != "" {
+			tasksByProject[allTasks[i].ProjectSlug]++
 		}
 	}
 
-	// --- Goals ---
+	out.Projects = make([]projectHealth, 0, len(projects))
+	for i := range projects {
+		p := &projects[i]
+		ph := projectHealth{
+			Slug:            p.Slug,
+			Title:           p.Title,
+			Status:          string(p.Status),
+			PendingTasks:    tasksByProject[p.Slug],
+			ExpectedCadence: p.ExpectedCadence,
+		}
+		if p.LastActivityAt != nil {
+			ph.DaysSinceActivity = int(now.Sub(*p.LastActivityAt).Hours() / 24)
+		}
+		ph.IsNeglected = isProjectNeglected(ph.DaysSinceActivity, p.ExpectedCadence)
+		out.Projects = append(out.Projects, ph)
+	}
+}
+
+// fetchMorningGoals fetches active goals (excluding done/abandoned).
+func (s *Server) fetchMorningGoals(ctx context.Context, out *MorningContextOutput) {
 	goals, err := s.goals.Goals(ctx)
 	if err != nil {
 		s.logger.Error("morning_context: goals", "error", err)
-	} else {
-		out.Goals = make([]goalBrief, 0)
-		for _, g := range goals {
-			if string(g.Status) == "done" || string(g.Status) == "abandoned" {
-				continue
-			}
-			gb := goalBrief{
-				Title:  g.Title,
-				Status: string(g.Status),
-				Area:   g.Area,
-			}
-			if g.Deadline != nil {
-				gb.Deadline = g.Deadline.Format(time.DateOnly)
-			}
-			out.Goals = append(out.Goals, gb)
-		}
+		return
 	}
 
-	// --- Session gap (days since last Claude.ai session) ---
+	out.Goals = make([]goalBrief, 0)
+	for i := range goals {
+		g := &goals[i]
+		if string(g.Status) == "done" || string(g.Status) == "abandoned" {
+			continue
+		}
+		gb := goalBrief{
+			Title:  g.Title,
+			Status: string(g.Status),
+			Area:   g.Area,
+		}
+		if g.Deadline != nil {
+			gb.Deadline = g.Deadline.Format(time.DateOnly)
+		}
+		out.Goals = append(out.Goals, gb)
+	}
+}
+
+// fetchMorningSessionData fetches session gap, reflection, planning history,
+// insights, recommendations, and yesterday adjustments.
+func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContextOutput, today, now time.Time) {
 	if s.sessionReader != nil {
 		lastSession, gapErr := s.sessionReader.LatestNoteBySource(ctx, "claude")
 		if gapErr == nil {
@@ -302,10 +343,7 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 			out.SessionGap = int(today.Sub(sessionDate).Hours() / 24)
 			out.LastSessionDate = lastSession.NoteDate.Format(time.DateOnly)
 		}
-	}
 
-	// --- Session notes (yesterday reflection + planning history + active insights) ---
-	if s.sessionReader != nil {
 		refl, reflErr := s.sessionReader.LatestNoteByType(ctx, "reflection")
 		if reflErr != nil {
 			s.logger.Error("morning_context: yesterday reflection", "error", reflErr)
@@ -313,7 +351,6 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 			out.YesterdayReflection = refl.Content
 		}
 
-		// Fetch 30 days of metrics for monthly summary; recent 7 in entries
 		since := now.AddDate(0, 0, -30)
 		metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
 		if metricsErr != nil {
@@ -321,50 +358,14 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 		out.PlanningHistory = buildPlanningHistory(metricsNotes, 7)
 
-		// Lazy auto-archive stale insights before querying
-		if s.sessionWriter != nil {
-			cutoff := now.AddDate(0, 0, -14)
-			if n, err := s.sessionWriter.ArchiveStaleInsights(ctx, cutoff); err != nil {
-				s.logger.Error("morning_context: auto-archive insights", "error", err)
-			} else if n > 0 {
-				s.logger.Info("auto-archived stale insights", "count", n)
-			}
-		}
+		s.archiveStaleInsights(ctx, now)
+		s.fetchMorningInsights(ctx, out)
 
-		// Active insights (unverified, most recent 5) + total count
-		unverified := "unverified"
-		insightNotes, insightErr := s.sessionReader.InsightsByStatus(ctx, &unverified, nil, 5)
-		if insightErr != nil {
-			s.logger.Error("morning_context: active insights", "error", insightErr)
-		}
-		out.ActiveInsights = make([]insightBrief, 0, len(insightNotes))
-		for i := range insightNotes {
-			out.ActiveInsights = append(out.ActiveInsights, parseInsightBrief(&insightNotes[i]))
-		}
-
-		unverifiedCount, countErr := s.sessionReader.CountInsightsByStatus(ctx, &unverified)
-		if countErr != nil {
-			s.logger.Error("morning_context: counting unverified insights", "error", countErr)
-		}
-		out.TotalUnverified = unverifiedCount
-
-		// Pending action recommendations (category = action_recommendation)
-		recNotes, recErr := s.sessionReader.InsightsByCategory(ctx, "unverified", "action_recommendation", 3)
-		if recErr != nil {
-			s.logger.Error("morning_context: pending recommendations", "error", recErr)
-		}
-		if len(recNotes) > 0 {
-			out.PendingRecommendations = make([]insightBrief, 0, len(recNotes))
-			for i := range recNotes {
-				out.PendingRecommendations = append(out.PendingRecommendations, parseInsightBrief(&recNotes[i]))
-			}
-		}
-
-		// Yesterday adjustments from latest metrics note
 		if len(metricsNotes) > 0 {
 			out.YesterdayAdjustments = parseAdjustments(metricsNotes[0].Metadata)
 		}
 	}
+
 	if out.PlanningHistory.Entries == nil {
 		out.PlanningHistory.Entries = []dailyMetrics{}
 	}
@@ -374,41 +375,91 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	if out.PendingRecommendations == nil {
 		out.PendingRecommendations = []insightBrief{}
 	}
+}
 
-	// --- RSS highlight summary ---
-	if s.collectedHighlights != nil {
-		weekAgo := now.AddDate(0, 0, -7)
-		highlights, hlErr := s.collectedHighlights.TopRelevantCollected(ctx, weekAgo, 20)
-		if hlErr != nil {
-			s.logger.Error("morning_context: rss highlights", "error", hlErr)
-		} else if len(highlights) > 0 {
-			out.RSSHighlightCount = len(highlights)
-			out.TopRSSHighlight = highlights[0].Title
-		}
+// archiveStaleInsights lazily auto-archives insights older than 14 days.
+func (s *Server) archiveStaleInsights(ctx context.Context, now time.Time) {
+	if s.sessionWriter == nil {
+		return
+	}
+	cutoff := now.AddDate(0, 0, -14)
+	n, err := s.sessionWriter.ArchiveStaleInsights(ctx, cutoff)
+	if err != nil {
+		s.logger.Error("morning_context: auto-archive insights", "error", err)
+	} else if n > 0 {
+		s.logger.Info("auto-archived stale insights", "count", n)
+	}
+}
+
+// fetchMorningInsights fetches active unverified insights, their total count,
+// and pending action recommendations.
+func (s *Server) fetchMorningInsights(ctx context.Context, out *MorningContextOutput) {
+	unverified := "unverified"
+	insightNotes, insightErr := s.sessionReader.InsightsByStatus(ctx, &unverified, nil, 5)
+	if insightErr != nil {
+		s.logger.Error("morning_context: active insights", "error", insightErr)
+	}
+	out.ActiveInsights = make([]insightBrief, 0, len(insightNotes))
+	for i := range insightNotes {
+		out.ActiveInsights = append(out.ActiveInsights, parseInsightBrief(&insightNotes[i]))
 	}
 
-	// --- Daily summary hint (F3: computed metrics for evening reflection) ---
+	unverifiedCount, countErr := s.sessionReader.CountInsightsByStatus(ctx, &unverified)
+	if countErr != nil {
+		s.logger.Error("morning_context: counting unverified insights", "error", countErr)
+	}
+	out.TotalUnverified = unverifiedCount
+
+	recNotes, recErr := s.sessionReader.InsightsByCategory(ctx, "unverified", "action_recommendation", 3)
+	if recErr != nil {
+		s.logger.Error("morning_context: pending recommendations", "error", recErr)
+	}
+	if len(recNotes) > 0 {
+		out.PendingRecommendations = make([]insightBrief, 0, len(recNotes))
+		for i := range recNotes {
+			out.PendingRecommendations = append(out.PendingRecommendations, parseInsightBrief(&recNotes[i]))
+		}
+	}
+}
+
+// fetchMorningRSSHighlights fetches top RSS highlights from the past week.
+func (s *Server) fetchMorningRSSHighlights(ctx context.Context, out *MorningContextOutput, now time.Time) {
+	if s.collectedHighlights == nil {
+		return
+	}
+	weekAgo := now.AddDate(0, 0, -7)
+	highlights, hlErr := s.collectedHighlights.TopRelevantCollected(ctx, weekAgo, 20)
+	if hlErr != nil {
+		s.logger.Error("morning_context: rss highlights", "error", hlErr)
+		return
+	}
+	if len(highlights) > 0 {
+		out.RSSHighlightCount = len(highlights)
+		out.TopRSSHighlight = highlights[0].Title
+	}
+}
+
+// fetchMorningDailySummary fetches the daily summary hint for evening reflection.
+func (s *Server) fetchMorningDailySummary(ctx context.Context, out *MorningContextOutput, today, tomorrow time.Time) {
 	hint, hintErr := s.tasks.DailySummaryHintForDate(ctx, today, tomorrow)
 	if hintErr != nil {
 		s.logger.Error("morning_context: daily summary hint", "error", hintErr)
-	} else {
-		out.DailySummary = &dailySummaryHint{
-			MyDayTasksTotal:     hint.MyDayTasksTotal,
-			MyDayTasksCompleted: hint.MyDayTasksCompleted,
-			NonMyDayCompleted:   hint.NonMyDayCompleted,
-			TotalCompleted:      hint.TotalCompleted,
-			CompletedTitles:     hint.CompletedTitles,
-		}
-		if out.DailySummary.CompletedTitles == nil {
-			out.DailySummary.CompletedTitles = []string{}
-		}
+		return
 	}
-
-	return nil, out, nil
+	out.DailySummary = &dailySummaryHint{
+		MyDayTasksTotal:     hint.MyDayTasksTotal,
+		MyDayTasksCompleted: hint.MyDayTasksCompleted,
+		NonMyDayCompleted:   hint.NonMyDayCompleted,
+		TotalCompleted:      hint.TotalCompleted,
+		CompletedTitles:     hint.CompletedTitles,
+	}
+	if out.DailySummary.CompletedTitles == nil {
+		out.DailySummary.CompletedTitles = []string{}
+	}
 }
 
 // parseDailyMetrics extracts daily metrics from a session note's metadata.
-func parseDailyMetrics(n session.Note) *dailyMetrics {
+func parseDailyMetrics(n *session.Note) *dailyMetrics {
 	if len(n.Metadata) == 0 {
 		return nil
 	}
@@ -440,8 +491,8 @@ func parseDailyMetrics(n session.Note) *dailyMetrics {
 // recentDays controls how many entries are included in Entries (the rest feed monthly summary).
 func buildPlanningHistory(notes []session.Note, recentDays int) planningHistorySummary {
 	allEntries := make([]dailyMetrics, 0, len(notes))
-	for _, n := range notes {
-		if dm := parseDailyMetrics(n); dm != nil {
+	for i := range notes {
+		if dm := parseDailyMetrics(&notes[i]); dm != nil {
 			allEntries = append(allEntries, *dm)
 		}
 	}
@@ -494,15 +545,15 @@ func computeCapacityMetrics(entries []dailyMetrics) (byDay map[string]float64, v
 
 	var allCapacities []float64
 	for _, e := range entries {
-		cap := float64(e.TasksCompleted)
-		allCapacities = append(allCapacities, cap)
+		capacity := float64(e.TasksCompleted)
+		allCapacities = append(allCapacities, capacity)
 
 		d, err := time.Parse(time.DateOnly, e.Date)
 		if err != nil {
 			continue
 		}
 		day := strings.ToLower(d.Weekday().String())
-		byDay[day] += cap
+		byDay[day] += capacity
 		dayCounts[day]++
 	}
 

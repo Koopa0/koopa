@@ -30,7 +30,7 @@ type PushCommit struct {
 }
 
 // ChangedFiles returns deduplicated file paths from all commits that were added or modified.
-func (e PushEvent) ChangedFiles() []string {
+func (e *PushEvent) ChangedFiles() []string {
 	seen := make(map[string]bool)
 	var files []string
 
@@ -69,7 +69,7 @@ type PullRequestData struct {
 }
 
 // RemovedFiles returns deduplicated file paths from all commits that were removed.
-func (e PushEvent) RemovedFiles() []string {
+func (e *PushEvent) RemovedFiles() []string {
 	seen := make(map[string]bool)
 	var files []string
 

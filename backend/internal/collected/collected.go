@@ -18,8 +18,8 @@ const (
 	StatusIgnored Status = "ignored"
 )
 
-// CollectedData represents externally collected data.
-type CollectedData struct {
+// Item represents externally collected data.
+type Item struct {
 	ID               uuid.UUID  `json:"id"`
 	SourceURL        string     `json:"source_url"`
 	SourceName       string     `json:"source_name"`

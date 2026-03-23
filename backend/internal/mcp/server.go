@@ -106,9 +106,9 @@ func WithSessionNotes(r SessionNoteReader, w SessionNoteWriter) ServerOption {
 // NewServer creates an MCP server with all tools registered.
 func NewServer(
 	notes NoteSearcher,
-	activity ActivityReader,
+	activityReader ActivityReader,
 	projects ProjectReader,
-	collected CollectedReader,
+	collectedReader CollectedReader,
 	stats StatsReader,
 	tasks TaskReader,
 	taskWriter TaskWriter,
@@ -120,9 +120,9 @@ func NewServer(
 ) *Server {
 	s := &Server{
 		notes:         notes,
-		activity:      activity,
+		activity:      activityReader,
 		projects:      projects,
-		collected:     collected,
+		collected:     collectedReader,
 		stats:         stats,
 		tasks:         tasks,
 		taskWriter:    taskWriter,
@@ -368,7 +368,7 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 			return nil, SearchNotesOutput{}, fmt.Errorf("text search: %w", err)
 		}
 
-		filterResults, err := s.notes.SearchByFilters(ctx, toSearchFilter(input), fetchLimit)
+		filterResults, err := s.notes.SearchByFilters(ctx, toSearchFilter(&input), fetchLimit)
 		if err != nil {
 			return nil, SearchNotesOutput{}, fmt.Errorf("filter search: %w", err)
 		}
@@ -380,17 +380,17 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 			return nil, SearchNotesOutput{}, fmt.Errorf("text search: %w", err)
 		}
 		results = make([]searchResultEntry, len(textResults))
-		for i, r := range textResults {
-			results[i] = searchResultEntry{Note: r.Note, Score: float64(r.Rank)}
+		for i := range textResults {
+			results[i] = searchResultEntry{Note: textResults[i].Note, Score: float64(textResults[i].Rank)}
 		}
 	default:
-		filterResults, err := s.notes.SearchByFilters(ctx, toSearchFilter(input), limit)
+		filterResults, err := s.notes.SearchByFilters(ctx, toSearchFilter(&input), limit)
 		if err != nil {
 			return nil, SearchNotesOutput{}, fmt.Errorf("filter search: %w", err)
 		}
 		results = make([]searchResultEntry, len(filterResults))
-		for i, n := range filterResults {
-			results[i] = searchResultEntry{Note: n}
+		for i := range filterResults {
+			results[i] = searchResultEntry{Note: filterResults[i]}
 		}
 	}
 
@@ -398,8 +398,8 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 		Results: make([]noteResult, len(results)),
 		Total:   len(results),
 	}
-	for i, r := range results {
-		out.Results[i] = toNoteResult(r)
+	for i := range results {
+		out.Results[i] = toNoteResult(&results[i])
 	}
 
 	return nil, out, nil
@@ -478,11 +478,11 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		RecentActivity: make([]activityResult, len(events)),
 		RelatedNotes:   make([]noteResult, len(relatedNotes)),
 	}
-	for i, e := range events {
-		out.RecentActivity[i] = eventToResult(e)
+	for i := range events {
+		out.RecentActivity[i] = eventToResult(&events[i])
 	}
-	for i, n := range relatedNotes {
-		out.RelatedNotes[i] = toNoteResult(searchResultEntry{Note: n})
+	for i := range relatedNotes {
+		out.RelatedNotes[i] = toNoteResult(&searchResultEntry{Note: relatedNotes[i]})
 	}
 
 	return nil, out, nil
@@ -522,7 +522,8 @@ func (s *Server) getRecentActivity(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 
 	grouped := make(map[string][]activityResult)
-	for _, e := range events {
+	for i := range events {
+		e := &events[i]
 		grouped[e.Source] = append(grouped[e.Source], eventToResult(e))
 	}
 
@@ -562,8 +563,10 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 		Decisions: make([]noteResult, len(notes)),
 		Total:     len(notes),
 	}
-	for i, n := range notes {
-		out.Decisions[i] = toNoteResult(searchResultEntry{Note: n})
+	for i := range notes {
+		n := notes[i]
+		entry := searchResultEntry{Note: n}
+		out.Decisions[i] = toNoteResult(&entry)
 	}
 
 	return nil, out, nil
@@ -597,7 +600,7 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 
 	// Prefer LatestCollectedData (no mandatory time constraint) if available.
 	// Falls back to RecentCollectedData with time range if not.
-	var data []collected.CollectedData
+	var data []collected.Item
 	var err error
 
 	if s.collectedLatest != nil {
@@ -617,13 +620,13 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 
 	items := make([]rssItem, len(data))
-	for i, d := range data {
+	for i := range data {
 		items[i] = rssItem{
-			Title:       d.Title,
-			SourceName:  d.SourceName,
-			URL:         d.SourceURL,
-			Topics:      d.Topics,
-			CollectedAt: d.CollectedAt.Format(time.RFC3339),
+			Title:       data[i].Title,
+			SourceName:  data[i].SourceName,
+			URL:         data[i].SourceURL,
+			Topics:      data[i].Topics,
+			CollectedAt: data[i].CollectedAt.Format(time.RFC3339),
 		}
 	}
 
@@ -705,7 +708,8 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	results := make([]taskResult, len(tasks))
-	for i, t := range tasks {
+	for i := range tasks {
+		t := &tasks[i]
 		r := taskResult{
 			ID:           t.ID.String(),
 			Title:        t.Title,
@@ -819,7 +823,8 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	if cr.err != nil {
 		s.logger.Error("search_knowledge: content search failed", "error", cr.err)
 	} else {
-		for _, c := range cr.contents {
+		for i := range cr.contents {
+			c := &cr.contents[i]
 			excerpt := c.Excerpt
 			if excerpt == "" {
 				excerpt = truncate(c.Body, 300)
@@ -840,7 +845,8 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	if nr.err != nil {
 		s.logger.Error("search_knowledge: note search failed", "error", nr.err)
 	} else {
-		for _, n := range nr.notes {
+		for i := range nr.notes {
+			n := &nr.notes[i]
 			seen[n.FilePath] = true
 			results = append(results, knowledgeResult{
 				SourceType: "note",
@@ -857,7 +863,8 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	if sr.err != nil {
 		s.logger.Error("search_knowledge: semantic search failed", "error", sr.err)
 	} else {
-		for _, n := range sr.notes {
+		for i := range sr.notes {
+			n := &sr.notes[i]
 			if seen[n.FilePath] {
 				continue
 			}
@@ -954,8 +961,8 @@ func (s *Server) listProjects(ctx context.Context, _ *mcp.CallToolRequest, input
 	}
 
 	summaries := make([]projectSummary, len(projects))
-	for i, p := range projects {
-		summaries[i] = toProjectSummary(&p)
+	for i := range projects {
+		summaries[i] = toProjectSummary(&projects[i])
 	}
 
 	return nil, ListProjectsOutput{Projects: summaries, Total: len(summaries)}, nil
@@ -993,7 +1000,8 @@ func (s *Server) getGoals(ctx context.Context, _ *mcp.CallToolRequest, input Get
 
 	// Client-side filtering (goal store returns all, we filter here).
 	var filtered []goalResult
-	for _, g := range goals {
+	for i := range goals {
+		g := &goals[i]
 		if input.Area != "" && g.Area != input.Area {
 			continue
 		}
@@ -1107,7 +1115,8 @@ func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	results := make([]sessionNoteResult, len(notes))
-	for i, n := range notes {
+	for i := range notes {
+		n := &notes[i]
 		var meta map[string]any
 		if len(n.Metadata) > 0 {
 			_ = json.Unmarshal(n.Metadata, &meta) // best-effort
@@ -1209,7 +1218,7 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	// Prepend metadata header so the frontend can parse project/session_type
 	body := fmt.Sprintf("project: %s\nsession_type: %s\n\n%s", proj.Title, input.SessionType, input.Body)
 
-	created, err := s.contentWriter.CreateContent(ctx, content.CreateParams{
+	created, err := s.contentWriter.CreateContent(ctx, &content.CreateParams{
 		Slug:        slug,
 		Title:       input.Title,
 		Body:        body,
@@ -1224,7 +1233,7 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		if errors.Is(err, content.ErrConflict) {
 			// Slug conflict: append timestamp to make unique
 			slug = fmt.Sprintf("%s-dev-log-%s-%d", proj.Slug, now.Format("2006-01-02"), now.Unix()%10000)
-			created, err = s.contentWriter.CreateContent(ctx, content.CreateParams{
+			created, err = s.contentWriter.CreateContent(ctx, &content.CreateParams{
 				Slug:        slug,
 				Title:       input.Title,
 				Body:        body,
@@ -1260,7 +1269,7 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 // --- helpers ---
 
-func toSearchFilter(input SearchNotesInput) note.SearchFilter {
+func toSearchFilter(input *SearchNotesInput) note.SearchFilter {
 	var f note.SearchFilter
 	if input.Type != "" {
 		f.Type = &input.Type
@@ -1277,7 +1286,7 @@ func toSearchFilter(input SearchNotesInput) note.SearchFilter {
 	return f
 }
 
-func toNoteResult(r searchResultEntry) noteResult {
+func toNoteResult(r *searchResultEntry) noteResult {
 	return noteResult{
 		ID:       r.Note.ID,
 		FilePath: r.Note.FilePath,
@@ -1305,7 +1314,7 @@ func toProjectSummary(p *project.Project) projectSummary {
 	}
 }
 
-func eventToResult(e activity.Event) activityResult {
+func eventToResult(e *activity.Event) activityResult {
 	return activityResult{
 		ID:        e.ID,
 		Timestamp: e.Timestamp.Format(time.RFC3339),
@@ -1332,7 +1341,7 @@ func extractFrontmatter(body, key string) string {
 			continue
 		}
 		// Stop at first markdown heading — past frontmatter zone
-		if len(line) > 0 && line[0] == '#' {
+		if line != "" && line[0] == '#' {
 			break
 		}
 		if k, v, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(k) == key {

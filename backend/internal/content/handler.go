@@ -159,7 +159,8 @@ func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]rssItem, len(contents))
-	for i, c := range contents {
+	for i := range contents {
+		c := contents[i]
 		pubDate := ""
 		if c.PublishedAt != nil {
 			pubDate = c.PublishedAt.Format(time.RFC1123Z)
@@ -231,7 +232,8 @@ func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	urls := make([]sitemapURL, len(contents))
-	for i, c := range contents {
+	for i := range contents {
+		c := contents[i]
 		urls[i] = sitemapURL{
 			Loc:     fmt.Sprintf("%s/%s/%s", h.siteURL, c.Type, c.Slug),
 			LastMod: c.UpdatedAt.Format("2006-01-02"),
@@ -283,7 +285,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		p.Tags = []string{}
 	}
 
-	c, err := h.store.CreateContent(r.Context(), p)
+	c, err := h.store.CreateContent(r.Context(), &p)
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
 			api.Error(w, http.StatusConflict, "CONFLICT", "content slug already exists")
@@ -310,7 +312,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, err := h.store.UpdateContent(r.Context(), id, p)
+	c, err := h.store.UpdateContent(r.Context(), id, &p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
@@ -434,7 +436,12 @@ func (h *Handler) KnowledgeGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api.Encode(w, http.StatusOK, api.Response{Data: v.(*KnowledgeGraph)})
+	graph, ok := v.(*KnowledgeGraph)
+	if !ok {
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "unexpected graph type")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: graph})
 }
 
 const (
@@ -533,7 +540,7 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 	// Compute pairwise cosine similarity, keeping top-N per node.
 	topEdges := make([][]simEdge, len(nodes))
 
-	for i := range len(nodes) {
+	for i := range nodes {
 		for j := i + 1; j < len(nodes); j++ {
 			sim := cosineSimilarity(nodes[i].embedding, nodes[j].embedding)
 			if sim < similarityThreshold {

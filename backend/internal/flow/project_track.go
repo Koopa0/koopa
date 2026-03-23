@@ -22,7 +22,7 @@ type ProjectByRepoFinder interface {
 
 // ProjectDescriptionUpdater updates a project's long description.
 type ProjectDescriptionUpdater interface {
-	UpdateProject(ctx context.Context, id uuid.UUID, p project.UpdateParams) (*project.Project, error)
+	UpdateProject(ctx context.Context, id uuid.UUID, p *project.UpdateParams) (*project.Project, error)
 }
 
 // ProjectTrackOutput is the JSON output of the project-track flow.
@@ -105,8 +105,8 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 		return ProjectTrackOutput{Skipped: true, Text: "project not found for repo"}, nil
 	}
 
-	if err := pt.budget.Reserve(estimatedTrackTokens); err != nil {
-		return ProjectTrackOutput{}, fmt.Errorf("budget reserve: %w", err)
+	if reserveErr := pt.budget.Reserve(estimatedTrackTokens); reserveErr != nil {
+		return ProjectTrackOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
 	}
 
 	pt.logger.Info("project-track starting", "repo", input.Repo, "project", proj.Title, "commits", len(input.Commits))
@@ -114,7 +114,7 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 	userPrompt := buildProjectTrackPrompt(proj, input.Commits)
 
 	text, err := genkit.Run(ctx, "generate-project-track", func() (string, error) {
-		resp, err := genkit.Generate(ctx, pt.g,
+		resp, genErr := genkit.Generate(ctx, pt.g,
 			ai.WithModel(pt.model),
 			ai.WithSystem(projectTrackSystemPrompt),
 			ai.WithPrompt(userPrompt),
@@ -123,11 +123,11 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 				MaxOutputTokens: 512,
 			}),
 		)
-		if err != nil {
-			return "", fmt.Errorf("generating project track: %w", err)
+		if genErr != nil {
+			return "", fmt.Errorf("generating project track: %w", genErr)
 		}
-		if err := checkFinishReason(resp); err != nil {
-			return "", err
+		if finishErr := checkFinishReason(resp); finishErr != nil {
+			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
@@ -136,7 +136,7 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 	}
 
 	// Update project's long description with the progress update
-	_, err = pt.updater.UpdateProject(ctx, proj.ID, project.UpdateParams{
+	_, err = pt.updater.UpdateProject(ctx, proj.ID, &project.UpdateParams{
 		LongDescription: &text,
 	})
 	if err != nil {

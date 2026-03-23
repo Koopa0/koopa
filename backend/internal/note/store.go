@@ -28,7 +28,7 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 }
 
 // UpsertNote creates or updates a knowledge note by file_path.
-func (s *Store) UpsertNote(ctx context.Context, p UpsertParams) (*Note, error) {
+func (s *Store) UpsertNote(ctx context.Context, p *UpsertParams) (*Note, error) {
 	tagsJSON, err := json.Marshal(p.Tags)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling tags: %w", err)
@@ -55,7 +55,7 @@ func (s *Store) UpsertNote(ctx context.Context, p UpsertParams) (*Note, error) {
 		return nil, fmt.Errorf("upserting note %s: %w", p.FilePath, err)
 	}
 
-	n := toNote(row)
+	n := toNote(&row)
 	return &n, nil
 }
 
@@ -88,10 +88,10 @@ func (s *Store) SearchByText(ctx context.Context, query string, limit int) ([]Se
 		return nil, fmt.Errorf("searching notes by text %q: %w", query, err)
 	}
 	results := make([]SearchResult, len(rows))
-	for i, r := range rows {
+	for i := range rows {
 		results[i] = SearchResult{
-			Note: toNoteFromSearch(r),
-			Rank: r.Rank,
+			Note: toNoteFromSearch(&rows[i]),
+			Rank: rows[i].Rank,
 		}
 	}
 	return results, nil
@@ -110,8 +110,8 @@ func (s *Store) SearchByFilters(ctx context.Context, f SearchFilter, limit int) 
 		return nil, fmt.Errorf("searching notes by filters: %w", err)
 	}
 	notes := make([]Note, len(rows))
-	for i, r := range rows {
-		notes[i] = toNoteFromFilterRow(r)
+	for i := range rows {
+		notes[i] = toNoteFromFilterRow(&rows[i])
 	}
 	return notes, nil
 }
@@ -127,8 +127,8 @@ func (s *Store) NotesByType(ctx context.Context, noteType string, filterContext 
 		return nil, fmt.Errorf("querying notes by type %s: %w", noteType, err)
 	}
 	notes := make([]Note, len(rows))
-	for i, r := range rows {
-		notes[i] = toNoteFromTypeRow(r)
+	for i := range rows {
+		notes[i] = toNoteFromTypeRow(&rows[i])
 	}
 	return notes, nil
 }
@@ -136,7 +136,7 @@ func (s *Store) NotesByType(ctx context.Context, noteType string, filterContext 
 // SyncNoteLinks replaces all wikilink edges for a note.
 // Deletes existing links, then bulk-inserts the new set using unnest
 // to avoid N+1 individual INSERT statements.
-func (s *Store) SyncNoteLinks(ctx context.Context, noteID int64, links []NoteLink) error {
+func (s *Store) SyncNoteLinks(ctx context.Context, noteID int64, links []Link) error {
 	if err := s.q.DeleteNoteLinksByNoteID(ctx, noteID); err != nil {
 		return fmt.Errorf("deleting note links for note %d: %w", noteID, err)
 	}
@@ -162,7 +162,7 @@ func (s *Store) SyncNoteLinks(ctx context.Context, noteID int64, links []NoteLin
 }
 
 // toNote converts a db.ObsidianNote to a domain Note.
-func toNote(row db.ObsidianNote) Note {
+func toNote(row *db.ObsidianNote) Note {
 	n := Note{
 		ID:           row.ID,
 		FilePath:     row.FilePath,
@@ -196,7 +196,7 @@ func toNote(row db.ObsidianNote) Note {
 }
 
 // toNoteFromSearch converts a SearchNotesByTextRow to a domain Note.
-func toNoteFromSearch(r db.SearchNotesByTextRow) Note {
+func toNoteFromSearch(r *db.SearchNotesByTextRow) Note {
 	n := Note{
 		ID:          r.ID,
 		FilePath:    r.FilePath,
@@ -221,7 +221,7 @@ func toNoteFromSearch(r db.SearchNotesByTextRow) Note {
 }
 
 // toNoteFromFilterRow converts a SearchNotesByFiltersRow to a domain Note.
-func toNoteFromFilterRow(r db.SearchNotesByFiltersRow) Note {
+func toNoteFromFilterRow(r *db.SearchNotesByFiltersRow) Note {
 	n := Note{
 		ID:          r.ID,
 		FilePath:    r.FilePath,
@@ -284,7 +284,8 @@ func (s *Store) SearchBySimilarity(ctx context.Context, queryVec pgvector.Vector
 		return nil, fmt.Errorf("semantic search notes: %w", err)
 	}
 	results := make([]SimilarityResult, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		n := Note{
 			ID:          r.ID,
 			FilePath:    r.FilePath,
@@ -311,7 +312,7 @@ func (s *Store) SearchBySimilarity(ctx context.Context, queryVec pgvector.Vector
 }
 
 // toNoteFromTypeRow converts a NotesByTypeAndContextRow to a domain Note.
-func toNoteFromTypeRow(r db.NotesByTypeAndContextRow) Note {
+func toNoteFromTypeRow(r *db.NotesByTypeAndContextRow) Note {
 	n := Note{
 		ID:          r.ID,
 		FilePath:    r.FilePath,

@@ -33,7 +33,7 @@ func (s *Store) CreateRun(ctx context.Context, flowName string, input json.RawMe
 	if err != nil {
 		return nil, fmt.Errorf("creating flow run: %w", err)
 	}
-	return dbToRun(r), nil
+	return dbToRun(&r), nil
 }
 
 // PendingRunExists returns true if a pending or running flow run exists
@@ -62,7 +62,7 @@ func (s *Store) LatestCompletedRun(ctx context.Context, flowName string, content
 		}
 		return nil, fmt.Errorf("querying latest completed run: %w", err)
 	}
-	return dbToRun(r), nil
+	return dbToRun(&r), nil
 }
 
 // Run returns a single flow run by ID.
@@ -74,7 +74,7 @@ func (s *Store) Run(ctx context.Context, id uuid.UUID) (*Run, error) {
 		}
 		return nil, fmt.Errorf("querying flow run %s: %w", id, err)
 	}
-	return dbToRun(r), nil
+	return dbToRun(&r), nil
 }
 
 // Runs returns a paginated list of flow runs.
@@ -99,8 +99,8 @@ func (s *Store) Runs(ctx context.Context, f Filter) ([]Run, int, error) {
 	}
 
 	runs := make([]Run, len(rows))
-	for i, r := range rows {
-		runs[i] = *dbToRun(r)
+	for i := range rows {
+		runs[i] = *dbToRun(&rows[i])
 	}
 	return runs, int(count), nil
 }
@@ -146,8 +146,8 @@ func (s *Store) RetryableRuns(ctx context.Context) ([]Run, error) {
 		return nil, fmt.Errorf("fetching retryable flow runs: %w", err)
 	}
 	runs := make([]Run, len(rows))
-	for i, r := range rows {
-		runs[i] = *dbToRun(r)
+	for i := range rows {
+		runs[i] = *dbToRun(&rows[i])
 	}
 	return runs, nil
 }
@@ -186,7 +186,7 @@ func (s *Store) FailureStats(ctx context.Context, since time.Time) ([]FlowFailur
 	return stats, nil
 }
 
-func dbToRun(r db.FlowRun) *Run {
+func dbToRun(r *db.FlowRun) *Run {
 	return &Run{
 		ID:          r.ID,
 		FlowName:    r.FlowName,

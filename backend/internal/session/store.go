@@ -22,7 +22,7 @@ func NewStore(dbtx db.DBTX) *Store {
 }
 
 // CreateNote inserts a new session note.
-func (s *Store) CreateNote(ctx context.Context, p CreateParams) (*Note, error) {
+func (s *Store) CreateNote(ctx context.Context, p *CreateParams) (*Note, error) {
 	row, err := s.q.CreateNote(ctx, db.CreateNoteParams{
 		NoteDate: p.NoteDate,
 		NoteType: p.NoteType,
@@ -33,7 +33,7 @@ func (s *Store) CreateNote(ctx context.Context, p CreateParams) (*Note, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating session note: %w", err)
 	}
-	n := rowToNote(row)
+	n := rowToNote(&row)
 	return &n, nil
 }
 
@@ -48,8 +48,8 @@ func (s *Store) NotesByDate(ctx context.Context, startDate, endDate time.Time, n
 		return nil, fmt.Errorf("listing session notes: %w", err)
 	}
 	notes := make([]Note, len(rows))
-	for i, r := range rows {
-		notes[i] = rowToNote(r)
+	for i := range rows {
+		notes[i] = rowToNote(&rows[i])
 	}
 	return notes, nil
 }
@@ -64,7 +64,7 @@ func (s *Store) LatestNoteByType(ctx context.Context, noteType string) (*Note, e
 		}
 		return nil, fmt.Errorf("querying latest %s note: %w", noteType, err)
 	}
-	n := rowToNote(row)
+	n := rowToNote(&row)
 	return &n, nil
 }
 
@@ -75,8 +75,8 @@ func (s *Store) MetricsHistory(ctx context.Context, sinceDate time.Time) ([]Note
 		return nil, fmt.Errorf("querying metrics history: %w", err)
 	}
 	notes := make([]Note, len(rows))
-	for i, r := range rows {
-		notes[i] = rowToNote(r)
+	for i := range rows {
+		notes[i] = rowToNote(&rows[i])
 	}
 	return notes, nil
 }
@@ -91,7 +91,7 @@ func (s *Store) NoteByID(ctx context.Context, id int64) (*Note, error) {
 		}
 		return nil, fmt.Errorf("querying session note %d: %w", id, err)
 	}
-	n := rowToNote(row)
+	n := rowToNote(&row)
 	return &n, nil
 }
 
@@ -106,8 +106,8 @@ func (s *Store) InsightsByStatus(ctx context.Context, status, project *string, l
 		return nil, fmt.Errorf("querying insights: %w", err)
 	}
 	notes := make([]Note, len(rows))
-	for i, r := range rows {
-		notes[i] = rowToNote(r)
+	for i := range rows {
+		notes[i] = rowToNote(&rows[i])
 	}
 	return notes, nil
 }
@@ -122,7 +122,7 @@ func (s *Store) CountInsightsByStatus(ctx context.Context, status *string) (int6
 }
 
 // UpdateNoteMetadata updates a note's metadata.
-func (s *Store) UpdateNoteMetadata(ctx context.Context, p UpdateMetadataParams) (*Note, error) {
+func (s *Store) UpdateNoteMetadata(ctx context.Context, p *UpdateMetadataParams) (*Note, error) {
 	row, err := s.q.UpdateNoteMetadata(ctx, db.UpdateNoteMetadataParams{
 		ID:       p.ID,
 		Metadata: p.Metadata,
@@ -133,7 +133,7 @@ func (s *Store) UpdateNoteMetadata(ctx context.Context, p UpdateMetadataParams) 
 		}
 		return nil, fmt.Errorf("updating session note %d metadata: %w", p.ID, err)
 	}
-	n := rowToNote(row)
+	n := rowToNote(&row)
 	return &n, nil
 }
 
@@ -156,7 +156,7 @@ func (s *Store) LatestNoteBySource(ctx context.Context, source string) (*Note, e
 		}
 		return nil, fmt.Errorf("querying latest note by source %q: %w", source, err)
 	}
-	n := rowToNote(row)
+	n := rowToNote(&row)
 	return &n, nil
 }
 
@@ -171,8 +171,8 @@ func (s *Store) InsightsByCategory(ctx context.Context, status, category string,
 		return nil, fmt.Errorf("querying insights by category: %w", err)
 	}
 	notes := make([]Note, len(rows))
-	for i, r := range rows {
-		notes[i] = rowToNote(r)
+	for i := range rows {
+		notes[i] = rowToNote(&rows[i])
 	}
 	return notes, nil
 }
@@ -184,8 +184,8 @@ func (s *Store) InsightsSince(ctx context.Context, sinceDate time.Time) ([]Note,
 		return nil, fmt.Errorf("querying insights since %s: %w", sinceDate.Format(time.DateOnly), err)
 	}
 	notes := make([]Note, len(rows))
-	for i, r := range rows {
-		notes[i] = rowToNote(r)
+	for i := range rows {
+		notes[i] = rowToNote(&rows[i])
 	}
 	return notes, nil
 }
@@ -204,7 +204,7 @@ func (s *Store) DeleteOldNotes(ctx context.Context, shortCutoff, longCutoff time
 	return n, nil
 }
 
-func rowToNote(r db.SessionNote) Note {
+func rowToNote(r *db.SessionNote) Note {
 	return Note{
 		ID:        r.ID,
 		NoteDate:  r.NoteDate,
