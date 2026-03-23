@@ -191,7 +191,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       10 * time.Second,
 			WriteTimeout:      120 * time.Second, // long: MCP uses SSE streaming
-			IdleTimeout:       60 * time.Second,
+			IdleTimeout:       600 * time.Second, // 10 min: keep MCP connections alive between tool calls
 		}
 
 		go func() {
@@ -298,7 +298,7 @@ func (o *oauthProvider) issueToken() (string, time.Duration) {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	tok := hex.EncodeToString(b)
-	ttl := 1 * time.Hour
+	ttl := 30 * 24 * time.Hour // 30 days — prevent Claude.ai frequent reconnections
 	o.mu.Lock()
 	o.tokens[tok] = time.Now().Add(ttl)
 	o.mu.Unlock()
