@@ -1,7 +1,6 @@
 package review
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -9,6 +8,11 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+}
 
 // Handler handles review queue HTTP requests.
 type Handler struct {
@@ -84,12 +88,7 @@ func (h *Handler) Edit(w http.ResponseWriter, r *http.Request) {
 	// Get the review to find the content ID
 	rev, err := h.store.Review(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "review not found")
-			return
-		}
-		h.logger.Error("querying review", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get review")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 

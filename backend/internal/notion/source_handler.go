@@ -13,6 +13,12 @@ import (
 	"github.com/koopa0/blog-backend/internal/api"
 )
 
+// sourceStoreErrors maps source store sentinel errors to HTTP responses.
+var sourceStoreErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
+}
+
 // SyncTrigger triggers a sync for a specific role or all roles.
 type SyncTrigger interface {
 	SyncAll(ctx context.Context)
@@ -75,13 +81,8 @@ func (h *SourceHandler) ByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := h.store.Source(r.Context(), id)
-	if errors.Is(err, ErrNotFound) {
-		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-		return
-	}
 	if err != nil {
-		h.logger.Error("querying notion source", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get notion source")
+		api.HandleError(w, h.logger, err, sourceStoreErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: src})
@@ -141,13 +142,8 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := h.store.CreateSource(r.Context(), &p)
-	if errors.Is(err, ErrConflict) {
-		api.Error(w, http.StatusConflict, "CONFLICT", "database_id already registered")
-		return
-	}
 	if err != nil {
-		h.logger.Error("creating notion source", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create notion source")
+		api.HandleError(w, h.logger, err, sourceStoreErrors...)
 		return
 	}
 	h.invalidateCache(src.DatabaseID)
@@ -197,13 +193,8 @@ func (h *SourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := h.store.UpdateSource(r.Context(), id, &p)
-	if errors.Is(err, ErrNotFound) {
-		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-		return
-	}
 	if err != nil {
-		h.logger.Error("updating notion source", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update notion source")
+		api.HandleError(w, h.logger, err, sourceStoreErrors...)
 		return
 	}
 	h.invalidateCache(src.DatabaseID)
@@ -222,12 +213,7 @@ func (h *SourceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	src, lookupErr := h.store.Source(r.Context(), id)
 
 	if err := h.store.DeleteSource(r.Context(), id); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-			return
-		}
-		h.logger.Error("deleting notion source", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete notion source")
+		api.HandleError(w, h.logger, err, sourceStoreErrors...)
 		return
 	}
 	if lookupErr == nil {

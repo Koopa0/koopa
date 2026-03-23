@@ -1,7 +1,6 @@
 package tracking
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -9,6 +8,11 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+}
 
 // Handler handles tracking topic HTTP requests.
 type Handler struct {
@@ -69,12 +73,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.store.UpdateTrackingTopic(r.Context(), id, &p)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "tracking topic not found")
-			return
-		}
-		h.logger.Error("updating tracking topic", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update tracking topic")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: t})

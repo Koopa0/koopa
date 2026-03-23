@@ -3,7 +3,6 @@ package flowrun
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -12,6 +11,11 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+}
 
 // JobSubmitter submits a flow run for async processing.
 type JobSubmitter interface {
@@ -52,12 +56,7 @@ func (h *Handler) ByID(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.store.Run(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "flow run not found")
-			return
-		}
-		h.logger.Error("querying flow run", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query flow run")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 
@@ -74,12 +73,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.store.Run(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "flow run not found")
-			return
-		}
-		h.logger.Error("querying flow run for retry", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query flow run")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 

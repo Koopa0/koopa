@@ -2,7 +2,6 @@ package feed
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -10,6 +9,12 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
+}
 
 // ManualFetcher fetches new items from a feed on demand.
 type ManualFetcher interface {
@@ -62,12 +67,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	f, err := h.store.CreateFeed(r.Context(), &p)
 	if err != nil {
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "feed url already exists")
-			return
-		}
-		h.logger.Error("creating feed", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create feed")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: f})
@@ -93,16 +93,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	f, err := h.store.UpdateFeed(r.Context(), id, &p)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "feed not found")
-			return
-		}
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "feed url already exists")
-			return
-		}
-		h.logger.Error("updating feed", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update feed")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: f})
@@ -144,12 +135,7 @@ func (h *Handler) Fetch(w http.ResponseWriter, r *http.Request) {
 
 	f, err := h.store.Feed(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "feed not found")
-			return
-		}
-		h.logger.Error("querying feed for fetch", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get feed")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 

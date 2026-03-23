@@ -1,7 +1,6 @@
 package tag
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -10,6 +9,13 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
+	{Target: ErrHasReferences, Status: http.StatusConflict, Code: "HAS_REFERENCES"},
+}
 
 // Input length limits for tag fields.
 const (
@@ -59,12 +65,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.store.CreateTag(r.Context(), &p)
 	if err != nil {
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "tag slug already exists")
-			return
-		}
-		h.logger.Error("creating tag", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create tag")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: t})
@@ -97,16 +98,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.store.UpdateTag(r.Context(), id, &p)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "tag not found")
-			return
-		}
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "tag slug already exists")
-			return
-		}
-		h.logger.Error("updating tag", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update tag")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: t})
@@ -121,16 +113,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.DeleteTag(r.Context(), id); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "tag not found")
-			return
-		}
-		if errors.Is(err, ErrHasReferences) {
-			api.Error(w, http.StatusConflict, "HAS_REFERENCES", "tag has aliases or notes referencing it")
-			return
-		}
-		h.logger.Error("deleting tag", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete tag")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -176,12 +159,7 @@ func (h *Handler) MapAlias(w http.ResponseWriter, r *http.Request) {
 
 	a, err := h.store.MapAlias(r.Context(), id, p.TagID)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "alias not found")
-			return
-		}
-		h.logger.Error("mapping alias", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to map alias")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: a})
@@ -197,12 +175,7 @@ func (h *Handler) ConfirmAlias(w http.ResponseWriter, r *http.Request) {
 
 	a, err := h.store.ConfirmAlias(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "alias not found")
-			return
-		}
-		h.logger.Error("confirming alias", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to confirm alias")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: a})
@@ -218,12 +191,7 @@ func (h *Handler) RejectAlias(w http.ResponseWriter, r *http.Request) {
 
 	a, err := h.store.RejectAlias(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "alias not found")
-			return
-		}
-		h.logger.Error("rejecting alias", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to reject alias")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: a})

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -18,6 +17,12 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
+}
 
 // Cache TTLs for pre-serialized feed responses and knowledge graph.
 // These caches expire on TTL only — no active invalidation on content writes.
@@ -73,12 +78,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	c, err := h.store.ContentBySlug(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
-			return
-		}
-		h.logger.Error("querying content", "slug", slug, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get content")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
@@ -287,12 +287,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	c, err := h.store.CreateContent(r.Context(), &p)
 	if err != nil {
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "content slug already exists")
-			return
-		}
-		h.logger.Error("creating content", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create content")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: c})
@@ -314,16 +309,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	c, err := h.store.UpdateContent(r.Context(), id, &p)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
-			return
-		}
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "content slug already exists")
-			return
-		}
-		h.logger.Error("updating content", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update content")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
@@ -355,12 +341,7 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 
 	c, err := h.store.PublishContent(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
-			return
-		}
-		h.logger.Error("publishing content", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to publish content")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
@@ -385,12 +366,7 @@ func (h *Handler) Related(w http.ResponseWriter, r *http.Request) {
 
 	id, embedding, err := h.store.ContentEmbeddingBySlug(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
-			return
-		}
-		h.logger.Error("querying embedding", "slug", slug, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get content")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 

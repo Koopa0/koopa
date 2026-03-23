@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -94,4 +95,24 @@ func PagedResponse(data any, total, page, perPage int) Response {
 			TotalPages: totalPages,
 		},
 	}
+}
+
+// ErrMap maps a sentinel error to an HTTP status and error code.
+type ErrMap struct {
+	Target error
+	Status int
+	Code   string
+}
+
+// HandleError writes an error response by checking sentinel error mappings.
+// The first matching sentinel wins. Unknown errors are logged and return 500.
+func HandleError(w http.ResponseWriter, logger *slog.Logger, err error, maps ...ErrMap) {
+	for _, m := range maps {
+		if errors.Is(err, m.Target) {
+			Error(w, m.Status, m.Code, m.Target.Error())
+			return
+		}
+	}
+	logger.Error("internal error", "error", err)
+	Error(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
 }

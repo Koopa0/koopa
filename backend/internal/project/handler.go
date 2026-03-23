@@ -1,7 +1,6 @@
 package project
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -9,6 +8,12 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
+}
 
 // Handler handles project HTTP requests.
 type Handler struct {
@@ -48,12 +53,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	p, err := h.store.ProjectBySlug(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "project not found")
-			return
-		}
-		h.logger.Error("querying project", "slug", slug, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get project")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: p})
@@ -76,12 +76,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	proj, err := h.store.CreateProject(r.Context(), &p)
 	if err != nil {
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "project slug already exists")
-			return
-		}
-		h.logger.Error("creating project", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create project")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: proj})
@@ -103,16 +98,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	proj, err := h.store.UpdateProject(r.Context(), id, &p)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "project not found")
-			return
-		}
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "project slug already exists")
-			return
-		}
-		h.logger.Error("updating project", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update project")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: proj})

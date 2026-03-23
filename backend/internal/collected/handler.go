@@ -1,7 +1,6 @@
 package collected
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -9,6 +8,11 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+}
 
 // Handler handles collected data HTTP requests.
 type Handler struct {
@@ -107,12 +111,7 @@ func (h *Handler) SubmitFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.UpdateFeedback(r.Context(), id, fb); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "collected data not found")
-			return
-		}
-		h.logger.Error("updating feedback", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update feedback")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

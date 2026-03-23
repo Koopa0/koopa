@@ -2,7 +2,6 @@ package topic
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -13,6 +12,12 @@ import (
 	"github.com/koopa0/blog-backend/internal/api"
 	"github.com/koopa0/blog-backend/internal/content"
 )
+
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
+}
 
 // ContentReader reads published contents for a topic.
 type ContentReader interface {
@@ -65,12 +70,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	t, err := h.store.TopicBySlug(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "topic not found")
-			return
-		}
-		h.logger.Error("querying topic", "slug", slug, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get topic")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 
@@ -103,12 +103,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.store.CreateTopic(r.Context(), &p)
 	if err != nil {
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "topic slug already exists")
-			return
-		}
-		h.logger.Error("creating topic", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create topic")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	h.topicCache.Del("topics")
@@ -131,16 +126,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.store.UpdateTopic(r.Context(), id, &p)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "topic not found")
-			return
-		}
-		if errors.Is(err, ErrConflict) {
-			api.Error(w, http.StatusConflict, "CONFLICT", "topic slug already exists")
-			return
-		}
-		h.logger.Error("updating topic", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update topic")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	h.topicCache.Del("topics")

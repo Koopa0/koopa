@@ -14,6 +14,16 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 )
 
+// contentErrors maps content-related sentinel errors to HTTP responses.
+var contentErrors = []api.ErrMap{
+	{Target: content.ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+}
+
+// runErrors maps flow run sentinel errors to HTTP responses.
+var runErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+}
+
 // ErrNotFound indicates a flow-related resource was not found.
 // Defined separately from flowrun.ErrNotFound to break the flow ↔ flowrun import cycle.
 // The runReader bridge in cmd/app/main.go translates between the two.
@@ -75,12 +85,7 @@ func (h *Handler) TriggerPolish(w http.ResponseWriter, r *http.Request) {
 
 	// verify content exists
 	if _, checkErr := h.content.Content(r.Context(), contentID); checkErr != nil {
-		if errors.Is(checkErr, content.ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
-			return
-		}
-		h.logger.Error("checking content", "content_id", contentID, "error", checkErr)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to check content")
+		api.HandleError(w, h.logger, checkErr, contentErrors...)
 		return
 	}
 
@@ -110,12 +115,7 @@ func (h *Handler) PolishResult(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.runs.LatestCompletedRunResult(r.Context(), "content-polish", contentID)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "no completed polish run found")
-			return
-		}
-		h.logger.Error("querying polish result", "content_id", contentID, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query polish result")
+		api.HandleError(w, h.logger, err, runErrors...)
 		return
 	}
 
@@ -163,12 +163,7 @@ func (h *Handler) ApprovePolish(w http.ResponseWriter, r *http.Request) {
 	// fetch the run and verify it's a completed content-polish run
 	run, err := h.runs.RunResult(r.Context(), runID)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "flow run not found")
-			return
-		}
-		h.logger.Error("querying flow run", "run_id", runID, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query flow run")
+		api.HandleError(w, h.logger, err, runErrors...)
 		return
 	}
 
@@ -197,12 +192,7 @@ func (h *Handler) ApprovePolish(w http.ResponseWriter, r *http.Request) {
 		Body: &output.PolishedBody,
 	})
 	if err != nil {
-		if errors.Is(err, content.ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "content not found")
-			return
-		}
-		h.logger.Error("applying polish result", "content_id", contentID, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to apply polish result")
+		api.HandleError(w, h.logger, err, contentErrors...)
 		return
 	}
 
