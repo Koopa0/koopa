@@ -3,7 +3,6 @@ package notion
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -231,13 +230,8 @@ func (h *SourceHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := h.store.ToggleEnabled(r.Context(), id)
-	if errors.Is(err, ErrNotFound) {
-		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-		return
-	}
 	if err != nil {
-		h.logger.Error("toggling notion source", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to toggle notion source")
+		api.HandleError(w, h.logger, err, sourceStoreErrors...)
 		return
 	}
 	h.invalidateCache(src.DatabaseID)
@@ -282,13 +276,8 @@ func (h *SourceHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src, err := h.store.Source(r.Context(), id)
-	if errors.Is(err, ErrNotFound) {
-		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-		return
-	}
 	if err != nil {
-		h.logger.Error("querying notion source after role change", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "role updated but failed to return source")
+		api.HandleError(w, h.logger, err, sourceStoreErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: src})
@@ -303,17 +292,8 @@ func (h *SourceHandler) applyRole(ctx context.Context, id uuid.UUID, role *strin
 }
 
 // handleRoleError maps a role operation error to an HTTP response.
-func (h *SourceHandler) handleRoleError(w http.ResponseWriter, err error, id uuid.UUID, role *string) {
-	if errors.Is(err, ErrNotFound) {
-		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-		return
-	}
-	action := "clearing"
-	if role != nil && *role != "" {
-		action = "setting"
-	}
-	h.logger.Error(action+" notion source role", "id", id, "error", err)
-	api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update role")
+func (h *SourceHandler) handleRoleError(w http.ResponseWriter, err error, _ uuid.UUID, _ *string) {
+	api.HandleError(w, h.logger, err, sourceStoreErrors...)
 }
 
 // invalidateCache removes a database_id from the source cache.
