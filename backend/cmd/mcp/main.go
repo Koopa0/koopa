@@ -236,22 +236,24 @@ type oauthProvider struct {
 	staticToken string // MCP_TOKEN — accepted directly as Bearer token
 	baseURL     string
 
-	mu      sync.Mutex
-	clients map[string]string    // client_id → client_secret (dynamic registrations)
-	tokens  map[string]time.Time // access_token → expiry
-	codes   map[string]time.Time // authorization_code → expiry
+	mu            sync.Mutex
+	clients       map[string]string    // client_id → client_secret (dynamic registrations)
+	tokens        map[string]time.Time // access_token → expiry
+	refreshTokens map[string]time.Time // refresh_token → expiry
+	codes         map[string]time.Time // authorization_code → expiry
 
 	done chan struct{} // signals cleanup goroutine to stop
 }
 
 func newOAuthProvider(staticToken string) *oauthProvider {
 	o := &oauthProvider{
-		staticToken: staticToken,
-		baseURL:     "https://mcp.koopa0.dev",
-		clients:     make(map[string]string),
-		tokens:      make(map[string]time.Time),
-		codes:       make(map[string]time.Time),
-		done:        make(chan struct{}),
+		staticToken:   staticToken,
+		baseURL:       "https://mcp.koopa0.dev",
+		clients:       make(map[string]string),
+		tokens:        make(map[string]time.Time),
+		refreshTokens: make(map[string]time.Time),
+		codes:         make(map[string]time.Time),
+		done:          make(chan struct{}),
 	}
 	go o.cleanup()
 	return o
@@ -277,6 +279,11 @@ func (o *oauthProvider) cleanup() {
 					delete(o.codes, code)
 				}
 			}
+			for rt, exp := range o.refreshTokens {
+				if now.After(exp) {
+					delete(o.refreshTokens, rt)
+				}
+			}
 			o.mu.Unlock()
 		}
 	}
@@ -294,15 +301,42 @@ func (o *oauthProvider) validToken(tok string) bool {
 	return ok && time.Now().Before(exp)
 }
 
+<<<<<<< HEAD
 func (o *oauthProvider) issueToken() (string, time.Duration) {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	tok := hex.EncodeToString(b)
 	ttl := 30 * 24 * time.Hour // 30 days — prevent Claude.ai frequent reconnections
+=======
+func (o *oauthProvider) issueToken() (accessToken string, accessTTL time.Duration, refreshToken string, refreshTTL time.Duration) {
+	ab := make([]byte, 32)
+	_, _ = rand.Read(ab)
+	accessToken = hex.EncodeToString(ab)
+	accessTTL = 1 * time.Hour
+
+	rb := make([]byte, 32)
+	_, _ = rand.Read(rb)
+	refreshToken = "rt_" + hex.EncodeToString(rb)
+	refreshTTL = 30 * 24 * time.Hour // 30 days
+
+>>>>>>> d18bc54 (fix: implement OAuth refresh token for persistent MCP connections)
 	o.mu.Lock()
-	o.tokens[tok] = time.Now().Add(ttl)
+	o.tokens[accessToken] = time.Now().Add(accessTTL)
+	o.refreshTokens[refreshToken] = time.Now().Add(refreshTTL)
 	o.mu.Unlock()
-	return tok, ttl
+	return
+}
+
+// consumeRefreshToken validates and rotates a refresh token.
+// Returns false if the token is invalid or expired.
+func (o *oauthProvider) consumeRefreshToken(rt string) bool {
+	o.mu.Lock()
+	exp, ok := o.refreshTokens[rt]
+	if ok {
+		delete(o.refreshTokens, rt) // single-use: rotate on each refresh
+	}
+	o.mu.Unlock()
+	return ok && time.Now().Before(exp)
 }
 
 func (o *oauthProvider) issueCode() string {
@@ -334,7 +368,7 @@ func (o *oauthProvider) metadata(w http.ResponseWriter, _ *http.Request) {
 		"token_endpoint":                        o.baseURL + "/oauth/token",
 		"registration_endpoint":                 o.baseURL + "/oauth/register",
 		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "client_credentials"},
+		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "refresh_token"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post"},
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
@@ -404,7 +438,6 @@ func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "authorization_code":
-		// RFC 6749 Section 4.1.3: authenticate the client when exchanging codes.
 		if !o.checkClientCredentials(r) {
 			jsonError(w, "invalid_client", http.StatusUnauthorized)
 			return
@@ -414,17 +447,24 @@ func (o *oauthProvider) token(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "invalid_grant", http.StatusBadRequest)
 			return
 		}
+	case "refresh_token":
+		rt := r.FormValue("refresh_token")
+		if !o.consumeRefreshToken(rt) {
+			jsonError(w, "invalid_grant", http.StatusBadRequest)
+			return
+		}
 	default:
 		jsonError(w, "unsupported_grant_type", http.StatusBadRequest)
 		return
 	}
 
-	tok, ttl := o.issueToken()
+	accessTok, accessTTL, refreshTok, _ := o.issueToken()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"access_token": tok,
-		"token_type":   "Bearer",
-		"expires_in":   int(ttl.Seconds()),
+		"access_token":  accessTok,
+		"refresh_token": refreshTok,
+		"token_type":    "Bearer",
+		"expires_in":    int(accessTTL.Seconds()),
 	})
 }
 
