@@ -336,36 +336,44 @@ func (s *Server) fetchMorningGoals(ctx context.Context, out *MorningContextOutpu
 // fetchMorningSessionData fetches session gap, reflection, planning history,
 // insights, recommendations, and yesterday adjustments.
 func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContextOutput, today, now time.Time) {
-	if s.sessionReader != nil {
-		lastSession, gapErr := s.sessionReader.LatestNoteBySource(ctx, "claude")
-		if gapErr == nil {
-			sessionDate := time.Date(lastSession.NoteDate.Year(), lastSession.NoteDate.Month(), lastSession.NoteDate.Day(), 0, 0, 0, 0, lastSession.NoteDate.Location())
-			out.SessionGap = int(today.Sub(sessionDate).Hours() / 24)
-			out.LastSessionDate = lastSession.NoteDate.Format(time.DateOnly)
-		}
-
-		refl, reflErr := s.sessionReader.LatestNoteByType(ctx, "reflection")
-		if reflErr != nil {
-			s.logger.Error("morning_context: yesterday reflection", "error", reflErr)
-		} else {
-			out.YesterdayReflection = refl.Content
-		}
-
-		since := now.AddDate(0, 0, -30)
-		metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
-		if metricsErr != nil {
-			s.logger.Error("morning_context: planning history", "error", metricsErr)
-		}
-		out.PlanningHistory = buildPlanningHistory(metricsNotes, 7)
-
-		s.archiveStaleInsights(ctx, now)
-		s.fetchMorningInsights(ctx, out)
-
-		if len(metricsNotes) > 0 {
-			out.YesterdayAdjustments = parseAdjustments(metricsNotes[0].Metadata)
-		}
+	if s.sessionReader == nil {
+		s.ensureSessionDefaults(out)
+		return
 	}
 
+	lastSession, gapErr := s.sessionReader.LatestNoteBySource(ctx, "claude")
+	if gapErr == nil {
+		sessionDate := time.Date(lastSession.NoteDate.Year(), lastSession.NoteDate.Month(), lastSession.NoteDate.Day(), 0, 0, 0, 0, lastSession.NoteDate.Location())
+		out.SessionGap = int(today.Sub(sessionDate).Hours() / 24)
+		out.LastSessionDate = lastSession.NoteDate.Format(time.DateOnly)
+	}
+
+	refl, reflErr := s.sessionReader.LatestNoteByType(ctx, "reflection")
+	if reflErr != nil {
+		s.logger.Error("morning_context: yesterday reflection", "error", reflErr)
+	} else {
+		out.YesterdayReflection = refl.Content
+	}
+
+	since := now.AddDate(0, 0, -30)
+	metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
+	if metricsErr != nil {
+		s.logger.Error("morning_context: planning history", "error", metricsErr)
+	}
+	out.PlanningHistory = buildPlanningHistory(metricsNotes, 7)
+
+	s.archiveStaleInsights(ctx, now)
+	s.fetchMorningInsights(ctx, out)
+
+	if len(metricsNotes) > 0 {
+		out.YesterdayAdjustments = parseAdjustments(metricsNotes[0].Metadata)
+	}
+
+	s.ensureSessionDefaults(out)
+}
+
+// ensureSessionDefaults fills nil slices in session-related output fields.
+func (*Server) ensureSessionDefaults(out *MorningContextOutput) {
 	if out.PlanningHistory.Entries == nil {
 		out.PlanningHistory.Entries = []dailyMetrics{}
 	}

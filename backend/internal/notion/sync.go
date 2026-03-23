@@ -130,75 +130,112 @@ func (h *Handler) syncTaskFromResult(ctx context.Context, result DatabaseQueryRe
 	return h.upsertTask(ctx, result.ID, result.Properties)
 }
 
-// upsertTask contains the shared task sync logic.
-func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[string]json.RawMessage) error {
-	status := statusProperty(props["Status"])
+// taskProps holds the extracted Notion properties for a task.
+type taskProps struct {
+	title         string
+	status        string
+	localStatus   task.Status
+	due           *time.Time
+	energy        string
+	priority      string
+	recurInterval *int32
+	recurUnit     string
+	myDay         bool
+	description   string
+	projectPageID string
+}
+
+// extractTaskProps reads and maps all relevant Notion properties for a task.
+func extractTaskProps(props map[string]json.RawMessage) taskProps {
 	title := titleProperty(props["Task Name"])
 	if title == "" {
 		title = titleProperty(props["Name"])
 	}
+	status := statusProperty(props["Status"])
+	return taskProps{
+		title:         title,
+		status:        status,
+		localStatus:   mapNotionTaskStatus(status),
+		due:           dateProperty(props["Due"]),
+		energy:        selectProperty(props["Energy"]),
+		priority:      statusProperty(props["Priority"]),
+		recurInterval: numberProperty(props["Recur Interval"]),
+		recurUnit:     selectProperty(props["Recur Unit"]),
+		myDay:         checkboxProperty(props["My Day"]),
+		description:   richTextProperty(props["Description"]),
+		projectPageID: relationProperty(props["Project"]),
+	}
+}
 
-	localStatus := mapNotionTaskStatus(status)
-	due := dateProperty(props["Due"])
-	energy := selectProperty(props["Energy"])
-	priority := statusProperty(props["Priority"])
-	recurInterval := numberProperty(props["Recur Interval"])
-	recurUnit := selectProperty(props["Recur Unit"])
-	myDay := checkboxProperty(props["My Day"])
-	description := richTextProperty(props["Description"])
-
-	// Resolve project via fallback chain: task Project → parent task Project
-	var projectSlug *string
-	var projectID *uuid.UUID
-	projectPageID := relationProperty(props["Project"])
+// resolveTaskProject resolves the project page ID (with parent-task fallback),
+// then looks up the local slug and UUID.
+func (h *Handler) resolveTaskProject(ctx context.Context, pageID, projectPageID string, props map[string]json.RawMessage) (resolvedPageID string, projectSlug *string, projectID *uuid.UUID) {
+	resolvedPageID = projectPageID
 
 	// Fallback: if task has no direct Project, check Parent Task.
 	// This requires an extra API call per subtask — acceptable at personal-project scale.
-	if projectPageID == "" {
-		parentTaskID := relationProperty(props["Parent Task"])
-		if parentTaskID != "" {
-			parentPage, parentErr := h.client.Page(ctx, parentTaskID)
-			if parentErr != nil {
-				h.logger.Warn("resolving parent task project",
-					"task_page_id", pageID,
-					"parent_task_id", parentTaskID,
-					"error", parentErr,
-				)
-			} else {
-				projectPageID = relationProperty(parentPage.Properties["Project"])
-			}
-		}
+	if resolvedPageID == "" {
+		resolvedPageID = h.resolveParentProject(ctx, pageID, props)
+	}
+
+	if resolvedPageID == "" {
+		return resolvedPageID, nil, nil
 	}
 
 	// Resolve project page ID → slug (for activity events)
-	if projectPageID != "" && h.projectSlugs != nil {
-		slug, slugErr := h.projectSlugs.SlugByNotionPageID(ctx, projectPageID)
+	if h.projectSlugs != nil {
+		slug, slugErr := h.projectSlugs.SlugByNotionPageID(ctx, resolvedPageID)
 		if slugErr == nil {
 			projectSlug = &slug
 		}
 	}
 
 	// Resolve project page ID → UUID (for tasks table FK)
-	if projectPageID != "" && h.projectIDs != nil {
-		id, idErr := h.projectIDs.IDByNotionPageID(ctx, projectPageID)
+	if h.projectIDs != nil {
+		id, idErr := h.projectIDs.IDByNotionPageID(ctx, resolvedPageID)
 		if idErr == nil {
 			projectID = &id
 		}
 	}
 
-	// Upsert task to local DB (completed_at is managed by the DB via CASE expression)
+	return resolvedPageID, projectSlug, projectID
+}
+
+// resolveParentProject looks up the parent task's Project relation.
+func (h *Handler) resolveParentProject(ctx context.Context, pageID string, props map[string]json.RawMessage) string {
+	parentTaskID := relationProperty(props["Parent Task"])
+	if parentTaskID == "" {
+		return ""
+	}
+	parentPage, parentErr := h.client.Page(ctx, parentTaskID)
+	if parentErr != nil {
+		h.logger.Warn("resolving parent task project",
+			"task_page_id", pageID,
+			"parent_task_id", parentTaskID,
+			"error", parentErr,
+		)
+		return ""
+	}
+	return relationProperty(parentPage.Properties["Project"])
+}
+
+// upsertTask contains the shared task sync logic.
+func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[string]json.RawMessage) error {
+	tp := extractTaskProps(props)
+	projectPageID, projectSlug, projectID := h.resolveTaskProject(ctx, pageID, tp.projectPageID, props)
+
 	t, err := h.tasks.UpsertByNotionPageID(ctx, &task.UpsertByNotionParams{
-		Title:         title,
-		Status:        localStatus,
-		Due:           due,
+		Title:         tp.title,
+		Status:        tp.localStatus,
+		Due:           tp.due,
 		ProjectID:     projectID,
 		NotionPageID:  pageID,
-		Energy:        energy,
-		Priority:      priority,
-		RecurInterval: recurInterval,
-		RecurUnit:     recurUnit,
-		MyDay:         myDay,
-		Description:   description,
+		Energy:        tp.energy,
+		Priority:      tp.priority,
+		RecurInterval: tp.recurInterval,
+		RecurUnit:     tp.recurUnit,
+		MyDay:         tp.myDay,
+		Description:   tp.description,
 	})
 	if err != nil {
 		return fmt.Errorf("upserting task: %w", err)
@@ -207,17 +244,17 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 	h.logger.Info("task synced from notion",
 		"page_id", pageID,
 		"task_id", t.ID,
-		"title", title,
-		"status", localStatus,
+		"title", tp.title,
+		"status", tp.localStatus,
 	)
 
 	// Record activity event for ALL status changes (best-effort)
 	if h.events != nil {
 		now := time.Now()
-		sourceID := buildSourceID(pageID, status)
+		sourceID := buildSourceID(pageID, tp.status)
 		meta := map[string]string{
-			"status": status,
-			"title":  title,
+			"status": tp.status,
+			"title":  tp.title,
 		}
 		if projectSlug != nil {
 			meta["project"] = *projectSlug
@@ -229,7 +266,7 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 			EventType: "task_status_change",
 			Source:    "notion",
 			Project:   projectSlug,
-			Title:     &title,
+			Title:     &tp.title,
 			Metadata:  metadata,
 		}); evErr != nil {
 			h.logger.Error("recording task activity event", "page_id", pageID, "error", evErr)
@@ -237,7 +274,7 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 	}
 
 	// Update project last_activity_at on Done
-	if localStatus == task.StatusDone && projectPageID != "" {
+	if tp.localStatus == task.StatusDone && projectPageID != "" {
 		if err := h.projects.UpdateLastActivity(ctx, projectPageID); err != nil {
 			return fmt.Errorf("updating project last activity: %w", err)
 		}

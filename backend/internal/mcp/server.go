@@ -444,21 +444,9 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, ProjectContextOutput{}, fmt.Errorf("project is required")
 	}
 
-	proj, err := s.projects.ProjectBySlug(ctx, input.Project)
+	proj, err := s.resolveProjectChain(ctx, input.Project)
 	if err != nil {
-		if !errors.Is(err, project.ErrNotFound) {
-			return nil, ProjectContextOutput{}, fmt.Errorf("querying project: %w", err)
-		}
-		proj, err = s.projects.ProjectByAlias(ctx, input.Project)
-		if err != nil {
-			if !errors.Is(err, project.ErrNotFound) {
-				return nil, ProjectContextOutput{}, fmt.Errorf("querying project by alias: %w", err)
-			}
-			proj, err = s.projects.ProjectByTitle(ctx, input.Project)
-			if err != nil {
-				return nil, ProjectContextOutput{}, fmt.Errorf("project %q not found by slug, alias, or title", input.Project)
-			}
-		}
+		return nil, ProjectContextOutput{}, err
 	}
 
 	events, err := s.activity.EventsByProject(ctx, proj.Slug, 20)
@@ -822,62 +810,59 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	// Content results first (higher signal — published, structured content).
 	if cr.err != nil {
 		s.logger.Error("search_knowledge: content search failed", "error", cr.err)
-	} else {
-		for i := range cr.contents {
-			c := &cr.contents[i]
-			excerpt := c.Excerpt
-			if excerpt == "" {
-				excerpt = truncate(c.Body, 300)
-			}
-			results = append(results, knowledgeResult{
-				SourceType: "content",
-				Slug:       c.Slug,
-				Title:      c.Title,
-				Excerpt:    excerpt,
-				Type:       string(c.Type),
-				Tags:       c.Tags,
-			})
+	}
+	for i := range cr.contents {
+		c := &cr.contents[i]
+		excerpt := c.Excerpt
+		if excerpt == "" {
+			excerpt = truncate(c.Body, 300)
 		}
+		results = append(results, knowledgeResult{
+			SourceType: "content",
+			Slug:       c.Slug,
+			Title:      c.Title,
+			Excerpt:    excerpt,
+			Type:       string(c.Type),
+			Tags:       c.Tags,
+		})
 	}
 
 	// Note text search results second.
 	seen := make(map[string]bool) // dedup by file_path across text and semantic results
 	if nr.err != nil {
 		s.logger.Error("search_knowledge: note search failed", "error", nr.err)
-	} else {
-		for i := range nr.notes {
-			n := &nr.notes[i]
-			seen[n.FilePath] = true
-			results = append(results, knowledgeResult{
-				SourceType: "note",
-				FilePath:   n.FilePath,
-				Title:      deref(n.Title),
-				Excerpt:    truncate(deref(n.ContentText), 300),
-				Type:       deref(n.Type),
-				Tags:       n.Tags,
-			})
-		}
+	}
+	for i := range nr.notes {
+		n := &nr.notes[i]
+		seen[n.FilePath] = true
+		results = append(results, knowledgeResult{
+			SourceType: "note",
+			FilePath:   n.FilePath,
+			Title:      deref(n.Title),
+			Excerpt:    truncate(deref(n.ContentText), 300),
+			Type:       deref(n.Type),
+			Tags:       n.Tags,
+		})
 	}
 
 	// Semantic note results third (deduped against text results).
 	if sr.err != nil {
 		s.logger.Error("search_knowledge: semantic search failed", "error", sr.err)
-	} else {
-		for i := range sr.notes {
-			n := &sr.notes[i]
-			if seen[n.FilePath] {
-				continue
-			}
-			seen[n.FilePath] = true
-			results = append(results, knowledgeResult{
-				SourceType: "note",
-				FilePath:   n.FilePath,
-				Title:      deref(n.Title),
-				Excerpt:    truncate(deref(n.ContentText), 300),
-				Type:       deref(n.Type),
-				Tags:       n.Tags,
-			})
+	}
+	for i := range sr.notes {
+		n := &sr.notes[i]
+		if seen[n.FilePath] {
+			continue
 		}
+		seen[n.FilePath] = true
+		results = append(results, knowledgeResult{
+			SourceType: "note",
+			FilePath:   n.FilePath,
+			Title:      deref(n.Title),
+			Excerpt:    truncate(deref(n.ContentText), 300),
+			Type:       deref(n.Type),
+			Tags:       n.Tags,
+		})
 	}
 
 	if len(results) > limit {
@@ -1154,7 +1139,7 @@ type DevSessionOutput struct {
 	Status    string `json:"status"`
 }
 
-func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, input DevSessionInput) (*mcp.CallToolResult, DevSessionOutput, error) {
+func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, input *DevSessionInput) (*mcp.CallToolResult, DevSessionOutput, error) {
 	if input.Project == "" {
 		return nil, DevSessionOutput{}, fmt.Errorf("project is required")
 	}
@@ -1177,21 +1162,9 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	}
 
 	// Resolve project (slug → alias → title)
-	proj, err := s.projects.ProjectBySlug(ctx, input.Project)
+	proj, err := s.resolveProjectChain(ctx, input.Project)
 	if err != nil {
-		if !errors.Is(err, project.ErrNotFound) {
-			return nil, DevSessionOutput{}, fmt.Errorf("querying project: %w", err)
-		}
-		proj, err = s.projects.ProjectByAlias(ctx, input.Project)
-		if err != nil {
-			if !errors.Is(err, project.ErrNotFound) {
-				return nil, DevSessionOutput{}, fmt.Errorf("querying project by alias: %w", err)
-			}
-			proj, err = s.projects.ProjectByTitle(ctx, input.Project)
-			if err != nil {
-				return nil, DevSessionOutput{}, fmt.Errorf("project %q not found", input.Project)
-			}
-		}
+		return nil, DevSessionOutput{}, err
 	}
 
 	now := time.Now()
@@ -1199,26 +1172,12 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	source := fmt.Sprintf("claude-code:%s", input.SessionType)
 	sourceType := content.SourceAIGenerated
 
-	tags := input.Tags
-	if tags == nil {
-		tags = []string{}
-	}
-	// Ensure session_type is in tags
-	hasType := false
-	for _, t := range tags {
-		if t == input.SessionType {
-			hasType = true
-			break
-		}
-	}
-	if !hasType {
-		tags = append(tags, input.SessionType)
-	}
+	tags := ensureTag(input.Tags, input.SessionType)
 
 	// Prepend metadata header so the frontend can parse project/session_type
 	body := fmt.Sprintf("project: %s\nsession_type: %s\n\n%s", proj.Title, input.SessionType, input.Body)
 
-	created, err := s.contentWriter.CreateContent(ctx, &content.CreateParams{
+	params := &content.CreateParams{
 		Slug:        slug,
 		Title:       input.Title,
 		Body:        body,
@@ -1228,28 +1187,10 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		Source:      &source,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
-	})
+	}
+	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-dev-log-%s", proj.Slug, now.Format("2006-01-02")), now)
 	if err != nil {
-		if errors.Is(err, content.ErrConflict) {
-			// Slug conflict: append timestamp to make unique
-			slug = fmt.Sprintf("%s-dev-log-%s-%d", proj.Slug, now.Format("2006-01-02"), now.Unix()%10000)
-			created, err = s.contentWriter.CreateContent(ctx, &content.CreateParams{
-				Slug:        slug,
-				Title:       input.Title,
-				Body:        body,
-				Type:        content.TypeBuildLog,
-				Status:      content.StatusPublished,
-				Tags:        tags,
-				Source:      &source,
-				SourceType:  &sourceType,
-				ReviewLevel: content.ReviewAuto,
-			})
-			if err != nil {
-				return nil, DevSessionOutput{}, fmt.Errorf("creating dev session log: %w", err)
-			}
-		} else {
-			return nil, DevSessionOutput{}, fmt.Errorf("creating dev session log: %w", err)
-		}
+		return nil, DevSessionOutput{}, fmt.Errorf("creating dev session log: %w", err)
 	}
 
 	s.logger.Info("dev session logged",
@@ -1380,4 +1321,57 @@ func clamp(val, minVal, maxVal, defaultVal int) int {
 		return maxVal
 	}
 	return val
+}
+
+// resolveProjectChain resolves a project by slug, alias, or title (in that order).
+// It distinguishes between "not found" and other errors.
+func (s *Server) resolveProjectChain(ctx context.Context, input string) (*project.Project, error) {
+	proj, err := s.projects.ProjectBySlug(ctx, input)
+	if err == nil {
+		return proj, nil
+	}
+	if !errors.Is(err, project.ErrNotFound) {
+		return nil, fmt.Errorf("querying project: %w", err)
+	}
+
+	proj, err = s.projects.ProjectByAlias(ctx, input)
+	if err == nil {
+		return proj, nil
+	}
+	if !errors.Is(err, project.ErrNotFound) {
+		return nil, fmt.Errorf("querying project by alias: %w", err)
+	}
+
+	proj, err = s.projects.ProjectByTitle(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("project %q not found", input)
+	}
+	return proj, nil
+}
+
+// createContentWithRetry creates content, retrying once with a timestamped slug on conflict.
+func (s *Server) createContentWithRetry(ctx context.Context, params *content.CreateParams, baseSlug string, now time.Time) (*content.Content, error) {
+	created, err := s.contentWriter.CreateContent(ctx, params)
+	if err == nil {
+		return created, nil
+	}
+	if !errors.Is(err, content.ErrConflict) {
+		return nil, err
+	}
+	// Slug conflict: append timestamp to make unique
+	params.Slug = fmt.Sprintf("%s-%d", baseSlug, now.Unix()%10000)
+	return s.contentWriter.CreateContent(ctx, params)
+}
+
+// ensureTag returns a copy of tags that includes target, adding it if absent.
+func ensureTag(tags []string, target string) []string {
+	if tags == nil {
+		tags = []string{}
+	}
+	for _, t := range tags {
+		if t == target {
+			return tags
+		}
+	}
+	return append(tags, target)
 }

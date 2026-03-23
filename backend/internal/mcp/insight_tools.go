@@ -177,23 +177,11 @@ type UpdateInsightOutput struct {
 }
 
 func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, input UpdateInsightInput) (*mcp.CallToolResult, UpdateInsightOutput, error) {
+	if err := validateInsightInput(input); err != nil {
+		return nil, UpdateInsightOutput{}, err
+	}
 	if s.sessionReader == nil || s.sessionWriter == nil {
 		return nil, UpdateInsightOutput{}, fmt.Errorf("session notes not configured")
-	}
-	if input.InsightID == 0 {
-		return nil, UpdateInsightOutput{}, fmt.Errorf("insight_id is required")
-	}
-	if input.Status == "" && input.AppendEvidence == "" && input.AppendCounterEvidence == "" && input.Conclusion == "" {
-		return nil, UpdateInsightOutput{}, fmt.Errorf("at least one of status, append_evidence, append_counter_evidence, or conclusion is required")
-	}
-
-	if input.Status != "" {
-		switch input.Status {
-		case "unverified", "verified", "invalidated", "archived":
-			// valid
-		default:
-			return nil, UpdateInsightOutput{}, fmt.Errorf("invalid status %q (must be unverified, verified, invalidated, or archived)", input.Status)
-		}
 	}
 
 	// Read current note
@@ -206,39 +194,13 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	}
 
 	// Parse existing metadata
-	meta := make(map[string]any)
-	if len(note.Metadata) > 0 {
-		if unmarshalErr := json.Unmarshal(note.Metadata, &meta); unmarshalErr != nil {
-			return nil, UpdateInsightOutput{}, fmt.Errorf("parsing insight metadata: %w", unmarshalErr)
-		}
+	meta, err := parseInsightMetadata(note.Metadata)
+	if err != nil {
+		return nil, UpdateInsightOutput{}, err
 	}
 
 	// Apply updates
-	if input.Status != "" {
-		meta["status"] = input.Status
-	}
-	if input.AppendEvidence != "" {
-		// Write to supporting_evidence (new convention), fallback read from evidence (legacy)
-		var evidence []any
-		if ev, ok := meta["supporting_evidence"].([]any); ok {
-			evidence = ev
-		} else if ev, ok := meta["evidence"].([]any); ok {
-			evidence = ev
-		}
-		evidence = append(evidence, input.AppendEvidence)
-		meta["supporting_evidence"] = evidence
-	}
-	if input.AppendCounterEvidence != "" {
-		var ce []any
-		if ev, ok := meta["counter_evidence"].([]any); ok {
-			ce = ev
-		}
-		ce = append(ce, input.AppendCounterEvidence)
-		meta["counter_evidence"] = ce
-	}
-	if input.Conclusion != "" {
-		meta["conclusion"] = input.Conclusion
-	}
+	applyInsightUpdates(meta, input)
 
 	// Marshal and update
 	updatedMetadata, marshalErr := json.Marshal(meta)
@@ -254,25 +216,9 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, UpdateInsightOutput{}, fmt.Errorf("updating insight: %w", updateErr)
 	}
 
-	// Count evidence in the updated note (supporting_evidence or legacy evidence)
-	evidenceCount := 0
-	if updatedMeta := make(map[string]any); len(updated.Metadata) > 0 {
-		if json.Unmarshal(updated.Metadata, &updatedMeta) == nil {
-			if ev, ok := updatedMeta["supporting_evidence"].([]any); ok {
-				evidenceCount = len(ev)
-			} else if ev, ok := updatedMeta["evidence"].([]any); ok {
-				evidenceCount = len(ev)
-			}
-		}
-	}
-
-	var currentStatus, conclusion string
-	if s, ok := meta["status"].(string); ok {
-		currentStatus = s
-	}
-	if c, ok := meta["conclusion"].(string); ok {
-		conclusion = c
-	}
+	evidenceCount := countEvidence(updated.Metadata)
+	currentStatus, _ := meta["status"].(string)
+	conclusion, _ := meta["conclusion"].(string)
 
 	s.logger.Info("insight updated via mcp",
 		"id", input.InsightID,
@@ -287,4 +233,83 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		Conclusion: conclusion,
 		UpdatedAt:  time.Now().Format(time.RFC3339),
 	}, nil
+}
+
+// validateInsightInput checks required fields and status validity.
+func validateInsightInput(input UpdateInsightInput) error {
+	if input.InsightID == 0 {
+		return fmt.Errorf("insight_id is required")
+	}
+	if input.Status == "" && input.AppendEvidence == "" && input.AppendCounterEvidence == "" && input.Conclusion == "" {
+		return fmt.Errorf("at least one of status, append_evidence, append_counter_evidence, or conclusion is required")
+	}
+	if input.Status != "" {
+		switch input.Status {
+		case "unverified", "verified", "invalidated", "archived":
+			// valid
+		default:
+			return fmt.Errorf("invalid status %q (must be unverified, verified, invalidated, or archived)", input.Status)
+		}
+	}
+	return nil
+}
+
+// parseInsightMetadata unmarshals raw metadata into a mutable map.
+func parseInsightMetadata(raw json.RawMessage) (map[string]any, error) {
+	meta := make(map[string]any)
+	if len(raw) == 0 {
+		return meta, nil
+	}
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return nil, fmt.Errorf("parsing insight metadata: %w", err)
+	}
+	return meta, nil
+}
+
+// applyInsightUpdates merges input fields into the metadata map.
+func applyInsightUpdates(meta map[string]any, input UpdateInsightInput) {
+	if input.Status != "" {
+		meta["status"] = input.Status
+	}
+	if input.AppendEvidence != "" {
+		// Write to supporting_evidence (new convention), fallback read from evidence (legacy)
+		evidence := metaSlice(meta, "supporting_evidence")
+		if evidence == nil {
+			evidence = metaSlice(meta, "evidence")
+		}
+		meta["supporting_evidence"] = append(evidence, input.AppendEvidence)
+	}
+	if input.AppendCounterEvidence != "" {
+		ce := metaSlice(meta, "counter_evidence")
+		meta["counter_evidence"] = append(ce, input.AppendCounterEvidence)
+	}
+	if input.Conclusion != "" {
+		meta["conclusion"] = input.Conclusion
+	}
+}
+
+// metaSlice extracts a []any value from a metadata map key.
+func metaSlice(meta map[string]any, key string) []any {
+	if ev, ok := meta[key].([]any); ok {
+		return ev
+	}
+	return nil
+}
+
+// countEvidence counts supporting_evidence (or legacy evidence) entries in raw metadata.
+func countEvidence(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return 0
+	}
+	if ev, ok := m["supporting_evidence"].([]any); ok {
+		return len(ev)
+	}
+	if ev, ok := m["evidence"].([]any); ok {
+		return len(ev)
+	}
+	return 0
 }

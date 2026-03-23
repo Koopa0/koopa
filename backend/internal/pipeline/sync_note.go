@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/note"
@@ -46,26 +47,34 @@ func (h *Handler) syncKnowledgeNote(ctx context.Context, path string) error {
 		return nil
 	}
 
-	// compute content hash (SHA-256 of body only)
 	bodyHash := sha256Hex(body)
 
-	// check if body changed — skip SplitCamelCase if hash matches
-	var searchText string
 	existingHash, err := h.notes.ContentHash(ctx, path)
 	isNewNote := errors.Is(err, note.ErrNotFound)
 	hashChanged := err != nil || existingHash == nil || *existingHash != bodyHash
 
-	if hashChanged {
-		searchText = obsidian.SplitCamelCase(body)
+	p := buildUpsertParams(path, bodyHash, body, hashChanged, parsed)
+
+	tagIDs, err := h.syncNoteInTx(ctx, path, &p, parsed.Tags, hashChanged)
+	if err != nil {
+		return err
 	}
 
-	// build upsert params
+	// Record activity event (best-effort, outside tx). Dedup handled by ON CONFLICT on sourceID=bodyHash.
+	if h.noteEvents != nil {
+		h.recordNoteEvent(ctx, path, bodyHash, parsed, tagIDs, isNewNote)
+	}
+
+	return nil
+}
+
+// buildUpsertParams constructs the note upsert parameters from parsed frontmatter.
+func buildUpsertParams(path, bodyHash, body string, hashChanged bool, parsed *obsidian.Knowledge) note.UpsertParams {
 	p := note.UpsertParams{
 		FilePath:    path,
 		ContentHash: &bodyHash,
 	}
 
-	// set optional fields from parsed frontmatter
 	if parsed.Title != "" {
 		p.Title = &parsed.Title
 	}
@@ -98,64 +107,75 @@ func (h *Handler) syncKnowledgeNote(ctx context.Context, path string) error {
 	}
 
 	if hashChanged {
+		searchText := obsidian.SplitCamelCase(body)
 		p.ContentText = &body
 		p.SearchText = &searchText
 	}
 
-	// === BEGIN TRANSACTION: upsert note + tag sync + link sync ===
+	return p
+}
+
+// syncNoteInTx performs the transactional portion of note sync: upsert, tag sync, link sync.
+func (h *Handler) syncNoteInTx(ctx context.Context, path string, p *note.UpsertParams, rawTags []string, hashChanged bool) ([]uuid.UUID, error) {
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("beginning note sync tx for %s: %w", path, err)
+		return nil, fmt.Errorf("beginning note sync tx for %s: %w", path, err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback on committed tx is no-op
 
 	txNotes := h.notes.WithTx(tx)
 	txTags := h.tags.WithTx(tx)
 
-	upserted, err := txNotes.UpsertNote(ctx, &p)
+	upserted, err := txNotes.UpsertNote(ctx, p)
 	if err != nil {
-		return fmt.Errorf("upserting note %s: %w", path, err)
+		return nil, fmt.Errorf("upserting note %s: %w", path, err)
 	}
 
-	// tag normalization (resolution runs outside tx for best-effort alias creation)
-	resolved := h.tags.ResolveTags(ctx, parsed.Tags)
+	tagIDs := h.resolveTagIDs(ctx, rawTags)
+	if err := txTags.SyncNoteTags(ctx, upserted.ID, tagIDs); err != nil {
+		return nil, fmt.Errorf("syncing tags for %s: %w", path, err)
+	}
+
+	if err := h.syncNoteLinks(ctx, tx, upserted.ID, path, p, hashChanged); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing note sync tx for %s: %w", path, err)
+	}
+
+	return tagIDs, nil
+}
+
+// resolveTagIDs resolves raw tag names to their UUIDs via the tag store.
+func (h *Handler) resolveTagIDs(ctx context.Context, rawTags []string) []uuid.UUID {
+	resolved := h.tags.ResolveTags(ctx, rawTags)
 	var tagIDs []uuid.UUID
 	for _, r := range resolved {
 		if r.TagID != nil {
 			tagIDs = append(tagIDs, *r.TagID)
 		}
 	}
-	// junction sync within tx
-	if err := txTags.SyncNoteTags(ctx, upserted.ID, tagIDs); err != nil {
-		return fmt.Errorf("syncing tags for %s: %w", path, err)
-	}
+	return tagIDs
+}
 
-	// wikilink edge sync within tx (only when content changed — includes clearing old links)
-	if h.noteLinks != nil && hashChanged && p.ContentText != nil {
-		txLinks := h.noteLinks.WithTx(tx)
-		links := obsidian.ParseWikilinks(*p.ContentText)
-		noteLinks := make([]note.Link, len(links))
-		for i, l := range links {
-			noteLinks[i] = note.Link{TargetPath: l.Path}
-			if l.Display != "" {
-				noteLinks[i].LinkText = &l.Display
-			}
-		}
-		if linkErr := txLinks.SyncNoteLinks(ctx, upserted.ID, noteLinks); linkErr != nil {
-			return fmt.Errorf("syncing note links for %s: %w", path, linkErr)
+// syncNoteLinks syncs wikilink edges within the transaction when content has changed.
+func (h *Handler) syncNoteLinks(ctx context.Context, tx pgx.Tx, noteID int64, path string, p *note.UpsertParams, hashChanged bool) error {
+	if h.noteLinks == nil || !hashChanged || p.ContentText == nil {
+		return nil
+	}
+	txLinks := h.noteLinks.WithTx(tx)
+	links := obsidian.ParseWikilinks(*p.ContentText)
+	noteLinks := make([]note.Link, len(links))
+	for i, l := range links {
+		noteLinks[i] = note.Link{TargetPath: l.Path}
+		if l.Display != "" {
+			noteLinks[i].LinkText = &l.Display
 		}
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing note sync tx for %s: %w", path, err)
+	if err := txLinks.SyncNoteLinks(ctx, noteID, noteLinks); err != nil {
+		return fmt.Errorf("syncing note links for %s: %w", path, err)
 	}
-	// === END TRANSACTION ===
-
-	// Record activity event (best-effort, outside tx). Dedup handled by ON CONFLICT on sourceID=bodyHash.
-	if h.noteEvents != nil {
-		h.recordNoteEvent(ctx, path, bodyHash, parsed, tagIDs, isNewNote)
-	}
-
 	return nil
 }
 

@@ -1,1 +1,6 @@
 .claude/session-learnings.log
+
+# Build artifacts
+app
+bin/
+*.exe

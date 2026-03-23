@@ -127,7 +127,6 @@ func extractYAMLBlock(raw []byte) (yamlBytes []byte, body string, err error) {
 // extractTypeFromTags scans tags for a "type/xxx" pattern, extracts the type,
 // and returns remaining tags (excluding the matched type tag and status tags).
 func extractTypeFromTags(tags []string) (typ string, remaining []string) {
-
 	for _, tag := range tags {
 		parts := strings.SplitN(tag, "/", 2)
 		if len(parts) == 2 && parts[0] == "type" {

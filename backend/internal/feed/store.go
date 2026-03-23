@@ -170,22 +170,24 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 		return fmt.Errorf("incrementing feed failure %s: %w", id, err)
 	}
 
-	if failures >= MaxConsecutiveFailures {
-		reason := fmt.Sprintf("auto-disabled: %d consecutive failures", MaxConsecutiveFailures)
-		s.logger.Warn("auto-disabling feed", "feed_id", id, "failures", failures)
-		if err := s.q.AutoDisableFeed(ctx, db.AutoDisableFeedParams{
-			ID:             id,
-			DisabledReason: reason,
-		}); err != nil {
-			return fmt.Errorf("auto-disabling feed %s: %w", id, err)
-		}
+	if failures < MaxConsecutiveFailures {
+		return nil
+	}
 
-		if s.alerts != nil {
-			msg := fmt.Sprintf("[ALERT] Feed auto-disabled\nFeed ID: %s\nFailures: %d\nLast error: %s",
-				id, failures, errMsg)
-			if sendErr := s.alerts.Send(ctx, msg); sendErr != nil {
-				s.logger.Error("sending feed disable alert", "feed_id", id, "error", sendErr)
-			}
+	reason := fmt.Sprintf("auto-disabled: %d consecutive failures", MaxConsecutiveFailures)
+	s.logger.Warn("auto-disabling feed", "feed_id", id, "failures", failures)
+	if err := s.q.AutoDisableFeed(ctx, db.AutoDisableFeedParams{
+		ID:             id,
+		DisabledReason: reason,
+	}); err != nil {
+		return fmt.Errorf("auto-disabling feed %s: %w", id, err)
+	}
+
+	if s.alerts != nil {
+		msg := fmt.Sprintf("[ALERT] Feed auto-disabled\nFeed ID: %s\nFailures: %d\nLast error: %s",
+			id, failures, errMsg)
+		if sendErr := s.alerts.Send(ctx, msg); sendErr != nil {
+			s.logger.Error("sending feed disable alert", "feed_id", id, "error", sendErr)
 		}
 	}
 

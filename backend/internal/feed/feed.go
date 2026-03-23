@@ -64,29 +64,21 @@ func (fc *FilterConfig) MatchTitle(title string) bool {
 //   - AllowTags is set and none of the item tags match
 //   - DenyTags is set and any of the item tags match
 func (fc *FilterConfig) MatchTags(tags []string) bool {
-	if len(fc.AllowTags) > 0 {
-		found := false
-		for _, tag := range tags {
-			for _, allow := range fc.AllowTags {
-				if strings.EqualFold(tag, allow) {
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-		if !found {
-			return true
-		}
+	if len(fc.AllowTags) > 0 && !hasAnyTag(tags, fc.AllowTags) {
+		return true
 	}
-	if len(fc.DenyTags) > 0 {
-		for _, tag := range tags {
-			for _, deny := range fc.DenyTags {
-				if strings.EqualFold(tag, deny) {
-					return true
-				}
+	if len(fc.DenyTags) > 0 && hasAnyTag(tags, fc.DenyTags) {
+		return true
+	}
+	return false
+}
+
+// hasAnyTag reports whether any tag in tags case-insensitively matches any entry in targets.
+func hasAnyTag(tags, targets []string) bool {
+	for _, tag := range tags {
+		for _, target := range targets {
+			if strings.EqualFold(tag, target) {
+				return true
 			}
 		}
 	}

@@ -282,26 +282,9 @@ func (h *SourceHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Role == nil || *req.Role == "" {
-		// clear role
-		if clearErr := h.store.ClearSourceRole(r.Context(), id); errors.Is(clearErr, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-			return
-		} else if clearErr != nil {
-			h.logger.Error("clearing notion source role", "id", id, "error", clearErr)
-			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to clear role")
-			return
-		}
-	} else {
-		// set role (clears from any existing holder atomically)
-		if setErr := h.store.SetRole(r.Context(), id, *req.Role); errors.Is(setErr, ErrNotFound) {
-			api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
-			return
-		} else if setErr != nil {
-			h.logger.Error("setting notion source role", "id", id, "role", *req.Role, "error", setErr)
-			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to set role")
-			return
-		}
+	if roleErr := h.applyRole(r.Context(), id, req.Role); roleErr != nil {
+		h.handleRoleError(w, roleErr, id, req.Role)
+		return
 	}
 
 	// invalidate all cached entries — role change can affect multiple sources
@@ -323,6 +306,28 @@ func (h *SourceHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: src})
+}
+
+// applyRole sets or clears a role on a notion source.
+func (h *SourceHandler) applyRole(ctx context.Context, id uuid.UUID, role *string) error {
+	if role != nil && *role != "" {
+		return h.store.SetRole(ctx, id, *role)
+	}
+	return h.store.ClearSourceRole(ctx, id)
+}
+
+// handleRoleError maps a role operation error to an HTTP response.
+func (h *SourceHandler) handleRoleError(w http.ResponseWriter, err error, id uuid.UUID, role *string) {
+	if errors.Is(err, ErrNotFound) {
+		api.Error(w, http.StatusNotFound, "NOT_FOUND", "notion source not found")
+		return
+	}
+	action := "clearing"
+	if role != nil && *role != "" {
+		action = "setting"
+	}
+	h.logger.Error(action+" notion source role", "id", id, "error", err)
+	api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update role")
 }
 
 // invalidateCache removes a database_id from the source cache.

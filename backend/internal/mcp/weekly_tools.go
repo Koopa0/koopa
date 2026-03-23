@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/koopa0/blog-backend/internal/flow"
+	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -246,7 +248,7 @@ func (s *Server) fetchWeeklyInsights(ctx context.Context, out *WeeklySummaryOutp
 
 // fetchWeeklyGoalAlignment fetches goals and computes on-track assessment using
 // area-based project matching and task completions. Appends off-track concerns.
-func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummaryOutput, byProject []flow.ProjectCompletion, weekStart time.Time, today time.Time) {
+func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummaryOutput, byProject []flow.ProjectCompletion, weekStart, today time.Time) {
 	goals, err := s.goals.Goals(ctx)
 	if err != nil {
 		s.logger.Error("weekly_summary: goals", "error", err)
@@ -257,16 +259,8 @@ func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummar
 		s.logger.Error("weekly_summary: projects for goal alignment", "error", projErr)
 	}
 
-	projectsByArea := make(map[string][]string)
-	for i := range projects {
-		if projects[i].Area != "" {
-			projectsByArea[projects[i].Area] = append(projectsByArea[projects[i].Area], projects[i].Title)
-		}
-	}
-	completionsByProject := make(map[string]int64)
-	for _, p := range byProject {
-		completionsByProject[p.ProjectTitle] = p.Completed
-	}
+	projectsByArea := buildProjectsByArea(projects)
+	completionsByProject := buildCompletionsByProject(byProject)
 
 	out.GoalAlignment = make([]weeklyGoal, 0)
 	for i := range goals {
@@ -274,32 +268,10 @@ func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummar
 		if string(g.Status) == "done" || string(g.Status) == "abandoned" {
 			continue
 		}
-		wg := weeklyGoal{
-			Title:           g.Title,
-			Status:          string(g.Status),
-			RelatedProjects: projectsByArea[g.Area],
-		}
-		if g.Deadline != nil {
-			wg.Deadline = g.Deadline.Format(time.DateOnly)
-		}
-		if wg.RelatedProjects == nil {
-			wg.RelatedProjects = []string{}
-		}
-
-		for _, pTitle := range wg.RelatedProjects {
-			wg.RelatedTasksCompleted += completionsByProject[pTitle]
-		}
-
-		var daysRemaining int
-		if g.Deadline != nil {
-			daysRemaining = int(g.Deadline.Sub(today).Hours() / 24)
-		}
-		weeklyRate := float64(wg.RelatedTasksCompleted)
-		wg.OnTrack = assessOnTrack(wg.RelatedTasksCompleted, weeklyRate, daysRemaining)
+		wg := buildWeeklyGoal(g, projectsByArea, completionsByProject, today)
 		if wg.OnTrack != "on_track" {
 			out.Concerns = append(out.Concerns, fmt.Sprintf("Goal %q: %s (completed %d related tasks this week)", g.Title, wg.OnTrack, wg.RelatedTasksCompleted))
 		}
-
 		out.GoalAlignment = append(out.GoalAlignment, wg)
 	}
 
@@ -309,6 +281,53 @@ func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummar
 			out.Highlights = append(out.Highlights, fmt.Sprintf("Build log: %s", buildLogs[i].Title))
 		}
 	}
+}
+
+// buildProjectsByArea groups project titles by their area.
+func buildProjectsByArea(projects []project.Project) map[string][]string {
+	m := make(map[string][]string)
+	for i := range projects {
+		if projects[i].Area != "" {
+			m[projects[i].Area] = append(m[projects[i].Area], projects[i].Title)
+		}
+	}
+	return m
+}
+
+// buildCompletionsByProject maps project titles to their completion counts.
+func buildCompletionsByProject(byProject []flow.ProjectCompletion) map[string]int64 {
+	m := make(map[string]int64)
+	for _, p := range byProject {
+		m[p.ProjectTitle] = p.Completed
+	}
+	return m
+}
+
+// buildWeeklyGoal assembles a weeklyGoal with task completions and on-track assessment.
+func buildWeeklyGoal(g *goal.Goal, projectsByArea map[string][]string, completionsByProject map[string]int64, today time.Time) weeklyGoal {
+	wg := weeklyGoal{
+		Title:           g.Title,
+		Status:          string(g.Status),
+		RelatedProjects: projectsByArea[g.Area],
+	}
+	if g.Deadline != nil {
+		wg.Deadline = g.Deadline.Format(time.DateOnly)
+	}
+	if wg.RelatedProjects == nil {
+		wg.RelatedProjects = []string{}
+	}
+
+	for _, pTitle := range wg.RelatedProjects {
+		wg.RelatedTasksCompleted += completionsByProject[pTitle]
+	}
+
+	var daysRemaining int
+	if g.Deadline != nil {
+		daysRemaining = int(g.Deadline.Sub(today).Hours() / 24)
+	}
+	weeklyRate := float64(wg.RelatedTasksCompleted)
+	wg.OnTrack = assessOnTrack(wg.RelatedTasksCompleted, weeklyRate, daysRemaining)
+	return wg
 }
 
 // fetchWeeklyTrendConcern checks if the completion rate trend is declining and appends a concern.

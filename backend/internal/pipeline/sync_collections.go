@@ -256,18 +256,7 @@ func (h *Handler) recordPushEvent(ctx context.Context, event *PushEvent) {
 	}
 
 	// fetch diff stats from Compare API (best-effort)
-	var metadata json.RawMessage
-	if h.comparer != nil && event.Before != zeroSHA && isSHA(event.Before) && isSHA(event.After) {
-		stats, err := h.comparer.Compare(ctx, repo, event.Before, event.After)
-		if err != nil {
-			h.logger.Warn("fetching diff stats", "repo", repo, "error", err)
-		} else {
-			stats.CommitCount = len(event.Commits)
-			if data, err := json.Marshal(stats); err == nil {
-				metadata = data
-			}
-		}
-	}
+	metadata := h.fetchDiffMetadata(ctx, repo, event)
 
 	// Resolve project: try projects.repo match, fallback to raw repo name.
 	// Normalize-on-write so all downstream consumers see clean slugs.
@@ -295,6 +284,24 @@ func (h *Handler) recordPushEvent(ctx context.Context, event *PushEvent) {
 	if _, err := h.events.CreateEvent(ctx, &p); err != nil {
 		h.logger.Error("recording push activity event", "repo", repo, "error", err)
 	}
+}
+
+// fetchDiffMetadata fetches diff stats from the Compare API if conditions are met.
+func (h *Handler) fetchDiffMetadata(ctx context.Context, repo string, event *PushEvent) json.RawMessage {
+	if h.comparer == nil || event.Before == zeroSHA || !isSHA(event.Before) || !isSHA(event.After) {
+		return nil
+	}
+	stats, err := h.comparer.Compare(ctx, repo, event.Before, event.After)
+	if err != nil {
+		h.logger.Warn("fetching diff stats", "repo", repo, "error", err)
+		return nil
+	}
+	stats.CommitCount = len(event.Commits)
+	data, err := json.Marshal(stats)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // Generate handles POST /api/pipeline/generate.

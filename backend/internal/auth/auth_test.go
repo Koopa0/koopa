@@ -157,7 +157,7 @@ func TestMiddleware_ClaimsPassedToHandler(t *testing.T) {
 	mid := Middleware(testSecret)
 	handler := mid(inner)
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+validToken)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -389,7 +389,7 @@ func FuzzMiddleware(f *testing.F) {
 	}))
 
 	f.Fuzz(func(t *testing.T, authHeader string) {
-		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 		if authHeader != "" {
 			req.Header.Set("Authorization", authHeader)
 		}

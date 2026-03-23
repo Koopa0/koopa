@@ -661,7 +661,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 		{"0 23 * * *", "daily-dev-log", 2 * time.Minute},
 	} {
 		addCron(job.schedule, job.flow, func() {
-			ctx, cancel := context.WithTimeout(context.Background(), job.timeout) //nolint:govet // intentional context narrowing for cron timeout
+			ctx, cancel := context.WithTimeout(context.Background(), job.timeout)
 			defer cancel()
 			if err := d.runner.Submit(ctx, job.flow, nil, nil); err != nil {
 				d.logger.Error("cron: submitting flow", "flow", job.flow, "error", err)
@@ -677,7 +677,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 
 	// reconciliation (Sunday 04:00)
 	addCron("0 4 * * 0", "reconciliation", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) //nolint:govet // intentional context narrowing for cron timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		if err := d.recon.Run(ctx); err != nil {
 			d.logger.Error("cron: reconciliation failed", "error", err)
@@ -693,7 +693,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 			return
 		}
 		defer syncRunning.Store(false)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) //nolint:govet // intentional context narrowing for cron timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		d.pipelineHandler.SyncAllFromGitHub(ctx)
 		d.notionHandler.SyncAll(ctx)
@@ -709,7 +709,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 // that don't have them yet.
 func noteEmbeddingJob(noteStore *note.Store, embedder ai.Embedder, g *genkit.Genkit, logger *slog.Logger) func() {
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) //nolint:govet // intentional context narrowing for cron timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		candidates, err := noteStore.NotesWithoutEmbedding(ctx, 20)
 		if err != nil {
@@ -721,33 +721,8 @@ func noteEmbeddingJob(noteStore *note.Store, embedder ai.Embedder, g *genkit.Gen
 		}
 		var embedded int
 		for _, c := range candidates {
-			text := ""
-			if c.Title != nil {
-				text = *c.Title + "\n"
-			}
-			if c.ContentText != nil {
-				text += *c.ContentText
-			}
-			if text == "" {
-				continue
-			}
-			resp, embedErr := genkit.Embed(ctx, g,
-				ai.WithEmbedder(embedder),
-				ai.WithTextDocs(text),
-				ai.WithConfig(&genai.EmbedContentConfig{
-					OutputDimensionality: genai.Ptr[int32](768),
-				}),
-			)
-			if embedErr != nil {
-				logger.Error("cron: generating note embedding", "note_id", c.ID, "error", embedErr)
-				continue
-			}
-			if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
-				continue
-			}
-			vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
-			if storeErr := noteStore.UpdateEmbedding(ctx, c.ID, vec); storeErr != nil {
-				logger.Error("cron: storing note embedding", "note_id", c.ID, "error", storeErr)
+			if err := embedNote(ctx, noteStore, embedder, g, c); err != nil {
+				logger.Error("cron: embedding note", "note_id", c.ID, "error", err)
 				continue
 			}
 			embedded++
@@ -756,6 +731,38 @@ func noteEmbeddingJob(noteStore *note.Store, embedder ai.Embedder, g *genkit.Gen
 			logger.Info("cron: note embeddings generated", "count", embedded, "candidates", len(candidates))
 		}
 	}
+}
+
+// embedNote generates and stores the embedding for a single note candidate.
+func embedNote(ctx context.Context, noteStore *note.Store, embedder ai.Embedder, g *genkit.Genkit, c note.EmbeddingCandidate) error {
+	text := ""
+	if c.Title != nil {
+		text = *c.Title + "\n"
+	}
+	if c.ContentText != nil {
+		text += *c.ContentText
+	}
+	if text == "" {
+		return nil
+	}
+	resp, err := genkit.Embed(ctx, g,
+		ai.WithEmbedder(embedder),
+		ai.WithTextDocs(text),
+		ai.WithConfig(&genai.EmbedContentConfig{
+			OutputDimensionality: genai.Ptr[int32](768),
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("generating embedding: %w", err)
+	}
+	if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
+		return nil
+	}
+	vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
+	if err := noteStore.UpdateEmbedding(ctx, c.ID, vec); err != nil {
+		return fmt.Errorf("storing embedding: %w", err)
+	}
+	return nil
 }
 
 func loadConfig(logger *slog.Logger) config {

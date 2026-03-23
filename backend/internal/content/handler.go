@@ -454,18 +454,19 @@ const (
 	maxSimilarPerNode = 3
 )
 
+// contentNode holds the data needed to build graph nodes and edges.
+type contentNode struct {
+	slug      string
+	title     string
+	typ       string
+	embedding []float32
+	topics    []TopicRef
+}
+
 func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, error) {
 	rows, err := h.store.PublishedWithEmbeddings(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	type contentNode struct {
-		slug      string
-		title     string
-		typ       string
-		embedding []float32
-		topics    []TopicRef
 	}
 
 	// Cap the number of nodes to avoid excessive computation.
@@ -473,14 +474,26 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 		rows = rows[:maxGraphNodes]
 	}
 
-	// Batch fetch topics for all rows in a single query
+	nodes, err := h.buildContentNodes(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
+
+	graphNodes, graphLinks := buildGraphFromTopics(nodes)
+	graphLinks = appendSimilarityEdges(graphLinks, nodes)
+
+	return &KnowledgeGraph{Nodes: graphNodes, Links: graphLinks}, nil
+}
+
+// buildContentNodes fetches topics and assembles contentNode entries from published rows.
+func (h *Handler) buildContentNodes(ctx context.Context, rows []EmbeddingContent) ([]contentNode, error) {
 	ids := make([]uuid.UUID, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID
 	}
-	topicMap, topicErr := h.store.topicsForContents(ctx, ids)
-	if topicErr != nil {
-		return nil, topicErr
+	topicMap, err := h.store.topicsForContents(ctx, ids)
+	if err != nil {
+		return nil, err
 	}
 
 	nodes := make([]contentNode, 0, len(rows))
@@ -496,11 +509,14 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 			topics:    topicMap[r.ID],
 		})
 	}
+	return nodes, nil
+}
 
-	// Build graph nodes and topic links.
+// buildGraphFromTopics creates content graph nodes, topic graph nodes, and topic links.
+func buildGraphFromTopics(nodes []contentNode) ([]GraphNode, []GraphLink) {
 	topicCounts := make(map[string]int)
 	topicNames := make(map[string]string)
-	var graphNodes []GraphNode
+	graphNodes := make([]GraphNode, 0, len(nodes)+len(topicCounts))
 	var graphLinks []GraphLink
 
 	for _, n := range nodes {
@@ -527,7 +543,6 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 		}
 	}
 
-	// Add topic nodes.
 	for id, count := range topicCounts {
 		graphNodes = append(graphNodes, GraphNode{
 			ID:    id,
@@ -537,7 +552,11 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 		})
 	}
 
-	// Compute pairwise cosine similarity, keeping top-N per node.
+	return graphNodes, graphLinks
+}
+
+// appendSimilarityEdges computes pairwise cosine similarity and appends deduplicated edges.
+func appendSimilarityEdges(graphLinks []GraphLink, nodes []contentNode) []GraphLink {
 	topEdges := make([][]simEdge, len(nodes))
 
 	for i := range nodes {
@@ -551,7 +570,6 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 		}
 	}
 
-	// Deduplicate edges (each pair kept once).
 	type edgeKey struct{ a, b int }
 	seen := make(map[edgeKey]bool)
 	for i, edges := range topEdges {
@@ -571,7 +589,7 @@ func (h *Handler) buildKnowledgeGraph(ctx context.Context) (*KnowledgeGraph, err
 		}
 	}
 
-	return &KnowledgeGraph{Nodes: graphNodes, Links: graphLinks}, nil
+	return graphLinks
 }
 
 type simEdge struct {

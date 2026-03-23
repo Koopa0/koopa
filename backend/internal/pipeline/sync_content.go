@@ -84,34 +84,7 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 	// check if content already exists
 	existing, err := h.contentReader.ContentBySlug(ctx, slug)
 	if err == nil && existing != nil {
-		// update existing content — status reflects frontmatter published field
-		status := content.StatusDraft
-		if parsed.Published {
-			status = content.StatusPublished
-		}
-		_, updateErr := h.contentWriter.UpdateContent(ctx, existing.ID, &content.UpdateParams{
-			Title:      &parsed.Title,
-			Body:       &body,
-			Type:       &contentType,
-			Status:     &status,
-			Tags:       parsed.Tags,
-			TopicIDs:   topicIDs,
-			SourceType: &sourceType,
-			Source:     &path,
-		})
-		if updateErr != nil {
-			return fmt.Errorf("updating content %s: %w", slug, updateErr)
-		}
-
-		// publish if the obsidian file is marked as published and not yet published
-		if parsed.Published && existing.Status != content.StatusPublished {
-			if _, publishErr := h.contentWriter.PublishContent(ctx, existing.ID); publishErr != nil {
-				return fmt.Errorf("publishing content %s: %w", slug, publishErr)
-			}
-		}
-
-		h.submitContentReview(ctx, existing.ID)
-		return nil
+		return h.updateExistingContent(ctx, existing, slug, parsed, body, contentType, sourceType, path, topicIDs)
 	}
 
 	// create new content
@@ -139,6 +112,37 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 	}
 
 	h.submitContentReview(ctx, created.ID)
+	return nil
+}
+
+// updateExistingContent updates an already-synced content entry, optionally publishing it.
+func (h *Handler) updateExistingContent(ctx context.Context, existing *content.Content, slug string, parsed *obsidian.Parsed, body string, contentType content.Type, sourceType content.SourceType, path string, topicIDs []uuid.UUID) error {
+	status := content.StatusDraft
+	if parsed.Published {
+		status = content.StatusPublished
+	}
+	_, updateErr := h.contentWriter.UpdateContent(ctx, existing.ID, &content.UpdateParams{
+		Title:      &parsed.Title,
+		Body:       &body,
+		Type:       &contentType,
+		Status:     &status,
+		Tags:       parsed.Tags,
+		TopicIDs:   topicIDs,
+		SourceType: &sourceType,
+		Source:     &path,
+	})
+	if updateErr != nil {
+		return fmt.Errorf("updating content %s: %w", slug, updateErr)
+	}
+
+	// publish if the obsidian file is marked as published and not yet published
+	if parsed.Published && existing.Status != content.StatusPublished {
+		if _, publishErr := h.contentWriter.PublishContent(ctx, existing.ID); publishErr != nil {
+			return fmt.Errorf("publishing content %s: %w", slug, publishErr)
+		}
+	}
+
+	h.submitContentReview(ctx, existing.ID)
 	return nil
 }
 

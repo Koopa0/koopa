@@ -226,59 +226,82 @@ func (s *Store) queryTagStats(ctx context.Context, ts *TagStats) error {
 
 // Drift compares activity distribution (last N days) vs active goals by area.
 func (s *Store) Drift(ctx context.Context, days int) (*DriftReport, error) {
-	// Goal counts by area (only active goals)
-	goalRows, err := s.dbtx.Query(ctx, `
+	goalsByArea, totalGoals, err := s.queryGoalsByArea(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	eventsByArea, totalEvents, err := s.queryEventsByArea(ctx, days)
+	if err != nil {
+		return nil, err
+	}
+
+	areas := computeAreaDrift(goalsByArea, totalGoals, eventsByArea, totalEvents)
+
+	return &DriftReport{
+		Period: fmt.Sprintf("last %d days", days),
+		Areas:  areas,
+	}, nil
+}
+
+func (s *Store) queryGoalsByArea(ctx context.Context) (map[string]int, int, error) { //nolint:gocritic // named results conflict with local := declarations
+	rows, err := s.dbtx.Query(ctx, `
 		SELECT COALESCE(area, 'unset'), COUNT(*)
 		FROM goals WHERE status IN ('not-started', 'in-progress')
 		GROUP BY area`)
 	if err != nil {
-		return nil, fmt.Errorf("querying goals by area: %w", err)
+		return nil, 0, fmt.Errorf("querying goals by area: %w", err)
 	}
-	defer goalRows.Close()
+	defer rows.Close()
 
-	goalsByArea := map[string]int{}
-	totalGoals := 0
-	for goalRows.Next() {
+	byArea := map[string]int{}
+	total := 0
+	for rows.Next() {
 		var area string
 		var count int
-		if scanErr := goalRows.Scan(&area, &count); scanErr != nil {
-			return nil, scanErr
+		if err := rows.Scan(&area, &count); err != nil {
+			return nil, 0, err
 		}
-		goalsByArea[area] = count
-		totalGoals += count
+		byArea[area] = count
+		total += count
 	}
-	if rowsErr := goalRows.Err(); rowsErr != nil {
-		return nil, rowsErr
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
 	}
+	return byArea, total, nil
+}
 
-	// Activity counts by project area (join through projects.area)
-	eventRows, err := s.dbtx.Query(ctx, `
+func (s *Store) queryEventsByArea(ctx context.Context, days int) (map[string]int, int, error) { //nolint:gocritic // named results conflict with local := declarations
+	rows, err := s.dbtx.Query(ctx, `
 		SELECT COALESCE(p.area, 'unset'), COUNT(*)
 		FROM activity_events ae
 		LEFT JOIN projects p ON ae.project = p.slug OR (p.repo IS NOT NULL AND p.repo != '' AND ae.project = p.repo)
 		WHERE ae.timestamp > now() - make_interval(days => $1)
 		GROUP BY p.area`, days)
 	if err != nil {
-		return nil, fmt.Errorf("querying events by area: %w", err)
+		return nil, 0, fmt.Errorf("querying events by area: %w", err)
 	}
-	defer eventRows.Close()
+	defer rows.Close()
 
-	eventsByArea := map[string]int{}
-	totalEvents := 0
-	for eventRows.Next() {
+	byArea := map[string]int{}
+	total := 0
+	for rows.Next() {
 		var area string
 		var count int
-		if err := eventRows.Scan(&area, &count); err != nil {
-			return nil, err
+		if err := rows.Scan(&area, &count); err != nil {
+			return nil, 0, err
 		}
-		eventsByArea[area] = count
-		totalEvents += count
+		byArea[area] = count
+		total += count
 	}
-	if err := eventRows.Err(); err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
 	}
+	return byArea, total, nil
+}
 
-	// Merge all areas
+// computeAreaDrift merges goal and event distributions, computes percentages, and sorts by absolute drift.
+func computeAreaDrift(goalsByArea map[string]int, totalGoals int, eventsByArea map[string]int, totalEvents int) []AreaDrift {
 	allAreas := map[string]struct{}{}
 	for a := range goalsByArea {
 		allAreas[a] = struct{}{}
@@ -287,7 +310,7 @@ func (s *Store) Drift(ctx context.Context, days int) (*DriftReport, error) {
 		allAreas[a] = struct{}{}
 	}
 
-	var areas []AreaDrift
+	areas := make([]AreaDrift, 0, len(allAreas))
 	for area := range allAreas {
 		goals := goalsByArea[area]
 		events := eventsByArea[area]
@@ -308,7 +331,6 @@ func (s *Store) Drift(ctx context.Context, days int) (*DriftReport, error) {
 		})
 	}
 
-	// Sort by absolute drift descending
 	slices.SortFunc(areas, func(a, b AreaDrift) int {
 		absA := a.DriftPercent
 		if absA < 0 {
@@ -327,10 +349,7 @@ func (s *Store) Drift(ctx context.Context, days int) (*DriftReport, error) {
 		return 0
 	})
 
-	return &DriftReport{
-		Period: fmt.Sprintf("last %d days", days),
-		Areas:  areas,
-	}, nil
+	return areas
 }
 
 // Learning returns aggregated learning metrics for the admin dashboard.

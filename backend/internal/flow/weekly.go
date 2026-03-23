@@ -236,18 +236,30 @@ func buildWeeklyReviewPrompt(
 ) string {
 	var b strings.Builder
 
-	// Health issues at the top (most important)
-	if len(healthIssues) > 0 {
-		b.WriteString("⚠️ == 系統健康警告 ==\n")
-		for _, issue := range healthIssues {
-			fmt.Fprintf(&b, "- %s\n", issue)
-		}
-		b.WriteByte('\n')
-	}
-
+	writeWeeklyHealthSection(&b, healthIssues)
 	fmt.Fprintf(&b, "回顧期間：%s 至 %s\n\n", start.Format("2006-01-02"), end.Format("2006-01-02"))
+	writeWeeklyPublishedSection(&b, published, pubErr)
+	writeWeeklyCommitsSection(&b, commits, commitErr)
+	writeWeeklyCollectedSection(&b, rssItems, rssErr)
+	writeWeeklyProjectsSection(&b, projects, projErr)
+	writeWeeklyCompletionSection(&b, completedCount, completedErr, completedByProj, completedProjErr)
+	writeWeeklyTasksSection(&b, tasks, taskErr)
 
-	// Published content
+	return b.String()
+}
+
+func writeWeeklyHealthSection(b *strings.Builder, healthIssues []string) {
+	if len(healthIssues) == 0 {
+		return
+	}
+	b.WriteString("⚠️ == 系統健康警告 ==\n")
+	for _, issue := range healthIssues {
+		fmt.Fprintf(b, "- %s\n", issue)
+	}
+	b.WriteByte('\n')
+}
+
+func writeWeeklyPublishedSection(b *strings.Builder, published []content.Content, pubErr error) {
 	b.WriteString("== 本週發佈 ==\n")
 	switch {
 	case pubErr != nil:
@@ -257,11 +269,12 @@ func buildWeeklyReviewPrompt(
 	default:
 		for i := range published {
 			c := &published[i]
-			fmt.Fprintf(&b, "- %s（%s）\n", c.Title, c.Type)
+			fmt.Fprintf(b, "- %s（%s）\n", c.Title, c.Type)
 		}
 	}
+}
 
-	// GitHub commits
+func writeWeeklyCommitsSection(b *strings.Builder, commits []pipeline.Commit, commitErr error) {
 	b.WriteString("\n== GitHub 活動 ==\n")
 	switch {
 	case commitErr != nil:
@@ -269,17 +282,18 @@ func buildWeeklyReviewPrompt(
 	case len(commits) == 0:
 		b.WriteString("本週無 commit\n")
 	default:
-		fmt.Fprintf(&b, "共 %d 筆 commit\n", len(commits))
+		fmt.Fprintf(b, "共 %d 筆 commit\n", len(commits))
 		limit := min(len(commits), 10)
 		for _, c := range commits[:limit] {
-			fmt.Fprintf(&b, "- %s %s\n", c.SHA, c.Message)
+			fmt.Fprintf(b, "- %s %s\n", c.SHA, c.Message)
 		}
 		if len(commits) > 10 {
-			fmt.Fprintf(&b, "...（還有 %d 筆）\n", len(commits)-10)
+			fmt.Fprintf(b, "...（還有 %d 筆）\n", len(commits)-10)
 		}
 	}
+}
 
-	// High-score articles
+func writeWeeklyCollectedSection(b *strings.Builder, rssItems []collected.Item, rssErr error) {
 	b.WriteString("\n== 本週值得關注的文章 ==\n")
 	switch {
 	case rssErr != nil:
@@ -287,13 +301,13 @@ func buildWeeklyReviewPrompt(
 	case len(rssItems) == 0:
 		b.WriteString("無符合條件的文章\n")
 	default:
-		for itemIdx := range rssItems {
-			item := rssItems[itemIdx]
-			fmt.Fprintf(&b, "- %s（%s）\n", item.Title, item.SourceName)
+		for i := range rssItems {
+			fmt.Fprintf(b, "- %s（%s）\n", rssItems[i].Title, rssItems[i].SourceName)
 		}
 	}
+}
 
-	// Active projects
+func writeWeeklyProjectsSection(b *strings.Builder, projects []project.Project, projErr error) {
 	b.WriteString("\n== 活躍專案 ==\n")
 	switch {
 	case projErr != nil:
@@ -302,26 +316,27 @@ func buildWeeklyReviewPrompt(
 		b.WriteString("無活躍專案\n")
 	default:
 		for i := range projects {
-			p := projects[i]
-			fmt.Fprintf(&b, "- %s（%s）\n", p.Title, p.Status)
+			fmt.Fprintf(b, "- %s（%s）\n", projects[i].Title, projects[i].Status)
 		}
 	}
+}
 
-	// Task completion stats
+func writeWeeklyCompletionSection(b *strings.Builder, completedCount int64, completedErr error, completedByProj []ProjectCompletion, completedProjErr error) {
 	b.WriteString("\n== 任務完成統計 ==\n")
 	if completedErr != nil {
 		b.WriteString("完成統計不可用\n")
 	} else {
-		fmt.Fprintf(&b, "本週完成 %d 個任務\n", completedCount)
+		fmt.Fprintf(b, "本週完成 %d 個任務\n", completedCount)
 	}
 	if completedProjErr == nil && len(completedByProj) > 0 {
 		b.WriteString("按專案分佈：\n")
 		for _, pc := range completedByProj {
-			fmt.Fprintf(&b, "  - %s：%d 個\n", pc.ProjectTitle, pc.Completed)
+			fmt.Fprintf(b, "  - %s：%d 個\n", pc.ProjectTitle, pc.Completed)
 		}
 	}
+}
 
-	// Pending tasks
+func writeWeeklyTasksSection(b *strings.Builder, tasks []PendingTask, taskErr error) {
 	b.WriteString("\n== 待辦事項 ==\n")
 	switch {
 	case taskErr != nil:
@@ -331,14 +346,12 @@ func buildWeeklyReviewPrompt(
 	default:
 		for _, t := range tasks {
 			if t.Due != "" {
-				fmt.Fprintf(&b, "- %s（截止：%s）\n", t.Title, t.Due)
+				fmt.Fprintf(b, "- %s（截止：%s）\n", t.Title, t.Due)
 			} else {
-				fmt.Fprintf(&b, "- %s\n", t.Title)
+				fmt.Fprintf(b, "- %s\n", t.Title)
 			}
 		}
 	}
-
-	return b.String()
 }
 
 // NewMockWeeklyReview returns a mock Flow for MOCK_MODE.

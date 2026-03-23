@@ -165,19 +165,9 @@ func (h *Handler) UpdateInsight(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "INVALID_BODY", "invalid request body")
 		return
 	}
-	if req.Status == "" && req.AppendEvidence == "" && req.Conclusion == "" {
-		api.Error(w, http.StatusBadRequest, "MISSING_FIELDS", "at least one of status, append_evidence, or conclusion is required")
+	if code, msg := validateInsightRequest(&req); code != "" {
+		api.Error(w, http.StatusBadRequest, code, msg)
 		return
-	}
-
-	if req.Status != "" {
-		switch req.Status {
-		case "unverified", "verified", "invalidated", "archived":
-			// valid
-		default:
-			api.Error(w, http.StatusBadRequest, "INVALID_STATUS", "status must be unverified, verified, invalidated, or archived")
-			return
-		}
 	}
 
 	ctx := r.Context()
@@ -193,31 +183,14 @@ func (h *Handler) UpdateInsight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse existing metadata
-	meta := make(map[string]any)
-	if len(note.Metadata) > 0 {
-		if unmarshalErr := json.Unmarshal(note.Metadata, &meta); unmarshalErr != nil {
-			h.logger.Error("parsing insight metadata", "id", id, "error", unmarshalErr)
-			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to parse insight metadata")
-			return
-		}
+	meta, err := parseNoteMetadata(note.Metadata)
+	if err != nil {
+		h.logger.Error("parsing insight metadata", "id", id, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to parse insight metadata")
+		return
 	}
 
-	// Apply updates
-	if req.Status != "" {
-		meta["status"] = req.Status
-	}
-	if req.AppendEvidence != "" {
-		var evidence []any
-		if ev, ok := meta["evidence"].([]any); ok {
-			evidence = ev
-		}
-		evidence = append(evidence, req.AppendEvidence)
-		meta["evidence"] = evidence
-	}
-	if req.Conclusion != "" {
-		meta["conclusion"] = req.Conclusion
-	}
+	applyInsightUpdates(meta, &req)
 
 	updatedMetadata, marshalErr := json.Marshal(meta)
 	if marshalErr != nil {
@@ -236,33 +209,79 @@ func (h *Handler) UpdateInsight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Count evidence in the updated note
-	evidenceCount := 0
-	if updatedMeta := make(map[string]any); len(updated.Metadata) > 0 {
-		if json.Unmarshal(updated.Metadata, &updatedMeta) == nil {
-			if ev, ok := updatedMeta["evidence"].([]any); ok {
-				evidenceCount = len(ev)
-			}
-		}
-	}
-
-	var currentStatus, conclusion string
-	if s, ok := meta["status"].(string); ok {
-		currentStatus = s
-	}
-	if c, ok := meta["conclusion"].(string); ok {
-		conclusion = c
-	}
+	currentStatus, _ := meta["status"].(string)
+	conclusion, _ := meta["conclusion"].(string)
 
 	h.logger.Info("insight updated via http", "id", id, "status", currentStatus)
 
 	api.Encode(w, http.StatusOK, api.Response{Data: map[string]any{
 		"id":             updated.ID,
 		"status":         currentStatus,
-		"evidence_count": evidenceCount,
+		"evidence_count": countEvidence(updated.Metadata),
 		"conclusion":     conclusion,
 		"updated_at":     time.Now().Format(time.RFC3339),
 	}})
+}
+
+// validateInsightRequest checks required fields and status enum.
+// Returns empty code on success.
+func validateInsightRequest(req *updateInsightRequest) (code, msg string) {
+	if req.Status == "" && req.AppendEvidence == "" && req.Conclusion == "" {
+		return "MISSING_FIELDS", "at least one of status, append_evidence, or conclusion is required"
+	}
+	if req.Status != "" {
+		switch req.Status {
+		case "unverified", "verified", "invalidated", "archived":
+			// valid
+		default:
+			return "INVALID_STATUS", "status must be unverified, verified, invalidated, or archived"
+		}
+	}
+	return "", ""
+}
+
+// parseNoteMetadata unmarshals raw JSON metadata into a map.
+func parseNoteMetadata(raw json.RawMessage) (map[string]any, error) {
+	meta := make(map[string]any)
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &meta); err != nil {
+			return nil, err
+		}
+	}
+	return meta, nil
+}
+
+// applyInsightUpdates merges request fields into the metadata map.
+func applyInsightUpdates(meta map[string]any, req *updateInsightRequest) {
+	if req.Status != "" {
+		meta["status"] = req.Status
+	}
+	if req.AppendEvidence != "" {
+		var evidence []any
+		if ev, ok := meta["evidence"].([]any); ok {
+			evidence = ev
+		}
+		evidence = append(evidence, req.AppendEvidence)
+		meta["evidence"] = evidence
+	}
+	if req.Conclusion != "" {
+		meta["conclusion"] = req.Conclusion
+	}
+}
+
+// countEvidence returns the number of evidence entries in raw metadata JSON.
+func countEvidence(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return 0
+	}
+	if ev, ok := m["evidence"].([]any); ok {
+		return len(ev)
+	}
+	return 0
 }
 
 // parseInsightNote extracts structured fields from an insight note's metadata.
