@@ -450,12 +450,15 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	if input.Source == "" {
 		input.Source = "discussion"
 	}
-	if input.Difficulty != "" && !learningDifficulties[normalizeTag(input.Difficulty)] {
-		return nil, LogLearningSessionOutput{}, fmt.Errorf("invalid difficulty %q (must be easy, medium, or hard)", input.Difficulty)
+	if input.Difficulty != "" {
+		d := normalizeTag(input.Difficulty)
+		if d != "easy" && d != "medium" && d != "hard" {
+			return nil, LogLearningSessionOutput{}, fmt.Errorf("invalid difficulty %q (must be easy, medium, or hard)", input.Difficulty)
+		}
 	}
 
-	// Validate and normalize tags against controlled vocabulary
-	tags, tagErr := validateLearningTags(input.Tags)
+	// Validate and normalize tags (strict for leetcode/hackerrank sources, pass-through otherwise)
+	tags, tagErr := validateLearningTags(input.Tags, input.Source)
 	if tagErr != nil {
 		return nil, LogLearningSessionOutput{}, tagErr
 	}

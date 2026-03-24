@@ -5,38 +5,53 @@ import (
 	"strings"
 )
 
-// Controlled vocabulary for learning session tags.
-// Source of truth for tag validation — MCP tool descriptions reference this list.
+// Controlled vocabulary for LeetCode/HackerRank learning session tags.
+// Source of truth — MCP tool description references this list.
+// Only enforced when project is "leetcode" or "hackerrank".
 
-// learningTopicTags are the allowed topic tags for learning sessions (LeetCode, etc.).
-var learningTopicTags = map[string]bool{
-	"array": true, "string": true, "hash-table": true,
-	"two-pointers": true, "sliding-window": true, "binary-search": true,
-	"stack": true, "queue": true, "monotonic-stack": true, "monotonic-queue": true,
-	"linked-list": true, "tree": true, "binary-tree": true, "bst": true,
-	"graph": true, "bfs": true, "dfs": true,
-	"heap": true, "trie": true, "union-find": true,
-	"dp": true, "greedy": true, "backtracking": true,
-	"bit-manipulation": true, "math": true, "matrix": true, "interval": true,
-	"topological-sort": true, "sorting": true, "design": true, "simulation": true,
-	"prefix-sum": true, "divide-and-conquer": true,
-	"segment-tree": true, "binary-indexed-tree": true,
+// strictTagProjects are the projects that require strict tag validation.
+var strictTagProjects = map[string]bool{
+	"leetcode": true, "hackerrank": true,
 }
 
-// learningDifficulties are the allowed difficulty values.
-var learningDifficulties = map[string]bool{
-	"easy": true, "medium": true, "hard": true,
-}
+// canonicalTags is the full set of allowed tags for strict-mode projects.
+// 55 tags total, organized by category for maintainability.
+var canonicalTags = buildCanonicalTags()
 
-// learningResultTags are the allowed result tags.
-var learningResultTags = map[string]bool{
-	"ac-independent": true, "ac-with-hints": true,
-	"ac-after-solution": true, "incomplete": true,
-}
+func buildCanonicalTags() map[string]bool {
+	categories := map[string][]string{
+		"topic": {
+			"array", "string", "hash-table", "two-pointers", "sliding-window",
+			"binary-search", "stack", "queue", "monotonic-stack", "linked-list",
+			"tree", "binary-tree", "bst", "graph", "bfs", "dfs",
+			"heap", "trie", "union-find", "dp", "greedy", "backtracking",
+			"bit-manipulation", "math", "matrix", "interval", "topological-sort",
+			"sorting", "simulation", "prefix-sum", "divide-and-conquer",
+			"segment-tree", "design",
+		},
+		"difficulty": {"easy", "medium", "hard"},
+		"result":     {"ac-independent", "ac-with-hints", "ac-after-solution", "incomplete"},
+		"weakness": {
+			"weakness:pattern-recognition", "weakness:approach-selection",
+			"weakness:state-transition", "weakness:edge-cases",
+			"weakness:complexity-analysis", "weakness:implementation",
+			"weakness:time-management",
+		},
+		"improvement": {
+			"improvement:pattern-recognition", "improvement:approach-selection",
+			"improvement:state-transition", "improvement:edge-cases",
+			"improvement:complexity-analysis", "improvement:implementation",
+		},
+		"platform": {"leetcode", "hackerrank"},
+	}
 
-// learningPrefixes are tag prefixes that accept any suffix (e.g. weakness:state-transition).
-var learningPrefixes = []string{
-	"weakness:", "improvement:",
+	m := make(map[string]bool)
+	for _, tags := range categories {
+		for _, t := range tags {
+			m[t] = true
+		}
+	}
+	return m
 }
 
 // normalizeTag converts a tag to canonical form: lowercase, spaces to hyphens.
@@ -45,44 +60,37 @@ func normalizeTag(t string) string {
 	return strings.ReplaceAll(t, " ", "-")
 }
 
-// validateLearningTags normalizes and validates tags against the controlled vocabulary.
-// Returns normalized tags and an error listing any invalid tags.
-func validateLearningTags(tags []string) ([]string, error) {
+// validateLearningTags normalizes and validates tags for learning sessions.
+// When project is a strict-mode project (leetcode, hackerrank), rejects unknown tags.
+// For other projects, tags pass through with normalization only.
+func validateLearningTags(tags []string, project string) ([]string, error) {
 	if len(tags) == 0 {
 		return tags, nil
 	}
 
 	normalized := make([]string, len(tags))
-	var invalid []string
-
 	for i, raw := range tags {
-		t := normalizeTag(raw)
-		normalized[i] = t
-
-		if isValidLearningTag(t) {
-			continue
-		}
-		invalid = append(invalid, t)
+		normalized[i] = normalizeTag(raw)
 	}
 
+	// Only enforce strict validation for coding practice projects
+	if !strictTagProjects[strings.ToLower(project)] {
+		return normalized, nil
+	}
+
+	var invalid []string
+	for _, t := range normalized {
+		if !canonicalTags[t] {
+			invalid = append(invalid, t)
+		}
+	}
 	if len(invalid) > 0 {
-		return nil, fmt.Errorf("invalid tags: %s. Allowed: topic tags (array, dp, graph, ...), "+
-			"result (ac-independent, ac-with-hints, ac-after-solution, incomplete), "+
-			"weakness:xxx, improvement:xxx", strings.Join(invalid, ", "))
+		return nil, fmt.Errorf("invalid tags for %s: %s. Use canonical tags only: "+
+			"topic (array, dp, graph, ...), difficulty (easy/medium/hard), "+
+			"result (ac-independent/ac-with-hints/ac-after-solution/incomplete), "+
+			"weakness:xxx, improvement:xxx, platform (leetcode/hackerrank)",
+			project, strings.Join(invalid, ", "))
 	}
 
 	return normalized, nil
-}
-
-// isValidLearningTag checks if a tag is in the controlled vocabulary.
-func isValidLearningTag(t string) bool {
-	if learningTopicTags[t] || learningDifficulties[t] || learningResultTags[t] {
-		return true
-	}
-	for _, prefix := range learningPrefixes {
-		if strings.HasPrefix(t, prefix) {
-			return true
-		}
-	}
-	return false
 }
