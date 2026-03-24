@@ -220,6 +220,7 @@ func (s *Store) UpsertByNotionPageID(ctx context.Context, p *UpsertByNotionParam
 			Description:  p.Description,
 			Status:       db.ProjectStatus(p.Status),
 			Area:         p.Area,
+			GoalID:       p.GoalID,
 			Deadline:     p.Deadline,
 			NotionPageID: &p.NotionPageID,
 		})
@@ -359,6 +360,7 @@ func rowToProject(r *db.Project) Project {
 		NotionPageID:    r.NotionPageID,
 		Repo:            r.Repo,
 		Area:            r.Area,
+		GoalID:          r.GoalID,
 		Deadline:        r.Deadline,
 		LastActivityAt:  r.LastActivityAt,
 		ExpectedCadence: r.ExpectedCadence,

@@ -57,6 +57,15 @@ func (h *Handler) upsertProject(ctx context.Context, pageID string, props map[st
 	area := h.resolveRelationTitle(ctx, props["Tag"])
 	deadline := dateProperty(props["Target Deadline"])
 
+	// Resolve Goal relation → local goal UUID
+	var goalID *uuid.UUID
+	goalPageID := relationProperty(props["Goal"])
+	if goalPageID != "" && h.goalIDs != nil {
+		if id, err := h.goalIDs.IDByNotionPageID(ctx, goalPageID); err == nil {
+			goalID = &id
+		}
+	}
+
 	idSuffix := pageID
 	if len(idSuffix) > 8 {
 		idSuffix = idSuffix[:8]
@@ -69,6 +78,7 @@ func (h *Handler) upsertProject(ctx context.Context, pageID string, props map[st
 		Description:  description,
 		Status:       localStatus,
 		Area:         area,
+		GoalID:       goalID,
 		Deadline:     deadline,
 		NotionPageID: pageID,
 	})

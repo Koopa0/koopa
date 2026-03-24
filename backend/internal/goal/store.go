@@ -89,6 +89,15 @@ func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (in
 	return n, nil
 }
 
+// IDByNotionPageID resolves a Notion page ID to a goal UUID.
+func (s *Store) IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error) {
+	id, err := s.q.GoalIDByNotionPageID(ctx, &notionPageID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("resolving goal by notion page %s: %w", notionPageID, err)
+	}
+	return id, nil
+}
+
 // GoalByTitle returns a goal by case-insensitive title match.
 func (s *Store) GoalByTitle(ctx context.Context, title string) (*Goal, error) {
 	r, err := s.q.GoalByTitle(ctx, title)

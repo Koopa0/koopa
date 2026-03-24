@@ -8,6 +8,10 @@ SELECT id, title, description, status, area, quarter, deadline,
        notion_page_id, created_at, updated_at
 FROM goals WHERE notion_page_id = @notion_page_id;
 
+-- name: GoalIDByNotionPageID :one
+-- Resolve a Notion page ID to a goal UUID.
+SELECT id FROM goals WHERE notion_page_id = $1;
+
 -- name: NotionGoalPageIDs :many
 SELECT notion_page_id FROM goals WHERE notion_page_id IS NOT NULL ORDER BY title;
 

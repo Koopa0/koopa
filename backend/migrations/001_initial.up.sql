@@ -131,6 +131,7 @@ CREATE TABLE projects (
     notion_page_id   TEXT UNIQUE,
     repo             TEXT,
     area             TEXT NOT NULL DEFAULT '',
+    goal_id          UUID,
     deadline         TIMESTAMPTZ,
     last_activity_at TIMESTAMPTZ,
     expected_cadence TEXT NOT NULL DEFAULT 'weekly',
@@ -250,6 +251,10 @@ CREATE TABLE goals (
 );
 
 CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
+
+-- FK: projects.goal_id -> goals.id (defined here because goals table comes after projects)
+ALTER TABLE projects ADD CONSTRAINT fk_projects_goal FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE SET NULL;
+CREATE INDEX idx_projects_goal_id ON projects(goal_id) WHERE goal_id IS NOT NULL;
 
 -- === Tasks (synced from Notion) ===
 

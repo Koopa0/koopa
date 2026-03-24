@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -259,7 +260,7 @@ func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummar
 		s.logger.Error("weekly_summary: projects for goal alignment", "error", projErr)
 	}
 
-	projectsByArea := buildProjectsByArea(projects)
+	projectsByGoalID := buildProjectsByGoalID(projects)
 	completionsByProject := buildCompletionsByProject(byProject)
 
 	out.GoalAlignment = make([]weeklyGoal, 0)
@@ -268,7 +269,7 @@ func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummar
 		if string(g.Status) == "done" || string(g.Status) == "abandoned" {
 			continue
 		}
-		wg := buildWeeklyGoal(g, projectsByArea, completionsByProject, today)
+		wg := buildWeeklyGoal(g, projectsByGoalID, completionsByProject, today)
 		if wg.OnTrack != "on_track" {
 			out.Concerns = append(out.Concerns, fmt.Sprintf("Goal %q: %s (completed %d related tasks this week)", g.Title, wg.OnTrack, wg.RelatedTasksCompleted))
 		}
@@ -283,12 +284,12 @@ func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummar
 	}
 }
 
-// buildProjectsByArea groups project titles by their area.
-func buildProjectsByArea(projects []project.Project) map[string][]string {
-	m := make(map[string][]string)
+// buildProjectsByGoalID groups project titles by their goal FK.
+func buildProjectsByGoalID(projects []project.Project) map[uuid.UUID][]string {
+	m := make(map[uuid.UUID][]string)
 	for i := range projects {
-		if projects[i].Area != "" {
-			m[projects[i].Area] = append(m[projects[i].Area], projects[i].Title)
+		if projects[i].GoalID != nil {
+			m[*projects[i].GoalID] = append(m[*projects[i].GoalID], projects[i].Title)
 		}
 	}
 	return m
@@ -304,11 +305,11 @@ func buildCompletionsByProject(byProject []flow.ProjectCompletion) map[string]in
 }
 
 // buildWeeklyGoal assembles a weeklyGoal with task completions and on-track assessment.
-func buildWeeklyGoal(g *goal.Goal, projectsByArea map[string][]string, completionsByProject map[string]int64, today time.Time) weeklyGoal {
+func buildWeeklyGoal(g *goal.Goal, projectsByGoalID map[uuid.UUID][]string, completionsByProject map[string]int64, today time.Time) weeklyGoal {
 	wg := weeklyGoal{
 		Title:           g.Title,
 		Status:          string(g.Status),
-		RelatedProjects: projectsByArea[g.Area],
+		RelatedProjects: projectsByGoalID[g.ID],
 	}
 	if g.Deadline != nil {
 		wg.Deadline = g.Deadline.Format(time.DateOnly)

@@ -242,6 +242,7 @@ func run(logger *slog.Logger) error {
 		notion.WithEventRecorder(activityStore),
 		notion.WithProjectSlugResolver(projectStore),
 		notion.WithProjectIDResolver(projectStore),
+		notion.WithGoalIDResolver(goalStore),
 	)
 	defer notionHandler.Wait() // drain background SyncRole goroutines
 

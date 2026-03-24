@@ -646,6 +646,7 @@ type Project struct {
 	NotionPageID    *string       `json:"notion_page_id"`
 	Repo            *string       `json:"repo"`
 	Area            string        `json:"area"`
+	GoalID          *uuid.UUID    `json:"goal_id"`
 	Deadline        *time.Time    `json:"deadline"`
 	LastActivityAt  *time.Time    `json:"last_activity_at"`
 	ExpectedCadence string        `json:"expected_cadence"`

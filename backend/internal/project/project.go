@@ -43,6 +43,7 @@ type Project struct {
 	NotionPageID    *string    `json:"notion_page_id,omitempty"`
 	Repo            *string    `json:"repo,omitempty"`
 	Area            string     `json:"area"`
+	GoalID          *uuid.UUID `json:"goal_id,omitempty"`
 	Deadline        *time.Time `json:"deadline,omitempty"`
 	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
 	ExpectedCadence string     `json:"expected_cadence"`
@@ -99,6 +100,7 @@ type UpsertByNotionParams struct {
 	Description  string
 	Status       Status
 	Area         string
+	GoalID       *uuid.UUID
 	Deadline     *time.Time
 	NotionPageID string
 }

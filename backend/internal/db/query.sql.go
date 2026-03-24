@@ -46,7 +46,7 @@ func (q *Queries) ActiveProjectSlugsWithRepo(ctx context.Context, since *time.Ti
 const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC
@@ -83,6 +83,7 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 			&i.NotionPageID,
 			&i.Repo,
 			&i.Area,
+			&i.GoalID,
 			&i.Deadline,
 			&i.LastActivityAt,
 			&i.ExpectedCadence,
@@ -1348,7 +1349,7 @@ INSERT INTO projects (slug, title, description, long_description, role, tech_sta
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -1415,6 +1416,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
@@ -2433,6 +2435,18 @@ func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const goalIDByNotionPageID = `-- name: GoalIDByNotionPageID :one
+SELECT id FROM goals WHERE notion_page_id = $1
+`
+
+// Resolve a Notion page ID to a goal UUID.
+func (q *Queries) GoalIDByNotionPageID(ctx context.Context, notionPageID *string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, goalIDByNotionPageID, notionPageID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const goals = `-- name: Goals :many
@@ -3686,7 +3700,7 @@ const projectByAlias = `-- name: ProjectByAlias :one
 SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
        p.results, p.github_url, p.live_url, p.featured, p.public, p.sort_order,
-       p.status, p.notion_page_id, p.repo, p.area, p.deadline, p.last_activity_at,
+       p.status, p.notion_page_id, p.repo, p.area, p.goal_id, p.deadline, p.last_activity_at,
        p.expected_cadence, p.created_at, p.updated_at
 FROM project_aliases pa
 JOIN projects p ON p.id = pa.project_id
@@ -3719,6 +3733,7 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
@@ -3731,7 +3746,7 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 const projectByRepo = `-- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE repo = $1
 `
@@ -3761,6 +3776,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
@@ -3773,7 +3789,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 const projectBySlug = `-- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE slug = $1
 `
@@ -3803,6 +3819,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
@@ -3815,7 +3832,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 const projectByTitle = `-- name: ProjectByTitle :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1)
 `
@@ -3846,6 +3863,7 @@ func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, er
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
@@ -3882,7 +3900,7 @@ func (q *Queries) ProjectSlugByNotionPageID(ctx context.Context, notionPageID *s
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title
 `
@@ -3918,6 +3936,7 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.NotionPageID,
 			&i.Repo,
 			&i.Area,
+			&i.GoalID,
 			&i.Deadline,
 			&i.LastActivityAt,
 			&i.ExpectedCadence,
@@ -3937,7 +3956,7 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 const publicProjects = `-- name: PublicProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE public = true
 ORDER BY featured DESC, sort_order, title
@@ -3974,6 +3993,7 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 			&i.NotionPageID,
 			&i.Repo,
 			&i.Area,
+			&i.GoalID,
 			&i.Deadline,
 			&i.LastActivityAt,
 			&i.ExpectedCadence,
@@ -6073,7 +6093,7 @@ UPDATE projects SET
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -6142,6 +6162,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
@@ -6170,7 +6191,7 @@ UPDATE projects SET
 WHERE id = $4
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
+          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -6212,6 +6233,7 @@ func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStat
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
@@ -6705,19 +6727,20 @@ func (q *Queries) UpsertNoteLink(ctx context.Context, arg UpsertNoteLinkParams) 
 }
 
 const upsertProjectByNotionPageID = `-- name: UpsertProjectByNotionPageID :one
-INSERT INTO projects (slug, title, description, status, area, deadline, notion_page_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO projects (slug, title, description, status, area, goal_id, deadline, notion_page_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (notion_page_id) DO UPDATE SET
     title = EXCLUDED.title,
     description = EXCLUDED.description,
     status = EXCLUDED.status,
     area = EXCLUDED.area,
+    goal_id = EXCLUDED.goal_id,
     deadline = EXCLUDED.deadline,
     updated_at = now()
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, deadline, last_activity_at,
-          expected_cadence, created_at, updated_at
+          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline,
+          last_activity_at, expected_cadence, created_at, updated_at
 `
 
 type UpsertProjectByNotionPageIDParams struct {
@@ -6726,6 +6749,7 @@ type UpsertProjectByNotionPageIDParams struct {
 	Description  string        `json:"description"`
 	Status       ProjectStatus `json:"status"`
 	Area         string        `json:"area"`
+	GoalID       *uuid.UUID    `json:"goal_id"`
 	Deadline     *time.Time    `json:"deadline"`
 	NotionPageID *string       `json:"notion_page_id"`
 }
@@ -6737,6 +6761,7 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 		arg.Description,
 		arg.Status,
 		arg.Area,
+		arg.GoalID,
 		arg.Deadline,
 		arg.NotionPageID,
 	)
@@ -6763,6 +6788,7 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 		&i.NotionPageID,
 		&i.Repo,
 		&i.Area,
+		&i.GoalID,
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,

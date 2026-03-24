@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -51,12 +52,12 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 		s.logger.Error("goal_progress: completed by project", "error", taskErr)
 	}
 
-	// Build area → projects mapping
-	projectsByArea := make(map[string][]string)
+	// Build goal_id → projects mapping (FK-based, not area-based)
+	projectsByGoalID := make(map[uuid.UUID][]string)
 	for pIdx := range projects {
 		p := projects[pIdx]
-		if p.Area != "" {
-			projectsByArea[p.Area] = append(projectsByArea[p.Area], p.Title)
+		if p.GoalID != nil {
+			projectsByGoalID[*p.GoalID] = append(projectsByGoalID[*p.GoalID], p.Title)
 		}
 	}
 
@@ -78,7 +79,7 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 			Title:           g.Title,
 			Status:          string(g.Status),
 			Area:            g.Area,
-			RelatedProjects: projectsByArea[g.Area],
+			RelatedProjects: projectsByGoalID[g.ID],
 		}
 		if gp.RelatedProjects == nil {
 			gp.RelatedProjects = []string{}

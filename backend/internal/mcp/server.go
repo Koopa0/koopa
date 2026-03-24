@@ -524,15 +524,15 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 	}
 
-	// Related goals (by area match)
-	if proj.Area != "" {
+	// Related goals (by goal_id FK)
+	if proj.GoalID != nil {
 		goals, goalsErr := s.goals.Goals(ctx)
 		if goalsErr != nil {
 			s.logger.Error("project_context: related goals", "error", goalsErr)
 		} else {
 			for i := range goals {
 				g := &goals[i]
-				if g.Area != proj.Area || string(g.Status) == "done" || string(g.Status) == "abandoned" {
+				if g.ID != *proj.GoalID {
 					continue
 				}
 				gb := goalBrief{Title: g.Title, Status: string(g.Status), Area: g.Area}

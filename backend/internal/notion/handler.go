@@ -65,6 +65,11 @@ type ProjectIDResolver interface {
 	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
 }
 
+// GoalIDResolver resolves a Notion page ID to a local goal UUID.
+type GoalIDResolver interface {
+	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
+}
+
 // Handler handles Notion webhook events.
 type Handler struct {
 	client        *Client
@@ -77,6 +82,7 @@ type Handler struct {
 	events        EventRecorder
 	projectSlugs  ProjectSlugResolver
 	projectIDs    ProjectIDResolver
+	goalIDs       GoalIDResolver
 	dedup         *webhook.DeduplicationCache
 	webhookSecret string
 	logger        *slog.Logger
@@ -105,6 +111,11 @@ func WithProjectSlugResolver(r ProjectSlugResolver) HandlerOption {
 // WithProjectIDResolver sets the project ID resolver for task → project FK resolution.
 func WithProjectIDResolver(r ProjectIDResolver) HandlerOption {
 	return func(h *Handler) { h.projectIDs = r }
+}
+
+// WithGoalIDResolver sets the goal ID resolver for project → goal FK resolution.
+func WithGoalIDResolver(r GoalIDResolver) HandlerOption {
+	return func(h *Handler) { h.goalIDs = r }
 }
 
 // WithDedup sets the deduplication cache for webhook replay protection.
