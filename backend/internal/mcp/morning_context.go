@@ -32,6 +32,8 @@ type MorningContextOutput struct {
 	RecentBuildLogs        []buildLogBrief        `json:"recent_build_logs"`
 	Projects               []projectHealth        `json:"projects"`
 	Goals                  []goalBrief            `json:"goals"`
+	LatestPlan             string                 `json:"latest_plan,omitempty"`
+	LatestPlanDate         string                 `json:"latest_plan_date,omitempty"`
 	LatestReflection       string                 `json:"latest_reflection,omitempty"`
 	LatestReflectionDate   string                 `json:"latest_reflection_date,omitempty"`
 	YesterdayAdjustments   []string               `json:"yesterday_adjustments,omitempty"`
@@ -360,10 +362,14 @@ func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContex
 		out.LastSessionDate = lastSession.NoteDate.Format(time.DateOnly)
 	}
 
+	plan, planErr := s.sessionReader.LatestNoteByType(ctx, "plan")
+	if planErr == nil {
+		out.LatestPlan = plan.Content
+		out.LatestPlanDate = plan.NoteDate.Format(time.DateOnly)
+	}
+
 	refl, reflErr := s.sessionReader.LatestNoteByType(ctx, "reflection")
-	if reflErr != nil {
-		s.logger.Error("morning_context: latest reflection", "error", reflErr)
-	} else {
+	if reflErr == nil {
 		out.LatestReflection = refl.Content
 		out.LatestReflectionDate = refl.NoteDate.Format(time.DateOnly)
 	}
