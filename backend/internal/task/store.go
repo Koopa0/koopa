@@ -326,6 +326,7 @@ func (s *Store) TasksCreatedSince(ctx context.Context, since time.Time) ([]Creat
 // UpdateParams holds optional fields for updating a task.
 type UpdateParams struct {
 	ID          uuid.UUID
+	Title       *string
 	Status      *Status
 	Due         *time.Time
 	Energy      *string
@@ -338,6 +339,7 @@ type UpdateParams struct {
 // Update updates arbitrary task fields.
 func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Task, error) {
 	params := db.UpdateTaskParams{ID: p.ID}
+	params.NewTitle = p.Title
 	if p.Status != nil {
 		params.Status = db.NullTaskStatus{
 			TaskStatus: db.TaskStatus(*p.Status),

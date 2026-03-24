@@ -6352,25 +6352,27 @@ func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, erro
 
 const updateTask = `-- name: UpdateTask :one
 UPDATE tasks SET
-    status       = COALESCE($1::task_status, status),
-    due          = COALESCE($2, due),
-    energy       = COALESCE($3, energy),
-    priority     = COALESCE($4, priority),
-    my_day       = COALESCE($5, my_day),
-    project_id   = COALESCE($6, project_id),
-    description  = COALESCE($7, description),
+    title        = COALESCE($1, title),
+    status       = COALESCE($2::task_status, status),
+    due          = COALESCE($3, due),
+    energy       = COALESCE($4, energy),
+    priority     = COALESCE($5, priority),
+    my_day       = COALESCE($6, my_day),
+    project_id   = COALESCE($7, project_id),
+    description  = COALESCE($8, description),
     completed_at = CASE
-        WHEN $1::task_status = 'done' AND completed_at IS NULL THEN now()
+        WHEN $2::task_status = 'done' AND completed_at IS NULL THEN now()
         ELSE completed_at
     END,
     updated_at = now()
-WHERE id = $8
+WHERE id = $9
 RETURNING id, title, status, due, project_id, notion_page_id,
           completed_at, energy, priority, recur_interval, recur_unit,
           my_day, description, created_at, updated_at
 `
 
 type UpdateTaskParams struct {
+	NewTitle       *string        `json:"new_title"`
 	Status         NullTaskStatus `json:"status"`
 	Due            *time.Time     `json:"due"`
 	Energy         *string        `json:"energy"`
@@ -6384,6 +6386,7 @@ type UpdateTaskParams struct {
 // Update arbitrary task fields. Only non-null parameters are applied.
 func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error) {
 	row := q.db.QueryRow(ctx, updateTask,
+		arg.NewTitle,
 		arg.Status,
 		arg.Due,
 		arg.Energy,

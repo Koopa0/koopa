@@ -231,7 +231,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "update_task",
-		Description: "Update any task property — due date, priority, energy, project, My Day, or status. Use when the user says 'move this to tomorrow', 'change priority to high', '這個改成下週', 'put this on my day'. For marking tasks complete, prefer complete_task instead.",
+		Description: "Update any task property — title (new_title), due date, priority, energy, project, My Day, or status. Use when the user says 'move this to tomorrow', 'change priority to high', '這個改成下週', 'put this on my day', 'rename this task'. For marking tasks complete, prefer complete_task instead.",
 	}, s.updateTask)
 
 	mcp.AddTool(s.server, &mcp.Tool{

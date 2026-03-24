@@ -182,6 +182,7 @@ ORDER BY t.created_at DESC;
 -- name: UpdateTask :one
 -- Update arbitrary task fields. Only non-null parameters are applied.
 UPDATE tasks SET
+    title        = COALESCE(sqlc.narg('new_title'), title),
     status       = COALESCE(sqlc.narg('status')::task_status, status),
     due          = COALESCE(sqlc.narg('due'), due),
     energy       = COALESCE(sqlc.narg('energy'), energy),

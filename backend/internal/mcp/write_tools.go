@@ -244,6 +244,7 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 type UpdateTaskInput struct {
 	TaskID    string  `json:"task_id,omitempty" jsonschema_description:"task UUID (most precise)"`
 	TaskTitle string  `json:"task_title,omitempty" jsonschema_description:"fuzzy match against pending task titles"`
+	NewTitle  *string `json:"new_title,omitempty" jsonschema_description:"rename the task to this value"`
 	Status    *string `json:"status,omitempty" jsonschema_description:"To Do, Doing, or Done"`
 	Due       *string `json:"due,omitempty" jsonschema_description:"ISO date (YYYY-MM-DD)"`
 	Priority  *string `json:"priority,omitempty" jsonschema_description:"Low, Medium, or High"`
@@ -277,6 +278,9 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 
 	params := &task.UpdateParams{ID: t.ID}
 
+	if input.NewTitle != nil {
+		params.Title = input.NewTitle
+	}
 	if input.Status != nil {
 		st := mapInputTaskStatus(*input.Status)
 		params.Status = &st
@@ -875,6 +879,13 @@ func joinLines(lines []string) string {
 // Project relation is handled separately by the caller (needs NotionPageID resolution).
 func buildNotionTaskProps(input *UpdateTaskInput) map[string]any {
 	props := make(map[string]any)
+	if input.NewTitle != nil {
+		props["Task Name"] = map[string]any{
+			"title": []map[string]any{
+				{"text": map[string]string{"content": *input.NewTitle}},
+			},
+		}
+	}
 	if input.Status != nil {
 		props["Status"] = map[string]any{
 			"status": map[string]string{"name": notion.NotionTaskStatusFromInput(*input.Status)},
