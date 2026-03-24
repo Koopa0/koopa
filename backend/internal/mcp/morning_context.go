@@ -499,7 +499,7 @@ func (s *Server) fetchTodayCompletions(ctx context.Context, out *MorningContextO
 			CompletedVia: e.Source,
 		}
 		if e.Title != nil {
-			tc.Title = *e.Title
+			tc.Title = strings.TrimPrefix(*e.Title, "Completed: ")
 		}
 		if e.Project != nil {
 			tc.Project = *e.Project

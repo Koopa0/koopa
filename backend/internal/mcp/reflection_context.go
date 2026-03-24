@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -189,7 +190,7 @@ func (s *Server) fetchReflectionCompletions(ctx context.Context, out *Reflection
 		}
 		tc := todayCompletion{CompletedVia: e.Source}
 		if e.Title != nil {
-			tc.Title = *e.Title
+			tc.Title = strings.TrimPrefix(*e.Title, "Completed: ")
 		}
 		if e.Project != nil {
 			tc.Project = *e.Project

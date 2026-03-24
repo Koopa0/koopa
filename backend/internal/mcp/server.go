@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -686,7 +687,7 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 			URL:         data[i].SourceURL,
 			Topics:      data[i].Topics,
 			CollectedAt: data[i].CollectedAt.Format(time.RFC3339),
-			Excerpt:     truncate(deref(data[i].OriginalContent), 200),
+			Excerpt:     truncate(stripHTMLTags(deref(data[i].OriginalContent)), 200),
 		}
 	}
 
@@ -757,7 +758,13 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	var projectSlug *string
 	if input.Project != "" {
-		projectSlug = &input.Project
+		proj, projErr := s.resolveProjectChain(ctx, input.Project)
+		if projErr == nil {
+			projectSlug = &proj.Slug
+		} else {
+			// Fallback: try as raw slug (backward compat)
+			projectSlug = &input.Project
+		}
 	}
 
 	tasks, err := s.tasks.PendingTasksWithProject(ctx, projectSlug, int32(limit)) // #nosec G115 -- limit is clamped 1-100
@@ -1370,6 +1377,14 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
+// stripHTMLTags removes HTML tags and collapses whitespace for plain-text excerpts.
+func stripHTMLTags(s string) string {
+	clean := htmlTagRe.ReplaceAllString(s, " ")
+	return strings.Join(strings.Fields(clean), " ")
 }
 
 // toMapAny converts any struct/map to map[string]any via JSON round-trip.

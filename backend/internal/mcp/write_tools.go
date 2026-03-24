@@ -132,6 +132,9 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	if input.Title == "" {
 		return nil, CreateTaskOutput{}, fmt.Errorf("title is required")
 	}
+	if !validEnergy(input.Energy) {
+		return nil, CreateTaskOutput{}, fmt.Errorf("invalid energy %q (must be High or Low)", input.Energy)
+	}
 
 	if s.notionTasks == nil {
 		return nil, CreateTaskOutput{}, fmt.Errorf("notion task writer not configured")
@@ -249,6 +252,9 @@ type UpdateTaskOutput struct {
 func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *UpdateTaskInput) (*mcp.CallToolResult, UpdateTaskOutput, error) {
 	if input.TaskID == "" && input.TaskTitle == "" {
 		return nil, UpdateTaskOutput{}, fmt.Errorf("either task_id or task_title is required")
+	}
+	if input.Energy != nil && !validEnergy(*input.Energy) {
+		return nil, UpdateTaskOutput{}, fmt.Errorf("invalid energy %q (must be High or Low)", *input.Energy)
 	}
 
 	t, err := s.resolveTask(ctx, input.TaskID, input.TaskTitle)
@@ -660,10 +666,17 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 
 	// Sync to Notion (best-effort)
 	if proj.NotionPageID != nil && s.notionTasks != nil {
-		notionStatus := notion.LocalProjectStatusToNotion(status)
-		if notionErr := s.notionTasks.UpdatePageProperties(ctx, *proj.NotionPageID, map[string]any{
-			"Status": map[string]any{"status": map[string]string{"name": notionStatus}},
-		}); notionErr != nil {
+		notionProps := map[string]any{
+			"Status": map[string]any{"status": map[string]string{"name": notion.LocalProjectStatusToNotion(status)}},
+		}
+		if input.ReviewNotes != nil && *input.ReviewNotes != "" {
+			notionProps["Review Notes"] = map[string]any{
+				"rich_text": []map[string]any{
+					{"type": "text", "text": map[string]string{"content": *input.ReviewNotes}},
+				},
+			}
+		}
+		if notionErr := s.notionTasks.UpdatePageProperties(ctx, *proj.NotionPageID, notionProps); notionErr != nil {
 			s.logger.Warn("update_project_status: notion write-back failed", "project", proj.Slug, "error", notionErr)
 		}
 	}
@@ -802,6 +815,11 @@ func mapInputTaskStatus(s string) task.Status {
 	default:
 		return task.StatusTodo
 	}
+}
+
+// validEnergy checks if the energy value is valid for Notion (High or Low only).
+func validEnergy(e string) bool {
+	return e == "" || e == "High" || e == "Low"
 }
 
 func joinLines(lines []string) string {
