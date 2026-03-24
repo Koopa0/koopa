@@ -450,17 +450,24 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	if input.Source == "" {
 		input.Source = "discussion"
 	}
+	if input.Difficulty != "" && !learningDifficulties[normalizeTag(input.Difficulty)] {
+		return nil, LogLearningSessionOutput{}, fmt.Errorf("invalid difficulty %q (must be easy, medium, or hard)", input.Difficulty)
+	}
+
+	// Validate and normalize tags against controlled vocabulary
+	tags, tagErr := validateLearningTags(input.Tags)
+	if tagErr != nil {
+		return nil, LogLearningSessionOutput{}, tagErr
+	}
+	if tags == nil {
+		tags = []string{}
+	}
 
 	now := time.Now()
 	topicSlug := tag.Slugify(input.Topic)
 	slug := fmt.Sprintf("%s-til-%s", topicSlug, now.Format("2006-01-02"))
 	source := fmt.Sprintf("claude:%s", input.Source)
 	sourceType := content.SourceAIGenerated
-
-	tags := input.Tags
-	if tags == nil {
-		tags = []string{}
-	}
 
 	// Add metadata to body if provided
 	body := input.Body

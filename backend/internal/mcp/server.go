@@ -241,7 +241,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "log_learning_session",
-		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Use after completing a learning discussion when the user gained new insight, finished a problem, or completed study material. Captures the knowledge for future retrieval via search_knowledge.",
+		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Tags use a controlled vocabulary: topic tags (array, string, hash-table, two-pointers, sliding-window, binary-search, stack, queue, linked-list, tree, binary-tree, bst, graph, bfs, dfs, heap, trie, union-find, dp, greedy, backtracking, bit-manipulation, math, matrix, interval, topological-sort, sorting, design, simulation, prefix-sum, divide-and-conquer, segment-tree, binary-indexed-tree), result (ac-independent, ac-with-hints, ac-after-solution, incomplete), weakness:xxx, improvement:xxx. Difficulty: easy, medium, hard.",
 	}, s.logLearningSession)
 
 	mcp.AddTool(s.server, &mcp.Tool{
