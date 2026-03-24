@@ -182,15 +182,24 @@ func (s *Server) fetchReflectionCompletions(ctx context.Context, out *Reflection
 		return
 	}
 
+	seen := make(map[string]bool)
 	out.TodayCompletions = make([]todayCompletion, 0)
 	for i := range events {
 		e := &events[i]
 		if !isCompletionEvent(e.EventType, e.Source, e.Metadata) {
 			continue
 		}
-		tc := todayCompletion{CompletedVia: e.Source}
+		title := ""
 		if e.Title != nil {
-			tc.Title = strings.TrimPrefix(*e.Title, "Completed: ")
+			title = strings.TrimPrefix(*e.Title, "Completed: ")
+		}
+		if seen[title] {
+			continue
+		}
+		seen[title] = true
+		tc := todayCompletion{
+			CompletedVia: e.Source,
+			Title:        title,
 		}
 		if e.Project != nil {
 			tc.Project = *e.Project
