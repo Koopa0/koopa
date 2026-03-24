@@ -118,6 +118,9 @@ services:
       MCP_TRANSPORT: http
       MCP_PORT: "8081"
       NOTION_API_KEY: ${NOTION_API_KEY}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
     depends_on:
       postgres:
         condition: service_healthy
