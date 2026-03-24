@@ -30,13 +30,23 @@ type CompleteTaskInput struct {
 
 // CompleteTaskOutput is the output of the complete_task tool.
 type CompleteTaskOutput struct {
-	TaskID         string  `json:"task_id"`
-	Title          string  `json:"title"`
-	Project        string  `json:"project,omitempty"`
-	CompletedAt    string  `json:"completed_at"`
-	IsRecurring    bool    `json:"is_recurring"`
-	NextRecurrence *string `json:"next_recurrence,omitempty"`
-	Warning        string  `json:"warning,omitempty"`
+	TaskID              string           `json:"task_id"`
+	Title               string           `json:"title"`
+	Project             string           `json:"project,omitempty"`
+	CompletedAt         string           `json:"completed_at"`
+	IsRecurring         bool             `json:"is_recurring"`
+	NextRecurrence      *string          `json:"next_recurrence,omitempty"`
+	Warning             string           `json:"warning,omitempty"`
+	RemainingMyDayTasks []myDayRemaining `json:"remaining_my_day_tasks"`
+}
+
+// myDayRemaining is a minimal task summary for post-completion next-task suggestion.
+type myDayRemaining struct {
+	TaskID   string `json:"task_id"`
+	Title    string `json:"title"`
+	Project  string `json:"project,omitempty"`
+	Priority string `json:"priority,omitempty"`
+	Energy   string `json:"energy,omitempty"`
 }
 
 func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input CompleteTaskInput) (*mcp.CallToolResult, CompleteTaskOutput, error) {
@@ -102,6 +112,9 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 			Title:     &evTitle,
 		})
 	}
+
+	// Attach remaining My Day tasks for next-task suggestion
+	out.RemainingMyDayTasks = s.fetchRemainingMyDay(ctx, updated.ID)
 
 	return nil, out, nil
 }
@@ -786,6 +799,30 @@ func (s *Server) resolveTaskDBID(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("resolving tasks database id: %w", err)
 	}
 	return dbID, nil
+}
+
+// fetchRemainingMyDay returns My Day tasks that are still pending (excluding the just-completed task).
+func (s *Server) fetchRemainingMyDay(ctx context.Context, excludeID uuid.UUID) []myDayRemaining {
+	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, 50)
+	if err != nil {
+		s.logger.Error("complete_task: fetching remaining my day", "error", err)
+		return []myDayRemaining{}
+	}
+	remaining := make([]myDayRemaining, 0)
+	for i := range allTasks {
+		t := &allTasks[i]
+		if !t.MyDay || t.ID == excludeID {
+			continue
+		}
+		remaining = append(remaining, myDayRemaining{
+			TaskID:   t.ID.String(),
+			Title:    t.Title,
+			Project:  t.ProjectTitle,
+			Priority: t.Priority,
+			Energy:   t.Energy,
+		})
+	}
+	return remaining
 }
 
 func (s *Server) resolveProject(ctx context.Context, input string) (*project.Project, error) {

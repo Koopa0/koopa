@@ -804,8 +804,9 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.
 type SearchKnowledgeInput struct {
-	Query string `json:"query" jsonschema_description:"search query (required)"`
-	Limit int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
+	Query   string `json:"query" jsonschema_description:"search query (required)"`
+	Project string `json:"project,omitempty" jsonschema_description:"filter results by project name, slug, or alias"`
+	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
 }
 
 // SearchKnowledgeOutput is the output for the search_knowledge tool.
@@ -833,6 +834,17 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	limit := clamp(input.Limit, 1, 30, 10)
+
+	// Resolve project filter to slug for note context filtering
+	var projectSlug string
+	if input.Project != "" {
+		proj, projErr := s.resolveProjectChain(ctx, input.Project)
+		if projErr == nil {
+			projectSlug = proj.Slug
+		} else {
+			projectSlug = input.Project // fallback to raw input
+		}
+	}
 
 	// Search content, notes (text), and notes (semantic) concurrently.
 	type contentResult struct {
@@ -862,8 +874,30 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	}()
 
 	go func() {
-		notes, err := s.notes.SearchByText(ctx, input.Query, limit)
-		noteCh <- noteSearchResult{notes, err}
+		if projectSlug != "" {
+			// When project is set, use filter-based search with context + query
+			filterResults, err := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &projectSlug}, limit*3)
+			if err != nil {
+				noteCh <- noteSearchResult{err: err}
+				return
+			}
+			// Text search separately and RRF merge
+			textResults, textErr := s.notes.SearchByText(ctx, input.Query, limit*3)
+			if textErr != nil {
+				noteCh <- noteSearchResult{err: textErr}
+				return
+			}
+			merged := rrfMerge(textResults, filterResults, limit)
+			// Convert back to SearchResult format
+			sr := make([]note.SearchResult, len(merged))
+			for j := range merged {
+				sr[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}
+			}
+			noteCh <- noteSearchResult{notes: sr}
+		} else {
+			notes, err := s.notes.SearchByText(ctx, input.Query, limit)
+			noteCh <- noteSearchResult{notes, err}
+		}
 	}()
 
 	go func() {
@@ -892,6 +926,10 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 	for i := range cr.contents {
 		c := &cr.contents[i]
+		// Project filter: check slug prefix or body frontmatter
+		if projectSlug != "" && !contentMatchesProject(c, projectSlug) {
+			continue
+		}
 		excerpt := c.Excerpt
 		if excerpt == "" {
 			excerpt = truncate(c.Body, 300)
@@ -1369,6 +1407,19 @@ func extractFrontmatter(body, key string) string {
 		}
 	}
 	return ""
+}
+
+// contentMatchesProject checks if a content item belongs to a project.
+// Matches by slug prefix (e.g. "koopa0dev-" in "koopa0dev-dev-log-2026-03-24")
+// or by "project:" frontmatter in the body.
+func contentMatchesProject(c *content.Content, projectSlug string) bool {
+	if strings.HasPrefix(c.Slug, projectSlug) {
+		return true
+	}
+	if p := extractFrontmatter(c.Body, "project"); p != "" {
+		return strings.EqualFold(p, projectSlug) || strings.Contains(strings.ToLower(p), strings.ToLower(projectSlug))
+	}
+	return false
 }
 
 func truncate(s string, maxLen int) string {

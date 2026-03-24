@@ -24,9 +24,18 @@ type SessionDeltaOutput struct {
 	TasksCreated       []deltaTask        `json:"tasks_created"`
 	TasksBecameOverdue []deltaTask        `json:"tasks_became_overdue"`
 	BuildLogs          []buildLogBrief    `json:"build_logs"`
+	ProjectChanges     []statusChange     `json:"project_changes"`
+	GoalChanges        []statusChange     `json:"goal_changes"`
 	InsightsChanged    []insightDelta     `json:"insights_changed"`
 	SessionNotes       []sessionNoteBrief `json:"session_notes"`
 	MetricsTrend       *metricsTrendBrief `json:"metrics_trend,omitempty"`
+}
+
+type statusChange struct {
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Date   string `json:"date"`
+	Source string `json:"source"`
 }
 
 type deltaPeriod struct {
@@ -83,6 +92,7 @@ func (s *Server) getSessionDelta(ctx context.Context, _ *mcp.CallToolRequest, in
 	s.fetchDeltaCreatedTasks(ctx, &out, since)
 	s.fetchDeltaOverdueTasks(ctx, &out, since, today)
 	s.fetchDeltaBuildLogs(ctx, &out, since)
+	s.fetchDeltaStatusChanges(ctx, &out, since, today)
 	s.fetchDeltaSessionData(ctx, &out, since, today)
 
 	return nil, out, nil
@@ -264,6 +274,44 @@ func parseInsightDelta(n *session.Note) insightDelta {
 		delta.EvidenceCount = len(meta.LegacyEv)
 	}
 	return delta
+}
+
+// fetchDeltaStatusChanges extracts project and goal status changes from activity events.
+func (s *Server) fetchDeltaStatusChanges(ctx context.Context, out *SessionDeltaOutput, since, today time.Time) {
+	events, err := s.activity.EventsByFilters(ctx, since, today, nil, nil, 200)
+	if err != nil {
+		s.logger.Error("session_delta: status changes", "error", err)
+		return
+	}
+
+	out.ProjectChanges = make([]statusChange, 0)
+	out.GoalChanges = make([]statusChange, 0)
+	for i := range events {
+		e := &events[i]
+		if e.EventType != "project_update" && e.EventType != "goal_update" {
+			continue
+		}
+		sc := statusChange{
+			Date:   e.Timestamp.Format(time.DateOnly),
+			Source: e.Source,
+		}
+		if e.Title != nil {
+			sc.Title = *e.Title
+		}
+		// Extract status from metadata
+		if len(e.Metadata) > 0 {
+			var meta map[string]string
+			if json.Unmarshal(e.Metadata, &meta) == nil {
+				sc.Status = meta["status"]
+			}
+		}
+		switch e.EventType {
+		case "project_update":
+			out.ProjectChanges = append(out.ProjectChanges, sc)
+		case "goal_update":
+			out.GoalChanges = append(out.GoalChanges, sc)
+		}
+	}
 }
 
 // buildDailyMetricsList parses all metrics notes into dailyMetrics entries.
