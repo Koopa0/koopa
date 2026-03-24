@@ -9,6 +9,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -100,12 +101,26 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 		Concerns:   []string{},
 	}
 
+	// Fetch shared data once
+	activeProjects, projErr := s.projects.ActiveProjects(ctx)
+	if projErr != nil {
+		s.logger.Error("weekly_summary: active projects", "error", projErr)
+	}
+	var metricsNotes []session.Note
+	if s.sessionReader != nil {
+		var metricsErr error
+		metricsNotes, metricsErr = s.sessionReader.MetricsHistory(ctx, weekStart)
+		if metricsErr != nil {
+			s.logger.Error("weekly_summary: metrics history", "error", metricsErr)
+		}
+	}
+
 	byProject := s.fetchWeeklyTasks(ctx, &out, weekStart)
-	s.fetchWeeklyMetrics(ctx, &out, weekStart)
-	s.fetchWeeklyProjectHealth(ctx, &out, now)
+	s.buildWeeklyMetrics(&out, metricsNotes)
+	s.fetchWeeklyProjectHealth(ctx, &out, activeProjects, now)
 	s.fetchWeeklyInsights(ctx, &out, weekStart)
-	s.fetchWeeklyGoalAlignment(ctx, &out, byProject, weekStart, today)
-	s.fetchWeeklyTrendConcern(ctx, &out, weekStart)
+	s.fetchWeeklyGoalAlignment(ctx, &out, activeProjects, byProject, weekStart, today)
+	s.buildWeeklyTrendConcern(&out, metricsNotes)
 
 	return nil, out, nil
 }
@@ -130,16 +145,8 @@ func (s *Server) fetchWeeklyTasks(ctx context.Context, out *WeeklySummaryOutput,
 	return byProject
 }
 
-// fetchWeeklyMetrics fetches daily metrics and computes trend, best/worst days, and highlights.
-func (s *Server) fetchWeeklyMetrics(ctx context.Context, out *WeeklySummaryOutput, weekStart time.Time) {
-	if s.sessionReader == nil {
-		return
-	}
-
-	metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, weekStart)
-	if metricsErr != nil {
-		s.logger.Error("weekly_summary: metrics", "error", metricsErr)
-	}
+// buildWeeklyMetrics computes trend, best/worst days, and highlights from pre-fetched metrics.
+func (s *Server) buildWeeklyMetrics(out *WeeklySummaryOutput, metricsNotes []session.Note) {
 	entries := buildDailyMetricsList(metricsNotes)
 
 	out.MetricsTrend.DailyRates = make([]float64, 0, len(entries))
@@ -178,12 +185,8 @@ func (s *Server) fetchWeeklyMetrics(ctx context.Context, out *WeeklySummaryOutpu
 	}
 }
 
-// fetchWeeklyProjectHealth fetches active projects, computes health, and appends neglect concerns.
-func (s *Server) fetchWeeklyProjectHealth(ctx context.Context, out *WeeklySummaryOutput, now time.Time) {
-	projects, err := s.projects.ActiveProjects(ctx)
-	if err != nil {
-		s.logger.Error("weekly_summary: projects", "error", err)
-	}
+// fetchWeeklyProjectHealth computes health from pre-fetched projects and appends neglect concerns.
+func (s *Server) fetchWeeklyProjectHealth(ctx context.Context, out *WeeklySummaryOutput, projects []project.Project, now time.Time) {
 	allPending, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
 	if err != nil {
 		s.logger.Error("weekly_summary: pending tasks", "error", err)
@@ -247,17 +250,12 @@ func (s *Server) fetchWeeklyInsights(ctx context.Context, out *WeeklySummaryOutp
 	}
 }
 
-// fetchWeeklyGoalAlignment fetches goals and computes on-track assessment using
-// area-based project matching and task completions. Appends off-track concerns.
-func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummaryOutput, byProject []flow.ProjectCompletion, weekStart, today time.Time) {
+// fetchWeeklyGoalAlignment computes on-track assessment using
+// goal_id FK project matching and task completions. Appends off-track concerns.
+func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummaryOutput, projects []project.Project, byProject []flow.ProjectCompletion, weekStart, today time.Time) {
 	goals, err := s.goals.Goals(ctx)
 	if err != nil {
 		s.logger.Error("weekly_summary: goals", "error", err)
-	}
-
-	projects, projErr := s.projects.ActiveProjects(ctx)
-	if projErr != nil {
-		s.logger.Error("weekly_summary: projects for goal alignment", "error", projErr)
 	}
 
 	projectsByGoalID := buildProjectsByGoalID(projects)
@@ -332,16 +330,9 @@ func buildWeeklyGoal(g *goal.Goal, projectsByGoalID map[uuid.UUID][]string, comp
 }
 
 // fetchWeeklyTrendConcern checks if the completion rate trend is declining and appends a concern.
-func (s *Server) fetchWeeklyTrendConcern(ctx context.Context, out *WeeklySummaryOutput, weekStart time.Time) {
-	if s.sessionReader == nil {
-		return
-	}
-
-	trendNotes, trendErr := s.sessionReader.MetricsHistory(ctx, weekStart)
-	if trendErr != nil {
-		s.logger.Error("weekly_summary: trend metrics", "error", trendErr)
-	}
-	entries := buildDailyMetricsList(trendNotes)
+// buildWeeklyTrendConcern appends a concern if the completion rate trend is declining.
+func (s *Server) buildWeeklyTrendConcern(out *WeeklySummaryOutput, metricsNotes []session.Note) {
+	entries := buildDailyMetricsList(metricsNotes)
 	if trend := computeTrend(entries); trend == "down" {
 		out.Concerns = append(out.Concerns, "Completion rate trend is declining")
 	}

@@ -962,13 +962,16 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		})
 	}
 
-	// Semantic note results third (deduped against text results).
+	// Semantic note results third (deduped against text results, project-filtered).
 	if sr.err != nil {
 		s.logger.Error("search_knowledge: semantic search failed", "error", sr.err)
 	}
 	for i := range sr.notes {
 		n := &sr.notes[i]
 		if seen[n.FilePath] {
+			continue
+		}
+		if projectSlug != "" && (n.Context == nil || *n.Context != projectSlug) {
 			continue
 		}
 		seen[n.FilePath] = true

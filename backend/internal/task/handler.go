@@ -23,6 +23,7 @@ type Handler struct {
 // NotionClient creates and updates tasks in Notion.
 type NotionClient interface {
 	UpdatePageStatus(ctx context.Context, pageID, status string) error
+	UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error
 	CreateTaskPage(ctx context.Context, databaseID, title, dueDate, description string) (string, error)
 }
 
@@ -239,6 +240,17 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Sync to Notion before local update (best-effort)
+	t, taskErr := h.store.TaskByID(ctx, id)
+	if taskErr == nil && t.NotionPageID != nil && h.notion != nil {
+		notionProps := buildHTTPNotionProps(req)
+		if len(notionProps) > 0 {
+			if notionErr := h.notion.UpdatePageProperties(ctx, *t.NotionPageID, notionProps); notionErr != nil {
+				h.logger.Warn("update task: notion sync failed", "task_id", id, "error", notionErr)
+			}
+		}
+	}
+
 	updated, err := h.store.Update(ctx, params)
 	if err != nil {
 		h.logger.Error("updating task", "id", id, "error", err)
@@ -331,9 +343,23 @@ func (h *Handler) BatchMyDay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	myDayFalse := map[string]any{"My Day": map[string]any{"checkbox": false}}
+	myDayTrue := map[string]any{"My Day": map[string]any{"checkbox": true}}
 	var cleared int64
 
 	if req.Clear {
+		// Sync to Notion before clearing (best-effort)
+		if h.notion != nil {
+			currentMyDay, myDayErr := h.store.MyDayTasksWithNotionPageID(ctx)
+			if myDayErr != nil {
+				h.logger.Warn("batch my day: fetching notion ids for clear", "error", myDayErr)
+			}
+			for _, t := range currentMyDay {
+				//nolint:errcheck // best-effort
+				h.notion.UpdatePageProperties(ctx, t.NotionPageID, myDayFalse)
+			}
+		}
+
 		cleared, err = h.store.ClearAllMyDay(ctx)
 		if err != nil {
 			h.logger.Error("clearing my day", "error", err)
@@ -354,6 +380,16 @@ func (h *Handler) BatchMyDay(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		set++
+
+		// Sync to Notion (best-effort)
+		if h.notion != nil {
+			t, taskErr := h.store.TaskByID(ctx, id)
+			if taskErr == nil && t.NotionPageID != nil {
+				if notionErr := h.notion.UpdatePageProperties(ctx, *t.NotionPageID, myDayTrue); notionErr != nil {
+					h.logger.Warn("batch my day: notion sync failed", "task_id", idStr, "error", notionErr)
+				}
+			}
+		}
 	}
 
 	api.Encode(w, http.StatusOK, api.Response{Data: map[string]any{
@@ -375,6 +411,40 @@ func (h *Handler) DailySummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: hint})
+}
+
+// buildHTTPNotionProps builds Notion properties from an HTTP update request.
+func buildHTTPNotionProps(req updateRequest) map[string]any {
+	props := make(map[string]any)
+	if req.Status != nil {
+		notionStatus := "To Do"
+		switch *req.Status {
+		case "todo", "To Do":
+			notionStatus = "To Do"
+		case "in-progress", "Doing":
+			notionStatus = "Doing"
+		case "done", "Done":
+			notionStatus = "Done"
+		}
+		props["Status"] = map[string]any{"status": map[string]string{"name": notionStatus}}
+	}
+	if req.Due != nil {
+		if *req.Due == "" {
+			props["Due"] = map[string]any{"date": nil}
+		} else {
+			props["Due"] = map[string]any{"date": map[string]string{"start": *req.Due}}
+		}
+	}
+	if req.Priority != nil {
+		props["Priority"] = map[string]any{"status": map[string]string{"name": *req.Priority}}
+	}
+	if req.Energy != nil {
+		props["Energy"] = map[string]any{"select": map[string]string{"name": *req.Energy}}
+	}
+	if req.MyDay != nil {
+		props["My Day"] = map[string]any{"checkbox": *req.MyDay}
+	}
+	return props
 }
 
 func mapHTTPTaskStatus(s string) Status {

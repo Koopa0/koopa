@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -70,11 +71,17 @@ func (s *Server) getReflectionContext(ctx context.Context, _ *mcp.CallToolReques
 	s.fetchReflectionCompletions(ctx, &out, today, tomorrow)
 	out.TasksCompletedToday = len(out.TodayCompletions)
 
+	// Fetch daily summary hint once — used by both My Day status and daily summary
+	hint, hintErr := s.tasks.DailySummaryHintForDate(ctx, today, tomorrow)
+	if hintErr != nil {
+		s.logger.Error("reflection_context: daily summary hint", "error", hintErr)
+	}
+
 	// 3. My Day task status (join pending tasks with completions)
-	s.fetchReflectionMyDayStatus(ctx, &out, today, tomorrow)
+	s.fetchReflectionMyDayStatus(ctx, &out, hint)
 
 	// 4. Daily summary from tasks table
-	s.fetchReflectionDailySummary(ctx, &out, today, tomorrow)
+	setReflectionDailySummary(&out, hint)
 
 	// 5. Unverified insights
 	s.fetchReflectionInsights(ctx, &out)
@@ -137,22 +144,19 @@ func (s *Server) fetchReflectionPlan(ctx context.Context, out *ReflectionContext
 
 // fetchReflectionMyDayStatus builds the My Day task completion status.
 // Joins pending My Day tasks with today's completions to show which were done.
-func (s *Server) fetchReflectionMyDayStatus(ctx context.Context, out *ReflectionContextOutput, today, tomorrow time.Time) {
+func (s *Server) fetchReflectionMyDayStatus(ctx context.Context, out *ReflectionContextOutput, hint *task.DailySummaryHint) {
 	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
 	if err != nil {
 		s.logger.Error("reflection_context: pending tasks", "error", err)
 		return
 	}
 
-	// Also include today's completed tasks (they won't be in "pending" anymore)
-	hint, hintErr := s.tasks.DailySummaryHintForDate(ctx, today, tomorrow)
-
 	// Build set of completed task titles for matching
 	completedTitles := make(map[string]bool)
 	for _, tc := range out.TodayCompletions {
 		completedTitles[tc.Title] = true
 	}
-	if hintErr == nil && hint != nil {
+	if hint != nil {
 		for _, t := range hint.CompletedTitles {
 			completedTitles[t] = true
 		}
@@ -208,11 +212,9 @@ func (s *Server) fetchReflectionCompletions(ctx context.Context, out *Reflection
 	}
 }
 
-// fetchReflectionDailySummary fetches the daily summary hint from tasks table.
-func (s *Server) fetchReflectionDailySummary(ctx context.Context, out *ReflectionContextOutput, today, tomorrow time.Time) {
-	hint, err := s.tasks.DailySummaryHintForDate(ctx, today, tomorrow)
-	if err != nil {
-		s.logger.Error("reflection_context: daily summary", "error", err)
+// setReflectionDailySummary populates the daily summary from a pre-fetched hint.
+func setReflectionDailySummary(out *ReflectionContextOutput, hint *task.DailySummaryHint) {
+	if hint == nil {
 		return
 	}
 	out.DailySummary = &dailySummaryHint{

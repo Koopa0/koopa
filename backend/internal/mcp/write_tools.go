@@ -304,9 +304,11 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	if input.Notes != nil {
 		params.Description = input.Notes
 	}
+	var resolvedProject *project.Project
 	if input.Project != nil {
 		proj, projErr := s.resolveProject(ctx, *input.Project)
 		if projErr == nil {
+			resolvedProject = proj
 			params.ProjectID = &proj.ID
 		}
 	}
@@ -314,13 +316,9 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	// Sync changed properties to Notion (best-effort, before local update)
 	if t.NotionPageID != nil && s.notionTasks != nil {
 		notionProps := buildNotionTaskProps(input)
-		// Handle project relation separately — needs resolved Notion page ID
-		if input.Project != nil {
-			proj, projErr := s.resolveProject(ctx, *input.Project)
-			if projErr == nil && proj.NotionPageID != nil {
-				notionProps["Project"] = map[string]any{
-					"relation": []map[string]string{{"id": *proj.NotionPageID}},
-				}
+		if resolvedProject != nil && resolvedProject.NotionPageID != nil {
+			notionProps["Project"] = map[string]any{
+				"relation": []map[string]string{{"id": *resolvedProject.NotionPageID}},
 			}
 		}
 		if len(notionProps) > 0 {

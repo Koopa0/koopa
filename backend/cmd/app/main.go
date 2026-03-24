@@ -925,6 +925,10 @@ func (a *notionTaskAdapter) UpdatePageStatus(ctx context.Context, pageID, status
 	return a.client.UpdatePageStatus(ctx, pageID, status)
 }
 
+func (a *notionTaskAdapter) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error {
+	return a.client.UpdatePageProperties(ctx, pageID, properties)
+}
+
 func (a *notionTaskAdapter) CreateTaskPage(ctx context.Context, databaseID, title, dueDate, description string) (string, error) {
 	return a.client.CreateTask(ctx, &notion.CreateTaskParams{
 		DatabaseID:  databaseID,
