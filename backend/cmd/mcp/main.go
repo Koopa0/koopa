@@ -124,6 +124,14 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mcpserver.WithActivityWriter(activityStore),
 	)
 
+	// Optional O'Reilly content search (requires ORM_JWT)
+	if ormJWT := os.Getenv("ORM_JWT"); ormJWT != "" {
+		opts = append(opts, mcpserver.WithOReilly(mcpserver.NewOReillyClient(ormJWT)))
+		logger.Info("O'Reilly content search enabled")
+	} else {
+		logger.Warn("ORM_JWT not set — search_oreilly_content will be unavailable")
+	}
+
 	// Optional semantic search (requires GEMINI_API_KEY)
 	noteStore := note.NewStore(pool)
 	if geminiKey := os.Getenv("GEMINI_API_KEY"); geminiKey != "" {
@@ -273,11 +281,11 @@ type oauthProvider struct {
 	logger      *slog.Logger
 
 	mu           sync.Mutex
-	clients      map[string]string       // client_id → client_secret
-	tokens       map[string]time.Time    // access_token → expiry
-	refreshToks  map[string]time.Time    // refresh_token → expiry
-	codes        map[string]codeInfo     // authorization_code → info
-	pendingAuths map[string]pendingAuth  // session_id → pending authorize request
+	clients      map[string]string      // client_id → client_secret
+	tokens       map[string]time.Time   // access_token → expiry
+	refreshToks  map[string]time.Time   // refresh_token → expiry
+	codes        map[string]codeInfo    // authorization_code → info
+	pendingAuths map[string]pendingAuth // session_id → pending authorize request
 
 	done chan struct{}
 }

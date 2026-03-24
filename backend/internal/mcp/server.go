@@ -44,6 +44,7 @@ type Server struct {
 	collectedHighlights CollectedHighlightReader
 	semanticNotes       NoteSemanticSearcher
 	queryEmbedder       QueryEmbedder
+	oreilly             OReillySearcher
 	logger              *slog.Logger
 	loc                 *time.Location // user timezone for day boundaries
 }
@@ -100,6 +101,11 @@ func WithSemanticSearch(ns NoteSemanticSearcher, qe QueryEmbedder) ServerOption 
 		s.semanticNotes = ns
 		s.queryEmbedder = qe
 	}
+}
+
+// WithOReilly enables O'Reilly content search tools.
+func WithOReilly(searcher OReillySearcher) ServerOption {
+	return func(s *Server) { s.oreilly = searcher }
 }
 
 // WithSessionNotes enables session note read/write tools.
@@ -304,6 +310,25 @@ func NewServer(
 		Name:        "update_insight",
 		Description: "Update an insight's status or append evidence. Use during evening reflection when today's data supports or contradicts a hypothesis — append evidence, or change status to 'verified'/'invalidated'. Use 'archived' to retire old insights.",
 	}, s.updateInsight)
+
+	// --- O'Reilly tools ---
+
+	if s.oreilly != nil {
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "search_oreilly_content",
+			Description: "Search O'Reilly Learning for books, videos, articles, courses, and other content. Use when the user asks for learning resources, book recommendations, wants to find technical content on a topic, or says 'find me a book about X'. Supports filtering by format (book, video, article, course), publisher, and author.",
+		}, s.searchOReillyContent)
+
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "get_oreilly_book_detail",
+			Description: "Get book metadata and full table of contents from O'Reilly Learning. Use after search_oreilly_content to see a book's chapters and structure before reading. Returns chapter titles, filenames (for read_oreilly_chapter), estimated reading time, and section headings.",
+		}, s.getOReillyBookDetail)
+
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "read_oreilly_chapter",
+			Description: "Read the full text content of an O'Reilly book chapter. Use after get_oreilly_book_detail to read specific chapters. Requires archive_id and filename (from book detail chapters list). Returns plain text content stripped of HTML formatting.",
+		}, s.readOReillyChapter)
+	}
 
 	return s
 }
