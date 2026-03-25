@@ -314,19 +314,7 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	}
 
 	// Sync changed properties to Notion (best-effort, before local update)
-	if t.NotionPageID != nil && s.notionTasks != nil {
-		notionProps := buildNotionTaskProps(input)
-		if resolvedProject != nil && resolvedProject.NotionPageID != nil {
-			notionProps["Project"] = map[string]any{
-				"relation": []map[string]string{{"id": *resolvedProject.NotionPageID}},
-			}
-		}
-		if len(notionProps) > 0 {
-			if notionErr := s.notionTasks.UpdatePageProperties(ctx, *t.NotionPageID, notionProps); notionErr != nil {
-				s.logger.Warn("update_task: notion write-back failed", "task_id", t.ID, "error", notionErr)
-			}
-		}
-	}
+	s.syncTaskToNotion(ctx, t, input, resolvedProject)
 
 	updated, err := s.taskWriter.Update(ctx, params)
 	if err != nil {
@@ -344,6 +332,26 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	}
 
 	return nil, out, nil
+}
+
+// syncTaskToNotion syncs changed task properties to Notion.
+// It is best-effort: errors are logged but not returned.
+func (s *Server) syncTaskToNotion(ctx context.Context, t *task.Task, input *UpdateTaskInput, resolvedProject *project.Project) {
+	if t.NotionPageID == nil || s.notionTasks == nil {
+		return
+	}
+	notionProps := buildNotionTaskProps(input)
+	if resolvedProject != nil && resolvedProject.NotionPageID != nil {
+		notionProps["Project"] = map[string]any{
+			"relation": []map[string]string{{"id": *resolvedProject.NotionPageID}},
+		}
+	}
+	if len(notionProps) == 0 {
+		return
+	}
+	if notionErr := s.notionTasks.UpdatePageProperties(ctx, *t.NotionPageID, notionProps); notionErr != nil {
+		s.logger.Warn("update_task: notion write-back failed", "task_id", t.ID, "error", notionErr)
+	}
 }
 
 // --- batch_my_day ---
@@ -365,9 +373,6 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 		return nil, BatchMyDayOutput{}, fmt.Errorf("task_ids is required (or set clear: true)")
 	}
 
-	myDayFalse := map[string]any{"My Day": map[string]any{"checkbox": false}}
-	myDayTrue := map[string]any{"My Day": map[string]any{"checkbox": true}}
-
 	var out BatchMyDayOutput
 
 	if input.Clear {
@@ -378,8 +383,7 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 				s.logger.Warn("batch_my_day: fetching notion page ids for clear", "error", myDayErr)
 			}
 			for _, t := range currentMyDay {
-				//nolint:errcheck // best-effort: don't fail batch on individual Notion errors
-				s.notionTasks.UpdatePageProperties(ctx, t.NotionPageID, myDayFalse)
+				s.syncMyDayToNotion(ctx, t.NotionPageID, false)
 			}
 		}
 
@@ -405,14 +409,23 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 		if s.notionTasks != nil {
 			t, taskErr := s.tasks.TaskByID(ctx, id)
 			if taskErr == nil && t.NotionPageID != nil {
-				if notionErr := s.notionTasks.UpdatePageProperties(ctx, *t.NotionPageID, myDayTrue); notionErr != nil {
-					s.logger.Warn("batch_my_day: notion sync failed", "task_id", idStr, "error", notionErr)
-				}
+				s.syncMyDayToNotion(ctx, *t.NotionPageID, true)
 			}
 		}
 	}
 
 	return nil, out, nil
+}
+
+// syncMyDayToNotion updates the My Day checkbox for a task in Notion.
+// It is best-effort: errors are logged but not returned.
+func (s *Server) syncMyDayToNotion(ctx context.Context, notionPageID string, value bool) {
+	if s.notionTasks == nil || notionPageID == "" {
+		return
+	}
+	props := map[string]any{"My Day": map[string]any{"checkbox": value}}
+	//nolint:errcheck // best-effort: don't fail batch on individual Notion errors
+	s.notionTasks.UpdatePageProperties(ctx, notionPageID, props)
 }
 
 // --- log_learning_session ---
@@ -580,32 +593,41 @@ type SaveSessionNoteOutput struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, input SaveSessionNoteInput) (*mcp.CallToolResult, SaveSessionNoteOutput, error) {
-	if s.sessionWriter == nil {
-		return nil, SaveSessionNoteOutput{}, fmt.Errorf("session notes not configured")
-	}
+// validateSessionNoteInput checks required fields and enum values for SaveSessionNoteInput.
+func validateSessionNoteInput(input SaveSessionNoteInput) error {
 	if input.NoteType == "" {
-		return nil, SaveSessionNoteOutput{}, fmt.Errorf("note_type is required")
+		return fmt.Errorf("note_type is required")
 	}
 	if input.Content == "" {
-		return nil, SaveSessionNoteOutput{}, fmt.Errorf("content is required")
+		return fmt.Errorf("content is required")
 	}
 	if input.Source == "" {
-		return nil, SaveSessionNoteOutput{}, fmt.Errorf("source is required")
+		return fmt.Errorf("source is required")
 	}
 
 	switch input.NoteType {
 	case "plan", "reflection", "context", "metrics", "insight":
 		// valid
 	default:
-		return nil, SaveSessionNoteOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
+		return fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
 	}
 
 	switch input.Source {
 	case "claude", "claude-code", "manual":
 		// valid
 	default:
-		return nil, SaveSessionNoteOutput{}, fmt.Errorf("invalid source %q (must be claude, claude-code, or manual)", input.Source)
+		return fmt.Errorf("invalid source %q (must be claude, claude-code, or manual)", input.Source)
+	}
+
+	return nil
+}
+
+func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, input SaveSessionNoteInput) (*mcp.CallToolResult, SaveSessionNoteOutput, error) {
+	if s.sessionWriter == nil {
+		return nil, SaveSessionNoteOutput{}, fmt.Errorf("session notes not configured")
+	}
+	if err := validateSessionNoteInput(input); err != nil {
+		return nil, SaveSessionNoteOutput{}, err
 	}
 
 	noteDate := time.Now()

@@ -18,6 +18,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // Server is the MCP server exposing knowledge tools.
@@ -445,19 +446,13 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 		if err != nil {
 			return nil, SearchNotesOutput{}, fmt.Errorf("text search: %w", err)
 		}
-		results = make([]searchResultEntry, len(textResults))
-		for i := range textResults {
-			results[i] = searchResultEntry{Note: textResults[i].Note, Score: float64(textResults[i].Rank)}
-		}
+		results = toSearchEntries(textResults)
 	default:
 		filterResults, err := s.notes.SearchByFilters(ctx, toSearchFilter(&input), limit)
 		if err != nil {
 			return nil, SearchNotesOutput{}, fmt.Errorf("filter search: %w", err)
 		}
-		results = make([]searchResultEntry, len(filterResults))
-		for i := range filterResults {
-			results[i] = searchResultEntry{Note: filterResults[i]}
-		}
+		results = toFilterEntries(filterResults)
 	}
 
 	out := SearchNotesOutput{
@@ -469,6 +464,24 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 	}
 
 	return nil, out, nil
+}
+
+// toSearchEntries converts text search results to the common searchResultEntry type.
+func toSearchEntries(textResults []note.SearchResult) []searchResultEntry {
+	entries := make([]searchResultEntry, len(textResults))
+	for i := range textResults {
+		entries[i] = searchResultEntry{Note: textResults[i].Note, Score: float64(textResults[i].Rank)}
+	}
+	return entries
+}
+
+// toFilterEntries converts filter search results to the common searchResultEntry type.
+func toFilterEntries(filterResults []note.Note) []searchResultEntry {
+	entries := make([]searchResultEntry, len(filterResults))
+	for i := range filterResults {
+		entries[i] = searchResultEntry{Note: filterResults[i]}
+	}
+	return entries
 }
 
 // ProjectContextInput is the input for the get_project_context tool.
@@ -552,26 +565,7 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		out.PendingTasks = make([]taskResult, len(pendingTasks))
 		for i := range pendingTasks {
-			t := &pendingTasks[i]
-			r := taskResult{
-				ID:          t.ID.String(),
-				Title:       t.Title,
-				Status:      string(t.Status),
-				ProjectSlug: t.ProjectSlug,
-				Energy:      t.Energy,
-				Priority:    t.Priority,
-				IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
-				MyDay:       t.MyDay,
-				UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
-			}
-			if t.Due != nil {
-				r.Due = t.Due.Format(time.DateOnly)
-				dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
-				if dueDate.Before(today) {
-					r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
-				}
-			}
-			out.PendingTasks[i] = r
+			out.PendingTasks[i] = toTaskResult(&pendingTasks[i], today)
 		}
 	}
 
@@ -591,6 +585,7 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 					gb.Deadline = g.Deadline.Format(time.DateOnly)
 				}
 				out.RelatedGoals = append(out.RelatedGoals, gb)
+				break // goal_id is a unique FK; stop after first match
 			}
 		}
 	}
@@ -808,6 +803,31 @@ type taskResult struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+// toTaskResult converts a pending task to a taskResult with overdue-days calculation.
+// today must be a date-only time (midnight, local timezone) for correct overdue math.
+func toTaskResult(t *task.PendingTaskDetail, today time.Time) taskResult {
+	r := taskResult{
+		ID:           t.ID.String(),
+		Title:        t.Title,
+		Status:       string(t.Status),
+		ProjectTitle: t.ProjectTitle,
+		ProjectSlug:  t.ProjectSlug,
+		Energy:       t.Energy,
+		Priority:     t.Priority,
+		IsRecurring:  t.RecurInterval != nil && *t.RecurInterval > 0,
+		MyDay:        t.MyDay,
+		UpdatedAt:    t.UpdatedAt.Format(time.RFC3339),
+	}
+	if t.Due != nil {
+		r.Due = t.Due.Format(time.DateOnly)
+		dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
+		if dueDate.Before(today) {
+			r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
+		}
+	}
+	return r
+}
+
 func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, input PendingTasksInput) (*mcp.CallToolResult, PendingTasksOutput, error) {
 	limit := clamp(input.Limit, 1, 100, 20)
 
@@ -831,27 +851,7 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	results := make([]taskResult, len(tasks))
 	for i := range tasks {
-		t := &tasks[i]
-		r := taskResult{
-			ID:           t.ID.String(),
-			Title:        t.Title,
-			Status:       string(t.Status),
-			ProjectTitle: t.ProjectTitle,
-			ProjectSlug:  t.ProjectSlug,
-			Energy:       t.Energy,
-			Priority:     t.Priority,
-			IsRecurring:  t.RecurInterval != nil && *t.RecurInterval > 0,
-			MyDay:        t.MyDay,
-			UpdatedAt:    t.UpdatedAt.Format(time.RFC3339),
-		}
-		if t.Due != nil {
-			r.Due = t.Due.Format(time.DateOnly)
-			dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
-			if dueDate.Before(today) {
-				r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
-			}
-		}
-		results[i] = r
+		results[i] = toTaskResult(&tasks[i], today)
 	}
 
 	return nil, PendingTasksOutput{Tasks: results, Total: len(results)}, nil

@@ -86,7 +86,7 @@ func Truncate(t *testing.T, pool *pgxpool.Pool, tables ...string) {
 //	    cleanup()
 //	    os.Exit(code)
 //	}
-func StartPool() (*pgxpool.Pool, func()) {
+func StartPool() (pool *pgxpool.Pool, cleanup func()) {
 	ctx := context.Background()
 
 	pgContainer, err := postgres.Run(ctx,
@@ -111,12 +111,12 @@ func StartPool() (*pgxpool.Pool, func()) {
 
 	applyMigrations(connStr)
 
-	pool, err := pgxpool.New(ctx, connStr)
+	pool, err = pgxpool.New(ctx, connStr)
 	if err != nil {
 		log.Fatalf("testdb: creating pool: %v", err)
 	}
 
-	cleanup := func() {
+	cleanup = func() {
 		pool.Close()
 		if err := pgContainer.Terminate(ctx); err != nil {
 			log.Printf("testdb: terminating container: %v", err)

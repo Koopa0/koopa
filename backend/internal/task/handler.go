@@ -127,14 +127,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var due *time.Time
-	if req.Due != "" {
-		d, parseErr := time.Parse(time.DateOnly, req.Due)
-		if parseErr != nil {
-			api.Error(w, http.StatusBadRequest, "INVALID_DATE", "due must be YYYY-MM-DD")
-			return
-		}
-		due = &d
+	due, parseErr := parseDueDate(req.Due)
+	if parseErr != nil {
+		api.Error(w, http.StatusBadRequest, "INVALID_DATE", "due must be YYYY-MM-DD")
+		return
 	}
 
 	var projectID *uuid.UUID
@@ -214,12 +210,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		params.Status = &st
 	}
 	if req.Due != nil {
-		due, parseErr := time.Parse(time.DateOnly, *req.Due)
+		d, parseErr := parseDueDate(*req.Due)
 		if parseErr != nil {
 			api.Error(w, http.StatusBadRequest, "INVALID_DATE", "due must be YYYY-MM-DD")
 			return
 		}
-		params.Due = &due
+		params.Due = d
 	}
 	if req.Priority != nil {
 		params.Priority = req.Priority
@@ -241,14 +237,8 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sync to Notion before local update (best-effort)
-	t, taskErr := h.store.TaskByID(ctx, id)
-	if taskErr == nil && t.NotionPageID != nil && h.notion != nil {
-		notionProps := buildHTTPNotionProps(req)
-		if len(notionProps) > 0 {
-			if notionErr := h.notion.UpdatePageProperties(ctx, *t.NotionPageID, notionProps); notionErr != nil {
-				h.logger.Warn("update task: notion sync failed", "task_id", id, "error", notionErr)
-			}
-		}
+	if t, taskErr := h.store.TaskByID(ctx, id); taskErr == nil && t.NotionPageID != nil {
+		h.syncNotionTask(ctx, *t.NotionPageID, buildHTTPNotionProps(req))
 	}
 
 	updated, err := h.store.Update(ctx, params)
@@ -349,16 +339,7 @@ func (h *Handler) BatchMyDay(w http.ResponseWriter, r *http.Request) {
 
 	if req.Clear {
 		// Sync to Notion before clearing (best-effort)
-		if h.notion != nil {
-			currentMyDay, myDayErr := h.store.MyDayTasksWithNotionPageID(ctx)
-			if myDayErr != nil {
-				h.logger.Warn("batch my day: fetching notion ids for clear", "error", myDayErr)
-			}
-			for _, t := range currentMyDay {
-				//nolint:errcheck // best-effort
-				h.notion.UpdatePageProperties(ctx, t.NotionPageID, myDayFalse)
-			}
-		}
+		h.syncNotionClearMyDay(ctx, myDayFalse)
 
 		cleared, err = h.store.ClearAllMyDay(ctx)
 		if err != nil {
@@ -382,13 +363,8 @@ func (h *Handler) BatchMyDay(w http.ResponseWriter, r *http.Request) {
 		set++
 
 		// Sync to Notion (best-effort)
-		if h.notion != nil {
-			t, taskErr := h.store.TaskByID(ctx, id)
-			if taskErr == nil && t.NotionPageID != nil {
-				if notionErr := h.notion.UpdatePageProperties(ctx, *t.NotionPageID, myDayTrue); notionErr != nil {
-					h.logger.Warn("batch my day: notion sync failed", "task_id", idStr, "error", notionErr)
-				}
-			}
+		if t, taskErr := h.store.TaskByID(ctx, id); taskErr == nil && t.NotionPageID != nil {
+			h.syncNotionTask(ctx, *t.NotionPageID, myDayTrue)
 		}
 	}
 
@@ -411,6 +387,46 @@ func (h *Handler) DailySummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: hint})
+}
+
+// parseDueDate parses a YYYY-MM-DD string into a *time.Time.
+// Returns nil, nil for an empty string.
+func parseDueDate(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	d, err := time.Parse(time.DateOnly, s)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// syncNotionTask updates a Notion page's properties as a best-effort operation.
+// Errors are logged but not returned; callers should proceed regardless.
+func (h *Handler) syncNotionTask(ctx context.Context, pageID string, props map[string]any) {
+	if h.notion == nil || len(props) == 0 {
+		return
+	}
+	if err := h.notion.UpdatePageProperties(ctx, pageID, props); err != nil {
+		h.logger.Warn("notion sync failed", "page_id", pageID, "error", err)
+	}
+}
+
+// syncNotionClearMyDay syncs all current My Day tasks to Notion before clearing (best-effort).
+func (h *Handler) syncNotionClearMyDay(ctx context.Context, props map[string]any) {
+	if h.notion == nil {
+		return
+	}
+	tasks, err := h.store.MyDayTasksWithNotionPageID(ctx)
+	if err != nil {
+		h.logger.Warn("batch my day: fetching notion ids for clear", "error", err)
+		return
+	}
+	for _, t := range tasks {
+		//nolint:errcheck // best-effort
+		h.notion.UpdatePageProperties(ctx, t.NotionPageID, props)
+	}
 }
 
 // buildHTTPNotionProps builds Notion properties from an HTTP update request.

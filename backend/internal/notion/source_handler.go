@@ -87,6 +87,47 @@ func (h *SourceHandler) ByID(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: src})
 }
 
+// validateCreateSourceParams checks required fields, lengths, enums, and sets defaults.
+func validateCreateSourceParams(p *CreateSourceParams) string {
+	if p.DatabaseID == "" || p.Name == "" {
+		return "database_id and name are required"
+	}
+	if len(p.DatabaseID) > 255 {
+		return "database_id exceeds 255 characters"
+	}
+	if len(p.Name) > 255 {
+		return "name exceeds 255 characters"
+	}
+	if len([]rune(p.Description)) > 1024 {
+		return "description exceeds 1024 characters"
+	}
+	if p.Role != nil && !ValidRole(*p.Role) {
+		return "invalid role, must be 'projects', 'tasks', 'books', or 'goals'"
+	}
+	if p.SyncMode == "" {
+		p.SyncMode = SyncModeFull
+	}
+	if !ValidSyncMode(p.SyncMode) {
+		return "invalid sync_mode, must be 'full' or 'events'"
+	}
+	if p.PollInterval == "" {
+		p.PollInterval = "15 minutes"
+	}
+	if !ValidPollInterval(p.PollInterval) {
+		return "invalid poll_interval"
+	}
+	if p.PropertyMap == nil {
+		p.PropertyMap = []byte("{}")
+	}
+	if len(p.PropertyMap) > 64*1024 {
+		return "property_map exceeds 64 KB"
+	}
+	if !json.Valid(p.PropertyMap) {
+		return "property_map is not valid JSON"
+	}
+	return ""
+}
+
 // Create handles POST /api/admin/notion-sources.
 func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 	p, err := api.Decode[CreateSourceParams](w, r)
@@ -94,49 +135,8 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
-	if p.DatabaseID == "" || p.Name == "" {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "database_id and name are required")
-		return
-	}
-	if len(p.DatabaseID) > 255 {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "database_id exceeds 255 characters")
-		return
-	}
-	if len(p.Name) > 255 {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name exceeds 255 characters")
-		return
-	}
-	if len([]rune(p.Description)) > 1024 {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description exceeds 1024 characters")
-		return
-	}
-	if p.Role != nil && !ValidRole(*p.Role) {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid role, must be 'projects', 'tasks', 'books', or 'goals'")
-		return
-	}
-	if p.SyncMode == "" {
-		p.SyncMode = SyncModeFull
-	}
-	if !ValidSyncMode(p.SyncMode) {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid sync_mode, must be 'full' or 'events'")
-		return
-	}
-	if p.PollInterval == "" {
-		p.PollInterval = "15 minutes"
-	}
-	if !ValidPollInterval(p.PollInterval) {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid poll_interval")
-		return
-	}
-	if p.PropertyMap == nil {
-		p.PropertyMap = []byte("{}")
-	}
-	if len(p.PropertyMap) > 64*1024 {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "property_map exceeds 64 KB")
-		return
-	}
-	if !json.Valid(p.PropertyMap) {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "property_map is not valid JSON")
+	if msg := validateCreateSourceParams(&p); msg != "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", msg)
 		return
 	}
 
@@ -153,6 +153,29 @@ func (h *SourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusCreated, api.Response{Data: src})
 }
 
+// validateUpdateSourceParams checks optional field constraints.
+func validateUpdateSourceParams(p *UpdateSourceParams) string {
+	if p.SyncMode != nil && !ValidSyncMode(*p.SyncMode) {
+		return "invalid sync_mode, must be 'full' or 'events'"
+	}
+	if p.Name != nil && *p.Name == "" {
+		return "name cannot be empty"
+	}
+	if p.Name != nil && len(*p.Name) > 255 {
+		return "name exceeds 255 characters"
+	}
+	if p.PollInterval != nil && !ValidPollInterval(*p.PollInterval) {
+		return "invalid poll_interval"
+	}
+	if p.PropertyMap != nil && len(*p.PropertyMap) > 64*1024 {
+		return "property_map exceeds 64 KB"
+	}
+	if p.PropertyMap != nil && !json.Valid(*p.PropertyMap) {
+		return "property_map is not valid JSON"
+	}
+	return ""
+}
+
 // Update handles PUT /api/admin/notion-sources/{id}.
 func (h *SourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -166,28 +189,8 @@ func (h *SourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
-	if p.SyncMode != nil && !ValidSyncMode(*p.SyncMode) {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid sync_mode, must be 'full' or 'events'")
-		return
-	}
-	if p.Name != nil && *p.Name == "" {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name cannot be empty")
-		return
-	}
-	if p.Name != nil && len(*p.Name) > 255 {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name exceeds 255 characters")
-		return
-	}
-	if p.PollInterval != nil && !ValidPollInterval(*p.PollInterval) {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid poll_interval")
-		return
-	}
-	if p.PropertyMap != nil && len(*p.PropertyMap) > 64*1024 {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "property_map exceeds 64 KB")
-		return
-	}
-	if p.PropertyMap != nil && !json.Valid(*p.PropertyMap) {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "property_map is not valid JSON")
+	if msg := validateUpdateSourceParams(&p); msg != "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", msg)
 		return
 	}
 

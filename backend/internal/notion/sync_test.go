@@ -474,14 +474,8 @@ func TestUpsertProject(t *testing.T) {
 
 			err := h.upsertProject(t.Context(), tt.pageID, tt.props)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("upsertProject() expected error, got nil")
-				}
+			if assertSyncResult(t, "upsertProject", err, tt.wantErr, nil) {
 				return
-			}
-			if err != nil {
-				t.Fatalf("upsertProject() unexpected error: %v", err)
 			}
 
 			if tt.wantStatus != "" && capturedParams.Status != tt.wantStatus {
@@ -571,19 +565,7 @@ func TestSyncProject(t *testing.T) {
 
 			archived := false
 			pw := &mockProjectWriter{
-				archiveFn: func(_ context.Context, _ string) (int64, error) {
-					archived = true
-					if tt.archiveFn != nil {
-						return tt.archiveFn(nil, "")
-					}
-					return 1, nil
-				},
-			}
-			if tt.archiveFn != nil {
-				pw.archiveFn = func(ctx context.Context, notionPageID string) (int64, error) {
-					archived = true
-					return tt.archiveFn(ctx, notionPageID)
-				}
+				archiveFn: makeArchiveFn(&archived, tt.archiveFn),
 			}
 
 			h := &Handler{
@@ -594,21 +576,12 @@ func TestSyncProject(t *testing.T) {
 
 			err := h.syncProject(t.Context(), validPageIDForTest)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("syncProject() expected error, got nil")
+			errPath := assertSyncResult(t, "syncProject", err, tt.wantErr, tt.wantErrIs)
+			if errPath && tt.wantErrIs == nil && tt.wantArchived {
+				// archive failure case: error must NOT be ErrSkipped
+				if errors.Is(err, ErrSkipped) {
+					t.Errorf("syncProject() archive failure: error should not be ErrSkipped, got %v", err)
 				}
-				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
-					t.Errorf("syncProject() error = %v, want errors.Is(%v)", err, tt.wantErrIs)
-				}
-				if tt.wantErrIs == nil && tt.wantArchived {
-					// archive failure case: error must NOT be ErrSkipped
-					if errors.Is(err, ErrSkipped) {
-						t.Errorf("syncProject() archive failure: error should not be ErrSkipped, got %v", err)
-					}
-				}
-			} else if err != nil {
-				t.Fatalf("syncProject() unexpected error: %v", err)
 			}
 
 			if tt.wantArchived && !archived {
@@ -692,17 +665,8 @@ func TestSyncGoal(t *testing.T) {
 			t.Cleanup(srv.Close)
 
 			archived := false
-			gw := &mockGoalWriter{}
-			if tt.archiveFn != nil {
-				gw.archiveFn = func(ctx context.Context, notionPageID string) (int64, error) {
-					archived = true
-					return tt.archiveFn(ctx, notionPageID)
-				}
-			} else {
-				gw.archiveFn = func(_ context.Context, _ string) (int64, error) {
-					archived = true
-					return 1, nil
-				}
+			gw := &mockGoalWriter{
+				archiveFn: makeArchiveFn(&archived, tt.archiveFn),
 			}
 
 			h := &Handler{
@@ -713,18 +677,9 @@ func TestSyncGoal(t *testing.T) {
 
 			err := h.syncGoal(t.Context(), validPageIDForTest)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("syncGoal() expected error, got nil")
-				}
-				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
-					t.Errorf("syncGoal() error = %v, want errors.Is(%v)", err, tt.wantErrIs)
-				}
-				if tt.archiveFn != nil && errors.Is(err, ErrSkipped) {
-					t.Errorf("syncGoal() archive failure should not return ErrSkipped, got %v", err)
-				}
-			} else if err != nil {
-				t.Fatalf("syncGoal() unexpected error: %v", err)
+			errPath := assertSyncResult(t, "syncGoal", err, tt.wantErr, tt.wantErrIs)
+			if errPath && tt.archiveFn != nil && errors.Is(err, ErrSkipped) {
+				t.Errorf("syncGoal() archive failure should not return ErrSkipped, got %v", err)
 			}
 
 			if tt.wantArchived && !archived {
@@ -802,17 +757,8 @@ func TestSyncTask(t *testing.T) {
 			t.Cleanup(srv.Close)
 
 			archived := false
-			tw := &mockTaskWriter{}
-			if tt.archiveFn != nil {
-				tw.archiveFn = func(ctx context.Context, notionPageID string) (int64, error) {
-					archived = true
-					return tt.archiveFn(ctx, notionPageID)
-				}
-			} else {
-				tw.archiveFn = func(_ context.Context, _ string) (int64, error) {
-					archived = true
-					return 1, nil
-				}
+			tw := &mockTaskWriter{
+				archiveFn: makeArchiveFn(&archived, tt.archiveFn),
 			}
 
 			h := &Handler{
@@ -823,18 +769,9 @@ func TestSyncTask(t *testing.T) {
 
 			err := h.syncTask(t.Context(), validPageIDForTest)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("syncTask() expected error, got nil")
-				}
-				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
-					t.Errorf("syncTask() error = %v, want errors.Is(%v)", err, tt.wantErrIs)
-				}
-				if tt.archiveFn != nil && errors.Is(err, ErrSkipped) {
-					t.Errorf("syncTask() archive failure should not return ErrSkipped, got %v", err)
-				}
-			} else if err != nil {
-				t.Fatalf("syncTask() unexpected error: %v", err)
+			errPath := assertSyncResult(t, "syncTask", err, tt.wantErr, tt.wantErrIs)
+			if errPath && tt.archiveFn != nil && errors.Is(err, ErrSkipped) {
+				t.Errorf("syncTask() archive failure should not return ErrSkipped, got %v", err)
 			}
 
 			if tt.wantArchived && !archived {
@@ -919,13 +856,7 @@ func TestSyncBook(t *testing.T) {
 
 			submitted := false
 			jm := &mockJobSubmitter{
-				submitFn: func(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error {
-					submitted = true
-					if tt.submitFn != nil {
-						return tt.submitFn(ctx, flowName, input, contentID)
-					}
-					return nil
-				},
+				submitFn: makeSubmitFn(&submitted, tt.submitFn),
 			}
 
 			h := &Handler{
@@ -936,16 +867,7 @@ func TestSyncBook(t *testing.T) {
 
 			err := h.syncBook(t.Context(), validPageIDForTest)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("syncBook() expected error, got nil")
-				}
-				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
-					t.Errorf("syncBook() error = %v, want errors.Is(%v)", err, tt.wantErrIs)
-				}
-			} else if err != nil {
-				t.Fatalf("syncBook() unexpected error: %v", err)
-			}
+			assertSyncResult(t, "syncBook", err, tt.wantErr, tt.wantErrIs)
 
 			if tt.wantSubmitted && !submitted {
 				t.Error("syncBook() expected jobs.Submit to be called")
@@ -1126,6 +1048,56 @@ func TestUpsertGoalEmptyTitle(t *testing.T) {
 // --------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------
+
+// assertSyncResult checks the error result of a sync function call.
+// It returns true when the call was expected to fail (wantErr=true) so the
+// caller can skip post-success assertions. Must be called with t.Helper().
+//
+// Usage:
+//
+//	if assertSyncResult(t, "syncProject", err, tt.wantErr, tt.wantErrIs) {
+//	    return // error path: skip success-only assertions
+//	}
+func assertSyncResult(t *testing.T, funcName string, err error, wantErr bool, wantErrIs error) bool {
+	t.Helper()
+	if wantErr {
+		if err == nil {
+			t.Fatalf("%s() expected error, got nil", funcName)
+		}
+		if wantErrIs != nil && !errors.Is(err, wantErrIs) {
+			t.Errorf("%s() error = %v, want errors.Is(%v)", funcName, err, wantErrIs)
+		}
+		return true
+	}
+	if err != nil {
+		t.Fatalf("%s() unexpected error: %v", funcName, err)
+	}
+	return false
+}
+
+// makeArchiveFn builds an archiveFn closure that records whether it was called
+// via *archived and delegates to override when non-nil, or returns (1, nil).
+func makeArchiveFn(archived *bool, override func(context.Context, string) (int64, error)) func(context.Context, string) (int64, error) {
+	return func(ctx context.Context, notionPageID string) (int64, error) {
+		*archived = true
+		if override != nil {
+			return override(ctx, notionPageID)
+		}
+		return 1, nil
+	}
+}
+
+// makeSubmitFn builds a submitFn closure that records whether it was called
+// via *submitted and delegates to override when non-nil, or returns nil.
+func makeSubmitFn(submitted *bool, override func(context.Context, string, json.RawMessage, *uuid.UUID) error) func(context.Context, string, json.RawMessage, *uuid.UUID) error {
+	return func(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error {
+		*submitted = true
+		if override != nil {
+			return override(ctx, flowName, input, contentID)
+		}
+		return nil
+	}
+}
 
 // mustMarshalTitle returns a json.RawMessage for a Notion title property.
 func mustMarshalTitle(text string) json.RawMessage {
