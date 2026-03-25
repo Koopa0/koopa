@@ -215,6 +215,7 @@ func dbToFeed(r *db.Feed) Feed {
 		Schedule:            r.Schedule,
 		Topics:              r.Topics,
 		Enabled:             r.Enabled,
+		Priority:            r.Priority,
 		Etag:                r.Etag,
 		LastModified:        r.LastModified,
 		LastFetchedAt:       r.LastFetchedAt,

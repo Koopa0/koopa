@@ -1233,7 +1233,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (int64
 const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (url, name, schedule, topics, filter_config)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, url, name, schedule, topics, enabled, etag, last_modified,
+RETURNING id, url, name, schedule, topics, enabled, priority, etag, last_modified,
           last_fetched_at, consecutive_failures, last_error, disabled_reason,
           filter_config, created_at, updated_at
 `
@@ -1262,6 +1262,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.Schedule,
 		&i.Topics,
 		&i.Enabled,
+		&i.Priority,
 		&i.Etag,
 		&i.LastModified,
 		&i.LastFetchedAt,
@@ -1948,7 +1949,7 @@ func (q *Queries) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 }
 
 const enabledFeeds = `-- name: EnabledFeeds :many
-SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
+SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds WHERE enabled = true
@@ -1971,6 +1972,7 @@ func (q *Queries) EnabledFeeds(ctx context.Context) ([]Feed, error) {
 			&i.Schedule,
 			&i.Topics,
 			&i.Enabled,
+			&i.Priority,
 			&i.Etag,
 			&i.LastModified,
 			&i.LastFetchedAt,
@@ -1992,7 +1994,7 @@ func (q *Queries) EnabledFeeds(ctx context.Context) ([]Feed, error) {
 }
 
 const enabledFeedsBySchedule = `-- name: EnabledFeedsBySchedule :many
-SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
+SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds WHERE enabled = true AND schedule = $1
@@ -2014,6 +2016,7 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 			&i.Schedule,
 			&i.Topics,
 			&i.Enabled,
+			&i.Priority,
 			&i.Etag,
 			&i.LastModified,
 			&i.LastFetchedAt,
@@ -2192,7 +2195,7 @@ func (q *Queries) EventsByTimeRange(ctx context.Context, arg EventsByTimeRangePa
 }
 
 const feedByID = `-- name: FeedByID :one
-SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
+SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds WHERE id = $1
@@ -2208,6 +2211,7 @@ func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (Feed, error) {
 		&i.Schedule,
 		&i.Topics,
 		&i.Enabled,
+		&i.Priority,
 		&i.Etag,
 		&i.LastModified,
 		&i.LastFetchedAt,
@@ -2222,7 +2226,7 @@ func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (Feed, error) {
 }
 
 const feeds = `-- name: Feeds :many
-SELECT id, url, name, schedule, topics, enabled, etag, last_modified,
+SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds
@@ -2246,6 +2250,7 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 			&i.Schedule,
 			&i.Topics,
 			&i.Enabled,
+			&i.Priority,
 			&i.Etag,
 			&i.LastModified,
 			&i.LastFetchedAt,
@@ -2475,6 +2480,60 @@ func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
 			&i.NotionPageID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const highPriorityRecentCollected = `-- name: HighPriorityRecentCollected :many
+SELECT cd.id, cd.source_url, cd.source_name, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id
+FROM collected_data cd
+JOIN feeds f ON cd.feed_id = f.id
+WHERE f.priority = 'high'
+  AND cd.status = 'unread'
+  AND cd.collected_at >= $1
+ORDER BY cd.collected_at DESC
+LIMIT $2
+`
+
+type HighPriorityRecentCollectedParams struct {
+	Since      time.Time `json:"since"`
+	MaxResults int32     `json:"max_results"`
+}
+
+// Get unread collected data from high-priority feeds in the past N hours.
+func (q *Queries) HighPriorityRecentCollected(ctx context.Context, arg HighPriorityRecentCollectedParams) ([]CollectedDatum, error) {
+	rows, err := q.db.Query(ctx, highPriorityRecentCollected, arg.Since, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CollectedDatum{}
+	for rows.Next() {
+		var i CollectedDatum
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceUrl,
+			&i.SourceName,
+			&i.Title,
+			&i.OriginalContent,
+			&i.RelevanceScore,
+			&i.Topics,
+			&i.Status,
+			&i.CuratedContentID,
+			&i.CollectedAt,
+			&i.UrlHash,
+			&i.UserFeedback,
+			&i.FeedbackAt,
+			&i.FeedID,
 		); err != nil {
 			return nil, err
 		}
@@ -2749,6 +2808,57 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 	var rejected bool
 	err := row.Scan(&rejected)
 	return rejected, err
+}
+
+const latestCollectedByRecency = `-- name: LatestCollectedByRecency :many
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE ($1::timestamptz IS NULL OR collected_at >= $1)
+ORDER BY collected_at DESC
+LIMIT $2
+`
+
+type LatestCollectedByRecencyParams struct {
+	Since      *time.Time `json:"since"`
+	MaxResults int32      `json:"max_results"`
+}
+
+// Get latest collected data ordered by recency (collected_at DESC), optionally filtered by time.
+func (q *Queries) LatestCollectedByRecency(ctx context.Context, arg LatestCollectedByRecencyParams) ([]CollectedDatum, error) {
+	rows, err := q.db.Query(ctx, latestCollectedByRecency, arg.Since, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CollectedDatum{}
+	for rows.Next() {
+		var i CollectedDatum
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceUrl,
+			&i.SourceName,
+			&i.Title,
+			&i.OriginalContent,
+			&i.RelevanceScore,
+			&i.Topics,
+			&i.Status,
+			&i.CuratedContentID,
+			&i.CollectedAt,
+			&i.UrlHash,
+			&i.UserFeedback,
+			&i.FeedbackAt,
+			&i.FeedID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const latestCollectedData = `-- name: LatestCollectedData :many
@@ -5908,7 +6018,7 @@ UPDATE feeds SET
     filter_config = COALESCE($7, filter_config),
     updated_at = now()
 WHERE id = $1
-RETURNING id, url, name, schedule, topics, enabled, etag, last_modified,
+RETURNING id, url, name, schedule, topics, enabled, priority, etag, last_modified,
           last_fetched_at, consecutive_failures, last_error, disabled_reason,
           filter_config, created_at, updated_at
 `
@@ -5941,6 +6051,7 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 		&i.Schedule,
 		&i.Topics,
 		&i.Enabled,
+		&i.Priority,
 		&i.Etag,
 		&i.LastModified,
 		&i.LastFetchedAt,

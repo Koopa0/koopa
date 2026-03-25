@@ -164,6 +164,7 @@ CREATE TABLE feeds (
     schedule             TEXT NOT NULL,
     topics               TEXT[] NOT NULL DEFAULT '{}',
     enabled              BOOLEAN NOT NULL DEFAULT true,
+    priority             TEXT NOT NULL DEFAULT 'normal',
     etag                 TEXT NOT NULL DEFAULT '',
     last_modified        TEXT NOT NULL DEFAULT '',
     last_fetched_at      TIMESTAMPTZ,
@@ -377,9 +378,23 @@ INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
 
 ('https://blog.bytebytego.com/feed', 'ByteByteGo', 'weekly',
  '{"system-design"}',
- '{"deny_title_patterns":["(?i)black friday","(?i)discount","(?i)course launch"]}')
+ '{"deny_title_patterns":["(?i)black friday","(?i)discount","(?i)course launch"]}'),
+
+('https://www.anthropic.com/rss.xml', 'Anthropic Blog', 'daily',
+ '{"ai","llm"}', '{}')
 
 ON CONFLICT (url) DO NOTHING;
+
+-- Set high priority feeds
+UPDATE feeds SET priority = 'high' WHERE name IN (
+    'Anthropic Blog',
+    'The Go Blog',
+    'Google AI Blog',
+    'Google Developers Blog',
+    'Rust Blog',
+    'Simon Willison''s Weblog',
+    'Ardan Labs'
+);
 
 -- === Phase 1: Knowledge Engine ===
 

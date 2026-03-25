@@ -120,6 +120,7 @@ type Feed struct {
 	Schedule            string       `json:"schedule"`
 	Topics              []string     `json:"topics"`
 	Enabled             bool         `json:"enabled"`
+	Priority            string       `json:"priority"`
 	Etag                string       `json:"etag"`
 	LastModified        string       `json:"last_modified"`
 	LastFetchedAt       *time.Time   `json:"last_fetched_at,omitempty"`

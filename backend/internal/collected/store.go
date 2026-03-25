@@ -203,6 +203,38 @@ func (s *Store) TopRelevantCollected(ctx context.Context, since time.Time, maxRe
 	return data, nil
 }
 
+// LatestByRecency returns collected items ordered by recency, optionally filtered by time.
+func (s *Store) LatestByRecency(ctx context.Context, since *time.Time, maxResults int32) ([]Item, error) {
+	rows, err := s.q.LatestCollectedByRecency(ctx, db.LatestCollectedByRecencyParams{
+		Since:      since,
+		MaxResults: maxResults,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing collected data by recency: %w", err)
+	}
+	data := make([]Item, len(rows))
+	for i := range rows {
+		data[i] = datumToItem(&rows[i])
+	}
+	return data, nil
+}
+
+// HighPriorityRecent returns unread items from high-priority feeds since the given time.
+func (s *Store) HighPriorityRecent(ctx context.Context, since time.Time, maxResults int32) ([]Item, error) {
+	rows, err := s.q.HighPriorityRecentCollected(ctx, db.HighPriorityRecentCollectedParams{
+		Since:      since,
+		MaxResults: maxResults,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing high priority collected data: %w", err)
+	}
+	data := make([]Item, len(rows))
+	for i := range rows {
+		data[i] = datumToItem(&rows[i])
+	}
+	return data, nil
+}
+
 // DeleteOldIgnored deletes ignored collected data with collected_at before cutoff.
 // Returns the number of rows deleted.
 func (s *Store) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, error) {

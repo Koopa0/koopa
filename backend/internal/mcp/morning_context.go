@@ -45,6 +45,17 @@ type MorningContextOutput struct {
 	TodayCompletions       []todayCompletion      `json:"today_completions"`
 	RSSHighlightCount      int                    `json:"rss_highlight_count"`
 	TopRSSHighlight        string                 `json:"top_rss_highlight,omitempty"`
+	UrgentRSS              []urgentRSSItem        `json:"urgent_rss"`
+}
+
+// urgentRSSItem represents a high-priority RSS article for morning planning.
+type urgentRSSItem struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	SourceName  string   `json:"source_name"`
+	URL         string   `json:"url"`
+	Topics      []string `json:"topics"`
+	CollectedAt string   `json:"collected_at"`
 }
 
 // dailySummaryHint provides computed task metrics for evening reflection.
@@ -449,8 +460,10 @@ func (s *Server) fetchMorningInsights(ctx context.Context, out *MorningContextOu
 	}
 }
 
-// fetchMorningRSSHighlights fetches top RSS highlights from the past week.
+// fetchMorningRSSHighlights fetches top RSS highlights and urgent high-priority items.
 func (s *Server) fetchMorningRSSHighlights(ctx context.Context, out *MorningContextOutput, now time.Time) {
+	out.UrgentRSS = []urgentRSSItem{}
+
 	if s.collectedHighlights == nil {
 		return
 	}
@@ -463,6 +476,27 @@ func (s *Server) fetchMorningRSSHighlights(ctx context.Context, out *MorningCont
 	if len(highlights) > 0 {
 		out.RSSHighlightCount = len(highlights)
 		out.TopRSSHighlight = highlights[0].Title
+	}
+
+	// Fetch urgent RSS from high-priority feeds (past 24 hours)
+	if s.collectedUrgent == nil {
+		return
+	}
+	dayAgo := now.AddDate(0, 0, -1)
+	urgent, urgentErr := s.collectedUrgent.HighPriorityRecent(ctx, dayAgo, 10)
+	if urgentErr != nil {
+		s.logger.Error("morning_context: urgent rss", "error", urgentErr)
+		return
+	}
+	for i := range urgent {
+		out.UrgentRSS = append(out.UrgentRSS, urgentRSSItem{
+			ID:          urgent[i].ID.String(),
+			Title:       urgent[i].Title,
+			SourceName:  urgent[i].SourceName,
+			URL:         urgent[i].SourceURL,
+			Topics:      urgent[i].Topics,
+			CollectedAt: urgent[i].CollectedAt.Format(time.RFC3339),
+		})
 	}
 }
 

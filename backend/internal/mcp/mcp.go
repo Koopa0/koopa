@@ -155,6 +155,22 @@ type CollectedHighlightReader interface {
 	TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]collected.Item, error)
 }
 
+// CollectedRecencyReader provides collected data ordered by recency.
+type CollectedRecencyReader interface {
+	LatestByRecency(ctx context.Context, since *time.Time, maxResults int32) ([]collected.Item, error)
+}
+
+// CollectedUrgentReader provides high-priority collected data for urgent RSS.
+type CollectedUrgentReader interface {
+	HighPriorityRecent(ctx context.Context, since time.Time, maxResults int32) ([]collected.Item, error)
+}
+
+// CollectedCurator marks collected items as curated and links to content.
+type CollectedCurator interface {
+	Curate(ctx context.Context, id, contentID uuid.UUID) error
+	Item(ctx context.Context, id uuid.UUID) (*collected.Item, error)
+}
+
 // ContentSearcher extends ContentReader with OR-fallback search.
 type ContentSearcher interface {
 	SearchOR(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)

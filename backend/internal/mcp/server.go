@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/koopa0/blog-backend/internal/activity"
@@ -42,6 +43,9 @@ type Server struct {
 	sessionWriter       SessionNoteWriter
 	activityWriter      ActivityWriter
 	collectedHighlights CollectedHighlightReader
+	collectedRecency    CollectedRecencyReader
+	collectedUrgent     CollectedUrgentReader
+	collectedCurator    CollectedCurator
 	semanticNotes       NoteSemanticSearcher
 	queryEmbedder       QueryEmbedder
 	oreilly             OReillySearcher
@@ -93,6 +97,21 @@ func WithActivityWriter(w ActivityWriter) ServerOption {
 // WithCollectedHighlights enables RSS highlight summary in morning context.
 func WithCollectedHighlights(r CollectedHighlightReader) ServerOption {
 	return func(s *Server) { s.collectedHighlights = r }
+}
+
+// WithCollectedRecency enables recency-sorted collected data queries.
+func WithCollectedRecency(r CollectedRecencyReader) ServerOption {
+	return func(s *Server) { s.collectedRecency = r }
+}
+
+// WithCollectedUrgent enables high-priority RSS for morning context.
+func WithCollectedUrgent(r CollectedUrgentReader) ServerOption {
+	return func(s *Server) { s.collectedUrgent = r }
+}
+
+// WithCollectedCurator enables the curate_collected_item tool.
+func WithCollectedCurator(c CollectedCurator) ServerOption {
+	return func(s *Server) { s.collectedCurator = c }
 }
 
 // WithSemanticSearch enables embedding-based semantic search for notes.
@@ -328,6 +347,13 @@ func NewServer(
 			Name:        "read_oreilly_chapter",
 			Description: "Read the full text content of an O'Reilly book chapter. Use after get_oreilly_book_detail to read specific chapters. Requires archive_id and filename (from book detail chapters list). Returns plain text content stripped of HTML formatting.",
 		}, s.readOReillyChapter)
+	}
+
+	if s.collectedCurator != nil {
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "curate_collected_item",
+			Description: "Curate an RSS article into the knowledge base as a bookmark. Creates a content record (type=bookmark, status=draft) and links it back to the collected item. The bookmark will be processed by the content-review pipeline (generating embedding, excerpt, tags). Use when a high-value article should be preserved for future search_knowledge retrieval.",
+		}, s.curateCollectedItem)
 	}
 
 	return s
@@ -660,8 +686,9 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // RSSHighlightsInput is the input for the get_rss_highlights tool.
 type RSSHighlightsInput struct {
-	Days  int `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 365)"`
-	Limit int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
+	Days   int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 365)"`
+	Limit  int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
+	SortBy string `json:"sort_by,omitempty" jsonschema_description:"sort order: relevance (default) or recency"`
 }
 
 // RSSHighlightsOutput is the output for the get_rss_highlights tool.
@@ -683,22 +710,25 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	days := clamp(input.Days, 1, 365, 7)
 	limit := clamp(input.Limit, 1, 100, 20)
 
-	// Prefer LatestCollectedData (no mandatory time constraint) if available.
-	// Falls back to RecentCollectedData with time range if not.
 	var data []collected.Item
 	var err error
 
-	if s.collectedLatest != nil {
-		since := time.Now().AddDate(0, 0, -days)
+	since := time.Now().AddDate(0, 0, -days)
+
+	switch {
+	case input.SortBy == "recency" && s.collectedRecency != nil:
+		data, err = s.collectedRecency.LatestByRecency(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
+		if err == nil && len(data) == 0 {
+			data, err = s.collectedRecency.LatestByRecency(ctx, nil, int32(limit)) // #nosec G115
+		}
+	case s.collectedLatest != nil:
 		data, err = s.collectedLatest.LatestCollectedData(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
-		// If time-filtered query returns nothing, retry without time constraint
 		if err == nil && len(data) == 0 {
 			data, err = s.collectedLatest.LatestCollectedData(ctx, nil, int32(limit)) // #nosec G115
 		}
-	} else {
+	default:
 		now := time.Now()
-		start := now.AddDate(0, 0, -days)
-		data, err = s.collected.RecentCollectedData(ctx, start, now, int32(limit)) // #nosec G115
+		data, err = s.collected.RecentCollectedData(ctx, since, now, int32(limit)) // #nosec G115
 	}
 	if err != nil {
 		return nil, RSSHighlightsOutput{}, fmt.Errorf("querying rss highlights: %w", err)
@@ -1527,6 +1557,95 @@ func (s *Server) createContentWithRetry(ctx context.Context, params *content.Cre
 	// Slug conflict: append timestamp to make unique
 	params.Slug = fmt.Sprintf("%s-%d", baseSlug, now.Unix()%10000)
 	return s.contentWriter.CreateContent(ctx, params)
+}
+
+// --- curate tool ---
+
+// CurateInput is the input for the curate_collected_item tool.
+type CurateInput struct {
+	CollectedID string   `json:"collected_id" jsonschema_description:"UUID of the collected_data item to curate (required)"`
+	Notes       string   `json:"notes,omitempty" jsonschema_description:"personal notes or commentary on why this is valuable"`
+	Tags        []string `json:"tags,omitempty" jsonschema_description:"tags for the bookmark"`
+}
+
+// CurateOutput is the output of the curate_collected_item tool.
+type CurateOutput struct {
+	ContentID string `json:"content_id"`
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+}
+
+func (s *Server) curateCollectedItem(ctx context.Context, _ *mcp.CallToolRequest, input CurateInput) (*mcp.CallToolResult, CurateOutput, error) {
+	if input.CollectedID == "" {
+		return nil, CurateOutput{}, fmt.Errorf("collected_id is required")
+	}
+
+	collectedID, err := uuid.Parse(input.CollectedID)
+	if err != nil {
+		return nil, CurateOutput{}, fmt.Errorf("invalid collected_id: %w", err)
+	}
+
+	item, err := s.collectedCurator.Item(ctx, collectedID)
+	if err != nil {
+		return nil, CurateOutput{}, fmt.Errorf("fetching collected item: %w", err)
+	}
+
+	if item.Status == collected.StatusCurated {
+		return nil, CurateOutput{}, fmt.Errorf("item already curated")
+	}
+
+	now := time.Now()
+	slug := fmt.Sprintf("bookmark-%s", item.URLHash)
+	if item.URLHash == "" {
+		slug = fmt.Sprintf("bookmark-%d", now.Unix())
+	}
+
+	sourceType := content.SourceExternal
+	body := fmt.Sprintf("source: %s\nurl: %s\n\n", item.SourceName, item.SourceURL)
+	if input.Notes != "" {
+		body += input.Notes + "\n\n"
+	}
+	if item.OriginalContent != nil && *item.OriginalContent != "" {
+		body += "---\n\n" + *item.OriginalContent
+	}
+
+	tags := input.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	tags = ensureTag(tags, "bookmark")
+	for _, t := range item.Topics {
+		tags = ensureTag(tags, t)
+	}
+
+	params := &content.CreateParams{
+		Slug:        slug,
+		Title:       item.Title,
+		Body:        body,
+		Type:        content.TypeBookmark,
+		Status:      content.StatusDraft,
+		Tags:        tags,
+		Source:      &item.SourceURL,
+		SourceType:  &sourceType,
+		ReviewLevel: content.ReviewLight,
+	}
+
+	created, err := s.createContentWithRetry(ctx, params, slug, now)
+	if err != nil {
+		return nil, CurateOutput{}, fmt.Errorf("creating bookmark content: %w", err)
+	}
+
+	if curateErr := s.collectedCurator.Curate(ctx, collectedID, created.ID); curateErr != nil {
+		s.logger.Error("curate: failed to link collected item", "collected_id", collectedID, "content_id", created.ID, "error", curateErr)
+	}
+
+	return nil, CurateOutput{
+		ContentID: created.ID.String(),
+		Slug:      created.Slug,
+		Title:     created.Title,
+		Status:    string(created.Status),
+	}, nil
 }
 
 // ensureTag returns a copy of tags that includes target, adding it if absent.

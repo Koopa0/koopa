@@ -84,6 +84,29 @@ WHERE collected_at >= @since
 ORDER BY relevance_score DESC
 LIMIT @max_results;
 
+-- name: LatestCollectedByRecency :many
+-- Get latest collected data ordered by recency (collected_at DESC), optionally filtered by time.
+SELECT id, source_url, source_name, title, original_content,
+       relevance_score, topics, status, curated_content_id, collected_at,
+       url_hash, user_feedback, feedback_at, feed_id
+FROM collected_data
+WHERE (sqlc.narg('since')::timestamptz IS NULL OR collected_at >= sqlc.narg('since'))
+ORDER BY collected_at DESC
+LIMIT @max_results;
+
+-- name: HighPriorityRecentCollected :many
+-- Get unread collected data from high-priority feeds in the past N hours.
+SELECT cd.id, cd.source_url, cd.source_name, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id
+FROM collected_data cd
+JOIN feeds f ON cd.feed_id = f.id
+WHERE f.priority = 'high'
+  AND cd.status = 'unread'
+  AND cd.collected_at >= @since
+ORDER BY cd.collected_at DESC
+LIMIT @max_results;
+
 -- name: DeleteOldIgnored :execrows
 -- Cleanup: delete ignored collected data older than the given cutoff.
 DELETE FROM collected_data WHERE status = 'ignored' AND collected_at < @cutoff;
