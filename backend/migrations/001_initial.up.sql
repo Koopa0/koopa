@@ -83,7 +83,7 @@ CREATE TABLE contents (
     cover_image   TEXT,
     visibility    TEXT NOT NULL DEFAULT 'public'
                   CHECK (visibility IN ('public', 'private')),
-    project       TEXT,
+    project_id    UUID,
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -106,7 +106,7 @@ CREATE INDEX idx_contents_embedding_hnsw ON contents USING hnsw (embedding vecto
 CREATE INDEX idx_contents_visibility ON contents(status, visibility)
     WHERE status = 'published' AND visibility = 'public';
 
-CREATE INDEX idx_contents_project ON contents(project) WHERE project IS NOT NULL;
+CREATE INDEX idx_contents_project_id ON contents(project_id) WHERE project_id IS NOT NULL;
 
 CREATE TABLE content_topics (
     content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
@@ -263,6 +263,9 @@ CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
 -- FK: projects.goal_id -> goals.id (defined here because goals table comes after projects)
 ALTER TABLE projects ADD CONSTRAINT fk_projects_goal FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE SET NULL;
 CREATE INDEX idx_projects_goal_id ON projects(goal_id) WHERE goal_id IS NOT NULL;
+
+-- FK: contents.project_id -> projects.id (defined here because projects table comes after contents)
+ALTER TABLE contents ADD CONSTRAINT fk_contents_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL;
 
 -- === Tasks (synced from Notion) ===
 

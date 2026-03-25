@@ -99,6 +99,8 @@ func (s *Store) SearchByFilters(ctx context.Context, f SearchFilter, limit int) 
 		FilterSource:  f.Source,
 		FilterContext: f.Context,
 		FilterBook:    f.Book,
+		After:         f.After,
+		Before:        f.Before,
 		MaxResults:    int32(limit), // #nosec G115 -- limit is bounded by caller
 	})
 	if err != nil {

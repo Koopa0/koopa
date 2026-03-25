@@ -49,7 +49,7 @@ ORDER BY rank DESC
 LIMIT @max_results;
 
 -- name: SearchNotesByFilters :many
--- Filter notes by frontmatter fields. NULL parameters are ignored.
+-- Filter notes by frontmatter fields and date range. NULL parameters are ignored.
 SELECT id, file_path, title, type, source, context, status, tags,
        difficulty, book, chapter, content_text, synced_at
 FROM obsidian_notes
@@ -58,6 +58,8 @@ WHERE (status IS NULL OR status != 'archived')
   AND (sqlc.narg('filter_source')::text IS NULL OR source = sqlc.narg('filter_source'))
   AND (sqlc.narg('filter_context')::text IS NULL OR context = sqlc.narg('filter_context'))
   AND (sqlc.narg('filter_book')::text IS NULL OR book = sqlc.narg('filter_book'))
+  AND (sqlc.narg('after')::timestamptz IS NULL OR synced_at >= sqlc.narg('after'))
+  AND (sqlc.narg('before')::timestamptz IS NULL OR synced_at < sqlc.narg('before'))
 ORDER BY synced_at DESC
 LIMIT @max_results;
 

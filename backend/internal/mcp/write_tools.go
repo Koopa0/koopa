@@ -485,11 +485,11 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		body = fmt.Sprintf("**Difficulty**: %s\n\n%s", input.Difficulty, body)
 	}
 
-	// Resolve project slug to store on the content record.
-	var projectSlug *string
+	// Resolve project to store ID on the content record.
+	var projectID *uuid.UUID
 	if input.Project != "" && input.Project != "none" {
 		if proj, projErr := s.resolveProject(ctx, input.Project); projErr == nil {
-			projectSlug = &proj.Slug
+			projectID = &proj.ID
 		}
 	}
 
@@ -504,7 +504,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
 		Visibility:  content.VisibilityPrivate,
-		Project:     projectSlug,
+		ProjectID:   projectID,
 	}
 	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-til-%s", topicSlug, now.Format("2006-01-02")), now)
 	if err != nil {
@@ -613,7 +613,8 @@ type SaveSessionNoteOutput struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// validateSessionNoteInput checks required fields and enum values for SaveSessionNoteInput.
+// validateSessionNoteInput checks required fields, enum values, and per-type
+// metadata requirements for SaveSessionNoteInput.
 func validateSessionNoteInput(input SaveSessionNoteInput) error {
 	if input.NoteType == "" {
 		return fmt.Errorf("note_type is required")
@@ -639,6 +640,42 @@ func validateSessionNoteInput(input SaveSessionNoteInput) error {
 		return fmt.Errorf("invalid source %q (must be claude, claude-code, or manual)", input.Source)
 	}
 
+	if err := validateSessionNoteMetadata(input.NoteType, input.Metadata); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateSessionNoteMetadata enforces required metadata fields per note_type.
+func validateSessionNoteMetadata(noteType string, meta map[string]any) error {
+	switch noteType {
+	case "insight":
+		if _, ok := meta["hypothesis"]; !ok {
+			return fmt.Errorf("insight metadata requires 'hypothesis' field")
+		}
+		if _, ok := meta["invalidation_condition"]; !ok {
+			return fmt.Errorf("insight metadata requires 'invalidation_condition' field")
+		}
+	case "plan":
+		if _, ok := meta["committed_task_ids"]; !ok {
+			return fmt.Errorf("plan metadata requires 'committed_task_ids' field")
+		}
+		if _, ok := meta["reasoning"]; !ok {
+			return fmt.Errorf("plan metadata requires 'reasoning' field")
+		}
+	case "metrics":
+		if _, ok := meta["tasks_planned"]; !ok {
+			return fmt.Errorf("metrics metadata requires 'tasks_planned' field")
+		}
+		if _, ok := meta["tasks_completed"]; !ok {
+			return fmt.Errorf("metrics metadata requires 'tasks_completed' field")
+		}
+		if _, ok := meta["adjustments"]; !ok {
+			return fmt.Errorf("metrics metadata requires 'adjustments' field")
+		}
+	}
+	// context and reflection: no metadata requirements
 	return nil
 }
 
@@ -665,16 +702,6 @@ func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, in
 		metadataJSON, marshalErr = json.Marshal(input.Metadata)
 		if marshalErr != nil {
 			return nil, SaveSessionNoteOutput{}, fmt.Errorf("marshaling metadata: %w", marshalErr)
-		}
-	}
-
-	// Soft validation for insight notes: warn if missing key fields
-	if input.NoteType == "insight" && len(input.Metadata) > 0 {
-		if _, ok := input.Metadata["hypothesis"]; !ok {
-			s.logger.Warn("insight saved without hypothesis")
-		}
-		if _, ok := input.Metadata["invalidation_condition"]; !ok {
-			s.logger.Warn("insight saved without invalidation_condition")
 		}
 	}
 

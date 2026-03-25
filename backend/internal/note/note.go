@@ -60,6 +60,8 @@ type SearchFilter struct {
 	Source  *string
 	Context *string
 	Book    *string
+	After   *time.Time
+	Before  *time.Time
 }
 
 // Link represents a wikilink edge from one note to a target path.

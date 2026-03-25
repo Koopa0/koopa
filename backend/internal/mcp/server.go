@@ -165,7 +165,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "search_notes",
-		Description: "Search obsidian knowledge notes by text query and/or frontmatter filters. Uses full-text search with Reciprocal Rank Fusion when both text and filters are provided. Use this when you know the content is an Obsidian note. For broader searches across all content types, use search_knowledge instead.",
+		Description: "Search obsidian knowledge notes by text query and/or frontmatter filters. Filters: type (til|article|note|build-log|bookmark|essay|digest), source (leetcode|book|course|discussion|practice|video), context (project name), book (book title). Uses full-text search with Reciprocal Rank Fusion when both text and filters are provided. Use this when you know the content is an Obsidian note. For broader searches across all content types, use search_knowledge instead. Example: search_notes(query=\"binary search\", type=\"til\", context=\"leetcode-prep\")",
 		Annotations: readOnly,
 	}, s.searchNotes)
 
@@ -209,7 +209,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "search_knowledge",
-		Description: "Search across ALL content types: articles, build logs, TILs, notes, and Obsidian notes. Returns excerpts with source type markers. Use when the user asks 'have I written about X before', needs to find past insights, or wants to search without knowing which content type contains the answer. For full article content, follow up with get_content_detail using the slug.",
+		Description: "Search across ALL content types: articles, build logs, TILs, notes, and Obsidian notes. Returns excerpts with source type markers. Filters: project (slug/alias/title), after/before (YYYY-MM-DD date range), content_type (article|essay|build-log|til|note|bookmark|digest). All filters are optional and combinable. Use when the user asks 'have I written about X before', needs to find past insights, or wants to search without knowing which content type contains the answer. Example: search_knowledge(query=\"pagination\", after=\"2026-03-18\", content_type=\"til\")",
 		Annotations: readOnly,
 	}, s.searchKnowledge)
 
@@ -253,13 +253,13 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "create_task",
-		Description: "Create a new task in Notion. Use during morning planning when the user confirms a suggested schedule, or when the user says 'add a task', 'remind me to', '幫我建一個任務'. Supports project linking, priority, energy level, and My Day assignment.",
+		Description: "Create a new task in Notion. Fields: title (required), project (slug/alias/title), due (YYYY-MM-DD), priority (Low|Medium|High), energy (Low|High), my_day (bool), notes (description text). Use during morning planning or when the user says 'add a task', 'remind me to', '幫我建一個任務'. Example: create_task(title=\"Review PR\", project=\"koopa0.dev\", due=\"2026-03-26\", priority=\"High\", energy=\"High\", my_day=true)",
 		Annotations: additive,
 	}, s.createTask)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "update_task",
-		Description: "Update any task property — title (new_title), due date, priority, energy, project, My Day, or status. Use when the user says 'move this to tomorrow', 'change priority to high', '這個改成下週', 'put this on my day', 'rename this task'. For marking tasks complete, prefer complete_task instead.",
+		Description: "Update any task property. Fields: new_title (string), due (YYYY-MM-DD), priority (Low|Medium|High), energy (Low|High), project (slug/alias/title), my_day (bool), status (To Do|Doing|Done), notes (appended to description). Identify task by task_id (UUID) or task_title (fuzzy match). Use when the user says 'move this to tomorrow', 'change priority to high', '這個改成下週', 'put this on my day'. For marking tasks complete, prefer complete_task instead. Example: update_task(task_title=\"Weekly LeetCode\", due=\"2026-04-01\", priority=\"High\")",
 		Annotations: mutating,
 	}, s.updateTask)
 
@@ -283,7 +283,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "update_goal_status",
-		Description: "Update a goal's status. Use when the user says 'this goal is now active', 'achieved', '這個目標完成了', or discusses goal progress changes. Maps to Dream (not-started), Active (in-progress), Achieved (done), Abandoned.",
+		Description: "Update a goal's status. Valid statuses: not-started (Dream), in-progress (Active), done (Achieved), abandoned. Use when the user says 'this goal is now active', 'achieved', '這個目標完成了', or discusses goal progress changes. Example: update_goal_status(goal=\"學好英文\", status=\"in-progress\")",
 		Annotations: mutating,
 	}, s.updateGoalStatus)
 
@@ -315,13 +315,13 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "save_session_note",
-		Description: "Save a session note for cross-environment context sharing. Use during morning planning (type=plan, source=claude), development sessions (type=context, source=claude-code), evening reflection (type=reflection, source=claude), or metrics recording (type=metrics with metadata). This bridges context between claude.ai and Claude Code.",
+		Description: "Save a session note for cross-environment context sharing. note_type: plan|reflection|context|metrics|insight. source: claude|claude-code|manual. Required metadata by type — insight: {hypothesis (string), invalidation_condition (string)}; plan: {committed_task_ids (array), reasoning (string)}; metrics: {tasks_planned (int), tasks_completed (int), adjustments (array)}; context and reflection: no required metadata. Example: save_session_note(note_type=\"insight\", source=\"claude\", content=\"...\", metadata={hypothesis: \"...\", invalidation_condition: \"...\"})",
 		Annotations: additive,
 	}, s.saveSessionNote)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_session_notes",
-		Description: "Retrieve session notes for a date or date range, optionally filtered by type. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Types: plan, reflection, context, metrics, insight.",
+		Description: "Retrieve session notes for a date or date range, optionally filtered by note_type (plan|reflection|context|metrics|insight). Set days (1-30, default 1) for lookback range. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Example: get_session_notes(note_type=\"plan\", days=7)",
 		Annotations: readOnly,
 	}, s.getSessionNotes)
 
@@ -393,10 +393,12 @@ func (s *Server) Run(ctx context.Context) error {
 // SearchNotesInput is the input for the search_notes tool.
 type SearchNotesInput struct {
 	Query   string `json:"query,omitempty" jsonschema_description:"free-text search query"`
-	Type    string `json:"type,omitempty" jsonschema_description:"filter by note type (e.g. til article note build-log)"`
-	Source  string `json:"source,omitempty" jsonschema_description:"filter by source"`
+	Type    string `json:"type,omitempty" jsonschema_description:"filter by note type (til|article|note|build-log|bookmark|essay|digest)"`
+	Source  string `json:"source,omitempty" jsonschema_description:"filter by source (leetcode|book|course|discussion|practice|video)"`
 	Context string `json:"context,omitempty" jsonschema_description:"filter by context (e.g. project name)"`
 	Book    string `json:"book,omitempty" jsonschema_description:"filter by book name"`
+	After   string `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD)"`
+	Before  string `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD)"`
 	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 50)"`
 }
 
@@ -436,7 +438,7 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 	limit := clamp(input.Limit, 1, 50, 10)
 
 	hasQuery := input.Query != ""
-	hasFilters := input.Type != "" || input.Source != "" || input.Context != "" || input.Book != ""
+	hasFilters := input.Type != "" || input.Source != "" || input.Context != "" || input.Book != "" || input.After != "" || input.Before != ""
 
 	if !hasQuery && !hasFilters {
 		return nil, SearchNotesOutput{}, fmt.Errorf("at least one of query or filter fields is required")
@@ -874,9 +876,12 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.
 type SearchKnowledgeInput struct {
-	Query   string `json:"query" jsonschema_description:"search query (required)"`
-	Project string `json:"project,omitempty" jsonschema_description:"filter results by project name, slug, or alias"`
-	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
+	Query       string `json:"query" jsonschema_description:"search query (required)"`
+	Project     string `json:"project,omitempty" jsonschema_description:"filter results by project name, slug, or alias"`
+	After       string `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD)"`
+	Before      string `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD)"`
+	ContentType string `json:"content_type,omitempty" jsonschema_description:"filter by content type (article|essay|build-log|til|note|bookmark|digest)"`
+	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
 }
 
 // SearchKnowledgeOutput is the output for the search_knowledge tool.
@@ -905,15 +910,37 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	limit := clamp(input.Limit, 1, 30, 10)
 
-	// Resolve project filter to slug for note context filtering
+	// Resolve project filter for content FK matching and note context filtering
 	var projectSlug string
+	var projectID uuid.UUID
 	if input.Project != "" {
 		proj, projErr := s.resolveProjectChain(ctx, input.Project)
 		if projErr == nil {
 			projectSlug = proj.Slug
+			projectID = proj.ID
 		} else {
 			projectSlug = input.Project // fallback to raw input
 		}
+	}
+
+	// Parse date range filters
+	var afterTime, beforeTime *time.Time
+	if input.After != "" {
+		if t, err := time.Parse(time.DateOnly, input.After); err == nil {
+			afterTime = &t
+		}
+	}
+	if input.Before != "" {
+		if t, err := time.Parse(time.DateOnly, input.Before); err == nil {
+			end := t.AddDate(0, 0, 1)
+			beforeTime = &end
+		}
+	}
+
+	// Parse content type filter
+	var filterType content.Type
+	if input.ContentType != "" {
+		filterType = content.Type(input.ContentType)
 	}
 
 	// Search content, notes (text), and notes (semantic) concurrently.
@@ -947,7 +974,7 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	go func() {
 		if projectSlug != "" {
 			// When project is set, use filter-based search with context + query
-			filterResults, err := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &projectSlug}, limit*3)
+			filterResults, err := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &projectSlug, After: afterTime, Before: beforeTime}, limit*3)
 			if err != nil {
 				noteCh <- noteSearchResult{err: err}
 				return
@@ -998,7 +1025,18 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	for i := range cr.contents {
 		c := &cr.contents[i]
 		// Project filter: check slug prefix or body frontmatter
-		if projectSlug != "" && !contentMatchesProject(c, projectSlug) {
+		if projectSlug != "" && !contentMatchesProject(c, projectID, projectSlug) {
+			continue
+		}
+		// Content type filter
+		if filterType != "" && c.Type != filterType {
+			continue
+		}
+		// Date range filter (use created_at for content)
+		if afterTime != nil && c.CreatedAt.Before(*afterTime) {
+			continue
+		}
+		if beforeTime != nil && !c.CreatedAt.Before(*beforeTime) {
 			continue
 		}
 		excerpt := c.Excerpt
@@ -1212,9 +1250,27 @@ type LearningProgressInput struct{}
 
 // LearningProgressOutput is the output for the get_learning_progress tool.
 type LearningProgressOutput struct {
-	Notes    map[string]any `json:"notes"`
-	Activity map[string]any `json:"activity"`
-	TopTags  map[string]any `json:"top_tags"`
+	Notes    learningNotes    `json:"notes"`
+	Activity learningActivity `json:"activity"`
+	TopTags  []learningTag    `json:"top_tags"`
+}
+
+type learningNotes struct {
+	Total     int            `json:"total"`
+	LastWeek  int            `json:"last_week"`
+	LastMonth int            `json:"last_month"`
+	ByType    map[string]int `json:"by_type"`
+}
+
+type learningActivity struct {
+	ThisWeek int    `json:"this_week"`
+	LastWeek int    `json:"last_week"`
+	Trend    string `json:"trend"`
+}
+
+type learningTag struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
 func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest, _ LearningProgressInput) (*mcp.CallToolResult, LearningProgressOutput, error) {
@@ -1223,10 +1279,24 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, LearningProgressOutput{}, fmt.Errorf("querying learning progress: %w", err)
 	}
 
+	tags := make([]learningTag, len(ld.TopTags))
+	for i := range ld.TopTags {
+		tags[i] = learningTag{Name: ld.TopTags[i].Name, Count: ld.TopTags[i].Count}
+	}
+
 	return nil, LearningProgressOutput{
-		Notes:    toMapAny(ld.Notes),
-		Activity: toMapAny(ld.Activity),
-		TopTags:  toMapAny(ld.TopTags),
+		Notes: learningNotes{
+			Total:     ld.Notes.Total,
+			LastWeek:  ld.Notes.LastWeek,
+			LastMonth: ld.Notes.LastMonth,
+			ByType:    ld.Notes.ByType,
+		},
+		Activity: learningActivity{
+			ThisWeek: ld.Activity.ThisWeek,
+			LastWeek: ld.Activity.LastWeek,
+			Trend:    ld.Activity.Trend,
+		},
+		TopTags: tags,
 	}, nil
 }
 
@@ -1379,7 +1449,7 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
 		Visibility:  content.VisibilityPublic,
-		Project:     &proj.Slug,
+		ProjectID:   &proj.ID,
 	}
 	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-dev-log-%s", proj.Slug, now.Format("2006-01-02")), now)
 	if err != nil {
@@ -1416,6 +1486,18 @@ func toSearchFilter(input *SearchNotesInput) note.SearchFilter {
 	}
 	if input.Book != "" {
 		f.Book = &input.Book
+	}
+	if input.After != "" {
+		if t, err := time.Parse(time.DateOnly, input.After); err == nil {
+			f.After = &t
+		}
+	}
+	if input.Before != "" {
+		if t, err := time.Parse(time.DateOnly, input.Before); err == nil {
+			// End-of-day: shift to start of next day for < comparison
+			end := t.AddDate(0, 0, 1)
+			f.Before = &end
+		}
 	}
 	return f
 }
@@ -1486,9 +1568,9 @@ func extractFrontmatter(body, key string) string {
 }
 
 // contentMatchesProject checks if a content item belongs to a project.
-// Priority: project column > slug prefix > body frontmatter.
-func contentMatchesProject(c *content.Content, projectSlug string) bool {
-	if c.Project != nil && strings.EqualFold(*c.Project, projectSlug) {
+// Priority: project_id FK > slug prefix > body frontmatter.
+func contentMatchesProject(c *content.Content, projectID uuid.UUID, projectSlug string) bool {
+	if c.ProjectID != nil && *c.ProjectID == projectID {
 		return true
 	}
 	if strings.HasPrefix(c.Slug, projectSlug) {

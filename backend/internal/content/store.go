@@ -88,7 +88,7 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
@@ -128,7 +128,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		r := rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 		ids[i] = r.ID
 	}
@@ -178,7 +178,7 @@ func (s *Store) AdminContents(ctx context.Context, f AdminFilter) ([]Content, in
 			Type:        Type(r.Type),
 			Status:      Status(r.Status),
 			Visibility:  Visibility(r.Visibility),
-			Project:     r.Project,
+			ProjectID:   r.ProjectID,
 			Tags:        r.Tags,
 			ReadingTime: int(r.ReadingTime),
 			PublishedAt: r.PublishedAt,
@@ -202,7 +202,7 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
@@ -235,7 +235,7 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 		r := rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 	}
 
@@ -263,7 +263,7 @@ func (s *Store) Search(ctx context.Context, query string, page, perPage int) ([]
 		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 	}
 
@@ -286,7 +286,7 @@ func (s *Store) SearchOR(ctx context.Context, query string, page, perPage int) (
 		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 	}
 
@@ -315,7 +315,7 @@ func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage 
 		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 	}
 
@@ -339,7 +339,7 @@ func (s *Store) InternalSearchOR(ctx context.Context, query string, page, perPag
 		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 	}
 
@@ -361,7 +361,7 @@ func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.T
 		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 	}
 	return contents, nil
@@ -402,7 +402,7 @@ func (s *Store) PublishedByDateRange(ctx context.Context, start, end time.Time) 
 		r := &rows[i]
 		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 	}
 	return contents, nil
@@ -480,7 +480,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		SeriesOrder: seriesOrder,
 		ReviewLevel: db.ReviewLevel(p.ReviewLevel),
 		Visibility:  string(p.Visibility),
-		Project:     p.Project,
+		ProjectID:   p.ProjectID,
 		AiMetadata:  p.AIMetadata,
 		ReadingTime: int32(p.ReadingTime), // #nosec G115 -- reading time in minutes is bounded, not user-controlled
 		CoverImage:  p.CoverImage,
@@ -507,7 +507,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
@@ -562,7 +562,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		SeriesOrder: seriesOrder,
 		ReviewLevel: nullReviewLevel(p.ReviewLevel),
 		Visibility:  nullVisibility(p.Visibility),
-		Project:     p.Project,
+		ProjectID:   p.ProjectID,
 		AiMetadata:  p.AIMetadata,
 		ReadingTime: readingTime,
 		CoverImage:  p.CoverImage,
@@ -597,7 +597,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
@@ -707,7 +707,7 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 
 	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
 		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.Project, r.AiMetadata,
+		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
 		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
@@ -753,7 +753,7 @@ func rowToContent(
 	id uuid.UUID, slug, title, body, excerpt string,
 	typ, status string, tags []string,
 	source *string, sourceType *SourceType, seriesID *string, seriesOrder *int32,
-	reviewLevel, visibility string, project *string, aiMetadata json.RawMessage,
+	reviewLevel, visibility string, projectID *uuid.UUID, aiMetadata json.RawMessage,
 	readingTime int32, coverImage *string, publishedAt *time.Time,
 	createdAt, updatedAt time.Time,
 ) Content {
@@ -770,7 +770,7 @@ func rowToContent(
 		SourceType:  sourceType,
 		ReviewLevel: ReviewLevel(reviewLevel),
 		Visibility:  Visibility(visibility),
-		Project:     project,
+		ProjectID:   projectID,
 		AIMetadata:  aiMetadata,
 		ReadingTime: int(readingTime),
 		CoverImage:  coverImage,
