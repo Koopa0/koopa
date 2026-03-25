@@ -493,6 +493,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		Source:      &source,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
+		Visibility:  content.VisibilityPrivate,
 	}
 	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-til-%s", topicSlug, now.Format("2006-01-02")), now)
 	if err != nil {

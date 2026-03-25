@@ -81,6 +81,10 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
+	if c.Visibility != VisibilityPublic {
+		api.Error(w, http.StatusNotFound, "NOT_FOUND", "not found")
+		return
+	}
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
 }
 
@@ -280,6 +284,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.ReviewLevel == "" {
 		p.ReviewLevel = ReviewStandard
+	}
+	if p.Visibility == "" {
+		p.Visibility = VisibilityPublic
 	}
 	if p.Tags == nil {
 		p.Tags = []string{}

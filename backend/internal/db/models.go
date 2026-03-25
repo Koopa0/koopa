@@ -513,6 +513,7 @@ type Content struct {
 	AiMetadata   json.RawMessage     `json:"ai_metadata"`
 	ReadingTime  int32               `json:"reading_time"`
 	CoverImage   *string             `json:"cover_image"`
+	Visibility   string              `json:"visibility"`
 	PublishedAt  *time.Time          `json:"published_at"`
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`

@@ -81,6 +81,8 @@ CREATE TABLE contents (
     ai_metadata   JSONB,
     reading_time  INT NOT NULL DEFAULT 0,
     cover_image   TEXT,
+    visibility    TEXT NOT NULL DEFAULT 'public'
+                  CHECK (visibility IN ('public', 'private')),
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -100,6 +102,12 @@ CREATE INDEX idx_contents_search ON contents USING GIN(search_vector);
 CREATE INDEX idx_contents_series ON contents(series_id, series_order) WHERE series_id IS NOT NULL;
 CREATE INDEX idx_contents_embedding_hnsw ON contents USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
+CREATE INDEX idx_contents_visibility ON contents(status, visibility)
+    WHERE status = 'published' AND visibility = 'public';
+
+-- Data patch: mark LeetCode learning TILs as private
+UPDATE contents SET visibility = 'private'
+WHERE tags && ARRAY['ac-with-hints', 'ac-after-solution', 'ac-independent'];
 
 CREATE TABLE content_topics (
     content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,

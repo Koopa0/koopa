@@ -53,6 +53,14 @@ const (
 	SourceManual      SourceType = "manual"
 )
 
+// Visibility controls whether content is shown on the public site.
+type Visibility string
+
+const (
+	VisibilityPublic  Visibility = "public"
+	VisibilityPrivate Visibility = "private"
+)
+
 // ReviewLevel represents the review strictness.
 type ReviewLevel string
 
@@ -86,6 +94,7 @@ type Content struct {
 	SeriesID    *string         `json:"series_id,omitempty"`
 	SeriesOrder *int            `json:"series_order,omitempty"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
+	Visibility  Visibility      `json:"visibility"`
 	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTime int             `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image,omitempty"`
@@ -117,6 +126,7 @@ type CreateParams struct {
 	SeriesID    *string         `json:"series_id,omitempty"`
 	SeriesOrder *int            `json:"series_order,omitempty"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
+	Visibility  Visibility      `json:"visibility,omitempty"`
 	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTime int             `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image,omitempty"`
@@ -137,6 +147,7 @@ type UpdateParams struct {
 	SeriesID    *string         `json:"series_id,omitempty"`
 	SeriesOrder *int            `json:"series_order,omitempty"`
 	ReviewLevel *ReviewLevel    `json:"review_level,omitempty"`
+	Visibility  *Visibility     `json:"visibility,omitempty"`
 	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTime *int            `json:"reading_time,omitempty"`
 	CoverImage  *string         `json:"cover_image,omitempty"`

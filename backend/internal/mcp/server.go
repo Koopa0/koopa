@@ -935,10 +935,11 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	semanticCh := make(chan semanticResult, 1)
 
 	go func() {
-		contents, _, err := s.contents.Search(ctx, input.Query, 1, limit)
+		// Internal search: no visibility filter so MCP can find private content.
+		contents, _, err := s.contents.InternalSearch(ctx, input.Query, 1, limit)
 		// AND→OR fallback: if AND search returns 0 results, try OR semantics
 		if err == nil && len(contents) == 0 {
-			contents, _, err = s.contents.SearchOR(ctx, input.Query, 1, limit)
+			contents, _, err = s.contents.InternalSearchOR(ctx, input.Query, 1, limit)
 		}
 		contentCh <- contentResult{contents, err}
 	}()
