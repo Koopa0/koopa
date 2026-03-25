@@ -451,6 +451,7 @@ type LogLearningSessionOutput struct {
 	Title             string             `json:"title"`
 	Status            string             `json:"status"`
 	AutoCompletedTask *AutoCompletedTask `json:"auto_completed_task"`
+	AutoCompleteSkip  string             `json:"auto_complete_skip,omitempty"`
 }
 
 // AutoCompletedTask reports the result of auto-completing a recurring task.
@@ -524,21 +525,28 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	}
 
 	// Auto-complete matching recurring task (best-effort)
-	if input.Project != "none" {
-		out.AutoCompletedTask = s.autoCompleteRecurringTask(ctx, input.Project)
+	if input.Project == "none" {
+		out.AutoCompleteSkip = "project is 'none', skipped"
+	} else {
+		completed, reason := s.autoCompleteRecurringTask(ctx, input.Project)
+		out.AutoCompletedTask = completed
+		if completed == nil {
+			out.AutoCompleteSkip = reason
+		}
 	}
 
 	return nil, out, nil
 }
 
 // autoCompleteRecurringTask finds and completes a recurring task matching the
-// project. Returns nil on any failure — auto-complete is best-effort and must
-// never fail the primary log_learning_session operation.
-func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput string) *AutoCompletedTask {
+// project. Returns (task, "") on success or (nil, reason) explaining why no
+// task was completed — auto-complete is best-effort and must never fail the
+// primary log_learning_session operation.
+func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput string) (*AutoCompletedTask, string) {
 	proj, err := s.resolveProject(ctx, projectInput)
 	if err != nil {
 		s.logger.Warn("auto-complete: project not found", "project", projectInput, "error", err)
-		return nil
+		return nil, fmt.Sprintf("project %q not found", projectInput)
 	}
 
 	now := time.Now().In(s.loc)
@@ -549,17 +557,17 @@ func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput str
 	t, err := s.tasks.RecurringTaskByProject(ctx, proj.ID, endOfDay)
 	if err != nil {
 		s.logger.Warn("auto-complete: query failed", "project", projectInput, "error", err)
-		return nil
+		return nil, fmt.Sprintf("query failed: %v", err)
 	}
 	if t == nil {
 		s.logger.Debug("auto-complete: no matching recurring task", "project", projectInput)
-		return nil
+		return nil, fmt.Sprintf("no recurring task under project %q is due today or in My Day", proj.Title)
 	}
 
 	// Check if already completed today (reuse same logic as completeTask)
 	if t.CompletedAt != nil && t.CompletedAt.In(s.loc).Format(time.DateOnly) == now.Format(time.DateOnly) {
 		s.logger.Info("auto-complete: task already completed today", "task_id", t.ID, "title", t.Title)
-		return nil
+		return nil, fmt.Sprintf("task %q already completed today", t.Title)
 	}
 
 	// Complete the task via the existing completeTask flow
@@ -568,7 +576,7 @@ func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput str
 	})
 	if completeErr != nil {
 		s.logger.Warn("auto-complete: complete failed", "task_id", t.ID, "error", completeErr)
-		return nil
+		return nil, fmt.Sprintf("complete failed: %v", completeErr)
 	}
 
 	s.logger.Info("auto-complete: recurring task completed",
@@ -581,7 +589,7 @@ func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput str
 		TaskID:  completeOut.TaskID,
 		Title:   completeOut.Title,
 		NextDue: completeOut.NextRecurrence,
-	}
+	}, ""
 }
 
 // --- save_session_note ---
