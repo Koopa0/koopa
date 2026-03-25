@@ -61,7 +61,7 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 
 	// Check if already completed today (recurring task double-complete detection)
 	var warning string
-	if t.CompletedAt != nil && t.CompletedAt.Format(time.DateOnly) == time.Now().Format(time.DateOnly) {
+	if t.CompletedAt != nil && t.CompletedAt.In(s.loc).Format(time.DateOnly) == time.Now().In(s.loc).Format(time.DateOnly) {
 		warning = fmt.Sprintf("This recurring task was already completed today (%s). Completing again will advance the due date further.",
 			t.CompletedAt.Format("2006-01-02 15:04"))
 	}
@@ -424,43 +424,31 @@ type LogLearningSessionInput struct {
 	Title      string   `json:"title" jsonschema_description:"short title (required)"`
 	Body       string   `json:"body" jsonschema_description:"markdown content: approach, concepts, insights (required)"`
 	Tags       []string `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
-	Project    string   `json:"project,omitempty" jsonschema_description:"related project"`
+	Project    string   `json:"project" jsonschema_description:"project name, slug, or alias (required; use 'none' for unaffiliated learning)"`
 	Difficulty string   `json:"difficulty,omitempty" jsonschema_description:"easy, medium, or hard"`
 	ProblemURL string   `json:"problem_url,omitempty" jsonschema_description:"problem link"`
 }
 
 // LogLearningSessionOutput is the output of the log_learning_session tool.
 type LogLearningSessionOutput struct {
-	ContentID string `json:"content_id"`
-	Slug      string `json:"slug"`
-	Title     string `json:"title"`
-	Status    string `json:"status"`
+	ContentID         string             `json:"content_id"`
+	Slug              string             `json:"slug"`
+	Title             string             `json:"title"`
+	Status            string             `json:"status"`
+	AutoCompletedTask *AutoCompletedTask `json:"auto_completed_task"`
+}
+
+// AutoCompletedTask reports the result of auto-completing a recurring task.
+type AutoCompletedTask struct {
+	TaskID  string  `json:"task_id"`
+	Title   string  `json:"title"`
+	NextDue *string `json:"next_due,omitempty"`
 }
 
 func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest, input *LogLearningSessionInput) (*mcp.CallToolResult, LogLearningSessionOutput, error) {
-	if input.Topic == "" {
-		return nil, LogLearningSessionOutput{}, fmt.Errorf("topic is required")
-	}
-	if input.Title == "" {
-		return nil, LogLearningSessionOutput{}, fmt.Errorf("title is required")
-	}
-	if input.Body == "" {
-		return nil, LogLearningSessionOutput{}, fmt.Errorf("body is required")
-	}
-	if input.Source == "" {
-		input.Source = "discussion"
-	}
-	if input.Difficulty != "" {
-		d := normalizeTag(input.Difficulty)
-		if d != "easy" && d != "medium" && d != "hard" {
-			return nil, LogLearningSessionOutput{}, fmt.Errorf("invalid difficulty %q (must be easy, medium, or hard)", input.Difficulty)
-		}
-	}
-
-	// Validate and normalize tags (strict for leetcode/hackerrank sources, pass-through otherwise)
-	tags, tagErr := validateLearningTags(input.Tags, input.Source)
-	if tagErr != nil {
-		return nil, LogLearningSessionOutput{}, tagErr
+	tags, err := validateLearningInput(input)
+	if err != nil {
+		return nil, LogLearningSessionOutput{}, err
 	}
 	if tags == nil {
 		tags = []string{}
@@ -503,12 +491,72 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		"source", input.Source,
 	)
 
-	return nil, LogLearningSessionOutput{
+	out := LogLearningSessionOutput{
 		ContentID: created.ID.String(),
 		Slug:      created.Slug,
 		Title:     created.Title,
 		Status:    string(created.Status),
-	}, nil
+	}
+
+	// Auto-complete matching recurring task (best-effort)
+	if input.Project != "none" {
+		out.AutoCompletedTask = s.autoCompleteRecurringTask(ctx, input.Project)
+	}
+
+	return nil, out, nil
+}
+
+// autoCompleteRecurringTask finds and completes a recurring task matching the
+// project. Returns nil on any failure — auto-complete is best-effort and must
+// never fail the primary log_learning_session operation.
+func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput string) *AutoCompletedTask {
+	proj, err := s.resolveProject(ctx, projectInput)
+	if err != nil {
+		s.logger.Warn("auto-complete: project not found", "project", projectInput, "error", err)
+		return nil
+	}
+
+	now := time.Now().In(s.loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)
+	// Pass end-of-day so due <= @today catches tasks due today (due stored as midnight)
+	endOfDay := today.AddDate(0, 0, 1)
+
+	t, err := s.tasks.RecurringTaskByProject(ctx, proj.ID, endOfDay)
+	if err != nil {
+		s.logger.Warn("auto-complete: query failed", "project", projectInput, "error", err)
+		return nil
+	}
+	if t == nil {
+		s.logger.Debug("auto-complete: no matching recurring task", "project", projectInput)
+		return nil
+	}
+
+	// Check if already completed today (reuse same logic as completeTask)
+	if t.CompletedAt != nil && t.CompletedAt.In(s.loc).Format(time.DateOnly) == now.Format(time.DateOnly) {
+		s.logger.Info("auto-complete: task already completed today", "task_id", t.ID, "title", t.Title)
+		return nil
+	}
+
+	// Complete the task via the existing completeTask flow
+	_, completeOut, completeErr := s.completeTask(ctx, nil, CompleteTaskInput{
+		TaskID: t.ID.String(),
+	})
+	if completeErr != nil {
+		s.logger.Warn("auto-complete: complete failed", "task_id", t.ID, "error", completeErr)
+		return nil
+	}
+
+	s.logger.Info("auto-complete: recurring task completed",
+		"task_id", t.ID,
+		"title", t.Title,
+		"next_recurrence", completeOut.NextRecurrence,
+	)
+
+	return &AutoCompletedTask{
+		TaskID:  completeOut.TaskID,
+		Title:   completeOut.Title,
+		NextDue: completeOut.NextRecurrence,
+	}
 }
 
 // --- save_session_note ---

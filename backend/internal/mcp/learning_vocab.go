@@ -60,6 +60,33 @@ func normalizeTag(t string) string {
 	return strings.ReplaceAll(t, " ", "-")
 }
 
+// validateLearningInput checks required fields and normalizes optional fields.
+// Returns validated tags on success.
+func validateLearningInput(input *LogLearningSessionInput) ([]string, error) {
+	if input.Project == "" {
+		return nil, fmt.Errorf("project is required (use \"none\" for learning not associated with any project)")
+	}
+	if input.Topic == "" {
+		return nil, fmt.Errorf("topic is required")
+	}
+	if input.Title == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+	if input.Body == "" {
+		return nil, fmt.Errorf("body is required")
+	}
+	if input.Source == "" {
+		input.Source = "discussion"
+	}
+	if input.Difficulty != "" {
+		d := normalizeTag(input.Difficulty)
+		if d != "easy" && d != "medium" && d != "hard" {
+			return nil, fmt.Errorf("invalid difficulty %q (must be easy, medium, or hard)", input.Difficulty)
+		}
+	}
+	return validateLearningTags(input.Tags, input.Source)
+}
+
 // validateLearningTags normalizes and validates tags for learning sessions.
 // When project is a strict-mode project (leetcode, hackerrank), rejects unknown tags.
 // For other projects, tags pass through with normalization only.

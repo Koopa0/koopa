@@ -4644,6 +4644,48 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 	return items, nil
 }
 
+const recurringTaskByProject = `-- name: RecurringTaskByProject :one
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       my_day, description, created_at, updated_at
+FROM tasks
+WHERE project_id = $1
+  AND status != 'done'
+  AND recur_interval IS NOT NULL AND recur_interval > 0
+  AND (due <= $2 OR my_day = true)
+ORDER BY due ASC NULLS LAST
+LIMIT 1
+`
+
+type RecurringTaskByProjectParams struct {
+	ProjectID *uuid.UUID `json:"project_id"`
+	Today     *time.Time `json:"today"`
+}
+
+// Find a recurring pending task under a given project that is due today, overdue, or in My Day.
+func (q *Queries) RecurringTaskByProject(ctx context.Context, arg RecurringTaskByProjectParams) (Task, error) {
+	row := q.db.QueryRow(ctx, recurringTaskByProject, arg.ProjectID, arg.Today)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.Due,
+		&i.ProjectID,
+		&i.NotionPageID,
+		&i.CompletedAt,
+		&i.Energy,
+		&i.Priority,
+		&i.RecurInterval,
+		&i.RecurUnit,
+		&i.MyDay,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const refreshTokenByHash = `-- name: RefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens

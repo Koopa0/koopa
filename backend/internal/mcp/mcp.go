@@ -82,6 +82,7 @@ type TaskReader interface {
 	TasksCreatedSince(ctx context.Context, since time.Time) ([]task.CreatedTaskDetail, error)
 	CompletedByProjectSince(ctx context.Context, since time.Time) ([]flow.ProjectCompletion, error)
 	MyDayTasksWithNotionPageID(ctx context.Context) ([]task.MyDayNotionTask, error)
+	RecurringTaskByProject(ctx context.Context, projectID uuid.UUID, today time.Time) (*task.Task, error)
 }
 
 // TaskWriter provides task mutations for MCP tools.

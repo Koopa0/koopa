@@ -179,6 +179,19 @@ LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.created_at >= @since
 ORDER BY t.created_at DESC;
 
+-- name: RecurringTaskByProject :one
+-- Find a recurring pending task under a given project that is due today, overdue, or in My Day.
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       my_day, description, created_at, updated_at
+FROM tasks
+WHERE project_id = @project_id
+  AND status != 'done'
+  AND recur_interval IS NOT NULL AND recur_interval > 0
+  AND (due <= @today OR my_day = true)
+ORDER BY due ASC NULLS LAST
+LIMIT 1;
+
 -- name: UpdateTask :one
 -- Update arbitrary task fields. Only non-null parameters are applied.
 UPDATE tasks SET

@@ -2,10 +2,12 @@ package task
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/koopa0/blog-backend/internal/db"
 	"github.com/koopa0/blog-backend/internal/flow"
@@ -321,6 +323,24 @@ func (s *Store) TasksCreatedSince(ctx context.Context, since time.Time) ([]Creat
 		}
 	}
 	return result, nil
+}
+
+// RecurringTaskByProject finds a recurring pending task under a
+// project that is due today, overdue, or in My Day. Returns (nil, nil) when no
+// matching task exists — callers use this for best-effort auto-complete.
+func (s *Store) RecurringTaskByProject(ctx context.Context, projectID uuid.UUID, today time.Time) (*Task, error) {
+	r, err := s.q.RecurringTaskByProject(ctx, db.RecurringTaskByProjectParams{
+		ProjectID: &projectID,
+		Today:     &today,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("querying recurring task for project %s: %w", projectID, err)
+	}
+	t := rowToTask(&r)
+	return &t, nil
 }
 
 // UpdateParams holds optional fields for updating a task.
