@@ -40,6 +40,7 @@ export interface ApiContent {
   series_id: string | null;
   series_order: number | null;
   review_level: ReviewLevel;
+  visibility: ContentVisibility;
   ai_metadata: Record<string, unknown> | null;
   reading_time: number;
   published_at: string | null;
@@ -59,6 +60,8 @@ export type ContentType =
 export type ContentStatus = 'draft' | 'review' | 'published' | 'archived';
 
 export type ReviewLevel = 'auto' | 'light' | 'standard' | 'strict';
+
+export type ContentVisibility = 'public' | 'private';
 
 /** Backend Topic object */
 export interface ApiTopic {
@@ -246,6 +249,7 @@ export interface ApiCreateContentRequest {
   review_level?: ReviewLevel;
   ai_metadata?: Record<string, unknown>;
   reading_time?: number;
+  visibility?: ContentVisibility;
 }
 
 export interface ApiUpdateContentRequest {
@@ -262,6 +266,7 @@ export interface ApiUpdateContentRequest {
   review_level?: ReviewLevel;
   ai_metadata?: Record<string, unknown>;
   reading_time?: number;
+  visibility?: ContentVisibility;
 }
 
 /** Admin — Create/Update Project request */
@@ -305,6 +310,7 @@ export interface ApiReviewItem {
   id: string;
   content_id: string;
   review_level: ReviewLevel;
+  visibility: ContentVisibility;
   status: ReviewStatus;
   reviewer_notes: string | null;
   content_title: string;

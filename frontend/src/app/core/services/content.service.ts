@@ -9,6 +9,7 @@ import type {
   ApiRelatedContent,
   ApiKnowledgeGraph,
   ContentType,
+  ContentVisibility,
 } from '../models';
 
 /** Unified content API — maps to backend /api/contents */
@@ -58,6 +59,21 @@ export class ContentService {
     return this.api.getListData<ApiContent>('/api/search', query);
   }
 
+  /** Admin — list all contents (no visibility/status filter) */
+  adminList(params?: {
+    page?: number;
+    perPage?: number;
+    type?: ContentType;
+    visibility?: ContentVisibility;
+  }): Observable<ApiListResponse<ApiContent>> {
+    const query: Record<string, string | number> = {};
+    if (params?.page) query['page'] = params.page;
+    if (params?.perPage) query['per_page'] = params.perPage;
+    if (params?.type) query['type'] = params.type;
+    if (params?.visibility) query['visibility'] = params.visibility;
+    return this.api.getListData<ApiContent>('/api/admin/contents', query);
+  }
+
   /** Admin — create content */
   create(request: ApiCreateContentRequest): Observable<ApiContent> {
     return this.api.postData<ApiContent>('/api/admin/contents', request);
@@ -79,6 +95,11 @@ export class ContentService {
       `/api/admin/contents/${id}/publish`,
       {},
     );
+  }
+
+  /** Admin — toggle visibility */
+  setVisibility(id: string, visibility: ContentVisibility): Observable<ApiContent> {
+    return this.api.patchData<ApiContent>(`/api/admin/contents/${id}/visibility`, { visibility });
   }
 
   /** Public — get related content by slug */

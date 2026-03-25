@@ -46,9 +46,7 @@ export const routes: Routes = [
   {
     path: 'til/:slug',
     loadComponent: () =>
-      import('./pages/til-detail/til-detail').then(
-        (m) => m.TilDetailComponent,
-      ),
+      import('./pages/til-detail/til-detail').then((m) => m.TilDetailComponent),
   },
   {
     path: 'notes',
@@ -94,8 +92,7 @@ export const routes: Routes = [
   },
   {
     path: 'admin/oauth-callback',
-    loadComponent: () =>
-      import('./admin/oauth-callback/oauth-callback'),
+    loadComponent: () => import('./admin/oauth-callback/oauth-callback'),
   },
   {
     path: 'admin',
@@ -142,6 +139,13 @@ export const routes: Routes = [
           import('./admin/review/review').then((m) => m.ReviewComponent),
       },
       {
+        path: 'contents',
+        loadComponent: () =>
+          import('./admin/contents/contents').then(
+            (m) => m.AdminContentsComponent,
+          ),
+      },
+      {
         path: 'tags',
         loadComponent: () =>
           import('./admin/tags/tags').then((m) => m.TagsComponent),
@@ -156,9 +160,7 @@ export const routes: Routes = [
       {
         path: 'activity',
         loadComponent: () =>
-          import('./admin/activity/activity').then(
-            (m) => m.ActivityComponent,
-          ),
+          import('./admin/activity/activity').then((m) => m.ActivityComponent),
       },
       {
         path: 'projects',
@@ -180,30 +182,22 @@ export const routes: Routes = [
       {
         path: 'tracking',
         loadComponent: () =>
-          import('./admin/tracking/tracking').then(
-            (m) => m.TrackingComponent,
-          ),
+          import('./admin/tracking/tracking').then((m) => m.TrackingComponent),
       },
       {
         path: 'insights',
         loadComponent: () =>
-          import('./admin/insights/insights').then(
-            (m) => m.InsightsComponent,
-          ),
+          import('./admin/insights/insights').then((m) => m.InsightsComponent),
       },
       {
         path: 'planning',
         loadComponent: () =>
-          import('./admin/planning/planning').then(
-            (m) => m.PlanningComponent,
-          ),
+          import('./admin/planning/planning').then((m) => m.PlanningComponent),
       },
       {
         path: 'pipeline',
         loadComponent: () =>
-          import('./admin/pipeline/pipeline').then(
-            (m) => m.PipelineComponent,
-          ),
+          import('./admin/pipeline/pipeline').then((m) => m.PipelineComponent),
       },
       {
         path: 'build-logs',
@@ -256,9 +250,7 @@ export const routes: Routes = [
   {
     path: 'error',
     loadComponent: () =>
-      import('./pages/error/error.component').then(
-        (m) => m.ErrorComponent,
-      ),
+      import('./pages/error/error.component').then((m) => m.ErrorComponent),
   },
   {
     path: '**',

@@ -103,6 +103,21 @@ WHERE status = 'published' AND visibility = 'public'
 ORDER BY published_at DESC NULLS LAST
 LIMIT $1;
 
+-- name: AdminListContents :many
+-- Admin list: all statuses, all visibilities, with optional type and visibility filter.
+SELECT id, slug, title, excerpt, type, status, visibility, tags,
+       reading_time, published_at, created_at, updated_at
+FROM contents
+WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
+  AND (sqlc.narg('visibility')::text IS NULL OR visibility = sqlc.narg('visibility'))
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2;
+
+-- name: AdminListContentsCount :one
+SELECT COUNT(*) FROM contents
+WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
+  AND (sqlc.narg('visibility')::text IS NULL OR visibility = sqlc.narg('visibility'));
+
 -- name: AllPublishedSlugs :many
 SELECT slug, type, updated_at
 FROM contents

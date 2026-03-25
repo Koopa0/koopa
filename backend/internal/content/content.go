@@ -111,6 +111,14 @@ type Filter struct {
 	Tag     *string
 }
 
+// AdminFilter holds admin content listing parameters.
+type AdminFilter struct {
+	Page       int
+	PerPage    int
+	Type       *Type
+	Visibility *Visibility
+}
+
 // CreateParams are the parameters for creating content.
 type CreateParams struct {
 	Slug        string          `json:"slug"`

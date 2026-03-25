@@ -625,3 +625,57 @@ func (h *Handler) parseFilter(r *http.Request) Filter {
 	}
 	return f
 }
+
+// AdminList handles GET /api/admin/contents.
+func (h *Handler) AdminList(w http.ResponseWriter, r *http.Request) {
+	page, perPage := api.ParsePagination(r)
+	f := AdminFilter{Page: page, PerPage: perPage}
+
+	if t := r.URL.Query().Get("type"); t != "" {
+		ct := Type(t)
+		if ct.Valid() {
+			f.Type = &ct
+		}
+	}
+	if v := r.URL.Query().Get("visibility"); v != "" {
+		vis := Visibility(v)
+		f.Visibility = &vis
+	}
+
+	contents, total, err := h.store.AdminContents(r.Context(), f)
+	if err != nil {
+		h.logger.Error("admin listing contents", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list contents")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, f.Page, f.PerPage))
+}
+
+// SetVisibility handles PATCH /api/admin/contents/{id}/visibility.
+func (h *Handler) SetVisibility(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
+		return
+	}
+
+	type visibilityBody struct {
+		Visibility Visibility `json:"visibility"`
+	}
+	body, decErr := api.Decode[visibilityBody](w, r)
+	if decErr != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if body.Visibility != VisibilityPublic && body.Visibility != VisibilityPrivate {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "visibility must be public or private")
+		return
+	}
+
+	c, err := h.store.UpdateContent(r.Context(), id, &UpdateParams{Visibility: &body.Visibility})
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: c})
+}

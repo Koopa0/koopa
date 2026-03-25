@@ -115,6 +115,95 @@ func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams
 	return err
 }
 
+const adminListContents = `-- name: AdminListContents :many
+SELECT id, slug, title, excerpt, type, status, visibility, tags,
+       reading_time, published_at, created_at, updated_at
+FROM contents
+WHERE ($3::content_type IS NULL OR type = $3)
+  AND ($4::text IS NULL OR visibility = $4)
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type AdminListContentsParams struct {
+	Limit       int32           `json:"limit"`
+	Offset      int32           `json:"offset"`
+	ContentType NullContentType `json:"content_type"`
+	Visibility  *string         `json:"visibility"`
+}
+
+type AdminListContentsRow struct {
+	ID          uuid.UUID     `json:"id"`
+	Slug        string        `json:"slug"`
+	Title       string        `json:"title"`
+	Excerpt     string        `json:"excerpt"`
+	Type        ContentType   `json:"type"`
+	Status      ContentStatus `json:"status"`
+	Visibility  string        `json:"visibility"`
+	Tags        []string      `json:"tags"`
+	ReadingTime int32         `json:"reading_time"`
+	PublishedAt *time.Time    `json:"published_at"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
+}
+
+// Admin list: all statuses, all visibilities, with optional type and visibility filter.
+func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsParams) ([]AdminListContentsRow, error) {
+	rows, err := q.db.Query(ctx, adminListContents,
+		arg.Limit,
+		arg.Offset,
+		arg.ContentType,
+		arg.Visibility,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListContentsRow{}
+	for rows.Next() {
+		var i AdminListContentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Excerpt,
+			&i.Type,
+			&i.Status,
+			&i.Visibility,
+			&i.Tags,
+			&i.ReadingTime,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListContentsCount = `-- name: AdminListContentsCount :one
+SELECT COUNT(*) FROM contents
+WHERE ($1::content_type IS NULL OR type = $1)
+  AND ($2::text IS NULL OR visibility = $2)
+`
+
+type AdminListContentsCountParams struct {
+	ContentType NullContentType `json:"content_type"`
+	Visibility  *string         `json:"visibility"`
+}
+
+func (q *Queries) AdminListContentsCount(ctx context.Context, arg AdminListContentsCountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminListContentsCount, arg.ContentType, arg.Visibility)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const aliasByCaseInsensitiveRawTag = `-- name: AliasByCaseInsensitiveRawTag :one
 SELECT id, raw_tag, tag_id, match_method, confirmed, confirmed_at, created_at FROM tag_aliases WHERE LOWER(raw_tag) = LOWER($1) AND tag_id IS NOT NULL
 LIMIT 1

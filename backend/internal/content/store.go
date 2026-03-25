@@ -145,6 +145,50 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	return contents, int(countRow), nil
 }
 
+// AdminContents returns a paginated list of all contents for admin (no status/visibility filter).
+func (s *Store) AdminContents(ctx context.Context, f AdminFilter) ([]Content, int, error) {
+	ct := nullContentType(f.Type)
+
+	rows, err := s.q.AdminListContents(ctx, db.AdminListContentsParams{
+		Limit:       int32(f.PerPage),                // #nosec G115 -- pagination values are bounded by API layer
+		Offset:      int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
+		ContentType: ct,
+		Visibility:  nullVisibility(f.Visibility),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("admin listing contents: %w", err)
+	}
+
+	countRow, err := s.q.AdminListContentsCount(ctx, db.AdminListContentsCountParams{
+		ContentType: ct,
+		Visibility:  nullVisibility(f.Visibility),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting admin contents: %w", err)
+	}
+
+	contents := make([]Content, len(rows))
+	for i := range rows {
+		r := rows[i]
+		contents[i] = Content{
+			ID:          r.ID,
+			Slug:        r.Slug,
+			Title:       r.Title,
+			Excerpt:     r.Excerpt,
+			Type:        Type(r.Type),
+			Status:      Status(r.Status),
+			Visibility:  Visibility(r.Visibility),
+			Tags:        r.Tags,
+			ReadingTime: int(r.ReadingTime),
+			PublishedAt: r.PublishedAt,
+			CreatedAt:   r.CreatedAt,
+			UpdatedAt:   r.UpdatedAt,
+		}
+	}
+
+	return contents, int(countRow), nil
+}
+
 // ContentBySlug returns a single content by slug.
 func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error) {
 	r, err := s.q.ContentBySlug(ctx, slug)

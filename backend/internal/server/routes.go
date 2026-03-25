@@ -100,10 +100,12 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handle
 	mux.Handle("POST /api/auth/refresh", rlMid(http.HandlerFunc(d.Auth.Refresh)))
 
 	// admin — content
+	mux.Handle("GET /api/admin/contents", authMid(http.HandlerFunc(d.Content.AdminList)))
 	mux.Handle("POST /api/admin/contents", authMid(http.HandlerFunc(d.Content.Create)))
 	mux.Handle("PUT /api/admin/contents/{id}", authMid(http.HandlerFunc(d.Content.Update)))
 	mux.Handle("DELETE /api/admin/contents/{id}", authMid(http.HandlerFunc(d.Content.Delete)))
 	mux.Handle("POST /api/admin/contents/{id}/publish", authMid(http.HandlerFunc(d.Content.Publish)))
+	mux.Handle("PATCH /api/admin/contents/{id}/visibility", authMid(http.HandlerFunc(d.Content.SetVisibility)))
 
 	// admin — review
 	mux.Handle("GET /api/admin/review", authMid(http.HandlerFunc(d.Review.List)))

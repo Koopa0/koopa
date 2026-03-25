@@ -69,6 +69,15 @@ export class ApiService {
     return this.post<T>(path, body).pipe(map((res) => res.data));
   }
 
+  patch<T>(path: string, body: unknown): Observable<ApiResponse<T>> {
+    return this.http.patch<ApiResponse<T>>(this.url(path), body);
+  }
+
+  /** PATCH and unwrap { data: T } */
+  patchData<T>(path: string, body: unknown): Observable<T> {
+    return this.patch<T>(path, body).pipe(map((res) => res.data));
+  }
+
   /** PUT and unwrap { data: T } */
   putData<T>(path: string, body: unknown): Observable<T> {
     return this.put<T>(path, body).pipe(map((res) => res.data));

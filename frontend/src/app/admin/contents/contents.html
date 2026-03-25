@@ -1,0 +1,174 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+          <lucide-icon [img]="FileTextIcon" [size]="24" />
+          內容管理
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">所有內容（含 private），可切換 visibility</p>
+      </div>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+        (click)="loadItems()"
+      >
+        <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+        重新整理
+      </button>
+    </div>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <!-- Filters -->
+    <div class="mb-6 flex flex-wrap items-center gap-2">
+      <lucide-icon [img]="FilterIcon" [size]="16" class="text-zinc-500" />
+      @for (v of visibilityOptions; track v.value) {
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs transition-colors"
+          [class]="visibilityFilter() === v.value
+            ? 'border-white bg-white text-zinc-900'
+            : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+          (click)="onVisibilityFilter(v.value)"
+        >
+          {{ v.label }}
+        </button>
+      }
+      <span class="mx-2 text-zinc-600">|</span>
+      @for (t of typeOptions; track t.value) {
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs transition-colors"
+          [class]="typeFilter() === t.value
+            ? 'border-white bg-white text-zinc-900'
+            : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+          (click)="onTypeFilter(t.value)"
+        >
+          {{ t.label }}
+        </button>
+      }
+    </div>
+
+    @if (isLoading()) {
+      <div class="flex items-center justify-center py-12">
+        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
+      </div>
+    }
+
+    @if (!isLoading() && items().length > 0) {
+      <div class="overflow-x-auto rounded-lg border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-zinc-800 bg-zinc-900/50 text-xs uppercase text-zinc-500">
+            <tr>
+              <th class="px-4 py-3">Title</th>
+              <th class="px-4 py-3">Type</th>
+              <th class="px-4 py-3">Status</th>
+              <th class="px-4 py-3">Visibility</th>
+              <th class="px-4 py-3">Created</th>
+              <th class="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-800">
+            @for (item of items(); track item.id) {
+              <tr class="text-zinc-300 hover:bg-zinc-900/30">
+                <td class="max-w-xs truncate px-4 py-3 font-medium text-zinc-100">
+                  {{ item.title }}
+                  @if (item.tags.length > 0) {
+                    <div class="mt-0.5 flex flex-wrap gap-1">
+                      @for (tag of item.tags.slice(0, 3); track tag) {
+                        <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">{{ tag }}</span>
+                      }
+                      @if (item.tags.length > 3) {
+                        <span class="text-[10px] text-zinc-600">+{{ item.tags.length - 3 }}</span>
+                      }
+                    </div>
+                  }
+                </td>
+                <td class="px-4 py-3">
+                  <span class="rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400">
+                    {{ item.type }}
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <span
+                    class="rounded-full px-2 py-0.5 text-xs"
+                    [class]="item.status === 'published'
+                      ? 'bg-emerald-900/30 text-emerald-400'
+                      : item.status === 'draft'
+                        ? 'bg-zinc-800 text-zinc-400'
+                        : 'bg-amber-900/30 text-amber-400'"
+                  >
+                    {{ item.status }}
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors"
+                    [class]="item.visibility === 'public'
+                      ? 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'
+                      : 'bg-red-900/30 text-red-400 hover:bg-red-900/50'"
+                    (click)="toggleVisibility(item)"
+                  >
+                    <lucide-icon
+                      [img]="item.visibility === 'public' ? EyeIcon : EyeOffIcon"
+                      [size]="12"
+                    />
+                    {{ item.visibility }}
+                  </button>
+                </td>
+                <td class="px-4 py-3 text-xs text-zinc-500">
+                  {{ item.created_at | date: 'yyyy-MM-dd' }}
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <a
+                    [routerLink]="['/admin/editor', item.id]"
+                    class="text-xs text-zinc-500 hover:text-zinc-300"
+                  >
+                    編輯
+                  </a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (totalPages() > 1) {
+        <div class="mt-4 flex items-center justify-between">
+          <p class="text-xs text-zinc-500">
+            共 {{ totalItems() }} 筆，第 {{ currentPage() }} / {{ totalPages() }} 頁
+          </p>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              class="rounded border border-zinc-700 p-1 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+              [disabled]="currentPage() <= 1"
+              (click)="goToPage(currentPage() - 1)"
+            >
+              <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
+            </button>
+            <button
+              type="button"
+              class="rounded border border-zinc-700 p-1 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+              [disabled]="currentPage() >= totalPages()"
+              (click)="goToPage(currentPage() + 1)"
+            >
+              <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+            </button>
+          </div>
+        </div>
+      }
+    }
+
+    @if (!isLoading() && items().length === 0) {
+      <div class="py-12 text-center text-zinc-500">
+        沒有符合條件的內容
+      </div>
+    }
+  </div>
+</section>
