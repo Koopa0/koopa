@@ -441,6 +441,10 @@ func (s *Store) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
 
 // CreateContent inserts a new content and associates topics within a transaction.
 func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, error) {
+	if p.Visibility == "" {
+		p.Visibility = VisibilityPublic
+	}
+
 	var seriesOrder *int32
 	if p.SeriesOrder != nil {
 		v := int32(*p.SeriesOrder) // #nosec G115 -- series order is a small sequential value, not user-controlled

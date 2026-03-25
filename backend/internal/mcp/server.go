@@ -1378,6 +1378,8 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		Source:      &source,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
+		Visibility:  content.VisibilityPublic,
+		Project:     &proj.Slug,
 	}
 	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-dev-log-%s", proj.Slug, now.Format("2006-01-02")), now)
 	if err != nil {
