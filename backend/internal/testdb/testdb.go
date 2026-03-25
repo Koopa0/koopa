@@ -5,6 +5,7 @@ package testdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -43,8 +44,8 @@ func NewPool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("starting postgres container: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := pgContainer.Terminate(context.Background()); err != nil {
-			t.Logf("terminating postgres container: %v", err)
+		if termErr := pgContainer.Terminate(context.Background()); termErr != nil {
+			t.Logf("terminating postgres container: %v", termErr)
 		}
 	})
 
@@ -133,7 +134,7 @@ func applyMigrations(connStr string) {
 	if err != nil {
 		log.Fatalf("testdb: creating migrator: %v", err)
 	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		log.Fatalf("testdb: running migrations: %v", err)
 	}
 	srcErr, dbErr := m.Close()
@@ -166,7 +167,7 @@ func runMigrations(t *testing.T, connStr string) {
 	if err != nil {
 		t.Fatalf("creating migrator: %v", err)
 	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("running migrations: %v", err)
 	}
 	srcErr, dbErr := m.Close()
