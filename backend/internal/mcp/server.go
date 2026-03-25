@@ -1484,9 +1484,11 @@ func extractFrontmatter(body, key string) string {
 }
 
 // contentMatchesProject checks if a content item belongs to a project.
-// Matches by slug prefix (e.g. "koopa0dev-" in "koopa0dev-dev-log-2026-03-24")
-// or by "project:" frontmatter in the body.
+// Priority: project column > slug prefix > body frontmatter.
 func contentMatchesProject(c *content.Content, projectSlug string) bool {
+	if c.Project != nil && strings.EqualFold(*c.Project, projectSlug) {
+		return true
+	}
 	if strings.HasPrefix(c.Slug, projectSlug) {
 		return true
 	}

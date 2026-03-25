@@ -116,7 +116,7 @@ func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams
 }
 
 const adminListContents = `-- name: AdminListContents :many
-SELECT id, slug, title, excerpt, type, status, visibility, tags,
+SELECT id, slug, title, excerpt, type, status, visibility, project, tags,
        reading_time, published_at, created_at, updated_at
 FROM contents
 WHERE ($3::content_type IS NULL OR type = $3)
@@ -140,6 +140,7 @@ type AdminListContentsRow struct {
 	Type        ContentType   `json:"type"`
 	Status      ContentStatus `json:"status"`
 	Visibility  string        `json:"visibility"`
+	Project     *string       `json:"project"`
 	Tags        []string      `json:"tags"`
 	ReadingTime int32         `json:"reading_time"`
 	PublishedAt *time.Time    `json:"published_at"`
@@ -170,6 +171,7 @@ func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsPa
 			&i.Type,
 			&i.Status,
 			&i.Visibility,
+			&i.Project,
 			&i.Tags,
 			&i.ReadingTime,
 			&i.PublishedAt,
@@ -896,7 +898,7 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (Re
 
 const contentByID = `-- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE id = $1
 `
@@ -916,6 +918,7 @@ type ContentByIDRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -942,6 +945,7 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.SeriesOrder,
 		&i.ReviewLevel,
 		&i.Visibility,
+		&i.Project,
 		&i.AiMetadata,
 		&i.ReadingTime,
 		&i.CoverImage,
@@ -954,7 +958,7 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 
 const contentBySlug = `-- name: ContentBySlug :one
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE slug = $1
 `
@@ -974,6 +978,7 @@ type ContentBySlugRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -1000,6 +1005,7 @@ func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlug
 		&i.SeriesOrder,
 		&i.ReviewLevel,
 		&i.Visibility,
+		&i.Project,
 		&i.AiMetadata,
 		&i.ReadingTime,
 		&i.CoverImage,
@@ -1029,7 +1035,7 @@ func (q *Queries) ContentEmbeddingBySlug(ctx context.Context, slug string) (Cont
 const contentsByTopicID = `-- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status, c.tags,
        c.source, c.source_type, c.series_id, c.series_order, c.review_level,
-       c.visibility, c.ai_metadata, c.reading_time, c.cover_image,
+       c.visibility, c.project, c.ai_metadata, c.reading_time, c.cover_image,
        c.published_at, c.created_at, c.updated_at
 FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
@@ -1059,6 +1065,7 @@ type ContentsByTopicIDRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -1091,6 +1098,7 @@ func (q *Queries) ContentsByTopicID(ctx context.Context, arg ContentsByTopicIDPa
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -1187,12 +1195,12 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 
 const createContent = `-- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status, tags, source, source_type,
-                      series_id, series_order, review_level, visibility, ai_metadata,
+                      series_id, series_order, review_level, visibility, project, ai_metadata,
                       reading_time, cover_image, search_text)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, left($3, 10000))
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, left($3, 10000))
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+          series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at
 `
 
@@ -1210,6 +1218,7 @@ type CreateContentParams struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -1230,6 +1239,7 @@ type CreateContentRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -1253,6 +1263,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.SeriesOrder,
 		arg.ReviewLevel,
 		arg.Visibility,
+		arg.Project,
 		arg.AiMetadata,
 		arg.ReadingTime,
 		arg.CoverImage,
@@ -1273,6 +1284,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.SeriesOrder,
 		&i.ReviewLevel,
 		&i.Visibility,
+		&i.Project,
 		&i.AiMetadata,
 		&i.ReadingTime,
 		&i.CoverImage,
@@ -2900,7 +2912,7 @@ func (q *Queries) InsightsSince(ctx context.Context, sinceDate time.Time) ([]Ses
 
 const internalSearchContents = `-- name: InternalSearchContents :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
@@ -2930,6 +2942,7 @@ type InternalSearchContentsRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -2963,6 +2976,7 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -2995,7 +3009,7 @@ func (q *Queries) InternalSearchContentsCount(ctx context.Context, websearchToTs
 
 const internalSearchContentsOR = `-- name: InternalSearchContentsOR :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
@@ -3025,6 +3039,7 @@ type InternalSearchContentsORRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -3058,6 +3073,7 @@ func (q *Queries) InternalSearchContentsOR(ctx context.Context, arg InternalSear
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -4401,7 +4417,7 @@ const publishContent = `-- name: PublishContent :one
 UPDATE contents SET status = 'published', published_at = now(), updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+          series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at
 `
 
@@ -4420,6 +4436,7 @@ type PublishContentRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -4446,6 +4463,7 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 		&i.SeriesOrder,
 		&i.ReviewLevel,
 		&i.Visibility,
+		&i.Project,
 		&i.AiMetadata,
 		&i.ReadingTime,
 		&i.CoverImage,
@@ -4471,7 +4489,7 @@ func (q *Queries) PublishedContentCountSince(ctx context.Context, publishedAt *t
 
 const publishedContents = `-- name: PublishedContents :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -4503,6 +4521,7 @@ type PublishedContentsRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -4540,6 +4559,7 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -4559,7 +4579,7 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 
 const publishedContentsByDateRange = `-- name: PublishedContentsByDateRange :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -4587,6 +4607,7 @@ type PublishedContentsByDateRangeRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -4619,6 +4640,7 @@ func (q *Queries) PublishedContentsByDateRange(ctx context.Context, arg Publishe
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -4852,7 +4874,7 @@ func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDa
 
 const recentContentsByType = `-- name: RecentContentsByType :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE type = $1::content_type
@@ -4882,6 +4904,7 @@ type RecentContentsByTypeRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -4916,6 +4939,7 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -5130,7 +5154,7 @@ func (q *Queries) ReviewByID(ctx context.Context, id uuid.UUID) (ReviewByIDRow, 
 
 const searchContents = `-- name: SearchContents :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -5160,6 +5184,7 @@ type SearchContentsRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -5192,6 +5217,7 @@ func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) 
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -5224,7 +5250,7 @@ func (q *Queries) SearchContentsCount(ctx context.Context, websearchToTsquery st
 
 const searchContentsOR = `-- name: SearchContentsOR :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -5254,6 +5280,7 @@ type SearchContentsORRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -5287,6 +5314,7 @@ func (q *Queries) SearchContentsOR(ctx context.Context, arg SearchContentsORPara
 			&i.SeriesOrder,
 			&i.ReviewLevel,
 			&i.Visibility,
+			&i.Project,
 			&i.AiMetadata,
 			&i.ReadingTime,
 			&i.CoverImage,
@@ -6234,14 +6262,15 @@ UPDATE contents SET
     series_order = COALESCE($12, series_order),
     review_level = COALESCE($13::review_level, review_level),
     visibility = COALESCE($14, visibility),
-    ai_metadata = COALESCE($15, ai_metadata),
-    reading_time = COALESCE($16, reading_time),
-    cover_image = COALESCE($17, cover_image),
+    project = COALESCE($15, project),
+    ai_metadata = COALESCE($16, ai_metadata),
+    reading_time = COALESCE($17, reading_time),
+    cover_image = COALESCE($18, cover_image),
     search_text = left(COALESCE($4, body), 10000),
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+          series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at
 `
 
@@ -6260,6 +6289,7 @@ type UpdateContentParams struct {
 	SeriesOrder *int32            `json:"series_order"`
 	ReviewLevel NullReviewLevel   `json:"review_level"`
 	Visibility  *string           `json:"visibility"`
+	Project     *string           `json:"project"`
 	AiMetadata  json.RawMessage   `json:"ai_metadata"`
 	ReadingTime *int32            `json:"reading_time"`
 	CoverImage  *string           `json:"cover_image"`
@@ -6280,6 +6310,7 @@ type UpdateContentRow struct {
 	SeriesOrder *int32          `json:"series_order"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  string          `json:"visibility"`
+	Project     *string         `json:"project"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	ReadingTime int32           `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image"`
@@ -6304,6 +6335,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.SeriesOrder,
 		arg.ReviewLevel,
 		arg.Visibility,
+		arg.Project,
 		arg.AiMetadata,
 		arg.ReadingTime,
 		arg.CoverImage,
@@ -6324,6 +6356,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.SeriesOrder,
 		&i.ReviewLevel,
 		&i.Visibility,
+		&i.Project,
 		&i.AiMetadata,
 		&i.ReadingTime,
 		&i.CoverImage,

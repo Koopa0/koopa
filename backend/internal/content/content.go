@@ -95,6 +95,7 @@ type Content struct {
 	SeriesOrder *int            `json:"series_order,omitempty"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  Visibility      `json:"visibility"`
+	Project     *string         `json:"project,omitempty"`
 	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTime int             `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image,omitempty"`
@@ -135,6 +136,7 @@ type CreateParams struct {
 	SeriesOrder *int            `json:"series_order,omitempty"`
 	ReviewLevel ReviewLevel     `json:"review_level"`
 	Visibility  Visibility      `json:"visibility,omitempty"`
+	Project     *string         `json:"project,omitempty"`
 	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTime int             `json:"reading_time"`
 	CoverImage  *string         `json:"cover_image,omitempty"`
@@ -156,6 +158,7 @@ type UpdateParams struct {
 	SeriesOrder *int            `json:"series_order,omitempty"`
 	ReviewLevel *ReviewLevel    `json:"review_level,omitempty"`
 	Visibility  *Visibility     `json:"visibility,omitempty"`
+	Project     *string         `json:"project,omitempty"`
 	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTime *int            `json:"reading_time,omitempty"`
 	CoverImage  *string         `json:"cover_image,omitempty"`

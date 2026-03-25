@@ -484,6 +484,14 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		body = fmt.Sprintf("**Difficulty**: %s\n\n%s", input.Difficulty, body)
 	}
 
+	// Resolve project slug to store on the content record.
+	var projectSlug *string
+	if input.Project != "" && input.Project != "none" {
+		if proj, projErr := s.resolveProject(ctx, input.Project); projErr == nil {
+			projectSlug = &proj.Slug
+		}
+	}
+
 	params := &content.CreateParams{
 		Slug:        slug,
 		Title:       input.Title,
@@ -495,6 +503,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
 		Visibility:  content.VisibilityPrivate,
+		Project:     projectSlug,
 	}
 	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-til-%s", topicSlug, now.Format("2006-01-02")), now)
 	if err != nil {

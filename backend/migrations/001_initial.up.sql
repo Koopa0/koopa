@@ -83,6 +83,7 @@ CREATE TABLE contents (
     cover_image   TEXT,
     visibility    TEXT NOT NULL DEFAULT 'public'
                   CHECK (visibility IN ('public', 'private')),
+    project       TEXT,
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -105,9 +106,7 @@ CREATE INDEX idx_contents_embedding_hnsw ON contents USING hnsw (embedding vecto
 CREATE INDEX idx_contents_visibility ON contents(status, visibility)
     WHERE status = 'published' AND visibility = 'public';
 
--- Data patch: mark LeetCode learning TILs as private
-UPDATE contents SET visibility = 'private'
-WHERE tags && ARRAY['ac-with-hints', 'ac-after-solution', 'ac-independent'];
+CREATE INDEX idx_contents_project ON contents(project) WHERE project IS NOT NULL;
 
 CREATE TABLE content_topics (
     content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,

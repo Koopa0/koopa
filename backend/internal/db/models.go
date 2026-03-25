@@ -514,6 +514,7 @@ type Content struct {
 	ReadingTime  int32               `json:"reading_time"`
 	CoverImage   *string             `json:"cover_image"`
 	Visibility   string              `json:"visibility"`
+	Project      *string             `json:"project"`
 	PublishedAt  *time.Time          `json:"published_at"`
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`

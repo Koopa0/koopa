@@ -1,12 +1,12 @@
 -- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE id = $1;
 
 -- name: PublishedContents :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -23,14 +23,14 @@ WHERE status = 'published' AND visibility = 'public'
 
 -- name: ContentBySlug :one
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE slug = $1;
 
 -- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status, c.tags,
        c.source, c.source_type, c.series_id, c.series_order, c.review_level,
-       c.visibility, c.ai_metadata, c.reading_time, c.cover_image,
+       c.visibility, c.project, c.ai_metadata, c.reading_time, c.cover_image,
        c.published_at, c.created_at, c.updated_at
 FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
@@ -45,7 +45,7 @@ WHERE ct.topic_id = $1 AND c.status = 'published' AND c.visibility = 'public';
 
 -- name: SearchContents :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -61,7 +61,7 @@ WHERE status = 'published' AND visibility = 'public'
 -- name: SearchContentsOR :many
 -- Fallback search using OR semantics: splits query into words and matches any.
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -72,7 +72,7 @@ LIMIT $2 OFFSET $3;
 -- name: InternalSearchContents :many
 -- Internal search without visibility filter (for MCP tools).
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
@@ -88,7 +88,7 @@ WHERE status = 'published'
 -- name: InternalSearchContentsOR :many
 -- Internal OR search without visibility filter (for MCP tools).
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
@@ -105,7 +105,7 @@ LIMIT $1;
 
 -- name: AdminListContents :many
 -- Admin list: all statuses, all visibilities, with optional type and visibility filter.
-SELECT id, slug, title, excerpt, type, status, visibility, tags,
+SELECT id, slug, title, excerpt, type, status, visibility, project, tags,
        reading_time, published_at, created_at, updated_at
 FROM contents
 WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
@@ -126,12 +126,12 @@ ORDER BY updated_at DESC;
 
 -- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status, tags, source, source_type,
-                      series_id, series_order, review_level, visibility, ai_metadata,
+                      series_id, series_order, review_level, visibility, project, ai_metadata,
                       reading_time, cover_image, search_text)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, left($3, 10000))
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, left($3, 10000))
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+          series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at;
 
 -- name: UpdateContent :one
@@ -149,6 +149,7 @@ UPDATE contents SET
     series_order = COALESCE(sqlc.narg('series_order'), series_order),
     review_level = COALESCE(sqlc.narg('review_level')::review_level, review_level),
     visibility = COALESCE(sqlc.narg('visibility'), visibility),
+    project = COALESCE(sqlc.narg('project'), project),
     ai_metadata = COALESCE(sqlc.narg('ai_metadata'), ai_metadata),
     reading_time = COALESCE(sqlc.narg('reading_time'), reading_time),
     cover_image = COALESCE(sqlc.narg('cover_image'), cover_image),
@@ -156,14 +157,14 @@ UPDATE contents SET
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+          series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at;
 
 -- name: PublishContent :one
 UPDATE contents SET status = 'published', published_at = now(), updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+          series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at;
 
 -- name: ArchiveContent :exec
@@ -174,7 +175,7 @@ UPDATE contents SET embedding = $2 WHERE id = $1;
 
 -- name: PublishedContentsByDateRange :many
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
@@ -231,7 +232,7 @@ WHERE status = 'published' AND visibility = 'public'
 -- Get recent contents of a specific type, ordered by creation date.
 -- Internal use (MCP) — no visibility filter.
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, ai_metadata, reading_time,
+       series_id, series_order, review_level, visibility, project, ai_metadata, reading_time,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE type = @content_type::content_type
