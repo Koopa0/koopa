@@ -13,9 +13,7 @@ import (
 	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/koopa0/blog-backend/internal/activity"
-	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
-	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -60,29 +58,11 @@ type ProjectReader interface {
 	ActiveProjects(ctx context.Context) ([]project.Project, error)
 }
 
-// CollectedReader provides recent collected data for MCP tools.
-type CollectedReader interface {
-	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]collected.Item, error)
-}
-
 // StatsReader provides platform statistics for MCP tools.
 type StatsReader interface {
 	Overview(ctx context.Context) (*stats.Overview, error)
 	Drift(ctx context.Context, days int) (*stats.DriftReport, error)
 	Learning(ctx context.Context) (*stats.LearningDashboard, error)
-}
-
-// TaskReader provides task queries for MCP tools.
-type TaskReader interface {
-	PendingTasksWithProject(ctx context.Context, projectSlug *string, limit int32) ([]task.PendingTaskDetail, error)
-	TaskByID(ctx context.Context, id uuid.UUID) (*task.Task, error)
-	PendingTasksByTitle(ctx context.Context, title string) ([]task.Task, error)
-	DailySummaryHintForDate(ctx context.Context, dayStart, dayEnd time.Time) (*task.DailySummaryHint, error)
-	CompletedTasksDetailSince(ctx context.Context, since time.Time) ([]task.CompletedTaskDetail, error)
-	TasksCreatedSince(ctx context.Context, since time.Time) ([]task.CreatedTaskDetail, error)
-	CompletedByProjectSince(ctx context.Context, since time.Time) ([]flow.ProjectCompletion, error)
-	MyDayTasksWithNotionPageID(ctx context.Context) ([]task.MyDayNotionTask, error)
-	RecurringTaskByProject(ctx context.Context, projectID uuid.UUID, today time.Time) (*task.Task, error)
 }
 
 // TaskWriter provides task mutations for MCP tools.
@@ -118,13 +98,6 @@ type TaskDBIDResolver interface {
 	DatabaseIDByRole(ctx context.Context, role string) (string, error)
 }
 
-// ContentReader provides content search and retrieval for MCP tools.
-type ContentReader interface {
-	Search(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)
-	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
-	RecentByType(ctx context.Context, contentType content.Type, since time.Time, limit int) ([]content.Content, error)
-}
-
 // ContentWriter creates content records via MCP tools.
 type ContentWriter interface {
 	CreateContent(ctx context.Context, p *content.CreateParams) (*content.Content, error)
@@ -144,50 +117,6 @@ type GoalWriter interface {
 // ProjectWriter provides project mutations for MCP tools.
 type ProjectWriter interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status project.Status, description, expectedCadence *string) (*project.Project, error)
-}
-
-// CollectedLatestReader provides latest collected data without mandatory time bounds.
-type CollectedLatestReader interface {
-	LatestCollectedData(ctx context.Context, since *time.Time, maxResults int32) ([]collected.Item, error)
-}
-
-// CollectedHighlightReader provides high-relevance collected data for morning context.
-type CollectedHighlightReader interface {
-	TopRelevantCollected(ctx context.Context, since time.Time, maxResults int32) ([]collected.Item, error)
-}
-
-// CollectedRecencyReader provides collected data ordered by recency.
-type CollectedRecencyReader interface {
-	LatestByRecency(ctx context.Context, since *time.Time, maxResults int32) ([]collected.Item, error)
-}
-
-// CollectedUrgentReader provides high-priority collected data for urgent RSS.
-type CollectedUrgentReader interface {
-	HighPriorityRecent(ctx context.Context, since time.Time, maxResults int32) ([]collected.Item, error)
-}
-
-// CollectedCurator marks collected items as curated and links to content.
-type CollectedCurator interface {
-	Curate(ctx context.Context, id, contentID uuid.UUID) error
-	Item(ctx context.Context, id uuid.UUID) (*collected.Item, error)
-}
-
-// ContentSearcher extends ContentReader with OR-fallback search.
-type ContentSearcher interface {
-	SearchOR(ctx context.Context, query string, page, perPage int) ([]content.Content, int, error)
-}
-
-// SessionNoteReader provides session note queries for MCP tools.
-type SessionNoteReader interface {
-	NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType *string) ([]session.Note, error)
-	LatestNoteByType(ctx context.Context, noteType string) (*session.Note, error)
-	LatestNoteBySource(ctx context.Context, source string) (*session.Note, error)
-	MetricsHistory(ctx context.Context, sinceDate time.Time) ([]session.Note, error)
-	NoteByID(ctx context.Context, id int64) (*session.Note, error)
-	InsightsByStatus(ctx context.Context, status, project *string, limit int32) ([]session.Note, error)
-	InsightsByCategory(ctx context.Context, status, category string, limit int32) ([]session.Note, error)
-	InsightsSince(ctx context.Context, sinceDate time.Time) ([]session.Note, error)
-	CountInsightsByStatus(ctx context.Context, status *string) (int64, error)
 }
 
 // SessionNoteWriter provides session note mutations for MCP tools.

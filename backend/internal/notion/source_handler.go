@@ -18,18 +18,12 @@ var sourceStoreErrors = []api.ErrMap{
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
 }
 
-// SyncTrigger triggers a sync for a specific role or all roles.
-type SyncTrigger interface {
-	SyncAll(ctx context.Context)
-	SyncRoleAsync(ctx context.Context, role string)
-}
-
 // SourceHandler handles admin HTTP requests for notion source CRUD.
 type SourceHandler struct {
 	store       *Store
 	client      *Client
 	sourceCache *ristretto.Cache[string, string]
-	syncer      SyncTrigger
+	syncer      *Handler
 	logger      *slog.Logger
 }
 
@@ -38,8 +32,8 @@ func NewSourceHandler(store *Store, client *Client, sourceCache *ristretto.Cache
 	return &SourceHandler{store: store, client: client, sourceCache: sourceCache, logger: logger}
 }
 
-// SetSyncer sets the sync trigger for immediate sync after role assignment.
-func (h *SourceHandler) SetSyncer(s SyncTrigger) {
+// SetSyncer sets the sync handler for immediate sync after role assignment.
+func (h *SourceHandler) SetSyncer(s *Handler) {
 	h.syncer = s
 }
 

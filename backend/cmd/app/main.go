@@ -240,8 +240,7 @@ func run(logger *slog.Logger) error {
 		cfg.NotionWebhookSecret, logger,
 		notion.WithDedup(webhookDedup),
 		notion.WithEventRecorder(activityStore),
-		notion.WithProjectSlugResolver(projectStore),
-		notion.WithProjectIDResolver(projectStore),
+		notion.WithProjectStore(projectStore),
 		notion.WithGoalIDResolver(goalStore),
 	)
 	defer notionHandler.Wait() // drain background SyncRole goroutines

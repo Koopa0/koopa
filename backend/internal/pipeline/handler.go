@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/activity"
@@ -80,14 +79,12 @@ type NoteUpserter interface {
 	UpsertNote(ctx context.Context, p *note.UpsertParams) (*note.Note, error)
 	ContentHash(ctx context.Context, filePath string) (*string, error)
 	ArchiveNote(ctx context.Context, filePath string) error
-	WithTx(tx pgx.Tx) *note.Store
 }
 
 // TagResolver normalizes raw tags and manages note-tag junction records.
 type TagResolver interface {
 	ResolveTags(ctx context.Context, rawTags []string) []tag.Resolved
 	SyncNoteTags(ctx context.Context, noteID int64, tagIDs []uuid.UUID) error
-	WithTx(tx pgx.Tx) *tag.Store
 }
 
 // GitHubComparer fetches diff stats between two commits.
@@ -114,7 +111,6 @@ type NoteEventRecorder interface {
 // NoteLinkSyncer syncs wikilink edges for a knowledge note.
 type NoteLinkSyncer interface {
 	SyncNoteLinks(ctx context.Context, noteID int64, links []note.Link) error
-	WithTx(tx pgx.Tx) *note.Store
 }
 
 // NotionTaskUpdater updates a Notion page status.

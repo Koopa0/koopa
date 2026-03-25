@@ -192,17 +192,13 @@ func (h *Handler) resolveTaskProject(ctx context.Context, pageID, projectPageID 
 		return resolvedPageID, nil, nil
 	}
 
-	// Resolve project page ID → slug (for activity events)
-	if h.projectSlugs != nil {
-		slug, slugErr := h.projectSlugs.SlugByNotionPageID(ctx, resolvedPageID)
+	// Resolve project page ID → slug (for activity events) and UUID (for tasks table FK)
+	if h.projectStore != nil {
+		slug, slugErr := h.projectStore.SlugByNotionPageID(ctx, resolvedPageID)
 		if slugErr == nil {
 			projectSlug = &slug
 		}
-	}
-
-	// Resolve project page ID → UUID (for tasks table FK)
-	if h.projectIDs != nil {
-		id, idErr := h.projectIDs.IDByNotionPageID(ctx, resolvedPageID)
+		id, idErr := h.projectStore.IDByNotionPageID(ctx, resolvedPageID)
 		if idErr == nil {
 			projectID = &id
 		}

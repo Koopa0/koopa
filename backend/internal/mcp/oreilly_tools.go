@@ -14,13 +14,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// OReillySearcher searches O'Reilly Learning content via the REST API.
-type OReillySearcher interface {
-	Search(ctx context.Context, p *OReillySearchParams) (*OReillySearchResult, error)
-	BookDetail(ctx context.Context, archiveID string) (*OReillyBookDetail, error)
-	ChapterContent(ctx context.Context, archiveID, filename string) (string, error)
-}
-
 // OReillySearchParams holds query parameters for the O'Reilly search API.
 type OReillySearchParams struct {
 	Query      string
@@ -397,19 +390,12 @@ func (s *Server) getOReillyBookDetail(ctx context.Context, _ *mcp.CallToolReques
 		return nil, BookDetailOutput{}, fmt.Errorf("archive_id is required")
 	}
 
-	// OReillyClient implements both OReillySearcher and BookTOC.
-	// We need the concrete client for BookTOC; use a type assertion.
-	client, ok := s.oreilly.(*OReillyClient)
-	if !ok {
-		return nil, BookDetailOutput{}, fmt.Errorf("book detail requires the O'Reilly HTTP client")
-	}
-
-	detail, err := client.BookDetail(ctx, input.ArchiveID)
+	detail, err := s.oreilly.BookDetail(ctx, input.ArchiveID)
 	if err != nil {
 		return nil, BookDetailOutput{}, fmt.Errorf("fetching book detail: %w", err)
 	}
 
-	toc, err := client.BookTOC(ctx, input.ArchiveID)
+	toc, err := s.oreilly.BookTOC(ctx, input.ArchiveID)
 	if err != nil {
 		return nil, BookDetailOutput{}, fmt.Errorf("fetching table of contents: %w", err)
 	}

@@ -22,11 +22,6 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
-// WithTx returns a new Store that uses the given transaction.
-func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{q: s.q.WithTx(tx)}
-}
-
 // UpsertNote creates or updates a knowledge note by file_path.
 func (s *Store) UpsertNote(ctx context.Context, p *UpsertParams) (*Note, error) {
 	tagsJSON, err := json.Marshal(p.Tags)

@@ -18,40 +18,35 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // Server is the MCP server exposing knowledge tools.
 type Server struct {
-	server              *mcp.Server
-	notes               NoteSearcher
-	activity            ActivityReader
-	projects            ProjectReader
-	collected           CollectedReader
-	collectedLatest     CollectedLatestReader
-	stats               StatsReader
-	tasks               TaskReader
-	taskWriter          TaskWriter
-	contents            ContentReader
-	contentSearcher     ContentSearcher
-	contentWriter       ContentWriter
-	goals               GoalReader
-	goalWriter          GoalWriter
-	projectWriter       ProjectWriter
-	notionTasks         NotionTaskWriter
-	taskDBResolver      TaskDBIDResolver
-	sessionReader       SessionNoteReader
-	sessionWriter       SessionNoteWriter
-	activityWriter      ActivityWriter
-	collectedHighlights CollectedHighlightReader
-	collectedRecency    CollectedRecencyReader
-	collectedUrgent     CollectedUrgentReader
-	collectedCurator    CollectedCurator
-	semanticNotes       NoteSemanticSearcher
-	queryEmbedder       QueryEmbedder
-	oreilly             OReillySearcher
-	logger              *slog.Logger
-	loc                 *time.Location // user timezone for day boundaries
+	server         *mcp.Server
+	notes          NoteSearcher
+	activity       ActivityReader
+	projects       ProjectReader
+	collected      *collected.Store
+	stats          StatsReader
+	tasks          *task.Store
+	taskWriter     TaskWriter
+	contents       *content.Store
+	contentWriter  ContentWriter
+	goals          GoalReader
+	goalWriter     GoalWriter
+	projectWriter  ProjectWriter
+	notionTasks    NotionTaskWriter
+	taskDBResolver TaskDBIDResolver
+	sessionReader  *session.Store
+	sessionWriter  SessionNoteWriter
+	activityWriter ActivityWriter
+	semanticNotes  NoteSemanticSearcher
+	queryEmbedder  QueryEmbedder
+	oreilly        *OReillyClient
+	logger         *slog.Logger
+	loc            *time.Location // user timezone for day boundaries
 }
 
 // ServerOption configures optional Server dependencies.
@@ -80,39 +75,9 @@ func WithProjectWriter(w ProjectWriter) ServerOption {
 	return func(s *Server) { s.projectWriter = w }
 }
 
-// WithCollectedLatest enables time-optional collected data queries.
-func WithCollectedLatest(r CollectedLatestReader) ServerOption {
-	return func(s *Server) { s.collectedLatest = r }
-}
-
-// WithContentSearcher enables OR-fallback search.
-func WithContentSearcher(cs ContentSearcher) ServerOption {
-	return func(s *Server) { s.contentSearcher = cs }
-}
-
 // WithActivityWriter enables activity event recording for task completion audit trail.
 func WithActivityWriter(w ActivityWriter) ServerOption {
 	return func(s *Server) { s.activityWriter = w }
-}
-
-// WithCollectedHighlights enables RSS highlight summary in morning context.
-func WithCollectedHighlights(r CollectedHighlightReader) ServerOption {
-	return func(s *Server) { s.collectedHighlights = r }
-}
-
-// WithCollectedRecency enables recency-sorted collected data queries.
-func WithCollectedRecency(r CollectedRecencyReader) ServerOption {
-	return func(s *Server) { s.collectedRecency = r }
-}
-
-// WithCollectedUrgent enables high-priority RSS for morning context.
-func WithCollectedUrgent(r CollectedUrgentReader) ServerOption {
-	return func(s *Server) { s.collectedUrgent = r }
-}
-
-// WithCollectedCurator enables the curate_collected_item tool.
-func WithCollectedCurator(c CollectedCurator) ServerOption {
-	return func(s *Server) { s.collectedCurator = c }
 }
 
 // WithSemanticSearch enables embedding-based semantic search for notes.
@@ -124,12 +89,12 @@ func WithSemanticSearch(ns NoteSemanticSearcher, qe QueryEmbedder) ServerOption 
 }
 
 // WithOReilly enables O'Reilly content search tools.
-func WithOReilly(searcher OReillySearcher) ServerOption {
-	return func(s *Server) { s.oreilly = searcher }
+func WithOReilly(client *OReillyClient) ServerOption {
+	return func(s *Server) { s.oreilly = client }
 }
 
 // WithSessionNotes enables session note read/write tools.
-func WithSessionNotes(r SessionNoteReader, w SessionNoteWriter) ServerOption {
+func WithSessionNotes(r *session.Store, w SessionNoteWriter) ServerOption {
 	return func(s *Server) {
 		s.sessionReader = r
 		s.sessionWriter = w
@@ -141,11 +106,11 @@ func NewServer(
 	notes NoteSearcher,
 	activityReader ActivityReader,
 	projects ProjectReader,
-	collectedReader CollectedReader,
+	collectedStore *collected.Store,
 	stats StatsReader,
-	tasks TaskReader,
+	tasks *task.Store,
 	taskWriter TaskWriter,
-	contents ContentReader,
+	contents *content.Store,
 	contentWriter ContentWriter,
 	goals GoalReader,
 	logger *slog.Logger,
@@ -155,7 +120,7 @@ func NewServer(
 		notes:         notes,
 		activity:      activityReader,
 		projects:      projects,
-		collected:     collectedReader,
+		collected:     collectedStore,
 		stats:         stats,
 		tasks:         tasks,
 		taskWriter:    taskWriter,
@@ -174,26 +139,52 @@ func NewServer(
 		Version: "v0.2.0",
 	}, nil)
 
-	// --- existing tools ---
+	// Tool annotation presets.
+	f := false
+	readOnly := &mcp.ToolAnnotations{
+		ReadOnlyHint:  true,
+		OpenWorldHint: &f,
+	}
+	readOnlyOpenWorld := &mcp.ToolAnnotations{
+		ReadOnlyHint: true,
+	}
+	additive := &mcp.ToolAnnotations{
+		DestructiveHint: &f,
+		OpenWorldHint:   &f,
+	}
+	additiveIdempotent := &mcp.ToolAnnotations{
+		DestructiveHint: &f,
+		IdempotentHint:  true,
+		OpenWorldHint:   &f,
+	}
+	mutating := &mcp.ToolAnnotations{
+		OpenWorldHint: &f,
+	}
+
+	// --- read-only tools ---
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "search_notes",
 		Description: "Search obsidian knowledge notes by text query and/or frontmatter filters. Uses full-text search with Reciprocal Rank Fusion when both text and filters are provided. Use this when you know the content is an Obsidian note. For broader searches across all content types, use search_knowledge instead.",
+		Annotations: readOnly,
 	}, s.searchNotes)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_project_context",
 		Description: "Get full context for a single project by name, slug, or alias. Returns project details, recent activity, and related notes. Use list_projects first if you need to see all projects.",
+		Annotations: readOnly,
 	}, s.getProjectContext)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_recent_activity",
 		Description: "Get recent development activity events, optionally filtered by source (github, obsidian, notion) or project name. Groups results by source. Use when the user asks what they've been working on, wants a summary of recent progress, or needs to understand time allocation.",
+		Annotations: readOnly,
 	}, s.getRecentActivity)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_decision_log",
 		Description: "Retrieve decision-log notes, optionally filtered by project context. Use when looking for past architectural decisions, design rationale, or 'why did we choose X' questions.",
+		Annotations: readOnly,
 	}, s.getDecisionLog)
 
 	// --- new Phase 1 tools ---
@@ -201,41 +192,49 @@ func NewServer(
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_rss_highlights",
 		Description: "Get recently collected RSS articles from tracked feeds, ordered by most recent first. Use when the user asks about recent tech news, wants reading recommendations, or needs to know what's trending in their tracked topics.",
+		Annotations: readOnly,
 	}, s.getRSSHighlights)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_platform_stats",
 		Description: "Get a full snapshot of the koopa0.dev knowledge engine: content counts, project stats, activity trends, goal alignment drift, and learning progress. Use when the user wants an overview of their system, asks 'how is everything going', or needs to assess platform health.",
+		Annotations: readOnly,
 	}, s.getPlatformStats)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_pending_tasks",
 		Description: "Get pending (not-done) tasks sorted by urgency: tasks with deadlines first (earliest deadline on top), then tasks without deadlines sorted by staleness (least recently touched first). Optionally filter by project. Use when the user asks what to work on, needs to plan their day, or wants to see overdue items.",
+		Annotations: readOnly,
 	}, s.getPendingTasks)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "search_knowledge",
 		Description: "Search across ALL content types: articles, build logs, TILs, notes, and Obsidian notes. Returns excerpts with source type markers. Use when the user asks 'have I written about X before', needs to find past insights, or wants to search without knowing which content type contains the answer. For full article content, follow up with get_content_detail using the slug.",
+		Annotations: readOnly,
 	}, s.searchKnowledge)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_content_detail",
 		Description: "Get the full content of an article, build log, TIL, or note by slug. Returns complete body text, tags, topics, and metadata. Use after search_knowledge to read the full content of a specific result.",
+		Annotations: readOnly,
 	}, s.getContentDetail)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "list_projects",
 		Description: "List all active projects with status, area, tech stack, and URLs. Use when the user wants to see all their projects at a glance, needs to pick which project to work on, or asks about project health. For deep context on a single project, follow up with get_project_context.",
+		Annotations: readOnly,
 	}, s.listProjects)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_goals",
 		Description: "Get personal goals synced from Notion, with status, area, quarter, and deadline. Use when the user asks about their goals, wants to check progress, or needs to align daily work with long-term objectives.",
+		Annotations: readOnly,
 	}, s.getGoals)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_learning_progress",
 		Description: "Get learning metrics: note growth trends, weekly activity comparison, and top knowledge tags. Use when the user asks about their learning progress, wants to know what topics they've been studying, or needs motivation data.",
+		Annotations: readOnly,
 	}, s.getLearningProgress)
 
 	// --- write tools ---
@@ -243,61 +242,73 @@ func NewServer(
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "log_dev_session",
 		Description: "Log a development session as a build-log entry. Use at the end of a coding session or after completing a feature/bugfix/refactor/research milestone to record what was done, why, and what decisions were made. This creates a draft content record that the user can review and publish. The body should be in Markdown format with sections like: what was done, decisions made, problems solved, impact scope.",
+		Annotations: additive,
 	}, s.logDevSession)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "complete_task",
 		Description: "Mark a task as done. Use when the user says they've finished something: 'done', 'completed', '做完了', '這題寫完了', 'OK next', or any phrase indicating task completion. Always confirm the specific task before calling. Returns next recurrence date for recurring tasks.",
+		Annotations: mutating,
 	}, s.completeTask)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "create_task",
 		Description: "Create a new task in Notion. Use during morning planning when the user confirms a suggested schedule, or when the user says 'add a task', 'remind me to', '幫我建一個任務'. Supports project linking, priority, energy level, and My Day assignment.",
+		Annotations: additive,
 	}, s.createTask)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "update_task",
 		Description: "Update any task property — title (new_title), due date, priority, energy, project, My Day, or status. Use when the user says 'move this to tomorrow', 'change priority to high', '這個改成下週', 'put this on my day', 'rename this task'. For marking tasks complete, prefer complete_task instead.",
+		Annotations: mutating,
 	}, s.updateTask)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "batch_my_day",
 		Description: "Set today's planned tasks on Notion My Day. Use at the end of morning planning after the user confirms the daily schedule. Optionally clears previous My Day selections first.",
+		Annotations: additiveIdempotent,
 	}, s.batchMyDay)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "log_learning_session",
 		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Tags use a controlled vocabulary: topic tags (array, string, hash-table, two-pointers, sliding-window, binary-search, stack, queue, linked-list, tree, binary-tree, bst, graph, bfs, dfs, heap, trie, union-find, dp, greedy, backtracking, bit-manipulation, math, matrix, interval, topological-sort, sorting, design, simulation, prefix-sum, divide-and-conquer, segment-tree, binary-indexed-tree), result (ac-independent, ac-with-hints, ac-after-solution, incomplete), weakness:xxx, improvement:xxx. Difficulty: easy, medium, hard.",
+		Annotations: additive,
 	}, s.logLearningSession)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "update_project_status",
 		Description: "Update a project's status during weekly or monthly review. Use when the user says 'put this project on hold', 'mark as done', '這個 project 暫停', or discusses project lifecycle changes. Supports optional review notes.",
+		Annotations: mutating,
 	}, s.updateProjectStatus)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "update_goal_status",
 		Description: "Update a goal's status. Use when the user says 'this goal is now active', 'achieved', '這個目標完成了', or discusses goal progress changes. Maps to Dream (not-started), Active (in-progress), Achieved (done), Abandoned.",
+		Annotations: mutating,
 	}, s.updateGoalStatus)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_morning_context",
 		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, active goals, yesterday's reflection, and planning history (completion rates). Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session.",
+		Annotations: readOnly,
 	}, s.getMorningContext)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_session_delta",
 		Description: "Show what changed since the last Claude.ai session: tasks completed, tasks created, tasks that became overdue, build logs, insight changes, session notes, and metrics trend. Use when resuming after a gap, e.g. 'what happened since last time', '上次之後有什麼變化', 'catch me up'. Defaults to changes since the last claude session note.",
+		Annotations: readOnly,
 	}, s.getSessionDelta)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_weekly_summary",
 		Description: "Get a comprehensive weekly summary: task completion by project, metrics trends, project health, insight activity, goal alignment, auto-generated highlights and concerns. Use for weekly reviews, '這週做了什麼', 'weekly review', 'how was this week'. Set weeks_back=1 for last week.",
+		Annotations: readOnly,
 	}, s.getWeeklySummary)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_goal_progress",
 		Description: "Show progress toward each active goal: related projects, tasks completed in the lookback period, weekly task rate, and on-track assessment. Use when reviewing goals, '目標進度', 'goal check', 'am I on track'.",
+		Annotations: readOnly,
 	}, s.getGoalProgress)
 
 	// --- session notes tools ---
@@ -305,11 +316,13 @@ func NewServer(
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "save_session_note",
 		Description: "Save a session note for cross-environment context sharing. Use during morning planning (type=plan, source=claude), development sessions (type=context, source=claude-code), evening reflection (type=reflection, source=claude), or metrics recording (type=metrics with metadata). This bridges context between claude.ai and Claude Code.",
+		Annotations: additive,
 	}, s.saveSessionNote)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_session_notes",
 		Description: "Retrieve session notes for a date or date range, optionally filtered by type. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Types: plan, reflection, context, metrics, insight.",
+		Annotations: readOnly,
 	}, s.getSessionNotes)
 
 	// --- reflection tool ---
@@ -317,6 +330,7 @@ func NewServer(
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_reflection_context",
 		Description: "Get everything needed for evening reflection in one call: today's plan vs actual completions, My Day task status, daily summary metrics, unverified insights for review, planning history, and yesterday's adjustments. Use when doing evening reflection, '今天做了什麼', 'reflection time', 'how did today go'. This is the evening counterpart to get_morning_context.",
+		Annotations: readOnly,
 	}, s.getReflectionContext)
 
 	// --- insight tools ---
@@ -324,11 +338,13 @@ func NewServer(
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_active_insights",
 		Description: "Get tracked insights (pattern observations and hypotheses) from past sessions. Use during morning planning to see unverified hypotheses that can inform today's schedule, or during evening reflection to review which insights have been confirmed or invalidated. Default returns unverified insights; use status='all' for everything.",
+		Annotations: readOnly,
 	}, s.getActiveInsights)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "update_insight",
 		Description: "Update an insight's status or append evidence. Use during evening reflection when today's data supports or contradicts a hypothesis — append evidence, or change status to 'verified'/'invalidated'. Use 'archived' to retire old insights.",
+		Annotations: mutating,
 	}, s.updateInsight)
 
 	// --- O'Reilly tools ---
@@ -337,25 +353,27 @@ func NewServer(
 		mcp.AddTool(s.server, &mcp.Tool{
 			Name:        "search_oreilly_content",
 			Description: "Search O'Reilly Learning for books, videos, articles, courses, and other content. Use when the user asks for learning resources, book recommendations, wants to find technical content on a topic, or says 'find me a book about X'. Supports filtering by format (book, video, article, course), publisher, and author.",
+			Annotations: readOnlyOpenWorld,
 		}, s.searchOReillyContent)
 
 		mcp.AddTool(s.server, &mcp.Tool{
 			Name:        "get_oreilly_book_detail",
 			Description: "Get book metadata and full table of contents from O'Reilly Learning. Use after search_oreilly_content to see a book's chapters and structure before reading. Returns chapter titles, filenames (for read_oreilly_chapter), estimated reading time, and section headings.",
+			Annotations: readOnlyOpenWorld,
 		}, s.getOReillyBookDetail)
 
 		mcp.AddTool(s.server, &mcp.Tool{
 			Name:        "read_oreilly_chapter",
 			Description: "Read the full text content of an O'Reilly book chapter. Use after get_oreilly_book_detail to read specific chapters. Requires archive_id and filename (from book detail chapters list). Returns plain text content stripped of HTML formatting.",
+			Annotations: readOnlyOpenWorld,
 		}, s.readOReillyChapter)
 	}
 
-	if s.collectedCurator != nil {
-		mcp.AddTool(s.server, &mcp.Tool{
-			Name:        "curate_collected_item",
-			Description: "Curate an RSS article into the knowledge base as a bookmark. Creates a content record (type=bookmark, status=draft) and links it back to the collected item. The bookmark will be processed by the content-review pipeline (generating embedding, excerpt, tags). Use when a high-value article should be preserved for future search_knowledge retrieval.",
-		}, s.curateCollectedItem)
-	}
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "curate_collected_item",
+		Description: "Curate an RSS article into the knowledge base as a bookmark. Creates a content record (type=bookmark, status=draft) and links it back to the collected item. The bookmark will be processed by the content-review pipeline (generating embedding, excerpt, tags). Use when a high-value article should be preserved for future search_knowledge retrieval.",
+		Annotations: additive,
+	}, s.curateCollectedItem)
 
 	return s
 }
@@ -711,19 +729,16 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	since := time.Now().AddDate(0, 0, -days)
 
 	switch {
-	case input.SortBy == "recency" && s.collectedRecency != nil:
-		data, err = s.collectedRecency.LatestByRecency(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
+	case input.SortBy == "recency":
+		data, err = s.collected.LatestByRecency(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
 		if err == nil && len(data) == 0 {
-			data, err = s.collectedRecency.LatestByRecency(ctx, nil, int32(limit)) // #nosec G115
-		}
-	case s.collectedLatest != nil:
-		data, err = s.collectedLatest.LatestCollectedData(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
-		if err == nil && len(data) == 0 {
-			data, err = s.collectedLatest.LatestCollectedData(ctx, nil, int32(limit)) // #nosec G115
+			data, err = s.collected.LatestByRecency(ctx, nil, int32(limit)) // #nosec G115
 		}
 	default:
-		now := time.Now()
-		data, err = s.collected.RecentCollectedData(ctx, since, now, int32(limit)) // #nosec G115
+		data, err = s.collected.LatestCollectedData(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
+		if err == nil && len(data) == 0 {
+			data, err = s.collected.LatestCollectedData(ctx, nil, int32(limit)) // #nosec G115
+		}
 	}
 	if err != nil {
 		return nil, RSSHighlightsOutput{}, fmt.Errorf("querying rss highlights: %w", err)
@@ -922,8 +937,8 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	go func() {
 		contents, _, err := s.contents.Search(ctx, input.Query, 1, limit)
 		// AND→OR fallback: if AND search returns 0 results, try OR semantics
-		if err == nil && len(contents) == 0 && s.contentSearcher != nil {
-			contents, _, err = s.contentSearcher.SearchOR(ctx, input.Query, 1, limit)
+		if err == nil && len(contents) == 0 {
+			contents, _, err = s.contents.SearchOR(ctx, input.Query, 1, limit)
 		}
 		contentCh <- contentResult{contents, err}
 	}()
@@ -1586,7 +1601,7 @@ func (s *Server) curateCollectedItem(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, CurateOutput{}, fmt.Errorf("invalid collected_id: %w", err)
 	}
 
-	item, err := s.collectedCurator.Item(ctx, collectedID)
+	item, err := s.collected.Item(ctx, collectedID)
 	if err != nil {
 		return nil, CurateOutput{}, fmt.Errorf("fetching collected item: %w", err)
 	}
@@ -1636,7 +1651,7 @@ func (s *Server) curateCollectedItem(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, CurateOutput{}, fmt.Errorf("creating bookmark content: %w", err)
 	}
 
-	if curateErr := s.collectedCurator.Curate(ctx, collectedID, created.ID); curateErr != nil {
+	if curateErr := s.collected.Curate(ctx, collectedID, created.ID); curateErr != nil {
 		s.logger.Error("curate: failed to link collected item", "collected_id", collectedID, "content_id", created.ID, "error", curateErr)
 	}
 

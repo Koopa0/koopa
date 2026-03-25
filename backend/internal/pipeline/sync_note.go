@@ -16,6 +16,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/obsidian"
+	"github.com/koopa0/blog-backend/internal/tag"
 )
 
 // syncKnowledgeNotes fetches and upserts each knowledge note.
@@ -123,8 +124,8 @@ func (h *Handler) syncNoteInTx(ctx context.Context, path string, p *note.UpsertP
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback on committed tx is no-op
 
-	txNotes := h.notes.WithTx(tx)
-	txTags := h.tags.WithTx(tx)
+	txNotes := note.NewStore(tx)
+	txTags := tag.NewStore(tx)
 
 	upserted, err := txNotes.UpsertNote(ctx, p)
 	if err != nil {
@@ -164,7 +165,7 @@ func (h *Handler) syncNoteLinks(ctx context.Context, tx pgx.Tx, noteID int64, pa
 	if h.noteLinks == nil || !hashChanged || p.ContentText == nil {
 		return nil
 	}
-	txLinks := h.noteLinks.WithTx(tx)
+	txLinks := note.NewStore(tx)
 	links := obsidian.ParseWikilinks(*p.ContentText)
 	noteLinks := make([]note.Link, len(links))
 	for i, l := range links {

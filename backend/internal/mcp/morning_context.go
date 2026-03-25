@@ -464,11 +464,8 @@ func (s *Server) fetchMorningInsights(ctx context.Context, out *MorningContextOu
 func (s *Server) fetchMorningRSSHighlights(ctx context.Context, out *MorningContextOutput, now time.Time) {
 	out.UrgentRSS = []urgentRSSItem{}
 
-	if s.collectedHighlights == nil {
-		return
-	}
 	weekAgo := now.AddDate(0, 0, -7)
-	highlights, hlErr := s.collectedHighlights.TopRelevantCollected(ctx, weekAgo, 20)
+	highlights, hlErr := s.collected.TopRelevantCollected(ctx, weekAgo, 20)
 	if hlErr != nil {
 		s.logger.Error("morning_context: rss highlights", "error", hlErr)
 		return
@@ -479,11 +476,8 @@ func (s *Server) fetchMorningRSSHighlights(ctx context.Context, out *MorningCont
 	}
 
 	// Fetch urgent RSS from high-priority feeds (past 24 hours)
-	if s.collectedUrgent == nil {
-		return
-	}
 	dayAgo := now.AddDate(0, 0, -1)
-	urgent, urgentErr := s.collectedUrgent.HighPriorityRecent(ctx, dayAgo, 10)
+	urgent, urgentErr := s.collected.HighPriorityRecent(ctx, dayAgo, 10)
 	if urgentErr != nil {
 		s.logger.Error("morning_context: urgent rss", "error", urgentErr)
 		return

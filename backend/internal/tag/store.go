@@ -23,11 +23,6 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
-// WithTx returns a new Store that uses the given transaction.
-func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{q: s.q.WithTx(tx)}
-}
-
 // maxRawTagLen is the maximum length for a raw tag string.
 // Tags exceeding this are silently dropped to prevent abuse via oversized YAML values.
 const maxRawTagLen = 255

@@ -55,16 +55,6 @@ type EventRecorder interface {
 	CreateEvent(ctx context.Context, p *activity.RecordParams) (int64, error)
 }
 
-// ProjectSlugResolver resolves a Notion page ID to a project slug.
-type ProjectSlugResolver interface {
-	SlugByNotionPageID(ctx context.Context, notionPageID string) (string, error)
-}
-
-// ProjectIDResolver resolves a Notion page ID to a local project UUID.
-type ProjectIDResolver interface {
-	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
-}
-
 // GoalIDResolver resolves a Notion page ID to a local goal UUID.
 type GoalIDResolver interface {
 	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
@@ -80,8 +70,7 @@ type Handler struct {
 	tasks         TaskWriter
 	jobs          JobSubmitter
 	events        EventRecorder
-	projectSlugs  ProjectSlugResolver
-	projectIDs    ProjectIDResolver
+	projectStore  *project.Store
 	goalIDs       GoalIDResolver
 	dedup         *webhook.DeduplicationCache
 	webhookSecret string
@@ -103,14 +92,9 @@ func WithEventRecorder(e EventRecorder) HandlerOption {
 	return func(h *Handler) { h.events = e }
 }
 
-// WithProjectSlugResolver sets the project slug resolver for task event project attribution.
-func WithProjectSlugResolver(r ProjectSlugResolver) HandlerOption {
-	return func(h *Handler) { h.projectSlugs = r }
-}
-
-// WithProjectIDResolver sets the project ID resolver for task → project FK resolution.
-func WithProjectIDResolver(r ProjectIDResolver) HandlerOption {
-	return func(h *Handler) { h.projectIDs = r }
+// WithProjectStore sets the project store for slug and ID resolution.
+func WithProjectStore(ps *project.Store) HandlerOption {
+	return func(h *Handler) { h.projectStore = ps }
 }
 
 // WithGoalIDResolver sets the goal ID resolver for project → goal FK resolution.
