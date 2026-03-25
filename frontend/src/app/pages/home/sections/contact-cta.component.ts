@@ -22,10 +22,10 @@ interface SocialLink {
     <section id="contact" class="bg-zinc-900/50">
       <div class="mx-auto max-w-7xl px-4 py-20 text-center sm:px-6 lg:px-8">
         <h2 class="text-3xl font-bold text-zinc-100">
-          Let's Build Something Together
+          Have a Backend Challenge?
         </h2>
         <p class="mx-auto mt-4 max-w-xl text-zinc-400">
-          Interested in collaboration, have a technical question, or just want to say hi? Feel free to reach out.
+          Whether it's performance issues, architecture decisions, or scaling bottlenecks — let's talk.
         </p>
         <div class="mt-10 flex items-center justify-center gap-4">
           @for (link of socialLinks; track link.name) {
