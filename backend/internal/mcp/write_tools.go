@@ -419,12 +419,12 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 
 // LogLearningSessionInput is the input for the log_learning_session tool.
 type LogLearningSessionInput struct {
-	Topic      string   `json:"topic" jsonschema_description:"what was learned (required)"`
-	Source     string   `json:"source" jsonschema_description:"leetcode, hackerrank, oreilly, ardanlabs, article, discussion (required)"`
-	Title      string   `json:"title" jsonschema_description:"short title (required)"`
-	Body       string   `json:"body" jsonschema_description:"markdown content: approach, concepts, insights (required)"`
+	Topic      string   `json:"topic" jsonschema:"required" jsonschema_description:"what was learned"`
+	Source     string   `json:"source" jsonschema:"required" jsonschema_description:"leetcode, hackerrank, oreilly, ardanlabs, article, discussion"`
+	Title      string   `json:"title" jsonschema:"required" jsonschema_description:"short title"`
+	Body       string   `json:"body" jsonschema:"required" jsonschema_description:"markdown content: approach, concepts, insights"`
 	Tags       []string `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
-	Project    string   `json:"project" jsonschema_description:"project name, slug, or alias (required; use 'none' for unaffiliated learning)"`
+	Project    string   `json:"project" jsonschema:"required" jsonschema_description:"project name, slug, or alias (use 'none' for unaffiliated learning)"`
 	Difficulty string   `json:"difficulty,omitempty" jsonschema_description:"easy, medium, or hard"`
 	ProblemURL string   `json:"problem_url,omitempty" jsonschema_description:"problem link"`
 }
