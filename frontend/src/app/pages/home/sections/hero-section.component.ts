@@ -46,7 +46,7 @@ import { LucideAngularModule, ArrowRight, Code2, Mail } from 'lucide-angular';
               <lucide-icon [img]="MailIcon" [size]="16" />
             </button>
             <a
-              href="/projects/koopa0dev"
+              href="/projects/koopa0-dev"
               class="inline-flex cursor-pointer items-center gap-2 rounded-sm border border-zinc-700 px-6 py-3 text-sm font-semibold text-zinc-300 no-underline transition-all hover:border-zinc-500 hover:text-white hover:shadow-xs hover:shadow-zinc-800 active:scale-[0.98]"
             >
               See how this site was built
