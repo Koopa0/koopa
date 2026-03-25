@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -474,12 +475,12 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	source := fmt.Sprintf("claude:%s", input.Source)
 	sourceType := content.SourceAIGenerated
 
-	// Add metadata to body if provided
+	// Add metadata to body only if not already present (Claude often includes these in the body)
 	body := input.Body
-	if input.ProblemURL != "" {
+	if input.ProblemURL != "" && !strings.Contains(body, input.ProblemURL) {
 		body = fmt.Sprintf("**Problem**: %s\n\n%s", input.ProblemURL, body)
 	}
-	if input.Difficulty != "" {
+	if input.Difficulty != "" && !strings.Contains(strings.ToLower(body), strings.ToLower(input.Difficulty)) {
 		body = fmt.Sprintf("**Difficulty**: %s\n\n%s", input.Difficulty, body)
 	}
 
