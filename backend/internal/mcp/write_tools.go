@@ -424,8 +424,9 @@ func (s *Server) syncMyDayToNotion(ctx context.Context, notionPageID string, val
 		return
 	}
 	props := map[string]any{"My Day": map[string]any{"checkbox": value}}
-	//nolint:errcheck // best-effort: don't fail batch on individual Notion errors
-	s.notionTasks.UpdatePageProperties(ctx, notionPageID, props)
+	if err := s.notionTasks.UpdatePageProperties(ctx, notionPageID, props); err != nil {
+		s.logger.Warn("batch_my_day: notion sync failed", "notion_page_id", notionPageID, "error", err)
+	}
 }
 
 // --- log_learning_session ---
