@@ -11,7 +11,10 @@
   --container-article: 720px;
 }
 
-/* Base reset — scroll-behavior handled by Lenis smooth scroll service */
+/* Base reset */
+html {
+  scroll-behavior: smooth;
+}
 
 html, body {
   height: 100%;

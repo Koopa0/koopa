@@ -10,7 +10,6 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { LucideAngularModule, ArrowRight, Code2, Mail } from 'lucide-angular';
-import { SmoothScrollService } from '../../../core/services/smooth-scroll.service';
 import { HeroCanvasComponent } from '../../../shared/components/hero-canvas/hero-canvas.component';
 
 @Component({
@@ -82,8 +81,6 @@ export class HeroSectionComponent {
   private readonly el = inject(ElementRef);
   private readonly ngZone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly smoothScroll = inject(SmoothScrollService);
-
   protected readonly ArrowRightIcon = ArrowRight;
   protected readonly Code2Icon = Code2;
   protected readonly MailIcon = Mail;
@@ -133,7 +130,7 @@ export class HeroSectionComponent {
     );
     tl.from(
       buttons,
-      { opacity: 0, y: 6, duration: 0.1, stagger: 0.05, ...shared },
+      { opacity: 0, y: 6, duration: 0.8, stagger: 0.05, ease: 'power2.out' },
       '-=0.7',
     );
 
@@ -141,6 +138,10 @@ export class HeroSectionComponent {
   }
 
   protected scrollToContact(): void {
-    this.smoothScroll.scrollTo('#contact', { duration: 1.4 });
+    if (isPlatformBrowser(this.platformId)) {
+      document
+        .getElementById('contact')
+        ?.scrollIntoView({ behavior: 'smooth' });
+    }
   }
 }
