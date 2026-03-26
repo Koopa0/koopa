@@ -153,6 +153,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Priority:     req.Priority,
 		MyDay:        req.MyDay,
 		Description:  req.Notes,
+		Assignee:     "human",
 	})
 	if upsertErr != nil {
 		h.logger.Error("local upsert after notion create", "error", upsertErr)

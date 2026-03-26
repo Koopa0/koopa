@@ -242,6 +242,7 @@ func (h *Handler) upsertTask(ctx context.Context, pageID string, props map[strin
 		RecurUnit:     tp.recurUnit,
 		MyDay:         tp.myDay,
 		Description:   tp.description,
+		Assignee:      "human",
 	})
 	if err != nil {
 		return fmt.Errorf("upserting task: %w", err)

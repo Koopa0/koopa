@@ -728,6 +728,7 @@ type Task struct {
 	RecurUnit     string     `json:"recur_unit"`
 	MyDay         bool       `json:"my_day"`
 	Description   string     `json:"description"`
+	Assignee      string     `json:"assignee"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

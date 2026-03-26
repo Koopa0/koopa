@@ -131,15 +131,17 @@ type CreateTaskInput struct {
 	Energy   string `json:"energy,omitempty" jsonschema_description:"Low or High"`
 	MyDay    bool   `json:"my_day,omitempty" jsonschema_description:"add to My Day"`
 	Notes    string `json:"notes,omitempty" jsonschema_description:"task description"`
+	Assignee string `json:"assignee,omitempty" jsonschema_description:"human|claude-code|cowork (default: human)"`
 }
 
 // CreateTaskOutput is the output of the create_task tool.
 type CreateTaskOutput struct {
-	TaskID  string `json:"task_id"`
-	Title   string `json:"title"`
-	Due     string `json:"due,omitempty"`
-	Project string `json:"project,omitempty"`
-	Warning string `json:"warning,omitempty"`
+	TaskID     string           `json:"task_id"`
+	Title      string           `json:"title"`
+	Due        string           `json:"due,omitempty"`
+	Project    string           `json:"project,omitempty"`
+	Warning    string           `json:"warning,omitempty"`
+	MyDayTasks []myDayRemaining `json:"my_day_tasks,omitempty"`
 }
 
 func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *CreateTaskInput) (*mcp.CallToolResult, CreateTaskOutput, error) {
@@ -199,6 +201,14 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	}
 
 	// Upsert to local DB immediately (don't wait for webhook)
+	assignee := input.Assignee
+	if assignee == "" {
+		assignee = "human"
+	}
+	if !task.ValidAssignee(assignee) {
+		return nil, CreateTaskOutput{}, fmt.Errorf("invalid assignee %q (must be human, claude-code, or cowork)", assignee)
+	}
+
 	upsertParams := &task.UpsertByNotionParams{
 		Title:        input.Title,
 		Status:       task.StatusTodo,
@@ -209,6 +219,7 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		Priority:     input.Priority,
 		MyDay:        input.MyDay,
 		Description:  input.Notes,
+		Assignee:     assignee,
 	}
 	localTask, upsertErr := s.taskWriter.UpsertByNotionPageID(ctx, upsertParams)
 
@@ -236,6 +247,10 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		"project", out.Project,
 	)
 
+	if input.MyDay {
+		out.MyDayTasks = s.fetchMyDaySnapshot(ctx)
+	}
+
 	return nil, out, nil
 }
 
@@ -253,15 +268,17 @@ type UpdateTaskInput struct {
 	MyDay     *bool   `json:"my_day,omitempty" jsonschema_description:"set or clear My Day"`
 	Project   *string `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
 	Notes     *string `json:"notes,omitempty" jsonschema_description:"append to description"`
+	Assignee  *string `json:"assignee,omitempty" jsonschema_description:"human|claude-code|cowork"`
 }
 
 // UpdateTaskOutput is the output of the update_task tool.
 type UpdateTaskOutput struct {
-	TaskID  string `json:"task_id"`
-	Title   string `json:"title"`
-	Status  string `json:"status"`
-	Due     string `json:"due,omitempty"`
-	Updated string `json:"updated_at"`
+	TaskID     string           `json:"task_id"`
+	Title      string           `json:"title"`
+	Status     string           `json:"status"`
+	Due        string           `json:"due,omitempty"`
+	Updated    string           `json:"updated_at"`
+	MyDayTasks []myDayRemaining `json:"my_day_tasks,omitempty"`
 }
 
 func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *UpdateTaskInput) (*mcp.CallToolResult, UpdateTaskOutput, error) {
@@ -305,6 +322,12 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	if input.Notes != nil {
 		params.Description = input.Notes
 	}
+	if input.Assignee != nil {
+		if !task.ValidAssignee(*input.Assignee) {
+			return nil, UpdateTaskOutput{}, fmt.Errorf("invalid assignee %q (must be human, claude-code, or cowork)", *input.Assignee)
+		}
+		params.Assignee = input.Assignee
+	}
 	var resolvedProject *project.Project
 	if input.Project != nil {
 		proj, projErr := s.resolveProject(ctx, *input.Project)
@@ -330,6 +353,9 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	}
 	if updated.Due != nil {
 		out.Due = updated.Due.Format(time.DateOnly)
+	}
+	if input.MyDay != nil {
+		out.MyDayTasks = s.fetchMyDaySnapshot(ctx)
 	}
 
 	return nil, out, nil
@@ -365,8 +391,9 @@ type BatchMyDayInput struct {
 
 // BatchMyDayOutput is the output of the batch_my_day tool.
 type BatchMyDayOutput struct {
-	Cleared int `json:"cleared,omitempty"`
-	Set     int `json:"set"`
+	Cleared    int              `json:"cleared,omitempty"`
+	Set        int              `json:"set"`
+	MyDayTasks []myDayRemaining `json:"my_day_tasks"`
 }
 
 func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input BatchMyDayInput) (*mcp.CallToolResult, BatchMyDayOutput, error) {
@@ -414,6 +441,8 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 			}
 		}
 	}
+
+	out.MyDayTasks = s.fetchMyDaySnapshot(ctx)
 
 	return nil, out, nil
 }
@@ -932,7 +961,7 @@ func (s *Server) resolveTaskDBID(ctx context.Context) (string, error) {
 
 // fetchRemainingMyDay returns My Day tasks that are still pending (excluding the just-completed task).
 func (s *Server) fetchRemainingMyDay(ctx context.Context, excludeID uuid.UUID) []myDayRemaining {
-	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, 50)
+	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, nil, 50)
 	if err != nil {
 		s.logger.Error("complete_task: fetching remaining my day", "error", err)
 		return []myDayRemaining{}
@@ -952,6 +981,26 @@ func (s *Server) fetchRemainingMyDay(ctx context.Context, excludeID uuid.UUID) [
 		})
 	}
 	return remaining
+}
+
+// fetchMyDaySnapshot returns the current My Day task list using the dedicated store method.
+func (s *Server) fetchMyDaySnapshot(ctx context.Context) []myDayRemaining {
+	snapshots, err := s.tasks.MyDayTasks(ctx)
+	if err != nil {
+		s.logger.Error("fetching my day snapshot", "error", err)
+		return []myDayRemaining{}
+	}
+	result := make([]myDayRemaining, len(snapshots))
+	for i := range snapshots {
+		result[i] = myDayRemaining{
+			TaskID:   snapshots[i].ID.String(),
+			Title:    snapshots[i].Title,
+			Project:  snapshots[i].ProjectTitle,
+			Priority: snapshots[i].Priority,
+			Energy:   snapshots[i].Energy,
+		}
+	}
+	return result
 }
 
 func (s *Server) resolveProject(ctx context.Context, input string) (*project.Project, error) {

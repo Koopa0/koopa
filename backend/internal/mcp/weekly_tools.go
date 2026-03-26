@@ -187,7 +187,7 @@ func (s *Server) buildWeeklyMetrics(out *WeeklySummaryOutput, metricsNotes []ses
 
 // fetchWeeklyProjectHealth computes health from pre-fetched projects and appends neglect concerns.
 func (s *Server) fetchWeeklyProjectHealth(ctx context.Context, out *WeeklySummaryOutput, projects []project.Project, now time.Time) {
-	allPending, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
+	allPending, err := s.tasks.PendingTasksWithProject(ctx, nil, nil, 100)
 	if err != nil {
 		s.logger.Error("weekly_summary: pending tasks", "error", err)
 	}

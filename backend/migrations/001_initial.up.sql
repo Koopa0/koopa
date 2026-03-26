@@ -285,6 +285,8 @@ CREATE TABLE tasks (
     recur_unit      TEXT NOT NULL DEFAULT '',
     my_day          BOOLEAN NOT NULL DEFAULT false,
     description     TEXT NOT NULL DEFAULT '',
+    assignee        TEXT NOT NULL DEFAULT 'human'
+                    CHECK (assignee IN ('human', 'claude-code', 'cowork')),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );

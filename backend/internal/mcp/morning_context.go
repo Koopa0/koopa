@@ -15,8 +15,9 @@ import (
 
 // MorningContextInput is the input for the get_morning_context tool.
 type MorningContextInput struct {
-	ActivityDays int `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
-	BuildLogDays int `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
+	ActivityDays int      `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
+	BuildLogDays int      `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
+	Sections     []string `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions"`
 }
 
 // MorningContextOutput is the aggregated output for daily planning.
@@ -172,17 +173,60 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		Date: now.Format("2006-01-02 (Monday)"),
 	}
 
-	allTasks := s.fetchMorningTasks(ctx, &out, today, tomorrow)
-	s.fetchMorningActivity(ctx, &out, now, activityDays)
-	s.fetchMorningBuildLogs(ctx, &out, now, buildLogDays)
-	s.fetchMorningProjectHealth(ctx, &out, allTasks, now)
-	s.fetchMorningGoals(ctx, &out)
-	s.fetchMorningSessionData(ctx, &out, today, now)
-	s.fetchMorningRSSHighlights(ctx, &out, now)
-	s.fetchMorningDailySummary(ctx, &out, today, tomorrow)
-	s.fetchTodayCompletions(ctx, &out, today, tomorrow)
+	// Build section set for selective fetching. Empty means all sections.
+	wantSection := buildSectionSet(input.Sections)
+	all := len(wantSection) == 0
+
+	// Tasks are always fetched when needed by projects (for pending task counts).
+	var allTasks []task.PendingTaskDetail
+	if all || wantSection["tasks"] || wantSection["projects"] {
+		allTasks = s.fetchMorningTasks(ctx, &out, today, tomorrow)
+	}
+	if all || wantSection["activity"] {
+		s.fetchMorningActivity(ctx, &out, now, activityDays)
+	}
+	if all || wantSection["build_logs"] {
+		s.fetchMorningBuildLogs(ctx, &out, now, buildLogDays)
+	}
+	if all || wantSection["projects"] {
+		s.fetchMorningProjectHealth(ctx, &out, allTasks, now)
+	}
+	if all || wantSection["goals"] {
+		s.fetchMorningGoals(ctx, &out)
+	}
+	if all || wantSection["insights"] || wantSection["reflection"] || wantSection["planning_history"] || wantSection["plan"] {
+		s.fetchMorningSessionData(ctx, &out, today, now)
+	}
+	if all || wantSection["rss"] {
+		s.fetchMorningRSSHighlights(ctx, &out, now)
+	}
+	if all || wantSection["completions"] {
+		s.fetchMorningDailySummary(ctx, &out, today, tomorrow)
+		s.fetchTodayCompletions(ctx, &out, today, tomorrow)
+	}
 
 	return nil, out, nil
+}
+
+// buildSectionSet converts a sections slice into a set for O(1) lookup.
+// Unknown section names are silently ignored (forward compatibility).
+func buildSectionSet(sections []string) map[string]bool {
+	if len(sections) == 0 {
+		return nil
+	}
+	valid := map[string]bool{
+		"tasks": true, "activity": true, "build_logs": true,
+		"projects": true, "goals": true, "insights": true,
+		"reflection": true, "planning_history": true, "rss": true,
+		"plan": true, "completions": true,
+	}
+	set := make(map[string]bool, len(sections))
+	for _, s := range sections {
+		if valid[s] {
+			set[s] = true
+		}
+	}
+	return set
 }
 
 // fetchMorningTasks fetches pending tasks and categorizes them into overdue, today,
@@ -190,7 +234,7 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 func (s *Server) fetchMorningTasks(ctx context.Context, out *MorningContextOutput, today, tomorrow time.Time) []task.PendingTaskDetail {
 	weekEnd := today.AddDate(0, 0, 7)
 
-	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
+	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, nil, 100)
 	if err != nil {
 		s.logger.Error("morning_context: pending tasks", "error", err)
 		out.OverdueTasks = []morningTask{}

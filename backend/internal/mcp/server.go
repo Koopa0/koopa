@@ -203,9 +203,15 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_pending_tasks",
-		Description: "Get pending (not-done) tasks sorted by urgency: tasks with deadlines first (earliest deadline on top), then tasks without deadlines sorted by staleness (least recently touched first). Optionally filter by project. Use when the user asks what to work on, needs to plan their day, or wants to see overdue items.",
+		Description: "Get pending (not-done) tasks sorted by urgency. Filters: project (slug/alias/title), assignee (human|claude-code|cowork). Use when the user asks what to work on, needs to plan their day, or wants to see overdue items.",
 		Annotations: readOnly,
 	}, s.getPendingTasks)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "search_tasks",
+		Description: "Search tasks by title/description with filters. Filters: query (fuzzy match title+description), project (slug/alias/title), status (pending|done|all, default: all), assignee (human|claude-code|cowork|all), completed_after/completed_before (YYYY-MM-DD). Use when looking for specific tasks, checking completed work, or finding tasks across projects. Example: search_tasks(query=\"refactor\", status=\"done\", completed_after=\"2026-03-01\")",
+		Annotations: readOnly,
+	}, s.searchTasks)
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "search_knowledge",
@@ -227,7 +233,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_goals",
-		Description: "Get personal goals synced from Notion, with status, area, quarter, and deadline. Use when the user asks about their goals, wants to check progress, or needs to align daily work with long-term objectives.",
+		Description: "DEPRECATED: Use get_goal_progress instead with area/status filters. This tool will be removed in a future version.",
 		Annotations: readOnly,
 	}, s.getGoals)
 
@@ -289,7 +295,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_morning_context",
-		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, active goals, yesterday's reflection, and planning history (completion rates). Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session.",
+		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, active goals, yesterday's reflection, and planning history (completion rates). Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session. Optional sections parameter limits response to specific sections: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions. Omit sections to get all.",
 		Annotations: readOnly,
 	}, s.getMorningContext)
 
@@ -307,7 +313,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_goal_progress",
-		Description: "Show progress toward each active goal: related projects, tasks completed in the lookback period, weekly task rate, and on-track assessment. Use when reviewing goals, '目標進度', 'goal check', 'am I on track'.",
+		Description: "Show progress toward each active goal: related projects, tasks completed in the lookback period, weekly task rate, and on-track assessment. Supports optional area and status filters. Use when reviewing goals, '目標進度', 'goal check', 'am I on track', or to list goals with filtering (replaces get_goals).",
 		Annotations: readOnly,
 	}, s.getGoalProgress)
 
@@ -577,7 +583,7 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 
 	// Pending tasks for this project
-	pendingTasks, ptErr := s.tasks.PendingTasksWithProject(ctx, &proj.Slug, 10)
+	pendingTasks, ptErr := s.tasks.PendingTasksWithProject(ctx, &proj.Slug, nil, 10)
 	if ptErr != nil {
 		s.logger.Error("project_context: pending tasks", "project", proj.Slug, "error", ptErr)
 	} else {
@@ -795,8 +801,9 @@ func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // PendingTasksInput is the input for the get_pending_tasks tool.
 type PendingTasksInput struct {
-	Project string `json:"project,omitempty" jsonschema_description:"filter by project slug"`
-	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
+	Project  string `json:"project,omitempty" jsonschema_description:"filter by project slug, alias, or title"`
+	Assignee string `json:"assignee,omitempty" jsonschema_description:"filter by assignee (human|claude-code|cowork)"`
+	Limit    int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 }
 
 // PendingTasksOutput is the output for the get_pending_tasks tool.
@@ -859,7 +866,12 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 	}
 
-	tasks, err := s.tasks.PendingTasksWithProject(ctx, projectSlug, int32(limit)) // #nosec G115 -- limit is clamped 1-100
+	var assignee *string
+	if input.Assignee != "" {
+		assignee = &input.Assignee
+	}
+
+	tasks, err := s.tasks.PendingTasksWithProject(ctx, projectSlug, assignee, int32(limit)) // #nosec G115 -- limit is clamped 1-100
 	if err != nil {
 		return nil, PendingTasksOutput{}, fmt.Errorf("querying pending tasks: %w", err)
 	}
@@ -872,6 +884,109 @@ func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	return nil, PendingTasksOutput{Tasks: results, Total: len(results)}, nil
+}
+
+// --- search_tasks ---
+
+// SearchTasksInput is the input for the search_tasks tool.
+type SearchTasksInput struct {
+	Query           string `json:"query,omitempty" jsonschema_description:"search title and description (fuzzy match)"`
+	Project         string `json:"project,omitempty" jsonschema_description:"filter by project slug, alias, or title"`
+	Status          string `json:"status,omitempty" jsonschema_description:"pending|done|all (default: all)"`
+	Assignee        string `json:"assignee,omitempty" jsonschema_description:"human|claude-code|cowork|all (default: all)"`
+	CompletedAfter  string `json:"completed_after,omitempty" jsonschema_description:"ISO date YYYY-MM-DD"`
+	CompletedBefore string `json:"completed_before,omitempty" jsonschema_description:"ISO date YYYY-MM-DD"`
+	Limit           int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
+}
+
+// SearchTasksOutput is the output for the search_tasks tool.
+type SearchTasksOutput struct {
+	Tasks []searchTaskResult `json:"tasks"`
+	Total int                `json:"total"`
+}
+
+type searchTaskResult struct {
+	TaskID      string `json:"task_id"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	Due         string `json:"due,omitempty"`
+	Project     string `json:"project,omitempty"`
+	Energy      string `json:"energy,omitempty"`
+	Priority    string `json:"priority,omitempty"`
+	Assignee    string `json:"assignee"`
+	IsRecurring bool   `json:"is_recurring"`
+	MyDay       bool   `json:"my_day"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input SearchTasksInput) (*mcp.CallToolResult, SearchTasksOutput, error) {
+	limit := clamp(input.Limit, 1, 100, 20)
+
+	var query, projectSlug, statusFilter, assignee *string
+	if input.Query != "" {
+		query = &input.Query
+	}
+	if input.Project != "" {
+		proj, projErr := s.resolveProjectChain(ctx, input.Project)
+		if projErr == nil {
+			projectSlug = &proj.Slug
+		} else {
+			projectSlug = &input.Project
+		}
+	}
+	if input.Status != "" && input.Status != "all" {
+		statusFilter = &input.Status
+	}
+	if input.Assignee != "" && input.Assignee != "all" {
+		assignee = &input.Assignee
+	}
+
+	var completedAfter, completedBefore *time.Time
+	if input.CompletedAfter != "" {
+		if t, err := time.Parse(time.DateOnly, input.CompletedAfter); err == nil {
+			completedAfter = &t
+		}
+	}
+	if input.CompletedBefore != "" {
+		if t, err := time.Parse(time.DateOnly, input.CompletedBefore); err == nil {
+			end := t.AddDate(0, 0, 1)
+			completedBefore = &end
+		}
+	}
+
+	tasks, err := s.tasks.SearchTasks(ctx, query, projectSlug, statusFilter, assignee, completedAfter, completedBefore, int32(limit))
+	if err != nil {
+		return nil, SearchTasksOutput{}, fmt.Errorf("searching tasks: %w", err)
+	}
+
+	results := make([]searchTaskResult, len(tasks))
+	for i := range tasks {
+		t := &tasks[i]
+		r := searchTaskResult{
+			TaskID:      t.ID.String(),
+			Title:       t.Title,
+			Status:      string(t.Status),
+			Project:     t.ProjectTitle,
+			Energy:      t.Energy,
+			Priority:    t.Priority,
+			Assignee:    t.Assignee,
+			IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
+			MyDay:       t.MyDay,
+		}
+		if t.Due != nil {
+			r.Due = t.Due.Format(time.DateOnly)
+		}
+		if t.CompletedAt != nil {
+			r.CompletedAt = t.CompletedAt.Format(time.RFC3339)
+		}
+		if t.Description != "" {
+			r.Description = truncate(t.Description, 200)
+		}
+		results[i] = r
+	}
+
+	return nil, SearchTasksOutput{Tasks: results, Total: len(results)}, nil
 }
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.

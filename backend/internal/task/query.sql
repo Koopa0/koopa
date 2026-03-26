@@ -2,24 +2,24 @@
 -- List all tasks ordered by status and due date.
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks ORDER BY status, due NULLS LAST, created_at DESC;
 
 -- name: PendingTasks :many
 -- List tasks that are not done, ordered by due date.
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks WHERE status != 'done'
 ORDER BY due NULLS LAST, created_at;
 
 -- name: UpsertTaskByNotionPageID :one
 -- Upsert a task from Notion sync. completed_at is set by the DB on first transition to done.
 INSERT INTO tasks (title, status, due, project_id, notion_page_id, completed_at,
-                   energy, priority, recur_interval, recur_unit, my_day, description)
+                   energy, priority, recur_interval, recur_unit, my_day, description, assignee)
 VALUES (@title, @status::task_status, @due, @project_id, @notion_page_id,
         CASE WHEN @status::task_status = 'done' THEN now() ELSE NULL END,
-        @energy, @priority, @recur_interval, @recur_unit, @my_day, @description)
+        @energy, @priority, @recur_interval, @recur_unit, @my_day, @description, @assignee)
 ON CONFLICT (notion_page_id) DO UPDATE SET
     title          = EXCLUDED.title,
     status         = EXCLUDED.status,
@@ -35,10 +35,11 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     recur_unit     = EXCLUDED.recur_unit,
     my_day         = EXCLUDED.my_day,
     description    = EXCLUDED.description,
+    assignee       = EXCLUDED.assignee,
     updated_at     = now()
 RETURNING id, title, status, due, project_id, notion_page_id,
           completed_at, energy, priority, recur_interval, recur_unit,
-          my_day, description, created_at, updated_at;
+          my_day, description, assignee, created_at, updated_at;
 
 -- name: NotionTaskPageIDs :many
 -- List all Notion page IDs for tasks.
@@ -64,13 +65,14 @@ SELECT count(*) FROM tasks WHERE status = 'done' AND completed_at >= @since;
 -- List pending tasks with project info, sorted by deadline priority then last-touched.
 SELECT t.id, t.title, t.status, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit, t.my_day,
-       t.created_at, t.updated_at,
+       t.assignee, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
 FROM tasks t
 LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.status != 'done'
   AND (sqlc.narg('project_slug')::text IS NULL OR p.slug = sqlc.narg('project_slug'))
+  AND (sqlc.narg('assignee')::text IS NULL OR t.assignee = sqlc.narg('assignee'))
 ORDER BY
     (t.due IS NOT NULL) DESC,
     t.due ASC NULLS LAST,
@@ -90,21 +92,21 @@ ORDER BY completed DESC;
 -- Get a task by ID.
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks WHERE id = @id;
 
 -- name: TaskByNotionPageID :one
 -- Get a task by its Notion page ID.
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks WHERE notion_page_id = @notion_page_id;
 
 -- name: PendingTasksByTitle :many
 -- Find pending tasks matching a title (case-insensitive contains).
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks
 WHERE status != 'done' AND title ILIKE '%' || @search_title || '%'
 ORDER BY due NULLS LAST, updated_at ASC
@@ -122,7 +124,7 @@ UPDATE tasks SET
 WHERE id = @id
 RETURNING id, title, status, due, project_id, notion_page_id,
           completed_at, energy, priority, recur_interval, recur_unit,
-          my_day, description, created_at, updated_at;
+          my_day, description, assignee, created_at, updated_at;
 
 -- name: UpdateTaskMyDay :execrows
 -- Set or clear My Day for a task.
@@ -183,7 +185,7 @@ ORDER BY t.created_at DESC;
 -- Find a recurring pending task under a given project that is due today, overdue, or in My Day.
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks
 WHERE project_id = @project_id
   AND status != 'done'
@@ -203,6 +205,7 @@ UPDATE tasks SET
     my_day       = COALESCE(sqlc.narg('my_day'), my_day),
     project_id   = COALESCE(sqlc.narg('new_project_id'), project_id),
     description  = COALESCE(sqlc.narg('new_description'), description),
+    assignee     = COALESCE(sqlc.narg('assignee'), assignee),
     completed_at = CASE
         WHEN sqlc.narg('status')::task_status = 'done' AND completed_at IS NULL THEN now()
         ELSE completed_at
@@ -211,4 +214,44 @@ UPDATE tasks SET
 WHERE id = @id
 RETURNING id, title, status, due, project_id, notion_page_id,
           completed_at, energy, priority, recur_interval, recur_unit,
-          my_day, description, created_at, updated_at;
+          my_day, description, assignee, created_at, updated_at;
+
+-- name: SearchTasks :many
+-- Search tasks by title/description with optional filters. Used by search_tasks MCP tool.
+SELECT t.id, t.title, t.status, t.due, t.project_id,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.my_day,
+       t.assignee, t.completed_at, t.description, t.created_at, t.updated_at,
+       COALESCE(p.title, '') AS project_title,
+       COALESCE(p.slug, '') AS project_slug
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE (sqlc.narg('query')::text IS NULL OR (t.title ILIKE '%' || sqlc.narg('query') || '%' OR t.description ILIKE '%' || sqlc.narg('query') || '%'))
+  AND (sqlc.narg('project_slug')::text IS NULL OR p.slug = sqlc.narg('project_slug'))
+  AND (sqlc.narg('status_filter')::text IS NULL OR
+       CASE sqlc.narg('status_filter')
+           WHEN 'pending' THEN t.status != 'done'
+           WHEN 'done' THEN t.status = 'done'
+           ELSE true
+       END)
+  AND (sqlc.narg('assignee')::text IS NULL OR t.assignee = sqlc.narg('assignee'))
+  AND (sqlc.narg('completed_after')::timestamptz IS NULL OR t.completed_at >= sqlc.narg('completed_after'))
+  AND (sqlc.narg('completed_before')::timestamptz IS NULL OR t.completed_at < sqlc.narg('completed_before'))
+ORDER BY
+    CASE WHEN t.status != 'done' THEN 0 ELSE 1 END,
+    CASE WHEN t.status != 'done' THEN
+        CASE WHEN t.due IS NOT NULL THEN 0 ELSE 1 END
+    ELSE 2 END,
+    t.due ASC NULLS LAST,
+    t.completed_at DESC NULLS LAST,
+    t.updated_at ASC
+LIMIT sqlc.arg('max_results');
+
+-- name: MyDayTasks :many
+-- Get current My Day pending tasks with project context (for snapshot responses).
+SELECT t.id, t.title, t.status, t.due, t.project_id,
+       t.energy, t.priority, t.assignee,
+       COALESCE(p.title, '') AS project_title
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.my_day = true AND t.status != 'done'
+ORDER BY t.due ASC NULLS LAST, t.priority DESC, t.created_at;

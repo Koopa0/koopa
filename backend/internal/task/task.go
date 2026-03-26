@@ -31,6 +31,7 @@ type Task struct {
 	RecurUnit     string     `json:"recur_unit,omitempty"`
 	MyDay         bool       `json:"my_day"`
 	Description   string     `json:"description,omitempty"`
+	Assignee      string     `json:"assignee"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
@@ -78,8 +79,48 @@ type PendingTaskDetail struct {
 	RecurInterval *int32     `json:"recur_interval,omitempty"`
 	RecurUnit     string     `json:"recur_unit,omitempty"`
 	MyDay         bool       `json:"my_day"`
+	Assignee      string     `json:"assignee"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// SearchTaskDetail represents a task search result with project context.
+type SearchTaskDetail struct {
+	ID            uuid.UUID  `json:"id"`
+	Title         string     `json:"title"`
+	Status        Status     `json:"status"`
+	Due           *time.Time `json:"due,omitempty"`
+	ProjectTitle  string     `json:"project_title"`
+	ProjectSlug   string     `json:"project_slug"`
+	Energy        string     `json:"energy,omitempty"`
+	Priority      string     `json:"priority,omitempty"`
+	RecurInterval *int32     `json:"recur_interval,omitempty"`
+	RecurUnit     string     `json:"recur_unit,omitempty"`
+	MyDay         bool       `json:"my_day"`
+	Assignee      string     `json:"assignee"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	Description   string     `json:"description,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// MyDaySnapshot represents a task in the My Day list for response enrichment.
+type MyDaySnapshot struct {
+	ID           uuid.UUID `json:"id"`
+	Title        string    `json:"title"`
+	ProjectTitle string    `json:"project_title"`
+	Energy       string    `json:"energy,omitempty"`
+	Priority     string    `json:"priority,omitempty"`
+	Assignee     string    `json:"assignee"`
+}
+
+// ValidAssignee reports whether a is a known assignee value.
+func ValidAssignee(a string) bool {
+	switch a {
+	case "human", "claude-code", "cowork":
+		return true
+	}
+	return false
 }
 
 // DailySummaryHint holds computed task counts for metrics (replaces manual counting).
@@ -127,4 +168,5 @@ type UpsertByNotionParams struct {
 	RecurUnit     string
 	MyDay         bool
 	Description   string
+	Assignee      string
 }

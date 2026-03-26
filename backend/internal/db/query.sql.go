@@ -3454,6 +3454,59 @@ func (q *Queries) MetricsHistory(ctx context.Context, sinceDate time.Time) ([]Se
 	return items, nil
 }
 
+const myDayTasks = `-- name: MyDayTasks :many
+SELECT t.id, t.title, t.status, t.due, t.project_id,
+       t.energy, t.priority, t.assignee,
+       COALESCE(p.title, '') AS project_title
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE t.my_day = true AND t.status != 'done'
+ORDER BY t.due ASC NULLS LAST, t.priority DESC, t.created_at
+`
+
+type MyDayTasksRow struct {
+	ID           uuid.UUID  `json:"id"`
+	Title        string     `json:"title"`
+	Status       TaskStatus `json:"status"`
+	Due          *time.Time `json:"due"`
+	ProjectID    *uuid.UUID `json:"project_id"`
+	Energy       string     `json:"energy"`
+	Priority     string     `json:"priority"`
+	Assignee     string     `json:"assignee"`
+	ProjectTitle string     `json:"project_title"`
+}
+
+// Get current My Day pending tasks with project context (for snapshot responses).
+func (q *Queries) MyDayTasks(ctx context.Context) ([]MyDayTasksRow, error) {
+	rows, err := q.db.Query(ctx, myDayTasks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MyDayTasksRow{}
+	for rows.Next() {
+		var i MyDayTasksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.Energy,
+			&i.Priority,
+			&i.Assignee,
+			&i.ProjectTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const myDayTasksWithNotionPageID = `-- name: MyDayTasksWithNotionPageID :many
 SELECT id, notion_page_id FROM tasks
 WHERE my_day = true AND status != 'done' AND notion_page_id IS NOT NULL
@@ -3935,7 +3988,7 @@ func (q *Queries) PendingRunExists(ctx context.Context, arg PendingRunExistsPara
 const pendingTasks = `-- name: PendingTasks :many
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks WHERE status != 'done'
 ORDER BY due NULLS LAST, created_at
 `
@@ -3964,6 +4017,7 @@ func (q *Queries) PendingTasks(ctx context.Context) ([]Task, error) {
 			&i.RecurUnit,
 			&i.MyDay,
 			&i.Description,
+			&i.Assignee,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -3980,7 +4034,7 @@ func (q *Queries) PendingTasks(ctx context.Context) ([]Task, error) {
 const pendingTasksByTitle = `-- name: PendingTasksByTitle :many
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks
 WHERE status != 'done' AND title ILIKE '%' || $1 || '%'
 ORDER BY due NULLS LAST, updated_at ASC
@@ -4011,6 +4065,7 @@ func (q *Queries) PendingTasksByTitle(ctx context.Context, searchTitle *string) 
 			&i.RecurUnit,
 			&i.MyDay,
 			&i.Description,
+			&i.Assignee,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -4027,22 +4082,24 @@ func (q *Queries) PendingTasksByTitle(ctx context.Context, searchTitle *string) 
 const pendingTasksWithProject = `-- name: PendingTasksWithProject :many
 SELECT t.id, t.title, t.status, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit, t.my_day,
-       t.created_at, t.updated_at,
+       t.assignee, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
 FROM tasks t
 LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.status != 'done'
   AND ($1::text IS NULL OR p.slug = $1)
+  AND ($2::text IS NULL OR t.assignee = $2)
 ORDER BY
     (t.due IS NOT NULL) DESC,
     t.due ASC NULLS LAST,
     t.updated_at ASC
-LIMIT $2
+LIMIT $3
 `
 
 type PendingTasksWithProjectParams struct {
 	ProjectSlug *string `json:"project_slug"`
+	Assignee    *string `json:"assignee"`
 	MaxResults  int32   `json:"max_results"`
 }
 
@@ -4057,6 +4114,7 @@ type PendingTasksWithProjectRow struct {
 	RecurInterval *int32     `json:"recur_interval"`
 	RecurUnit     string     `json:"recur_unit"`
 	MyDay         bool       `json:"my_day"`
+	Assignee      string     `json:"assignee"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	ProjectTitle  string     `json:"project_title"`
@@ -4065,7 +4123,7 @@ type PendingTasksWithProjectRow struct {
 
 // List pending tasks with project info, sorted by deadline priority then last-touched.
 func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksWithProjectParams) ([]PendingTasksWithProjectRow, error) {
-	rows, err := q.db.Query(ctx, pendingTasksWithProject, arg.ProjectSlug, arg.MaxResults)
+	rows, err := q.db.Query(ctx, pendingTasksWithProject, arg.ProjectSlug, arg.Assignee, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
@@ -4084,6 +4142,7 @@ func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksW
 			&i.RecurInterval,
 			&i.RecurUnit,
 			&i.MyDay,
+			&i.Assignee,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ProjectTitle,
@@ -4960,7 +5019,7 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 const recurringTaskByProject = `-- name: RecurringTaskByProject :one
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks
 WHERE project_id = $1
   AND status != 'done'
@@ -4993,6 +5052,7 @@ func (q *Queries) RecurringTaskByProject(ctx context.Context, arg RecurringTaskB
 		&i.RecurUnit,
 		&i.MyDay,
 		&i.Description,
+		&i.Assignee,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5555,6 +5615,113 @@ func (q *Queries) SearchNotesByText(ctx context.Context, arg SearchNotesByTextPa
 	return items, nil
 }
 
+const searchTasks = `-- name: SearchTasks :many
+SELECT t.id, t.title, t.status, t.due, t.project_id,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.my_day,
+       t.assignee, t.completed_at, t.description, t.created_at, t.updated_at,
+       COALESCE(p.title, '') AS project_title,
+       COALESCE(p.slug, '') AS project_slug
+FROM tasks t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE ($1::text IS NULL OR (t.title ILIKE '%' || $1 || '%' OR t.description ILIKE '%' || $1 || '%'))
+  AND ($2::text IS NULL OR p.slug = $2)
+  AND ($3::text IS NULL OR
+       CASE $3
+           WHEN 'pending' THEN t.status != 'done'
+           WHEN 'done' THEN t.status = 'done'
+           ELSE true
+       END)
+  AND ($4::text IS NULL OR t.assignee = $4)
+  AND ($5::timestamptz IS NULL OR t.completed_at >= $5)
+  AND ($6::timestamptz IS NULL OR t.completed_at < $6)
+ORDER BY
+    CASE WHEN t.status != 'done' THEN 0 ELSE 1 END,
+    CASE WHEN t.status != 'done' THEN
+        CASE WHEN t.due IS NOT NULL THEN 0 ELSE 1 END
+    ELSE 2 END,
+    t.due ASC NULLS LAST,
+    t.completed_at DESC NULLS LAST,
+    t.updated_at ASC
+LIMIT $7
+`
+
+type SearchTasksParams struct {
+	Query           *string    `json:"query"`
+	ProjectSlug     *string    `json:"project_slug"`
+	StatusFilter    *string    `json:"status_filter"`
+	Assignee        *string    `json:"assignee"`
+	CompletedAfter  *time.Time `json:"completed_after"`
+	CompletedBefore *time.Time `json:"completed_before"`
+	MaxResults      int32      `json:"max_results"`
+}
+
+type SearchTasksRow struct {
+	ID            uuid.UUID  `json:"id"`
+	Title         string     `json:"title"`
+	Status        TaskStatus `json:"status"`
+	Due           *time.Time `json:"due"`
+	ProjectID     *uuid.UUID `json:"project_id"`
+	Energy        string     `json:"energy"`
+	Priority      string     `json:"priority"`
+	RecurInterval *int32     `json:"recur_interval"`
+	RecurUnit     string     `json:"recur_unit"`
+	MyDay         bool       `json:"my_day"`
+	Assignee      string     `json:"assignee"`
+	CompletedAt   *time.Time `json:"completed_at"`
+	Description   string     `json:"description"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	ProjectTitle  string     `json:"project_title"`
+	ProjectSlug   string     `json:"project_slug"`
+}
+
+// Search tasks by title/description with optional filters. Used by search_tasks MCP tool.
+func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]SearchTasksRow, error) {
+	rows, err := q.db.Query(ctx, searchTasks,
+		arg.Query,
+		arg.ProjectSlug,
+		arg.StatusFilter,
+		arg.Assignee,
+		arg.CompletedAfter,
+		arg.CompletedBefore,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchTasksRow{}
+	for rows.Next() {
+		var i SearchTasksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.MyDay,
+			&i.Assignee,
+			&i.CompletedAt,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectTitle,
+			&i.ProjectSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setSourceRole = `-- name: SetSourceRole :execrows
 UPDATE notion_sources SET role = $2, updated_at = now() WHERE id = $1
 `
@@ -5791,7 +5958,7 @@ func (q *Queries) TagBySlug(ctx context.Context, slug string) (Tag, error) {
 const taskByID = `-- name: TaskByID :one
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks WHERE id = $1
 `
 
@@ -5813,6 +5980,7 @@ func (q *Queries) TaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.RecurUnit,
 		&i.MyDay,
 		&i.Description,
+		&i.Assignee,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5822,7 +5990,7 @@ func (q *Queries) TaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 const taskByNotionPageID = `-- name: TaskByNotionPageID :one
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks WHERE notion_page_id = $1
 `
 
@@ -5844,6 +6012,7 @@ func (q *Queries) TaskByNotionPageID(ctx context.Context, notionPageID *string) 
 		&i.RecurUnit,
 		&i.MyDay,
 		&i.Description,
+		&i.Assignee,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5853,7 +6022,7 @@ func (q *Queries) TaskByNotionPageID(ctx context.Context, notionPageID *string) 
 const tasks = `-- name: Tasks :many
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
-       my_day, description, created_at, updated_at
+       my_day, description, assignee, created_at, updated_at
 FROM tasks ORDER BY status, due NULLS LAST, created_at DESC
 `
 
@@ -5881,6 +6050,7 @@ func (q *Queries) Tasks(ctx context.Context) ([]Task, error) {
 			&i.RecurUnit,
 			&i.MyDay,
 			&i.Description,
+			&i.Assignee,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -6850,15 +7020,16 @@ UPDATE tasks SET
     my_day       = COALESCE($6, my_day),
     project_id   = COALESCE($7, project_id),
     description  = COALESCE($8, description),
+    assignee     = COALESCE($9, assignee),
     completed_at = CASE
         WHEN $2::task_status = 'done' AND completed_at IS NULL THEN now()
         ELSE completed_at
     END,
     updated_at = now()
-WHERE id = $9
+WHERE id = $10
 RETURNING id, title, status, due, project_id, notion_page_id,
           completed_at, energy, priority, recur_interval, recur_unit,
-          my_day, description, created_at, updated_at
+          my_day, description, assignee, created_at, updated_at
 `
 
 type UpdateTaskParams struct {
@@ -6870,6 +7041,7 @@ type UpdateTaskParams struct {
 	MyDay          *bool          `json:"my_day"`
 	NewProjectID   *uuid.UUID     `json:"new_project_id"`
 	NewDescription *string        `json:"new_description"`
+	Assignee       *string        `json:"assignee"`
 	ID             uuid.UUID      `json:"id"`
 }
 
@@ -6884,6 +7056,7 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		arg.MyDay,
 		arg.NewProjectID,
 		arg.NewDescription,
+		arg.Assignee,
 		arg.ID,
 	)
 	var i Task
@@ -6901,6 +7074,7 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.RecurUnit,
 		&i.MyDay,
 		&i.Description,
+		&i.Assignee,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -6937,7 +7111,7 @@ UPDATE tasks SET
 WHERE id = $2
 RETURNING id, title, status, due, project_id, notion_page_id,
           completed_at, energy, priority, recur_interval, recur_unit,
-          my_day, description, created_at, updated_at
+          my_day, description, assignee, created_at, updated_at
 `
 
 type UpdateTaskStatusParams struct {
@@ -6963,6 +7137,7 @@ func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusPara
 		&i.RecurUnit,
 		&i.MyDay,
 		&i.Description,
+		&i.Assignee,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7293,10 +7468,10 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 
 const upsertTaskByNotionPageID = `-- name: UpsertTaskByNotionPageID :one
 INSERT INTO tasks (title, status, due, project_id, notion_page_id, completed_at,
-                   energy, priority, recur_interval, recur_unit, my_day, description)
+                   energy, priority, recur_interval, recur_unit, my_day, description, assignee)
 VALUES ($1, $2::task_status, $3, $4, $5,
         CASE WHEN $2::task_status = 'done' THEN now() ELSE NULL END,
-        $6, $7, $8, $9, $10, $11)
+        $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (notion_page_id) DO UPDATE SET
     title          = EXCLUDED.title,
     status         = EXCLUDED.status,
@@ -7312,10 +7487,11 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     recur_unit     = EXCLUDED.recur_unit,
     my_day         = EXCLUDED.my_day,
     description    = EXCLUDED.description,
+    assignee       = EXCLUDED.assignee,
     updated_at     = now()
 RETURNING id, title, status, due, project_id, notion_page_id,
           completed_at, energy, priority, recur_interval, recur_unit,
-          my_day, description, created_at, updated_at
+          my_day, description, assignee, created_at, updated_at
 `
 
 type UpsertTaskByNotionPageIDParams struct {
@@ -7330,6 +7506,7 @@ type UpsertTaskByNotionPageIDParams struct {
 	RecurUnit     string     `json:"recur_unit"`
 	MyDay         bool       `json:"my_day"`
 	Description   string     `json:"description"`
+	Assignee      string     `json:"assignee"`
 }
 
 // Upsert a task from Notion sync. completed_at is set by the DB on first transition to done.
@@ -7346,6 +7523,7 @@ func (q *Queries) UpsertTaskByNotionPageID(ctx context.Context, arg UpsertTaskBy
 		arg.RecurUnit,
 		arg.MyDay,
 		arg.Description,
+		arg.Assignee,
 	)
 	var i Task
 	err := row.Scan(
@@ -7362,6 +7540,7 @@ func (q *Queries) UpsertTaskByNotionPageID(ctx context.Context, arg UpsertTaskBy
 		&i.RecurUnit,
 		&i.MyDay,
 		&i.Description,
+		&i.Assignee,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -72,6 +72,7 @@ func (s *Store) UpsertByNotionPageID(ctx context.Context, p *UpsertByNotionParam
 		RecurUnit:     p.RecurUnit,
 		MyDay:         p.MyDay,
 		Description:   p.Description,
+		Assignee:      p.Assignee,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upserting task by notion page %s: %w", p.NotionPageID, err)
@@ -144,9 +145,10 @@ func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([
 }
 
 // PendingTasksWithProject returns pending tasks with project context for MCP tools.
-func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug *string, maxResults int32) ([]PendingTaskDetail, error) {
+func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug, assignee *string, maxResults int32) ([]PendingTaskDetail, error) {
 	rows, err := s.q.PendingTasksWithProject(ctx, db.PendingTasksWithProjectParams{
 		ProjectSlug: projectSlug,
+		Assignee:    assignee,
 		MaxResults:  maxResults,
 	})
 	if err != nil {
@@ -167,8 +169,69 @@ func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug *string
 			RecurInterval: r.RecurInterval,
 			RecurUnit:     r.RecurUnit,
 			MyDay:         r.MyDay,
+			Assignee:      r.Assignee,
 			CreatedAt:     r.CreatedAt,
 			UpdatedAt:     r.UpdatedAt,
+		}
+	}
+	return tasks, nil
+}
+
+// SearchTasks searches tasks by title/description with optional filters.
+func (s *Store) SearchTasks(ctx context.Context, query, projectSlug, statusFilter, assignee *string, completedAfter, completedBefore *time.Time, maxResults int32) ([]SearchTaskDetail, error) {
+	rows, err := s.q.SearchTasks(ctx, db.SearchTasksParams{
+		Query:           query,
+		ProjectSlug:     projectSlug,
+		StatusFilter:    statusFilter,
+		Assignee:        assignee,
+		CompletedAfter:  completedAfter,
+		CompletedBefore: completedBefore,
+		MaxResults:      maxResults,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("searching tasks: %w", err)
+	}
+	tasks := make([]SearchTaskDetail, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		tasks[i] = SearchTaskDetail{
+			ID:            r.ID,
+			Title:         r.Title,
+			Status:        Status(r.Status),
+			Due:           r.Due,
+			ProjectTitle:  r.ProjectTitle,
+			ProjectSlug:   r.ProjectSlug,
+			Energy:        r.Energy,
+			Priority:      r.Priority,
+			RecurInterval: r.RecurInterval,
+			RecurUnit:     r.RecurUnit,
+			MyDay:         r.MyDay,
+			Assignee:      r.Assignee,
+			CompletedAt:   r.CompletedAt,
+			Description:   r.Description,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
+		}
+	}
+	return tasks, nil
+}
+
+// MyDayTasks returns current My Day pending tasks with project context.
+func (s *Store) MyDayTasks(ctx context.Context) ([]MyDaySnapshot, error) {
+	rows, err := s.q.MyDayTasks(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing my day tasks: %w", err)
+	}
+	tasks := make([]MyDaySnapshot, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		tasks[i] = MyDaySnapshot{
+			ID:           r.ID,
+			Title:        r.Title,
+			ProjectTitle: r.ProjectTitle,
+			Energy:       r.Energy,
+			Priority:     r.Priority,
+			Assignee:     r.Assignee,
 		}
 	}
 	return tasks, nil
@@ -354,6 +417,7 @@ type UpdateParams struct {
 	MyDay       *bool
 	ProjectID   *uuid.UUID
 	Description *string
+	Assignee    *string
 }
 
 // Update updates arbitrary task fields.
@@ -372,6 +436,7 @@ func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Task, error) {
 	params.MyDay = p.MyDay
 	params.NewProjectID = p.ProjectID
 	params.NewDescription = p.Description
+	params.Assignee = p.Assignee
 	r, err := s.q.UpdateTask(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("updating task %s: %w", p.ID, err)
@@ -395,6 +460,7 @@ func rowToTask(r *db.Task) Task {
 		RecurUnit:     r.RecurUnit,
 		MyDay:         r.MyDay,
 		Description:   r.Description,
+		Assignee:      r.Assignee,
 		CreatedAt:     r.CreatedAt,
 		UpdatedAt:     r.UpdatedAt,
 	}

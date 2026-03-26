@@ -10,7 +10,9 @@ import (
 
 // GoalProgressInput is the input for the get_goal_progress tool.
 type GoalProgressInput struct {
-	Days int `json:"days,omitempty" jsonschema_description:"lookback period in days for task counting. Default 30, max 90."`
+	Days   int    `json:"days,omitempty" jsonschema_description:"lookback period in days for task counting. Default 30, max 90."`
+	Area   string `json:"area,omitempty" jsonschema_description:"filter goals by area"`
+	Status string `json:"status,omitempty" jsonschema_description:"filter goals by status (not-started, in-progress, done, abandoned)"`
 }
 
 // GoalProgressOutput shows progress toward each active goal.
@@ -20,8 +22,10 @@ type GoalProgressOutput struct {
 
 type goalProgressDetail struct {
 	Title                 string   `json:"title"`
+	Description           string   `json:"description,omitempty"`
 	Status                string   `json:"status"`
 	Area                  string   `json:"area,omitempty"`
+	Quarter               string   `json:"quarter,omitempty"`
 	Deadline              string   `json:"deadline,omitempty"`
 	DaysRemaining         int      `json:"days_remaining,omitempty"`
 	RelatedProjects       []string `json:"related_projects"`
@@ -71,14 +75,24 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 	result := make([]goalProgressDetail, 0)
 	for gIdx := range goals {
 		g := goals[gIdx]
-		if string(g.Status) == "done" || string(g.Status) == "abandoned" {
+		// By default, exclude done/abandoned. But if caller explicitly
+		// filters by status, respect their choice.
+		if input.Status == "" && (string(g.Status) == "done" || string(g.Status) == "abandoned") {
+			continue
+		}
+		if input.Area != "" && g.Area != input.Area {
+			continue
+		}
+		if input.Status != "" && string(g.Status) != input.Status {
 			continue
 		}
 
 		gp := goalProgressDetail{
 			Title:           g.Title,
+			Description:     g.Description,
 			Status:          string(g.Status),
 			Area:            g.Area,
+			Quarter:         g.Quarter,
 			RelatedProjects: projectsByGoalID[g.ID],
 		}
 		if gp.RelatedProjects == nil {

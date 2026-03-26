@@ -158,7 +158,7 @@ func (s *Server) fetchDeltaCreatedTasks(ctx context.Context, out *SessionDeltaOu
 
 // fetchDeltaOverdueTasks finds pending tasks whose due date fell between since and today.
 func (s *Server) fetchDeltaOverdueTasks(ctx context.Context, out *SessionDeltaOutput, since, today time.Time) {
-	allPending, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
+	allPending, err := s.tasks.PendingTasksWithProject(ctx, nil, nil, 100)
 	if err != nil {
 		s.logger.Error("session_delta: pending tasks", "error", err)
 	}

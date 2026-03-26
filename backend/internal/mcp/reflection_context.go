@@ -145,7 +145,7 @@ func (s *Server) fetchReflectionPlan(ctx context.Context, out *ReflectionContext
 // fetchReflectionMyDayStatus builds the My Day task completion status.
 // Joins pending My Day tasks with today's completions to show which were done.
 func (s *Server) fetchReflectionMyDayStatus(ctx context.Context, out *ReflectionContextOutput, hint *task.DailySummaryHint) {
-	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, 100)
+	allTasks, err := s.tasks.PendingTasksWithProject(ctx, nil, nil, 100)
 	if err != nil {
 		s.logger.Error("reflection_context: pending tasks", "error", err)
 		return
