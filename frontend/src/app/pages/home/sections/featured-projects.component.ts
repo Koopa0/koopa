@@ -5,7 +5,12 @@ import {
   signal,
   DestroyRef,
   OnInit,
+  ElementRef,
+  NgZone,
+  afterNextRender,
+  PLATFORM_ID,
 } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
@@ -24,23 +29,26 @@ import type { ApiProject, ProjectStatus } from '../../../core/models';
   template: `
     <section id="projects" class="border-b border-zinc-800 bg-zinc-950">
       <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-        <div class="mb-12 text-center">
-          <h2 class="text-3xl font-bold text-zinc-100">Featured Projects</h2>
+        <div class="section-header mb-12">
+          <h2 class="font-display text-3xl font-bold text-zinc-100">
+            Featured Projects
+          </h2>
           <p class="mt-3 text-zinc-400">
-            Selected open-source and personal projects spanning backend services, CLI tools, and full-stack apps
+            Selected open-source and personal projects spanning backend
+            services, CLI tools, and full-stack apps
           </p>
         </div>
 
         <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           @for (project of projects(); track project.id) {
             <div
-              class="group flex flex-col rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+              class="project-card group flex flex-col rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 transition-all duration-300 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
             >
               <!-- Header -->
               <div class="mb-4">
                 <a
                   [routerLink]="['/projects', project.slug]"
-                  class="text-lg font-semibold text-zinc-100 no-underline hover:text-white"
+                  class="font-display text-lg font-semibold text-zinc-100 no-underline hover:text-white"
                 >
                   {{ project.title }}
                 </a>
@@ -117,12 +125,21 @@ import type { ApiProject, ProjectStatus } from '../../../core/models';
 export class FeaturedProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly el = inject(ElementRef);
+  private readonly ngZone = inject(NgZone);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly projects = signal<ApiProject[]>([]);
 
   protected readonly GithubIcon = Github;
   protected readonly ExternalLinkIcon = ExternalLink;
   protected readonly ArrowRightIcon = ArrowRight;
+
+  constructor() {
+    afterNextRender(() => {
+      this.ngZone.runOutsideAngular(() => this.initScrollAnimations());
+    });
+  }
 
   ngOnInit(): void {
     this.projectService
@@ -134,6 +151,56 @@ export class FeaturedProjectsComponent implements OnInit {
           .sort((a, b) => a.sort_order - b.sort_order);
         this.projects.set(featured);
       });
+  }
+
+  private async initScrollAnimations(): Promise<void> {
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const { gsap, ScrollTrigger, registerGsapPlugins } = await import(
+      '../../../shared/utils/gsap'
+    );
+    registerGsapPlugins();
+
+    const root = this.el.nativeElement as HTMLElement;
+    const header = root.querySelector('.section-header');
+    const cards = root.querySelectorAll('.project-card');
+
+    if (header) {
+      gsap.fromTo(
+        header,
+        { opacity: 0, y: 30 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.6,
+          ease: 'power2.out',
+          scrollTrigger: { trigger: header, start: 'top 85%', once: true },
+        },
+      );
+    }
+
+    if (cards.length > 0) {
+      gsap.fromTo(
+        cards,
+        { opacity: 0, y: 40, scale: 0.97 },
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.5,
+          ease: 'power2.out',
+          stagger: 0.12,
+          scrollTrigger: { trigger: cards[0], start: 'top 85%', once: true },
+        },
+      );
+    }
+
+    this.destroyRef.onDestroy(() => {
+      ScrollTrigger.getAll().forEach((st) => {
+        if (root.contains(st.trigger as Element)) st.kill();
+      });
+    });
   }
 
   protected getStatusLabel(status: ProjectStatus): string {

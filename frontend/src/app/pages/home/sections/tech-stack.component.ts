@@ -15,9 +15,13 @@ interface TechCategory {
   template: `
     <section class="border-b border-zinc-800 bg-zinc-900/30">
       <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-        <div class="mb-12 text-center">
-          <h2 class="text-3xl font-bold text-zinc-100">Tech Stack</h2>
-          <p class="mt-3 text-zinc-400">Technologies and tools I work with daily</p>
+        <div class="mb-12">
+          <h2 class="font-display text-3xl font-bold text-zinc-100">
+            Tech Stack
+          </h2>
+          <p class="mt-3 text-zinc-400">
+            Technologies and tools I work with daily
+          </p>
         </div>
 
         <div class="grid grid-cols-1 gap-8 md:grid-cols-3">
@@ -33,14 +37,14 @@ interface TechCategory {
                     class="text-zinc-300"
                   />
                 </div>
-                <h3 class="text-sm font-semibold text-zinc-200">
+                <h3 class="font-display text-sm font-semibold text-zinc-200">
                   {{ category.name }}
                 </h3>
               </div>
               <div class="flex flex-wrap gap-2">
                 @for (item of category.items; track item) {
                   <span
-                    class="rounded-sm bg-zinc-800 px-2.5 py-1 text-sm text-zinc-300"
+                    class="rounded-sm bg-zinc-800 px-2.5 py-1 text-sm text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100"
                   >
                     {{ item }}
                   </span>

@@ -2,18 +2,16 @@
 
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
-  --color-brand: oklch(0.55 0.2 260);
-  --color-brand-light: oklch(0.65 0.18 260);
+  --color-brand: oklch(0.58 0.2 245);
+  --color-brand-light: oklch(0.68 0.18 245);
 
   --container-article: 720px;
 }
 
-/* Base reset */
-html {
-  scroll-behavior: smooth;
-}
+/* Base reset — scroll-behavior handled by Lenis smooth scroll service */
 
 html, body {
   height: 100%;
@@ -155,6 +153,175 @@ code, pre {
 :where(a, button, input, select, textarea, [tabindex], [role="button"], [role="link"], [role="tab"], [role="option"], [role="switch"]):focus-visible {
   outline: 2px solid #a1a1aa; /* zinc-400 */
   outline-offset: 2px;
+}
+
+/* View Transitions — route navigation cross-fade */
+::view-transition-old(root) {
+  animation: 200ms ease-out both vt-fade-out;
+}
+
+::view-transition-new(root) {
+  animation: 300ms ease-out 80ms both vt-fade-in;
+}
+
+@keyframes vt-fade-out {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes vt-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+/* Display font for headings — breaks the "everything is Inter" AI feel */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Grain texture overlay — adds organic feel, removes clinical flatness */
+.grain-overlay::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url('/noise.svg');
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  mix-blend-mode: overlay;
+}
+
+/* CTA Button shimmer effect on hover */
+.cta-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.25) 50%, transparent 60%);
+  transform: translateX(-200%);
+  transition: none;
+}
+
+.cta-primary:hover::after {
+  animation: shimmer 0.6s ease-in-out;
+}
+
+@keyframes shimmer {
+  to { transform: translateX(200%); }
+}
+
+/* Glitch effect — full (404 page) */
+.glitch-text {
+  position: relative;
+  animation: glitch-idle 2.5s step-end infinite;
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+}
+
+.glitch-text::before {
+  color: oklch(0.58 0.2 245);
+  animation: glitch-shift-1 2.5s step-end infinite;
+  clip-path: inset(0 0 100% 0);
+}
+
+.glitch-text::after {
+  color: rgb(255, 80, 80);
+  animation: glitch-shift-2 2.5s step-end infinite;
+  clip-path: inset(0 0 100% 0);
+}
+
+@keyframes glitch-idle {
+  0%, 78%, 100% { transform: none; }
+  80% { transform: translate(-2px, 1px); }
+  83% { transform: translate(2px, -1px); }
+  86% { transform: translate(-1px, 2px); }
+  89% { transform: translate(1px, -1px); }
+  92% { transform: none; }
+}
+
+@keyframes glitch-shift-1 {
+  0%, 78%, 92%, 100% { clip-path: inset(0 0 100% 0); }
+  80% { clip-path: inset(20% 0 60% 0); transform: translate(-3px, 0); }
+  83% { clip-path: inset(60% 0 10% 0); transform: translate(3px, 0); }
+  86% { clip-path: inset(40% 0 30% 0); transform: translate(-2px, 0); }
+  89% { clip-path: inset(15% 0 70% 0); transform: translate(2px, 0); }
+}
+
+@keyframes glitch-shift-2 {
+  0%, 78%, 92%, 100% { clip-path: inset(0 0 100% 0); }
+  81% { clip-path: inset(30% 0 50% 0); transform: translate(3px, 0); }
+  84% { clip-path: inset(10% 0 70% 0); transform: translate(-3px, 0); }
+  87% { clip-path: inset(50% 0 20% 0); transform: translate(2px, 0); }
+  90% { clip-path: inset(25% 0 55% 0); transform: translate(-2px, 0); }
+}
+
+/* Glitch effect — subtle (hover, brand elements) */
+.glitch-hover {
+  position: relative;
+}
+
+.glitch-hover::before,
+.glitch-hover::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 0 100% 0);
+  pointer-events: none;
+}
+
+.glitch-hover::before { color: oklch(0.58 0.2 245); }
+.glitch-hover::after { color: rgb(255, 80, 80); }
+
+.glitch-hover:hover::before {
+  animation: glitch-subtle-1 0.3s step-end;
+}
+
+.glitch-hover:hover::after {
+  animation: glitch-subtle-2 0.3s step-end;
+}
+
+.glitch-hover:hover {
+  animation: glitch-subtle-base 0.3s step-end;
+}
+
+@keyframes glitch-subtle-base {
+  0%, 100% { transform: none; }
+  25% { transform: translate(-1px, 0); }
+  50% { transform: translate(1px, 0); }
+  75% { transform: translate(-1px, 1px); }
+}
+
+@keyframes glitch-subtle-1 {
+  0%, 100% { clip-path: inset(0 0 100% 0); }
+  25% { clip-path: inset(30% 0 50% 0); transform: translate(-2px, 0); }
+  50% { clip-path: inset(60% 0 20% 0); transform: translate(2px, 0); }
+  75% { clip-path: inset(10% 0 70% 0); transform: translate(-1px, 0); }
+}
+
+@keyframes glitch-subtle-2 {
+  0%, 100% { clip-path: inset(0 0 100% 0); }
+  33% { clip-path: inset(40% 0 40% 0); transform: translate(2px, 0); }
+  66% { clip-path: inset(20% 0 60% 0); transform: translate(-2px, 0); }
+}
+
+/* Scanline overlay for 404 */
+.scanlines::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 255, 255, 0.015) 2px,
+    rgba(255, 255, 255, 0.015) 4px
+  );
 }
 
 /* Respect user's reduced motion preference (WCAG 2.3.3) */

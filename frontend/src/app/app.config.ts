@@ -3,7 +3,12 @@ import {
   provideBrowserGlobalErrorListeners,
   provideZoneChangeDetection,
 } from '@angular/core';
-import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from '@angular/router';
+import {
+  provideRouter,
+  withComponentInputBinding,
+  withInMemoryScrolling,
+  withViewTransitions,
+} from '@angular/router';
 import {
   provideClientHydration,
   withEventReplay,
@@ -30,6 +35,7 @@ export const appConfig: ApplicationConfig = {
         scrollPositionRestoration: 'top',
         anchorScrolling: 'enabled',
       }),
+      withViewTransitions({ skipInitialTransition: true }),
     ),
     provideAnimationsAsync(),
     provideHttpClient(

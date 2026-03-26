@@ -1,7 +1,7 @@
 <!-- Header -->
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-    <h1 class="text-3xl font-bold text-balance text-zinc-100">Articles</h1>
+    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">Articles</h1>
     <p class="mt-2 text-zinc-400">Exploring the latest tech trends and in-depth analysis</p>
   </div>
 </section>
@@ -64,7 +64,7 @@
       >
         <!-- Gradient accent line -->
         <div
-          class="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-zinc-600 via-zinc-400 to-zinc-600 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+          class="absolute inset-x-0 top-0 h-0.5 bg-linear-to-r from-zinc-600 via-zinc-400 to-zinc-600 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
         ></div>
 
         <div class="p-6">
@@ -119,7 +119,7 @@
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none disabled:opacity-30"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
           [disabled]="cp === 1"
           (click)="onPageChange(cp - 1)"
           aria-label="Previous page"
@@ -130,7 +130,7 @@
         @for (page of pageArray(); track page) {
         <button
           type="button"
-          class="rounded-sm px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none"
+          class="rounded-sm px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden"
           [class]="
                     cp === page
                       ? 'bg-zinc-700 text-white'
@@ -146,7 +146,7 @@
 
         <button
           type="button"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none disabled:opacity-30"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
           [disabled]="cp === tp"
           (click)="onPageChange(cp + 1)"
           aria-label="Next page"

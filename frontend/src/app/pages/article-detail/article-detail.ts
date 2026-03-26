@@ -8,6 +8,9 @@ import {
   OnInit,
   computed,
   PLATFORM_ID,
+  ElementRef,
+  afterNextRender,
+  effect,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
@@ -56,6 +59,7 @@ export class ArticleDetailComponent implements OnInit {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly seoService = inject(SeoService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly el = inject(ElementRef);
 
   protected readonly article = signal<ApiContent | null>(null);
   protected readonly isLoading = signal(true);
@@ -83,6 +87,22 @@ export class ArticleDetailComponent implements OnInit {
   protected readonly CopyIcon = Copy;
   protected readonly CheckIcon = Check;
 
+  private isBrowser = false;
+
+  constructor() {
+    afterNextRender(() => {
+      this.isBrowser = true;
+    });
+
+    // Inject copy buttons into <pre> blocks when content changes
+    effect(() => {
+      this.parsedContent(); // track dependency
+      if (!this.isBrowser || !isPlatformBrowser(this.platformId)) return;
+      // Wait for DOM update
+      setTimeout(() => this.injectCopyButtons(), 0);
+    });
+  }
+
   ngOnInit(): void {
     this.loadArticle(this.id());
   }
@@ -91,17 +111,20 @@ export class ArticleDetailComponent implements OnInit {
     this.isLoading.set(true);
     this.error.set(null);
 
-    this.articleService.getArticleBySlug(slug).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (article) => {
-        this.article.set(article);
-        this.isLoading.set(false);
-        this.updateSeo(article);
-      },
-      error: () => {
-        this.error.set('Failed to load article');
-        this.isLoading.set(false);
-      },
-    });
+    this.articleService
+      .getArticleBySlug(slug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (article) => {
+          this.article.set(article);
+          this.isLoading.set(false);
+          this.updateSeo(article);
+        },
+        error: () => {
+          this.error.set('Failed to load article');
+          this.isLoading.set(false);
+        },
+      });
   }
 
   protected goBack(): void {
@@ -130,6 +153,39 @@ export class ArticleDetailComponent implements OnInit {
         tags: article.tags,
       }),
     });
+  }
+
+  private injectCopyButtons(): void {
+    const root = this.el.nativeElement as HTMLElement;
+    const preBlocks = root.querySelectorAll('.prose pre');
+
+    for (const pre of Array.from(preBlocks)) {
+      if (pre.querySelector('.copy-btn')) continue;
+
+      const wrapper = document.createElement('div');
+      wrapper.style.position = 'relative';
+      pre.parentNode?.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      const btn = document.createElement('button');
+      btn.className =
+        'copy-btn absolute right-2 top-2 rounded-xs border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-400 opacity-0 transition-opacity hover:text-zinc-200 group-hover:opacity-100';
+      btn.textContent = 'Copy';
+      btn.type = 'button';
+      wrapper.classList.add('group');
+      wrapper.appendChild(btn);
+
+      btn.addEventListener('click', () => {
+        const code =
+          pre.querySelector('code')?.textContent ?? pre.textContent ?? '';
+        navigator.clipboard.writeText(code).then(() => {
+          btn.textContent = 'Copied!';
+          setTimeout(() => {
+            btn.textContent = 'Copy';
+          }, 1500);
+        });
+      });
+    }
   }
 
   protected shareArticle(): void {

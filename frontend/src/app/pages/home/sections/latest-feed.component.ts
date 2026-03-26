@@ -56,8 +56,12 @@ const PATH_PREFIX_MAP: Record<FeedEntry['type'], string> = {
       <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div class="mb-12 flex items-center justify-between">
           <div>
-            <h2 class="text-3xl font-bold text-zinc-100">Latest</h2>
-            <p class="mt-3 text-zinc-400">Recent articles, build logs, and learning notes</p>
+            <h2 class="font-display text-3xl font-bold text-zinc-100">
+              Latest
+            </h2>
+            <p class="mt-3 text-zinc-400">
+              Recent articles, build logs, and learning notes
+            </p>
           </div>
           <a
             routerLink="/articles"
@@ -71,7 +75,9 @@ const PATH_PREFIX_MAP: Record<FeedEntry['type'], string> = {
         @if (isLoading()) {
           <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             @for (_ of [1, 2, 3]; track _) {
-              <div class="animate-pulse rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+              <div
+                class="animate-pulse rounded-sm border border-zinc-800 bg-zinc-900/50 p-6"
+              >
                 <div class="mb-3 flex gap-2">
                   <div class="h-5 w-16 rounded-sm bg-zinc-800"></div>
                   <div class="h-5 w-12 rounded-sm bg-zinc-800"></div>
@@ -90,7 +96,7 @@ const PATH_PREFIX_MAP: Record<FeedEntry['type'], string> = {
             @for (entry of feedEntries(); track entry.id) {
               <a
                 [routerLink]="entry.path"
-                class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+                class="feed-card group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-300 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
               >
                 <div class="mb-3 flex items-center gap-2">
                   <span

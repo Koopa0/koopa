@@ -65,11 +65,7 @@ export const routes: Routes = [
     redirectTo: '/about',
     pathMatch: 'full',
   },
-  {
-    path: 'uses',
-    loadComponent: () =>
-      import('./pages/uses/uses').then((m) => m.UsesComponent),
-  },
+  // /uses page removed from navigation
   {
     path: 'about',
     loadComponent: () =>

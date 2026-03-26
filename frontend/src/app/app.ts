@@ -55,7 +55,7 @@ import { slideDown } from './shared/animations/fade-in.animation';
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [slideDown],
   host: {
-    'class': 'flex min-h-dvh flex-col',
+    class: 'flex min-h-dvh flex-col',
     '(document:click)': 'onDocumentClick($event)',
   },
 })
@@ -73,9 +73,11 @@ export class AppComponent {
 
   protected readonly isMobileMenuOpen = signal(false);
   protected readonly isWritingMenuOpen = signal(false);
+  protected readonly isScrolled = signal(false);
   protected readonly currentYear = new Date().getFullYear();
 
-  private readonly writingDropdown = viewChild.required<ElementRef>('writingDropdown');
+  private readonly writingDropdown =
+    viewChild.required<ElementRef>('writingDropdown');
 
   // Lucide icons
   protected readonly MenuIcon = Menu;
@@ -92,6 +94,13 @@ export class AppComponent {
   constructor() {
     afterNextRender(() => {
       this.keyboardShortcuts.init();
+
+      // Nav scroll-aware border
+      if (isPlatformBrowser(this.platformId)) {
+        const onScroll = () => this.isScrolled.set(window.scrollY > 100);
+        window.addEventListener('scroll', onScroll, { passive: true });
+        onScroll();
+      }
     });
 
     this.router.events

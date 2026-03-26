@@ -14,12 +14,21 @@ import { SeoService } from '../../core/services/seo/seo.service';
   imports: [RouterLink, LucideAngularModule],
   template: `
     <section
-      class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950 px-4"
+      class="scanlines relative flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950 px-4"
     >
       <div class="text-center">
-        <p class="text-8xl font-bold text-zinc-800">404</p>
-        <h1 class="mt-4 text-2xl font-bold text-zinc-100">Page Not Found</h1>
-        <p class="mt-2 text-sm text-zinc-400">The page you are looking for does not exist or has been removed.</p>
+        <p
+          class="glitch-text font-display text-8xl font-bold text-zinc-800"
+          data-text="404"
+        >
+          404
+        </p>
+        <h1 class="font-display mt-4 text-2xl font-bold text-zinc-100">
+          Page Not Found
+        </h1>
+        <p class="mt-2 text-sm text-zinc-400">
+          The page you are looking for does not exist or has been removed.
+        </p>
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           <a
             routerLink="/"
@@ -54,7 +63,8 @@ export class NotFoundComponent implements OnInit {
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: '404 - Page Not Found',
-      description: 'The page you are looking for does not exist or has been removed.',
+      description:
+        'The page you are looking for does not exist or has been removed.',
       noIndex: true,
     });
   }
