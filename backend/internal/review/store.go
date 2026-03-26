@@ -40,8 +40,7 @@ func (s *Store) Create(ctx context.Context, contentID uuid.UUID, reviewLevel str
 	if err != nil {
 		// Unique partial index idx_review_queue_pending_content catches the
 		// TOCTOU race between PendingReviewExistsForContent and CreateReview.
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("creating review for content %s: %w", contentID, err)
