@@ -181,9 +181,6 @@ func NewServer(
 		IdempotentHint:  true,
 		OpenWorldHint:   &f,
 	}
-	mutating := &mcp.ToolAnnotations{
-		OpenWorldHint: &f,
-	}
 	t := true
 	destructive := &mcp.ToolAnnotations{
 		DestructiveHint: &t,
@@ -288,8 +285,8 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "update_task",
-		Description: "Update any task property. Fields: new_title (string), due (YYYY-MM-DD), priority (Low|Medium|High), energy (Low|High), project (slug/alias/title), my_day (bool), status (To Do|Doing|Done), notes (appended to description). Identify task by task_id (UUID) or task_title (fuzzy match). Use when the user says 'move this to tomorrow', 'change priority to high', '這個改成下週', 'put this on my day'. For marking tasks complete, prefer complete_task instead. Example: update_task(task_title=\"Weekly LeetCode\", due=\"2026-04-01\", priority=\"High\")",
-		Annotations: mutating,
+		Description: "Update any task property. Fields: new_title (string), due (YYYY-MM-DD), priority (Low|Medium|High), energy (Low|High), project (slug/alias/title), my_day (bool), status (To Do|Doing|Done), notes (appended to description). Identify task by task_id (UUID) or task_title (fuzzy match). For marking tasks complete, prefer complete_task instead.",
+		Annotations: additiveIdempotent,
 	}, s.updateTask)
 
 	addTool(s, &mcp.Tool{
@@ -306,14 +303,14 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "update_project_status",
-		Description: "Update a project's status during weekly or monthly review. Use when the user says 'put this project on hold', 'mark as done', '這個 project 暫停', or discusses project lifecycle changes. Supports optional review notes.",
-		Annotations: mutating,
+		Description: "Update a project's status during weekly or monthly review. Supports optional review notes.",
+		Annotations: additiveIdempotent,
 	}, s.updateProjectStatus)
 
 	addTool(s, &mcp.Tool{
 		Name:        "update_goal_status",
-		Description: "Update a goal's status. Valid statuses: not-started (Dream), in-progress (Active), done (Achieved), abandoned. Use when the user says 'this goal is now active', 'achieved', '這個目標完成了', or discusses goal progress changes. Example: update_goal_status(goal=\"學好英文\", status=\"in-progress\")",
-		Annotations: mutating,
+		Description: "Update a goal's status. Valid statuses: not-started (Dream), in-progress (Active), done (Achieved), abandoned.",
+		Annotations: additiveIdempotent,
 	}, s.updateGoalStatus)
 
 	addTool(s, &mcp.Tool{
@@ -373,7 +370,7 @@ func NewServer(
 	addTool(s, &mcp.Tool{
 		Name:        "update_insight",
 		Description: "Update an insight's status or append evidence. Use during evening reflection when today's data supports or contradicts a hypothesis — append evidence, or change status to 'verified'/'invalidated'. Use 'archived' to retire old insights.",
-		Annotations: mutating,
+		Annotations: additiveIdempotent,
 	}, s.updateInsight)
 
 	// --- O'Reilly tools ---
