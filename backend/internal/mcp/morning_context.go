@@ -26,10 +26,10 @@ type MorningContextOutput struct {
 	Date                   string                  `json:"date"`
 	SessionGap             int                     `json:"session_gap"`
 	LastSessionDate        string                  `json:"last_session_date,omitempty"`
-	OverdueTasks           []morningTask           `json:"overdue_tasks"`
-	TodayTasks             []morningTask           `json:"today_tasks"`
-	UpcomingTasks          []morningTask           `json:"upcoming_tasks"`
-	MyDayTasks             []morningTask           `json:"my_day_tasks"`
+	OverdueTasks           []morningTask           `json:"overdue_tasks"`  // Tasks past their due date
+	TodayTasks             []morningTask           `json:"today_tasks"`    // Tasks with due date = today (not yet marked My Day)
+	UpcomingTasks          []morningTask           `json:"upcoming_tasks"` // Tasks due in the next 7 days
+	MyDayTasks             []morningTask           `json:"my_day_tasks"`   // Tasks explicitly marked as "My Day" in Notion (user's daily commitment)
 	RecentActivity         activitySummary         `json:"recent_activity"`
 	RecentBuildLogs        []buildLogBrief         `json:"recent_build_logs"`
 	Projects               []projectHealth         `json:"projects"`

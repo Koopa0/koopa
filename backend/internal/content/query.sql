@@ -239,3 +239,13 @@ WHERE type = @content_type::content_type
   AND created_at >= @since
 ORDER BY created_at DESC
 LIMIT @max_results;
+
+-- name: ContentTagsByTypeAndProject :many
+-- Fetch id, tags, and created_at for learning analytics aggregation.
+-- Used by MCP get_tag_summary, get_coverage_matrix, get_weakness_trend.
+SELECT id, tags, created_at
+FROM contents
+WHERE type = @content_type::content_type
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id'))
+  AND created_at >= @since
+ORDER BY created_at DESC;

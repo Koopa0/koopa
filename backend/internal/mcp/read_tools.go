@@ -518,8 +518,8 @@ type SearchTasksInput struct {
 	Project         string `json:"project,omitempty" jsonschema_description:"filter by project slug, alias, or title"`
 	Status          string `json:"status,omitempty" jsonschema_description:"pending|done|all (default: all)"`
 	Assignee        string `json:"assignee,omitempty" jsonschema_description:"human|claude-code|cowork|all (default: all)"`
-	CompletedAfter  string `json:"completed_after,omitempty" jsonschema_description:"ISO date YYYY-MM-DD"`
-	CompletedBefore string `json:"completed_before,omitempty" jsonschema_description:"ISO date YYYY-MM-DD"`
+	CompletedAfter  string `json:"completed_after,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or after this date)"`
+	CompletedBefore string `json:"completed_before,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or before this date)"`
 	Limit           int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 }
 
@@ -535,12 +535,15 @@ type searchTaskResult struct {
 	Status      string `json:"status"`
 	Due         string `json:"due,omitempty"`
 	Project     string `json:"project,omitempty"`
+	ProjectSlug string `json:"project_slug,omitempty"`
 	Energy      string `json:"energy,omitempty"`
 	Priority    string `json:"priority,omitempty"`
 	Assignee    string `json:"assignee"`
 	IsRecurring bool   `json:"is_recurring"`
+	OverdueDays int    `json:"overdue_days,omitempty"`
 	MyDay       bool   `json:"my_day"`
 	CompletedAt string `json:"completed_at,omitempty"`
+	UpdatedAt   string `json:"updated_at"`
 	Description string `json:"description,omitempty"`
 }
 
@@ -584,6 +587,9 @@ func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input 
 		return nil, SearchTasksOutput{}, fmt.Errorf("searching tasks: %w", err)
 	}
 
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
 	results := make([]searchTaskResult, len(tasks))
 	for i := range tasks {
 		t := &tasks[i]
@@ -592,14 +598,22 @@ func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input 
 			Title:       t.Title,
 			Status:      string(t.Status),
 			Project:     t.ProjectTitle,
+			ProjectSlug: t.ProjectSlug,
 			Energy:      t.Energy,
 			Priority:    t.Priority,
 			Assignee:    t.Assignee,
 			IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
 			MyDay:       t.MyDay,
+			UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
 		}
 		if t.Due != nil {
 			r.Due = t.Due.Format(time.DateOnly)
+			if t.Status != task.StatusDone {
+				dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
+				if dueDate.Before(today) {
+					r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
+				}
+			}
 		}
 		if t.CompletedAt != nil {
 			r.CompletedAt = t.CompletedAt.Format(time.RFC3339)
@@ -617,9 +631,12 @@ func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input 
 type SearchKnowledgeInput struct {
 	Query       string `json:"query" jsonschema_description:"search query (required)"`
 	Project     string `json:"project,omitempty" jsonschema_description:"filter results by project name, slug, or alias"`
-	After       string `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD)"`
-	Before      string `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD)"`
-	ContentType string `json:"content_type,omitempty" jsonschema_description:"filter by content type (article|essay|build-log|til|note|bookmark|digest)"`
+	After       string `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD, exclusive — results strictly after this date)"`
+	Before      string `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD, exclusive)"`
+	ContentType string `json:"content_type,omitempty" jsonschema_description:"filter by content type (article|essay|build-log|til|note|bookmark|digest|obsidian-note). Use obsidian-note to search only Obsidian knowledge notes."`
+	Source      string `json:"source,omitempty" jsonschema_description:"filter Obsidian notes by source (leetcode|book|course|discussion|practice|video). Only applies when searching notes."`
+	Context     string `json:"context,omitempty" jsonschema_description:"filter Obsidian notes by context/project name in frontmatter. Only applies when searching notes."`
+	Book        string `json:"book,omitempty" jsonschema_description:"filter Obsidian notes by book title in frontmatter. Only applies when searching notes."`
 	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
 }
 
@@ -678,8 +695,25 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	// Parse content type filter
 	var filterType content.Type
-	if input.ContentType != "" {
+	notesOnly := input.ContentType == "obsidian-note"
+	if input.ContentType != "" && !notesOnly {
 		filterType = content.Type(input.ContentType)
+	}
+
+	// Build note filter from source/context/book/project/date params.
+	hasNoteFilters := input.Source != "" || input.Context != "" || input.Book != "" || projectSlug != "" || afterTime != nil || beforeTime != nil
+	noteFilter := note.SearchFilter{After: afterTime, Before: beforeTime}
+	if input.Source != "" {
+		noteFilter.Source = &input.Source
+	}
+	if input.Context != "" {
+		// Explicit context filter takes priority over project slug.
+		noteFilter.Context = &input.Context
+	} else if projectSlug != "" {
+		noteFilter.Context = &projectSlug
+	}
+	if input.Book != "" {
+		noteFilter.Book = &input.Book
 	}
 
 	// Search content, notes (text), and notes (semantic) concurrently.
@@ -701,17 +735,19 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	var sr semanticResult
 
 	var wg sync.WaitGroup
+	if !notesOnly {
+		wg.Go(func() {
+			// Internal search: no visibility filter so MCP can find private content.
+			cr.contents, _, cr.err = s.contents.InternalSearch(ctx, input.Query, 1, limit)
+			// AND→OR fallback: if AND search returns 0 results, try OR semantics
+			if cr.err == nil && len(cr.contents) == 0 {
+				cr.contents, _, cr.err = s.contents.InternalSearchOR(ctx, input.Query, 1, limit)
+			}
+		})
+	}
 	wg.Go(func() {
-		// Internal search: no visibility filter so MCP can find private content.
-		cr.contents, _, cr.err = s.contents.InternalSearch(ctx, input.Query, 1, limit)
-		// AND→OR fallback: if AND search returns 0 results, try OR semantics
-		if cr.err == nil && len(cr.contents) == 0 {
-			cr.contents, _, cr.err = s.contents.InternalSearchOR(ctx, input.Query, 1, limit)
-		}
-	})
-	wg.Go(func() {
-		if projectSlug != "" {
-			filterResults, filterErr := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &projectSlug, After: afterTime, Before: beforeTime}, limit*3)
+		if hasNoteFilters {
+			filterResults, filterErr := s.notes.SearchByFilters(ctx, noteFilter, limit*3)
 			if filterErr != nil {
 				nr.err = filterErr
 				return

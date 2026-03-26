@@ -157,18 +157,18 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		logger.Warn("ORM_JWT not set — search_oreilly_content will be unavailable")
 	}
 
-	// Tool call telemetry — async insert, no impact on response time.
-	opts = append(opts, mcpserver.WithTelemetry(func(name string, d time.Duration, isErr bool) {
+	// Tool call telemetry — async insert with timeout context, no impact on response time.
+	opts = append(opts, mcpserver.WithTelemetry(func(ctx context.Context, rec mcpserver.ToolCallRecord) {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Error("telemetry panic", "tool", name, "recover", r)
+				logger.Error("telemetry panic", "tool", rec.Name, "recover", r)
 			}
 		}()
-		_, execErr := pool.Exec(context.Background(),
-			"INSERT INTO tool_call_logs (tool_name, called_at, duration_ms, is_error) VALUES ($1, now(), $2, $3)",
-			name, d.Milliseconds(), isErr)
+		_, execErr := pool.Exec(ctx,
+			"INSERT INTO tool_call_logs (tool_name, called_at, duration_ms, is_error, is_empty, input_bytes, output_bytes) VALUES ($1, now(), $2, $3, $4, $5, $6)",
+			rec.Name, rec.Duration.Milliseconds(), rec.IsError, rec.IsEmpty, rec.InputBytes, rec.OutputBytes)
 		if execErr != nil {
-			logger.Warn("telemetry insert failed", "tool", name, "error", execErr)
+			logger.Warn("telemetry insert failed", "tool", rec.Name, "error", execErr)
 		}
 	}))
 

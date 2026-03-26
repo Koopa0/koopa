@@ -589,24 +589,36 @@ CREATE INDEX idx_session_notes_insight_status ON session_notes ((metadata->>'sta
 -- === MCP Tool Call Telemetry ===
 
 CREATE TABLE tool_call_logs (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tool_name   TEXT NOT NULL,
-    called_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    duration_ms INTEGER,
-    is_error    BOOLEAN NOT NULL DEFAULT false
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tool_name    TEXT NOT NULL,
+    called_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    duration_ms  INTEGER,
+    is_error     BOOLEAN NOT NULL DEFAULT false,
+    is_empty     BOOLEAN NOT NULL DEFAULT false,
+    input_bytes  INTEGER,
+    output_bytes INTEGER
 );
+
+COMMENT ON COLUMN tool_call_logs.is_empty IS 'True when a search/list tool returned 0 results — signals misuse or missing data.';
+COMMENT ON COLUMN tool_call_logs.input_bytes IS 'Approximate JSON byte size of tool input. Helps identify unexpectedly large payloads.';
+COMMENT ON COLUMN tool_call_logs.output_bytes IS 'Approximate JSON byte size of tool output. Helps identify tools returning excessive data.';
 
 CREATE INDEX idx_tool_call_logs_name_time ON tool_call_logs (tool_name, called_at DESC);
 
 -- Telemetry analysis views — run SELECT * instead of remembering queries.
 CREATE VIEW tool_usage_summary AS
 SELECT tool_name,
-       COUNT(*)                                    AS calls,
-       AVG(duration_ms)::int                       AS avg_ms,
-       MAX(duration_ms)                            AS max_ms,
-       COUNT(*) FILTER (WHERE is_error)            AS errors,
-       MIN(called_at)                              AS first_seen,
-       MAX(called_at)                              AS last_seen
+       COUNT(*)                                                               AS calls,
+       AVG(duration_ms)::int                                                  AS avg_ms,
+       MAX(duration_ms)                                                       AS max_ms,
+       percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)::int         AS p95_ms,
+       COUNT(*) FILTER (WHERE is_error)                                       AS errors,
+       ROUND(COUNT(*) FILTER (WHERE is_error)::numeric / NULLIF(COUNT(*), 0), 4) AS error_rate,
+       COUNT(*) FILTER (WHERE is_empty)                                       AS empty_results,
+       AVG(input_bytes)::int                                                  AS avg_input_bytes,
+       AVG(output_bytes)::int                                                 AS avg_output_bytes,
+       MIN(called_at)                                                         AS first_seen,
+       MAX(called_at)                                                         AS last_seen
 FROM tool_call_logs
 GROUP BY tool_name
 ORDER BY calls DESC;
@@ -614,7 +626,8 @@ ORDER BY calls DESC;
 CREATE VIEW tool_daily_trend AS
 SELECT called_at::date AS day,
        COUNT(*)        AS calls,
-       COUNT(*) FILTER (WHERE is_error) AS errors
+       COUNT(*) FILTER (WHERE is_error) AS errors,
+       COUNT(*) FILTER (WHERE is_empty) AS empty_results
 FROM tool_call_logs
 GROUP BY called_at::date
 ORDER BY day DESC;

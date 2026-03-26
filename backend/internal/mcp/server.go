@@ -46,9 +46,9 @@ type Server struct {
 	oreilly         *OReillyClient
 	systemStatus    SystemStatusReader
 	pipelineTrigger PipelineTrigger
-	recordToolCall  func(name string, d time.Duration, isErr bool) // optional telemetry
-	lastTrigger     map[string]time.Time                           // rate limit: pipeline name -> last trigger time
-	triggerMu       sync.Mutex                                     // protects lastTrigger
+	recordToolCall  func(context.Context, ToolCallRecord) // optional telemetry
+	lastTrigger     map[string]time.Time                  // rate limit: pipeline name -> last trigger time
+	triggerMu       sync.Mutex                            // protects lastTrigger
 	logger          *slog.Logger
 	loc             *time.Location // user timezone for day boundaries
 }
@@ -115,9 +115,20 @@ func WithPipelineTrigger(t PipelineTrigger) ServerOption {
 	}
 }
 
+// ToolCallRecord holds telemetry data for a single tool invocation.
+type ToolCallRecord struct {
+	Name        string
+	Duration    time.Duration
+	IsError     bool
+	IsEmpty     bool // true when search/list tools return 0 results
+	InputBytes  int  // approximate JSON size of input
+	OutputBytes int  // approximate JSON size of output
+}
+
 // WithTelemetry enables async tool call logging for convergence analysis.
-// The recorder is called in a goroutine after each tool call completes.
-func WithTelemetry(recorder func(name string, d time.Duration, isErr bool)) ServerOption {
+// The recorder is called in a goroutine with a 5-second timeout context
+// after each tool call completes.
+func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption {
 	return func(s *Server) { s.recordToolCall = recorder }
 }
 
@@ -183,11 +194,9 @@ func NewServer(
 
 	// --- read-only tools ---
 
-	addTool(s, &mcp.Tool{
-		Name:        "search_notes",
-		Description: "Search obsidian knowledge notes by text query and/or frontmatter filters. Filters: type (til|article|note|build-log|bookmark|essay|digest), source (leetcode|book|course|discussion|practice|video), context (project name), book (book title). Uses full-text search with Reciprocal Rank Fusion when both text and filters are provided. Use this when you know the content is an Obsidian note. For broader searches across all content types, use search_knowledge instead. Example: search_notes(query=\"binary search\", type=\"til\", context=\"leetcode-prep\")",
-		Annotations: readOnly,
-	}, s.searchNotes)
+	// search_notes MERGED into search_knowledge (A1).
+	// Obsidian note frontmatter filters (source, context, book) are now parameters
+	// on search_knowledge. Use content_type="obsidian-note" to search notes only.
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_project_context",
@@ -203,7 +212,7 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_decision_log",
-		Description: "Retrieve decision-log notes, optionally filtered by project context. Use when looking for past architectural decisions, design rationale, or 'why did we choose X' questions.",
+		Description: "Retrieve decision-log notes from Obsidian (notes with type=decision-log in frontmatter), optionally filtered by project context. Unlike search_knowledge which searches by text query, this returns all decision-log entries without requiring a search term. Use when looking for past architectural decisions, design rationale, or 'why did we choose X' questions.",
 		Annotations: readOnly,
 	}, s.getDecisionLog)
 
@@ -221,21 +230,18 @@ func NewServer(
 		Annotations: readOnly,
 	}, s.getPlatformStats)
 
-	addTool(s, &mcp.Tool{
-		Name:        "get_pending_tasks",
-		Description: "Get pending (not-done) tasks sorted by urgency. Filters: project (slug/alias/title), assignee (human|claude-code|cowork). Use when the user asks what to work on, needs to plan their day, or wants to see overdue items.",
-		Annotations: readOnly,
-	}, s.getPendingTasks)
+	// get_pending_tasks MERGED into search_tasks (A3).
+	// Use search_tasks(status="pending") for the same functionality with urgency sort.
 
 	addTool(s, &mcp.Tool{
 		Name:        "search_tasks",
-		Description: "Search tasks by title/description with filters. Filters: query (fuzzy match title+description), project (slug/alias/title), status (pending|done|all, default: all), assignee (human|claude-code|cowork|all), completed_after/completed_before (YYYY-MM-DD). Use when looking for specific tasks, checking completed work, or finding tasks across projects. Example: search_tasks(query=\"refactor\", status=\"done\", completed_after=\"2026-03-01\")",
+		Description: "Search and list tasks with flexible filters. Replaces get_pending_tasks — use status=\"pending\" for the same urgency-sorted view. Filters: query (fuzzy match title+description), project (slug/alias/title), status (pending|done|all, default: all), assignee (human|claude-code|cowork|all), completed_after/completed_before (YYYY-MM-DD). Pending tasks include overdue_days calculation. Examples: search_tasks(status=\"pending\", assignee=\"claude-code\") for pending work, search_tasks(query=\"refactor\", status=\"done\", completed_after=\"2026-03-01\") for completed work.",
 		Annotations: readOnly,
 	}, s.searchTasks)
 
 	addTool(s, &mcp.Tool{
 		Name:        "search_knowledge",
-		Description: "Search across ALL content types: articles, build logs, TILs, notes, and Obsidian notes. Returns excerpts with source type markers. Filters: project (slug/alias/title), after/before (YYYY-MM-DD date range), content_type (article|essay|build-log|til|note|bookmark|digest). All filters are optional and combinable. Use when the user asks 'have I written about X before', needs to find past insights, or wants to search without knowing which content type contains the answer. Example: search_knowledge(query=\"pagination\", after=\"2026-03-18\", content_type=\"til\")",
+		Description: "Search across ALL content types: articles, build logs, TILs, notes, and Obsidian knowledge notes. Returns excerpts with source type markers. Filters: project (slug/alias/title), after/before (YYYY-MM-DD, exclusive), content_type (article|essay|build-log|til|note|bookmark|digest|obsidian-note). Obsidian note filters: source (leetcode|book|course|discussion|practice|video), context (project name in frontmatter), book (book title). All filters are optional and combinable. Use content_type=\"obsidian-note\" to search only Obsidian notes. Examples: search_knowledge(query=\"pagination\", content_type=\"til\"), search_knowledge(query=\"binary search\", content_type=\"obsidian-note\", source=\"leetcode\", context=\"leetcode-prep\")",
 		Annotations: readOnly,
 	}, s.searchKnowledge)
 
@@ -309,7 +315,7 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_morning_context",
-		Description: "Get everything needed for daily planning in one call. Use when the user starts their day ('good morning', '早安', 'what should I work on today'). This should be the FIRST tool called in a morning planning session. Optional sections parameter limits response: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions. Examples: Full daily planning (omit sections), Learning session: sections=[\"tasks\",\"plan\"], Claude Code session: sections=[\"tasks\",\"plan\",\"build_logs\",\"activity\"].",
+		Description: "Get everything needed for daily planning in one call. Use when the user starts their day ('good morning', '早安', 'what should I work on today'). This should be the FIRST tool called in a morning planning session. Returns four task lists: overdue_tasks (past due), today_tasks (due today, not yet committed), my_day_tasks (explicitly committed via Notion My Day), upcoming_tasks (due within 7 days). Optional sections parameter limits response: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions. Examples: Full daily planning (omit sections), Learning session: sections=[\"tasks\",\"plan\"], Claude Code session: sections=[\"tasks\",\"plan\",\"build_logs\",\"activity\"].",
 		Annotations: readOnly,
 	}, s.getMorningContext)
 
@@ -400,7 +406,7 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "create_content",
-		Description: "Create a new draft content record. Required: title, body, content_type (article|build-log|til|bookmark|essay|note|digest). Optional: tags, project. For dev session logs, prefer log_dev_session instead.",
+		Description: "Create a new draft content record. Required: title, body, content_type. Types: article (deep technical writing), essay (personal/non-technical reflection), build-log (project dev record — prefer log_dev_session for coding sessions), til (short daily learning), note (technical reference snippet), bookmark (external resource + commentary), digest (weekly/monthly roundup). Optional: tags, project.",
 		Annotations: additive,
 	}, s.createContent)
 
@@ -474,7 +480,7 @@ func NewServer(
 	if s.pipelineTrigger != nil {
 		addTool(s, &mcp.Tool{
 			Name:        "trigger_pipeline",
-			Description: "Manually trigger a background pipeline: rss_collector or notion_sync. Rate limited to once per 5 minutes per pipeline.",
+			Description: "Manually trigger a background pipeline: rss_collector or notion_sync. Use when you need immediate pipeline execution instead of waiting for the next scheduled run — e.g., after adding a new RSS feed, after deploying new scoring logic, or when debugging collection issues. Rate limited to once per 5 minutes per pipeline.",
 			Annotations: destructive,
 		}, s.triggerPipeline)
 	}
@@ -483,18 +489,34 @@ func NewServer(
 	// (AI-calls-AI anti-pattern — consumers should do polish/strategy directly)
 	// Genkit flow code retained in flow_tools.go for potential non-LLM consumers.
 
-	// C3: generate_social_excerpt marked DEPRECATED (low usage expected)
+	// C3: generate_social_excerpt REMOVED from MCP registry (deprecated, confirmed unused by all consumers).
+	// Handler code retained in flow_tools.go for potential non-MCP consumers.
+
+	// --- Learning analytics tools (B1-B3) ---
+
 	addTool(s, &mcp.Tool{
-		Name:        "generate_social_excerpt",
-		Description: "[DEPRECATED — pending telemetry review] Generate a social media excerpt from published content. Platforms: linkedin, twitter. Returns excerpt, hook, CTA, and hashtags. Consider writing excerpts directly instead of using this tool.",
+		Name:        "get_tag_summary",
+		Description: "Aggregate tag frequency for a project's TIL entries. Returns each tag with its occurrence count, optionally filtered by prefix. Use for learning analytics: get_tag_summary(project=\"leetcode\") for all tags, get_tag_summary(project=\"leetcode\", tag_prefix=\"weakness:\") for weaknesses only.",
 		Annotations: readOnly,
-	}, s.generateSocialExcerpt)
+	}, s.getTagSummary)
+
+	addTool(s, &mcp.Tool{
+		Name:        "get_coverage_matrix",
+		Description: "Coverage matrix of topic patterns for a project's TIL entries. For each topic tag (e.g. two-pointers, dp, graph), returns: total count, last practice date, and result distribution (ac-independent / ac-with-hints / ac-after-solution / incomplete). Use for adaptive coaching: identifying under-practiced or low-accuracy topics.",
+		Annotations: readOnly,
+	}, s.getCoverageMatrix)
+
+	addTool(s, &mcp.Tool{
+		Name:        "get_weakness_trend",
+		Description: "Time series of a specific weakness tag's occurrences with trend analysis. Returns chronological list of occurrences with their result tags, plus a computed trend (improving / stable / declining / insufficient-data). Use for tracking whether a weakness is getting better over time. Example: get_weakness_trend(project=\"leetcode\", tag=\"weakness:pattern-recognition\", days=60).",
+		Annotations: readOnly,
+	}, s.getWeaknessTrend)
 
 	// --- Knowledge synthesis ---
 
 	addTool(s, &mcp.Tool{
 		Name:        "synthesize_topic",
-		Description: "Synthesize knowledge across ALL content sources for a topic. HIGH TOKEN COST. Consider using search_knowledge + search_notes manually if you need more control over the synthesis process. Searches articles, build logs, TILs, Obsidian notes, and RSS bookmarks, then produces a structured synthesis grouped by source type with gap analysis.",
+		Description: "Synthesize knowledge across ALL content sources for a topic: articles, build logs, TILs, Obsidian notes, and RSS bookmarks. Produces a structured synthesis grouped by source type with gap analysis. Use when you need cross-source synthesis across 5+ related items or want to identify knowledge gaps. For quick lookups of 1-2 results, search_knowledge is faster and cheaper. Note: higher token cost than search tools due to multi-source aggregation.",
 		Annotations: readOnly,
 	}, s.synthesizeTopic)
 
@@ -662,7 +684,8 @@ func (s *Server) createContentWithRetry(ctx context.Context, params *content.Cre
 }
 
 // addTool registers a tool with optional telemetry wrapping.
-// When s.recordToolCall is set, each tool call records name, duration, and error status.
+// When s.recordToolCall is set, each tool call records name, duration, error status,
+// input/output sizes, and empty-result detection.
 func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error)) {
 	if s.recordToolCall == nil {
 		mcp.AddTool(s.server, tool, handler)
@@ -673,7 +696,42 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 	mcp.AddTool(s.server, tool, func(ctx context.Context, req *mcp.CallToolRequest, input I) (*mcp.CallToolResult, O, error) {
 		start := time.Now()
 		result, output, err := handler(ctx, req, input)
-		go record(name, time.Since(start), err != nil)
+
+		// Compute telemetry asynchronously with timeout to prevent goroutine leaks.
+		inputBytes, _ := json.Marshal(input)
+		outputBytes, _ := json.Marshal(output)
+		rec := ToolCallRecord{
+			Name:        name,
+			Duration:    time.Since(start),
+			IsError:     err != nil,
+			IsEmpty:     isEmptyResult(output),
+			InputBytes:  len(inputBytes),
+			OutputBytes: len(outputBytes),
+		}
+		go func() { //nolint:gosec // G118: intentionally detached from request context — telemetry must outlive the request
+			tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			record(tctx, rec)
+		}()
+
 		return result, output, err
 	})
+}
+
+// isEmptyResult checks if an output struct has a Total field with value 0,
+// indicating a search or list tool returned no results.
+func isEmptyResult(output any) bool {
+	b, err := json.Marshal(output)
+	if err != nil {
+		return false
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return false
+	}
+	raw, ok := m["total"]
+	if !ok {
+		return false
+	}
+	return string(raw) == "0"
 }

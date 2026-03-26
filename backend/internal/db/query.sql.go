@@ -1032,6 +1032,49 @@ func (q *Queries) ContentEmbeddingBySlug(ctx context.Context, slug string) (Cont
 	return i, err
 }
 
+const contentTagsByTypeAndProject = `-- name: ContentTagsByTypeAndProject :many
+SELECT id, tags, created_at
+FROM contents
+WHERE type = $1::content_type
+  AND ($2::uuid IS NULL OR project_id = $2)
+  AND created_at >= $3
+ORDER BY created_at DESC
+`
+
+type ContentTagsByTypeAndProjectParams struct {
+	ContentType ContentType `json:"content_type"`
+	ProjectID   *uuid.UUID  `json:"project_id"`
+	Since       time.Time   `json:"since"`
+}
+
+type ContentTagsByTypeAndProjectRow struct {
+	ID        uuid.UUID `json:"id"`
+	Tags      []string  `json:"tags"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Fetch id, tags, and created_at for learning analytics aggregation.
+// Used by MCP get_tag_summary, get_coverage_matrix, get_weakness_trend.
+func (q *Queries) ContentTagsByTypeAndProject(ctx context.Context, arg ContentTagsByTypeAndProjectParams) ([]ContentTagsByTypeAndProjectRow, error) {
+	rows, err := q.db.Query(ctx, contentTagsByTypeAndProject, arg.ContentType, arg.ProjectID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ContentTagsByTypeAndProjectRow{}
+	for rows.Next() {
+		var i ContentTagsByTypeAndProjectRow
+		if err := rows.Scan(&i.ID, &i.Tags, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const contentsByTopicID = `-- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status, c.tags,
        c.source, c.source_type, c.series_id, c.series_order, c.review_level,

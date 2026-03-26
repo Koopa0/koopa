@@ -368,6 +368,35 @@ func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.T
 	return contents, nil
 }
 
+// TagEntry is a lightweight record for learning analytics aggregation.
+type TagEntry struct {
+	ID        uuid.UUID
+	Tags      []string
+	CreatedAt time.Time
+}
+
+// TagEntries returns id, tags, and created_at for contents of a given type,
+// optionally filtered by project. Used for learning analytics aggregation.
+func (s *Store) TagEntries(ctx context.Context, contentType Type, projectID *uuid.UUID, since time.Time) ([]TagEntry, error) {
+	rows, err := s.q.ContentTagsByTypeAndProject(ctx, db.ContentTagsByTypeAndProjectParams{
+		ContentType: db.ContentType(contentType),
+		ProjectID:   projectID,
+		Since:       since,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying tag entries: %w", err)
+	}
+	entries := make([]TagEntry, len(rows))
+	for i := range rows {
+		entries[i] = TagEntry{
+			ID:        rows[i].ID,
+			Tags:      rows[i].Tags,
+			CreatedAt: rows[i].CreatedAt,
+		}
+	}
+	return entries, nil
+}
+
 // PublishedForRSS returns recent published content for RSS feed.
 func (s *Store) PublishedForRSS(ctx context.Context, limit int) ([]Content, error) {
 	rows, err := s.q.PublishedForRSS(ctx, int32(limit)) // #nosec G115 -- RSS limit is a small constant, not user-controlled
