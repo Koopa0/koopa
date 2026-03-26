@@ -259,6 +259,8 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		s.fetchMorningContentPipeline(ctx, &out)
 	}
 
+	ensureMorningDefaults(&out)
+
 	return nil, out, nil
 }
 
@@ -461,7 +463,6 @@ func (s *Server) fetchMorningGoals(ctx context.Context, out *MorningContextOutpu
 // insights, recommendations, and yesterday adjustments.
 func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContextOutput, today, now time.Time) {
 	if s.sessions == nil {
-		s.ensureSessionDefaults(out)
 		return
 	}
 
@@ -498,12 +499,51 @@ func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContex
 	if len(metricsNotes) > 0 {
 		out.YesterdayAdjustments = parseAdjustments(metricsNotes[0].Metadata)
 	}
-
-	s.ensureSessionDefaults(out)
 }
 
-// ensureSessionDefaults fills nil slices/maps in session-related output fields.
-func (*Server) ensureSessionDefaults(out *MorningContextOutput) {
+// ensureMorningDefaults initializes all nil slices and maps in the output struct
+// so that JSON serialization produces [] and {} instead of null. This is the
+// single fix for the sections-filter null pattern: when a section is skipped,
+// its fields remain Go zero values (nil), which serialize to JSON null and fail
+// MCP output schema validation. Called once before returning, covers ALL fields.
+func ensureMorningDefaults(out *MorningContextOutput) { //nolint:gocyclo // flat nil-guard function, splitting would hurt readability
+	// -- task slices --
+	if out.OverdueTasks == nil {
+		out.OverdueTasks = []morningTask{}
+	}
+	if out.TodayTasks == nil {
+		out.TodayTasks = []morningTask{}
+	}
+	if out.UpcomingTasks == nil {
+		out.UpcomingTasks = []morningTask{}
+	}
+	if out.MyDayTasks == nil {
+		out.MyDayTasks = []morningTask{}
+	}
+
+	// -- activity (value type, always serialized) --
+	if out.RecentActivity.BySource == nil {
+		out.RecentActivity.BySource = make(map[string]int)
+	}
+	if out.RecentActivity.ByProject == nil {
+		out.RecentActivity.ByProject = make(map[string]int)
+	}
+	if out.RecentActivity.TopEvents == nil {
+		out.RecentActivity.TopEvents = []string{}
+	}
+
+	// -- other section slices --
+	if out.RecentBuildLogs == nil {
+		out.RecentBuildLogs = []buildLogBrief{}
+	}
+	if out.Projects == nil {
+		out.Projects = []projectHealth{}
+	}
+	if out.Goals == nil {
+		out.Goals = []goalBrief{}
+	}
+
+	// -- session/planning data --
 	if out.PlanningHistory == nil {
 		out.PlanningHistory = &planningHistorySummary{
 			Entries:           []dailyMetrics{},
@@ -522,6 +562,16 @@ func (*Server) ensureSessionDefaults(out *MorningContextOutput) {
 	}
 	if out.PendingRecommendations == nil {
 		out.PendingRecommendations = []insightBrief{}
+	}
+
+	// -- completions --
+	if out.TodayCompletions == nil {
+		out.TodayCompletions = []todayCompletion{}
+	}
+
+	// -- rss --
+	if out.UrgentRSS == nil {
+		out.UrgentRSS = []urgentRSSItem{}
 	}
 }
 
