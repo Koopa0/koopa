@@ -1,13 +1,17 @@
 <!-- Header -->
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">Articles</h1>
-    <p class="mt-2 text-zinc-400">Exploring the latest tech trends and in-depth analysis</p>
+    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+      Articles
+    </h1>
+    <p class="mt-2 text-zinc-400">
+      Exploring the latest tech trends and in-depth analysis
+    </p>
   </div>
 </section>
 
 <section class="bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
     <!-- Filters -->
     <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center">
       <!-- Search -->
@@ -74,7 +78,7 @@
             <a
               [routerLink]="'/tags/' + tag"
               (click)="$event.stopPropagation()"
-              class="rounded-sm bg-zinc-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-300"
+              class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-300"
             >
               {{ tag }}
             </a>
@@ -112,9 +116,7 @@
     </div>
 
     <!-- Pagination -->
-    @let cp = currentPage();
-    @let tp = totalPages();
-    @if (tp > 1) {
+    @let cp = currentPage(); @let tp = totalPages(); @if (tp > 1) {
     <nav aria-label="Pagination" class="mt-12 flex flex-col items-center gap-4">
       <div class="flex items-center gap-2">
         <button
@@ -154,16 +156,16 @@
           <lucide-icon [img]="ChevronRightIcon" [size]="16" />
         </button>
       </div>
-      <div class="text-xs text-zinc-500">
-        Page {{ cp }} of {{ tp }}
-      </div>
+      <div class="text-xs text-zinc-500">Page {{ cp }} of {{ tp }}</div>
     </nav>
     } } @else {
     <!-- Empty State -->
     <div class="flex flex-col items-center gap-4 py-20 text-center">
       <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
       <h2 class="text-lg font-medium text-zinc-300">No articles found</h2>
-      <p class="text-sm text-zinc-500">Try adjusting your search or clearing filters</p>
+      <p class="text-sm text-zinc-500">
+        Try adjusting your search or clearing filters
+      </p>
       @if (hasFilters()) {
       <button
         type="button"

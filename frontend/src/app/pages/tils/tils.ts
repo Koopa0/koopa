@@ -8,12 +8,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
-import {
-  LucideAngularModule,
-  Calendar,
-  Lightbulb,
-  Tag,
-} from 'lucide-angular';
+import { LucideAngularModule, Calendar, Tag } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -58,7 +53,6 @@ export class TilsComponent implements OnInit {
   });
 
   protected readonly CalendarIcon = Calendar;
-  protected readonly LightbulbIcon = Lightbulb;
   protected readonly TagIcon = Tag;
 
   ngOnInit(): void {

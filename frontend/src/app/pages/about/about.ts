@@ -9,7 +9,6 @@ import {
   Mail,
   Github,
   Linkedin,
-  Code,
   MapPin,
 } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -54,13 +53,13 @@ export class AboutComponent implements OnInit {
   protected readonly MailIcon = Mail;
   protected readonly GithubIcon = Github;
   protected readonly LinkedinIcon = Linkedin;
-  protected readonly CodeIcon = Code;
   protected readonly MapPinIcon = MapPin;
 
   ngOnInit(): void {
     this.seoService.updateMeta({
       title: 'About',
-      description: 'Koopa — Software Engineer. Go, Angular, and cloud-native technologies.',
+      description:
+        'Koopa — Software Engineer. Go, Angular, and cloud-native technologies.',
       ogUrl: `${environment.siteUrl}/about`,
       ogType: 'profile',
       jsonLd: buildPersonSchema(),

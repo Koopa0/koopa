@@ -1,22 +1,17 @@
 <!-- Header -->
 <section class="border-b border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-    <div class="flex items-center gap-3">
-      <lucide-icon [img]="LightbulbIcon" [size]="28" class="text-zinc-500" />
-      <div>
-        <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
-          Today I Learned
-        </h1>
-        <p class="mt-1 text-zinc-400">
-          Daily learning notes — bite-sized technical discoveries
-        </p>
-      </div>
-    </div>
+  <div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+      Today I Learned
+    </h1>
+    <p class="mt-2 text-zinc-400">
+      Daily learning notes — bite-sized technical discoveries
+    </p>
   </div>
 </section>
 
 <section class="bg-zinc-950">
-  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
     <!-- Tag Filter -->
     @if (allTags().length > 0) {
     <div class="mb-8 flex flex-wrap gap-2">
@@ -64,7 +59,7 @@
       @for (til of filteredTils(); track til.id) {
       <a
         [routerLink]="'/til/' + til.slug"
-        class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all hover:border-zinc-600 hover:bg-zinc-900"
+        class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
       >
         <div
           class="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500"
