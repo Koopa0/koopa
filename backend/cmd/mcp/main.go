@@ -149,6 +149,16 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		logger.Warn("ORM_JWT not set — search_oreilly_content will be unavailable")
 	}
 
+	// Tool call telemetry — async insert, no impact on response time.
+	opts = append(opts, mcpserver.WithTelemetry(func(name string, d time.Duration, isErr bool) {
+		_, execErr := pool.Exec(context.Background(),
+			"INSERT INTO tool_call_logs (tool_name, called_at, duration_ms, is_error) VALUES ($1, now(), $2, $3)",
+			name, d.Milliseconds(), isErr)
+		if execErr != nil {
+			logger.Warn("telemetry insert failed", "tool", name, "error", execErr)
+		}
+	}))
+
 	// Optional semantic search (requires GEMINI_API_KEY)
 	noteStore := note.NewStore(pool)
 	if geminiKey := os.Getenv("GEMINI_API_KEY"); geminiKey != "" {

@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS tool_call_logs;
 DROP TABLE IF EXISTS session_notes;
 DROP TABLE IF EXISTS note_links;
 DROP TABLE IF EXISTS notion_sources;

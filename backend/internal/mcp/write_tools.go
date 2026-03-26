@@ -515,10 +515,15 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	}
 
 	// Resolve project to store ID on the content record.
+	// Also add project slug as a tag so contentMatchesProject can find it
+	// even when the FK is missing (e.g. project not yet in projects table).
 	var projectID *uuid.UUID
 	if input.Project != "" && input.Project != "none" {
 		if proj, projErr := s.resolveProjectChain(ctx, input.Project); projErr == nil {
 			projectID = &proj.ID
+			tags = ensureTag(tags, proj.Slug)
+		} else {
+			tags = ensureTag(tags, strings.ToLower(input.Project))
 		}
 	}
 
@@ -687,11 +692,13 @@ func validateSessionNoteMetadata(noteType string, meta map[string]any) error {
 			return fmt.Errorf("insight metadata requires 'invalidation_condition' field")
 		}
 	case "plan":
-		if _, ok := meta["committed_task_ids"]; !ok {
-			return fmt.Errorf("plan metadata requires 'committed_task_ids' field")
-		}
 		if _, ok := meta["reasoning"]; !ok {
 			return fmt.Errorf("plan metadata requires 'reasoning' field")
+		}
+		_, hasIDs := meta["committed_task_ids"]
+		_, hasItems := meta["committed_items"]
+		if !hasIDs && !hasItems {
+			return fmt.Errorf("plan metadata requires 'committed_task_ids' or 'committed_items' (or both)")
 		}
 	case "metrics":
 		if _, ok := meta["tasks_planned"]; !ok {

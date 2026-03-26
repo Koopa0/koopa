@@ -9,6 +9,7 @@ package stats
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -481,10 +482,47 @@ func (s *Store) PipelineSummaries(ctx context.Context, since time.Time) ([]Pipel
 // Learning returns aggregated learning metrics for the admin dashboard.
 func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	ld := &LearningDashboard{
-		Notes: NoteGrowth{ByType: map[string]int{}},
+		Notes:    NoteGrowth{ByType: map[string]int{}},
+		Activity: WeeklyActivity{Trend: "stable"},
+		TopTags:  []TagCount{},
 	}
 
-	// Note growth
+	// Each section is independent — partial failures return zeros so the
+	// tool always returns a response even when some tables are empty or
+	// missing (e.g. obsidian sync not yet configured).
+	var hasData bool
+
+	// Note growth (obsidian_notes)
+	if err := s.learningNoteGrowth(ctx, ld); err != nil {
+		slog.Warn("learning: note growth query failed, returning zeros", "error", err)
+	} else {
+		hasData = true
+	}
+
+	// Weekly activity comparison (activity_events)
+	if err := s.learningWeeklyActivity(ctx, ld); err != nil {
+		slog.Warn("learning: weekly activity query failed, returning zeros", "error", err)
+	} else {
+		hasData = true
+	}
+
+	// Top tags by note count (tags + obsidian_note_tags)
+	if err := s.learningTopTags(ctx, ld); err != nil {
+		slog.Warn("learning: top tags query failed, returning zeros", "error", err)
+	} else {
+		hasData = true
+	}
+
+	// If none of the queries succeeded, report the error — likely a
+	// database connectivity issue rather than empty tables.
+	if !hasData {
+		return nil, fmt.Errorf("all learning queries failed: check database connectivity and migration status")
+	}
+
+	return ld, nil
+}
+
+func (s *Store) learningNoteGrowth(ctx context.Context, ld *LearningDashboard) error {
 	err := s.dbtx.QueryRow(ctx, `
 		SELECT
 			COUNT(*),
@@ -492,34 +530,33 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 			COUNT(*) FILTER (WHERE synced_at > now() - interval '30 days')
 		FROM obsidian_notes`).Scan(&ld.Notes.Total, &ld.Notes.LastWeek, &ld.Notes.LastMonth)
 	if err != nil {
-		return nil, fmt.Errorf("note growth: %w", err)
+		return fmt.Errorf("note growth: %w", err)
 	}
 
 	noteRows, err := s.dbtx.Query(ctx, `SELECT COALESCE(type, 'unknown'), COUNT(*) FROM obsidian_notes GROUP BY type`)
 	if err != nil {
-		return nil, fmt.Errorf("notes by type: %w", err)
+		return fmt.Errorf("notes by type: %w", err)
 	}
 	defer noteRows.Close()
 	for noteRows.Next() {
 		var ntype string
 		var count int
 		if scanErr := noteRows.Scan(&ntype, &count); scanErr != nil {
-			return nil, scanErr
+			return scanErr
 		}
 		ld.Notes.ByType[ntype] = count
 	}
-	if rowsErr := noteRows.Err(); rowsErr != nil {
-		return nil, rowsErr
-	}
+	return noteRows.Err()
+}
 
-	// Weekly activity comparison
-	err = s.dbtx.QueryRow(ctx, `
+func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboard) error {
+	err := s.dbtx.QueryRow(ctx, `
 		SELECT
 			COUNT(*) FILTER (WHERE timestamp > now() - interval '7 days'),
 			COUNT(*) FILTER (WHERE timestamp > now() - interval '14 days' AND timestamp <= now() - interval '7 days')
 		FROM activity_events`).Scan(&ld.Activity.ThisWeek, &ld.Activity.LastWeek)
 	if err != nil {
-		return nil, fmt.Errorf("weekly activity: %w", err)
+		return fmt.Errorf("weekly activity: %w", err)
 	}
 
 	switch {
@@ -530,8 +567,10 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	default:
 		ld.Activity.Trend = "stable"
 	}
+	return nil
+}
 
-	// Top tags by note count
+func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) error {
 	tagRows, err := s.dbtx.Query(ctx, `
 		SELECT t.name, COUNT(ont.note_id) AS cnt
 		FROM tags t
@@ -540,22 +579,15 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 		ORDER BY cnt DESC
 		LIMIT 10`)
 	if err != nil {
-		return nil, fmt.Errorf("top tags: %w", err)
+		return fmt.Errorf("top tags: %w", err)
 	}
 	defer tagRows.Close()
 	for tagRows.Next() {
 		var tc TagCount
-		if err := tagRows.Scan(&tc.Name, &tc.Count); err != nil {
-			return nil, err
+		if scanErr := tagRows.Scan(&tc.Name, &tc.Count); scanErr != nil {
+			return scanErr
 		}
 		ld.TopTags = append(ld.TopTags, tc)
 	}
-	if err := tagRows.Err(); err != nil {
-		return nil, err
-	}
-	if ld.TopTags == nil {
-		ld.TopTags = []TagCount{}
-	}
-
-	return ld, nil
+	return tagRows.Err()
 }

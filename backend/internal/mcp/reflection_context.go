@@ -33,6 +33,7 @@ type ReflectionContextOutput struct {
 type reflectionPlanNote struct {
 	Content          string   `json:"content"`
 	CommittedTaskIDs []string `json:"committed_task_ids,omitempty"`
+	CommittedItems   []string `json:"committed_items,omitempty"`
 	BufferTaskIDs    []string `json:"buffer_task_ids,omitempty"`
 	Source           string   `json:"source"`
 	CreatedAt        string   `json:"created_at"`
@@ -126,16 +127,19 @@ func (s *Server) fetchReflectionPlan(ctx context.Context, out *ReflectionContext
 		CreatedAt: n.CreatedAt.Format(time.RFC3339),
 	}
 
-	// Parse committed/buffer task IDs from metadata
+	// Parse committed/buffer task IDs from metadata.
+	// Supports both committed_task_ids (UUID array) and committed_items (free-text array).
 	if len(n.Metadata) > 0 {
 		var meta struct {
 			CommittedTaskIDs []string `json:"committed_task_ids"`
+			CommittedItems   []string `json:"committed_items"`
 			BufferTaskIDs    []string `json:"buffer_task_ids"`
 		}
 		if json.Unmarshal(n.Metadata, &meta) == nil {
 			plan.CommittedTaskIDs = meta.CommittedTaskIDs
+			plan.CommittedItems = meta.CommittedItems
 			plan.BufferTaskIDs = meta.BufferTaskIDs
-			out.TasksPlannedToday = len(meta.CommittedTaskIDs)
+			out.TasksPlannedToday = len(meta.CommittedTaskIDs) + len(meta.CommittedItems)
 		}
 	}
 

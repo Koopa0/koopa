@@ -585,3 +585,15 @@ CREATE TABLE session_notes (
 CREATE INDEX idx_session_notes_date ON session_notes (note_date DESC);
 CREATE INDEX idx_session_notes_type ON session_notes (note_date, note_type);
 CREATE INDEX idx_session_notes_insight_status ON session_notes ((metadata->>'status')) WHERE note_type = 'insight';
+
+-- === MCP Tool Call Telemetry ===
+
+CREATE TABLE tool_call_logs (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tool_name   TEXT NOT NULL,
+    called_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    duration_ms INTEGER,
+    is_error    BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX idx_tool_call_logs_name_time ON tool_call_logs (tool_name, called_at DESC);
