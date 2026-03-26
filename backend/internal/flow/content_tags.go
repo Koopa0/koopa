@@ -101,7 +101,8 @@ func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTa
 
 		var suggested []string
 		if err := parseJSONLoose(resp.Text(), &suggested); err != nil {
-			return nil, fmt.Errorf("parsing tags response: %w", err)
+			slog.Warn("content tags: falling back to empty tags", "error", err, "response", resp.Text()[:min(len(resp.Text()), 100)])
+			return []string{}, nil
 		}
 
 		// Filter to only existing slugs.

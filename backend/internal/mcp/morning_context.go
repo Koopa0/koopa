@@ -39,7 +39,7 @@ type MorningContextOutput struct {
 	LatestReflection       string                  `json:"latest_reflection,omitempty"`
 	LatestReflectionDate   string                  `json:"latest_reflection_date,omitempty"`
 	YesterdayAdjustments   []string                `json:"yesterday_adjustments,omitempty"`
-	PlanningHistory        planningHistorySummary  `json:"planning_history"`
+	PlanningHistory        *planningHistorySummary `json:"planning_history,omitempty"`
 	ActiveInsights         []insightBrief          `json:"active_insights"`
 	PendingRecommendations []insightBrief          `json:"pending_recommendations"`
 	TotalUnverified        int64                   `json:"total_unverified"`
@@ -48,6 +48,7 @@ type MorningContextOutput struct {
 	RSSHighlightCount      int                     `json:"rss_highlight_count"`
 	TopRSSHighlight        string                  `json:"top_rss_highlight,omitempty"`
 	UrgentRSS              []urgentRSSItem         `json:"urgent_rss"`
+	UrgentRSSCount         int                     `json:"urgent_rss_count"`
 	PipelineHealth         *pipelineHealthSection  `json:"pipeline_health,omitempty"`
 	RSSHighlights          []rssHighlightItem      `json:"rss_highlights,omitempty"`
 	AgentTasks             []agentTaskItem         `json:"agent_tasks,omitempty"`
@@ -488,7 +489,8 @@ func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContex
 	if metricsErr != nil {
 		s.logger.Error("morning_context: planning history", "error", metricsErr)
 	}
-	out.PlanningHistory = buildPlanningHistory(metricsNotes, 7)
+	ph := buildPlanningHistory(metricsNotes, 7)
+	out.PlanningHistory = &ph
 
 	s.archiveStaleInsights(ctx, now)
 	s.fetchMorningInsights(ctx, out)
@@ -590,6 +592,7 @@ func (s *Server) fetchMorningRSSHighlights(ctx context.Context, out *MorningCont
 			CollectedAt: urgent[i].CollectedAt.Format(time.RFC3339),
 		})
 	}
+	out.UrgentRSSCount = len(out.UrgentRSS)
 }
 
 // fetchMorningDailySummary fetches the daily summary hint for evening reflection.
@@ -952,36 +955,32 @@ func parseInsightBrief(n *session.Note) insightBrief {
 }
 
 // fetchMorningPipelineHealth gets a quick pipeline health summary for the briefing.
+// Uses FlowRunsSince(24h) to align with get_system_status(scope=summary) time window.
 func (s *Server) fetchMorningPipelineHealth(ctx context.Context, out *MorningContextOutput) {
-	if s.stats == nil {
+	if s.systemStatus == nil {
 		return
 	}
-	// Use platform stats as a proxy for pipeline health
-	overview, err := s.stats.Overview(ctx)
+
+	since := time.Now().Add(-24 * time.Hour)
+	fs, err := s.systemStatus.FlowRunsSince(ctx, since, nil, nil)
 	if err != nil {
 		s.logger.Warn("morning: pipeline health failed", "error", err)
 		return
 	}
 
-	failed := overview.FlowRuns.ByStatus["failed"]
-	total := overview.FlowRuns.Total
-
 	status := "all systems normal"
-	if failed > 0 {
-		status = fmt.Sprintf("%d failed flow runs detected", failed)
+	if fs.Failed > 0 {
+		status = fmt.Sprintf("%d failed flow runs detected", fs.Failed)
 	}
 
-	// Query actual failing feeds (consecutive_failures > 0) via system status reader
 	var failingFeeds int
-	if s.systemStatus != nil {
-		if fh, fhErr := s.systemStatus.FeedHealth(ctx); fhErr == nil {
-			failingFeeds = fh.FailingFeeds
-		}
+	if fh, fhErr := s.systemStatus.FeedHealth(ctx); fhErr == nil {
+		failingFeeds = fh.FailingFeeds
 	}
 
 	out.PipelineHealth = &pipelineHealthSection{
-		FlowsLast12h:  total,
-		FlowsFailed:   failed,
+		FlowsLast12h:  fs.Total,
+		FlowsFailed:   fs.Failed,
 		FailingFeeds:  failingFeeds,
 		StatusSummary: status,
 	}
