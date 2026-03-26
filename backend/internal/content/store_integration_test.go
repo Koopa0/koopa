@@ -3,7 +3,6 @@
 package content
 
 import (
-	"context"
 	"os"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) *Store {
 	t.Helper()
-	if err := testdb.TruncateCtx(context.Background(), testPool, "content_topics", "contents", "topics"); err != nil {
+	if err := testdb.TruncateCtx(t.Context(), testPool, "content_topics", "contents", "topics"); err != nil {
 		t.Fatal(err)
 	}
 	return NewStore(testPool)

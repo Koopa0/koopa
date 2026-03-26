@@ -3,7 +3,6 @@
 package tag
 
 import (
-	"context"
 	"os"
 	"strings"
 	"testing"
@@ -29,7 +28,7 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) *Store {
 	t.Helper()
-	if err := testdb.TruncateCtx(context.Background(), testPool, "tag_aliases", "obsidian_note_tags", "activity_event_tags", "tags"); err != nil {
+	if err := testdb.TruncateCtx(t.Context(), testPool, "tag_aliases", "obsidian_note_tags", "activity_event_tags", "tags"); err != nil {
 		t.Fatal(err)
 	}
 	return NewStore(testPool)

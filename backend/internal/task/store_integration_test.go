@@ -3,7 +3,6 @@
 package task
 
 import (
-	"context"
 	"os"
 	"testing"
 	"time"
@@ -27,7 +26,7 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) *Store {
 	t.Helper()
-	if err := testdb.TruncateCtx(context.Background(), testPool, "tasks"); err != nil {
+	if err := testdb.TruncateCtx(t.Context(), testPool, "tasks"); err != nil {
 		t.Fatal(err)
 	}
 	return NewStore(testPool)

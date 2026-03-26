@@ -3,7 +3,6 @@
 package note
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -26,7 +25,7 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) *Store {
 	t.Helper()
-	if err := testdb.TruncateCtx(context.Background(), testPool, "note_links", "obsidian_notes"); err != nil {
+	if err := testdb.TruncateCtx(t.Context(), testPool, "note_links", "obsidian_notes"); err != nil {
 		t.Fatal(err)
 	}
 	return NewStore(testPool)
