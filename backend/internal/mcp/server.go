@@ -184,6 +184,11 @@ func NewServer(
 	mutating := &mcp.ToolAnnotations{
 		OpenWorldHint: &f,
 	}
+	t := true
+	destructive := &mcp.ToolAnnotations{
+		DestructiveHint: &t,
+		OpenWorldHint:   &f,
+	}
 
 	// --- read-only tools ---
 
@@ -271,8 +276,8 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "complete_task",
-		Description: "Mark a task as done. Use when the user says they've finished something: 'done', 'completed', '做完了', '這題寫完了', 'OK next', or any phrase indicating task completion. Always confirm the specific task before calling. Returns next recurrence date for recurring tasks.",
-		Annotations: mutating,
+		Description: "Mark a task as done. Use when the user says they've finished something: 'done', 'completed', '做完了', '這題寫完了', 'OK next'. Always confirm the specific task before calling. Returns next recurrence date for recurring tasks.",
+		Annotations: destructive, // recurring task due date push is irreversible
 	}, s.completeTask)
 
 	addTool(s, &mcp.Tool{
@@ -313,7 +318,7 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_morning_context",
-		Description: "Get everything needed for daily planning in one call: overdue tasks, today's tasks, recent activity summary, latest build logs, project health, active goals, yesterday's reflection, and planning history (completion rates). Use when the user starts their day with phrases like 'good morning', '早安', 'what should I work on today', '今天有什麼事', 'start planning'. This should be the FIRST tool called in a morning planning session. Optional sections parameter limits response to specific sections: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions. Omit sections to get all.",
+		Description: "Get everything needed for daily planning in one call. Use when the user starts their day ('good morning', '早安', 'what should I work on today'). This should be the FIRST tool called in a morning planning session. Optional sections parameter limits response: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions. Examples: Full daily planning (omit sections), Learning session: sections=[\"tasks\",\"plan\"], Claude Code session: sections=[\"tasks\",\"plan\",\"build_logs\",\"activity\"].",
 		Annotations: readOnly,
 	}, s.getMorningContext)
 
@@ -325,7 +330,7 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_weekly_summary",
-		Description: "Get a comprehensive weekly summary: task completion by project, metrics trends, project health, insight activity, goal alignment, auto-generated highlights and concerns. Use for weekly reviews, '這週做了什麼', 'weekly review', 'how was this week'. Set weeks_back=1 for last week.",
+		Description: "Get a comprehensive weekly summary: task completion by project, metrics trends, project health, insight activity, goal alignment, highlights and concerns. Set weeks_back=1 for last week. Set compare_previous=true to include previous week data and delta (tasks completed diff, avg capacity diff).",
 		Annotations: readOnly,
 	}, s.getWeeklySummary)
 
@@ -339,7 +344,7 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "save_session_note",
-		Description: "Save a session note for cross-environment context sharing. note_type: plan|reflection|context|metrics|insight. source: claude|claude-code|manual. Required metadata by type — insight: {hypothesis (string), invalidation_condition (string)}; plan: {committed_task_ids (array), reasoning (string)}; metrics: {tasks_planned (int), tasks_completed (int), adjustments (array)}; context and reflection: no required metadata. Example: save_session_note(note_type=\"insight\", source=\"claude\", content=\"...\", metadata={hypothesis: \"...\", invalidation_condition: \"...\"})",
+		Description: "Save a session note for cross-environment context sharing. note_type: plan|reflection|context|metrics|insight. source: claude|claude-code|manual. Required metadata by type — insight: {hypothesis, invalidation_condition}; plan: {reasoning (required), committed_task_ids (UUID array) and/or committed_items (free-text string array)}; metrics: {tasks_planned, tasks_completed, adjustments}; context and reflection: no required metadata.",
 		Annotations: additive,
 	}, s.saveSessionNote)
 
@@ -393,46 +398,84 @@ func NewServer(
 		}, s.readOReillyChapter)
 	}
 
+	// D2: renamed curate_collected_item → bookmark_rss_item
 	addTool(s, &mcp.Tool{
-		Name:        "curate_collected_item",
-		Description: "Curate an RSS article into the knowledge base as a bookmark. Creates a content record (type=bookmark, status=draft) and links it back to the collected item. The bookmark will be processed by the content-review pipeline (generating embedding, excerpt, tags). Use when a high-value article should be preserved for future search_knowledge retrieval.",
+		Name:        "bookmark_rss_item",
+		Description: "Save an RSS collected item as a bookmark in the knowledge base. Creates a content record (type=bookmark, status=draft) and links it to the collected item. Use when a high-value article should be preserved for future search_knowledge retrieval.",
 		Annotations: additive,
 	}, s.curateCollectedItem)
 
-	// --- Sprint 3 content management tools ---
+	// --- B2: content tools (split from manage_content) ---
 
 	addTool(s, &mcp.Tool{
-		Name:        "manage_content",
-		Description: "Manage content records. Actions: create (title+body+content_type required, returns content_id+slug), update (content_id required, updates provided fields), publish (content_id required, sets status to published). Use when creating articles, build logs, TILs, or other content types. For dev session logs, prefer log_dev_session instead.",
-		Annotations: mutating,
-	}, s.manageContent)
+		Name:        "create_content",
+		Description: "Create a new draft content record. Required: title, body, content_type (article|build-log|til|bookmark|essay|note|digest). Optional: tags, project. For dev session logs, prefer log_dev_session instead.",
+		Annotations: additive,
+	}, s.createContent)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_content_pipeline",
-		Description: "View the content pipeline: drafts awaiting work, review queue, recently published, and scheduled content. Views: queue (draft+review items), calendar (published last 7 days + scheduled drafts), recent (published content). Use when checking what content needs attention, reviewing publishing cadence, or planning what to write next.",
+		Name:        "update_content",
+		Description: "Update a draft or review content's properties. Required: content_id. Optional: title, body, content_type, tags, project. Only provided fields are updated.",
+		Annotations: additiveIdempotent,
+	}, s.updateContent)
+
+	addTool(s, &mcp.Tool{
+		Name:        "publish_content",
+		Description: "Publish a content record (status → published). This is irreversible. Required: content_id.",
+		Annotations: destructive,
+	}, s.publishContent)
+
+	// D1: renamed get_content_pipeline → list_content_queue
+	addTool(s, &mcp.Tool{
+		Name:        "list_content_queue",
+		Description: "View the content queue: drafts awaiting work, review items, recently published, and scheduled content. Views: queue (draft+review items, default), calendar (published last 7 days + scheduled), recent (published). Use when checking what content needs attention or planning what to write next.",
 		Annotations: readOnly,
 	}, s.getContentPipeline)
 
-	// --- Sprint 2 tools ---
+	// --- B1: feed tools (split from manage_feeds) ---
 
 	if s.feeds != nil {
 		addTool(s, &mcp.Tool{
-			Name:        "manage_feeds",
-			Description: "Manage RSS/Atom feed sources. Actions: list (all feeds with status), add (url+name required, schedule defaults to daily), disable/enable/remove (feed_id required). Use when the user wants to add a new feed source, check feed health, or manage existing subscriptions.",
-			Annotations: mutating,
-		}, s.manageFeeds)
+			Name:        "list_feeds",
+			Description: "List all RSS/Atom feed subscriptions with id, name, url, enabled status, schedule, topics, and last_fetched_at.",
+			Annotations: readOnly,
+		}, s.listFeeds)
+
+		addTool(s, &mcp.Tool{
+			Name:        "add_feed",
+			Description: "Add a new RSS/Atom feed subscription. Required: url, name. Optional: schedule (daily|weekly, default daily), topics.",
+			Annotations: additive,
+		}, s.addFeed)
+
+		addTool(s, &mcp.Tool{
+			Name:        "disable_feed",
+			Description: "Disable a feed subscription. Stops collection but preserves historical data. Required: feed_id.",
+			Annotations: additiveIdempotent,
+		}, s.disableFeed)
+
+		addTool(s, &mcp.Tool{
+			Name:        "enable_feed",
+			Description: "Re-enable a disabled feed subscription. Required: feed_id.",
+			Annotations: additiveIdempotent,
+		}, s.enableFeed)
+
+		addTool(s, &mcp.Tool{
+			Name:        "remove_feed",
+			Description: "Permanently delete a feed subscription and its record. Required: feed_id.",
+			Annotations: destructive,
+		}, s.removeFeed)
 	}
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_collection_stats",
-		Description: "Get collection pipeline statistics: per-feed item counts, average relevance scores, last collection timestamps, and global totals. Optionally filter by feed_id and lookback period (days, default 30, max 90). Use when checking feed health, collection pipeline performance, or diagnosing why certain feeds aren't producing results.",
+		Description: "Get collection pipeline statistics: per-feed item counts, average relevance scores, last collection timestamps, and global totals. Optionally filter by feed_id and lookback period (days, default 30, max 90).",
 		Annotations: readOnly,
 	}, s.getCollectionStats)
 
 	if s.systemStatus != nil {
 		addTool(s, &mcp.Tool{
 			Name:        "get_system_status",
-			Description: "Get system observability: flow run stats, feed health, pipeline summaries, and recent flow runs. Scopes: summary (flow stats + feed health), pipelines (per-flow-name aggregation), flows (recent individual flow runs). Use when checking system health, diagnosing pipeline failures, or monitoring background jobs.",
+			Description: "Get system observability: flow run stats, feed health, pipeline summaries, and recent flow runs. Scopes: summary (flow stats + feed health), pipelines (per-flow-name aggregation), flows (recent individual runs).",
 			Annotations: readOnly,
 		}, s.getSystemStatus)
 	}
@@ -440,38 +483,27 @@ func NewServer(
 	if s.pipelineTrigger != nil {
 		addTool(s, &mcp.Tool{
 			Name:        "trigger_pipeline",
-			Description: "Manually trigger a background pipeline. Valid pipelines: rss_collector (fetch all enabled RSS feeds), notion_sync (sync all Notion pages). Rate limited to once per 5 minutes per pipeline. Use when the user wants to force a feed collection or Notion sync outside the regular schedule.",
-			Annotations: mutating,
+			Description: "Manually trigger a background pipeline: rss_collector or notion_sync. Rate limited to once per 5 minutes per pipeline.",
+			Annotations: destructive,
 		}, s.triggerPipeline)
 	}
 
-	// --- Sprint 3: AI flow tools ---
+	// C1-C2: invoke_content_polish and invoke_content_strategy REMOVED
+	// (AI-calls-AI anti-pattern — consumers should do polish/strategy directly)
+	// Genkit flow code retained in flow_tools.go for potential non-LLM consumers.
 
-	if s.flowInvoker != nil {
-		addTool(s, &mcp.Tool{
-			Name:        "invoke_content_polish",
-			Description: "Polish a draft content using AI. Improves writing quality, fixes grammar, enhances readability. Input: content_id (required). Returns polished version of the content body.",
-			Annotations: mutating,
-		}, s.invokeContentPolish)
-
-		addTool(s, &mcp.Tool{
-			Name:        "invoke_content_strategy",
-			Description: "Get AI-powered content topic suggestions based on existing content, RSS trends, and Koopa's positioning as a Go backend consultant. Returns suggested topics with rationale.",
-			Annotations: readOnly,
-		}, s.invokeContentStrategy)
-	}
-
+	// C3: generate_social_excerpt marked DEPRECATED (low usage expected)
 	addTool(s, &mcp.Tool{
 		Name:        "generate_social_excerpt",
-		Description: "Generate a social media excerpt from published content. Platforms: linkedin (150-300 words, professional), twitter (280 chars, concise). Returns excerpt, hook, CTA, and hashtags.",
+		Description: "[DEPRECATED — pending telemetry review] Generate a social media excerpt from published content. Platforms: linkedin, twitter. Returns excerpt, hook, CTA, and hashtags. Consider writing excerpts directly instead of using this tool.",
 		Annotations: readOnly,
 	}, s.generateSocialExcerpt)
 
-	// --- Sprint 4: Knowledge synthesis ---
+	// --- Knowledge synthesis ---
 
 	addTool(s, &mcp.Tool{
 		Name:        "synthesize_topic",
-		Description: "Synthesize knowledge across ALL content sources for a topic. Searches articles, build logs, TILs, Obsidian notes, and RSS bookmarks, then produces a structured synthesis grouped by source type. Includes gap analysis showing which sub-topics lack coverage. HIGH TOKEN COST — this tool searches broadly and generates a long synthesis. Use when preparing discovery calls, writing topic overviews, or analyzing knowledge coverage. Example: synthesize_topic(query=\"PostgreSQL connection pooling\")",
+		Description: "Synthesize knowledge across ALL content sources for a topic. HIGH TOKEN COST. Consider using search_knowledge + search_notes manually if you need more control over the synthesis process. Searches articles, build logs, TILs, Obsidian notes, and RSS bookmarks, then produces a structured synthesis grouped by source type with gap analysis.",
 		Annotations: readOnly,
 	}, s.synthesizeTopic)
 

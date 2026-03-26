@@ -15,19 +15,32 @@ import (
 
 // WeeklySummaryInput is the input for the get_weekly_summary tool.
 type WeeklySummaryInput struct {
-	WeeksBack int `json:"weeks_back,omitempty" jsonschema_description:"0 = current week, 1 = last week. Default 0, max 4."`
+	WeeksBack       int  `json:"weeks_back,omitempty" jsonschema_description:"0 = current week, 1 = last week. Default 0, max 4."`
+	ComparePrevious bool `json:"compare_previous,omitempty" jsonschema_description:"include previous week data and delta comparison"`
 }
 
 // WeeklySummaryOutput is the aggregated weekly report.
 type WeeklySummaryOutput struct {
-	Period           weeklyPeriod    `json:"period"`
-	Tasks            weeklyTasks     `json:"tasks"`
-	MetricsTrend     weeklyMetrics   `json:"metrics_trend"`
-	ProjectHealth    []projectHealth `json:"project_health"`
-	InsightsActivity weeklyInsights  `json:"insights_activity"`
-	GoalAlignment    []weeklyGoal    `json:"goal_alignment"`
-	Highlights       []string        `json:"highlights"`
-	Concerns         []string        `json:"concerns"`
+	Period           weeklyPeriod      `json:"period"`
+	Tasks            weeklyTasks       `json:"tasks"`
+	MetricsTrend     weeklyMetrics     `json:"metrics_trend"`
+	ProjectHealth    []projectHealth   `json:"project_health"`
+	InsightsActivity weeklyInsights    `json:"insights_activity"`
+	GoalAlignment    []weeklyGoal      `json:"goal_alignment"`
+	Highlights       []string          `json:"highlights"`
+	Concerns         []string          `json:"concerns"`
+	PreviousWeek     *weeklyComparison `json:"previous_week,omitempty"`
+}
+
+type weeklyComparison struct {
+	Period         weeklyPeriod `json:"period"`
+	TasksCompleted int          `json:"tasks_completed"`
+	Delta          weeklyDelta  `json:"delta"`
+}
+
+type weeklyDelta struct {
+	TasksCompleted int     `json:"tasks_completed"` // current - previous
+	AvgCapacity    float64 `json:"avg_capacity"`    // current - previous
 }
 
 type weeklyPeriod struct {
@@ -121,6 +134,46 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 	s.fetchWeeklyInsights(ctx, &out, weekStart)
 	s.fetchWeeklyGoalAlignment(ctx, &out, activeProjects, byProject, weekStart, today)
 	s.buildWeeklyTrendConcern(&out, metricsNotes)
+
+	// D5: compare with previous week when requested
+	if input.ComparePrevious {
+		prevStart := weekStart.AddDate(0, 0, -7)
+		prevEnd := weekStart
+		prevByProject, prevErr := s.tasks.CompletedByProjectSince(ctx, prevStart)
+		if prevErr == nil {
+			var prevTotal int64
+			for _, p := range prevByProject {
+				prevTotal += p.Completed
+			}
+
+			var prevAvgCapacity float64
+			if s.sessions != nil {
+				prevMetrics, mErr := s.sessions.MetricsHistory(ctx, prevStart)
+				if mErr == nil {
+					entries := buildDailyMetricsList(prevMetrics)
+					var totalCap float64
+					for _, e := range entries {
+						totalCap += float64(e.TasksCompleted)
+					}
+					if len(entries) > 0 {
+						prevAvgCapacity = totalCap / float64(len(entries))
+					}
+				}
+			}
+
+			out.PreviousWeek = &weeklyComparison{
+				Period: weeklyPeriod{
+					From: prevStart.Format(time.DateOnly),
+					To:   prevEnd.AddDate(0, 0, -1).Format(time.DateOnly),
+				},
+				TasksCompleted: int(prevTotal),
+				Delta: weeklyDelta{
+					TasksCompleted: out.Tasks.TotalCompleted - int(prevTotal),
+					AvgCapacity:    out.MetricsTrend.AvgCapacity - prevAvgCapacity,
+				},
+			}
+		}
+	}
 
 	return nil, out, nil
 }

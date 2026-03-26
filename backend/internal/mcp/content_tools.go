@@ -15,28 +15,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 )
 
-// --- manage_content tool ---
-
-// ManageContentInput is the input for the manage_content tool.
-type ManageContentInput struct {
-	Action      string   `json:"action" jsonschema_description:"create|update|publish (required)"`
-	ContentID   string   `json:"content_id,omitempty" jsonschema_description:"content UUID (required for update/publish)"`
-	Title       string   `json:"title,omitempty" jsonschema_description:"content title (required for create)"`
-	Body        string   `json:"body,omitempty" jsonschema_description:"markdown body (required for create)"`
-	ContentType string   `json:"content_type,omitempty" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest (required for create)"`
-	Tags        []string `json:"tags,omitempty"`
-	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
-}
-
-// ManageContentOutput is the output for the manage_content tool.
-type ManageContentOutput struct {
-	Action    string `json:"action"`
-	ContentID string `json:"content_id,omitempty"`
-	Slug      string `json:"slug,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Title     string `json:"title,omitempty"`
-	Message   string `json:"message,omitempty"`
-}
+// --- content tools (split from manage_content) ---
 
 // slugRe matches any character that is not a lowercase letter, digit, or hyphen.
 var slugRe = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -47,7 +26,6 @@ func slugify(title string) string {
 	s := strings.ToLower(strings.TrimSpace(title))
 	s = strings.ReplaceAll(s, " ", "-")
 	s = slugRe.ReplaceAllString(s, "")
-	// Collapse consecutive hyphens.
 	for strings.Contains(s, "--") {
 		s = strings.ReplaceAll(s, "--", "-")
 	}
@@ -59,32 +37,37 @@ func slugify(title string) string {
 	return s
 }
 
-func (s *Server) manageContent(ctx context.Context, _ *mcp.CallToolRequest, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
-	switch input.Action {
-	case "create":
-		return s.manageContentCreate(ctx, input)
-	case "update":
-		return s.manageContentUpdate(ctx, input)
-	case "publish":
-		return s.manageContentPublish(ctx, input)
-	default:
-		return nil, ManageContentOutput{}, fmt.Errorf("invalid action %q: use create, update, or publish", input.Action)
-	}
+// ContentActionOutput is the shared output for create/update/publish content.
+type ContentActionOutput struct {
+	ContentID string `json:"content_id"`
+	Slug      string `json:"slug"`
+	Status    string `json:"status"`
+	Title     string `json:"title"`
+	Message   string `json:"message"`
 }
 
-func (s *Server) manageContentCreate(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+// CreateContentInput is the input for the create_content tool.
+type CreateContentInput struct {
+	Title       string   `json:"title" jsonschema_description:"content title (required)"`
+	Body        string   `json:"body" jsonschema_description:"markdown body (required)"`
+	ContentType string   `json:"content_type" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest (required)"`
+	Tags        []string `json:"tags,omitempty"`
+	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
+}
+
+func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, input CreateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
 	if input.Title == "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("title is required for create")
+		return nil, ContentActionOutput{}, fmt.Errorf("title is required")
 	}
 	if input.Body == "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("body is required for create")
+		return nil, ContentActionOutput{}, fmt.Errorf("body is required")
 	}
 	if input.ContentType == "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("content_type is required for create")
+		return nil, ContentActionOutput{}, fmt.Errorf("content_type is required")
 	}
 	ct := content.Type(input.ContentType)
 	if !ct.Valid() {
-		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_type %q: use article, build-log, til, bookmark, essay, note, or digest", input.ContentType)
+		return nil, ContentActionOutput{}, fmt.Errorf("invalid content_type %q: use article, build-log, til, bookmark, essay, note, or digest", input.ContentType)
 	}
 
 	slug := slugify(input.Title)
@@ -106,7 +89,7 @@ func (s *Server) manageContentCreate(ctx context.Context, input *ManageContentIn
 	if input.Project != "" {
 		proj, err := s.resolveProjectChain(ctx, input.Project)
 		if err != nil {
-			return nil, ManageContentOutput{}, err
+			return nil, ContentActionOutput{}, err
 		}
 		params.ProjectID = &proj.ID
 	}
@@ -114,17 +97,16 @@ func (s *Server) manageContentCreate(ctx context.Context, input *ManageContentIn
 	now := time.Now()
 	created, err := s.createContentWithRetry(ctx, params, slug, now)
 	if err != nil {
-		return nil, ManageContentOutput{}, fmt.Errorf("creating content: %w", err)
+		return nil, ContentActionOutput{}, fmt.Errorf("creating content: %w", err)
 	}
 
-	s.logger.Info("content created via manage_content",
+	s.logger.Info("content created via create_content",
 		"content_id", created.ID,
 		"slug", created.Slug,
 		"type", input.ContentType,
 	)
 
-	return nil, ManageContentOutput{
-		Action:    "create",
+	return nil, ContentActionOutput{
 		ContentID: created.ID.String(),
 		Slug:      created.Slug,
 		Status:    string(created.Status),
@@ -133,13 +115,23 @@ func (s *Server) manageContentCreate(ctx context.Context, input *ManageContentIn
 	}, nil
 }
 
-func (s *Server) manageContentUpdate(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+// UpdateContentInput is the input for the update_content tool.
+type UpdateContentInput struct {
+	ContentID   string   `json:"content_id" jsonschema_description:"content UUID (required)"`
+	Title       string   `json:"title,omitempty"`
+	Body        string   `json:"body,omitempty"`
+	ContentType string   `json:"content_type,omitempty" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest"`
+	Tags        []string `json:"tags,omitempty"`
+	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
+}
+
+func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, input UpdateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
 	if input.ContentID == "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for update")
+		return nil, ContentActionOutput{}, fmt.Errorf("content_id is required")
 	}
 	id, err := uuid.Parse(input.ContentID)
 	if err != nil {
-		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_id %q: %w", input.ContentID, err)
+		return nil, ContentActionOutput{}, fmt.Errorf("invalid content_id %q: %w", input.ContentID, err)
 	}
 
 	p := &content.UpdateParams{}
@@ -152,7 +144,7 @@ func (s *Server) manageContentUpdate(ctx context.Context, input *ManageContentIn
 	if input.ContentType != "" {
 		ct := content.Type(input.ContentType)
 		if !ct.Valid() {
-			return nil, ManageContentOutput{}, fmt.Errorf("invalid content_type %q", input.ContentType)
+			return nil, ContentActionOutput{}, fmt.Errorf("invalid content_type %q", input.ContentType)
 		}
 		p.Type = &ct
 	}
@@ -162,7 +154,7 @@ func (s *Server) manageContentUpdate(ctx context.Context, input *ManageContentIn
 	if input.Project != "" {
 		proj, projErr := s.resolveProjectChain(ctx, input.Project)
 		if projErr != nil {
-			return nil, ManageContentOutput{}, projErr
+			return nil, ContentActionOutput{}, projErr
 		}
 		p.ProjectID = &proj.ID
 	}
@@ -170,13 +162,12 @@ func (s *Server) manageContentUpdate(ctx context.Context, input *ManageContentIn
 	updated, err := s.contents.UpdateContent(ctx, id, p)
 	if err != nil {
 		if errors.Is(err, content.ErrNotFound) {
-			return nil, ManageContentOutput{}, fmt.Errorf("content %s not found", input.ContentID)
+			return nil, ContentActionOutput{}, fmt.Errorf("content %s not found", input.ContentID)
 		}
-		return nil, ManageContentOutput{}, fmt.Errorf("updating content: %w", err)
+		return nil, ContentActionOutput{}, fmt.Errorf("updating content: %w", err)
 	}
 
-	return nil, ManageContentOutput{
-		Action:    "update",
+	return nil, ContentActionOutput{
 		ContentID: updated.ID.String(),
 		Slug:      updated.Slug,
 		Status:    string(updated.Status),
@@ -185,24 +176,28 @@ func (s *Server) manageContentUpdate(ctx context.Context, input *ManageContentIn
 	}, nil
 }
 
-func (s *Server) manageContentPublish(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+// PublishContentInput is the input for the publish_content tool.
+type PublishContentInput struct {
+	ContentID string `json:"content_id" jsonschema_description:"content UUID (required)"`
+}
+
+func (s *Server) publishContent(ctx context.Context, _ *mcp.CallToolRequest, input PublishContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
 	if input.ContentID == "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for publish")
+		return nil, ContentActionOutput{}, fmt.Errorf("content_id is required")
 	}
 	id, err := uuid.Parse(input.ContentID)
 	if err != nil {
-		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_id %q: %w", input.ContentID, err)
+		return nil, ContentActionOutput{}, fmt.Errorf("invalid content_id %q: %w", input.ContentID, err)
 	}
 
 	published, err := s.contents.PublishContent(ctx, id)
 	if err != nil {
 		if errors.Is(err, content.ErrNotFound) {
-			return nil, ManageContentOutput{}, fmt.Errorf("content %s not found", input.ContentID)
+			return nil, ContentActionOutput{}, fmt.Errorf("content %s not found", input.ContentID)
 		}
-		return nil, ManageContentOutput{}, fmt.Errorf("publishing content: %w", err)
+		return nil, ContentActionOutput{}, fmt.Errorf("publishing content: %w", err)
 	}
 
-	// Record activity event if writer is available.
 	if s.activityWriter != nil {
 		evTitle := fmt.Sprintf("published: %s", published.Title)
 		_, actErr := s.activityWriter.CreateEvent(ctx, &activity.RecordParams{
@@ -212,12 +207,11 @@ func (s *Server) manageContentPublish(ctx context.Context, input *ManageContentI
 			Title:     &evTitle,
 		})
 		if actErr != nil {
-			s.logger.Warn("manage_content: failed to record activity", "error", actErr)
+			s.logger.Warn("publish_content: failed to record activity", "error", actErr)
 		}
 	}
 
-	return nil, ManageContentOutput{
-		Action:    "publish",
+	return nil, ContentActionOutput{
 		ContentID: published.ID.String(),
 		Slug:      published.Slug,
 		Status:    string(published.Status),

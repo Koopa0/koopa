@@ -116,25 +116,7 @@ func ensureTag(tags []string, target string) []string {
 	return append(tags, target)
 }
 
-// --- manage_feeds tool ---
-
-// ManageFeedsInput is the input for the manage_feeds tool.
-type ManageFeedsInput struct {
-	Action   string   `json:"action" jsonschema_description:"list|add|disable|enable|remove (required)"`
-	FeedID   string   `json:"feed_id,omitempty" jsonschema_description:"feed UUID (required for disable/enable/remove)"`
-	URL      string   `json:"url,omitempty" jsonschema_description:"feed URL (required for add)"`
-	Name     string   `json:"name,omitempty" jsonschema_description:"feed name (required for add)"`
-	Schedule string   `json:"schedule,omitempty" jsonschema_description:"daily or weekly (default: daily)"`
-	Topics   []string `json:"topics,omitempty" jsonschema_description:"topic tags for the feed"`
-}
-
-// ManageFeedsOutput is the output for the manage_feeds tool.
-type ManageFeedsOutput struct {
-	Action  string      `json:"action"`
-	Feeds   []feedBrief `json:"feeds,omitempty"`
-	Feed    *feedBrief  `json:"feed,omitempty"`
-	Message string      `json:"message,omitempty"`
-}
+// --- feed tools (split from manage_feeds) ---
 
 type feedBrief struct {
 	ID            string   `json:"id"`
@@ -161,88 +143,116 @@ func toFeedBrief(f *feed.Feed) feedBrief {
 	return fb
 }
 
-func (s *Server) manageFeeds(ctx context.Context, _ *mcp.CallToolRequest, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
-	switch input.Action {
-	case "list":
-		feeds, err := s.feeds.Feeds(ctx, nil)
-		if err != nil {
-			return nil, ManageFeedsOutput{}, fmt.Errorf("listing feeds: %w", err)
-		}
-		briefs := make([]feedBrief, len(feeds))
-		for i := range feeds {
-			briefs[i] = toFeedBrief(&feeds[i])
-		}
-		return nil, ManageFeedsOutput{Action: "list", Feeds: briefs}, nil
+// ListFeedsInput is the input for the list_feeds tool.
+type ListFeedsInput struct{}
 
-	case "add":
-		if input.URL == "" || input.Name == "" {
-			return nil, ManageFeedsOutput{}, fmt.Errorf("url and name are required for add action")
-		}
-		schedule := input.Schedule
-		if schedule == "" {
-			schedule = feed.ScheduleDaily
-		}
-		if !feed.ValidSchedule(schedule) {
-			return nil, ManageFeedsOutput{}, fmt.Errorf("invalid schedule %q: use daily, weekly, or hourly_4", schedule)
-		}
-		created, err := s.feeds.CreateFeed(ctx, &feed.CreateParams{
-			URL:      input.URL,
-			Name:     input.Name,
-			Schedule: schedule,
-			Topics:   input.Topics,
-		})
-		if err != nil {
-			if errors.Is(err, feed.ErrConflict) {
-				return nil, ManageFeedsOutput{}, fmt.Errorf("feed with this URL already exists")
-			}
-			return nil, ManageFeedsOutput{}, fmt.Errorf("creating feed: %w", err)
-		}
-		fb := toFeedBrief(created)
-		return nil, ManageFeedsOutput{Action: "add", Feed: &fb, Message: "feed created"}, nil
+// ListFeedsOutput is the output for the list_feeds tool.
+type ListFeedsOutput struct {
+	Feeds []feedBrief `json:"feeds"`
+}
 
-	case "disable":
-		id, err := parseFeedID(input.FeedID)
-		if err != nil {
-			return nil, ManageFeedsOutput{}, err
-		}
-		enabled := false
-		_, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled})
-		if err != nil {
-			if errors.Is(err, feed.ErrNotFound) {
-				return nil, ManageFeedsOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
-			}
-			return nil, ManageFeedsOutput{}, fmt.Errorf("disabling feed: %w", err)
-		}
-		return nil, ManageFeedsOutput{Action: "disable", Message: fmt.Sprintf("feed %s disabled", input.FeedID)}, nil
-
-	case "enable":
-		id, err := parseFeedID(input.FeedID)
-		if err != nil {
-			return nil, ManageFeedsOutput{}, err
-		}
-		enabled := true
-		_, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled})
-		if err != nil {
-			if errors.Is(err, feed.ErrNotFound) {
-				return nil, ManageFeedsOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
-			}
-			return nil, ManageFeedsOutput{}, fmt.Errorf("enabling feed: %w", err)
-		}
-		return nil, ManageFeedsOutput{Action: "enable", Message: fmt.Sprintf("feed %s enabled", input.FeedID)}, nil
-
-	case "remove":
-		id, err := parseFeedID(input.FeedID)
-		if err != nil {
-			return nil, ManageFeedsOutput{}, err
-		}
-		if err := s.feeds.DeleteFeed(ctx, id); err != nil {
-			return nil, ManageFeedsOutput{}, fmt.Errorf("removing feed: %w", err)
-		}
-		return nil, ManageFeedsOutput{Action: "remove", Message: fmt.Sprintf("feed %s removed", input.FeedID)}, nil
-
-	default:
-		return nil, ManageFeedsOutput{}, fmt.Errorf("invalid action %q: use list, add, disable, enable, or remove", input.Action)
+func (s *Server) listFeeds(ctx context.Context, _ *mcp.CallToolRequest, _ ListFeedsInput) (*mcp.CallToolResult, ListFeedsOutput, error) {
+	feeds, err := s.feeds.Feeds(ctx, nil)
+	if err != nil {
+		return nil, ListFeedsOutput{}, fmt.Errorf("listing feeds: %w", err)
 	}
+	briefs := make([]feedBrief, len(feeds))
+	for i := range feeds {
+		briefs[i] = toFeedBrief(&feeds[i])
+	}
+	return nil, ListFeedsOutput{Feeds: briefs}, nil
+}
+
+// AddFeedInput is the input for the add_feed tool.
+type AddFeedInput struct {
+	URL      string   `json:"url" jsonschema_description:"feed URL (required)"`
+	Name     string   `json:"name" jsonschema_description:"feed name (required)"`
+	Schedule string   `json:"schedule,omitempty" jsonschema_description:"daily or weekly (default: daily)"`
+	Topics   []string `json:"topics,omitempty" jsonschema_description:"topic tags for the feed"`
+}
+
+// AddFeedOutput is the output for the add_feed tool.
+type AddFeedOutput struct {
+	Feed    feedBrief `json:"feed"`
+	Message string    `json:"message"`
+}
+
+func (s *Server) addFeed(ctx context.Context, _ *mcp.CallToolRequest, input AddFeedInput) (*mcp.CallToolResult, AddFeedOutput, error) {
+	if input.URL == "" || input.Name == "" {
+		return nil, AddFeedOutput{}, fmt.Errorf("url and name are required")
+	}
+	schedule := input.Schedule
+	if schedule == "" {
+		schedule = feed.ScheduleDaily
+	}
+	if !feed.ValidSchedule(schedule) {
+		return nil, AddFeedOutput{}, fmt.Errorf("invalid schedule %q: use daily, weekly, or hourly_4", schedule)
+	}
+	created, err := s.feeds.CreateFeed(ctx, &feed.CreateParams{
+		URL:      input.URL,
+		Name:     input.Name,
+		Schedule: schedule,
+		Topics:   input.Topics,
+	})
+	if err != nil {
+		if errors.Is(err, feed.ErrConflict) {
+			return nil, AddFeedOutput{}, fmt.Errorf("feed with this URL already exists")
+		}
+		return nil, AddFeedOutput{}, fmt.Errorf("creating feed: %w", err)
+	}
+	fb := toFeedBrief(created)
+	return nil, AddFeedOutput{Feed: fb, Message: "feed created"}, nil
+}
+
+// FeedIDInput is shared input for disable_feed, enable_feed, remove_feed.
+type FeedIDInput struct {
+	FeedID string `json:"feed_id" jsonschema_description:"feed UUID (required)"`
+}
+
+// FeedActionOutput is shared output for disable/enable/remove feed operations.
+type FeedActionOutput struct {
+	Message string `json:"message"`
+}
+
+func (s *Server) disableFeed(ctx context.Context, _ *mcp.CallToolRequest, input FeedIDInput) (*mcp.CallToolResult, FeedActionOutput, error) {
+	id, err := parseFeedID(input.FeedID)
+	if err != nil {
+		return nil, FeedActionOutput{}, err
+	}
+	enabled := false
+	if _, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled}); err != nil {
+		if errors.Is(err, feed.ErrNotFound) {
+			return nil, FeedActionOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
+		}
+		return nil, FeedActionOutput{}, fmt.Errorf("disabling feed: %w", err)
+	}
+	return nil, FeedActionOutput{Message: fmt.Sprintf("feed %s disabled", input.FeedID)}, nil
+}
+
+func (s *Server) enableFeed(ctx context.Context, _ *mcp.CallToolRequest, input FeedIDInput) (*mcp.CallToolResult, FeedActionOutput, error) {
+	id, err := parseFeedID(input.FeedID)
+	if err != nil {
+		return nil, FeedActionOutput{}, err
+	}
+	enabled := true
+	if _, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled}); err != nil {
+		if errors.Is(err, feed.ErrNotFound) {
+			return nil, FeedActionOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
+		}
+		return nil, FeedActionOutput{}, fmt.Errorf("enabling feed: %w", err)
+	}
+	return nil, FeedActionOutput{Message: fmt.Sprintf("feed %s enabled", input.FeedID)}, nil
+}
+
+func (s *Server) removeFeed(ctx context.Context, _ *mcp.CallToolRequest, input FeedIDInput) (*mcp.CallToolResult, FeedActionOutput, error) {
+	id, err := parseFeedID(input.FeedID)
+	if err != nil {
+		return nil, FeedActionOutput{}, err
+	}
+	if err := s.feeds.DeleteFeed(ctx, id); err != nil {
+		return nil, FeedActionOutput{}, fmt.Errorf("removing feed: %w", err)
+	}
+	return nil, FeedActionOutput{Message: fmt.Sprintf("feed %s removed", input.FeedID)}, nil
 }
 
 func parseFeedID(raw string) (uuid.UUID, error) {
