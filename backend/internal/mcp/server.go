@@ -16,6 +16,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/session"
@@ -24,33 +25,42 @@ import (
 
 // Server is the MCP server exposing knowledge tools.
 type Server struct {
-	server         *mcp.Server
-	notes          NoteSearcher
-	activity       ActivityReader
-	projects       ProjectReader
-	collected      *collected.Store
-	stats          StatsReader
-	tasks          *task.Store
-	taskWriter     TaskWriter
-	contents       *content.Store
-	contentWriter  ContentWriter
-	goals          GoalReader
-	goalWriter     GoalWriter
-	projectWriter  ProjectWriter
-	notionTasks    NotionTaskWriter
-	taskDBResolver TaskDBIDResolver
-	sessionReader  *session.Store
-	sessionWriter  SessionNoteWriter
-	activityWriter ActivityWriter
-	semanticNotes  NoteSemanticSearcher
-	queryEmbedder  QueryEmbedder
-	oreilly        *OReillyClient
-	logger         *slog.Logger
-	loc            *time.Location // user timezone for day boundaries
+	server          *mcp.Server
+	notes           NoteSearcher
+	activity        ActivityReader
+	projects        ProjectReader
+	collected       *collected.Store
+	stats           StatsReader
+	tasks           *task.Store
+	taskWriter      TaskWriter
+	contents        *content.Store
+	contentWriter   ContentWriter
+	goals           GoalReader
+	goalWriter      GoalWriter
+	projectWriter   ProjectWriter
+	notionTasks     NotionTaskWriter
+	taskDBResolver  TaskDBIDResolver
+	sessionReader   *session.Store
+	sessionWriter   SessionNoteWriter
+	activityWriter  ActivityWriter
+	semanticNotes   NoteSemanticSearcher
+	queryEmbedder   QueryEmbedder
+	feeds           *feed.Store
+	oreilly         *OReillyClient
+	systemStatus    SystemStatusReader
+	pipelineTrigger PipelineTrigger
+	lastTrigger     map[string]time.Time // rate limit: pipeline name -> last trigger time
+	logger          *slog.Logger
+	loc             *time.Location // user timezone for day boundaries
 }
 
 // ServerOption configures optional Server dependencies.
 type ServerOption func(*Server)
+
+// WithFeedStore enables feed management tools.
+func WithFeedStore(fs *feed.Store) ServerOption {
+	return func(s *Server) { s.feeds = fs }
+}
 
 // WithNotionTaskWriter sets the Notion task writer for complete/create operations.
 func WithNotionTaskWriter(n NotionTaskWriter, resolver TaskDBIDResolver) ServerOption {
@@ -91,6 +101,19 @@ func WithSemanticSearch(ns NoteSemanticSearcher, qe QueryEmbedder) ServerOption 
 // WithOReilly enables O'Reilly content search tools.
 func WithOReilly(client *OReillyClient) ServerOption {
 	return func(s *Server) { s.oreilly = client }
+}
+
+// WithSystemStatus enables the get_system_status tool.
+func WithSystemStatus(r SystemStatusReader) ServerOption {
+	return func(s *Server) { s.systemStatus = r }
+}
+
+// WithPipelineTrigger enables the trigger_pipeline tool.
+func WithPipelineTrigger(t PipelineTrigger) ServerOption {
+	return func(s *Server) {
+		s.pipelineTrigger = t
+		s.lastTrigger = make(map[string]time.Time)
+	}
 }
 
 // WithSessionNotes enables session note read/write tools.
@@ -380,6 +403,38 @@ func NewServer(
 		Description: "Curate an RSS article into the knowledge base as a bookmark. Creates a content record (type=bookmark, status=draft) and links it back to the collected item. The bookmark will be processed by the content-review pipeline (generating embedding, excerpt, tags). Use when a high-value article should be preserved for future search_knowledge retrieval.",
 		Annotations: additive,
 	}, s.curateCollectedItem)
+
+	// --- Sprint 2 tools ---
+
+	if s.feeds != nil {
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "manage_feeds",
+			Description: "Manage RSS/Atom feed sources. Actions: list (all feeds with status), add (url+name required, schedule defaults to daily), disable/enable/remove (feed_id required). Use when the user wants to add a new feed source, check feed health, or manage existing subscriptions.",
+			Annotations: mutating,
+		}, s.manageFeeds)
+	}
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_collection_stats",
+		Description: "Get collection pipeline statistics: per-feed item counts, average relevance scores, last collection timestamps, and global totals. Optionally filter by feed_id and lookback period (days, default 30, max 90). Use when checking feed health, collection pipeline performance, or diagnosing why certain feeds aren't producing results.",
+		Annotations: readOnly,
+	}, s.getCollectionStats)
+
+	if s.systemStatus != nil {
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "get_system_status",
+			Description: "Get system observability: flow run stats, feed health, pipeline summaries, and recent flow runs. Scopes: summary (flow stats + feed health), pipelines (per-flow-name aggregation), flows (recent individual flow runs). Use when checking system health, diagnosing pipeline failures, or monitoring background jobs.",
+			Annotations: readOnly,
+		}, s.getSystemStatus)
+	}
+
+	if s.pipelineTrigger != nil {
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "trigger_pipeline",
+			Description: "Manually trigger a background pipeline. Valid pipelines: rss_collector (fetch all enabled RSS feeds), notion_sync (sync all Notion pages). Rate limited to once per 5 minutes per pipeline. Use when the user wants to force a feed collection or Notion sync outside the regular schedule.",
+			Annotations: mutating,
+		}, s.triggerPipeline)
+	}
 
 	return s
 }
@@ -1876,4 +1931,421 @@ func ensureTag(tags []string, target string) []string {
 		}
 	}
 	return append(tags, target)
+}
+
+// --- manage_feeds tool ---
+
+// ManageFeedsInput is the input for the manage_feeds tool.
+type ManageFeedsInput struct {
+	Action   string   `json:"action" jsonschema_description:"list|add|disable|enable|remove (required)"`
+	FeedID   string   `json:"feed_id,omitempty" jsonschema_description:"feed UUID (required for disable/enable/remove)"`
+	URL      string   `json:"url,omitempty" jsonschema_description:"feed URL (required for add)"`
+	Name     string   `json:"name,omitempty" jsonschema_description:"feed name (required for add)"`
+	Schedule string   `json:"schedule,omitempty" jsonschema_description:"daily or weekly (default: daily)"`
+	Topics   []string `json:"topics,omitempty" jsonschema_description:"topic tags for the feed"`
+}
+
+// ManageFeedsOutput is the output for the manage_feeds tool.
+type ManageFeedsOutput struct {
+	Action  string      `json:"action"`
+	Feeds   []feedBrief `json:"feeds,omitempty"`
+	Feed    *feedBrief  `json:"feed,omitempty"`
+	Message string      `json:"message,omitempty"`
+}
+
+type feedBrief struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	URL           string   `json:"url"`
+	Enabled       bool     `json:"enabled"`
+	Schedule      string   `json:"schedule"`
+	Topics        []string `json:"topics"`
+	LastFetchedAt string   `json:"last_fetched_at,omitempty"`
+}
+
+func toFeedBrief(f *feed.Feed) feedBrief {
+	fb := feedBrief{
+		ID:       f.ID.String(),
+		Name:     f.Name,
+		URL:      f.URL,
+		Enabled:  f.Enabled,
+		Schedule: f.Schedule,
+		Topics:   f.Topics,
+	}
+	if f.LastFetchedAt != nil {
+		fb.LastFetchedAt = f.LastFetchedAt.Format(time.RFC3339)
+	}
+	return fb
+}
+
+func (s *Server) manageFeeds(ctx context.Context, _ *mcp.CallToolRequest, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
+	switch input.Action {
+	case "list":
+		feeds, err := s.feeds.Feeds(ctx, nil)
+		if err != nil {
+			return nil, ManageFeedsOutput{}, fmt.Errorf("listing feeds: %w", err)
+		}
+		briefs := make([]feedBrief, len(feeds))
+		for i := range feeds {
+			briefs[i] = toFeedBrief(&feeds[i])
+		}
+		return nil, ManageFeedsOutput{Action: "list", Feeds: briefs}, nil
+
+	case "add":
+		if input.URL == "" || input.Name == "" {
+			return nil, ManageFeedsOutput{}, fmt.Errorf("url and name are required for add action")
+		}
+		schedule := input.Schedule
+		if schedule == "" {
+			schedule = feed.ScheduleDaily
+		}
+		if !feed.ValidSchedule(schedule) {
+			return nil, ManageFeedsOutput{}, fmt.Errorf("invalid schedule %q: use daily, weekly, or hourly_4", schedule)
+		}
+		created, err := s.feeds.CreateFeed(ctx, &feed.CreateParams{
+			URL:      input.URL,
+			Name:     input.Name,
+			Schedule: schedule,
+			Topics:   input.Topics,
+		})
+		if err != nil {
+			if errors.Is(err, feed.ErrConflict) {
+				return nil, ManageFeedsOutput{}, fmt.Errorf("feed with this URL already exists")
+			}
+			return nil, ManageFeedsOutput{}, fmt.Errorf("creating feed: %w", err)
+		}
+		fb := toFeedBrief(created)
+		return nil, ManageFeedsOutput{Action: "add", Feed: &fb, Message: "feed created"}, nil
+
+	case "disable":
+		id, err := parseFeedID(input.FeedID)
+		if err != nil {
+			return nil, ManageFeedsOutput{}, err
+		}
+		enabled := false
+		_, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled})
+		if err != nil {
+			if errors.Is(err, feed.ErrNotFound) {
+				return nil, ManageFeedsOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
+			}
+			return nil, ManageFeedsOutput{}, fmt.Errorf("disabling feed: %w", err)
+		}
+		return nil, ManageFeedsOutput{Action: "disable", Message: fmt.Sprintf("feed %s disabled", input.FeedID)}, nil
+
+	case "enable":
+		id, err := parseFeedID(input.FeedID)
+		if err != nil {
+			return nil, ManageFeedsOutput{}, err
+		}
+		enabled := true
+		_, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled})
+		if err != nil {
+			if errors.Is(err, feed.ErrNotFound) {
+				return nil, ManageFeedsOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
+			}
+			return nil, ManageFeedsOutput{}, fmt.Errorf("enabling feed: %w", err)
+		}
+		return nil, ManageFeedsOutput{Action: "enable", Message: fmt.Sprintf("feed %s enabled", input.FeedID)}, nil
+
+	case "remove":
+		id, err := parseFeedID(input.FeedID)
+		if err != nil {
+			return nil, ManageFeedsOutput{}, err
+		}
+		if err := s.feeds.DeleteFeed(ctx, id); err != nil {
+			return nil, ManageFeedsOutput{}, fmt.Errorf("removing feed: %w", err)
+		}
+		return nil, ManageFeedsOutput{Action: "remove", Message: fmt.Sprintf("feed %s removed", input.FeedID)}, nil
+
+	default:
+		return nil, ManageFeedsOutput{}, fmt.Errorf("invalid action %q: use list, add, disable, enable, or remove", input.Action)
+	}
+}
+
+func parseFeedID(raw string) (uuid.UUID, error) {
+	if raw == "" {
+		return uuid.UUID{}, fmt.Errorf("feed_id is required")
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("invalid feed_id %q: %w", raw, err)
+	}
+	return id, nil
+}
+
+// --- get_collection_stats tool ---
+
+// CollectionStatsInput is the input for the get_collection_stats tool.
+type CollectionStatsInput struct {
+	FeedID string `json:"feed_id,omitempty" jsonschema_description:"specific feed UUID (omit for global stats)"`
+	Days   int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default: 30, max: 90)"`
+}
+
+// CollectionStatsOutput is the output for the get_collection_stats tool.
+type CollectionStatsOutput struct {
+	Feeds  []feedCollectionStat `json:"feeds"`
+	Global globalCollectionStat `json:"global"`
+	Days   int                  `json:"days"`
+}
+
+type feedCollectionStat struct {
+	FeedID          string  `json:"feed_id"`
+	FeedName        string  `json:"feed_name"`
+	TotalItems      int     `json:"total_items"`
+	AvgScore        float64 `json:"avg_score"`
+	LastCollectedAt string  `json:"last_collected_at,omitempty"`
+}
+
+type globalCollectionStat struct {
+	TotalItems   int     `json:"total_items"`
+	TotalFeeds   int     `json:"total_feeds"`
+	AvgScore     float64 `json:"avg_score"`
+	UnreadCount  int     `json:"unread_count"`
+	CuratedCount int     `json:"curated_count"`
+}
+
+func (s *Server) getCollectionStats(ctx context.Context, _ *mcp.CallToolRequest, input CollectionStatsInput) (*mcp.CallToolResult, CollectionStatsOutput, error) {
+	days := clamp(input.Days, 1, 90, 30)
+
+	var feedID *uuid.UUID
+	if input.FeedID != "" {
+		id, err := uuid.Parse(input.FeedID)
+		if err != nil {
+			return nil, CollectionStatsOutput{}, fmt.Errorf("invalid feed_id %q: %w", input.FeedID, err)
+		}
+		feedID = &id
+	}
+
+	cs, err := s.collected.CollectionStats(ctx, feedID, days)
+	if err != nil {
+		return nil, CollectionStatsOutput{}, fmt.Errorf("querying collection stats: %w", err)
+	}
+
+	feeds := make([]feedCollectionStat, len(cs.Feeds))
+	for i := range cs.Feeds {
+		f := &cs.Feeds[i]
+		feeds[i] = feedCollectionStat{
+			FeedID:     f.FeedID.String(),
+			FeedName:   f.FeedName,
+			TotalItems: f.TotalItems,
+			AvgScore:   f.AvgScore,
+		}
+		if f.LastCollectedAt != nil {
+			feeds[i].LastCollectedAt = f.LastCollectedAt.Format(time.RFC3339)
+		}
+	}
+
+	return nil, CollectionStatsOutput{
+		Feeds: feeds,
+		Global: globalCollectionStat{
+			TotalItems:   cs.Global.TotalItems,
+			TotalFeeds:   cs.Global.TotalFeeds,
+			AvgScore:     cs.Global.AvgScore,
+			UnreadCount:  cs.Global.UnreadCount,
+			CuratedCount: cs.Global.CuratedCount,
+		},
+		Days: days,
+	}, nil
+}
+
+// --- get_system_status tool ---
+
+// SystemStatusInput is the input for the get_system_status tool.
+type SystemStatusInput struct {
+	Scope    string `json:"scope,omitempty" jsonschema_description:"summary|pipelines|flows (default: summary)"`
+	FlowName string `json:"flow_name,omitempty" jsonschema_description:"filter by flow name (only for scope=flows)"`
+	Status   string `json:"status,omitempty" jsonschema_description:"completed|failed|running (only for scope=flows)"`
+	Hours    int    `json:"hours,omitempty" jsonschema_description:"lookback hours (default: 24, max: 168)"`
+}
+
+// SystemStatusOutput is the output for the get_system_status tool.
+type SystemStatusOutput struct {
+	Scope      string              `json:"scope"`
+	Hours      int                 `json:"hours"`
+	FlowStats  *flowStatusSummary  `json:"flow_stats,omitempty"`
+	FeedHealth *feedHealthSummary  `json:"feed_health,omitempty"`
+	Pipelines  []pipelineSummary   `json:"pipelines,omitempty"`
+	FlowRuns   []recentFlowRunItem `json:"flow_runs,omitempty"`
+}
+
+type flowStatusSummary struct {
+	Total     int `json:"total"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
+	Running   int `json:"running"`
+}
+
+type feedHealthSummary struct {
+	Total        int `json:"total"`
+	Enabled      int `json:"enabled"`
+	FailingFeeds int `json:"failing_feeds"`
+}
+
+type pipelineSummary struct {
+	FlowName   string  `json:"flow_name"`
+	Total      int     `json:"total"`
+	Completed  int     `json:"completed"`
+	Failed     int     `json:"failed"`
+	Running    int     `json:"running"`
+	LastRunAt  *string `json:"last_run_at,omitempty"`
+	LastStatus *string `json:"last_status,omitempty"`
+}
+
+type recentFlowRunItem struct {
+	ID        string  `json:"id"`
+	FlowName  string  `json:"flow_name"`
+	Status    string  `json:"status"`
+	Error     *string `json:"error,omitempty"`
+	CreatedAt string  `json:"created_at"`
+	EndedAt   *string `json:"ended_at,omitempty"`
+}
+
+func (s *Server) getSystemStatus(ctx context.Context, _ *mcp.CallToolRequest, input SystemStatusInput) (*mcp.CallToolResult, SystemStatusOutput, error) {
+	scope := input.Scope
+	if scope == "" {
+		scope = "summary"
+	}
+	switch scope {
+	case "summary", "pipelines", "flows":
+		// valid
+	default:
+		return nil, SystemStatusOutput{}, fmt.Errorf("invalid scope %q: must be summary, pipelines, or flows", scope)
+	}
+
+	hours := clamp(input.Hours, 1, 168, 24)
+	since := time.Now().Add(-time.Duration(hours) * time.Hour)
+
+	out := SystemStatusOutput{
+		Scope: scope,
+		Hours: hours,
+	}
+
+	switch scope {
+	case "summary":
+		fs, err := s.systemStatus.FlowRunsSince(ctx, since, nil, nil)
+		if err != nil {
+			return nil, SystemStatusOutput{}, fmt.Errorf("querying flow stats: %w", err)
+		}
+		out.FlowStats = &flowStatusSummary{
+			Total:     fs.Total,
+			Completed: fs.Completed,
+			Failed:    fs.Failed,
+			Running:   fs.Running,
+		}
+
+		fh, err := s.systemStatus.FeedHealth(ctx)
+		if err != nil {
+			return nil, SystemStatusOutput{}, fmt.Errorf("querying feed health: %w", err)
+		}
+		out.FeedHealth = &feedHealthSummary{
+			Total:        fh.Total,
+			Enabled:      fh.Enabled,
+			FailingFeeds: fh.FailingFeeds,
+		}
+
+	case "pipelines":
+		summaries, err := s.systemStatus.PipelineSummaries(ctx, since)
+		if err != nil {
+			return nil, SystemStatusOutput{}, fmt.Errorf("querying pipeline summaries: %w", err)
+		}
+		out.Pipelines = make([]pipelineSummary, len(summaries))
+		for i, ps := range summaries {
+			out.Pipelines[i] = pipelineSummary{
+				FlowName:   ps.FlowName,
+				Total:      ps.Total,
+				Completed:  ps.Completed,
+				Failed:     ps.Failed,
+				Running:    ps.Running,
+				LastRunAt:  ps.LastRunAt,
+				LastStatus: ps.LastStatus,
+			}
+		}
+
+	case "flows":
+		var flowName, status *string
+		if input.FlowName != "" {
+			flowName = &input.FlowName
+		}
+		if input.Status != "" {
+			switch input.Status {
+			case "completed", "failed", "running":
+				status = &input.Status
+			default:
+				return nil, SystemStatusOutput{}, fmt.Errorf("invalid status %q: must be completed, failed, or running", input.Status)
+			}
+		}
+
+		runs, err := s.systemStatus.RecentFlowRuns(ctx, since, flowName, status, 50)
+		if err != nil {
+			return nil, SystemStatusOutput{}, fmt.Errorf("querying recent flow runs: %w", err)
+		}
+		out.FlowRuns = make([]recentFlowRunItem, len(runs))
+		for i, r := range runs {
+			out.FlowRuns[i] = recentFlowRunItem{
+				ID:        r.ID,
+				FlowName:  r.FlowName,
+				Status:    r.Status,
+				Error:     r.Error,
+				CreatedAt: r.CreatedAt,
+				EndedAt:   r.EndedAt,
+			}
+		}
+	}
+
+	return nil, out, nil
+}
+
+// --- trigger_pipeline tool ---
+
+// TriggerPipelineInput is the input for the trigger_pipeline tool.
+type TriggerPipelineInput struct {
+	Pipeline string `json:"pipeline" jsonschema_description:"rss_collector|notion_sync (required)"`
+}
+
+// TriggerPipelineOutput is the output for the trigger_pipeline tool.
+type TriggerPipelineOutput struct {
+	Triggered bool   `json:"triggered"`
+	Pipeline  string `json:"pipeline"`
+	Message   string `json:"message"`
+}
+
+// triggerCooldown is the minimum interval between triggers of the same pipeline.
+const triggerCooldown = 5 * time.Minute
+
+func (s *Server) triggerPipeline(ctx context.Context, _ *mcp.CallToolRequest, input TriggerPipelineInput) (*mcp.CallToolResult, TriggerPipelineOutput, error) {
+	switch input.Pipeline {
+	case "rss_collector", "notion_sync":
+		// valid
+	case "":
+		return nil, TriggerPipelineOutput{}, fmt.Errorf("pipeline is required: valid values are rss_collector, notion_sync")
+	default:
+		return nil, TriggerPipelineOutput{}, fmt.Errorf("invalid pipeline %q: valid values are rss_collector, notion_sync", input.Pipeline)
+	}
+
+	// Rate limit check.
+	if last, ok := s.lastTrigger[input.Pipeline]; ok {
+		if time.Since(last) < triggerCooldown {
+			remaining := triggerCooldown - time.Since(last)
+			return nil, TriggerPipelineOutput{
+				Triggered: false,
+				Pipeline:  input.Pipeline,
+				Message:   fmt.Sprintf("rate limited: try again in %s", remaining.Truncate(time.Second)),
+			}, nil
+		}
+	}
+
+	s.lastTrigger[input.Pipeline] = time.Now()
+
+	switch input.Pipeline {
+	case "rss_collector":
+		s.pipelineTrigger.TriggerCollect(ctx)
+	case "notion_sync":
+		s.pipelineTrigger.TriggerNotionSync(ctx)
+	}
+
+	return nil, TriggerPipelineOutput{
+		Triggered: true,
+		Pipeline:  input.Pipeline,
+		Message:   "pipeline triggered successfully",
+	}, nil
 }

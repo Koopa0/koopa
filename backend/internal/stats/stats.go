@@ -123,3 +123,39 @@ type TagCount struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
 }
+
+// FlowStatusSummary holds flow run counts by status within a time window.
+type FlowStatusSummary struct {
+	Total     int `json:"total"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
+	Running   int `json:"running"`
+}
+
+// FeedHealthSummary holds feed health stats.
+type FeedHealthSummary struct {
+	Total        int `json:"total"`
+	Enabled      int `json:"enabled"`
+	FailingFeeds int `json:"failing_feeds"`
+}
+
+// RecentFlowRun holds a single flow run for the recent runs list.
+type RecentFlowRun struct {
+	ID        string  `json:"id"`
+	FlowName  string  `json:"flow_name"`
+	Status    string  `json:"status"`
+	Error     *string `json:"error,omitempty"`
+	CreatedAt string  `json:"created_at"`
+	EndedAt   *string `json:"ended_at,omitempty"`
+}
+
+// PipelineSummary holds per-pipeline aggregated info.
+type PipelineSummary struct {
+	FlowName   string  `json:"flow_name"`
+	Total      int     `json:"total"`
+	Completed  int     `json:"completed"`
+	Failed     int     `json:"failed"`
+	Running    int     `json:"running"`
+	LastRunAt  *string `json:"last_run_at,omitempty"`
+	LastStatus *string `json:"last_status,omitempty"`
+}

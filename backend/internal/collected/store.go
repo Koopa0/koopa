@@ -23,12 +23,13 @@ func nullCollectedStatus(s *string) db.NullCollectedStatus {
 
 // Store handles database operations for collected data.
 type Store struct {
-	q *db.Queries
+	q    *db.Queries
+	dbtx db.DBTX
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{q: db.New(dbtx)}
+	return &Store{q: db.New(dbtx), dbtx: dbtx}
 }
 
 // Items returns a paginated list of collected items.
@@ -245,6 +246,23 @@ func (s *Store) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, 
 	return n, nil
 }
 
+// TopItems returns the top N highest-scoring unread items from the last 7 days.
+func (s *Store) TopItems(ctx context.Context, limit int) ([]Item, error) {
+	since := time.Now().AddDate(0, 0, -7)
+	rows, err := s.q.TopRelevantCollected(ctx, db.TopRelevantCollectedParams{
+		Since:      since,
+		MaxResults: int32(limit), // #nosec G115 -- limit bounded by caller
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing top collected items: %w", err)
+	}
+	items := make([]Item, len(rows))
+	for i := range rows {
+		items[i] = datumToItem(&rows[i])
+	}
+	return items, nil
+}
+
 // datumToItem converts a db.CollectedDatum to Item.
 func datumToItem(r *db.CollectedDatum) Item {
 	return Item{
@@ -263,4 +281,70 @@ func datumToItem(r *db.CollectedDatum) Item {
 		FeedbackAt:       r.FeedbackAt,
 		FeedID:           r.FeedID,
 	}
+}
+
+// CollectionStats returns per-feed and global collection statistics.
+// Raw SQL is required: this aggregation joins collected_data and feeds tables
+// with GROUP BY, which cannot be expressed efficiently via sqlc-generated queries.
+// Parameters use pgx placeholders ($1, $2), no string interpolation.
+func (s *Store) CollectionStats(ctx context.Context, feedID *uuid.UUID, days int) (*Stats, error) {
+	cutoff := time.Now().AddDate(0, 0, -days)
+
+	// Per-feed stats
+	feedQuery := `
+		SELECT f.id, f.name,
+		       COUNT(cd.id)::int AS total_items,
+		       COALESCE(AVG(cd.relevance_score), 0) AS avg_score,
+		       MAX(cd.collected_at) AS last_collected_at
+		FROM feeds f
+		LEFT JOIN collected_data cd ON cd.feed_id = f.id AND cd.collected_at >= $1
+	`
+	args := []any{cutoff}
+	if feedID != nil {
+		feedQuery += " WHERE f.id = $2"
+		args = append(args, *feedID)
+	}
+	feedQuery += " GROUP BY f.id, f.name ORDER BY total_items DESC"
+
+	rows, err := s.dbtx.Query(ctx, feedQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying per-feed stats: %w", err)
+	}
+	defer rows.Close()
+
+	var feeds []FeedStat
+	for rows.Next() {
+		var fs FeedStat
+		if err := rows.Scan(&fs.FeedID, &fs.FeedName, &fs.TotalItems, &fs.AvgScore, &fs.LastCollectedAt); err != nil {
+			return nil, fmt.Errorf("scanning feed stat: %w", err)
+		}
+		feeds = append(feeds, fs)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating feed stats: %w", err)
+	}
+
+	// Global stats
+	globalQuery := `
+		SELECT COUNT(*)::int AS total_items,
+		       COUNT(DISTINCT feed_id)::int AS total_feeds,
+		       COALESCE(AVG(relevance_score), 0) AS avg_score,
+		       COUNT(*) FILTER (WHERE status = 'unread')::int AS unread_count,
+		       COUNT(*) FILTER (WHERE status = 'curated')::int AS curated_count
+		FROM collected_data
+		WHERE collected_at >= $1
+	`
+	globalArgs := []any{cutoff}
+	if feedID != nil {
+		globalQuery += " AND feed_id = $2"
+		globalArgs = append(globalArgs, *feedID)
+	}
+
+	var g GlobalStat
+	row := s.dbtx.QueryRow(ctx, globalQuery, globalArgs...)
+	if err := row.Scan(&g.TotalItems, &g.TotalFeeds, &g.AvgScore, &g.UnreadCount, &g.CuratedCount); err != nil {
+		return nil, fmt.Errorf("querying global stats: %w", err)
+	}
+
+	return &Stats{Feeds: feeds, Global: g}, nil
 }

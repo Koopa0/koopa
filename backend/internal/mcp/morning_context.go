@@ -17,7 +17,7 @@ import (
 type MorningContextInput struct {
 	ActivityDays int      `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
 	BuildLogDays int      `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
-	Sections     []string `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions"`
+	Sections     []string `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions, pipeline_health, rss_highlights, agent_tasks"`
 }
 
 // MorningContextOutput is the aggregated output for daily planning.
@@ -47,6 +47,32 @@ type MorningContextOutput struct {
 	RSSHighlightCount      int                    `json:"rss_highlight_count"`
 	TopRSSHighlight        string                 `json:"top_rss_highlight,omitempty"`
 	UrgentRSS              []urgentRSSItem        `json:"urgent_rss"`
+	PipelineHealth         *pipelineHealthSection `json:"pipeline_health,omitempty"`
+	RSSHighlights          []rssHighlightItem     `json:"rss_highlights,omitempty"`
+	AgentTasks             []agentTaskItem        `json:"agent_tasks,omitempty"`
+}
+
+type pipelineHealthSection struct {
+	FlowsLast12h  int    `json:"flows_last_12h"`
+	FlowsFailed   int    `json:"flows_failed"`
+	FailingFeeds  int    `json:"failing_feeds"`
+	StatusSummary string `json:"status_summary"`
+}
+
+type rssHighlightItem struct {
+	Title      string  `json:"title"`
+	SourceName string  `json:"source_name"`
+	Score      float64 `json:"score"`
+	URL        string  `json:"url"`
+}
+
+type agentTaskItem struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Assignee string `json:"assignee"`
+	Project  string `json:"project,omitempty"`
+	Due      string `json:"due,omitempty"`
+	Priority string `json:"priority,omitempty"`
 }
 
 // urgentRSSItem represents a high-priority RSS article for morning planning.
@@ -203,6 +229,15 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	if all || wantSection["completions"] {
 		s.fetchMorningDailySummary(ctx, &out, today, tomorrow)
 		s.fetchTodayCompletions(ctx, &out, today, tomorrow)
+	}
+	if all || wantSection["pipeline_health"] {
+		s.fetchMorningPipelineHealth(ctx, &out)
+	}
+	if wantSection["rss_highlights"] { // not in default — only when explicitly requested
+		s.fetchMorningRSSHighlightItems(ctx, &out)
+	}
+	if all || wantSection["agent_tasks"] {
+		s.fetchMorningAgentTasks(ctx, &out, allTasks)
 	}
 
 	return nil, out, nil
@@ -895,4 +930,88 @@ func parseInsightBrief(n *session.Note) insightBrief {
 	brief.Status = meta.Status
 	brief.Project = meta.Project
 	return brief
+}
+
+// fetchMorningPipelineHealth gets a quick pipeline health summary for the briefing.
+func (s *Server) fetchMorningPipelineHealth(ctx context.Context, out *MorningContextOutput) {
+	if s.stats == nil {
+		return
+	}
+	// Use platform stats as a proxy for pipeline health
+	overview, err := s.stats.Overview(ctx)
+	if err != nil {
+		s.logger.Warn("morning: pipeline health failed", "error", err)
+		return
+	}
+
+	failed := overview.FlowRuns.ByStatus["failed"]
+	total := overview.FlowRuns.Total
+
+	status := "all systems normal"
+	if failed > 0 {
+		status = fmt.Sprintf("%d failed flow runs detected", failed)
+	}
+
+	failingFeeds := 0
+	// Count feeds with consecutive failures from the feed stats
+	if overview.Feeds.Total > overview.Feeds.Enabled {
+		failingFeeds = overview.Feeds.Total - overview.Feeds.Enabled
+	}
+
+	out.PipelineHealth = &pipelineHealthSection{
+		FlowsLast12h:  total,
+		FlowsFailed:   failed,
+		FailingFeeds:  failingFeeds,
+		StatusSummary: status,
+	}
+}
+
+// fetchMorningRSSHighlightItems returns top 3 high-scoring RSS items.
+func (s *Server) fetchMorningRSSHighlightItems(ctx context.Context, out *MorningContextOutput) {
+	if s.collected == nil {
+		return
+	}
+	// Reuse existing RSS highlights fetch with score filter
+	items, err := s.collected.TopItems(ctx, 3)
+	if err != nil {
+		s.logger.Warn("morning: rss highlights failed", "error", err)
+		return
+	}
+
+	highlights := make([]rssHighlightItem, len(items))
+	for i := range items {
+		highlights[i] = rssHighlightItem{
+			Title:      items[i].Title,
+			SourceName: items[i].SourceName,
+			Score:      float64(items[i].RelevanceScore),
+			URL:        items[i].SourceURL,
+		}
+	}
+	out.RSSHighlights = highlights
+}
+
+// fetchMorningAgentTasks returns pending tasks assigned to non-human agents.
+func (s *Server) fetchMorningAgentTasks(_ context.Context, out *MorningContextOutput, allTasks []task.PendingTaskDetail) {
+	var agentTasks []agentTaskItem
+	for i := range allTasks {
+		t := &allTasks[i]
+		if t.Assignee == "human" || t.Assignee == "" {
+			continue
+		}
+		item := agentTaskItem{
+			ID:       t.ID.String(),
+			Title:    t.Title,
+			Assignee: t.Assignee,
+			Project:  t.ProjectTitle,
+			Priority: t.Priority,
+		}
+		if t.Due != nil {
+			item.Due = t.Due.Format("2006-01-02")
+		}
+		agentTasks = append(agentTasks, item)
+	}
+	if agentTasks == nil {
+		agentTasks = []agentTaskItem{}
+	}
+	out.AgentTasks = agentTasks
 }

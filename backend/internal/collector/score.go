@@ -2,9 +2,22 @@ package collector
 
 import "strings"
 
+// coreKeywords are high-value topics for Koopa's positioning as a Go backend
+// consultant specializing in PostgreSQL, high-concurrency systems, and IoT.
+// Matches against these keywords receive a 2x weight boost.
+var coreKeywords = map[string]bool{
+	"go": true, "golang": true, "postgresql": true, "postgres": true,
+	"pgx": true, "sqlc": true, "concurrency": true, "goroutine": true,
+	"grpc": true, "system design": true, "database": true, "sql": true,
+	"iot": true, "mqtt": true, "kubernetes": true, "docker": true,
+	"performance": true, "benchmark": true, "observability": true,
+	"genkit": true, "mcp": true, "claude": true, "llm": true,
+}
+
 // Score computes a relevance score (0-100) for a collected item based on
 // keyword matches in title, content, and tags against tracking keywords.
-// Uses case-insensitive substring matching. Returns 0 if keywords is empty.
+// Core keywords (Go, PostgreSQL, system design, etc.) receive 2x weight,
+// reflecting Koopa's positioning as a Go backend consultant.
 func Score(title, content string, tags, keywords []string) float32 {
 	if len(keywords) == 0 {
 		return 0
@@ -25,14 +38,22 @@ func Score(title, content string, tags, keywords []string) float32 {
 	b.WriteString(strings.ToLower(content))
 	haystack := b.String()
 
-	var matched int
+	var totalWeight, matchedWeight float32
 	for _, kw := range keywords {
+		weight := float32(1)
+		if coreKeywords[kw] {
+			weight = 2 // core keywords are worth double
+		}
+		totalWeight += weight
 		if strings.Contains(haystack, kw) {
-			matched++
+			matchedWeight += weight
 		}
 	}
 
-	score := float32(matched) / float32(len(keywords)) * 100
+	if totalWeight == 0 {
+		return 0
+	}
+	score := matchedWeight / totalWeight * 100
 	if score > 100 {
 		score = 100
 	}

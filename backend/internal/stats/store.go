@@ -10,7 +10,9 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/koopa0/blog-backend/internal/db"
 )
 
@@ -350,6 +352,130 @@ func computeAreaDrift(goalsByArea map[string]int, totalGoals int, eventsByArea m
 	})
 
 	return areas
+}
+
+// FlowRunsSince returns flow run counts by status since the given time,
+// optionally filtered by flow name and status.
+func (s *Store) FlowRunsSince(ctx context.Context, since time.Time, flowName, status *string) (*FlowStatusSummary, error) {
+	row := s.dbtx.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'completed'),
+			COUNT(*) FILTER (WHERE status = 'failed'),
+			COUNT(*) FILTER (WHERE status = 'running')
+		FROM flow_runs
+		WHERE created_at >= $1
+			AND ($2::text IS NULL OR flow_name = $2)
+			AND ($3::flow_status IS NULL OR status = $3::flow_status)`,
+		since, flowName, status)
+
+	var fs FlowStatusSummary
+	if err := row.Scan(&fs.Total, &fs.Completed, &fs.Failed, &fs.Running); err != nil {
+		return nil, fmt.Errorf("querying flow run stats since %v: %w", since, err)
+	}
+	return &fs, nil
+}
+
+// FeedHealth returns feed health summary including failing feed count.
+func (s *Store) FeedHealth(ctx context.Context) (*FeedHealthSummary, error) {
+	row := s.dbtx.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE enabled),
+			COUNT(*) FILTER (WHERE consecutive_failures > 0)
+		FROM feeds`)
+
+	var fh FeedHealthSummary
+	if err := row.Scan(&fh.Total, &fh.Enabled, &fh.FailingFeeds); err != nil {
+		return nil, fmt.Errorf("querying feed health: %w", err)
+	}
+	return &fh, nil
+}
+
+// RecentFlowRuns returns recent flow runs within a time window,
+// optionally filtered by flow name and status.
+func (s *Store) RecentFlowRuns(ctx context.Context, since time.Time, flowName, status *string, limit int) ([]RecentFlowRun, error) {
+	rows, err := s.dbtx.Query(ctx, `
+		SELECT id, flow_name, status::text, error, created_at, ended_at
+		FROM flow_runs
+		WHERE created_at >= $1
+			AND ($2::text IS NULL OR flow_name = $2)
+			AND ($3::flow_status IS NULL OR status = $3::flow_status)
+		ORDER BY created_at DESC
+		LIMIT $4`,
+		since, flowName, status, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying recent flow runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []RecentFlowRun
+	for rows.Next() {
+		var r RecentFlowRun
+		var id uuid.UUID
+		var createdAt time.Time
+		var endedAt *time.Time
+		if err := rows.Scan(&id, &r.FlowName, &r.Status, &r.Error, &createdAt, &endedAt); err != nil {
+			return nil, err
+		}
+		r.ID = id.String()
+		r.CreatedAt = createdAt.Format(time.RFC3339)
+		if endedAt != nil {
+			s := endedAt.Format(time.RFC3339)
+			r.EndedAt = &s
+		}
+		runs = append(runs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if runs == nil {
+		runs = []RecentFlowRun{}
+	}
+	return runs, nil
+}
+
+// PipelineSummaries returns per-flow-name aggregated stats within a time window.
+func (s *Store) PipelineSummaries(ctx context.Context, since time.Time) ([]PipelineSummary, error) {
+	rows, err := s.dbtx.Query(ctx, `
+		SELECT
+			flow_name,
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'completed'),
+			COUNT(*) FILTER (WHERE status = 'failed'),
+			COUNT(*) FILTER (WHERE status = 'running'),
+			MAX(created_at),
+			(array_agg(status::text ORDER BY created_at DESC))[1]
+		FROM flow_runs
+		WHERE created_at >= $1
+		GROUP BY flow_name
+		ORDER BY flow_name`,
+		since)
+	if err != nil {
+		return nil, fmt.Errorf("querying pipeline summaries: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []PipelineSummary
+	for rows.Next() {
+		var ps PipelineSummary
+		var lastRunAt *time.Time
+		if err := rows.Scan(&ps.FlowName, &ps.Total, &ps.Completed, &ps.Failed, &ps.Running, &lastRunAt, &ps.LastStatus); err != nil {
+			return nil, err
+		}
+		if lastRunAt != nil {
+			s := lastRunAt.Format(time.RFC3339)
+			ps.LastRunAt = &s
+		}
+		summaries = append(summaries, ps)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if summaries == nil {
+		summaries = []PipelineSummary{}
+	}
+	return summaries, nil
 }
 
 // Learning returns aggregated learning metrics for the admin dashboard.

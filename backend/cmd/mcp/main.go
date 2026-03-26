@@ -42,6 +42,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/goal"
 	mcpserver "github.com/koopa0/blog-backend/internal/mcp"
 	"github.com/koopa0/blog-backend/internal/note"
@@ -97,6 +98,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	collectedStore := collected.NewStore(pool)
 	activityStore := activity.NewStore(pool)
 	sessionStore := session.NewStore(pool)
+	feedStore := feed.NewStore(pool, logger)
 
 	var opts []mcpserver.ServerOption
 	notionKey := os.Getenv("NOTION_API_KEY")
@@ -119,6 +121,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mcpserver.WithProjectWriter(projectStore),
 		mcpserver.WithSessionNotes(sessionStore, sessionStore),
 		mcpserver.WithActivityWriter(activityStore),
+		mcpserver.WithFeedStore(feedStore),
 	)
 
 	// Optional O'Reilly content search (requires ORM_JWT)

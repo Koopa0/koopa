@@ -67,6 +67,30 @@ type Filter struct {
 	Sort    string // "" or "relevance"
 }
 
+// FeedStat holds collection statistics for a single feed.
+type FeedStat struct {
+	FeedID          uuid.UUID  `json:"feed_id"`
+	FeedName        string     `json:"feed_name"`
+	TotalItems      int        `json:"total_items"`
+	AvgScore        float64    `json:"avg_score"`
+	LastCollectedAt *time.Time `json:"last_collected_at,omitempty"`
+}
+
+// GlobalStat holds aggregated collection statistics across all feeds.
+type GlobalStat struct {
+	TotalItems   int     `json:"total_items"`
+	TotalFeeds   int     `json:"total_feeds"`
+	AvgScore     float64 `json:"avg_score"`
+	UnreadCount  int     `json:"unread_count"`
+	CuratedCount int     `json:"curated_count"`
+}
+
+// Stats holds per-feed and global collection statistics.
+type Stats struct {
+	Feeds  []FeedStat `json:"feeds"`
+	Global GlobalStat `json:"global"`
+}
+
 var (
 	// ErrNotFound indicates the collected data does not exist.
 	ErrNotFound = errors.New("not found")

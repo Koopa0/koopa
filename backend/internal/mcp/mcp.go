@@ -126,6 +126,20 @@ type SessionNoteWriter interface {
 	ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
+// SystemStatusReader provides system observability queries for the get_system_status tool.
+type SystemStatusReader interface {
+	FlowRunsSince(ctx context.Context, since time.Time, flowName, status *string) (*stats.FlowStatusSummary, error)
+	FeedHealth(ctx context.Context) (*stats.FeedHealthSummary, error)
+	RecentFlowRuns(ctx context.Context, since time.Time, flowName, status *string, limit int) ([]stats.RecentFlowRun, error)
+	PipelineSummaries(ctx context.Context, since time.Time) ([]stats.PipelineSummary, error)
+}
+
+// PipelineTrigger triggers background pipelines from MCP tools.
+type PipelineTrigger interface {
+	TriggerCollect(ctx context.Context)
+	TriggerNotionSync(ctx context.Context)
+}
+
 // searchResultEntry is a note with a combined RRF score for merged search results.
 type searchResultEntry struct {
 	Note  note.Note
