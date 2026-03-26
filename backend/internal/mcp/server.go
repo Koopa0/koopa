@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +52,7 @@ type Server struct {
 	pipelineTrigger PipelineTrigger
 	flowInvoker     FlowInvoker
 	lastTrigger     map[string]time.Time // rate limit: pipeline name -> last trigger time
+	triggerMu       sync.Mutex           // protects lastTrigger
 	logger          *slog.Logger
 	loc             *time.Location // user timezone for day boundaries
 }
@@ -1054,7 +1056,7 @@ func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input 
 		}
 	}
 
-	tasks, err := s.tasks.SearchTasks(ctx, query, projectSlug, statusFilter, assignee, completedAfter, completedBefore, int32(limit))
+	tasks, err := s.tasks.SearchTasks(ctx, query, projectSlug, statusFilter, assignee, completedAfter, completedBefore, int32(limit)) // #nosec G115 -- limit is clamped 1-100
 	if err != nil {
 		return nil, SearchTasksOutput{}, fmt.Errorf("searching tasks: %w", err)
 	}
@@ -2334,10 +2336,12 @@ func (s *Server) triggerPipeline(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, TriggerPipelineOutput{}, fmt.Errorf("invalid pipeline %q: valid values are rss_collector, notion_sync", input.Pipeline)
 	}
 
-	// Rate limit check.
+	// Rate limit check (mutex-protected for HTTP transport safety).
+	s.triggerMu.Lock()
 	if last, ok := s.lastTrigger[input.Pipeline]; ok {
 		if time.Since(last) < triggerCooldown {
 			remaining := triggerCooldown - time.Since(last)
+			s.triggerMu.Unlock()
 			return nil, TriggerPipelineOutput{
 				Triggered: false,
 				Pipeline:  input.Pipeline,
@@ -2345,8 +2349,8 @@ func (s *Server) triggerPipeline(ctx context.Context, _ *mcp.CallToolRequest, in
 			}, nil
 		}
 	}
-
 	s.lastTrigger[input.Pipeline] = time.Now()
+	s.triggerMu.Unlock()
 
 	switch input.Pipeline {
 	case "rss_collector":
@@ -2507,9 +2511,9 @@ func (s *Server) manageContentUpdate(ctx context.Context, input ManageContentInp
 		p.Tags = input.Tags
 	}
 	if input.Project != "" {
-		proj, err := s.resolveProjectChain(ctx, input.Project)
-		if err != nil {
-			return nil, ManageContentOutput{}, err
+		proj, projErr := s.resolveProjectChain(ctx, input.Project)
+		if projErr != nil {
+			return nil, ManageContentOutput{}, projErr
 		}
 		p.ProjectID = &proj.ID
 	}

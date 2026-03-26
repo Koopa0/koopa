@@ -1077,6 +1077,8 @@ func (s *Server) fetchMorningContentPipeline(ctx context.Context, out *MorningCo
 					PublishedAt: c.PublishedAt.Format(time.DateOnly),
 				})
 			}
+		case content.StatusArchived:
+			// archived content is not shown in the pipeline view
 		}
 	}
 
