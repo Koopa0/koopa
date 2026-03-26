@@ -916,3 +916,50 @@
 
 ### Read-Only（無副作用）
 其餘 24 個 tools
+
+---
+
+## Standing Architectural Principles
+
+These principles emerged from cross-environment review (Claude Code + Cowork + Learning + HQ) and real-world validation. They apply to all future MCP development.
+
+### P1: AI-calls-AI is an anti-pattern when the consumer is an LLM
+Server-side LLM invocation is only justified for orchestration that involves DB queries, embedding APIs, or multi-step pipelines the consumer can't execute. If the MCP consumer can do the task itself (like polishing prose), don't route it through HTTP → Go → Genkit → another LLM.
+
+### P2: One tool, one action, one risk level
+Don't use action multiplexer patterns (`manage_X(action=...)`). Each tool name should directly communicate its intent and risk level. MCP annotations (readOnlyHint, destructiveHint) work at tool level, not action level.
+
+### P3: Convergence gate before expansion
+Before adding any tool: "How many sessions in the past two weeks failed because this tool didn't exist?" Zero → backlog. Three+ → build.
+
+### P4: Schema enforcement for data quality
+Session notes have required metadata fields (insight needs hypothesis + invalidation_condition; plan needs reasoning; metrics needs adjustments). Strict validation prevents low-quality data from entering the knowledge base.
+
+### P5: Session notes are context, tasks are action items
+Both are needed. A session note saying "there's a bug" without a task means nobody acts on it. A task without a session note means the fixer lacks context.
+
+### P6: Description quality > tool count
+47 well-described tools with 97%+ selection accuracy is better than 25 tools where you have to guess which one handles your edge case.
+
+### P7: Freeze aggregate views at 4 — new features via surgical tools only
+**The biggest maintenance risk is not tool count, but aggregate view integration surface area.**
+
+Tools are either:
+- **Surgical** (~30 tools) — do one thing, clear boundaries, can't simplify further
+- **Aggregate views** (4 tools) — run N queries, assemble a big JSON
+
+The 4 aggregate views (`get_morning_context`, `get_reflection_context`, `get_session_delta`, `get_weekly_summary`) are "convenience packs" of surgical tools. Every new feature creates 1-4 decision points: should it be in morning? weekly? delta? reflection? This is N×M maintenance cost.
+
+**Rule**: New features MUST only be exposed via surgical tools. Do NOT add new sections to aggregate views unless the feature is core to that view's purpose. Let AI consumers assemble context from surgical tools — aggregate views are convenience, not necessity.
+
+**Why**: 4 aggregate views = 4 decision points per new feature = 4 places to maintain code. This cost grows with every feature and compounds over time. The cost of selection pressure (too many tools for LLM) is solved by good descriptions. The cost of integration surface area (too many aggregate views) is only solved by architectural discipline.
+
+### Deferred Evaluations (2026-04-09 telemetry review)
+
+| Item | Signal to watch | Action if confirmed |
+|------|-----------------|---------------------|
+| `get_session_delta` overlap | 80%+ usage replaceable by `get_morning_context(since=...)` | Consider removing, add `since` param to morning_context |
+| `get_learning_progress` usage | Low usage even after P1 bug fix | Merge into `get_weekly_summary(area="learning")` |
+| `synthesize_topic` usage | Low usage despite no AI-calls-AI issue | Consider removing, LLM consumers can classify search results themselves |
+| Insight lifecycle ROI | 90%+ insights auto-archived without verify/invalidate | Simplify to tagged notes without lifecycle |
+| Genkit flow overhead | Deterministic flows not using LLM orchestration | Replace with plain Go functions |
