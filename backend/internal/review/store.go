@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -40,7 +41,7 @@ func (s *Store) Create(ctx context.Context, contentID uuid.UUID, reviewLevel str
 	if err != nil {
 		// Unique partial index idx_review_queue_pending_content catches the
 		// TOCTOU race between PendingReviewExistsForContent and CreateReview.
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("creating review for content %s: %w", contentID, err)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -105,7 +106,7 @@ func (s *Store) CreateSource(ctx context.Context, p *CreateSourceParams) (*Sourc
 		PollInterval: p.PollInterval,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating notion source: %w", err)

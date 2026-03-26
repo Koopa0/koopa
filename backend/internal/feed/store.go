@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -110,7 +111,7 @@ func (s *Store) CreateFeed(ctx context.Context, p *CreateParams) (*Feed, error) 
 		FilterConfig: filterJSON,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating feed: %w", err)
@@ -142,7 +143,7 @@ func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p *UpdateParams) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating feed %s: %w", id, err)

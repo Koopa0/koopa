@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -91,7 +92,7 @@ func (s *Store) CreateTopic(ctx context.Context, p *CreateParams) (*Topic, error
 		SortOrder:   int32(p.SortOrder), // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating topic: %w", err)
@@ -127,7 +128,7 @@ func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p *UpdateParams) 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating topic %s: %w", id, err)

@@ -129,12 +129,14 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	// Pipeline trigger and flow invoker via admin API (requires ADMIN_API_URL and ADMIN_API_TOKEN)
 	if adminURL := os.Getenv("ADMIN_API_URL"); adminURL != "" {
 		adminToken := os.Getenv("ADMIN_API_TOKEN")
-		opts = append(opts, mcpserver.WithPipelineTrigger(
-			&httpPipelineTrigger{baseURL: adminURL, token: adminToken, logger: logger},
-		))
-		opts = append(opts, mcpserver.WithFlowInvoker(
-			&httpFlowInvoker{baseURL: adminURL, token: adminToken, logger: logger},
-		))
+		opts = append(opts,
+			mcpserver.WithPipelineTrigger(
+				&httpPipelineTrigger{baseURL: adminURL, token: adminToken, logger: logger},
+			),
+			mcpserver.WithFlowInvoker(
+				&httpFlowInvoker{baseURL: adminURL, token: adminToken, logger: logger},
+			),
+		)
 		logger.Info("pipeline trigger and flow invoker enabled", "admin_url", adminURL)
 	} else {
 		logger.Warn("ADMIN_API_URL not set — trigger_pipeline and flow tools will be unavailable")

@@ -2410,7 +2410,7 @@ func slugify(title string) string {
 	return s
 }
 
-func (s *Server) manageContent(ctx context.Context, _ *mcp.CallToolRequest, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) manageContent(ctx context.Context, _ *mcp.CallToolRequest, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	switch input.Action {
 	case "create":
 		return s.manageContentCreate(ctx, input)
@@ -2423,7 +2423,7 @@ func (s *Server) manageContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	}
 }
 
-func (s *Server) manageContentCreate(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) manageContentCreate(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if input.Title == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("title is required for create")
 	}
@@ -2484,7 +2484,7 @@ func (s *Server) manageContentCreate(ctx context.Context, input ManageContentInp
 	}, nil
 }
 
-func (s *Server) manageContentUpdate(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) manageContentUpdate(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for update")
 	}
@@ -2536,7 +2536,7 @@ func (s *Server) manageContentUpdate(ctx context.Context, input ManageContentInp
 	}, nil
 }
 
-func (s *Server) manageContentPublish(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) manageContentPublish(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for publish")
 	}

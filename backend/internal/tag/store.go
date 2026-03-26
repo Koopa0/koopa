@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -173,7 +174,7 @@ func (s *Store) CreateTag(ctx context.Context, p *CreateParams) (*Tag, error) {
 		Description: p.Description,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating tag: %w", err)
@@ -195,7 +196,7 @@ func (s *Store) UpdateTag(ctx context.Context, id uuid.UUID, p *UpdateParams) (*
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating tag %s: %w", id, err)

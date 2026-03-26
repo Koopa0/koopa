@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -98,7 +99,7 @@ func (s *Store) CreateProject(ctx context.Context, p *CreateParams) (*Project, e
 		Status:          db.ProjectStatus(p.Status),
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("creating project: %w", err)
@@ -138,7 +139,7 @@ func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p *UpdateParams
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("updating project %s: %w", id, err)
@@ -225,7 +226,7 @@ func (s *Store) UpsertByNotionPageID(ctx context.Context, p *UpsertByNotionParam
 			NotionPageID: &p.NotionPageID,
 		})
 		if err != nil {
-			if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" && pgErr.ConstraintName == "projects_slug_key" {
+			if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "projects_slug_key" {
 				// suffix: "title-2", "title-3", … "title-6"
 				slug = fmt.Sprintf("%s-%d", p.Slug, i+2)
 				continue
