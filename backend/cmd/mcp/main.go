@@ -132,11 +132,8 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 			mcpserver.WithPipelineTrigger(
 				&httpPipelineTrigger{baseURL: adminURL, token: adminToken, logger: logger},
 			),
-			mcpserver.WithFlowInvoker(
-				&httpFlowInvoker{baseURL: adminURL, token: adminToken, logger: logger},
-			),
 		)
-		logger.Info("pipeline trigger and flow invoker enabled", "admin_url", adminURL)
+		logger.Info("pipeline trigger enabled", "admin_url", adminURL)
 	} else {
 		logger.Warn("ADMIN_API_URL not set — trigger_pipeline and flow tools will be unavailable")
 	}
@@ -151,6 +148,11 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 
 	// Tool call telemetry — async insert, no impact on response time.
 	opts = append(opts, mcpserver.WithTelemetry(func(name string, d time.Duration, isErr bool) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("telemetry panic", "tool", name, "recover", r)
+			}
+		}()
 		_, execErr := pool.Exec(context.Background(),
 			"INSERT INTO tool_call_logs (tool_name, called_at, duration_ms, is_error) VALUES ($1, now(), $2, $3)",
 			name, d.Milliseconds(), isErr)
@@ -840,62 +842,6 @@ func (t *httpPipelineTrigger) post(ctx context.Context, path string) {
 	t.logger.Info("pipeline triggered via admin API", "path", path, "status", resp.StatusCode)
 }
 
-// httpFlowInvoker invokes AI flows via the admin API.
-type httpFlowInvoker struct {
-	baseURL string
-	token   string
-	logger  *slog.Logger
-}
-
-// InvokePolish triggers the content-polish flow via POST /api/admin/flow/polish/{content_id}.
-func (f *httpFlowInvoker) InvokePolish(ctx context.Context, contentID string) (string, error) {
-	path := "/api/admin/flow/polish/" + contentID
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.baseURL+path, http.NoBody)
-	if err != nil {
-		return "", fmt.Errorf("creating polish request: %w", err)
-	}
-	if f.token != "" {
-		req.Header.Set("Authorization", "Bearer "+f.token)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("calling polish endpoint: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("polish endpoint returned status %d", resp.StatusCode)
-	}
-
-	f.logger.Info("content-polish invoked via admin API", "content_id", contentID, "status", resp.StatusCode)
-	return "submitted", nil
-}
-
-// InvokeStrategy triggers the content-strategy flow via POST /api/admin/pipeline/generate.
-// The strategy flow runs asynchronously; this returns "submitted" immediately.
-func (f *httpFlowInvoker) InvokeStrategy(ctx context.Context) (string, error) {
-	path := "/api/admin/pipeline/generate"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.baseURL+path, http.NoBody)
-	if err != nil {
-		return "", fmt.Errorf("creating strategy request: %w", err)
-	}
-	if f.token != "" {
-		req.Header.Set("Authorization", "Bearer "+f.token)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("calling strategy endpoint: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// The generate endpoint may not be implemented yet (returns 501).
-	if resp.StatusCode == http.StatusNotImplemented {
-		return "content-strategy flow submitted via cron schedule; generate endpoint is not yet implemented for on-demand invocation", nil
-	}
-	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("strategy endpoint returned status %d", resp.StatusCode)
-	}
-
-	f.logger.Info("content-strategy invoked via admin API", "status", resp.StatusCode)
-	return "content-strategy flow triggered successfully; results will be available via get_system_status", nil
-}
+// httpFlowInvoker removed — invoke_content_polish and invoke_content_strategy
+// no longer exposed as MCP tools (AI-calls-AI anti-pattern).
+// Genkit flows remain in internal/flow/ for potential non-LLM consumers.

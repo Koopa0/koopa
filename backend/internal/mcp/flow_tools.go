@@ -13,68 +13,9 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 )
 
-// --- invoke_content_polish ---
-
-// InvokeContentPolishInput is the input for the invoke_content_polish tool.
-type InvokeContentPolishInput struct {
-	ContentID string `json:"content_id" jsonschema_description:"content UUID (required)"`
-}
-
-// InvokeContentPolishOutput is the output for the invoke_content_polish tool.
-type InvokeContentPolishOutput struct {
-	ContentID string `json:"content_id"`
-	Status    string `json:"status"`
-	Message   string `json:"message"`
-}
-
-func (s *Server) invokeContentPolish(ctx context.Context, _ *mcp.CallToolRequest, input InvokeContentPolishInput) (*mcp.CallToolResult, InvokeContentPolishOutput, error) {
-	if input.ContentID == "" {
-		return nil, InvokeContentPolishOutput{}, fmt.Errorf("content_id is required")
-	}
-
-	contentID, err := uuid.Parse(input.ContentID)
-	if err != nil {
-		return nil, InvokeContentPolishOutput{}, fmt.Errorf("invalid content_id: %w", err)
-	}
-
-	// Verify content exists before submitting.
-	if _, checkErr := s.contents.Content(ctx, contentID); checkErr != nil {
-		if isNotFound(checkErr) {
-			return nil, InvokeContentPolishOutput{}, fmt.Errorf("content %q not found", input.ContentID)
-		}
-		return nil, InvokeContentPolishOutput{}, fmt.Errorf("checking content: %w", checkErr)
-	}
-
-	status, err := s.flowInvoker.InvokePolish(ctx, input.ContentID)
-	if err != nil {
-		return nil, InvokeContentPolishOutput{}, fmt.Errorf("invoking content-polish: %w", err)
-	}
-
-	return nil, InvokeContentPolishOutput{
-		ContentID: input.ContentID,
-		Status:    status,
-		Message:   "content-polish flow submitted; check flow run status for results",
-	}, nil
-}
-
-// --- invoke_content_strategy ---
-
-// InvokeContentStrategyInput is the input for the invoke_content_strategy tool.
-type InvokeContentStrategyInput struct{}
-
-// InvokeContentStrategyOutput is the output for the invoke_content_strategy tool.
-type InvokeContentStrategyOutput struct {
-	Text string `json:"text"`
-}
-
-func (s *Server) invokeContentStrategy(ctx context.Context, _ *mcp.CallToolRequest, _ InvokeContentStrategyInput) (*mcp.CallToolResult, InvokeContentStrategyOutput, error) {
-	text, err := s.flowInvoker.InvokeStrategy(ctx)
-	if err != nil {
-		return nil, InvokeContentStrategyOutput{}, fmt.Errorf("invoking content-strategy: %w", err)
-	}
-
-	return nil, InvokeContentStrategyOutput{Text: text}, nil
-}
+// invoke_content_polish and invoke_content_strategy REMOVED from MCP registry.
+// AI-calls-AI anti-pattern: consumers should do polish/strategy directly.
+// Genkit flow code retained in internal/flow/ for potential non-LLM consumers.
 
 // --- generate_social_excerpt ---
 

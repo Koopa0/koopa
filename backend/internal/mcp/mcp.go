@@ -116,16 +116,6 @@ type PipelineTrigger interface {
 	TriggerNotionSync(ctx context.Context)
 }
 
-// FlowInvoker invokes AI flows via the admin API.
-type FlowInvoker interface {
-	// InvokePolish triggers the content-polish flow for the given content ID.
-	// Returns immediately after submission (async).
-	InvokePolish(ctx context.Context, contentID string) (status string, err error)
-	// InvokeStrategy triggers the content-strategy flow.
-	// Returns the strategy text synchronously (may take 30+ seconds).
-	InvokeStrategy(ctx context.Context) (text string, err error)
-}
-
 // searchResultEntry is a note with a combined RRF score for merged search results.
 type searchResultEntry struct {
 	Note  note.Note

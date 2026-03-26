@@ -46,7 +46,6 @@ type Server struct {
 	oreilly         *OReillyClient
 	systemStatus    SystemStatusReader
 	pipelineTrigger PipelineTrigger
-	flowInvoker     FlowInvoker
 	recordToolCall  func(name string, d time.Duration, isErr bool) // optional telemetry
 	lastTrigger     map[string]time.Time                           // rate limit: pipeline name -> last trigger time
 	triggerMu       sync.Mutex                                     // protects lastTrigger
@@ -114,11 +113,6 @@ func WithPipelineTrigger(t PipelineTrigger) ServerOption {
 		s.pipelineTrigger = t
 		s.lastTrigger = make(map[string]time.Time)
 	}
-}
-
-// WithFlowInvoker enables AI flow invocation tools (polish, strategy).
-func WithFlowInvoker(f FlowInvoker) ServerOption {
-	return func(s *Server) { s.flowInvoker = f }
 }
 
 // WithTelemetry enables async tool call logging for convergence analysis.
@@ -574,9 +568,8 @@ func contentMatchesProject(c *content.Content, projectID uuid.UUID, projectSlug 
 	if c.ProjectID != nil && *c.ProjectID == projectID {
 		return true
 	}
-	slugLower := strings.ToLower(projectSlug)
 	for _, t := range c.Tags {
-		if strings.ToLower(t) == slugLower {
+		if strings.EqualFold(t, projectSlug) {
 			return true
 		}
 	}
@@ -584,7 +577,7 @@ func contentMatchesProject(c *content.Content, projectID uuid.UUID, projectSlug 
 		return true
 	}
 	if p := extractFrontmatter(c.Body, "project"); p != "" {
-		return strings.EqualFold(p, projectSlug) || strings.Contains(strings.ToLower(p), slugLower)
+		return strings.EqualFold(p, projectSlug) || strings.Contains(strings.ToLower(p), strings.ToLower(projectSlug))
 	}
 	return false
 }
