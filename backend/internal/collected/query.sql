@@ -73,15 +73,16 @@ ORDER BY relevance_score DESC, collected_at DESC
 LIMIT $1 OFFSET $2;
 
 -- name: TopRelevantCollected :many
--- Get top unread collected data by relevance since a given time.
+-- Get top unread collected data since a given time.
+-- Score filter removed: scoring pipeline not yet active, all items have score=0.
+-- When scoring is implemented, restore relevance_score > 0.5 threshold.
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
        url_hash, user_feedback, feedback_at, feed_id
 FROM collected_data
 WHERE collected_at >= @since
   AND status = 'unread'
-  AND relevance_score > 0.5
-ORDER BY relevance_score DESC
+ORDER BY collected_at DESC
 LIMIT @max_results;
 
 -- name: LatestCollectedByRecency :many

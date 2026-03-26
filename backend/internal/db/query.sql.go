@@ -6145,8 +6145,7 @@ SELECT id, source_url, source_name, title, original_content,
 FROM collected_data
 WHERE collected_at >= $1
   AND status = 'unread'
-  AND relevance_score > 0.5
-ORDER BY relevance_score DESC
+ORDER BY collected_at DESC
 LIMIT $2
 `
 
@@ -6155,7 +6154,9 @@ type TopRelevantCollectedParams struct {
 	MaxResults int32     `json:"max_results"`
 }
 
-// Get top unread collected data by relevance since a given time.
+// Get top unread collected data since a given time.
+// Score filter removed: scoring pipeline not yet active, all items have score=0.
+// When scoring is implemented, restore relevance_score > 0.5 threshold.
 func (q *Queries) TopRelevantCollected(ctx context.Context, arg TopRelevantCollectedParams) ([]CollectedDatum, error) {
 	rows, err := q.db.Query(ctx, topRelevantCollected, arg.Since, arg.MaxResults)
 	if err != nil {
