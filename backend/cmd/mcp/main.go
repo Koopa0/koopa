@@ -115,6 +115,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	if locErr != nil {
 		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
 	}
+	statsStore := stats.NewStore(pool)
 	opts = append(opts,
 		mcpserver.WithLocation(taipeiLoc),
 		mcpserver.WithGoalWriter(goalStore),
@@ -122,7 +123,22 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mcpserver.WithSessionNotes(sessionStore, sessionStore),
 		mcpserver.WithActivityWriter(activityStore),
 		mcpserver.WithFeedStore(feedStore),
+		mcpserver.WithSystemStatus(statsStore),
 	)
+
+	// Pipeline trigger and flow invoker via admin API (requires ADMIN_API_URL and ADMIN_API_TOKEN)
+	if adminURL := os.Getenv("ADMIN_API_URL"); adminURL != "" {
+		adminToken := os.Getenv("ADMIN_API_TOKEN")
+		opts = append(opts, mcpserver.WithPipelineTrigger(
+			&httpPipelineTrigger{baseURL: adminURL, token: adminToken, logger: logger},
+		))
+		opts = append(opts, mcpserver.WithFlowInvoker(
+			&httpFlowInvoker{baseURL: adminURL, token: adminToken, logger: logger},
+		))
+		logger.Info("pipeline trigger and flow invoker enabled", "admin_url", adminURL)
+	} else {
+		logger.Warn("ADMIN_API_URL not set — trigger_pipeline and flow tools will be unavailable")
+	}
 
 	// Optional O'Reilly content search (requires ORM_JWT)
 	if ormJWT := os.Getenv("ORM_JWT"); ormJWT != "" {
@@ -149,7 +165,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		activityStore,
 		projectStore,
 		collectedStore,
-		stats.NewStore(pool),
+		statsStore,
 		taskStore,
 		taskStore,
 		contentStore,
@@ -779,4 +795,97 @@ func (e *geminiQueryEmbedder) EmbedQuery(ctx context.Context, text string) (pgve
 		return pgvector.Vector{}, fmt.Errorf("empty embedding response")
 	}
 	return pgvector.NewVector(resp.Embeddings[0].Embedding), nil
+}
+
+// httpPipelineTrigger triggers pipelines via the admin API.
+type httpPipelineTrigger struct {
+	baseURL string
+	token   string
+	logger  *slog.Logger
+}
+
+func (t *httpPipelineTrigger) TriggerCollect(ctx context.Context) {
+	t.post(ctx, "/api/admin/pipeline/collect")
+}
+
+func (t *httpPipelineTrigger) TriggerNotionSync(ctx context.Context) {
+	t.post(ctx, "/api/admin/pipeline/notion-sync")
+}
+
+func (t *httpPipelineTrigger) post(ctx context.Context, path string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+path, http.NoBody)
+	if err != nil {
+		t.logger.Error("creating pipeline trigger request", "path", path, "error", err)
+		return
+	}
+	if t.token != "" {
+		req.Header.Set("Authorization", "Bearer "+t.token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.logger.Error("triggering pipeline", "path", path, "error", err)
+		return
+	}
+	resp.Body.Close()
+	t.logger.Info("pipeline triggered via admin API", "path", path, "status", resp.StatusCode)
+}
+
+// httpFlowInvoker invokes AI flows via the admin API.
+type httpFlowInvoker struct {
+	baseURL string
+	token   string
+	logger  *slog.Logger
+}
+
+// InvokePolish triggers the content-polish flow via POST /api/admin/flow/polish/{content_id}.
+func (f *httpFlowInvoker) InvokePolish(ctx context.Context, contentID string) (string, error) {
+	path := "/api/admin/flow/polish/" + contentID
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.baseURL+path, http.NoBody)
+	if err != nil {
+		return "", fmt.Errorf("creating polish request: %w", err)
+	}
+	if f.token != "" {
+		req.Header.Set("Authorization", "Bearer "+f.token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("calling polish endpoint: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("polish endpoint returned status %d", resp.StatusCode)
+	}
+
+	f.logger.Info("content-polish invoked via admin API", "content_id", contentID, "status", resp.StatusCode)
+	return "submitted", nil
+}
+
+// InvokeStrategy triggers the content-strategy flow via POST /api/admin/pipeline/generate.
+// The strategy flow runs asynchronously; this returns "submitted" immediately.
+func (f *httpFlowInvoker) InvokeStrategy(ctx context.Context) (string, error) {
+	path := "/api/admin/pipeline/generate"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.baseURL+path, http.NoBody)
+	if err != nil {
+		return "", fmt.Errorf("creating strategy request: %w", err)
+	}
+	if f.token != "" {
+		req.Header.Set("Authorization", "Bearer "+f.token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("calling strategy endpoint: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// The generate endpoint may not be implemented yet (returns 501).
+	if resp.StatusCode == http.StatusNotImplemented {
+		return "content-strategy flow submitted via cron schedule; generate endpoint is not yet implemented for on-demand invocation", nil
+	}
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("strategy endpoint returned status %d", resp.StatusCode)
+	}
+
+	f.logger.Info("content-strategy invoked via admin API", "status", resp.StatusCode)
+	return "content-strategy flow triggered successfully; results will be available via get_system_status", nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/task"
 )
@@ -17,39 +18,53 @@ import (
 type MorningContextInput struct {
 	ActivityDays int      `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
 	BuildLogDays int      `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
-	Sections     []string `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions, pipeline_health, rss_highlights, agent_tasks"`
+	Sections     []string `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions, pipeline_health, rss_highlights, agent_tasks, content_pipeline"`
 }
 
 // MorningContextOutput is the aggregated output for daily planning.
 type MorningContextOutput struct {
-	Date                   string                 `json:"date"`
-	SessionGap             int                    `json:"session_gap"`
-	LastSessionDate        string                 `json:"last_session_date,omitempty"`
-	OverdueTasks           []morningTask          `json:"overdue_tasks"`
-	TodayTasks             []morningTask          `json:"today_tasks"`
-	UpcomingTasks          []morningTask          `json:"upcoming_tasks"`
-	MyDayTasks             []morningTask          `json:"my_day_tasks"`
-	RecentActivity         activitySummary        `json:"recent_activity"`
-	RecentBuildLogs        []buildLogBrief        `json:"recent_build_logs"`
-	Projects               []projectHealth        `json:"projects"`
-	Goals                  []goalBrief            `json:"goals"`
-	LatestPlan             string                 `json:"latest_plan,omitempty"`
-	LatestPlanDate         string                 `json:"latest_plan_date,omitempty"`
-	LatestReflection       string                 `json:"latest_reflection,omitempty"`
-	LatestReflectionDate   string                 `json:"latest_reflection_date,omitempty"`
-	YesterdayAdjustments   []string               `json:"yesterday_adjustments,omitempty"`
-	PlanningHistory        planningHistorySummary `json:"planning_history"`
-	ActiveInsights         []insightBrief         `json:"active_insights"`
-	PendingRecommendations []insightBrief         `json:"pending_recommendations"`
-	TotalUnverified        int64                  `json:"total_unverified"`
-	DailySummary           *dailySummaryHint      `json:"daily_summary,omitempty"`
-	TodayCompletions       []todayCompletion      `json:"today_completions"`
-	RSSHighlightCount      int                    `json:"rss_highlight_count"`
-	TopRSSHighlight        string                 `json:"top_rss_highlight,omitempty"`
-	UrgentRSS              []urgentRSSItem        `json:"urgent_rss"`
-	PipelineHealth         *pipelineHealthSection `json:"pipeline_health,omitempty"`
-	RSSHighlights          []rssHighlightItem     `json:"rss_highlights,omitempty"`
-	AgentTasks             []agentTaskItem        `json:"agent_tasks,omitempty"`
+	Date                   string                  `json:"date"`
+	SessionGap             int                     `json:"session_gap"`
+	LastSessionDate        string                  `json:"last_session_date,omitempty"`
+	OverdueTasks           []morningTask           `json:"overdue_tasks"`
+	TodayTasks             []morningTask           `json:"today_tasks"`
+	UpcomingTasks          []morningTask           `json:"upcoming_tasks"`
+	MyDayTasks             []morningTask           `json:"my_day_tasks"`
+	RecentActivity         activitySummary         `json:"recent_activity"`
+	RecentBuildLogs        []buildLogBrief         `json:"recent_build_logs"`
+	Projects               []projectHealth         `json:"projects"`
+	Goals                  []goalBrief             `json:"goals"`
+	LatestPlan             string                  `json:"latest_plan,omitempty"`
+	LatestPlanDate         string                  `json:"latest_plan_date,omitempty"`
+	LatestReflection       string                  `json:"latest_reflection,omitempty"`
+	LatestReflectionDate   string                  `json:"latest_reflection_date,omitempty"`
+	YesterdayAdjustments   []string                `json:"yesterday_adjustments,omitempty"`
+	PlanningHistory        planningHistorySummary  `json:"planning_history"`
+	ActiveInsights         []insightBrief          `json:"active_insights"`
+	PendingRecommendations []insightBrief          `json:"pending_recommendations"`
+	TotalUnverified        int64                   `json:"total_unverified"`
+	DailySummary           *dailySummaryHint       `json:"daily_summary,omitempty"`
+	TodayCompletions       []todayCompletion       `json:"today_completions"`
+	RSSHighlightCount      int                     `json:"rss_highlight_count"`
+	TopRSSHighlight        string                  `json:"top_rss_highlight,omitempty"`
+	UrgentRSS              []urgentRSSItem         `json:"urgent_rss"`
+	PipelineHealth         *pipelineHealthSection  `json:"pipeline_health,omitempty"`
+	RSSHighlights          []rssHighlightItem      `json:"rss_highlights,omitempty"`
+	AgentTasks             []agentTaskItem         `json:"agent_tasks,omitempty"`
+	ContentPipeline        *contentPipelineSection `json:"content_pipeline,omitempty"`
+}
+
+type contentPipelineSection struct {
+	DraftsCount     int                    `json:"drafts_count"`
+	ReviewCount     int                    `json:"review_count"`
+	RecentPublished []contentPipelineBrief `json:"recent_published"`
+	Scheduled       []contentPipelineBrief `json:"scheduled"`
+}
+
+type contentPipelineBrief struct {
+	Title       string `json:"title"`
+	Slug        string `json:"slug"`
+	PublishedAt string `json:"published_at,omitempty"`
 }
 
 type pipelineHealthSection struct {
@@ -239,6 +254,9 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	if all || wantSection["agent_tasks"] {
 		s.fetchMorningAgentTasks(ctx, &out, allTasks)
 	}
+	if all || wantSection["content_pipeline"] {
+		s.fetchMorningContentPipeline(ctx, &out)
+	}
 
 	return nil, out, nil
 }
@@ -253,7 +271,8 @@ func buildSectionSet(sections []string) map[string]bool {
 		"tasks": true, "activity": true, "build_logs": true,
 		"projects": true, "goals": true, "insights": true,
 		"reflection": true, "planning_history": true, "rss": true,
-		"plan": true, "completions": true,
+		"plan": true, "completions": true, "pipeline_health": true,
+		"rss_highlights": true, "agent_tasks": true, "content_pipeline": true,
 	}
 	set := make(map[string]bool, len(sections))
 	for _, s := range sections {
@@ -1014,4 +1033,52 @@ func (s *Server) fetchMorningAgentTasks(_ context.Context, out *MorningContextOu
 		agentTasks = []agentTaskItem{}
 	}
 	out.AgentTasks = agentTasks
+}
+
+// fetchMorningContentPipeline builds a content pipeline summary: draft/review counts,
+// recent published items, and scheduled (draft) items.
+func (s *Server) fetchMorningContentPipeline(ctx context.Context, out *MorningContextOutput) {
+	all, _, err := s.contents.AdminContents(ctx, content.AdminFilter{
+		Page:    1,
+		PerPage: 100,
+	})
+	if err != nil {
+		s.logger.Warn("morning: content pipeline failed", "error", err)
+		return
+	}
+
+	section := &contentPipelineSection{
+		RecentPublished: []contentPipelineBrief{},
+		Scheduled:       []contentPipelineBrief{},
+	}
+
+	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+
+	for i := range all {
+		c := &all[i]
+		switch c.Status {
+		case content.StatusDraft:
+			section.DraftsCount++
+			section.Scheduled = append(section.Scheduled, contentPipelineBrief{
+				Title: c.Title,
+				Slug:  c.Slug,
+			})
+		case content.StatusReview:
+			section.ReviewCount++
+			section.Scheduled = append(section.Scheduled, contentPipelineBrief{
+				Title: c.Title,
+				Slug:  c.Slug,
+			})
+		case content.StatusPublished:
+			if c.PublishedAt != nil && c.PublishedAt.After(sevenDaysAgo) && len(section.RecentPublished) < 5 {
+				section.RecentPublished = append(section.RecentPublished, contentPipelineBrief{
+					Title:       c.Title,
+					Slug:        c.Slug,
+					PublishedAt: c.PublishedAt.Format(time.DateOnly),
+				})
+			}
+		}
+	}
+
+	out.ContentPipeline = section
 }

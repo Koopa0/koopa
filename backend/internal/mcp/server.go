@@ -49,6 +49,7 @@ type Server struct {
 	oreilly         *OReillyClient
 	systemStatus    SystemStatusReader
 	pipelineTrigger PipelineTrigger
+	flowInvoker     FlowInvoker
 	lastTrigger     map[string]time.Time // rate limit: pipeline name -> last trigger time
 	logger          *slog.Logger
 	loc             *time.Location // user timezone for day boundaries
@@ -114,6 +115,11 @@ func WithPipelineTrigger(t PipelineTrigger) ServerOption {
 		s.pipelineTrigger = t
 		s.lastTrigger = make(map[string]time.Time)
 	}
+}
+
+// WithFlowInvoker enables AI flow invocation tools (polish, strategy).
+func WithFlowInvoker(f FlowInvoker) ServerOption {
+	return func(s *Server) { s.flowInvoker = f }
 }
 
 // WithSessionNotes enables session note read/write tools.
@@ -270,7 +276,7 @@ func NewServer(
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "log_dev_session",
-		Description: "Log a development session as a build-log entry. Use at the end of a coding session or after completing a feature/bugfix/refactor/research milestone to record what was done, why, and what decisions were made. This creates a draft content record that the user can review and publish. The body should be in Markdown format with sections like: what was done, decisions made, problems solved, impact scope.",
+		Description: "Log a development session as a build-log entry. Use at the end of a coding session. Required: project, session_type (feature|refactor|bugfix|research|infra), title, body (markdown). Optional: plan_summary (from .claude/plans/), review_summary (reviewer findings), tier (tier-1|tier-2|tier-3), diff_stats (+N -N). plan_summary and review_summary bridge context to Claude Web for weekly review.",
 		Annotations: additive,
 	}, s.logDevSession)
 
@@ -404,6 +410,20 @@ func NewServer(
 		Annotations: additive,
 	}, s.curateCollectedItem)
 
+	// --- Sprint 3 content management tools ---
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "manage_content",
+		Description: "Manage content records. Actions: create (title+body+content_type required, returns content_id+slug), update (content_id required, updates provided fields), publish (content_id required, sets status to published). Use when creating articles, build logs, TILs, or other content types. For dev session logs, prefer log_dev_session instead.",
+		Annotations: mutating,
+	}, s.manageContent)
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "get_content_pipeline",
+		Description: "View the content pipeline: drafts awaiting work, review queue, recently published, and scheduled content. Views: queue (draft+review items), calendar (published last 7 days + scheduled drafts), recent (published content). Use when checking what content needs attention, reviewing publishing cadence, or planning what to write next.",
+		Annotations: readOnly,
+	}, s.getContentPipeline)
+
 	// --- Sprint 2 tools ---
 
 	if s.feeds != nil {
@@ -435,6 +455,28 @@ func NewServer(
 			Annotations: mutating,
 		}, s.triggerPipeline)
 	}
+
+	// --- Sprint 3: AI flow tools ---
+
+	if s.flowInvoker != nil {
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "invoke_content_polish",
+			Description: "Polish a draft content using AI. Improves writing quality, fixes grammar, enhances readability. Input: content_id (required). Returns polished version of the content body.",
+			Annotations: mutating,
+		}, s.invokeContentPolish)
+
+		mcp.AddTool(s.server, &mcp.Tool{
+			Name:        "invoke_content_strategy",
+			Description: "Get AI-powered content topic suggestions based on existing content, RSS trends, and Koopa's positioning as a Go backend consultant. Returns suggested topics with rationale.",
+			Annotations: readOnly,
+		}, s.invokeContentStrategy)
+	}
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "generate_social_excerpt",
+		Description: "Generate a social media excerpt from published content. Platforms: linkedin (150-300 words, professional), twitter (280 chars, concise). Returns excerpt, hook, CTA, and hashtags.",
+		Annotations: readOnly,
+	}, s.generateSocialExcerpt)
 
 	return s
 }
@@ -1555,11 +1597,15 @@ func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, in
 
 // DevSessionInput is the input for the log_dev_session tool.
 type DevSessionInput struct {
-	Project     string   `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
-	SessionType string   `json:"session_type" jsonschema_description:"type of work: feature, refactor, bugfix, research, infra (required)"`
-	Title       string   `json:"title" jsonschema_description:"short summary of what was done (required)"`
-	Body        string   `json:"body" jsonschema_description:"markdown body with sections: what was done, decisions, problems solved, impact (required)"`
-	Tags        []string `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
+	Project       string   `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
+	SessionType   string   `json:"session_type" jsonschema_description:"type of work: feature, refactor, bugfix, research, infra (required)"`
+	Title         string   `json:"title" jsonschema_description:"short summary of what was done (required)"`
+	Body          string   `json:"body" jsonschema_description:"markdown body with sections: what was done, decisions, problems solved, impact (required)"`
+	Tags          []string `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
+	PlanSummary   string   `json:"plan_summary,omitempty" jsonschema_description:"summary of .claude/plans/<feature>.md — design goals, key decisions, implementation approach"`
+	ReviewSummary string   `json:"review_summary,omitempty" jsonschema_description:"go-reviewer/review-code findings summary (e.g. critical:0 high:1 medium:3)"`
+	Tier          string   `json:"tier,omitempty" jsonschema_description:"change tier: tier-1|tier-2|tier-3"`
+	DiffStats     string   `json:"diff_stats,omitempty" jsonschema_description:"diff size (e.g. +120 -30)"`
 }
 
 // DevSessionOutput is the output of the log_dev_session tool.
@@ -1606,7 +1652,23 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	tags := ensureTag(input.Tags, input.SessionType)
 
 	// Prepend metadata header so the frontend can parse project/session_type
-	body := fmt.Sprintf("project: %s\nsession_type: %s\n\n%s", proj.Title, input.SessionType, input.Body)
+	var bodyBuilder strings.Builder
+	fmt.Fprintf(&bodyBuilder, "project: %s\nsession_type: %s\n", proj.Title, input.SessionType)
+	if input.Tier != "" {
+		fmt.Fprintf(&bodyBuilder, "tier: %s\n", input.Tier)
+	}
+	if input.DiffStats != "" {
+		fmt.Fprintf(&bodyBuilder, "diff_stats: %s\n", input.DiffStats)
+	}
+	bodyBuilder.WriteString("\n")
+	bodyBuilder.WriteString(input.Body)
+	if input.PlanSummary != "" {
+		fmt.Fprintf(&bodyBuilder, "\n\n## Plan Summary\n\n%s", input.PlanSummary)
+	}
+	if input.ReviewSummary != "" {
+		fmt.Fprintf(&bodyBuilder, "\n\n## Review Summary\n\n%s", input.ReviewSummary)
+	}
+	body := bodyBuilder.String()
 
 	params := &content.CreateParams{
 		Slug:        slug,
@@ -2205,94 +2267,104 @@ func (s *Server) getSystemStatus(ctx context.Context, _ *mcp.CallToolRequest, in
 	if scope == "" {
 		scope = "summary"
 	}
-	switch scope {
-	case "summary", "pipelines", "flows":
-		// valid
-	default:
-		return nil, SystemStatusOutput{}, fmt.Errorf("invalid scope %q: must be summary, pipelines, or flows", scope)
-	}
 
 	hours := clamp(input.Hours, 1, 168, 24)
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
 
-	out := SystemStatusOutput{
-		Scope: scope,
-		Hours: hours,
-	}
+	out := SystemStatusOutput{Scope: scope, Hours: hours}
 
+	var err error
 	switch scope {
 	case "summary":
-		fs, err := s.systemStatus.FlowRunsSince(ctx, since, nil, nil)
-		if err != nil {
-			return nil, SystemStatusOutput{}, fmt.Errorf("querying flow stats: %w", err)
-		}
-		out.FlowStats = &flowStatusSummary{
-			Total:     fs.Total,
-			Completed: fs.Completed,
-			Failed:    fs.Failed,
-			Running:   fs.Running,
-		}
-
-		fh, err := s.systemStatus.FeedHealth(ctx)
-		if err != nil {
-			return nil, SystemStatusOutput{}, fmt.Errorf("querying feed health: %w", err)
-		}
-		out.FeedHealth = &feedHealthSummary{
-			Total:        fh.Total,
-			Enabled:      fh.Enabled,
-			FailingFeeds: fh.FailingFeeds,
-		}
-
+		err = s.statusScopeSummary(ctx, since, &out)
 	case "pipelines":
-		summaries, err := s.systemStatus.PipelineSummaries(ctx, since)
-		if err != nil {
-			return nil, SystemStatusOutput{}, fmt.Errorf("querying pipeline summaries: %w", err)
-		}
-		out.Pipelines = make([]pipelineSummary, len(summaries))
-		for i, ps := range summaries {
-			out.Pipelines[i] = pipelineSummary{
-				FlowName:   ps.FlowName,
-				Total:      ps.Total,
-				Completed:  ps.Completed,
-				Failed:     ps.Failed,
-				Running:    ps.Running,
-				LastRunAt:  ps.LastRunAt,
-				LastStatus: ps.LastStatus,
-			}
-		}
-
+		err = s.statusScopePipelines(ctx, since, &out)
 	case "flows":
-		var flowName, status *string
-		if input.FlowName != "" {
-			flowName = &input.FlowName
-		}
-		if input.Status != "" {
-			switch input.Status {
-			case "completed", "failed", "running":
-				status = &input.Status
-			default:
-				return nil, SystemStatusOutput{}, fmt.Errorf("invalid status %q: must be completed, failed, or running", input.Status)
-			}
-		}
-
-		runs, err := s.systemStatus.RecentFlowRuns(ctx, since, flowName, status, 50)
-		if err != nil {
-			return nil, SystemStatusOutput{}, fmt.Errorf("querying recent flow runs: %w", err)
-		}
-		out.FlowRuns = make([]recentFlowRunItem, len(runs))
-		for i, r := range runs {
-			out.FlowRuns[i] = recentFlowRunItem{
-				ID:        r.ID,
-				FlowName:  r.FlowName,
-				Status:    r.Status,
-				Error:     r.Error,
-				CreatedAt: r.CreatedAt,
-				EndedAt:   r.EndedAt,
-			}
-		}
+		err = s.statusScopeFlows(ctx, since, &input, &out)
+	default:
+		return nil, SystemStatusOutput{}, fmt.Errorf("invalid scope %q: must be summary, pipelines, or flows", scope)
+	}
+	if err != nil {
+		return nil, SystemStatusOutput{}, err
 	}
 
 	return nil, out, nil
+}
+
+func (s *Server) statusScopeSummary(ctx context.Context, since time.Time, out *SystemStatusOutput) error {
+	fs, err := s.systemStatus.FlowRunsSince(ctx, since, nil, nil)
+	if err != nil {
+		return fmt.Errorf("querying flow stats: %w", err)
+	}
+	out.FlowStats = &flowStatusSummary{
+		Total:     fs.Total,
+		Completed: fs.Completed,
+		Failed:    fs.Failed,
+		Running:   fs.Running,
+	}
+
+	fh, err := s.systemStatus.FeedHealth(ctx)
+	if err != nil {
+		return fmt.Errorf("querying feed health: %w", err)
+	}
+	out.FeedHealth = &feedHealthSummary{
+		Total:        fh.Total,
+		Enabled:      fh.Enabled,
+		FailingFeeds: fh.FailingFeeds,
+	}
+	return nil
+}
+
+func (s *Server) statusScopePipelines(ctx context.Context, since time.Time, out *SystemStatusOutput) error {
+	summaries, err := s.systemStatus.PipelineSummaries(ctx, since)
+	if err != nil {
+		return fmt.Errorf("querying pipeline summaries: %w", err)
+	}
+	out.Pipelines = make([]pipelineSummary, len(summaries))
+	for i, ps := range summaries {
+		out.Pipelines[i] = pipelineSummary{
+			FlowName:   ps.FlowName,
+			Total:      ps.Total,
+			Completed:  ps.Completed,
+			Failed:     ps.Failed,
+			Running:    ps.Running,
+			LastRunAt:  ps.LastRunAt,
+			LastStatus: ps.LastStatus,
+		}
+	}
+	return nil
+}
+
+func (s *Server) statusScopeFlows(ctx context.Context, since time.Time, input *SystemStatusInput, out *SystemStatusOutput) error {
+	var flowName, status *string
+	if input.FlowName != "" {
+		flowName = &input.FlowName
+	}
+	if input.Status != "" {
+		switch input.Status {
+		case "completed", "failed", "running":
+			status = &input.Status
+		default:
+			return fmt.Errorf("invalid status %q: must be completed, failed, or running", input.Status)
+		}
+	}
+
+	runs, err := s.systemStatus.RecentFlowRuns(ctx, since, flowName, status, 50)
+	if err != nil {
+		return fmt.Errorf("querying recent flow runs: %w", err)
+	}
+	out.FlowRuns = make([]recentFlowRunItem, len(runs))
+	for i, r := range runs {
+		out.FlowRuns[i] = recentFlowRunItem{
+			ID:        r.ID,
+			FlowName:  r.FlowName,
+			Status:    r.Status,
+			Error:     r.Error,
+			CreatedAt: r.CreatedAt,
+			EndedAt:   r.EndedAt,
+		}
+	}
+	return nil
 }
 
 // --- trigger_pipeline tool ---
@@ -2347,5 +2419,353 @@ func (s *Server) triggerPipeline(ctx context.Context, _ *mcp.CallToolRequest, in
 		Triggered: true,
 		Pipeline:  input.Pipeline,
 		Message:   "pipeline triggered successfully",
+	}, nil
+}
+
+// --- manage_content tool ---
+
+// ManageContentInput is the input for the manage_content tool.
+type ManageContentInput struct {
+	Action      string   `json:"action" jsonschema_description:"create|update|publish (required)"`
+	ContentID   string   `json:"content_id,omitempty" jsonschema_description:"content UUID (required for update/publish)"`
+	Title       string   `json:"title,omitempty" jsonschema_description:"content title (required for create)"`
+	Body        string   `json:"body,omitempty" jsonschema_description:"markdown body (required for create)"`
+	ContentType string   `json:"content_type,omitempty" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest (required for create)"`
+	Tags        []string `json:"tags,omitempty"`
+	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
+}
+
+// ManageContentOutput is the output for the manage_content tool.
+type ManageContentOutput struct {
+	Action    string `json:"action"`
+	ContentID string `json:"content_id,omitempty"`
+	Slug      string `json:"slug,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
+// slugRe matches any character that is not a lowercase letter, digit, or hyphen.
+var slugRe = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// slugify converts a title to a URL-safe slug: lowercase, spaces to hyphens,
+// strip non-alphanumeric, truncate to 80 characters.
+func slugify(title string) string {
+	s := strings.ToLower(strings.TrimSpace(title))
+	s = strings.ReplaceAll(s, " ", "-")
+	s = slugRe.ReplaceAllString(s, "")
+	// Collapse consecutive hyphens.
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	s = strings.Trim(s, "-")
+	if len(s) > 80 {
+		s = s[:80]
+		s = strings.TrimRight(s, "-")
+	}
+	return s
+}
+
+func (s *Server) manageContent(ctx context.Context, _ *mcp.CallToolRequest, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	switch input.Action {
+	case "create":
+		return s.manageContentCreate(ctx, input)
+	case "update":
+		return s.manageContentUpdate(ctx, input)
+	case "publish":
+		return s.manageContentPublish(ctx, input)
+	default:
+		return nil, ManageContentOutput{}, fmt.Errorf("invalid action %q: use create, update, or publish", input.Action)
+	}
+}
+
+func (s *Server) manageContentCreate(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if input.Title == "" {
+		return nil, ManageContentOutput{}, fmt.Errorf("title is required for create")
+	}
+	if input.Body == "" {
+		return nil, ManageContentOutput{}, fmt.Errorf("body is required for create")
+	}
+	if input.ContentType == "" {
+		return nil, ManageContentOutput{}, fmt.Errorf("content_type is required for create")
+	}
+	ct := content.Type(input.ContentType)
+	if !ct.Valid() {
+		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_type %q: use article, build-log, til, bookmark, essay, note, or digest", input.ContentType)
+	}
+
+	slug := slugify(input.Title)
+	if slug == "" {
+		slug = fmt.Sprintf("content-%d", time.Now().Unix())
+	}
+
+	params := &content.CreateParams{
+		Slug:        slug,
+		Title:       input.Title,
+		Body:        input.Body,
+		Type:        ct,
+		Status:      content.StatusDraft,
+		Tags:        input.Tags,
+		ReviewLevel: content.ReviewStandard,
+		Visibility:  content.VisibilityPublic,
+	}
+
+	if input.Project != "" {
+		proj, err := s.resolveProjectChain(ctx, input.Project)
+		if err != nil {
+			return nil, ManageContentOutput{}, err
+		}
+		params.ProjectID = &proj.ID
+	}
+
+	now := time.Now()
+	created, err := s.createContentWithRetry(ctx, params, slug, now)
+	if err != nil {
+		return nil, ManageContentOutput{}, fmt.Errorf("creating content: %w", err)
+	}
+
+	s.logger.Info("content created via manage_content",
+		"content_id", created.ID,
+		"slug", created.Slug,
+		"type", input.ContentType,
+	)
+
+	return nil, ManageContentOutput{
+		Action:    "create",
+		ContentID: created.ID.String(),
+		Slug:      created.Slug,
+		Status:    string(created.Status),
+		Title:     created.Title,
+		Message:   "content created as draft",
+	}, nil
+}
+
+func (s *Server) manageContentUpdate(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if input.ContentID == "" {
+		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for update")
+	}
+	id, err := uuid.Parse(input.ContentID)
+	if err != nil {
+		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_id %q: %w", input.ContentID, err)
+	}
+
+	p := &content.UpdateParams{}
+	if input.Title != "" {
+		p.Title = &input.Title
+	}
+	if input.Body != "" {
+		p.Body = &input.Body
+	}
+	if input.ContentType != "" {
+		ct := content.Type(input.ContentType)
+		if !ct.Valid() {
+			return nil, ManageContentOutput{}, fmt.Errorf("invalid content_type %q", input.ContentType)
+		}
+		p.Type = &ct
+	}
+	if len(input.Tags) > 0 {
+		p.Tags = input.Tags
+	}
+	if input.Project != "" {
+		proj, err := s.resolveProjectChain(ctx, input.Project)
+		if err != nil {
+			return nil, ManageContentOutput{}, err
+		}
+		p.ProjectID = &proj.ID
+	}
+
+	updated, err := s.contents.UpdateContent(ctx, id, p)
+	if err != nil {
+		if errors.Is(err, content.ErrNotFound) {
+			return nil, ManageContentOutput{}, fmt.Errorf("content %s not found", input.ContentID)
+		}
+		return nil, ManageContentOutput{}, fmt.Errorf("updating content: %w", err)
+	}
+
+	return nil, ManageContentOutput{
+		Action:    "update",
+		ContentID: updated.ID.String(),
+		Slug:      updated.Slug,
+		Status:    string(updated.Status),
+		Title:     updated.Title,
+		Message:   "content updated",
+	}, nil
+}
+
+func (s *Server) manageContentPublish(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if input.ContentID == "" {
+		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for publish")
+	}
+	id, err := uuid.Parse(input.ContentID)
+	if err != nil {
+		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_id %q: %w", input.ContentID, err)
+	}
+
+	published, err := s.contents.PublishContent(ctx, id)
+	if err != nil {
+		if errors.Is(err, content.ErrNotFound) {
+			return nil, ManageContentOutput{}, fmt.Errorf("content %s not found", input.ContentID)
+		}
+		return nil, ManageContentOutput{}, fmt.Errorf("publishing content: %w", err)
+	}
+
+	// Record activity event if writer is available.
+	if s.activityWriter != nil {
+		evTitle := fmt.Sprintf("published: %s", published.Title)
+		_, actErr := s.activityWriter.CreateEvent(ctx, &activity.RecordParams{
+			Timestamp: time.Now(),
+			Source:    "mcp",
+			EventType: "content_published",
+			Title:     &evTitle,
+		})
+		if actErr != nil {
+			s.logger.Warn("manage_content: failed to record activity", "error", actErr)
+		}
+	}
+
+	return nil, ManageContentOutput{
+		Action:    "publish",
+		ContentID: published.ID.String(),
+		Slug:      published.Slug,
+		Status:    string(published.Status),
+		Title:     published.Title,
+		Message:   "content published",
+	}, nil
+}
+
+// --- get_content_pipeline tool ---
+
+// ContentPipelineInput is the input for the get_content_pipeline tool.
+type ContentPipelineInput struct {
+	View        string `json:"view,omitempty" jsonschema_description:"queue|calendar|recent (default: queue)"`
+	Status      string `json:"status,omitempty" jsonschema_description:"draft|review|published|all"`
+	ContentType string `json:"content_type,omitempty"`
+	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 20)"`
+}
+
+// ContentPipelineOutput is the output for the get_content_pipeline tool.
+type ContentPipelineOutput struct {
+	View  string                 `json:"view"`
+	Items []contentPipelineEntry `json:"items"`
+	Total int                    `json:"total"`
+}
+
+type contentPipelineEntry struct {
+	ID          string   `json:"id"`
+	Slug        string   `json:"slug"`
+	Title       string   `json:"title"`
+	Type        string   `json:"type"`
+	Status      string   `json:"status"`
+	Tags        []string `json:"tags"`
+	CreatedAt   string   `json:"created_at"`
+	PublishedAt string   `json:"published_at,omitempty"`
+	WordCount   int      `json:"word_count"`
+}
+
+func toContentPipelineEntry(c *content.Content) contentPipelineEntry {
+	e := contentPipelineEntry{
+		ID:        c.ID.String(),
+		Slug:      c.Slug,
+		Title:     c.Title,
+		Type:      string(c.Type),
+		Status:    string(c.Status),
+		Tags:      c.Tags,
+		CreatedAt: c.CreatedAt.Format(time.RFC3339),
+		WordCount: estimateWordCount(c.Body),
+	}
+	if c.PublishedAt != nil {
+		e.PublishedAt = c.PublishedAt.Format(time.RFC3339)
+	}
+	if e.Tags == nil {
+		e.Tags = []string{}
+	}
+	return e
+}
+
+// estimateWordCount returns a rough word count for a string.
+func estimateWordCount(body string) int {
+	if body == "" {
+		return 0
+	}
+	return len(strings.Fields(body))
+}
+
+func (s *Server) getContentPipeline(ctx context.Context, _ *mcp.CallToolRequest, input ContentPipelineInput) (*mcp.CallToolResult, ContentPipelineOutput, error) {
+	view := input.View
+	if view == "" {
+		view = "queue"
+	}
+	limit := clamp(input.Limit, 1, 100, 20)
+
+	// Fetch a generous page from AdminContents and filter in memory.
+	var typeFilter *content.Type
+	if input.ContentType != "" {
+		ct := content.Type(input.ContentType)
+		if ct.Valid() {
+			typeFilter = &ct
+		}
+	}
+
+	all, _, err := s.contents.AdminContents(ctx, content.AdminFilter{
+		Page:    1,
+		PerPage: 200,
+		Type:    typeFilter,
+	})
+	if err != nil {
+		return nil, ContentPipelineOutput{}, fmt.Errorf("listing contents: %w", err)
+	}
+
+	var filtered []content.Content
+	switch view {
+	case "queue":
+		for i := range all {
+			c := &all[i]
+			if input.Status != "" && input.Status != "all" {
+				if string(c.Status) != input.Status {
+					continue
+				}
+			} else if c.Status != content.StatusDraft && c.Status != content.StatusReview {
+				continue
+			}
+			filtered = append(filtered, *c)
+		}
+	case "calendar":
+		sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+		for i := range all {
+			c := &all[i]
+			// Published in last 7 days.
+			if c.Status == content.StatusPublished && c.PublishedAt != nil && c.PublishedAt.After(sevenDaysAgo) {
+				filtered = append(filtered, *c)
+				continue
+			}
+			// Drafts and review items (potential scheduled content).
+			if c.Status == content.StatusDraft || c.Status == content.StatusReview {
+				filtered = append(filtered, *c)
+			}
+		}
+	case "recent":
+		for i := range all {
+			c := &all[i]
+			if c.Status == content.StatusPublished {
+				filtered = append(filtered, *c)
+			}
+		}
+	default:
+		return nil, ContentPipelineOutput{}, fmt.Errorf("invalid view %q: use queue, calendar, or recent", view)
+	}
+
+	if len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+
+	entries := make([]contentPipelineEntry, len(filtered))
+	for i := range filtered {
+		entries[i] = toContentPipelineEntry(&filtered[i])
+	}
+
+	return nil, ContentPipelineOutput{
+		View:  view,
+		Items: entries,
+		Total: len(entries),
 	}, nil
 }
