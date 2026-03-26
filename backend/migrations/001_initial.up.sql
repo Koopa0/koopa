@@ -597,3 +597,24 @@ CREATE TABLE tool_call_logs (
 );
 
 CREATE INDEX idx_tool_call_logs_name_time ON tool_call_logs (tool_name, called_at DESC);
+
+-- Telemetry analysis views — run SELECT * instead of remembering queries.
+CREATE VIEW tool_usage_summary AS
+SELECT tool_name,
+       COUNT(*)                                    AS calls,
+       AVG(duration_ms)::int                       AS avg_ms,
+       MAX(duration_ms)                            AS max_ms,
+       COUNT(*) FILTER (WHERE is_error)            AS errors,
+       MIN(called_at)                              AS first_seen,
+       MAX(called_at)                              AS last_seen
+FROM tool_call_logs
+GROUP BY tool_name
+ORDER BY calls DESC;
+
+CREATE VIEW tool_daily_trend AS
+SELECT called_at::date AS day,
+       COUNT(*)        AS calls,
+       COUNT(*) FILTER (WHERE is_error) AS errors
+FROM tool_call_logs
+GROUP BY called_at::date
+ORDER BY day DESC;

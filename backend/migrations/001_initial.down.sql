@@ -1,3 +1,5 @@
+DROP VIEW IF EXISTS tool_daily_trend;
+DROP VIEW IF EXISTS tool_usage_summary;
 DROP TABLE IF EXISTS tool_call_logs;
 DROP TABLE IF EXISTS session_notes;
 DROP TABLE IF EXISTS note_links;
