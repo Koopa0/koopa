@@ -224,11 +224,8 @@ func NewServer(
 		Annotations: readOnly,
 	}, s.getRSSHighlights)
 
-	addTool(s, &mcp.Tool{
-		Name:        "get_platform_stats",
-		Description: "Get a full snapshot of the koopa0.dev knowledge engine: content counts, project stats, activity trends, goal alignment drift, and learning progress. Use when the user wants an overview of their system, asks 'how is everything going', or needs to assess platform health.",
-		Annotations: readOnly,
-	}, s.getPlatformStats)
+	// get_platform_stats REMOVED — drift analysis moved to get_goal_progress(include_drift=true).
+	// Overview stats covered by individual domain tools (system_status, weekly_summary, learning_progress).
 
 	// get_pending_tasks MERGED into search_tasks (A3).
 	// Use search_tasks(status="pending") for the same functionality with urgency sort.
@@ -333,7 +330,7 @@ func NewServer(
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_goal_progress",
-		Description: "Show progress toward each active goal: related projects, tasks completed in the lookback period, weekly task rate, and on-track assessment. Supports optional area and status filters. Use when reviewing goals, '目標進度', 'goal check', 'am I on track', or to list goals with filtering (replaces get_goals).",
+		Description: "Show progress toward each active goal: related projects, tasks completed in the lookback period, weekly task rate, and on-track assessment. Supports optional area and status filters. Set include_drift=true for goal-vs-activity alignment analysis (per-area drift%). Use when reviewing goals, '目標進度', 'goal check', 'am I on track', or to list goals with filtering (replaces get_goals).",
 		Annotations: readOnly,
 	}, s.getGoalProgress)
 
@@ -444,17 +441,12 @@ func NewServer(
 			Annotations: additive,
 		}, s.addFeed)
 
+		// disable_feed + enable_feed MERGED into update_feed (boolean toggle, not multiplexer).
 		addTool(s, &mcp.Tool{
-			Name:        "disable_feed",
-			Description: "Disable a feed subscription. Stops collection but preserves historical data. Required: feed_id.",
+			Name:        "update_feed",
+			Description: "Update a feed subscription. Currently supports enabling/disabling. Required: feed_id, enabled (bool). Stops or resumes collection while preserving historical data.",
 			Annotations: additiveIdempotent,
-		}, s.disableFeed)
-
-		addTool(s, &mcp.Tool{
-			Name:        "enable_feed",
-			Description: "Re-enable a disabled feed subscription. Required: feed_id.",
-			Annotations: additiveIdempotent,
-		}, s.enableFeed)
+		}, s.updateFeed)
 
 		addTool(s, &mcp.Tool{
 			Name:        "remove_feed",
@@ -618,16 +610,6 @@ var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 func stripHTMLTags(s string) string {
 	clean := htmlTagRe.ReplaceAllString(s, " ")
 	return strings.Join(strings.Fields(clean), " ")
-}
-
-// toMapAny converts any struct/map to map[string]any via JSON round-trip.
-// This avoids jsonschema generating bare "true" (from interface{}) or
-// ["null","array"] (from json.RawMessage) for dynamic output fields.
-func toMapAny(v any) map[string]any {
-	b, _ := json.Marshal(v)
-	var m map[string]any
-	_ = json.Unmarshal(b, &m)
-	return m
 }
 
 func clamp(val, minVal, maxVal, defaultVal int) int {

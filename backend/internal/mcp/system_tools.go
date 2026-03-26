@@ -214,34 +214,29 @@ type FeedActionOutput struct {
 	Message string `json:"message"`
 }
 
-func (s *Server) disableFeed(ctx context.Context, _ *mcp.CallToolRequest, input FeedIDInput) (*mcp.CallToolResult, FeedActionOutput, error) {
-	id, err := parseFeedID(input.FeedID)
-	if err != nil {
-		return nil, FeedActionOutput{}, err
-	}
-	enabled := false
-	if _, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled}); err != nil {
-		if errors.Is(err, feed.ErrNotFound) {
-			return nil, FeedActionOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
-		}
-		return nil, FeedActionOutput{}, fmt.Errorf("disabling feed: %w", err)
-	}
-	return nil, FeedActionOutput{Message: fmt.Sprintf("feed %s disabled", input.FeedID)}, nil
+// UpdateFeedInput is the input for the update_feed tool (merged disable_feed + enable_feed).
+type UpdateFeedInput struct {
+	FeedID  string `json:"feed_id" jsonschema_description:"feed UUID (required)"`
+	Enabled bool   `json:"enabled" jsonschema_description:"true to enable, false to disable"`
 }
 
-func (s *Server) enableFeed(ctx context.Context, _ *mcp.CallToolRequest, input FeedIDInput) (*mcp.CallToolResult, FeedActionOutput, error) {
+func (s *Server) updateFeed(ctx context.Context, _ *mcp.CallToolRequest, input UpdateFeedInput) (*mcp.CallToolResult, FeedActionOutput, error) {
 	id, err := parseFeedID(input.FeedID)
 	if err != nil {
 		return nil, FeedActionOutput{}, err
 	}
-	enabled := true
+	enabled := input.Enabled
 	if _, err = s.feeds.UpdateFeed(ctx, id, &feed.UpdateParams{Enabled: &enabled}); err != nil {
 		if errors.Is(err, feed.ErrNotFound) {
 			return nil, FeedActionOutput{}, fmt.Errorf("feed %s not found", input.FeedID)
 		}
-		return nil, FeedActionOutput{}, fmt.Errorf("enabling feed: %w", err)
+		return nil, FeedActionOutput{}, fmt.Errorf("updating feed: %w", err)
 	}
-	return nil, FeedActionOutput{Message: fmt.Sprintf("feed %s enabled", input.FeedID)}, nil
+	action := "disabled"
+	if enabled {
+		action = "enabled"
+	}
+	return nil, FeedActionOutput{Message: fmt.Sprintf("feed %s %s", input.FeedID, action)}, nil
 }
 
 func (s *Server) removeFeed(ctx context.Context, _ *mcp.CallToolRequest, input FeedIDInput) (*mcp.CallToolResult, FeedActionOutput, error) {

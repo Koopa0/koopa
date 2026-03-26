@@ -58,7 +58,6 @@ type ProjectReader interface {
 
 // StatsReader provides platform statistics for MCP tools.
 type StatsReader interface {
-	Overview(ctx context.Context) (*stats.Overview, error)
 	Drift(ctx context.Context, days int) (*stats.DriftReport, error)
 	Learning(ctx context.Context) (*stats.LearningDashboard, error)
 }

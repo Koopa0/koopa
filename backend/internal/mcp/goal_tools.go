@@ -10,14 +10,30 @@ import (
 
 // GoalProgressInput is the input for the get_goal_progress tool.
 type GoalProgressInput struct {
-	Days   int    `json:"days,omitempty" jsonschema_description:"lookback period in days for task counting. Default 30, max 90."`
-	Area   string `json:"area,omitempty" jsonschema_description:"filter goals by area"`
-	Status string `json:"status,omitempty" jsonschema_description:"filter goals by status (not-started, in-progress, done, abandoned)"`
+	Days         int    `json:"days,omitempty" jsonschema_description:"lookback period in days for task counting. Default 30, max 90."`
+	Area         string `json:"area,omitempty" jsonschema_description:"filter goals by area"`
+	Status       string `json:"status,omitempty" jsonschema_description:"filter goals by status (not-started, in-progress, done, abandoned)"`
+	IncludeDrift bool   `json:"include_drift,omitempty" jsonschema_description:"include goal-vs-activity drift analysis showing per-area alignment percentages"`
 }
 
 // GoalProgressOutput shows progress toward each active goal.
 type GoalProgressOutput struct {
 	Goals []goalProgressDetail `json:"goals"`
+	Drift *driftSummary        `json:"drift,omitempty"`
+}
+
+type driftSummary struct {
+	Period string          `json:"period"`
+	Areas  []driftAreaItem `json:"areas"`
+}
+
+type driftAreaItem struct {
+	Area         string  `json:"area"`
+	ActiveGoals  int     `json:"active_goals"`
+	EventCount   int     `json:"event_count"`
+	EventPercent float64 `json:"event_percent"`
+	GoalPercent  float64 `json:"goal_percent"`
+	DriftPercent float64 `json:"drift_percent"`
 }
 
 type goalProgressDetail struct {
@@ -122,7 +138,31 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 		result = append(result, gp)
 	}
 
-	return nil, GoalProgressOutput{Goals: result}, nil
+	out := GoalProgressOutput{Goals: result}
+
+	if input.IncludeDrift {
+		driftDays := clamp(input.Days, 7, 90, 30)
+		drift, err := s.stats.Drift(ctx, driftDays)
+		if err != nil {
+			s.logger.Error("goal_progress: drift analysis", "error", err)
+			// best-effort: return goals without drift
+		} else {
+			areas := make([]driftAreaItem, len(drift.Areas))
+			for i, a := range drift.Areas {
+				areas[i] = driftAreaItem{
+					Area:         a.Area,
+					ActiveGoals:  a.ActiveGoals,
+					EventCount:   a.EventCount,
+					EventPercent: a.EventPercent,
+					GoalPercent:  a.GoalPercent,
+					DriftPercent: a.DriftPercent,
+				}
+			}
+			out.Drift = &driftSummary{Period: drift.Period, Areas: areas}
+		}
+	}
+
+	return nil, out, nil
 }
 
 // assessOnTrack determines goal progress status based on task completions and deadline proximity.

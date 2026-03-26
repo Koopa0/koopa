@@ -391,37 +391,9 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	return nil, RSSHighlightsOutput{Items: items, Total: len(items)}, nil
 }
 
-// PlatformStatsInput is the input for the get_platform_stats tool.
-type PlatformStatsInput struct {
-	IncludeDrift bool `json:"include_drift,omitempty" jsonschema_description:"include goal vs activity drift analysis (default true)"`
-	DriftDays    int  `json:"drift_days,omitempty" jsonschema_description:"number of days for drift analysis (default 30 max 90)"`
-}
-
-// PlatformStatsOutput is the output for the get_platform_stats tool.
-type PlatformStatsOutput struct {
-	Overview map[string]any `json:"overview"`
-	Drift    map[string]any `json:"drift,omitempty"`
-}
-
-func (s *Server) getPlatformStats(ctx context.Context, _ *mcp.CallToolRequest, input PlatformStatsInput) (*mcp.CallToolResult, PlatformStatsOutput, error) {
-	overview, err := s.stats.Overview(ctx)
-	if err != nil {
-		return nil, PlatformStatsOutput{}, fmt.Errorf("querying platform stats: %w", err)
-	}
-
-	out := PlatformStatsOutput{Overview: toMapAny(overview)}
-
-	driftDays := clamp(input.DriftDays, 1, 90, 30)
-	drift, err := s.stats.Drift(ctx, driftDays)
-	if err != nil {
-		s.logger.Error("querying drift report", "error", err)
-		// best-effort: return overview without drift
-	} else {
-		out.Drift = toMapAny(drift)
-	}
-
-	return nil, out, nil
-}
+// get_platform_stats REMOVED — drift analysis moved to get_goal_progress(include_drift=true).
+// Overview stats covered by individual domain tools (system_status, weekly_summary, learning_progress).
+// stats.Overview() is still used by internal/stats/handler.go for the HTTP endpoint.
 
 // PendingTasksInput is the input for the get_pending_tasks tool.
 type PendingTasksInput struct {
