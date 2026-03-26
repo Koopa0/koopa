@@ -139,12 +139,15 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 	if input.ComparePrevious {
 		prevStart := weekStart.AddDate(0, 0, -7)
 		prevEnd := weekStart
-		prevByProject, prevErr := s.tasks.CompletedByProjectSince(ctx, prevStart)
+		// CompletedByProjectSince returns all completions from since→now,
+		// so we query from prevStart and subtract current week to isolate previous week.
+		allSincePrev, prevErr := s.tasks.CompletedByProjectSince(ctx, prevStart)
 		if prevErr == nil {
-			var prevTotal int64
-			for _, p := range prevByProject {
-				prevTotal += p.Completed
+			var totalSincePrev int64
+			for _, p := range allSincePrev {
+				totalSincePrev += p.Completed
 			}
+			prevTotal := totalSincePrev - int64(out.Tasks.TotalCompleted)
 
 			var prevAvgCapacity float64
 			if s.sessions != nil {
