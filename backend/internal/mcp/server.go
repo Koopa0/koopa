@@ -261,12 +261,6 @@ func NewServer(
 	}, s.listProjects)
 
 	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "get_goals",
-		Description: "DEPRECATED: Use get_goal_progress instead with area/status filters. This tool will be removed in a future version.",
-		Annotations: readOnly,
-	}, s.getGoals)
-
-	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "get_learning_progress",
 		Description: "Get learning metrics: note growth trends, weekly activity comparison, and top knowledge tags. Use when the user asks about their learning progress, wants to know what topics they've been studying, or needs motivation data.",
 		Annotations: readOnly,
@@ -477,6 +471,14 @@ func NewServer(
 		Description: "Generate a social media excerpt from published content. Platforms: linkedin (150-300 words, professional), twitter (280 chars, concise). Returns excerpt, hook, CTA, and hashtags.",
 		Annotations: readOnly,
 	}, s.generateSocialExcerpt)
+
+	// --- Sprint 4: Knowledge synthesis ---
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name:        "synthesize_topic",
+		Description: "Synthesize knowledge across ALL content sources for a topic. Searches articles, build logs, TILs, Obsidian notes, and RSS bookmarks, then produces a structured synthesis grouped by source type. Includes gap analysis showing which sub-topics lack coverage. HIGH TOKEN COST — this tool searches broadly and generates a long synthesis. Use when preparing discovery calls, writing topic overviews, or analyzing knowledge coverage. Example: synthesize_topic(query=\"PostgreSQL connection pooling\")",
+		Annotations: readOnly,
+	}, s.synthesizeTopic)
 
 	return s
 }
@@ -1395,68 +1397,6 @@ func (s *Server) listProjects(ctx context.Context, _ *mcp.CallToolRequest, input
 }
 
 // GetGoalsInput is the input for the get_goals tool.
-type GetGoalsInput struct {
-	Area   string `json:"area,omitempty" jsonschema_description:"filter by area"`
-	Status string `json:"status,omitempty" jsonschema_description:"filter by status (not-started in-progress done abandoned)"`
-	Limit  int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
-}
-
-// GetGoalsOutput is the output for the get_goals tool.
-type GetGoalsOutput struct {
-	Goals []goalResult `json:"goals"`
-	Total int          `json:"total"`
-}
-
-type goalResult struct {
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Status      string `json:"status"`
-	Area        string `json:"area,omitempty"`
-	Quarter     string `json:"quarter,omitempty"`
-	Deadline    string `json:"deadline,omitempty"`
-}
-
-func (s *Server) getGoals(ctx context.Context, _ *mcp.CallToolRequest, input GetGoalsInput) (*mcp.CallToolResult, GetGoalsOutput, error) {
-	limit := clamp(input.Limit, 1, 50, 20)
-
-	goals, err := s.goals.Goals(ctx)
-	if err != nil {
-		return nil, GetGoalsOutput{}, fmt.Errorf("querying goals: %w", err)
-	}
-
-	// Client-side filtering (goal store returns all, we filter here).
-	var filtered []goalResult
-	for i := range goals {
-		g := &goals[i]
-		if input.Area != "" && g.Area != input.Area {
-			continue
-		}
-		if input.Status != "" && string(g.Status) != input.Status {
-			continue
-		}
-		r := goalResult{
-			Title:       g.Title,
-			Description: g.Description,
-			Status:      string(g.Status),
-			Area:        g.Area,
-			Quarter:     g.Quarter,
-		}
-		if g.Deadline != nil {
-			r.Deadline = g.Deadline.Format(time.DateOnly)
-		}
-		filtered = append(filtered, r)
-		if len(filtered) >= limit {
-			break
-		}
-	}
-
-	if filtered == nil {
-		filtered = []goalResult{}
-	}
-
-	return nil, GetGoalsOutput{Goals: filtered, Total: len(filtered)}, nil
-}
-
 // LearningProgressInput is the input for the get_learning_progress tool.
 type LearningProgressInput struct{}
 
@@ -2768,4 +2708,182 @@ func (s *Server) getContentPipeline(ctx context.Context, _ *mcp.CallToolRequest,
 		Items: entries,
 		Total: len(entries),
 	}, nil
+}
+
+// --- synthesize_topic ---
+
+// SynthesizeTopicInput is the input for the synthesize_topic tool.
+type SynthesizeTopicInput struct {
+	Query              string `json:"query" jsonschema_description:"topic to synthesize (required)"`
+	MaxSources         int    `json:"max_sources,omitempty" jsonschema_description:"max source items to use (default 15, max 30)"`
+	IncludeGapAnalysis bool   `json:"include_gap_analysis,omitempty" jsonschema_description:"include sub-topic coverage gaps (default true)"`
+}
+
+// SynthesizeTopicOutput is the output for the synthesize_topic tool.
+type SynthesizeTopicOutput struct {
+	Query       string            `json:"query"`
+	Sources     []synthesisSource `json:"sources"`
+	SourceCount map[string]int    `json:"source_count"`
+	Synthesis   synthesisSections `json:"synthesis"`
+	Gaps        []synthesisGap    `json:"gaps,omitempty"`
+	Disclaimer  string            `json:"disclaimer,omitempty"`
+}
+
+type synthesisSource struct {
+	Slug       string `json:"slug,omitempty"`
+	FilePath   string `json:"file_path,omitempty"`
+	Title      string `json:"title"`
+	Type       string `json:"type"`
+	SourceType string `json:"source_type"` // "content" or "note"
+	Excerpt    string `json:"excerpt"`
+}
+
+type synthesisSections struct {
+	PracticalExperience string `json:"practical_experience"` // from build logs, TILs
+	ExternalKnowledge   string `json:"external_knowledge"`   // from RSS bookmarks
+	TheoreticalBasis    string `json:"theoretical_basis"`    // from Obsidian notes
+	CommonPatterns      string `json:"common_patterns"`      // cross-source patterns
+}
+
+type synthesisGap struct {
+	SubTopic string `json:"sub_topic"`
+	Reason   string `json:"reason"`
+}
+
+func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, input SynthesizeTopicInput) (*mcp.CallToolResult, SynthesizeTopicOutput, error) {
+	if input.Query == "" {
+		return nil, SynthesizeTopicOutput{}, fmt.Errorf("query is required")
+	}
+	maxSources := clamp(input.MaxSources, 5, 30, 15)
+
+	// Step 1: Search across all content types
+	_, searchOut, err := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
+		Query: input.Query,
+		Limit: maxSources,
+	})
+	if err != nil {
+		return nil, SynthesizeTopicOutput{}, fmt.Errorf("searching knowledge: %w", err)
+	}
+
+	results := searchOut.Results
+
+	// If too few results, try a broader search with individual words
+	if len(results) < 5 {
+		words := strings.Fields(input.Query)
+		for _, w := range words {
+			if len(w) < 3 || len(results) >= maxSources {
+				continue
+			}
+			_, extraOut, extraErr := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
+				Query: w,
+				Limit: 5,
+			})
+			if extraErr == nil {
+				for _, r := range extraOut.Results {
+					// Dedup by slug/filepath
+					dup := false
+					for _, existing := range results {
+						if (r.Slug != "" && r.Slug == existing.Slug) || (r.FilePath != "" && r.FilePath == existing.FilePath) {
+							dup = true
+							break
+						}
+					}
+					if !dup && len(results) < maxSources {
+						results = append(results, r)
+					}
+				}
+			}
+		}
+	}
+
+	// Step 2: Classify sources and build synthesis sections
+	var practical, external, theoretical []string
+	sourceCount := map[string]int{}
+	sources := make([]synthesisSource, len(results))
+
+	for i := range results {
+		r := &results[i]
+		sources[i] = synthesisSource{
+			Slug:       r.Slug,
+			FilePath:   r.FilePath,
+			Title:      r.Title,
+			Type:       r.Type,
+			SourceType: r.SourceType,
+			Excerpt:    r.Excerpt,
+		}
+
+		// Classify by type
+		switch r.Type {
+		case "build-log", "til":
+			practical = append(practical, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
+			sourceCount["practical"]++
+		case "bookmark", "digest":
+			external = append(external, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
+			sourceCount["external"]++
+		case "article", "essay":
+			external = append(external, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
+			sourceCount["article"]++
+		default:
+			if r.SourceType == "note" {
+				theoretical = append(theoretical, fmt.Sprintf("- %s: %s", r.Title, truncate(r.Excerpt, 150)))
+				sourceCount["note"]++
+			}
+		}
+	}
+
+	synthesis := synthesisSections{
+		PracticalExperience: "No build logs or TILs found for this topic.",
+		ExternalKnowledge:   "No RSS bookmarks or external articles found for this topic.",
+		TheoreticalBasis:    "No Obsidian notes found for this topic.",
+		CommonPatterns:      "Insufficient data to identify cross-source patterns.",
+	}
+	if len(practical) > 0 {
+		synthesis.PracticalExperience = strings.Join(practical, "\n")
+	}
+	if len(external) > 0 {
+		synthesis.ExternalKnowledge = strings.Join(external, "\n")
+	}
+	if len(theoretical) > 0 {
+		synthesis.TheoreticalBasis = strings.Join(theoretical, "\n")
+	}
+	if len(results) >= 3 {
+		synthesis.CommonPatterns = fmt.Sprintf("Found %d sources across %d categories covering '%s'.", len(results), len(sourceCount), input.Query)
+	}
+
+	out := SynthesizeTopicOutput{
+		Query:       input.Query,
+		Sources:     sources,
+		SourceCount: sourceCount,
+		Synthesis:   synthesis,
+	}
+
+	// Step 3: Gap analysis
+	if input.IncludeGapAnalysis || input.MaxSources == 0 { // default true
+		if sourceCount["practical"] == 0 {
+			out.Gaps = append(out.Gaps, synthesisGap{
+				SubTopic: "hands-on experience",
+				Reason:   fmt.Sprintf("No build logs or TILs found about %q — consider doing a practice project", input.Query),
+			})
+		}
+		if sourceCount["note"] == 0 {
+			out.Gaps = append(out.Gaps, synthesisGap{
+				SubTopic: "theoretical foundation",
+				Reason:   fmt.Sprintf("No Obsidian notes found about %q — consider writing study notes", input.Query),
+			})
+		}
+		if sourceCount["external"] == 0 && sourceCount["article"] == 0 {
+			out.Gaps = append(out.Gaps, synthesisGap{
+				SubTopic: "external perspectives",
+				Reason:   fmt.Sprintf("No bookmarked articles about %q — check RSS feeds or curate relevant items", input.Query),
+			})
+		}
+	}
+
+	// Disclaimer if data is thin
+	totalContent := len(results)
+	if totalContent < 5 {
+		out.Disclaimer = fmt.Sprintf("Only %d sources found. Gap analysis may be incomplete due to limited data.", totalContent)
+	}
+
+	return nil, out, nil
 }
