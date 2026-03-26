@@ -109,8 +109,8 @@ func (s *Server) resolveDeltaSince(ctx context.Context, sinceInput string, today
 		return since, nil
 	}
 
-	if s.sessionReader != nil {
-		lastNote, err := s.sessionReader.LatestNoteBySource(ctx, "claude")
+	if s.sessions != nil {
+		lastNote, err := s.sessions.LatestNoteBySource(ctx, "claude")
 		if err == nil {
 			return time.Date(lastNote.NoteDate.Year(), lastNote.NoteDate.Month(), lastNote.NoteDate.Day(), 0, 0, 0, 0, lastNote.NoteDate.Location()), nil
 		}
@@ -201,11 +201,11 @@ func (s *Server) fetchDeltaBuildLogs(ctx context.Context, out *SessionDeltaOutpu
 
 // fetchDeltaSessionData fetches insights, session notes, and metrics trend since the given date.
 func (s *Server) fetchDeltaSessionData(ctx context.Context, out *SessionDeltaOutput, since, today time.Time) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		return
 	}
 
-	insightNotes, insightErr := s.sessionReader.InsightsSince(ctx, since)
+	insightNotes, insightErr := s.sessions.InsightsSince(ctx, since)
 	if insightErr != nil && !errors.Is(insightErr, session.ErrNotFound) {
 		s.logger.Error("session_delta: insights", "error", insightErr)
 	}
@@ -214,7 +214,7 @@ func (s *Server) fetchDeltaSessionData(ctx context.Context, out *SessionDeltaOut
 		out.InsightsChanged = append(out.InsightsChanged, parseInsightDelta(&insightNotes[i]))
 	}
 
-	notes, notesErr := s.sessionReader.NotesByDate(ctx, since, today, nil)
+	notes, notesErr := s.sessions.NotesByDate(ctx, since, today, nil)
 	if notesErr != nil {
 		s.logger.Error("session_delta: session notes", "error", notesErr)
 	}
@@ -233,7 +233,7 @@ func (s *Server) fetchDeltaSessionData(ctx context.Context, out *SessionDeltaOut
 		})
 	}
 
-	metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
+	metricsNotes, metricsErr := s.sessions.MetricsHistory(ctx, since)
 	if metricsErr != nil {
 		s.logger.Error("session_delta: metrics", "error", metricsErr)
 	}

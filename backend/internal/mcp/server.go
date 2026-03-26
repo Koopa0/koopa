@@ -33,16 +33,13 @@ type Server struct {
 	collected       *collected.Store
 	stats           StatsReader
 	tasks           *task.Store
-	taskWriter      TaskWriter
 	contents        *content.Store
-	contentWriter   ContentWriter
 	goals           GoalReader
 	goalWriter      GoalWriter
 	projectWriter   ProjectWriter
 	notionTasks     NotionTaskWriter
 	taskDBResolver  TaskDBIDResolver
-	sessionReader   *session.Store
-	sessionWriter   SessionNoteWriter
+	sessions        *session.Store
 	activityWriter  ActivityWriter
 	semanticNotes   NoteSemanticSearcher
 	queryEmbedder   QueryEmbedder
@@ -124,14 +121,6 @@ func WithFlowInvoker(f FlowInvoker) ServerOption {
 	return func(s *Server) { s.flowInvoker = f }
 }
 
-// WithSessionNotes enables session note read/write tools.
-func WithSessionNotes(r *session.Store, w SessionNoteWriter) ServerOption {
-	return func(s *Server) {
-		s.sessionReader = r
-		s.sessionWriter = w
-	}
-}
-
 // NewServer creates an MCP server with all tools registered.
 func NewServer(
 	notes NoteSearcher,
@@ -140,26 +129,24 @@ func NewServer(
 	collectedStore *collected.Store,
 	stats StatsReader,
 	tasks *task.Store,
-	taskWriter TaskWriter,
 	contents *content.Store,
-	contentWriter ContentWriter,
+	sessions *session.Store,
 	goals GoalReader,
 	logger *slog.Logger,
 	opts ...ServerOption,
 ) *Server {
 	s := &Server{
-		notes:         notes,
-		activity:      activityReader,
-		projects:      projects,
-		collected:     collectedStore,
-		stats:         stats,
-		tasks:         tasks,
-		taskWriter:    taskWriter,
-		contents:      contents,
-		contentWriter: contentWriter,
-		goals:         goals,
-		logger:        logger,
-		loc:           time.UTC, // default; override with WithLocation
+		notes:     notes,
+		activity:  activityReader,
+		projects:  projects,
+		collected: collectedStore,
+		stats:     stats,
+		tasks:     tasks,
+		contents:  contents,
+		sessions:  sessions,
+		goals:     goals,
+		logger:    logger,
+		loc:       time.UTC, // default; override with WithLocation
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -1482,7 +1469,7 @@ type sessionNoteResult struct {
 }
 
 func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input GetSessionNotesInput) (*mcp.CallToolResult, GetSessionNotesOutput, error) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		return nil, GetSessionNotesOutput{}, fmt.Errorf("session notes not configured")
 	}
 
@@ -1509,7 +1496,7 @@ func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 	}
 
-	notes, err := s.sessionReader.NotesByDate(ctx, startDate, endDate, noteType)
+	notes, err := s.sessions.NotesByDate(ctx, startDate, endDate, noteType)
 	if err != nil {
 		return nil, GetSessionNotesOutput{}, fmt.Errorf("querying session notes: %w", err)
 	}
@@ -1823,7 +1810,7 @@ func (s *Server) resolveProjectChain(ctx context.Context, input string) (*projec
 
 // createContentWithRetry creates content, retrying once with a timestamped slug on conflict.
 func (s *Server) createContentWithRetry(ctx context.Context, params *content.CreateParams, baseSlug string, now time.Time) (*content.Content, error) {
-	created, err := s.contentWriter.CreateContent(ctx, params)
+	created, err := s.contents.CreateContent(ctx, params)
 	if err == nil {
 		return created, nil
 	}
@@ -1832,7 +1819,7 @@ func (s *Server) createContentWithRetry(ctx context.Context, params *content.Cre
 	}
 	// Slug conflict: append timestamp to make unique
 	params.Slug = fmt.Sprintf("%s-%d", baseSlug, now.Unix()%10000)
-	return s.contentWriter.CreateContent(ctx, params)
+	return s.contents.CreateContent(ctx, params)
 }
 
 // --- curate tool ---

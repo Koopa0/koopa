@@ -107,9 +107,9 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 		s.logger.Error("weekly_summary: active projects", "error", projErr)
 	}
 	var metricsNotes []session.Note
-	if s.sessionReader != nil {
+	if s.sessions != nil {
 		var metricsErr error
-		metricsNotes, metricsErr = s.sessionReader.MetricsHistory(ctx, weekStart)
+		metricsNotes, metricsErr = s.sessions.MetricsHistory(ctx, weekStart)
 		if metricsErr != nil {
 			s.logger.Error("weekly_summary: metrics history", "error", metricsErr)
 		}
@@ -223,11 +223,11 @@ func (s *Server) fetchWeeklyProjectHealth(ctx context.Context, out *WeeklySummar
 
 // fetchWeeklyInsights fetches insight activity (new, verified, invalidated) and pending recommendations.
 func (s *Server) fetchWeeklyInsights(ctx context.Context, out *WeeklySummaryOutput, weekStart time.Time) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		return
 	}
 
-	allInsights, insightErr := s.sessionReader.InsightsSince(ctx, weekStart)
+	allInsights, insightErr := s.sessions.InsightsSince(ctx, weekStart)
 	if insightErr != nil {
 		s.logger.Error("weekly_summary: insights", "error", insightErr)
 	}
@@ -244,7 +244,7 @@ func (s *Server) fetchWeeklyInsights(ctx context.Context, out *WeeklySummaryOutp
 		}
 	}
 
-	recNotes, recErr := s.sessionReader.InsightsByCategory(ctx, "unverified", "action_recommendation", 10)
+	recNotes, recErr := s.sessions.InsightsByCategory(ctx, "unverified", "action_recommendation", 10)
 	if recErr == nil {
 		out.InsightsActivity.PendingRecommendations = len(recNotes)
 	}

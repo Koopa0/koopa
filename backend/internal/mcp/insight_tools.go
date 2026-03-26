@@ -44,14 +44,14 @@ type insightEntry struct {
 }
 
 func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, input GetActiveInsightsInput) (*mcp.CallToolResult, GetActiveInsightsOutput, error) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		return nil, GetActiveInsightsOutput{}, fmt.Errorf("session notes not configured")
 	}
 
 	// Lazy auto-archive: verified/invalidated insights older than 14 days → archived
-	if s.sessionWriter != nil {
+	if s.sessions != nil {
 		cutoff := time.Now().AddDate(0, 0, -14)
-		if n, err := s.sessionWriter.ArchiveStaleInsights(ctx, cutoff); err != nil {
+		if n, err := s.sessions.ArchiveStaleInsights(ctx, cutoff); err != nil {
 			s.logger.Error("get_active_insights: auto-archive", "error", err)
 		} else if n > 0 {
 			s.logger.Info("auto-archived stale insights", "count", n)
@@ -74,13 +74,13 @@ func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, 
 		projectFilter = &input.Project
 	}
 
-	notes, err := s.sessionReader.InsightsByStatus(ctx, statusFilter, projectFilter, int32(min(limit, 1000))) //nolint:gosec // limit is bounded by min()
+	notes, err := s.sessions.InsightsByStatus(ctx, statusFilter, projectFilter, int32(min(limit, 1000))) //nolint:gosec // limit is bounded by min()
 	if err != nil {
 		return nil, GetActiveInsightsOutput{}, fmt.Errorf("querying insights: %w", err)
 	}
 
 	unverifiedStatus := "unverified"
-	unverifiedCount, countErr := s.sessionReader.CountInsightsByStatus(ctx, &unverifiedStatus)
+	unverifiedCount, countErr := s.sessions.CountInsightsByStatus(ctx, &unverifiedStatus)
 	if countErr != nil {
 		s.logger.Error("get_active_insights: counting unverified", "error", countErr)
 	}
@@ -180,12 +180,12 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	if err := validateInsightInput(input); err != nil {
 		return nil, UpdateInsightOutput{}, err
 	}
-	if s.sessionReader == nil || s.sessionWriter == nil {
+	if s.sessions == nil {
 		return nil, UpdateInsightOutput{}, fmt.Errorf("session notes not configured")
 	}
 
 	// Read current note
-	note, err := s.sessionReader.NoteByID(ctx, input.InsightID)
+	note, err := s.sessions.NoteByID(ctx, input.InsightID)
 	if err != nil {
 		return nil, UpdateInsightOutput{}, fmt.Errorf("insight %d not found: %w", input.InsightID, err)
 	}
@@ -208,7 +208,7 @@ func (s *Server) updateInsight(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, UpdateInsightOutput{}, fmt.Errorf("marshaling updated metadata: %w", marshalErr)
 	}
 
-	updated, updateErr := s.sessionWriter.UpdateNoteMetadata(ctx, &session.UpdateMetadataParams{
+	updated, updateErr := s.sessions.UpdateNoteMetadata(ctx, &session.UpdateMetadataParams{
 		ID:       input.InsightID,
 		Metadata: updatedMetadata,
 	})

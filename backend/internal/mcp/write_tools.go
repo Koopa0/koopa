@@ -75,7 +75,7 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 	}
 
 	// Update local DB
-	updated, err := s.taskWriter.UpdateStatus(ctx, t.ID, task.StatusDone)
+	updated, err := s.tasks.UpdateStatus(ctx, t.ID, task.StatusDone)
 	if err != nil {
 		return nil, CompleteTaskOutput{}, fmt.Errorf("completing task: %w", err)
 	}
@@ -221,7 +221,7 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		Description:  input.Notes,
 		Assignee:     assignee,
 	}
-	localTask, upsertErr := s.taskWriter.UpsertByNotionPageID(ctx, upsertParams)
+	localTask, upsertErr := s.tasks.UpsertByNotionPageID(ctx, upsertParams)
 
 	out := CreateTaskOutput{
 		TaskID: pageID,
@@ -340,7 +340,7 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	// Sync changed properties to Notion (best-effort, before local update)
 	s.syncTaskToNotion(ctx, t, input, resolvedProject)
 
-	updated, err := s.taskWriter.Update(ctx, params)
+	updated, err := s.tasks.Update(ctx, params)
 	if err != nil {
 		return nil, UpdateTaskOutput{}, fmt.Errorf("updating task: %w", err)
 	}
@@ -415,7 +415,7 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 			}
 		}
 
-		n, err := s.taskWriter.ClearAllMyDay(ctx)
+		n, err := s.tasks.ClearAllMyDay(ctx)
 		if err != nil {
 			return nil, BatchMyDayOutput{}, fmt.Errorf("clearing my day: %w", err)
 		}
@@ -427,7 +427,7 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 		if parseErr != nil {
 			return nil, BatchMyDayOutput{}, fmt.Errorf("invalid task_id %q: %w", idStr, parseErr)
 		}
-		if err := s.taskWriter.UpdateMyDay(ctx, id, true); err != nil {
+		if err := s.tasks.UpdateMyDay(ctx, id, true); err != nil {
 			s.logger.Error("batch_my_day: setting my day", "task_id", idStr, "error", err)
 			continue
 		}
@@ -709,7 +709,7 @@ func validateSessionNoteMetadata(noteType string, meta map[string]any) error {
 }
 
 func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, input SaveSessionNoteInput) (*mcp.CallToolResult, SaveSessionNoteOutput, error) {
-	if s.sessionWriter == nil {
+	if s.sessions == nil {
 		return nil, SaveSessionNoteOutput{}, fmt.Errorf("session notes not configured")
 	}
 	if err := validateSessionNoteInput(input); err != nil {
@@ -734,7 +734,7 @@ func (s *Server) saveSessionNote(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 	}
 
-	created, err := s.sessionWriter.CreateNote(ctx, &session.CreateParams{
+	created, err := s.sessions.CreateNote(ctx, &session.CreateParams{
 		NoteDate: noteDate,
 		NoteType: input.NoteType,
 		Source:   input.Source,

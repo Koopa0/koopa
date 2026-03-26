@@ -108,12 +108,12 @@ func (s *Server) getReflectionContext(ctx context.Context, _ *mcp.CallToolReques
 
 // fetchReflectionPlan fetches today's plan note and parses committed/buffer task IDs.
 func (s *Server) fetchReflectionPlan(ctx context.Context, out *ReflectionContextOutput, today, tomorrow time.Time) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		return
 	}
 
 	planType := "plan"
-	notes, err := s.sessionReader.NotesByDate(ctx, today, tomorrow, &planType)
+	notes, err := s.sessions.NotesByDate(ctx, today, tomorrow, &planType)
 	if err != nil || len(notes) == 0 {
 		return
 	}
@@ -231,12 +231,12 @@ func setReflectionDailySummary(out *ReflectionContextOutput, hint *task.DailySum
 
 // fetchReflectionInsights fetches unverified insights for review.
 func (s *Server) fetchReflectionInsights(ctx context.Context, out *ReflectionContextOutput) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		return
 	}
 
 	unverified := "unverified"
-	insightNotes, err := s.sessionReader.InsightsByStatus(ctx, &unverified, nil, 10)
+	insightNotes, err := s.sessions.InsightsByStatus(ctx, &unverified, nil, 10)
 	if err != nil {
 		s.logger.Error("reflection_context: insights", "error", err)
 		return
@@ -249,12 +249,12 @@ func (s *Server) fetchReflectionInsights(ctx context.Context, out *ReflectionCon
 
 // fetchReflectionPlanningHistory fetches metrics history and yesterday's adjustments.
 func (s *Server) fetchReflectionPlanningHistory(ctx context.Context, out *ReflectionContextOutput, now time.Time) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		return
 	}
 
 	since := now.AddDate(0, 0, -30)
-	metricsNotes, err := s.sessionReader.MetricsHistory(ctx, since)
+	metricsNotes, err := s.sessions.MetricsHistory(ctx, since)
 	if err != nil {
 		s.logger.Error("reflection_context: metrics history", "error", err)
 		return

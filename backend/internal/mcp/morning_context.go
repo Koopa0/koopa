@@ -459,32 +459,32 @@ func (s *Server) fetchMorningGoals(ctx context.Context, out *MorningContextOutpu
 // fetchMorningSessionData fetches session gap, reflection, planning history,
 // insights, recommendations, and yesterday adjustments.
 func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContextOutput, today, now time.Time) {
-	if s.sessionReader == nil {
+	if s.sessions == nil {
 		s.ensureSessionDefaults(out)
 		return
 	}
 
-	lastSession, gapErr := s.sessionReader.LatestNoteBySource(ctx, "claude")
+	lastSession, gapErr := s.sessions.LatestNoteBySource(ctx, "claude")
 	if gapErr == nil {
 		sessionDate := time.Date(lastSession.NoteDate.Year(), lastSession.NoteDate.Month(), lastSession.NoteDate.Day(), 0, 0, 0, 0, lastSession.NoteDate.Location())
 		out.SessionGap = int(today.Sub(sessionDate).Hours() / 24)
 		out.LastSessionDate = lastSession.NoteDate.Format(time.DateOnly)
 	}
 
-	plan, planErr := s.sessionReader.LatestNoteByType(ctx, "plan")
+	plan, planErr := s.sessions.LatestNoteByType(ctx, "plan")
 	if planErr == nil {
 		out.LatestPlan = plan.Content
 		out.LatestPlanDate = plan.NoteDate.Format(time.DateOnly)
 	}
 
-	refl, reflErr := s.sessionReader.LatestNoteByType(ctx, "reflection")
+	refl, reflErr := s.sessions.LatestNoteByType(ctx, "reflection")
 	if reflErr == nil {
 		out.LatestReflection = refl.Content
 		out.LatestReflectionDate = refl.NoteDate.Format(time.DateOnly)
 	}
 
 	since := now.AddDate(0, 0, -30)
-	metricsNotes, metricsErr := s.sessionReader.MetricsHistory(ctx, since)
+	metricsNotes, metricsErr := s.sessions.MetricsHistory(ctx, since)
 	if metricsErr != nil {
 		s.logger.Error("morning_context: planning history", "error", metricsErr)
 	}
@@ -515,11 +515,11 @@ func (*Server) ensureSessionDefaults(out *MorningContextOutput) {
 
 // archiveStaleInsights lazily auto-archives insights older than 14 days.
 func (s *Server) archiveStaleInsights(ctx context.Context, now time.Time) {
-	if s.sessionWriter == nil {
+	if s.sessions == nil {
 		return
 	}
 	cutoff := now.AddDate(0, 0, -14)
-	n, err := s.sessionWriter.ArchiveStaleInsights(ctx, cutoff)
+	n, err := s.sessions.ArchiveStaleInsights(ctx, cutoff)
 	if err != nil {
 		s.logger.Error("morning_context: auto-archive insights", "error", err)
 	} else if n > 0 {
@@ -531,7 +531,7 @@ func (s *Server) archiveStaleInsights(ctx context.Context, now time.Time) {
 // and pending action recommendations.
 func (s *Server) fetchMorningInsights(ctx context.Context, out *MorningContextOutput) {
 	unverified := "unverified"
-	insightNotes, insightErr := s.sessionReader.InsightsByStatus(ctx, &unverified, nil, 5)
+	insightNotes, insightErr := s.sessions.InsightsByStatus(ctx, &unverified, nil, 5)
 	if insightErr != nil {
 		s.logger.Error("morning_context: active insights", "error", insightErr)
 	}
@@ -540,13 +540,13 @@ func (s *Server) fetchMorningInsights(ctx context.Context, out *MorningContextOu
 		out.ActiveInsights = append(out.ActiveInsights, parseInsightBrief(&insightNotes[i]))
 	}
 
-	unverifiedCount, countErr := s.sessionReader.CountInsightsByStatus(ctx, &unverified)
+	unverifiedCount, countErr := s.sessions.CountInsightsByStatus(ctx, &unverified)
 	if countErr != nil {
 		s.logger.Error("morning_context: counting unverified insights", "error", countErr)
 	}
 	out.TotalUnverified = unverifiedCount
 
-	recNotes, recErr := s.sessionReader.InsightsByCategory(ctx, "unverified", "action_recommendation", 3)
+	recNotes, recErr := s.sessions.InsightsByCategory(ctx, "unverified", "action_recommendation", 3)
 	if recErr != nil {
 		s.logger.Error("morning_context: pending recommendations", "error", recErr)
 	}

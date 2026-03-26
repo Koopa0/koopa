@@ -13,13 +13,10 @@ import (
 	pgvector "github.com/pgvector/pgvector-go"
 
 	"github.com/koopa0/blog-backend/internal/activity"
-	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
-	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
-	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // NoteSearcher provides note search and retrieval for MCP tools.
@@ -65,15 +62,6 @@ type StatsReader interface {
 	Learning(ctx context.Context) (*stats.LearningDashboard, error)
 }
 
-// TaskWriter provides task mutations for MCP tools.
-type TaskWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error)
-	UpdateStatus(ctx context.Context, id uuid.UUID, status task.Status) (*task.Task, error)
-	UpdateMyDay(ctx context.Context, id uuid.UUID, myDay bool) error
-	ClearAllMyDay(ctx context.Context) (int64, error)
-	Update(ctx context.Context, p *task.UpdateParams) (*task.Task, error)
-}
-
 // NotionTaskWriter creates and updates tasks in Notion.
 type NotionTaskWriter interface {
 	UpdatePageStatus(ctx context.Context, pageID, status string) error
@@ -98,11 +86,6 @@ type TaskDBIDResolver interface {
 	DatabaseIDByRole(ctx context.Context, role string) (string, error)
 }
 
-// ContentWriter creates content records via MCP tools.
-type ContentWriter interface {
-	CreateContent(ctx context.Context, p *content.CreateParams) (*content.Content, error)
-}
-
 // GoalReader provides goal queries for MCP tools.
 type GoalReader interface {
 	Goals(ctx context.Context) ([]goal.Goal, error)
@@ -117,13 +100,6 @@ type GoalWriter interface {
 // ProjectWriter provides project mutations for MCP tools.
 type ProjectWriter interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status project.Status, description, expectedCadence *string) (*project.Project, error)
-}
-
-// SessionNoteWriter provides session note mutations for MCP tools.
-type SessionNoteWriter interface {
-	CreateNote(ctx context.Context, p *session.CreateParams) (*session.Note, error)
-	UpdateNoteMetadata(ctx context.Context, p *session.UpdateMetadataParams) (*session.Note, error)
-	ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // SystemStatusReader provides system observability queries for the get_system_status tool.
