@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/koopa0/blog-backend/internal/flow"
+	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/session"
@@ -139,9 +139,9 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 	if input.ComparePrevious {
 		prevStart := weekStart.AddDate(0, 0, -7)
 		prevEnd := weekStart
-		// CompletedByProjectSince returns all completions from since→now,
+		// CompletionsByProjectSince returns all completions from since→now,
 		// so we query from prevStart and subtract current week to isolate previous week.
-		allSincePrev, prevErr := s.tasks.CompletedByProjectSince(ctx, prevStart)
+		allSincePrev, prevErr := s.activity.CompletionsByProjectSince(ctx, prevStart)
 		if prevErr == nil {
 			var totalSincePrev int64
 			for _, p := range allSincePrev {
@@ -183,8 +183,8 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // fetchWeeklyTasks fetches completed tasks grouped by project for the week.
 // Returns the raw by-project data for reuse by goal alignment.
-func (s *Server) fetchWeeklyTasks(ctx context.Context, out *WeeklySummaryOutput, weekStart time.Time) []flow.ProjectCompletion {
-	byProject, err := s.tasks.CompletedByProjectSince(ctx, weekStart)
+func (s *Server) fetchWeeklyTasks(ctx context.Context, out *WeeklySummaryOutput, weekStart time.Time) []activity.ProjectCompletion {
+	byProject, err := s.activity.CompletionsByProjectSince(ctx, weekStart)
 	if err != nil {
 		s.logger.Error("weekly_summary: tasks by project", "error", err)
 	}
@@ -308,7 +308,7 @@ func (s *Server) fetchWeeklyInsights(ctx context.Context, out *WeeklySummaryOutp
 
 // fetchWeeklyGoalAlignment computes on-track assessment using
 // goal_id FK project matching and task completions. Appends off-track concerns.
-func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummaryOutput, projects []project.Project, byProject []flow.ProjectCompletion, weekStart, today time.Time) {
+func (s *Server) fetchWeeklyGoalAlignment(ctx context.Context, out *WeeklySummaryOutput, projects []project.Project, byProject []activity.ProjectCompletion, weekStart, today time.Time) {
 	goals, err := s.goals.Goals(ctx)
 	if err != nil {
 		s.logger.Error("weekly_summary: goals", "error", err)
@@ -350,7 +350,7 @@ func buildProjectsByGoalID(projects []project.Project) map[uuid.UUID][]string {
 }
 
 // buildCompletionsByProject maps project titles to their completion counts.
-func buildCompletionsByProject(byProject []flow.ProjectCompletion) map[string]int64 {
+func buildCompletionsByProject(byProject []activity.ProjectCompletion) map[string]int64 {
 	m := make(map[string]int64)
 	for _, p := range byProject {
 		m[p.ProjectTitle] = p.Completed

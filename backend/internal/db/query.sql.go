@@ -853,6 +853,60 @@ func (q *Queries) CompletedTitlesSince(ctx context.Context, since *time.Time) ([
 	return items, nil
 }
 
+const completionEventsByProjectSince = `-- name: CompletionEventsByProjectSince :many
+WITH completions AS (
+    SELECT DISTINCT ON (COALESCE(title, ''), timestamp::date)
+           COALESCE(project, '') AS project_slug,
+           title,
+           timestamp::date AS completed_date
+    FROM activity_events
+    WHERE timestamp >= $1
+      AND (
+          event_type = 'task_completed'
+          OR (event_type = 'task_status_change' AND metadata->>'status' = 'Done')
+      )
+    ORDER BY COALESCE(title, ''), timestamp::date, timestamp ASC
+)
+SELECT COALESCE(p.title, c.project_slug, '(no project)') AS project_title,
+       count(*) AS completed
+FROM completions c
+LEFT JOIN projects p ON c.project_slug = p.slug
+GROUP BY COALESCE(p.title, c.project_slug, '(no project)')
+ORDER BY completed DESC
+`
+
+type CompletionEventsByProjectSinceRow struct {
+	ProjectTitle string `json:"project_title"`
+	Completed    int64  `json:"completed"`
+}
+
+// Count task completions per project from activity events since the given time.
+// Captures both one-time and recurring task completions (recurring tasks reset
+// status to "To Do" in the tasks table, making snapshot queries miss them).
+// Sources: "task_completed" events from MCP/HTTP, plus "task_status_change" events
+// from Notion sync where metadata status is "Done".
+// Deduplicates by (title, day) to avoid double-counting when MCP complete triggers
+// a Notion webhook in the same day.
+func (q *Queries) CompletionEventsByProjectSince(ctx context.Context, since time.Time) ([]CompletionEventsByProjectSinceRow, error) {
+	rows, err := q.db.Query(ctx, completionEventsByProjectSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CompletionEventsByProjectSinceRow{}
+	for rows.Next() {
+		var i CompletionEventsByProjectSinceRow
+		if err := rows.Scan(&i.ProjectTitle, &i.Completed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const confirmAlias = `-- name: ConfirmAlias :one
 UPDATE tag_aliases SET
     confirmed = true,

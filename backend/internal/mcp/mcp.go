@@ -40,6 +40,7 @@ type QueryEmbedder interface {
 type ActivityReader interface {
 	EventsByFilters(ctx context.Context, start, end time.Time, source, project *string, limit int) ([]activity.Event, error)
 	EventsByProject(ctx context.Context, project string, limit int) ([]activity.Event, error)
+	CompletionsByProjectSince(ctx context.Context, since time.Time) ([]activity.ProjectCompletion, error)
 }
 
 // ActivityWriter records activity events for audit trail.

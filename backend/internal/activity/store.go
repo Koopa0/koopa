@@ -141,6 +141,30 @@ func (s *Store) EventsByProject(ctx context.Context, projectName string, limit i
 	return events, nil
 }
 
+// ProjectCompletion is a per-project task completion count.
+type ProjectCompletion struct {
+	ProjectTitle string
+	Completed    int64
+}
+
+// CompletionsByProjectSince counts task completions per project from activity events.
+// Unlike task-table queries, this captures recurring task completions
+// (which reset to "To Do" and disappear from snapshot queries).
+func (s *Store) CompletionsByProjectSince(ctx context.Context, since time.Time) ([]ProjectCompletion, error) {
+	rows, err := s.q.CompletionEventsByProjectSince(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("querying completion events: %w", err)
+	}
+	result := make([]ProjectCompletion, len(rows))
+	for i := range rows {
+		result[i] = ProjectCompletion{
+			ProjectTitle: rows[i].ProjectTitle,
+			Completed:    rows[i].Completed,
+		}
+	}
+	return result, nil
+}
+
 // DeleteOldEvents deletes activity events with a timestamp before cutoff.
 // Returns the number of rows deleted.
 func (s *Store) DeleteOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {

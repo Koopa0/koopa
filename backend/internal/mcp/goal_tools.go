@@ -51,9 +51,11 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 		s.logger.Error("goal_progress: active projects", "error", projErr)
 	}
 
-	byProject, taskErr := s.tasks.CompletedByProjectSince(ctx, since)
+	// Use activity events for completion counting — captures recurring task
+	// completions that disappear from the tasks table snapshot.
+	byProject, taskErr := s.activity.CompletionsByProjectSince(ctx, since)
 	if taskErr != nil {
-		s.logger.Error("goal_progress: completed by project", "error", taskErr)
+		s.logger.Error("goal_progress: completion events by project", "error", taskErr)
 	}
 
 	// Build goal_id → projects mapping (FK-based, not area-based)
