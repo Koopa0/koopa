@@ -492,7 +492,7 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	// missing (e.g. obsidian sync not yet configured).
 	var hasData bool
 
-	// Note growth (obsidian_notes)
+	// Note growth (obsidian_notes + contents TIL entries)
 	if err := s.learningNoteGrowth(ctx, ld); err != nil {
 		slog.Warn("learning: note growth query failed, returning zeros", "error", err)
 	} else {
@@ -506,7 +506,7 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 		hasData = true
 	}
 
-	// Top tags by note count (tags + obsidian_note_tags)
+	// Top tags by count (obsidian_note_tags + contents TIL tags)
 	if err := s.learningTopTags(ctx, ld); err != nil {
 		slog.Warn("learning: top tags query failed, returning zeros", "error", err)
 	} else {
@@ -523,17 +523,35 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 }
 
 func (s *Store) learningNoteGrowth(ctx context.Context, ld *LearningDashboard) error {
+	// Aggregate from BOTH obsidian_notes AND contents (TIL entries).
+	// obsidian_notes uses synced_at; contents uses created_at.
 	err := s.dbtx.QueryRow(ctx, `
 		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE synced_at > now() - interval '7 days'),
-			COUNT(*) FILTER (WHERE synced_at > now() - interval '30 days')
-		FROM obsidian_notes`).Scan(&ld.Notes.Total, &ld.Notes.LastWeek, &ld.Notes.LastMonth)
+			COALESCE(o.total, 0) + COALESCE(c.total, 0),
+			COALESCE(o.last_week, 0) + COALESCE(c.last_week, 0),
+			COALESCE(o.last_month, 0) + COALESCE(c.last_month, 0)
+		FROM
+			(SELECT COUNT(*) AS total,
+				COUNT(*) FILTER (WHERE synced_at > now() - interval '7 days') AS last_week,
+				COUNT(*) FILTER (WHERE synced_at > now() - interval '30 days') AS last_month
+			 FROM obsidian_notes) o,
+			(SELECT COUNT(*) AS total,
+				COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS last_week,
+				COUNT(*) FILTER (WHERE created_at > now() - interval '30 days') AS last_month
+			 FROM contents WHERE type = 'til') c
+	`).Scan(&ld.Notes.Total, &ld.Notes.LastWeek, &ld.Notes.LastMonth)
 	if err != nil {
 		return fmt.Errorf("note growth: %w", err)
 	}
 
-	noteRows, err := s.dbtx.Query(ctx, `SELECT COALESCE(type, 'unknown'), COUNT(*) FROM obsidian_notes GROUP BY type`)
+	// By-type breakdown: obsidian_notes types + TIL count from contents.
+	noteRows, err := s.dbtx.Query(ctx, `
+		SELECT type, SUM(cnt)::int FROM (
+			SELECT COALESCE(type, 'unknown') AS type, COUNT(*) AS cnt FROM obsidian_notes GROUP BY type
+			UNION ALL
+			SELECT 'til' AS type, COUNT(*) AS cnt FROM contents WHERE type = 'til'
+		) combined
+		GROUP BY type`)
 	if err != nil {
 		return fmt.Errorf("notes by type: %w", err)
 	}
@@ -571,12 +589,21 @@ func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboar
 }
 
 func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) error {
+	// Aggregate tags from BOTH obsidian_note_tags junction AND contents.tags TEXT[].
 	tagRows, err := s.dbtx.Query(ctx, `
-		SELECT t.name, COUNT(ont.note_id) AS cnt
-		FROM tags t
-		JOIN obsidian_note_tags ont ON ont.tag_id = t.id
-		GROUP BY t.id, t.name
-		ORDER BY cnt DESC
+		SELECT name, SUM(cnt)::int AS total FROM (
+			SELECT t.name, COUNT(ont.note_id) AS cnt
+			FROM tags t
+			JOIN obsidian_note_tags ont ON ont.tag_id = t.id
+			GROUP BY t.id, t.name
+			UNION ALL
+			SELECT UNNEST(tags) AS name, COUNT(*) AS cnt
+			FROM contents
+			WHERE type = 'til' AND tags != '{}'
+			GROUP BY UNNEST(tags)
+		) combined
+		GROUP BY name
+		ORDER BY total DESC
 		LIMIT 10`)
 	if err != nil {
 		return fmt.Errorf("top tags: %w", err)
