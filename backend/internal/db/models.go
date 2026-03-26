@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
@@ -739,22 +740,34 @@ type ToolCallLog struct {
 	CalledAt   time.Time `json:"called_at"`
 	DurationMs *int32    `json:"duration_ms"`
 	IsError    bool      `json:"is_error"`
+	// True when a search/list tool returned 0 results — signals misuse or missing data.
+	IsEmpty bool `json:"is_empty"`
+	// Approximate JSON byte size of tool input. Helps identify unexpectedly large payloads.
+	InputBytes *int32 `json:"input_bytes"`
+	// Approximate JSON byte size of tool output. Helps identify tools returning excessive data.
+	OutputBytes *int32 `json:"output_bytes"`
 }
 
 type ToolDailyTrend struct {
-	Day    time.Time `json:"day"`
-	Calls  int64     `json:"calls"`
-	Errors int64     `json:"errors"`
+	Day          time.Time `json:"day"`
+	Calls        int64     `json:"calls"`
+	Errors       int64     `json:"errors"`
+	EmptyResults int64     `json:"empty_results"`
 }
 
 type ToolUsageSummary struct {
-	ToolName  string      `json:"tool_name"`
-	Calls     int64       `json:"calls"`
-	AvgMs     int32       `json:"avg_ms"`
-	MaxMs     interface{} `json:"max_ms"`
-	Errors    int64       `json:"errors"`
-	FirstSeen interface{} `json:"first_seen"`
-	LastSeen  interface{} `json:"last_seen"`
+	ToolName       string         `json:"tool_name"`
+	Calls          int64          `json:"calls"`
+	AvgMs          int32          `json:"avg_ms"`
+	MaxMs          interface{}    `json:"max_ms"`
+	P95Ms          int32          `json:"p95_ms"`
+	Errors         int64          `json:"errors"`
+	ErrorRate      pgtype.Numeric `json:"error_rate"`
+	EmptyResults   int64          `json:"empty_results"`
+	AvgInputBytes  int32          `json:"avg_input_bytes"`
+	AvgOutputBytes int32          `json:"avg_output_bytes"`
+	FirstSeen      interface{}    `json:"first_seen"`
+	LastSeen       interface{}    `json:"last_seen"`
 }
 
 type Topic struct {

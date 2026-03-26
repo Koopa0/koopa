@@ -100,18 +100,23 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 		"is_recurring", updated.IsRecurring(),
 	)
 
-	// Record activity event for audit trail (enables recurring task tracking)
+	// Record activity event for audit trail (enables recurring task tracking).
+	// Project slug is resolved so goal_progress can attribute completions correctly.
 	if s.activityWriter != nil {
 		evTitle := fmt.Sprintf("Completed: %s", updated.Title)
 		sourceID := fmt.Sprintf("task-complete-%s-%s", updated.ID, time.Now().Format(time.DateOnly))
-		//nolint:errcheck // best-effort: don't fail task completion on event recording error
-		s.activityWriter.CreateEvent(ctx, &activity.RecordParams{
+		params := &activity.RecordParams{
 			SourceID:  &sourceID,
 			Timestamp: time.Now(),
 			Source:    "mcp",
 			EventType: "task_completed",
 			Title:     &evTitle,
-		})
+		}
+		if updated.ProjectID != nil {
+			params.Project = s.resolveProjectSlug(ctx, *updated.ProjectID)
+		}
+		//nolint:errcheck // best-effort: don't fail task completion on event recording error
+		s.activityWriter.CreateEvent(ctx, params)
 	}
 
 	// Attach remaining My Day tasks for next-task suggestion
@@ -953,6 +958,21 @@ func mapInputGoalStatus(s string) goal.Status {
 	default:
 		return goal.StatusNotStarted
 	}
+}
+
+// resolveProjectSlug returns a pointer to the project slug for the given ID.
+// Returns nil if the project cannot be found (best-effort for telemetry).
+func (s *Server) resolveProjectSlug(ctx context.Context, projectID uuid.UUID) *string {
+	projects, err := s.projects.ActiveProjects(ctx)
+	if err != nil {
+		return nil
+	}
+	for i := range projects {
+		if projects[i].ID == projectID {
+			return &projects[i].Slug
+		}
+	}
+	return nil
 }
 
 func (s *Server) resolveTaskDBID(ctx context.Context) (string, error) {
