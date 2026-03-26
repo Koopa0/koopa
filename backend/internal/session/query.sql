@@ -37,19 +37,30 @@ WHERE id = @id;
 
 -- name: InsightsByStatus :many
 -- Get insight notes, optionally filtered by status and project in metadata.
+-- When filtering for 'unverified', also match empty string or NULL status
+-- (insights saved before status was enforced).
 SELECT id, note_date, note_type, source, content, metadata, created_at
 FROM session_notes
 WHERE note_type = 'insight'
-  AND (sqlc.narg('status')::text IS NULL OR metadata->>'status' = sqlc.narg('status'))
+  AND (
+    sqlc.narg('status')::text IS NULL
+    OR metadata->>'status' = sqlc.narg('status')
+    OR (sqlc.narg('status') = 'unverified' AND (metadata->>'status' IS NULL OR metadata->>'status' = ''))
+  )
   AND (sqlc.narg('project')::text IS NULL OR metadata->>'project' = sqlc.narg('project'))
 ORDER BY created_at DESC
 LIMIT @limit_val;
 
 -- name: CountInsightsByStatus :one
 -- Count insight notes by status in metadata.
+-- Matches empty/NULL status as 'unverified' (same logic as InsightsByStatus).
 SELECT count(*) FROM session_notes
 WHERE note_type = 'insight'
-  AND (sqlc.narg('status')::text IS NULL OR metadata->>'status' = sqlc.narg('status'));
+  AND (
+    sqlc.narg('status')::text IS NULL
+    OR metadata->>'status' = sqlc.narg('status')
+    OR (sqlc.narg('status') = 'unverified' AND (metadata->>'status' IS NULL OR metadata->>'status' = ''))
+  );
 
 -- name: UpdateNoteMetadata :one
 -- Update metadata (and optionally content) of a session note.

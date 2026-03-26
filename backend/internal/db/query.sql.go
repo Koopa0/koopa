@@ -1132,10 +1132,15 @@ func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID)
 const countInsightsByStatus = `-- name: CountInsightsByStatus :one
 SELECT count(*) FROM session_notes
 WHERE note_type = 'insight'
-  AND ($1::text IS NULL OR metadata->>'status' = $1)
+  AND (
+    $1::text IS NULL
+    OR metadata->>'status' = $1
+    OR ($1 = 'unverified' AND (metadata->>'status' IS NULL OR metadata->>'status' = ''))
+  )
 `
 
 // Count insight notes by status in metadata.
+// Matches empty/NULL status as 'unverified' (same logic as InsightsByStatus).
 func (q *Queries) CountInsightsByStatus(ctx context.Context, status *string) (int64, error) {
 	row := q.db.QueryRow(ctx, countInsightsByStatus, status)
 	var count int64
@@ -2832,7 +2837,11 @@ const insightsByStatus = `-- name: InsightsByStatus :many
 SELECT id, note_date, note_type, source, content, metadata, created_at
 FROM session_notes
 WHERE note_type = 'insight'
-  AND ($1::text IS NULL OR metadata->>'status' = $1)
+  AND (
+    $1::text IS NULL
+    OR metadata->>'status' = $1
+    OR ($1 = 'unverified' AND (metadata->>'status' IS NULL OR metadata->>'status' = ''))
+  )
   AND ($2::text IS NULL OR metadata->>'project' = $2)
 ORDER BY created_at DESC
 LIMIT $3
@@ -2845,6 +2854,8 @@ type InsightsByStatusParams struct {
 }
 
 // Get insight notes, optionally filtered by status and project in metadata.
+// When filtering for 'unverified', also match empty string or NULL status
+// (insights saved before status was enforced).
 func (q *Queries) InsightsByStatus(ctx context.Context, arg InsightsByStatusParams) ([]SessionNote, error) {
 	rows, err := q.db.Query(ctx, insightsByStatus, arg.Status, arg.Project, arg.LimitVal)
 	if err != nil {

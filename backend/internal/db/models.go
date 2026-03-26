@@ -733,6 +733,30 @@ type Task struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+type ToolCallLog struct {
+	ID         uuid.UUID `json:"id"`
+	ToolName   string    `json:"tool_name"`
+	CalledAt   time.Time `json:"called_at"`
+	DurationMs *int32    `json:"duration_ms"`
+	IsError    bool      `json:"is_error"`
+}
+
+type ToolDailyTrend struct {
+	Day    time.Time `json:"day"`
+	Calls  int64     `json:"calls"`
+	Errors int64     `json:"errors"`
+}
+
+type ToolUsageSummary struct {
+	ToolName  string      `json:"tool_name"`
+	Calls     int64       `json:"calls"`
+	AvgMs     int32       `json:"avg_ms"`
+	MaxMs     interface{} `json:"max_ms"`
+	Errors    int64       `json:"errors"`
+	FirstSeen interface{} `json:"first_seen"`
+	LastSeen  interface{} `json:"last_seen"`
+}
+
 type Topic struct {
 	ID          uuid.UUID `json:"id"`
 	Slug        string    `json:"slug"`

@@ -502,10 +502,20 @@ func (s *Server) fetchMorningSessionData(ctx context.Context, out *MorningContex
 	s.ensureSessionDefaults(out)
 }
 
-// ensureSessionDefaults fills nil slices in session-related output fields.
+// ensureSessionDefaults fills nil slices/maps in session-related output fields.
 func (*Server) ensureSessionDefaults(out *MorningContextOutput) {
+	if out.PlanningHistory == nil {
+		out.PlanningHistory = &planningHistorySummary{
+			Entries:           []dailyMetrics{},
+			CapacityByDayType: make(map[string]float64),
+			Trend:             "no_data",
+		}
+	}
 	if out.PlanningHistory.Entries == nil {
 		out.PlanningHistory.Entries = []dailyMetrics{}
+	}
+	if out.PlanningHistory.CapacityByDayType == nil {
+		out.PlanningHistory.CapacityByDayType = make(map[string]float64)
 	}
 	if out.ActiveInsights == nil {
 		out.ActiveInsights = []insightBrief{}
@@ -701,12 +711,21 @@ func parseDailyMetrics(n *session.Note) *dailyMetrics {
 
 // buildPlanningHistory aggregates metrics notes into a planning history summary.
 // recentDays controls how many entries are included in Entries (the rest feed monthly summary).
+// Notes are ordered by note_date DESC; when multiple notes share a date, only the first
+// (most recent) is kept — this prevents duplicate entries from inflating capacity metrics.
 func buildPlanningHistory(notes []session.Note, recentDays int) planningHistorySummary {
 	allEntries := make([]dailyMetrics, 0, len(notes))
+	seenDates := make(map[string]bool, len(notes))
 	for i := range notes {
-		if dm := parseDailyMetrics(&notes[i]); dm != nil {
-			allEntries = append(allEntries, *dm)
+		dm := parseDailyMetrics(&notes[i])
+		if dm == nil {
+			continue
 		}
+		if seenDates[dm.Date] {
+			continue // dedup: keep first entry per date (most recent by created_at)
+		}
+		seenDates[dm.Date] = true
+		allEntries = append(allEntries, *dm)
 	}
 
 	// Cap recent entries

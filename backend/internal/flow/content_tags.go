@@ -83,26 +83,38 @@ func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTa
 		topicList.String(), in.ContentType, in.Title, truncateBodyRunes(in.Body))
 
 	tags, err := genkit.Run(ctx, "tags", func() ([]string, error) {
-		resp, err := genkit.Generate(ctx, ct.g,
-			ai.WithModel(ct.model),
-			ai.WithSystem(tagsSystemPrompt),
-			ai.WithPrompt(userPrompt),
-			ai.WithConfig(&genai.GenerateContentConfig{
-				Temperature:     genai.Ptr[float32](0.2),
-				MaxOutputTokens: 512,
-			}),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("calling llm: %w", err)
-		}
-		if err := checkFinishReason(resp); err != nil {
-			return nil, err
-		}
-
+		const maxRetries = 2
 		var suggested []string
-		if err := parseJSONLoose(resp.Text(), &suggested); err != nil {
-			slog.Warn("content tags: falling back to empty tags", "error", err, "response", resp.Text()[:min(len(resp.Text()), 100)])
-			return []string{}, nil
+		for attempt := range maxRetries {
+			resp, err := genkit.Generate(ctx, ct.g,
+				ai.WithModel(ct.model),
+				ai.WithSystem(tagsSystemPrompt),
+				ai.WithPrompt(userPrompt),
+				ai.WithConfig(&genai.GenerateContentConfig{
+					Temperature:     genai.Ptr[float32](0.2),
+					MaxOutputTokens: 512,
+				}),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("calling llm: %w", err)
+			}
+			if err := checkFinishReason(resp); err != nil {
+				return nil, err
+			}
+
+			if err := parseJSONLoose(resp.Text(), &suggested); err != nil {
+				snippet := resp.Text()[:min(len(resp.Text()), 100)]
+				if attempt < maxRetries-1 {
+					ct.logger.Warn("content tags: JSON parse failed, retrying",
+						"attempt", attempt+1, "error", err, "response", snippet)
+					userPrompt = "Return ONLY a JSON array of tag slugs, no explanation. Example: [\"go\",\"testing\"]\n\n" + userPrompt
+					continue
+				}
+				ct.logger.Warn("content tags: falling back to empty tags after retries",
+					"error", err, "response", snippet)
+				return []string{}, nil
+			}
+			break
 		}
 
 		// Filter to only existing slugs.
