@@ -32,6 +32,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	pgvector "github.com/pgvector/pgvector-go"
@@ -125,17 +126,27 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 		mcpserver.WithSystemStatus(statsStore),
 	)
 
-	// Pipeline trigger and flow invoker via admin API (requires ADMIN_API_URL and ADMIN_API_TOKEN)
+	// Pipeline trigger via admin API (self-signs JWT using shared secret)
 	if adminURL := os.Getenv("ADMIN_API_URL"); adminURL != "" {
-		adminToken := os.Getenv("ADMIN_API_TOKEN")
-		opts = append(opts,
-			mcpserver.WithPipelineTrigger(
-				&httpPipelineTrigger{baseURL: adminURL, token: adminToken, logger: logger},
-			),
-		)
-		logger.Info("pipeline trigger enabled", "admin_url", adminURL)
+		jwtSecret := os.Getenv("JWT_SECRET")
+		adminEmail := os.Getenv("ADMIN_EMAIL")
+		if jwtSecret == "" || adminEmail == "" {
+			logger.Error("ADMIN_API_URL set but JWT_SECRET or ADMIN_EMAIL missing — trigger_pipeline disabled")
+		} else {
+			opts = append(opts,
+				mcpserver.WithPipelineTrigger(
+					&httpPipelineTrigger{
+						baseURL:    adminURL,
+						jwtSecret:  []byte(jwtSecret),
+						adminEmail: adminEmail,
+						logger:     logger,
+					},
+				),
+			)
+			logger.Info("pipeline trigger enabled", "admin_url", adminURL)
+		}
 	} else {
-		logger.Warn("ADMIN_API_URL not set — trigger_pipeline and flow tools will be unavailable")
+		logger.Warn("ADMIN_API_URL not set — trigger_pipeline will be unavailable")
 	}
 
 	// Optional O'Reilly content search (requires ORM_JWT)
@@ -810,10 +821,13 @@ func (e *geminiQueryEmbedder) EmbedQuery(ctx context.Context, text string) (pgve
 }
 
 // httpPipelineTrigger triggers pipelines via the admin API.
+// It self-signs a short-lived JWT using the shared JWT_SECRET,
+// so no separate ADMIN_API_TOKEN is needed.
 type httpPipelineTrigger struct {
-	baseURL string
-	token   string
-	logger  *slog.Logger
+	baseURL    string
+	jwtSecret  []byte
+	adminEmail string
+	logger     *slog.Logger
 }
 
 func (t *httpPipelineTrigger) TriggerCollect(ctx context.Context) {
@@ -824,15 +838,29 @@ func (t *httpPipelineTrigger) TriggerNotionSync(ctx context.Context) {
 	t.post(ctx, "/api/admin/pipeline/notion-sync")
 }
 
+func (t *httpPipelineTrigger) signToken() (string, error) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"email": t.adminEmail,
+		"iat":   now.Unix(),
+		"exp":   now.Add(time.Minute).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(t.jwtSecret)
+}
+
 func (t *httpPipelineTrigger) post(ctx context.Context, path string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+path, http.NoBody)
 	if err != nil {
 		t.logger.Error("creating pipeline trigger request", "path", path, "error", err)
 		return
 	}
-	if t.token != "" {
-		req.Header.Set("Authorization", "Bearer "+t.token)
+	signed, err := t.signToken()
+	if err != nil {
+		t.logger.Error("signing admin jwt", "error", err)
+		return
 	}
+	req.Header.Set("Authorization", "Bearer "+signed)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.logger.Error("triggering pipeline", "path", path, "error", err)
