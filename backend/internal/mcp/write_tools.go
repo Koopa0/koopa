@@ -166,7 +166,7 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	var projectTitle string
 	var projectNotionPageID string
 	if input.Project != "" {
-		proj, projErr := s.resolveProject(ctx, input.Project)
+		proj, projErr := s.resolveProjectChain(ctx, input.Project)
 		if projErr == nil {
 			projectID = &proj.ID
 			projectTitle = proj.Title
@@ -330,7 +330,7 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	}
 	var resolvedProject *project.Project
 	if input.Project != nil {
-		proj, projErr := s.resolveProject(ctx, *input.Project)
+		proj, projErr := s.resolveProjectChain(ctx, *input.Project)
 		if projErr == nil {
 			resolvedProject = proj
 			params.ProjectID = &proj.ID
@@ -517,7 +517,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	// Resolve project to store ID on the content record.
 	var projectID *uuid.UUID
 	if input.Project != "" && input.Project != "none" {
-		if proj, projErr := s.resolveProject(ctx, input.Project); projErr == nil {
+		if proj, projErr := s.resolveProjectChain(ctx, input.Project); projErr == nil {
 			projectID = &proj.ID
 		}
 	}
@@ -572,7 +572,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 // task was completed — auto-complete is best-effort and must never fail the
 // primary log_learning_session operation.
 func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput string) (*AutoCompletedTask, string) {
-	proj, err := s.resolveProject(ctx, projectInput)
+	proj, err := s.resolveProjectChain(ctx, projectInput)
 	if err != nil {
 		s.logger.Warn("auto-complete: project not found", "project", projectInput, "error", err)
 		return nil, fmt.Sprintf("project %q not found", projectInput)
@@ -824,7 +824,7 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("project writer not configured")
 	}
 
-	proj, err := s.resolveProject(ctx, input.Project)
+	proj, err := s.resolveProjectChain(ctx, input.Project)
 	if err != nil {
 		return nil, UpdateProjectStatusOutput{}, err
 	}
@@ -1001,22 +1001,6 @@ func (s *Server) fetchMyDaySnapshot(ctx context.Context) []myDayRemaining {
 		}
 	}
 	return result
-}
-
-func (s *Server) resolveProject(ctx context.Context, input string) (*project.Project, error) {
-	proj, err := s.projects.ProjectBySlug(ctx, input)
-	if err == nil {
-		return proj, nil
-	}
-	proj, err = s.projects.ProjectByAlias(ctx, input)
-	if err == nil {
-		return proj, nil
-	}
-	proj, err = s.projects.ProjectByTitle(ctx, input)
-	if err == nil {
-		return proj, nil
-	}
-	return nil, fmt.Errorf("project %q not found", input)
 }
 
 func mapInputTaskStatus(s string) task.Status {

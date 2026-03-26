@@ -971,10 +971,12 @@ func (s *Server) fetchMorningPipelineHealth(ctx context.Context, out *MorningCon
 		status = fmt.Sprintf("%d failed flow runs detected", failed)
 	}
 
-	failingFeeds := 0
-	// Count feeds with consecutive failures from the feed stats
-	if overview.Feeds.Total > overview.Feeds.Enabled {
-		failingFeeds = overview.Feeds.Total - overview.Feeds.Enabled
+	// Query actual failing feeds (consecutive_failures > 0) via system status reader
+	var failingFeeds int
+	if s.systemStatus != nil {
+		if fh, fhErr := s.systemStatus.FeedHealth(ctx); fhErr == nil {
+			failingFeeds = fh.FailingFeeds
+		}
 	}
 
 	out.PipelineHealth = &pipelineHealthSection{

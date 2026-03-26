@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -695,64 +696,52 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		err   error
 	}
 
-	contentCh := make(chan contentResult, 1)
-	noteCh := make(chan noteSearchResult, 1)
-	semanticCh := make(chan semanticResult, 1)
+	var cr contentResult
+	var nr noteSearchResult
+	var sr semanticResult
 
-	go func() {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		// Internal search: no visibility filter so MCP can find private content.
-		contents, _, err := s.contents.InternalSearch(ctx, input.Query, 1, limit)
+		cr.contents, _, cr.err = s.contents.InternalSearch(ctx, input.Query, 1, limit)
 		// AND→OR fallback: if AND search returns 0 results, try OR semantics
-		if err == nil && len(contents) == 0 {
-			contents, _, err = s.contents.InternalSearchOR(ctx, input.Query, 1, limit)
+		if cr.err == nil && len(cr.contents) == 0 {
+			cr.contents, _, cr.err = s.contents.InternalSearchOR(ctx, input.Query, 1, limit)
 		}
-		contentCh <- contentResult{contents, err}
-	}()
-
-	go func() {
+	})
+	wg.Go(func() {
 		if projectSlug != "" {
-			// When project is set, use filter-based search with context + query
-			filterResults, err := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &projectSlug, After: afterTime, Before: beforeTime}, limit*3)
-			if err != nil {
-				noteCh <- noteSearchResult{err: err}
+			filterResults, filterErr := s.notes.SearchByFilters(ctx, note.SearchFilter{Context: &projectSlug, After: afterTime, Before: beforeTime}, limit*3)
+			if filterErr != nil {
+				nr.err = filterErr
 				return
 			}
-			// Text search separately and RRF merge
 			textResults, textErr := s.notes.SearchByText(ctx, input.Query, limit*3)
 			if textErr != nil {
-				noteCh <- noteSearchResult{err: textErr}
+				nr.err = textErr
 				return
 			}
 			merged := rrfMerge(textResults, filterResults, limit)
-			// Convert back to SearchResult format
-			sr := make([]note.SearchResult, len(merged))
+			nr.notes = make([]note.SearchResult, len(merged))
 			for j := range merged {
-				sr[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}
+				nr.notes[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}
 			}
-			noteCh <- noteSearchResult{notes: sr}
 		} else {
-			notes, err := s.notes.SearchByText(ctx, input.Query, limit)
-			noteCh <- noteSearchResult{notes, err}
+			nr.notes, nr.err = s.notes.SearchByText(ctx, input.Query, limit)
 		}
-	}()
-
-	go func() {
+	})
+	wg.Go(func() {
 		if s.queryEmbedder == nil || s.semanticNotes == nil {
-			semanticCh <- semanticResult{}
 			return
 		}
 		vec, err := s.queryEmbedder.EmbedQuery(ctx, input.Query)
 		if err != nil {
-			semanticCh <- semanticResult{err: err}
+			sr.err = err
 			return
 		}
-		notes, err := s.semanticNotes.SearchBySimilarity(ctx, vec, limit)
-		semanticCh <- semanticResult{notes, err}
-	}()
-
-	cr := <-contentCh
-	nr := <-noteCh
-	sr := <-semanticCh
+		sr.notes, sr.err = s.semanticNotes.SearchBySimilarity(ctx, vec, limit)
+	})
+	wg.Wait()
 
 	var results []knowledgeResult
 
@@ -920,7 +909,6 @@ func (s *Server) listProjects(ctx context.Context, _ *mcp.CallToolRequest, input
 	return nil, ListProjectsOutput{Projects: summaries, Total: len(summaries)}, nil
 }
 
-// GetGoalsInput is the input for the get_goals tool.
 // LearningProgressInput is the input for the get_learning_progress tool.
 type LearningProgressInput struct{}
 

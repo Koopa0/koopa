@@ -369,7 +369,7 @@ func (s *Server) getContentPipeline(ctx context.Context, _ *mcp.CallToolRequest,
 type SynthesizeTopicInput struct {
 	Query              string `json:"query" jsonschema_description:"topic to synthesize (required)"`
 	MaxSources         int    `json:"max_sources,omitempty" jsonschema_description:"max source items to use (default 15, max 30)"`
-	IncludeGapAnalysis bool   `json:"include_gap_analysis,omitempty" jsonschema_description:"include sub-topic coverage gaps (default true)"`
+	IncludeGapAnalysis *bool  `json:"include_gap_analysis,omitempty" jsonschema_description:"include sub-topic coverage gaps (default true)"`
 }
 
 // SynthesizeTopicOutput is the output for the synthesize_topic tool.
@@ -511,7 +511,7 @@ func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	// Step 3: Gap analysis
-	if input.IncludeGapAnalysis || input.MaxSources == 0 { // default true
+	if input.IncludeGapAnalysis == nil || *input.IncludeGapAnalysis { // default true when omitted
 		if sourceCount["practical"] == 0 {
 			out.Gaps = append(out.Gaps, synthesisGap{
 				SubTopic: "hands-on experience",

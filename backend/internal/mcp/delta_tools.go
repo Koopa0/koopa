@@ -221,10 +221,7 @@ func (s *Server) fetchDeltaSessionData(ctx context.Context, out *SessionDeltaOut
 	out.SessionNotes = make([]sessionNoteBrief, 0, len(notes))
 	for i := range notes {
 		n := &notes[i]
-		excerpt := n.Content
-		if len(excerpt) > 150 {
-			excerpt = excerpt[:150] + "..."
-		}
+		excerpt := truncate(n.Content, 150)
 		out.SessionNotes = append(out.SessionNotes, sessionNoteBrief{
 			Date:    n.NoteDate.Format(time.DateOnly),
 			Type:    n.NoteType,
