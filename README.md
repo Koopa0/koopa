@@ -1,7 +1,5 @@
-# koopa0.dev
-
 <p align="center">
-  <img src="frontend/public/logo.png" alt="koopa0.dev" width="80">
+  <img src="frontend/public/logo-title.png" alt="koopa0.dev" width="320">
 </p>
 
 <p align="center">
