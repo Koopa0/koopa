@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LucideAngularModule, BookOpen, Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-angular';
+import { forkJoin } from 'rxjs';
 import {
   LearningAnalyticsService,
   type CoverageMatrixResponse,
@@ -17,7 +18,9 @@ import {
   type TagSummaryTag,
   type WeaknessTrendResponse,
 } from '../../core/services/learning-analytics.service';
+import { ProjectService } from '../../core/services/project/project.service';
 import { NotificationService } from '../../core/services/notification.service';
+import type { ApiProject } from '../../core/models';
 
 const FRESHNESS_DAYS = 7;
 const STALE_DAYS = 14;
@@ -32,6 +35,7 @@ const DEPTH_THRESHOLD = 3;
 })
 export class KnowledgeMetricsComponent implements OnInit {
   private readonly analyticsService = inject(LearningAnalyticsService);
+  private readonly projectService = inject(ProjectService);
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -42,6 +46,8 @@ export class KnowledgeMetricsComponent implements OnInit {
   protected readonly MinusIcon = Minus;
 
   // ─── State ───
+  protected readonly projects = signal<ApiProject[]>([]);
+  protected readonly selectedProject = signal<string | null>(null);
   protected readonly coverageData = signal<CoverageMatrixResponse | null>(null);
   protected readonly weaknessData = signal<TagSummaryResponse | null>(null);
   protected readonly expandedWeakness = signal<string | null>(null);
@@ -139,7 +145,7 @@ export class KnowledgeMetricsComponent implements OnInit {
     this.weaknessTrend.set(null);
 
     this.analyticsService
-      .getWeaknessTrend('leetcode', tag)
+      .getWeaknessTrend(this.selectedProject()!, tag)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (trend) => this.weaknessTrend.set(trend),
@@ -149,31 +155,53 @@ export class KnowledgeMetricsComponent implements OnInit {
 
   // ─── Lifecycle ───
 
-  ngOnInit(): void {
-    this.loadData();
+  protected selectProject(slug: string): void {
+    this.selectedProject.set(slug);
+    this.coverageData.set(null);
+    this.weaknessData.set(null);
+    this.expandedWeakness.set(null);
+    this.weaknessTrend.set(null);
+    this.isLoading.set(true);
+    this.loadAnalytics(slug);
   }
 
-  private loadData(): void {
-    this.analyticsService
-      .getCoverageMatrix('leetcode')
+  ngOnInit(): void {
+    this.projectService
+      .getAdminProjects()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (data) => {
-          this.coverageData.set(data);
-          this.isLoading.set(false);
+        next: (projects) => {
+          this.projects.set(projects);
+          if (projects.length > 0) {
+            this.selectedProject.set(projects[0].slug);
+            this.loadAnalytics(projects[0].slug);
+          } else {
+            this.isLoading.set(false);
+          }
         },
         error: () => {
-          this.notificationService.error('無法載入 coverage 資料');
+          this.notificationService.error('無法載入專案列表');
           this.isLoading.set(false);
         },
       });
+  }
 
-    this.analyticsService
-      .getTagSummary('leetcode', 'weakness:')
+  private loadAnalytics(project: string): void {
+    forkJoin({
+      coverage: this.analyticsService.getCoverageMatrix(project),
+      weakness: this.analyticsService.getTagSummary(project, 'weakness:'),
+    })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (data) => this.weaknessData.set(data),
-        error: () => this.notificationService.error('無法載入 weakness 資料'),
+        next: ({ coverage, weakness }) => {
+          this.coverageData.set(coverage);
+          this.weaknessData.set(weakness);
+          this.isLoading.set(false);
+        },
+        error: () => {
+          this.notificationService.error('無法載入分析資料');
+          this.isLoading.set(false);
+        },
       });
   }
 
