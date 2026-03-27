@@ -4,101 +4,340 @@
   <img src="frontend/public/logo.png" alt="koopa0.dev" width="120">
 </p>
 
-A personal operating system powered by AI. One Go server, one PostgreSQL database, 47 [MCP](https://modelcontextprotocol.io/) tools — connecting four AI environments into a unified workflow for planning, learning, development, and content creation.
+<p align="center">
+  <strong>English</strong> | <a href="README.zh-TW.md">繁體中文</a>
+</p>
 
-## The problem
+A personal knowledge engine that can take input, process it, and produce output.
 
-Every AI conversation starts from zero. You plan your day in Claude Web, then switch to Claude Code — it doesn't know the plan. You learn something in a study session — next week you've forgotten you learned it. You make an architectural decision in a coding session — three months later you make the opposite decision because the reasoning was lost.
+Not a blog. A blog is "you write → publish." This system is: your Obsidian notes, RSS articles you follow, your tasks and goals — everything flows into one database. AI helps organize it. You review and publish. Meanwhile it tracks your learning progress, validates hypotheses, and manages your daily plan.
 
-The root cause: AI environments have no shared memory. Each session is an island.
+<p align="center">
+  <img src="docs/images/data-flow.svg" alt="Data Flow" width="720">
+</p>
 
-## The approach
+---
 
-koopa0.dev uses MCP not just for tool access, but as a **shared memory layer**. Multiple AI environments connect to the same Go server, read and write the same PostgreSQL database, and coordinate through structured artifacts — session notes, tasks, build logs, learning records, and insights.
+## Why this exists
 
-The human stops being a messenger between AI tools and becomes a decision-maker.
+Every AI conversation starts from zero. You plan your day in Claude Web, switch to Claude Code to write code — it doesn't know your plan. You learned a binary search pattern last week — this week you've forgotten you learned it. You made an architecture decision three months ago — today you make the opposite decision because the reasoning was never recorded.
 
+Root cause: **AI environments have no shared memory.** Every session is an island.
+
+koopa0.dev uses MCP not just for tool access, but as a **shared memory layer**. Four AI environments connect to the same Go server, read and write the same PostgreSQL database, and coordinate through structured artifacts — session notes, tasks, build logs, insights.
+
+You stop being a messenger between AI tools and become the decision-maker.
+
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="Architecture" width="720">
+</p>
+
+---
+
+## Core Concepts
+
+Understand these six things and you understand 80% of the system.
+
+### Content — The finished product
+
+**Anything that ends up on the website for visitors to see is a content record.**
+
+| Type | What it is | Example |
+|------|-----------|---------|
+| `article` | In-depth technical article | "Complete guide to Go error handling" |
+| `essay` | Personal thoughts, non-technical | "Why I left big tech" |
+| `build-log` | Project development record | "koopa0.dev Week 3: RSS pipeline" |
+| `til` | Today I Learned | "TIL: psql's \watch auto-reruns queries" |
+| `note` | Technical snippet | "PostgreSQL JSONB common operations cheatsheet" |
+| `bookmark` | Recommended external article + your commentary | "Uber's Go style guide is worth reading because..." |
+| `digest` | Weekly/monthly roundup | "2026 Week 12: Shipped RSS pipeline..." |
+
+All types share one table, one lifecycle:
+
+<p align="center">
+  <img src="docs/images/content-lifecycle.svg" alt="Content Lifecycle" width="520">
+</p>
+
+In one sentence: **content = something you'd put your name on and let others see.**
+
+### Note — Two different things
+
+There are two kinds of "note" in this system. This is the easiest thing to confuse:
+
+| | Obsidian notes | Content type `note` |
+|---|---|---|
+| What | Raw notes from your Obsidian vault | Polished technical notes published to the site |
+| Stored in | `notes` table | `contents` table |
+| Visible to | Admin only | Visitors (when published) |
+| Volume | Hundreds to thousands | Curated selection, maybe dozens |
+
+**Relationship**: Obsidian note (raw material) → you decide it's worth sharing → polish into content (finished product) → publish.
+
+Obsidian notes also carry embeddings (vectors) — they power semantic search and the knowledge graph.
+
+### Topic & Tag — Knowledge organization
+
+**Topic** = high-level knowledge domain (Go, System Design, AI). 10-20 of them, manually managed.
+
+**Tag** = fine-grained label (pgvector, error-handling). Auto-extracted from Obsidian notes.
+
+Tags have an **alias system** — because the same concept has different names in different places:
+
+| Raw tag | → | Canonical |
+|---------|---|-----------|
+| `golang` | → | `go` |
+| `JS` | → | `javascript` |
+| `PostgreSQL` | → | `postgres` |
+
+Unknown raw tags create unmapped aliases, waiting for admin to map / confirm / reject.
+
+### Session Note — AI's work journal
+
+**Not written by you. Auto-generated by AI flows. Not public.**
+
+| Type | When | What |
+|------|------|------|
+| `plan` | Every morning | Today's plan |
+| `reflection` | Every Sunday | Weekly review |
+| `context` | End of session | What changed this session |
+| `metrics` | Periodic | Data snapshot |
+| `insight` | When AI spots a pattern | Hypothesis record ↓ |
+
+### Insight — Hypothesis tracking
+
+An insight is a special session note with a "hypothesis → validation" structure:
+
+```yaml
+content:    "90% of collected articles with relevance score < 0.3 get ignored"
+hypothesis: "Threshold should be raised from 0.2 to 0.3"
+evidence:   ["03-20: 15/17 ignored", "03-25: 12/14 ignored"]
+status:     unverified → verified / invalidated → archived
+conclusion: "Confirmed. Threshold adjusted."
 ```
-Koopa HQ          Koopa Learning        Claude Code          Cowork
-(Claude Web)      (Claude Web)          (CLI)                (Desktop)
-Planning          LeetCode coaching     Development          Automation
-Reflection        Book reading          Code review          Content pipeline
-Editorial review  Spaced retrieval      Build logging        System monitoring
-      \                |                    |                /
-       \               |                    |               /
-        '-----------.  |  .----------------'               /
-                     v v v                                /
-                  MCP Server (Go, 47 tools) <-----------'
-                         |
-                    PostgreSQL
-                  FTS + pgvector + relations
-                         |
-                .--------+--------.
-                |        |        |
-             Notion    GitHub   Obsidian
-```
 
-## What it does
+In one sentence: **insight = a hypothesis AI raised, waiting for you to gather evidence and confirm.**
 
-### AI environments that remember each other
+### Project — Your work
 
-Morning plan in Koopa HQ automatically flows to Learning's coaching direction and Claude Code's task queue. A build log written by Claude Code appears in tomorrow's morning context. An insight from evening reflection surfaces every morning until verified or disproven.
+Projects have their own table, separate from content. A project can link to multiple content records (build-logs, articles) and multiple tasks.
 
-### Daily loop that closes itself
+Projects sync from Notion or are created manually. They have case study fields (problem / solution / architecture / results) — so the project page reads like a portfolio, not just a list.
 
-Plan -> Execute -> Reflect -> Adjust. The adjustment step is forced (required metadata field), and yesterday's adjustments automatically appear in today's planning context. Historical completion rates calibrate how many tasks to plan — the system learns your realistic throughput.
+---
 
-### Learning that targets weaknesses
+## Three Data Flows
 
-Every study session is logged with canonical tags (35+ controlled vocabulary). Server-side aggregation tools compute coverage matrices and weakness trends. The learning coach reads today's plan and targets weak patterns, not random practice. Spaced retrieval automatically finds material at the optimal review interval (3-7 days).
+### Flow 1: Obsidian → Website
 
-### Knowledge that compounds
+**Obsidian vault** → git push → GitHub webhook → Backend sync → `notes` table (raw material) → AI tags + embeddings → you decide what to publish → `contents` table → review → **website**
 
-All content — articles, TILs, build logs, bookmarks, notes — lives in one searchable database. Three search modes (full-text with GIN, semantic with pgvector, and structured Obsidian filters) are merged via Reciprocal Rank Fusion. Six months of build logs and learning records become a queryable second brain.
+### Flow 2: RSS → Website
 
-### Tasks that cross boundaries
+**RSS feeds** → scheduled fetch → TF-IDF scoring → `collected_data` table → Admin reviews: **Curate** (→ bookmark content) / **Ignore** / **Feedback** (→ improve scoring)
 
-Cowork spots a bug during morning briefing, creates a task assigned to Claude Code, Claude Code picks it up on next `/checkin`, fixes it, marks complete. The completion flows back to planning context. No human relay needed.
+Each feed has filter config (deny paths, title patterns, tag filters) to block unwanted articles at fetch time.
 
-### Content from discovery to publish
+### Flow 3: Notion → System
 
-RSS feeds collect articles scored by relevance. Knowledge synthesis connects collected material with existing notes. Drafts go through tiered review gates (auto / light / standard / strict). Editorial review happens in a different AI environment than execution. Seven content types: article, essay, build-log, TIL, note, bookmark, digest.
+**Notion workspace** → webhook / cron → route by source role:
+- `role=task` → tasks table
+- `role=goal` → goals table
+- `role=project` → projects table
+- ↩ Bidirectional: complete a task in frontend → Backend writes back to Notion
 
-## Key design decisions
+Bidirectional sync: complete a task in the frontend → Backend writes back to Notion.
 
-**MCP over REST** — Consumers are LLMs, not human developers. A tool named `get_morning_context` is easier for an LLM to select correctly than `GET /api/v1/planning/context?phase=morning`. Tool descriptions and names matter more than URL design.
+---
 
-**One database for everything** — PostgreSQL handles relational data, full-text search (tsvector + GIN), and vector search (pgvector + HNSW). No Elasticsearch, no separate vector DB. Simpler to operate, simpler to reason about.
+## AI Pipeline
 
-**Structured over freeform** — Session notes require type-specific metadata (plans need `reasoning`, insights need `hypothesis` + `invalidation_condition`, metrics need `adjustments`). Slightly more friction at write time, dramatically better aggregation at read time.
+13 Genkit flows, all using Claude.
 
-**Discrete tools over multiplexers** — 5 separate feed tools (`list_feeds`, `add_feed`, `disable_feed`, `enable_feed`, `remove_feed`) instead of one `manage_feeds(action=...)`. Each tool carries its own name (intent) and MCP annotations (read-only vs destructive). LLMs select more accurately with one decision instead of two.
+**Content processing**: ContentPolish (improve writing), ContentTags (auto-tag), ContentExcerpt (generate summary), ContentProofread (grammar check), ContentReview (quality scoring), ContentStrategy (strategic advice), BookmarkGenerate (extract key points), BuildLog (structure dev records)
 
-**No AI-calls-AI** — If the consumer is already an LLM, routing through `HTTP -> Go -> Genkit -> another LLM` adds latency and cost with zero benefit. MCP tools return data; the consuming LLM does the reasoning. Exception: server-side orchestration involving DB queries or multi-step pipelines.
+**Periodic reports**: MorningBrief (daily plan), DailyDevLog (daily dev summary), WeeklyReview (weekly reflection), DigestGenerate (weekly/monthly roundup)
 
-**Telemetry-driven tool evolution** — Every tool call is logged (name, duration, error status). New tools must pass an evidence gate: "How many sessions degraded because this tool didn't exist?" Zero -> backlog. Three+ -> build immediately.
+**Project tracking**: ProjectTrack (analyze activity, update status)
 
-## Tech stack
+All flow executions are recorded in `flow_runs` — monitorable and retryable.
+
+---
+
+## MCP — How AI interacts with the platform
+
+MCP (Model Context Protocol) is the interface for AI environments to operate this system. 45 tools, four domains.
+
+This isn't a REST API reference — these are **building blocks**. Each tool is a block. You compose them into whatever workflow fits your needs.
+
+### Block 1: Daily Loop (11 tools)
+
+> Plan → Execute → Reflect → Adjust. AI helps you run this loop.
+
+| Block | What it does | Risk |
+|-------|-------------|------|
+| `get_morning_context` | Pull all planning data in one call (tasks, plan, goals, insights, RSS) | Read |
+| `get_reflection_context` | Pull all review data in one call (plan vs actual, completions) | Read |
+| `get_session_delta` | Everything that changed since last session | Read |
+| `save_session_note` | Write a session note (plan / reflection / context / metrics / insight) | Create |
+| `get_session_notes` | Read session notes by date/type | Read |
+| `create_task` | Create a task (syncs to Notion) | Create |
+| `complete_task` | Complete a task (recurring tasks auto-advance due date) | Irreversible |
+| `update_task` | Update any task field | Idempotent |
+| `search_tasks` | Search/filter tasks | Read |
+| `batch_my_day` | Batch-set today's tasks | Idempotent |
+| `get_active_insights` | View unverified hypotheses | Read |
+
+**`get_morning_context` supports a `sections` parameter** — different environments pull different subsets. Claude Code only needs tasks + plan + build_logs (~1/4 of the data).
+
+**How these might compose**:
+- Start morning → `get_morning_context` → review insights → decide plan → `save_session_note(type=plan)` → `batch_my_day`
+- Mid-development, spot an issue → `create_task` + `save_session_note(type=context)`
+- Evening review → `get_reflection_context` → validate hypotheses → `update_insight` → `save_session_note(type=metrics)`
+- These are examples, not prescriptions — your loop might look completely different
+
+### Block 2: Knowledge & Content (13 tools)
+
+> Search knowledge, manage content, O'Reilly learning, RSS bookmarking.
+
+| Block | What it does | Risk |
+|-------|-------------|------|
+| `search_knowledge` | Search everything: content + Obsidian notes (4-way parallel, including semantic) | Read |
+| `synthesize_topic` | Cross-source synthesis + gap analysis | Read |
+| `get_content_detail` | Fetch full content by slug | Read |
+| `create_content` | Create a draft (7 types) | Create |
+| `update_content` | Update draft/review content | Idempotent |
+| `publish_content` | Publish (irreversible) | Irreversible |
+| `list_content_queue` | View content queue (drafts / review / published) | Read |
+| `get_decision_log` | Fetch all decision-log type notes | Read |
+| `bookmark_rss_item` | Convert collected item to bookmark content (6-step atomic) | Create |
+| `search_oreilly_content` | Search O'Reilly books/videos/courses | Read |
+| `get_oreilly_book_detail` | View book table of contents | Read |
+| `read_oreilly_chapter` | Read a full chapter | Read |
+| `get_rss_highlights` | Recent RSS highlights | Read |
+
+**Search is 4-way parallel**: content full-text + Obsidian text search + Obsidian semantic search (embedding) + dedup. Results ranked by Reciprocal Rank Fusion.
+
+**O'Reilly trio** uses progressive disclosure: search → detail (see TOC) → read (full chapter).
+
+### Block 3: Development & Learning (8 tools)
+
+> Record dev sessions, track learning, analyze weaknesses.
+
+| Block | What it does | Risk |
+|-------|-------------|------|
+| `log_dev_session` | Record a coding session as build-log | Create |
+| `log_learning_session` | Record learning (LeetCode / book / course) | Create |
+| `get_project_context` | Full context for a single project | Read |
+| `list_projects` | List all active projects | Read |
+| `update_project_status` | Update project status | Idempotent |
+| `get_coverage_matrix` | Topic × Result matrix (what you practiced, how you did) | Read |
+| `get_tag_summary` | Tag frequency stats | Read |
+| `get_weakness_trend` | Time-series trend for a single weakness | Read |
+
+**`log_dev_session` is a cross-environment bridge** — `plan_summary` and `review_summary` let HQ understand development progress without reading git diffs.
+
+**Learning analytics trio**: `get_tag_summary` (find frequent weaknesses) → `get_weakness_trend` (see trend) → `get_coverage_matrix` (see full distribution).
+
+**`log_learning_session` uses controlled vocabulary** — 35+ standardized tags (two-pointers, sliding-window, dp...) + result tags (ac-independent, ac-with-hints...) + weakness tags (weakness:xxx). Standardization prevents query fragmentation.
+
+### Block 4: System & Infrastructure (13 tools)
+
+> Monitoring, RSS management, goal tracking, insight lifecycle, weekly reports.
+
+| Block | What it does | Risk |
+|-------|-------------|------|
+| `get_system_status` | System health (flow runs, feed health) | Read |
+| `get_collection_stats` | RSS collection quality (per-feed scores) | Read |
+| `get_weekly_summary` | Weekly report (per-project completions, trends) | Read |
+| `get_goal_progress` | Goal progress (includes drift analysis) | Read |
+| `update_goal_status` | Update goal status | Idempotent |
+| `update_insight` | Update insight (status / append evidence / conclusion) | Idempotent |
+| `get_learning_progress` | Learning metrics (note growth, top tags) | Read |
+| `get_recent_activity` | Recent activity (filterable by source) | Read |
+| `add_feed` | Add RSS subscription | Create |
+| `update_feed` | Update feed (including enable/disable) | Idempotent |
+| `remove_feed` | Delete feed (irreversible) | Irreversible |
+| `list_feeds` | List all feeds | Read |
+| `trigger_pipeline` | Manually trigger pipeline (rss_collector / notion_sync) | Irreversible |
+
+### MCP Design Principles
+
+| Principle | Meaning |
+|-----------|---------|
+| One tool, one action, one risk level | No multiplexer patterns (`manage_X(action=...)`). The tool name IS the intent |
+| No AI-calls-AI | If the consumer is already an LLM, don't route through another LLM on the server |
+| Schema enforcement | Session notes have required metadata — insights must have hypothesis + falsification condition |
+| Freeze aggregate views at 4 | morning / reflection / delta / weekly are "convenience packs." New features only add surgical tools |
+| Convergence before expansion | Before adding a tool: "How many sessions degraded because this didn't exist?" 0 → backlog, 3+ → build now |
+| Description quality > tool count | 45 well-described tools beat 25 ambiguous ones |
+
+Full MCP tool reference: [`docs/MCP-TOOLS-REFERENCE.md`](docs/MCP-TOOLS-REFERENCE.md)
+
+---
+
+## Frontend — What visitors see
+
+### Public pages
+
+| Page | Content |
+|------|---------|
+| Home | Hero + featured projects + latest 6 posts + tech stack + CTA |
+| Articles | 3-column grid, inline search (debounced 300ms), tag filter, pagination |
+| Article detail | Sticky TOC sidebar, syntax highlighting, copy code buttons, related articles |
+| Projects | Status filter, featured badges |
+| Project detail | Case study format: Problem → Solution → Architecture → Results |
+| TIL | Short learning records |
+| Notes | Technical snippets |
+| Tag browse | All content tagged with a specific tag (mixed types) |
+| Search | ⌘K global search / inline on articles page |
+
+### Admin dashboard
+
+| Page | Purpose |
+|------|---------|
+| Dashboard | System overview: stats grid + drift report + learning dashboard + quick sync |
+| Today | Personal daily: My Day tasks + insights + planning heatmap |
+| Contents | Content CRUD + status/type/visibility filters |
+| Editor | Markdown (edit/preview/split) + AI polish + image upload |
+| Review | Review queue: approve / reject / edit |
+| Feeds | RSS management: CRUD + filter config |
+| Collected | Collection review: feedback + ignore |
+| Tasks | Task management: My Day view, priority/energy filters |
+| Goals | Goal tracking: read-only + status toggle |
+| Projects | Project CRUD (including case study fields) |
+| Tags | Canonical tags + alias management + backfill + merge |
+| Notion Sources | Notion database connections + role assignment |
+| Flow Runs | AI flow monitoring + retry |
+| Activity | Change log (session view / timeline view) |
+| Insights | Hypothesis management: verify / invalidate / add evidence |
+| Pipeline | 7 manual trigger buttons |
+
+---
+
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Backend | Go 1.26+, net/http (std lib routing) |
 | Database | PostgreSQL, pgx/v5, sqlc |
-| Search | tsvector + GIN, pgvector + HNSW |
-| AI Pipeline | Genkit Go (12 flows) |
+| Search | tsvector + GIN (full-text), pgvector + HNSW (semantic) |
+| AI Pipeline | Genkit Go (13 flows), Claude |
+| Messaging | NATS (Core + JetStream) |
+| Cache | Ristretto (in-memory) |
 | Frontend | Angular 21, Tailwind CSS v4, SSR |
-| Integrations | Notion (tasks/goals), GitHub (activity), Obsidian (notes) |
+| Storage | Cloudflare R2 |
+| Integrations | Notion API, GitHub Webhook, Obsidian vault |
 | Protocol | MCP (Model Context Protocol) |
 
-## Repository structure
+## Repository Structure
 
 ```
-frontend/     Angular 21 frontend (SSR)
-backend/      Go API, MCP server, AI pipeline
-docs/         Platform design documents
+frontend/     Angular 21 frontend (SSR + Tailwind v4)
+backend/      Go API + MCP server + AI pipeline
+docs/         Design documents
 ```
 
-## Getting started
+## Getting Started
 
 See [`frontend/CLAUDE.md`](frontend/CLAUDE.md) and [`backend/CLAUDE.md`](backend/CLAUDE.md) for development setup and conventions.
 
