@@ -35,6 +35,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/learning"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/notion"
@@ -351,6 +352,7 @@ func run(logger *slog.Logger) error {
 			}),
 		),
 		Stats:    stats.NewHandler(stats.NewStore(pool), logger),
+		Learning: learning.NewHandler(contentStore, projectStore, logger),
 		Note:     note.NewHandler(noteStore, logger),
 		Activity: activity.NewHandler(activityStore, logger),
 		Session:  session.NewHandler(sessionStore, logger),

@@ -15,6 +15,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/learning"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
@@ -54,6 +55,7 @@ type Deps struct {
 	Goal         *goal.Handler
 	Task         *task.Handler
 	Stats        *stats.Handler
+	Learning     *learning.Handler
 	Note         *note.Handler
 	Activity     *activity.Handler
 	Session      *session.Handler
@@ -234,4 +236,9 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handle
 	mux.Handle("GET /api/admin/stats", authMid(http.HandlerFunc(d.Stats.Overview)))
 	mux.Handle("GET /api/admin/stats/drift", authMid(http.HandlerFunc(d.Stats.Drift)))
 	mux.Handle("GET /api/admin/stats/learning", authMid(http.HandlerFunc(d.Stats.Learning)))
+
+	// admin stats — learning analytics
+	mux.Handle("GET /api/admin/stats/coverage-matrix", authMid(http.HandlerFunc(d.Learning.CoverageMatrixHTTP)))
+	mux.Handle("GET /api/admin/stats/tag-summary", authMid(http.HandlerFunc(d.Learning.TagSummaryHTTP)))
+	mux.Handle("GET /api/admin/stats/weakness-trend", authMid(http.HandlerFunc(d.Learning.WeaknessTrendHTTP)))
 }
