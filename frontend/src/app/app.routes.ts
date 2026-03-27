@@ -61,6 +61,18 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'build-logs',
+    loadComponent: () =>
+      import('./pages/build-logs/build-logs').then((m) => m.BuildLogsComponent),
+  },
+  {
+    path: 'build-logs/:slug',
+    loadComponent: () =>
+      import('./pages/build-log-detail/build-log-detail').then(
+        (m) => m.BuildLogDetailComponent,
+      ),
+  },
+  {
     path: 'resume',
     redirectTo: '/about',
     pathMatch: 'full',
@@ -194,20 +206,6 @@ export const routes: Routes = [
         path: 'pipeline',
         loadComponent: () =>
           import('./admin/pipeline/pipeline').then((m) => m.PipelineComponent),
-      },
-      {
-        path: 'build-logs',
-        loadComponent: () =>
-          import('./pages/build-logs/build-logs').then(
-            (m) => m.BuildLogsComponent,
-          ),
-      },
-      {
-        path: 'build-logs/:slug',
-        loadComponent: () =>
-          import('./pages/build-log-detail/build-log-detail').then(
-            (m) => m.BuildLogDetailComponent,
-          ),
       },
       {
         path: 'editor',

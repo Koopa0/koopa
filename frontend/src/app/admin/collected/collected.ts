@@ -21,6 +21,7 @@ import {
   Filter,
   RefreshCw,
   EyeOff,
+  BookmarkPlus,
 } from 'lucide-angular';
 import { CollectedService } from '../../core/services/collected.service';
 import { NotificationService } from '../../core/services/notification.service';
@@ -79,6 +80,7 @@ export class CollectedComponent implements OnInit {
   protected readonly FilterIcon = Filter;
   protected readonly RefreshCwIcon = RefreshCw;
   protected readonly EyeOffIcon = EyeOff;
+  protected readonly BookmarkPlusIcon = BookmarkPlus;
 
   ngOnInit(): void {
     this.loadItems();
@@ -98,7 +100,11 @@ export class CollectedComponent implements OnInit {
     }
 
     this.collectedService
-      .getCollected({ page: this.currentPage(), perPage: ITEMS_PER_PAGE, status: status ?? undefined })
+      .getCollected({
+        page: this.currentPage(),
+        perPage: ITEMS_PER_PAGE,
+        status: status ?? undefined,
+      })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {
@@ -124,7 +130,10 @@ export class CollectedComponent implements OnInit {
     this.loadItems();
   }
 
-  protected sendFeedback(item: ApiCollectedItem, feedback: CollectedFeedback): void {
+  protected sendFeedback(
+    item: ApiCollectedItem,
+    feedback: CollectedFeedback,
+  ): void {
     this.collectedService
       .sendFeedback(item.id, feedback)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -149,12 +158,33 @@ export class CollectedComponent implements OnInit {
         next: () => {
           this.items.update((list) =>
             list.map((i) =>
-              i.id === item.id ? { ...i, status: 'ignored' as CollectedStatus } : i,
+              i.id === item.id
+                ? { ...i, status: 'ignored' as CollectedStatus }
+                : i,
             ),
           );
           this.notificationService.success('已忽略');
         },
         error: () => this.notificationService.error('操作失敗'),
+      });
+  }
+
+  protected curateItem(item: ApiCollectedItem): void {
+    this.collectedService
+      .curateItem(item.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.items.update((list) =>
+            list.map((i) =>
+              i.id === item.id
+                ? { ...i, status: 'curated' as CollectedStatus }
+                : i,
+            ),
+          );
+          this.notificationService.success('已加入書籤');
+        },
+        error: () => this.notificationService.error('Curate 失敗'),
       });
   }
 
@@ -178,5 +208,4 @@ export class CollectedComponent implements OnInit {
   protected getDisplaySummary(item: ApiCollectedItem): string | null {
     return item.ai_summary_zh ?? item.ai_summary;
   }
-
 }

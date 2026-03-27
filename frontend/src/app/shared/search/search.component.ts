@@ -22,7 +22,7 @@ import type { ContentType } from '../../core/models';
 const TYPE_ROUTE_MAP: Record<ContentType, string> = {
   article: '/articles',
   essay: '/essays',
-  'build-log': '/admin/build-logs',
+  'build-log': '/build-logs',
   til: '/til',
   note: '/notes',
   bookmark: '/bookmarks',

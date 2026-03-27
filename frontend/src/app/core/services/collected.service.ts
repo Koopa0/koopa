@@ -18,7 +18,9 @@ export interface CollectedFilters {
 export class CollectedService {
   private readonly api = inject(ApiService);
 
-  getCollected(filters: CollectedFilters = {}): Observable<ApiListResponse<ApiCollectedItem>> {
+  getCollected(
+    filters: CollectedFilters = {},
+  ): Observable<ApiListResponse<ApiCollectedItem>> {
     const params: Record<string, string | number> = {};
     if (filters.page) {
       params['page'] = filters.page;
@@ -30,14 +32,27 @@ export class CollectedService {
       params['status'] = filters.status;
     }
 
-    return this.api.getListData<ApiCollectedItem>('/api/admin/collected', params);
+    return this.api.getListData<ApiCollectedItem>(
+      '/api/admin/collected',
+      params,
+    );
   }
 
   sendFeedback(id: string, feedback: CollectedFeedback): Observable<void> {
-    return this.api.postVoid(`/api/admin/collected/${id}/feedback`, { feedback });
+    return this.api.postVoid(`/api/admin/collected/${id}/feedback`, {
+      feedback,
+    });
   }
 
   ignoreItem(id: string): Observable<void> {
     return this.api.postVoid(`/api/admin/collected/${id}/ignore`, {});
+  }
+
+  curateItem(id: string, contentId?: string): Observable<void> {
+    const body: Record<string, string> = {};
+    if (contentId) {
+      body['content_id'] = contentId;
+    }
+    return this.api.postVoid(`/api/admin/collected/${id}/curate`, body);
   }
 }

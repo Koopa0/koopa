@@ -1,13 +1,17 @@
 <!-- Header -->
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+    >
       <div>
         <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
           <lucide-icon [img]="DatabaseIcon" [size]="24" />
           收集文章
         </h1>
-        <p class="mt-1 text-sm text-zinc-400">AI 評分的 RSS 收集內容，提供 Feedback 校準模型</p>
+        <p class="mt-1 text-sm text-zinc-400">
+          AI 評分的 RSS 收集內容，提供 Feedback 校準模型
+        </p>
       </div>
       <button
         type="button"
@@ -80,168 +84,190 @@
 
     <!-- Error -->
     @if (error()) {
-      <div class="mb-4 rounded-sm border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-        {{ error() }}
-      </div>
+    <div
+      class="mb-4 rounded-sm border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400"
+    >
+      {{ error() }}
+    </div>
     }
 
     <!-- Loading -->
     @if (isLoading()) {
-      <div class="flex items-center justify-center py-16">
-        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
-      </div>
+    <div class="flex items-center justify-center py-16">
+      <lucide-icon
+        [img]="Loader2Icon"
+        [size]="24"
+        class="animate-spin text-zinc-500"
+      />
+    </div>
     } @else if (items().length === 0) {
-      <div class="flex flex-col items-center gap-3 py-16 text-center">
-        <lucide-icon [img]="DatabaseIcon" [size]="40" class="text-zinc-700" />
-        <h3 class="text-sm font-medium text-zinc-300">尚無收集資料</h3>
-        <p class="text-xs text-zinc-500">觸發 RSS Collect 開始收集文章</p>
-      </div>
+    <div class="flex flex-col items-center gap-3 py-16 text-center">
+      <lucide-icon [img]="DatabaseIcon" [size]="40" class="text-zinc-700" />
+      <h3 class="text-sm font-medium text-zinc-300">尚無收集資料</h3>
+      <p class="text-xs text-zinc-500">觸發 RSS Collect 開始收集文章</p>
+    </div>
     } @else {
-      <!-- Card List -->
-      <div class="space-y-3">
-        @for (item of items(); track item.id) {
-          <div
-            class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
-            [class.opacity-50]="item.status === 'ignored'"
-          >
-            <div class="flex items-start gap-4">
-              <!-- Content -->
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <a
-                    [href]="item.source_url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="line-clamp-1 text-sm font-medium text-zinc-200 no-underline hover:text-white"
-                  >
-                    {{ getDisplayTitle(item) }}
-                    <lucide-icon [img]="ExternalLinkIcon" [size]="12" class="ml-1 inline-block text-zinc-500" />
-                  </a>
-                </div>
+    <!-- Card List -->
+    <div class="space-y-3">
+      @for (item of items(); track item.id) {
+      <div
+        class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+        [class.opacity-50]="item.status === 'ignored'"
+      >
+        <div class="flex items-start gap-4">
+          <!-- Content -->
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <a
+                [href]="item.source_url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="line-clamp-1 text-sm font-medium text-zinc-200 no-underline hover:text-white"
+              >
+                {{ getDisplayTitle(item) }}
+                <lucide-icon
+                  [img]="ExternalLinkIcon"
+                  [size]="12"
+                  class="ml-1 inline-block text-zinc-500"
+                />
+              </a>
+            </div>
 
-                @if (getDisplaySummary(item)) {
-                  <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-400">
-                    {{ getDisplaySummary(item) }}
-                  </p>
-                }
+            @if (getDisplaySummary(item)) {
+            <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-400">
+              {{ getDisplaySummary(item) }}
+            </p>
+            }
 
-                <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                  <span>{{ item.source_name }}</span>
-                  <span>{{ item.collected_at | date: 'MM/dd HH:mm' }}</span>
-                  @if (item.topics.length > 0) {
-                    @for (topic of item.topics; track topic) {
-                      <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{{ topic }}</span>
-                    }
-                  }
-                </div>
-              </div>
-
-              <!-- Actions -->
-              <div class="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  class="rounded-sm p-1.5 transition-colors"
-                  [class]="item.user_feedback === 'up'
-                    ? 'bg-emerald-900/30 text-emerald-400'
-                    : 'text-zinc-500 hover:bg-zinc-800 hover:text-emerald-400'"
-                  aria-label="有用"
-                  (click)="sendFeedback(item, 'up')"
-                >
-                  <lucide-icon [img]="ThumbsUpIcon" [size]="16" />
-                </button>
-                <button
-                  type="button"
-                  class="rounded-sm p-1.5 transition-colors"
-                  [class]="item.user_feedback === 'down'
-                    ? 'bg-red-900/30 text-red-400'
-                    : 'text-zinc-500 hover:bg-zinc-800 hover:text-red-400'"
-                  aria-label="沒用"
-                  (click)="sendFeedback(item, 'down')"
-                >
-                  <lucide-icon [img]="ThumbsDownIcon" [size]="16" />
-                </button>
-                @if (item.status !== 'ignored') {
-                  <button
-                    type="button"
-                    class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                    aria-label="忽略"
-                    (click)="ignoreItem(item)"
-                  >
-                    <lucide-icon [img]="EyeOffIcon" [size]="16" />
-                  </button>
-                }
-              </div>
+            <div
+              class="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500"
+            >
+              <span>{{ item.source_name }}</span>
+              <span>{{ item.collected_at | date: 'MM/dd HH:mm' }}</span>
+              @if (item.topics.length > 0) { @for (topic of item.topics; track
+              topic) {
+              <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400"
+                >{{ topic }}</span
+              >
+              } }
             </div>
           </div>
-        }
-      </div>
 
-      <!-- Pagination -->
-      @if (totalPages() > 1) {
-        <nav aria-label="Pagination" class="mt-6 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
-            [disabled]="currentPage() === 1"
-            (click)="onPageChange(currentPage() - 1)"
-            aria-label="Previous page"
-          >
-            <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
-          </button>
-          @if (visiblePages()[0] > 1) {
+          <!-- Actions -->
+          <div class="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
-              (click)="onPageChange(1)"
-              [attr.aria-current]="currentPage() === 1 ? 'page' : null"
-              [attr.aria-label]="'Page 1'"
+              class="rounded-sm p-1.5 transition-colors"
+              [class]="item.user_feedback === 'up'
+                    ? 'bg-emerald-900/30 text-emerald-400'
+                    : 'text-zinc-500 hover:bg-zinc-800 hover:text-emerald-400'"
+              aria-label="有用"
+              (click)="sendFeedback(item, 'up')"
             >
-              1
+              <lucide-icon [img]="ThumbsUpIcon" [size]="16" />
             </button>
-            @if (visiblePages()[0] > 2) {
-              <span class="px-1 text-xs text-zinc-600">…</span>
-            }
-          }
-          @for (page of visiblePages(); track page) {
             <button
               type="button"
-              class="rounded-sm border px-3 py-1.5 text-xs transition-colors"
-              [class]="page === currentPage()
+              class="rounded-sm p-1.5 transition-colors"
+              [class]="item.user_feedback === 'down'
+                    ? 'bg-red-900/30 text-red-400'
+                    : 'text-zinc-500 hover:bg-zinc-800 hover:text-red-400'"
+              aria-label="沒用"
+              (click)="sendFeedback(item, 'down')"
+            >
+              <lucide-icon [img]="ThumbsDownIcon" [size]="16" />
+            </button>
+            @if (item.status !== 'ignored' && item.status !== 'curated') {
+            <button
+              type="button"
+              class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-emerald-400"
+              aria-label="加入書籤"
+              (click)="curateItem(item)"
+            >
+              <lucide-icon [img]="BookmarkPlusIcon" [size]="16" />
+            </button>
+            <button
+              type="button"
+              class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              aria-label="忽略"
+              (click)="ignoreItem(item)"
+            >
+              <lucide-icon [img]="EyeOffIcon" [size]="16" />
+            </button>
+            }
+          </div>
+        </div>
+      </div>
+      }
+    </div>
+
+    <!-- Pagination -->
+    @if (totalPages() > 1) {
+    <nav
+      aria-label="Pagination"
+      class="mt-6 flex items-center justify-center gap-2"
+    >
+      <button
+        type="button"
+        class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+        [disabled]="currentPage() === 1"
+        (click)="onPageChange(currentPage() - 1)"
+        aria-label="Previous page"
+      >
+        <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
+      </button>
+      @if (visiblePages()[0] > 1) {
+      <button
+        type="button"
+        class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
+        (click)="onPageChange(1)"
+        [attr.aria-current]="currentPage() === 1 ? 'page' : null"
+        [attr.aria-label]="'Page 1'"
+      >
+        1
+      </button>
+      @if (visiblePages()[0] > 2) {
+      <span class="px-1 text-xs text-zinc-600">…</span>
+      } } @for (page of visiblePages(); track page) {
+      <button
+        type="button"
+        class="rounded-sm border px-3 py-1.5 text-xs transition-colors"
+        [class]="page === currentPage()
                 ? 'border-white bg-white text-zinc-900'
                 : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
-              (click)="onPageChange(page)"
-              [attr.aria-current]="currentPage() === page ? 'page' : null"
-              [attr.aria-label]="'Page ' + page"
-            >
-              {{ page }}
-            </button>
-          }
-          @if (visiblePages()[visiblePages().length - 1] < totalPages()) {
-            @if (visiblePages()[visiblePages().length - 1] < totalPages() - 1) {
-              <span class="px-1 text-xs text-zinc-600">…</span>
-            }
-            <button
-              type="button"
-              class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
-              (click)="onPageChange(totalPages())"
-              [attr.aria-current]="currentPage() === totalPages() ? 'page' : null"
-              [attr.aria-label]="'Page ' + totalPages()"
-            >
-              {{ totalPages() }}
-            </button>
-          }
-          <button
-            type="button"
-            class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
-            [disabled]="currentPage() === totalPages()"
-            (click)="onPageChange(currentPage() + 1)"
-            aria-label="Next page"
-          >
-            <lucide-icon [img]="ChevronRightIcon" [size]="16" />
-          </button>
-          <span class="ml-2 text-xs text-zinc-500">{{ currentPage() }} / {{ totalPages() }}</span>
-        </nav>
+        (click)="onPageChange(page)"
+        [attr.aria-current]="currentPage() === page ? 'page' : null"
+        [attr.aria-label]="'Page ' + page"
+      >
+        {{ page }}
+      </button>
+      } @if (visiblePages()[visiblePages().length - 1] < totalPages()) { @if
+      (visiblePages()[visiblePages().length - 1] < totalPages() - 1) {
+      <span class="px-1 text-xs text-zinc-600">…</span>
       }
-    }
+      <button
+        type="button"
+        class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
+        (click)="onPageChange(totalPages())"
+        [attr.aria-current]="currentPage() === totalPages() ? 'page' : null"
+        [attr.aria-label]="'Page ' + totalPages()"
+      >
+        {{ totalPages() }}
+      </button>
+      }
+      <button
+        type="button"
+        class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+        [disabled]="currentPage() === totalPages()"
+        (click)="onPageChange(currentPage() + 1)"
+        aria-label="Next page"
+      >
+        <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+      </button>
+      <span class="ml-2 text-xs text-zinc-500"
+        >{{ currentPage() }} / {{ totalPages() }}</span
+      >
+    </nav>
+    } }
   </div>
 </section>

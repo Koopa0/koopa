@@ -55,7 +55,7 @@ export class PipelineService {
 
   private trigger(action: PipelineAction): Observable<unknown> {
     this._triggering.set(action);
-    return this.api.post(`/api/pipeline/${action}`, {}).pipe(
+    return this.api.post(`/api/admin/pipeline/${action}`, {}).pipe(
       tap(() => this._triggering.set(null)),
       catchError((err) => {
         this._triggering.set(null);
