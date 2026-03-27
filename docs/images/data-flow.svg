@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 340" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="800" height="340" fill="#fafbfc" rx="12"/>
+
+  <!-- Column headers -->
+  <text x="108" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1.5">INPUT</text>
+  <text x="400" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1.5">PROCESSING</text>
+  <text x="692" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1.5">OUTPUT</text>
+
+  <!-- Row 1: Obsidian -->
+  <g filter="url(#shadow)">
+    <rect x="24" y="52" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="108" y="72" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">Obsidian vault</text>
+    <text x="108" y="88" text-anchor="middle" font-size="10" fill="#94a3b8">git push → webhook</text>
+  </g>
+  <line x1="192" y1="76" x2="304" y2="76" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="308" y="52" width="184" height="48" rx="8" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="400" y="72" text-anchor="middle" font-size="12" font-weight="500" fill="#1e40af">AI tag + embed + review</text>
+    <text x="400" y="88" text-anchor="middle" font-size="10" fill="#64748b">auto / light / standard / strict</text>
+  </g>
+  <line x1="492" y1="76" x2="604" y2="76" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="608" y="52" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="692" y="72" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">Articles / Notes</text>
+    <text x="692" y="88" text-anchor="middle" font-size="10" fill="#94a3b8">TILs / Essays / Build logs</text>
+  </g>
+
+  <!-- Row 2: RSS -->
+  <g filter="url(#shadow)">
+    <rect x="24" y="124" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="108" y="144" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">RSS feeds</text>
+    <text x="108" y="160" text-anchor="middle" font-size="10" fill="#94a3b8">4h / daily / weekly</text>
+  </g>
+  <line x1="192" y1="148" x2="304" y2="148" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="308" y="124" width="184" height="48" rx="8" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="400" y="144" text-anchor="middle" font-size="12" font-weight="500" fill="#1e40af">TF-IDF score + filter</text>
+    <text x="400" y="160" text-anchor="middle" font-size="10" fill="#64748b">curate / ignore / feedback</text>
+  </g>
+  <line x1="492" y1="148" x2="604" y2="148" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="608" y="124" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="692" y="144" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">Bookmarks</text>
+    <text x="692" y="160" text-anchor="middle" font-size="10" fill="#94a3b8">Digests / Summaries</text>
+  </g>
+
+  <!-- Row 3: Notion -->
+  <g filter="url(#shadow)">
+    <rect x="24" y="196" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="108" y="216" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">Notion</text>
+    <text x="108" y="232" text-anchor="middle" font-size="10" fill="#94a3b8">webhook / cron</text>
+  </g>
+  <line x1="192" y1="220" x2="304" y2="220" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="308" y="196" width="184" height="48" rx="8" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="400" y="216" text-anchor="middle" font-size="12" font-weight="500" fill="#1e40af">Role-based routing</text>
+    <text x="400" y="232" text-anchor="middle" font-size="10" fill="#64748b">bidirectional sync</text>
+  </g>
+  <line x1="492" y1="220" x2="604" y2="220" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="608" y="196" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="692" y="216" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">Tasks / Goals</text>
+    <text x="692" y="232" text-anchor="middle" font-size="10" fill="#94a3b8">Projects</text>
+  </g>
+
+  <!-- Row 4: Manual -->
+  <g filter="url(#shadow)">
+    <rect x="24" y="268" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="108" y="288" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">Manual writing</text>
+    <text x="108" y="304" text-anchor="middle" font-size="10" fill="#94a3b8">Editor / MCP tools</text>
+  </g>
+  <line x1="192" y1="292" x2="304" y2="292" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="308" y="268" width="184" height="48" rx="8" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="400" y="288" text-anchor="middle" font-size="12" font-weight="500" fill="#1e40af">AI polish + tag + excerpt</text>
+    <text x="400" y="304" text-anchor="middle" font-size="10" fill="#64748b">semantic search + graph</text>
+  </g>
+  <line x1="492" y1="292" x2="604" y2="292" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="608" y="268" width="168" height="48" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="692" y="288" text-anchor="middle" font-size="12" font-weight="500" fill="#1e293b">Published content</text>
+    <text x="692" y="304" text-anchor="middle" font-size="10" fill="#94a3b8">7 types → website</text>
+  </g>
+</svg>

@@ -1,7 +1,7 @@
 # koopa0.dev
 
 <p align="center">
-  <img src="frontend/public/logo.png" alt="koopa0.dev" width="120">
+  <img src="frontend/public/logo.png" alt="koopa0.dev" width="80">
 </p>
 
 <p align="center">

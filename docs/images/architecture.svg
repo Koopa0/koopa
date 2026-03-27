@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="520" fill="#fafbfc" rx="12"/>
+
+  <!-- AI Environments -->
+  <g filter="url(#shadow)">
+    <rect x="24" y="24" width="172" height="88" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="110" y="50" text-anchor="middle" font-size="13" font-weight="600" fill="#1e293b">Koopa HQ</text>
+    <text x="110" y="67" text-anchor="middle" font-size="10" fill="#94a3b8">Claude Web</text>
+    <text x="110" y="84" text-anchor="middle" font-size="10" fill="#64748b">Planning / Reflection</text>
+    <text x="110" y="97" text-anchor="middle" font-size="10" fill="#64748b">Editorial review</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="212" y="24" width="172" height="88" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="298" y="50" text-anchor="middle" font-size="13" font-weight="600" fill="#1e293b">Koopa Learning</text>
+    <text x="298" y="67" text-anchor="middle" font-size="10" fill="#94a3b8">Claude Web</text>
+    <text x="298" y="84" text-anchor="middle" font-size="10" fill="#64748b">LeetCode coaching</text>
+    <text x="298" y="97" text-anchor="middle" font-size="10" fill="#64748b">Books / Spaced retrieval</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="414" y="24" width="172" height="88" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="500" y="50" text-anchor="middle" font-size="13" font-weight="600" fill="#1e293b">Claude Code</text>
+    <text x="500" y="67" text-anchor="middle" font-size="10" fill="#94a3b8">CLI</text>
+    <text x="500" y="84" text-anchor="middle" font-size="10" fill="#64748b">Development</text>
+    <text x="500" y="97" text-anchor="middle" font-size="10" fill="#64748b">Code review / Build logging</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="604" y="24" width="172" height="88" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="690" y="50" text-anchor="middle" font-size="13" font-weight="600" fill="#1e293b">Cowork</text>
+    <text x="690" y="67" text-anchor="middle" font-size="10" fill="#94a3b8">Desktop</text>
+    <text x="690" y="84" text-anchor="middle" font-size="10" fill="#64748b">Automation</text>
+    <text x="690" y="97" text-anchor="middle" font-size="10" fill="#64748b">Content pipeline</text>
+  </g>
+
+  <!-- Connection lines from environments to MCP -->
+  <line x1="110" y1="112" x2="110" y2="170" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="298" y1="112" x2="298" y2="170" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="500" y1="112" x2="500" y2="170" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="690" y1="112" x2="690" y2="170" stroke="#cbd5e1" stroke-width="1.5"/>
+
+  <!-- Arrows -->
+  <polygon points="106,168 110,178 114,168" fill="#cbd5e1"/>
+  <polygon points="294,168 298,178 302,168" fill="#cbd5e1"/>
+  <polygon points="496,168 500,178 504,168" fill="#cbd5e1"/>
+  <polygon points="686,168 690,178 694,168" fill="#cbd5e1"/>
+
+  <!-- MCP Server -->
+  <g filter="url(#shadow)">
+    <rect x="200" y="180" width="400" height="72" rx="12" fill="#1e293b"/>
+    <text x="400" y="210" text-anchor="middle" font-size="15" font-weight="600" fill="#f8fafc">MCP Server</text>
+    <text x="400" y="230" text-anchor="middle" font-size="11" fill="#94a3b8">Go &middot; 45 tools &middot; 4 domains</text>
+    <text x="400" y="245" text-anchor="middle" font-size="10" fill="#64748b">Daily Loop &middot; Knowledge &middot; Dev &amp; Learning &middot; System</text>
+  </g>
+
+  <!-- MCP to PostgreSQL -->
+  <line x1="400" y1="252" x2="400" y2="306" stroke="#cbd5e1" stroke-width="1.5"/>
+  <polygon points="396,304 400,314 404,304" fill="#cbd5e1"/>
+
+  <!-- PostgreSQL -->
+  <g filter="url(#shadow)">
+    <rect x="230" y="316" width="340" height="68" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="400" y="344" text-anchor="middle" font-size="14" font-weight="600" fill="#1e40af">PostgreSQL</text>
+    <text x="400" y="364" text-anchor="middle" font-size="11" fill="#64748b">Full-text search (GIN) &middot; Semantic search (pgvector) &middot; Relational</text>
+    <text x="400" y="378" text-anchor="middle" font-size="10" fill="#94a3b8">21 tables &middot; 183 queries &middot; 768-dim embeddings</text>
+  </g>
+
+  <!-- PostgreSQL to integrations -->
+  <line x1="300" y1="384" x2="200" y2="438" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <line x1="400" y1="384" x2="400" y2="438" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <line x1="500" y1="384" x2="600" y2="438" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,4"/>
+
+  <!-- Integrations -->
+  <g filter="url(#shadow)">
+    <rect x="130" y="440" width="140" height="52" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="200" y="464" text-anchor="middle" font-size="13" font-weight="500" fill="#1e293b">Notion</text>
+    <text x="200" y="480" text-anchor="middle" font-size="10" fill="#94a3b8">Tasks / Goals / Projects</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="330" y="440" width="140" height="52" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="400" y="464" text-anchor="middle" font-size="13" font-weight="500" fill="#1e293b">GitHub</text>
+    <text x="400" y="480" text-anchor="middle" font-size="10" fill="#94a3b8">Webhooks / Activity</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="530" y="440" width="140" height="52" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="600" y="464" text-anchor="middle" font-size="13" font-weight="500" fill="#1e293b">Obsidian</text>
+    <text x="600" y="480" text-anchor="middle" font-size="10" fill="#94a3b8">Knowledge vault</text>
+  </g>
+</svg>
