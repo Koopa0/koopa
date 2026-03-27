@@ -11,7 +11,7 @@
 不是部落格。部落格是「你寫文章 → 發布」。這個系統是：你的筆記、你訂閱的文章、你的 task 和 goal — 全部流進同一個資料庫，AI 幫你整理，你審核後發布，同時幫你追蹤學習進度、驗證假說、管理每日計畫。
 
 <p align="center">
-  <img src="docs/images/data-flow.svg" alt="Data Flow" width="720">
+  <img src="docs/images/data-flow.png" alt="Data Flow" width="720">
 </p>
 
 ---
@@ -27,7 +27,7 @@ koopa0.dev 用 MCP 不只是 tool access，而是 **共享記憶層**。四個 A
 你不再當 AI 工具之間的信差，而是決策者。
 
 <p align="center">
-  <img src="docs/images/architecture.svg" alt="Architecture" width="720">
+  <img src="docs/images/architecture.png" alt="Architecture" width="720">
 </p>
 
 ---
@@ -53,7 +53,7 @@ koopa0.dev 用 MCP 不只是 tool access，而是 **共享記憶層**。四個 A
 所有 type 共用同一張表，走同一個生命週期：
 
 <p align="center">
-  <img src="docs/images/content-lifecycle.svg" alt="Content Lifecycle" width="520">
+  <img src="docs/images/content-lifecycle.png" alt="Content Lifecycle" width="520">
 </p>
 
 一句話：**content = 你願意掛上名字、讓別人看到的東西。**

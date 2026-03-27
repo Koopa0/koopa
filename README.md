@@ -11,7 +11,7 @@ A personal knowledge engine that can take input, process it, and produce output.
 Not a blog. A blog is "you write → publish." This system is: your Obsidian notes, RSS articles you follow, your tasks and goals — everything flows into one database. AI helps organize it. You review and publish. Meanwhile it tracks your learning progress, validates hypotheses, and manages your daily plan.
 
 <p align="center">
-  <img src="docs/images/data-flow.svg" alt="Data Flow" width="720">
+  <img src="docs/images/data-flow.png" alt="Data Flow" width="720">
 </p>
 
 ---
@@ -27,7 +27,7 @@ koopa0.dev uses MCP not just for tool access, but as a **shared memory layer**. 
 You stop being a messenger between AI tools and become the decision-maker.
 
 <p align="center">
-  <img src="docs/images/architecture.svg" alt="Architecture" width="720">
+  <img src="docs/images/architecture.png" alt="Architecture" width="720">
 </p>
 
 ---
@@ -53,7 +53,7 @@ Understand these six things and you understand 80% of the system.
 All types share one table, one lifecycle:
 
 <p align="center">
-  <img src="docs/images/content-lifecycle.svg" alt="Content Lifecycle" width="520">
+  <img src="docs/images/content-lifecycle.png" alt="Content Lifecycle" width="520">
 </p>
 
 In one sentence: **content = something you'd put your name on and let others see.**
