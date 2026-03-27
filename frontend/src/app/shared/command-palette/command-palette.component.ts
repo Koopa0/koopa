@@ -26,31 +26,12 @@ import {
   type CommandAction,
 } from './command-palette.service';
 import type { ApiContent, ContentType } from '../../core/models';
+import { contentTypeLabel, contentTypeRoute } from '../../core/models';
 
 interface GroupedAction {
   name: string;
   items: (CommandAction & { flatIndex: number })[];
 }
-
-const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
-  article: '文章',
-  essay: '隨筆',
-  'build-log': '日誌',
-  til: 'TIL',
-  note: '筆記',
-  bookmark: '書籤',
-  digest: '摘要',
-};
-
-const TYPE_ROUTE_MAP: Record<ContentType, string> = {
-  article: '/articles',
-  essay: '/essays',
-  'build-log': '/build-logs',
-  til: '/til',
-  note: '/notes',
-  bookmark: '/bookmarks',
-  digest: '/digests',
-};
 
 @Component({
   selector: 'app-command-palette',
@@ -253,13 +234,19 @@ export class CommandPaletteComponent {
   }
 
   protected selectSearchResult(result: ApiContent): void {
-    const prefix = TYPE_ROUTE_MAP[result.type] ?? '/articles';
+    const prefix = contentTypeRoute(result.type);
     this.close();
     this.router.navigate([`${prefix}/${result.slug}`]);
   }
 
+  protected navigateToSearch(): void {
+    const q = this.query().trim();
+    this.close();
+    this.router.navigate(['/search'], { queryParams: q ? { q } : {} });
+  }
+
   protected getTypeLabel(type: ContentType): string {
-    return CONTENT_TYPE_LABELS[type] ?? type;
+    return contentTypeLabel(type);
   }
 
   private selectActive(): void {

@@ -1,0 +1,86 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+      主題
+    </h1>
+    <p class="mt-2 text-zinc-400">
+      依主題瀏覽所有技術文章、筆記與學習紀錄
+    </p>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+    <!-- Loading skeleton -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      @for (_ of [1, 2, 3, 4, 5, 6]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-6">
+        <div class="mb-3 h-10 w-10 rounded-sm bg-zinc-800"></div>
+        <div class="mb-2 h-5 w-1/2 rounded-sm bg-zinc-800"></div>
+        <div class="mb-4 h-4 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-1/4 rounded-sm bg-zinc-800"></div>
+      </div>
+      }
+    </div>
+    } @else if (error()) {
+    <p class="py-20 text-center text-zinc-500">{{ error() }}</p>
+    } @else if (topics().length === 0) {
+    <!-- Empty state -->
+    <div class="flex flex-col items-center gap-4 py-20 text-center">
+      <lucide-icon [img]="LayersIcon" [size]="48" class="text-zinc-700" />
+      <h2 class="text-lg font-medium text-zinc-300">尚無主題</h2>
+      <p class="text-sm text-zinc-500">主題將會在有內容發佈後自動出現</p>
+    </div>
+    } @else {
+    <!-- Topics grid -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      @for (topic of topics(); track topic.id) {
+      <a
+        [routerLink]="'/topics/' + topic.slug"
+        class="group relative overflow-hidden rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+      >
+        <!-- Gradient accent line -->
+        <div
+          class="absolute inset-x-0 top-0 h-0.5 bg-linear-to-r from-zinc-600 via-zinc-400 to-zinc-600 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+        ></div>
+
+        <!-- Icon -->
+        @if (topic.icon) {
+        <div class="mb-3 text-3xl">{{ topic.icon }}</div>
+        } @else {
+        <div class="mb-3">
+          <lucide-icon [img]="HashIcon" [size]="28" class="text-zinc-500" />
+        </div>
+        }
+
+        <!-- Name -->
+        <h2
+          class="mb-2 text-lg font-semibold text-zinc-100 group-hover:text-white"
+        >
+          {{ topic.name }}
+        </h2>
+
+        <!-- Description -->
+        @if (topic.description) {
+        <p class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400">
+          {{ topic.description }}
+        </p>
+        }
+
+        <!-- Content count badge -->
+        <div class="flex items-center gap-1.5 text-xs text-zinc-500">
+          <span
+            class="inline-flex items-center rounded-sm bg-zinc-800 px-2 py-0.5 font-medium text-zinc-300"
+          >
+            {{ topic.content_count }}
+          </span>
+          <span>篇內容</span>
+        </div>
+      </a>
+      }
+    </div>
+    }
+  </div>
+</section>

@@ -61,6 +61,7 @@ export class TodayComponent implements OnInit {
   protected readonly tasks = signal<ApiTask[]>([]);
   protected readonly sessionNotes = signal<ApiSessionNote[]>([]);
   protected readonly metricsNotes = signal<ApiSessionNote[]>([]);
+  protected readonly todayPlanNotes = signal<ApiSessionNote[]>([]);
   protected readonly insights = signal<ApiInsight[]>([]);
   protected readonly unverifiedCount = signal(0);
   protected readonly dailySummary = signal<ApiDailySummary | null>(null);
@@ -97,6 +98,10 @@ export class TodayComponent implements OnInit {
 
   protected readonly todayDueTasks = computed(() =>
     this.tasks().filter((t) => t.status !== 'done' && t.due === this.today && !t.my_day),
+  );
+
+  protected readonly todayPlan = computed(() =>
+    this.todayPlanNotes().find((n) => n.note_type === 'plan') ?? null,
   );
 
   protected readonly yesterdayNotes = computed(() =>
@@ -351,15 +356,17 @@ export class TodayComponent implements OnInit {
       tasks: this.taskService.list(),
       notes: this.sessionNoteService.list(yesterday, undefined, 2),
       metrics: this.sessionNoteService.list(undefined, 'metrics', 7),
+      todayPlan: this.sessionNoteService.list(this.today, 'plan', 1),
       insights: this.insightService.list({ status: 'unverified', limit: 5 }),
       summary: this.taskService.dailySummary(),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ tasks, notes, metrics, insights, summary }) => {
+        next: ({ tasks, notes, metrics, todayPlan, insights, summary }) => {
           this.tasks.set(tasks);
           this.sessionNotes.set(notes);
           this.metricsNotes.set(metrics);
+          this.todayPlanNotes.set(todayPlan);
           this.insights.set(insights.insights);
           this.unverifiedCount.set(insights.unverified_count);
           this.dailySummary.set(summary);

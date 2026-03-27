@@ -8,7 +8,7 @@ import {
   DestroyRef,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
@@ -47,6 +47,7 @@ export class AdminContentsComponent implements OnInit {
   private readonly contentService = inject(ContentService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly notificationService = inject(NotificationService);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly items = signal<ApiContent[]>([]);
   protected readonly totalItems = signal(0);
@@ -86,6 +87,10 @@ export class AdminContentsComponent implements OnInit {
   ];
 
   ngOnInit(): void {
+    const typeParam = this.route.snapshot.queryParamMap.get('type') as ContentType | null;
+    if (typeParam && this.typeOptions.some((o) => o.value === typeParam)) {
+      this.typeFilter.set(typeParam);
+    }
     this.loadItems();
   }
 

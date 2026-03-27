@@ -73,11 +73,14 @@ export class AppComponent {
 
   protected readonly isMobileMenuOpen = signal(false);
   protected readonly isWritingMenuOpen = signal(false);
+  protected readonly isLabMenuOpen = signal(false);
   protected readonly isScrolled = signal(false);
   protected readonly currentYear = new Date().getFullYear();
 
   private readonly writingDropdown =
     viewChild.required<ElementRef>('writingDropdown');
+  private readonly labDropdown =
+    viewChild.required<ElementRef>('labDropdown');
 
   // Lucide icons
   protected readonly MenuIcon = Menu;
@@ -116,6 +119,7 @@ export class AppComponent {
         }
         this.isMobileMenuOpen.set(false);
         this.isWritingMenuOpen.set(false);
+        this.isLabMenuOpen.set(false);
       });
   }
 
@@ -125,16 +129,31 @@ export class AppComponent {
 
   protected toggleWritingMenu(): void {
     this.isWritingMenuOpen.update((v) => !v);
+    if (this.isWritingMenuOpen()) {
+      this.isLabMenuOpen.set(false);
+    }
+  }
+
+  protected toggleLabMenu(): void {
+    this.isLabMenuOpen.update((v) => !v);
+    if (this.isLabMenuOpen()) {
+      this.isWritingMenuOpen.set(false);
+    }
   }
 
   protected onDocumentClick(event: MouseEvent): void {
-    if (!this.isWritingMenuOpen()) {
-      return;
-    }
     const target = event.target as HTMLElement;
-    const dropdownEl = this.writingDropdown().nativeElement;
-    if (!dropdownEl.contains(target)) {
-      this.isWritingMenuOpen.set(false);
+    if (this.isWritingMenuOpen()) {
+      const dropdownEl = this.writingDropdown().nativeElement;
+      if (!dropdownEl.contains(target)) {
+        this.isWritingMenuOpen.set(false);
+      }
+    }
+    if (this.isLabMenuOpen()) {
+      const dropdownEl = this.labDropdown().nativeElement;
+      if (!dropdownEl.contains(target)) {
+        this.isLabMenuOpen.set(false);
+      }
     }
   }
 

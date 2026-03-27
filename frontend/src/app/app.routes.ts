@@ -23,6 +23,18 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'essays',
+    loadComponent: () =>
+      import('./pages/essays/essays').then((m) => m.EssaysComponent),
+  },
+  {
+    path: 'essays/:id',
+    loadComponent: () =>
+      import('./pages/essay-detail/essay-detail').then(
+        (m) => m.EssayDetailComponent,
+      ),
+  },
+  {
     path: 'projects',
     loadComponent: () =>
       import('./pages/projects/projects').then((m) => m.ProjectsComponent),
@@ -32,6 +44,18 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/project-detail/project-detail').then(
         (m) => m.ProjectDetailComponent,
+      ),
+  },
+  {
+    path: 'topics',
+    loadComponent: () =>
+      import('./pages/topics/topics').then((m) => m.TopicsComponent),
+  },
+  {
+    path: 'topics/:slug',
+    loadComponent: () =>
+      import('./pages/topic-detail/topic-detail').then(
+        (m) => m.TopicDetailComponent,
       ),
   },
   {
@@ -61,6 +85,11 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'search',
+    loadComponent: () =>
+      import('./pages/search/search').then((m) => m.SearchComponent),
+  },
+  {
     path: 'build-logs',
     loadComponent: () =>
       import('./pages/build-logs/build-logs').then((m) => m.BuildLogsComponent),
@@ -71,6 +100,11 @@ export const routes: Routes = [
       import('./pages/build-log-detail/build-log-detail').then(
         (m) => m.BuildLogDetailComponent,
       ),
+  },
+  {
+    path: 'bookmarks',
+    loadComponent: () =>
+      import('./pages/bookmarks/bookmarks').then((m) => m.BookmarksComponent),
   },
   {
     path: 'resume',
@@ -171,6 +205,13 @@ export const routes: Routes = [
           import('./admin/activity/activity').then((m) => m.ActivityComponent),
       },
       {
+        path: 'session-notes',
+        loadComponent: () =>
+          import('./admin/session-notes/session-notes').then(
+            (m) => m.SessionNotesComponent,
+          ),
+      },
+      {
         path: 'projects',
         loadComponent: () =>
           import('./admin/projects/projects').then(
@@ -201,6 +242,13 @@ export const routes: Routes = [
         path: 'planning',
         loadComponent: () =>
           import('./admin/planning/planning').then((m) => m.PlanningComponent),
+      },
+      {
+        path: 'knowledge-metrics',
+        loadComponent: () =>
+          import('./admin/knowledge-metrics/knowledge-metrics').then(
+            (m) => m.KnowledgeMetricsComponent,
+          ),
       },
       {
         path: 'pipeline',

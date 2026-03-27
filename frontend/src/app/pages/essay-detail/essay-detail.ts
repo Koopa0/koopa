@@ -26,10 +26,9 @@ import {
   Check,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
-import { ArticleService } from '../../core/services/article.service';
 import { ContentService } from '../../core/services/content.service';
 import { MarkdownService } from '../../core/services/markdown.service';
-import type { ApiContent, ApiRelatedContent } from '../../core/models';
+import type { ApiContent } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
 import { TableOfContentsComponent } from '../../shared/table-of-contents/table-of-contents.component';
@@ -37,7 +36,7 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
 import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 @Component({
-  selector: 'app-article-detail',
+  selector: 'app-essay-detail',
   standalone: true,
   imports: [
     DatePipe,
@@ -45,17 +44,16 @@ import { fadeInUp } from '../../shared/animations/fade-in.animation';
     TableOfContentsComponent,
     RelatedArticlesComponent,
   ],
-  templateUrl: './article-detail.html',
+  templateUrl: './essay-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [fadeInUp],
   host: { '[@fadeInUp]': '' },
 })
-export class ArticleDetailComponent implements OnInit {
-  /** Route param: articles/:id */
+export class EssayDetailComponent implements OnInit {
+  /** Route param: essays/:id */
   readonly id = input.required<string>();
 
   private readonly location = inject(Location);
-  private readonly articleService = inject(ArticleService);
   private readonly contentService = inject(ContentService);
   private readonly markdownService = inject(MarkdownService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -63,19 +61,18 @@ export class ArticleDetailComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly el = inject(ElementRef);
 
-  protected readonly article = signal<ApiContent | null>(null);
-  protected readonly relatedArticles = signal<ApiRelatedContent[]>([]);
+  protected readonly essay = signal<ApiContent | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly isCopied = signal(false);
 
   protected readonly rawHtml = computed(() => {
-    const article = this.article();
-    if (!article) {
+    const essay = this.essay();
+    if (!essay) {
       return '';
     }
     // Strip leading h1 from markdown — the title is already rendered in the header section
-    const body = article.body.replace(/^#\s+.+\n+/, '');
+    const body = essay.body.replace(/^#\s+.+\n+/, '');
     return this.markdownService.parse(body);
   });
 
@@ -107,38 +104,25 @@ export class ArticleDetailComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.loadArticle(this.id());
+    this.loadEssay(this.id());
   }
 
-  protected loadArticle(slug: string): void {
+  protected loadEssay(slug: string): void {
     this.isLoading.set(true);
     this.error.set(null);
 
-    this.articleService
-      .getArticleBySlug(slug)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (article) => {
-          this.article.set(article);
-          this.isLoading.set(false);
-          this.updateSeo(article);
-          this.loadRelated(article.slug);
-        },
-        error: () => {
-          this.error.set('Failed to load article');
-          this.isLoading.set(false);
-        },
-      });
-  }
-
-  private loadRelated(slug: string): void {
     this.contentService
-      .getRelated(slug)
+      .getBySlug(slug)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (related) => this.relatedArticles.set(related),
+        next: (essay) => {
+          this.essay.set(essay);
+          this.isLoading.set(false);
+          this.updateSeo(essay);
+        },
         error: () => {
-          // graceful degradation — hide related section on error
+          this.error.set('Failed to load essay');
+          this.isLoading.set(false);
         },
       });
   }
@@ -147,26 +131,26 @@ export class ArticleDetailComponent implements OnInit {
     this.location.back();
   }
 
-  private updateSeo(article: ApiContent): void {
-    const articleUrl = `${environment.siteUrl}/articles/${article.slug}`;
+  private updateSeo(essay: ApiContent): void {
+    const essayUrl = `${environment.siteUrl}/essays/${essay.slug}`;
     this.seoService.updateMeta({
-      title: article.title,
-      description: article.excerpt,
-      ogTitle: article.title,
-      ogDescription: article.excerpt,
-      ogImage: article.cover_image ?? undefined,
-      ogUrl: articleUrl,
+      title: essay.title,
+      description: essay.excerpt,
+      ogTitle: essay.title,
+      ogDescription: essay.excerpt,
+      ogImage: essay.cover_image ?? undefined,
+      ogUrl: essayUrl,
       ogType: 'article',
       twitterCard: 'summary_large_image',
-      canonicalUrl: articleUrl,
+      canonicalUrl: essayUrl,
       jsonLd: buildBlogPostingSchema({
-        title: article.title,
-        description: article.excerpt,
-        url: articleUrl,
-        publishedAt: article.published_at ?? article.created_at,
-        updatedAt: article.updated_at,
-        coverImage: article.cover_image ?? undefined,
-        tags: article.tags,
+        title: essay.title,
+        description: essay.excerpt,
+        url: essayUrl,
+        publishedAt: essay.published_at ?? essay.created_at,
+        updatedAt: essay.updated_at,
+        coverImage: essay.cover_image ?? undefined,
+        tags: essay.tags,
       }),
     });
   }
@@ -204,20 +188,20 @@ export class ArticleDetailComponent implements OnInit {
     }
   }
 
-  protected shareArticle(): void {
+  protected shareEssay(): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
 
-    const article = this.article();
-    if (!article) {
+    const essay = this.essay();
+    if (!essay) {
       return;
     }
 
     if (navigator.share) {
       navigator.share({
-        title: article.title,
-        text: article.excerpt,
+        title: essay.title,
+        text: essay.excerpt,
         url: window.location.href,
       });
     } else {

@@ -37,8 +37,9 @@
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <!-- Title (required) -->
         <div class="sm:col-span-2 lg:col-span-3">
-          <label class="mb-1 block text-xs text-zinc-400">標題 *</label>
+          <label for="new-task-title" class="mb-1 block text-xs text-zinc-400">標題 *</label>
           <input
+            id="new-task-title"
             type="text"
             class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
             placeholder="任務標題"
@@ -49,8 +50,9 @@
 
         <!-- Due Date -->
         <div>
-          <label class="mb-1 block text-xs text-zinc-400">到期日</label>
+          <label for="new-task-due" class="mb-1 block text-xs text-zinc-400">到期日</label>
           <input
+            id="new-task-due"
             type="date"
             class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
             [ngModel]="newDue()"
@@ -60,8 +62,9 @@
 
         <!-- Priority -->
         <div>
-          <label class="mb-1 block text-xs text-zinc-400">優先級</label>
+          <label for="new-task-priority" class="mb-1 block text-xs text-zinc-400">優先級</label>
           <select
+            id="new-task-priority"
             class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
             [ngModel]="newPriority()"
             (ngModelChange)="newPriority.set($event)"
@@ -74,8 +77,9 @@
 
         <!-- Energy -->
         <div>
-          <label class="mb-1 block text-xs text-zinc-400">Energy</label>
+          <label for="new-task-energy" class="mb-1 block text-xs text-zinc-400">Energy</label>
           <select
+            id="new-task-energy"
             class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
             [ngModel]="newEnergy()"
             (ngModelChange)="newEnergy.set($event)"
@@ -87,8 +91,9 @@
 
         <!-- Project -->
         <div>
-          <label class="mb-1 block text-xs text-zinc-400">專案</label>
+          <label for="new-task-project" class="mb-1 block text-xs text-zinc-400">專案</label>
           <select
+            id="new-task-project"
             class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
             [ngModel]="newProjectSlug()"
             (ngModelChange)="newProjectSlug.set($event)"
@@ -115,8 +120,9 @@
 
         <!-- Notes -->
         <div class="sm:col-span-2 lg:col-span-3">
-          <label class="mb-1 block text-xs text-zinc-400">備註</label>
+          <label for="new-task-notes" class="mb-1 block text-xs text-zinc-400">備註</label>
           <textarea
+            id="new-task-notes"
             rows="2"
             class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
             placeholder="備註（選填）"
@@ -344,8 +350,9 @@
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <!-- Due Date -->
                   <div>
-                    <label class="mb-1 block text-xs text-zinc-500">到期日</label>
+                    <label for="edit-task-due" class="mb-1 block text-xs text-zinc-500">到期日</label>
                     <input
+                      id="edit-task-due"
                       type="date"
                       class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
                       [ngModel]="editDue()"
@@ -355,8 +362,9 @@
 
                   <!-- Priority -->
                   <div>
-                    <label class="mb-1 block text-xs text-zinc-500">優先級</label>
+                    <label for="edit-task-priority" class="mb-1 block text-xs text-zinc-500">優先級</label>
                     <select
+                      id="edit-task-priority"
                       class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
                       [ngModel]="editPriority()"
                       (ngModelChange)="editPriority.set($event)"
@@ -369,8 +377,9 @@
 
                   <!-- Energy -->
                   <div>
-                    <label class="mb-1 block text-xs text-zinc-500">Energy</label>
+                    <label for="edit-task-energy" class="mb-1 block text-xs text-zinc-500">Energy</label>
                     <select
+                      id="edit-task-energy"
                       class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
                       [ngModel]="editEnergy()"
                       (ngModelChange)="editEnergy.set($event)"
@@ -382,8 +391,9 @@
 
                   <!-- Project -->
                   <div>
-                    <label class="mb-1 block text-xs text-zinc-500">專案</label>
+                    <label for="edit-task-project" class="mb-1 block text-xs text-zinc-500">專案</label>
                     <select
+                      id="edit-task-project"
                       class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:border-zinc-500 focus:outline-none"
                       [ngModel]="editProjectSlug()"
                       (ngModelChange)="editProjectSlug.set($event)"
@@ -410,8 +420,9 @@
 
                   <!-- Notes -->
                   <div class="sm:col-span-2 lg:col-span-3">
-                    <label class="mb-1 block text-xs text-zinc-500">備註</label>
+                    <label for="edit-task-notes" class="mb-1 block text-xs text-zinc-500">備註</label>
                     <textarea
+                      id="edit-task-notes"
                       rows="2"
                       class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
                       placeholder="附加備註（選填）"

@@ -23,22 +23,13 @@ import {
 import { ReviewService } from '../../core/services/review.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type { ApiReviewItem, ReviewLevel, ContentType } from '../../core/models';
+import { contentTypeLabelEn } from '../../core/models';
 
 const REVIEW_LEVEL_CONFIG: Record<ReviewLevel, { label: string; classes: string }> = {
   auto: { label: '自動', classes: 'border-zinc-600 bg-zinc-800 text-zinc-300' },
   light: { label: '輕度', classes: 'border-sky-700 bg-sky-900/30 text-sky-400' },
   standard: { label: '標準', classes: 'border-amber-700 bg-amber-900/30 text-amber-400' },
   strict: { label: '嚴格', classes: 'border-red-700 bg-red-900/30 text-red-400' },
-};
-
-const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
-  article: 'Article',
-  essay: 'Essay',
-  'build-log': 'Build Log',
-  til: 'TIL',
-  note: 'Note',
-  bookmark: 'Bookmark',
-  digest: 'Digest',
 };
 
 @Component({
@@ -156,7 +147,7 @@ export class ReviewComponent implements OnInit {
   }
 
   protected getContentTypeLabel(type: ContentType): string {
-    return CONTENT_TYPE_LABELS[type] ?? type;
+    return contentTypeLabelEn(type);
   }
 
 }

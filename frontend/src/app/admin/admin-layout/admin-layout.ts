@@ -37,6 +37,7 @@ import {
   Lightbulb,
   BarChart3,
   Workflow,
+  Notebook,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -47,6 +48,7 @@ interface NavItem {
   icon: typeof LayoutDashboard;
   exact: boolean;
   disabled: boolean;
+  queryParams?: Record<string, string>;
 }
 
 interface NavGroup {
@@ -123,6 +125,13 @@ export class AdminLayoutComponent {
           label: 'Planning',
           route: '/admin/planning',
           icon: BarChart3,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Knowledge',
+          route: '/admin/knowledge-metrics',
+          icon: BookOpen,
           exact: false,
           disabled: false,
         },
@@ -227,11 +236,19 @@ export class AdminLayoutComponent {
           disabled: false,
         },
         {
+          label: 'Session Notes',
+          route: '/admin/session-notes',
+          icon: Notebook,
+          exact: false,
+          disabled: false,
+        },
+        {
           label: 'Build Logs',
-          route: '/admin/build-logs',
+          route: '/admin/contents',
           icon: FileCode,
           exact: false,
           disabled: false,
+          queryParams: { type: 'build-log' },
         },
       ],
     },

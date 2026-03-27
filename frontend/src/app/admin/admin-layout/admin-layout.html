@@ -77,6 +77,7 @@
       } @else {
       <a
         [routerLink]="item.route"
+        [queryParams]="item.queryParams ?? {}"
         routerLinkActive="bg-zinc-800 text-white"
         [routerLinkActiveOptions]="{ exact: item.exact }"
         class="flex items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"

@@ -1,0 +1,213 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+      搜尋
+    </h1>
+    <p class="mt-2 text-zinc-400">
+      搜尋所有文章、筆記、TIL 和更多內容
+    </p>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <!-- Search Input -->
+    <div class="mb-6 flex items-center gap-2">
+      <div
+        class="flex flex-1 items-center gap-2 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2.5"
+      >
+        <lucide-icon [img]="SearchIcon" [size]="18" class="text-zinc-500" />
+        <input
+          type="text"
+          placeholder="輸入關鍵字搜尋..."
+          aria-label="搜尋內容"
+          class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500"
+          [value]="query()"
+          (input)="onInput($event)"
+          data-testid="search-input"
+        />
+      </div>
+
+      @if (query().length > 0) {
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded-sm border border-red-900 px-3 py-2.5 text-sm text-red-400 transition-colors hover:bg-red-900/20"
+          (click)="clearSearch()"
+        >
+          <lucide-icon [img]="XIcon" [size]="14" />
+          清除
+        </button>
+      }
+    </div>
+
+    <!-- Type Filter Pills -->
+    <div class="mb-8 flex flex-wrap gap-2">
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+        [class]="
+          typeFilter() === null
+            ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
+            : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
+        "
+        (click)="selectType(null)"
+      >
+        全部
+      </button>
+      @for (type of availableTypes; track type) {
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+          [class]="
+            typeFilter() === type
+              ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
+              : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
+          "
+          (click)="selectType(type)"
+        >
+          {{ typeConfig[type].labelZh }}
+        </button>
+      }
+    </div>
+
+    <!-- Loading State -->
+    @if (isLoading()) {
+      <div class="flex items-center justify-center gap-2 py-20 text-zinc-500">
+        <div
+          class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+        ></div>
+        <span class="text-sm">搜尋中...</span>
+      </div>
+    } @else if (error()) {
+      <!-- Error State -->
+      <div class="flex flex-col items-center gap-4 py-20 text-center">
+        <p class="text-sm text-red-400">{{ error() }}</p>
+      </div>
+    } @else if (query().length >= 2 && results().length === 0 && results().length >= 0) {
+      <!-- Empty State -->
+      <div class="flex flex-col items-center gap-4 py-20 text-center">
+        <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
+        <h2 class="text-lg font-medium text-zinc-300">找不到相關結果</h2>
+        <p class="text-sm text-zinc-500">
+          @if (typeFilter()) {
+            目前篩選類型下沒有符合「{{ query() }}」的結果，試試切換類型或
+          } @else {
+            找不到「{{ query() }}」的相關結果，試試
+          }
+          調整搜尋關鍵字
+        </p>
+      </div>
+    } @else if (query().length < 2) {
+      <!-- Initial State -->
+      <div class="flex flex-col items-center gap-4 py-20 text-center">
+        <lucide-icon [img]="SearchIcon" [size]="48" class="text-zinc-700" />
+        <h2 class="text-lg font-medium text-zinc-300">開始搜尋</h2>
+        <p class="text-sm text-zinc-500">
+          輸入至少 2 個字元開始搜尋
+        </p>
+      </div>
+    } @else {
+      <!-- Results Count -->
+      <div class="mb-6 text-sm text-zinc-500">
+        找到
+        <strong class="text-zinc-300">{{ results().length }}</strong>
+        筆結果
+        @if (typeFilter()) {
+          <span>（{{ typeConfig[typeFilter()!].labelZh }}）</span>
+        }
+      </div>
+
+      <!-- Results List -->
+      <div class="space-y-4">
+        @for (result of results(); track result.id) {
+          <a
+            [routerLink]="getResultRoute(result)"
+            class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-5 no-underline transition-all duration-200 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+          >
+            <div class="flex items-start gap-4">
+              <div class="min-w-0 flex-1">
+                <div class="mb-2 flex items-center gap-2">
+                  <!-- Type Badge -->
+                  <span
+                    class="rounded-sm border px-2 py-0.5 text-xs font-medium"
+                    [class]="typeConfig[result.type].badgeClasses"
+                  >
+                    {{ typeConfig[result.type].labelZh }}
+                  </span>
+                  <!-- Date -->
+                  @if (result.published_at) {
+                    <span class="text-xs text-zinc-600">
+                      {{ result.published_at | date: 'yyyy-MM-dd' }}
+                    </span>
+                  }
+                </div>
+
+                <!-- Title -->
+                <h3
+                  class="mb-1 text-base font-semibold text-zinc-100 group-hover:text-white"
+                >
+                  {{ result.title }}
+                </h3>
+
+                <!-- Excerpt -->
+                @if (result.excerpt) {
+                  <p class="line-clamp-2 text-sm leading-relaxed text-zinc-400">
+                    {{ result.excerpt }}
+                  </p>
+                }
+              </div>
+            </div>
+          </a>
+        }
+      </div>
+
+      <!-- Pagination -->
+      @let cp = currentPage();
+      @let tp = totalPages();
+      @if (tp > 1) {
+        <nav aria-label="Pagination" class="mt-12 flex flex-col items-center gap-4">
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
+              [disabled]="cp === 1"
+              (click)="onPageChange(cp - 1)"
+              aria-label="上一頁"
+            >
+              <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
+            </button>
+
+            @for (page of pageArray(); track page) {
+              <button
+                type="button"
+                class="rounded-sm px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden"
+                [class]="
+                  cp === page
+                    ? 'bg-zinc-700 text-white'
+                    : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                "
+                (click)="onPageChange(page)"
+                [attr.aria-current]="cp === page ? 'page' : null"
+                [attr.aria-label]="'第 ' + page + ' 頁'"
+              >
+                {{ page }}
+              </button>
+            }
+
+            <button
+              type="button"
+              class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
+              [disabled]="cp === tp"
+              (click)="onPageChange(cp + 1)"
+              aria-label="下一頁"
+            >
+              <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+            </button>
+          </div>
+          <div class="text-xs text-zinc-500">第 {{ cp }} / {{ tp }} 頁</div>
+        </nav>
+      }
+    }
+  </div>
+</section>

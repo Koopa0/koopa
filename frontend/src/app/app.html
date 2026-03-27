@@ -77,16 +77,75 @@
             Articles
           </a>
           <a
+            routerLink="/essays"
+            role="menuitem"
+            class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Essays
+          </a>
+        </div>
+        }
+      </div>
+
+      <!-- Lab Dropdown -->
+      <div class="lab-dropdown relative" #labDropdown>
+        <button
+          type="button"
+          (click)="toggleLabMenu()"
+          [attr.aria-expanded]="isLabMenuOpen()"
+          aria-haspopup="true"
+          aria-controls="lab-menu"
+          class="flex items-center gap-1 rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
+          [class.bg-zinc-800]="isLabMenuOpen()"
+          [class.text-white]="isLabMenuOpen()"
+        >
+          Lab
+          <lucide-icon
+            [img]="ChevronDownIcon"
+            [size]="14"
+            class="transition-transform"
+            [class.rotate-180]="isLabMenuOpen()"
+          />
+        </button>
+        @if (isLabMenuOpen()) {
+        <div
+          @slideDown
+          id="lab-menu"
+          role="menu"
+          class="absolute left-0 top-full mt-1 w-48 rounded-sm border border-zinc-800 bg-zinc-950 py-1 shadow-lg"
+        >
+          <a
             routerLink="/til"
             role="menuitem"
             class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
           >
             TIL
           </a>
+          <a
+            routerLink="/notes"
+            role="menuitem"
+            class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Notes
+          </a>
+          <a
+            routerLink="/build-logs"
+            role="menuitem"
+            class="block px-4 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Build Logs
+          </a>
         </div>
         }
       </div>
 
+      <a
+        routerLink="/topics"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-zinc-100 no-underline"
+      >
+        Topics
+      </a>
       <a
         routerLink="/projects"
         routerLinkActive="bg-zinc-800 text-white"
@@ -188,15 +247,49 @@
         Articles
       </a>
       <a
+        routerLink="/essays"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Essays
+      </a>
+
+      <p
+        class="px-3 pt-2 text-xs font-semibold tracking-wider text-zinc-400 uppercase"
+      >
+        Lab
+      </p>
+      <a
         routerLink="/til"
         routerLinkActive="bg-zinc-800 text-white"
         class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
       >
         TIL
       </a>
+      <a
+        routerLink="/notes"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Notes
+      </a>
+      <a
+        routerLink="/build-logs"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Build Logs
+      </a>
 
       <div class="my-1 border-t border-zinc-800"></div>
 
+      <a
+        routerLink="/topics"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 no-underline hover:bg-zinc-800/50 hover:text-zinc-100"
+      >
+        Topics
+      </a>
       <a
         routerLink="/projects"
         routerLinkActive="bg-zinc-800 text-white"

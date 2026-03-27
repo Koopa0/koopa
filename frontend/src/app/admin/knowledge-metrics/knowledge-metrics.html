@@ -1,0 +1,178 @@
+<section class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <!-- 頁面標題 -->
+  <div class="mb-8">
+    <h1 class="flex items-center gap-2 text-xl font-semibold text-zinc-100">
+      <lucide-icon [img]="BookOpenIcon" [size]="20" />
+      Knowledge Metrics
+    </h1>
+    <p class="mt-1 text-sm text-zinc-500">知識覆蓋與弱點分析</p>
+  </div>
+
+  @if (isLoading()) {
+    <div class="flex items-center justify-center py-20">
+      <div class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-white"></div>
+    </div>
+  } @else {
+    <div class="space-y-8">
+
+      <!-- Section 1: Topic Coverage -->
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-5">
+        <h2 class="mb-4 text-sm font-medium text-zinc-300">主題覆蓋</h2>
+
+        @if (sortedTopics().length === 0) {
+          <div class="flex flex-col items-center justify-center py-12">
+            <lucide-icon [img]="BookOpenIcon" [size]="40" class="mb-4 text-zinc-600" />
+            <p class="text-sm text-zinc-400">尚無主題資料</p>
+          </div>
+        } @else {
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            @for (topic of sortedTopics(); track topic.topic) {
+              <div
+                class="rounded-xs border p-3"
+                [class]="tileBgClass(topic)"
+                [style.border-style]="tileBorderStyle(topic)"
+              >
+                <!-- Topic name + count -->
+                <div class="mb-2 flex items-start justify-between">
+                  <span class="text-sm font-medium text-zinc-200">{{ topic.topic }}</span>
+                  <span class="ml-2 shrink-0 rounded-full bg-zinc-700/60 px-2 py-0.5 text-xs font-medium text-zinc-300">
+                    {{ topic.count }}
+                  </span>
+                </div>
+
+                <!-- Last practice date -->
+                <p class="mb-2 text-xs text-zinc-500">
+                  @if (topic.count > 0) {
+                    最近：{{ formatDate(topic.last_date) }}
+                  } @else {
+                    尚未練習
+                  }
+                </p>
+
+                <!-- AC-independent ratio bar -->
+                @if (topic.count > 0) {
+                  <div class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-700/50">
+                    <div
+                      class="h-full rounded-full bg-emerald-500"
+                      [style.width.%]="acIndependentRatio(topic)"
+                    ></div>
+                  </div>
+                  <p class="mt-1 text-[10px] text-zinc-500">
+                    獨立 AC {{ acIndependentRatio(topic) }}%
+                  </p>
+                }
+              </div>
+            }
+          </div>
+
+          <!-- Coverage summary -->
+          <div class="mt-4 flex gap-6 text-xs text-zinc-500">
+            <span>共 {{ coverageData()?.total_entries }} 筆</span>
+            <span>{{ sortedTopics().length }} 個主題</span>
+            <span>{{ coverageData()?.period_days }} 天區間</span>
+          </div>
+        }
+      </div>
+
+      <!-- Section 2: Weakness Analysis -->
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-5">
+        <h2 class="mb-4 text-sm font-medium text-zinc-300">弱點分析</h2>
+
+        @if (!weaknessData() || weaknessData()!.tags.length === 0) {
+          <div class="flex flex-col items-center justify-center py-12">
+            <lucide-icon [img]="BookOpenIcon" [size]="40" class="mb-4 text-zinc-600" />
+            <p class="text-sm text-zinc-400">尚無弱點標記資料</p>
+          </div>
+        } @else {
+          <div class="space-y-2">
+            @for (tag of weaknessData()!.tags; track tag.tag) {
+              <!-- Weakness bar row -->
+              <div>
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-3 rounded-xs px-2 py-2 text-left transition-colors hover:bg-zinc-800/50"
+                  (click)="toggleWeakness(tag.tag)"
+                >
+                  <!-- Tag name -->
+                  <span class="w-32 shrink-0 truncate text-sm text-zinc-300">
+                    {{ formatWeaknessTag(tag.tag) }}
+                  </span>
+
+                  <!-- Bar -->
+                  <div class="h-4 flex-1 overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      class="h-full rounded-full bg-red-500/70 transition-all duration-300"
+                      [style.width.%]="barWidthPercent(tag)"
+                    ></div>
+                  </div>
+
+                  <!-- Count -->
+                  <span class="w-8 shrink-0 text-right text-xs text-zinc-400">
+                    {{ tag.count }}
+                  </span>
+                </button>
+
+                <!-- Expanded: trend detail -->
+                @if (expandedWeakness() === tag.tag) {
+                  <div class="ml-2 mt-1 rounded-xs border border-zinc-800 bg-zinc-950/50 p-3">
+                    @if (!weaknessTrend()) {
+                      <div class="flex items-center gap-2 text-xs text-zinc-500">
+                        <div class="h-3 w-3 animate-spin rounded-full border border-zinc-600 border-t-white"></div>
+                        載入中...
+                      </div>
+                    } @else {
+                      <!-- Trend indicator -->
+                      <div class="mb-2 flex items-center gap-2">
+                        <span class="text-xs text-zinc-500">趨勢：</span>
+                        <span class="text-sm font-medium" [class]="trendColorClass(weaknessTrend()!.trend)">
+                          {{ trendIndicator(weaknessTrend()!.trend) }}
+                        </span>
+                      </div>
+
+                      <!-- Occurrence boxes -->
+                      <div class="flex flex-wrap gap-1">
+                        @for (occ of weaknessTrend()!.occurrences; track occ.date + occ.title) {
+                          <div
+                            class="h-4 w-4 rounded-xs"
+                            [class]="occurrenceColor(occ.result)"
+                            [title]="occ.date + ' — ' + occ.title + ' (' + occ.result + ')'"
+                          ></div>
+                        }
+                      </div>
+
+                      <!-- Legend -->
+                      <div class="mt-2 flex flex-wrap gap-3 text-[10px] text-zinc-500">
+                        <span class="flex items-center gap-1">
+                          <span class="inline-block h-2.5 w-2.5 rounded-xs bg-emerald-500"></span>
+                          獨立 AC
+                        </span>
+                        <span class="flex items-center gap-1">
+                          <span class="inline-block h-2.5 w-2.5 rounded-xs bg-amber-500"></span>
+                          提示後 AC
+                        </span>
+                        <span class="flex items-center gap-1">
+                          <span class="inline-block h-2.5 w-2.5 rounded-xs bg-red-500"></span>
+                          看解後 AC
+                        </span>
+                        <span class="flex items-center gap-1">
+                          <span class="inline-block h-2.5 w-2.5 rounded-xs bg-zinc-500"></span>
+                          未完成
+                        </span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+
+          <!-- Weakness summary -->
+          <div class="mt-4 text-xs text-zinc-500">
+            共 {{ weaknessData()!.total_tags }} 個弱點標記（{{ weaknessData()!.period_days }} 天區間）
+          </div>
+        }
+      </div>
+
+    </div>
+  }
+</section>

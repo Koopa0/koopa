@@ -6,7 +6,7 @@
     <div
       class="size-8 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
     ></div>
-    <p class="text-sm">Loading article...</p>
+    <p class="text-sm">Loading essay...</p>
   </div>
 </section>
 } @else if (error()) {
@@ -27,8 +27,8 @@
     </button>
   </div>
 </section>
-} @else if (article()) {
-<!-- Article Header -->
+} @else if (essay()) {
+<!-- Essay Header -->
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
     <!-- Navigation -->
@@ -44,7 +44,7 @@
       <button
         type="button"
         class="inline-flex items-center gap-1 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
-        (click)="shareArticle()"
+        (click)="shareEssay()"
       >
         @if (isCopied()) {
         <lucide-icon [img]="CheckIcon" [size]="14" />
@@ -56,7 +56,7 @@
 
     <!-- Tags -->
     <div class="mb-4 flex flex-wrap gap-2">
-      @for (tag of article()!.tags; track tag) {
+      @for (tag of essay()!.tags; track tag) {
       <span
         class="rounded-full border border-zinc-700 px-3 py-0.5 text-xs text-zinc-400"
       >
@@ -67,24 +67,24 @@
 
     <!-- Title -->
     <h1 class="font-display mb-6 text-3xl font-bold text-balance sm:text-4xl text-zinc-100">
-      {{ article()!.title }}
+      {{ essay()!.title }}
     </h1>
 
     <!-- Meta -->
     <div class="flex flex-wrap items-center gap-4 text-sm text-zinc-500">
       <span class="flex items-center gap-1">
         <lucide-icon [img]="CalendarIcon" [size]="14" />
-        {{ article()!.published_at | date: 'MMM d, yyyy' }}
+        {{ essay()!.published_at | date: 'MMM d, yyyy' }}
       </span>
       <span class="flex items-center gap-1">
         <lucide-icon [img]="ClockIcon" [size]="14" />
-        {{ article()!.reading_time }} min read
+        {{ essay()!.reading_time }} min read
       </span>
     </div>
   </div>
 </section>
 
-<!-- Article Body -->
+<!-- Essay Body -->
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
     <div class="flex gap-8">
@@ -105,11 +105,11 @@
 <!-- Related Articles -->
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-    <app-related-articles [articles]="relatedArticles()" />
+    <app-related-articles />
   </div>
 </section>
 
-<!-- Article Footer -->
+<!-- Essay Footer -->
 <section class="border-t border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
     <div class="flex flex-wrap items-center justify-between gap-4">
@@ -117,13 +117,13 @@
         <button
           type="button"
           class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
-          (click)="shareArticle()"
+          (click)="shareEssay()"
         >
           @if (isCopied()) {
           <lucide-icon [img]="CheckIcon" [size]="16" />
           Link Copied } @else {
           <lucide-icon [img]="Share2Icon" [size]="16" />
-          Share Article }
+          Share Essay }
         </button>
         <button
           type="button"
@@ -135,9 +135,9 @@
         </button>
       </div>
 
-      @if (article()!.updated_at !== article()!.published_at) {
+      @if (essay()!.updated_at !== essay()!.published_at) {
       <p class="text-xs text-zinc-500">
-        Last updated: {{ article()!.updated_at | date: 'MMM d, yyyy HH:mm' }}
+        Last updated: {{ essay()!.updated_at | date: 'MMM d, yyyy HH:mm' }}
       </p>
       }
     </div>

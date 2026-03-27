@@ -190,8 +190,34 @@
         }
       </div>
 
-      <!-- 右欄：Insights + Metrics + Notes -->
+      <!-- 右欄：Plan + Insights + Metrics + Notes -->
       <div class="space-y-6">
+        <!-- 今日計畫 -->
+        @if (todayPlan(); as plan) {
+          <div>
+            <div class="mb-3 flex items-center gap-2">
+              <lucide-icon [img]="SunIcon" [size]="16" class="text-amber-400" />
+              <h2 class="text-sm font-medium text-zinc-300">今日計畫</h2>
+            </div>
+            <div class="rounded-sm border border-amber-900/50 bg-amber-950/20 px-4 py-3">
+              <div
+                class="prose prose-compact text-zinc-300"
+                [innerHTML]="parseMarkdown(plan.content)">
+              </div>
+            </div>
+          </div>
+        } @else {
+          <div>
+            <div class="mb-3 flex items-center gap-2">
+              <lucide-icon [img]="SunIcon" [size]="16" class="text-zinc-600" />
+              <h2 class="text-sm font-medium text-zinc-500">今日計畫</h2>
+            </div>
+            <p class="rounded-sm border border-zinc-800 bg-zinc-900/30 px-4 py-4 text-center text-sm text-zinc-500">
+              尚未建立今日計畫
+            </p>
+          </div>
+        }
+
         <!-- Active Insights -->
         @if (insights().length > 0) {
           <div>
@@ -317,7 +343,7 @@
                       [innerHTML]="parseMarkdown(note.content)">
                     </div>
                   } @else {
-                    <div class="text-sm text-zinc-300 line-clamp-3 cursor-pointer" (click)="toggleNote(note.id)">
+                    <div class="text-sm text-zinc-300 line-clamp-3 cursor-pointer" tabindex="0" role="button" (click)="toggleNote(note.id)" (keyup.enter)="toggleNote(note.id)">
                       {{ note.content }}
                     </div>
                   }

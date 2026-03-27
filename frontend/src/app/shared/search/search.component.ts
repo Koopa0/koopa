@@ -2,6 +2,7 @@ import {
   Component,
   inject,
   signal,
+  computed,
   ChangeDetectionStrategy,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -17,17 +18,7 @@ import { debounceTime, Subject } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { slideDown } from '../animations/fade-in.animation';
 import type { ContentType } from '../../core/models';
-
-/** Map ContentType to frontend route prefix */
-const TYPE_ROUTE_MAP: Record<ContentType, string> = {
-  article: '/articles',
-  essay: '/essays',
-  'build-log': '/build-logs',
-  til: '/til',
-  note: '/notes',
-  bookmark: '/bookmarks',
-  digest: '/digests',
-};
+import { contentTypeRoute, CONTENT_TYPE_CONFIG } from '../../core/models';
 
 @Component({
   selector: 'app-search',
@@ -122,9 +113,12 @@ export class SearchComponent {
   protected readonly showResults = signal(false);
   private readonly searchSubject = new Subject<string>();
 
-  protected readonly results = this.searchService.results;
+  private readonly allResults = this.searchService.results;
+  protected readonly results = computed(() =>
+    this.allResults().filter((r) => CONTENT_TYPE_CONFIG[r.type]?.hasPublicPage !== false),
+  );
   protected readonly isSearching = this.searchService.searching;
-  protected readonly hasResults = this.searchService.hasResults;
+  protected readonly hasResults = computed(() => this.results().length > 0);
 
   protected readonly SearchIcon = Search;
   protected readonly XIcon = X;
@@ -153,7 +147,7 @@ export class SearchComponent {
   }
 
   protected getResultRoute(type: ContentType, slug: string): string {
-    const prefix = TYPE_ROUTE_MAP[type] ?? '/articles';
+    const prefix = contentTypeRoute(type);
     return `${prefix}/${slug}`;
   }
 }

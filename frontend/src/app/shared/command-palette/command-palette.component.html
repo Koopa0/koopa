@@ -109,6 +109,14 @@
                   </div>
                 </button>
               }
+              <!-- 查看所有結果 -->
+              <button
+                type="button"
+                class="mt-1 flex w-full items-center justify-center gap-1 rounded-md px-3 py-2 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                (click)="navigateToSearch()"
+              >
+                查看所有結果 →
+              </button>
             </div>
           } @else if (query().length >= 2) {
             <div class="px-4 py-8 text-center text-sm text-zinc-600">

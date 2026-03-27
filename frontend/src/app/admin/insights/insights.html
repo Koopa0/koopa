@@ -175,8 +175,9 @@
               <div class="mt-3 border-t border-zinc-800 pt-3">
                 @if (isActionActive(insight.id, 'verify')) {
                   <div class="space-y-2">
-                    <label class="text-xs font-medium text-emerald-400">驗證結論（選填）</label>
+                    <label for="verify-conclusion" class="text-xs font-medium text-emerald-400">驗證結論（選填）</label>
                     <textarea
+                      id="verify-conclusion"
                       [ngModel]="actionText()"
                       (ngModelChange)="actionText.set($event)"
                       placeholder="輸入結論..."
@@ -201,8 +202,9 @@
                 }
                 @if (isActionActive(insight.id, 'invalidate')) {
                   <div class="space-y-2">
-                    <label class="text-xs font-medium text-red-400">否決原因（選填）</label>
+                    <label for="invalidate-reason" class="text-xs font-medium text-red-400">否決原因（選填）</label>
                     <textarea
+                      id="invalidate-reason"
                       [ngModel]="actionText()"
                       (ngModelChange)="actionText.set($event)"
                       placeholder="輸入否決原因..."
@@ -227,8 +229,9 @@
                 }
                 @if (isActionActive(insight.id, 'evidence')) {
                   <div class="space-y-2">
-                    <label class="text-xs font-medium text-zinc-300">新增 Evidence</label>
+                    <label for="add-evidence" class="text-xs font-medium text-zinc-300">新增 Evidence</label>
                     <textarea
+                      id="add-evidence"
                       [ngModel]="actionText()"
                       (ngModelChange)="actionText.set($event)"
                       (keyup.enter)="submitEvidence(insight)"

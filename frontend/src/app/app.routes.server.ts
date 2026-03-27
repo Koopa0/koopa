@@ -22,6 +22,14 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
   },
   {
+    path: 'topics',
+    renderMode: RenderMode.Server,
+  },
+  {
+    path: 'topics/:slug',
+    renderMode: RenderMode.Server,
+  },
+  {
     path: 'tags/:tag',
     renderMode: RenderMode.Server,
   },
@@ -40,6 +48,10 @@ export const serverRoutes: ServerRoute[] = [
   {
     path: 'notes/:slug',
     renderMode: RenderMode.Server,
+  },
+  {
+    path: 'search',
+    renderMode: RenderMode.Client,
   },
   {
     path: 'about',

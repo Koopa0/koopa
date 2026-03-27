@@ -49,6 +49,7 @@ import { UploadService } from '../../core/services/upload.service';
 import { FlowPolishService } from '../../core/services/flow-polish.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type {
+  ContentType,
   ContentStatus,
   ApiCreateContentRequest,
   ApiUpdateContentRequest,
@@ -60,6 +61,11 @@ const STATUS_OPTIONS: { value: ContentStatus; label: string }[] = [
   { value: 'draft', label: 'Draft' },
   { value: 'published', label: 'Published' },
   { value: 'archived', label: 'Archived' },
+];
+
+const EDITOR_TYPE_OPTIONS: { value: ContentType; label: string }[] = [
+  { value: 'article', label: 'Article' },
+  { value: 'essay', label: 'Essay' },
 ];
 
 @Component({
@@ -84,6 +90,7 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
   protected readonly isLoading = signal(false);
   protected readonly isSaving = signal(false);
   protected readonly isNewArticle = signal(true);
+  protected readonly contentType = signal<ContentType>('article');
   protected readonly previewHtml = signal('');
   protected readonly selectedTab = signal<'edit' | 'preview' | 'split'>('edit');
   protected readonly isUploading = signal(false);
@@ -101,6 +108,7 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
   protected readonly articleForm: FormGroup;
 
   protected readonly statusOptions = STATUS_OPTIONS;
+  protected readonly editorTypeOptions = EDITOR_TYPE_OPTIONS;
 
   protected readonly availableTags = [
     'Angular',
@@ -193,6 +201,9 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
     this.articleService.getArticleBySlug(id).subscribe({
       next: (article) => {
         this.articleId = article.id;
+        if (article.type === 'article' || article.type === 'essay') {
+          this.contentType.set(article.type);
+        }
         this.articleForm.patchValue({
           title: article.title,
           slug: article.slug,
@@ -302,7 +313,7 @@ Summarize your thoughts here...
         slug: formValue.slug,
         body: formValue.body,
         excerpt,
-        type: 'article',
+        type: this.contentType(),
         status,
         tags: formValue.tags,
         cover_image: formValue.cover_image || undefined,

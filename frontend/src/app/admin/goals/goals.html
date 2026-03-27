@@ -123,7 +123,10 @@
                       } @else {
                         <p
                           class="line-clamp-2 cursor-pointer text-xs text-zinc-500"
+                          tabindex="0"
+                          role="button"
                           (click)="toggleDescription(goal.id)"
+                          (keyup.enter)="toggleDescription(goal.id)"
                         >
                           {{ goal.description }}
                         </p>
