@@ -20,22 +20,14 @@ type TagSummaryInput struct {
 	Days      int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 90, max 365)"`
 }
 
-// TagSummaryOutput is the output for the get_tag_summary tool.
-type TagSummaryOutput struct {
-	Tags    []learning.TagCount `json:"tags"`
-	Total   int                 `json:"total"`
-	Project string              `json:"project"`
-	Period  string              `json:"period"`
-}
-
-func (s *Server) getTagSummary(ctx context.Context, _ *mcp.CallToolRequest, input TagSummaryInput) (*mcp.CallToolResult, TagSummaryOutput, error) {
+func (s *Server) getTagSummary(ctx context.Context, _ *mcp.CallToolRequest, input TagSummaryInput) (*mcp.CallToolResult, learning.TagSummaryResult, error) {
 	if input.Project == "" {
-		return nil, TagSummaryOutput{}, fmt.Errorf("project is required")
+		return nil, learning.TagSummaryResult{}, fmt.Errorf("project is required")
 	}
 
 	proj, err := s.resolveProjectChain(ctx, input.Project)
 	if err != nil {
-		return nil, TagSummaryOutput{}, err
+		return nil, learning.TagSummaryResult{}, err
 	}
 
 	days := clamp(input.Days, 1, 365, 90)
@@ -43,17 +35,10 @@ func (s *Server) getTagSummary(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 	entries, err := s.contents.TagEntries(ctx, content.TypeTIL, &proj.ID, since)
 	if err != nil {
-		return nil, TagSummaryOutput{}, fmt.Errorf("querying tag entries: %w", err)
+		return nil, learning.TagSummaryResult{}, fmt.Errorf("querying tag entries: %w", err)
 	}
 
-	result := learning.TagSummary(entries, input.TagPrefix, days)
-
-	return nil, TagSummaryOutput{
-		Tags:    result.Tags,
-		Total:   result.TotalTags,
-		Project: proj.Slug,
-		Period:  learning.FormatPeriod(days),
-	}, nil
+	return nil, learning.TagSummary(entries, input.TagPrefix, days), nil
 }
 
 // --- B2: get_coverage_matrix ---
@@ -64,22 +49,14 @@ type CoverageMatrixInput struct {
 	Days    int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
 }
 
-// CoverageMatrixOutput is the output for the get_coverage_matrix tool.
-type CoverageMatrixOutput struct {
-	Topics  []learning.TopicCoverage `json:"topics"`
-	Total   int                      `json:"total"`
-	Project string                   `json:"project"`
-	Period  string                   `json:"period"`
-}
-
-func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, input CoverageMatrixInput) (*mcp.CallToolResult, CoverageMatrixOutput, error) {
+func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, input CoverageMatrixInput) (*mcp.CallToolResult, learning.CoverageMatrixResult, error) {
 	if input.Project == "" {
-		return nil, CoverageMatrixOutput{}, fmt.Errorf("project is required")
+		return nil, learning.CoverageMatrixResult{}, fmt.Errorf("project is required")
 	}
 
 	proj, err := s.resolveProjectChain(ctx, input.Project)
 	if err != nil {
-		return nil, CoverageMatrixOutput{}, err
+		return nil, learning.CoverageMatrixResult{}, err
 	}
 
 	days := clamp(input.Days, 1, 730, 365)
@@ -87,17 +64,10 @@ func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	entries, err := s.contents.TagEntries(ctx, content.TypeTIL, &proj.ID, since)
 	if err != nil {
-		return nil, CoverageMatrixOutput{}, fmt.Errorf("querying tag entries: %w", err)
+		return nil, learning.CoverageMatrixResult{}, fmt.Errorf("querying tag entries: %w", err)
 	}
 
-	result := learning.CoverageMatrix(entries, days)
-
-	return nil, CoverageMatrixOutput{
-		Topics:  result.Topics,
-		Total:   result.TotalEntries,
-		Project: proj.Slug,
-		Period:  learning.FormatPeriod(days),
-	}, nil
+	return nil, learning.CoverageMatrix(entries, days), nil
 }
 
 // --- B3: get_weakness_trend ---
@@ -109,27 +79,17 @@ type WeaknessTrendInput struct {
 	Days    int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 180)"`
 }
 
-// WeaknessTrendOutput is the output for the get_weakness_trend tool.
-type WeaknessTrendOutput struct {
-	Tag         string                   `json:"tag"`
-	Occurrences []learning.WeaknessPoint `json:"occurrences"`
-	Total       int                      `json:"total"`
-	Trend       string                   `json:"trend"`
-	Project     string                   `json:"project"`
-	Period      string                   `json:"period"`
-}
-
-func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, input WeaknessTrendInput) (*mcp.CallToolResult, WeaknessTrendOutput, error) {
+func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, input WeaknessTrendInput) (*mcp.CallToolResult, learning.WeaknessTrendResult, error) {
 	if input.Project == "" {
-		return nil, WeaknessTrendOutput{}, fmt.Errorf("project is required")
+		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("project is required")
 	}
 	if input.Tag == "" {
-		return nil, WeaknessTrendOutput{}, fmt.Errorf("tag is required")
+		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("tag is required")
 	}
 
 	proj, err := s.resolveProjectChain(ctx, input.Project)
 	if err != nil {
-		return nil, WeaknessTrendOutput{}, err
+		return nil, learning.WeaknessTrendResult{}, err
 	}
 
 	days := clamp(input.Days, 1, 180, 30)
@@ -137,17 +97,8 @@ func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, i
 
 	entries, err := s.contents.TagEntries(ctx, content.TypeTIL, &proj.ID, since)
 	if err != nil {
-		return nil, WeaknessTrendOutput{}, fmt.Errorf("querying tag entries: %w", err)
+		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("querying tag entries: %w", err)
 	}
 
-	result := learning.WeaknessTrend(entries, input.Tag, days)
-
-	return nil, WeaknessTrendOutput{
-		Tag:         result.Tag,
-		Occurrences: result.Occurrences,
-		Total:       len(result.Occurrences),
-		Trend:       result.Trend,
-		Project:     proj.Slug,
-		Period:      learning.FormatPeriod(days),
-	}, nil
+	return nil, learning.WeaknessTrend(entries, input.Tag, days), nil
 }
