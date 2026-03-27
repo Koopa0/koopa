@@ -9,7 +9,7 @@ import {
   DestroyRef,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { LucideAngularModule, ArrowRight, Code2, Mail } from 'lucide-angular';
+import { LucideAngularModule, Code2 } from 'lucide-angular';
 import { HeroCanvasComponent } from '../../../shared/components/hero-canvas/hero-canvas.component';
 
 @Component({
@@ -53,23 +53,6 @@ import { HeroCanvasComponent } from '../../../shared/components/hero-canvas/hero
             Building production-grade services with Go — from diagnosis to
             delivery.
           </p>
-          <div class="hero-cta mt-10 flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              (click)="scrollToContact()"
-              class="cta-primary group relative inline-flex cursor-pointer items-center gap-2 overflow-hidden rounded-sm bg-white px-6 py-3 text-sm font-semibold text-zinc-900 no-underline transition-all hover:scale-[1.02] hover:bg-zinc-200 active:scale-[0.98]"
-            >
-              Have a backend challenge? Let's talk
-              <lucide-icon [img]="MailIcon" [size]="16" />
-            </button>
-            <a
-              href="/projects/koopa0-dev"
-              class="inline-flex cursor-pointer items-center gap-2 rounded-sm border border-zinc-700 px-6 py-3 text-sm font-semibold text-zinc-300 no-underline transition-all hover:border-zinc-500 hover:text-white hover:shadow-xs hover:shadow-zinc-800 active:scale-[0.98]"
-            >
-              See how this site was built
-              <lucide-icon [img]="ArrowRightIcon" [size]="16" />
-            </a>
-          </div>
         </div>
       </div>
     </section>
@@ -81,9 +64,7 @@ export class HeroSectionComponent {
   private readonly el = inject(ElementRef);
   private readonly ngZone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
-  protected readonly ArrowRightIcon = ArrowRight;
   protected readonly Code2Icon = Code2;
-  protected readonly MailIcon = Mail;
 
   constructor() {
     afterNextRender(() => {
@@ -104,21 +85,16 @@ export class HeroSectionComponent {
     const badge = root.querySelector('.hero-badge');
     const title = root.querySelector('.hero-title');
     const subtitle = root.querySelector('.hero-subtitle');
-    const cta = root.querySelector('.hero-cta');
-
-    if (!badge || !title || !subtitle || !cta) return;
+    if (!badge || !title || !subtitle) return;
 
     const tl = gsap.timeline({
       delay: 0.2,
       onComplete: () => {
-        // Remove all inline styles GSAP added so elements return to their CSS state
-        [badge, title, subtitle, ...Array.from(buttons)].forEach((el) => {
+        [badge, title, subtitle].forEach((el) => {
           (el as HTMLElement).removeAttribute('style');
         });
       },
     });
-
-    const buttons = cta.querySelectorAll('button, a');
 
     const shared = { ease: 'power3.out' };
     tl.from(badge, { opacity: 0, y: 10, duration: 0.5, ...shared });
@@ -128,20 +104,7 @@ export class HeroSectionComponent {
       { opacity: 0, y: 10, duration: 0.5, ...shared },
       '-=0.35',
     );
-    tl.from(
-      buttons,
-      { opacity: 0, y: 6, duration: 0.8, stagger: 0.05, ease: 'power2.out' },
-      '-=0.7',
-    );
 
     this.destroyRef.onDestroy(() => tl.kill());
-  }
-
-  protected scrollToContact(): void {
-    if (isPlatformBrowser(this.platformId)) {
-      document
-        .getElementById('contact')
-        ?.scrollIntoView({ behavior: 'smooth' });
-    }
   }
 }

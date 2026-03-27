@@ -6,9 +6,9 @@
   <a href="README.md">English</a> | <strong>繁體中文</strong>
 </p>
 
-一個「可以輸入、可以處理、可以輸出」的個人知識引擎。
+一個用 Go 打造的後端系統，將 Notion、Obsidian 和 RSS 整合成統一平台 — AI 透過 45 個 MCP 工具作為系統的一級使用者。
 
-不是部落格。部落格是「你寫文章 → 發布」。這個系統是：你的筆記、你訂閱的文章、你的 task 和 goal — 全部流進同一個資料庫，AI 幫你整理，你審核後發布，同時幫你追蹤學習進度、驗證假說、管理每日計畫。
+這不是部落格平台，也不是又一個 PKM 應用程式。這是我每天實際在用的個人基礎設施 — 規劃任務、追蹤學習、收集與策展文章、發佈值得分享的內容。多個 AI 環境（Claude Web、Claude Code、Cowork）連接到同一個 Go server 和 PostgreSQL，透過結構化的 artifact 協調運作，而不是每次對話都從零開始。
 
 <p align="center">
   <img src="docs/images/data-flow.png" alt="Data Flow" width="720">
@@ -18,13 +18,13 @@
 
 ## 為什麼做這個
 
-每次 AI 對話都從零開始。你在 Claude Web 規劃今天要做什麼，切到 Claude Code 寫程式 — 它不知道你的計畫。你上週學了 binary search 的 pattern — 這週忘了自己學過。你三個月前做了一個架構決策 — 今天做了相反的決策，因為當初的理由沒有留下來。
+我每天要處理的東西很多 — 任務、學習目標、技術閱讀、Obsidian 筆記、要寫的文章。量一直在增長，我需要的是一個跟得上節奏的系統，而不只是一堆 app 的組合。
 
-根本原因：**AI 環境之間沒有共享記憶**。每個 session 都是孤島。
+Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任務和目標，Obsidian 寫技術筆記。但我想要的工作流程不存在於任何單一工具裡：跨所有來源的語義搜尋、AI 驅動的每日規劃循環、從 RSS 訂閱到策展書籤的自動化內容管線、能隨時間自我驗證的假說追蹤。資料散落在彼此無法溝通的工具之間，手動串接的方式無法擴展。
 
-koopa0.dev 用 MCP 不只是 tool access，而是 **共享記憶層**。四個 AI 環境連到同一個 Go server，讀寫同一個 PostgreSQL，透過結構化的 artifact（session notes、tasks、build logs、insights）互相協調。
+所以我建了底下那一層。一個 Go server 搭配 PostgreSQL，將這些工具作為資料來源整合，透過 Genkit 執行 13 個 AI flow，並開放 45 個 MCP 工具讓 AI 操作整個系統。Notion 雙向同步任務和目標。Obsidian 同步筆記並產生向量嵌入以支援語義搜尋。RSS 訂閱經過 TF-IDF 評分後浮出供審閱。所有資料匯入同一個資料庫，AI 幫忙驅動整個循環 — 規劃、執行、反思、調整。
 
-你不再當 AI 工具之間的信差，而是決策者。
+這個架構帶來一個附帶效果：當多個 AI 環境連接到同一個後端，「每次 session 都從零開始」的問題自然消失了。Claude Web 規劃我的一天、Claude Code 接手任務、Cowork 執行內容管線 — 它們讀寫的是同一份資料。session 之間不會遺失任何上下文。
 
 <p align="center">
   <img src="docs/images/architecture.png" alt="Architecture" width="720">
@@ -32,323 +32,149 @@ koopa0.dev 用 MCP 不只是 tool access，而是 **共享記憶層**。四個 A
 
 ---
 
+## 架構
+
+系統由三個層級、四個 AI 消費者和三條資料流組成。
+
+### 三個層級
+
+**Notion + Obsidian** 是輸入層 — 我原本就在用的工具，現在作為資料來源接入，而不是孤立的 silo。Notion 透過 webhook 和排程同步提供任務、目標和專案。Obsidian 透過 git push 和 GitHub webhook 提供技術筆記。兩者都沒有被取代，而是獲得了一個能做到它們單獨做不到的事情的後端。
+
+**PostgreSQL** 是處理層 — 一個資料庫承載所有資料。透過 tsvector + GIN 實現全文搜尋，透過 pgvector + HNSW 實現語義搜尋，再用 Reciprocal Rank Fusion 合併結果。原始素材在這裡變得可查詢、可搜尋、可關聯。
+
+**Go server + Angular 前端** 是輸出層 — 一個 MCP server 為 AI 環境開放 45 個工具、一條 Genkit 管線執行 13 個 AI flow、一個 Angular SSR 前端將成品發佈到網站。
+
+### 四個 AI 消費者
+
+每個都連接到同一個 MCP server，但透過 `sections` 參數拉取不同的資料子集：
+
+| 消費者             | 角色                         | 典型工具                                                           |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------ |
+| Claude Web（日常） | 晨間規劃、晚間反思、週報     | `get_morning_context`、`save_session_note`、`batch_my_day`         |
+| Claude Web（學習） | 學習 session、知識搜尋、閱讀 | `log_learning_session`、`search_knowledge`、`read_oreilly_chapter` |
+| Claude Code        | 開發、build log、專案追蹤    | `get_project_context`、`log_dev_session`、`search_tasks`           |
+| Cowork             | 內容管線、RSS 管理、系統維運 | `create_content`、`publish_content`、`trigger_pipeline`            |
+
+### 三條資料流
+
+**Obsidian → 網站**：vault → git push → GitHub webhook → `notes` 表（原始素材）→ AI 標籤 + 嵌入 → 策展 → `contents` 表 → 發佈 → 網站。
+
+**RSS → 網站**：訂閱源 → 排程抓取 → TF-IDF 評分 → `collected_data` 表 → 管理員審閱：策展（→ 書籤）/ 忽略 / 回饋（→ 改善評分）。每個 feed 有過濾設定（排除路徑、標題模式、標籤過濾）。
+
+**Notion → 系統**：workspace → webhook / cron → 依角色分流：`task` → 任務表、`goal` → 目標表、`project` → 專案表。雙向同步 — 在前端完成任務，後端寫回 Notion。
+
+---
+
 ## 核心概念
 
-在看任何功能之前，先搞懂這六個東西。系統的一切都圍繞它們。
+理解這六個概念，就理解了系統的 80%。
 
 ### Content — 成品
 
-**任何最終會出現在網站上讓訪客看到的東西，都是一筆 content。**
-
-| Type | 是什麼 | 例子 |
-|------|--------|------|
-| `article` | 深度技術文章 | 「Go error handling 完整指南」 |
-| `essay` | 個人想法、非技術反思 | 「為什麼我離開大公司」 |
-| `build-log` | 專案開發紀錄 | 「koopa0.dev Week 3: RSS pipeline」 |
-| `til` | Today I Learned | 「TIL: psql 的 \watch 可以自動重跑 query」 |
-| `note` | 技術筆記片段 | 「PostgreSQL JSONB 常用操作速查」 |
-| `bookmark` | 推薦外部文章 + 你的評語 | 「Uber 的 Go style guide 值得看，因為...」 |
-| `digest` | 週報/月報 | 「2026 第 12 週：完成了 RSS pipeline...」 |
-
-所有 type 共用同一張表，走同一個生命週期：
+發佈到網站上的東西就是一筆 content 記錄。七種類型共用一張表和一個生命週期：`article`（深度技術文章）、`essay`（個人思考/非技術）、`build-log`（專案開發紀錄）、`til`（Today I Learned）、`note`（技術片段）、`bookmark`（策展的外部文章 + 評論）、`digest`（週報/月報）。
 
 <p align="center">
   <img src="docs/images/content-lifecycle.png" alt="Content Lifecycle" width="520">
 </p>
 
-一句話：**content = 你願意掛上名字、讓別人看到的東西。**
+生命週期：**draft** → **review** → **published**。Content = 你願意署名並讓別人看到的東西。
 
-### Note — 兩個不同的東西
+### Notes — 兩種不同的東西
 
-系統裡有兩種 "note"，這是最容易搞混的地方：
-
-| | Obsidian notes | Content type `note` |
-|---|---|---|
-| 是什麼 | Obsidian vault 裡的原始筆記 | 整理好的技術筆記成品 |
-| 存在哪 | `notes` 表 | `contents` 表 |
-| 誰看得到 | 只有 admin | published 後訪客可見 |
-| 數量 | 幾百上千筆 | 精選，幾十筆 |
-
-**關係**：Obsidian note（原始素材）→ 覺得值得分享 → 整理成 content（成品）→ publish。
-
-Obsidian notes 還帶 embedding (vector)，是語義搜尋和知識圖譜的基礎。
+這是最容易搞混的地方。**Obsidian notes** 存在 `notes` 表 — 原始素材、僅管理員可見、數量可達數百到數千筆，攜帶向量嵌入供語義搜尋使用。**Content 類型的 `note`** 存在 `contents` 表 — 打磨過的技術片段、發佈到網站、可能只有幾十筆。關係：Obsidian note（原始）→ 判斷值得分享 → 打磨 → content（成品）→ 發佈。
 
 ### Topic & Tag — 知識組織
 
-**Topic** = 高層級知識領域（Go、系統設計、AI），10-20 個，手動管理。
-
-**Tag** = 細粒度標籤（pgvector、error-handling），自動從 Obsidian 提取。
-
-Tag 有 **alias 系統** — 因為同一個概念在不同地方叫不同名字：
-
-| Raw tag | → | Canonical |
-|---------|---|-----------|
-| `golang` | → | `go` |
-| `JS` | → | `javascript` |
-| `PostgreSQL` | → | `postgres` |
-
-未知的 raw tag 會建立 unmapped alias，等 admin 決定 map / confirm / reject。
+**Topic** 是高層級的知識領域（Go、System Design、AI）— 10-20 個，手動管理。**Tag** 是細粒度的標籤（pgvector、error-handling）— 從 Obsidian 筆記自動提取。Tag 有別名系統，將不同寫法對應到正規形式（`golang` → `go`、`JS` → `javascript`）。未知的原始 tag 會建立未映射的別名，等待管理員映射、確認或拒絕。
 
 ### Session Note — AI 的工作日誌
 
-**不是你寫的，是 AI flow 自動產生的。不對外公開。**
-
-| Type | 什麼時候產生 | 做什麼 |
-|------|------------|--------|
-| `plan` | 每天早上 | 今日計畫 |
-| `reflection` | 每週日 | 週回顧 |
-| `context` | session 結束 | 這次改了什麼 |
-| `metrics` | 定期 | 數據快照 |
-| `insight` | 發現 pattern | 假說紀錄 ↓ |
+由 AI flow 自動生成，不是使用者手寫的，不公開。五種類型：`plan`（每日）、`reflection`（每週）、`context`（session 結束時）、`metrics`（定期資料快照）、`insight`（假說紀錄 — 見下方）。
 
 ### Insight — 假說追蹤
 
-Insight 是 session note 的特殊子類型，多了「假說 → 驗證」結構：
+一種帶有「假說 → 驗證」結構的 session note。AI 發現模式後記錄下來，附帶可證偽條件，系統隨時間追蹤證據，直到假說被驗證、否定或歸檔。例如：「90% 的 relevance score < 0.3 的文章被忽略」→ 跨 session 收集證據 → 確認 → 調整閾值。
 
-```yaml
-content:    "relevance score < 0.3 的文章 90% 被 ignore"
-hypothesis: "門檻應該從 0.2 調到 0.3"
-evidence:   ["03-20: 15/17 ignored", "03-25: 12/14 ignored"]
-status:     unverified → verified / invalidated → archived
-conclusion: "確認有效，已調整"
-```
+### Project — 你的工作
 
-**一句話：insight = AI 提出的假說，等你蒐集證據確認對不對。**
-
-### Project — 專案
-
-Project 有自己的表，跟 content 分開。一個 project 可以關聯多篇 content（build-logs、articles）和多個 tasks。
-
-Project 可以從 Notion 同步，也可以手動建立。有 case study 欄位（problem / solution / architecture / results），讓專案頁面像作品集而不只是清單。
+專案有獨立的表，帶有案例研究欄位（問題 / 方案 / 架構 / 成果）— 專案頁面讀起來像作品集，而不只是一份清單。專案連結到 content 記錄（build-log、article）和任務，從 Notion 同步或手動建立。
 
 ---
 
-## 三大資料流
+## MCP 設計
 
-### 流 1：Obsidian → 網站
+MCP（Model Context Protocol）是 AI 環境與系統互動的方式。45 個工具，橫跨四個領域。
 
-**Obsidian vault** → git push → GitHub webhook → Backend sync → `notes` 表 (原始素材) → AI 打 tag + embedding → 你決定哪些發布 → `contents` 表 → 審核 → **網站**
+### 四個領域
 
-### 流 2：RSS → 網站
+| 領域           | 工具數 | 用途                                                     |
+| -------------- | ------ | -------------------------------------------------------- |
+| 日常循環       | 11     | 規劃 → 執行 → 反思 → 調整。每日工作循環                  |
+| 知識與內容     | 13     | 搜尋、建立、策展、發佈。Content 生命週期 + O'Reilly 整合 |
+| 開發與學習     | 8      | Build log、學習紀錄、弱點分析、專案追蹤                  |
+| 系統與基礎設施 | 13     | 監控、RSS 管理、目標追蹤、insight 生命週期               |
 
-**RSS feeds** → 排程抓取 → TF-IDF 評分 → `collected_data` 表 → Admin 審核：**Curate** (→ bookmark content) / **Ignore** / **Feedback** (→ 改善評分)
+完整工具參考（含參數和風險等級）：[`docs/MCP-TOOLS-REFERENCE.md`](docs/MCP-TOOLS-REFERENCE.md)
 
-每個 feed 有 filter config（deny path、title pattern、tag 過濾），在抓取階段就擋掉不要的。
+### 設計原則
 
-### 流 3：Notion → 系統
+| 原則                             | 意義                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| 一個工具、一個動作、一個風險等級 | 不做多工器模式（`manage_X(action=...)`）。工具名稱就是意圖                       |
+| 不做 AI 呼叫 AI                  | 如果消費者已經是 LLM，server 端就不再經過另一個 LLM                              |
+| Schema 強制                      | Session note 有必填 metadata — insight 必須有假說 + 可證偽條件                   |
+| 聚合檢視凍結在 4 個              | morning / reflection / delta / weekly 是便利包。新功能只加手術刀型工具           |
+| 先收斂再擴展                     | 加工具之前問：「有幾個 session 因為缺這個工具而劣化？」 0 → backlog，3+ → 立即做 |
+| 描述品質 > 工具數量              | 45 個描述清晰的工具勝過 25 個語意模糊的                                          |
 
-**Notion workspace** → webhook / cron → 根據 source role 分流：
-- `role=task` → tasks 表
-- `role=goal` → goals 表
-- `role=project` → projects 表
-- ↩ 雙向：前端 complete task → Backend 回寫 Notion
+### 組合範例
 
-雙向同步：前端 complete task → Backend 回寫 Notion。
+這些工具是積木 — 你可以組合成任何符合需求的工作流程：
 
----
+- **早晨**：`get_morning_context` → 審閱 insight → 決定計劃 → `save_session_note(type=plan)` → `batch_my_day`
+- **開發中**：發現問題 → `create_task` + `save_session_note(type=context)`
+- **傍晚**：`get_reflection_context` → 驗證假說 → `update_insight` → `save_session_note(type=metrics)`
+- **知識工作**：`search_knowledge`（四路並行：content 全文 + Obsidian 文字 + Obsidian 語義 + 去重，以 RRF 排序）→ `synthesize_topic` → `create_content`
 
-## AI Pipeline
+### 關鍵技術細節
 
-13 個 Genkit flow，全部用 Claude。
+**搜尋是四路並行的**：content 全文搜尋 + Obsidian 文字搜尋 + Obsidian 語義搜尋（pgvector 嵌入）+ 去重。結果以 Reciprocal Rank Fusion 排序。
 
-**內容處理**：ContentPolish（潤色）、ContentTags（自動打 tag）、ContentExcerpt（生成摘要）、ContentProofread（語法檢查）、ContentReview（品質審核）、ContentStrategy（策略建議）、BookmarkGenerate（書籤提取重點）、BuildLog（開發紀錄結構化）
+**`get_morning_context` 支援 `sections` 參數**：不同 AI 環境拉取不同的資料子集。Claude Code 只需要 tasks + plan + build_logs（約 1/4 的資料量），避免浪費 token。
 
-**定期報告**：MorningBrief（每日計畫）、DailyDevLog（每日開發摘要）、WeeklyReview（週回顧）、DigestGenerate（週報/月報）
-
-**專案追蹤**：ProjectTrack（分析 activity、更新狀態）
-
-所有 flow 執行紀錄存在 `flow_runs` 表，可監控、可重試。
-
----
-
-## MCP — AI 跟平台互動的方式
-
-MCP (Model Context Protocol) 是讓 AI 環境操作這個系統的介面。45 個 tool，四個領域。
-
-這不是 REST API 文件 — 這是 **AI 可以用的積木**。每個 tool 是一塊積木，你可以自由組合出適合自己的工作流。
-
-### 積木 1：每日循環 (11 tools)
-
-> 規劃 → 執行 → 回顧 → 調整。AI 幫你跑這個循環。
-
-| 積木 | 做什麼 | 風險 |
-|------|--------|------|
-| `get_morning_context` | 一次拉回所有規劃所需的資料（tasks、plan、goals、insights、RSS） | 唯讀 |
-| `get_reflection_context` | 一次拉回回顧所需的資料（plan vs actual、completions、insights） | 唯讀 |
-| `get_session_delta` | 上次 session 到現在的所有變化 | 唯讀 |
-| `save_session_note` | 寫入 session note（plan / reflection / context / metrics / insight） | 新增 |
-| `get_session_notes` | 讀取指定日期/類型的 session notes | 唯讀 |
-| `create_task` | 建立任務（同步到 Notion） | 新增 |
-| `complete_task` | 完成任務（recurring task 自動推進 due date） | 不可逆 |
-| `update_task` | 更新任務屬性 | 冪等 |
-| `search_tasks` | 搜尋/篩選任務 | 唯讀 |
-| `batch_my_day` | 批次設定今日任務 | 冪等 |
-| `get_active_insights` | 查看待驗證的假說 | 唯讀 |
-
-**`get_morning_context` 支援 `sections` 參數** — 不同環境拉不同子集。Claude Code 只需要 tasks + plan + build_logs（約 1/4 的資料量），不用拉全量。
-
-**組合的可能性**：
-- 早上開始 → `get_morning_context` → 看 insights → 決定 plan → `save_session_note(type=plan)` → `batch_my_day`
-- 開發到一半發現問題 → `create_task` + `save_session_note(type=context)`
-- 晚上回顧 → `get_reflection_context` → 驗證假說 → `update_insight` → `save_session_note(type=metrics)`
-- 這些只是範例 — 你的循環可能完全不同
-
-### 積木 2：知識與內容 (13 tools)
-
-> 搜尋知識、管理內容、O'Reilly 學習、RSS 收藏。
-
-| 積木 | 做什麼 | 風險 |
-|------|--------|------|
-| `search_knowledge` | 全域搜尋：content + Obsidian notes（4 路並行，含語義） | 唯讀 |
-| `synthesize_topic` | 跨源知識合成 + gap analysis | 唯讀 |
-| `get_content_detail` | 用 slug 拉完整內容 | 唯讀 |
-| `create_content` | 建立草稿（7 種 type） | 新增 |
-| `update_content` | 更新草稿/review 中的內容 | 冪等 |
-| `publish_content` | 發布（不可逆） | 不可逆 |
-| `list_content_queue` | 查看內容佇列（drafts / review / published） | 唯讀 |
-| `get_decision_log` | 拉所有 decision-log 類型的筆記 | 唯讀 |
-| `bookmark_rss_item` | 把 collected item 轉成 bookmark content（6 步 atomic） | 新增 |
-| `search_oreilly_content` | 搜尋 O'Reilly 書/影片/課程 | 唯讀 |
-| `get_oreilly_book_detail` | 看書的章節目錄 | 唯讀 |
-| `read_oreilly_chapter` | 讀完整章節 | 唯讀 |
-| `get_rss_highlights` | 最近收集的 RSS 精選 | 唯讀 |
-
-**搜尋是 4 路並行**：content 全文搜尋 + Obsidian 文字搜尋 + Obsidian 語義搜尋 (embedding) + 去重。結果按 Reciprocal Rank Fusion 排序。
-
-**O'Reilly 三件組** 是 progressive disclosure：search → detail（看目錄）→ read（讀章節）。
-
-**組合的可能性**：
-- 寫文章前 → `search_knowledge` 看以前寫過什麼 → `synthesize_topic` 看哪些面向缺內容 → `create_content` 開始寫
-- 讀完一篇 RSS → `bookmark_rss_item` 存起來 + 加評語
-- 做架構決策前 → `get_decision_log` 看過去類似的決策
-- O'Reilly 學習 → search → 挑書 → 讀特定章節 → `save_session_note` 記錄心得
-
-### 積木 3：開發與學習 (8 tools)
-
-> 記錄開發、記錄學習、追蹤專案、分析弱點。
-
-| 積木 | 做什麼 | 風險 |
-|------|--------|------|
-| `log_dev_session` | 記錄 coding session 為 build-log | 新增 |
-| `log_learning_session` | 記錄學習成果（LeetCode / 讀書 / 課程） | 新增 |
-| `get_project_context` | 單一 project 的完整 context | 唯讀 |
-| `list_projects` | 列出所有 active projects | 唯讀 |
-| `update_project_status` | 更新 project 狀態 | 冪等 |
-| `get_coverage_matrix` | Topic × Result 矩陣（哪些練了、成績如何） | 唯讀 |
-| `get_tag_summary` | Tag 頻率統計 | 唯讀 |
-| `get_weakness_trend` | 單一弱點的時間趨勢 | 唯讀 |
-
-**`log_dev_session` 是跨環境橋樑** — `plan_summary` 和 `review_summary` 讓 HQ 不需要看 git diff 就能理解開發進度。
-
-**學習分析三件組**：`get_tag_summary`（找高頻弱點）→ `get_weakness_trend`（看趨勢）→ `get_coverage_matrix`（看整體分佈）。
-
-**`log_learning_session` 有 controlled vocabulary** — 35+ 標準化 tag（two-pointers、sliding-window、dp...）+ 結果標籤（ac-independent、ac-with-hints...）+ 弱點標籤（weakness:xxx）。標準化讓分析查詢不會碎片化。
-
-### 積木 4：系統與基礎設施 (13 tools)
-
-> 監控、RSS 管理、目標追蹤、insight lifecycle、週報。
-
-| 積木 | 做什麼 | 風險 |
-|------|--------|------|
-| `get_system_status` | 系統健康度（flow runs、feed health） | 唯讀 |
-| `get_collection_stats` | RSS 收集品質（per-feed score、item counts） | 唯讀 |
-| `get_weekly_summary` | 週報（per-project completions、trends） | 唯讀 |
-| `get_goal_progress` | 目標進度（含 drift analysis） | 唯讀 |
-| `update_goal_status` | 更新目標狀態 | 冪等 |
-| `update_insight` | 更新 insight（status / 追加 evidence / conclusion） | 冪等 |
-| `get_learning_progress` | 學習指標（note growth、top tags） | 唯讀 |
-| `get_recent_activity` | 最近活動（可按 source 過濾） | 唯讀 |
-| `add_feed` | 新增 RSS 訂閱 | 新增 |
-| `update_feed` | 更新 feed（含啟用/停用） | 冪等 |
-| `remove_feed` | 刪除 feed（不可逆） | 不可逆 |
-| `list_feeds` | 列出所有 feed | 唯讀 |
-| `trigger_pipeline` | 手動觸發 pipeline（rss_collector / notion_sync） | 不可逆 |
-
-**`get_system_status` vs `get_collection_stats`** — 不同層級。system_status 看「job 有沒有正常跑」（infra），collection_stats 看「收了什麼、品質如何」（data quality）。
-
-### MCP 設計原則
-
-這些原則決定了 tool 為什麼長這樣：
-
-| 原則 | 意思 |
-|------|------|
-| 一個 tool、一個動作、一個風險等級 | 不用 multiplexer pattern（`manage_X(action=...)`）。tool 名字就是意圖 |
-| AI 不呼叫 AI | 如果 consumer 已經是 LLM，不繞一圈讓 server 再叫另一個 LLM |
-| Schema 強制 | Session note 有 required metadata — insight 必須有 hypothesis + 證偽條件 |
-| 聚合視圖凍結在 4 個 | morning / reflection / delta / weekly 是「便利包」。新功能只加 surgical tool，不膨脹聚合視圖 |
-| 收斂才能擴張 | 加 tool 前問：「過去兩週有幾個 session 因為缺這個 tool 而失敗？」0 → backlog，3+ → 立刻做 |
-| 描述品質 > tool 數量 | 45 個描述清楚的 tool 比 25 個猜不準的 tool 好 |
-
-完整 MCP tool reference 見 [`docs/MCP-TOOLS-REFERENCE.md`](docs/MCP-TOOLS-REFERENCE.md)。
+**學習使用受控詞彙**：35+ 標準化標籤（two-pointers、sliding-window、dp...）+ 結果標籤（ac-independent、ac-with-hints...）+ 弱點標籤（weakness:xxx）。標準化防止查詢碎片化。
 
 ---
 
-## 前端 — 訪客看到什麼
+## AI 管線
 
-### 公開頁面
+13 個 Genkit flow，全部使用 Claude。每次執行都記錄在 `flow_runs` — 可監控、可重試。
 
-| 頁面 | 內容 |
-|------|------|
-| 首頁 | Hero + 精選專案 + 最新 6 篇 + Tech Stack + CTA |
-| 文章列表 | 3 欄 grid、inline 搜尋 (debounce 300ms)、tag 過濾、分頁 |
-| 文章詳情 | TOC 側邊欄、syntax highlight、copy code、related articles |
-| 專案列表 | 狀態過濾、featured 標記 |
-| 專案詳情 | Case study 格式：Problem → Solution → Architecture → Results |
-| TIL | 短篇學習紀錄 |
-| Notes | 技術筆記片段 |
-| Tag 瀏覽 | 某 tag 下所有 content（混合類型） |
-| 全站搜尋 | ⌘K 搜尋 / articles 頁面 inline 搜尋 |
+**內容處理**：潤稿、自動標籤、摘要生成、文法檢查、品質評分、策略建議、書籤提取、build log 結構化。
 
-### Admin Dashboard
+**定期報告**：晨間簡報（每日計劃）、每日開發日誌、週報、digest 生成（週/月報）。
 
-| 頁面 | 用途 |
-|------|------|
-| Dashboard | 系統全局：stats grid + drift report + learning dashboard + quick sync |
-| Today | 個人每日：My Day tasks + insights + planning heatmap |
-| Contents | 內容 CRUD + status/type/visibility 過濾 |
-| Editor | Markdown 編輯 (edit/preview/split) + AI polish + image upload |
-| Review | 審核佇列：approve / reject / edit |
-| Feeds | RSS 管理：CRUD + filter config |
-| Collected | 收集審核：feedback + ignore |
-| Tasks | 任務管理：My Day 視圖、priority/energy filter |
-| Goals | 目標追蹤：唯讀 + status 切換 |
-| Projects | 專案 CRUD（含 case study 欄位） |
-| Tags | Canonical tags + Alias 管理 + backfill + merge |
-| Notion Sources | Notion database 連接 + role 設定 |
-| Flow Runs | AI flow 監控 + retry |
-| Activity | 變更紀錄（session 視圖 / timeline 視圖） |
-| Insights | 假說管理：verify / invalidate / add evidence |
-| Pipeline | 7 個手動觸發按鈕 |
+**專案追蹤**：分析近期活動、自動更新專案狀態。
 
 ---
 
-## 技術棧
+## 技術
 
-| 層 | 技術 |
-|----|------|
-| 後端 | Go 1.26+, net/http (std lib routing) |
-| 資料庫 | PostgreSQL, pgx/v5, sqlc |
-| 搜尋 | tsvector + GIN (全文), pgvector + HNSW (語義) |
-| AI Pipeline | Genkit Go (13 flows), Claude |
-| 訊息佇列 | NATS (Core + JetStream) |
-| 快取 | Ristretto (in-memory) |
-| 前端 | Angular 21, Tailwind CSS v4, SSR |
-| 儲存 | Cloudflare R2 |
-| 整合 | Notion API, GitHub Webhook, Obsidian vault |
-| 協定 | MCP (Model Context Protocol) |
+| 層級     | 技術                                            |
+| -------- | ----------------------------------------------- |
+| 後端     | Go 1.26+、net/http（stdlib routing）            |
+| 資料庫   | PostgreSQL、pgx/v5、sqlc                        |
+| 搜尋     | tsvector + GIN（全文）、pgvector + HNSW（語義） |
+| AI 管線  | Genkit Go（13 flows）、Claude                   |
+| 訊息佇列 | NATS（Core + JetStream）                        |
+| 快取     | Ristretto（in-memory）                          |
+| 前端     | Angular 21、Tailwind CSS v4、SSR                |
+| 儲存     | Cloudflare R2                                   |
+| 整合     | Notion API、GitHub Webhook、Obsidian vault      |
+| 協議     | MCP（Model Context Protocol）                   |
 
-## Repository 結構
+---
 
-```
-frontend/     Angular 21 前端（SSR + Tailwind v4）
-backend/      Go API + MCP server + AI pipeline
-docs/         設計文件
-```
+## 授權
 
-## 開始開發
-
-見 [`frontend/CLAUDE.md`](frontend/CLAUDE.md) 和 [`backend/CLAUDE.md`](backend/CLAUDE.md)。
-
-## License
-
-本 repository 包含個人內容與基礎設施。All rights reserved.
+本 repository 包含個人內容與基礎設施。保留所有權利。
