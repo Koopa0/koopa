@@ -61,8 +61,8 @@
   <g filter="url(#shadow)">
     <rect x="200" y="180" width="400" height="72" rx="12" fill="#1e293b"/>
     <text x="400" y="210" text-anchor="middle" font-size="15" font-weight="600" fill="#f8fafc">MCP Server</text>
-    <text x="400" y="230" text-anchor="middle" font-size="11" fill="#94a3b8">Go &middot; 45 tools &middot; 4 domains</text>
-    <text x="400" y="245" text-anchor="middle" font-size="10" fill="#64748b">Daily Loop &middot; Knowledge &middot; Dev &amp; Learning &middot; System</text>
+    <text x="400" y="230" text-anchor="middle" font-size="11" fill="#94a3b8">Go · 45 tools · 4 domains</text>
+    <text x="400" y="245" text-anchor="middle" font-size="10" fill="#64748b">Daily Loop · Knowledge · Dev &amp; Learning · System</text>
   </g>
 
   <!-- MCP to PostgreSQL -->
@@ -73,8 +73,8 @@
   <g filter="url(#shadow)">
     <rect x="230" y="316" width="340" height="68" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="1.5"/>
     <text x="400" y="344" text-anchor="middle" font-size="14" font-weight="600" fill="#1e40af">PostgreSQL</text>
-    <text x="400" y="364" text-anchor="middle" font-size="11" fill="#64748b">Full-text search (GIN) &middot; Semantic search (pgvector) &middot; Relational</text>
-    <text x="400" y="378" text-anchor="middle" font-size="10" fill="#94a3b8">21 tables &middot; 183 queries &middot; 768-dim embeddings</text>
+    <text x="400" y="364" text-anchor="middle" font-size="11" fill="#64748b">Full-text search (GIN) · Semantic search (pgvector) · Relational</text>
+    <text x="400" y="378" text-anchor="middle" font-size="10" fill="#94a3b8">21 tables · 183 queries · 768-dim embeddings</text>
   </g>
 
   <!-- PostgreSQL to integrations -->
