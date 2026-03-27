@@ -12,7 +12,7 @@ FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('tag')::text IS NULL OR sqlc.narg('tag') = ANY(tags))
-  AND (sqlc.narg('since')::timestamptz IS NULL OR created_at >= sqlc.narg('since'))
+  AND (sqlc.narg('since')::timestamptz IS NULL OR published_at >= sqlc.narg('since'))
 ORDER BY published_at DESC NULLS LAST
 LIMIT $1 OFFSET $2;
 
@@ -21,7 +21,7 @@ SELECT COUNT(*) FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('tag')::text IS NULL OR sqlc.narg('tag') = ANY(tags))
-  AND (sqlc.narg('since')::timestamptz IS NULL OR created_at >= sqlc.narg('since'));
+  AND (sqlc.narg('since')::timestamptz IS NULL OR published_at >= sqlc.narg('since'));
 
 -- name: ContentBySlug :one
 SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
@@ -70,6 +70,7 @@ SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
+  AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
 ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
 LIMIT $2 OFFSET $3;
 

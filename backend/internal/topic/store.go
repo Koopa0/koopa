@@ -145,12 +145,6 @@ func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p *UpdateParams) 
 	}, nil
 }
 
-// TagCount is a tag with its frequency within a topic.
-type TagCount struct {
-	Tag   string `json:"tag"`
-	Count int    `json:"count"`
-}
-
 // RelatedTags returns the most frequent tags in published content for a topic.
 func (s *Store) RelatedTags(ctx context.Context, topicID uuid.UUID, limit int) ([]TagCount, error) {
 	rows, err := s.q.RelatedTagsForTopic(ctx, db.RelatedTagsForTopicParams{

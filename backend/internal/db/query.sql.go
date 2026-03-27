@@ -4662,7 +4662,7 @@ FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND ($3::content_type IS NULL OR type = $3)
   AND ($4::text IS NULL OR $4 = ANY(tags))
-  AND ($5::timestamptz IS NULL OR created_at >= $5)
+  AND ($5::timestamptz IS NULL OR published_at >= $5)
 ORDER BY published_at DESC NULLS LAST
 LIMIT $1 OFFSET $2
 `
@@ -4833,7 +4833,7 @@ SELECT COUNT(*) FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND ($1::content_type IS NULL OR type = $1)
   AND ($2::text IS NULL OR $2 = ANY(tags))
-  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($3::timestamptz IS NULL OR published_at >= $3)
 `
 
 type PublishedContentsCountParams struct {
@@ -5483,14 +5483,16 @@ SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
+  AND ($4::content_type IS NULL OR type = $4)
 ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
 LIMIT $2 OFFSET $3
 `
 
 type SearchContentsORParams struct {
-	PlaintoTsquery string `json:"plainto_tsquery"`
-	Limit          int32  `json:"limit"`
-	Offset         int32  `json:"offset"`
+	PlaintoTsquery string          `json:"plainto_tsquery"`
+	Limit          int32           `json:"limit"`
+	Offset         int32           `json:"offset"`
+	ContentType    NullContentType `json:"content_type"`
 }
 
 type SearchContentsORRow struct {
@@ -5519,7 +5521,12 @@ type SearchContentsORRow struct {
 
 // Fallback search using OR semantics: splits query into words and matches any.
 func (q *Queries) SearchContentsOR(ctx context.Context, arg SearchContentsORParams) ([]SearchContentsORRow, error) {
-	rows, err := q.db.Query(ctx, searchContentsOR, arg.PlaintoTsquery, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, searchContentsOR,
+		arg.PlaintoTsquery,
+		arg.Limit,
+		arg.Offset,
+		arg.ContentType,
+	)
 	if err != nil {
 		return nil, err
 	}

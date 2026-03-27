@@ -280,11 +280,12 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 }
 
 // SearchOR performs full-text search using OR semantics (any word matches).
-func (s *Store) SearchOR(ctx context.Context, query string, page, perPage int) ([]Content, int, error) {
+func (s *Store) SearchOR(ctx context.Context, query string, contentType *Type, page, perPage int) ([]Content, int, error) {
 	rows, err := s.q.SearchContentsOR(ctx, db.SearchContentsORParams{
 		PlaintoTsquery: query,
 		Limit:          int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
 		Offset:         int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
+		ContentType:    nullContentType(contentType),
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("searching contents (OR): %w", err)

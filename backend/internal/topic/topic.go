@@ -39,6 +39,12 @@ type UpdateParams struct {
 	SortOrder   *int    `json:"sort_order,omitempty"`
 }
 
+// TagCount is a tag with its frequency within a topic.
+type TagCount struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
 // Slug is a lightweight topic reference for AI classification.
 type Slug struct {
 	Slug string `json:"slug"`
