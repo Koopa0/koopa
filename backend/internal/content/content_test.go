@@ -2,6 +2,7 @@ package content
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -92,6 +93,32 @@ func TestFilterDefaults(t *testing.T) {
 	if f.PerPage < 0 {
 		t.Errorf("Filter{}.PerPage = %d, want >= 0", f.PerPage)
 	}
+}
+
+// TestFilterSinceField verifies that the Since field on Filter is correctly typed.
+// Scene: frontend passes ?since=2026-03-20 — parseFilter should populate Since.
+func TestFilterSinceField(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil by default", func(t *testing.T) {
+		t.Parallel()
+		f := Filter{}
+		if f.Since != nil {
+			t.Errorf("Filter{}.Since = %v, want nil", f.Since)
+		}
+	})
+
+	t.Run("can be set", func(t *testing.T) {
+		t.Parallel()
+		when := time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC)
+		f := Filter{Since: &when}
+		if f.Since == nil {
+			t.Fatal("Filter.Since = nil after setting")
+		}
+		if !f.Since.Equal(when) {
+			t.Errorf("Filter.Since = %v, want %v", *f.Since, when)
+		}
+	})
 }
 
 // TestContentTypeConstants verifies that content types match the expected database enum values.
