@@ -110,6 +110,7 @@ type Filter struct {
 	PerPage int
 	Type    *Type
 	Tag     *string
+	Since   *time.Time
 }
 
 // AdminFilter holds admin content listing parameters.

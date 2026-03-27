@@ -4662,6 +4662,7 @@ FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND ($3::content_type IS NULL OR type = $3)
   AND ($4::text IS NULL OR $4 = ANY(tags))
+  AND ($5::timestamptz IS NULL OR created_at >= $5)
 ORDER BY published_at DESC NULLS LAST
 LIMIT $1 OFFSET $2
 `
@@ -4671,6 +4672,7 @@ type PublishedContentsParams struct {
 	Offset      int32           `json:"offset"`
 	ContentType NullContentType `json:"content_type"`
 	Tag         *string         `json:"tag"`
+	Since       *time.Time      `json:"since"`
 }
 
 type PublishedContentsRow struct {
@@ -4703,6 +4705,7 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 		arg.Offset,
 		arg.ContentType,
 		arg.Tag,
+		arg.Since,
 	)
 	if err != nil {
 		return nil, err
@@ -4830,15 +4833,17 @@ SELECT COUNT(*) FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND ($1::content_type IS NULL OR type = $1)
   AND ($2::text IS NULL OR $2 = ANY(tags))
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
 `
 
 type PublishedContentsCountParams struct {
 	ContentType NullContentType `json:"content_type"`
 	Tag         *string         `json:"tag"`
+	Since       *time.Time      `json:"since"`
 }
 
 func (q *Queries) PublishedContentsCount(ctx context.Context, arg PublishedContentsCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, publishedContentsCount, arg.ContentType, arg.Tag)
+	row := q.db.QueryRow(ctx, publishedContentsCount, arg.ContentType, arg.Tag, arg.Since)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -5226,6 +5231,48 @@ func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) erro
 	return err
 }
 
+const relatedTagsForTopic = `-- name: RelatedTagsForTopic :many
+SELECT tag::text, COUNT(*)::int AS count
+FROM content_topics ct
+JOIN contents c ON c.id = ct.content_id,
+     unnest(c.tags) AS tag
+WHERE ct.topic_id = $1
+  AND c.status = 'published' AND c.visibility = 'public'
+GROUP BY tag
+ORDER BY count DESC
+LIMIT $2
+`
+
+type RelatedTagsForTopicParams struct {
+	TopicID uuid.UUID `json:"topic_id"`
+	Limit   int32     `json:"limit"`
+}
+
+type RelatedTagsForTopicRow struct {
+	Tag   string `json:"tag"`
+	Count int32  `json:"count"`
+}
+
+func (q *Queries) RelatedTagsForTopic(ctx context.Context, arg RelatedTagsForTopicParams) ([]RelatedTagsForTopicRow, error) {
+	rows, err := q.db.Query(ctx, relatedTagsForTopic, arg.TopicID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RelatedTagsForTopicRow{}
+	for rows.Next() {
+		var i RelatedTagsForTopicRow
+		if err := rows.Scan(&i.Tag, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resetFeedFailure = `-- name: ResetFeedFailure :exec
 UPDATE feeds SET
     consecutive_failures = 0,
@@ -5327,14 +5374,16 @@ SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
 FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND search_vector @@ websearch_to_tsquery('simple', $1)
+  AND ($4::content_type IS NULL OR type = $4)
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3
 `
 
 type SearchContentsParams struct {
-	WebsearchToTsquery string `json:"websearch_to_tsquery"`
-	Limit              int32  `json:"limit"`
-	Offset             int32  `json:"offset"`
+	WebsearchToTsquery string          `json:"websearch_to_tsquery"`
+	Limit              int32           `json:"limit"`
+	Offset             int32           `json:"offset"`
+	ContentType        NullContentType `json:"content_type"`
 }
 
 type SearchContentsRow struct {
@@ -5362,7 +5411,12 @@ type SearchContentsRow struct {
 }
 
 func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) ([]SearchContentsRow, error) {
-	rows, err := q.db.Query(ctx, searchContents, arg.WebsearchToTsquery, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, searchContents,
+		arg.WebsearchToTsquery,
+		arg.Limit,
+		arg.Offset,
+		arg.ContentType,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -5407,10 +5461,16 @@ const searchContentsCount = `-- name: SearchContentsCount :one
 SELECT COUNT(*) FROM contents
 WHERE status = 'published' AND visibility = 'public'
   AND search_vector @@ websearch_to_tsquery('simple', $1)
+  AND ($2::content_type IS NULL OR type = $2)
 `
 
-func (q *Queries) SearchContentsCount(ctx context.Context, websearchToTsquery string) (int64, error) {
-	row := q.db.QueryRow(ctx, searchContentsCount, websearchToTsquery)
+type SearchContentsCountParams struct {
+	WebsearchToTsquery string          `json:"websearch_to_tsquery"`
+	ContentType        NullContentType `json:"content_type"`
+}
+
+func (q *Queries) SearchContentsCount(ctx context.Context, arg SearchContentsCountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, searchContentsCount, arg.WebsearchToTsquery, arg.ContentType)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

@@ -110,6 +110,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		Offset:      int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
 		ContentType: ct,
 		Tag:         f.Tag,
+		Since:       f.Since,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing contents: %w", err)
@@ -118,6 +119,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	countRow, err := s.q.PublishedContentsCount(ctx, db.PublishedContentsCountParams{
 		ContentType: ct,
 		Tag:         f.Tag,
+		Since:       f.Since,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting contents: %w", err)
@@ -244,17 +246,23 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 }
 
 // Search performs full-text search on published content.
-func (s *Store) Search(ctx context.Context, query string, page, perPage int) ([]Content, int, error) {
+func (s *Store) Search(ctx context.Context, query string, contentType *Type, page, perPage int) ([]Content, int, error) {
+	ct := nullContentType(contentType)
+
 	rows, err := s.q.SearchContents(ctx, db.SearchContentsParams{
 		WebsearchToTsquery: query,
 		Limit:              int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
 		Offset:             int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
+		ContentType:        ct,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("searching contents: %w", err)
 	}
 
-	count, err := s.q.SearchContentsCount(ctx, query)
+	count, err := s.q.SearchContentsCount(ctx, db.SearchContentsCountParams{
+		WebsearchToTsquery: query,
+		ContentType:        ct,
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting search results: %w", err)
 	}

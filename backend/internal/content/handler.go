@@ -113,8 +113,17 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "query parameter q is required")
 		return
 	}
+
+	var ct *Type
+	if t := r.URL.Query().Get("type"); t != "" {
+		v := Type(t)
+		if v.Valid() {
+			ct = &v
+		}
+	}
+
 	page, perPage := api.ParsePagination(r)
-	contents, total, err := h.store.Search(r.Context(), q, page, perPage)
+	contents, total, err := h.store.Search(r.Context(), q, ct, page, perPage)
 	if err != nil {
 		h.logger.Error("searching contents", "query", q, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to search")
@@ -622,6 +631,11 @@ func (h *Handler) parseFilter(r *http.Request) Filter {
 	}
 	if tag := r.URL.Query().Get("tag"); tag != "" {
 		f.Tag = &tag
+	}
+	if s := r.URL.Query().Get("since"); s != "" {
+		if t, err := time.Parse(time.DateOnly, s); err == nil {
+			f.Since = &t
+		}
 	}
 	return f
 }
