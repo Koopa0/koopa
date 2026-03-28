@@ -39,6 +39,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/reconcile"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/server"
 	"github.com/koopa0/blog-backend/internal/session"
@@ -167,6 +168,7 @@ func testServer(t *testing.T) *httptest.Server {
 		Notion:       notion.NewHandler(notionClient, notionStore, nil, projectStore, goalStore, taskStore, runner, "", logger),
 		Tag:          tag.NewHandler(tagStore, pool, logger),
 		Session:      session.NewHandler(sessionStore, logger),
+		Reconcile:    reconcile.NewHandler(reconcile.NewStore(pool), logger),
 		NotionSource: notion.NewSourceHandler(notionStore, notionClient, nil, logger),
 		Goal:         goal.NewHandler(goalStore, logger),
 		Task:         task.NewHandler(taskStore, logger),

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/koopa0/blog-backend/internal/notion"
 )
@@ -71,6 +72,11 @@ type RoleLookup interface {
 	DatabaseIDByRole(ctx context.Context, role string) (string, error)
 }
 
+// RunSaver persists reconcile run results.
+type RunSaver interface {
+	SaveRun(ctx context.Context, startedAt, completedAt time.Time, report *Report, errs []string) (int64, error)
+}
+
 // Reconciler runs weekly reconciliation checks.
 type Reconciler struct {
 	github   DirectoryLister
@@ -80,6 +86,7 @@ type Reconciler struct {
 	notionDB NotionDBQuerier
 	notifier Sender
 	roles    RoleLookup
+	runs     RunSaver // optional: persists run history
 	logger   *slog.Logger
 }
 
@@ -106,8 +113,14 @@ func New(
 	}
 }
 
+// WithRunSaver sets the optional run history store.
+func (r *Reconciler) WithRunSaver(rs RunSaver) {
+	r.runs = rs
+}
+
 // Run executes the full reconciliation (Obsidian + Notion) and always sends a summary notification.
 func (r *Reconciler) Run(ctx context.Context) error {
+	startedAt := time.Now()
 	r.logger.Info("reconciliation starting")
 
 	var obsReport, notionReport Report
@@ -127,6 +140,13 @@ func (r *Reconciler) Run(ctx context.Context) error {
 		ProjectsOrphaned: notionReport.ProjectsOrphaned,
 		GoalsMissing:     notionReport.GoalsMissing,
 		GoalsOrphaned:    notionReport.GoalsOrphaned,
+	}
+
+	// persist run history (best-effort)
+	if r.runs != nil {
+		if _, err := r.runs.SaveRun(ctx, startedAt, time.Now(), &report, nil); err != nil {
+			r.logger.Error("saving reconcile run", "error", err)
+		}
 	}
 
 	return r.sendReport(ctx, &report)

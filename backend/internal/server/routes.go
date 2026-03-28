@@ -19,6 +19,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/reconcile"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
@@ -57,6 +58,7 @@ type Deps struct {
 	Note         *note.Handler
 	Activity     *activity.Handler
 	Session      *session.Handler
+	Reconcile    *reconcile.Handler
 	Pool         Pinger
 	Logger       *slog.Logger
 }
@@ -220,6 +222,9 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handle
 	mux.Handle("POST /api/admin/pipeline/generate", authMid(http.HandlerFunc(d.Pipeline.Generate)))
 	mux.Handle("POST /api/admin/pipeline/digest", authMid(http.HandlerFunc(d.Pipeline.Digest)))
 	mux.Handle("POST /api/admin/pipeline/bookmark", authMid(http.HandlerFunc(d.Pipeline.Bookmark)))
+
+	// admin — reconcile history
+	mux.Handle("GET /api/admin/reconcile/history", authMid(http.HandlerFunc(d.Reconcile.History)))
 
 	// webhooks — HMAC-verified, not JWT
 	mux.HandleFunc("POST /api/webhook/github", d.Pipeline.WebhookGithub)

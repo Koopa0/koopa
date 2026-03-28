@@ -667,6 +667,26 @@ type ProjectAlias struct {
 	CreatedAt     time.Time  `json:"created_at"`
 }
 
+// History of weekly reconciliation runs for system health monitoring and drift trend analysis.
+type ReconcileRun struct {
+	ID        int64     `json:"id"`
+	StartedAt time.Time `json:"started_at"`
+	// NULL until run finishes. NULL + old started_at = crashed run.
+	CompletedAt       *time.Time `json:"completed_at"`
+	ObsidianMissing   int32      `json:"obsidian_missing"`
+	ObsidianOrphaned  int32      `json:"obsidian_orphaned"`
+	NotionProjMissing int32      `json:"notion_proj_missing"`
+	NotionProjOrphan  int32      `json:"notion_proj_orphan"`
+	NotionGoalMissing int32      `json:"notion_goal_missing"`
+	NotionGoalOrphan  int32      `json:"notion_goal_orphan"`
+	// Sum of all missing+orphaned counts. Zero = fully consistent.
+	TotalDrift int32 `json:"total_drift"`
+	ErrorCount int32 `json:"error_count"`
+	// JSON array of error strings from the run. NULL when error_count=0.
+	Errors    json.RawMessage `json:"errors"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID        uuid.UUID `json:"id"`
 	UserID    uuid.UUID `json:"user_id"`

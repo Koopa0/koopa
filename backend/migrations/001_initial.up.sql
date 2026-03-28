@@ -472,7 +472,7 @@ CREATE TABLE tags (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug        TEXT NOT NULL UNIQUE,
     name        TEXT NOT NULL,
-    parent_id   UUID REFERENCES tags(id),
+    parent_id   UUID REFERENCES tags(id) ON DELETE SET NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -484,7 +484,7 @@ CREATE INDEX idx_tags_parent ON tags(parent_id);
 CREATE TABLE tag_aliases (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_tag       TEXT NOT NULL UNIQUE,
-    tag_id        UUID REFERENCES tags(id),
+    tag_id        UUID REFERENCES tags(id) ON DELETE CASCADE,
     match_method  TEXT NOT NULL DEFAULT 'manual',
     confirmed     BOOLEAN NOT NULL DEFAULT false,
     confirmed_at  TIMESTAMPTZ,
@@ -631,3 +631,27 @@ SELECT called_at::date AS day,
 FROM tool_call_logs
 GROUP BY called_at::date
 ORDER BY day DESC;
+
+-- Reconcile runs — history of weekly Obsidian↔Notion reconciliation
+CREATE TABLE reconcile_runs (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    started_at          TIMESTAMPTZ NOT NULL,
+    completed_at        TIMESTAMPTZ,          -- NULL if still running or crashed
+    obsidian_missing    INT NOT NULL DEFAULT 0, -- files in GitHub but not in content DB
+    obsidian_orphaned   INT NOT NULL DEFAULT 0, -- content in DB but not in GitHub
+    notion_proj_missing INT NOT NULL DEFAULT 0, -- projects in Notion but not local
+    notion_proj_orphan  INT NOT NULL DEFAULT 0, -- local projects not in Notion
+    notion_goal_missing INT NOT NULL DEFAULT 0, -- goals in Notion but not local
+    notion_goal_orphan  INT NOT NULL DEFAULT 0, -- local goals not in Notion
+    total_drift         INT NOT NULL DEFAULT 0, -- sum of all drift counts
+    error_count         INT NOT NULL DEFAULT 0, -- number of errors during run
+    errors              JSONB,                   -- error details array, NULL if no errors
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE reconcile_runs IS 'History of weekly reconciliation runs for system health monitoring and drift trend analysis.';
+COMMENT ON COLUMN reconcile_runs.completed_at IS 'NULL until run finishes. NULL + old started_at = crashed run.';
+COMMENT ON COLUMN reconcile_runs.total_drift IS 'Sum of all missing+orphaned counts. Zero = fully consistent.';
+COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
+
+CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);

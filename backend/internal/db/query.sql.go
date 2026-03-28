@@ -2873,6 +2873,50 @@ func (q *Queries) InsertNoteTags(ctx context.Context, arg InsertNoteTagsParams) 
 	return err
 }
 
+const insertReconcileRun = `-- name: InsertReconcileRun :one
+INSERT INTO reconcile_runs (
+    started_at, completed_at,
+    obsidian_missing, obsidian_orphaned,
+    notion_proj_missing, notion_proj_orphan,
+    notion_goal_missing, notion_goal_orphan,
+    total_drift, error_count, errors
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id
+`
+
+type InsertReconcileRunParams struct {
+	StartedAt         time.Time       `json:"started_at"`
+	CompletedAt       *time.Time      `json:"completed_at"`
+	ObsidianMissing   int32           `json:"obsidian_missing"`
+	ObsidianOrphaned  int32           `json:"obsidian_orphaned"`
+	NotionProjMissing int32           `json:"notion_proj_missing"`
+	NotionProjOrphan  int32           `json:"notion_proj_orphan"`
+	NotionGoalMissing int32           `json:"notion_goal_missing"`
+	NotionGoalOrphan  int32           `json:"notion_goal_orphan"`
+	TotalDrift        int32           `json:"total_drift"`
+	ErrorCount        int32           `json:"error_count"`
+	Errors            json.RawMessage `json:"errors"`
+}
+
+func (q *Queries) InsertReconcileRun(ctx context.Context, arg InsertReconcileRunParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertReconcileRun,
+		arg.StartedAt,
+		arg.CompletedAt,
+		arg.ObsidianMissing,
+		arg.ObsidianOrphaned,
+		arg.NotionProjMissing,
+		arg.NotionProjOrphan,
+		arg.NotionGoalMissing,
+		arg.NotionGoalOrphan,
+		arg.TotalDrift,
+		arg.ErrorCount,
+		arg.Errors,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertUnmappedAlias = `-- name: InsertUnmappedAlias :exec
 INSERT INTO tag_aliases (raw_tag, tag_id, match_method, confirmed)
 VALUES ($1, NULL, 'unmapped', false)
@@ -5118,6 +5162,51 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recentReconcileRuns = `-- name: RecentReconcileRuns :many
+SELECT id, started_at, completed_at,
+       obsidian_missing, obsidian_orphaned,
+       notion_proj_missing, notion_proj_orphan,
+       notion_goal_missing, notion_goal_orphan,
+       total_drift, error_count, errors, created_at
+FROM reconcile_runs
+ORDER BY started_at DESC
+LIMIT $1
+`
+
+func (q *Queries) RecentReconcileRuns(ctx context.Context, limit int32) ([]ReconcileRun, error) {
+	rows, err := q.db.Query(ctx, recentReconcileRuns, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReconcileRun{}
+	for rows.Next() {
+		var i ReconcileRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.ObsidianMissing,
+			&i.ObsidianOrphaned,
+			&i.NotionProjMissing,
+			&i.NotionProjOrphan,
+			&i.NotionGoalMissing,
+			&i.NotionGoalOrphan,
+			&i.TotalDrift,
+			&i.ErrorCount,
+			&i.Errors,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

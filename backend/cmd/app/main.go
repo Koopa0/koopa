@@ -223,6 +223,7 @@ func run(logger *slog.Logger) error {
 	defer runner.Stop()
 
 	// reconciler: weekly Obsidian + Notion comparison
+	reconcileStore := reconcile.NewStore(pool)
 	recon := reconcile.New(
 		githubFetcher, contentStore,
 		projectStore, goalStore,
@@ -230,6 +231,7 @@ func run(logger *slog.Logger) error {
 		notionSourceStore,
 		logger,
 	)
+	recon.WithRunSaver(reconcileStore)
 
 	// webhook replay protection: shared dedup cache with 10-minute TTL
 	webhookDedup := webhook.NewDeduplicationCache(10 * time.Minute)
@@ -374,12 +376,13 @@ func run(logger *slog.Logger) error {
 				return proj.ID, proj.Title, nil
 			}),
 		),
-		Stats:    stats.NewHandler(stats.NewStore(pool), logger),
-		Learning: learning.NewHandler(contentStore, projectStore, logger),
-		Note:     note.NewHandler(noteStore, logger),
-		Activity: activity.NewHandler(activityStore, logger),
-		Session:  session.NewHandler(sessionStore, logger),
-		Logger:   logger,
+		Stats:     stats.NewHandler(stats.NewStore(pool), logger),
+		Learning:  learning.NewHandler(contentStore, projectStore, logger),
+		Note:      note.NewHandler(noteStore, logger),
+		Activity:  activity.NewHandler(activityStore, logger),
+		Session:   session.NewHandler(sessionStore, logger),
+		Reconcile: reconcile.NewHandler(reconcileStore, logger),
+		Logger:    logger,
 	}
 
 	// sync on startup: catch anything missed while the server was down
