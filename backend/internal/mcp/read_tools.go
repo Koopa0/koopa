@@ -395,19 +395,6 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 // Overview stats covered by individual domain tools (system_status, weekly_summary, learning_progress).
 // stats.Overview() is still used by internal/stats/handler.go for the HTTP endpoint.
 
-// PendingTasksInput is the input for the get_pending_tasks tool.
-type PendingTasksInput struct {
-	Project  string `json:"project,omitempty" jsonschema_description:"filter by project slug, alias, or title"`
-	Assignee string `json:"assignee,omitempty" jsonschema_description:"filter by assignee (human|claude-code|cowork)"`
-	Limit    int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
-}
-
-// PendingTasksOutput is the output for the get_pending_tasks tool.
-type PendingTasksOutput struct {
-	Tasks []taskResult `json:"tasks"`
-	Total int          `json:"total"`
-}
-
 type taskResult struct {
 	ID           string `json:"id"`
 	Title        string `json:"title"`
@@ -446,40 +433,6 @@ func toTaskResult(t *task.PendingTaskDetail, today time.Time) taskResult {
 		}
 	}
 	return r
-}
-
-func (s *Server) getPendingTasks(ctx context.Context, _ *mcp.CallToolRequest, input PendingTasksInput) (*mcp.CallToolResult, PendingTasksOutput, error) {
-	limit := clamp(input.Limit, 1, 100, 20)
-
-	var projectSlug *string
-	if input.Project != "" {
-		proj, projErr := s.resolveProjectChain(ctx, input.Project)
-		if projErr == nil {
-			projectSlug = &proj.Slug
-		} else {
-			// Fallback: try as raw slug (backward compat)
-			projectSlug = &input.Project
-		}
-	}
-
-	var assignee *string
-	if input.Assignee != "" {
-		assignee = &input.Assignee
-	}
-
-	tasks, err := s.tasks.PendingTasksWithProject(ctx, projectSlug, assignee, int32(limit)) // #nosec G115 -- limit is clamped 1-100
-	if err != nil {
-		return nil, PendingTasksOutput{}, fmt.Errorf("querying pending tasks: %w", err)
-	}
-
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	results := make([]taskResult, len(tasks))
-	for i := range tasks {
-		results[i] = toTaskResult(&tasks[i], today)
-	}
-
-	return nil, PendingTasksOutput{Tasks: results, Total: len(results)}, nil
 }
 
 // --- search_tasks ---

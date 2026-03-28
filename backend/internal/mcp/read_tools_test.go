@@ -22,11 +22,6 @@ func strPtr(s string) *string { return new(s) }
 //go:fix inline
 func int32Ptr(v int32) *int32 { return new(v) }
 
-// timePtr returns a pointer to t.
-//
-//go:fix inline
-func timePtr(t time.Time) *time.Time { return new(t) }
-
 func TestToSearchEntries(t *testing.T) {
 	t.Parallel()
 

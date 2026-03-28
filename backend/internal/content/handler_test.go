@@ -84,8 +84,3 @@ func timePtr(year, month, day int) *time.Time {
 	t := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
 	return &t
 }
-
-//go:fix inline
-func typePtr(t Type) *Type {
-	return new(t)
-}
