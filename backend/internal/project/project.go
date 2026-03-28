@@ -12,12 +12,23 @@ import (
 type Status string
 
 const (
-	StatusPlanned    Status = "planned"
+	// StatusPlanned indicates the project is planned but not yet started.
+	StatusPlanned Status = "planned"
+
+	// StatusInProgress indicates the project is actively being developed.
 	StatusInProgress Status = "in-progress"
-	StatusOnHold     Status = "on-hold"
-	StatusCompleted  Status = "completed"
+
+	// StatusOnHold indicates the project is paused.
+	StatusOnHold Status = "on-hold"
+
+	// StatusCompleted indicates the project is finished.
+	StatusCompleted Status = "completed"
+
+	// StatusMaintained indicates the project is in maintenance mode.
 	StatusMaintained Status = "maintained"
-	StatusArchived   Status = "archived"
+
+	// StatusArchived indicates the project is archived and no longer active.
+	StatusArchived Status = "archived"
 )
 
 // Project represents a portfolio project.

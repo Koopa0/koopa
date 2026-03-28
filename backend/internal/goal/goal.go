@@ -12,10 +12,17 @@ import (
 type Status string
 
 const (
+	// StatusNotStarted indicates the goal has not been started.
 	StatusNotStarted Status = "not-started"
+
+	// StatusInProgress indicates the goal is actively being worked on.
 	StatusInProgress Status = "in-progress"
-	StatusDone       Status = "done"
-	StatusAbandoned  Status = "abandoned"
+
+	// StatusDone indicates the goal has been achieved.
+	StatusDone Status = "done"
+
+	// StatusAbandoned indicates the goal was abandoned.
+	StatusAbandoned Status = "abandoned"
 )
 
 // Goal represents a personal goal synced from Notion.

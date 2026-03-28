@@ -1,4 +1,5 @@
-// Package tracking provides tracking topic configuration.
+// Package tracking provides tracking topic configuration for automated
+// data collection. Topics define keywords and sources to monitor.
 package tracking
 
 import (

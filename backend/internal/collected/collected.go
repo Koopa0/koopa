@@ -1,4 +1,5 @@
-// Package collected provides collected data management.
+// Package collected manages externally collected data items from RSS feeds
+// and other sources, including curation, feedback, and collection statistics.
 package collected
 
 import (
@@ -12,9 +13,16 @@ import (
 type Status string
 
 const (
-	StatusUnread  Status = "unread"
-	StatusRead    Status = "read"
+	// StatusUnread indicates the item has not been reviewed yet.
+	StatusUnread Status = "unread"
+
+	// StatusRead indicates the item has been seen but not curated.
+	StatusRead Status = "read"
+
+	// StatusCurated indicates the item was promoted to content.
 	StatusCurated Status = "curated"
+
+	// StatusIgnored indicates the item was dismissed.
 	StatusIgnored Status = "ignored"
 )
 

@@ -11,7 +11,8 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 )
 
-// TopicTags are the canonical LeetCode topic patterns.
+// TopicTags maps canonical LeetCode topic names (e.g. "dp", "two-pointers")
+// to true. Used to classify tag entries by algorithmic topic.
 var TopicTags = buildTopicTags()
 
 func buildTopicTags() map[string]bool {
@@ -31,7 +32,8 @@ func buildTopicTags() map[string]bool {
 	return m
 }
 
-// ResultTags are the canonical result outcome tags.
+// ResultTags maps canonical LeetCode result outcome tags (e.g. "ac-independent",
+// "incomplete") to true. Used to classify problem-solving outcomes.
 var ResultTags = map[string]bool{
 	"ac-independent": true, "ac-with-hints": true, "ac-after-solution": true, "incomplete": true,
 }

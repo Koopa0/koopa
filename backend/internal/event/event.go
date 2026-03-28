@@ -50,15 +50,27 @@ func (b *Bus) Emit(ctx context.Context, event string, payload any) error {
 
 // Event names for the Notion sync pipeline.
 const (
+	// NotionPageCreated fires when a new Notion page is detected during sync.
 	NotionPageCreated = "notion.page.created"
+
+	// NotionPageUpdated fires when an existing Notion page is modified.
 	NotionPageUpdated = "notion.page.updated"
 )
 
 // Event names for the content sync pipeline.
 const (
-	ObsidianNoteSynced  = "obsidian.note.synced"
+	// ObsidianNoteSynced fires when an Obsidian note is synced from GitHub.
+	ObsidianNoteSynced = "obsidian.note.synced"
+
+	// ObsidianNoteDeleted fires when an Obsidian note is removed from GitHub.
 	ObsidianNoteDeleted = "obsidian.note.deleted"
-	ContentPublished    = "content.published"
-	ContentUpdated      = "content.updated"
-	WebhookGitHubPush   = "webhook.github.push"
+
+	// ContentPublished fires when content transitions to published status.
+	ContentPublished = "content.published"
+
+	// ContentUpdated fires when existing content is modified.
+	ContentUpdated = "content.updated"
+
+	// WebhookGitHubPush fires when a GitHub push webhook is received.
+	WebhookGitHubPush = "webhook.github.push"
 )
