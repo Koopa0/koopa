@@ -31,6 +31,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
@@ -234,6 +235,21 @@ func run(logger *slog.Logger) error {
 	webhookDedup := webhook.NewDeduplicationCache(10 * time.Minute)
 	defer webhookDedup.Stop()
 
+	// event bus: cross-cutting event dispatch for observability
+	bus := event.New()
+	bus.On(event.WebhookGitHubPush, func(_ context.Context, payload any) error {
+		if m, ok := payload.(map[string]any); ok {
+			logger.Info("event: github push", "repo", m["repo"], "ref", m["ref"], "source", m["source"])
+		}
+		return nil
+	})
+	bus.On(event.NotionPageUpdated, func(_ context.Context, payload any) error {
+		if m, ok := payload.(map[string]any); ok {
+			logger.Info("event: notion page updated", "page_id", m["page_id"], "role", m["role"])
+		}
+		return nil
+	})
+
 	// notion webhook handler
 	notionHandler := notion.NewHandler(
 		notionClient, notionSourceStore, c.source,
@@ -243,6 +259,7 @@ func run(logger *slog.Logger) error {
 		notion.WithEventRecorder(activityStore),
 		notion.WithProjectStore(projectStore),
 		notion.WithGoalIDResolver(goalStore),
+		notion.WithEventBus(bus),
 	)
 	defer notionHandler.Wait() // drain background SyncRole goroutines
 
@@ -270,6 +287,7 @@ func run(logger *slog.Logger) error {
 	webhookRouter.WithNotionTasks(notionClient)
 	webhookRouter.WithProjectRepo(projectStore)
 	webhookRouter.WithJobs(runner)
+	webhookRouter.WithEventBus(bus)
 
 	// pipeline: manual triggers
 	triggers := pipeline.NewTriggers(runner, logger)

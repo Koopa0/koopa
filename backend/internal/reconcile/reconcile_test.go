@@ -329,18 +329,18 @@ func TestReconcileObsidian(t *testing.T) {
 		wantErrSend bool // whether Send returns an error to propagate
 	}{
 		{
-			name:     "no drift, no notification sent",
+			name:     "no drift sends consistent summary",
 			github:   &fakeDirectoryLister{slugs: []string{"post-a", "post-b"}},
 			content:  &fakeObsidianSlugLister{slugs: []string{"post-a", "post-b"}},
 			sender:   &fakeSender{},
-			wantSent: false,
+			wantSent: true,
 		},
 		{
-			name:     "empty sources, no notification sent",
+			name:     "empty sources sends consistent summary",
 			github:   &fakeDirectoryLister{slugs: nil},
 			content:  &fakeObsidianSlugLister{slugs: nil},
 			sender:   &fakeSender{},
-			wantSent: false,
+			wantSent: true,
 		},
 		{
 			name:     "file in github missing from DB sends notification",
@@ -357,18 +357,18 @@ func TestReconcileObsidian(t *testing.T) {
 			wantSent: true,
 		},
 		{
-			name:     "github error suppresses diff, no notification",
+			name:     "github error suppresses diff, sends consistent summary",
 			github:   &fakeDirectoryLister{err: errors.New("github api down")},
 			content:  &fakeObsidianSlugLister{slugs: []string{"post-a"}},
 			sender:   &fakeSender{},
-			wantSent: false,
+			wantSent: true,
 		},
 		{
-			name:     "db error suppresses diff, no notification",
+			name:     "db error suppresses diff, sends consistent summary",
 			github:   &fakeDirectoryLister{slugs: []string{"post-a"}},
 			content:  &fakeObsidianSlugLister{err: errors.New("db unavailable")},
 			sender:   &fakeSender{},
-			wantSent: false,
+			wantSent: true,
 		},
 		{
 			name:        "notification send failure is propagated",
@@ -436,7 +436,7 @@ func TestReconcileNotion(t *testing.T) {
 		wantErrSend bool
 	}{
 		{
-			name:     "no drift, no notification",
+			name:     "no drift sends consistent summary",
 			projects: &fakeNotionPageIDLister{ids: []string{"proj-1", "proj-2"}},
 			goals:    &fakeNotionPageIDLister{ids: []string{"goal-1"}},
 			notionDB: &fakeNotionDBQuerier{ids: map[string][]string{
@@ -444,7 +444,7 @@ func TestReconcileNotion(t *testing.T) {
 				goalDBID: {"goal-1"},
 			}},
 			roles:    defaultRoles(),
-			wantSent: false,
+			wantSent: true,
 		},
 		{
 			name:     "project in notion missing from local DB",
@@ -480,15 +480,15 @@ func TestReconcileNotion(t *testing.T) {
 			wantSent: true,
 		},
 		{
-			name:     "role lookup failure skips that domain, no error",
+			name:     "role lookup failure skips that domain, sends consistent summary",
 			projects: &fakeNotionPageIDLister{ids: []string{}},
 			goals:    &fakeNotionPageIDLister{ids: []string{}},
 			notionDB: &fakeNotionDBQuerier{ids: map[string][]string{}},
 			roles:    &fakeRoleLookup{err: errors.New("notion roles unavailable")},
-			wantSent: false,
+			wantSent: true,
 		},
 		{
-			name:     "local projects error suppresses projects diff",
+			name:     "local projects error suppresses projects diff, sends consistent summary",
 			projects: &fakeNotionPageIDLister{err: errors.New("db down")},
 			goals:    &fakeNotionPageIDLister{ids: []string{"goal-1"}},
 			notionDB: &fakeNotionDBQuerier{ids: map[string][]string{
@@ -496,18 +496,18 @@ func TestReconcileNotion(t *testing.T) {
 				goalDBID: {"goal-1"},
 			}},
 			roles:    defaultRoles(),
-			wantSent: false,
+			wantSent: true,
 		},
 		{
-			name:     "notion DB error suppresses projects diff",
+			name:     "notion DB error suppresses projects diff, sends consistent summary",
 			projects: &fakeNotionPageIDLister{ids: []string{"proj-1"}},
 			goals:    &fakeNotionPageIDLister{ids: []string{"goal-1"}},
 			notionDB: &fakeNotionDBQuerier{err: errors.New("notion API down")},
 			roles:    defaultRoles(),
-			wantSent: false,
+			wantSent: true,
 		},
 		{
-			name:     "empty notion results skip diff entirely (no issues)",
+			name:     "empty notion results skip diff, sends consistent summary",
 			projects: &fakeNotionPageIDLister{ids: []string{"proj-1", "proj-2"}},
 			goals:    &fakeNotionPageIDLister{ids: []string{"goal-1"}},
 			notionDB: &fakeNotionDBQuerier{ids: map[string][]string{
@@ -515,7 +515,7 @@ func TestReconcileNotion(t *testing.T) {
 				goalDBID: {},
 			}},
 			roles:    defaultRoles(),
-			wantSent: false,
+			wantSent: true,
 		},
 	}
 
@@ -562,7 +562,7 @@ func TestRun(t *testing.T) {
 		wantSent bool
 	}{
 		{
-			name:     "fully synced, no notification",
+			name:     "fully synced sends consistent summary",
 			github:   &fakeDirectoryLister{slugs: []string{"post-a"}},
 			content:  &fakeObsidianSlugLister{slugs: []string{"post-a"}},
 			projects: &fakeNotionPageIDLister{ids: []string{"proj-1"}},
@@ -572,7 +572,7 @@ func TestRun(t *testing.T) {
 				goalDBID: {"goal-1"},
 			}},
 			roles:    defaultRoles(),
-			wantSent: false,
+			wantSent: true,
 		},
 		{
 			name:     "obsidian drift triggers notification",
@@ -601,24 +601,24 @@ func TestRun(t *testing.T) {
 			wantSent: true,
 		},
 		{
-			name:     "all sources empty, no notification",
+			name:     "all sources empty sends consistent summary",
 			github:   &fakeDirectoryLister{slugs: nil},
 			content:  &fakeObsidianSlugLister{slugs: nil},
 			projects: &fakeNotionPageIDLister{ids: nil},
 			goals:    &fakeNotionPageIDLister{ids: nil},
 			notionDB: &fakeNotionDBQuerier{ids: map[string][]string{}},
 			roles:    defaultRoles(),
-			wantSent: false,
+			wantSent: true,
 		},
 		{
-			name:     "all errors suppress all diffs, no notification",
+			name:     "all errors suppress all diffs, sends consistent summary",
 			github:   &fakeDirectoryLister{err: errors.New("github down")},
 			content:  &fakeObsidianSlugLister{err: errors.New("db down")},
 			projects: &fakeNotionPageIDLister{err: errors.New("db down")},
 			goals:    &fakeNotionPageIDLister{err: errors.New("db down")},
 			notionDB: &fakeNotionDBQuerier{err: errors.New("notion down")},
 			roles:    defaultRoles(),
-			wantSent: false,
+			wantSent: true,
 		},
 	}
 

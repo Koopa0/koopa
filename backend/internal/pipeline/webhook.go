@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
 
@@ -106,6 +107,8 @@ func (wr *WebhookRouter) Handle(w http.ResponseWriter, r *http.Request, bg bgFun
 	w.WriteHeader(http.StatusAccepted)
 
 	cs := wr.contentSync
+	repo := event.Repository.FullName
+	ref := event.Ref
 	bg("webhook-push", func() {
 		ctx := context.WithoutCancel(r.Context())
 
@@ -118,6 +121,9 @@ func (wr *WebhookRouter) Handle(w http.ResponseWriter, r *http.Request, bg bgFun
 			cs.syncKnowledgeNotes(ctx, knowledgeFiles)
 			cs.archiveKnowledgeNotes(ctx, knowledgeRemoved)
 		}
+
+		// best-effort: emit event for cross-cutting subscribers
+		wr.emitPushEvent(ctx, repo, ref, "obsidian")
 	})
 }
 
@@ -221,6 +227,8 @@ func (wr *WebhookRouter) handleProjectTrack(w http.ResponseWriter, r *http.Reque
 	// respond 202 immediately, do all work in background
 	w.WriteHeader(http.StatusAccepted)
 
+	repo := event.Repository.FullName
+	ref := event.Ref
 	ctx := context.WithoutCancel(r.Context())
 	bg("project-track", func() {
 		// submit project-track flow job (best-effort)
@@ -242,6 +250,9 @@ func (wr *WebhookRouter) handleProjectTrack(w http.ResponseWriter, r *http.Reque
 		if wr.events != nil {
 			wr.recordPushEvent(ctx, event)
 		}
+
+		// best-effort: emit event for cross-cutting subscribers
+		wr.emitPushEvent(ctx, repo, ref, "project")
 	})
 }
 
@@ -323,4 +334,19 @@ func isSHA(s string) bool {
 		}
 	}
 	return true
+}
+
+// emitPushEvent emits a WebhookGitHubPush event on the bus (best-effort).
+// If no bus is configured, this is a no-op.
+func (wr *WebhookRouter) emitPushEvent(ctx context.Context, repo, ref, source string) {
+	if wr.bus == nil {
+		return
+	}
+	if err := wr.bus.Emit(ctx, event.WebhookGitHubPush, map[string]any{
+		"repo":   repo,
+		"ref":    ref,
+		"source": source,
+	}); err != nil {
+		wr.logger.Warn("emitting webhook push event", "error", err) // best-effort
+	}
 }

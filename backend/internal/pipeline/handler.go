@@ -13,6 +13,7 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -193,6 +194,7 @@ type WebhookRouter struct {
 	notionTasks   NotionTaskUpdater
 	projectRepo   ProjectRepoResolver
 	jobs          JobSubmitter
+	bus           *event.Bus
 	logger        *slog.Logger
 }
 
@@ -233,6 +235,11 @@ func (wr *WebhookRouter) WithProjectRepo(r ProjectRepoResolver) {
 // WithJobs sets the job submitter for project-track flow submissions.
 func (wr *WebhookRouter) WithJobs(j JobSubmitter) {
 	wr.jobs = j
+}
+
+// WithEventBus sets the event bus for emitting cross-cutting events.
+func (wr *WebhookRouter) WithEventBus(b *event.Bus) {
+	wr.bus = b
 }
 
 // ---------------------------------------------------------------------------

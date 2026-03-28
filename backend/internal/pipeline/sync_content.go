@@ -43,6 +43,13 @@ func (cs *ContentSync) SyncAllFromGitHub(ctx context.Context) {
 		"synced", synced,
 		"failed", failed,
 	)
+
+	if synced > 0 {
+		cs.logger.Warn("sync drift detected: hourly sync fixed items that webhooks missed",
+			"synced", synced,
+			"failed", failed,
+		)
+	}
 }
 
 // syncFiles fetches and upserts each markdown file.

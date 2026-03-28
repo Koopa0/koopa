@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -64,6 +65,7 @@ type Handler struct {
 	projectStore  *project.Store
 	goalIDs       GoalIDResolver
 	dedup         *webhook.DeduplicationCache
+	bus           *event.Bus
 	webhookSecret string
 	logger        *slog.Logger
 
@@ -96,6 +98,11 @@ func WithGoalIDResolver(r GoalIDResolver) HandlerOption {
 // WithDedup sets the deduplication cache for webhook replay protection.
 func WithDedup(c *webhook.DeduplicationCache) HandlerOption {
 	return func(h *Handler) { h.dedup = c }
+}
+
+// WithEventBus sets the event bus for emitting cross-cutting events.
+func WithEventBus(b *event.Bus) HandlerOption {
+	return func(h *Handler) { h.bus = b }
 }
 
 // NewHandler returns a Notion webhook Handler.
@@ -242,6 +249,11 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 
 	if syncErr != nil && !errors.Is(syncErr, ErrSkipped) {
 		h.logger.Error("syncing from notion webhook", "role", role, "page_id", pageID, "error", syncErr)
+	}
+
+	// best-effort: emit event for cross-cutting subscribers
+	if syncErr == nil && role != "" {
+		h.emitPageUpdated(r.Context(), pageID, role)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -418,4 +430,18 @@ func (h *Handler) resolveRole(ctx context.Context, dataSourceID string) string {
 	}
 	h.sourceCache.SetWithTTL(dataSourceID, role, 1, sourceCacheTTL)
 	return role
+}
+
+// emitPageUpdated emits a NotionPageUpdated event on the bus (best-effort).
+// If no bus is configured, this is a no-op.
+func (h *Handler) emitPageUpdated(ctx context.Context, pageID, role string) {
+	if h.bus == nil {
+		return
+	}
+	if err := h.bus.Emit(ctx, event.NotionPageUpdated, map[string]any{
+		"page_id": pageID,
+		"role":    role,
+	}); err != nil {
+		h.logger.Warn("emitting notion page updated event", "error", err) // best-effort
+	}
 }

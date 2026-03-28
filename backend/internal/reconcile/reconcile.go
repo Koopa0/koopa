@@ -106,7 +106,7 @@ func New(
 	}
 }
 
-// Run executes the full reconciliation (Obsidian + Notion) and sends a report if issues are found.
+// Run executes the full reconciliation (Obsidian + Notion) and always sends a summary notification.
 func (r *Reconciler) Run(ctx context.Context) error {
 	r.logger.Info("reconciliation starting")
 
@@ -241,10 +241,13 @@ func (r *Reconciler) reconcileNotion(ctx context.Context) Report {
 	return report
 }
 
-// sendReport sends a notification if the report has issues.
+// sendReport always sends a reconciliation summary notification.
 func (r *Reconciler) sendReport(ctx context.Context, report *Report) error {
 	if !report.HasIssues() {
 		r.logger.Info("reconciliation complete, no issues found")
+		if err := r.notifier.Send(ctx, "Reconcile complete: all consistent"); err != nil {
+			return fmt.Errorf("sending reconciliation report: %w", err)
+		}
 		return nil
 	}
 
