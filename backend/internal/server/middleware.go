@@ -70,6 +70,12 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap returns the underlying ResponseWriter, enabling
+// http.ResponseController to access Flusher, Hijacker, etc.
+func (w *statusWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func corsMiddleware(origin string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -105,32 +111,75 @@ type ipEntry struct {
 	lastSeen time.Time
 }
 
+// defaultMaxEntries is the maximum number of IPs tracked before eviction
+// is forced. Prevents OOM under DDoS with many unique source IPs.
+const defaultMaxEntries = 10_000
+
 // ipRateLimiter tracks per-IP rate limiters.
 type ipRateLimiter struct {
-	mu      sync.Mutex
-	entries map[string]*ipEntry
-	rate    rate.Limit
-	burst   int
+	mu         sync.Mutex
+	entries    map[string]*ipEntry
+	rate       rate.Limit
+	burst      int
+	maxEntries int
+	logger     *slog.Logger
 }
 
-func newIPRateLimiter(r rate.Limit, burst int) *ipRateLimiter {
+func newIPRateLimiter(r rate.Limit, burst int, logger *slog.Logger) *ipRateLimiter {
 	return &ipRateLimiter{
-		entries: make(map[string]*ipEntry),
-		rate:    r,
-		burst:   burst,
+		entries:    make(map[string]*ipEntry),
+		rate:       r,
+		burst:      burst,
+		maxEntries: defaultMaxEntries,
+		logger:     logger,
 	}
 }
 
 func (l *ipRateLimiter) limiter(ip string) *rate.Limiter {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	e, ok := l.entries[ip]
-	if !ok {
-		e = &ipEntry{limiter: rate.NewLimiter(l.rate, l.burst)}
-		l.entries[ip] = e
+
+	if e, ok := l.entries[ip]; ok {
+		e.lastSeen = time.Now()
+		return e.limiter
 	}
-	e.lastSeen = time.Now()
+
+	// New IP — enforce the size cap before inserting.
+	if len(l.entries) >= l.maxEntries {
+		l.evictOldestLocked()
+	}
+	if len(l.entries) >= l.maxEntries {
+		// All entries are fresh; return a temporary limiter without storing.
+		l.logger.Warn("rate limiter map at capacity, using ephemeral limiter",
+			"ip", ip, "entries", len(l.entries), "max", l.maxEntries)
+		return rate.NewLimiter(l.rate, l.burst)
+	}
+
+	e := &ipEntry{limiter: rate.NewLimiter(l.rate, l.burst), lastSeen: time.Now()}
+	l.entries[ip] = e
 	return e.limiter
+}
+
+// evictOldestLocked removes the least-recently-seen entries to free at least
+// 10% of capacity (minimum 1 entry). The caller MUST hold l.mu.
+func (l *ipRateLimiter) evictOldestLocked() {
+	evictCount := max(l.maxEntries/10, 1)
+	target := l.maxEntries - evictCount
+
+	for len(l.entries) > target {
+		oldestIP := ""
+		oldestTime := time.Now()
+		for ip, e := range l.entries {
+			if e.lastSeen.Before(oldestTime) {
+				oldestIP = ip
+				oldestTime = e.lastSeen
+			}
+		}
+		if oldestIP == "" {
+			break
+		}
+		delete(l.entries, oldestIP)
+	}
 }
 
 // evictStale removes entries that have not been seen for the given duration.
@@ -149,7 +198,7 @@ func (l *ipRateLimiter) evictStale(maxAge time.Duration) {
 // 10 requests per minute per IP, burst of 10.
 // The done channel stops the background cleanup goroutine on server shutdown.
 func rateLimitMiddleware(logger *slog.Logger, done <-chan struct{}) func(http.Handler) http.Handler {
-	lim := newIPRateLimiter(rate.Every(6*time.Second), 10)
+	lim := newIPRateLimiter(rate.Every(6*time.Second), 10, logger)
 
 	// Evict IPs not seen for 10+ minutes, check every 5 minutes.
 	go func() {

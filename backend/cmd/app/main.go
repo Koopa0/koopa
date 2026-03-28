@@ -303,7 +303,7 @@ func run(logger *slog.Logger) error {
 		noteEmbedder:   aiRes.noteEmbedder,
 		genkitInstance: aiRes.genkit,
 		logger:         logger,
-	})
+	}, ctx)
 	cronScheduler.Start()
 
 	deps := server.Deps{
@@ -613,7 +613,9 @@ type cronDeps struct {
 }
 
 // registerCronJobs registers all scheduled jobs on the given cron scheduler.
-func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
+// appCtx is the application-level context tied to the shutdown signal; each job
+// derives its own timeout from it so that in-flight work is cancelled on shutdown.
+func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context) {
 	addCron := func(schedule, name string, fn func()) {
 		if _, err := scheduler.AddFunc(schedule, fn); err != nil {
 			d.logger.Error("cron: failed to register", "job", name, "error", err)
@@ -621,36 +623,36 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 	}
 
 	// flow retries (every 2 min)
-	addCron("@every 2m", "retry-flows", retryFlows(d.flowrunStore, d.runner, d.notifier, d.logger))
+	addCron("@every 2m", "retry-flows", retryFlows(appCtx, d.flowrunStore, d.runner, d.notifier, d.logger))
 
 	// feed collection (overlap guarded)
 	var collectRunning atomic.Bool
-	collectFn := collectFeeds(d.feedStore, d.feedCollector, &collectRunning, d.notifier, d.logger)
+	collectFn := collectFeeds(appCtx, d.feedStore, d.feedCollector, &collectRunning, d.notifier, d.logger)
 	addCron("0 */4 * * *", "feed-hourly_4", func() { collectFn(feed.ScheduleHourly4, "hourly_4") })
 	addCron("0 6 * * *", "feed-daily", func() { collectFn(feed.ScheduleDaily, "daily") })
 	addCron("0 6 * * 1", "feed-weekly", func() { collectFn(feed.ScheduleWeekly, "weekly") })
 
 	// daily resets
 	addCron("0 0 * * *", "budget-reset", resetBudget(d.tokenBudget, d.logger))
-	addCron("0 1 * * *", "token-cleanup", cleanupExpiredTokens(d.authStore, d.logger))
+	addCron("0 1 * * *", "token-cleanup", cleanupExpiredTokens(appCtx, d.authStore, d.logger))
 
 	// data retention cleanup — all follow the same pattern: delete old records, log count
-	addCron("0 3 * * *", "retention-events", retentionFunc(
+	addCron("0 3 * * *", "retention-events", retentionFunc(appCtx,
 		"deleted old activity events",
 		func(ctx context.Context) (int64, error) {
 			return d.activityStore.DeleteOldEvents(ctx, time.Now().AddDate(0, -12, 0))
 		}, d.logger))
-	addCron("15 3 * * *", "retention-ignored", retentionFunc(
+	addCron("15 3 * * *", "retention-ignored", retentionFunc(appCtx,
 		"deleted old ignored collected data",
 		func(ctx context.Context) (int64, error) {
 			return d.collectedStore.DeleteOldIgnored(ctx, time.Now().AddDate(0, 0, -30))
 		}, d.logger))
-	addCron("30 3 * * *", "retention-flowruns", retentionFunc(
+	addCron("30 3 * * *", "retention-flowruns", retentionFunc(appCtx,
 		"deleted old completed flow runs",
 		func(ctx context.Context) (int64, error) {
 			return d.flowrunStore.DeleteOldCompletedRuns(ctx, time.Now().AddDate(0, 0, -90))
 		}, d.logger))
-	addCron("45 3 * * *", "retention-session-notes", retentionFunc(
+	addCron("45 3 * * *", "retention-session-notes", retentionFunc(appCtx,
 		"deleted old session notes",
 		func(ctx context.Context) (int64, error) {
 			return d.sessionStore.DeleteOldNotes(ctx,
@@ -668,7 +670,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 		{"0 23 * * *", "daily-dev-log", 2 * time.Minute},
 	} {
 		addCron(job.schedule, job.flow, func() {
-			ctx, cancel := context.WithTimeout(context.Background(), job.timeout)
+			ctx, cancel := context.WithTimeout(appCtx, job.timeout)
 			defer cancel()
 			if err := d.runner.Submit(ctx, job.flow, nil, nil); err != nil {
 				d.logger.Error("cron: submitting flow", "flow", job.flow, "error", err)
@@ -677,14 +679,14 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 	}
 
 	// weekly review with health data (Monday 09:00)
-	addCron("0 9 * * 1", "weekly-review", submitWeeklyReview(d.flowrunStore, d.feedStore, d.runner, d.logger))
+	addCron("0 9 * * 1", "weekly-review", submitWeeklyReview(appCtx, d.flowrunStore, d.feedStore, d.runner, d.logger))
 
 	// build-log generation (Monday 10:00)
-	addCron("0 10 * * 1", "build-log-generate", submitBuildLogs(d.projectStore, d.runner, d.logger))
+	addCron("0 10 * * 1", "build-log-generate", submitBuildLogs(appCtx, d.projectStore, d.runner, d.logger))
 
 	// reconciliation (Sunday 04:00)
 	addCron("0 4 * * 0", "reconciliation", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
 		defer cancel()
 		if err := d.recon.Run(ctx); err != nil {
 			d.logger.Error("cron: reconciliation failed", "error", err)
@@ -700,7 +702,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 			return
 		}
 		defer syncRunning.Store(false)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
 		defer cancel()
 		d.contentSync.SyncAllFromGitHub(ctx)
 		d.notionHandler.SyncAll(ctx)
@@ -708,15 +710,15 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 
 	// note embedding generation (hourly at :30, after sync at :15)
 	if d.noteEmbedder != nil {
-		addCron("30 * * * *", "note-embedding", noteEmbeddingJob(d.noteStore, d.noteEmbedder, d.genkitInstance, d.logger))
+		addCron("30 * * * *", "note-embedding", noteEmbeddingJob(appCtx, d.noteStore, d.noteEmbedder, d.genkitInstance, d.logger))
 	}
 }
 
 // noteEmbeddingJob returns a cron function that generates embeddings for notes
 // that don't have them yet.
-func noteEmbeddingJob(noteStore *note.Store, embedder ai.Embedder, g *genkit.Genkit, logger *slog.Logger) func() {
+func noteEmbeddingJob(appCtx context.Context, noteStore *note.Store, embedder ai.Embedder, g *genkit.Genkit, logger *slog.Logger) func() {
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
 		defer cancel()
 		candidates, err := noteStore.NotesWithoutEmbedding(ctx, 20)
 		if err != nil {

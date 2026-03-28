@@ -18,9 +18,9 @@ import (
 )
 
 // retryFlows requeues failed/stuck flow runs.
-func retryFlows(store *flowrun.Store, runner *flowrun.Runner, notifier notify.Notifier, logger *slog.Logger) func() {
+func retryFlows(appCtx context.Context, store *flowrun.Store, runner *flowrun.Runner, notifier notify.Notifier, logger *slog.Logger) func() {
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		ctx, cancel := context.WithTimeout(appCtx, 1*time.Minute)
 		defer cancel()
 		runs, err := store.RetryableRuns(ctx)
 		if err != nil {
@@ -39,6 +39,7 @@ func retryFlows(store *flowrun.Store, runner *flowrun.Runner, notifier notify.No
 
 // collectFeeds fetches RSS feeds with an overlap guard.
 func collectFeeds(
+	appCtx context.Context,
 	feedStore *feed.Store,
 	coll *collector.Collector,
 	running *atomic.Bool,
@@ -52,7 +53,7 @@ func collectFeeds(
 		}
 		defer running.Store(false)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
 		defer cancel()
 
 		feeds, err := feedStore.EnabledFeedsBySchedule(ctx, schedule)
@@ -78,13 +79,14 @@ func collectFeeds(
 
 // submitWeeklyReview gathers system health data and submits the weekly-review flow.
 func submitWeeklyReview(
+	appCtx context.Context,
 	flowrunStore *flowrun.Store,
 	feedStore *feed.Store,
 	runner *flowrun.Runner,
 	logger *slog.Logger,
 ) func() {
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		ctx, cancel := context.WithTimeout(appCtx, 3*time.Minute)
 		defer cancel()
 
 		weekAgo := time.Now().AddDate(0, 0, -7)
@@ -126,9 +128,9 @@ func submitWeeklyReview(
 }
 
 // submitBuildLogs generates build logs for active projects with recent activity.
-func submitBuildLogs(projectStore *project.Store, runner *flowrun.Runner, logger *slog.Logger) func() {
+func submitBuildLogs(appCtx context.Context, projectStore *project.Store, runner *flowrun.Runner, logger *slog.Logger) func() {
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		ctx, cancel := context.WithTimeout(appCtx, 3*time.Minute)
 		defer cancel()
 		since := time.Now().AddDate(0, 0, -7)
 		slugs, err := projectStore.ActiveSlugsWithRepo(ctx, since)
@@ -157,9 +159,9 @@ func resetBudget(b *budget.Budget, logger *slog.Logger) func() {
 }
 
 // cleanupExpiredTokens deletes expired auth tokens.
-func cleanupExpiredTokens(store *auth.Store, logger *slog.Logger) func() {
+func cleanupExpiredTokens(appCtx context.Context, store *auth.Store, logger *slog.Logger) func() {
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(appCtx, 30*time.Second)
 		defer cancel()
 		if err := store.DeleteExpiredTokens(ctx); err != nil {
 			logger.Error("cron: deleting expired tokens", "error", err)
@@ -171,9 +173,9 @@ func cleanupExpiredTokens(store *auth.Store, logger *slog.Logger) func() {
 const retentionTimeout = 1 * time.Minute
 
 // retentionFunc returns a cron func that deletes old records via the provided delete function.
-func retentionFunc(name string, deleteFn func(ctx context.Context) (int64, error), logger *slog.Logger) func() {
+func retentionFunc(appCtx context.Context, name string, deleteFn func(ctx context.Context) (int64, error), logger *slog.Logger) func() {
 	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), retentionTimeout)
+		ctx, cancel := context.WithTimeout(appCtx, retentionTimeout)
 		defer cancel()
 		n, err := deleteFn(ctx)
 		if err != nil {

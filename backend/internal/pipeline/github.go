@@ -15,6 +15,12 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 )
 
+// maxGitHubResponseSize is the upper bound for GitHub API response bodies (10 MB).
+// The Contents API returns base64-encoded files (≈1.3× raw size), and the Compare/Commits
+// APIs return JSON proportional to diff size. 10 MB covers large responses while
+// preventing a malicious or buggy upstream from exhausting memory.
+const maxGitHubResponseSize = 10 << 20
+
 // ErrGitHubNotFound indicates a 404 from the GitHub API (permanent — file deleted or missing).
 var ErrGitHubNotFound = errors.New("github: not found")
 
@@ -74,7 +80,7 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	}
 
 	var fileResp githubFileResponse
-	if decodeErr := json.NewDecoder(resp.Body).Decode(&fileResp); decodeErr != nil {
+	if decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&fileResp); decodeErr != nil {
 		return nil, fmt.Errorf("decoding response: %w", decodeErr)
 	}
 
@@ -123,7 +129,7 @@ func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, erro
 	}
 
 	var entries []githubDirEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("decoding directory listing: %w", err)
 	}
 
@@ -177,7 +183,7 @@ func (g *GitHub) Compare(ctx context.Context, repo, base, head string) (*activit
 	}
 
 	var cmp githubCompareResponse
-	if err := json.NewDecoder(resp.Body).Decode(&cmp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&cmp); err != nil {
 		return nil, fmt.Errorf("decoding compare response: %w", err)
 	}
 
@@ -241,7 +247,7 @@ func (g *GitHub) CommitsForRepo(ctx context.Context, repo string, since time.Tim
 	}
 
 	var raw []githubCommitResponse
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding commits: %w", err)
 	}
 

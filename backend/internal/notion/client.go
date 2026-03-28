@@ -17,6 +17,11 @@ import (
 const (
 	notionBaseURL = "https://api.notion.com"
 	apiVersion    = "2025-09-03"
+
+	// maxNotionResponseSize is the upper bound for Notion API response bodies (5 MB).
+	// Database queries with 100 results can produce large JSON payloads. 5 MB covers
+	// the largest legitimate responses while preventing unbounded memory consumption.
+	maxNotionResponseSize = 5 << 20
 )
 
 // Client calls the Notion API with rate limiting.
@@ -67,7 +72,7 @@ func (c *Client) Page(ctx context.Context, pageID string) (*PageResponse, error)
 	}
 
 	var page PageResponse
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxNotionResponseSize)).Decode(&page); err != nil {
 		return nil, fmt.Errorf("decoding page %s: %w", pageID, err)
 	}
 	return &page, nil
@@ -134,7 +139,7 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 			return nil, err
 		}
 		var qr databaseQueryResponse
-		decodeErr := json.NewDecoder(resp.Body).Decode(&qr)
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxNotionResponseSize)).Decode(&qr)
 		_ = resp.Body.Close() // #nosec G104 -- best-effort close
 		if decodeErr != nil {
 			return nil, fmt.Errorf("decoding data source query response: %w", decodeErr)
@@ -300,7 +305,7 @@ func (c *Client) CreateTask(ctx context.Context, p *CreateTaskParams) (string, e
 	var created struct {
 		ID string `json:"id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxNotionResponseSize)).Decode(&created); err != nil {
 		return "", fmt.Errorf("decoding create task response: %w", err)
 	}
 
@@ -354,7 +359,7 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 			} `json:"database_parent"`
 		} `json:"results"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxNotionResponseSize)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding search response: %w", err)
 	}
 

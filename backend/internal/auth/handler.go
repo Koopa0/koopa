@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -27,6 +28,11 @@ const (
 	accessTokenDuration  = 24 * time.Hour
 	refreshTokenDuration = 7 * 24 * time.Hour
 	stateMaxAge          = 5 * time.Minute
+
+	// maxGoogleOAuthResponseSize is the upper bound for Google OAuth API responses (1 MB).
+	// The userinfo endpoint returns a small JSON payload (~200 bytes). 1 MB is generous
+	// enough to never truncate legitimate responses while capping memory usage.
+	maxGoogleOAuthResponseSize = 1 << 20
 )
 
 // Handler handles authentication HTTP requests.
@@ -272,7 +278,7 @@ func (h *Handler) fetchGoogleEmail(ctx context.Context, token *oauth2.Token) (st
 	}
 
 	var info googleUserInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxGoogleOAuthResponseSize)).Decode(&info); err != nil {
 		return "", fmt.Errorf("decoding userinfo: %w", err)
 	}
 
