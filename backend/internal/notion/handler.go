@@ -15,7 +15,7 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/event"
-	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -60,7 +60,7 @@ type Handler struct {
 	projects      ProjectWriter
 	goals         GoalWriter
 	tasks         TaskWriter
-	jobs          flowrun.Submitter
+	jobs          exec.Submitter
 	events        activity.Recorder
 	projectStore  *project.Store
 	goalIDs       GoalIDResolver
@@ -113,7 +113,7 @@ func NewHandler(
 	projects ProjectWriter,
 	goals GoalWriter,
 	tasks TaskWriter,
-	jobs flowrun.Submitter,
+	jobs exec.Submitter,
 	webhookSecret string,
 	logger *slog.Logger,
 	opts ...HandlerOption,

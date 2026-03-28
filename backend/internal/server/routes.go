@@ -9,10 +9,10 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
-	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
-	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/learning"
 	"github.com/koopa0/blog-backend/internal/note"
@@ -25,8 +25,8 @@ import (
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
+	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/topic"
-	"github.com/koopa0/blog-backend/internal/tracking"
 	"github.com/koopa0/blog-backend/internal/upload"
 )
 
@@ -42,10 +42,10 @@ type Deps struct {
 	Content      *content.Handler
 	Project      *project.Handler
 	Review       *review.Handler
-	Collected    *collected.Handler
-	Tracking     *tracking.Handler
+	Collected    *entry.Handler
+	Tracking     *monitor.Handler
 	Pipeline     *pipeline.Handler
-	FlowRun      *flowrun.Handler
+	FlowRun      *exec.Handler
 	Upload       *upload.Handler
 	Feed         *feed.Handler
 	Notion       *notion.Handler

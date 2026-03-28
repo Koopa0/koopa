@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
 )
@@ -47,7 +47,7 @@ func (s *Server) curateCollectedItem(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, CurateOutput{}, fmt.Errorf("fetching collected item: %w", err)
 	}
 
-	if item.Status == collected.StatusCurated {
+	if item.Status == entry.StatusCurated {
 		return nil, CurateOutput{}, fmt.Errorf("item already curated")
 	}
 

@@ -26,7 +26,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/content"
-	"github.com/koopa0/blog-backend/internal/flow"
+	aiflow "github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/obsidian"
 	"github.com/koopa0/blog-backend/internal/topic"
 )
@@ -53,7 +53,7 @@ type articleResult struct {
 	File        string                   `json:"file"`
 	Title       string                   `json:"title"`
 	ContentType string                   `json:"content_type"`
-	Output      flow.ContentReviewOutput `json:"output"`
+	Output      aiflow.ContentReviewOutput `json:"output"`
 	DurationMS  int64                    `json:"duration_ms"`
 	Error       string                   `json:"error,omitempty"`
 }
@@ -211,7 +211,7 @@ func processArticle(ctx context.Context, g *genkit.Genkit, model ai.Model, file 
 		File:        name,
 		Title:       parsed.Title,
 		ContentType: parsed.ContentType,
-		Output: flow.ContentReviewOutput{
+		Output: aiflow.ContentReviewOutput{
 			Proofread:   reviewResult,
 			Excerpt:     excerpt,
 			Tags:        tags,
@@ -221,8 +221,8 @@ func processArticle(ctx context.Context, g *genkit.Genkit, model ai.Model, file 
 	}
 }
 
-func runProofread(ctx context.Context, g *genkit.Genkit, model ai.Model, userPrompt string) (*flow.ReviewResult, error) {
-	result, _, err := genkit.GenerateData[flow.ReviewResult](ctx, g,
+func runProofread(ctx context.Context, g *genkit.Genkit, model ai.Model, userPrompt string) (*aiflow.ReviewResult, error) {
+	result, _, err := genkit.GenerateData[aiflow.ReviewResult](ctx, g,
 		ai.WithModel(model),
 		ai.WithSystem(reviewSystemPrompt),
 		ai.WithPrompt(userPrompt),

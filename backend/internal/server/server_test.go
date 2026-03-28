@@ -29,12 +29,12 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
-	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
-	"github.com/koopa0/blog-backend/internal/flow"
-	"github.com/koopa0/blog-backend/internal/flowrun"
+	aiflow "github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
@@ -47,7 +47,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/topic"
-	"github.com/koopa0/blog-backend/internal/tracking"
+	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/upload"
 )
 
@@ -115,10 +115,10 @@ func testServer(t *testing.T) *httptest.Server {
 	contentStore := content.NewStore(pool)
 	projectStore := project.NewStore(pool)
 	reviewStore := review.NewStore(pool)
-	collectedStore := collected.NewStore(pool)
-	trackingStore := tracking.NewStore(pool)
+	collectedStore := entry.NewStore(pool)
+	monitorStore := monitor.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)
-	flowrunStore := flowrun.NewStore(pool)
+	flowrunStore := exec.NewStore(pool)
 	notionStore := notion.NewStore(pool)
 	goalStore := goal.NewStore(pool)
 	taskStore := task.NewStore(pool)
@@ -128,14 +128,14 @@ func testServer(t *testing.T) *httptest.Server {
 	sessionStore := session.NewStore(pool)
 
 	// mock flows + runner for pipeline endpoints
-	registry := flow.NewRegistry(
-		flow.NewMockContentReview(),
-		flow.NewMockContentPolish(),
-		flow.NewMockDigestGenerate(),
-		flow.NewMockBookmarkGenerate(),
+	registry := aiflow.NewRegistry(
+		aiflow.NewMockContentReview(),
+		aiflow.NewMockContentPolish(),
+		aiflow.NewMockDigestGenerate(),
+		aiflow.NewMockBookmarkGenerate(),
 	)
-	alerter := flowrun.NewLogAlerter(logger)
-	runner := flowrun.New(flowrunStore, registry, 1, alerter, logger)
+	alerter := exec.NewLogAlerter(logger)
+	runner := exec.New(flowrunStore, registry, 1, alerter, logger)
 	runner.Start(t.Context())
 	t.Cleanup(runner.Stop)
 
@@ -155,11 +155,11 @@ func testServer(t *testing.T) *httptest.Server {
 		Content:   content.NewHandler(contentStore, "http://localhost:8080", nil, nil, logger),
 		Project:   project.NewHandler(projectStore, logger),
 		Review:    review.NewHandler(reviewStore, logger),
-		Collected: collected.NewHandler(collectedStore, logger),
-		Tracking:  tracking.NewHandler(trackingStore, logger),
+		Collected: entry.NewHandler(collectedStore, logger),
+		Tracking:  monitor.NewHandler(monitorStore, logger),
 		Pipeline:  pipelineHandler,
-		FlowRun: func() *flowrun.Handler {
-			h := flowrun.NewHandler(flowrunStore, runner, logger)
+		FlowRun: func() *exec.Handler {
+			h := exec.NewHandler(flowrunStore, runner, logger)
 			h.WithContentDeps(contentStore, contentStore)
 			return h
 		}(),

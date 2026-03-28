@@ -41,7 +41,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
-	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/goal"
@@ -96,7 +96,7 @@ func run(ctx context.Context, dbURL string, logger *slog.Logger) error {
 	notionStore := notion.NewStore(pool)
 	projectStore := project.NewStore(pool)
 	goalStore := goal.NewStore(pool)
-	collectedStore := collected.NewStore(pool)
+	collectedStore := entry.NewStore(pool)
 	activityStore := activity.NewStore(pool)
 	sessionStore := session.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)

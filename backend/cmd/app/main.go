@@ -28,13 +28,13 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/budget"
-	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/feed"
-	"github.com/koopa0/blog-backend/internal/flow"
-	"github.com/koopa0/blog-backend/internal/flowrun"
+	aiflow "github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/learning"
 	"github.com/koopa0/blog-backend/internal/note"
@@ -50,7 +50,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/topic"
-	"github.com/koopa0/blog-backend/internal/tracking"
+	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/upload"
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
@@ -148,9 +148,9 @@ func run(logger *slog.Logger) error {
 	contentStore := content.NewStore(pool)
 	projectStore := project.NewStore(pool)
 	reviewStore := review.NewStore(pool)
-	collectedStore := collected.NewStore(pool)
-	trackingStore := tracking.NewStore(pool)
-	flowrunStore := flowrun.NewStore(pool)
+	collectedStore := entry.NewStore(pool)
+	monitorStore := monitor.NewStore(pool)
+	flowrunStore := exec.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)
 	goalStore := goal.NewStore(pool)
 	tagStore := tag.NewStore(pool)
@@ -167,7 +167,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// collector + budget
-	feedCollector := collector.New(collectedStore, feedStore, trackingStore, logger)
+	feedCollector := collector.New(collectedStore, feedStore, monitorStore, logger)
 	defer feedCollector.Stop()
 	tokenBudget := budget.New(500_000)
 
@@ -218,7 +218,7 @@ func run(logger *slog.Logger) error {
 	runner := aiRes.runner
 
 	bizMetrics := server.NewMetrics()
-	runner.SetObserver(flowrun.NewMetricsObserver(bizMetrics.FlowDuration))
+	runner.SetObserver(exec.NewMetricsObserver(bizMetrics.FlowDuration))
 	runner.Start(ctx)
 	defer runner.Stop()
 
@@ -339,11 +339,11 @@ func run(logger *slog.Logger) error {
 		Content:   content.NewHandler(contentStore, cfg.SiteURL, c.graph, c.feed, logger),
 		Project:   project.NewHandler(projectStore, logger),
 		Review:    review.NewHandler(reviewStore, logger),
-		Collected: collected.NewHandler(collectedStore, logger),
-		Tracking:  tracking.NewHandler(trackingStore, logger),
+		Collected: entry.NewHandler(collectedStore, logger),
+		Tracking:  monitor.NewHandler(monitorStore, logger),
 		Pipeline:  pipelineHandler,
-		FlowRun: func() *flowrun.Handler {
-			h := flowrun.NewHandler(flowrunStore, runner, logger)
+		FlowRun: func() *exec.Handler {
+			h := exec.NewHandler(flowrunStore, runner, logger)
 			h.WithContentDeps(contentStore, contentStore)
 			return h
 		}(),
@@ -484,11 +484,11 @@ func setupNotifiers(cfg *config, logger *slog.Logger) notify.Notifier {
 
 // aiDeps holds the dependencies needed to set up the AI pipeline.
 type aiDeps struct {
-	flowrunStore   *flowrun.Store
+	flowrunStore   *exec.Store
 	contentStore   *content.Store
 	reviewStore    *review.Store
 	topicStore     *topic.Store
-	collectedStore *collected.Store
+	collectedStore *entry.Store
 	projectStore   *project.Store
 	taskStore      *task.Store
 	activityStore  *activity.Store
@@ -501,34 +501,34 @@ type aiDeps struct {
 
 // aiResult holds the outputs from AI pipeline setup.
 type aiResult struct {
-	runner       *flowrun.Runner
+	runner       *exec.Runner
 	noteEmbedder ai.Embedder    // nil in mock mode
 	genkit       *genkit.Genkit // nil in mock mode
 }
 
 // setupAI initializes the AI pipeline in either mock or real mode.
 func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
-	alerter := flowrun.NewNotifyAlerter(d.notifier, d.logger)
+	alerter := exec.NewNotifyAlerter(d.notifier, d.logger)
 
 	if cfg.MockMode {
 		d.logger.Info("starting in MOCK MODE — AI calls disabled")
-		registry := flow.NewRegistry(
-			flow.NewMockContentReview(),
-			flow.NewMockContentProofread(),
-			flow.NewMockContentExcerpt(),
-			flow.NewMockContentTags(),
-			flow.NewMockContentPolish(),
-			flow.NewMockDigestGenerate(),
-			flow.NewMockBookmarkGenerate(),
-			flow.NewMockMorningBrief(),
-			flow.NewMockWeeklyReview(),
-			flow.NewMockProjectTrack(),
-			flow.NewMockContentStrategy(),
-			flow.NewMockBuildLog(),
-			flow.NewMockDailyDevLog(),
+		registry := aiflow.NewRegistry(
+			aiflow.NewMockContentReview(),
+			aiflow.NewMockContentProofread(),
+			aiflow.NewMockContentExcerpt(),
+			aiflow.NewMockContentTags(),
+			aiflow.NewMockContentPolish(),
+			aiflow.NewMockDigestGenerate(),
+			aiflow.NewMockBookmarkGenerate(),
+			aiflow.NewMockMorningBrief(),
+			aiflow.NewMockWeeklyReview(),
+			aiflow.NewMockProjectTrack(),
+			aiflow.NewMockContentStrategy(),
+			aiflow.NewMockBuildLog(),
+			aiflow.NewMockDailyDevLog(),
 		)
 		return &aiResult{
-			runner: flowrun.New(d.flowrunStore, registry, 3, alerter, d.logger),
+			runner: exec.New(d.flowrunStore, registry, 3, alerter, d.logger),
 		}, nil
 	}
 
@@ -564,48 +564,48 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 		return nil, fmt.Errorf("defining embedder: %w", err)
 	}
 
-	contentProofread := flow.NewContentProofread(g, geminiModel, d.logger)
-	contentExcerpt := flow.NewContentExcerpt(g, geminiModel, d.logger)
-	contentTags := flow.NewContentTags(g, geminiModel, d.logger)
-	contentReview := flow.NewContentReview(
+	contentProofread := aiflow.NewContentProofread(g, geminiModel, d.logger)
+	contentExcerpt := aiflow.NewContentExcerpt(g, geminiModel, d.logger)
+	contentTags := aiflow.NewContentTags(g, geminiModel, d.logger)
+	contentReview := aiflow.NewContentReview(
 		g, embedder,
 		d.contentStore, d.contentStore, d.contentStore, d.reviewStore, d.topicStore,
 		contentProofread, contentExcerpt, contentTags,
 		d.logger,
 	)
-	contentPolish := flow.NewContentPolish(g, claudeModel, d.contentStore, d.logger)
-	digestGenerate := flow.NewDigestGenerate(g, geminiModel, d.contentStore, d.collectedStore, d.projectStore, d.tokenBudget, d.taipeiLoc, d.logger)
-	bookmarkGenerate := flow.NewBookmarkGenerate(g, geminiModel, d.collectedStore, d.tokenBudget, d.logger)
-	morningBrief := flow.NewMorningBrief(g, d.taskStore, d.notifier, d.taipeiLoc, d.logger)
-	weeklyReview := flow.NewWeeklyReview(
+	contentPolish := aiflow.NewContentPolish(g, claudeModel, d.contentStore, d.logger)
+	digestGenerate := aiflow.NewDigestGenerate(g, geminiModel, d.contentStore, d.collectedStore, d.projectStore, d.tokenBudget, d.taipeiLoc, d.logger)
+	bookmarkGenerate := aiflow.NewBookmarkGenerate(g, geminiModel, d.collectedStore, d.tokenBudget, d.logger)
+	morningBrief := aiflow.NewMorningBrief(g, d.taskStore, d.notifier, d.taipeiLoc, d.logger)
+	weeklyReview := aiflow.NewWeeklyReview(
 		g, geminiModel, d.taskStore, d.taskStore,
 		d.collectedStore, d.contentStore, d.projectStore, d.githubFetcher,
 		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
 	)
-	projectTrack := flow.NewProjectTrack(
+	projectTrack := aiflow.NewProjectTrack(
 		g, geminiModel, d.projectStore, d.projectStore,
 		d.notifier, d.tokenBudget, d.logger,
 	)
-	contentStrategy := flow.NewContentStrategy(
+	contentStrategy := aiflow.NewContentStrategy(
 		g, geminiModel, d.contentStore, d.collectedStore, d.projectStore,
 		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
 	)
-	buildLog := flow.NewBuildLog(
+	buildLog := aiflow.NewBuildLog(
 		g, geminiModel, d.projectStore, d.githubFetcher, d.contentStore,
 		d.tokenBudget, d.taipeiLoc, d.logger,
 	)
-	dailyDevLog := flow.NewDailyDevLog(
+	dailyDevLog := aiflow.NewDailyDevLog(
 		g, geminiModel, d.activityStore,
 		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
 	)
-	registry := flow.NewRegistry(
+	registry := aiflow.NewRegistry(
 		contentReview, contentProofread, contentExcerpt, contentTags,
 		contentPolish, digestGenerate, bookmarkGenerate,
 		morningBrief, weeklyReview, projectTrack,
 		contentStrategy, buildLog, dailyDevLog,
 	)
 	return &aiResult{
-		runner:       flowrun.New(d.flowrunStore, registry, 3, alerter, d.logger),
+		runner:       exec.New(d.flowrunStore, registry, 3, alerter, d.logger),
 		noteEmbedder: embedder,
 		genkit:       g,
 	}, nil
@@ -613,15 +613,15 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 
 // cronDeps holds the dependencies needed to register cron jobs.
 type cronDeps struct {
-	flowrunStore   *flowrun.Store
+	flowrunStore   *exec.Store
 	feedStore      *feed.Store
 	authStore      *auth.Store
-	collectedStore *collected.Store
+	collectedStore *entry.Store
 	sessionStore   *session.Store
 	activityStore  *activity.Store
 	projectStore   *project.Store
 	noteStore      *note.Store
-	runner         *flowrun.Runner
+	runner         *exec.Runner
 	feedCollector  *collector.Collector
 	notifier       notify.Notifier
 	tokenBudget    *budget.Budget

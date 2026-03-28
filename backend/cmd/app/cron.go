@@ -12,13 +12,13 @@ import (
 	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/feed"
-	"github.com/koopa0/blog-backend/internal/flowrun"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
 // retryFlows requeues failed/stuck flow runs.
-func retryFlows(appCtx context.Context, store *flowrun.Store, runner *flowrun.Runner, notifier notify.Notifier, logger *slog.Logger) func() {
+func retryFlows(appCtx context.Context, store *exec.Store, runner *exec.Runner, notifier notify.Notifier, logger *slog.Logger) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(appCtx, 1*time.Minute)
 		defer cancel()
@@ -80,9 +80,9 @@ func collectFeeds(
 // submitWeeklyReview gathers system health data and submits the weekly-review flow.
 func submitWeeklyReview(
 	appCtx context.Context,
-	flowrunStore *flowrun.Store,
+	flowrunStore *exec.Store,
 	feedStore *feed.Store,
-	runner *flowrun.Runner,
+	runner *exec.Runner,
 	logger *slog.Logger,
 ) func() {
 	return func() {
@@ -128,7 +128,7 @@ func submitWeeklyReview(
 }
 
 // submitBuildLogs generates build logs for active projects with recent activity.
-func submitBuildLogs(appCtx context.Context, projectStore *project.Store, runner *flowrun.Runner, logger *slog.Logger) func() {
+func submitBuildLogs(appCtx context.Context, projectStore *project.Store, runner *exec.Runner, logger *slog.Logger) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(appCtx, 3*time.Minute)
 		defer cancel()

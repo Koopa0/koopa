@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mmcdole/gofeed"
 
-	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/feed"
 )
 
@@ -29,8 +29,8 @@ const (
 
 // CollectedWriter creates collected data records.
 type CollectedWriter interface {
-	CreateItem(ctx context.Context, p *collected.CreateParams) (*collected.Item, error)
-	ItemByURLHash(ctx context.Context, urlHash string) (*collected.Item, error)
+	CreateItem(ctx context.Context, p *entry.CreateParams) (*entry.Item, error)
+	ItemByURLHash(ctx context.Context, urlHash string) (*entry.Item, error)
 }
 
 // FeedUpdater updates feed status after fetch.
@@ -173,7 +173,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		if _, err := c.writer.ItemByURLHash(ctx, urlHash); err == nil {
 			// already exists, skip
 			continue
-		} else if !errors.Is(err, collected.ErrNotFound) {
+		} else if !errors.Is(err, entry.ErrNotFound) {
 			logger.Error("checking url hash dedup", "url", item.Link, "error", err)
 			continue
 		}
@@ -186,7 +186,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 
 		score := Score(item.Title, content, tags, keywords)
 
-		cd, err := c.writer.CreateItem(ctx, &collected.CreateParams{
+		cd, err := c.writer.CreateItem(ctx, &entry.CreateParams{
 			SourceURL:       item.Link,
 			SourceName:      f.Name,
 			Title:           item.Title,
@@ -198,7 +198,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		})
 		if err != nil {
 			// skip duplicates from race conditions
-			if errors.Is(err, collected.ErrConflict) {
+			if errors.Is(err, entry.ErrConflict) {
 				continue
 			}
 			logger.Error("creating collected data", "url", item.Link, "error", err)

@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/task"
 )
@@ -320,8 +320,8 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 	}
 	for i := range notes {
 		n := notes[i]
-		entry := searchResultEntry{Note: n}
-		out.Decisions[i] = toNoteResult(&entry)
+		result := searchResultEntry{Note: n}
+		out.Decisions[i] = toNoteResult(&result)
 	}
 
 	return nil, out, nil
@@ -355,7 +355,7 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	days := clamp(input.Days, 1, 365, 7)
 	limit := clamp(input.Limit, 1, 100, 20)
 
-	var data []collected.Item
+	var data []entry.Item
 	var err error
 
 	since := time.Now().AddDate(0, 0, -days)

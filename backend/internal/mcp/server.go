@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/koopa0/blog-backend/internal/activity"
-	"github.com/koopa0/blog-backend/internal/collected"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -29,7 +29,7 @@ type Server struct {
 	notes           NoteSearcher
 	activity        ActivityReader
 	projects        ProjectReader
-	collected       *collected.Store
+	collected       *entry.Store
 	stats           StatsReader
 	tasks           *task.Store
 	contents        *content.Store
@@ -137,7 +137,7 @@ func NewServer(
 	notes NoteSearcher,
 	activityReader ActivityReader,
 	projects ProjectReader,
-	collectedStore *collected.Store,
+	collectedStore *entry.Store,
 	stats StatsReader,
 	tasks *task.Store,
 	contents *content.Store,

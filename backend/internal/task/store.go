@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/koopa0/blog-backend/internal/db"
-	"github.com/koopa0/blog-backend/internal/flow"
+	"github.com/koopa0/blog-backend/internal/ai"
 )
 
 // Store handles database operations for tasks.
@@ -38,19 +38,19 @@ func (s *Store) Tasks(ctx context.Context) ([]Task, error) {
 }
 
 // PendingTasks returns tasks that are not done, satisfying flow.TaskQuerier.
-func (s *Store) PendingTasks(ctx context.Context) ([]flow.PendingTask, error) {
+func (s *Store) PendingTasks(ctx context.Context) ([]ai.PendingTask, error) {
 	rows, err := s.q.PendingTasks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing pending tasks: %w", err)
 	}
-	tasks := make([]flow.PendingTask, 0, len(rows))
+	tasks := make([]ai.PendingTask, 0, len(rows))
 	for i := range rows {
 		r := &rows[i]
 		var due string
 		if r.Due != nil {
 			due = r.Due.Format(time.DateOnly)
 		}
-		tasks = append(tasks, flow.PendingTask{
+		tasks = append(tasks, ai.PendingTask{
 			Title: r.Title,
 			Due:   due,
 		})
@@ -129,14 +129,14 @@ func (s *Store) CompletedSince(ctx context.Context, since time.Time) (int64, err
 }
 
 // CompletedByProjectSince returns per-project completion counts since the given time.
-func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([]flow.ProjectCompletion, error) {
+func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([]ai.ProjectCompletion, error) {
 	rows, err := s.q.CompletedTasksByProjectSince(ctx, &since)
 	if err != nil {
 		return nil, fmt.Errorf("counting completed tasks by project: %w", err)
 	}
-	result := make([]flow.ProjectCompletion, len(rows))
+	result := make([]ai.ProjectCompletion, len(rows))
 	for i := range rows {
-		result[i] = flow.ProjectCompletion{
+		result[i] = ai.ProjectCompletion{
 			ProjectTitle: rows[i].ProjectTitle,
 			Completed:    rows[i].Completed,
 		}
