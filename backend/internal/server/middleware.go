@@ -222,8 +222,8 @@ func rateLimitMiddleware(logger *slog.Logger, done <-chan struct{}) func(http.Ha
 			if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
 				ip = cfIP
 			} else if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-				if idx := strings.Index(xff, ","); idx != -1 {
-					ip = strings.TrimSpace(xff[:idx])
+				if before, _, ok := strings.Cut(xff, ","); ok {
+					ip = strings.TrimSpace(before)
 				} else {
 					ip = strings.TrimSpace(xff)
 				}

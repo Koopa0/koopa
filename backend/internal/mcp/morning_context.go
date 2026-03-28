@@ -929,10 +929,7 @@ func computeTrend(entries []dailyMetrics) string {
 	}
 
 	// entries are ordered by date desc (most recent first)
-	recentCount := 3
-	if recentCount > len(entries) {
-		recentCount = len(entries)
-	}
+	recentCount := min(3, len(entries))
 	olderStart := recentCount
 
 	var recentSum, olderSum float64

@@ -113,13 +113,13 @@ func extractYAMLBlock(raw []byte) (yamlBytes []byte, body string, err error) {
 	}
 
 	rest := content[3:]
-	idx := bytes.Index(rest, []byte("\n---"))
-	if idx < 0 {
+	before, after, ok := bytes.Cut(rest, []byte("\n---"))
+	if !ok {
 		return nil, "", fmt.Errorf("no closing frontmatter delimiter found")
 	}
 
-	yamlBytes = rest[:idx]
-	body = strings.TrimSpace(string(rest[idx+4:])) // skip \n---
+	yamlBytes = before
+	body = strings.TrimSpace(string(after)) // skip \n---
 
 	return yamlBytes, body, nil
 }

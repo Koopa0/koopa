@@ -302,10 +302,7 @@ func estimateReadingTime(body string) int {
 	if words == 0 {
 		words = len(strings.Fields(body))
 	}
-	minutes := words / 250
-	if minutes < 1 {
-		minutes = 1
-	}
+	minutes := max(words/250, 1)
 	return minutes
 }
 
@@ -317,10 +314,10 @@ func parseJSONLoose(text string, v any) error {
 		return nil
 	}
 
-	if start := strings.Index(text, "```json"); start >= 0 {
-		rest := text[start+7:]
-		if end := strings.Index(rest, "```"); end >= 0 {
-			if err := json.Unmarshal([]byte(strings.TrimSpace(rest[:end])), v); err == nil {
+	if _, after, ok := strings.Cut(text, "```json"); ok {
+		rest := after
+		if before, _, ok := strings.Cut(rest, "```"); ok {
+			if err := json.Unmarshal([]byte(strings.TrimSpace(before)), v); err == nil {
 				return nil
 			}
 		}

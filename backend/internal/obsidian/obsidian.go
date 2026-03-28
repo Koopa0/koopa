@@ -73,13 +73,13 @@ func extractFrontmatter(raw []byte) (*frontmatter, string, error) {
 
 	// find the closing ---
 	rest := content[3:]
-	idx := bytes.Index(rest, []byte("\n---"))
-	if idx < 0 {
+	before, after, ok := bytes.Cut(rest, []byte("\n---"))
+	if !ok {
 		return nil, "", fmt.Errorf("no closing frontmatter delimiter found")
 	}
 
-	yamlBlock := rest[:idx]
-	body := string(rest[idx+4:]) // skip \n---
+	yamlBlock := before
+	body := string(after) // skip \n---
 
 	var fm frontmatter
 	if err := yaml.Unmarshal(yamlBlock, &fm); err != nil {

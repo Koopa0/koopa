@@ -85,15 +85,13 @@ func TestReserveConcurrent(t *testing.T) {
 
 	// 50 goroutines each trying to reserve 3 tokens
 	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := b.Reserve(3); err == nil {
 				mu.Lock()
 				successCount++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

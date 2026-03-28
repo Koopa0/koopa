@@ -416,8 +416,8 @@ func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	// If too few results, try a broader search with individual words
 	if len(results) < 5 {
-		words := strings.Fields(input.Query)
-		for _, w := range words {
+		words := strings.FieldsSeq(input.Query)
+		for w := range words {
 			if len(w) < 3 || len(results) >= maxSources {
 				continue
 			}

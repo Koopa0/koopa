@@ -576,7 +576,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "new title is mapped",
 			input: &UpdateTaskInput{
-				NewTitle: strPtr("Renamed Task"),
+				NewTitle: new("Renamed Task"),
 			},
 			want: map[string]any{
 				"Task Name": map[string]any{
@@ -589,7 +589,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "status is mapped",
 			input: &UpdateTaskInput{
-				Status: strPtr("Doing"),
+				Status: new("Doing"),
 			},
 			want: map[string]any{
 				"Status": map[string]any{
@@ -600,7 +600,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "due date is mapped",
 			input: &UpdateTaskInput{
-				Due: strPtr("2026-04-01"),
+				Due: new("2026-04-01"),
 			},
 			want: map[string]any{
 				"Due": map[string]any{
@@ -611,7 +611,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "empty due date clears the field",
 			input: &UpdateTaskInput{
-				Due: strPtr(""),
+				Due: new(""),
 			},
 			want: map[string]any{
 				"Due": map[string]any{"date": nil},
@@ -620,7 +620,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "priority is mapped",
 			input: &UpdateTaskInput{
-				Priority: strPtr("High"),
+				Priority: new("High"),
 			},
 			want: map[string]any{
 				"Priority": map[string]any{
@@ -631,7 +631,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "empty priority clears the field",
 			input: &UpdateTaskInput{
-				Priority: strPtr(""),
+				Priority: new(""),
 			},
 			want: map[string]any{
 				"Priority": map[string]any{"status": nil},
@@ -640,7 +640,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "energy High is mapped",
 			input: &UpdateTaskInput{
-				Energy: strPtr("High"),
+				Energy: new("High"),
 			},
 			want: map[string]any{
 				"Energy": map[string]any{
@@ -651,7 +651,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "empty energy clears the field",
 			input: &UpdateTaskInput{
-				Energy: strPtr(""),
+				Energy: new(""),
 			},
 			want: map[string]any{
 				"Energy": map[string]any{"select": nil},
@@ -678,11 +678,11 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "full input with all fields set",
 			input: &UpdateTaskInput{
-				NewTitle: strPtr("Full Update"),
-				Status:   strPtr("Done"),
-				Due:      strPtr("2026-05-15"),
-				Priority: strPtr("Low"),
-				Energy:   strPtr("Low"),
+				NewTitle: new("Full Update"),
+				Status:   new("Done"),
+				Due:      new("2026-05-15"),
+				Priority: new("Low"),
+				Energy:   new("Low"),
 				MyDay:    boolPtr(true),
 			},
 			want: map[string]any{
@@ -709,7 +709,7 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "special characters in title",
 			input: &UpdateTaskInput{
-				NewTitle: strPtr(`Fix "race condition" & panic < > edge`),
+				NewTitle: new(`Fix "race condition" & panic < > edge`),
 			},
 			want: map[string]any{
 				"Task Name": map[string]any{
@@ -722,14 +722,14 @@ func TestBuildNotionTaskProps(t *testing.T) {
 		{
 			name: "project field is not included (handled by caller)",
 			input: &UpdateTaskInput{
-				Project: strPtr("blog-backend"),
+				Project: new("blog-backend"),
 			},
 			want: map[string]any{},
 		},
 		{
 			name: "notes field is not included (handled by local DB only)",
 			input: &UpdateTaskInput{
-				Notes: strPtr("some notes"),
+				Notes: new("some notes"),
 			},
 			want: map[string]any{},
 		},

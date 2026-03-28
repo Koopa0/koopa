@@ -42,7 +42,7 @@ func TestParseFilter_Type(t *testing.T) {
 		wantType *Type
 	}{
 		{name: "missing", query: "", wantType: nil},
-		{name: "valid type", query: "type=til", wantType: typePtr(TypeTIL)},
+		{name: "valid type", query: "type=til", wantType: new(TypeTIL)},
 		{name: "invalid type ignored", query: "type=podcast", wantType: nil},
 	}
 
@@ -85,6 +85,7 @@ func timePtr(year, month, day int) *time.Time {
 	return &t
 }
 
+//go:fix inline
 func typePtr(t Type) *Type {
-	return &t
+	return new(t)
 }

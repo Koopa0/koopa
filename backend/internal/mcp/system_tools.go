@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,10 +109,8 @@ func ensureTag(tags []string, target string) []string {
 	if tags == nil {
 		tags = []string{}
 	}
-	for _, t := range tags {
-		if t == target {
-			return tags
-		}
+	if slices.Contains(tags, target) {
+		return tags
 	}
 	return append(tags, target)
 }

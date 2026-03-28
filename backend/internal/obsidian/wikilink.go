@@ -16,8 +16,8 @@ func ParseWikilinks(content string) []Link {
 	seen := map[string]struct{}{}
 	inCodeBlock := false
 
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(content, "\n")
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") {
 			inCodeBlock = !inCodeBlock
@@ -44,9 +44,9 @@ func ParseWikilinks(content string) []Link {
 			}
 
 			var l Link
-			if pipe := strings.IndexByte(inner, '|'); pipe >= 0 {
-				l.Path = strings.TrimSpace(inner[:pipe])
-				l.Display = strings.TrimSpace(inner[pipe+1:])
+			if before, after, ok := strings.Cut(inner, "|"); ok {
+				l.Path = strings.TrimSpace(before)
+				l.Display = strings.TrimSpace(after)
 			} else {
 				l.Path = strings.TrimSpace(inner)
 			}

@@ -13,13 +13,19 @@ import (
 )
 
 // strPtr returns a pointer to s.
-func strPtr(s string) *string { return &s }
+//
+//go:fix inline
+func strPtr(s string) *string { return new(s) }
 
 // int32Ptr returns a pointer to v.
-func int32Ptr(v int32) *int32 { return &v }
+//
+//go:fix inline
+func int32Ptr(v int32) *int32 { return new(v) }
 
 // timePtr returns a pointer to t.
-func timePtr(t time.Time) *time.Time { return &t }
+//
+//go:fix inline
+func timePtr(t time.Time) *time.Time { return new(t) }
 
 func TestToSearchEntries(t *testing.T) {
 	t.Parallel()
@@ -145,35 +151,35 @@ func TestToSearchFilter(t *testing.T) {
 		{
 			name:  "content_type only",
 			input: SearchNotesInput{Type: "til"},
-			want:  note.SearchFilter{Type: strPtr("til")},
+			want:  note.SearchFilter{Type: new("til")},
 		},
 		{
 			name:  "source only",
 			input: SearchNotesInput{Source: "leetcode"},
-			want:  note.SearchFilter{Source: strPtr("leetcode")},
+			want:  note.SearchFilter{Source: new("leetcode")},
 		},
 		{
 			name:  "context only",
 			input: SearchNotesInput{Context: "my-project"},
-			want:  note.SearchFilter{Context: strPtr("my-project")},
+			want:  note.SearchFilter{Context: new("my-project")},
 		},
 		{
 			name:  "book only",
 			input: SearchNotesInput{Book: "Clean Code"},
-			want:  note.SearchFilter{Book: strPtr("Clean Code")},
+			want:  note.SearchFilter{Book: new("Clean Code")},
 		},
 		{
 			name:  "valid date_from",
 			input: SearchNotesInput{After: "2024-01-15"},
 			want: note.SearchFilter{
-				After: timePtr(time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)),
+				After: new(time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)),
 			},
 		},
 		{
 			name:  "valid date_to shifts to start of next day",
 			input: SearchNotesInput{Before: "2024-01-20"},
 			want: note.SearchFilter{
-				Before: timePtr(time.Date(2024, 1, 21, 0, 0, 0, 0, time.UTC)),
+				Before: new(time.Date(2024, 1, 21, 0, 0, 0, 0, time.UTC)),
 			},
 		},
 		{
@@ -197,12 +203,12 @@ func TestToSearchFilter(t *testing.T) {
 				Before:  "2024-03-31",
 			},
 			want: note.SearchFilter{
-				Type:    strPtr("article"),
-				Source:  strPtr("book"),
-				Context: strPtr("project-x"),
-				Book:    strPtr("DDIA"),
-				After:   timePtr(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
-				Before:  timePtr(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
+				Type:    new("article"),
+				Source:  new("book"),
+				Context: new("project-x"),
+				Book:    new("DDIA"),
+				After:   new(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
+				Before:  new(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
 			},
 		},
 	}
