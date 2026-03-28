@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -45,16 +46,6 @@ type TaskWriter interface {
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
-// JobSubmitter submits flow runs for async processing.
-type JobSubmitter interface {
-	Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error
-}
-
-// EventRecorder records activity events for Notion sync tracking.
-type EventRecorder interface {
-	CreateEvent(ctx context.Context, p *activity.RecordParams) (int64, error)
-}
-
 // GoalIDResolver resolves a Notion page ID to a local goal UUID.
 type GoalIDResolver interface {
 	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
@@ -68,8 +59,8 @@ type Handler struct {
 	projects      ProjectWriter
 	goals         GoalWriter
 	tasks         TaskWriter
-	jobs          JobSubmitter
-	events        EventRecorder
+	jobs          flowrun.Submitter
+	events        activity.Recorder
 	projectStore  *project.Store
 	goalIDs       GoalIDResolver
 	dedup         *webhook.DeduplicationCache
@@ -88,7 +79,7 @@ type Handler struct {
 type HandlerOption func(*Handler)
 
 // WithEventRecorder sets the activity event recorder for Notion sync tracking.
-func WithEventRecorder(e EventRecorder) HandlerOption {
+func WithEventRecorder(e activity.Recorder) HandlerOption {
 	return func(h *Handler) { h.events = e }
 }
 
@@ -115,7 +106,7 @@ func NewHandler(
 	projects ProjectWriter,
 	goals GoalWriter,
 	tasks TaskWriter,
-	jobs JobSubmitter,
+	jobs flowrun.Submitter,
 	webhookSecret string,
 	logger *slog.Logger,
 	opts ...HandlerOption,

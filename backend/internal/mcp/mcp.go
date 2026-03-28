@@ -43,11 +43,6 @@ type ActivityReader interface {
 	CompletionsByProjectSince(ctx context.Context, since time.Time) ([]activity.ProjectCompletion, error)
 }
 
-// ActivityWriter records activity events for audit trail.
-type ActivityWriter interface {
-	CreateEvent(ctx context.Context, p *activity.RecordParams) (int64, error)
-}
-
 // ProjectReader provides project lookup for MCP tools.
 type ProjectReader interface {
 	ProjectBySlug(ctx context.Context, slug string) (*project.Project, error)

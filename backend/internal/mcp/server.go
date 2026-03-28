@@ -39,7 +39,7 @@ type Server struct {
 	notionTasks     NotionTaskWriter
 	taskDBResolver  TaskDBIDResolver
 	sessions        *session.Store
-	activityWriter  ActivityWriter
+	activityWriter  activity.Recorder
 	semanticNotes   NoteSemanticSearcher
 	queryEmbedder   QueryEmbedder
 	feeds           *feed.Store
@@ -85,7 +85,7 @@ func WithProjectWriter(w ProjectWriter) ServerOption {
 }
 
 // WithActivityWriter enables activity event recording for task completion audit trail.
-func WithActivityWriter(w ActivityWriter) ServerOption {
+func WithActivityWriter(w activity.Recorder) ServerOption {
 	return func(s *Server) { s.activityWriter = w }
 }
 

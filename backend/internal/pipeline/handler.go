@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -24,6 +23,10 @@ import (
 // maxConcurrentOps limits the number of concurrent background operations
 // to prevent resource exhaustion from webhook floods.
 const maxConcurrentOps = 10
+
+// ---------------------------------------------------------------------------
+// Interface definitions (consumed by sub-structs)
+// ---------------------------------------------------------------------------
 
 // ContentReader reads content by slug.
 type ContentReader interface {
@@ -53,6 +56,8 @@ func (a *topicLookupFunc) TopicIDBySlug(ctx context.Context, slug string) (uuid.
 }
 
 // JobSubmitter submits a flow run for async processing.
+// Defined here (consumer) because importing flowrun would create an import cycle
+// (pipeline → flowrun → flow → pipeline). Identical contract: flowrun.Submitter.
 type JobSubmitter interface {
 	Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error
 }
@@ -97,14 +102,9 @@ type ProjectRepoResolver interface {
 	ProjectByRepo(ctx context.Context, repo string) (*project.Project, error)
 }
 
-// EventRecorder records activity events for tracking.
-type EventRecorder interface {
-	CreateEvent(ctx context.Context, p *activity.RecordParams) (int64, error)
-}
-
 // NoteEventRecorder records activity events for knowledge notes and links tags.
 type NoteEventRecorder interface {
-	EventRecorder
+	activity.Recorder
 	SyncEventTags(ctx context.Context, eventID int64, tagIDs []uuid.UUID) error
 }
 
@@ -128,106 +128,181 @@ type NotionSyncer interface {
 	SyncAll(ctx context.Context)
 }
 
-// Handler handles pipeline and webhook HTTP requests.
-type Handler struct {
-	wg            sync.WaitGroup
-	sem           chan struct{}
+// ---------------------------------------------------------------------------
+// ContentSync — GitHub → content/note sync (A1 + B1 pipeline)
+// ---------------------------------------------------------------------------
+
+// ContentSync synchronises Obsidian content and knowledge notes from GitHub.
+type ContentSync struct {
 	pool          *pgxpool.Pool
 	contentReader ContentReader
 	contentWriter ContentWriter
 	topics        TopicLookup
 	fetcher       GitHubFetcher
 	jobs          JobSubmitter
-	collector     FeedCollector
-	feeds         FeedLister
-	reconciler    Reconciler
-	notionSync    NotionSyncer
 	notes         NoteUpserter
 	tags          TagResolver
-	comparer      GitHubComparer
-	events        EventRecorder
 	noteEvents    NoteEventRecorder
 	noteLinks     NoteLinkSyncer
-	notionTasks   NotionTaskUpdater
-	projectRepo   ProjectRepoResolver
-	dedup         *webhook.DeduplicationCache
-	webhookSecret string
-	obsidianRepo  string // "owner/repo" for Obsidian content sync
-	botLogin      string // GitHub login to ignore (self-loop protection)
 	logger        *slog.Logger
 }
 
-// NewHandler returns a pipeline Handler.
+// NewContentSync returns a ContentSync with required dependencies.
 // pool is used for transactional note sync (upsert + tags + links in one tx).
-// botLogin is the GitHub username whose pushes should be ignored to prevent self-loops.
-// Pass "" to disable self-loop protection.
-func NewHandler(pool *pgxpool.Pool, cr ContentReader, cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, webhookSecret, obsidianRepo, botLogin string, logger *slog.Logger) *Handler {
-	return &Handler{
-		sem:           make(chan struct{}, maxConcurrentOps),
+func NewContentSync(pool *pgxpool.Pool, cr ContentReader, cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, logger *slog.Logger) *ContentSync {
+	return &ContentSync{
 		pool:          pool,
 		contentReader: cr,
 		contentWriter: cw,
 		topics:        tl,
 		fetcher:       fetcher,
 		jobs:          jobs,
-		webhookSecret: webhookSecret,
-		obsidianRepo:  obsidianRepo,
-		botLogin:      botLogin,
 		logger:        logger,
 	}
 }
 
-// SetCollector sets the feed collector and lister for the collect pipeline.
-func (h *Handler) SetCollector(c FeedCollector, f FeedLister) {
-	h.collector = c
-	h.feeds = f
+// WithNoteSync sets the note upserter and tag resolver for B1 knowledge note sync.
+func (cs *ContentSync) WithNoteSync(n NoteUpserter, t TagResolver) {
+	cs.notes = n
+	cs.tags = t
 }
 
-// SetReconciler sets the reconciler for manual sync endpoints.
-func (h *Handler) SetReconciler(r Reconciler) {
-	h.reconciler = r
+// WithNoteEvents sets the note event recorder for B1 activity tracking.
+func (cs *ContentSync) WithNoteEvents(ne NoteEventRecorder) {
+	cs.noteEvents = ne
 }
 
-// SetNotionSync sets the Notion syncer for full sync.
-func (h *Handler) SetNotionSync(n NotionSyncer) {
-	h.notionSync = n
+// WithNoteLinks sets the note link syncer for wikilink edge extraction.
+func (cs *ContentSync) WithNoteLinks(nl NoteLinkSyncer) {
+	cs.noteLinks = nl
 }
 
-// SetNoteSync sets the note upserter and tag resolver for B1 knowledge note sync.
-func (h *Handler) SetNoteSync(n NoteUpserter, t TagResolver) {
-	h.notes = n
-	h.tags = t
+// ---------------------------------------------------------------------------
+// WebhookRouter — HMAC verification, event routing, dedup
+// ---------------------------------------------------------------------------
+
+// WebhookRouter verifies GitHub webhooks and routes events to the appropriate handler.
+type WebhookRouter struct {
+	webhookSecret string
+	obsidianRepo  string // "owner/repo" for Obsidian content sync
+	botLogin      string // GitHub login to ignore (self-loop protection)
+	contentSync   *ContentSync
+	dedup         *webhook.DeduplicationCache
+	events        activity.Recorder
+	comparer      GitHubComparer
+	notionTasks   NotionTaskUpdater
+	projectRepo   ProjectRepoResolver
+	jobs          JobSubmitter
+	logger        *slog.Logger
 }
 
-// SetActivityRecorder sets the event recorder and GitHub comparer for activity tracking.
-func (h *Handler) SetActivityRecorder(e EventRecorder, c GitHubComparer) {
-	h.events = e
-	h.comparer = c
+// NewWebhookRouter returns a WebhookRouter.
+// botLogin is the GitHub username whose pushes should be ignored to prevent self-loops.
+// Pass "" to disable self-loop protection.
+func NewWebhookRouter(secret, obsidianRepo, botLogin string, cs *ContentSync, logger *slog.Logger) *WebhookRouter {
+	return &WebhookRouter{
+		webhookSecret: secret,
+		obsidianRepo:  obsidianRepo,
+		botLogin:      botLogin,
+		contentSync:   cs,
+		logger:        logger,
+	}
 }
 
-// SetNoteLinkSync sets the note link syncer for wikilink edge extraction.
-func (h *Handler) SetNoteLinkSync(n NoteLinkSyncer) {
-	h.noteLinks = n
+// WithDedup sets the deduplication cache for webhook replay protection.
+func (wr *WebhookRouter) WithDedup(d *webhook.DeduplicationCache) {
+	wr.dedup = d
 }
 
-// SetNoteEventRecorder sets the note event recorder for B1 activity tracking.
-func (h *Handler) SetNoteEventRecorder(ne NoteEventRecorder) {
-	h.noteEvents = ne
+// WithActivityRecorder sets the event recorder and GitHub comparer for activity tracking.
+func (wr *WebhookRouter) WithActivityRecorder(e activity.Recorder, c GitHubComparer) {
+	wr.events = e
+	wr.comparer = c
 }
 
-// SetNotionTaskUpdater sets the Notion client for PR merge → task status updates.
-func (h *Handler) SetNotionTaskUpdater(n NotionTaskUpdater) {
-	h.notionTasks = n
+// WithNotionTasks sets the Notion client for PR merge → task status updates.
+func (wr *WebhookRouter) WithNotionTasks(n NotionTaskUpdater) {
+	wr.notionTasks = n
 }
 
-// SetProjectRepoResolver sets the resolver for GitHub push event project attribution.
-func (h *Handler) SetProjectRepoResolver(r ProjectRepoResolver) {
-	h.projectRepo = r
+// WithProjectRepo sets the resolver for GitHub push event project attribution.
+func (wr *WebhookRouter) WithProjectRepo(r ProjectRepoResolver) {
+	wr.projectRepo = r
 }
 
-// SetDedup sets the deduplication cache for webhook replay protection.
-func (h *Handler) SetDedup(c *webhook.DeduplicationCache) {
-	h.dedup = c
+// WithJobs sets the job submitter for project-track flow submissions.
+func (wr *WebhookRouter) WithJobs(j JobSubmitter) {
+	wr.jobs = j
+}
+
+// ---------------------------------------------------------------------------
+// Triggers — manual pipeline triggers
+// ---------------------------------------------------------------------------
+
+// Triggers handles manually-triggered pipeline operations (collect, reconcile, etc.).
+type Triggers struct {
+	collector  FeedCollector
+	feeds      FeedLister
+	reconciler Reconciler
+	notionSync NotionSyncer
+	jobs       JobSubmitter
+	logger     *slog.Logger
+}
+
+// NewTriggers returns a Triggers with required dependencies.
+func NewTriggers(jobs JobSubmitter, logger *slog.Logger) *Triggers {
+	return &Triggers{
+		jobs:   jobs,
+		logger: logger,
+	}
+}
+
+// WithCollector sets the feed collector and lister for the collect pipeline.
+func (tr *Triggers) WithCollector(c FeedCollector, f FeedLister) {
+	tr.collector = c
+	tr.feeds = f
+}
+
+// WithReconciler sets the reconciler for manual sync endpoints.
+func (tr *Triggers) WithReconciler(r Reconciler) {
+	tr.reconciler = r
+}
+
+// WithNotionSync sets the Notion syncer for full sync.
+func (tr *Triggers) WithNotionSync(n NotionSyncer) {
+	tr.notionSync = n
+}
+
+// ---------------------------------------------------------------------------
+// Handler — thin facade for route registration + background goroutine pool
+// ---------------------------------------------------------------------------
+
+// Handler is a thin facade that delegates HTTP requests to the appropriate
+// sub-struct (ContentSync, WebhookRouter, Triggers) and manages a shared
+// background goroutine pool with backpressure.
+type Handler struct {
+	content  *ContentSync
+	webhook  *WebhookRouter
+	triggers *Triggers
+	wg       sync.WaitGroup
+	sem      chan struct{}
+	logger   *slog.Logger
+}
+
+// NewHandler returns a pipeline Handler that delegates to the given sub-structs.
+func NewHandler(cs *ContentSync, wr *WebhookRouter, tr *Triggers, logger *slog.Logger) *Handler {
+	return &Handler{
+		content:  cs,
+		webhook:  wr,
+		triggers: tr,
+		sem:      make(chan struct{}, maxConcurrentOps),
+		logger:   logger,
+	}
+}
+
+// NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
+func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
+	return &topicLookupFunc{fn: fn}
 }
 
 // Go runs fn in a tracked goroutine. Wait will block until fn returns.
@@ -255,121 +330,58 @@ func (h *Handler) goBackground(name string, fn func()) {
 	}
 }
 
-// NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
-func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
-	return &topicLookupFunc{fn: fn}
-}
+// ---------------------------------------------------------------------------
+// Facade HTTP methods — delegate to sub-structs
+// ---------------------------------------------------------------------------
 
 // Sync handles POST /api/pipeline/sync — full Obsidian sync from GitHub.
-// Lists all .md files in 10-Public-Content/, compares with DB,
-// and syncs any missing or updated files.
 func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = fmt.Fprint(w, `{"status":"submitted"}`)
 	h.goBackground("sync", func() {
 		ctx := context.WithoutCancel(r.Context())
-		h.SyncAllFromGitHub(ctx)
+		h.content.SyncAllFromGitHub(ctx)
 	})
+}
+
+// SyncAllFromGitHub delegates to ContentSync for direct (non-HTTP) callers
+// such as cron jobs and startup sync.
+func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
+	h.content.SyncAllFromGitHub(ctx)
 }
 
 // WebhookGithub handles POST /api/webhook/github.
 func (h *Handler) WebhookGithub(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		h.logger.Error("reading webhook body", "error", err)
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
+	h.webhook.Handle(w, r, h.goBackground)
+}
 
-	sig := r.Header.Get("X-Hub-Signature-256")
-	if err := webhook.VerifySignature(body, sig, h.webhookSecret); err != nil {
-		h.logger.Warn("invalid webhook signature")
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
+// Collect handles POST /api/pipeline/collect.
+func (h *Handler) Collect(w http.ResponseWriter, r *http.Request) {
+	h.triggers.Collect(w, r, h.goBackground)
+}
 
-	// replay protection: reject duplicate deliveries
-	if h.dedup != nil {
-		deliveryID := r.Header.Get("X-GitHub-Delivery")
-		if deliveryID != "" && h.dedup.Seen(deliveryID) {
-			h.logger.Warn("github webhook replay detected", "delivery_id", deliveryID)
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-	}
+// NotionSync handles POST /api/pipeline/notion-sync — full Notion sync.
+func (h *Handler) NotionSync(w http.ResponseWriter, r *http.Request) {
+	h.triggers.NotionSync(w, r, h.goBackground)
+}
 
-	// route by event type
-	eventType := r.Header.Get("X-GitHub-Event")
-	switch eventType {
-	case "pull_request":
-		h.handlePullRequest(w, r, body)
-		return
-	case "push":
-		// handled below
-	default:
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+// Reconcile handles POST /api/pipeline/reconcile — full reconciliation.
+func (h *Handler) Reconcile(w http.ResponseWriter, r *http.Request) {
+	h.triggers.Reconcile(w, r, h.goBackground)
+}
 
-	var event PushEvent
-	if err := json.Unmarshal(body, &event); err != nil {
-		h.logger.Error("parsing push event", "error", err)
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
+// Generate handles POST /api/pipeline/generate.
+func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
+	h.triggers.Generate(w, r)
+}
 
-	// B2 self-loop protection: ignore pushes from the bot account.
-	// This check runs AFTER HMAC verification so that an attacker cannot
-	// craft a payload with Sender.Login == botLogin to bypass processing.
-	if h.botLogin != "" && event.Sender.Login == h.botLogin {
-		h.logger.Info("ignoring push from bot", "sender", event.Sender.Login)
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+// Digest handles POST /api/pipeline/digest.
+func (h *Handler) Digest(w http.ResponseWriter, r *http.Request) {
+	h.triggers.Digest(w, r)
+}
 
-	// only process pushes to main branch
-	if event.Ref != "refs/heads/main" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// route: Obsidian repo → content sync, other repos → project-track
-	if event.Repository.FullName != h.obsidianRepo {
-		h.handleProjectTrack(w, r, &event)
-		return
-	}
-
-	// split changed files into public content (A1) and knowledge notes (B1)
-	changed := event.ChangedFiles()
-	removedAll := event.RemovedFiles()
-
-	publicFiles := filterPublicMarkdown(changed)
-	publicRemoved := filterPublicMarkdown(removedAll)
-	knowledgeFiles := filterKnowledgeMarkdown(changed)
-	knowledgeRemoved := filterKnowledgeMarkdown(removedAll)
-
-	if len(publicFiles) == 0 && len(publicRemoved) == 0 &&
-		len(knowledgeFiles) == 0 && len(knowledgeRemoved) == 0 {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// respond 202 immediately, process in background
-	w.WriteHeader(http.StatusAccepted)
-
-	h.goBackground("webhook-push", func() {
-		ctx := context.WithoutCancel(r.Context())
-
-		// A1: public content sync
-		h.syncFiles(ctx, publicFiles)
-		h.archiveRemovedFiles(ctx, publicRemoved)
-
-		// B1: knowledge note sync
-		if h.notes != nil && h.tags != nil {
-			h.syncKnowledgeNotes(ctx, knowledgeFiles)
-			h.archiveKnowledgeNotes(ctx, knowledgeRemoved)
-		}
-	})
+// Bookmark handles POST /api/pipeline/bookmark.
+func (h *Handler) Bookmark(w http.ResponseWriter, r *http.Request) {
+	h.triggers.Bookmark(w, r)
 }

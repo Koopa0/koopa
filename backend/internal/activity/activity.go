@@ -2,6 +2,7 @@
 package activity
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -59,6 +60,12 @@ type ChangelogEvent struct {
 	Project   *string   `json:"project,omitempty"`
 	Title     *string   `json:"title,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
+}
+
+// Recorder records activity events.
+// Defined here (producer) because 3+ consumers use the identical contract.
+type Recorder interface {
+	CreateEvent(ctx context.Context, p *RecordParams) (int64, error)
 }
 
 var (

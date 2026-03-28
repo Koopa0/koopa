@@ -3,6 +3,7 @@
 package flowrun
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -41,6 +42,12 @@ type Filter struct {
 	Page    int
 	PerPage int
 	Status  *Status
+}
+
+// Submitter submits a flow run for async processing.
+// Defined here (producer) because 3+ consumers use the identical contract.
+type Submitter interface {
+	Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error
 }
 
 var (

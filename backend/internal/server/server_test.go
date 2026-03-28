@@ -140,22 +140,28 @@ func testServer(t *testing.T) *httptest.Server {
 
 	feedCollector := collector.New(collectedStore, feedStore, logger)
 
-	pipelineHandler := pipeline.NewHandler(pool, contentStore, contentStore, nil, nil, runner, "", "", "", logger)
-	pipelineHandler.SetCollector(feedCollector, feedStore)
+	contentSync := pipeline.NewContentSync(pool, contentStore, contentStore, nil, nil, runner, logger)
+	webhookRouter := pipeline.NewWebhookRouter("", "", "", contentSync, logger)
+	triggers := pipeline.NewTriggers(runner, logger)
+	triggers.WithCollector(feedCollector, feedStore)
+	pipelineHandler := pipeline.NewHandler(contentSync, webhookRouter, triggers, logger)
 
 	notionClient := notion.NewClient("")
 
 	deps := server.Deps{
-		Auth:         auth.NewHandler(authStore, testJWTSecret, &auth.GoogleConfig{}, logger),
-		Topic:        topic.NewHandler(topicStore, contentStore, nil, logger),
-		Content:      content.NewHandler(contentStore, "http://localhost:8080", nil, nil, logger),
-		Project:      project.NewHandler(projectStore, logger),
-		Review:       review.NewHandler(reviewStore, logger),
-		Collected:    collected.NewHandler(collectedStore, logger),
-		Tracking:     tracking.NewHandler(trackingStore, logger),
-		Pipeline:     pipelineHandler,
-		FlowRun:      flowrun.NewHandler(flowrunStore, runner, logger),
-		Flow:         flow.NewHandler(runner, nil, contentStore, contentStore, logger),
+		Auth:      auth.NewHandler(authStore, testJWTSecret, &auth.GoogleConfig{}, logger),
+		Topic:     topic.NewHandler(topicStore, contentStore, nil, logger),
+		Content:   content.NewHandler(contentStore, "http://localhost:8080", nil, nil, logger),
+		Project:   project.NewHandler(projectStore, logger),
+		Review:    review.NewHandler(reviewStore, logger),
+		Collected: collected.NewHandler(collectedStore, logger),
+		Tracking:  tracking.NewHandler(trackingStore, logger),
+		Pipeline:  pipelineHandler,
+		FlowRun: func() *flowrun.Handler {
+			h := flowrun.NewHandler(flowrunStore, runner, logger)
+			h.WithContentDeps(contentStore, contentStore)
+			return h
+		}(),
 		Upload:       upload.NewHandler(nil, "test-bucket", "http://localhost", logger),
 		Feed:         feed.NewHandler(feedStore, feedCollector, logger),
 		Notion:       notion.NewHandler(notionClient, notionStore, nil, projectStore, goalStore, taskStore, runner, "", logger),

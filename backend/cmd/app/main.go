@@ -255,52 +255,54 @@ func run(logger *slog.Logger) error {
 		return t.ID, nil
 	})
 
-	// pipeline handler with collector and reconciler
-	pipelineHandler := pipeline.NewHandler(pool, contentStore, contentStore, topicLookup, githubFetcher, runner, cfg.GitHubWebhookSecret, cfg.GitHubRepo, cfg.GitHubBotLogin, logger)
-	defer pipelineHandler.Wait() // drain in-flight background operations before exit
-	pipelineHandler.SetCollector(feedCollector, feedStore)
-	pipelineHandler.SetReconciler(recon)
-	pipelineHandler.SetNotionSync(notionHandler)
 	noteStore := note.NewStore(pool)
-	pipelineHandler.SetNoteSync(noteStore, tagStore)
-	pipelineHandler.SetActivityRecorder(activityStore, githubFetcher)
-	pipelineHandler.SetNoteEventRecorder(activityStore)
-	pipelineHandler.SetProjectRepoResolver(projectStore)
-	pipelineHandler.SetNoteLinkSync(noteStore)
-	pipelineHandler.SetNotionTaskUpdater(notionClient)
-	pipelineHandler.SetDedup(webhookDedup)
 
-	// flow admin handler
-	flowHandler := flow.NewHandler(
-		runner,
-		&runReader{store: flowrunStore},
-		contentStore,
-		contentStore,
-		logger,
-	)
+	// pipeline: content sync (A1 + B1)
+	contentSync := pipeline.NewContentSync(pool, contentStore, contentStore, topicLookup, githubFetcher, runner, logger)
+	contentSync.WithNoteSync(noteStore, tagStore)
+	contentSync.WithNoteEvents(activityStore)
+	contentSync.WithNoteLinks(noteStore)
+
+	// pipeline: webhook router
+	webhookRouter := pipeline.NewWebhookRouter(cfg.GitHubWebhookSecret, cfg.GitHubRepo, cfg.GitHubBotLogin, contentSync, logger)
+	webhookRouter.WithDedup(webhookDedup)
+	webhookRouter.WithActivityRecorder(activityStore, githubFetcher)
+	webhookRouter.WithNotionTasks(notionClient)
+	webhookRouter.WithProjectRepo(projectStore)
+	webhookRouter.WithJobs(runner)
+
+	// pipeline: manual triggers
+	triggers := pipeline.NewTriggers(runner, logger)
+	triggers.WithCollector(feedCollector, feedStore)
+	triggers.WithReconciler(recon)
+	triggers.WithNotionSync(notionHandler)
+
+	// pipeline: facade handler
+	pipelineHandler := pipeline.NewHandler(contentSync, webhookRouter, triggers, logger)
+	defer pipelineHandler.Wait() // drain in-flight background operations before exit
 
 	// cron: register all scheduled jobs
 	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
 	defer cronScheduler.Stop()
 	registerCronJobs(cronScheduler, &cronDeps{
-		flowrunStore:    flowrunStore,
-		feedStore:       feedStore,
-		authStore:       authStore,
-		collectedStore:  collectedStore,
-		sessionStore:    sessionStore,
-		activityStore:   activityStore,
-		projectStore:    projectStore,
-		noteStore:       noteStore,
-		runner:          runner,
-		feedCollector:   feedCollector,
-		notifier:        notifier,
-		tokenBudget:     tokenBudget,
-		recon:           recon,
-		pipelineHandler: pipelineHandler,
-		notionHandler:   notionHandler,
-		noteEmbedder:    aiRes.noteEmbedder,
-		genkitInstance:  aiRes.genkit,
-		logger:          logger,
+		flowrunStore:   flowrunStore,
+		feedStore:      feedStore,
+		authStore:      authStore,
+		collectedStore: collectedStore,
+		sessionStore:   sessionStore,
+		activityStore:  activityStore,
+		projectStore:   projectStore,
+		noteStore:      noteStore,
+		runner:         runner,
+		feedCollector:  feedCollector,
+		notifier:       notifier,
+		tokenBudget:    tokenBudget,
+		recon:          recon,
+		contentSync:    contentSync,
+		notionHandler:  notionHandler,
+		noteEmbedder:   aiRes.noteEmbedder,
+		genkitInstance: aiRes.genkit,
+		logger:         logger,
 	})
 	cronScheduler.Start()
 
@@ -320,12 +322,15 @@ func run(logger *slog.Logger) error {
 		Collected: collected.NewHandler(collectedStore, logger),
 		Tracking:  tracking.NewHandler(trackingStore, logger),
 		Pipeline:  pipelineHandler,
-		FlowRun:   flowrun.NewHandler(flowrunStore, runner, logger),
-		Upload:    upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
-		Flow:      flowHandler,
-		Feed:      feed.NewHandler(feedStore, feedCollector, logger),
-		Notion:    notionHandler,
-		Tag:       tag.NewHandler(tagStore, pool, logger),
+		FlowRun: func() *flowrun.Handler {
+			h := flowrun.NewHandler(flowrunStore, runner, logger)
+			h.WithContentDeps(contentStore, contentStore)
+			return h
+		}(),
+		Upload: upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
+		Feed:   feed.NewHandler(feedStore, feedCollector, logger),
+		Notion: notionHandler,
+		Tag:    tag.NewHandler(tagStore, pool, logger),
 		NotionSource: func() *notion.SourceHandler {
 			sh := notion.NewSourceHandler(notionSourceStore, notionClient, c.source, logger)
 			sh.SetSyncer(notionHandler)
@@ -365,7 +370,7 @@ func run(logger *slog.Logger) error {
 		syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		logger.Info("startup sync: starting")
-		pipelineHandler.SyncAllFromGitHub(syncCtx)
+		contentSync.SyncAllFromGitHub(syncCtx)
 		notionHandler.SyncAll(syncCtx)
 		logger.Info("startup sync: complete")
 	})
@@ -587,24 +592,24 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 
 // cronDeps holds the dependencies needed to register cron jobs.
 type cronDeps struct {
-	flowrunStore    *flowrun.Store
-	feedStore       *feed.Store
-	authStore       *auth.Store
-	collectedStore  *collected.Store
-	sessionStore    *session.Store
-	activityStore   *activity.Store
-	projectStore    *project.Store
-	noteStore       *note.Store
-	runner          *flowrun.Runner
-	feedCollector   *collector.Collector
-	notifier        notify.Notifier
-	tokenBudget     *budget.Budget
-	recon           *reconcile.Reconciler
-	pipelineHandler *pipeline.Handler
-	notionHandler   *notion.Handler
-	noteEmbedder    ai.Embedder    // nil in mock mode
-	genkitInstance  *genkit.Genkit // nil in mock mode
-	logger          *slog.Logger
+	flowrunStore   *flowrun.Store
+	feedStore      *feed.Store
+	authStore      *auth.Store
+	collectedStore *collected.Store
+	sessionStore   *session.Store
+	activityStore  *activity.Store
+	projectStore   *project.Store
+	noteStore      *note.Store
+	runner         *flowrun.Runner
+	feedCollector  *collector.Collector
+	notifier       notify.Notifier
+	tokenBudget    *budget.Budget
+	recon          *reconcile.Reconciler
+	contentSync    *pipeline.ContentSync
+	notionHandler  *notion.Handler
+	noteEmbedder   ai.Embedder    // nil in mock mode
+	genkitInstance *genkit.Genkit // nil in mock mode
+	logger         *slog.Logger
 }
 
 // registerCronJobs registers all scheduled jobs on the given cron scheduler.
@@ -697,7 +702,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps) {
 		defer syncRunning.Store(false)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		d.pipelineHandler.SyncAllFromGitHub(ctx)
+		d.contentSync.SyncAllFromGitHub(ctx)
 		d.notionHandler.SyncAll(ctx)
 	})
 
@@ -868,44 +873,6 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-// runReader converts flowrun.Run to flow.RunResult, breaking the flow ↔ flowrun import cycle.
-type runReader struct {
-	store *flowrun.Store
-}
-
-func (a *runReader) RunResult(ctx context.Context, id uuid.UUID) (*flow.RunResult, error) {
-	run, err := a.store.Run(ctx, id)
-	if err != nil {
-		if errors.Is(err, flowrun.ErrNotFound) {
-			return nil, flow.ErrNotFound
-		}
-		return nil, err
-	}
-	return toRunResult(run), nil
-}
-
-func (a *runReader) LatestCompletedRunResult(ctx context.Context, flowName string, contentID uuid.UUID) (*flow.RunResult, error) {
-	run, err := a.store.LatestCompletedRun(ctx, flowName, contentID)
-	if err != nil {
-		if errors.Is(err, flowrun.ErrNotFound) {
-			return nil, flow.ErrNotFound
-		}
-		return nil, err
-	}
-	return toRunResult(run), nil
-}
-
-func toRunResult(r *flowrun.Run) *flow.RunResult {
-	return &flow.RunResult{
-		ID:        r.ID,
-		FlowName:  r.FlowName,
-		ContentID: r.ContentID,
-		Status:    string(r.Status),
-		Output:    r.Output,
-		EndedAt:   r.EndedAt,
-	}
 }
 
 // flowObserver adapts server.Metrics to flowrun.FlowObserver.

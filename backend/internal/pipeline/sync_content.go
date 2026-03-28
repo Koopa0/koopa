@@ -16,21 +16,21 @@ import (
 )
 
 // SyncAllFromGitHub lists 10-Public-Content/ on GitHub and syncs each file.
-func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
-	slugs, err := h.fetcher.ListDirectory(ctx, "10-Public-Content")
+func (cs *ContentSync) SyncAllFromGitHub(ctx context.Context) {
+	slugs, err := cs.fetcher.ListDirectory(ctx, "10-Public-Content")
 	if err != nil {
-		h.logger.Error("sync: listing github directory", "error", err)
+		cs.logger.Error("sync: listing github directory", "error", err)
 		return
 	}
 
 	var synced, failed int
 	for _, slug := range slugs {
 		path := "10-Public-Content/" + slug + ".md"
-		if err := h.syncFile(ctx, path); err != nil {
+		if err := cs.syncFile(ctx, path); err != nil {
 			if errors.Is(err, ErrGitHubNotFound) {
-				h.logger.Warn("sync: file not found (deleted?)", "path", path)
+				cs.logger.Warn("sync: file not found (deleted?)", "path", path)
 			} else {
-				h.logger.Error("sync: syncing file", "path", path, "error", err)
+				cs.logger.Error("sync: syncing file", "path", path, "error", err)
 			}
 			failed++
 			continue
@@ -38,7 +38,7 @@ func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
 		synced++
 	}
 
-	h.logger.Info("sync: complete",
+	cs.logger.Info("sync: complete",
 		"total", len(slugs),
 		"synced", synced,
 		"failed", failed,
@@ -46,19 +46,19 @@ func (h *Handler) SyncAllFromGitHub(ctx context.Context) {
 }
 
 // syncFiles fetches and upserts each markdown file.
-func (h *Handler) syncFiles(ctx context.Context, files []string) {
+func (cs *ContentSync) syncFiles(ctx context.Context, files []string) {
 	for _, path := range files {
-		if err := h.syncFile(ctx, path); err != nil {
-			h.logger.Error("syncing file", "path", path, "error", err)
+		if err := cs.syncFile(ctx, path); err != nil {
+			cs.logger.Error("syncing file", "path", path, "error", err)
 			continue
 		}
-		h.logger.Info("synced file", "path", path)
+		cs.logger.Info("synced file", "path", path)
 	}
 }
 
 // syncFile fetches a single file from GitHub and upserts it as content.
-func (h *Handler) syncFile(ctx context.Context, path string) error {
-	raw, err := h.fetcher.FileContent(ctx, path)
+func (cs *ContentSync) syncFile(ctx context.Context, path string) error {
+	raw, err := cs.fetcher.FileContent(ctx, path)
 	if err != nil {
 		return fmt.Errorf("fetching %s: %w", path, err)
 	}
@@ -71,7 +71,7 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 	slug := slugFromPath(path)
 
 	// resolve topic IDs from parsed topic slugs
-	topicIDs := h.resolveTopics(ctx, parsed.TopicSlugs)
+	topicIDs := cs.resolveTopics(ctx, parsed.TopicSlugs)
 
 	// determine content type
 	contentType := content.TypeNote // default
@@ -82,13 +82,13 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 	sourceType := content.SourceObsidian
 
 	// check if content already exists
-	existing, err := h.contentReader.ContentBySlug(ctx, slug)
+	existing, err := cs.contentReader.ContentBySlug(ctx, slug)
 	if err == nil && existing != nil {
-		return h.updateExistingContent(ctx, existing, slug, parsed, body, contentType, sourceType, path, topicIDs)
+		return cs.updateExistingContent(ctx, existing, slug, parsed, body, contentType, sourceType, path, topicIDs)
 	}
 
 	// create new content
-	created, err := h.contentWriter.CreateContent(ctx, &content.CreateParams{
+	created, err := cs.contentWriter.CreateContent(ctx, &content.CreateParams{
 		Slug:        slug,
 		Title:       parsed.Title,
 		Body:        body,
@@ -106,22 +106,22 @@ func (h *Handler) syncFile(ctx context.Context, path string) error {
 
 	// publish if the obsidian file is marked as published
 	if parsed.Published {
-		if _, err := h.contentWriter.PublishContent(ctx, created.ID); err != nil {
+		if _, err := cs.contentWriter.PublishContent(ctx, created.ID); err != nil {
 			return fmt.Errorf("publishing content %s: %w", slug, err)
 		}
 	}
 
-	h.submitContentReview(ctx, created.ID)
+	cs.submitContentReview(ctx, created.ID)
 	return nil
 }
 
 // updateExistingContent updates an already-synced content entry, optionally publishing it.
-func (h *Handler) updateExistingContent(ctx context.Context, existing *content.Content, slug string, parsed *obsidian.Parsed, body string, contentType content.Type, sourceType content.SourceType, path string, topicIDs []uuid.UUID) error {
+func (cs *ContentSync) updateExistingContent(ctx context.Context, existing *content.Content, slug string, parsed *obsidian.Parsed, body string, contentType content.Type, sourceType content.SourceType, path string, topicIDs []uuid.UUID) error {
 	status := content.StatusDraft
 	if parsed.Published {
 		status = content.StatusPublished
 	}
-	_, updateErr := h.contentWriter.UpdateContent(ctx, existing.ID, &content.UpdateParams{
+	_, updateErr := cs.contentWriter.UpdateContent(ctx, existing.ID, &content.UpdateParams{
 		Title:      &parsed.Title,
 		Body:       &body,
 		Type:       &contentType,
@@ -137,39 +137,39 @@ func (h *Handler) updateExistingContent(ctx context.Context, existing *content.C
 
 	// publish if the obsidian file is marked as published and not yet published
 	if parsed.Published && existing.Status != content.StatusPublished {
-		if _, publishErr := h.contentWriter.PublishContent(ctx, existing.ID); publishErr != nil {
+		if _, publishErr := cs.contentWriter.PublishContent(ctx, existing.ID); publishErr != nil {
 			return fmt.Errorf("publishing content %s: %w", slug, publishErr)
 		}
 	}
 
-	h.submitContentReview(ctx, existing.ID)
+	cs.submitContentReview(ctx, existing.ID)
 	return nil
 }
 
 // submitContentReview submits a content-review flow job.
 // Errors are logged but not propagated — content sync should not fail
 // because the AI pipeline is unavailable.
-func (h *Handler) submitContentReview(ctx context.Context, contentID uuid.UUID) {
-	if h.jobs == nil {
+func (cs *ContentSync) submitContentReview(ctx context.Context, contentID uuid.UUID) {
+	if cs.jobs == nil {
 		return
 	}
 	input, err := json.Marshal(map[string]string{"content_id": contentID.String()})
 	if err != nil {
-		h.logger.Error("marshaling content-review input", "content_id", contentID, "error", err)
+		cs.logger.Error("marshaling content-review input", "content_id", contentID, "error", err)
 		return
 	}
-	if err := h.jobs.Submit(ctx, "content-review", input, &contentID); err != nil {
-		h.logger.Error("submitting content-review", "content_id", contentID, "error", err)
+	if err := cs.jobs.Submit(ctx, "content-review", input, &contentID); err != nil {
+		cs.logger.Error("submitting content-review", "content_id", contentID, "error", err)
 	}
 }
 
 // resolveTopics looks up topic IDs for the given slugs, skipping unknown ones.
-func (h *Handler) resolveTopics(ctx context.Context, slugs []string) []uuid.UUID {
+func (cs *ContentSync) resolveTopics(ctx context.Context, slugs []string) []uuid.UUID {
 	var ids []uuid.UUID
 	for _, slug := range slugs {
-		id, err := h.topics.TopicIDBySlug(ctx, slug)
+		id, err := cs.topics.TopicIDBySlug(ctx, slug)
 		if err != nil {
-			h.logger.Debug("topic not found, skipping", "slug", slug)
+			cs.logger.Debug("topic not found, skipping", "slug", slug)
 			continue
 		}
 		ids = append(ids, id)
@@ -178,20 +178,20 @@ func (h *Handler) resolveTopics(ctx context.Context, slugs []string) []uuid.UUID
 }
 
 // archiveRemovedFiles archives content for deleted markdown files.
-func (h *Handler) archiveRemovedFiles(ctx context.Context, files []string) {
+func (cs *ContentSync) archiveRemovedFiles(ctx context.Context, files []string) {
 	for _, path := range files {
 		slug := slugFromPath(path)
-		existing, err := h.contentReader.ContentBySlug(ctx, slug)
+		existing, err := cs.contentReader.ContentBySlug(ctx, slug)
 		if err != nil {
 			// not found — already deleted or never synced, skip
-			h.logger.Debug("removed file not found in db, skipping", "path", path, "slug", slug)
+			cs.logger.Debug("removed file not found in db, skipping", "path", path, "slug", slug)
 			continue
 		}
-		if err := h.contentWriter.DeleteContent(ctx, existing.ID); err != nil {
-			h.logger.Error("archiving removed file", "path", path, "slug", slug, "error", err)
+		if err := cs.contentWriter.DeleteContent(ctx, existing.ID); err != nil {
+			cs.logger.Error("archiving removed file", "path", path, "slug", slug, "error", err)
 			continue
 		}
-		h.logger.Info("archived removed file", "path", path, "slug", slug)
+		cs.logger.Info("archived removed file", "path", path, "slug", slug)
 	}
 }
 

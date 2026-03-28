@@ -12,7 +12,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/collected"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
-	"github.com/koopa0/blog-backend/internal/flow"
 	"github.com/koopa0/blog-backend/internal/flowrun"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/learning"
@@ -46,7 +45,6 @@ type Deps struct {
 	Tracking     *tracking.Handler
 	Pipeline     *pipeline.Handler
 	FlowRun      *flowrun.Handler
-	Flow         *flow.Handler
 	Upload       *upload.Handler
 	Feed         *feed.Handler
 	Notion       *notion.Handler
@@ -172,9 +170,9 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handle
 	mux.Handle("POST /api/admin/flow-runs/{id}/retry", authMid(http.HandlerFunc(d.FlowRun.Retry)))
 
 	// admin — flow polish
-	mux.Handle("POST /api/admin/flow/polish/{content_id}", authMid(http.HandlerFunc(d.Flow.TriggerPolish)))
-	mux.Handle("GET /api/admin/flow/polish/{content_id}/result", authMid(http.HandlerFunc(d.Flow.PolishResult)))
-	mux.Handle("POST /api/admin/flow/polish/{content_id}/approve", authMid(http.HandlerFunc(d.Flow.ApprovePolish)))
+	mux.Handle("POST /api/admin/flow/polish/{content_id}", authMid(http.HandlerFunc(d.FlowRun.TriggerPolish)))
+	mux.Handle("GET /api/admin/flow/polish/{content_id}/result", authMid(http.HandlerFunc(d.FlowRun.PolishResult)))
+	mux.Handle("POST /api/admin/flow/polish/{content_id}/approve", authMid(http.HandlerFunc(d.FlowRun.ApprovePolish)))
 
 	// admin — feeds
 	mux.Handle("GET /api/admin/feeds", authMid(http.HandlerFunc(d.Feed.List)))

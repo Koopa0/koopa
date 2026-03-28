@@ -20,19 +20,19 @@ import (
 )
 
 // syncKnowledgeNotes fetches and upserts each knowledge note.
-func (h *Handler) syncKnowledgeNotes(ctx context.Context, files []string) {
+func (cs *ContentSync) syncKnowledgeNotes(ctx context.Context, files []string) {
 	for _, path := range files {
-		if err := h.syncKnowledgeNote(ctx, path); err != nil {
-			h.logger.Error("syncing knowledge note", "path", path, "error", err)
+		if err := cs.syncKnowledgeNote(ctx, path); err != nil {
+			cs.logger.Error("syncing knowledge note", "path", path, "error", err)
 			continue
 		}
-		h.logger.Info("synced knowledge note", "path", path)
+		cs.logger.Info("synced knowledge note", "path", path)
 	}
 }
 
 // syncKnowledgeNote fetches a single file from GitHub and upserts it as a knowledge note.
-func (h *Handler) syncKnowledgeNote(ctx context.Context, path string) error {
-	raw, err := h.fetcher.FileContent(ctx, path)
+func (cs *ContentSync) syncKnowledgeNote(ctx context.Context, path string) error {
+	raw, err := cs.fetcher.FileContent(ctx, path)
 	if err != nil {
 		return fmt.Errorf("fetching %s: %w", path, err)
 	}
@@ -44,26 +44,26 @@ func (h *Handler) syncKnowledgeNote(ctx context.Context, path string) error {
 
 	// type is hard required — skip if missing
 	if parsed.Type == "" {
-		h.logger.Warn("knowledge note missing type, skipping", "path", path)
+		cs.logger.Warn("knowledge note missing type, skipping", "path", path)
 		return nil
 	}
 
 	bodyHash := sha256Hex(body)
 
-	existingHash, err := h.notes.ContentHash(ctx, path)
+	existingHash, err := cs.notes.ContentHash(ctx, path)
 	isNewNote := errors.Is(err, note.ErrNotFound)
 	hashChanged := err != nil || existingHash == nil || *existingHash != bodyHash
 
 	p := buildUpsertParams(path, bodyHash, body, hashChanged, parsed)
 
-	tagIDs, err := h.syncNoteInTx(ctx, path, &p, parsed.Tags, hashChanged)
+	tagIDs, err := cs.syncNoteInTx(ctx, path, &p, parsed.Tags, hashChanged)
 	if err != nil {
 		return err
 	}
 
 	// Record activity event (best-effort, outside tx). Dedup handled by ON CONFLICT on sourceID=bodyHash.
-	if h.noteEvents != nil {
-		h.recordNoteEvent(ctx, path, bodyHash, parsed, tagIDs, isNewNote)
+	if cs.noteEvents != nil {
+		cs.recordNoteEvent(ctx, path, bodyHash, parsed, tagIDs, isNewNote)
 	}
 
 	return nil
@@ -117,8 +117,8 @@ func buildUpsertParams(path, bodyHash, body string, hashChanged bool, parsed *ob
 }
 
 // syncNoteInTx performs the transactional portion of note sync: upsert, tag sync, link sync.
-func (h *Handler) syncNoteInTx(ctx context.Context, path string, p *note.UpsertParams, rawTags []string, hashChanged bool) ([]uuid.UUID, error) {
-	tx, err := h.pool.Begin(ctx)
+func (cs *ContentSync) syncNoteInTx(ctx context.Context, path string, p *note.UpsertParams, rawTags []string, hashChanged bool) ([]uuid.UUID, error) {
+	tx, err := cs.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning note sync tx for %s: %w", path, err)
 	}
@@ -132,12 +132,12 @@ func (h *Handler) syncNoteInTx(ctx context.Context, path string, p *note.UpsertP
 		return nil, fmt.Errorf("upserting note %s: %w", path, err)
 	}
 
-	tagIDs := h.resolveTagIDs(ctx, rawTags)
+	tagIDs := cs.resolveTagIDs(ctx, rawTags)
 	if err := txTags.SyncNoteTags(ctx, upserted.ID, tagIDs); err != nil {
 		return nil, fmt.Errorf("syncing tags for %s: %w", path, err)
 	}
 
-	if err := h.syncNoteLinks(ctx, tx, upserted.ID, path, p, hashChanged); err != nil {
+	if err := cs.syncNoteLinks(ctx, tx, upserted.ID, path, p, hashChanged); err != nil {
 		return nil, err
 	}
 
@@ -149,8 +149,8 @@ func (h *Handler) syncNoteInTx(ctx context.Context, path string, p *note.UpsertP
 }
 
 // resolveTagIDs resolves raw tag names to their UUIDs via the tag store.
-func (h *Handler) resolveTagIDs(ctx context.Context, rawTags []string) []uuid.UUID {
-	resolved := h.tags.ResolveTags(ctx, rawTags)
+func (cs *ContentSync) resolveTagIDs(ctx context.Context, rawTags []string) []uuid.UUID {
+	resolved := cs.tags.ResolveTags(ctx, rawTags)
 	var tagIDs []uuid.UUID
 	for _, r := range resolved {
 		if r.TagID != nil {
@@ -161,8 +161,8 @@ func (h *Handler) resolveTagIDs(ctx context.Context, rawTags []string) []uuid.UU
 }
 
 // syncNoteLinks syncs wikilink edges within the transaction when content has changed.
-func (h *Handler) syncNoteLinks(ctx context.Context, tx pgx.Tx, noteID int64, path string, p *note.UpsertParams, hashChanged bool) error {
-	if h.noteLinks == nil || !hashChanged || p.ContentText == nil {
+func (cs *ContentSync) syncNoteLinks(ctx context.Context, tx pgx.Tx, noteID int64, path string, p *note.UpsertParams, hashChanged bool) error {
+	if cs.noteLinks == nil || !hashChanged || p.ContentText == nil {
 		return nil
 	}
 	txLinks := note.NewStore(tx)
@@ -181,18 +181,18 @@ func (h *Handler) syncNoteLinks(ctx context.Context, tx pgx.Tx, noteID int64, pa
 }
 
 // archiveKnowledgeNotes archives removed knowledge notes.
-func (h *Handler) archiveKnowledgeNotes(ctx context.Context, files []string) {
+func (cs *ContentSync) archiveKnowledgeNotes(ctx context.Context, files []string) {
 	for _, path := range files {
-		if err := h.notes.ArchiveNote(ctx, path); err != nil {
-			h.logger.Error("archiving knowledge note", "path", path, "error", err)
+		if err := cs.notes.ArchiveNote(ctx, path); err != nil {
+			cs.logger.Error("archiving knowledge note", "path", path, "error", err)
 			continue
 		}
-		h.logger.Info("archived knowledge note", "path", path)
+		cs.logger.Info("archived knowledge note", "path", path)
 	}
 }
 
 // recordNoteEvent records an activity event for a knowledge note sync (best-effort).
-func (h *Handler) recordNoteEvent(ctx context.Context, filePath, bodyHash string, parsed *obsidian.Knowledge, tagIDs []uuid.UUID, isNew bool) {
+func (cs *ContentSync) recordNoteEvent(ctx context.Context, filePath, bodyHash string, parsed *obsidian.Knowledge, tagIDs []uuid.UUID, isNew bool) {
 	eventType := "note_updated"
 	if isNew {
 		eventType = "note_created"
@@ -208,7 +208,7 @@ func (h *Handler) recordNoteEvent(ctx context.Context, filePath, bodyHash string
 		"file_path": filePath,
 	})
 	if err != nil {
-		h.logger.Error("marshaling note event metadata", "path", filePath, "error", err)
+		cs.logger.Error("marshaling note event metadata", "path", filePath, "error", err)
 		return
 	}
 
@@ -232,15 +232,15 @@ func (h *Handler) recordNoteEvent(ctx context.Context, filePath, bodyHash string
 		Metadata:  meta,
 	}
 
-	eventID, err := h.noteEvents.CreateEvent(ctx, &p)
+	eventID, err := cs.noteEvents.CreateEvent(ctx, &p)
 	if err != nil {
-		h.logger.Error("recording note activity event", "path", filePath, "error", err)
+		cs.logger.Error("recording note activity event", "path", filePath, "error", err)
 		return
 	}
 
 	if len(tagIDs) > 0 {
-		if err := h.noteEvents.SyncEventTags(ctx, eventID, tagIDs); err != nil {
-			h.logger.Error("syncing note event tags", "path", filePath, "error", err)
+		if err := cs.noteEvents.SyncEventTags(ctx, eventID, tagIDs); err != nil {
+			cs.logger.Error("syncing note event tags", "path", filePath, "error", err)
 		}
 	}
 }
