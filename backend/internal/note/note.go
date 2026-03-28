@@ -84,4 +84,11 @@ type EmbeddingCandidate struct {
 	ContentText *string
 }
 
+// MergedResult is a note with a combined score from Reciprocal Rank Fusion
+// across text and filter search results.
+type MergedResult struct {
+	Note
+	Score float64
+}
+
 var ErrNotFound = errors.New("not found")

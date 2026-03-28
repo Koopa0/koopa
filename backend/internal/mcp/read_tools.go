@@ -90,7 +90,7 @@ func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input 
 			return nil, SearchNotesOutput{}, fmt.Errorf("filter search: %w", err)
 		}
 
-		results = rrfMerge(textResults, filterResults, limit)
+		results = note.RRFMerge(textResults, filterResults, limit)
 	case hasQuery:
 		textResults, err := s.notes.SearchByText(ctx, input.Query, limit)
 		if err != nil {
@@ -729,7 +729,7 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 				nr.err = textErr
 				return
 			}
-			merged := rrfMerge(textResults, filterResults, limit)
+			merged := note.RRFMerge(textResults, filterResults, limit)
 			nr.notes = make([]note.SearchResult, len(merged))
 			for j := range merged {
 				nr.notes[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}

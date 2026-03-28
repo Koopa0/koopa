@@ -3,9 +3,7 @@
 package mcpserver
 
 import (
-	"cmp"
 	"context"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -111,46 +109,6 @@ type PipelineTrigger interface {
 	TriggerNotionSync(ctx context.Context)
 }
 
-// searchResultEntry is a note with a combined RRF score for merged search results.
-type searchResultEntry struct {
-	Note  note.Note
-	Score float64
-}
-
-// rrfMerge combines text search results and filter results using Reciprocal Rank Fusion.
-// k is the RRF constant (typically 60). Returns merged results sorted by combined score.
-func rrfMerge(textResults []note.SearchResult, filterResults []note.Note, limit int) []searchResultEntry {
-	const k = 60.0
-	scores := make(map[int64]float64)
-	notes := make(map[int64]note.Note)
-
-	for rank := range textResults {
-		r := textResults[rank]
-		scores[r.ID] += 1.0 / (k + float64(rank))
-		notes[r.ID] = r.Note
-	}
-	for rank := range filterResults {
-		n := &filterResults[rank]
-		scores[n.ID] += 1.0 / (k + float64(rank))
-		if _, ok := notes[n.ID]; !ok {
-			notes[n.ID] = *n
-		}
-	}
-
-	// Collect and sort by score descending.
-	entries := make([]searchResultEntry, 0, len(scores))
-	for id, score := range scores {
-		entries = append(entries, searchResultEntry{Note: notes[id], Score: score})
-	}
-	slices.SortFunc(entries, func(a, b searchResultEntry) int {
-		return cmp.Compare(b.Score, a.Score) // descending
-	})
-
-	if limit <= 0 {
-		return nil
-	}
-	if len(entries) > limit {
-		entries = entries[:limit]
-	}
-	return entries
-}
+// searchResultEntry is a thin alias for note.MergedResult used by MCP tool handlers
+// to avoid rewriting all response mapping code. The RRF logic lives in note.RRFMerge.
+type searchResultEntry = note.MergedResult

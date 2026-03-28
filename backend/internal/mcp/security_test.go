@@ -4,8 +4,6 @@ import (
 	"math"
 	"strings"
 	"testing"
-
-	"github.com/koopa0/blog-backend/internal/note"
 )
 
 // ==========================================================================
@@ -174,84 +172,7 @@ func TestClamp_DefaultNotBounded(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 4. rrfMerge — NaN, Infinity, adversarial scores
-// ---------------------------------------------------------------------------
-
-func TestRRFMerge_AdversarialScores(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		text    []note.SearchResult
-		filter  []note.Note
-		limit   int
-		checkFn func(t *testing.T, results []searchResultEntry)
-	}{
-		{
-			name: "NaN rank",
-			text: []note.SearchResult{
-				{Note: note.Note{ID: 1, FilePath: "a.md"}, Rank: float32(math.NaN())},
-				{Note: note.Note{ID: 2, FilePath: "b.md"}, Rank: 0.5},
-			},
-			limit: 10,
-			checkFn: func(t *testing.T, results []searchResultEntry) {
-				t.Helper()
-				for _, r := range results {
-					if math.IsNaN(r.Score) {
-						t.Error("NaN score survived into output")
-					}
-				}
-			},
-		},
-		{
-			name: "Infinity rank",
-			text: []note.SearchResult{
-				{Note: note.Note{ID: 1, FilePath: "a.md"}, Rank: float32(math.Inf(1))},
-				{Note: note.Note{ID: 2, FilePath: "b.md"}, Rank: float32(math.Inf(-1))},
-			},
-			limit: 10,
-		},
-		{
-			name: "negative rank",
-			text: []note.SearchResult{
-				{Note: note.Note{ID: 1, FilePath: "a.md"}, Rank: -999},
-			},
-			limit: 10,
-		},
-		{
-			name:  "empty inputs",
-			limit: 10,
-		},
-		{
-			name: "dedup across text and filter",
-			text: []note.SearchResult{
-				{Note: note.Note{ID: 1, FilePath: "same.md"}, Rank: 0.9},
-			},
-			filter: []note.Note{
-				{ID: 1, FilePath: "same.md"},
-			},
-			limit: 10,
-			checkFn: func(t *testing.T, results []searchResultEntry) {
-				t.Helper()
-				if len(results) != 1 {
-					t.Errorf("expected 1 deduped result, got %d", len(results))
-				}
-			},
-		},
-		{name: "zero limit", text: []note.SearchResult{{Note: note.Note{ID: 1}, Rank: 0.5}}, limit: 0},
-		{name: "negative limit", text: []note.SearchResult{{Note: note.Note{ID: 1}, Rank: 0.5}}, limit: -1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := rrfMerge(tt.text, tt.filter, tt.limit)
-			if tt.checkFn != nil {
-				tt.checkFn(t, got)
-			}
-		})
-	}
-}
+// 4. RRFMerge adversarial tests → moved to internal/note/search_test.go
 
 // ---------------------------------------------------------------------------
 // 5. extractFrontmatter — injection through body content

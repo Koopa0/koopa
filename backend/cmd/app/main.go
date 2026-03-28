@@ -217,7 +217,7 @@ func run(logger *slog.Logger) error {
 	runner := aiRes.runner
 
 	bizMetrics := server.NewMetrics()
-	runner.SetObserver(&flowObserver{m: bizMetrics})
+	runner.SetObserver(flowrun.NewMetricsObserver(bizMetrics.FlowDuration))
 	runner.Start(ctx)
 	defer runner.Stop()
 
@@ -487,7 +487,7 @@ type aiResult struct {
 
 // setupAI initializes the AI pipeline in either mock or real mode.
 func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
-	alerter := &notifyAlerter{notifier: d.notifier, logger: d.logger}
+	alerter := flowrun.NewNotifyAlerter(d.notifier, d.logger)
 
 	if cfg.MockMode {
 		d.logger.Info("starting in MOCK MODE — AI calls disabled")
@@ -875,16 +875,9 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// flowObserver adapts server.Metrics to flowrun.FlowObserver.
-type flowObserver struct {
-	m *server.Metrics
-}
-
-func (o *flowObserver) ObserveFlowDuration(flowName, status string, d time.Duration) {
-	o.m.FlowDuration.WithLabelValues(flowName, status).Observe(d.Seconds())
-}
-
 // notionTaskAdapter adapts notion.Client to task.NotionClient.
+// Lives in main.go because task and notion have a circular import
+// (notion imports task), so only the wiring layer can bridge them.
 type notionTaskAdapter struct {
 	client *notion.Client
 }
@@ -907,13 +900,14 @@ func (a *notionTaskAdapter) CreateTaskPage(ctx context.Context, databaseID, titl
 }
 
 // sourceDBResolver adapts notion.Store + cache to task.DBIDResolver.
+// Lives in main.go for the same reason as notionTaskAdapter: circular
+// import between notion and task prevents placing it in either package.
 type sourceDBResolver struct {
 	store *notion.Store
 	cache *ristretto.Cache[string, string]
 }
 
 func (r *sourceDBResolver) DatabaseIDByRole(ctx context.Context, role string) (string, error) {
-	// Check cache first
 	if id, ok := r.cache.Get("role:" + role); ok {
 		return id, nil
 	}
@@ -923,25 +917,4 @@ func (r *sourceDBResolver) DatabaseIDByRole(ctx context.Context, role string) (s
 	}
 	r.cache.SetWithTTL("role:"+role, src.DatabaseID, 1, 10*time.Minute)
 	return src.DatabaseID, nil
-}
-
-// notifyAlerter adapts notify.Notifier to flowrun.Alerter.
-type notifyAlerter struct {
-	notifier notify.Notifier
-	logger   *slog.Logger
-}
-
-func (a *notifyAlerter) Alert(ctx context.Context, run *flowrun.Run) error {
-	errMsg := ""
-	if run.Error != nil {
-		errMsg = *run.Error
-	}
-	text := fmt.Sprintf("[ALERT] Flow run failed\nFlow: %s\nRun ID: %s\nAttempt: %d\nError: %s",
-		run.FlowName, run.ID, run.Attempt, errMsg)
-
-	if err := a.notifier.Send(ctx, text); err != nil {
-		a.logger.Error("sending flow alert notification", "run_id", run.ID, "error", err)
-		return err
-	}
-	return nil
 }
