@@ -50,38 +50,17 @@ type ContentReviewInput struct {
 	ContentID string `json:"content_id"`
 }
 
-// proofreadOutput mirrors review.ProofreadOutput for JSON unmarshaling
-// within the orchestrator, avoiding an import cycle with the review sub-package.
-// Mirror of review.ProofreadOutput -- keep in sync with internal/ai/review/proofread.go.
-type proofreadOutput struct {
-	Level       string   `json:"level"`
-	Notes       string   `json:"notes"`
-	Corrections []string `json:"corrections"`
-}
-
-// excerptOutput mirrors review.ExcerptOutput.
-// Mirror of review.ExcerptOutput -- keep in sync with internal/ai/review/excerpt.go.
-type excerptOutput struct {
-	Excerpt string `json:"excerpt"`
-}
-
-// tagsOutput mirrors review.TagsOutput.
-// Mirror of review.TagsOutput -- keep in sync with internal/ai/review/tags.go.
-type tagsOutput struct {
-	Tags []string `json:"tags"`
-}
-
 // ContentReviewOutput is the JSON output of the content-review flow.
 type ContentReviewOutput struct {
-	Proofread   *proofreadOutput `json:"proofread"`
+	Proofread   *ProofreadOutput `json:"proofread"`
 	Excerpt     string           `json:"excerpt"`
 	Tags        []string         `json:"tags"`
 	ReadingTime int              `json:"reading_time"`
 }
 
-// ReviewResult mirrors the proofread output shape for backward compatibility.
+// ReviewResult is an alias for ProofreadOutput for backward compatibility.
 // Referenced by internal/ai/exec tests.
-type ReviewResult = proofreadOutput
+type ReviewResult = ProofreadOutput
 
 // ContentReview is the orchestrator flow that calls sub-flows (proofread, excerpt, tags)
 // and handles persistence (embedding, content update, review queue).
@@ -179,7 +158,7 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 	if err != nil {
 		return ContentReviewOutput{}, fmt.Errorf("proofreading content %s: %w", contentID, err)
 	}
-	var proofreadResult proofreadOutput
+	var proofreadResult ProofreadOutput
 	if unmarshalErr := json.Unmarshal(proofreadRaw, &proofreadResult); unmarshalErr != nil {
 		return ContentReviewOutput{}, fmt.Errorf("parsing proofread output: %w", unmarshalErr)
 	}
@@ -188,8 +167,8 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 
 	// Steps 2-5 (parallel): excerpt, tags, reading time, embedding
 	var (
-		excerptResult excerptOutput
-		tagsResult    tagsOutput
+		excerptResult ExcerptOutput
+		tagsResult    TagsOutput
 		readingTime   int
 	)
 
@@ -329,7 +308,7 @@ func NewMockContentReview() Flow {
 	return &mockFlow{
 		name: "content-review",
 		output: ContentReviewOutput{
-			Proofread:   &proofreadOutput{Level: "auto", Notes: "mock mode", Corrections: []string{}},
+			Proofread:   &ProofreadOutput{Level: "auto", Notes: "mock mode", Corrections: []string{}},
 			Excerpt:     "Mock excerpt for testing.",
 			Tags:        []string{},
 			ReadingTime: 1,
@@ -341,7 +320,7 @@ func NewMockContentReview() Flow {
 func NewMockContentProofread() Flow {
 	return &mockFlow{
 		name: "content-proofread",
-		output: proofreadOutput{
+		output: ProofreadOutput{
 			Level:       "auto",
 			Notes:       "mock mode",
 			Corrections: []string{},
@@ -353,7 +332,7 @@ func NewMockContentProofread() Flow {
 func NewMockContentExcerpt() Flow {
 	return &mockFlow{
 		name: "content-excerpt",
-		output: excerptOutput{
+		output: ExcerptOutput{
 			Excerpt: "Mock excerpt for testing.",
 		},
 	}
@@ -363,7 +342,7 @@ func NewMockContentExcerpt() Flow {
 func NewMockContentTags() Flow {
 	return &mockFlow{
 		name: "content-tags",
-		output: tagsOutput{
+		output: TagsOutput{
 			Tags: []string{},
 		},
 	}

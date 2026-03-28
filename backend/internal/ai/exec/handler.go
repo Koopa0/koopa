@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/koopa0/blog-backend/internal/ai/review"
+	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/api"
 	"github.com/koopa0/blog-backend/internal/content"
 )
@@ -156,7 +156,7 @@ func (h *Handler) TriggerPolish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input, err := json.Marshal(review.PolishInput{ContentID: contentID.String()})
+	input, err := json.Marshal(ai.PolishInput{ContentID: contentID.String()})
 	if err != nil {
 		h.logger.Error("marshaling polish input", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to marshal input")
@@ -191,7 +191,7 @@ func (h *Handler) PolishResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var output review.PolishOutput
+	var output ai.PolishOutput
 	if err := json.Unmarshal(run.Output, &output); err != nil {
 		h.logger.Error("unmarshaling polish output", "run_id", run.ID, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to parse polish output")
@@ -252,7 +252,7 @@ func (h *Handler) ApprovePolish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var output review.PolishOutput
+	var output ai.PolishOutput
 	if unmarshalErr := json.Unmarshal(run.Output, &output); unmarshalErr != nil {
 		h.logger.Error("unmarshaling polish output", "run_id", runID, "error", unmarshalErr)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to parse polish output")

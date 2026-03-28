@@ -1,4 +1,4 @@
-package review
+package ai
 
 import (
 	"context"
@@ -10,8 +10,6 @@ import (
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
-
-	"github.com/koopa0/blog-backend/internal/ai"
 )
 
 // TagsInput is the JSON input for the content-tags sub-flow.
@@ -31,7 +29,7 @@ type TagsOutput struct {
 // Tags implements the content-tags sub-flow.
 // It is pure: takes text + topic list as input, returns suggested tags, no DB access.
 type Tags struct {
-	gf           *ai.GenkitFlow
+	gf           *GenkitFlow
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
@@ -84,7 +82,7 @@ func (ct *Tags) run(ctx context.Context, in *TagsInput) (TagsOutput, error) {
 	}
 
 	userPrompt := fmt.Sprintf("%s\nType: %s\nTitle: %s\n\nBody:\n%s",
-		topicList.String(), in.ContentType, in.Title, ai.TruncateBodyRunes(in.Body))
+		topicList.String(), in.ContentType, in.Title, TruncateBodyRunes(in.Body))
 
 	tags, err := genkit.Run(ctx, "tags", func() ([]string, error) {
 		const maxRetries = 2
@@ -102,11 +100,11 @@ func (ct *Tags) run(ctx context.Context, in *TagsInput) (TagsOutput, error) {
 			if err != nil {
 				return nil, fmt.Errorf("calling llm: %w", err)
 			}
-			if err := ai.CheckFinishReason(resp); err != nil {
+			if err := CheckFinishReason(resp); err != nil {
 				return nil, err
 			}
 
-			if err := ai.ParseJSONLoose(resp.Text(), &suggested); err != nil {
+			if err := ParseJSONLoose(resp.Text(), &suggested); err != nil {
 				snippet := resp.Text()[:min(len(resp.Text()), 100)]
 				if attempt < maxRetries-1 {
 					ct.logger.Warn("content tags: JSON parse failed, retrying",

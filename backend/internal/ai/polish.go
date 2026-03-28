@@ -1,4 +1,4 @@
-package review
+package ai
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genai"
 
-	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/content"
 )
 
@@ -27,14 +26,9 @@ type PolishOutput struct {
 	PolishedBody string `json:"polished_body"`
 }
 
-// ContentReader reads content by ID.
-type ContentReader interface {
-	Content(ctx context.Context, id uuid.UUID) (*content.Content, error)
-}
-
 // Polish implements the content-polish flow using Genkit + Claude.
 type Polish struct {
-	gf           *ai.GenkitFlow
+	gf           *GenkitFlow
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
@@ -89,7 +83,7 @@ func (cp *Polish) run(ctx context.Context, in PolishInput) (PolishOutput, error)
 
 	cp.logger.Info("content-polish starting", "content_id", contentID, "title", c.Title)
 
-	userPrompt := ai.BuildUserPrompt(c)
+	userPrompt := BuildUserPrompt(c)
 
 	polished, err := genkit.Run(ctx, "polish", func() (string, error) {
 		resp, genErr := genkit.Generate(ctx, cp.g,
@@ -104,7 +98,7 @@ func (cp *Polish) run(ctx context.Context, in PolishInput) (PolishOutput, error)
 		if genErr != nil {
 			return "", fmt.Errorf("generating polish: %w", genErr)
 		}
-		if finishErr := ai.CheckFinishReason(resp); finishErr != nil {
+		if finishErr := CheckFinishReason(resp); finishErr != nil {
 			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil

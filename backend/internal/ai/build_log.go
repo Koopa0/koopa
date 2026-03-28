@@ -1,4 +1,4 @@
-package track
+package ai
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
 
-	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -54,14 +53,14 @@ type BuildLogOutput struct {
 
 // BuildLog implements the build-log-generate flow.
 type BuildLog struct {
-	gf           *ai.GenkitFlow
+	gf           *GenkitFlow
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
 	projects     ProjectBySlugFinder
 	commits      RepoCommitLister
 	content      ContentCreator
-	budget       ai.BudgetChecker
+	budget       BudgetChecker
 	loc          *time.Location
 	logger       *slog.Logger
 }
@@ -74,7 +73,7 @@ func NewBuildLog(
 	projects ProjectBySlugFinder,
 	commits RepoCommitLister,
 	creator ContentCreator,
-	budget ai.BudgetChecker,
+	budget BudgetChecker,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *BuildLog {
@@ -167,7 +166,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 		if genErr != nil {
 			return "", fmt.Errorf("generating build log: %w", genErr)
 		}
-		if finishErr := ai.CheckFinishReason(resp); finishErr != nil {
+		if finishErr := CheckFinishReason(resp); finishErr != nil {
 			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
@@ -177,7 +176,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 	}
 
 	var llmOut buildLogLLMOutput
-	if parseErr := ai.ParseJSONLoose(respText, &llmOut); parseErr != nil {
+	if parseErr := ParseJSONLoose(respText, &llmOut); parseErr != nil {
 		return BuildLogOutput{}, fmt.Errorf("parsing build-log LLM output: %w", parseErr)
 	}
 

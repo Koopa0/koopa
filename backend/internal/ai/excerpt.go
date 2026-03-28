@@ -1,5 +1,4 @@
-// Package review implements content review and quality AI flows.
-package review
+package ai
 
 import (
 	"context"
@@ -11,8 +10,6 @@ import (
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
-
-	"github.com/koopa0/blog-backend/internal/ai"
 )
 
 // ExcerptInput is the JSON input for the content-excerpt sub-flow.
@@ -30,7 +27,7 @@ type ExcerptOutput struct {
 // Excerpt implements the content-excerpt sub-flow.
 // It is pure: takes text input, returns excerpt string, no DB access.
 type Excerpt struct {
-	gf           *ai.GenkitFlow
+	gf           *GenkitFlow
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
@@ -71,7 +68,7 @@ func (ce *Excerpt) Run(ctx context.Context, input json.RawMessage) (json.RawMess
 func (ce *Excerpt) run(ctx context.Context, in ExcerptInput) (ExcerptOutput, error) {
 	ce.logger.Info("content-excerpt starting", "title", in.Title)
 
-	userPrompt := fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", in.ContentType, in.Title, ai.TruncateBodyRunes(in.Body))
+	userPrompt := fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", in.ContentType, in.Title, TruncateBodyRunes(in.Body))
 
 	excerpt, err := genkit.Run(ctx, "excerpt", func() (string, error) {
 		resp, err := genkit.Generate(ctx, ce.g,
@@ -86,7 +83,7 @@ func (ce *Excerpt) run(ctx context.Context, in ExcerptInput) (ExcerptOutput, err
 		if err != nil {
 			return "", fmt.Errorf("calling llm: %w", err)
 		}
-		if err := ai.CheckFinishReason(resp); err != nil {
+		if err := CheckFinishReason(resp); err != nil {
 			return "", err
 		}
 		return strings.TrimSpace(resp.Text()), nil

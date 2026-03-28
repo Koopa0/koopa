@@ -1,5 +1,4 @@
-// Package track implements activity tracking AI flows.
-package track
+package ai
 
 import (
 	"context"
@@ -13,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genai"
 
-	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -27,48 +25,43 @@ type ProjectDescriptionUpdater interface {
 	UpdateProject(ctx context.Context, id uuid.UUID, p *project.UpdateParams) (*project.Project, error)
 }
 
-// Sender sends a text notification.
-type Sender interface {
-	Send(ctx context.Context, text string) error
-}
-
-// ProjectOutput is the JSON output of the project-track flow.
-type ProjectOutput struct {
+// ProjectTrackOutput is the JSON output of the project-track flow.
+type ProjectTrackOutput struct {
 	Text    string `json:"text"`
 	Skipped bool   `json:"skipped"`
 }
 
-// projectInput is the JSON input from the webhook handler.
-type projectInput struct {
+// projectTrackInput is the JSON input from the webhook handler.
+type projectTrackInput struct {
 	Repo    string   `json:"repo"`
 	Commits []string `json:"commits"`
 }
 
-// Project implements the project-track flow.
-type Project struct {
-	gf           *ai.GenkitFlow
+// ProjectTrack implements the project-track flow.
+type ProjectTrack struct {
+	gf           *GenkitFlow
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
 	projects     ProjectByRepoFinder
 	updater      ProjectDescriptionUpdater
 	notifier     Sender
-	budget       ai.BudgetChecker
+	budget       BudgetChecker
 	logger       *slog.Logger
 }
 
-// NewProject returns a Project flow.
-func NewProject(
+// NewProjectTrack returns a ProjectTrack flow.
+func NewProjectTrack(
 	g *genkit.Genkit,
 	model genkitai.Model,
 	systemPrompt string,
 	projects ProjectByRepoFinder,
 	updater ProjectDescriptionUpdater,
 	notifier Sender,
-	budget ai.BudgetChecker,
+	budget BudgetChecker,
 	logger *slog.Logger,
-) *Project {
-	pt := &Project{
+) *ProjectTrack {
+	pt := &ProjectTrack{
 		g:            g,
 		model:        model,
 		systemPrompt: systemPrompt,
@@ -89,34 +82,34 @@ func NewProject(
 }
 
 // Name returns the flow name for registry lookup.
-func (pt *Project) Name() string { return "project-track" }
+func (pt *ProjectTrack) Name() string { return "project-track" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (pt *Project) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (pt *ProjectTrack) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return pt.gf.Run(ctx, input)
 }
 
 const estimatedTrackTokens int64 = 1000
 
-func (pt *Project) run(ctx context.Context, raw json.RawMessage) (ProjectOutput, error) {
-	var input projectInput
+func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTrackOutput, error) {
+	var input projectTrackInput
 	if err := json.Unmarshal(raw, &input); err != nil {
-		return ProjectOutput{}, fmt.Errorf("parsing project-track input: %w", err)
+		return ProjectTrackOutput{}, fmt.Errorf("parsing project-track input: %w", err)
 	}
 
 	if input.Repo == "" || len(input.Commits) == 0 {
-		return ProjectOutput{Skipped: true, Text: "no repo or commits"}, nil
+		return ProjectTrackOutput{Skipped: true, Text: "no repo or commits"}, nil
 	}
 
 	// Look up project by repo — if not found, skip silently
 	proj, err := pt.projects.ProjectByRepo(ctx, input.Repo)
 	if err != nil {
 		pt.logger.Info("project-track: no project for repo, skipping", "repo", input.Repo)
-		return ProjectOutput{Skipped: true, Text: "project not found for repo"}, nil
+		return ProjectTrackOutput{Skipped: true, Text: "project not found for repo"}, nil
 	}
 
 	if reserveErr := pt.budget.Reserve(estimatedTrackTokens); reserveErr != nil {
-		return ProjectOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
+		return ProjectTrackOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
 	}
 
 	pt.logger.Info("project-track starting", "repo", input.Repo, "project", proj.Title, "commits", len(input.Commits))
@@ -136,13 +129,13 @@ func (pt *Project) run(ctx context.Context, raw json.RawMessage) (ProjectOutput,
 		if genErr != nil {
 			return "", fmt.Errorf("generating project track: %w", genErr)
 		}
-		if finishErr := ai.CheckFinishReason(resp); finishErr != nil {
+		if finishErr := CheckFinishReason(resp); finishErr != nil {
 			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {
-		return ProjectOutput{}, err
+		return ProjectTrackOutput{}, err
 	}
 
 	// Update project's long description with the progress update
@@ -150,7 +143,7 @@ func (pt *Project) run(ctx context.Context, raw json.RawMessage) (ProjectOutput,
 		LongDescription: &text,
 	})
 	if err != nil {
-		return ProjectOutput{}, fmt.Errorf("updating project description: %w", err)
+		return ProjectTrackOutput{}, fmt.Errorf("updating project description: %w", err)
 	}
 
 	// Send notification
@@ -161,7 +154,7 @@ func (pt *Project) run(ctx context.Context, raw json.RawMessage) (ProjectOutput,
 
 	pt.logger.Info("project-track complete", "repo", input.Repo, "project", proj.Title)
 
-	return ProjectOutput{Text: text}, nil
+	return ProjectTrackOutput{Text: text}, nil
 }
 
 func buildProjectPrompt(proj *project.Project, commits []string) string {

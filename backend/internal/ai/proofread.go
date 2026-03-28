@@ -1,4 +1,4 @@
-package review
+package ai
 
 import (
 	"context"
@@ -9,8 +9,6 @@ import (
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
-
-	"github.com/koopa0/blog-backend/internal/ai"
 )
 
 // ProofreadInput is the JSON input for the content-proofread sub-flow.
@@ -30,7 +28,7 @@ type ProofreadOutput struct {
 // Proofread implements the content-proofread sub-flow.
 // It is pure: takes text input, returns structured review result, no DB access.
 type Proofread struct {
-	gf           *ai.GenkitFlow
+	gf           *GenkitFlow
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
@@ -71,7 +69,7 @@ func (cp *Proofread) Run(ctx context.Context, input json.RawMessage) (json.RawMe
 func (cp *Proofread) run(ctx context.Context, in ProofreadInput) (ProofreadOutput, error) {
 	cp.logger.Info("content-proofread starting", "title", in.Title)
 
-	userPrompt := fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", in.ContentType, in.Title, ai.TruncateBodyRunes(in.Body))
+	userPrompt := fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", in.ContentType, in.Title, TruncateBodyRunes(in.Body))
 
 	result, err := genkit.Run(ctx, "proofread", func() (*ProofreadOutput, error) {
 		r, resp, err := genkit.GenerateData[ProofreadOutput](ctx, cp.g,
@@ -86,7 +84,7 @@ func (cp *Proofread) run(ctx context.Context, in ProofreadInput) (ProofreadOutpu
 		if err != nil {
 			return nil, fmt.Errorf("generating review: %w", err)
 		}
-		if err := ai.CheckFinishReason(resp); err != nil {
+		if err := CheckFinishReason(resp); err != nil {
 			return nil, err
 		}
 		return r, nil

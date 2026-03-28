@@ -29,8 +29,6 @@ import (
 	aiflow "github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/ai/exec"
 	aireport "github.com/koopa0/blog-backend/internal/ai/report"
-	aireview "github.com/koopa0/blog-backend/internal/ai/review"
-	aitrack "github.com/koopa0/blog-backend/internal/ai/track"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/content"
@@ -537,16 +535,16 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 		return nil, fmt.Errorf("defining embedder: %w", err)
 	}
 
-	contentProofread := aireview.NewProofread(g, geminiModel, aiflow.ReviewSystemPrompt, d.logger)
-	contentExcerpt := aireview.NewExcerpt(g, geminiModel, aiflow.ExcerptSystemPrompt, d.logger)
-	contentTags := aireview.NewTags(g, geminiModel, aiflow.TagsSystemPrompt, d.logger)
+	contentProofread := aiflow.NewProofread(g, geminiModel, aiflow.ReviewSystemPrompt, d.logger)
+	contentExcerpt := aiflow.NewExcerpt(g, geminiModel, aiflow.ExcerptSystemPrompt, d.logger)
+	contentTags := aiflow.NewTags(g, geminiModel, aiflow.TagsSystemPrompt, d.logger)
 	contentReview := aiflow.NewContentReview(
 		g, embedder,
 		d.contentStore, d.contentStore, d.contentStore, d.reviewStore, d.topicStore,
 		contentProofread, contentExcerpt, contentTags,
 		d.logger,
 	)
-	contentPolish := aireview.NewPolish(g, claudeModel, aiflow.PolishSystemPrompt, d.contentStore, d.logger)
+	contentPolish := aiflow.NewPolish(g, claudeModel, aiflow.PolishSystemPrompt, d.contentStore, d.logger)
 	digestGenerate := aireport.NewDigest(g, geminiModel, aiflow.DigestSystemPrompt, d.contentStore, d.entryStore, d.projectStore, d.tokenBudget, d.taipeiLoc, d.logger)
 	bookmarkGenerate := aiflow.NewBookmarkGenerate(g, geminiModel, d.entryStore, d.tokenBudget, d.logger)
 	morningBrief := aireport.NewMorning(g, d.taskStore, d.notifier, d.taipeiLoc, d.logger)
@@ -555,7 +553,7 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 		d.entryStore, d.contentStore, d.projectStore, d.githubFetcher,
 		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
 	)
-	projectTrack := aitrack.NewProject(
+	projectTrack := aiflow.NewProjectTrack(
 		g, geminiModel, aiflow.ProjectTrackSystemPrompt, d.projectStore, d.projectStore,
 		d.notifier, d.tokenBudget, d.logger,
 	)
@@ -563,7 +561,7 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 		g, geminiModel, d.contentStore, d.entryStore, d.projectStore,
 		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
 	)
-	buildLog := aitrack.NewBuildLog(
+	buildLog := aiflow.NewBuildLog(
 		g, geminiModel, aiflow.BuildLogSystemPrompt, d.projectStore, d.githubFetcher, d.contentStore,
 		d.tokenBudget, d.taipeiLoc, d.logger,
 	)

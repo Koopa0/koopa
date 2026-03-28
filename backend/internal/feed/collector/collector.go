@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -16,15 +17,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/mmcdole/gofeed"
 
-	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/feed"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 )
 
 const (
-	maxContentLen  = 5000 // truncate original content for scoring
-	requestTimeout = 30 * time.Second
-	maxRedirects   = 3
-	userAgent      = "koopa0.dev/rss-collector (+https://koopa0.dev)"
+	maxContentLen       = 5000     // truncate original content for scoring
+	maxFeedResponseSize = 10 << 20 // 10 MB
+	requestTimeout      = 30 * time.Second
+	maxRedirects        = 3
+	userAgent           = "koopa0.dev/rss-collector (+https://koopa0.dev)"
 )
 
 // CollectedWriter creates collected data records.
@@ -136,7 +138,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 	}
 
 	parser := gofeed.NewParser()
-	parsed, err := parser.Parse(resp.Body)
+	parsed, err := parser.Parse(io.LimitReader(resp.Body, maxFeedResponseSize))
 	if err != nil {
 		errMsg := fmt.Sprintf("parsing feed: %v", err)
 		if fErr := c.feeds.IncrementFailure(ctx, f.ID, errMsg); fErr != nil {

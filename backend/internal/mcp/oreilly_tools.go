@@ -79,7 +79,10 @@ type OReillyClient struct {
 	httpClient *http.Client
 }
 
-const oreillyBaseURL = "https://learning.oreilly.com"
+const (
+	oreillyBaseURL         = "https://learning.oreilly.com"
+	maxOReillyResponseSize = 5 << 20 // 5 MB
+)
 
 // NewOReillyClient creates a client for the O'Reilly search API.
 func NewOReillyClient(token string) *OReillyClient {
@@ -138,7 +141,7 @@ func (c *OReillyClient) Search(ctx context.Context, p *OReillySearchParams) (*OR
 	}
 
 	var result OReillySearchResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOReillyResponseSize)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding search response: %w", err)
 	}
 	return &result, nil
@@ -159,7 +162,7 @@ func (c *OReillyClient) BookDetail(ctx context.Context, archiveID string) (*ORei
 	}
 
 	var detail OReillyBookDetail
-	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOReillyResponseSize)).Decode(&detail); err != nil {
 		return nil, fmt.Errorf("decoding book detail: %w", err)
 	}
 	return &detail, nil
@@ -193,7 +196,7 @@ func (c *OReillyClient) BookTOC(ctx context.Context, archiveID string) ([]OReill
 			Duration float64 `json:"duration"`
 		} `json:"children"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOReillyResponseSize)).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding TOC: %w", err)
 	}
 

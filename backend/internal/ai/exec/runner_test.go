@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/ai"
-	"github.com/koopa0/blog-backend/internal/ai/review"
 )
 
 // --- mock store ---
@@ -555,12 +554,12 @@ func TestRunner_MockFlowOutputUnmarshal(t *testing.T) {
 			t.Fatalf("NewMockContentPolish().Run() error: %v", err)
 		}
 
-		var got review.PolishOutput
+		var got ai.PolishOutput
 		if err := json.Unmarshal(output, &got); err != nil {
 			t.Fatalf("unmarshal ContentPolishOutput: %v", err)
 		}
 
-		want := review.PolishOutput{
+		want := ai.PolishOutput{
 			OriginalBody: "Mock original body.",
 			PolishedBody: "Mock polished body.",
 		}
