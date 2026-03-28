@@ -52,16 +52,17 @@ func (wr *WebhookRouter) Handle(w http.ResponseWriter, r *http.Request, bg bgFun
 	switch eventType {
 	case "pull_request":
 		wr.handlePullRequest(w, r, body, bg)
-		return
 	case "push":
-		// handled below
+		wr.handlePush(w, r, body, bg)
 	default:
 		w.WriteHeader(http.StatusOK)
-		return
 	}
+}
 
-	var event PushEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+// handlePush processes a verified GitHub push event.
+func (wr *WebhookRouter) handlePush(w http.ResponseWriter, r *http.Request, body []byte, bg bgFunc) {
+	var pushEvt PushEvent
+	if err := json.Unmarshal(body, &pushEvt); err != nil {
 		wr.logger.Error("parsing push event", "error", err)
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -70,27 +71,27 @@ func (wr *WebhookRouter) Handle(w http.ResponseWriter, r *http.Request, bg bgFun
 	// B2 self-loop protection: ignore pushes from the bot account.
 	// This check runs AFTER HMAC verification so that an attacker cannot
 	// craft a payload with Sender.Login == botLogin to bypass processing.
-	if wr.botLogin != "" && event.Sender.Login == wr.botLogin {
-		wr.logger.Info("ignoring push from bot", "sender", event.Sender.Login)
+	if wr.botLogin != "" && pushEvt.Sender.Login == wr.botLogin {
+		wr.logger.Info("ignoring push from bot", "sender", pushEvt.Sender.Login)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	// only process pushes to main branch
-	if event.Ref != "refs/heads/main" {
+	if pushEvt.Ref != "refs/heads/main" {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	// route: Obsidian repo → content sync, other repos → project-track
-	if event.Repository.FullName != wr.obsidianRepo {
-		wr.handleProjectTrack(w, r, &event, bg)
+	if pushEvt.Repository.FullName != wr.obsidianRepo {
+		wr.handleProjectTrack(w, r, &pushEvt, bg)
 		return
 	}
 
 	// split changed files into public content (A1) and knowledge notes (B1)
-	changed := event.ChangedFiles()
-	removedAll := event.RemovedFiles()
+	changed := pushEvt.ChangedFiles()
+	removedAll := pushEvt.RemovedFiles()
 
 	publicFiles := filterPublicMarkdown(changed)
 	publicRemoved := filterPublicMarkdown(removedAll)
@@ -107,8 +108,8 @@ func (wr *WebhookRouter) Handle(w http.ResponseWriter, r *http.Request, bg bgFun
 	w.WriteHeader(http.StatusAccepted)
 
 	cs := wr.contentSync
-	repo := event.Repository.FullName
-	ref := event.Ref
+	repo := pushEvt.Repository.FullName
+	ref := pushEvt.Ref
 	bg("webhook-push", func() {
 		ctx := context.WithoutCancel(r.Context())
 
@@ -132,15 +133,15 @@ var notionURLPattern = regexp.MustCompile(`https?://(?:www\.)?notion\.so/\S*?([0
 
 // handlePullRequest routes pull_request webhook events.
 func (wr *WebhookRouter) handlePullRequest(w http.ResponseWriter, r *http.Request, body []byte, bg bgFunc) {
-	var event PullRequestEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	var prEvt PullRequestEvent
+	if err := json.Unmarshal(body, &prEvt); err != nil {
 		wr.logger.Error("parsing pull_request event", "error", err)
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
 	// only process merged PRs (action=closed + merged=true)
-	if event.Action != "closed" || !event.PullRequest.Merged {
+	if prEvt.Action != "closed" || !prEvt.PullRequest.Merged {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -155,7 +156,7 @@ func (wr *WebhookRouter) handlePullRequest(w http.ResponseWriter, r *http.Reques
 
 	bg("pr-merge", func() {
 		ctx := context.WithoutCancel(r.Context())
-		wr.handlePRMerge(ctx, &event)
+		wr.handlePRMerge(ctx, &prEvt)
 	})
 }
 
@@ -164,8 +165,8 @@ func (wr *WebhookRouter) handlePullRequest(w http.ResponseWriter, r *http.Reques
 const maxNotionUpdatesPerPR = 10
 
 // handlePRMerge extracts Notion page IDs from the PR body and marks them as Done.
-func (wr *WebhookRouter) handlePRMerge(ctx context.Context, event *PullRequestEvent) {
-	matches := notionURLPattern.FindAllStringSubmatch(event.PullRequest.Body, -1)
+func (wr *WebhookRouter) handlePRMerge(ctx context.Context, prEvt *PullRequestEvent) {
+	matches := notionURLPattern.FindAllStringSubmatch(prEvt.PullRequest.Body, -1)
 	if len(matches) == 0 {
 		return
 	}
@@ -180,7 +181,7 @@ func (wr *WebhookRouter) handlePRMerge(ctx context.Context, event *PullRequestEv
 		if len(seen) >= maxNotionUpdatesPerPR {
 			wr.logger.Warn("PR body exceeds max Notion page ID limit, skipping remaining",
 				"limit", maxNotionUpdatesPerPR,
-				"pr", event.PullRequest.Number,
+				"pr", prEvt.PullRequest.Number,
 			)
 			break
 		}
@@ -194,16 +195,16 @@ func (wr *WebhookRouter) handlePRMerge(ctx context.Context, event *PullRequestEv
 		if err := wr.notionTasks.UpdatePageStatus(ctx, formattedID, "Done"); err != nil {
 			wr.logger.Error("updating notion task status",
 				"page_id", formattedID,
-				"repo", event.Repository.FullName,
-				"pr", event.PullRequest.Number,
+				"repo", prEvt.Repository.FullName,
+				"pr", prEvt.PullRequest.Number,
 				"error", err,
 			)
 			continue
 		}
 		wr.logger.Info("notion task marked done",
 			"page_id", formattedID,
-			"repo", event.Repository.FullName,
-			"pr", event.PullRequest.Number,
+			"repo", prEvt.Repository.FullName,
+			"pr", prEvt.PullRequest.Number,
 		)
 	}
 }
@@ -213,10 +214,10 @@ const zeroSHA = "0000000000000000000000000000000000000000"
 
 // handleProjectTrack submits a project-track flow job and records an activity
 // event for non-Obsidian repos.
-func (wr *WebhookRouter) handleProjectTrack(w http.ResponseWriter, r *http.Request, event *PushEvent, bg bgFunc) {
+func (wr *WebhookRouter) handleProjectTrack(w http.ResponseWriter, r *http.Request, evt *PushEvent, bg bgFunc) {
 	// collect commit messages
-	messages := make([]string, 0, len(event.Commits))
-	for _, c := range event.Commits {
+	messages := make([]string, 0, len(evt.Commits))
+	for _, c := range evt.Commits {
 		messages = append(messages, c.Message)
 	}
 	if len(messages) == 0 {
@@ -227,28 +228,28 @@ func (wr *WebhookRouter) handleProjectTrack(w http.ResponseWriter, r *http.Reque
 	// respond 202 immediately, do all work in background
 	w.WriteHeader(http.StatusAccepted)
 
-	repo := event.Repository.FullName
-	ref := event.Ref
+	repo := evt.Repository.FullName
+	ref := evt.Ref
 	ctx := context.WithoutCancel(r.Context())
 	bg("project-track", func() {
 		// submit project-track flow job (best-effort)
 		if wr.jobs != nil {
 			input, err := json.Marshal(map[string]any{
-				"repo":    event.Repository.FullName,
+				"repo":    evt.Repository.FullName,
 				"commits": messages,
 			})
 			if err != nil {
 				wr.logger.Error("marshaling project-track input", "error", err)
 			} else if err := wr.jobs.Submit(ctx, "project-track", input, nil); err != nil {
-				wr.logger.Error("submitting project-track", "repo", event.Repository.FullName, "error", err)
+				wr.logger.Error("submitting project-track", "repo", evt.Repository.FullName, "error", err)
 			} else {
-				wr.logger.Info("project-track submitted", "repo", event.Repository.FullName, "commits", len(messages))
+				wr.logger.Info("project-track submitted", "repo", evt.Repository.FullName, "commits", len(messages))
 			}
 		}
 
 		// record activity event
 		if wr.events != nil {
-			wr.recordPushEvent(ctx, event)
+			wr.recordPushEvent(ctx, evt)
 		}
 
 		// best-effort: emit event for cross-cutting subscribers
@@ -257,14 +258,14 @@ func (wr *WebhookRouter) handleProjectTrack(w http.ResponseWriter, r *http.Reque
 }
 
 // recordPushEvent records a push activity event, optionally enriched with diff stats.
-func (wr *WebhookRouter) recordPushEvent(ctx context.Context, event *PushEvent) {
-	repo := event.Repository.FullName
-	ref := event.Ref
+func (wr *WebhookRouter) recordPushEvent(ctx context.Context, evt *PushEvent) {
+	repo := evt.Repository.FullName
+	ref := evt.Ref
 
 	// build title from first commit message (first line only, capped at 500 chars)
 	var titlePtr *string
-	if len(event.Commits) > 0 {
-		title := event.Commits[0].Message
+	if len(evt.Commits) > 0 {
+		title := evt.Commits[0].Message
 		if idx := strings.IndexByte(title, '\n'); idx > 0 {
 			title = title[:idx]
 		}
@@ -275,7 +276,7 @@ func (wr *WebhookRouter) recordPushEvent(ctx context.Context, event *PushEvent) 
 	}
 
 	// fetch diff stats from Compare API (best-effort)
-	metadata := wr.fetchDiffMetadata(ctx, repo, event)
+	metadata := wr.fetchDiffMetadata(ctx, repo, evt)
 
 	// Resolve project: try projects.repo match, fallback to raw repo name.
 	// Normalize-on-write so all downstream consumers see clean slugs.
@@ -287,7 +288,7 @@ func (wr *WebhookRouter) recordPushEvent(ctx context.Context, event *PushEvent) 
 	}
 
 	// source_id: use after SHA for dedup
-	sourceID := event.After
+	sourceID := evt.After
 	p := activity.RecordParams{
 		SourceID:  &sourceID,
 		Timestamp: time.Now(),
@@ -306,16 +307,16 @@ func (wr *WebhookRouter) recordPushEvent(ctx context.Context, event *PushEvent) 
 }
 
 // fetchDiffMetadata fetches diff stats from the Compare API if conditions are met.
-func (wr *WebhookRouter) fetchDiffMetadata(ctx context.Context, repo string, event *PushEvent) json.RawMessage {
-	if wr.comparer == nil || event.Before == zeroSHA || !isSHA(event.Before) || !isSHA(event.After) {
+func (wr *WebhookRouter) fetchDiffMetadata(ctx context.Context, repo string, evt *PushEvent) json.RawMessage {
+	if wr.comparer == nil || evt.Before == zeroSHA || !isSHA(evt.Before) || !isSHA(evt.After) {
 		return nil
 	}
-	stats, err := wr.comparer.Compare(ctx, repo, event.Before, event.After)
+	stats, err := wr.comparer.Compare(ctx, repo, evt.Before, evt.After)
 	if err != nil {
 		wr.logger.Warn("fetching diff stats", "repo", repo, "error", err)
 		return nil
 	}
-	stats.CommitCount = len(event.Commits)
+	stats.CommitCount = len(evt.Commits)
 	data, err := json.Marshal(stats)
 	if err != nil {
 		return nil
