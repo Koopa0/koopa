@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/koopa0/blog-backend/internal/note"
 )
@@ -270,12 +269,6 @@ func BenchmarkRRFMerge(b *testing.B) {
 	}
 }
 
-// rrfMergeOption helps cmp.Diff ignore map-ordering non-determinism when checking
-// that two sets contain the same IDs regardless of score-tie ordering.
-var sortByID = cmpopts.SortSlices(func(a, b searchResultEntry) bool {
-	return a.Note.ID < b.Note.ID
-})
-
 func TestRRFMerge_AllInputIDsPresent(t *testing.T) {
 	t.Parallel()
 
@@ -294,6 +287,4 @@ func TestRRFMerge_AllInputIDsPresent(t *testing.T) {
 	if len(wantIDs) != 0 {
 		t.Errorf("rrfMerge() missing IDs: %v", wantIDs)
 	}
-	// Use sortByID option to suppress unused-variable lint warning
-	_ = sortByID
 }

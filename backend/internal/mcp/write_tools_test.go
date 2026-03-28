@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -354,7 +355,7 @@ func TestValidateSessionNoteInput(t *testing.T) {
 				}
 				if tt.errMsg != "" {
 					errStr := err.Error()
-					if errStr == "" || !containsSubstr(errStr, tt.errMsg) {
+					if errStr == "" || !strings.Contains(errStr, tt.errMsg) {
 						t.Errorf("validateSessionNoteInput() error = %q, want to contain %q", errStr, tt.errMsg)
 					}
 				}
@@ -543,7 +544,7 @@ func TestValidateSessionNoteMetadata(t *testing.T) {
 				if err == nil {
 					t.Fatalf("validateSessionNoteMetadata(%q) expected error containing %q, got nil", tt.noteType, tt.errMsg)
 				}
-				if tt.errMsg != "" && !containsSubstr(err.Error(), tt.errMsg) {
+				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
 					t.Errorf("validateSessionNoteMetadata(%q) error = %q, want to contain %q", tt.noteType, err.Error(), tt.errMsg)
 				}
 				return
@@ -743,18 +744,4 @@ func TestBuildNotionTaskProps(t *testing.T) {
 			}
 		})
 	}
-}
-
-// containsSubstr checks if s contains sub without importing strings.
-func containsSubstr(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || indexSubstr(s, sub) >= 0)
-}
-
-func indexSubstr(s, sub string) int {
-	for i := range len(s) - len(sub) + 1 {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
