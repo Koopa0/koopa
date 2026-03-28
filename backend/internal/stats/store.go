@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/koopa0/blog-backend/internal/db"
 )
 
@@ -28,6 +30,7 @@ func NewStore(dbtx db.DBTX) *Store {
 }
 
 // Overview returns aggregated stats across all platform data sources.
+// Queries run concurrently via errgroup since they are independent.
 func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 	o := &Overview{
 		Contents:  ContentStats{ByStatus: map[string]int{}, ByType: map[string]int{}},
@@ -38,37 +41,21 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 		Activity:  ActivityStats{BySource: map[string]int{}},
 	}
 
-	if err := s.queryContentStats(ctx, &o.Contents); err != nil {
-		return nil, fmt.Errorf("content stats: %w", err)
-	}
-	if err := s.queryCollectedStats(ctx, &o.Collected); err != nil {
-		return nil, fmt.Errorf("collected stats: %w", err)
-	}
-	if err := s.queryFeedStats(ctx, &o.Feeds); err != nil {
-		return nil, fmt.Errorf("feed stats: %w", err)
-	}
-	if err := s.queryFlowRunStats(ctx, &o.FlowRuns); err != nil {
-		return nil, fmt.Errorf("flow run stats: %w", err)
-	}
-	if err := s.queryProjectStats(ctx, &o.Projects); err != nil {
-		return nil, fmt.Errorf("project stats: %w", err)
-	}
-	if err := s.queryReviewStats(ctx, &o.Reviews); err != nil {
-		return nil, fmt.Errorf("review stats: %w", err)
-	}
-	if err := s.queryNoteStats(ctx, &o.Notes); err != nil {
-		return nil, fmt.Errorf("note stats: %w", err)
-	}
-	if err := s.queryActivityStats(ctx, &o.Activity); err != nil {
-		return nil, fmt.Errorf("activity stats: %w", err)
-	}
-	if err := s.querySourceStats(ctx, &o.Sources); err != nil {
-		return nil, fmt.Errorf("source stats: %w", err)
-	}
-	if err := s.queryTagStats(ctx, &o.Tags); err != nil {
-		return nil, fmt.Errorf("tag stats: %w", err)
-	}
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return s.queryContentStats(ctx, &o.Contents) })
+	g.Go(func() error { return s.queryCollectedStats(ctx, &o.Collected) })
+	g.Go(func() error { return s.queryFeedStats(ctx, &o.Feeds) })
+	g.Go(func() error { return s.queryFlowRunStats(ctx, &o.FlowRuns) })
+	g.Go(func() error { return s.queryProjectStats(ctx, &o.Projects) })
+	g.Go(func() error { return s.queryReviewStats(ctx, &o.Reviews) })
+	g.Go(func() error { return s.queryNoteStats(ctx, &o.Notes) })
+	g.Go(func() error { return s.queryActivityStats(ctx, &o.Activity) })
+	g.Go(func() error { return s.querySourceStats(ctx, &o.Sources) })
+	g.Go(func() error { return s.queryTagStats(ctx, &o.Tags) })
 
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
 	return o, nil
 }
 

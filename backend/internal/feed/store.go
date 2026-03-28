@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -28,9 +27,9 @@ type Store struct {
 	logger *slog.Logger
 }
 
-// NewStore returns a Store backed by the given pool.
-func NewStore(pool *pgxpool.Pool, logger *slog.Logger) *Store {
-	return &Store{q: db.New(pool), logger: logger}
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX, logger *slog.Logger) *Store {
+	return &Store{q: db.New(dbtx), logger: logger}
 }
 
 // SetAlerts sets the alert sender for auto-disable notifications.

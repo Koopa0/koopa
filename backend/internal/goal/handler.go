@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -54,7 +55,11 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status := mapHTTPGoalStatus(req.Status)
+	status, statusErr := mapHTTPGoalStatus(req.Status)
+	if statusErr != nil {
+		api.Error(w, http.StatusBadRequest, "INVALID_STATUS", statusErr.Error())
+		return
+	}
 
 	updated, err := h.store.UpdateStatus(r.Context(), id, status)
 	if err != nil {
@@ -71,17 +76,17 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-func mapHTTPGoalStatus(s string) Status {
+func mapHTTPGoalStatus(s string) (Status, error) {
 	switch s {
 	case "not-started", "Not Started", "Dream":
-		return StatusNotStarted
+		return StatusNotStarted, nil
 	case "in-progress", "In Progress", "Active":
-		return StatusInProgress
+		return StatusInProgress, nil
 	case "done", "Done", "Achieved":
-		return StatusDone
+		return StatusDone, nil
 	case "abandoned", "Abandoned":
-		return StatusAbandoned
+		return StatusAbandoned, nil
 	default:
-		return StatusNotStarted
+		return "", fmt.Errorf("unknown goal status %q: valid values are not-started, in-progress, done, abandoned", s)
 	}
 }

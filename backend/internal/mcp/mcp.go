@@ -1,6 +1,6 @@
-// Package mcpserver provides an MCP (Model Context Protocol) server exposing
+// Package mcp provides an MCP (Model Context Protocol) server exposing
 // tools for querying and managing the koopa0.dev knowledge engine.
-package mcpserver
+package mcp
 
 import (
 	"context"

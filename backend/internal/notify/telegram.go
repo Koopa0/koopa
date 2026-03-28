@@ -25,7 +25,7 @@ func NewTelegram(token, chatID string) *Telegram {
 	return &Telegram{
 		token:   token,
 		chatID:  chatID,
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  &http.Client{Timeout: 10 * time.Second},
 		baseURL: telegramDefaultURL,
 	}
 }

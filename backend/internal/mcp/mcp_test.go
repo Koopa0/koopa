@@ -1,1 +1,1 @@
-package mcpserver
+package mcp

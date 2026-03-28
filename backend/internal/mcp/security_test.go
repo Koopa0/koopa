@@ -1,4 +1,4 @@
-package mcpserver
+package mcp
 
 import (
 	"math"

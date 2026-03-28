@@ -25,7 +25,7 @@ func NewLINE(token, userID string) *LINE {
 	return &LINE{
 		token:   token,
 		userID:  userID,
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  &http.Client{Timeout: 10 * time.Second},
 		baseURL: lineDefaultURL,
 	}
 }

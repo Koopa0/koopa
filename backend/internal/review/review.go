@@ -22,7 +22,19 @@ type Review struct {
 	ReviewedAt    *time.Time `json:"reviewed_at,omitempty"`
 }
 
+// Status is the lifecycle state of a review queue entry.
+type Status string
+
+const (
+	StatusPending  Status = "pending"
+	StatusApproved Status = "approved"
+	StatusRejected Status = "rejected"
+)
+
 var (
 	// ErrNotFound indicates the review does not exist.
 	ErrNotFound = errors.New("not found")
+
+	// ErrConflict indicates a duplicate or conflicting review operation.
+	ErrConflict = errors.New("conflict")
 )

@@ -1,4 +1,4 @@
-package mcpserver
+package mcp
 
 import (
 	"context"
@@ -1149,14 +1149,14 @@ func toSearchFilter(input *SearchNotesInput) note.SearchFilter {
 
 func toNoteResult(r *searchResultEntry) noteResult {
 	return noteResult{
-		ID:       r.Note.ID,
-		FilePath: r.Note.FilePath,
-		Title:    deref(r.Note.Title),
-		Type:     deref(r.Note.Type),
-		Context:  deref(r.Note.Context),
-		Source:   deref(r.Note.Source),
-		Tags:     r.Note.Tags,
-		Excerpt:  truncate(deref(r.Note.ContentText), 200),
+		ID:       r.ID,
+		FilePath: r.FilePath,
+		Title:    deref(r.Title),
+		Type:     deref(r.Type),
+		Context:  deref(r.Context),
+		Source:   deref(r.Source),
+		Tags:     r.Tags,
+		Excerpt:  truncate(deref(r.ContentText), 200),
 		Score:    r.Score,
 	}
 }
