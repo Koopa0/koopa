@@ -63,18 +63,20 @@ func Error(w http.ResponseWriter, status int, code, message string) {
 }
 
 // ParsePagination extracts page and per_page query parameters.
-// Defaults: page=1, perPage=20. Maximum perPage is 100.
+// Defaults: page=1, perPage=20. Out-of-range values are clamped:
+// page < 1 → 1, per_page < 1 → 1, per_page > 100 → 100.
+// Non-numeric values fall back to defaults.
 func ParsePagination(r *http.Request) (page, perPage int) {
 	page = 1
 	perPage = 20
 	if v := r.URL.Query().Get("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
+		if p, err := strconv.Atoi(v); err == nil {
+			page = max(p, 1)
 		}
 	}
 	if v := r.URL.Query().Get("per_page"); v != "" {
-		if pp, err := strconv.Atoi(v); err == nil && pp > 0 && pp <= 100 {
-			perPage = pp
+		if pp, err := strconv.Atoi(v); err == nil {
+			perPage = min(max(pp, 1), 100)
 		}
 	}
 	return page, perPage

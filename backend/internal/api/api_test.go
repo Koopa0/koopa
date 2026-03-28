@@ -23,13 +23,14 @@ func TestParsePagination(t *testing.T) {
 	}{
 		{name: "defaults when no params", query: "", wantPage: 1, wantPerPage: 20},
 		{name: "explicit page and per_page", query: "page=3&per_page=50", wantPage: 3, wantPerPage: 50},
-		{name: "per_page capped at 100", query: "per_page=200", wantPage: 1, wantPerPage: 20},
-		{name: "negative page uses default", query: "page=-1", wantPage: 1, wantPerPage: 20},
-		{name: "zero page uses default", query: "page=0", wantPage: 1, wantPerPage: 20},
+		{name: "per_page clamped to 100", query: "per_page=200", wantPage: 1, wantPerPage: 100},
+		{name: "negative page clamped to 1", query: "page=-1", wantPage: 1, wantPerPage: 20},
+		{name: "zero page clamped to 1", query: "page=0", wantPage: 1, wantPerPage: 20},
 		{name: "non-numeric page uses default", query: "page=abc", wantPage: 1, wantPerPage: 20},
-		{name: "zero per_page uses default", query: "per_page=0", wantPage: 1, wantPerPage: 20},
+		{name: "zero per_page clamped to 1", query: "per_page=0", wantPage: 1, wantPerPage: 1},
+		{name: "negative per_page clamped to 1", query: "per_page=-5", wantPage: 1, wantPerPage: 1},
 		{name: "per_page exactly 100 allowed", query: "per_page=100", wantPage: 1, wantPerPage: 100},
-		{name: "per_page 101 rejected", query: "per_page=101", wantPage: 1, wantPerPage: 20},
+		{name: "per_page 101 clamped to 100", query: "per_page=101", wantPage: 1, wantPerPage: 100},
 	}
 
 	for _, tt := range tests {
