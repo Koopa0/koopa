@@ -151,6 +151,9 @@ func rrfMerge(textResults []note.SearchResult, filterResults []note.Note, limit 
 		return cmp.Compare(b.Score, a.Score) // descending
 	})
 
+	if limit <= 0 {
+		return nil
+	}
 	if len(entries) > limit {
 		entries = entries[:limit]
 	}

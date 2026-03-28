@@ -597,6 +597,9 @@ func contentMatchesProject(c *content.Content, projectID uuid.UUID, projectSlug 
 }
 
 func truncate(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
 	runes := []rune(s)
 	if len(runes) <= maxLen {
 		return s

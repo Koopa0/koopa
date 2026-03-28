@@ -268,6 +268,9 @@ func parseInsightMetadata(raw json.RawMessage) (map[string]any, error) {
 
 // applyInsightUpdates merges input fields into the metadata map.
 func applyInsightUpdates(meta map[string]any, input UpdateInsightInput) {
+	if meta == nil {
+		return
+	}
 	if input.Status != "" {
 		meta["status"] = input.Status
 	}
