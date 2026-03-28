@@ -258,7 +258,6 @@ func csrfMiddleware(corsOrigin string, logger *slog.Logger) (func(http.Handler) 
 	// Webhooks are server-to-server and carry HMAC signatures, not browser cookies.
 	// Bypass CSRF checks so they are not rejected when an Origin header is present.
 	// List specific routes rather than a wildcard to avoid covering future endpoints.
-	// Note: /api/webhook/obsidian uses authMid (JWT) so it does not need a bypass.
 	cop.AddInsecureBypassPattern("POST /api/webhook/github")
 	cop.AddInsecureBypassPattern("POST /api/webhook/notion")
 

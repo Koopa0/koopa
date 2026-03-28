@@ -10,6 +10,7 @@ type config struct {
 	Transport          string
 	Port               string
 	MCPToken           string
+	MCPBaseURL         string
 	NotionAPIKey       string
 	AdminAPIURL        string
 	JWTSecret          string
@@ -30,6 +31,7 @@ func loadConfig(logger *slog.Logger) config {
 
 	// HTTP transport requires MCP_TOKEN + Google OAuth
 	cfg.MCPToken = os.Getenv("MCP_TOKEN")
+	cfg.MCPBaseURL = envOr("MCP_BASE_URL", "https://mcp.koopa0.dev")
 	cfg.GoogleClientID = os.Getenv("GOOGLE_CLIENT_ID")
 	cfg.GoogleClientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
 	cfg.AdminEmail = os.Getenv("ADMIN_EMAIL")

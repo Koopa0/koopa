@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -350,7 +351,7 @@ func fetchGoogleEmail(ctx context.Context, cfg *oauth2.Config, token *oauth2.Tok
 	var info struct {
 		Email string `json:"email"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
 		return "", fmt.Errorf("decoding userinfo: %w", err)
 	}
 	if info.Email == "" {

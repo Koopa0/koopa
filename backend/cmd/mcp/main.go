@@ -122,6 +122,7 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 						baseURL:    cfg.AdminAPIURL,
 						jwtSecret:  []byte(cfg.JWTSecret),
 						adminEmail: cfg.AdminEmail,
+						client:     &http.Client{Timeout: 10 * time.Second},
 						logger:     logger,
 					},
 				),
@@ -205,11 +206,11 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 	oauth := mcpkg.NewOAuthProvider(mcpkg.OAuthConfig{
 		StaticToken: cfg.MCPToken,
 		AdminEmail:  cfg.AdminEmail,
-		BaseURL:     "https://mcp.koopa0.dev",
+		BaseURL:     cfg.MCPBaseURL,
 		GoogleOAuth: &oauth2.Config{
 			ClientID:     cfg.GoogleClientID,
 			ClientSecret: cfg.GoogleClientSecret,
-			RedirectURL:  "https://mcp.koopa0.dev/oauth/google/callback",
+			RedirectURL:  cfg.MCPBaseURL + "/oauth/google/callback",
 			Scopes:       []string{"openid", "email"},
 			Endpoint:     google.Endpoint,
 		},
@@ -334,6 +335,7 @@ type httpPipelineTrigger struct {
 	baseURL    string
 	jwtSecret  []byte
 	adminEmail string
+	client     *http.Client
 	logger     *slog.Logger
 }
 
@@ -368,7 +370,7 @@ func (t *httpPipelineTrigger) post(ctx context.Context, path string) {
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+signed)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		t.logger.Error("triggering pipeline", "path", path, "error", err)
 		return

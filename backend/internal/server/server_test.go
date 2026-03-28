@@ -867,29 +867,12 @@ func TestAdminStats(t *testing.T) {
 	}
 }
 
-// --- Pipeline Stubs Test ---
+// --- Pipeline Endpoint Tests ---
 
-func TestPipelineStubs(t *testing.T) {
+func TestPipelineEndpoints(t *testing.T) {
 	ts := testServer(t)
 	defer ts.Close()
 	token := login(t, ts.URL)
-
-	// Endpoints still returning 501 (not yet implemented, JWT-protected)
-	stubEndpoints := []string{
-		"/api/admin/pipeline/sync",
-		"/api/admin/pipeline/generate",
-		"/api/webhook/obsidian",
-	}
-
-	for _, ep := range stubEndpoints {
-		t.Run(ep, func(t *testing.T) {
-			resp := doRequest(t, http.MethodPost, ts.URL+ep, "", token)
-			resp.Body.Close()
-			if resp.StatusCode != http.StatusNotImplemented {
-				t.Errorf("%s: expected 501, got %d", ep, resp.StatusCode)
-			}
-		})
-	}
 
 	// Notion webhook: HMAC-verified, returns 501 when no webhook secret configured
 	t.Run("/api/webhook/notion_no_secret", func(t *testing.T) {
