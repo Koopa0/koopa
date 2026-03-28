@@ -15,7 +15,7 @@ import (
 // strPtr returns a pointer to s.
 //
 //go:fix inline
-func strPtr(s string) *string { return new(s) }
+func strPtr(s string) *string { return new(s) } //nolint:unused // used by write_tools_test.go (same package)
 
 // int32Ptr returns a pointer to v.
 //

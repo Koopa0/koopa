@@ -139,6 +139,11 @@ type approveRequest struct {
 
 // TriggerPolish handles POST /api/admin/flow/polish/{content_id}.
 func (h *Handler) TriggerPolish(w http.ResponseWriter, r *http.Request) {
+	if h.contentReader == nil {
+		api.Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "polish not configured")
+		return
+	}
+
 	contentID, err := uuid.Parse(r.PathValue("content_id"))
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content ID")
@@ -169,6 +174,11 @@ func (h *Handler) TriggerPolish(w http.ResponseWriter, r *http.Request) {
 
 // PolishResult handles GET /api/admin/flow/polish/{content_id}/result.
 func (h *Handler) PolishResult(w http.ResponseWriter, r *http.Request) {
+	if h.contentReader == nil {
+		api.Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "polish not configured")
+		return
+	}
+
 	contentID, err := uuid.Parse(r.PathValue("content_id"))
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content ID")
@@ -198,6 +208,11 @@ func (h *Handler) PolishResult(w http.ResponseWriter, r *http.Request) {
 
 // ApprovePolish handles POST /api/admin/flow/polish/{content_id}/approve.
 func (h *Handler) ApprovePolish(w http.ResponseWriter, r *http.Request) {
+	if h.contentUpdater == nil {
+		api.Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "polish not configured")
+		return
+	}
+
 	contentID, err := uuid.Parse(r.PathValue("content_id"))
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content ID")

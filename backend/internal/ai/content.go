@@ -52,6 +52,7 @@ type ContentReviewInput struct {
 
 // proofreadOutput mirrors review.ProofreadOutput for JSON unmarshaling
 // within the orchestrator, avoiding an import cycle with the review sub-package.
+// Mirror of review.ProofreadOutput -- keep in sync with internal/ai/review/proofread.go.
 type proofreadOutput struct {
 	Level       string   `json:"level"`
 	Notes       string   `json:"notes"`
@@ -59,11 +60,13 @@ type proofreadOutput struct {
 }
 
 // excerptOutput mirrors review.ExcerptOutput.
+// Mirror of review.ExcerptOutput -- keep in sync with internal/ai/review/excerpt.go.
 type excerptOutput struct {
 	Excerpt string `json:"excerpt"`
 }
 
 // tagsOutput mirrors review.TagsOutput.
+// Mirror of review.TagsOutput -- keep in sync with internal/ai/review/tags.go.
 type tagsOutput struct {
 	Tags []string `json:"tags"`
 }
