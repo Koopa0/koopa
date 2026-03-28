@@ -230,20 +230,21 @@ func (wr *WebhookRouter) handleProjectTrack(w http.ResponseWriter, r *http.Reque
 
 	repo := evt.Repository.FullName
 	ref := evt.Ref
-	ctx := context.WithoutCancel(r.Context())
 	bg("project-track", func() {
+		ctx := context.WithoutCancel(r.Context())
+
 		// submit project-track flow job (best-effort)
 		if wr.jobs != nil {
 			input, err := json.Marshal(map[string]any{
-				"repo":    evt.Repository.FullName,
+				"repo":    repo,
 				"commits": messages,
 			})
 			if err != nil {
 				wr.logger.Error("marshaling project-track input", "error", err)
 			} else if err := wr.jobs.Submit(ctx, "project-track", input, nil); err != nil {
-				wr.logger.Error("submitting project-track", "repo", evt.Repository.FullName, "error", err)
+				wr.logger.Error("submitting project-track", "repo", repo, "error", err)
 			} else {
-				wr.logger.Info("project-track submitted", "repo", evt.Repository.FullName, "commits", len(messages))
+				wr.logger.Info("project-track submitted", "repo", repo, "commits", len(messages))
 			}
 		}
 

@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/koopa0/blog-backend/internal/db"
@@ -70,7 +71,7 @@ func (s *Store) SaveRun(ctx context.Context, startedAt, completedAt time.Time, r
 func (s *Store) RecentRuns(ctx context.Context, limit int) ([]RunRecord, error) {
 	rows, err := s.q.RecentReconcileRuns(ctx, int32(limit)) //nolint:gosec // limit bounded to [1,100] by handler
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing recent reconcile runs: %w", err)
 	}
 	records := make([]RunRecord, len(rows))
 	for i, r := range rows {
