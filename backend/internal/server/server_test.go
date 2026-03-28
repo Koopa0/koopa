@@ -28,14 +28,15 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	aiflow "github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/auth"
-	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
-	aiflow "github.com/koopa0/blog-backend/internal/ai"
-	"github.com/koopa0/blog-backend/internal/ai/exec"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -47,7 +48,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/topic"
-	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/upload"
 )
 
@@ -139,7 +139,7 @@ func testServer(t *testing.T) *httptest.Server {
 	runner.Start(t.Context())
 	t.Cleanup(runner.Stop)
 
-	feedCollector := collector.New(collectedStore, feedStore, logger)
+	feedCollector := collector.New(collectedStore, feedStore, monitorStore, logger)
 
 	contentSync := pipeline.NewContentSync(pool, contentStore, contentStore, nil, nil, runner, logger)
 	webhookRouter := pipeline.NewWebhookRouter("", "", "", contentSync, logger)
@@ -150,15 +150,15 @@ func testServer(t *testing.T) *httptest.Server {
 	notionClient := notion.NewClient("")
 
 	deps := server.Deps{
-		Auth:      auth.NewHandler(authStore, testJWTSecret, &auth.GoogleConfig{}, logger),
-		Topic:     topic.NewHandler(topicStore, contentStore, nil, logger),
-		Content:   content.NewHandler(contentStore, "http://localhost:8080", nil, nil, logger),
-		Project:   project.NewHandler(projectStore, logger),
-		Review:    review.NewHandler(reviewStore, logger),
-		Collected: entry.NewHandler(collectedStore, logger),
-		Tracking:  monitor.NewHandler(monitorStore, logger),
-		Pipeline:  pipelineHandler,
-		FlowRun: func() *exec.Handler {
+		Auth:     auth.NewHandler(authStore, testJWTSecret, &auth.GoogleConfig{}, logger),
+		Topic:    topic.NewHandler(topicStore, contentStore, nil, logger),
+		Content:  content.NewHandler(contentStore, "http://localhost:8080", nil, nil, logger),
+		Project:  project.NewHandler(projectStore, logger),
+		Review:   review.NewHandler(reviewStore, logger),
+		Entry:    entry.NewHandler(collectedStore, logger),
+		Monitor:  monitor.NewHandler(monitorStore, logger),
+		Pipeline: pipelineHandler,
+		Exec: func() *exec.Handler {
 			h := exec.NewHandler(flowrunStore, runner, logger)
 			h.WithContentDeps(contentStore, contentStore)
 			return h
@@ -182,7 +182,7 @@ func testServer(t *testing.T) *httptest.Server {
 	authMid := auth.Middleware(testJWTSecret)
 	noopMid := func(next http.Handler) http.Handler { return next }
 	mux := http.NewServeMux()
-	server.RegisterRoutes(mux, deps, authMid, noopMid)
+	server.RegisterRoutes(mux, &deps, authMid, noopMid)
 
 	return httptest.NewServer(mux)
 }

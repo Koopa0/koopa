@@ -59,7 +59,7 @@ type ContentReviewOutput struct {
 }
 
 // ReviewResult is an alias for ContentProofreadOutput.
-// Kept for backward compatibility: referenced by cmd/calibrate and internal/flowrun tests.
+// Kept for backward compatibility: referenced by internal/ai/exec tests.
 type ReviewResult = ContentProofreadOutput
 
 // ContentReview is the orchestrator flow that calls sub-flows (proofread, excerpt, tags)

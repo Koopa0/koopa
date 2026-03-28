@@ -1,5 +1,4 @@
-// Package monitor provides tracking topic configuration for automated
-// data collection. Topics define keywords and sources to monitor.
+// Package monitor configures data collection topics and schedules.
 package monitor
 
 import (

@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/feed"
-	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/project"
 )
@@ -80,7 +80,7 @@ func collectFeeds(
 // submitWeeklyReview gathers system health data and submits the weekly-review flow.
 func submitWeeklyReview(
 	appCtx context.Context,
-	flowrunStore *exec.Store,
+	execStore *exec.Store,
 	feedStore *feed.Store,
 	runner *exec.Runner,
 	logger *slog.Logger,
@@ -93,7 +93,7 @@ func submitWeeklyReview(
 
 		var issues []string
 
-		stats, err := flowrunStore.FailureStats(ctx, weekAgo)
+		stats, err := execStore.FailureStats(ctx, weekAgo)
 		if err != nil {
 			logger.Error("cron: weekly-review health: flow stats", "error", err)
 		} else {

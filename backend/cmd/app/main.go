@@ -26,17 +26,18 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	aiflow "github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/auth"
 	"github.com/koopa0/blog-backend/internal/budget"
-	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/collector"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/feed"
-	aiflow "github.com/koopa0/blog-backend/internal/ai"
-	"github.com/koopa0/blog-backend/internal/ai/exec"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/learning"
+	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/notion"
@@ -50,40 +51,9 @@ import (
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/topic"
-	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/upload"
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
-
-type config struct {
-	Port                string
-	DatabaseURL         string
-	JWTSecret           string
-	CORSOrigin          string
-	SiteURL             string
-	GitHubWebhookSecret string
-	GitHubToken         string
-	GitHubRepo          string
-	GitHubBotLogin      string
-	R2Endpoint          string
-	R2AccessKeyID       string
-	R2SecretAccessKey   string
-	R2Bucket            string
-	R2PublicURL         string
-	GeminiModel         string
-	ClaudeModel         string
-	NotionAPIKey        string
-	NotionWebhookSecret string
-	LINEChannelToken    string
-	LINEUserID          string
-	TelegramBotToken    string
-	TelegramChatID      string
-	GoogleClientID      string
-	GoogleClientSecret  string
-	GoogleRedirectURI   string
-	AdminEmail          string
-	MockMode            bool
-}
 
 // shutdownHardDeadline is the maximum time allowed for the entire graceful
 // shutdown sequence (HTTP drain + defer cleanup chain). If shutdown takes
@@ -148,9 +118,9 @@ func run(logger *slog.Logger) error {
 	contentStore := content.NewStore(pool)
 	projectStore := project.NewStore(pool)
 	reviewStore := review.NewStore(pool)
-	collectedStore := entry.NewStore(pool)
+	entryStore := entry.NewStore(pool)
 	monitorStore := monitor.NewStore(pool)
-	flowrunStore := exec.NewStore(pool)
+	execStore := exec.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)
 	goalStore := goal.NewStore(pool)
 	tagStore := tag.NewStore(pool)
@@ -167,7 +137,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// collector + budget
-	feedCollector := collector.New(collectedStore, feedStore, monitorStore, logger)
+	feedCollector := collector.New(entryStore, feedStore, monitorStore, logger)
 	defer feedCollector.Stop()
 	tokenBudget := budget.New(500_000)
 
@@ -198,19 +168,19 @@ func run(logger *slog.Logger) error {
 
 	// AI pipeline — Genkit + flow registry + runner
 	aiRes, err := setupAI(ctx, &cfg, &aiDeps{
-		flowrunStore:   flowrunStore,
-		contentStore:   contentStore,
-		reviewStore:    reviewStore,
-		topicStore:     topicStore,
-		collectedStore: collectedStore,
-		projectStore:   projectStore,
-		taskStore:      taskStore,
-		activityStore:  activityStore,
-		githubFetcher:  githubFetcher,
-		notifier:       notifier,
-		tokenBudget:    tokenBudget,
-		taipeiLoc:      taipeiLoc,
-		logger:         logger,
+		execStore:     execStore,
+		contentStore:  contentStore,
+		reviewStore:   reviewStore,
+		topicStore:    topicStore,
+		entryStore:    entryStore,
+		projectStore:  projectStore,
+		taskStore:     taskStore,
+		activityStore: activityStore,
+		githubFetcher: githubFetcher,
+		notifier:      notifier,
+		tokenBudget:   tokenBudget,
+		taipeiLoc:     taipeiLoc,
+		logger:        logger,
 	})
 	if err != nil {
 		return err
@@ -305,10 +275,10 @@ func run(logger *slog.Logger) error {
 	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
 	defer cronScheduler.Stop()
 	registerCronJobs(cronScheduler, &cronDeps{
-		flowrunStore:   flowrunStore,
+		execStore:      execStore,
 		feedStore:      feedStore,
 		authStore:      authStore,
-		collectedStore: collectedStore,
+		entryStore:     entryStore,
 		sessionStore:   sessionStore,
 		activityStore:  activityStore,
 		projectStore:   projectStore,
@@ -335,15 +305,15 @@ func run(logger *slog.Logger) error {
 			AdminEmail:   cfg.AdminEmail,
 			FrontendURL:  cfg.CORSOrigin,
 		}, logger),
-		Topic:     topic.NewHandler(topicStore, contentStore, c.topic, logger),
-		Content:   content.NewHandler(contentStore, cfg.SiteURL, c.graph, c.feed, logger),
-		Project:   project.NewHandler(projectStore, logger),
-		Review:    review.NewHandler(reviewStore, logger),
-		Collected: entry.NewHandler(collectedStore, logger),
-		Tracking:  monitor.NewHandler(monitorStore, logger),
-		Pipeline:  pipelineHandler,
-		FlowRun: func() *exec.Handler {
-			h := exec.NewHandler(flowrunStore, runner, logger)
+		Topic:    topic.NewHandler(topicStore, contentStore, c.topic, logger),
+		Content:  content.NewHandler(contentStore, cfg.SiteURL, c.graph, c.feed, logger),
+		Project:  project.NewHandler(projectStore, logger),
+		Review:   review.NewHandler(reviewStore, logger),
+		Entry:    entry.NewHandler(entryStore, logger),
+		Monitor:  monitor.NewHandler(monitorStore, logger),
+		Pipeline: pipelineHandler,
+		Exec: func() *exec.Handler {
+			h := exec.NewHandler(execStore, runner, logger)
 			h.WithContentDeps(contentStore, contentStore)
 			return h
 		}(),
@@ -484,19 +454,19 @@ func setupNotifiers(cfg *config, logger *slog.Logger) notify.Notifier {
 
 // aiDeps holds the dependencies needed to set up the AI pipeline.
 type aiDeps struct {
-	flowrunStore   *exec.Store
-	contentStore   *content.Store
-	reviewStore    *review.Store
-	topicStore     *topic.Store
-	collectedStore *entry.Store
-	projectStore   *project.Store
-	taskStore      *task.Store
-	activityStore  *activity.Store
-	githubFetcher  *pipeline.GitHub
-	notifier       notify.Notifier
-	tokenBudget    *budget.Budget
-	taipeiLoc      *time.Location
-	logger         *slog.Logger
+	execStore     *exec.Store
+	contentStore  *content.Store
+	reviewStore   *review.Store
+	topicStore    *topic.Store
+	entryStore    *entry.Store
+	projectStore  *project.Store
+	taskStore     *task.Store
+	activityStore *activity.Store
+	githubFetcher *pipeline.GitHub
+	notifier      notify.Notifier
+	tokenBudget   *budget.Budget
+	taipeiLoc     *time.Location
+	logger        *slog.Logger
 }
 
 // aiResult holds the outputs from AI pipeline setup.
@@ -528,7 +498,7 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 			aiflow.NewMockDailyDevLog(),
 		)
 		return &aiResult{
-			runner: exec.New(d.flowrunStore, registry, 3, alerter, d.logger),
+			runner: exec.New(d.execStore, registry, 3, alerter, d.logger),
 		}, nil
 	}
 
@@ -574,12 +544,12 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 		d.logger,
 	)
 	contentPolish := aiflow.NewContentPolish(g, claudeModel, d.contentStore, d.logger)
-	digestGenerate := aiflow.NewDigestGenerate(g, geminiModel, d.contentStore, d.collectedStore, d.projectStore, d.tokenBudget, d.taipeiLoc, d.logger)
-	bookmarkGenerate := aiflow.NewBookmarkGenerate(g, geminiModel, d.collectedStore, d.tokenBudget, d.logger)
+	digestGenerate := aiflow.NewDigestGenerate(g, geminiModel, d.contentStore, d.entryStore, d.projectStore, d.tokenBudget, d.taipeiLoc, d.logger)
+	bookmarkGenerate := aiflow.NewBookmarkGenerate(g, geminiModel, d.entryStore, d.tokenBudget, d.logger)
 	morningBrief := aiflow.NewMorningBrief(g, d.taskStore, d.notifier, d.taipeiLoc, d.logger)
 	weeklyReview := aiflow.NewWeeklyReview(
 		g, geminiModel, d.taskStore, d.taskStore,
-		d.collectedStore, d.contentStore, d.projectStore, d.githubFetcher,
+		d.entryStore, d.contentStore, d.projectStore, d.githubFetcher,
 		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
 	)
 	projectTrack := aiflow.NewProjectTrack(
@@ -587,7 +557,7 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 		d.notifier, d.tokenBudget, d.logger,
 	)
 	contentStrategy := aiflow.NewContentStrategy(
-		g, geminiModel, d.contentStore, d.collectedStore, d.projectStore,
+		g, geminiModel, d.contentStore, d.entryStore, d.projectStore,
 		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
 	)
 	buildLog := aiflow.NewBuildLog(
@@ -605,7 +575,7 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 		contentStrategy, buildLog, dailyDevLog,
 	)
 	return &aiResult{
-		runner:       exec.New(d.flowrunStore, registry, 3, alerter, d.logger),
+		runner:       exec.New(d.execStore, registry, 3, alerter, d.logger),
 		noteEmbedder: embedder,
 		genkit:       g,
 	}, nil
@@ -613,10 +583,10 @@ func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
 
 // cronDeps holds the dependencies needed to register cron jobs.
 type cronDeps struct {
-	flowrunStore   *exec.Store
+	execStore      *exec.Store
 	feedStore      *feed.Store
 	authStore      *auth.Store
-	collectedStore *entry.Store
+	entryStore     *entry.Store
 	sessionStore   *session.Store
 	activityStore  *activity.Store
 	projectStore   *project.Store
@@ -644,7 +614,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context)
 	}
 
 	// flow retries (every 2 min)
-	addCron("@every 2m", "retry-flows", retryFlows(appCtx, d.flowrunStore, d.runner, d.notifier, d.logger))
+	addCron("@every 2m", "retry-flows", retryFlows(appCtx, d.execStore, d.runner, d.notifier, d.logger))
 
 	// feed collection (overlap guarded)
 	var collectRunning atomic.Bool
@@ -666,12 +636,12 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context)
 	addCron("15 3 * * *", "retention-ignored", retentionFunc(appCtx,
 		"deleted old ignored collected data",
 		func(ctx context.Context) (int64, error) {
-			return d.collectedStore.DeleteOldIgnored(ctx, time.Now().AddDate(0, 0, -30))
+			return d.entryStore.DeleteOldIgnored(ctx, time.Now().AddDate(0, 0, -30))
 		}, d.logger))
 	addCron("30 3 * * *", "retention-flowruns", retentionFunc(appCtx,
 		"deleted old completed flow runs",
 		func(ctx context.Context) (int64, error) {
-			return d.flowrunStore.DeleteOldCompletedRuns(ctx, time.Now().AddDate(0, 0, -90))
+			return d.execStore.DeleteOldCompletedRuns(ctx, time.Now().AddDate(0, 0, -90))
 		}, d.logger))
 	addCron("45 3 * * *", "retention-session-notes", retentionFunc(appCtx,
 		"deleted old session notes",
@@ -700,7 +670,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context)
 	}
 
 	// weekly review with health data (Monday 09:00)
-	addCron("0 9 * * 1", "weekly-review", submitWeeklyReview(appCtx, d.flowrunStore, d.feedStore, d.runner, d.logger))
+	addCron("0 9 * * 1", "weekly-review", submitWeeklyReview(appCtx, d.execStore, d.feedStore, d.runner, d.logger))
 
 	// build-log generation (Monday 10:00)
 	addCron("0 10 * * 1", "build-log-generate", submitBuildLogs(appCtx, d.projectStore, d.runner, d.logger))
@@ -795,57 +765,6 @@ func embedNote(ctx context.Context, noteStore *note.Store, embedder ai.Embedder,
 	return nil
 }
 
-func loadConfig(logger *slog.Logger) config {
-	cfg := config{
-		Port:        envOr("SERVER_PORT", "8080"),
-		CORSOrigin:  envOr("CORS_ORIGIN", "http://localhost:4200"),
-		SiteURL:     envOr("SITE_URL", "http://localhost:8080"),
-		GeminiModel: envOr("GEMINI_MODEL", "gemini-3-flash-preview"),
-		ClaudeModel: envOr("CLAUDE_MODEL", "claude-sonnet-4-6"),
-		MockMode:    os.Getenv("MOCK_MODE") == "true",
-	}
-
-	cfg.DatabaseURL = requireEnv("DATABASE_URL", logger)
-	cfg.JWTSecret = requireEnv("JWT_SECRET", logger)
-
-	cfg.GitHubWebhookSecret = requireEnv("GITHUB_WEBHOOK_SECRET", logger)
-	cfg.GitHubToken = os.Getenv("GITHUB_TOKEN")
-	cfg.GitHubRepo = envOr("GITHUB_REPO", "Koopa0/obsidian")
-	cfg.GitHubBotLogin = os.Getenv("GITHUB_BOT_LOGIN")
-
-	cfg.R2Endpoint = requireEnv("R2_ENDPOINT", logger)
-	cfg.R2AccessKeyID = requireEnv("R2_ACCESS_KEY_ID", logger)
-	cfg.R2SecretAccessKey = requireEnv("R2_SECRET_ACCESS_KEY", logger)
-	cfg.R2Bucket = envOr("R2_BUCKET", "blog")
-	cfg.R2PublicURL = requireEnv("R2_PUBLIC_URL", logger)
-
-	// AI keys: required unless MOCK_MODE
-	// googlegenai plugin reads GEMINI_API_KEY from env
-	// anthropic plugin reads ANTHROPIC_API_KEY from env
-	if !cfg.MockMode {
-		requireEnv("GEMINI_API_KEY", logger)
-		requireEnv("ANTHROPIC_API_KEY", logger)
-	}
-
-	// Notion integration (optional — empty means disabled)
-	cfg.NotionAPIKey = os.Getenv("NOTION_API_KEY")
-	cfg.NotionWebhookSecret = os.Getenv("NOTION_WEBHOOK_SECRET")
-
-	// Google OAuth
-	cfg.GoogleClientID = requireEnv("GOOGLE_CLIENT_ID", logger)
-	cfg.GoogleClientSecret = requireEnv("GOOGLE_CLIENT_SECRET", logger)
-	cfg.GoogleRedirectURI = requireEnv("GOOGLE_REDIRECT_URI", logger)
-	cfg.AdminEmail = requireEnv("ADMIN_EMAIL", logger)
-
-	// Notification providers (optional — empty means noop)
-	cfg.LINEChannelToken = os.Getenv("LINE_CHANNEL_TOKEN")
-	cfg.LINEUserID = os.Getenv("LINE_USER_ID")
-	cfg.TelegramBotToken = os.Getenv("TELEGRAM_BOT_TOKEN")
-	cfg.TelegramChatID = os.Getenv("TELEGRAM_CHAT_ID")
-
-	return cfg
-}
-
 func runMigrations(databaseURL string, logger *slog.Logger) error {
 	// Strip postgres:// or postgresql:// prefix and replace with pgx5://
 	connStr := databaseURL
@@ -880,22 +799,6 @@ func runMigrations(databaseURL string, logger *slog.Logger) error {
 
 	logger.Info("migrations: applied successfully")
 	return nil
-}
-
-func requireEnv(key string, logger *slog.Logger) string {
-	v := os.Getenv(key)
-	if v == "" {
-		logger.Error(key + " is required")
-		os.Exit(1)
-	}
-	return v
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // notionTaskAdapter adapts notion.Client to task.NotionClient.

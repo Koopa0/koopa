@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 
 	pgContainer, err := postgres.Run(ctx, "postgres:17",
-		postgres.WithDatabase("flowrun_test"),
+		postgres.WithDatabase("exec_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -141,7 +141,7 @@ func TestStore_Lifecycle(t *testing.T) {
 	input := json.RawMessage(`{"content_id":"abc"}`)
 
 	// Create
-	run, err := s.CreateRun(ctx, "test-flow", input)
+	run, err := s.CreateRun(ctx, "test-flow", input, nil)
 	if err != nil {
 		t.Fatalf("CreateRun() error: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestStore_Lifecycle_Failed(t *testing.T) {
 	s := newStore()
 	ctx := t.Context()
 
-	run, err := s.CreateRun(ctx, "fail-flow", json.RawMessage(`{}`))
+	run, err := s.CreateRun(ctx, "fail-flow", json.RawMessage(`{}`), nil)
 	if err != nil {
 		t.Fatalf("CreateRun() error: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestStore_Runs_Pagination(t *testing.T) {
 
 	// Create 5 runs
 	for range 5 {
-		if _, err := s.CreateRun(ctx, "test", json.RawMessage(`{}`)); err != nil {
+		if _, err := s.CreateRun(ctx, "test", json.RawMessage(`{}`), nil); err != nil {
 			t.Fatalf("CreateRun() error: %v", err)
 		}
 	}
@@ -265,7 +265,7 @@ func TestStore_Runs_Pagination(t *testing.T) {
 	}
 
 	// Filter by status
-	if _, err := s.CreateRun(ctx, "test", json.RawMessage(`{}`)); err != nil {
+	if _, err := s.CreateRun(ctx, "test", json.RawMessage(`{}`), nil); err != nil {
 		t.Fatalf("CreateRun() error: %v", err)
 	}
 	// Mark one as failed
@@ -303,7 +303,7 @@ func TestStore_RetryableFlowRuns(t *testing.T) {
 			name: "failed with attempt < max → picked up",
 			setup: func(t *testing.T) uuid.UUID {
 				t.Helper()
-				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 				_ = s.UpdateRunning(ctx, run.ID)
 				_ = s.UpdateFailed(ctx, run.ID, "err")
 				// attempt=1 after UpdateRunning, max_attempts=3
@@ -315,7 +315,7 @@ func TestStore_RetryableFlowRuns(t *testing.T) {
 			name: "failed with attempt >= max → NOT picked up",
 			setup: func(t *testing.T) uuid.UUID {
 				t.Helper()
-				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 				_ = s.UpdateRunning(ctx, run.ID)
 				_ = s.UpdateFailed(ctx, run.ID, "err")
 				setAttempt(t, run.ID, 3) // at max
@@ -327,7 +327,7 @@ func TestStore_RetryableFlowRuns(t *testing.T) {
 			name: "stuck pending (created_at > 5min ago) → picked up",
 			setup: func(t *testing.T) uuid.UUID {
 				t.Helper()
-				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 				setCreatedAt(t, run.ID, 6*time.Minute)
 				return run.ID
 			},
@@ -337,7 +337,7 @@ func TestStore_RetryableFlowRuns(t *testing.T) {
 			name: "fresh pending (created_at < 5min ago) → NOT picked up",
 			setup: func(t *testing.T) uuid.UUID {
 				t.Helper()
-				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 				// created_at is now(), well within 5 min
 				return run.ID
 			},
@@ -347,7 +347,7 @@ func TestStore_RetryableFlowRuns(t *testing.T) {
 			name: "stuck running (started_at > 10min ago) → picked up",
 			setup: func(t *testing.T) uuid.UUID {
 				t.Helper()
-				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 				_ = s.UpdateRunning(ctx, run.ID) // attempt=1
 				setStartedAt(t, run.ID, 11*time.Minute)
 				return run.ID
@@ -358,7 +358,7 @@ func TestStore_RetryableFlowRuns(t *testing.T) {
 			name: "recently running (started_at < 10min ago) → NOT picked up",
 			setup: func(t *testing.T) uuid.UUID {
 				t.Helper()
-				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 				_ = s.UpdateRunning(ctx, run.ID)
 				// started_at is now(), well within 10 min
 				return run.ID
@@ -369,7 +369,7 @@ func TestStore_RetryableFlowRuns(t *testing.T) {
 			name: "completed → NOT picked up",
 			setup: func(t *testing.T) uuid.UUID {
 				t.Helper()
-				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+				run, _ := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 				_ = s.UpdateRunning(ctx, run.ID)
 				_ = s.UpdateCompleted(ctx, run.ID, json.RawMessage(`{}`))
 				return run.ID
@@ -414,7 +414,7 @@ func TestStore_RetryableFlowRuns_ConcurrentNoDuplicatePickup(t *testing.T) {
 	// Create 10 failed runs, all retryable.
 	var ids []uuid.UUID
 	for range 10 {
-		run, err := s.CreateRun(ctx, "f", json.RawMessage(`{}`))
+		run, err := s.CreateRun(ctx, "f", json.RawMessage(`{}`), nil)
 		if err != nil {
 			t.Fatalf("CreateRun() error: %v", err)
 		}

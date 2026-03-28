@@ -1,6 +1,6 @@
 .claude/session-learnings.log
 
 # Build artifacts
-app
+/app
 bin/
 *.exe

@@ -41,9 +41,9 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
-	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/goal"
 	mcpserver "github.com/koopa0/blog-backend/internal/mcp"
 	"github.com/koopa0/blog-backend/internal/note"
@@ -872,4 +872,4 @@ func (t *httpPipelineTrigger) post(ctx context.Context, path string) {
 
 // httpFlowInvoker removed — invoke_content_polish and invoke_content_strategy
 // no longer exposed as MCP tools (AI-calls-AI anti-pattern).
-// Genkit flows remain in internal/flow/ for potential non-LLM consumers.
+// Genkit flows remain in internal/ai/ for potential non-LLM consumers.

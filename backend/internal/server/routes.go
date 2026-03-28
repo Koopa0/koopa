@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/auth"
-	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
-	"github.com/koopa0/blog-backend/internal/ai/exec"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/learning"
+	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/pipeline"
@@ -25,7 +26,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/task"
-	"github.com/koopa0/blog-backend/internal/monitor"
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/upload"
 )
@@ -42,10 +42,10 @@ type Deps struct {
 	Content      *content.Handler
 	Project      *project.Handler
 	Review       *review.Handler
-	Collected    *entry.Handler
-	Tracking     *monitor.Handler
+	Entry        *entry.Handler
+	Monitor      *monitor.Handler
 	Pipeline     *pipeline.Handler
-	FlowRun      *exec.Handler
+	Exec         *exec.Handler
 	Upload       *upload.Handler
 	Feed         *feed.Handler
 	Notion       *notion.Handler
@@ -116,9 +116,9 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handle
 	mux.Handle("PUT /api/admin/review/{id}/edit", authMid(http.HandlerFunc(d.Review.Edit)))
 
 	// admin — collected
-	mux.Handle("GET /api/admin/collected", authMid(http.HandlerFunc(d.Collected.List)))
-	mux.Handle("POST /api/admin/collected/{id}/curate", authMid(http.HandlerFunc(d.Collected.Curate)))
-	mux.Handle("POST /api/admin/collected/{id}/ignore", authMid(http.HandlerFunc(d.Collected.Ignore)))
+	mux.Handle("GET /api/admin/collected", authMid(http.HandlerFunc(d.Entry.List)))
+	mux.Handle("POST /api/admin/collected/{id}/curate", authMid(http.HandlerFunc(d.Entry.Curate)))
+	mux.Handle("POST /api/admin/collected/{id}/ignore", authMid(http.HandlerFunc(d.Entry.Ignore)))
 
 	// admin — projects
 	mux.Handle("GET /api/admin/projects", authMid(http.HandlerFunc(d.Project.List)))
@@ -161,20 +161,20 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handle
 	mux.Handle("POST /api/admin/tags/merge", authMid(http.HandlerFunc(d.Tag.Merge)))
 
 	// admin — tracking
-	mux.Handle("GET /api/admin/tracking", authMid(http.HandlerFunc(d.Tracking.List)))
-	mux.Handle("POST /api/admin/tracking", authMid(http.HandlerFunc(d.Tracking.Create)))
-	mux.Handle("PUT /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Tracking.Update)))
-	mux.Handle("DELETE /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Tracking.Delete)))
+	mux.Handle("GET /api/admin/tracking", authMid(http.HandlerFunc(d.Monitor.List)))
+	mux.Handle("POST /api/admin/tracking", authMid(http.HandlerFunc(d.Monitor.Create)))
+	mux.Handle("PUT /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Monitor.Update)))
+	mux.Handle("DELETE /api/admin/tracking/{id}", authMid(http.HandlerFunc(d.Monitor.Delete)))
 
 	// admin — flow runs
-	mux.Handle("GET /api/admin/flow-runs", authMid(http.HandlerFunc(d.FlowRun.List)))
-	mux.Handle("GET /api/admin/flow-runs/{id}", authMid(http.HandlerFunc(d.FlowRun.ByID)))
-	mux.Handle("POST /api/admin/flow-runs/{id}/retry", authMid(http.HandlerFunc(d.FlowRun.Retry)))
+	mux.Handle("GET /api/admin/flow-runs", authMid(http.HandlerFunc(d.Exec.List)))
+	mux.Handle("GET /api/admin/flow-runs/{id}", authMid(http.HandlerFunc(d.Exec.ByID)))
+	mux.Handle("POST /api/admin/flow-runs/{id}/retry", authMid(http.HandlerFunc(d.Exec.Retry)))
 
 	// admin — flow polish
-	mux.Handle("POST /api/admin/flow/polish/{content_id}", authMid(http.HandlerFunc(d.FlowRun.TriggerPolish)))
-	mux.Handle("GET /api/admin/flow/polish/{content_id}/result", authMid(http.HandlerFunc(d.FlowRun.PolishResult)))
-	mux.Handle("POST /api/admin/flow/polish/{content_id}/approve", authMid(http.HandlerFunc(d.FlowRun.ApprovePolish)))
+	mux.Handle("POST /api/admin/flow/polish/{content_id}", authMid(http.HandlerFunc(d.Exec.TriggerPolish)))
+	mux.Handle("GET /api/admin/flow/polish/{content_id}/result", authMid(http.HandlerFunc(d.Exec.PolishResult)))
+	mux.Handle("POST /api/admin/flow/polish/{content_id}/approve", authMid(http.HandlerFunc(d.Exec.ApprovePolish)))
 
 	// admin — feeds
 	mux.Handle("GET /api/admin/feeds", authMid(http.HandlerFunc(d.Feed.List)))
@@ -184,7 +184,7 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handle
 	mux.Handle("POST /api/admin/feeds/{id}/fetch", authMid(http.HandlerFunc(d.Feed.Fetch)))
 
 	// admin — collected feedback
-	mux.Handle("POST /api/admin/collected/{id}/feedback", authMid(http.HandlerFunc(d.Collected.SubmitFeedback)))
+	mux.Handle("POST /api/admin/collected/{id}/feedback", authMid(http.HandlerFunc(d.Entry.SubmitFeedback)))
 
 	// admin — notion sources
 	mux.Handle("GET /api/admin/notion-sources/discover", authMid(http.HandlerFunc(d.NotionSource.Discover)))
