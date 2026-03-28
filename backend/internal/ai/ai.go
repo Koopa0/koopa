@@ -8,24 +8,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/google/uuid"
 
+	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
+	"github.com/koopa0/blog-backend/internal/project"
 )
 
 // ErrContentBlocked indicates the model refused to generate due to safety or policy filters.
 // This is a permanent failure — retrying will not help.
 var ErrContentBlocked = errors.New("content blocked by model safety filter")
 
-// checkFinishReason returns ErrContentBlocked if the model response was blocked
+// CheckFinishReason returns ErrContentBlocked if the model response was blocked
 // by safety filters. FinishReasonLength (MaxOutputTokens hit) is intentionally
 // NOT treated as an error — many flows use small token limits by design
 // (e.g. excerpt generation). Notification truncation is prevented by setting
 // adequate MaxOutputTokens (2048) in those flows.
-func checkFinishReason(resp *genkitai.ModelResponse) error {
+// Exported for use by sub-packages.
+func CheckFinishReason(resp *genkitai.ModelResponse) error {
 	if resp == nil {
 		return nil
 	}
@@ -39,9 +43,10 @@ func checkFinishReason(resp *genkitai.ModelResponse) error {
 	}
 }
 
-// genkitFlow is a type alias for a Genkit flow that takes and returns raw JSON.
+// GenkitFlow is a type alias for a Genkit flow that takes and returns raw JSON.
 // Every concrete flow stores one of these, created via genkit.DefineFlow in its constructor.
-type genkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
+// Exported for use by sub-packages.
+type GenkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
 
 // BudgetChecker atomically reserves token budget.
 type BudgetChecker interface {
@@ -51,6 +56,26 @@ type BudgetChecker interface {
 // CollectedReader reads collected items by ID.
 type CollectedReader interface {
 	Item(ctx context.Context, id uuid.UUID) (*entry.Item, error)
+}
+
+// PublishedContentLister lists published contents in a date range.
+type PublishedContentLister interface {
+	PublishedByDateRange(ctx context.Context, start, end time.Time) ([]content.Content, error)
+}
+
+// RecentCollectedLister lists recently collected data in a date range.
+type RecentCollectedLister interface {
+	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]entry.Item, error)
+}
+
+// ActiveProjectLister lists active projects.
+type ActiveProjectLister interface {
+	ActiveProjects(ctx context.Context) ([]project.Project, error)
+}
+
+// Sender sends a text notification.
+type Sender interface {
+	Send(ctx context.Context, text string) error
 }
 
 // Flow executes a named AI processing pipeline.

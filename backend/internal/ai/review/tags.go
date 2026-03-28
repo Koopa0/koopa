@@ -1,4 +1,4 @@
-package ai
+package review
 
 import (
 	"context"
@@ -10,10 +10,12 @@ import (
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
+
+	"github.com/koopa0/blog-backend/internal/ai"
 )
 
-// ContentTagsInput is the JSON input for the content-tags sub-flow.
-type ContentTagsInput struct {
+// TagsInput is the JSON input for the content-tags sub-flow.
+type TagsInput struct {
 	ContentType string   `json:"content_type"`
 	Title       string   `json:"title"`
 	Body        string   `json:"body"`
@@ -21,29 +23,31 @@ type ContentTagsInput struct {
 	TopicNames  []string `json:"topic_names"`
 }
 
-// ContentTagsOutput is the JSON output of the content-tags sub-flow.
-type ContentTagsOutput struct {
+// TagsOutput is the JSON output of the content-tags sub-flow.
+type TagsOutput struct {
 	Tags []string `json:"tags"`
 }
 
-// ContentTags implements the content-tags sub-flow.
+// Tags implements the content-tags sub-flow.
 // It is pure: takes text + topic list as input, returns suggested tags, no DB access.
-type ContentTags struct {
-	gf     *genkitFlow
-	g      *genkit.Genkit
-	model  genkitai.Model
-	logger *slog.Logger
+type Tags struct {
+	gf           *ai.GenkitFlow
+	g            *genkit.Genkit
+	model        genkitai.Model
+	systemPrompt string
+	logger       *slog.Logger
 }
 
-// NewContentTags returns a ContentTags flow.
-func NewContentTags(g *genkit.Genkit, model genkitai.Model, logger *slog.Logger) *ContentTags {
-	ct := &ContentTags{
-		g:      g,
-		model:  model,
-		logger: logger,
+// NewTags returns a Tags flow.
+func NewTags(g *genkit.Genkit, model genkitai.Model, systemPrompt string, logger *slog.Logger) *Tags {
+	ct := &Tags{
+		g:            g,
+		model:        model,
+		systemPrompt: systemPrompt,
+		logger:       logger,
 	}
 	ct.gf = genkit.DefineFlow(g, "content-tags", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var in ContentTagsInput
+		var in TagsInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("parsing content-tags input: %w", err)
 		}
@@ -57,15 +61,15 @@ func NewContentTags(g *genkit.Genkit, model genkitai.Model, logger *slog.Logger)
 }
 
 // Name returns the flow name for registry lookup.
-func (ct *ContentTags) Name() string { return "content-tags" }
+func (ct *Tags) Name() string { return "content-tags" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (ct *ContentTags) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (ct *Tags) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return ct.gf.Run(ctx, input)
 }
 
 // run is the typed internal implementation.
-func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTagsOutput, error) {
+func (ct *Tags) run(ctx context.Context, in *TagsInput) (TagsOutput, error) {
 	ct.logger.Info("content-tags starting", "title", in.Title)
 
 	// Build topic list for the prompt.
@@ -80,7 +84,7 @@ func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTa
 	}
 
 	userPrompt := fmt.Sprintf("%s\nType: %s\nTitle: %s\n\nBody:\n%s",
-		topicList.String(), in.ContentType, in.Title, truncateBodyRunes(in.Body))
+		topicList.String(), in.ContentType, in.Title, ai.TruncateBodyRunes(in.Body))
 
 	tags, err := genkit.Run(ctx, "tags", func() ([]string, error) {
 		const maxRetries = 2
@@ -88,7 +92,7 @@ func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTa
 		for attempt := range maxRetries {
 			resp, err := genkit.Generate(ctx, ct.g,
 				genkitai.WithModel(ct.model),
-				genkitai.WithSystem(tagsSystemPrompt),
+				genkitai.WithSystem(ct.systemPrompt),
 				genkitai.WithPrompt(userPrompt),
 				genkitai.WithConfig(&genai.GenerateContentConfig{
 					Temperature:     genai.Ptr[float32](0.2),
@@ -98,11 +102,11 @@ func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTa
 			if err != nil {
 				return nil, fmt.Errorf("calling llm: %w", err)
 			}
-			if err := checkFinishReason(resp); err != nil {
+			if err := ai.CheckFinishReason(resp); err != nil {
 				return nil, err
 			}
 
-			if err := parseJSONLoose(resp.Text(), &suggested); err != nil {
+			if err := ai.ParseJSONLoose(resp.Text(), &suggested); err != nil {
 				snippet := resp.Text()[:min(len(resp.Text()), 100)]
 				if attempt < maxRetries-1 {
 					ct.logger.Warn("content tags: JSON parse failed, retrying",
@@ -135,19 +139,9 @@ func (ct *ContentTags) run(ctx context.Context, in *ContentTagsInput) (ContentTa
 		return filtered, nil
 	})
 	if err != nil {
-		return ContentTagsOutput{}, fmt.Errorf("generating tags: %w", err)
+		return TagsOutput{}, fmt.Errorf("generating tags: %w", err)
 	}
 
 	ct.logger.Info("content-tags complete", "title", in.Title, "count", len(tags))
-	return ContentTagsOutput{Tags: tags}, nil
-}
-
-// NewMockContentTags returns a mock Flow that returns canned tags output.
-func NewMockContentTags() Flow {
-	return &mockFlow{
-		name: "content-tags",
-		output: ContentTagsOutput{
-			Tags: []string{},
-		},
-	}
+	return TagsOutput{Tags: tags}, nil
 }

@@ -27,7 +27,7 @@ type ContentStrategyOutput struct {
 
 // ContentStrategy implements the content-strategy flow.
 type ContentStrategy struct {
-	gf        *genkitFlow
+	gf        *GenkitFlow
 	g         *genkit.Genkit
 	model     genkitai.Model
 	contents  PublishedContentLister
@@ -132,7 +132,7 @@ func (cs *ContentStrategy) run(ctx context.Context) (ContentStrategyOutput, erro
 		if err != nil {
 			return "", fmt.Errorf("generating content strategy: %w", err)
 		}
-		if err := checkFinishReason(resp); err != nil {
+		if err := CheckFinishReason(resp); err != nil {
 			return "", err
 		}
 		return strings.TrimSpace(resp.Text()), nil
@@ -273,10 +273,4 @@ func writeTagDistribution(b *strings.Builder, header string, tags map[string]int
 	}
 }
 
-// NewMockContentStrategy returns a mock Flow for MOCK_MODE.
-func NewMockContentStrategy() Flow {
-	return &mockFlow{
-		name:   "content-strategy",
-		output: ContentStrategyOutput{Text: "Mock content strategy"},
-	}
-}
+// mock constructor moved to mock.go

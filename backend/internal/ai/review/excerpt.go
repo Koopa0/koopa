@@ -1,4 +1,5 @@
-package ai
+// Package review implements content review and quality AI flows.
+package review
 
 import (
 	"context"
@@ -10,38 +11,42 @@ import (
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
+
+	"github.com/koopa0/blog-backend/internal/ai"
 )
 
-// ContentExcerptInput is the JSON input for the content-excerpt sub-flow.
-type ContentExcerptInput struct {
+// ExcerptInput is the JSON input for the content-excerpt sub-flow.
+type ExcerptInput struct {
 	ContentType string `json:"content_type"`
 	Title       string `json:"title"`
 	Body        string `json:"body"`
 }
 
-// ContentExcerptOutput is the JSON output of the content-excerpt sub-flow.
-type ContentExcerptOutput struct {
+// ExcerptOutput is the JSON output of the content-excerpt sub-flow.
+type ExcerptOutput struct {
 	Excerpt string `json:"excerpt"`
 }
 
-// ContentExcerpt implements the content-excerpt sub-flow.
+// Excerpt implements the content-excerpt sub-flow.
 // It is pure: takes text input, returns excerpt string, no DB access.
-type ContentExcerpt struct {
-	gf     *genkitFlow
-	g      *genkit.Genkit
-	model  genkitai.Model
-	logger *slog.Logger
+type Excerpt struct {
+	gf           *ai.GenkitFlow
+	g            *genkit.Genkit
+	model        genkitai.Model
+	systemPrompt string
+	logger       *slog.Logger
 }
 
-// NewContentExcerpt returns a ContentExcerpt flow.
-func NewContentExcerpt(g *genkit.Genkit, model genkitai.Model, logger *slog.Logger) *ContentExcerpt {
-	ce := &ContentExcerpt{
-		g:      g,
-		model:  model,
-		logger: logger,
+// NewExcerpt returns an Excerpt flow.
+func NewExcerpt(g *genkit.Genkit, model genkitai.Model, systemPrompt string, logger *slog.Logger) *Excerpt {
+	ce := &Excerpt{
+		g:            g,
+		model:        model,
+		systemPrompt: systemPrompt,
+		logger:       logger,
 	}
 	ce.gf = genkit.DefineFlow(g, "content-excerpt", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var in ContentExcerptInput
+		var in ExcerptInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("parsing content-excerpt input: %w", err)
 		}
@@ -55,23 +60,23 @@ func NewContentExcerpt(g *genkit.Genkit, model genkitai.Model, logger *slog.Logg
 }
 
 // Name returns the flow name for registry lookup.
-func (ce *ContentExcerpt) Name() string { return "content-excerpt" }
+func (ce *Excerpt) Name() string { return "content-excerpt" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (ce *ContentExcerpt) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (ce *Excerpt) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return ce.gf.Run(ctx, input)
 }
 
 // run is the typed internal implementation.
-func (ce *ContentExcerpt) run(ctx context.Context, in ContentExcerptInput) (ContentExcerptOutput, error) {
+func (ce *Excerpt) run(ctx context.Context, in ExcerptInput) (ExcerptOutput, error) {
 	ce.logger.Info("content-excerpt starting", "title", in.Title)
 
-	userPrompt := fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", in.ContentType, in.Title, truncateBodyRunes(in.Body))
+	userPrompt := fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", in.ContentType, in.Title, ai.TruncateBodyRunes(in.Body))
 
 	excerpt, err := genkit.Run(ctx, "excerpt", func() (string, error) {
 		resp, err := genkit.Generate(ctx, ce.g,
 			genkitai.WithModel(ce.model),
-			genkitai.WithSystem(excerptSystemPrompt),
+			genkitai.WithSystem(ce.systemPrompt),
 			genkitai.WithPrompt(userPrompt),
 			genkitai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.5),
@@ -81,25 +86,15 @@ func (ce *ContentExcerpt) run(ctx context.Context, in ContentExcerptInput) (Cont
 		if err != nil {
 			return "", fmt.Errorf("calling llm: %w", err)
 		}
-		if err := checkFinishReason(resp); err != nil {
+		if err := ai.CheckFinishReason(resp); err != nil {
 			return "", err
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {
-		return ContentExcerptOutput{}, fmt.Errorf("generating excerpt: %w", err)
+		return ExcerptOutput{}, fmt.Errorf("generating excerpt: %w", err)
 	}
 
 	ce.logger.Info("content-excerpt complete", "title", in.Title)
-	return ContentExcerptOutput{Excerpt: excerpt}, nil
-}
-
-// NewMockContentExcerpt returns a mock Flow that returns canned excerpt output.
-func NewMockContentExcerpt() Flow {
-	return &mockFlow{
-		name: "content-excerpt",
-		output: ContentExcerptOutput{
-			Excerpt: "Mock excerpt for testing.",
-		},
-	}
+	return ExcerptOutput{Excerpt: excerpt}, nil
 }

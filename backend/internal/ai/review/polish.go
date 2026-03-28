@@ -1,4 +1,4 @@
-package ai
+package review
 
 import (
 	"context"
@@ -12,39 +12,47 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genai"
 
+	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/content"
 )
 
-// ContentPolishInput is the JSON input for the content-polish flow.
-type ContentPolishInput struct {
+// PolishInput is the JSON input for the content-polish flow.
+type PolishInput struct {
 	ContentID string `json:"content_id"`
 }
 
-// ContentPolishOutput is the JSON output of the content-polish flow.
-type ContentPolishOutput struct {
+// PolishOutput is the JSON output of the content-polish flow.
+type PolishOutput struct {
 	OriginalBody string `json:"original_body"`
 	PolishedBody string `json:"polished_body"`
 }
 
-// ContentPolish implements the content-polish flow using Genkit + Claude.
-type ContentPolish struct {
-	gf      *genkitFlow
-	g       *genkit.Genkit
-	model   genkitai.Model
-	content ContentReader
-	logger  *slog.Logger
+// ContentReader reads content by ID.
+type ContentReader interface {
+	Content(ctx context.Context, id uuid.UUID) (*content.Content, error)
 }
 
-// NewContentPolish returns a ContentPolish flow.
-func NewContentPolish(g *genkit.Genkit, model genkitai.Model, reader ContentReader, logger *slog.Logger) *ContentPolish {
-	cp := &ContentPolish{
-		g:       g,
-		model:   model,
-		content: reader,
-		logger:  logger,
+// Polish implements the content-polish flow using Genkit + Claude.
+type Polish struct {
+	gf           *ai.GenkitFlow
+	g            *genkit.Genkit
+	model        genkitai.Model
+	systemPrompt string
+	content      ContentReader
+	logger       *slog.Logger
+}
+
+// NewPolish returns a Polish flow.
+func NewPolish(g *genkit.Genkit, model genkitai.Model, systemPrompt string, reader ContentReader, logger *slog.Logger) *Polish {
+	cp := &Polish{
+		g:            g,
+		model:        model,
+		systemPrompt: systemPrompt,
+		content:      reader,
+		logger:       logger,
 	}
 	cp.gf = genkit.DefineFlow(g, "content-polish", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var in ContentPolishInput
+		var in PolishInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("parsing content-polish input: %w", err)
 		}
@@ -58,35 +66,35 @@ func NewContentPolish(g *genkit.Genkit, model genkitai.Model, reader ContentRead
 }
 
 // Name returns the flow name for registry lookup.
-func (cp *ContentPolish) Name() string { return "content-polish" }
+func (cp *Polish) Name() string { return "content-polish" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (cp *ContentPolish) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (cp *Polish) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return cp.gf.Run(ctx, input)
 }
 
 // run is the typed internal implementation.
-func (cp *ContentPolish) run(ctx context.Context, in ContentPolishInput) (ContentPolishOutput, error) {
+func (cp *Polish) run(ctx context.Context, in PolishInput) (PolishOutput, error) {
 	contentID, err := uuid.Parse(in.ContentID)
 	if err != nil {
-		return ContentPolishOutput{}, fmt.Errorf("parsing content ID: %w", err)
+		return PolishOutput{}, fmt.Errorf("parsing content ID: %w", err)
 	}
 
 	c, err := genkit.Run(ctx, "fetch-content", func() (*content.Content, error) {
 		return cp.content.Content(ctx, contentID)
 	})
 	if err != nil {
-		return ContentPolishOutput{}, fmt.Errorf("reading content %s: %w", contentID, err)
+		return PolishOutput{}, fmt.Errorf("reading content %s: %w", contentID, err)
 	}
 
 	cp.logger.Info("content-polish starting", "content_id", contentID, "title", c.Title)
 
-	userPrompt := buildUserPrompt(c)
+	userPrompt := ai.BuildUserPrompt(c)
 
 	polished, err := genkit.Run(ctx, "polish", func() (string, error) {
 		resp, genErr := genkit.Generate(ctx, cp.g,
 			genkitai.WithModel(cp.model),
-			genkitai.WithSystem(polishSystemPrompt),
+			genkitai.WithSystem(cp.systemPrompt),
 			genkitai.WithPrompt(userPrompt),
 			genkitai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.3),
@@ -96,30 +104,19 @@ func (cp *ContentPolish) run(ctx context.Context, in ContentPolishInput) (Conten
 		if genErr != nil {
 			return "", fmt.Errorf("generating polish: %w", genErr)
 		}
-		if finishErr := checkFinishReason(resp); finishErr != nil {
+		if finishErr := ai.CheckFinishReason(resp); finishErr != nil {
 			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {
-		return ContentPolishOutput{}, fmt.Errorf("polishing content %s: %w", contentID, err)
+		return PolishOutput{}, fmt.Errorf("polishing content %s: %w", contentID, err)
 	}
 
 	cp.logger.Info("content-polish completed", "content_id", contentID)
 
-	return ContentPolishOutput{
+	return PolishOutput{
 		OriginalBody: c.Body,
 		PolishedBody: polished,
 	}, nil
-}
-
-// NewMockContentPolish returns a mock Flow that returns canned polish output.
-func NewMockContentPolish() Flow {
-	return &mockFlow{
-		name: "content-polish",
-		output: ContentPolishOutput{
-			OriginalBody: "Mock original body.",
-			PolishedBody: "Mock polished body.",
-		},
-	}
 }

@@ -1,11 +1,11 @@
-package ai
+package report
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -26,7 +26,7 @@ func TestBuildDigestUserPrompt(t *testing.T) {
 		{Title: "blog-backend", Status: project.StatusInProgress, Description: "Go API server"},
 	}
 
-	got := buildDigestUserPrompt(published, collectedItems, projects, "2026-03-03", "2026-03-10")
+	got := BuildDigestUserPrompt(published, collectedItems, projects, "2026-03-03", "2026-03-10")
 
 	for _, want := range []string{
 		"2026-03-03",
@@ -36,18 +36,18 @@ func TestBuildDigestUserPrompt(t *testing.T) {
 		"blog-backend",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("buildDigestUserPrompt() missing %q", want)
+			t.Errorf("BuildDigestUserPrompt() missing %q", want)
 		}
 	}
 }
 
 func TestBuildDigestUserPrompt_Empty(t *testing.T) {
-	got := buildDigestUserPrompt(nil, nil, nil, "2026-03-03", "2026-03-10")
+	got := BuildDigestUserPrompt(nil, nil, nil, "2026-03-03", "2026-03-10")
 	if !strings.Contains(got, "2026-03-03") {
-		t.Error("buildDigestUserPrompt() should contain date range even with empty data")
+		t.Error("BuildDigestUserPrompt() should contain date range even with empty data")
 	}
 	// should not contain section headers when no data
 	if strings.Contains(got, "本週發佈的內容") {
-		t.Error("buildDigestUserPrompt() should skip published section when empty")
+		t.Error("BuildDigestUserPrompt() should skip published section when empty")
 	}
 }

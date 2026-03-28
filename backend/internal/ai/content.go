@@ -50,22 +50,40 @@ type ContentReviewInput struct {
 	ContentID string `json:"content_id"`
 }
 
-// ContentReviewOutput is the JSON output of the content-review flow.
-type ContentReviewOutput struct {
-	Proofread   *ContentProofreadOutput `json:"proofread"`
-	Excerpt     string                  `json:"excerpt"`
-	Tags        []string                `json:"tags"`
-	ReadingTime int                     `json:"reading_time"`
+// proofreadOutput mirrors review.ProofreadOutput for JSON unmarshaling
+// within the orchestrator, avoiding an import cycle with the review sub-package.
+type proofreadOutput struct {
+	Level       string   `json:"level"`
+	Notes       string   `json:"notes"`
+	Corrections []string `json:"corrections"`
 }
 
-// ReviewResult is an alias for ContentProofreadOutput.
-// Kept for backward compatibility: referenced by internal/ai/exec tests.
-type ReviewResult = ContentProofreadOutput
+// excerptOutput mirrors review.ExcerptOutput.
+type excerptOutput struct {
+	Excerpt string `json:"excerpt"`
+}
+
+// tagsOutput mirrors review.TagsOutput.
+type tagsOutput struct {
+	Tags []string `json:"tags"`
+}
+
+// ContentReviewOutput is the JSON output of the content-review flow.
+type ContentReviewOutput struct {
+	Proofread   *proofreadOutput `json:"proofread"`
+	Excerpt     string           `json:"excerpt"`
+	Tags        []string         `json:"tags"`
+	ReadingTime int              `json:"reading_time"`
+}
+
+// ReviewResult mirrors the proofread output shape for backward compatibility.
+// Referenced by internal/ai/exec tests.
+type ReviewResult = proofreadOutput
 
 // ContentReview is the orchestrator flow that calls sub-flows (proofread, excerpt, tags)
 // and handles persistence (embedding, content update, review queue).
 type ContentReview struct {
-	gf          *genkitFlow
+	gf          *GenkitFlow
 	g           *genkit.Genkit
 	embedder    genkitai.Embedder
 	content     ContentReader
@@ -73,13 +91,15 @@ type ContentReview struct {
 	embedWriter EmbeddingWriter
 	review      ReviewCreator
 	topics      TopicLister
-	proofread   *ContentProofread
-	excerpt     *ContentExcerpt
-	tags        *ContentTags
+	proofread   Flow
+	excerpt     Flow
+	tags        Flow
 	logger      *slog.Logger
 }
 
 // NewContentReview returns a ContentReview orchestrator flow.
+// The proofread, excerpt, and tags parameters accept any Flow implementation,
+// enabling injection of either real sub-package flows or mocks.
 func NewContentReview(
 	g *genkit.Genkit,
 	embedder genkitai.Embedder,
@@ -88,9 +108,9 @@ func NewContentReview(
 	embedWriter EmbeddingWriter,
 	reviewer ReviewCreator,
 	topics TopicLister,
-	proofread *ContentProofread,
-	excerpt *ContentExcerpt,
-	tags *ContentTags,
+	proofread Flow,
+	excerpt Flow,
+	tags Flow,
 	logger *slog.Logger,
 ) *ContentReview {
 	cr := &ContentReview{
@@ -146,21 +166,27 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 	cr.logger.Info("content-review starting", "content_id", contentID, "title", c.Title)
 
 	// Step 1 (sequential): proofread via sub-flow
-	proofreadResult, err := cr.proofread.run(ctx, ContentProofreadInput{
-		ContentType: string(c.Type),
-		Title:       c.Title,
-		Body:        c.Body,
-	})
+	proofreadInput, _ := json.Marshal(struct {
+		ContentType string `json:"content_type"`
+		Title       string `json:"title"`
+		Body        string `json:"body"`
+	}{ContentType: string(c.Type), Title: c.Title, Body: c.Body})
+
+	proofreadRaw, err := cr.proofread.Run(ctx, proofreadInput)
 	if err != nil {
 		return ContentReviewOutput{}, fmt.Errorf("proofreading content %s: %w", contentID, err)
+	}
+	var proofreadResult proofreadOutput
+	if unmarshalErr := json.Unmarshal(proofreadRaw, &proofreadResult); unmarshalErr != nil {
+		return ContentReviewOutput{}, fmt.Errorf("parsing proofread output: %w", unmarshalErr)
 	}
 
 	cr.logger.Info("proofread complete", "content_id", contentID, "level", proofreadResult.Level)
 
 	// Steps 2-5 (parallel): excerpt, tags, reading time, embedding
 	var (
-		excerptResult ContentExcerptOutput
-		tagsResult    ContentTagsOutput
+		excerptResult excerptOutput
+		tagsResult    tagsOutput
 		readingTime   int
 	)
 
@@ -168,13 +194,17 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 
 	// Step 2: excerpt via sub-flow
 	eg.Go(func() error {
-		var excerptErr error
-		excerptResult, excerptErr = cr.excerpt.run(gctx, ContentExcerptInput{
-			ContentType: string(c.Type),
-			Title:       c.Title,
-			Body:        c.Body,
-		})
-		return excerptErr
+		excerptInput, _ := json.Marshal(struct {
+			ContentType string `json:"content_type"`
+			Title       string `json:"title"`
+			Body        string `json:"body"`
+		}{ContentType: string(c.Type), Title: c.Title, Body: c.Body})
+
+		excerptRaw, excerptErr := cr.excerpt.Run(gctx, excerptInput)
+		if excerptErr != nil {
+			return excerptErr
+		}
+		return json.Unmarshal(excerptRaw, &excerptResult)
 	})
 
 	// Step 3: tags via sub-flow (fetch topics first, pass as input)
@@ -191,15 +221,25 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 			topicNames[i] = s.Name
 		}
 
-		var tagsErr error
-		tagsResult, tagsErr = cr.tags.run(gctx, &ContentTagsInput{
+		tagsInput, _ := json.Marshal(struct {
+			ContentType string   `json:"content_type"`
+			Title       string   `json:"title"`
+			Body        string   `json:"body"`
+			TopicSlugs  []string `json:"topic_slugs"`
+			TopicNames  []string `json:"topic_names"`
+		}{
 			ContentType: string(c.Type),
 			Title:       c.Title,
 			Body:        c.Body,
 			TopicSlugs:  topicSlugs,
 			TopicNames:  topicNames,
 		})
-		return tagsErr
+
+		tagsRaw, tagsErr := cr.tags.Run(gctx, tagsInput)
+		if tagsErr != nil {
+			return tagsErr
+		}
+		return json.Unmarshal(tagsRaw, &tagsResult)
 	})
 
 	// Step 4: reading time (pure computation, traced)
@@ -286,7 +326,7 @@ func NewMockContentReview() Flow {
 	return &mockFlow{
 		name: "content-review",
 		output: ContentReviewOutput{
-			Proofread:   &ContentProofreadOutput{Level: "auto", Notes: "mock mode", Corrections: []string{}},
+			Proofread:   &proofreadOutput{Level: "auto", Notes: "mock mode", Corrections: []string{}},
 			Excerpt:     "Mock excerpt for testing.",
 			Tags:        []string{},
 			ReadingTime: 1,
@@ -294,11 +334,58 @@ func NewMockContentReview() Flow {
 	}
 }
 
+// NewMockContentProofread returns a mock Flow that returns canned proofread output.
+func NewMockContentProofread() Flow {
+	return &mockFlow{
+		name: "content-proofread",
+		output: proofreadOutput{
+			Level:       "auto",
+			Notes:       "mock mode",
+			Corrections: []string{},
+		},
+	}
+}
+
+// NewMockContentExcerpt returns a mock Flow that returns canned excerpt output.
+func NewMockContentExcerpt() Flow {
+	return &mockFlow{
+		name: "content-excerpt",
+		output: excerptOutput{
+			Excerpt: "Mock excerpt for testing.",
+		},
+	}
+}
+
+// NewMockContentTags returns a mock Flow that returns canned tags output.
+func NewMockContentTags() Flow {
+	return &mockFlow{
+		name: "content-tags",
+		output: tagsOutput{
+			Tags: []string{},
+		},
+	}
+}
+
+// NewMockContentPolish returns a mock Flow that returns canned polish output.
+func NewMockContentPolish() Flow {
+	return &mockFlow{
+		name: "content-polish",
+		output: struct {
+			OriginalBody string `json:"original_body"`
+			PolishedBody string `json:"polished_body"`
+		}{
+			OriginalBody: "Mock original body.",
+			PolishedBody: "Mock polished body.",
+		},
+	}
+}
+
 // maxPromptBodyRunes caps prompt body length to prevent excessive token consumption.
 const maxPromptBodyRunes = 50000
 
-// truncateBodyRunes truncates body to maxPromptBodyRunes runes for LLM prompt safety.
-func truncateBodyRunes(body string) string {
+// TruncateBodyRunes truncates body to maxPromptBodyRunes runes for LLM prompt safety.
+// Exported for use by sub-packages.
+func TruncateBodyRunes(body string) string {
 	runes := []rune(body)
 	if len(runes) <= maxPromptBodyRunes {
 		return body
@@ -306,8 +393,9 @@ func truncateBodyRunes(body string) string {
 	return string(runes[:maxPromptBodyRunes]) + "\n...[truncated]"
 }
 
-// buildUserPrompt assembles the user prompt from content fields.
-func buildUserPrompt(c *content.Content) string {
+// BuildUserPrompt assembles the user prompt from content fields.
+// Exported for use by sub-packages.
+func BuildUserPrompt(c *content.Content) string {
 	return fmt.Sprintf("Type: %s\nTitle: %s\n\nBody:\n%s", c.Type, c.Title, c.Body)
 }
 
@@ -322,8 +410,9 @@ func estimateReadingTime(body string) int {
 	return minutes
 }
 
-// parseJSONLoose extracts JSON from LLM output that may be wrapped in markdown.
-func parseJSONLoose(text string, v any) error {
+// ParseJSONLoose extracts JSON from LLM output that may be wrapped in markdown.
+// Exported for use by sub-packages.
+func ParseJSONLoose(text string, v any) error {
 	text = strings.TrimSpace(text)
 
 	// Try direct unmarshal first

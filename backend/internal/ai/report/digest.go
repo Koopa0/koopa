@@ -1,4 +1,5 @@
-package ai
+// Package report implements periodic report and summary AI flows.
+package report
 
 import (
 	"context"
@@ -12,73 +13,71 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
 
-	"github.com/koopa0/blog-backend/internal/feed/entry"
+	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
-// PublishedContentLister lists published contents in a date range.
-type PublishedContentLister interface {
-	PublishedByDateRange(ctx context.Context, start, end time.Time) ([]content.Content, error)
-}
+// PublishedContentLister is a convenience alias for ai.PublishedContentLister.
+type PublishedContentLister = ai.PublishedContentLister
 
-// RecentCollectedLister lists recently collected data in a date range.
-type RecentCollectedLister interface {
-	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]entry.Item, error)
-}
+// RecentCollectedLister is a convenience alias for ai.RecentCollectedLister.
+type RecentCollectedLister = ai.RecentCollectedLister
 
-// ActiveProjectLister lists active projects.
-type ActiveProjectLister interface {
-	ActiveProjects(ctx context.Context) ([]project.Project, error)
-}
+// ActiveProjectLister is a convenience alias for ai.ActiveProjectLister.
+type ActiveProjectLister = ai.ActiveProjectLister
 
-// DigestGenerateInput is the JSON input for the digest-generate flow.
-type DigestGenerateInput struct {
+// DigestInput is the JSON input for the digest-generate flow.
+type DigestInput struct {
 	StartDate string `json:"start_date"` // YYYY-MM-DD
 	EndDate   string `json:"end_date"`   // YYYY-MM-DD
 }
 
-// DigestGenerateOutput is the JSON output of the digest-generate flow.
-type DigestGenerateOutput struct {
+// DigestOutput is the JSON output of the digest-generate flow.
+type DigestOutput struct {
 	Markdown string `json:"markdown"`
 }
 
-// DigestGenerate implements the digest-generate flow using Genkit.
-type DigestGenerate struct {
-	gf       *genkitFlow
-	g        *genkit.Genkit
-	model    genkitai.Model
-	contents PublishedContentLister
-	collects RecentCollectedLister
-	projects ActiveProjectLister
-	budget   BudgetChecker
-	loc      *time.Location
-	logger   *slog.Logger
+// Digest implements the digest-generate flow using Genkit.
+type Digest struct {
+	gf           *ai.GenkitFlow
+	g            *genkit.Genkit
+	model        genkitai.Model
+	systemPrompt string
+	contents     PublishedContentLister
+	collects     RecentCollectedLister
+	projects     ActiveProjectLister
+	budget       ai.BudgetChecker
+	loc          *time.Location
+	logger       *slog.Logger
 }
 
-// NewDigestGenerate returns a DigestGenerate flow.
-func NewDigestGenerate(
+// NewDigest returns a Digest flow.
+func NewDigest(
 	g *genkit.Genkit,
 	model genkitai.Model,
+	systemPrompt string,
 	contents PublishedContentLister,
 	collects RecentCollectedLister,
 	projects ActiveProjectLister,
-	budget BudgetChecker,
+	budget ai.BudgetChecker,
 	loc *time.Location,
 	logger *slog.Logger,
-) *DigestGenerate {
-	dg := &DigestGenerate{
-		g:        g,
-		model:    model,
-		contents: contents,
-		collects: collects,
-		projects: projects,
-		budget:   budget,
-		loc:      loc,
-		logger:   logger,
+) *Digest {
+	dg := &Digest{
+		g:            g,
+		model:        model,
+		systemPrompt: systemPrompt,
+		contents:     contents,
+		collects:     collects,
+		projects:     projects,
+		budget:       budget,
+		loc:          loc,
+		logger:       logger,
 	}
 	dg.gf = genkit.DefineFlow(g, "digest-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var in DigestGenerateInput
+		var in DigestInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("parsing digest-generate input: %w", err)
 		}
@@ -92,10 +91,10 @@ func NewDigestGenerate(
 }
 
 // Name returns the flow name for registry lookup.
-func (dg *DigestGenerate) Name() string { return "digest-generate" }
+func (dg *Digest) Name() string { return "digest-generate" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (dg *DigestGenerate) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (dg *Digest) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return dg.gf.Run(ctx, input)
 }
 
@@ -104,18 +103,18 @@ const (
 	digestCollectedLimit  int32 = 50
 )
 
-func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (DigestGenerateOutput, error) {
+func (dg *Digest) run(ctx context.Context, in DigestInput) (DigestOutput, error) {
 	start, err := time.ParseInLocation("2006-01-02", in.StartDate, dg.loc)
 	if err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("parsing start date: %w", err)
+		return DigestOutput{}, fmt.Errorf("parsing start date: %w", err)
 	}
 	end, err := time.ParseInLocation("2006-01-02", in.EndDate, dg.loc)
 	if err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("parsing end date: %w", err)
+		return DigestOutput{}, fmt.Errorf("parsing end date: %w", err)
 	}
 
 	if reserveErr := dg.budget.Reserve(estimatedDigestTokens); reserveErr != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
+		return DigestOutput{}, fmt.Errorf("budget reserve: %w", reserveErr)
 	}
 
 	dg.logger.Info("digest-generate starting", "start", in.StartDate, "end", in.EndDate)
@@ -129,27 +128,27 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 	// Fetch published contents
 	published, err = dg.contents.PublishedByDateRange(ctx, start, end)
 	if err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("listing published contents: %w", err)
+		return DigestOutput{}, fmt.Errorf("listing published contents: %w", err)
 	}
 
 	// Fetch recent collected data
 	highScoreItems, err = dg.collects.RecentCollectedData(ctx, start, end, digestCollectedLimit)
 	if err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("listing recent collected data: %w", err)
+		return DigestOutput{}, fmt.Errorf("listing recent collected data: %w", err)
 	}
 
 	// Fetch active projects
 	activeProjects, err = dg.projects.ActiveProjects(ctx)
 	if err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("listing active projects: %w", err)
+		return DigestOutput{}, fmt.Errorf("listing active projects: %w", err)
 	}
 
-	userPrompt := buildDigestUserPrompt(published, highScoreItems, activeProjects, in.StartDate, in.EndDate)
+	userPrompt := BuildDigestUserPrompt(published, highScoreItems, activeProjects, in.StartDate, in.EndDate)
 
 	markdown, err := genkit.Run(ctx, "generate-digest", func() (string, error) {
 		resp, genErr := genkit.Generate(ctx, dg.g,
 			genkitai.WithModel(dg.model),
-			genkitai.WithSystem(digestSystemPrompt),
+			genkitai.WithSystem(dg.systemPrompt),
 			genkitai.WithPrompt(userPrompt),
 			genkitai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.7),
@@ -159,13 +158,13 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 		if genErr != nil {
 			return "", fmt.Errorf("generating digest: %w", genErr)
 		}
-		if finishErr := checkFinishReason(resp); finishErr != nil {
+		if finishErr := ai.CheckFinishReason(resp); finishErr != nil {
 			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {
-		return DigestGenerateOutput{}, fmt.Errorf("generating digest: %w", err)
+		return DigestOutput{}, fmt.Errorf("generating digest: %w", err)
 	}
 
 	dg.logger.Info("digest-generate complete",
@@ -174,11 +173,12 @@ func (dg *DigestGenerate) run(ctx context.Context, in DigestGenerateInput) (Dige
 		"project_count", len(activeProjects),
 	)
 
-	return DigestGenerateOutput{Markdown: markdown}, nil
+	return DigestOutput{Markdown: markdown}, nil
 }
 
-// buildDigestUserPrompt assembles material for the digest prompt.
-func buildDigestUserPrompt(
+// BuildDigestUserPrompt assembles material for the digest prompt.
+// Exported for use by tests.
+func BuildDigestUserPrompt(
 	published []content.Content,
 	collectedData []entry.Item,
 	projects []project.Project,
@@ -213,12 +213,4 @@ func buildDigestUserPrompt(
 	}
 
 	return b.String()
-}
-
-// NewMockDigestGenerate returns a mock Flow for MOCK_MODE.
-func NewMockDigestGenerate() Flow {
-	return &mockFlow{
-		name:   "digest-generate",
-		output: DigestGenerateOutput{Markdown: "## Mock Digest\n\nThis is a mock weekly digest."},
-	}
 }

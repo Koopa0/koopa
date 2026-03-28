@@ -1,4 +1,4 @@
-package ai
+package report
 
 import (
 	"context"
@@ -9,19 +9,16 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/genkit"
+
+	"github.com/koopa0/blog-backend/internal/ai"
 )
 
 // TaskQuerier queries pending tasks from the local database.
 // Data freshness depends on the hourly Notion sync (SyncAll).
-// Staleness window: ≤1 hour. If Notion is unreachable, tasks degrade gracefully
+// Staleness window: <=1 hour. If Notion is unreachable, tasks degrade gracefully
 // with stale data rather than failing outright.
 type TaskQuerier interface {
-	PendingTasks(ctx context.Context) ([]PendingTask, error)
-}
-
-// PublishedCounter counts published content since a given time.
-type PublishedCounter interface {
-	PublishedContentCountSince(ctx context.Context, since time.Time) (int64, error)
+	PendingTasks(ctx context.Context) ([]ai.PendingTask, error)
 }
 
 // Sender sends a text notification.
@@ -29,38 +26,35 @@ type Sender interface {
 	Send(ctx context.Context, text string) error
 }
 
-// PendingTask represents a task pending completion.
-type PendingTask struct {
-	Title string
-	Due   string // YYYY-MM-DD or empty
-}
+// PendingTask is a convenience alias for ai.PendingTask.
+type PendingTask = ai.PendingTask
 
-// MorningBriefOutput is the JSON output of the morning-brief flow.
-type MorningBriefOutput struct {
+// MorningOutput is the JSON output of the morning-brief flow.
+type MorningOutput struct {
 	Text string `json:"text"`
 }
 
-// MorningBrief implements the morning-brief flow as a zero-LLM deterministic nudge.
+// Morning implements the morning-brief flow as a zero-LLM deterministic nudge.
 // It computes overdue/today task counts and sends a short notification
 // reminding the user to open Claude for full planning.
-type MorningBrief struct {
-	gf       *genkitFlow
+type Morning struct {
+	gf       *ai.GenkitFlow
 	tasks    TaskQuerier
 	notifier Sender
 	loc      *time.Location
 	logger   *slog.Logger
 }
 
-// NewMorningBrief returns a MorningBrief flow.
+// NewMorning returns a Morning flow.
 // No AI model or token budget needed — this is a deterministic nudge.
-func NewMorningBrief(
+func NewMorning(
 	g *genkit.Genkit,
 	tasks TaskQuerier,
 	notifier Sender,
 	loc *time.Location,
 	logger *slog.Logger,
-) *MorningBrief {
-	mb := &MorningBrief{
+) *Morning {
+	mb := &Morning{
 		tasks:    tasks,
 		notifier: notifier,
 		loc:      loc,
@@ -77,14 +71,14 @@ func NewMorningBrief(
 }
 
 // Name returns the flow name for registry lookup.
-func (mb *MorningBrief) Name() string { return "morning-brief" }
+func (mb *Morning) Name() string { return "morning-brief" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (mb *MorningBrief) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (mb *Morning) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return mb.gf.Run(ctx, input)
 }
 
-func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) { //nolint:unparam // error required by Genkit flow signature
+func (mb *Morning) run(ctx context.Context) (MorningOutput, error) { //nolint:unparam // error required by Genkit flow signature
 	mb.logger.Info("morning-brief starting")
 
 	now := time.Now().In(mb.loc)
@@ -98,7 +92,7 @@ func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) { /
 		if sendErr := mb.notifier.Send(ctx, text); sendErr != nil {
 			mb.logger.Error("sending morning brief notification", "error", sendErr)
 		}
-		return MorningBriefOutput{Text: text}, nil
+		return MorningOutput{Text: text}, nil
 	}
 
 	var total, overdueCount, todayCount int
@@ -136,7 +130,7 @@ func (mb *MorningBrief) run(ctx context.Context) (MorningBriefOutput, error) { /
 		"today", todayCount,
 	)
 
-	return MorningBriefOutput{Text: text}, nil
+	return MorningOutput{Text: text}, nil
 }
 
 // buildNudge constructs a deterministic morning nudge message.
@@ -169,12 +163,4 @@ func buildNudge(now time.Time, total, overdue, today int, severelyOverdue []stri
 	b.WriteString("\n👉 打開 Claude 做今日規劃")
 
 	return b.String()
-}
-
-// NewMockMorningBrief returns a mock Flow for MOCK_MODE.
-func NewMockMorningBrief() Flow {
-	return &mockFlow{
-		name:   "morning-brief",
-		output: MorningBriefOutput{Text: "Mock morning brief"},
-	}
 }

@@ -3,34 +3,34 @@ package ai
 import _ "embed"
 
 //go:embed prompts/review.txt
-var reviewSystemPrompt string
+var ReviewSystemPrompt string
 
 //go:embed prompts/excerpt.txt
-var excerptSystemPrompt string
+var ExcerptSystemPrompt string
 
 //go:embed prompts/tags.txt
-var tagsSystemPrompt string
+var TagsSystemPrompt string
 
 //go:embed prompts/polish.txt
-var polishSystemPrompt string
+var PolishSystemPrompt string
 
 //go:embed prompts/digest.txt
-var digestSystemPrompt string
+var DigestSystemPrompt string
 
 //go:embed prompts/bookmark.txt
 var bookmarkSystemPrompt string
 
 //go:embed prompts/weekly_review.txt
-var weeklyReviewSystemPrompt string
+var WeeklyReviewSystemPrompt string
 
 //go:embed prompts/project_track.txt
-var projectTrackSystemPrompt string
+var ProjectTrackSystemPrompt string
 
 //go:embed prompts/content_strategy.txt
 var contentStrategySystemPrompt string
 
 //go:embed prompts/build_log.txt
-var buildLogSystemPrompt string
+var BuildLogSystemPrompt string
 
 //go:embed prompts/daily_dev_log.txt
-var dailyDevLogSystemPrompt string
+var DailyDevLogSystemPrompt string

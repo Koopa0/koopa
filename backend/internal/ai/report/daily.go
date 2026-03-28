@@ -1,4 +1,4 @@
-package ai
+package report
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/ai"
 )
 
 // ActivityLister lists activity events within a time range.
@@ -20,52 +21,55 @@ type ActivityLister interface {
 	EventsByTimeRange(ctx context.Context, start, end time.Time) ([]activity.Event, error)
 }
 
-// DailyDevLogInput is the optional JSON input for the daily-dev-log flow.
+// DailyInput is the optional JSON input for the daily-dev-log flow.
 // When empty, defaults to yesterday in the configured timezone.
-type DailyDevLogInput struct {
+type DailyInput struct {
 	Date string `json:"date,omitempty"` // YYYY-MM-DD, defaults to yesterday
 }
 
-// DailyDevLogOutput is the JSON output of the daily-dev-log flow.
-type DailyDevLogOutput struct {
+// DailyOutput is the JSON output of the daily-dev-log flow.
+type DailyOutput struct {
 	Date     string `json:"date"`
 	Markdown string `json:"markdown"`
 	Events   int    `json:"events"` // total activity events processed
 }
 
-// DailyDevLog implements the daily-dev-log flow using Genkit.
-type DailyDevLog struct {
-	gf       *genkitFlow
-	g        *genkit.Genkit
-	model    genkitai.Model
-	events   ActivityLister
-	notifier Sender
-	budget   BudgetChecker
-	loc      *time.Location
-	logger   *slog.Logger
+// Daily implements the daily-dev-log flow using Genkit.
+type Daily struct {
+	gf           *ai.GenkitFlow
+	g            *genkit.Genkit
+	model        genkitai.Model
+	systemPrompt string
+	events       ActivityLister
+	notifier     Sender
+	budget       ai.BudgetChecker
+	loc          *time.Location
+	logger       *slog.Logger
 }
 
-// NewDailyDevLog returns a DailyDevLog flow.
-func NewDailyDevLog(
+// NewDaily returns a Daily flow.
+func NewDaily(
 	g *genkit.Genkit,
 	model genkitai.Model,
+	systemPrompt string,
 	events ActivityLister,
 	notifier Sender,
-	budget BudgetChecker,
+	budget ai.BudgetChecker,
 	loc *time.Location,
 	logger *slog.Logger,
-) *DailyDevLog {
-	ddl := &DailyDevLog{
-		g:        g,
-		model:    model,
-		events:   events,
-		notifier: notifier,
-		budget:   budget,
-		loc:      loc,
-		logger:   logger,
+) *Daily {
+	ddl := &Daily{
+		g:            g,
+		model:        model,
+		systemPrompt: systemPrompt,
+		events:       events,
+		notifier:     notifier,
+		budget:       budget,
+		loc:          loc,
+		logger:       logger,
 	}
 	ddl.gf = genkit.DefineFlow(g, "daily-dev-log", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var in DailyDevLogInput
+		var in DailyInput
 		if len(input) > 0 {
 			if err := json.Unmarshal(input, &in); err != nil {
 				return nil, fmt.Errorf("parsing daily-dev-log input: %w", err)
@@ -81,18 +85,18 @@ func NewDailyDevLog(
 }
 
 // Name returns the flow name for registry lookup.
-func (ddl *DailyDevLog) Name() string { return "daily-dev-log" }
+func (ddl *Daily) Name() string { return "daily-dev-log" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (ddl *DailyDevLog) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (ddl *Daily) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return ddl.gf.Run(ctx, input)
 }
 
 const estimatedDevLogTokens int64 = 2000
 
-func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevLogOutput, error) {
+func (ddl *Daily) run(ctx context.Context, in DailyInput) (DailyOutput, error) {
 	if err := ddl.budget.Reserve(estimatedDevLogTokens); err != nil {
-		return DailyDevLogOutput{}, fmt.Errorf("budget reserve: %w", err)
+		return DailyOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	// determine target date — midnight in configured timezone
@@ -101,7 +105,7 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 	if in.Date != "" {
 		parsed, err := time.ParseInLocation("2006-01-02", in.Date, ddl.loc)
 		if err != nil {
-			return DailyDevLogOutput{}, fmt.Errorf("parsing date: %w", err)
+			return DailyOutput{}, fmt.Errorf("parsing date: %w", err)
 		}
 		targetDate = parsed
 	} else {
@@ -118,13 +122,13 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 
 	events, err := ddl.events.EventsByTimeRange(ctx, start, end)
 	if err != nil {
-		return DailyDevLogOutput{}, fmt.Errorf("querying events: %w", err)
+		return DailyOutput{}, fmt.Errorf("querying events: %w", err)
 	}
 
 	// no events — return a short message without calling the LLM
 	if len(events) == 0 {
 		noActivity := fmt.Sprintf("# Daily Dev Log — %s\n\n今天沒有記錄到任何開發活動。", dateStr)
-		return DailyDevLogOutput{
+		return DailyOutput{
 			Date:     dateStr,
 			Markdown: noActivity,
 			Events:   0,
@@ -136,7 +140,7 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 	markdown, err := genkit.Run(ctx, "generate-daily-dev-log", func() (string, error) {
 		resp, genErr := genkit.Generate(ctx, ddl.g,
 			genkitai.WithModel(ddl.model),
-			genkitai.WithSystem(dailyDevLogSystemPrompt),
+			genkitai.WithSystem(ddl.systemPrompt),
 			genkitai.WithPrompt(userPrompt),
 			genkitai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.4),
@@ -146,13 +150,13 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 		if genErr != nil {
 			return "", fmt.Errorf("generating daily dev log: %w", genErr)
 		}
-		if finishErr := checkFinishReason(resp); finishErr != nil {
+		if finishErr := ai.CheckFinishReason(resp); finishErr != nil {
 			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {
-		return DailyDevLogOutput{}, err
+		return DailyOutput{}, err
 	}
 
 	// send notification (best-effort)
@@ -164,7 +168,7 @@ func (ddl *DailyDevLog) run(ctx context.Context, in DailyDevLogInput) (DailyDevL
 
 	ddl.logger.Info("daily-dev-log complete", "date", dateStr, "events", len(events))
 
-	return DailyDevLogOutput{
+	return DailyOutput{
 		Date:     dateStr,
 		Markdown: markdown,
 		Events:   len(events),
@@ -245,12 +249,4 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-// NewMockDailyDevLog returns a mock Flow for MOCK_MODE.
-func NewMockDailyDevLog() Flow {
-	return &mockFlow{
-		name:   "daily-dev-log",
-		output: DailyDevLogOutput{Date: "2026-03-17", Markdown: "# Daily Dev Log — Mock\n\nNo activity.", Events: 0},
-	}
 }

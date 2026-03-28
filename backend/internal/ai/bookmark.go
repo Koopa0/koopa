@@ -35,7 +35,7 @@ type BookmarkGenerateOutput struct {
 
 // BookmarkGenerate implements the bookmark-generate flow using Genkit.
 type BookmarkGenerate struct {
-	gf     *genkitFlow
+	gf     *GenkitFlow
 	g      *genkit.Genkit
 	model  genkitai.Model
 	reader CollectedReader
@@ -116,7 +116,7 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 		if genErr != nil {
 			return nil, fmt.Errorf("generating bookmark: %w", genErr)
 		}
-		if finishErr := checkFinishReason(resp); finishErr != nil {
+		if finishErr := CheckFinishReason(resp); finishErr != nil {
 			return nil, finishErr
 		}
 		return r, nil

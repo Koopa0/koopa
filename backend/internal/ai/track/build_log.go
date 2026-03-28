@@ -1,4 +1,4 @@
-package ai
+package track
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
 
+	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -53,37 +54,40 @@ type BuildLogOutput struct {
 
 // BuildLog implements the build-log-generate flow.
 type BuildLog struct {
-	gf       *genkitFlow
-	g        *genkit.Genkit
-	model    genkitai.Model
-	projects ProjectBySlugFinder
-	commits  RepoCommitLister
-	content  ContentCreator
-	budget   BudgetChecker
-	loc      *time.Location
-	logger   *slog.Logger
+	gf           *ai.GenkitFlow
+	g            *genkit.Genkit
+	model        genkitai.Model
+	systemPrompt string
+	projects     ProjectBySlugFinder
+	commits      RepoCommitLister
+	content      ContentCreator
+	budget       ai.BudgetChecker
+	loc          *time.Location
+	logger       *slog.Logger
 }
 
 // NewBuildLog returns a BuildLog flow.
 func NewBuildLog(
 	g *genkit.Genkit,
 	model genkitai.Model,
+	systemPrompt string,
 	projects ProjectBySlugFinder,
 	commits RepoCommitLister,
 	creator ContentCreator,
-	budget BudgetChecker,
+	budget ai.BudgetChecker,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *BuildLog {
 	bl := &BuildLog{
-		g:        g,
-		model:    model,
-		projects: projects,
-		commits:  commits,
-		content:  creator,
-		budget:   budget,
-		loc:      loc,
-		logger:   logger,
+		g:            g,
+		model:        model,
+		systemPrompt: systemPrompt,
+		projects:     projects,
+		commits:      commits,
+		content:      creator,
+		budget:       budget,
+		loc:          loc,
+		logger:       logger,
 	}
 	bl.gf = genkit.DefineFlow(g, "build-log-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		out, err := bl.run(ctx, input)
@@ -153,7 +157,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 	respText, err := genkit.Run(ctx, "generate-build-log", func() (string, error) {
 		resp, genErr := genkit.Generate(ctx, bl.g,
 			genkitai.WithModel(bl.model),
-			genkitai.WithSystem(buildLogSystemPrompt),
+			genkitai.WithSystem(bl.systemPrompt),
 			genkitai.WithPrompt(userPrompt),
 			genkitai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.3),
@@ -163,7 +167,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 		if genErr != nil {
 			return "", fmt.Errorf("generating build log: %w", genErr)
 		}
-		if finishErr := checkFinishReason(resp); finishErr != nil {
+		if finishErr := ai.CheckFinishReason(resp); finishErr != nil {
 			return "", finishErr
 		}
 		return strings.TrimSpace(resp.Text()), nil
@@ -173,7 +177,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 	}
 
 	var llmOut buildLogLLMOutput
-	if parseErr := parseJSONLoose(respText, &llmOut); parseErr != nil {
+	if parseErr := ai.ParseJSONLoose(respText, &llmOut); parseErr != nil {
 		return BuildLogOutput{}, fmt.Errorf("parsing build-log LLM output: %w", parseErr)
 	}
 
@@ -226,12 +230,4 @@ func buildBuildLogPrompt(proj *project.Project, commits []pipeline.Commit, days 
 	}
 
 	return b.String()
-}
-
-// NewMockBuildLog returns a mock Flow for MOCK_MODE.
-func NewMockBuildLog() Flow {
-	return &mockFlow{
-		name:   "build-log-generate",
-		output: BuildLogOutput{ContentID: "mock-id", Title: "Mock build log"},
-	}
 }

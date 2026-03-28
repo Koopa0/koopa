@@ -1,4 +1,4 @@
-package ai
+package report
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
 
+	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/pipeline"
@@ -24,34 +25,32 @@ type CommitLister interface {
 	RecentCommits(ctx context.Context, since time.Time) ([]pipeline.Commit, error)
 }
 
-// WeeklyReviewInput is optional JSON input passed via Runner.Submit.
+// WeeklyInput is optional JSON input passed via Runner.Submit.
 // Health data is gathered at the cron layer and passed in as input.
-type WeeklyReviewInput struct {
+type WeeklyInput struct {
 	HealthIssues []string `json:"health_issues,omitempty"`
 }
 
-// ProjectCompletion holds a per-project completion count.
-type ProjectCompletion struct {
-	ProjectTitle string
-	Completed    int64
-}
+// ProjectCompletion is a convenience alias for ai.ProjectCompletion.
+type ProjectCompletion = ai.ProjectCompletion
 
 // TaskCompletionCounter counts tasks completed since a given time.
 type TaskCompletionCounter interface {
 	CompletedSince(ctx context.Context, since time.Time) (int64, error)
-	CompletedByProjectSince(ctx context.Context, since time.Time) ([]ProjectCompletion, error)
+	CompletedByProjectSince(ctx context.Context, since time.Time) ([]ai.ProjectCompletion, error)
 }
 
-// WeeklyReviewOutput is the JSON output of the weekly-review flow.
-type WeeklyReviewOutput struct {
+// WeeklyOutput is the JSON output of the weekly-review flow.
+type WeeklyOutput struct {
 	Text string `json:"text"`
 }
 
-// WeeklyReview implements the weekly-review flow.
-type WeeklyReview struct {
-	gf             *genkitFlow
+// Weekly implements the weekly-review flow.
+type Weekly struct {
+	gf             *ai.GenkitFlow
 	g              *genkit.Genkit
 	model          genkitai.Model
+	systemPrompt   string
 	tasks          TaskQuerier
 	taskCompletion TaskCompletionCounter
 	collected      RecentCollectedLister
@@ -59,15 +58,16 @@ type WeeklyReview struct {
 	projects       ActiveProjectLister
 	commits        CommitLister
 	notifier       Sender
-	budget         BudgetChecker
+	budget         ai.BudgetChecker
 	loc            *time.Location
 	logger         *slog.Logger
 }
 
-// NewWeeklyReview returns a WeeklyReview flow.
-func NewWeeklyReview(
+// NewWeekly returns a Weekly flow.
+func NewWeekly(
 	g *genkit.Genkit,
 	model genkitai.Model,
+	systemPrompt string,
 	tasks TaskQuerier,
 	taskCompletion TaskCompletionCounter,
 	collects RecentCollectedLister,
@@ -75,13 +75,14 @@ func NewWeeklyReview(
 	projects ActiveProjectLister,
 	commits CommitLister,
 	notifier Sender,
-	budget BudgetChecker,
+	budget ai.BudgetChecker,
 	loc *time.Location,
 	logger *slog.Logger,
-) *WeeklyReview {
-	wr := &WeeklyReview{
+) *Weekly {
+	wr := &Weekly{
 		g:              g,
 		model:          model,
+		systemPrompt:   systemPrompt,
 		tasks:          tasks,
 		taskCompletion: taskCompletion,
 		collected:      collects,
@@ -104,10 +105,10 @@ func NewWeeklyReview(
 }
 
 // Name returns the flow name for registry lookup.
-func (wr *WeeklyReview) Name() string { return "weekly-review" }
+func (wr *Weekly) Name() string { return "weekly-review" }
 
 // Run implements Flow.Run — delegates to the registered Genkit flow.
-func (wr *WeeklyReview) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (wr *Weekly) Run(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 	return wr.gf.Run(ctx, input)
 }
 
@@ -116,15 +117,15 @@ const (
 	reviewCollectedLimit  int32 = 30
 )
 
-func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (WeeklyReviewOutput, error) {
+func (wr *Weekly) run(ctx context.Context, rawInput json.RawMessage) (WeeklyOutput, error) {
 	if err := wr.budget.Reserve(estimatedReviewTokens); err != nil {
-		return WeeklyReviewOutput{}, fmt.Errorf("budget reserve: %w", err)
+		return WeeklyOutput{}, fmt.Errorf("budget reserve: %w", err)
 	}
 
 	wr.logger.Info("weekly-review starting")
 
 	// Parse optional input (health data from cron layer).
-	var input WeeklyReviewInput
+	var input WeeklyInput
 	if len(rawInput) > 0 {
 		_ = json.Unmarshal(rawInput, &input) // best-effort: empty input is fine
 	}
@@ -144,7 +145,7 @@ func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (Week
 		rssErr           error
 		published        []content.Content
 		pubErr           error
-		projects         []project.Project
+		activeProjects   []project.Project
 		projErr          error
 		commits          []pipeline.Commit
 		commitErr        error
@@ -167,7 +168,7 @@ func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (Week
 		published, pubErr = wr.contents.PublishedByDateRange(ctx, weekAgo, now)
 	})
 	wg.Go(func() {
-		projects, projErr = wr.projects.ActiveProjects(ctx)
+		activeProjects, projErr = wr.projects.ActiveProjects(ctx)
 	})
 	wg.Go(func() {
 		commits, commitErr = wr.commits.RecentCommits(ctx, weekAgo)
@@ -180,7 +181,7 @@ func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (Week
 		completedByProj, completedProjErr,
 		rssItems, rssErr,
 		published, pubErr,
-		projects, projErr,
+		activeProjects, projErr,
 		commits, commitErr,
 		input.HealthIssues,
 		weekAgo, now,
@@ -189,7 +190,7 @@ func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (Week
 	text, err := genkit.Run(ctx, "generate-weekly-review", func() (string, error) {
 		resp, err := genkit.Generate(ctx, wr.g,
 			genkitai.WithModel(wr.model),
-			genkitai.WithSystem(weeklyReviewSystemPrompt),
+			genkitai.WithSystem(wr.systemPrompt),
 			genkitai.WithPrompt(userPrompt),
 			genkitai.WithConfig(&genai.GenerateContentConfig{
 				Temperature:     genai.Ptr[float32](0.3),
@@ -199,13 +200,13 @@ func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (Week
 		if err != nil {
 			return "", fmt.Errorf("generating weekly review: %w", err)
 		}
-		if err := checkFinishReason(resp); err != nil {
+		if err := ai.CheckFinishReason(resp); err != nil {
 			return "", err
 		}
 		return strings.TrimSpace(resp.Text()), nil
 	})
 	if err != nil {
-		return WeeklyReviewOutput{}, err
+		return WeeklyOutput{}, err
 	}
 
 	if err := wr.notifier.Send(ctx, text); err != nil {
@@ -216,11 +217,11 @@ func (wr *WeeklyReview) run(ctx context.Context, rawInput json.RawMessage) (Week
 		"tasks", len(tasks),
 		"rss_items", len(rssItems),
 		"published", len(published),
-		"projects", len(projects),
+		"projects", len(activeProjects),
 		"commits", len(commits),
 	)
 
-	return WeeklyReviewOutput{Text: text}, nil
+	return WeeklyOutput{Text: text}, nil
 }
 
 func buildWeeklyReviewPrompt(
@@ -351,13 +352,5 @@ func writeWeeklyTasksSection(b *strings.Builder, tasks []PendingTask, taskErr er
 				fmt.Fprintf(b, "- %s\n", t.Title)
 			}
 		}
-	}
-}
-
-// NewMockWeeklyReview returns a mock Flow for MOCK_MODE.
-func NewMockWeeklyReview() Flow {
-	return &mockFlow{
-		name:   "weekly-review",
-		output: WeeklyReviewOutput{Text: "Mock weekly review"},
 	}
 }
