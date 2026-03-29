@@ -61,7 +61,7 @@ func (t *Telegram) Send(ctx context.Context, text string) error {
 	}
 	defer resp.Body.Close()
 
-	_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("telegram api returned status %d", resp.StatusCode)
 	}

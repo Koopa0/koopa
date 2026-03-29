@@ -197,7 +197,7 @@ func (c *Client) UpdatePageProperties(ctx context.Context, pageID string, proper
 		return fmt.Errorf("updating page %s: %w", pageID, err)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 
 	if resp.StatusCode != http.StatusOK {
 		return notionError(resp, "page update "+pageID)
@@ -472,7 +472,7 @@ func (c *Client) doWithRetry(ctx context.Context, method, url string, bodyFunc f
 
 		// Read Retry-After header before draining the body.
 		retryAfter := resp.Header.Get("Retry-After")
-		_, _ = io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 		_ = resp.Body.Close() // #nosec G104 -- best-effort close before retry
 		lastErr = fmt.Errorf("notion api returned %d", resp.StatusCode)
 

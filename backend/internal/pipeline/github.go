@@ -72,7 +72,7 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("github %s: %w", path, ErrGitHubNotFound)
 		}
@@ -121,7 +121,7 @@ func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, erro
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("github directory %s: %w", path, ErrGitHubNotFound)
 		}
@@ -178,7 +178,7 @@ func (g *GitHub) Compare(ctx context.Context, repo, base, head string) (*activit
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 		return nil, fmt.Errorf("github compare api returned %d for %s...%s", resp.StatusCode, shortSHA(base), shortSHA(head))
 	}
 
@@ -242,7 +242,7 @@ func (g *GitHub) CommitsForRepo(ctx context.Context, repo string, since time.Tim
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 		return nil, fmt.Errorf("github api returned %d for commits", resp.StatusCode)
 	}
 

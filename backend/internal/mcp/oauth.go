@@ -44,6 +44,10 @@ type pendingAuth struct {
 	expiresAt     time.Time
 }
 
+// maxClients is the upper bound on dynamic client registrations.
+// Prevents memory exhaustion from automated registration spam.
+const maxClients = 100
+
 // OAuthProvider implements OAuth 2.1 with Google login and PKCE for the MCP server.
 type OAuthProvider struct {
 	staticToken string // MCP_TOKEN — accepted directly as Bearer token
@@ -425,6 +429,14 @@ func (o *OAuthProvider) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+
+	o.mu.Lock()
+	if len(o.clients) >= maxClients {
+		o.mu.Unlock()
+		http.Error(w, "too many registered clients", http.StatusServiceUnavailable)
+		return
+	}
+	o.mu.Unlock()
 
 	cidBytes := make([]byte, 16)
 	csecBytes := make([]byte, 32)

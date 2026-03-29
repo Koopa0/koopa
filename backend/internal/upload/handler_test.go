@@ -111,9 +111,9 @@ var pngHeader = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 // jpegHeader is a minimal valid JPEG SOI marker.
 var jpegHeader = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01}
 
-// makePNGBytes returns a minimal PNG-like byte slice (magic bytes + padding).
-func makePNGBytes(extraBytes int) []byte {
-	data := make([]byte, len(pngHeader)+extraBytes)
+// makePNGBytes returns a minimal PNG-like byte slice (magic bytes + 512 bytes padding).
+func makePNGBytes() []byte {
+	data := make([]byte, len(pngHeader)+512)
 	copy(data, pngHeader)
 	return data
 }
@@ -148,7 +148,7 @@ func TestHandler_Upload(t *testing.T) {
 		{
 			name: "valid PNG upload returns URL",
 			buildReq: func(t *testing.T) *http.Request {
-				return newMultipartRequest(t, "file", "photo.png", makePNGBytes(512))
+				return newMultipartRequest(t, "file", "photo.png", makePNGBytes())
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusOK,
@@ -229,7 +229,7 @@ func TestHandler_Upload(t *testing.T) {
 		{
 			name: "S3 upload failure returns 500",
 			buildReq: func(t *testing.T) *http.Request {
-				return newMultipartRequest(t, "file", "photo.png", makePNGBytes(512))
+				return newMultipartRequest(t, "file", "photo.png", makePNGBytes())
 			},
 			s3Client:   s3Failure,
 			wantStatus: http.StatusInternalServerError,
@@ -240,7 +240,7 @@ func TestHandler_Upload(t *testing.T) {
 			buildReq: func(t *testing.T) *http.Request {
 				// The handler generates a UUID key and ignores the original filename,
 				// so path traversal in the filename cannot affect the S3 key.
-				return newMultipartRequest(t, "file", "../../../etc/passwd.png", makePNGBytes(512))
+				return newMultipartRequest(t, "file", "../../../etc/passwd.png", makePNGBytes())
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusOK,
@@ -308,7 +308,7 @@ func TestHandler_Upload_ContentTypeHeader(t *testing.T) {
 	t.Parallel()
 
 	h := newHandler(t, s3Success(t))
-	req := newMultipartRequest(t, "file", "photo.png", makePNGBytes(512))
+	req := newMultipartRequest(t, "file", "photo.png", makePNGBytes())
 	w := httptest.NewRecorder()
 
 	h.Upload(w, req)
@@ -325,7 +325,7 @@ func TestHandler_Upload_URLStructure(t *testing.T) {
 	t.Parallel()
 
 	h := newHandler(t, s3Success(t))
-	req := newMultipartRequest(t, "file", "photo.png", makePNGBytes(512))
+	req := newMultipartRequest(t, "file", "photo.png", makePNGBytes())
 	w := httptest.NewRecorder()
 
 	h.Upload(w, req)
