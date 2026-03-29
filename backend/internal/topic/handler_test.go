@@ -293,7 +293,7 @@ func TestHandler_List(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			h := newTestHandler(tt.stub, &stubContentReader{})
-			req := httptest.NewRequest(http.MethodGet, "/api/topics", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/topics", http.NoBody)
 			w := httptest.NewRecorder()
 
 			h.List(w, req)
@@ -349,7 +349,7 @@ func TestHandler_BySlug(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			h := newTestHandler(tt.stub, tt.content)
-			req := httptest.NewRequest(http.MethodGet, "/api/topics/"+tt.slug, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/topics/"+tt.slug, http.NoBody)
 			req.SetPathValue("slug", tt.slug)
 			w := httptest.NewRecorder()
 
@@ -556,7 +556,7 @@ func TestHandler_Delete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			h := newTestHandler(tt.stub, &stubContentReader{})
-			req := httptest.NewRequest(http.MethodDelete, "/api/admin/topics/"+tt.id, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/api/admin/topics/"+tt.id, http.NoBody)
 			req.SetPathValue("id", tt.id)
 			w := httptest.NewRecorder()
 

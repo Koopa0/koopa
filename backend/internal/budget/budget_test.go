@@ -24,25 +24,35 @@ func TestReserve(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := New(tt.limit)
-			if tt.preload > 0 {
-				if err := b.Reserve(tt.preload); err != nil {
-					t.Fatalf("Reserve(%d) preload: %v", tt.preload, err)
-				}
-			}
+			preloadBudget(t, b, tt.preload)
 			err := b.Reserve(tt.reserve)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if !errors.Is(err, ErrOverBudget) {
-					t.Fatalf("Reserve(%d) = %v, want ErrOverBudget", tt.reserve, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Reserve(%d) unexpected error: %v", tt.reserve, err)
-			}
+			assertReserveResult(t, err, tt.reserve, tt.wantErr)
 		})
+	}
+}
+
+func preloadBudget(t *testing.T, b *Budget, amount int64) {
+	t.Helper()
+	if amount > 0 {
+		if err := b.Reserve(amount); err != nil {
+			t.Fatalf("Reserve(%d) preload: %v", amount, err)
+		}
+	}
+}
+
+func assertReserveResult(t *testing.T, err error, reserve int64, wantErr bool) {
+	t.Helper()
+	if !wantErr {
+		if err != nil {
+			t.Fatalf("Reserve(%d) unexpected error: %v", reserve, err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrOverBudget) {
+		t.Fatalf("Reserve(%d) = %v, want ErrOverBudget", reserve, err)
 	}
 }
 

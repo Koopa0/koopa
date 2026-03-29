@@ -80,19 +80,18 @@ func newTestHandler(store noteStore) *Handler {
 	}
 }
 
-// decodeErrorBody decodes the standard error response envelope.
-func decodeErrorBody(t *testing.T, body io.Reader) (code, message string) {
+// decodeErrorBody decodes the standard error response envelope and returns the error code.
+func decodeErrorBody(t *testing.T, body io.Reader) string {
 	t.Helper()
 	var resp struct {
 		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Code string `json:"code"`
 		} `json:"error"`
 	}
 	if err := json.NewDecoder(body).Decode(&resp); err != nil {
 		t.Fatalf("decodeErrorBody: %v", err)
 	}
-	return resp.Error.Code, resp.Error.Message
+	return resp.Error.Code
 }
 
 // ---------------------------------------------------------------------------
@@ -617,7 +616,7 @@ func TestHandler_List(t *testing.T) {
 				t.Fatalf("List(%q) status = %d, want %d\nbody: %s", tt.query, w.Code, tt.wantStatus, w.Body.String())
 			}
 			if tt.wantCode != "" {
-				code, _ := decodeErrorBody(t, w.Body)
+				code := decodeErrorBody(t, w.Body)
 				if code != tt.wantCode {
 					t.Errorf("List(%q) error code = %q, want %q", tt.query, code, tt.wantCode)
 				}
@@ -733,7 +732,7 @@ func TestHandler_Insights(t *testing.T) {
 				t.Fatalf("Insights(%q) status = %d, want %d\nbody: %s", tt.query, w.Code, tt.wantStatus, w.Body.String())
 			}
 			if tt.wantCode != "" {
-				code, _ := decodeErrorBody(t, w.Body)
+				code := decodeErrorBody(t, w.Body)
 				if code != tt.wantCode {
 					t.Errorf("Insights(%q) error code = %q, want %q", tt.query, code, tt.wantCode)
 				}
@@ -939,7 +938,7 @@ func TestHandler_UpdateInsight(t *testing.T) {
 					tt.idPath, w.Code, tt.wantStatus, w.Body.String())
 			}
 			if tt.wantCode != "" {
-				code, _ := decodeErrorBody(t, w.Body)
+				code := decodeErrorBody(t, w.Body)
 				if code != tt.wantCode {
 					t.Errorf("UpdateInsight(id=%q) error code = %q, want %q",
 						tt.idPath, code, tt.wantCode)

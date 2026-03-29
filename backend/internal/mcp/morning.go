@@ -215,53 +215,70 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		Date: now.Format("2006-01-02 (Monday)"),
 	}
 
-	// Build section set for selective fetching. Empty means all sections.
 	wantSection := buildSectionSet(input.Sections)
-	all := len(wantSection) == 0
+	want := sectionChecker(wantSection)
 
-	// Tasks are always fetched when needed by projects (for pending task counts).
 	var allTasks []task.PendingTaskDetail
-	if all || wantSection["tasks"] || wantSection["projects"] {
+	if want("tasks") || want("projects") {
 		allTasks = s.fetchMorningTasks(ctx, &out, today, tomorrow)
 	}
-	if all || wantSection["activity"] {
-		s.fetchMorningActivity(ctx, &out, now, activityDays)
-	}
-	if all || wantSection["build_logs"] {
-		s.fetchMorningBuildLogs(ctx, &out, now, buildLogDays)
-	}
-	if all || wantSection["projects"] {
-		s.fetchMorningProjectHealth(ctx, &out, allTasks, now)
-	}
-	if all || wantSection["goals"] {
-		s.fetchMorningGoals(ctx, &out)
-	}
-	if all || wantSection["insights"] || wantSection["reflection"] || wantSection["planning_history"] || wantSection["plan"] {
-		s.fetchMorningSessionData(ctx, &out, today, now)
-	}
-	if all || wantSection["rss"] {
-		s.fetchMorningRSSHighlights(ctx, &out, now)
-	}
-	if all || wantSection["completions"] {
-		s.fetchMorningDailySummary(ctx, &out, today, tomorrow)
-		s.fetchTodayCompletions(ctx, &out, today, tomorrow)
-	}
-	if all || wantSection["pipeline_health"] {
-		s.fetchMorningPipelineHealth(ctx, &out)
-	}
-	if wantSection["rss_highlights"] { // not in default — only when explicitly requested
-		s.fetchMorningRSSHighlightItems(ctx, &out)
-	}
-	if all || wantSection["agent_tasks"] {
-		s.fetchMorningAgentTasks(ctx, &out, allTasks)
-	}
-	if all || wantSection["content_pipeline"] {
-		s.fetchMorningContentPipeline(ctx, &out)
-	}
+
+	s.fetchMorningSections(ctx, &out, want, allTasks, now, today, tomorrow, activityDays, buildLogDays)
 
 	ensureMorningDefaults(&out)
-
 	return nil, out, nil
+}
+
+// sectionChecker returns a function that checks whether a section should be fetched.
+// When no sections are specified (all), every section is included except
+// those in the "explicit only" set (e.g. rss_highlights).
+func sectionChecker(wantSection map[string]bool) func(string) bool {
+	all := len(wantSection) == 0
+	explicitOnly := map[string]bool{"rss_highlights": true}
+	return func(name string) bool {
+		if explicitOnly[name] {
+			return wantSection[name]
+		}
+		return all || wantSection[name]
+	}
+}
+
+// fetchMorningSections dispatches to individual section fetchers based on the section filter.
+func (s *Server) fetchMorningSections(ctx context.Context, out *MorningContextOutput, want func(string) bool, allTasks []task.PendingTaskDetail, now, today, tomorrow time.Time, activityDays, buildLogDays int) {
+	if want("activity") {
+		s.fetchMorningActivity(ctx, out, now, activityDays)
+	}
+	if want("build_logs") {
+		s.fetchMorningBuildLogs(ctx, out, now, buildLogDays)
+	}
+	if want("projects") {
+		s.fetchMorningProjectHealth(ctx, out, allTasks, now)
+	}
+	if want("goals") {
+		s.fetchMorningGoals(ctx, out)
+	}
+	if want("insights") || want("reflection") || want("planning_history") || want("plan") {
+		s.fetchMorningSessionData(ctx, out, today, now)
+	}
+	if want("rss") {
+		s.fetchMorningRSSHighlights(ctx, out, now)
+	}
+	if want("completions") {
+		s.fetchMorningDailySummary(ctx, out, today, tomorrow)
+		s.fetchTodayCompletions(ctx, out, today, tomorrow)
+	}
+	if want("pipeline_health") {
+		s.fetchMorningPipelineHealth(ctx, out)
+	}
+	if want("rss_highlights") {
+		s.fetchMorningRSSHighlightItems(ctx, out)
+	}
+	if want("agent_tasks") {
+		s.fetchMorningAgentTasks(ctx, out, allTasks)
+	}
+	if want("content_pipeline") {
+		s.fetchMorningContentPipeline(ctx, out)
+	}
 }
 
 // buildSectionSet converts a sections slice into a set for O(1) lookup.

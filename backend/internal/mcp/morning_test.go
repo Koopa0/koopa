@@ -756,14 +756,10 @@ func TestBuildPlanningHistory(t *testing.T) {
 	t.Run("empty notes returns no_data trend", func(t *testing.T) {
 		t.Parallel()
 		got := buildPlanningHistory(nil, 7)
-		if got.Trend != "no_data" {
-			t.Errorf("Trend = %q, want %q", got.Trend, "no_data")
-		}
+		assertHistoryTrend(t, got.Trend, "no_data")
+		assertHistoryEntriesLen(t, got.Entries, 0)
 		if got.Days != 7 {
 			t.Errorf("Days = %d, want 7", got.Days)
-		}
-		if len(got.Entries) != 0 {
-			t.Errorf("Entries = %v, want empty", got.Entries)
 		}
 		if got.CapacityByDayType == nil {
 			t.Error("CapacityByDayType is nil, want empty map")
@@ -774,12 +770,8 @@ func TestBuildPlanningHistory(t *testing.T) {
 		t.Parallel()
 		notes := []session.Note{makeNote("2026-03-10", 5, 4, 0.8)}
 		got := buildPlanningHistory(notes, 7)
-		if got.Trend != "insufficient_data" {
-			t.Errorf("Trend = %q, want %q", got.Trend, "insufficient_data")
-		}
-		if len(got.Entries) != 1 {
-			t.Errorf("Entries len = %d, want 1", len(got.Entries))
-		}
+		assertHistoryTrend(t, got.Trend, "insufficient_data")
+		assertHistoryEntriesLen(t, got.Entries, 1)
 	})
 
 	t.Run("dedup: duplicate dates keep only first", func(t *testing.T) {
@@ -789,12 +781,10 @@ func TestBuildPlanningHistory(t *testing.T) {
 		meta2, _ := json.Marshal(map[string]any{"tasks_planned": 3, "tasks_completed": 2, "completion_rate": 0.6})
 		notes := []session.Note{
 			{NoteDate: d, Metadata: json.RawMessage(meta1)},
-			{NoteDate: d, Metadata: json.RawMessage(meta2)}, // same date — should be dropped
+			{NoteDate: d, Metadata: json.RawMessage(meta2)},
 		}
 		got := buildPlanningHistory(notes, 7)
-		if len(got.Entries) != 1 {
-			t.Errorf("Entries len = %d, want 1 (dedup)", len(got.Entries))
-		}
+		assertHistoryEntriesLen(t, got.Entries, 1)
 		if got.Entries[0].CompletionRate != 0.8 {
 			t.Errorf("CompletionRate = %v, want 0.8 (first entry kept)", got.Entries[0].CompletionRate)
 		}
@@ -810,9 +800,7 @@ func TestBuildPlanningHistory(t *testing.T) {
 			makeNote("2026-03-06", 5, 4, 0.8),
 		}
 		got := buildPlanningHistory(notes, 3)
-		if len(got.Entries) != 3 {
-			t.Errorf("Entries len = %d, want 3 (capped)", len(got.Entries))
-		}
+		assertHistoryEntriesLen(t, got.Entries, 3)
 	})
 
 	t.Run("averages computed correctly", func(t *testing.T) {
@@ -828,7 +816,6 @@ func TestBuildPlanningHistory(t *testing.T) {
 		if got.AvgCompletionRate != wantAvgRate {
 			t.Errorf("AvgCompletionRate = %v, want %v", got.AvgCompletionRate, wantAvgRate)
 		}
-		// AvgDailyCapacity = avg of TasksCompleted: (4+3+5+1)/4 = 3.25
 		wantCap := (4.0 + 3.0 + 5.0 + 1.0) / 4.0
 		if got.AvgDailyCapacity != wantCap {
 			t.Errorf("AvgDailyCapacity = %v, want %v", got.AvgDailyCapacity, wantCap)
@@ -837,7 +824,6 @@ func TestBuildPlanningHistory(t *testing.T) {
 
 	t.Run("monthly summary only when more data than recent window", func(t *testing.T) {
 		t.Parallel()
-		// recentDays=7, only 5 entries → no monthly summary
 		notes := []session.Note{
 			makeNote("2026-03-10", 5, 4, 0.8),
 			makeNote("2026-03-09", 5, 4, 0.8),
@@ -860,7 +846,7 @@ func TestBuildPlanningHistory(t *testing.T) {
 		}
 		got := buildPlanningHistory(notes, 7)
 		if got.MonthlySummary == nil {
-			t.Error("MonthlySummary should not be nil when entries > recentDays")
+			t.Fatal("MonthlySummary should not be nil when entries > recentDays")
 		}
 		if got.MonthlySummary.TotalDaysTracked != 10 {
 			t.Errorf("TotalDaysTracked = %d, want 10", got.MonthlySummary.TotalDaysTracked)
@@ -875,10 +861,22 @@ func TestBuildPlanningHistory(t *testing.T) {
 			makeNote("2026-03-09", 5, 4, 0.8),
 		}
 		got := buildPlanningHistory(notes, 7)
-		if len(got.Entries) != 1 {
-			t.Errorf("Entries len = %d, want 1 (nil metadata skipped)", len(got.Entries))
-		}
+		assertHistoryEntriesLen(t, got.Entries, 1)
 	})
+}
+
+func assertHistoryTrend(t *testing.T, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Errorf("Trend = %q, want %q", got, want)
+	}
+}
+
+func assertHistoryEntriesLen(t *testing.T, entries []dailyMetrics, want int) {
+	t.Helper()
+	if len(entries) != want {
+		t.Errorf("Entries len = %d, want %d", len(entries), want)
+	}
 }
 
 // BenchmarkBuildPlanningHistory measures aggregation performance at different data sizes.
@@ -985,26 +983,34 @@ func TestComputeCapacityMetrics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			gotByDay, gotVariance := computeCapacityMetrics(tt.entries)
-
-			if tt.approxTolerance > 0 {
-				if diff := tt.wantVariance - gotVariance; diff < -tt.approxTolerance || diff > tt.approxTolerance {
-					t.Errorf("variance = %v, want %v (±%v)", gotVariance, tt.wantVariance, tt.approxTolerance)
-				}
-			} else if tt.wantVariance != 0 && gotVariance == 0 {
-				t.Errorf("variance = 0, want non-zero")
-			}
-
-			for _, key := range tt.wantDayKeys {
-				if _, ok := gotByDay[key]; !ok {
-					t.Errorf("byDay missing key %q", key)
-				}
-			}
-			for _, key := range tt.wantNoDayKeys {
-				if _, ok := gotByDay[key]; ok {
-					t.Errorf("byDay should not have key %q", key)
-				}
-			}
+			assertCapacityVariance(t, gotVariance, tt.wantVariance, tt.approxTolerance)
+			assertMapKeys(t, gotByDay, tt.wantDayKeys, tt.wantNoDayKeys)
 		})
+	}
+}
+
+func assertCapacityVariance(t *testing.T, got, want, tolerance float64) {
+	t.Helper()
+	if tolerance > 0 {
+		if diff := want - got; diff < -tolerance || diff > tolerance {
+			t.Errorf("variance = %v, want %v (±%v)", got, want, tolerance)
+		}
+	} else if want != 0 && got == 0 {
+		t.Errorf("variance = 0, want non-zero")
+	}
+}
+
+func assertMapKeys(t *testing.T, m map[string]float64, wantKeys, noKeys []string) {
+	t.Helper()
+	for _, key := range wantKeys {
+		if _, ok := m[key]; !ok {
+			t.Errorf("byDay missing key %q", key)
+		}
+	}
+	for _, key := range noKeys {
+		if _, ok := m[key]; ok {
+			t.Errorf("byDay should not have key %q", key)
+		}
 	}
 }
 
@@ -1096,60 +1102,9 @@ func TestEnsureMorningDefaults(t *testing.T) {
 		out := &MorningContextOutput{}
 		ensureMorningDefaults(out)
 
-		if out.OverdueTasks == nil {
-			t.Error("OverdueTasks is nil after ensureMorningDefaults")
-		}
-		if out.TodayTasks == nil {
-			t.Error("TodayTasks is nil after ensureMorningDefaults")
-		}
-		if out.UpcomingTasks == nil {
-			t.Error("UpcomingTasks is nil after ensureMorningDefaults")
-		}
-		if out.MyDayTasks == nil {
-			t.Error("MyDayTasks is nil after ensureMorningDefaults")
-		}
-		if out.RecentActivity.BySource == nil {
-			t.Error("RecentActivity.BySource is nil")
-		}
-		if out.RecentActivity.ByProject == nil {
-			t.Error("RecentActivity.ByProject is nil")
-		}
-		if out.RecentActivity.TopEvents == nil {
-			t.Error("RecentActivity.TopEvents is nil")
-		}
-		if out.RecentBuildLogs == nil {
-			t.Error("RecentBuildLogs is nil")
-		}
-		if out.Projects == nil {
-			t.Error("Projects is nil")
-		}
-		if out.Goals == nil {
-			t.Error("Goals is nil")
-		}
-		if out.PlanningHistory == nil {
-			t.Fatal("PlanningHistory is nil")
-		}
-		if out.PlanningHistory.Entries == nil {
-			t.Error("PlanningHistory.Entries is nil")
-		}
-		if out.PlanningHistory.CapacityByDayType == nil {
-			t.Error("PlanningHistory.CapacityByDayType is nil")
-		}
-		if out.PlanningHistory.Trend != "no_data" {
-			t.Errorf("PlanningHistory.Trend = %q, want %q", out.PlanningHistory.Trend, "no_data")
-		}
-		if out.ActiveInsights == nil {
-			t.Error("ActiveInsights is nil")
-		}
-		if out.PendingRecommendations == nil {
-			t.Error("PendingRecommendations is nil")
-		}
-		if out.TodayCompletions == nil {
-			t.Error("TodayCompletions is nil")
-		}
-		if out.UrgentRSS == nil {
-			t.Error("UrgentRSS is nil")
-		}
+		assertMorningSlicesNotNil(t, out)
+		assertMorningMapsNotNil(t, out)
+		assertMorningPlanningHistoryDefaults(t, out)
 	})
 
 	t.Run("existing slices are not overwritten", func(t *testing.T) {
@@ -1309,6 +1264,63 @@ func TestIsCompletionEvent(t *testing.T) {
 					tt.eventType, tt.source, tt.metadata, got, tt.want)
 			}
 		})
+	}
+}
+
+// assertMorningSlicesNotNil checks that all slice fields in MorningContextOutput are non-nil.
+func assertMorningSlicesNotNil(t *testing.T, out *MorningContextOutput) {
+	t.Helper()
+	checks := []struct {
+		name string
+		val  any
+	}{
+		{"OverdueTasks", out.OverdueTasks},
+		{"TodayTasks", out.TodayTasks},
+		{"UpcomingTasks", out.UpcomingTasks},
+		{"MyDayTasks", out.MyDayTasks},
+		{"RecentBuildLogs", out.RecentBuildLogs},
+		{"Projects", out.Projects},
+		{"Goals", out.Goals},
+		{"ActiveInsights", out.ActiveInsights},
+		{"PendingRecommendations", out.PendingRecommendations},
+		{"TodayCompletions", out.TodayCompletions},
+		{"UrgentRSS", out.UrgentRSS},
+	}
+	for _, c := range checks {
+		if c.val == nil {
+			t.Errorf("%s is nil after ensureMorningDefaults", c.name)
+		}
+	}
+}
+
+// assertMorningPlanningHistoryDefaults checks that PlanningHistory is properly initialized.
+func assertMorningPlanningHistoryDefaults(t *testing.T, out *MorningContextOutput) {
+	t.Helper()
+	if out.PlanningHistory == nil {
+		t.Fatal("PlanningHistory is nil")
+	}
+	if out.PlanningHistory.Entries == nil {
+		t.Error("PlanningHistory.Entries is nil")
+	}
+	if out.PlanningHistory.CapacityByDayType == nil {
+		t.Error("PlanningHistory.CapacityByDayType is nil")
+	}
+	if out.PlanningHistory.Trend != "no_data" {
+		t.Errorf("PlanningHistory.Trend = %q, want %q", out.PlanningHistory.Trend, "no_data")
+	}
+}
+
+// assertMorningMapsNotNil checks that map fields inside MorningContextOutput are non-nil.
+func assertMorningMapsNotNil(t *testing.T, out *MorningContextOutput) {
+	t.Helper()
+	if out.RecentActivity.BySource == nil {
+		t.Error("RecentActivity.BySource is nil")
+	}
+	if out.RecentActivity.ByProject == nil {
+		t.Error("RecentActivity.ByProject is nil")
+	}
+	if out.RecentActivity.TopEvents == nil {
+		t.Error("RecentActivity.TopEvents is nil")
 	}
 }
 

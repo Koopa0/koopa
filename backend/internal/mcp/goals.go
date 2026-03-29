@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -56,7 +57,6 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	since := today.AddDate(0, 0, -days)
 
-	// Fetch all data sources
 	goals, err := s.goals.Goals(ctx)
 	if err != nil {
 		return nil, GoalProgressOutput{}, err
@@ -67,102 +67,104 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 		s.logger.Error("goal_progress: active projects", "error", projErr)
 	}
 
-	// Use activity events for completion counting — captures recurring task
-	// completions that disappear from the tasks table snapshot.
 	byProject, taskErr := s.activity.CompletionsByProjectSince(ctx, since)
 	if taskErr != nil {
 		s.logger.Error("goal_progress: completion events by project", "error", taskErr)
 	}
 
-	// Build goal_id → projects mapping (FK-based, not area-based)
-	projectsByGoalID := make(map[uuid.UUID][]string)
-	for pIdx := range projects {
-		p := projects[pIdx]
-		if p.GoalID != nil {
-			projectsByGoalID[*p.GoalID] = append(projectsByGoalID[*p.GoalID], p.Title)
-		}
-	}
+	projectsByGoalID := buildProjectsByGoalID(projects)
+	completionsByProject := buildCompletionsByProject(byProject)
 
-	// Build project → completions mapping
-	completionsByProject := make(map[string]int64)
-	for _, p := range byProject {
-		completionsByProject[p.ProjectTitle] = p.Completed
-	}
-
-	// Build goal progress
-	result := make([]goalProgressDetail, 0)
-	for gIdx := range goals {
-		g := goals[gIdx]
-		// By default, exclude done/abandoned. But if caller explicitly
-		// filters by status, respect their choice.
-		if input.Status == "" && (string(g.Status) == "done" || string(g.Status) == "abandoned") {
-			continue
-		}
-		if input.Area != "" && g.Area != input.Area {
-			continue
-		}
-		if input.Status != "" && string(g.Status) != input.Status {
-			continue
-		}
-
-		gp := goalProgressDetail{
-			Title:           g.Title,
-			Description:     g.Description,
-			Status:          string(g.Status),
-			Area:            g.Area,
-			Quarter:         g.Quarter,
-			RelatedProjects: projectsByGoalID[g.ID],
-		}
-		if gp.RelatedProjects == nil {
-			gp.RelatedProjects = []string{}
-		}
-
-		if g.Deadline != nil {
-			gp.Deadline = g.Deadline.Format(time.DateOnly)
-			gp.DaysRemaining = int(g.Deadline.Sub(today).Hours() / 24)
-		}
-
-		// Sum completions for related projects
-		for _, pTitle := range gp.RelatedProjects {
-			gp.RelatedTasksCompleted += completionsByProject[pTitle]
-		}
-
-		// Weekly task rate
-		weeks := float64(days) / 7.0
-		if weeks > 0 {
-			gp.WeeklyTaskRate = float64(gp.RelatedTasksCompleted) / weeks
-		}
-
-		gp.OnTrackAssessment = assessOnTrack(gp.RelatedTasksCompleted, gp.WeeklyTaskRate, gp.DaysRemaining)
-
-		result = append(result, gp)
-	}
+	result := buildGoalProgressList(goals, input, projectsByGoalID, completionsByProject, today, days)
 
 	out := GoalProgressOutput{Goals: result}
-
 	if input.IncludeDrift {
-		driftDays := clamp(input.Days, 7, 90, 30)
-		drift, err := s.stats.Drift(ctx, driftDays)
-		if err != nil {
-			s.logger.Error("goal_progress: drift analysis", "error", err)
-			// best-effort: return goals without drift
-		} else {
-			areas := make([]driftAreaItem, len(drift.Areas))
-			for i, a := range drift.Areas {
-				areas[i] = driftAreaItem{
-					Area:         a.Area,
-					ActiveGoals:  a.ActiveGoals,
-					EventCount:   a.EventCount,
-					EventPercent: a.EventPercent,
-					GoalPercent:  a.GoalPercent,
-					DriftPercent: a.DriftPercent,
-				}
-			}
-			out.Drift = &driftSummary{Period: drift.Period, Areas: areas}
-		}
+		s.attachDriftAnalysis(ctx, &out, input.Days)
 	}
 
 	return nil, out, nil
+}
+
+// buildGoalProgressList filters and assembles goal progress details.
+func buildGoalProgressList(goals []goal.Goal, input GoalProgressInput, projectsByGoalID map[uuid.UUID][]string, completionsByProject map[string]int64, today time.Time, days int) []goalProgressDetail {
+	result := make([]goalProgressDetail, 0)
+	for gIdx := range goals {
+		g := &goals[gIdx]
+		if !goalMatchesFilter(g, input) {
+			continue
+		}
+		gp := buildGoalDetail(g, projectsByGoalID, completionsByProject, today, days)
+		result = append(result, gp)
+	}
+	return result
+}
+
+// goalMatchesFilter checks whether a goal passes the area/status filters.
+func goalMatchesFilter(g *goal.Goal, input GoalProgressInput) bool {
+	if input.Status == "" && (string(g.Status) == "done" || string(g.Status) == "abandoned") {
+		return false
+	}
+	if input.Area != "" && g.Area != input.Area {
+		return false
+	}
+	if input.Status != "" && string(g.Status) != input.Status {
+		return false
+	}
+	return true
+}
+
+// buildGoalDetail assembles a single goal's progress detail.
+func buildGoalDetail(g *goal.Goal, projectsByGoalID map[uuid.UUID][]string, completionsByProject map[string]int64, today time.Time, days int) goalProgressDetail {
+	gp := goalProgressDetail{
+		Title:           g.Title,
+		Description:     g.Description,
+		Status:          string(g.Status),
+		Area:            g.Area,
+		Quarter:         g.Quarter,
+		RelatedProjects: projectsByGoalID[g.ID],
+	}
+	if gp.RelatedProjects == nil {
+		gp.RelatedProjects = []string{}
+	}
+
+	if g.Deadline != nil {
+		gp.Deadline = g.Deadline.Format(time.DateOnly)
+		gp.DaysRemaining = int(g.Deadline.Sub(today).Hours() / 24)
+	}
+
+	for _, pTitle := range gp.RelatedProjects {
+		gp.RelatedTasksCompleted += completionsByProject[pTitle]
+	}
+
+	weeks := float64(days) / 7.0
+	if weeks > 0 {
+		gp.WeeklyTaskRate = float64(gp.RelatedTasksCompleted) / weeks
+	}
+
+	gp.OnTrackAssessment = assessOnTrack(gp.RelatedTasksCompleted, gp.WeeklyTaskRate, gp.DaysRemaining)
+	return gp
+}
+
+// attachDriftAnalysis fetches drift data and attaches it to the output (best-effort).
+func (s *Server) attachDriftAnalysis(ctx context.Context, out *GoalProgressOutput, inputDays int) {
+	driftDays := clamp(inputDays, 7, 90, 30)
+	drift, err := s.stats.Drift(ctx, driftDays)
+	if err != nil {
+		s.logger.Error("goal_progress: drift analysis", "error", err)
+		return
+	}
+	areas := make([]driftAreaItem, len(drift.Areas))
+	for i, a := range drift.Areas {
+		areas[i] = driftAreaItem{
+			Area:         a.Area,
+			ActiveGoals:  a.ActiveGoals,
+			EventCount:   a.EventCount,
+			EventPercent: a.EventPercent,
+			GoalPercent:  a.GoalPercent,
+			DriftPercent: a.DriftPercent,
+		}
+	}
+	out.Drift = &driftSummary{Period: drift.Period, Areas: areas}
 }
 
 // assessOnTrack determines goal progress status based on task completions and deadline proximity.

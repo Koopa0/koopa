@@ -135,50 +135,62 @@ func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, i
 	s.fetchWeeklyGoalAlignment(ctx, &out, activeProjects, byProject, weekStart, today)
 	s.buildWeeklyTrendConcern(&out, metricsNotes)
 
-	// D5: compare with previous week when requested
 	if input.ComparePrevious {
-		prevStart := weekStart.AddDate(0, 0, -7)
-		prevEnd := weekStart
-		// CompletionsByProjectSince returns all completions from since→now,
-		// so we query from prevStart and subtract current week to isolate previous week.
-		allSincePrev, prevErr := s.activity.CompletionsByProjectSince(ctx, prevStart)
-		if prevErr == nil {
-			var totalSincePrev int64
-			for _, p := range allSincePrev {
-				totalSincePrev += p.Completed
-			}
-			prevTotal := totalSincePrev - int64(out.Tasks.TotalCompleted)
-
-			var prevAvgCapacity float64
-			if s.sessions != nil {
-				prevMetrics, mErr := s.sessions.MetricsHistory(ctx, prevStart)
-				if mErr == nil {
-					entries := buildDailyMetricsList(prevMetrics)
-					var totalCap float64
-					for _, e := range entries {
-						totalCap += float64(e.TasksCompleted)
-					}
-					if len(entries) > 0 {
-						prevAvgCapacity = totalCap / float64(len(entries))
-					}
-				}
-			}
-
-			out.PreviousWeek = &weeklyComparison{
-				Period: weeklyPeriod{
-					From: prevStart.Format(time.DateOnly),
-					To:   prevEnd.AddDate(0, 0, -1).Format(time.DateOnly),
-				},
-				TasksCompleted: int(prevTotal),
-				Delta: weeklyDelta{
-					TasksCompleted: out.Tasks.TotalCompleted - int(prevTotal),
-					AvgCapacity:    out.MetricsTrend.AvgCapacity - prevAvgCapacity,
-				},
-			}
-		}
+		s.attachWeeklyComparison(ctx, &out, weekStart)
 	}
 
 	return nil, out, nil
+}
+
+// attachWeeklyComparison computes and attaches a comparison with the previous week.
+func (s *Server) attachWeeklyComparison(ctx context.Context, out *WeeklySummaryOutput, weekStart time.Time) {
+	prevStart := weekStart.AddDate(0, 0, -7)
+	prevEnd := weekStart
+
+	allSincePrev, prevErr := s.activity.CompletionsByProjectSince(ctx, prevStart)
+	if prevErr != nil {
+		return
+	}
+
+	var totalSincePrev int64
+	for _, p := range allSincePrev {
+		totalSincePrev += p.Completed
+	}
+	prevTotal := totalSincePrev - int64(out.Tasks.TotalCompleted)
+
+	prevAvgCapacity := s.computePrevWeekCapacity(ctx, prevStart)
+
+	out.PreviousWeek = &weeklyComparison{
+		Period: weeklyPeriod{
+			From: prevStart.Format(time.DateOnly),
+			To:   prevEnd.AddDate(0, 0, -1).Format(time.DateOnly),
+		},
+		TasksCompleted: int(prevTotal),
+		Delta: weeklyDelta{
+			TasksCompleted: out.Tasks.TotalCompleted - int(prevTotal),
+			AvgCapacity:    out.MetricsTrend.AvgCapacity - prevAvgCapacity,
+		},
+	}
+}
+
+// computePrevWeekCapacity computes the average daily capacity for the previous week.
+func (s *Server) computePrevWeekCapacity(ctx context.Context, prevStart time.Time) float64 {
+	if s.sessions == nil {
+		return 0
+	}
+	prevMetrics, mErr := s.sessions.MetricsHistory(ctx, prevStart)
+	if mErr != nil {
+		return 0
+	}
+	entries := buildDailyMetricsList(prevMetrics)
+	var totalCap float64
+	for _, e := range entries {
+		totalCap += float64(e.TasksCompleted)
+	}
+	if len(entries) > 0 {
+		return totalCap / float64(len(entries))
+	}
+	return 0
 }
 
 // fetchWeeklyTasks fetches completed tasks grouped by project for the week.

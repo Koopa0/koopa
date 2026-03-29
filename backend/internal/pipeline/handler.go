@@ -71,7 +71,7 @@ type GitHubFetcher interface {
 
 // FeedCollector fetches new items from feeds and scores them.
 type FeedCollector interface {
-	FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, error)
+	FetchFeed(ctx context.Context, f *feed.Feed) ([]uuid.UUID, error)
 }
 
 // FeedLister lists feeds by schedule.

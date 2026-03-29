@@ -349,20 +349,17 @@ func TestValidateSessionNoteInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			err := validateSessionNoteInput(tt.input)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("validateSessionNoteInput() expected error containing %q, got nil", tt.errMsg)
-				}
-				if tt.errMsg != "" {
-					errStr := err.Error()
-					if errStr == "" || !strings.Contains(errStr, tt.errMsg) {
-						t.Errorf("validateSessionNoteInput() error = %q, want to contain %q", errStr, tt.errMsg)
-					}
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("validateSessionNoteInput() unexpected error: %v", err)
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("validateSessionNoteInput() unexpected error: %v", err)
+			if err == nil {
+				t.Fatalf("validateSessionNoteInput() expected error containing %q, got nil", tt.errMsg)
+			}
+			if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("validateSessionNoteInput() error = %q, want to contain %q", err.Error(), tt.errMsg)
 			}
 		})
 	}

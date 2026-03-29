@@ -111,38 +111,9 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 	endpoint := fmt.Sprintf("%s/v1/data_sources/%s/query", notionBaseURL, dataSourceID)
 
 	for range maxPages {
-		body := map[string]any{
-			"page_size": 100,
-		}
-		if filter != nil {
-			body["filter"] = filter
-		}
-		if cursor != nil {
-			body["start_cursor"] = *cursor
-		}
-
-		payload, err := json.Marshal(body)
+		qr, err := c.fetchDataSourcePage(ctx, endpoint, filter, cursor)
 		if err != nil {
-			return nil, fmt.Errorf("marshaling query body: %w", err)
-		}
-
-		resp, err := c.doWithRetry(ctx, http.MethodPost, endpoint, func() io.Reader {
-			return bytes.NewReader(payload)
-		})
-		if err != nil {
-			return nil, fmt.Errorf("querying data source %s: %w", dataSourceID, err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			err := notionError(resp, "data source query "+dataSourceID)
-			_ = resp.Body.Close() // #nosec G104 -- best-effort close
 			return nil, err
-		}
-		var qr databaseQueryResponse
-		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxNotionResponseSize)).Decode(&qr)
-		_ = resp.Body.Close() // #nosec G104 -- best-effort close
-		if decodeErr != nil {
-			return nil, fmt.Errorf("decoding data source query response: %w", decodeErr)
 		}
 
 		for _, r := range qr.Results {
@@ -158,6 +129,45 @@ func (c *Client) QueryDataSource(ctx context.Context, dataSourceID string, filte
 	}
 
 	return allResults, nil
+}
+
+// fetchDataSourcePage fetches a single page of results from a Notion data source query.
+func (c *Client) fetchDataSourcePage(ctx context.Context, endpoint string, filter json.RawMessage, cursor *string) (*databaseQueryResponse, error) {
+	body := map[string]any{
+		"page_size": 100,
+	}
+	if filter != nil {
+		body["filter"] = filter
+	}
+	if cursor != nil {
+		body["start_cursor"] = *cursor
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling query body: %w", err)
+	}
+
+	resp, err := c.doWithRetry(ctx, http.MethodPost, endpoint, func() io.Reader {
+		return bytes.NewReader(payload)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying data source: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		err := notionError(resp, "data source query")
+		_ = resp.Body.Close() // #nosec G104 -- best-effort close
+		return nil, err
+	}
+	var qr databaseQueryResponse
+	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxNotionResponseSize)).Decode(&qr)
+	_ = resp.Body.Close() // #nosec G104 -- best-effort close
+	if decodeErr != nil {
+		return nil, fmt.Errorf("decoding data source query response: %w", decodeErr)
+	}
+
+	return &qr, nil
 }
 
 // QueryPageIDs queries a data source and returns just the page IDs.

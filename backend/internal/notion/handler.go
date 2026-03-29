@@ -14,8 +14,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/activity"
-	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/ai/exec"
+	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/task"
@@ -169,15 +169,7 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	// Only allowed before the webhook secret is configured (initial setup).
 	// Once the secret is set, this path is closed to prevent abuse.
 	if h.webhookSecret == "" {
-		var probe struct {
-			VerificationToken string `json:"verification_token"`
-		}
-		if json.Unmarshal(body, &probe) == nil && probe.VerificationToken != "" {
-			h.logger.Info("notion webhook verification handshake received")
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		http.Error(w, "not implemented", http.StatusNotImplemented)
+		h.handleVerificationHandshake(w, body)
 		return
 	}
 
@@ -195,30 +187,56 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// replay protection: timestamp ±5min + entity dedup
-	if h.dedup != nil {
-		if payload.Timestamp == "" {
-			h.logger.Warn("notion webhook missing timestamp, rejecting")
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		if err := webhook.ValidateTimestamp(payload.Timestamp, 5*time.Minute); err != nil {
-			h.logger.Warn("notion webhook timestamp rejected", "error", err)
-			http.Error(w, "request expired", http.StatusBadRequest)
-			return
-		}
-		dedupKey := payload.Entity.ID + "|" + payload.Timestamp
-		if h.dedup.Seen(dedupKey) {
-			h.logger.Warn("notion webhook replay detected",
-				"entity_id", payload.Entity.ID,
-				"timestamp", payload.Timestamp,
-			)
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+	if rejected := h.rejectReplay(w, &payload); rejected {
+		return
 	}
 
-	role := h.resolveRole(r.Context(), payload.Data.Parent.DataSourceID)
+	h.dispatchWebhookSync(r.Context(), w, &payload)
+}
+
+// handleVerificationHandshake responds to Notion's initial webhook verification probe.
+func (h *Handler) handleVerificationHandshake(w http.ResponseWriter, body []byte) {
+	var probe struct {
+		VerificationToken string `json:"verification_token"`
+	}
+	if json.Unmarshal(body, &probe) == nil && probe.VerificationToken != "" {
+		h.logger.Info("notion webhook verification handshake received")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+// rejectReplay performs timestamp and dedup checks. Returns true if the request was rejected.
+func (h *Handler) rejectReplay(w http.ResponseWriter, payload *WebhookPayload) bool {
+	if h.dedup == nil {
+		return false
+	}
+	if payload.Timestamp == "" {
+		h.logger.Warn("notion webhook missing timestamp, rejecting")
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return true
+	}
+	if err := webhook.ValidateTimestamp(payload.Timestamp, 5*time.Minute); err != nil {
+		h.logger.Warn("notion webhook timestamp rejected", "error", err)
+		http.Error(w, "request expired", http.StatusBadRequest)
+		return true
+	}
+	dedupKey := payload.Entity.ID + "|" + payload.Timestamp
+	if h.dedup.Seen(dedupKey) {
+		h.logger.Warn("notion webhook replay detected",
+			"entity_id", payload.Entity.ID,
+			"timestamp", payload.Timestamp,
+		)
+		w.WriteHeader(http.StatusOK)
+		return true
+	}
+	return false
+}
+
+// dispatchWebhookSync routes a validated webhook payload to the correct sync handler.
+func (h *Handler) dispatchWebhookSync(ctx context.Context, w http.ResponseWriter, payload *WebhookPayload) {
+	role := h.resolveRole(ctx, payload.Data.Parent.DataSourceID)
 	pageID := payload.Entity.ID
 
 	h.logger.Info("notion webhook received",
@@ -228,19 +246,16 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		"role", role,
 	)
 
-	// All roles return 200 on error (best-effort) so Notion does not retry
-	// endlessly. Errors are logged for alerting. The hourly SyncAll cron
-	// acts as the safety net for any missed updates.
 	var syncErr error
 	switch role {
 	case RoleProjects:
-		syncErr = h.trySync(r.Context(), pageID, h.syncProject)
+		syncErr = h.trySync(ctx, pageID, h.syncProject)
 	case RoleTasks:
-		syncErr = h.trySync(r.Context(), pageID, h.syncTask)
+		syncErr = h.trySync(ctx, pageID, h.syncTask)
 	case RoleBooks:
-		syncErr = h.trySync(r.Context(), pageID, h.syncBook)
+		syncErr = h.trySync(ctx, pageID, h.syncBook)
 	case RoleGoals:
-		syncErr = h.trySync(r.Context(), pageID, h.syncGoal)
+		syncErr = h.trySync(ctx, pageID, h.syncGoal)
 	default:
 		h.logger.Debug("notion webhook from unknown database, skipping",
 			"data_source_id", payload.Data.Parent.DataSourceID,
@@ -251,9 +266,8 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("syncing from notion webhook", "role", role, "page_id", pageID, "error", syncErr)
 	}
 
-	// best-effort: emit event for cross-cutting subscribers
 	if syncErr == nil && role != "" {
-		h.emitPageUpdated(r.Context(), pageID, role)
+		h.emitPageUpdated(ctx, pageID, role)
 	}
 
 	w.WriteHeader(http.StatusOK)

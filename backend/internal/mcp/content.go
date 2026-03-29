@@ -55,7 +55,7 @@ type CreateContentInput struct {
 	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
 }
 
-func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, input CreateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
+func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, input *CreateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
 	if input.Title == "" {
 		return nil, ContentActionOutput{}, fmt.Errorf("title is required")
 	}
@@ -125,7 +125,7 @@ type UpdateContentInput struct {
 	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
 }
 
-func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, input UpdateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
+func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, input *UpdateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
 	if input.ContentID == "" {
 		return nil, ContentActionOutput{}, fmt.Errorf("content_id is required")
 	}
@@ -302,43 +302,9 @@ func (s *Server) getContentPipeline(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, ContentPipelineOutput{}, fmt.Errorf("listing contents: %w", err)
 	}
 
-	var filtered []content.Content
-	switch view {
-	case "queue":
-		for i := range all {
-			c := &all[i]
-			if input.Status != "" && input.Status != "all" {
-				if string(c.Status) != input.Status {
-					continue
-				}
-			} else if c.Status != content.StatusDraft && c.Status != content.StatusReview {
-				continue
-			}
-			filtered = append(filtered, *c)
-		}
-	case "calendar":
-		sevenDaysAgo := time.Now().AddDate(0, 0, -7)
-		for i := range all {
-			c := &all[i]
-			// Published in last 7 days.
-			if c.Status == content.StatusPublished && c.PublishedAt != nil && c.PublishedAt.After(sevenDaysAgo) {
-				filtered = append(filtered, *c)
-				continue
-			}
-			// Drafts and review items (potential scheduled content).
-			if c.Status == content.StatusDraft || c.Status == content.StatusReview {
-				filtered = append(filtered, *c)
-			}
-		}
-	case "recent":
-		for i := range all {
-			c := &all[i]
-			if c.Status == content.StatusPublished {
-				filtered = append(filtered, *c)
-			}
-		}
-	default:
-		return nil, ContentPipelineOutput{}, fmt.Errorf("invalid view %q: use queue, calendar, or recent", view)
+	filtered, err := filterContentByView(all, view, input.Status)
+	if err != nil {
+		return nil, ContentPipelineOutput{}, err
 	}
 
 	if len(filtered) > limit {
@@ -355,6 +321,66 @@ func (s *Server) getContentPipeline(ctx context.Context, _ *mcp.CallToolRequest,
 		Items: entries,
 		Total: len(entries),
 	}, nil
+}
+
+// filterContentByView applies the view-specific filter to content items.
+func filterContentByView(all []content.Content, view, status string) ([]content.Content, error) {
+	switch view {
+	case "queue":
+		return filterQueueView(all, status), nil
+	case "calendar":
+		return filterCalendarView(all), nil
+	case "recent":
+		return filterRecentView(all), nil
+	default:
+		return nil, fmt.Errorf("invalid view %q: use queue, calendar, or recent", view)
+	}
+}
+
+// filterQueueView returns draft/review items, optionally filtered by explicit status.
+func filterQueueView(all []content.Content, status string) []content.Content {
+	var filtered []content.Content
+	for i := range all {
+		c := &all[i]
+		if status != "" && status != "all" {
+			if string(c.Status) != status {
+				continue
+			}
+		} else if c.Status != content.StatusDraft && c.Status != content.StatusReview {
+			continue
+		}
+		filtered = append(filtered, *c)
+	}
+	return filtered
+}
+
+// filterCalendarView returns recently published items and drafts/review items.
+func filterCalendarView(all []content.Content) []content.Content {
+	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+	var filtered []content.Content
+	for i := range all {
+		c := &all[i]
+		if c.Status == content.StatusPublished && c.PublishedAt != nil && c.PublishedAt.After(sevenDaysAgo) {
+			filtered = append(filtered, *c)
+			continue
+		}
+		if c.Status == content.StatusDraft || c.Status == content.StatusReview {
+			filtered = append(filtered, *c)
+		}
+	}
+	return filtered
+}
+
+// filterRecentView returns only published items.
+func filterRecentView(all []content.Content) []content.Content {
+	var filtered []content.Content
+	for i := range all {
+		c := &all[i]
+		if c.Status == content.StatusPublished {
+			filtered = append(filtered, *c)
+		}
+	}
+	return filtered
 }
 
 // --- synthesize_topic ---
@@ -408,27 +434,39 @@ func (s *Server) broadenSearchResults(ctx context.Context, results []knowledgeRe
 		if len(w) < 3 || len(results) >= maxSources {
 			continue
 		}
-		_, extraOut, extraErr := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
+		_, extraOut, extraErr := s.searchKnowledge(ctx, nil, &SearchKnowledgeInput{
 			Query: w,
 			Limit: 5,
 		})
 		if extraErr != nil {
 			continue
 		}
-		for _, r := range extraOut.Results {
-			dup := false
-			for _, existing := range results {
-				if (r.Slug != "" && r.Slug == existing.Slug) || (r.FilePath != "" && r.FilePath == existing.FilePath) {
-					dup = true
-					break
-				}
-			}
-			if !dup && len(results) < maxSources {
-				results = append(results, r)
-			}
-		}
+		results = mergeUniqueResults(results, extraOut.Results, maxSources)
 	}
 	return results
+}
+
+// mergeUniqueResults appends non-duplicate results up to maxSources.
+func mergeUniqueResults(existing, candidates []knowledgeResult, maxSources int) []knowledgeResult {
+	for _, r := range candidates {
+		if len(existing) >= maxSources {
+			break
+		}
+		if !isDuplicateResult(existing, &r) {
+			existing = append(existing, r)
+		}
+	}
+	return existing
+}
+
+// isDuplicateResult checks if a result already exists in the slice by slug or file path.
+func isDuplicateResult(results []knowledgeResult, candidate *knowledgeResult) bool {
+	for _, existing := range results {
+		if (candidate.Slug != "" && candidate.Slug == existing.Slug) || (candidate.FilePath != "" && candidate.FilePath == existing.FilePath) {
+			return true
+		}
+	}
+	return false
 }
 
 // sourceClassification holds classified source lines and counts from knowledge results.
@@ -530,7 +568,7 @@ func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, in
 	maxSources := clamp(input.MaxSources, 5, 30, 15)
 
 	// Step 1: search and broaden
-	_, searchOut, err := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
+	_, searchOut, err := s.searchKnowledge(ctx, nil, &SearchKnowledgeInput{
 		Query: input.Query,
 		Limit: maxSources,
 	})

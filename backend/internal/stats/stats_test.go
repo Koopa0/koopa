@@ -146,28 +146,7 @@ func TestComputeAreaDrift(t *testing.T) {
 				t.Fatalf("computeAreaDrift() len = %d, want %d; got %+v", len(got), tt.wantLen, got)
 			}
 
-			// Special case: sorted-by-drift test only checks first element.
-			if tt.name == "sorted by absolute drift descending" {
-				if got[0].Area != "a" {
-					t.Errorf("computeAreaDrift() first area = %q, want %q", got[0].Area, "a")
-				}
-				if math.Abs(got[0].DriftPercent-66.666) > 0.1 {
-					t.Errorf("computeAreaDrift() first drift = %f, want ~66.7", got[0].DriftPercent)
-				}
-				return
-			}
-
-			if tt.wantAreas == nil {
-				return
-			}
-
-			opts := cmp.Options{
-				cmpopts.EquateApprox(0, 0.0001), // float tolerance
-				cmpopts.SortSlices(func(a, b AreaDrift) bool { return a.Area < b.Area }),
-			}
-			if diff := cmp.Diff(tt.wantAreas, got, opts...); diff != "" {
-				t.Errorf("computeAreaDrift() mismatch (-want +got):\n%s", diff)
-			}
+			assertAreaDriftResults(t, tt.name, got, tt.wantAreas)
 		})
 	}
 }
@@ -280,19 +259,6 @@ type errRow struct{ err error }
 
 func (e *errRow) Scan(_ ...any) error { return e.err }
 
-// errRows always returns an error from the first call to Next (via Err).
-type errRows struct{ err error }
-
-func (e *errRows) Next() bool                                   { return false }
-func (e *errRows) Scan(_ ...any) error                          { return nil }
-func (e *errRows) Err() error                                   { return e.err }
-func (e *errRows) Close()                                       {}
-func (e *errRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
-func (e *errRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (e *errRows) Values() ([]any, error)                       { return nil, nil }
-func (e *errRows) RawValues() [][]byte                          { return nil }
-func (e *errRows) Conn() *pgx.Conn                              { return nil }
-
 // silentLogger discards all log output from the handler.
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -316,7 +282,7 @@ func TestHandler_Overview_Success(t *testing.T) {
 
 	h := NewHandler(NewStore(dbtx), silentLogger())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats", http.NoBody)
 	w := httptest.NewRecorder()
 	h.Overview(w, req)
 
@@ -353,7 +319,7 @@ func TestHandler_Overview_StoreError(t *testing.T) {
 
 	h := NewHandler(NewStore(dbtx), silentLogger())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats", http.NoBody)
 	w := httptest.NewRecorder()
 	h.Overview(w, req)
 
@@ -400,11 +366,11 @@ func TestHandler_Drift_DaysParamClamping(t *testing.T) {
 
 			h := NewHandler(NewStore(dbtx), silentLogger())
 
-			url := "/api/admin/stats/drift"
+			reqURL := "/api/admin/stats/drift"
 			if tt.query != "" {
-				url += "?" + tt.query
+				reqURL += "?" + tt.query
 			}
-			req := httptest.NewRequest(http.MethodGet, url, nil)
+			req := httptest.NewRequest(http.MethodGet, reqURL, http.NoBody)
 			w := httptest.NewRecorder()
 			h.Drift(w, req)
 
@@ -440,7 +406,7 @@ func TestHandler_Drift_StoreError(t *testing.T) {
 
 	h := NewHandler(NewStore(dbtx), silentLogger())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/drift", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/drift", http.NoBody)
 	w := httptest.NewRecorder()
 	h.Drift(w, req)
 
@@ -466,7 +432,7 @@ func TestHandler_Learning_Success(t *testing.T) {
 
 	h := NewHandler(NewStore(dbtx), silentLogger())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", http.NoBody)
 	w := httptest.NewRecorder()
 	h.Learning(w, req)
 
@@ -511,7 +477,7 @@ func TestHandler_Learning_AllQueriesFail_ReturnsError(t *testing.T) {
 
 	h := NewHandler(NewStore(dbtx), silentLogger())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", http.NoBody)
 	w := httptest.NewRecorder()
 	h.Learning(w, req)
 
@@ -551,7 +517,7 @@ func TestHandler_Learning_PartialFailure_StillSucceeds(t *testing.T) {
 
 	h := NewHandler(NewStore(dbtx), silentLogger())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", http.NoBody)
 	w := httptest.NewRecorder()
 	h.Learning(w, req)
 
@@ -596,7 +562,7 @@ func FuzzDriftDaysParam(f *testing.F) {
 		// sequences through the handler's Atoi / bounds-check path without
 		// triggering the HTTP library's URL validator.
 		escaped := url.QueryEscape(rawDays)
-		req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/drift?days="+escaped, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/drift?days="+escaped, http.NoBody)
 		w := httptest.NewRecorder()
 
 		// Must not panic.
@@ -609,30 +575,58 @@ func FuzzDriftDaysParam(f *testing.F) {
 
 		// If successful, Period must match "last N days" where N is in [1, 90].
 		if w.Code == http.StatusOK {
-			var resp struct {
-				Data DriftReport `json:"data"`
-			}
-			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-				t.Fatalf("decoding fuzz response: %v", err)
-			}
-			// Period format: "last N days" — N must be between 1 and 90.
-			var n int
-			if _, err := fmt.Sscanf(resp.Data.Period, "last %d days", &n); err != nil {
-				t.Errorf("Period %q doesn't match 'last N days': %v", resp.Data.Period, err)
-				return
-			}
-			if n < 1 || n > 90 {
-				t.Errorf("Period N = %d, want [1, 90]", n)
-			}
-
-			// Verify that non-parseable or out-of-range inputs always produce days=30.
-			d, err := strconv.Atoi(strings.TrimSpace(rawDays))
-			outOfRange := err != nil || d <= 0 || d > 90
-			if outOfRange && n != 30 {
-				t.Errorf("out-of-range input %q produced days=%d, want 30", rawDays, n)
-			}
+			assertDriftFuzzResponse(t, w, rawDays)
 		}
 	})
+}
+
+// assertAreaDriftResults checks the computed drift results against expected values.
+func assertAreaDriftResults(t *testing.T, testName string, got, wantAreas []AreaDrift) {
+	t.Helper()
+	// Special case: sorted-by-drift test only checks first element.
+	if testName == "sorted by absolute drift descending" {
+		if got[0].Area != "a" {
+			t.Errorf("computeAreaDrift() first area = %q, want %q", got[0].Area, "a")
+		}
+		if math.Abs(got[0].DriftPercent-66.666) > 0.1 {
+			t.Errorf("computeAreaDrift() first drift = %f, want ~66.7", got[0].DriftPercent)
+		}
+		return
+	}
+	if wantAreas == nil {
+		return
+	}
+	opts := cmp.Options{
+		cmpopts.EquateApprox(0, 0.0001),
+		cmpopts.SortSlices(func(a, b AreaDrift) bool { return a.Area < b.Area }),
+	}
+	if diff := cmp.Diff(wantAreas, got, opts...); diff != "" {
+		t.Errorf("computeAreaDrift() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// assertDriftFuzzResponse validates a successful drift fuzz response: period format and range clamping.
+func assertDriftFuzzResponse(t *testing.T, w *httptest.ResponseRecorder, rawDays string) {
+	t.Helper()
+	var resp struct {
+		Data DriftReport `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding fuzz response: %v", err)
+	}
+	var n int
+	if _, err := fmt.Sscanf(resp.Data.Period, "last %d days", &n); err != nil {
+		t.Errorf("Period %q doesn't match 'last N days': %v", resp.Data.Period, err)
+		return
+	}
+	if n < 1 || n > 90 {
+		t.Errorf("Period N = %d, want [1, 90]", n)
+	}
+	d, err := strconv.Atoi(strings.TrimSpace(rawDays))
+	outOfRange := err != nil || d <= 0 || d > 90
+	if outOfRange && n != 30 {
+		t.Errorf("out-of-range input %q produced days=%d, want 30", rawDays, n)
+	}
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────

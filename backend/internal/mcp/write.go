@@ -150,6 +150,29 @@ type CreateTaskOutput struct {
 	MyDayTasks []myDayRemaining `json:"my_day_tasks,omitempty"`
 }
 
+// resolvedProject holds the resolved project info for task creation.
+type resolvedProject struct {
+	id           *uuid.UUID
+	title        string
+	notionPageID string
+}
+
+// resolveCreateTaskProject resolves the project for task creation.
+func (s *Server) resolveCreateTaskProject(ctx context.Context, projectInput string) resolvedProject {
+	if projectInput == "" {
+		return resolvedProject{}
+	}
+	proj, projErr := s.resolveProjectChain(ctx, projectInput)
+	if projErr != nil {
+		return resolvedProject{}
+	}
+	rp := resolvedProject{id: &proj.ID, title: proj.Title}
+	if proj.NotionPageID != nil {
+		rp.notionPageID = *proj.NotionPageID
+	}
+	return rp
+}
+
 func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *CreateTaskInput) (*mcp.CallToolResult, CreateTaskOutput, error) {
 	if input.Title == "" {
 		return nil, CreateTaskOutput{}, fmt.Errorf("title is required")
@@ -157,7 +180,6 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	if !validEnergy(input.Energy) {
 		return nil, CreateTaskOutput{}, fmt.Errorf("invalid energy %q (must be High or Low)", input.Energy)
 	}
-
 	if s.notionTasks == nil {
 		return nil, CreateTaskOutput{}, fmt.Errorf("notion task writer not configured")
 	}
@@ -167,46 +189,24 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		return nil, CreateTaskOutput{}, err
 	}
 
-	// Resolve project before Notion create so we can pass the relation
-	var projectID *uuid.UUID
-	var projectTitle string
-	var projectNotionPageID string
-	if input.Project != "" {
-		proj, projErr := s.resolveProjectChain(ctx, input.Project)
-		if projErr == nil {
-			projectID = &proj.ID
-			projectTitle = proj.Title
-			if proj.NotionPageID != nil {
-				projectNotionPageID = *proj.NotionPageID
-			}
-		}
-	}
+	rp := s.resolveCreateTaskProject(ctx, input.Project)
 
-	// Parse due date for local DB
 	var due *time.Time
 	if input.Due != "" {
-		d, parseErr := time.Parse(time.DateOnly, input.Due)
-		if parseErr == nil {
+		if d, parseErr := time.Parse(time.DateOnly, input.Due); parseErr == nil {
 			due = &d
 		}
 	}
 
-	// Create in Notion with all properties
 	pageID, err := s.notionTasks.CreateTask(ctx, &NotionCreateTaskParams{
-		DatabaseID:  taskDBID,
-		Title:       input.Title,
-		DueDate:     input.Due,
-		Description: input.Notes,
-		Priority:    input.Priority,
-		Energy:      input.Energy,
-		MyDay:       input.MyDay,
-		ProjectID:   projectNotionPageID,
+		DatabaseID: taskDBID, Title: input.Title, DueDate: input.Due,
+		Description: input.Notes, Priority: input.Priority, Energy: input.Energy,
+		MyDay: input.MyDay, ProjectID: rp.notionPageID,
 	})
 	if err != nil {
 		return nil, CreateTaskOutput{}, fmt.Errorf("creating notion task: %w", err)
 	}
 
-	// Upsert to local DB immediately (don't wait for webhook)
 	assignee := input.Assignee
 	if assignee == "" {
 		assignee = "human"
@@ -215,42 +215,19 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		return nil, CreateTaskOutput{}, fmt.Errorf("invalid assignee %q (must be human, claude-code, or cowork)", assignee)
 	}
 
-	upsertParams := &task.UpsertByNotionParams{
-		Title:        input.Title,
-		Status:       task.StatusTodo,
-		Due:          due,
-		ProjectID:    projectID,
-		NotionPageID: pageID,
-		Energy:       input.Energy,
-		Priority:     input.Priority,
-		MyDay:        input.MyDay,
-		Description:  input.Notes,
-		Assignee:     assignee,
-	}
-	localTask, upsertErr := s.tasks.UpsertByNotionPageID(ctx, upsertParams)
+	localTask, upsertErr := s.tasks.UpsertByNotionPageID(ctx, &task.UpsertByNotionParams{
+		Title: input.Title, Status: task.StatusTodo, Due: due,
+		ProjectID: rp.id, NotionPageID: pageID, Energy: input.Energy,
+		Priority: input.Priority, MyDay: input.MyDay, Description: input.Notes, Assignee: assignee,
+	})
 
-	out := CreateTaskOutput{
-		TaskID: pageID,
-		Title:  input.Title,
-		Due:    input.Due,
-	}
-	if projectTitle != "" {
-		out.Project = projectTitle
-	} else if input.Project != "" {
-		out.Warning = fmt.Sprintf("task created but project %q not found", input.Project)
-	}
-	if localTask != nil {
-		out.TaskID = localTask.ID.String()
-	}
+	out := buildCreateTaskOutput(pageID, input, rp, localTask)
 	if upsertErr != nil {
 		s.logger.Error("create_task: local upsert failed (webhook will retry)", "error", upsertErr)
 	}
 
 	s.logger.Info("task created via mcp",
-		"notion_page_id", pageID,
-		"title", input.Title,
-		"due", input.Due,
-		"project", out.Project,
+		"notion_page_id", pageID, "title", input.Title, "due", input.Due, "project", out.Project,
 	)
 
 	if input.MyDay {
@@ -258,6 +235,20 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	}
 
 	return nil, out, nil
+}
+
+// buildCreateTaskOutput assembles the output from create task results.
+func buildCreateTaskOutput(pageID string, input *CreateTaskInput, rp resolvedProject, localTask *task.Task) CreateTaskOutput {
+	out := CreateTaskOutput{TaskID: pageID, Title: input.Title, Due: input.Due}
+	if rp.title != "" {
+		out.Project = rp.title
+	} else if input.Project != "" {
+		out.Warning = fmt.Sprintf("task created but project %q not found", input.Project)
+	}
+	if localTask != nil {
+		out.TaskID = localTask.ID.String()
+	}
+	return out
 }
 
 // --- update_task ---
@@ -300,51 +291,12 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		return nil, UpdateTaskOutput{}, err
 	}
 
-	params := &task.UpdateParams{ID: t.ID}
-
-	if input.NewTitle != nil {
-		params.Title = input.NewTitle
-	}
-	if input.Status != nil {
-		st := mapInputTaskStatus(*input.Status)
-		params.Status = &st
-	}
-	if input.Due != nil {
-		due, parseErr := time.Parse(time.DateOnly, *input.Due)
-		if parseErr != nil {
-			return nil, UpdateTaskOutput{}, fmt.Errorf("invalid due date %q (expected YYYY-MM-DD)", *input.Due)
-		}
-		params.Due = &due
-	}
-	if input.Priority != nil {
-		params.Priority = input.Priority
-	}
-	if input.Energy != nil {
-		params.Energy = input.Energy
-	}
-	if input.MyDay != nil {
-		params.MyDay = input.MyDay
-	}
-	if input.Notes != nil {
-		params.Description = input.Notes
-	}
-	if input.Assignee != nil {
-		if !task.ValidAssignee(*input.Assignee) {
-			return nil, UpdateTaskOutput{}, fmt.Errorf("invalid assignee %q (must be human, claude-code, or cowork)", *input.Assignee)
-		}
-		params.Assignee = input.Assignee
-	}
-	var resolvedProject *project.Project
-	if input.Project != nil {
-		proj, projErr := s.resolveProjectChain(ctx, *input.Project)
-		if projErr == nil {
-			resolvedProject = proj
-			params.ProjectID = &proj.ID
-		}
+	params, resolvedProj, buildErr := s.buildUpdateTaskParams(ctx, t.ID, input)
+	if buildErr != nil {
+		return nil, UpdateTaskOutput{}, buildErr
 	}
 
-	// Sync changed properties to Notion (best-effort, before local update)
-	s.syncTaskToNotion(ctx, t, input, resolvedProject)
+	s.syncTaskToNotion(ctx, t, input, resolvedProj)
 
 	updated, err := s.tasks.Update(ctx, params)
 	if err != nil {
@@ -387,6 +339,55 @@ func (s *Server) syncTaskToNotion(ctx context.Context, t *task.Task, input *Upda
 	}
 }
 
+// buildUpdateTaskParams constructs task.UpdateParams from input, resolving project and validating fields.
+func (s *Server) buildUpdateTaskParams(ctx context.Context, taskID uuid.UUID, input *UpdateTaskInput) (*task.UpdateParams, *project.Project, error) {
+	params := &task.UpdateParams{ID: taskID}
+
+	if input.NewTitle != nil {
+		params.Title = input.NewTitle
+	}
+	if input.Status != nil {
+		st := mapInputTaskStatus(*input.Status)
+		params.Status = &st
+	}
+	if input.Due != nil {
+		due, parseErr := time.Parse(time.DateOnly, *input.Due)
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("invalid due date %q (expected YYYY-MM-DD)", *input.Due)
+		}
+		params.Due = &due
+	}
+	if input.Priority != nil {
+		params.Priority = input.Priority
+	}
+	if input.Energy != nil {
+		params.Energy = input.Energy
+	}
+	if input.MyDay != nil {
+		params.MyDay = input.MyDay
+	}
+	if input.Notes != nil {
+		params.Description = input.Notes
+	}
+	if input.Assignee != nil {
+		if !task.ValidAssignee(*input.Assignee) {
+			return nil, nil, fmt.Errorf("invalid assignee %q (must be human, claude-code, or cowork)", *input.Assignee)
+		}
+		params.Assignee = input.Assignee
+	}
+
+	var resolvedProj *project.Project
+	if input.Project != nil {
+		proj, projErr := s.resolveProjectChain(ctx, *input.Project)
+		if projErr == nil {
+			resolvedProj = proj
+			params.ProjectID = &proj.ID
+		}
+	}
+
+	return params, resolvedProj, nil
+}
+
 // --- batch_my_day ---
 
 // BatchMyDayInput is the input for the batch_my_day tool.
@@ -410,47 +411,59 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 	var out BatchMyDayOutput
 
 	if input.Clear {
-		// Sync to Notion before clearing local DB (best-effort)
-		if s.notionTasks != nil {
-			currentMyDay, myDayErr := s.tasks.MyDayTasksWithNotionPageID(ctx)
-			if myDayErr != nil {
-				s.logger.Warn("batch_my_day: fetching notion page ids for clear", "error", myDayErr)
-			}
-			for _, t := range currentMyDay {
-				s.syncMyDayToNotion(ctx, t.NotionPageID, false)
-			}
-		}
-
-		n, err := s.tasks.ClearAllMyDay(ctx)
+		n, err := s.clearMyDay(ctx)
 		if err != nil {
-			return nil, BatchMyDayOutput{}, fmt.Errorf("clearing my day: %w", err)
+			return nil, BatchMyDayOutput{}, err
 		}
-		out.Cleared = int(n)
+		out.Cleared = n
 	}
 
 	for _, idStr := range input.TaskIDs {
-		id, parseErr := uuid.Parse(idStr)
-		if parseErr != nil {
-			return nil, BatchMyDayOutput{}, fmt.Errorf("invalid task_id %q: %w", idStr, parseErr)
-		}
-		if err := s.tasks.UpdateMyDay(ctx, id, true); err != nil {
-			s.logger.Error("batch_my_day: setting my day", "task_id", idStr, "error", err)
-			continue
+		if err := s.setTaskMyDay(ctx, idStr); err != nil {
+			return nil, BatchMyDayOutput{}, err
 		}
 		out.Set++
-
-		// Sync to Notion (best-effort)
-		if s.notionTasks != nil {
-			t, taskErr := s.tasks.TaskByID(ctx, id)
-			if taskErr == nil && t.NotionPageID != nil {
-				s.syncMyDayToNotion(ctx, *t.NotionPageID, true)
-			}
-		}
 	}
 
 	out.MyDayTasks = s.fetchMyDaySnapshot(ctx)
-
 	return nil, out, nil
+}
+
+// clearMyDay syncs My Day=false to Notion and clears all local My Day flags.
+func (s *Server) clearMyDay(ctx context.Context) (int, error) {
+	if s.notionTasks != nil {
+		currentMyDay, myDayErr := s.tasks.MyDayTasksWithNotionPageID(ctx)
+		if myDayErr != nil {
+			s.logger.Warn("batch_my_day: fetching notion page ids for clear", "error", myDayErr)
+		}
+		for _, t := range currentMyDay {
+			s.syncMyDayToNotion(ctx, t.NotionPageID, false)
+		}
+	}
+	n, err := s.tasks.ClearAllMyDay(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("clearing my day: %w", err)
+	}
+	return int(n), nil
+}
+
+// setTaskMyDay marks a single task as My Day and syncs to Notion.
+func (s *Server) setTaskMyDay(ctx context.Context, idStr string) error {
+	id, parseErr := uuid.Parse(idStr)
+	if parseErr != nil {
+		return fmt.Errorf("invalid task_id %q: %w", idStr, parseErr)
+	}
+	if err := s.tasks.UpdateMyDay(ctx, id, true); err != nil {
+		s.logger.Error("batch_my_day: setting my day", "task_id", idStr, "error", err)
+		return nil // best-effort: continue with remaining tasks
+	}
+	if s.notionTasks != nil {
+		t, taskErr := s.tasks.TaskByID(ctx, id)
+		if taskErr == nil && t.NotionPageID != nil {
+			s.syncMyDayToNotion(ctx, *t.NotionPageID, true)
+		}
+	}
+	return nil
 }
 
 // syncMyDayToNotion updates the My Day checkbox for a task in Notion.
@@ -590,7 +603,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 // project. Returns (task, "") on success or (nil, reason) explaining why no
 // task was completed — auto-complete is best-effort and must never fail the
 // primary log_learning_session operation.
-func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput string) (*AutoCompletedTask, string) {
+func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput string) (completed *AutoCompletedTask, reason string) {
 	proj, err := s.resolveProjectChain(ctx, projectInput)
 	if err != nil {
 		s.logger.Warn("auto-complete: project not found", "project", projectInput, "error", err)

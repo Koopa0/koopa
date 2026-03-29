@@ -70,7 +70,25 @@ func (ct *Tags) Run(ctx context.Context, input json.RawMessage) (json.RawMessage
 func (ct *Tags) run(ctx context.Context, in *TagsInput) (TagsOutput, error) {
 	ct.logger.Info("content-tags starting", "title", in.Title)
 
-	// Build topic list for the prompt.
+	userPrompt := ct.buildTagsPrompt(in)
+
+	tags, err := genkit.Run(ctx, "tags", func() ([]string, error) {
+		suggested, suggestErr := ct.suggestTags(ctx, &userPrompt)
+		if suggestErr != nil {
+			return nil, suggestErr
+		}
+		return ct.filterToExisting(suggested, in), nil
+	})
+	if err != nil {
+		return TagsOutput{}, fmt.Errorf("generating tags: %w", err)
+	}
+
+	ct.logger.Info("content-tags complete", "title", in.Title, "count", len(tags))
+	return TagsOutput{Tags: tags}, nil
+}
+
+// buildTagsPrompt constructs the user prompt from topic list and content.
+func (ct *Tags) buildTagsPrompt(in *TagsInput) string {
 	var topicList strings.Builder
 	topicList.WriteString("Existing tags:\n")
 	for i, slug := range in.TopicSlugs {
@@ -80,66 +98,64 @@ func (ct *Tags) run(ctx context.Context, in *TagsInput) (TagsOutput, error) {
 		}
 		fmt.Fprintf(&topicList, "- %s (%s)\n", slug, name)
 	}
-
-	userPrompt := fmt.Sprintf("%s\nType: %s\nTitle: %s\n\nBody:\n%s",
+	return fmt.Sprintf("%s\nType: %s\nTitle: %s\n\nBody:\n%s",
 		topicList.String(), in.ContentType, in.Title, TruncateBodyRunes(in.Body))
+}
 
-	tags, err := genkit.Run(ctx, "tags", func() ([]string, error) {
-		const maxRetries = 2
-		var suggested []string
-		for attempt := range maxRetries {
-			resp, err := genkit.Generate(ctx, ct.g,
-				genkitai.WithModel(ct.model),
-				genkitai.WithSystem(ct.systemPrompt),
-				genkitai.WithPrompt(userPrompt),
-				genkitai.WithConfig(&genai.GenerateContentConfig{
-					Temperature:     genai.Ptr[float32](0.2),
-					MaxOutputTokens: 512,
-				}),
-			)
-			if err != nil {
-				return nil, fmt.Errorf("calling llm: %w", err)
-			}
-			if err := CheckFinishReason(resp); err != nil {
-				return nil, err
-			}
-
-			if err := ParseJSONLoose(resp.Text(), &suggested); err != nil {
-				snippet := resp.Text()[:min(len(resp.Text()), 100)]
-				if attempt < maxRetries-1 {
-					ct.logger.Warn("content tags: JSON parse failed, retrying",
-						"attempt", attempt+1, "error", err, "response", snippet)
-					userPrompt = "Return ONLY a JSON array of tag slugs, no explanation. Example: [\"go\",\"testing\"]\n\n" + userPrompt
-					continue
-				}
-				ct.logger.Warn("content tags: falling back to empty tags after retries",
-					"error", err, "response", snippet)
-				return []string{}, nil
-			}
-			break
+// suggestTags calls the LLM with retry to extract tag slugs. The prompt pointer
+// is updated on retry to include a format hint.
+func (ct *Tags) suggestTags(ctx context.Context, userPrompt *string) ([]string, error) {
+	const maxRetries = 2
+	var suggested []string
+	for attempt := range maxRetries {
+		resp, err := genkit.Generate(ctx, ct.g,
+			genkitai.WithModel(ct.model),
+			genkitai.WithSystem(ct.systemPrompt),
+			genkitai.WithPrompt(*userPrompt),
+			genkitai.WithConfig(&genai.GenerateContentConfig{
+				Temperature:     genai.Ptr[float32](0.2),
+				MaxOutputTokens: 512,
+			}),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("calling llm: %w", err)
+		}
+		if err := CheckFinishReason(resp); err != nil {
+			return nil, err
 		}
 
-		// Filter to only existing slugs.
-		existing := make(map[string]struct{}, len(in.TopicSlugs))
-		for _, s := range in.TopicSlugs {
-			existing[s] = struct{}{}
-		}
-		var filtered []string
-		for _, tag := range suggested {
-			if _, ok := existing[tag]; ok {
-				filtered = append(filtered, tag)
+		if err := ParseJSONLoose(resp.Text(), &suggested); err != nil {
+			snippet := resp.Text()[:min(len(resp.Text()), 100)]
+			if attempt < maxRetries-1 {
+				ct.logger.Warn("content tags: JSON parse failed, retrying",
+					"attempt", attempt+1, "error", err, "response", snippet)
+				*userPrompt = "Return ONLY a JSON array of tag slugs, no explanation. Example: [\"go\",\"testing\"]\n\n" + *userPrompt
+				continue
 			}
+			ct.logger.Warn("content tags: falling back to empty tags after retries",
+				"error", err, "response", snippet)
+			return []string{}, nil
 		}
-		if len(filtered) == 0 && len(suggested) > 0 {
-			ct.logger.Warn("all LLM-suggested tags rejected by allowlist",
-				"title", in.Title, "suggested", suggested)
-		}
-		return filtered, nil
-	})
-	if err != nil {
-		return TagsOutput{}, fmt.Errorf("generating tags: %w", err)
+		break
 	}
+	return suggested, nil
+}
 
-	ct.logger.Info("content-tags complete", "title", in.Title, "count", len(tags))
-	return TagsOutput{Tags: tags}, nil
+// filterToExisting filters suggested tags to only those in the allowed topic slugs.
+func (ct *Tags) filterToExisting(suggested []string, in *TagsInput) []string {
+	existing := make(map[string]struct{}, len(in.TopicSlugs))
+	for _, s := range in.TopicSlugs {
+		existing[s] = struct{}{}
+	}
+	var filtered []string
+	for _, tag := range suggested {
+		if _, ok := existing[tag]; ok {
+			filtered = append(filtered, tag)
+		}
+	}
+	if len(filtered) == 0 && len(suggested) > 0 {
+		ct.logger.Warn("all LLM-suggested tags rejected by allowlist",
+			"title", in.Title, "suggested", suggested)
+	}
+	return filtered
 }

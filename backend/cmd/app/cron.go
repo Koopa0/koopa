@@ -64,7 +64,7 @@ func collectFeeds(
 		}
 		var totalNew int
 		for i := range feeds {
-			ids, fetchErr := coll.FetchFeed(ctx, feeds[i])
+			ids, fetchErr := coll.FetchFeed(ctx, &feeds[i])
 			if fetchErr != nil {
 				logger.Error("cron: collecting feed", "feed_id", feeds[i].ID, "error", fetchErr)
 				continue

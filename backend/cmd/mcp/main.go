@@ -51,7 +51,7 @@ func main() {
 	cfg := loadConfig(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	err := run(ctx, cfg, logger)
+	err := run(ctx, &cfg, logger)
 	stop()
 	if err != nil {
 		logger.Error("MCP server stopped", "error", err)
@@ -59,26 +59,15 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, cfg config, logger *slog.Logger) error {
-	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
+	pool, err := connectDB(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return fmt.Errorf("parsing DATABASE_URL: %w", err)
-	}
-	poolCfg.MaxConns = 5
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+		return err
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("pinging database: %w", err)
-	}
-
 	contentStore := content.NewStore(pool)
 	taskStore := task.NewStore(pool)
-
 	notionStore := notion.NewStore(pool)
 	projectStore := project.NewStore(pool)
 	goalStore := goal.NewStore(pool)
@@ -86,8 +75,65 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 	activityStore := activity.NewStore(pool)
 	sessionStore := session.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)
+	statsStore := stats.NewStore(pool)
+	noteStore := note.NewStore(pool)
 
+	opts, err := buildServerOptions(ctx, cfg, pool, notionStore, goalStore, projectStore, activityStore, feedStore, statsStore, noteStore, logger)
+	if err != nil {
+		return err
+	}
+
+	server := mcpkg.NewServer(
+		noteStore, activityStore, projectStore, collectedStore,
+		statsStore, taskStore, contentStore, sessionStore, goalStore,
+		logger, opts...,
+	)
+
+	switch cfg.Transport {
+	case "stdio":
+		logger.Info("starting MCP server over stdio")
+		return server.Run(ctx)
+	case "http":
+		return runHTTP(ctx, cfg, server, logger)
+	default:
+		return fmt.Errorf("unknown MCP_TRANSPORT: %q (use \"http\" or \"stdio\")", cfg.Transport)
+	}
+}
+
+func connectDB(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing DATABASE_URL: %w", err)
+	}
+	poolCfg.MaxConns = 5
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to database: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("pinging database: %w", err)
+	}
+	return pool, nil
+}
+
+func buildServerOptions(
+	ctx context.Context,
+	cfg *config,
+	pool *pgxpool.Pool,
+	notionStore *notion.Store,
+	goalStore *goal.Store,
+	projectStore *project.Store,
+	activityStore *activity.Store,
+	feedStore *feed.Store,
+	statsStore *stats.Store,
+	noteStore *note.Store,
+	logger *slog.Logger,
+) ([]mcpkg.ServerOption, error) {
 	var opts []mcpkg.ServerOption
+
 	if cfg.NotionAPIKey != "" {
 		logger.Info("notion write tools enabled")
 		opts = append(opts, mcpkg.WithNotionTaskWriter(
@@ -97,11 +143,12 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 	} else {
 		logger.Warn("NOTION_API_KEY not set — create_task and complete_task will be unavailable")
 	}
+
 	taipeiLoc, locErr := time.LoadLocation("Asia/Taipei")
 	if locErr != nil {
-		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
+		return nil, fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
 	}
-	statsStore := stats.NewStore(pool)
+
 	opts = append(opts,
 		mcpkg.WithLocation(taipeiLoc),
 		mcpkg.WithGoalWriter(goalStore),
@@ -111,38 +158,48 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 		mcpkg.WithSystemStatus(statsStore),
 	)
 
-	// Pipeline trigger via admin API (self-signs JWT using shared secret)
-	if cfg.AdminAPIURL != "" {
-		if cfg.JWTSecret == "" || cfg.AdminEmail == "" {
-			logger.Error("ADMIN_API_URL set but JWT_SECRET or ADMIN_EMAIL missing — trigger_pipeline disabled")
-		} else {
-			opts = append(opts,
-				mcpkg.WithPipelineTrigger(
-					&httpPipelineTrigger{
-						baseURL:    cfg.AdminAPIURL,
-						jwtSecret:  []byte(cfg.JWTSecret),
-						adminEmail: cfg.AdminEmail,
-						client:     &http.Client{Timeout: 10 * time.Second},
-						logger:     logger,
-					},
-				),
-			)
-			logger.Info("pipeline trigger enabled", "admin_url", cfg.AdminAPIURL)
-		}
-	} else {
-		logger.Warn("ADMIN_API_URL not set — trigger_pipeline will be unavailable")
-	}
+	opts = appendPipelineTrigger(opts, cfg, logger)
+	opts = appendOReillyOption(opts, cfg, logger)
+	opts = appendTelemetry(opts, pool, logger)
+	opts = appendSemanticSearch(ctx, opts, cfg, noteStore, logger)
 
-	// Optional O'Reilly content search (requires ORM_JWT)
+	return opts, nil
+}
+
+func appendPipelineTrigger(opts []mcpkg.ServerOption, cfg *config, logger *slog.Logger) []mcpkg.ServerOption {
+	if cfg.AdminAPIURL == "" {
+		logger.Warn("ADMIN_API_URL not set — trigger_pipeline will be unavailable")
+		return opts
+	}
+	if cfg.JWTSecret == "" || cfg.AdminEmail == "" {
+		logger.Error("ADMIN_API_URL set but JWT_SECRET or ADMIN_EMAIL missing — trigger_pipeline disabled")
+		return opts
+	}
+	opts = append(opts, mcpkg.WithPipelineTrigger(
+		&httpPipelineTrigger{
+			baseURL:    cfg.AdminAPIURL,
+			jwtSecret:  []byte(cfg.JWTSecret),
+			adminEmail: cfg.AdminEmail,
+			client:     &http.Client{Timeout: 10 * time.Second},
+			logger:     logger,
+		},
+	))
+	logger.Info("pipeline trigger enabled", "admin_url", cfg.AdminAPIURL)
+	return opts
+}
+
+func appendOReillyOption(opts []mcpkg.ServerOption, cfg *config, logger *slog.Logger) []mcpkg.ServerOption {
 	if cfg.ORMJWT != "" {
 		opts = append(opts, mcpkg.WithOReilly(mcpkg.NewOReillyClient(cfg.ORMJWT)))
 		logger.Info("O'Reilly content search enabled")
 	} else {
 		logger.Warn("ORM_JWT not set — search_oreilly_content will be unavailable")
 	}
+	return opts
+}
 
-	// Tool call telemetry — async insert with timeout context, no impact on response time.
-	opts = append(opts, mcpkg.WithTelemetry(func(ctx context.Context, rec mcpkg.ToolCallRecord) {
+func appendTelemetry(opts []mcpkg.ServerOption, pool *pgxpool.Pool, logger *slog.Logger) []mcpkg.ServerOption {
+	return append(opts, mcpkg.WithTelemetry(func(ctx context.Context, rec mcpkg.ToolCallRecord) {
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Error("telemetry panic", "tool", rec.Name, "recover", r)
@@ -155,44 +212,20 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 			logger.Warn("telemetry insert failed", "tool", rec.Name, "error", execErr)
 		}
 	}))
+}
 
-	// Optional semantic search (requires GEMINI_API_KEY)
-	noteStore := note.NewStore(pool)
-	if cfg.GeminiAPIKey != "" {
-		qe, embedErr := newGeminiQueryEmbedder(ctx, logger)
-		if embedErr != nil {
-			logger.Warn("semantic search unavailable", "error", embedErr)
-		} else {
-			opts = append(opts, mcpkg.WithSemanticSearch(noteStore, qe))
-			logger.Info("semantic search enabled for notes")
-		}
+func appendSemanticSearch(ctx context.Context, opts []mcpkg.ServerOption, cfg *config, noteStore *note.Store, logger *slog.Logger) []mcpkg.ServerOption {
+	if cfg.GeminiAPIKey == "" {
+		return opts
 	}
-
-	server := mcpkg.NewServer(
-		noteStore,
-		activityStore,
-		projectStore,
-		collectedStore,
-		statsStore,
-		taskStore,
-		contentStore,
-		sessionStore,
-		goalStore,
-		logger,
-		opts...,
-	)
-
-	switch cfg.Transport {
-	case "stdio":
-		logger.Info("starting MCP server over stdio")
-		return server.Run(ctx)
-
-	case "http":
-		return runHTTP(ctx, &cfg, server, logger)
-
-	default:
-		return fmt.Errorf("unknown MCP_TRANSPORT: %q (use \"http\" or \"stdio\")", cfg.Transport)
+	qe, embedErr := newGeminiQueryEmbedder(ctx, logger)
+	if embedErr != nil {
+		logger.Warn("semantic search unavailable", "error", embedErr)
+		return opts
 	}
+	opts = append(opts, mcpkg.WithSemanticSearch(noteStore, qe))
+	logger.Info("semantic search enabled for notes")
+	return opts
 }
 
 func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slog.Logger) error {

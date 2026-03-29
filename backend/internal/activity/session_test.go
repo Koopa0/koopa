@@ -33,9 +33,7 @@ func TestGroupSessions(t *testing.T) {
 			wantLen: 1,
 			wantFunc: func(t *testing.T, sessions []Session) {
 				t.Helper()
-				if sessions[0].EventCount != 1 {
-					t.Errorf("event count = %d, want 1", sessions[0].EventCount)
-				}
+				assertEventCount(t, sessions, 0, 1)
 			},
 		},
 		{
@@ -47,9 +45,7 @@ func TestGroupSessions(t *testing.T) {
 			wantLen: 1,
 			wantFunc: func(t *testing.T, sessions []Session) {
 				t.Helper()
-				if sessions[0].EventCount != 2 {
-					t.Errorf("event count = %d, want 2", sessions[0].EventCount)
-				}
+				assertEventCount(t, sessions, 0, 2)
 				if !slices.Contains(sessions[0].Sources, "github") || !slices.Contains(sessions[0].Sources, "obsidian") {
 					t.Errorf("sources = %v, want github+obsidian", sessions[0].Sources)
 				}
@@ -65,13 +61,8 @@ func TestGroupSessions(t *testing.T) {
 			wantLen: 2,
 			wantFunc: func(t *testing.T, sessions []Session) {
 				t.Helper()
-				// newest first
-				if sessions[0].EventCount != 1 {
-					t.Errorf("session[0] event count = %d, want 1", sessions[0].EventCount)
-				}
-				if sessions[1].EventCount != 2 {
-					t.Errorf("session[1] event count = %d, want 2", sessions[1].EventCount)
-				}
+				assertEventCount(t, sessions, 0, 1)
+				assertEventCount(t, sessions, 1, 2)
 			},
 		},
 		{
@@ -125,11 +116,18 @@ func TestGroupSessions(t *testing.T) {
 			t.Parallel()
 			sessions := GroupSessions(tt.events)
 			if len(sessions) != tt.wantLen {
-				t.Fatalf("got %d sessions, want %d", len(sessions), tt.wantLen)
+				t.Fatalf("GroupSessions() = %d sessions, want %d", len(sessions), tt.wantLen)
 			}
 			if tt.wantFunc != nil {
 				tt.wantFunc(t, sessions)
 			}
 		})
+	}
+}
+
+func assertEventCount(t *testing.T, sessions []Session, idx, want int) {
+	t.Helper()
+	if sessions[idx].EventCount != want {
+		t.Errorf("session[%d] event count = %d, want %d", idx, sessions[idx].EventCount, want)
 	}
 }

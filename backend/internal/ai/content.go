@@ -130,6 +130,13 @@ func (cr *ContentReview) Run(ctx context.Context, input json.RawMessage) (json.R
 	return cr.gf.Run(ctx, input)
 }
 
+// parallelResults holds results from the parallel AI enrichment steps.
+type parallelResults struct {
+	excerpt     ExcerptOutput
+	tags        TagsOutput
+	readingTime int
+}
+
 // run is the typed internal implementation.
 func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (ContentReviewOutput, error) {
 	contentID, err := uuid.Parse(in.ContentID)
@@ -137,7 +144,6 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 		return ContentReviewOutput{}, fmt.Errorf("parsing content ID: %w", err)
 	}
 
-	// Step: fetch content (traced)
 	c, err := genkit.Run(ctx, "fetch-content", func() (*content.Content, error) {
 		return cr.content.Content(ctx, contentID)
 	})
@@ -147,7 +153,30 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 
 	cr.logger.Info("content-review starting", "content_id", contentID, "title", c.Title)
 
-	// Step 1 (sequential): proofread via sub-flow
+	proofreadResult, err := cr.runProofread(ctx, c, contentID)
+	if err != nil {
+		return ContentReviewOutput{}, err
+	}
+
+	pr, err := cr.runParallelSteps(ctx, c, contentID)
+	if err != nil {
+		return ContentReviewOutput{}, fmt.Errorf("parallel steps for content %s: %w", contentID, err)
+	}
+
+	if err := cr.applyResults(ctx, contentID, proofreadResult, pr); err != nil {
+		return ContentReviewOutput{}, fmt.Errorf("updating content %s: %w", contentID, err)
+	}
+
+	return ContentReviewOutput{
+		Proofread:   proofreadResult,
+		Excerpt:     pr.excerpt.Excerpt,
+		Tags:        pr.tags.Tags,
+		ReadingTime: pr.readingTime,
+	}, nil
+}
+
+// runProofread executes the sequential proofread sub-flow.
+func (cr *ContentReview) runProofread(ctx context.Context, c *content.Content, contentID uuid.UUID) (*ProofreadOutput, error) {
 	proofreadInput, _ := json.Marshal(struct {
 		ContentType string `json:"content_type"`
 		Title       string `json:"title"`
@@ -156,25 +185,22 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 
 	proofreadRaw, err := cr.proofread.Run(ctx, proofreadInput)
 	if err != nil {
-		return ContentReviewOutput{}, fmt.Errorf("proofreading content %s: %w", contentID, err)
+		return nil, fmt.Errorf("proofreading content %s: %w", contentID, err)
 	}
-	var proofreadResult ProofreadOutput
-	if unmarshalErr := json.Unmarshal(proofreadRaw, &proofreadResult); unmarshalErr != nil {
-		return ContentReviewOutput{}, fmt.Errorf("parsing proofread output: %w", unmarshalErr)
+	var result ProofreadOutput
+	if unmarshalErr := json.Unmarshal(proofreadRaw, &result); unmarshalErr != nil {
+		return nil, fmt.Errorf("parsing proofread output: %w", unmarshalErr)
 	}
 
-	cr.logger.Info("proofread complete", "content_id", contentID, "level", proofreadResult.Level)
+	cr.logger.Info("proofread complete", "content_id", contentID, "level", result.Level)
+	return &result, nil
+}
 
-	// Steps 2-5 (parallel): excerpt, tags, reading time, embedding
-	var (
-		excerptResult ExcerptOutput
-		tagsResult    TagsOutput
-		readingTime   int
-	)
-
+// runParallelSteps runs excerpt, tags, reading time, and embedding generation concurrently.
+func (cr *ContentReview) runParallelSteps(ctx context.Context, c *content.Content, contentID uuid.UUID) (parallelResults, error) {
+	var pr parallelResults
 	eg, gctx := errgroup.WithContext(ctx)
 
-	// Step 2: excerpt via sub-flow
 	eg.Go(func() error {
 		excerptInput, _ := json.Marshal(struct {
 			ContentType string `json:"content_type"`
@@ -186,121 +212,118 @@ func (cr *ContentReview) run(ctx context.Context, in ContentReviewInput) (Conten
 		if excerptErr != nil {
 			return excerptErr
 		}
-		return json.Unmarshal(excerptRaw, &excerptResult)
+		return json.Unmarshal(excerptRaw, &pr.excerpt)
 	})
 
-	// Step 3: tags via sub-flow (fetch topics first, pass as input)
 	eg.Go(func() error {
-		slugs, slugsErr := cr.topics.AllTopicSlugs(gctx)
-		if slugsErr != nil {
-			return fmt.Errorf("listing topics: %w", slugsErr)
-		}
-
-		topicSlugs := make([]string, len(slugs))
-		topicNames := make([]string, len(slugs))
-		for i, s := range slugs {
-			topicSlugs[i] = s.Slug
-			topicNames[i] = s.Name
-		}
-
-		tagsInput, _ := json.Marshal(struct {
-			ContentType string   `json:"content_type"`
-			Title       string   `json:"title"`
-			Body        string   `json:"body"`
-			TopicSlugs  []string `json:"topic_slugs"`
-			TopicNames  []string `json:"topic_names"`
-		}{
-			ContentType: string(c.Type),
-			Title:       c.Title,
-			Body:        c.Body,
-			TopicSlugs:  topicSlugs,
-			TopicNames:  topicNames,
-		})
-
-		tagsRaw, tagsErr := cr.tags.Run(gctx, tagsInput)
-		if tagsErr != nil {
-			return tagsErr
-		}
-		return json.Unmarshal(tagsRaw, &tagsResult)
+		return cr.runTagsStep(gctx, c, &pr.tags)
 	})
 
-	// Step 4: reading time (pure computation, traced)
 	eg.Go(func() error {
 		var rtErr error
-		readingTime, rtErr = genkit.Run(gctx, "reading-time", func() (int, error) {
+		pr.readingTime, rtErr = genkit.Run(gctx, "reading-time", func() (int, error) {
 			return estimateReadingTime(c.Body), nil
 		})
 		return rtErr
 	})
 
-	// Step 5: generate embedding
 	eg.Go(func() error {
-		_, embedRunErr := genkit.Run(gctx, "generate-embedding", func() (any, error) {
-			resp, embedErr := genkit.Embed(gctx, cr.g,
-				genkitai.WithEmbedder(cr.embedder),
-				genkitai.WithTextDocs(c.Body),
-				genkitai.WithConfig(&genai.EmbedContentConfig{
-					OutputDimensionality: genai.Ptr[int32](768),
-				}),
-			)
-			if embedErr != nil {
-				return nil, fmt.Errorf("generating embedding: %w", embedErr)
-			}
-			if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
-				cr.logger.Warn("empty embedding response", "content_id", contentID)
-				return nil, nil
-			}
-			vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
-			if storeErr := cr.embedWriter.UpdateEmbedding(gctx, contentID, vec); storeErr != nil {
-				return nil, fmt.Errorf("storing embedding: %w", storeErr)
-			}
-			cr.logger.Info("embedding stored", "content_id", contentID, "dimensions", len(resp.Embeddings[0].Embedding))
-			return nil, nil
-		})
-		return embedRunErr
+		return cr.runEmbeddingStep(gctx, c.Body, contentID)
 	})
 
-	if waitErr := eg.Wait(); waitErr != nil {
-		return ContentReviewOutput{}, fmt.Errorf("parallel steps for content %s: %w", contentID, waitErr)
+	return pr, eg.Wait()
+}
+
+// runTagsStep fetches topic slugs and runs the tags sub-flow.
+func (cr *ContentReview) runTagsStep(ctx context.Context, c *content.Content, out *TagsOutput) error {
+	slugs, err := cr.topics.AllTopicSlugs(ctx)
+	if err != nil {
+		return fmt.Errorf("listing topics: %w", err)
 	}
 
-	// Step: update content with AI results (traced)
-	_, err = genkit.Run(ctx, "update-content", func() (any, error) {
-		aiMetadata, _ := json.Marshal(proofreadResult) // safe: struct contains only JSON-compatible types
+	topicSlugs := make([]string, len(slugs))
+	topicNames := make([]string, len(slugs))
+	for i, s := range slugs {
+		topicSlugs[i] = s.Slug
+		topicNames[i] = s.Name
+	}
+
+	tagsInput, _ := json.Marshal(struct {
+		ContentType string   `json:"content_type"`
+		Title       string   `json:"title"`
+		Body        string   `json:"body"`
+		TopicSlugs  []string `json:"topic_slugs"`
+		TopicNames  []string `json:"topic_names"`
+	}{
+		ContentType: string(c.Type),
+		Title:       c.Title,
+		Body:        c.Body,
+		TopicSlugs:  topicSlugs,
+		TopicNames:  topicNames,
+	})
+
+	tagsRaw, tagsErr := cr.tags.Run(ctx, tagsInput)
+	if tagsErr != nil {
+		return tagsErr
+	}
+	return json.Unmarshal(tagsRaw, out)
+}
+
+// runEmbeddingStep generates and stores a content embedding.
+func (cr *ContentReview) runEmbeddingStep(ctx context.Context, body string, contentID uuid.UUID) error {
+	_, err := genkit.Run(ctx, "generate-embedding", func() (any, error) {
+		resp, embedErr := genkit.Embed(ctx, cr.g,
+			genkitai.WithEmbedder(cr.embedder),
+			genkitai.WithTextDocs(body),
+			genkitai.WithConfig(&genai.EmbedContentConfig{
+				OutputDimensionality: genai.Ptr[int32](768),
+			}),
+		)
+		if embedErr != nil {
+			return nil, fmt.Errorf("generating embedding: %w", embedErr)
+		}
+		if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
+			cr.logger.Warn("empty embedding response", "content_id", contentID)
+			return nil, nil
+		}
+		vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
+		if storeErr := cr.embedWriter.UpdateEmbedding(ctx, contentID, vec); storeErr != nil {
+			return nil, fmt.Errorf("storing embedding: %w", storeErr)
+		}
+		cr.logger.Info("embedding stored", "content_id", contentID, "dimensions", len(resp.Embeddings[0].Embedding))
+		return nil, nil
+	})
+	return err
+}
+
+// applyResults updates content with AI results and creates review entry if needed.
+func (cr *ContentReview) applyResults(ctx context.Context, contentID uuid.UUID, proofread *ProofreadOutput, pr parallelResults) error {
+	_, err := genkit.Run(ctx, "update-content", func() (any, error) {
+		aiMetadata, _ := json.Marshal(proofread) // safe: struct contains only JSON-compatible types
 		updateParams := &content.UpdateParams{
-			Excerpt:     &excerptResult.Excerpt,
-			ReadingTime: &readingTime,
+			Excerpt:     &pr.excerpt.Excerpt,
+			ReadingTime: &pr.readingTime,
 			AIMetadata:  aiMetadata,
 		}
-		if len(tagsResult.Tags) > 0 {
-			updateParams.Tags = tagsResult.Tags
+		if len(pr.tags.Tags) > 0 {
+			updateParams.Tags = pr.tags.Tags
 		}
 		if _, updateErr := cr.updater.UpdateContent(ctx, contentID, updateParams); updateErr != nil {
 			return nil, fmt.Errorf("updating content: %w", updateErr)
 		}
 
-		// Create review queue entry if not auto-publishable
-		if proofreadResult.Level != "auto" {
-			notes := proofreadResult.Notes
-			if _, reviewErr := cr.review.Create(ctx, contentID, proofreadResult.Level, &notes); reviewErr != nil {
+		if proofread.Level != "auto" {
+			notes := proofread.Notes
+			if _, reviewErr := cr.review.Create(ctx, contentID, proofread.Level, &notes); reviewErr != nil {
 				return nil, fmt.Errorf("creating review: %w", reviewErr)
 			}
-			cr.logger.Info("content sent to review queue", "content_id", contentID, "level", proofreadResult.Level)
+			cr.logger.Info("content sent to review queue", "content_id", contentID, "level", proofread.Level)
 		} else {
 			cr.logger.Info("content auto-approved", "content_id", contentID)
 		}
 		return nil, nil
 	})
-	if err != nil {
-		return ContentReviewOutput{}, fmt.Errorf("updating content %s: %w", contentID, err)
-	}
-
-	return ContentReviewOutput{
-		Proofread:   &proofreadResult,
-		Excerpt:     excerptResult.Excerpt,
-		Tags:        tagsResult.Tags,
-		ReadingTime: readingTime,
-	}, nil
+	return err
 }
 
 // NewMockContentReview returns a mock Flow that returns canned output without calling any AI or database.

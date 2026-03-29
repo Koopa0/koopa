@@ -18,7 +18,7 @@ var storeErrors = []api.ErrMap{
 
 // ManualFetcher fetches new items from a feed on demand.
 type ManualFetcher interface {
-	FetchFeed(ctx context.Context, f Feed) ([]uuid.UUID, error)
+	FetchFeed(ctx context.Context, f *Feed) ([]uuid.UUID, error)
 }
 
 // Handler handles feed HTTP requests.
@@ -139,7 +139,7 @@ func (h *Handler) Fetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ids, err := h.fetcher.FetchFeed(r.Context(), *f)
+	ids, err := h.fetcher.FetchFeed(r.Context(), f)
 	if err != nil {
 		h.logger.Error("fetching feed", "id", id, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to fetch feed")

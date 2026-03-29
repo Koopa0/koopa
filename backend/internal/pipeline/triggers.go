@@ -64,7 +64,7 @@ func (tr *Triggers) Collect(w http.ResponseWriter, r *http.Request, bg bgFunc) {
 func (tr *Triggers) collectFeeds(ctx context.Context, feeds []feed.Feed, schedule string) {
 	var totalNew int
 	for i := range feeds {
-		f := feeds[i]
+		f := &feeds[i]
 		ids, err := tr.collector.FetchFeed(ctx, f)
 		if err != nil {
 			tr.logger.Error("collecting feed", "feed_id", f.ID, "feed_name", f.Name, "error", err)

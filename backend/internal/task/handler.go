@@ -204,37 +204,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	params := &UpdateParams{ID: id}
-
-	if req.Status != nil {
-		st := mapHTTPTaskStatus(*req.Status)
-		params.Status = &st
-	}
-	if req.Due != nil {
-		d, parseErr := parseDueDate(*req.Due)
-		if parseErr != nil {
-			api.Error(w, http.StatusBadRequest, "INVALID_DATE", "due must be YYYY-MM-DD")
-			return
-		}
-		params.Due = d
-	}
-	if req.Priority != nil {
-		params.Priority = req.Priority
-	}
-	if req.Energy != nil {
-		params.Energy = req.Energy
-	}
-	if req.MyDay != nil {
-		params.MyDay = req.MyDay
-	}
-	if req.Notes != nil {
-		params.Description = req.Notes
-	}
-	if req.Project != nil && h.projects != nil {
-		pid, _, projErr := h.projects(ctx, *req.Project)
-		if projErr == nil {
-			params.ProjectID = &pid
-		}
+	params, parseErr := h.buildUpdateParams(ctx, id, req)
+	if parseErr != nil {
+		api.Error(w, http.StatusBadRequest, "INVALID_DATE", "due must be YYYY-MM-DD")
+		return
 	}
 
 	// Sync to Notion before local update (best-effort)
@@ -260,6 +233,43 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.Encode(w, http.StatusOK, api.Response{Data: out})
+}
+
+// buildUpdateParams maps an HTTP update request into store-level UpdateParams.
+// Returns an error only if due date parsing fails.
+func (h *Handler) buildUpdateParams(ctx context.Context, id uuid.UUID, req updateRequest) (*UpdateParams, error) {
+	params := &UpdateParams{ID: id}
+
+	if req.Status != nil {
+		st := mapHTTPTaskStatus(*req.Status)
+		params.Status = &st
+	}
+	if req.Due != nil {
+		d, parseErr := parseDueDate(*req.Due)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		params.Due = d
+	}
+	if req.Priority != nil {
+		params.Priority = req.Priority
+	}
+	if req.Energy != nil {
+		params.Energy = req.Energy
+	}
+	if req.MyDay != nil {
+		params.MyDay = req.MyDay
+	}
+	if req.Notes != nil {
+		params.Description = req.Notes
+	}
+	if req.Project != nil && h.projects != nil {
+		pid, _, projErr := h.projects(ctx, *req.Project)
+		if projErr == nil {
+			params.ProjectID = &pid
+		}
+	}
+	return params, nil
 }
 
 // completeRequest is the JSON body for POST /api/admin/tasks/{id}/complete.

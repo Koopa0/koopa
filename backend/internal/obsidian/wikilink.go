@@ -27,43 +27,48 @@ func ParseWikilinks(content string) []Link {
 			continue
 		}
 
-		// Scan for [[ ]] pairs in this line
-		for i := 0; i < len(line)-3; i++ {
-			if line[i] != '[' || line[i+1] != '[' {
-				continue
-			}
-			// Found [[, look for ]]
-			end := strings.Index(line[i+2:], "]]")
-			if end < 0 {
-				break // no closing ]] on this line
-			}
-			inner := line[i+2 : i+2+end]
-			if inner == "" {
-				i = i + 2 + end + 1
-				continue
-			}
-
-			var l Link
-			if before, after, ok := strings.Cut(inner, "|"); ok {
-				l.Path = strings.TrimSpace(before)
-				l.Display = strings.TrimSpace(after)
-			} else {
-				l.Path = strings.TrimSpace(inner)
-			}
-
-			if l.Path != "" {
-				if _, ok := seen[l.Path]; !ok {
-					seen[l.Path] = struct{}{}
-					links = append(links, l)
-				}
-			}
-
-			i = i + 2 + end + 1 // skip past ]]
-		}
+		links = extractLineWikilinks(line, seen, links)
 	}
 
 	if links == nil {
 		return []Link{}
 	}
 	return links
+}
+
+// extractLineWikilinks scans a single line for [[ ]] pairs and appends deduplicated links.
+func extractLineWikilinks(line string, seen map[string]struct{}, links []Link) []Link {
+	for i := 0; i < len(line)-3; i++ {
+		if line[i] != '[' || line[i+1] != '[' {
+			continue
+		}
+		end := strings.Index(line[i+2:], "]]")
+		if end < 0 {
+			break
+		}
+		inner := line[i+2 : i+2+end]
+		if inner == "" {
+			i = i + 2 + end + 1
+			continue
+		}
+
+		l := parseWikilinkInner(inner)
+		if l.Path != "" {
+			if _, ok := seen[l.Path]; !ok {
+				seen[l.Path] = struct{}{}
+				links = append(links, l)
+			}
+		}
+
+		i = i + 2 + end + 1
+	}
+	return links
+}
+
+// parseWikilinkInner parses the content between [[ and ]] into a Link.
+func parseWikilinkInner(inner string) Link {
+	if before, after, ok := strings.Cut(inner, "|"); ok {
+		return Link{Path: strings.TrimSpace(before), Display: strings.TrimSpace(after)}
+	}
+	return Link{Path: strings.TrimSpace(inner)}
 }

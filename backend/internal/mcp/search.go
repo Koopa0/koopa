@@ -55,67 +55,6 @@ const (
 	maxFilterLen = 100
 )
 
-func (s *Server) searchNotes(ctx context.Context, _ *mcp.CallToolRequest, input SearchNotesInput) (*mcp.CallToolResult, SearchNotesOutput, error) {
-	if len(input.Query) > maxQueryLen {
-		return nil, SearchNotesOutput{}, fmt.Errorf("query too long (max %d characters)", maxQueryLen)
-	}
-	for _, v := range []string{input.Type, input.Source, input.Context, input.Book} {
-		if len(v) > maxFilterLen {
-			return nil, SearchNotesOutput{}, fmt.Errorf("filter value too long (max %d characters)", maxFilterLen)
-		}
-	}
-
-	limit := clamp(input.Limit, 1, 50, 10)
-
-	hasQuery := input.Query != ""
-	hasFilters := input.Type != "" || input.Source != "" || input.Context != "" || input.Book != "" || input.After != "" || input.Before != ""
-
-	if !hasQuery && !hasFilters {
-		return nil, SearchNotesOutput{}, fmt.Errorf("at least one of query or filter fields is required")
-	}
-
-	var results []searchResultEntry
-
-	switch {
-	case hasQuery && hasFilters:
-		fetchLimit := limit * 3
-
-		textResults, err := s.notes.SearchByText(ctx, input.Query, fetchLimit)
-		if err != nil {
-			return nil, SearchNotesOutput{}, fmt.Errorf("text search: %w", err)
-		}
-
-		filterResults, err := s.notes.SearchByFilters(ctx, toSearchFilter(&input), fetchLimit)
-		if err != nil {
-			return nil, SearchNotesOutput{}, fmt.Errorf("filter search: %w", err)
-		}
-
-		results = note.RRFMerge(textResults, filterResults, limit)
-	case hasQuery:
-		textResults, err := s.notes.SearchByText(ctx, input.Query, limit)
-		if err != nil {
-			return nil, SearchNotesOutput{}, fmt.Errorf("text search: %w", err)
-		}
-		results = toSearchEntries(textResults)
-	default:
-		filterResults, err := s.notes.SearchByFilters(ctx, toSearchFilter(&input), limit)
-		if err != nil {
-			return nil, SearchNotesOutput{}, fmt.Errorf("filter search: %w", err)
-		}
-		results = toFilterEntries(filterResults)
-	}
-
-	out := SearchNotesOutput{
-		Results: make([]noteResult, len(results)),
-		Total:   len(results),
-	}
-	for i := range results {
-		out.Results[i] = toNoteResult(&results[i])
-	}
-
-	return nil, out, nil
-}
-
 // toSearchEntries converts text search results to the common searchResultEntry type.
 func toSearchEntries(textResults []note.SearchResult) []searchResultEntry {
 	entries := make([]searchResultEntry, len(textResults))
@@ -220,27 +159,33 @@ func (s *Server) getProjectContext(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 
 	// Related goals (by goal_id FK)
-	if proj.GoalID != nil {
-		goals, goalsErr := s.goals.Goals(ctx)
-		if goalsErr != nil {
-			s.logger.Error("project_context: related goals", "error", goalsErr)
-		} else {
-			for i := range goals {
-				g := &goals[i]
-				if g.ID != *proj.GoalID {
-					continue
-				}
-				gb := goalBrief{Title: g.Title, Status: string(g.Status), Area: g.Area}
-				if g.Deadline != nil {
-					gb.Deadline = g.Deadline.Format(time.DateOnly)
-				}
-				out.RelatedGoals = append(out.RelatedGoals, gb)
-				break // goal_id is a unique FK; stop after first match
-			}
-		}
-	}
+	out.RelatedGoals = s.fetchRelatedGoals(ctx, proj.GoalID)
 
 	return nil, out, nil
+}
+
+// fetchRelatedGoals finds goals matching the given goal ID (FK).
+func (s *Server) fetchRelatedGoals(ctx context.Context, goalID *uuid.UUID) []goalBrief {
+	if goalID == nil {
+		return []goalBrief{}
+	}
+	goals, goalsErr := s.goals.Goals(ctx)
+	if goalsErr != nil {
+		s.logger.Error("project_context: related goals", "error", goalsErr)
+		return []goalBrief{}
+	}
+	for i := range goals {
+		g := &goals[i]
+		if g.ID != *goalID {
+			continue
+		}
+		gb := goalBrief{Title: g.Title, Status: string(g.Status), Area: g.Area}
+		if g.Deadline != nil {
+			gb.Deadline = g.Deadline.Format(time.DateOnly)
+		}
+		return []goalBrief{gb}
+	}
+	return []goalBrief{}
 }
 
 // RecentActivityInput is the input for the get_recent_activity tool.
@@ -360,8 +305,8 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 
 	since := time.Now().AddDate(0, 0, -days)
 
-	switch {
-	case input.SortBy == "recency":
+	switch input.SortBy {
+	case "recency":
 		data, err = s.collected.LatestByRecency(ctx, &since, int32(limit)) // #nosec G115 -- limit clamped
 		if err == nil && len(data) == 0 {
 			data, err = s.collected.LatestByRecency(ctx, nil, int32(limit)) // #nosec G115
@@ -472,42 +417,11 @@ type searchTaskResult struct {
 	Description string `json:"description,omitempty"`
 }
 
-func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input SearchTasksInput) (*mcp.CallToolResult, SearchTasksOutput, error) {
+func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input *SearchTasksInput) (*mcp.CallToolResult, SearchTasksOutput, error) {
 	limit := clamp(input.Limit, 1, 100, 20)
+	filters := s.parseTaskSearchFilters(ctx, input)
 
-	var query, projectSlug, statusFilter, assignee *string
-	if input.Query != "" {
-		query = &input.Query
-	}
-	if input.Project != "" {
-		proj, projErr := s.resolveProjectChain(ctx, input.Project)
-		if projErr == nil {
-			projectSlug = &proj.Slug
-		} else {
-			projectSlug = &input.Project
-		}
-	}
-	if input.Status != "" && input.Status != "all" {
-		statusFilter = &input.Status
-	}
-	if input.Assignee != "" && input.Assignee != "all" {
-		assignee = &input.Assignee
-	}
-
-	var completedAfter, completedBefore *time.Time
-	if input.CompletedAfter != "" {
-		if t, err := time.Parse(time.DateOnly, input.CompletedAfter); err == nil {
-			completedAfter = &t
-		}
-	}
-	if input.CompletedBefore != "" {
-		if t, err := time.Parse(time.DateOnly, input.CompletedBefore); err == nil {
-			end := t.AddDate(0, 0, 1)
-			completedBefore = &end
-		}
-	}
-
-	tasks, err := s.tasks.SearchTasks(ctx, query, projectSlug, statusFilter, assignee, completedAfter, completedBefore, int32(limit)) // #nosec G115 -- limit is clamped 1-100
+	tasks, err := s.tasks.SearchTasks(ctx, filters.query, filters.projectSlug, filters.status, filters.assignee, filters.completedAfter, filters.completedBefore, int32(limit)) // #nosec G115 -- limit is clamped 1-100
 	if err != nil {
 		return nil, SearchTasksOutput{}, fmt.Errorf("searching tasks: %w", err)
 	}
@@ -517,39 +431,87 @@ func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input 
 
 	results := make([]searchTaskResult, len(tasks))
 	for i := range tasks {
-		t := &tasks[i]
-		r := searchTaskResult{
-			TaskID:      t.ID.String(),
-			Title:       t.Title,
-			Status:      string(t.Status),
-			Project:     t.ProjectTitle,
-			ProjectSlug: t.ProjectSlug,
-			Energy:      t.Energy,
-			Priority:    t.Priority,
-			Assignee:    t.Assignee,
-			IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
-			MyDay:       t.MyDay,
-			UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
-		}
-		if t.Due != nil {
-			r.Due = t.Due.Format(time.DateOnly)
-			if t.Status != task.StatusDone {
-				dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
-				if dueDate.Before(today) {
-					r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
-				}
-			}
-		}
-		if t.CompletedAt != nil {
-			r.CompletedAt = t.CompletedAt.Format(time.RFC3339)
-		}
-		if t.Description != "" {
-			r.Description = truncate(t.Description, 200)
-		}
-		results[i] = r
+		results[i] = toSearchTaskResult(&tasks[i], today)
 	}
 
 	return nil, SearchTasksOutput{Tasks: results, Total: len(results)}, nil
+}
+
+// taskSearchFilters holds parsed filter parameters for searchTasks.
+type taskSearchFilters struct {
+	query           *string
+	projectSlug     *string
+	status          *string
+	assignee        *string
+	completedAfter  *time.Time
+	completedBefore *time.Time
+}
+
+// parseTaskSearchFilters resolves project and parses date filters from raw input.
+func (s *Server) parseTaskSearchFilters(ctx context.Context, input *SearchTasksInput) taskSearchFilters {
+	var f taskSearchFilters
+	if input.Query != "" {
+		f.query = &input.Query
+	}
+	if input.Project != "" {
+		proj, projErr := s.resolveProjectChain(ctx, input.Project)
+		if projErr == nil {
+			f.projectSlug = &proj.Slug
+		} else {
+			f.projectSlug = &input.Project
+		}
+	}
+	if input.Status != "" && input.Status != "all" {
+		f.status = &input.Status
+	}
+	if input.Assignee != "" && input.Assignee != "all" {
+		f.assignee = &input.Assignee
+	}
+	if input.CompletedAfter != "" {
+		if t, err := time.Parse(time.DateOnly, input.CompletedAfter); err == nil {
+			f.completedAfter = &t
+		}
+	}
+	if input.CompletedBefore != "" {
+		if t, err := time.Parse(time.DateOnly, input.CompletedBefore); err == nil {
+			end := t.AddDate(0, 0, 1)
+			f.completedBefore = &end
+		}
+	}
+	return f
+}
+
+// toSearchTaskResult converts a task search result to the output type.
+func toSearchTaskResult(t *task.SearchTaskDetail, today time.Time) searchTaskResult {
+	r := searchTaskResult{
+		TaskID:      t.ID.String(),
+		Title:       t.Title,
+		Status:      string(t.Status),
+		Project:     t.ProjectTitle,
+		ProjectSlug: t.ProjectSlug,
+		Energy:      t.Energy,
+		Priority:    t.Priority,
+		Assignee:    t.Assignee,
+		IsRecurring: t.RecurInterval != nil && *t.RecurInterval > 0,
+		MyDay:       t.MyDay,
+		UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
+	}
+	if t.Due != nil {
+		r.Due = t.Due.Format(time.DateOnly)
+		if t.Status != task.StatusDone {
+			dueDate := time.Date(t.Due.Year(), t.Due.Month(), t.Due.Day(), 0, 0, 0, 0, t.Due.Location())
+			if dueDate.Before(today) {
+				r.OverdueDays = int(today.Sub(dueDate).Hours() / 24)
+			}
+		}
+	}
+	if t.CompletedAt != nil {
+		r.CompletedAt = t.CompletedAt.Format(time.RFC3339)
+	}
+	if t.Description != "" {
+		r.Description = truncate(t.Description, 200)
+	}
+	return r
 }
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.
@@ -600,37 +562,50 @@ func (s *Server) parseKnowledgeFilters(ctx context.Context, input *SearchKnowled
 		limit: clamp(input.Limit, 1, 30, 10),
 	}
 
-	// Resolve project
 	if input.Project != "" {
-		proj, projErr := s.resolveProjectChain(ctx, input.Project)
-		if projErr == nil {
-			f.projectSlug = proj.Slug
-			f.projectID = proj.ID
-		} else {
-			f.projectSlug = input.Project
-		}
+		s.resolveKnowledgeProject(ctx, input.Project, &f)
 	}
 
-	// Parse date range
-	if input.After != "" {
-		if t, err := time.Parse(time.DateOnly, input.After); err == nil {
-			f.afterTime = &t
-		}
-	}
-	if input.Before != "" {
-		if t, err := time.Parse(time.DateOnly, input.Before); err == nil {
-			end := t.AddDate(0, 0, 1)
-			f.beforeTime = &end
-		}
-	}
+	f.afterTime = parseDateFilter(input.After, false)
+	f.beforeTime = parseDateFilter(input.Before, true)
 
-	// Parse content type
 	f.notesOnly = input.ContentType == "obsidian-note"
 	if input.ContentType != "" && !f.notesOnly {
 		f.filterType = content.Type(input.ContentType)
 	}
 
-	// Build note filter
+	f.buildNoteFilter(input)
+	return f
+}
+
+// resolveKnowledgeProject resolves the project slug and ID for knowledge filtering.
+func (s *Server) resolveKnowledgeProject(ctx context.Context, project string, f *knowledgeFilters) {
+	proj, projErr := s.resolveProjectChain(ctx, project)
+	if projErr == nil {
+		f.projectSlug = proj.Slug
+		f.projectID = proj.ID
+	} else {
+		f.projectSlug = project
+	}
+}
+
+// parseDateFilter parses a date string and optionally shifts to start of next day for "before" semantics.
+func parseDateFilter(dateStr string, nextDay bool) *time.Time {
+	if dateStr == "" {
+		return nil
+	}
+	t, err := time.Parse(time.DateOnly, dateStr)
+	if err != nil {
+		return nil
+	}
+	if nextDay {
+		t = t.AddDate(0, 0, 1)
+	}
+	return &t
+}
+
+// buildNoteFilter populates the note filter and hasNoteFilters flag.
+func (f *knowledgeFilters) buildNoteFilter(input *SearchKnowledgeInput) {
 	f.hasNoteFilters = input.Source != "" || input.Context != "" || input.Book != "" || f.projectSlug != "" || f.afterTime != nil || f.beforeTime != nil
 	f.noteFilter = note.SearchFilter{After: f.afterTime, Before: f.beforeTime}
 	if input.Source != "" {
@@ -644,8 +619,6 @@ func (s *Server) parseKnowledgeFilters(ctx context.Context, input *SearchKnowled
 	if input.Book != "" {
 		f.noteFilter.Book = &input.Book
 	}
-
-	return f
 }
 
 // knowledgeSearchResults holds the raw results from concurrent content/note/semantic searches.
@@ -665,46 +638,59 @@ func (s *Server) searchKnowledgeConcurrently(ctx context.Context, query string, 
 
 	if !f.notesOnly {
 		wg.Go(func() {
-			r.contents, _, r.contentErr = s.contents.InternalSearch(ctx, query, 1, f.limit)
-			if r.contentErr == nil && len(r.contents) == 0 {
-				r.contents, _, r.contentErr = s.contents.InternalSearchOR(ctx, query, 1, f.limit)
-			}
+			r.contents, r.contentErr = s.searchContentWithFallback(ctx, query, f.limit)
 		})
 	}
 	wg.Go(func() {
-		if f.hasNoteFilters {
-			filterResults, filterErr := s.notes.SearchByFilters(ctx, f.noteFilter, f.limit*3)
-			if filterErr != nil {
-				r.noteErr = filterErr
-				return
-			}
-			textResults, textErr := s.notes.SearchByText(ctx, query, f.limit*3)
-			if textErr != nil {
-				r.noteErr = textErr
-				return
-			}
-			merged := note.RRFMerge(textResults, filterResults, f.limit)
-			r.notes = make([]note.SearchResult, len(merged))
-			for j := range merged {
-				r.notes[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}
-			}
-		} else {
-			r.notes, r.noteErr = s.notes.SearchByText(ctx, query, f.limit)
-		}
+		r.notes, r.noteErr = s.searchNotesForKnowledge(ctx, query, f)
 	})
 	wg.Go(func() {
-		if s.queryEmbedder == nil || s.semanticNotes == nil {
-			return
-		}
-		vec, err := s.queryEmbedder.EmbedQuery(ctx, query)
-		if err != nil {
-			r.semanticErr = err
-			return
-		}
-		r.semantic, r.semanticErr = s.semanticNotes.SearchBySimilarity(ctx, vec, f.limit)
+		r.semantic, r.semanticErr = s.searchSemanticNotes(ctx, query, f.limit)
 	})
 	wg.Wait()
 	return r
+}
+
+// searchContentWithFallback tries exact-match content search, falling back to OR search.
+func (s *Server) searchContentWithFallback(ctx context.Context, query string, limit int) ([]content.Content, error) {
+	contents, _, err := s.contents.InternalSearch(ctx, query, 1, limit)
+	if err == nil && len(contents) == 0 {
+		contents, _, err = s.contents.InternalSearchOR(ctx, query, 1, limit)
+	}
+	return contents, err
+}
+
+// searchNotesForKnowledge searches notes with optional filter+text RRF merge.
+func (s *Server) searchNotesForKnowledge(ctx context.Context, query string, f *knowledgeFilters) ([]note.SearchResult, error) {
+	if !f.hasNoteFilters {
+		return s.notes.SearchByText(ctx, query, f.limit)
+	}
+	filterResults, filterErr := s.notes.SearchByFilters(ctx, f.noteFilter, f.limit*3)
+	if filterErr != nil {
+		return nil, filterErr
+	}
+	textResults, textErr := s.notes.SearchByText(ctx, query, f.limit*3)
+	if textErr != nil {
+		return nil, textErr
+	}
+	merged := note.RRFMerge(textResults, filterResults, f.limit)
+	results := make([]note.SearchResult, len(merged))
+	for j := range merged {
+		results[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}
+	}
+	return results, nil
+}
+
+// searchSemanticNotes performs embedding-based similarity search on notes.
+func (s *Server) searchSemanticNotes(ctx context.Context, query string, limit int) ([]note.SimilarityResult, error) {
+	if s.queryEmbedder == nil || s.semanticNotes == nil {
+		return nil, nil
+	}
+	vec, err := s.queryEmbedder.EmbedQuery(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return s.semanticNotes.SearchBySimilarity(ctx, vec, limit)
 }
 
 // collectContentResults filters and converts content search results to knowledgeResult entries.
@@ -784,7 +770,7 @@ func collectSemanticResults(notes []note.SimilarityResult, seen map[string]bool,
 	return results
 }
 
-func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, input SearchKnowledgeInput) (*mcp.CallToolResult, SearchKnowledgeOutput, error) {
+func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, input *SearchKnowledgeInput) (*mcp.CallToolResult, SearchKnowledgeOutput, error) {
 	if input.Query == "" {
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query is required")
 	}
@@ -792,7 +778,7 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query too long (max %d characters)", maxQueryLen)
 	}
 
-	f := s.parseKnowledgeFilters(ctx, &input)
+	f := s.parseKnowledgeFilters(ctx, input)
 	raw := s.searchKnowledgeConcurrently(ctx, input.Query, &f)
 
 	// Assemble results: content first, then text notes, then semantic notes.

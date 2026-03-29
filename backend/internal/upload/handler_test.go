@@ -80,16 +80,16 @@ func (noopCredentials) Retrieve(_ context.Context) (aws.Credentials, error) {
 	return aws.Credentials{AccessKeyID: "fake", SecretAccessKey: "fake"}, nil
 }
 
-// newMultipartRequest builds an HTTP request with a multipart file field.
+// newMultipartRequest builds an HTTP request with a multipart file field named "file".
 // contentType is the declared Content-Type of the file bytes (not the multipart
 // boundary). Pass an empty contentType to skip the part's Content-Type header
 // so http.DetectContentType runs on the bytes.
-func newMultipartRequest(t *testing.T, fieldName string, filename string, body []byte) *http.Request {
+func newMultipartRequest(t *testing.T, filename string, body []byte) *http.Request {
 	t.Helper()
 
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
-	part, err := w.CreateFormFile(fieldName, filename)
+	part, err := w.CreateFormFile("file", filename)
 	if err != nil {
 		t.Fatalf("creating form file: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestHandler_Upload(t *testing.T) {
 		{
 			name: "valid PNG upload returns URL",
 			buildReq: func(t *testing.T) *http.Request {
-				return newMultipartRequest(t, "file", "photo.png", makePNGBytes())
+				return newMultipartRequest(t, "photo.png", makePNGBytes())
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusOK,
@@ -159,7 +159,7 @@ func TestHandler_Upload(t *testing.T) {
 			buildReq: func(t *testing.T) *http.Request {
 				body := make([]byte, len(jpegHeader)+256)
 				copy(body, jpegHeader)
-				return newMultipartRequest(t, "file", "image.jpg", body)
+				return newMultipartRequest(t, "image.jpg", body)
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusOK,
@@ -197,7 +197,7 @@ func TestHandler_Upload(t *testing.T) {
 			buildReq: func(t *testing.T) *http.Request {
 				// PDF magic bytes: %PDF
 				pdfBytes := []byte("%PDF-1.4 fake pdf content for content type detection")
-				return newMultipartRequest(t, "file", "doc.pdf", pdfBytes)
+				return newMultipartRequest(t, "doc.pdf", pdfBytes)
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusBadRequest,
@@ -206,7 +206,7 @@ func TestHandler_Upload(t *testing.T) {
 		{
 			name: "plain text file returns 400",
 			buildReq: func(t *testing.T) *http.Request {
-				return newMultipartRequest(t, "file", "script.sh", []byte("#!/bin/bash\necho hello"))
+				return newMultipartRequest(t, "script.sh", []byte("#!/bin/bash\necho hello"))
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusBadRequest,
@@ -220,7 +220,7 @@ func TestHandler_Upload(t *testing.T) {
 				const overLimit = (5 << 20) + 2048
 				bigData := make([]byte, overLimit)
 				copy(bigData, pngHeader) // start with PNG magic so type check would pass
-				return newMultipartRequest(t, "file", "huge.png", bigData)
+				return newMultipartRequest(t, "huge.png", bigData)
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusBadRequest,
@@ -229,7 +229,7 @@ func TestHandler_Upload(t *testing.T) {
 		{
 			name: "S3 upload failure returns 500",
 			buildReq: func(t *testing.T) *http.Request {
-				return newMultipartRequest(t, "file", "photo.png", makePNGBytes())
+				return newMultipartRequest(t, "photo.png", makePNGBytes())
 			},
 			s3Client:   s3Failure,
 			wantStatus: http.StatusInternalServerError,
@@ -240,7 +240,7 @@ func TestHandler_Upload(t *testing.T) {
 			buildReq: func(t *testing.T) *http.Request {
 				// The handler generates a UUID key and ignores the original filename,
 				// so path traversal in the filename cannot affect the S3 key.
-				return newMultipartRequest(t, "file", "../../../etc/passwd.png", makePNGBytes())
+				return newMultipartRequest(t, "../../../etc/passwd.png", makePNGBytes())
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusOK,
@@ -249,7 +249,7 @@ func TestHandler_Upload(t *testing.T) {
 		{
 			name: "empty file (zero bytes) returns 400",
 			buildReq: func(t *testing.T) *http.Request {
-				return newMultipartRequest(t, "file", "empty.png", []byte{})
+				return newMultipartRequest(t, "empty.png", []byte{})
 			},
 			s3Client:   s3Success,
 			wantStatus: http.StatusBadRequest,
@@ -279,26 +279,30 @@ func TestHandler_Upload(t *testing.T) {
 			}
 
 			if tt.wantURLPfx != "" {
-				var resp api.Response
-				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-					t.Fatalf("decoding success response: %v", err)
-				}
-				// resp.Data is map[string]any after generic JSON decode.
-				dataMap, ok := resp.Data.(map[string]any)
-				if !ok {
-					t.Fatalf("Upload() resp.Data type = %T, want map[string]any", resp.Data)
-				}
-				gotURL, _ := dataMap["url"].(string)
-				if !strings.HasPrefix(gotURL, tt.wantURLPfx) {
-					t.Errorf("Upload() URL = %q, want prefix %q", gotURL, tt.wantURLPfx)
-				}
-				// After prefix, remainder should be UUID.ext (e.g. "abc-123.png")
-				suffix := strings.TrimPrefix(gotURL, tt.wantURLPfx)
-				if len(suffix) < 5 { // minimum: "x.png"
-					t.Errorf("Upload() URL suffix = %q, want UUID.ext", suffix)
-				}
+				assertUploadURLPrefix(t, w, tt.wantURLPfx)
 			}
 		})
+	}
+}
+
+// assertUploadURLPrefix checks that the response contains a URL with the expected prefix and a valid suffix.
+func assertUploadURLPrefix(t *testing.T, w *httptest.ResponseRecorder, wantPrefix string) {
+	t.Helper()
+	var resp api.Response
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding success response: %v", err)
+	}
+	dataMap, ok := resp.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("Upload() resp.Data type = %T, want map[string]any", resp.Data)
+	}
+	gotURL, _ := dataMap["url"].(string)
+	if !strings.HasPrefix(gotURL, wantPrefix) {
+		t.Errorf("Upload() URL = %q, want prefix %q", gotURL, wantPrefix)
+	}
+	suffix := strings.TrimPrefix(gotURL, wantPrefix)
+	if len(suffix) < 5 { // minimum: "x.png"
+		t.Errorf("Upload() URL suffix = %q, want UUID.ext", suffix)
 	}
 }
 
@@ -308,7 +312,7 @@ func TestHandler_Upload_ContentTypeHeader(t *testing.T) {
 	t.Parallel()
 
 	h := newHandler(t, s3Success(t))
-	req := newMultipartRequest(t, "file", "photo.png", makePNGBytes())
+	req := newMultipartRequest(t, "photo.png", makePNGBytes())
 	w := httptest.NewRecorder()
 
 	h.Upload(w, req)
@@ -325,7 +329,7 @@ func TestHandler_Upload_URLStructure(t *testing.T) {
 	t.Parallel()
 
 	h := newHandler(t, s3Success(t))
-	req := newMultipartRequest(t, "file", "photo.png", makePNGBytes())
+	req := newMultipartRequest(t, "photo.png", makePNGBytes())
 	w := httptest.NewRecorder()
 
 	h.Upload(w, req)
@@ -397,7 +401,7 @@ func TestHandler_Upload_EachAllowedType(t *testing.T) {
 			copy(body, fx.magic)
 
 			h := newHandler(t, s3Success(t))
-			req := newMultipartRequest(t, "file", fmt.Sprintf("img%s", fx.wantExt), body)
+			req := newMultipartRequest(t, fmt.Sprintf("img%s", fx.wantExt), body)
 			w := httptest.NewRecorder()
 
 			h.Upload(w, req)

@@ -85,19 +85,52 @@ func (c *Collector) Stop() {
 }
 
 // FetchFeed fetches a single feed and returns IDs of newly created collected_data rows.
-func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, error) {
+func (c *Collector) FetchFeed(ctx context.Context, f *feed.Feed) ([]uuid.UUID, error) {
 	logger := c.logger.With("feed_id", f.ID, "feed_name", f.Name)
 
 	if err := c.limiter.Wait(ctx, f.URL); err != nil {
 		return nil, fmt.Errorf("rate limit wait: %w", err)
 	}
 
-	// validate URL scheme to prevent SSRF via file://, gopher://, etc.
-	parsedURL, err := url.Parse(f.URL)
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return nil, fmt.Errorf("invalid feed url scheme: %s", f.URL)
+	if err := validateFeedURL(f.URL); err != nil {
+		return nil, err
 	}
 
+	resp, err := c.doFeedRequest(ctx, f)
+	if err != nil {
+		if fErr := c.feeds.IncrementFailure(ctx, f.ID, err.Error()); fErr != nil {
+			logger.Error("incrementing failure after fetch error", "error", fErr)
+		}
+		return nil, fmt.Errorf("fetching feed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }() // best-effort
+
+	parsed, err := c.handleFeedResponse(ctx, resp, f, logger)
+	if err != nil {
+		return nil, err
+	}
+	if parsed == nil {
+		return nil, nil // 304 Not Modified
+	}
+
+	keywords := c.loadKeywords(ctx, logger)
+	newIDs := c.processItems(ctx, parsed.Items, f, keywords, logger)
+
+	logger.Info("feed fetched", "total_items", len(parsed.Items), "new_items", len(newIDs))
+	return newIDs, nil
+}
+
+// validateFeedURL validates the URL scheme to prevent SSRF.
+func validateFeedURL(rawURL string) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return fmt.Errorf("invalid feed url scheme: %s", rawURL)
+	}
+	return nil
+}
+
+// doFeedRequest builds and executes the HTTP request for a feed.
+func (c *Collector) doFeedRequest(ctx context.Context, f *feed.Feed) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -109,17 +142,12 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 	if f.LastModified != "" {
 		req.Header.Set("If-Modified-Since", f.LastModified)
 	}
+	return c.client.Do(req)
+}
 
-	resp, err := c.client.Do(req)
-	if err != nil {
-		if fErr := c.feeds.IncrementFailure(ctx, f.ID, err.Error()); fErr != nil {
-			logger.Error("incrementing failure after fetch error", "error", fErr)
-		}
-		return nil, fmt.Errorf("fetching feed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }() // best-effort
-
-	// 304 Not Modified — nothing new
+// handleFeedResponse handles status codes and parses the feed body.
+// Returns nil parsed on 304 Not Modified.
+func (c *Collector) handleFeedResponse(ctx context.Context, resp *http.Response, f *feed.Feed, logger *slog.Logger) (*gofeed.Feed, error) {
 	if resp.StatusCode == http.StatusNotModified {
 		etag := resp.Header.Get("ETag")
 		lm := resp.Header.Get("Last-Modified")
@@ -147,70 +175,71 @@ func (c *Collector) FetchFeed(ctx context.Context, f feed.Feed) ([]uuid.UUID, er
 		return nil, fmt.Errorf("parsing feed: %w", err)
 	}
 
-	// reset failure counter on successful parse
 	etag := resp.Header.Get("ETag")
 	lm := resp.Header.Get("Last-Modified")
 	if rErr := c.feeds.ResetFailure(ctx, f.ID, etag, lm); rErr != nil {
 		logger.Error("resetting failure after successful fetch", "error", rErr)
 	}
 
-	keywords := c.loadKeywords(ctx, logger)
+	return parsed, nil
+}
 
+// processItems deduplicates, scores, and stores new feed items.
+func (c *Collector) processItems(ctx context.Context, items []*gofeed.Item, f *feed.Feed, keywords []string, logger *slog.Logger) []uuid.UUID {
 	var newIDs []uuid.UUID
-	for _, item := range parsed.Items {
+	for _, item := range items {
 		if item.Link == "" {
 			continue
 		}
 
-		// extract tags from RSS categories
 		tags := append([]string{}, item.Categories...)
-
 		if f.Filter.Skip(item.Link, item.Title, tags) {
 			continue
 		}
 
-		urlHash := hashURL(item.Link)
-
-		// dedup by URL hash
-		if _, err := c.writer.ItemByURLHash(ctx, urlHash); err == nil {
-			// already exists, skip
-			continue
-		} else if !errors.Is(err, entry.ErrNotFound) {
-			logger.Error("checking url hash dedup", "url", item.Link, "error", err)
-			continue
+		id := c.tryCreateItem(ctx, item, f, tags, keywords, logger)
+		if id != nil {
+			newIDs = append(newIDs, *id)
 		}
+	}
+	return newIDs
+}
 
-		// extract content, truncate for scoring
-		content := itemContent(item)
-		if len(content) > maxContentLen {
-			content = content[:maxContentLen]
-		}
+// tryCreateItem attempts to create a single collected item, returning nil if skipped.
+func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *feed.Feed, tags, keywords []string, logger *slog.Logger) *uuid.UUID {
+	urlHash := hashURL(item.Link)
 
-		score := Score(item.Title, content, tags, keywords)
-
-		cd, err := c.writer.CreateItem(ctx, &entry.CreateParams{
-			SourceURL:       item.Link,
-			SourceName:      f.Name,
-			Title:           item.Title,
-			OriginalContent: &content,
-			Topics:          f.Topics,
-			URLHash:         urlHash,
-			FeedID:          &f.ID,
-			RelevanceScore:  score,
-		})
-		if err != nil {
-			// skip duplicates from race conditions
-			if errors.Is(err, entry.ErrConflict) {
-				continue
-			}
-			logger.Error("creating collected data", "url", item.Link, "error", err)
-			continue
-		}
-		newIDs = append(newIDs, cd.ID)
+	if _, err := c.writer.ItemByURLHash(ctx, urlHash); err == nil {
+		return nil // already exists
+	} else if !errors.Is(err, entry.ErrNotFound) {
+		logger.Error("checking url hash dedup", "url", item.Link, "error", err)
+		return nil
 	}
 
-	logger.Info("feed fetched", "total_items", len(parsed.Items), "new_items", len(newIDs))
-	return newIDs, nil
+	content := itemContent(item)
+	if len(content) > maxContentLen {
+		content = content[:maxContentLen]
+	}
+
+	score := Score(item.Title, content, tags, keywords)
+
+	cd, err := c.writer.CreateItem(ctx, &entry.CreateParams{
+		SourceURL:       item.Link,
+		SourceName:      f.Name,
+		Title:           item.Title,
+		OriginalContent: &content,
+		Topics:          f.Topics,
+		URLHash:         urlHash,
+		FeedID:          &f.ID,
+		RelevanceScore:  score,
+	})
+	if err != nil {
+		if !errors.Is(err, entry.ErrConflict) {
+			logger.Error("creating collected data", "url", item.Link, "error", err)
+		}
+		return nil
+	}
+	return &cd.ID
 }
 
 // hashURL returns the SHA-256 hex hash of a normalized URL.
