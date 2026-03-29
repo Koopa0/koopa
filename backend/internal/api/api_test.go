@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -181,12 +182,176 @@ func TestDecode(t *testing.T) {
 	})
 }
 
-// BenchmarkEncode measures JSON encoding overhead per response.
-// Scene: every API response goes through Encode — this is the hot path.
+// ---------------------------------------------------------------------------
+// ParsePagination — adversarial + security
+// ---------------------------------------------------------------------------
+
+func TestParsePagination_Adversarial(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		query       string
+		wantPage    int
+		wantPerPage int
+	}{
+		// SQL injection attempts (URL-encoded to avoid breaking httptest)
+		{name: "SQL injection in page", query: "page=1%3BDROP%20TABLE", wantPage: 1, wantPerPage: 20},
+		{name: "SQL injection in per_page", query: "per_page=20%3BDROP%20TABLE", wantPage: 1, wantPerPage: 20},
+
+		// overflow / large values
+		{name: "max int page", query: "page=2147483647", wantPage: 2147483647, wantPerPage: 20},
+		{name: "very large per_page", query: "per_page=999999", wantPage: 1, wantPerPage: 100},
+
+		// special characters
+		{name: "null bytes in page", query: "page=1%00", wantPage: 1, wantPerPage: 20},
+		{name: "float page", query: "page=1.5", wantPage: 1, wantPerPage: 20},
+		{name: "float per_page", query: "per_page=20.5", wantPage: 1, wantPerPage: 20},
+		{name: "unicode digits", query: "page=١٢٣", wantPage: 1, wantPerPage: 20},
+		{name: "empty values", query: "page=&per_page=", wantPage: 1, wantPerPage: 20},
+
+		// boundary
+		{name: "per_page exactly 1", query: "per_page=1", wantPage: 1, wantPerPage: 1},
+		{name: "page exactly 1", query: "page=1", wantPage: 1, wantPerPage: 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequest("GET", "/items?"+tt.query, http.NoBody)
+			page, perPage := ParsePagination(r)
+			if page != tt.wantPage {
+				t.Errorf("ParsePagination(%q) page = %d, want %d", tt.query, page, tt.wantPage)
+			}
+			if perPage != tt.wantPerPage {
+				t.Errorf("ParsePagination(%q) perPage = %d, want %d", tt.query, perPage, tt.wantPerPage)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandleError — sentinel error mapping
+// ---------------------------------------------------------------------------
+
+func TestHandleError(t *testing.T) {
+	t.Parallel()
+
+	sentinel := http.ErrNoCookie // just any error for testing
+
+	tests := []struct {
+		name       string
+		err        error
+		maps       []ErrMap
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "matched sentinel",
+			err:        sentinel,
+			maps:       []ErrMap{{Target: sentinel, Status: 404, Code: "NOT_FOUND"}},
+			wantStatus: 404,
+			wantCode:   "NOT_FOUND",
+		},
+		{
+			name:       "unmatched error returns 500",
+			err:        http.ErrAbortHandler,
+			maps:       []ErrMap{{Target: sentinel, Status: 404, Code: "NOT_FOUND"}},
+			wantStatus: 500,
+			wantCode:   "INTERNAL",
+		},
+		{
+			name:       "first match wins",
+			err:        sentinel,
+			maps:       []ErrMap{{Target: sentinel, Status: 404, Code: "FIRST"}, {Target: sentinel, Status: 409, Code: "SECOND"}},
+			wantStatus: 404,
+			wantCode:   "FIRST",
+		},
+		{
+			name:       "no mappings returns 500",
+			err:        sentinel,
+			maps:       nil,
+			wantStatus: 500,
+			wantCode:   "INTERNAL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			w := httptest.NewRecorder()
+			logger := slog.New(slog.DiscardHandler)
+			HandleError(w, logger, tt.err, tt.maps...)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("HandleError() status = %d, want %d", w.Code, tt.wantStatus)
+			}
+			var body ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+				t.Fatalf("decoding error response: %v", err)
+			}
+			if body.Error.Code != tt.wantCode {
+				t.Errorf("HandleError() code = %q, want %q", body.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Encode — does not leak internal errors in 5xx
+// ---------------------------------------------------------------------------
+
+func TestEncode_NilData(t *testing.T) {
+	t.Parallel()
+	w := httptest.NewRecorder()
+	Encode(w, http.StatusOK, Response{Data: nil})
+
+	var got Response
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got.Data != nil {
+		t.Errorf("Encode(nil data).Data = %v, want nil", got.Data)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Benchmarks
+// ---------------------------------------------------------------------------
+
 func BenchmarkEncode(b *testing.B) {
 	data := Response{Data: map[string]string{"id": "abc", "title": "test"}}
+	b.ReportAllocs()
 	for b.Loop() {
 		w := httptest.NewRecorder()
 		Encode(w, http.StatusOK, data)
 	}
+}
+
+func BenchmarkParsePagination(b *testing.B) {
+	r := httptest.NewRequest("GET", "/items?page=3&per_page=50", http.NoBody)
+	b.ReportAllocs()
+	for b.Loop() {
+		ParsePagination(r)
+	}
+}
+
+func FuzzParsePagination(f *testing.F) {
+	f.Add("page=1&per_page=20")
+	f.Add("")
+	f.Add("page=-1&per_page=999")
+	f.Add("page=abc&per_page=xyz")
+	f.Add("page=0&per_page=0")
+	f.Add("page=2147483647&per_page=2147483647")
+
+	f.Fuzz(func(t *testing.T, query string) {
+		r := httptest.NewRequest("GET", "/items?"+query, http.NoBody)
+		page, perPage := ParsePagination(r)
+		if page < 1 {
+			t.Errorf("ParsePagination(%q) page = %d, want >= 1", query, page)
+		}
+		if perPage < 1 || perPage > 100 {
+			t.Errorf("ParsePagination(%q) perPage = %d, want [1,100]", query, perPage)
+		}
+	})
 }

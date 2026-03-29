@@ -71,6 +71,7 @@ func (s *stubReviewStore) Review(ctx context.Context, id uuid.UUID) (*Review, er
 
 // reviewStore is an unexported interface that mirrors the store methods called
 // by Handler. Defining it here (same package) lets us shadow the store field.
+// TODO: refactor to testcontainers (violates interface-golden-rule.md — test-only interface).
 type reviewStore interface {
 	PendingReviews(ctx context.Context) ([]Review, error)
 	ApproveReview(ctx context.Context, id uuid.UUID) error

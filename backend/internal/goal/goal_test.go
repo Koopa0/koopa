@@ -99,6 +99,7 @@ func (s *stubGoalStore) UpdateStatus(ctx context.Context, id uuid.UUID, status S
 }
 
 // goalStore mirrors the store methods used by Handler.
+// TODO: refactor to testcontainers (violates interface-golden-rule.md — test-only interface).
 type goalStore interface {
 	Goals(ctx context.Context) ([]Goal, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (*Goal, error)

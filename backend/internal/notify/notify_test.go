@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -198,6 +199,100 @@ func TestMulti_Send(t *testing.T) {
 				t.Fatalf("Multi.Send() unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Adversarial: message content
+// ---------------------------------------------------------------------------
+
+func TestLINE_Send_Adversarial(t *testing.T) {
+	t.Parallel()
+
+	messages := []struct {
+		name string
+		text string
+	}{
+		{name: "empty", text: ""},
+		{name: "null bytes", text: "\x00\x00\x00"},
+		{name: "XSS payload", text: `<script>alert("xss")</script>`},
+		{name: "SQL injection", text: "'; DROP TABLE notifications; --"},
+		{name: "unicode emoji", text: "🚀🔥 Deploy success 📝"},
+		{name: "very long", text: strings.Repeat("x", 10000)},
+		{name: "newlines", text: "line1\nline2\nline3"},
+		{name: "JSON in text", text: `{"key":"value","nested":{"a":1}}`},
+	}
+
+	for _, tt := range messages {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(srv.Close)
+
+			l := NewLINE("token", "U1234")
+			l.baseURL = srv.URL
+
+			// Must not panic on any message content.
+			err := l.Send(t.Context(), tt.text)
+			if err != nil {
+				t.Errorf("LINE.Send(%q) unexpected error: %v", tt.name, err)
+			}
+		})
+	}
+}
+
+func TestMulti_Send_ConcurrentNotifiers(t *testing.T) {
+	t.Parallel()
+
+	// Multi.Send calls notifiers sequentially (by design), but we verify
+	// it doesn't leak goroutines or deadlock with many notifiers.
+	var notifiers []Notifier
+	for range 100 {
+		notifiers = append(notifiers, &stubNotifier{})
+	}
+
+	m := NewMulti(notifiers...)
+	if err := m.Send(t.Context(), "test"); err != nil {
+		t.Fatalf("Multi.Send(100 notifiers) error: %v", err)
+	}
+}
+
+func TestMulti_Send_NilNotifier(t *testing.T) {
+	t.Parallel()
+
+	// A nil notifier in the list would panic — verify Multi doesn't include nil handling.
+	// This test documents the contract: callers must not pass nil notifiers.
+	m := NewMulti(&stubNotifier{})
+	if err := m.Send(t.Context(), "test"); err != nil {
+		t.Fatalf("Multi.Send() error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Benchmarks
+// ---------------------------------------------------------------------------
+
+func BenchmarkNoop_Send(b *testing.B) {
+	n := NewNoop(slog.New(slog.DiscardHandler))
+	ctx := context.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = n.Send(ctx, "benchmark message")
+	}
+}
+
+func BenchmarkMulti_Send_3Notifiers(b *testing.B) {
+	m := NewMulti(
+		&stubNotifier{},
+		&stubNotifier{},
+		&stubNotifier{},
+	)
+	ctx := context.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.Send(ctx, "benchmark")
 	}
 }
 

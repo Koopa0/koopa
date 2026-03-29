@@ -110,6 +110,7 @@ func TestStore_CreateContent_and_Content(t *testing.T) {
 		Tags:        []string{"go", "testing"},
 		Topics:      []TopicRef{{ID: tp.ID, Slug: "golang", Name: "Go Language"}},
 		ReviewLevel: ReviewStandard,
+		Visibility:  "public",
 		ReadingTime: 5,
 		CreatedAt:   created.CreatedAt,
 		UpdatedAt:   created.UpdatedAt,

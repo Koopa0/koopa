@@ -9,11 +9,11 @@ import (
 
 func TestParse(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
+		name       string
+		input      string
 		wantParsed *Parsed
-		wantBody string
-		wantErr  bool
+		wantBody   string
+		wantErr    bool
 	}{
 		{
 			name: "full blog draft",
@@ -103,6 +103,76 @@ Body here.`,
 			input:   "---\ntitle: broken\n\nNo closing delimiter.",
 			wantErr: true,
 		},
+		// adversarial
+		{
+			name:    "invalid YAML in frontmatter",
+			input:   "---\ntitle: [unclosed\n---\nbody",
+			wantErr: true,
+		},
+		{
+			name:  "empty frontmatter",
+			input: "---\n---\nbody text",
+			wantParsed: &Parsed{
+				Tags:       []string{},
+				TopicSlugs: []string{},
+			},
+			wantBody: "body text",
+		},
+		{
+			name:    "invalid date format",
+			input:   "---\ntitle: test\ncreated: not-a-date\n---\nbody",
+			wantErr: true,
+		},
+		{
+			name:  "SQL injection in title",
+			input: "---\ntitle: \"'; DROP TABLE contents; --\"\ntags: []\n---\nbody",
+			wantParsed: &Parsed{
+				Title:      "'; DROP TABLE contents; --",
+				Tags:       []string{},
+				TopicSlugs: []string{},
+			},
+			wantBody: "body",
+		},
+		{
+			name:  "XSS in title",
+			input: "---\ntitle: \"<script>alert(1)</script>\"\ntags: []\n---\nbody",
+			wantParsed: &Parsed{
+				Title:      "<script>alert(1)</script>",
+				Tags:       []string{},
+				TopicSlugs: []string{},
+			},
+			wantBody: "body",
+		},
+		{
+			name:  "frontmatter delimiter in body",
+			input: "---\ntitle: test\ntags: []\n---\nbody with --- dashes",
+			wantParsed: &Parsed{
+				Title:      "test",
+				Tags:       []string{},
+				TopicSlugs: []string{},
+			},
+			wantBody: "body with --- dashes",
+		},
+		{
+			name:  "unicode tags",
+			input: "---\ntitle: test\ntags:\n  - type/文章\n  - 中文/技術\n---\n內容",
+			wantParsed: &Parsed{
+				Title:       "test",
+				ContentType: "文章",
+				Tags:        []string{"中文/技術"},
+				TopicSlugs:  []string{"中文"},
+			},
+			wantBody: "內容",
+		},
+		{
+			name:  "only whitespace between delimiters",
+			input: "---\n   \n---\n",
+			wantParsed: &Parsed{
+				Tags:       []string{},
+				TopicSlugs: []string{},
+			},
+			wantBody: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -129,11 +199,11 @@ Body here.`,
 
 func TestClassifyTags(t *testing.T) {
 	tests := []struct {
-		name        string
-		tags        []string
-		wantType    string
-		wantTags    []string
-		wantTopics  []string
+		name       string
+		tags       []string
+		wantType   string
+		wantTags   []string
+		wantTopics []string
 	}{
 		{
 			name:       "mixed tags",
@@ -162,6 +232,51 @@ func TestClassifyTags(t *testing.T) {
 			wantType:   "",
 			wantTags:   []string{"golang/memory", "golang/compiler", "golang/gc"},
 			wantTopics: []string{"golang"},
+		},
+		// adversarial
+		{
+			name:       "multiple type tags — last wins (overwrite semantics)",
+			tags:       []string{"type/article", "type/til"},
+			wantType:   "til",
+			wantTags:   []string{},
+			wantTopics: []string{},
+		},
+		{
+			// "/" splits to ["", ""] — empty prefix becomes empty topic slug.
+			// Not ideal but documents current behavior.
+			name:       "slash-only tag creates empty topic slug",
+			tags:       []string{"/"},
+			wantType:   "",
+			wantTags:   []string{"/"},
+			wantTopics: []string{""},
+		},
+		{
+			name:       "empty string tag",
+			tags:       []string{""},
+			wantType:   "",
+			wantTags:   []string{""},
+			wantTopics: []string{},
+		},
+		{
+			name:       "type with empty value",
+			tags:       []string{"type/"},
+			wantType:   "",
+			wantTags:   []string{},
+			wantTopics: []string{},
+		},
+		{
+			name:       "status tags stripped",
+			tags:       []string{"status/draft", "status/published", "docker"},
+			wantType:   "",
+			wantTags:   []string{"docker"},
+			wantTopics: []string{},
+		},
+		{
+			name:       "SQL injection in tag",
+			tags:       []string{"'; DROP TABLE/tags"},
+			wantType:   "",
+			wantTags:   []string{"'; DROP TABLE/tags"},
+			wantTopics: []string{"'; DROP TABLE"},
 		},
 	}
 

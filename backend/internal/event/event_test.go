@@ -174,3 +174,143 @@ func TestBus_ConcurrentEmitAndOn(t *testing.T) {
 
 	wg.Wait()
 }
+
+// ---------------------------------------------------------------------------
+// Edge cases requested in test-writer spec
+// ---------------------------------------------------------------------------
+
+func TestBus_EmitNilPayload(t *testing.T) {
+	t.Parallel()
+
+	bus := New()
+	var received any = "sentinel" // confirm nil overwrites it
+
+	bus.On("nil-payload", func(_ context.Context, p any) error {
+		received = p
+		return nil
+	})
+
+	if err := bus.Emit(t.Context(), "nil-payload", nil); err != nil {
+		t.Fatalf("Emit() with nil payload returned error: %v", err)
+	}
+	if received != nil {
+		t.Errorf("handler received %v, want nil", received)
+	}
+}
+
+func TestBus_EmitEmptyEventName(t *testing.T) {
+	t.Parallel()
+
+	bus := New()
+	var called bool
+
+	// Register handler for empty string event name.
+	bus.On("", func(_ context.Context, _ any) error {
+		called = true
+		return nil
+	})
+
+	// Emitting "" fires the handler registered under "".
+	if err := bus.Emit(t.Context(), "", "payload"); err != nil {
+		t.Fatalf("Emit(%q) unexpected error: %v", "", err)
+	}
+	if !called {
+		t.Error("Emit(\"\") did not call handler registered for empty event name")
+	}
+
+	// Emitting a different event does NOT fire the empty-name handler.
+	called = false
+	if err := bus.Emit(t.Context(), "other", "payload"); err != nil {
+		t.Fatalf("Emit(%q) unexpected error: %v", "other", err)
+	}
+	if called {
+		t.Error("Emit(\"other\") called handler registered for empty event name")
+	}
+}
+
+// TestBus_OnDuringEmit_DoesNotDeadlock verifies that registering a new handler
+// while another goroutine is inside Emit does not deadlock.
+// Emit holds an RLock; On acquires a write Lock.
+// The RWMutex guarantees this is safe — On waits until Emit finishes its read.
+func TestBus_OnDuringEmit_DoesNotDeadlock(t *testing.T) {
+	t.Parallel()
+
+	bus := New()
+	done := make(chan struct{})
+
+	// Handler that signals we are inside Emit, then blocks until the test allows it to continue.
+	inside := make(chan struct{})
+	proceed := make(chan struct{})
+
+	bus.On("event", func(ctx context.Context, _ any) error {
+		close(inside) // signal: we are inside Emit
+		<-proceed     // wait: test will close this after calling On
+		return nil
+	})
+
+	// Start Emit in a separate goroutine.
+	go func() {
+		defer close(done)
+		_ = bus.Emit(t.Context(), "event", nil)
+	}()
+
+	// Wait until the handler is executing (i.e., Emit holds its RLock).
+	<-inside
+
+	// Register a new handler from a different goroutine.
+	// This MUST NOT deadlock — On will block waiting for Emit's RLock to be released,
+	// but the test unblocks Emit shortly after.
+	registered := make(chan struct{})
+	go func() {
+		bus.On("event", func(_ context.Context, _ any) error { return nil })
+		close(registered)
+	}()
+
+	// Allow Emit's handler to finish.
+	close(proceed)
+
+	// Wait for both goroutines to complete within a reasonable time.
+	select {
+	case <-done:
+	case <-t.Context().Done():
+		t.Fatal("Emit goroutine did not finish: possible deadlock")
+	}
+	select {
+	case <-registered:
+	case <-t.Context().Done():
+		t.Fatal("On goroutine did not finish: possible deadlock")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Benchmarks
+// ---------------------------------------------------------------------------
+
+func BenchmarkBus_Emit_10Handlers(b *testing.B) {
+	bus := New()
+	for range 10 {
+		bus.On("bench", func(_ context.Context, _ any) error {
+			return nil
+		})
+	}
+	ctx := context.Background()
+	for b.Loop() {
+		_ = bus.Emit(ctx, "bench", "payload")
+	}
+}
+
+func BenchmarkBus_Emit_NoHandlers(b *testing.B) {
+	bus := New()
+	ctx := context.Background()
+	for b.Loop() {
+		_ = bus.Emit(ctx, "no-handlers", nil)
+	}
+}
+
+func BenchmarkBus_On(b *testing.B) {
+	bus := New()
+	fn := func(_ context.Context, _ any) error { return nil }
+	for b.Loop() {
+		bus.On("bench", fn)
+	}
+}

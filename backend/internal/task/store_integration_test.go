@@ -42,6 +42,7 @@ func TestUpsertByNotionPageID_InsertAndRead(t *testing.T) {
 		Status:       StatusTodo,
 		Due:          &due,
 		NotionPageID: "notion-page-001",
+		Assignee:     "human",
 		Energy:       "high",
 		Priority:     "P1",
 		MyDay:        true,
@@ -93,6 +94,7 @@ func TestUpsertByNotionPageID_UpdateExisting(t *testing.T) {
 		Title:        "Original title",
 		Status:       StatusTodo,
 		NotionPageID: "notion-page-002",
+		Assignee:     "human",
 		Energy:       "low",
 		Priority:     "P3",
 	}
@@ -137,6 +139,7 @@ func TestUpdateStatus(t *testing.T) {
 		Title:        "Task for status test",
 		Status:       StatusTodo,
 		NotionPageID: "notion-status-001",
+		Assignee:     "human",
 	})
 	if err != nil {
 		t.Fatalf("UpsertByNotionPageID() error: %v", err)
@@ -187,6 +190,7 @@ func TestUpdateStatus_DoneToDone_PreservesCompletedAt(t *testing.T) {
 		Title:        "Already done task",
 		Status:       StatusDone,
 		NotionPageID: "notion-done-001",
+		Assignee:     "human",
 	})
 	if err != nil {
 		t.Fatalf("UpsertByNotionPageID() error: %v", err)
@@ -232,6 +236,7 @@ func TestPendingTasks(t *testing.T) {
 			Title:        seed.title,
 			Status:       seed.status,
 			NotionPageID: seed.pageID,
+			Assignee:     "human",
 		})
 		if err != nil {
 			t.Fatalf("UpsertByNotionPageID(%q) error: %v", seed.title, err)
@@ -275,6 +280,7 @@ func TestTasks_ReturnsAll(t *testing.T) {
 			Title:        seed.title,
 			Status:       seed.status,
 			NotionPageID: seed.pageID,
+			Assignee:     "human",
 		})
 		if err != nil {
 			t.Fatalf("UpsertByNotionPageID(%q) error: %v", seed.title, err)
@@ -301,6 +307,7 @@ func TestCompletedSince(t *testing.T) {
 		Title:        "Completed recently",
 		Status:       StatusDone,
 		NotionPageID: "comp-001",
+		Assignee:     "human",
 	})
 	if err != nil {
 		t.Fatalf("UpsertByNotionPageID() error: %v", err)
@@ -310,6 +317,7 @@ func TestCompletedSince(t *testing.T) {
 		Title:        "Still pending",
 		Status:       StatusTodo,
 		NotionPageID: "comp-002",
+		Assignee:     "human",
 	})
 	if err != nil {
 		t.Fatalf("UpsertByNotionPageID() error: %v", err)
@@ -335,6 +343,7 @@ func TestCompletedTasksDetailSince(t *testing.T) {
 		Title:        "Completed detail task",
 		Status:       StatusDone,
 		NotionPageID: "detail-001",
+		Assignee:     "human",
 	})
 	if err != nil {
 		t.Fatalf("UpsertByNotionPageID() error: %v", err)
@@ -389,6 +398,7 @@ func TestDailySummaryHintForDate(t *testing.T) {
 			Status:       seed.status,
 			MyDay:        seed.myDay,
 			NotionPageID: seed.pageID,
+			Assignee:     "human",
 		})
 		if err != nil {
 			t.Fatalf("UpsertByNotionPageID(%q) error: %v", seed.title, err)
@@ -433,6 +443,7 @@ func TestNotionPageIDs(t *testing.T) {
 			Title:        "Task " + pageID,
 			Status:       StatusTodo,
 			NotionPageID: pageID,
+			Assignee:     "human",
 		})
 		if err != nil {
 			t.Fatalf("UpsertByNotionPageID(%q) error: %v", pageID, err)
@@ -456,6 +467,7 @@ func TestArchiveByNotionPageID(t *testing.T) {
 		Title:        "To archive",
 		Status:       StatusTodo,
 		NotionPageID: "archive-001",
+		Assignee:     "human",
 	})
 	if err != nil {
 		t.Fatalf("UpsertByNotionPageID() error: %v", err)
@@ -501,6 +513,7 @@ func TestArchiveOrphanNotion(t *testing.T) {
 			Title:        "Task " + pageID,
 			Status:       StatusTodo,
 			NotionPageID: pageID,
+			Assignee:     "human",
 		})
 		if err != nil {
 			t.Fatalf("UpsertByNotionPageID(%q) error: %v", pageID, err)
@@ -534,6 +547,7 @@ func TestArchiveOrphanNotion_EmptyActiveIDs(t *testing.T) {
 		Title:        "Should not be archived",
 		Status:       StatusTodo,
 		NotionPageID: "safe-001",
+		Assignee:     "human",
 	})
 	if err != nil {
 		t.Fatalf("UpsertByNotionPageID() error: %v", err)
@@ -557,6 +571,7 @@ func TestUpdateMyDay(t *testing.T) {
 		Title:        "MyDay test",
 		Status:       StatusTodo,
 		NotionPageID: "myday-001",
+		Assignee:     "human",
 		MyDay:        false,
 	})
 	if err != nil {
@@ -587,6 +602,7 @@ func TestClearAllMyDay(t *testing.T) {
 			Title:        "Clear " + pageID,
 			Status:       StatusTodo,
 			NotionPageID: pageID,
+			Assignee:     "human",
 			MyDay:        true,
 		})
 		if err != nil {
@@ -623,6 +639,7 @@ func TestPendingTasksByTitle(t *testing.T) {
 			Title:        seed.title,
 			Status:       seed.status,
 			NotionPageID: seed.pageID,
+			Assignee:     "human",
 		})
 		if err != nil {
 			t.Fatalf("UpsertByNotionPageID(%q) error: %v", seed.title, err)

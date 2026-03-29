@@ -43,6 +43,7 @@ func (s *stubMonitorStore) DeleteTrackingTopic(ctx context.Context, id uuid.UUID
 }
 
 // monitorStore mirrors the store methods used by Handler.
+// TODO: refactor to testcontainers (violates interface-golden-rule.md — test-only interface).
 type monitorStore interface {
 	TrackingTopics(ctx context.Context) ([]Topic, error)
 	CreateTrackingTopic(ctx context.Context, p *CreateParams) (*Topic, error)

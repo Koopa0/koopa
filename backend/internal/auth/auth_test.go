@@ -283,12 +283,15 @@ func TestGenerateAndValidateState(t *testing.T) {
 }
 
 // generateStateAt creates a correctly signed state string with a specific unix timestamp.
+// Uses a fixed nonce for deterministic test output.
 func generateStateAt(h *Handler, unix int64) string {
 	ts := strconv.FormatInt(unix, 10)
+	nonce := base64.URLEncoding.EncodeToString([]byte("testnonce"))
+	payload := ts + "." + nonce
 	mac := hmac.New(sha256.New, h.secret)
-	mac.Write([]byte(ts))
+	mac.Write([]byte(payload))
 	sig := base64.URLEncoding.EncodeToString(mac.Sum(nil))
-	return ts + "." + sig
+	return payload + "." + sig
 }
 
 func TestHashToken(t *testing.T) {

@@ -65,11 +65,14 @@ func TestMain(m *testing.M) {
 
 func applySchema(ctx context.Context, pool *pgxpool.Pool) error {
 	// Only create the enums and tables needed for flow_runs.
+	// Must match the production migration (001_initial.up.sql) — content_id is
+	// nullable (no FK here since we don't create the contents table).
 	schema := `
 		CREATE TYPE flow_status AS ENUM ('pending', 'running', 'completed', 'failed');
 		CREATE TABLE flow_runs (
 			id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			flow_name    TEXT NOT NULL,
+			content_id   UUID,
 			input        JSONB NOT NULL,
 			output       JSONB,
 			status       flow_status NOT NULL DEFAULT 'pending',
@@ -83,6 +86,8 @@ func applySchema(ctx context.Context, pool *pgxpool.Pool) error {
 		CREATE INDEX idx_flow_runs_status ON flow_runs (status);
 		CREATE INDEX idx_flow_runs_retry ON flow_runs (created_at) WHERE status = 'failed';
 		CREATE INDEX idx_flow_runs_created_at ON flow_runs (created_at DESC);
+		CREATE INDEX idx_flow_runs_content_id ON flow_runs (content_id) WHERE content_id IS NOT NULL;
+		CREATE INDEX idx_flow_runs_dedup ON flow_runs (content_id, flow_name, status) WHERE status IN ('pending', 'running');
 	`
 	_, err := pool.Exec(ctx, schema)
 	return err

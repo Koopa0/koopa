@@ -29,6 +29,7 @@ import (
 
 // handlerStore is the minimal store surface the Handler actually calls.
 // Defined here so the stub only needs to implement what the handler uses.
+// TODO: refactor to testcontainers (violates interface-golden-rule.md — test-only interface).
 type handlerStore interface {
 	Topics(ctx context.Context) ([]Topic, error)
 	TopicBySlug(ctx context.Context, slug string) (*Topic, error)

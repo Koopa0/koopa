@@ -247,6 +247,7 @@ func BenchmarkRRFMerge(b *testing.B) {
 			for i := range sz.filterCount {
 				filter[i] = makeNote(int64(i + 1))
 			}
+			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
 				_ = RRFMerge(text, filter, 20)
