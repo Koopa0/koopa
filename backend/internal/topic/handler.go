@@ -36,7 +36,13 @@ type Handler struct {
 }
 
 // NewHandler returns a topic Handler.
-func NewHandler(store *Store, contentReader ContentReader, topicCache *ristretto.Cache[string, []Topic], logger *slog.Logger) *Handler {
+// The topic cache is created internally — it is an implementation detail of this handler.
+func NewHandler(store *Store, contentReader ContentReader, logger *slog.Logger) *Handler {
+	topicCache, _ := ristretto.NewCache(&ristretto.Config[string, []Topic]{
+		NumCounters: 10, // 10x expected items (1 key: "topics")
+		MaxCost:     1,  // count-based: 1 item max
+		BufferItems: 64,
+	})
 	return &Handler{store: store, content: contentReader, topicCache: topicCache, logger: logger}
 }
 

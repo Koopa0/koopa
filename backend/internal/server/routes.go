@@ -35,8 +35,8 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// Deps holds all handler dependencies for route registration.
-type Deps struct {
+// Handlers holds all handler dependencies for route registration.
+type Handlers struct {
 	Auth         *auth.Handler
 	Topic        *topic.Handler
 	Content      *content.Handler
@@ -64,7 +64,7 @@ type Deps struct {
 }
 
 // RegisterRoutes registers all API routes on the given mux.
-func RegisterRoutes(mux *http.ServeMux, d *Deps, authMid, rlMid func(http.Handler) http.Handler) {
+func RegisterRoutes(mux *http.ServeMux, d *Handlers, authMid, rlMid func(http.Handler) http.Handler) {
 	// health checks — no auth, no middleware
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

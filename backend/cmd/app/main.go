@@ -12,18 +12,14 @@ import (
 	"time"
 
 	"github.com/dgraph-io/ristretto/v2"
-	"github.com/firebase/genkit/go/ai"
+	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/anthropic"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pgvector/pgvector-go"
 	"github.com/robfig/cron/v3"
-	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	aiflow "github.com/koopa0/blog-backend/internal/ai"
@@ -142,15 +138,12 @@ func run(logger *slog.Logger) error {
 	defer feedCollector.Stop()
 	tokenBudget := budget.New(500_000)
 
-	// caches (Ristretto v2 — TinyLFU admission, per-item TTL)
-	c, err := createCaches()
+	// notion source cache (shared between notion.Handler and notion.SourceHandler)
+	sourceCache, err := notion.NewSourceCache()
 	if err != nil {
 		return err
 	}
-	defer c.graph.Close()
-	defer c.feed.Close()
-	defer c.topic.Close()
-	defer c.source.Close()
+	defer sourceCache.Close()
 
 	// upload
 	s3Client := upload.NewS3Client(ctx, cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey)
@@ -167,26 +160,37 @@ func run(logger *slog.Logger) error {
 	// github client (used by weekly review flow and pipeline handler)
 	githubFetcher := pipeline.NewGitHub(cfg.GitHubToken, cfg.GitHubRepo)
 
-	// AI pipeline — Genkit + flow registry + runner
-	aiRes, err := setupAI(ctx, &cfg, &aiDeps{
-		execStore:     execStore,
-		contentStore:  contentStore,
-		reviewStore:   reviewStore,
-		topicStore:    topicStore,
-		entryStore:    entryStore,
-		projectStore:  projectStore,
-		taskStore:     taskStore,
-		activityStore: activityStore,
-		githubFetcher: githubFetcher,
-		notifier:      notifier,
-		tokenBudget:   tokenBudget,
-		taipeiLoc:     taipeiLoc,
-		logger:        logger,
-	})
+	// AI pipeline — Genkit + flow registry
+	aiRes, err := aiflow.Setup(ctx, aiflow.PipelineConfig{
+		MockMode:    cfg.MockMode,
+		GeminiModel: cfg.GeminiModel,
+		ClaudeModel: cfg.ClaudeModel,
+	}, aiflow.PipelineStores{
+		Content: contentStore,
+		Review:  reviewStore,
+		Topic:   topicStore,
+		Entry:   entryStore,
+		Project: projectStore,
+	}, githubFetcher, notifier, tokenBudget, taipeiLoc, logger,
+		func(g *genkit.Genkit, model genkitai.Model) []aiflow.Flow {
+			return []aiflow.Flow{
+				aireport.NewDigest(g, model, aiflow.DigestSystemPrompt, contentStore, entryStore, projectStore, tokenBudget, taipeiLoc, logger),
+				aireport.NewMorning(g, taskStore, notifier, taipeiLoc, logger),
+				aireport.NewWeekly(
+					g, model, aiflow.WeeklyReviewSystemPrompt, taskStore, taskStore,
+					entryStore, contentStore, projectStore, githubFetcher,
+					notifier, tokenBudget, taipeiLoc, logger,
+				),
+				aireport.NewDaily(g, model, aiflow.DailyDevLogSystemPrompt, activityStore, notifier, tokenBudget, taipeiLoc, logger),
+			}
+		},
+	)
 	if err != nil {
 		return err
 	}
-	runner := aiRes.runner
+
+	alerter := exec.NewNotifyAlerter(notifier, logger)
+	runner := exec.New(execStore, aiRes.Registry, 3, alerter, logger)
 
 	bizMetrics := server.NewMetrics()
 	runner.SetObserver(exec.NewMetricsObserver(bizMetrics.FlowDuration))
@@ -225,7 +229,7 @@ func run(logger *slog.Logger) error {
 
 	// notion webhook handler
 	notionHandler := notion.NewHandler(
-		notionClient, notionSourceStore, c.source,
+		notionClient, notionSourceStore, sourceCache,
 		projectStore, goalStore, taskStore, runner,
 		cfg.NotionWebhookSecret, logger,
 		notion.WithDedup(webhookDedup),
@@ -272,32 +276,37 @@ func run(logger *slog.Logger) error {
 	pipelineHandler := pipeline.NewHandler(contentSync, webhookRouter, triggers, logger)
 	defer pipelineHandler.Wait() // drain in-flight background operations before exit
 
+	// note embedder (nil in mock mode)
+	var noteEmbedder *note.Embedder
+	if aiRes.Embedder != nil {
+		noteEmbedder = note.NewEmbedder(noteStore, aiRes.Embedder, aiRes.Genkit, logger)
+	}
+
 	// cron: register all scheduled jobs
 	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
 	defer cronScheduler.Stop()
 	registerCronJobs(cronScheduler, &cronDeps{
-		execStore:      execStore,
-		feedStore:      feedStore,
-		authStore:      authStore,
-		entryStore:     entryStore,
-		sessionStore:   sessionStore,
-		activityStore:  activityStore,
-		projectStore:   projectStore,
-		noteStore:      noteStore,
-		runner:         runner,
-		feedCollector:  feedCollector,
-		notifier:       notifier,
-		tokenBudget:    tokenBudget,
-		recon:          recon,
-		contentSync:    contentSync,
-		notionHandler:  notionHandler,
-		noteEmbedder:   aiRes.noteEmbedder,
-		genkitInstance: aiRes.genkit,
-		logger:         logger,
+		execStore:     execStore,
+		feedStore:     feedStore,
+		authStore:     authStore,
+		entryStore:    entryStore,
+		sessionStore:  sessionStore,
+		activityStore: activityStore,
+		projectStore:  projectStore,
+		noteStore:     noteStore,
+		runner:        runner,
+		feedCollector: feedCollector,
+		notifier:      notifier,
+		tokenBudget:   tokenBudget,
+		recon:         recon,
+		contentSync:   contentSync,
+		notionHandler: notionHandler,
+		noteEmbedder:  noteEmbedder,
+		logger:        logger,
 	}, ctx)
 	cronScheduler.Start()
 
-	deps := server.Deps{
+	handlers := server.Handlers{
 		Pool: pool,
 		Auth: auth.NewHandler(authStore, cfg.JWTSecret, &auth.GoogleConfig{
 			ClientID:     cfg.GoogleClientID,
@@ -306,8 +315,8 @@ func run(logger *slog.Logger) error {
 			AdminEmail:   cfg.AdminEmail,
 			FrontendURL:  cfg.CORSOrigin,
 		}, logger),
-		Topic:    topic.NewHandler(topicStore, contentStore, c.topic, logger),
-		Content:  content.NewHandler(contentStore, cfg.SiteURL, c.graph, c.feed, logger),
+		Topic:    topic.NewHandler(topicStore, contentStore, logger),
+		Content:  content.NewHandler(contentStore, cfg.SiteURL, logger),
 		Project:  project.NewHandler(projectStore, logger),
 		Review:   review.NewHandler(reviewStore, logger),
 		Entry:    entry.NewHandler(entryStore, logger),
@@ -323,7 +332,7 @@ func run(logger *slog.Logger) error {
 		Notion: notionHandler,
 		Tag:    tag.NewHandler(tagStore, pool, logger),
 		NotionSource: func() *notion.SourceHandler {
-			sh := notion.NewSourceHandler(notionSourceStore, notionClient, c.source, logger)
+			sh := notion.NewSourceHandler(notionSourceStore, notionClient, sourceCache, logger)
 			sh.SetSyncer(notionHandler)
 			return sh
 		}(),
@@ -331,7 +340,7 @@ func run(logger *slog.Logger) error {
 		Task: task.NewHandler(taskStore, logger,
 			task.WithNotion(
 				&notionTaskAdapter{client: notionClient},
-				&sourceDBResolver{store: notionSourceStore, cache: c.source},
+				&sourceDBResolver{store: notionSourceStore, cache: sourceCache},
 			),
 			task.WithProjectResolver(func(ctx context.Context, slug string) (uuid.UUID, string, error) {
 				proj, err := projectStore.ProjectBySlug(ctx, slug)
@@ -371,67 +380,7 @@ func run(logger *slog.Logger) error {
 		Port:       cfg.Port,
 		CORSOrigin: cfg.CORSOrigin,
 		JWTSecret:  cfg.JWTSecret,
-	}, &deps, logger)
-}
-
-// caches holds all Ristretto caches used by the application.
-type caches struct {
-	graph  *ristretto.Cache[string, *content.KnowledgeGraph]
-	feed   *ristretto.Cache[string, []byte]
-	topic  *ristretto.Cache[string, []topic.Topic]
-	source *ristretto.Cache[string, string]
-}
-
-// createCaches creates all Ristretto v2 caches (TinyLFU admission, per-item TTL).
-func createCaches() (*caches, error) {
-	graphCache, err := ristretto.NewCache(&ristretto.Config[string, *content.KnowledgeGraph]{
-		NumCounters: 10, // 10x expected items (1 key: "graph")
-		MaxCost:     1,  // count-based: 1 item max
-		BufferItems: 64,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("creating graph cache: %w", err)
-	}
-
-	feedCache, err := ristretto.NewCache(&ristretto.Config[string, []byte]{
-		NumCounters: 100,     // 10x expected items (2 keys: "rss", "sitemap")
-		MaxCost:     1 << 20, // 1 MB byte budget
-		BufferItems: 64,
-	})
-	if err != nil {
-		graphCache.Close()
-		return nil, fmt.Errorf("creating feed cache: %w", err)
-	}
-
-	topicCache, err := ristretto.NewCache(&ristretto.Config[string, []topic.Topic]{
-		NumCounters: 10, // 10x expected items (1 key: "topics")
-		MaxCost:     1,  // count-based: 1 item max
-		BufferItems: 64,
-	})
-	if err != nil {
-		graphCache.Close()
-		feedCache.Close()
-		return nil, fmt.Errorf("creating topic cache: %w", err)
-	}
-
-	sourceCache, err := ristretto.NewCache(&ristretto.Config[string, string]{
-		NumCounters: 50, // 10x expected items (~4 sources)
-		MaxCost:     10, // count-based: max 10 items
-		BufferItems: 64,
-	})
-	if err != nil {
-		graphCache.Close()
-		feedCache.Close()
-		topicCache.Close()
-		return nil, fmt.Errorf("creating source cache: %w", err)
-	}
-
-	return &caches{
-		graph:  graphCache,
-		feed:   feedCache,
-		topic:  topicCache,
-		source: sourceCache,
-	}, nil
+	}, &handlers, logger)
 }
 
 // setupNotifiers creates a notifier from configured providers (LINE, Telegram)
@@ -453,155 +402,25 @@ func setupNotifiers(cfg *config, logger *slog.Logger) notify.Notifier {
 	return notify.NewNoop(logger)
 }
 
-// aiDeps holds the dependencies needed to set up the AI pipeline.
-type aiDeps struct {
-	execStore     *exec.Store
-	contentStore  *content.Store
-	reviewStore   *review.Store
-	topicStore    *topic.Store
-	entryStore    *entry.Store
-	projectStore  *project.Store
-	taskStore     *task.Store
-	activityStore *activity.Store
-	githubFetcher *pipeline.GitHub
-	notifier      notify.Notifier
-	tokenBudget   *budget.Budget
-	taipeiLoc     *time.Location
-	logger        *slog.Logger
-}
-
-// aiResult holds the outputs from AI pipeline setup.
-type aiResult struct {
-	runner       *exec.Runner
-	noteEmbedder ai.Embedder    // nil in mock mode
-	genkit       *genkit.Genkit // nil in mock mode
-}
-
-// setupAI initializes the AI pipeline in either mock or real mode.
-func setupAI(ctx context.Context, cfg *config, d *aiDeps) (*aiResult, error) {
-	alerter := exec.NewNotifyAlerter(d.notifier, d.logger)
-
-	if cfg.MockMode {
-		d.logger.Info("starting in MOCK MODE — AI calls disabled")
-		registry := aiflow.NewRegistry(
-			aiflow.NewMockContentReview(),
-			aiflow.NewMockContentProofread(),
-			aiflow.NewMockContentExcerpt(),
-			aiflow.NewMockContentTags(),
-			aiflow.NewMockContentPolish(),
-			aiflow.NewMockDigestGenerate(),
-			aiflow.NewMockBookmarkGenerate(),
-			aiflow.NewMockMorningBrief(),
-			aiflow.NewMockWeeklyReview(),
-			aiflow.NewMockProjectTrack(),
-			aiflow.NewMockContentStrategy(),
-			aiflow.NewMockBuildLog(),
-			aiflow.NewMockDailyDevLog(),
-		)
-		return &aiResult{
-			runner: exec.New(d.execStore, registry, 3, alerter, d.logger),
-		}, nil
-	}
-
-	googleAI := &googlegenai.GoogleAI{}
-	anthropicPlugin := &anthropic.Anthropic{}
-	g := genkit.Init(ctx, genkit.WithPlugins(googleAI, anthropicPlugin))
-
-	geminiModel, err := googleAI.DefineModel(g, cfg.GeminiModel, &ai.ModelOptions{
-		Label: "Gemini Review",
-		Supports: &ai.ModelSupports{
-			Multiturn:  true,
-			SystemRole: true,
-			Media:      true,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("defining gemini model: %w", err)
-	}
-
-	claudeModel, err := anthropicPlugin.DefineModel(g, cfg.ClaudeModel, &ai.ModelOptions{
-		Label: "Claude Polish",
-		Supports: &ai.ModelSupports{
-			Multiturn:  true,
-			SystemRole: true,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("defining claude model: %w", err)
-	}
-
-	embedder, err := googleAI.DefineEmbedder(g, "gemini-embedding-2-preview", &ai.EmbedderOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("defining embedder: %w", err)
-	}
-
-	contentProofread := aiflow.NewProofread(g, geminiModel, aiflow.ReviewSystemPrompt, d.logger)
-	contentExcerpt := aiflow.NewExcerpt(g, geminiModel, aiflow.ExcerptSystemPrompt, d.logger)
-	contentTags := aiflow.NewTags(g, geminiModel, aiflow.TagsSystemPrompt, d.logger)
-	contentReview := aiflow.NewContentReview(
-		g, embedder,
-		d.contentStore, d.contentStore, d.contentStore, d.reviewStore, d.topicStore,
-		contentProofread, contentExcerpt, contentTags,
-		d.logger,
-	)
-	contentPolish := aiflow.NewPolish(g, claudeModel, aiflow.PolishSystemPrompt, d.contentStore, d.logger)
-	digestGenerate := aireport.NewDigest(g, geminiModel, aiflow.DigestSystemPrompt, d.contentStore, d.entryStore, d.projectStore, d.tokenBudget, d.taipeiLoc, d.logger)
-	bookmarkGenerate := aiflow.NewBookmarkGenerate(g, geminiModel, d.entryStore, d.tokenBudget, d.logger)
-	morningBrief := aireport.NewMorning(g, d.taskStore, d.notifier, d.taipeiLoc, d.logger)
-	weeklyReview := aireport.NewWeekly(
-		g, geminiModel, aiflow.WeeklyReviewSystemPrompt, d.taskStore, d.taskStore,
-		d.entryStore, d.contentStore, d.projectStore, d.githubFetcher,
-		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
-	)
-	projectTrack := aiflow.NewProjectTrack(
-		g, geminiModel, aiflow.ProjectTrackSystemPrompt, d.projectStore, d.projectStore,
-		d.notifier, d.tokenBudget, d.logger,
-	)
-	contentStrategy := aiflow.NewContentStrategy(
-		g, geminiModel, d.contentStore, d.entryStore, d.projectStore,
-		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
-	)
-	buildLog := aiflow.NewBuildLog(
-		g, geminiModel, aiflow.BuildLogSystemPrompt, d.projectStore, d.githubFetcher, d.contentStore,
-		d.tokenBudget, d.taipeiLoc, d.logger,
-	)
-	dailyDevLog := aireport.NewDaily(
-		g, geminiModel, aiflow.DailyDevLogSystemPrompt, d.activityStore,
-		d.notifier, d.tokenBudget, d.taipeiLoc, d.logger,
-	)
-	registry := aiflow.NewRegistry(
-		contentReview, contentProofread, contentExcerpt, contentTags,
-		contentPolish, digestGenerate, bookmarkGenerate,
-		morningBrief, weeklyReview, projectTrack,
-		contentStrategy, buildLog, dailyDevLog,
-	)
-	return &aiResult{
-		runner:       exec.New(d.execStore, registry, 3, alerter, d.logger),
-		noteEmbedder: embedder,
-		genkit:       g,
-	}, nil
-}
-
 // cronDeps holds the dependencies needed to register cron jobs.
 type cronDeps struct {
-	execStore      *exec.Store
-	feedStore      *feed.Store
-	authStore      *auth.Store
-	entryStore     *entry.Store
-	sessionStore   *session.Store
-	activityStore  *activity.Store
-	projectStore   *project.Store
-	noteStore      *note.Store
-	runner         *exec.Runner
-	feedCollector  *collector.Collector
-	notifier       notify.Notifier
-	tokenBudget    *budget.Budget
-	recon          *reconcile.Reconciler
-	contentSync    *pipeline.ContentSync
-	notionHandler  *notion.Handler
-	noteEmbedder   ai.Embedder    // nil in mock mode
-	genkitInstance *genkit.Genkit // nil in mock mode
-	logger         *slog.Logger
+	execStore     *exec.Store
+	feedStore     *feed.Store
+	authStore     *auth.Store
+	entryStore    *entry.Store
+	sessionStore  *session.Store
+	activityStore *activity.Store
+	projectStore  *project.Store
+	noteStore     *note.Store
+	runner        *exec.Runner
+	feedCollector *collector.Collector
+	notifier      notify.Notifier
+	tokenBudget   *budget.Budget
+	recon         *reconcile.Reconciler
+	contentSync   *pipeline.ContentSync
+	notionHandler *notion.Handler
+	noteEmbedder  *note.Embedder // nil in mock mode
+	logger        *slog.Logger
 }
 
 // registerCronJobs registers all scheduled jobs on the given cron scheduler.
@@ -702,68 +521,19 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context)
 
 	// note embedding generation (hourly at :30, after sync at :15)
 	if d.noteEmbedder != nil {
-		addCron("30 * * * *", "note-embedding", noteEmbeddingJob(appCtx, d.noteStore, d.noteEmbedder, d.genkitInstance, d.logger))
-	}
-}
-
-// noteEmbeddingJob returns a cron function that generates embeddings for notes
-// that don't have them yet.
-func noteEmbeddingJob(appCtx context.Context, noteStore *note.Store, embedder ai.Embedder, g *genkit.Genkit, logger *slog.Logger) func() {
-	return func() {
-		ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
-		defer cancel()
-		candidates, err := noteStore.NotesWithoutEmbedding(ctx, 20)
-		if err != nil {
-			logger.Error("cron: listing notes without embedding", "error", err)
-			return
-		}
-		if len(candidates) == 0 {
-			return
-		}
-		var embedded int
-		for _, c := range candidates {
-			if err := embedNote(ctx, noteStore, embedder, g, c); err != nil {
-				logger.Error("cron: embedding note", "note_id", c.ID, "error", err)
-				continue
+		addCron("30 * * * *", "note-embedding", func() {
+			ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
+			defer cancel()
+			n, err := d.noteEmbedder.EmbedMissing(ctx, 20)
+			if err != nil {
+				d.logger.Error("cron: note embedding", "error", err)
+				return
 			}
-			embedded++
-		}
-		if embedded > 0 {
-			logger.Info("cron: note embeddings generated", "count", embedded, "candidates", len(candidates))
-		}
+			if n > 0 {
+				d.logger.Info("cron: note embeddings generated", "count", n)
+			}
+		})
 	}
-}
-
-// embedNote generates and stores the embedding for a single note candidate.
-func embedNote(ctx context.Context, noteStore *note.Store, embedder ai.Embedder, g *genkit.Genkit, c note.EmbeddingCandidate) error {
-	text := ""
-	if c.Title != nil {
-		text = *c.Title + "\n"
-	}
-	if c.ContentText != nil {
-		text += *c.ContentText
-	}
-	if text == "" {
-		return nil
-	}
-	resp, err := genkit.Embed(ctx, g,
-		ai.WithEmbedder(embedder),
-		ai.WithTextDocs(text),
-		ai.WithConfig(&genai.EmbedContentConfig{
-			OutputDimensionality: genai.Ptr[int32](768),
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("generating embedding: %w", err)
-	}
-	if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
-		return nil
-	}
-	vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
-	if err := noteStore.UpdateEmbedding(ctx, c.ID, vec); err != nil {
-		return fmt.Errorf("storing embedding: %w", err)
-	}
-	return nil
 }
 
 func runMigrations(databaseURL string, logger *slog.Logger) error {

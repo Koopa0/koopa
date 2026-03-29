@@ -149,10 +149,10 @@ func testServer(t *testing.T) *httptest.Server {
 
 	notionClient := notion.NewClient("")
 
-	deps := server.Deps{
+	deps := server.Handlers{
 		Auth:     auth.NewHandler(authStore, testJWTSecret, &auth.GoogleConfig{}, logger),
-		Topic:    topic.NewHandler(topicStore, contentStore, nil, logger),
-		Content:  content.NewHandler(contentStore, "http://localhost:8080", nil, nil, logger),
+		Topic:    topic.NewHandler(topicStore, contentStore, logger),
+		Content:  content.NewHandler(contentStore, "http://localhost:8080", logger),
 		Project:  project.NewHandler(projectStore, logger),
 		Review:   review.NewHandler(reviewStore, logger),
 		Entry:    entry.NewHandler(collectedStore, logger),

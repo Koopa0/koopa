@@ -45,13 +45,22 @@ type Handler struct {
 }
 
 // NewHandler returns a content Handler.
+// Caches are created internally — they are implementation details of this handler.
 func NewHandler(
 	store *Store,
 	siteURL string,
-	graphCache *ristretto.Cache[string, *KnowledgeGraph],
-	feedCache *ristretto.Cache[string, []byte],
 	logger *slog.Logger,
 ) *Handler {
+	graphCache, _ := ristretto.NewCache(&ristretto.Config[string, *KnowledgeGraph]{
+		NumCounters: 10, // 10x expected items (1 key: "graph")
+		MaxCost:     1,  // count-based: 1 item max
+		BufferItems: 64,
+	})
+	feedCache, _ := ristretto.NewCache(&ristretto.Config[string, []byte]{
+		NumCounters: 100,     // 10x expected items (2 keys: "rss", "sitemap")
+		MaxCost:     1 << 20, // 1 MB byte budget
+		BufferItems: 64,
+	})
 	return &Handler{
 		store:      store,
 		siteURL:    siteURL,

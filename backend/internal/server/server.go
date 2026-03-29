@@ -23,7 +23,7 @@ type Config struct {
 
 // Run creates and starts the HTTP server with graceful shutdown.
 // It blocks until ctx is cancelled, then drains connections.
-func Run(ctx context.Context, cfg Config, deps *Deps, logger *slog.Logger) error {
+func Run(ctx context.Context, cfg Config, deps *Handlers, logger *slog.Logger) error {
 	RegisterMetrics(prometheus.DefaultRegisterer)
 
 	authMid := auth.Middleware(cfg.JWTSecret)
