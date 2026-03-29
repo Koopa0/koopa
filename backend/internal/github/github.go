@@ -1,4 +1,5 @@
-package pipeline
+// Package github provides a client for the GitHub REST API (Contents, Compare, Commits).
+package github
 
 import (
 	"context"
@@ -15,14 +16,14 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 )
 
-// maxGitHubResponseSize is the upper bound for GitHub API response bodies (10 MB).
-// The Contents API returns base64-encoded files (≈1.3× raw size), and the Compare/Commits
+// maxResponseSize is the upper bound for GitHub API response bodies (10 MB).
+// The Contents API returns base64-encoded files (~1.3x raw size), and the Compare/Commits
 // APIs return JSON proportional to diff size. 10 MB covers large responses while
 // preventing a malicious or buggy upstream from exhausting memory.
-const maxGitHubResponseSize = 10 << 20
+const maxResponseSize = 10 << 20
 
-// ErrGitHubNotFound indicates a 404 from the GitHub API (permanent — file deleted or missing).
-var ErrGitHubNotFound = errors.New("github: not found")
+// ErrNotFound indicates a 404 from the GitHub API (permanent -- file deleted or missing).
+var ErrNotFound = errors.New("github: not found")
 
 // Commit represents a single GitHub commit.
 type Commit struct {
@@ -31,16 +32,16 @@ type Commit struct {
 	Date    time.Time
 }
 
-// GitHub fetches file content from a GitHub repository using the GitHub API.
-type GitHub struct {
+// Client fetches file content from a GitHub repository using the GitHub API.
+type Client struct {
 	token  string
 	repo   string // "owner/repo"
 	client *http.Client
 }
 
-// NewGitHub returns a GitHub fetcher with a 15-second HTTP timeout.
-func NewGitHub(token, repo string) *GitHub {
-	return &GitHub{
+// NewClient returns a Client with a 15-second HTTP timeout.
+func NewClient(token, repo string) *Client {
+	return &Client{
 		token: token,
 		repo:  repo,
 		client: &http.Client{
@@ -49,14 +50,14 @@ func NewGitHub(token, repo string) *GitHub {
 	}
 }
 
-// githubFileResponse represents the GitHub Contents API response.
-type githubFileResponse struct {
+// fileResponse represents the GitHub Contents API response.
+type fileResponse struct {
 	Content  string `json:"content"`
 	Encoding string `json:"encoding"`
 }
 
 // FileContent fetches the raw content of a file from the repository's default branch.
-func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
+func (g *Client) FileContent(ctx context.Context, path string) ([]byte, error) {
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
@@ -74,13 +75,13 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("github %s: %w", path, ErrGitHubNotFound)
+			return nil, fmt.Errorf("github %s: %w", path, ErrNotFound)
 		}
 		return nil, fmt.Errorf("github api returned %d for %s", resp.StatusCode, path)
 	}
 
-	var fileResp githubFileResponse
-	if decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&fileResp); decodeErr != nil {
+	var fileResp fileResponse
+	if decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&fileResp); decodeErr != nil {
 		return nil, fmt.Errorf("decoding response: %w", decodeErr)
 	}
 
@@ -98,14 +99,14 @@ func (g *GitHub) FileContent(ctx context.Context, path string) ([]byte, error) {
 	return content, nil
 }
 
-// githubDirEntry represents a single entry from the GitHub Contents API directory listing.
-type githubDirEntry struct {
+// dirEntry represents a single entry from the GitHub Contents API directory listing.
+type dirEntry struct {
 	Name string `json:"name"`
 	Type string `json:"type"` // "file" or "dir"
 }
 
 // ListDirectory lists file names in a directory using the GitHub Contents API.
-func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, error) {
+func (g *Client) ListDirectory(ctx context.Context, path string) ([]string, error) {
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
@@ -123,13 +124,13 @@ func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, erro
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain for keep-alive
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("github directory %s: %w", path, ErrGitHubNotFound)
+			return nil, fmt.Errorf("github directory %s: %w", path, ErrNotFound)
 		}
 		return nil, fmt.Errorf("github api returned %d for directory %s", resp.StatusCode, path)
 	}
 
-	var entries []githubDirEntry
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&entries); err != nil {
+	var entries []dirEntry
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("decoding directory listing: %w", err)
 	}
 
@@ -142,21 +143,21 @@ func (g *GitHub) ListDirectory(ctx context.Context, path string) ([]string, erro
 	return names, nil
 }
 
-// githubCompareResponse represents the relevant fields from the GitHub Compare API.
-type githubCompareResponse struct {
-	TotalCommits int                 `json:"total_commits"`
-	Files        []githubCompareFile `json:"files"`
+// compareResponse represents the relevant fields from the GitHub Compare API.
+type compareResponse struct {
+	TotalCommits int           `json:"total_commits"`
+	Files        []compareFile `json:"files"`
 }
 
-// githubCompareFile represents a single file in a compare response.
-type githubCompareFile struct {
+// compareFile represents a single file in a compare response.
+type compareFile struct {
 	Additions int `json:"additions"`
 	Deletions int `json:"deletions"`
 }
 
 // Compare fetches diff stats between two commits using the GitHub Compare API.
 // repo is "owner/repo", base and head are commit SHAs.
-func (g *GitHub) Compare(ctx context.Context, repo, base, head string) (*activity.DiffStats, error) {
+func (g *Client) Compare(ctx context.Context, repo, base, head string) (*activity.DiffStats, error) {
 	parts := strings.SplitN(repo, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("invalid repo format %q: expected owner/repo", repo)
@@ -182,8 +183,8 @@ func (g *GitHub) Compare(ctx context.Context, repo, base, head string) (*activit
 		return nil, fmt.Errorf("github compare api returned %d for %s...%s", resp.StatusCode, shortSHA(base), shortSHA(head))
 	}
 
-	var cmp githubCompareResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&cmp); err != nil {
+	var cmp compareResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&cmp); err != nil {
 		return nil, fmt.Errorf("decoding compare response: %w", err)
 	}
 
@@ -208,8 +209,8 @@ func shortSHA(s string) string {
 	return s
 }
 
-// githubCommitResponse represents a single commit from the GitHub Commits API.
-type githubCommitResponse struct {
+// commitResponse represents a single commit from the GitHub Commits API.
+type commitResponse struct {
 	SHA    string `json:"sha"`
 	Commit struct {
 		Message string `json:"message"`
@@ -220,12 +221,12 @@ type githubCommitResponse struct {
 }
 
 // RecentCommits lists commits for the configured repo since the given time.
-func (g *GitHub) RecentCommits(ctx context.Context, since time.Time) ([]Commit, error) {
+func (g *Client) RecentCommits(ctx context.Context, since time.Time) ([]Commit, error) {
 	return g.CommitsForRepo(ctx, g.repo, since)
 }
 
 // CommitsForRepo lists commits for an arbitrary repo since the given time using the GitHub Commits API.
-func (g *GitHub) CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]Commit, error) {
+func (g *Client) CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]Commit, error) {
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/commits?since=%s&per_page=100",
 		repo, since.Format(time.RFC3339))
 
@@ -246,8 +247,8 @@ func (g *GitHub) CommitsForRepo(ctx context.Context, repo string, since time.Tim
 		return nil, fmt.Errorf("github api returned %d for commits", resp.StatusCode)
 	}
 
-	var raw []githubCommitResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseSize)).Decode(&raw); err != nil {
+	var raw []commitResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding commits: %w", err)
 	}
 

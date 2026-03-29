@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genai"
 
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
 )
 
@@ -39,7 +40,7 @@ type BookmarkGenerate struct {
 	g      *genkit.Genkit
 	model  genkitai.Model
 	reader CollectedReader
-	budget BudgetChecker
+	budget *budget.Budget
 	logger *slog.Logger
 }
 
@@ -48,14 +49,14 @@ func NewBookmarkGenerate(
 	g *genkit.Genkit,
 	model genkitai.Model,
 	reader CollectedReader,
-	budget BudgetChecker,
+	tokenBudget *budget.Budget,
 	logger *slog.Logger,
 ) *BookmarkGenerate {
 	bg := &BookmarkGenerate{
 		g:      g,
 		model:  model,
 		reader: reader,
-		budget: budget,
+		budget: tokenBudget,
 		logger: logger,
 	}
 	bg.gf = genkit.DefineFlow(g, "bookmark-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {

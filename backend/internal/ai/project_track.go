@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genai"
 
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -46,7 +47,7 @@ type ProjectTrack struct {
 	projects     ProjectByRepoFinder
 	updater      ProjectDescriptionUpdater
 	notifier     Sender
-	budget       BudgetChecker
+	budget       *budget.Budget
 	logger       *slog.Logger
 }
 
@@ -58,7 +59,7 @@ func NewProjectTrack(
 	projects ProjectByRepoFinder,
 	updater ProjectDescriptionUpdater,
 	notifier Sender,
-	budget BudgetChecker,
+	tokenBudget *budget.Budget,
 	logger *slog.Logger,
 ) *ProjectTrack {
 	pt := &ProjectTrack{
@@ -68,7 +69,7 @@ func NewProjectTrack(
 		projects:     projects,
 		updater:      updater,
 		notifier:     notifier,
-		budget:       budget,
+		budget:       tokenBudget,
 		logger:       logger,
 	}
 	pt.gf = genkit.DefineFlow(g, "project-track", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {

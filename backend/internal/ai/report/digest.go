@@ -14,6 +14,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -48,7 +49,7 @@ type Digest struct {
 	contents     PublishedContentLister
 	collects     RecentCollectedLister
 	projects     ActiveProjectLister
-	budget       ai.BudgetChecker
+	budget       *budget.Budget
 	loc          *time.Location
 	logger       *slog.Logger
 }
@@ -61,7 +62,7 @@ func NewDigest(
 	contents PublishedContentLister,
 	collects RecentCollectedLister,
 	projects ActiveProjectLister,
-	budget ai.BudgetChecker,
+	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *Digest {
@@ -72,7 +73,7 @@ func NewDigest(
 		contents:     contents,
 		collects:     collects,
 		projects:     projects,
-		budget:       budget,
+		budget:       tokenBudget,
 		loc:          loc,
 		logger:       logger,
 	}

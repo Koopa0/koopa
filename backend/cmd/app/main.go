@@ -32,6 +32,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/feed/collector"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
+	"github.com/koopa0/blog-backend/internal/github"
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/learning"
 	"github.com/koopa0/blog-backend/internal/monitor"
@@ -158,7 +159,7 @@ func run(logger *slog.Logger) error {
 	notionClient := notion.NewClient(cfg.NotionAPIKey)
 
 	// github client (used by weekly review flow and pipeline handler)
-	githubFetcher := pipeline.NewGitHub(cfg.GitHubToken, cfg.GitHubRepo)
+	githubFetcher := github.NewClient(cfg.GitHubToken, cfg.GitHubRepo)
 
 	// AI pipeline — Genkit + flow registry
 	aiRes, err := aiflow.Setup(ctx, aiflow.PipelineConfig{

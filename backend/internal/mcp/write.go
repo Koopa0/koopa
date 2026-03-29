@@ -916,17 +916,13 @@ func (s *Server) updateGoalStatus(ctx context.Context, _ *mcp.CallToolRequest, i
 		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("status is required")
 	}
 
-	if s.goalWriter == nil {
-		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("goal writer not configured")
-	}
-
 	g, err := s.goals.GoalByTitle(ctx, input.GoalTitle)
 	if err != nil {
 		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("goal %q not found", input.GoalTitle)
 	}
 
 	status := mapInputGoalStatus(input.Status)
-	updated, err := s.goalWriter.UpdateStatus(ctx, g.ID, status)
+	updated, err := s.goals.UpdateStatus(ctx, g.ID, status)
 	if err != nil {
 		return nil, UpdateGoalStatusOutput{}, fmt.Errorf("updating goal status: %w", err)
 	}

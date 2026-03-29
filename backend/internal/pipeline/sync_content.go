@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/github"
 	"github.com/koopa0/blog-backend/internal/obsidian"
 )
 
@@ -27,7 +28,7 @@ func (cs *ContentSync) SyncAllFromGitHub(ctx context.Context) {
 	for _, slug := range slugs {
 		path := "10-Public-Content/" + slug + ".md"
 		if err := cs.syncFile(ctx, path); err != nil {
-			if errors.Is(err, ErrGitHubNotFound) {
+			if errors.Is(err, github.ErrNotFound) {
 				cs.logger.Warn("sync: file not found (deleted?)", "path", path)
 			} else {
 				cs.logger.Error("sync: syncing file", "path", path, "error", err)

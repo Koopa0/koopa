@@ -15,36 +15,39 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/koopa0/blog-backend/internal/activity"
-	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed"
+	"github.com/koopa0/blog-backend/internal/feed/entry"
+	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/note"
+	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/session"
+	"github.com/koopa0/blog-backend/internal/stats"
 	"github.com/koopa0/blog-backend/internal/task"
 )
 
 // Server is the MCP server exposing knowledge tools.
 type Server struct {
 	server          *mcp.Server
-	notes           NoteSearcher
-	activity        ActivityReader
-	projects        ProjectReader
+	notes           *note.Store
+	activity        *activity.Store
+	projects        *project.Store
 	collected       *entry.Store
-	stats           StatsReader
+	stats           *stats.Store
 	tasks           *task.Store
 	contents        *content.Store
-	goals           GoalReader
-	goalWriter      GoalWriter
-	projectWriter   ProjectWriter
+	goals           *goal.Store
+	projectWriter   *project.Store // same store, separate field for write operations
 	notionTasks     NotionTaskWriter
-	taskDBResolver  TaskDBIDResolver
+	taskDBResolver  *notion.Store
 	sessions        *session.Store
 	activityWriter  activity.Recorder
-	semanticNotes   NoteSemanticSearcher
+	semanticNotes   *note.Store
 	queryEmbedder   QueryEmbedder
 	feeds           *feed.Store
 	oreilly         *OReillyClient
-	systemStatus    SystemStatusReader
+	systemStatus    *stats.Store
 	pipelineTrigger PipelineTrigger
 	recordToolCall  func(context.Context, ToolCallRecord) // optional telemetry
 	lastTrigger     map[string]time.Time                  // rate limit: pipeline name -> last trigger time
@@ -62,7 +65,7 @@ func WithFeedStore(fs *feed.Store) ServerOption {
 }
 
 // WithNotionTaskWriter sets the Notion task writer for complete/create operations.
-func WithNotionTaskWriter(n NotionTaskWriter, resolver TaskDBIDResolver) ServerOption {
+func WithNotionTaskWriter(n NotionTaskWriter, resolver *notion.Store) ServerOption {
 	return func(s *Server) {
 		s.notionTasks = n
 		s.taskDBResolver = resolver
@@ -75,12 +78,15 @@ func WithLocation(loc *time.Location) ServerOption {
 }
 
 // WithGoalWriter enables goal status update tools.
-func WithGoalWriter(w GoalWriter) ServerOption {
-	return func(s *Server) { s.goalWriter = w }
+// Uses the same *goal.Store that provides reads; the Server stores it on the
+// goals field. This option is kept so goal writes remain opt-in at the wiring
+// site (cmd/mcp), even though reads and writes share the same store instance.
+func WithGoalWriter(w *goal.Store) ServerOption {
+	return func(s *Server) { s.goals = w }
 }
 
 // WithProjectWriter enables project status update tools.
-func WithProjectWriter(w ProjectWriter) ServerOption {
+func WithProjectWriter(w *project.Store) ServerOption {
 	return func(s *Server) { s.projectWriter = w }
 }
 
@@ -90,7 +96,7 @@ func WithActivityWriter(w activity.Recorder) ServerOption {
 }
 
 // WithSemanticSearch enables embedding-based semantic search for notes.
-func WithSemanticSearch(ns NoteSemanticSearcher, qe QueryEmbedder) ServerOption {
+func WithSemanticSearch(ns *note.Store, qe QueryEmbedder) ServerOption {
 	return func(s *Server) {
 		s.semanticNotes = ns
 		s.queryEmbedder = qe
@@ -103,7 +109,7 @@ func WithOReilly(client *OReillyClient) ServerOption {
 }
 
 // WithSystemStatus enables the get_system_status tool.
-func WithSystemStatus(r SystemStatusReader) ServerOption {
+func WithSystemStatus(r *stats.Store) ServerOption {
 	return func(s *Server) { s.systemStatus = r }
 }
 
@@ -134,15 +140,15 @@ func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption 
 
 // NewServer creates an MCP server with all tools registered.
 func NewServer(
-	notes NoteSearcher,
-	activityReader ActivityReader,
-	projects ProjectReader,
+	notes *note.Store,
+	activityReader *activity.Store,
+	projects *project.Store,
 	collectedStore *entry.Store,
-	stats StatsReader,
+	statsStore *stats.Store,
 	tasks *task.Store,
 	contents *content.Store,
 	sessions *session.Store,
-	goals GoalReader,
+	goals *goal.Store,
 	logger *slog.Logger,
 	opts ...ServerOption,
 ) *Server {
@@ -151,7 +157,7 @@ func NewServer(
 		activity:  activityReader,
 		projects:  projects,
 		collected: collectedStore,
-		stats:     stats,
+		stats:     statsStore,
 		tasks:     tasks,
 		contents:  contents,
 		sessions:  sessions,

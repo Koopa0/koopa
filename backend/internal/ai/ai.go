@@ -48,11 +48,6 @@ func CheckFinishReason(resp *genkitai.ModelResponse) error {
 // Exported for use by sub-packages.
 type GenkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
 
-// BudgetChecker atomically reserves token budget.
-type BudgetChecker interface {
-	Reserve(tokens int64) error
-}
-
 // CollectedReader reads collected items by ID.
 type CollectedReader interface {
 	Item(ctx context.Context, id uuid.UUID) (*entry.Item, error)

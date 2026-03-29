@@ -14,8 +14,8 @@ import (
 	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
+	"github.com/koopa0/blog-backend/internal/github"
 	"github.com/koopa0/blog-backend/internal/notify"
-	"github.com/koopa0/blog-backend/internal/pipeline"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/review"
 	"github.com/koopa0/blog-backend/internal/topic"
@@ -59,7 +59,7 @@ func Setup(
 	ctx context.Context,
 	cfg PipelineConfig,
 	stores PipelineStores,
-	github *pipeline.GitHub,
+	gh *github.Client,
 	notifier notify.Notifier,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
@@ -139,7 +139,7 @@ func Setup(
 		notifier, tokenBudget, loc, logger,
 	)
 	buildLog := NewBuildLog(
-		g, geminiModel, BuildLogSystemPrompt, stores.Project, github, stores.Content,
+		g, geminiModel, BuildLogSystemPrompt, stores.Project, gh, stores.Content,
 		tokenBudget, loc, logger,
 	)
 

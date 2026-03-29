@@ -15,6 +15,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
 
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/project"
@@ -34,7 +35,7 @@ type ContentStrategy struct {
 	collected RecentCollectedLister
 	projects  ActiveProjectLister
 	notifier  Sender
-	budget    BudgetChecker
+	budget    *budget.Budget
 	loc       *time.Location
 	logger    *slog.Logger
 }
@@ -47,7 +48,7 @@ func NewContentStrategy(
 	collects RecentCollectedLister,
 	projects ActiveProjectLister,
 	notifier Sender,
-	budget BudgetChecker,
+	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *ContentStrategy {
@@ -58,7 +59,7 @@ func NewContentStrategy(
 		collected: collects,
 		projects:  projects,
 		notifier:  notifier,
-		budget:    budget,
+		budget:    tokenBudget,
 		loc:       loc,
 		logger:    logger,
 	}

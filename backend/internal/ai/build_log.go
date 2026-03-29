@@ -12,8 +12,9 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
 
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/content"
-	"github.com/koopa0/blog-backend/internal/pipeline"
+	"github.com/koopa0/blog-backend/internal/github"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -24,7 +25,7 @@ type ProjectBySlugFinder interface {
 
 // RepoCommitLister lists commits for a specific repository.
 type RepoCommitLister interface {
-	CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]pipeline.Commit, error)
+	CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]github.Commit, error)
 }
 
 // ContentCreator creates a new content record.
@@ -60,7 +61,7 @@ type BuildLog struct {
 	projects     ProjectBySlugFinder
 	commits      RepoCommitLister
 	content      ContentCreator
-	budget       BudgetChecker
+	budget       *budget.Budget
 	loc          *time.Location
 	logger       *slog.Logger
 }
@@ -73,7 +74,7 @@ func NewBuildLog(
 	projects ProjectBySlugFinder,
 	commits RepoCommitLister,
 	creator ContentCreator,
-	budget BudgetChecker,
+	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *BuildLog {
@@ -84,7 +85,7 @@ func NewBuildLog(
 		projects:     projects,
 		commits:      commits,
 		content:      creator,
-		budget:       budget,
+		budget:       tokenBudget,
 		loc:          loc,
 		logger:       logger,
 	}
@@ -213,7 +214,7 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 	}, nil
 }
 
-func buildBuildLogPrompt(proj *project.Project, commits []pipeline.Commit, days int) string {
+func buildBuildLogPrompt(proj *project.Project, commits []github.Commit, days int) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "專案名稱：%s\n", proj.Title)

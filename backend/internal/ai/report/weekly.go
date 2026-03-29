@@ -14,15 +14,16 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
-	"github.com/koopa0/blog-backend/internal/pipeline"
+	"github.com/koopa0/blog-backend/internal/github"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
 // CommitLister lists recent commits from a source repository.
 type CommitLister interface {
-	RecentCommits(ctx context.Context, since time.Time) ([]pipeline.Commit, error)
+	RecentCommits(ctx context.Context, since time.Time) ([]github.Commit, error)
 }
 
 // WeeklyInput is optional JSON input passed via Runner.Submit.
@@ -58,7 +59,7 @@ type Weekly struct {
 	projects       ActiveProjectLister
 	commits        CommitLister
 	notifier       Sender
-	budget         ai.BudgetChecker
+	budget         *budget.Budget
 	loc            *time.Location
 	logger         *slog.Logger
 }
@@ -75,7 +76,7 @@ func NewWeekly(
 	projects ActiveProjectLister,
 	commits CommitLister,
 	notifier Sender,
-	budget ai.BudgetChecker,
+	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *Weekly {
@@ -90,7 +91,7 @@ func NewWeekly(
 		projects:       projects,
 		commits:        commits,
 		notifier:       notifier,
-		budget:         budget,
+		budget:         tokenBudget,
 		loc:            loc,
 		logger:         logger,
 	}
@@ -147,7 +148,7 @@ func (wr *Weekly) run(ctx context.Context, rawInput json.RawMessage) (WeeklyOutp
 		pubErr           error
 		activeProjects   []project.Project
 		projErr          error
-		commits          []pipeline.Commit
+		commits          []github.Commit
 		commitErr        error
 	)
 
@@ -231,7 +232,7 @@ func buildWeeklyReviewPrompt(
 	rssItems []entry.Item, rssErr error,
 	published []content.Content, pubErr error,
 	projects []project.Project, projErr error,
-	commits []pipeline.Commit, commitErr error,
+	commits []github.Commit, commitErr error,
 	healthIssues []string,
 	start, end time.Time,
 ) string {
@@ -275,7 +276,7 @@ func writeWeeklyPublishedSection(b *strings.Builder, published []content.Content
 	}
 }
 
-func writeWeeklyCommitsSection(b *strings.Builder, commits []pipeline.Commit, commitErr error) {
+func writeWeeklyCommitsSection(b *strings.Builder, commits []github.Commit, commitErr error) {
 	b.WriteString("\n== GitHub 活動 ==\n")
 	switch {
 	case commitErr != nil:

@@ -14,6 +14,7 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/budget"
 )
 
 // ActivityLister lists activity events within a time range.
@@ -42,7 +43,7 @@ type Daily struct {
 	systemPrompt string
 	events       ActivityLister
 	notifier     Sender
-	budget       ai.BudgetChecker
+	budget       *budget.Budget
 	loc          *time.Location
 	logger       *slog.Logger
 }
@@ -54,7 +55,7 @@ func NewDaily(
 	systemPrompt string,
 	events ActivityLister,
 	notifier Sender,
-	budget ai.BudgetChecker,
+	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *Daily {
@@ -64,7 +65,7 @@ func NewDaily(
 		systemPrompt: systemPrompt,
 		events:       events,
 		notifier:     notifier,
-		budget:       budget,
+		budget:       tokenBudget,
 		loc:          loc,
 		logger:       logger,
 	}
