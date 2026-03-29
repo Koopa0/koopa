@@ -89,6 +89,16 @@ type MergeResult struct {
 	EventsMoved  int64 `json:"events_moved"`
 }
 
+// containsControlChars returns true if s contains any control character (null bytes, etc.).
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
 // Slugify normalizes a raw tag string to a URL-safe slug.
 // Lowercase, replace spaces and special chars with hyphens, collapse consecutive hyphens.
 func Slugify(raw string) string {

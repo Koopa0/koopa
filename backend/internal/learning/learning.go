@@ -66,7 +66,10 @@ func CoverageMatrix(entries []content.TagEntry, days int) CoverageMatrixResult {
 		})
 	}
 	slices.SortFunc(topics, func(a, b TopicCoverage) int {
-		return cmp.Compare(b.Count, a.Count)
+		if c := cmp.Compare(b.Count, a.Count); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Topic, b.Topic) // stable tiebreaker: alphabetical
 	})
 
 	return CoverageMatrixResult{

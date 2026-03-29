@@ -71,16 +71,23 @@ func (c *DeduplicationCache) cleanup() {
 
 // ValidateTimestamp checks that a webhook timestamp is within ±maxSkew of now.
 // Returns an error if the timestamp is too old or too far in the future.
+// Handles time.Duration overflow for timestamps >292 years from now.
 func ValidateTimestamp(timestamp string, maxSkew time.Duration) error {
 	t, err := time.Parse(time.RFC3339, timestamp)
 	if err != nil {
 		return fmt.Errorf("parsing timestamp %q: %w", timestamp, err)
 	}
-	diff := time.Since(t)
-	if diff < 0 {
-		diff = -diff
-	}
-	if diff > maxSkew {
+	now := time.Now()
+	// Use time comparison instead of duration subtraction to avoid
+	// int64 nanosecond overflow for timestamps >292 years from now.
+	earliest := now.Add(-maxSkew)
+	latest := now.Add(maxSkew)
+	if t.Before(earliest) || t.After(latest) {
+		// Compute diff for the error message; clamp to avoid overflow.
+		diff := now.Sub(t)
+		if diff < 0 {
+			diff = -diff
+		}
 		return fmt.Errorf("timestamp %q is %s from now, exceeds %s skew", timestamp, diff.Round(time.Second), maxSkew)
 	}
 	return nil

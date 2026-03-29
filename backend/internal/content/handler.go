@@ -297,6 +297,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "slug, title, and type are required")
 		return
 	}
+	if !p.Type.Valid() {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
+		return
+	}
 	if p.Status == "" {
 		p.Status = StatusDraft
 	}

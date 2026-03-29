@@ -62,6 +62,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "field exceeds maximum length")
 		return
 	}
+	if containsControlChars(p.Slug) || containsControlChars(p.Name) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "slug and name must not contain control characters")
+		return
+	}
 
 	t, err := h.store.CreateTag(r.Context(), &p)
 	if err != nil {
@@ -93,6 +97,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		(p.Name != nil && len(*p.Name) > maxNameLen) ||
 		(p.Description != nil && len(*p.Description) > maxDescLen) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "field exceeds maximum length")
+		return
+	}
+	if (p.Slug != nil && containsControlChars(*p.Slug)) ||
+		(p.Name != nil && containsControlChars(*p.Name)) ||
+		(p.Description != nil && containsControlChars(*p.Description)) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "fields must not contain control characters")
 		return
 	}
 

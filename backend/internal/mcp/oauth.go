@@ -135,7 +135,7 @@ func (o *OAuthProvider) ValidToken(tok string) bool {
 	return ok && time.Now().Before(exp)
 }
 
-func (o *OAuthProvider) issueToken() (accessToken string, accessTTL time.Duration, refreshToken string, refreshTTL time.Duration) {
+func (o *OAuthProvider) issueToken() (accessToken string, accessTTL time.Duration, refreshToken string, refreshTTL time.Duration) { //nolint:unparam // refreshTTL used internally for storage
 	ab := make([]byte, 32)
 	_, _ = rand.Read(ab)
 	accessToken = hex.EncodeToString(ab)
@@ -224,6 +224,21 @@ var allowedRedirectPrefixes = []string{
 }
 
 func validRedirectURI(uri string) bool {
+	parsed, err := url.Parse(uri)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	// Reject URLs with userinfo — prevents authority confusion attacks
+	// like http://localhost:80@evil.com/ which passes prefix check but
+	// redirects the browser to evil.com.
+	if parsed.User != nil {
+		return false
+	}
+	// Catch edge cases url.Parse doesn't flag as User (e.g., /@evil.com paths).
+	if strings.Contains(parsed.Host+parsed.Path, "@") {
+		return false
+	}
+
 	for _, prefix := range allowedRedirectPrefixes {
 		if strings.HasPrefix(uri, prefix) {
 			return true
@@ -430,14 +445,7 @@ func (o *OAuthProvider) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	o.mu.Lock()
-	if len(o.clients) >= maxClients {
-		o.mu.Unlock()
-		http.Error(w, "too many registered clients", http.StatusServiceUnavailable)
-		return
-	}
-	o.mu.Unlock()
-
+	// Generate client credentials outside the lock (crypto/rand is safe).
 	cidBytes := make([]byte, 16)
 	csecBytes := make([]byte, 32)
 	_, _ = rand.Read(cidBytes)
@@ -445,7 +453,13 @@ func (o *OAuthProvider) Register(w http.ResponseWriter, r *http.Request) {
 	cid := hex.EncodeToString(cidBytes)
 	csec := hex.EncodeToString(csecBytes)
 
+	// Atomic check-and-insert under a single lock hold to prevent TOCTOU race.
 	o.mu.Lock()
+	if len(o.clients) >= maxClients {
+		o.mu.Unlock()
+		http.Error(w, "too many registered clients", http.StatusServiceUnavailable)
+		return
+	}
 	o.clients[cid] = csec
 	o.mu.Unlock()
 

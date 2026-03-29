@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	urlpath "path"
 	"path/filepath"
 	"strings"
@@ -108,6 +109,15 @@ func (cs *ContentSync) syncFile(ctx context.Context, path string) error {
 		Source:      &path,
 		ReviewLevel: content.ReviewLight,
 	})
+	if errors.Is(err, content.ErrConflict) {
+		// Race: another webhook created this content between our read and write.
+		// Retry as an update instead of silently dropping the sync.
+		existing, readErr := cs.contentReader.ContentBySlug(ctx, slug)
+		if readErr != nil {
+			return fmt.Errorf("re-reading content %s after conflict: %w", slug, readErr)
+		}
+		return cs.updateExistingContent(ctx, existing, slug, parsed, body, contentType, sourceType, path, topicIDs)
+	}
 	if err != nil {
 		return fmt.Errorf("creating content %s: %w", slug, err)
 	}
@@ -237,8 +247,21 @@ func filterKnowledgeMarkdown(files []string) []string {
 		if !strings.HasSuffix(f, ".md") {
 			continue
 		}
+		// Defense-in-depth: repeatedly URL-decode to catch double/triple encoding.
+		decoded := f
+		for range 3 { // max 3 rounds of decoding
+			d, err := url.PathUnescape(decoded)
+			if err != nil || d == decoded {
+				break
+			}
+			decoded = d
+		}
 		// Sanitize path to prevent traversal (e.g. "foo/../99-System/bar.md").
-		clean := urlpath.Clean(f)
+		clean := urlpath.Clean(decoded)
+		// Reject any path containing ".." after all decoding+cleaning.
+		if strings.Contains(clean, "..") {
+			continue
+		}
 		// exclude root-level .md files (no directory prefix)
 		if !strings.Contains(clean, "/") {
 			continue

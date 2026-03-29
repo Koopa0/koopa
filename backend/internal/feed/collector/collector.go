@@ -109,6 +109,24 @@ func validateFeedURL(rawURL string) error {
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
 		return fmt.Errorf("invalid feed url scheme: %s", rawURL)
 	}
+	host := parsedURL.Hostname()
+	// Block private/internal hosts to prevent SSRF.
+	blocked := []string{
+		"localhost", "127.0.0.1", "::1", "0.0.0.0",
+		"169.254.169.254", // AWS/GCP metadata
+		"metadata.google.internal",
+	}
+	for _, b := range blocked {
+		if strings.EqualFold(host, b) {
+			return fmt.Errorf("feed url host %q is blocked (internal address)", host)
+		}
+	}
+	// Block 10.x, 172.16-31.x, 192.168.x private ranges.
+	if strings.HasPrefix(host, "10.") ||
+		strings.HasPrefix(host, "192.168.") ||
+		strings.HasPrefix(host, "172.") {
+		return fmt.Errorf("feed url host %q is blocked (private network)", host)
+	}
 	return nil
 }
 

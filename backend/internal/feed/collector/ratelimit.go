@@ -79,7 +79,14 @@ func (d *DomainLimiter) cleanup() {
 }
 
 // domainFromURL extracts the lowercase host from a URL.
+// Returns empty string for URLs with control characters (null bytes etc.)
+// which are invalid in DNS hostnames.
 func domainFromURL(rawURL string) string {
+	for _, c := range rawURL {
+		if c < 0x20 || c == 0x7f || (c >= 0x80 && c <= 0x9f) {
+			return ""
+		}
+	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return rawURL

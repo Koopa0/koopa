@@ -231,30 +231,46 @@ func hashToken(token string) string {
 // generateState creates an HMAC-signed timestamp for OAuth state parameter.
 func (h *Handler) generateState() string {
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	// Add random nonce to ensure uniqueness within the same second.
+	nonce := make([]byte, 8)
+	if _, err := rand.Read(nonce); err != nil {
+		// crypto/rand failure is fatal — cannot generate secure state.
+		panic("crypto/rand: " + err.Error())
+	}
+	payload := ts + "." + base64.URLEncoding.EncodeToString(nonce)
 	mac := hmac.New(sha256.New, h.secret)
-	mac.Write([]byte(ts))
+	mac.Write([]byte(payload))
 	sig := base64.URLEncoding.EncodeToString(mac.Sum(nil))
-	return ts + "." + sig
+	return payload + "." + sig
 }
 
 // validateState checks that the state is a valid HMAC-signed timestamp within maxAge.
 func (h *Handler) validateState(state string) bool {
-	ts, sig, ok := strings.Cut(state, ".")
-	if !ok {
+	// Format: ts.nonce.sig — find the last dot to split payload from signature.
+	lastDot := strings.LastIndex(state, ".")
+	if lastDot < 0 {
 		return false
 	}
+	payload := state[:lastDot]
+	sig := state[lastDot+1:]
+
+	// Extract timestamp from payload (first segment before first dot).
+	ts, _, _ := strings.Cut(payload, ".")
 
 	unix, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil {
 		return false
 	}
 
-	if time.Since(time.Unix(unix, 0)) > stateMaxAge {
+	// Reject states that are too old OR in the future (prevents never-expiring states).
+	stateTime := time.Unix(unix, 0)
+	age := time.Since(stateTime)
+	if age < 0 || age > stateMaxAge {
 		return false
 	}
 
 	mac := hmac.New(sha256.New, h.secret)
-	mac.Write([]byte(ts))
+	mac.Write([]byte(payload))
 	expected := base64.URLEncoding.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(sig), []byte(expected))
 }
@@ -298,7 +314,15 @@ func (h *Handler) redirectError(w http.ResponseWriter, _ *http.Request, msg stri
 
 // jsRedirect writes an HTML page that redirects via JavaScript.
 // This avoids 302 redirects that BFF proxies may follow server-side.
+// Only https: and http: URLs are allowed — rejects javascript:, data:, etc.
 func (h *Handler) jsRedirect(w http.ResponseWriter, target string) {
+	parsed, err := url.Parse(target)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		h.logger.Warn("jsRedirect: rejected non-http(s) URL", "target", target)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	// Use json.Marshal for safe JS string escaping (handles </script>, quotes, etc.)
 	jsStr, err := json.Marshal(target)
 	if err != nil {
