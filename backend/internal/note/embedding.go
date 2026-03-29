@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	genkitai "github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	pgvector "github.com/pgvector/pgvector-go"
 	"google.golang.org/genai"
@@ -14,13 +14,13 @@ import (
 // Embedder generates embeddings for notes that lack them.
 type Embedder struct {
 	store    *Store
-	embedder genkitai.Embedder
+	embedder ai.Embedder
 	g        *genkit.Genkit
 	logger   *slog.Logger
 }
 
 // NewEmbedder returns an Embedder.
-func NewEmbedder(store *Store, embedder genkitai.Embedder, g *genkit.Genkit, logger *slog.Logger) *Embedder {
+func NewEmbedder(store *Store, embedder ai.Embedder, g *genkit.Genkit, logger *slog.Logger) *Embedder {
 	return &Embedder{store: store, embedder: embedder, g: g, logger: logger}
 }
 
@@ -57,9 +57,9 @@ func (e *Embedder) embedOne(ctx context.Context, c EmbeddingCandidate) error {
 		return nil
 	}
 	resp, err := genkit.Embed(ctx, e.g,
-		genkitai.WithEmbedder(e.embedder),
-		genkitai.WithTextDocs(text),
-		genkitai.WithConfig(&genai.EmbedContentConfig{
+		ai.WithEmbedder(e.embedder),
+		ai.WithTextDocs(text),
+		ai.WithConfig(&genai.EmbedContentConfig{
 			OutputDimensionality: genai.Ptr[int32](768),
 		}),
 	)
