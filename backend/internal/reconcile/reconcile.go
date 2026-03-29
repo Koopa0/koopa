@@ -16,7 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/koopa0/blog-backend/internal/content"
+	"github.com/koopa0/blog-backend/internal/github"
+	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/notion"
+	"github.com/koopa0/blog-backend/internal/project"
 )
 
 // directoryLister lists markdown file slugs in a directory.
@@ -72,11 +77,6 @@ type roleLookup interface {
 	DatabaseIDByRole(ctx context.Context, role string) (string, error)
 }
 
-// runSaver persists reconcile run results.
-type runSaver interface {
-	SaveRun(ctx context.Context, startedAt, completedAt time.Time, report *Report, errs []string) (int64, error)
-}
-
 // Reconciler runs weekly reconciliation checks.
 type Reconciler struct {
 	github   directoryLister
@@ -86,35 +86,35 @@ type Reconciler struct {
 	notionDB notionDBQuerier
 	notifier sender
 	roles    roleLookup
-	runs     runSaver // optional: persists run history
+	runs     *Store // optional: persists run history
 	logger   *slog.Logger
 }
 
-// New returns a Reconciler.
+// New returns a Reconciler wired to concrete dependencies.
 func New(
-	github directoryLister,
-	content obsidianSlugLister,
-	projects notionPageIDLister,
-	goals notionPageIDLister,
-	notionDB notionDBQuerier,
-	notifier sender,
-	roles roleLookup,
+	gh *github.Client,
+	cs *content.Store,
+	ps *project.Store,
+	gs *goal.Store,
+	nc *notion.Client,
+	n notify.Notifier,
+	ns *notion.Store,
 	logger *slog.Logger,
 ) *Reconciler {
 	return &Reconciler{
-		github:   github,
-		content:  content,
-		projects: projects,
-		goals:    goals,
-		notionDB: notionDB,
-		notifier: notifier,
-		roles:    roles,
+		github:   gh,
+		content:  cs,
+		projects: ps,
+		goals:    gs,
+		notionDB: nc,
+		notifier: n,
+		roles:    ns,
 		logger:   logger,
 	}
 }
 
 // WithRunSaver sets the optional run history store.
-func (r *Reconciler) WithRunSaver(rs runSaver) {
+func (r *Reconciler) WithRunSaver(rs *Store) {
 	r.runs = rs
 }
 

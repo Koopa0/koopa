@@ -175,7 +175,7 @@ func (cs *ContentSync) submitContentReview(ctx context.Context, contentID uuid.U
 func (cs *ContentSync) resolveTopics(ctx context.Context, slugs []string) []uuid.UUID {
 	var ids []uuid.UUID
 	for _, slug := range slugs {
-		id, err := cs.topics.TopicIDBySlug(ctx, slug)
+		id, err := cs.topics(ctx, slug)
 		if err != nil {
 			cs.logger.Debug("topic not found, skipping", "slug", slug)
 			continue

@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/budget"
 )
 
 // semaphoreTimeout is the hard deadline for acquiring a worker slot.
@@ -21,20 +21,13 @@ import (
 const semaphoreTimeout = 30 * time.Second
 
 // defaultFlowTimeout is the hard deadline for a single flow execution.
-// Flows that implement FlowTimeouter can override this per-flow.
 // Set to 3 minutes: safely above the longest observed flow (weekly-review ~120s)
 // while preventing a hung AI API from holding a semaphore slot forever.
 const defaultFlowTimeout = 3 * time.Minute
 
-// FlowTimeouter is an optional interface that flows can implement
-// to declare a custom execution timeout. Flows that do not implement
-// this interface use defaultFlowTimeout.
-type FlowTimeouter interface {
-	Timeout() time.Duration
-}
-
 // runnerStore is the minimal store interface the Runner needs.
-// Defined here (consumer side) so unit tests can substitute a mock.
+// Kept as an interface so unit tests can substitute an in-memory mock
+// for the dispatch-loop / dedup / shutdown orchestration tests.
 type runnerStore interface {
 	CreateRun(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) (*Run, error)
 	Run(ctx context.Context, id uuid.UUID) (*Run, error)
@@ -44,12 +37,6 @@ type runnerStore interface {
 	UpdateFailed(ctx context.Context, id uuid.UUID, errMsg string) error
 }
 
-// FlowObserver receives timing data for flow executions.
-// Implement this with Prometheus histograms and wire via SetObserver.
-type FlowObserver interface {
-	ObserveFlowDuration(flowName, status string, duration time.Duration)
-}
-
 // Runner manages a pool of workers that execute AI flows.
 // Jobs are persisted to the flow_runs table before being dispatched
 // to the channel, ensuring recoverability via cron retry.
@@ -57,7 +44,7 @@ type Runner struct {
 	store    runnerStore
 	registry *ai.Registry
 	alerter  Alerter
-	observer FlowObserver // optional: records execution metrics
+	observer *MetricsObserver // optional: records execution metrics
 	jobs     chan uuid.UUID
 	sem      chan struct{} // concurrency semaphore
 	logger   *slog.Logger
@@ -66,7 +53,7 @@ type Runner struct {
 }
 
 // SetObserver sets the optional flow execution metrics observer.
-func (r *Runner) SetObserver(o FlowObserver) { r.observer = o }
+func (r *Runner) SetObserver(o *MetricsObserver) { r.observer = o }
 
 // New returns a Runner with the given concurrency limit.
 // Channel buffer is set to workers * 2 to avoid blocking callers
@@ -201,13 +188,8 @@ func (r *Runner) execute(ctx context.Context, runID uuid.UUID) {
 		return
 	}
 
-	// Apply per-job timeout so a hung AI API cannot hold a semaphore slot
-	// forever. Flows may implement FlowTimeouter to override the default.
-	timeout := defaultFlowTimeout
-	if ft, ok := f.(FlowTimeouter); ok {
-		timeout = ft.Timeout()
-	}
-	execCtx, execCancel := context.WithTimeout(ctx, timeout)
+	// Apply per-job timeout so a hung AI API cannot hold a semaphore slot forever.
+	execCtx, execCancel := context.WithTimeout(ctx, defaultFlowTimeout)
 	defer execCancel()
 
 	start := time.Now()

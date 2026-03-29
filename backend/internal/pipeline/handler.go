@@ -29,25 +29,8 @@ import (
 // to prevent resource exhaustion from webhook floods.
 const maxConcurrentOps = 10
 
-// TopicLookup resolves a topic slug to a UUID.
-type TopicLookup interface {
-	TopicIDBySlug(ctx context.Context, slug string) (uuid.UUID, error)
-}
-
-// topicLookupFunc wraps a function as a TopicLookup implementation.
-type topicLookupFunc struct {
-	fn func(ctx context.Context, slug string) (uuid.UUID, error)
-}
-
-func (a *topicLookupFunc) TopicIDBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
-	return a.fn(ctx, slug)
-}
-
-// noteEventRecorder records activity events for knowledge notes and links tags.
-type noteEventRecorder interface {
-	activity.Recorder
-	SyncEventTags(ctx context.Context, eventID int64, tagIDs []uuid.UUID) error
-}
+// TopicLookupFunc resolves a topic slug to a UUID.
+type TopicLookupFunc func(ctx context.Context, slug string) (uuid.UUID, error)
 
 // ---------------------------------------------------------------------------
 // ContentSync — GitHub → content/note sync (A1 + B1 pipeline)
@@ -58,19 +41,19 @@ type ContentSync struct {
 	pool          *pgxpool.Pool
 	contentReader *content.Store
 	contentWriter *content.Store
-	topics        TopicLookup
+	topics        TopicLookupFunc
 	fetcher       *github.Client
 	jobs          *exec.Runner
 	notes         *note.Store
 	tags          *tag.Store
-	noteEvents    noteEventRecorder
+	noteEvents    *activity.Store
 	noteLinks     *note.Store
 	logger        *slog.Logger
 }
 
 // NewContentSync returns a ContentSync with required dependencies.
 // pool is used for transactional note sync (upsert + tags + links in one tx).
-func NewContentSync(pool *pgxpool.Pool, cr, cw *content.Store, tl TopicLookup, fetcher *github.Client, jobs *exec.Runner, logger *slog.Logger) *ContentSync {
+func NewContentSync(pool *pgxpool.Pool, cr, cw *content.Store, tl TopicLookupFunc, fetcher *github.Client, jobs *exec.Runner, logger *slog.Logger) *ContentSync {
 	return &ContentSync{
 		pool:          pool,
 		contentReader: cr,
@@ -89,7 +72,7 @@ func (cs *ContentSync) WithNoteSync(n *note.Store, t *tag.Store) {
 }
 
 // WithNoteEvents sets the note event recorder for B1 activity tracking.
-func (cs *ContentSync) WithNoteEvents(ne noteEventRecorder) {
+func (cs *ContentSync) WithNoteEvents(ne *activity.Store) {
 	cs.noteEvents = ne
 }
 
@@ -227,9 +210,9 @@ func NewHandler(cs *ContentSync, wr *WebhookRouter, tr *Triggers, logger *slog.L
 	}
 }
 
-// NewTopicLookup creates a TopicLookup from a function that returns a topic with an ID.
-func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookup {
-	return &topicLookupFunc{fn: fn}
+// NewTopicLookup creates a TopicLookupFunc from a function that resolves a topic slug to a UUID.
+func NewTopicLookup(fn func(ctx context.Context, slug string) (uuid.UUID, error)) TopicLookupFunc {
+	return fn
 }
 
 // Go runs fn in a tracked goroutine. Wait will block until fn returns.

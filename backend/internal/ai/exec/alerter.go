@@ -4,18 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/koopa0/blog-backend/internal/notify"
 )
 
 // Alerter sends alerts when flow runs fail permanently.
 type Alerter interface {
 	Alert(ctx context.Context, run *Run) error
-}
-
-// notifier is the minimal notification interface the NotifyAlerter needs.
-// Matches notify.Notifier but defined here (consumer side) to avoid
-// importing the notify package.
-type notifier interface {
-	Send(ctx context.Context, text string) error
 }
 
 // LogAlerter logs permanently failed flow runs using slog.
@@ -41,13 +36,13 @@ func (a *LogAlerter) Alert(_ context.Context, run *Run) error {
 
 // NotifyAlerter sends flow failure alerts via a notification provider.
 type NotifyAlerter struct {
-	notifier notifier
+	notifier notify.Notifier
 	logger   *slog.Logger
 }
 
 // NewNotifyAlerter returns an Alerter that sends failure notifications
 // via the given notifier.
-func NewNotifyAlerter(n notifier, logger *slog.Logger) *NotifyAlerter {
+func NewNotifyAlerter(n notify.Notifier, logger *slog.Logger) *NotifyAlerter {
 	return &NotifyAlerter{notifier: n, logger: logger}
 }
 

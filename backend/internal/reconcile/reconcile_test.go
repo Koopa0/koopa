@@ -88,16 +88,26 @@ func discardLogger() *slog.Logger {
 }
 
 // newReconciler builds a Reconciler with the given fakes wired up.
+// Constructs the struct directly (same package) since New() takes concrete types.
 func newReconciler(
-	github directoryLister,
-	content obsidianSlugLister,
-	projects notionPageIDLister,
-	goals notionPageIDLister,
-	notionDB notionDBQuerier,
-	sender sender,
-	roles roleLookup,
+	gh directoryLister,
+	cs obsidianSlugLister,
+	ps notionPageIDLister,
+	gs notionPageIDLister,
+	ndb notionDBQuerier,
+	s sender,
+	rl roleLookup,
 ) *Reconciler {
-	return New(github, content, projects, goals, notionDB, sender, roles, discardLogger())
+	return &Reconciler{
+		github:   gh,
+		content:  cs,
+		projects: ps,
+		goals:    gs,
+		notionDB: ndb,
+		notifier: s,
+		roles:    rl,
+		logger:   discardLogger(),
+	}
 }
 
 // --- diff ---

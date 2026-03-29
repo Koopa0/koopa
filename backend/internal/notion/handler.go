@@ -26,6 +26,7 @@ import (
 const sourceCacheTTL = 10 * time.Minute
 
 // projectWriter upserts projects from Notion data.
+// Kept as interface so webhook handler tests can use mocks without a real database.
 type projectWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error)
 	UpdateLastActivity(ctx context.Context, notionPageID string) error
@@ -34,6 +35,7 @@ type projectWriter interface {
 }
 
 // goalWriter upserts goals from Notion data.
+// Kept as interface so webhook handler tests can use mocks without a real database.
 type goalWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p *goal.UpsertByNotionParams) (*goal.Goal, error)
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
@@ -41,6 +43,7 @@ type goalWriter interface {
 }
 
 // taskWriter upserts tasks from Notion data.
+// Kept as interface so webhook handler tests can use mocks without a real database.
 type taskWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error)
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
@@ -48,6 +51,7 @@ type taskWriter interface {
 }
 
 // goalIDResolver resolves a Notion page ID to a local goal UUID.
+// Kept as interface so webhook handler tests can use mocks without a real database.
 type goalIDResolver interface {
 	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
 }

@@ -13,17 +13,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/koopa0/blog-backend/internal/db"
+	"github.com/koopa0/blog-backend/internal/notify"
 )
-
-// AlertSender sends alert notifications when feeds are auto-disabled.
-type AlertSender interface {
-	Send(ctx context.Context, text string) error
-}
 
 // Store handles database operations for feeds.
 type Store struct {
 	q      *db.Queries
-	alerts AlertSender
+	alerts notify.Notifier
 	logger *slog.Logger
 }
 
@@ -33,7 +29,7 @@ func NewStore(dbtx db.DBTX, logger *slog.Logger) *Store {
 }
 
 // SetAlerts sets the alert sender for auto-disable notifications.
-func (s *Store) SetAlerts(alerts AlertSender) {
+func (s *Store) SetAlerts(alerts notify.Notifier) {
 	s.alerts = alerts
 }
 
