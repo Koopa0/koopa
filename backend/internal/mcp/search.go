@@ -581,150 +581,147 @@ type knowledgeResult struct {
 	Tags       []string `json:"tags,omitempty"`
 }
 
-func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, input SearchKnowledgeInput) (*mcp.CallToolResult, SearchKnowledgeOutput, error) {
-	if input.Query == "" {
-		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query is required")
-	}
-	if len(input.Query) > maxQueryLen {
-		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query too long (max %d characters)", maxQueryLen)
+// knowledgeFilters holds parsed and resolved filter parameters for searchKnowledge.
+type knowledgeFilters struct {
+	limit          int
+	projectSlug    string
+	projectID      uuid.UUID
+	afterTime      *time.Time
+	beforeTime     *time.Time
+	filterType     content.Type
+	notesOnly      bool
+	noteFilter     note.SearchFilter
+	hasNoteFilters bool
+}
+
+// parseKnowledgeFilters resolves project, date, type, and note filters from raw input.
+func (s *Server) parseKnowledgeFilters(ctx context.Context, input *SearchKnowledgeInput) knowledgeFilters {
+	f := knowledgeFilters{
+		limit: clamp(input.Limit, 1, 30, 10),
 	}
 
-	limit := clamp(input.Limit, 1, 30, 10)
-
-	// Resolve project filter for content FK matching and note context filtering
-	var projectSlug string
-	var projectID uuid.UUID
+	// Resolve project
 	if input.Project != "" {
 		proj, projErr := s.resolveProjectChain(ctx, input.Project)
 		if projErr == nil {
-			projectSlug = proj.Slug
-			projectID = proj.ID
+			f.projectSlug = proj.Slug
+			f.projectID = proj.ID
 		} else {
-			projectSlug = input.Project // fallback to raw input
+			f.projectSlug = input.Project
 		}
 	}
 
-	// Parse date range filters
-	var afterTime, beforeTime *time.Time
+	// Parse date range
 	if input.After != "" {
 		if t, err := time.Parse(time.DateOnly, input.After); err == nil {
-			afterTime = &t
+			f.afterTime = &t
 		}
 	}
 	if input.Before != "" {
 		if t, err := time.Parse(time.DateOnly, input.Before); err == nil {
 			end := t.AddDate(0, 0, 1)
-			beforeTime = &end
+			f.beforeTime = &end
 		}
 	}
 
-	// Parse content type filter
-	var filterType content.Type
-	notesOnly := input.ContentType == "obsidian-note"
-	if input.ContentType != "" && !notesOnly {
-		filterType = content.Type(input.ContentType)
+	// Parse content type
+	f.notesOnly = input.ContentType == "obsidian-note"
+	if input.ContentType != "" && !f.notesOnly {
+		f.filterType = content.Type(input.ContentType)
 	}
 
-	// Build note filter from source/context/book/project/date params.
-	hasNoteFilters := input.Source != "" || input.Context != "" || input.Book != "" || projectSlug != "" || afterTime != nil || beforeTime != nil
-	noteFilter := note.SearchFilter{After: afterTime, Before: beforeTime}
+	// Build note filter
+	f.hasNoteFilters = input.Source != "" || input.Context != "" || input.Book != "" || f.projectSlug != "" || f.afterTime != nil || f.beforeTime != nil
+	f.noteFilter = note.SearchFilter{After: f.afterTime, Before: f.beforeTime}
 	if input.Source != "" {
-		noteFilter.Source = &input.Source
+		f.noteFilter.Source = &input.Source
 	}
 	if input.Context != "" {
-		// Explicit context filter takes priority over project slug.
-		noteFilter.Context = &input.Context
-	} else if projectSlug != "" {
-		noteFilter.Context = &projectSlug
+		f.noteFilter.Context = &input.Context
+	} else if f.projectSlug != "" {
+		f.noteFilter.Context = &f.projectSlug
 	}
 	if input.Book != "" {
-		noteFilter.Book = &input.Book
+		f.noteFilter.Book = &input.Book
 	}
 
-	// Search content, notes (text), and notes (semantic) concurrently.
-	type contentResult struct {
-		contents []content.Content
-		err      error
-	}
-	type noteSearchResult struct {
-		notes []note.SearchResult
-		err   error
-	}
-	type semanticResult struct {
-		notes []note.SimilarityResult
-		err   error
-	}
+	return f
+}
 
-	var cr contentResult
-	var nr noteSearchResult
-	var sr semanticResult
+// knowledgeSearchResults holds the raw results from concurrent content/note/semantic searches.
+type knowledgeSearchResults struct {
+	contents    []content.Content
+	contentErr  error
+	notes       []note.SearchResult
+	noteErr     error
+	semantic    []note.SimilarityResult
+	semanticErr error
+}
 
+// searchKnowledgeConcurrently runs content, text-note, and semantic-note searches in parallel.
+func (s *Server) searchKnowledgeConcurrently(ctx context.Context, query string, f *knowledgeFilters) knowledgeSearchResults {
+	var r knowledgeSearchResults
 	var wg sync.WaitGroup
-	if !notesOnly {
+
+	if !f.notesOnly {
 		wg.Go(func() {
-			// Internal search: no visibility filter so MCP can find private content.
-			cr.contents, _, cr.err = s.contents.InternalSearch(ctx, input.Query, 1, limit)
-			// AND→OR fallback: if AND search returns 0 results, try OR semantics
-			if cr.err == nil && len(cr.contents) == 0 {
-				cr.contents, _, cr.err = s.contents.InternalSearchOR(ctx, input.Query, 1, limit)
+			r.contents, _, r.contentErr = s.contents.InternalSearch(ctx, query, 1, f.limit)
+			if r.contentErr == nil && len(r.contents) == 0 {
+				r.contents, _, r.contentErr = s.contents.InternalSearchOR(ctx, query, 1, f.limit)
 			}
 		})
 	}
 	wg.Go(func() {
-		if hasNoteFilters {
-			filterResults, filterErr := s.notes.SearchByFilters(ctx, noteFilter, limit*3)
+		if f.hasNoteFilters {
+			filterResults, filterErr := s.notes.SearchByFilters(ctx, f.noteFilter, f.limit*3)
 			if filterErr != nil {
-				nr.err = filterErr
+				r.noteErr = filterErr
 				return
 			}
-			textResults, textErr := s.notes.SearchByText(ctx, input.Query, limit*3)
+			textResults, textErr := s.notes.SearchByText(ctx, query, f.limit*3)
 			if textErr != nil {
-				nr.err = textErr
+				r.noteErr = textErr
 				return
 			}
-			merged := note.RRFMerge(textResults, filterResults, limit)
-			nr.notes = make([]note.SearchResult, len(merged))
+			merged := note.RRFMerge(textResults, filterResults, f.limit)
+			r.notes = make([]note.SearchResult, len(merged))
 			for j := range merged {
-				nr.notes[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}
+				r.notes[j] = note.SearchResult{Note: merged[j].Note, Rank: float32(merged[j].Score)}
 			}
 		} else {
-			nr.notes, nr.err = s.notes.SearchByText(ctx, input.Query, limit)
+			r.notes, r.noteErr = s.notes.SearchByText(ctx, query, f.limit)
 		}
 	})
 	wg.Go(func() {
 		if s.queryEmbedder == nil || s.semanticNotes == nil {
 			return
 		}
-		vec, err := s.queryEmbedder.EmbedQuery(ctx, input.Query)
+		vec, err := s.queryEmbedder.EmbedQuery(ctx, query)
 		if err != nil {
-			sr.err = err
+			r.semanticErr = err
 			return
 		}
-		sr.notes, sr.err = s.semanticNotes.SearchBySimilarity(ctx, vec, limit)
+		r.semantic, r.semanticErr = s.semanticNotes.SearchBySimilarity(ctx, vec, f.limit)
 	})
 	wg.Wait()
+	return r
+}
 
+// collectContentResults filters and converts content search results to knowledgeResult entries.
+func collectContentResults(contents []content.Content, f *knowledgeFilters) []knowledgeResult {
 	var results []knowledgeResult
-
-	// Content results first (higher signal — published, structured content).
-	if cr.err != nil {
-		s.logger.Error("search_knowledge: content search failed", "error", cr.err)
-	}
-	for i := range cr.contents {
-		c := &cr.contents[i]
-		// Project filter: check slug prefix or body frontmatter
-		if projectSlug != "" && !contentMatchesProject(c, projectID, projectSlug) {
+	for i := range contents {
+		c := &contents[i]
+		if f.projectSlug != "" && !contentMatchesProject(c, f.projectID, f.projectSlug) {
 			continue
 		}
-		// Content type filter
-		if filterType != "" && c.Type != filterType {
+		if f.filterType != "" && c.Type != f.filterType {
 			continue
 		}
-		// Date range filter (use created_at for content)
-		if afterTime != nil && c.CreatedAt.Before(*afterTime) {
+		if f.afterTime != nil && c.CreatedAt.Before(*f.afterTime) {
 			continue
 		}
-		if beforeTime != nil && !c.CreatedAt.Before(*beforeTime) {
+		if f.beforeTime != nil && !c.CreatedAt.Before(*f.beforeTime) {
 			continue
 		}
 		excerpt := c.Excerpt
@@ -740,14 +737,15 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 			Tags:       c.Tags,
 		})
 	}
+	return results
+}
 
-	// Note text search results second.
-	seen := make(map[string]bool) // dedup by file_path across text and semantic results
-	if nr.err != nil {
-		s.logger.Error("search_knowledge: note search failed", "error", nr.err)
-	}
-	for i := range nr.notes {
-		n := &nr.notes[i]
+// collectNoteResults converts text-note search results to knowledgeResult entries and
+// records seen file paths for dedup against semantic results.
+func collectNoteResults(notes []note.SearchResult, seen map[string]bool) []knowledgeResult {
+	results := make([]knowledgeResult, 0, len(notes))
+	for i := range notes {
+		n := &notes[i]
 		seen[n.FilePath] = true
 		results = append(results, knowledgeResult{
 			SourceType: "note",
@@ -758,13 +756,15 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 			Tags:       n.Tags,
 		})
 	}
+	return results
+}
 
-	// Semantic note results third (deduped against text results, project-filtered).
-	if sr.err != nil {
-		s.logger.Error("search_knowledge: semantic search failed", "error", sr.err)
-	}
-	for i := range sr.notes {
-		n := &sr.notes[i]
+// collectSemanticResults converts semantic-note results to knowledgeResult entries,
+// deduplicating against already-seen file paths and applying project filter.
+func collectSemanticResults(notes []note.SimilarityResult, seen map[string]bool, projectSlug string) []knowledgeResult {
+	var results []knowledgeResult
+	for i := range notes {
+		n := &notes[i]
 		if seen[n.FilePath] {
 			continue
 		}
@@ -781,9 +781,41 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 			Tags:       n.Tags,
 		})
 	}
+	return results
+}
 
-	if len(results) > limit {
-		results = results[:limit]
+func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, input SearchKnowledgeInput) (*mcp.CallToolResult, SearchKnowledgeOutput, error) {
+	if input.Query == "" {
+		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query is required")
+	}
+	if len(input.Query) > maxQueryLen {
+		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query too long (max %d characters)", maxQueryLen)
+	}
+
+	f := s.parseKnowledgeFilters(ctx, &input)
+	raw := s.searchKnowledgeConcurrently(ctx, input.Query, &f)
+
+	// Assemble results: content first, then text notes, then semantic notes.
+	var results []knowledgeResult
+
+	if raw.contentErr != nil {
+		s.logger.Error("search_knowledge: content search failed", "error", raw.contentErr)
+	}
+	results = append(results, collectContentResults(raw.contents, &f)...)
+
+	seen := make(map[string]bool)
+	if raw.noteErr != nil {
+		s.logger.Error("search_knowledge: note search failed", "error", raw.noteErr)
+	}
+	results = append(results, collectNoteResults(raw.notes, seen)...)
+
+	if raw.semanticErr != nil {
+		s.logger.Error("search_knowledge: semantic search failed", "error", raw.semanticErr)
+	}
+	results = append(results, collectSemanticResults(raw.semantic, seen, f.projectSlug)...)
+
+	if len(results) > f.limit {
+		results = results[:f.limit]
 	}
 
 	return nil, SearchKnowledgeOutput{Results: results, Total: len(results)}, nil

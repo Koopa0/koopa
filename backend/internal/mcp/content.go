@@ -397,60 +397,58 @@ type synthesisGap struct {
 	Reason   string `json:"reason"`
 }
 
-func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, input SynthesizeTopicInput) (*mcp.CallToolResult, SynthesizeTopicOutput, error) {
-	if input.Query == "" {
-		return nil, SynthesizeTopicOutput{}, fmt.Errorf("query is required")
+// broadenSearchResults tries individual words from the query to find additional
+// results when the initial search returned fewer than 5 items.
+func (s *Server) broadenSearchResults(ctx context.Context, results []knowledgeResult, query string, maxSources int) []knowledgeResult {
+	if len(results) >= 5 {
+		return results
 	}
-	maxSources := clamp(input.MaxSources, 5, 30, 15)
-
-	// Step 1: Search across all content types
-	_, searchOut, err := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
-		Query: input.Query,
-		Limit: maxSources,
-	})
-	if err != nil {
-		return nil, SynthesizeTopicOutput{}, fmt.Errorf("searching knowledge: %w", err)
-	}
-
-	results := searchOut.Results
-
-	// If too few results, try a broader search with individual words
-	if len(results) < 5 {
-		words := strings.FieldsSeq(input.Query)
-		for w := range words {
-			if len(w) < 3 || len(results) >= maxSources {
-				continue
-			}
-			_, extraOut, extraErr := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
-				Query: w,
-				Limit: 5,
-			})
-			if extraErr == nil {
-				for _, r := range extraOut.Results {
-					// Dedup by slug/filepath
-					dup := false
-					for _, existing := range results {
-						if (r.Slug != "" && r.Slug == existing.Slug) || (r.FilePath != "" && r.FilePath == existing.FilePath) {
-							dup = true
-							break
-						}
-					}
-					if !dup && len(results) < maxSources {
-						results = append(results, r)
-					}
+	words := strings.FieldsSeq(query)
+	for w := range words {
+		if len(w) < 3 || len(results) >= maxSources {
+			continue
+		}
+		_, extraOut, extraErr := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
+			Query: w,
+			Limit: 5,
+		})
+		if extraErr != nil {
+			continue
+		}
+		for _, r := range extraOut.Results {
+			dup := false
+			for _, existing := range results {
+				if (r.Slug != "" && r.Slug == existing.Slug) || (r.FilePath != "" && r.FilePath == existing.FilePath) {
+					dup = true
+					break
 				}
+			}
+			if !dup && len(results) < maxSources {
+				results = append(results, r)
 			}
 		}
 	}
+	return results
+}
 
-	// Step 2: Classify sources and build synthesis sections
-	var practical, external, theoretical []string
-	sourceCount := map[string]int{}
-	sources := make([]synthesisSource, len(results))
+// sourceClassification holds classified source lines and counts from knowledge results.
+type sourceClassification struct {
+	practical   []string
+	external    []string
+	theoretical []string
+	sourceCount map[string]int
+	sources     []synthesisSource
+}
 
+// classifySources categorizes knowledge results into practical/external/theoretical buckets.
+func classifySources(results []knowledgeResult) sourceClassification {
+	c := sourceClassification{
+		sourceCount: map[string]int{},
+		sources:     make([]synthesisSource, len(results)),
+	}
 	for i := range results {
 		r := &results[i]
-		sources[i] = synthesisSource{
+		c.sources[i] = synthesisSource{
 			Slug:       r.Slug,
 			FilePath:   r.FilePath,
 			Title:      r.Title,
@@ -458,78 +456,107 @@ func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, in
 			SourceType: r.SourceType,
 			Excerpt:    r.Excerpt,
 		}
-
-		// Classify by type
 		switch r.Type {
 		case "build-log", "til":
-			practical = append(practical, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
-			sourceCount["practical"]++
+			c.practical = append(c.practical, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
+			c.sourceCount["practical"]++
 		case "bookmark", "digest":
-			external = append(external, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
-			sourceCount["external"]++
+			c.external = append(c.external, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
+			c.sourceCount["external"]++
 		case "article", "essay":
-			external = append(external, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
-			sourceCount["article"]++
+			c.external = append(c.external, fmt.Sprintf("- [%s] %s: %s", r.Type, r.Title, truncate(r.Excerpt, 150)))
+			c.sourceCount["article"]++
 		default:
 			if r.SourceType == "note" {
-				theoretical = append(theoretical, fmt.Sprintf("- %s: %s", r.Title, truncate(r.Excerpt, 150)))
-				sourceCount["note"]++
+				c.theoretical = append(c.theoretical, fmt.Sprintf("- %s: %s", r.Title, truncate(r.Excerpt, 150)))
+				c.sourceCount["note"]++
 			}
 		}
 	}
+	return c
+}
 
-	synthesis := synthesisSections{
+// buildSynthesisSections assembles synthesis text from classified source lines.
+func buildSynthesisSections(c *sourceClassification, query string, totalResults int) synthesisSections {
+	s := synthesisSections{
 		PracticalExperience: "No build logs or TILs found for this topic.",
 		ExternalKnowledge:   "No RSS bookmarks or external articles found for this topic.",
 		TheoreticalBasis:    "No Obsidian notes found for this topic.",
 		CommonPatterns:      "Insufficient data to identify cross-source patterns.",
 	}
-	if len(practical) > 0 {
-		synthesis.PracticalExperience = strings.Join(practical, "\n")
+	if len(c.practical) > 0 {
+		s.PracticalExperience = strings.Join(c.practical, "\n")
 	}
-	if len(external) > 0 {
-		synthesis.ExternalKnowledge = strings.Join(external, "\n")
+	if len(c.external) > 0 {
+		s.ExternalKnowledge = strings.Join(c.external, "\n")
 	}
-	if len(theoretical) > 0 {
-		synthesis.TheoreticalBasis = strings.Join(theoretical, "\n")
+	if len(c.theoretical) > 0 {
+		s.TheoreticalBasis = strings.Join(c.theoretical, "\n")
 	}
-	if len(results) >= 3 {
-		synthesis.CommonPatterns = fmt.Sprintf("Found %d sources across %d categories covering '%s'.", len(results), len(sourceCount), input.Query)
+	if totalResults >= 3 {
+		s.CommonPatterns = fmt.Sprintf("Found %d sources across %d categories covering '%s'.", totalResults, len(c.sourceCount), query)
 	}
+	return s
+}
+
+// analyzeGaps identifies knowledge coverage gaps based on source classification counts.
+func analyzeGaps(sourceCount map[string]int, query string) []synthesisGap {
+	var gaps []synthesisGap
+	if sourceCount["practical"] == 0 {
+		gaps = append(gaps, synthesisGap{
+			SubTopic: "hands-on experience",
+			Reason:   fmt.Sprintf("No build logs or TILs found about %q — consider doing a practice project", query),
+		})
+	}
+	if sourceCount["note"] == 0 {
+		gaps = append(gaps, synthesisGap{
+			SubTopic: "theoretical foundation",
+			Reason:   fmt.Sprintf("No Obsidian notes found about %q — consider writing study notes", query),
+		})
+	}
+	if sourceCount["external"] == 0 && sourceCount["article"] == 0 {
+		gaps = append(gaps, synthesisGap{
+			SubTopic: "external perspectives",
+			Reason:   fmt.Sprintf("No bookmarked articles about %q — check RSS feeds or curate relevant items", query),
+		})
+	}
+	return gaps
+}
+
+func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, input SynthesizeTopicInput) (*mcp.CallToolResult, SynthesizeTopicOutput, error) {
+	if input.Query == "" {
+		return nil, SynthesizeTopicOutput{}, fmt.Errorf("query is required")
+	}
+	maxSources := clamp(input.MaxSources, 5, 30, 15)
+
+	// Step 1: search and broaden
+	_, searchOut, err := s.searchKnowledge(ctx, nil, SearchKnowledgeInput{
+		Query: input.Query,
+		Limit: maxSources,
+	})
+	if err != nil {
+		return nil, SynthesizeTopicOutput{}, fmt.Errorf("searching knowledge: %w", err)
+	}
+	results := s.broadenSearchResults(ctx, searchOut.Results, input.Query, maxSources)
+
+	// Step 2: classify and synthesize
+	classified := classifySources(results)
+	synthesis := buildSynthesisSections(&classified, input.Query, len(results))
 
 	out := SynthesizeTopicOutput{
 		Query:       input.Query,
-		Sources:     sources,
-		SourceCount: sourceCount,
+		Sources:     classified.sources,
+		SourceCount: classified.sourceCount,
 		Synthesis:   synthesis,
 	}
 
-	// Step 3: Gap analysis
-	if input.IncludeGapAnalysis == nil || *input.IncludeGapAnalysis { // default true when omitted
-		if sourceCount["practical"] == 0 {
-			out.Gaps = append(out.Gaps, synthesisGap{
-				SubTopic: "hands-on experience",
-				Reason:   fmt.Sprintf("No build logs or TILs found about %q — consider doing a practice project", input.Query),
-			})
-		}
-		if sourceCount["note"] == 0 {
-			out.Gaps = append(out.Gaps, synthesisGap{
-				SubTopic: "theoretical foundation",
-				Reason:   fmt.Sprintf("No Obsidian notes found about %q — consider writing study notes", input.Query),
-			})
-		}
-		if sourceCount["external"] == 0 && sourceCount["article"] == 0 {
-			out.Gaps = append(out.Gaps, synthesisGap{
-				SubTopic: "external perspectives",
-				Reason:   fmt.Sprintf("No bookmarked articles about %q — check RSS feeds or curate relevant items", input.Query),
-			})
-		}
+	// Step 3: gap analysis
+	if input.IncludeGapAnalysis == nil || *input.IncludeGapAnalysis {
+		out.Gaps = analyzeGaps(classified.sourceCount, input.Query)
 	}
 
-	// Disclaimer if data is thin
-	totalContent := len(results)
-	if totalContent < 5 {
-		out.Disclaimer = fmt.Sprintf("Only %d sources found. Gap analysis may be incomplete due to limited data.", totalContent)
+	if len(results) < 5 {
+		out.Disclaimer = fmt.Sprintf("Only %d sources found. Gap analysis may be incomplete due to limited data.", len(results))
 	}
 
 	return nil, out, nil
