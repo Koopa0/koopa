@@ -872,7 +872,7 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 	// Sync to Notion (best-effort)
 	if proj.NotionPageID != nil && s.notionClient != nil {
 		notionProps := map[string]any{
-			"Status": map[string]any{"status": map[string]string{"name": notion.LocalProjectStatusToNotion(status)}},
+			"Status": map[string]any{"status": map[string]string{"name": project.StatusToNotion(status)}},
 		}
 		if input.ReviewNotes != nil && *input.ReviewNotes != "" {
 			notionProps["Review Notes"] = map[string]any{
@@ -929,7 +929,7 @@ func (s *Server) updateGoalStatus(ctx context.Context, _ *mcp.CallToolRequest, i
 
 	// Sync to Notion (best-effort)
 	if g.NotionPageID != nil && s.notionClient != nil {
-		notionStatus := notion.LocalGoalStatusToNotion(status)
+		notionStatus := goal.StatusToNotion(status)
 		if notionErr := s.notionClient.UpdatePageProperties(ctx, *g.NotionPageID, map[string]any{
 			"Status": map[string]any{"status": map[string]string{"name": notionStatus}},
 		}); notionErr != nil {
@@ -1091,7 +1091,7 @@ func buildNotionTaskProps(input *UpdateTaskInput) map[string]any {
 	}
 	if input.Status != nil {
 		props["Status"] = map[string]any{
-			"status": map[string]string{"name": notion.NotionTaskStatusFromInput(*input.Status)},
+			"status": map[string]string{"name": task.NotionStatusFromInput(*input.Status)},
 		}
 	}
 	if input.Due != nil {

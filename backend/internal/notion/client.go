@@ -389,9 +389,9 @@ func (c *Client) SearchDatabases(ctx context.Context) ([]DiscoveredDatabase, err
 			continue // best-effort: skip unresolvable parents
 		}
 		// page title can be under "title" or "Name" property
-		t := titleProperty(page.Properties["title"])
+		t := TitleProperty(page.Properties["title"])
 		if t == "" {
-			t = titleProperty(page.Properties["Name"])
+			t = TitleProperty(page.Properties["Name"])
 		}
 		parentTitles[pid] = t
 	}

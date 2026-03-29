@@ -18,6 +18,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
+	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -34,7 +35,7 @@ type ContentStrategy struct {
 	contents  *content.Store
 	collected *entry.Store
 	projects  *project.Store
-	notifier  Sender
+	notifier  notify.Notifier
 	budget    *budget.Budget
 	loc       *time.Location
 	logger    *slog.Logger
@@ -47,7 +48,7 @@ func NewContentStrategy(
 	contents *content.Store,
 	collects *entry.Store,
 	projects *project.Store,
-	notifier Sender,
+	notifier notify.Notifier,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,

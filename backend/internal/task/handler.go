@@ -9,46 +9,35 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/koopa0/blog-backend/internal/api"
+	"github.com/koopa0/blog-backend/internal/notion"
 )
 
 // Handler handles task HTTP requests.
 type Handler struct {
-	store      *Store
-	notion     NotionClient
-	projects   ProjectResolver
-	dbResolver DBIDResolver
-	logger     *slog.Logger
+	store    *Store
+	notion   *notion.Client
+	notionDB *notion.Store
+	projects HTTPProjectResolver
+	logger   *slog.Logger
 }
 
-// NotionClient creates and updates tasks in Notion.
-type NotionClient interface {
-	UpdatePageStatus(ctx context.Context, pageID, status string) error
-	UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error
-	CreateTaskPage(ctx context.Context, databaseID, title, dueDate, description string) (string, error)
-}
-
-// ProjectResolver resolves a project identifier to (project_id, project_title).
+// HTTPProjectResolver resolves a project identifier to (project_id, project_title).
 // Returns an error if the project is not found.
-type ProjectResolver func(ctx context.Context, slug string) (uuid.UUID, string, error)
-
-// DBIDResolver resolves the Notion database ID for a given role.
-type DBIDResolver interface {
-	DatabaseIDByRole(ctx context.Context, role string) (string, error)
-}
+type HTTPProjectResolver func(ctx context.Context, slug string) (uuid.UUID, string, error)
 
 // HandlerOption configures optional Handler dependencies.
 type HandlerOption func(*Handler)
 
 // WithNotion enables Notion integration for task creation and completion.
-func WithNotion(n NotionClient, r DBIDResolver) HandlerOption {
+func WithNotion(client *notion.Client, store *notion.Store) HandlerOption {
 	return func(h *Handler) {
-		h.notion = n
-		h.dbResolver = r
+		h.notion = client
+		h.notionDB = store
 	}
 }
 
-// WithProjectResolver enables project slug resolution for task creation/update.
-func WithProjectResolver(p ProjectResolver) HandlerOption {
+// WithHTTPProjectResolver enables project slug resolution for task creation/update.
+func WithHTTPProjectResolver(p HTTPProjectResolver) HandlerOption {
 	return func(h *Handler) { h.projects = p }
 }
 
@@ -108,19 +97,24 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	if h.notion == nil || h.dbResolver == nil {
+	if h.notion == nil || h.notionDB == nil {
 		api.Error(w, http.StatusServiceUnavailable, "NOT_CONFIGURED", "notion integration not configured")
 		return
 	}
 
-	taskDBID, err := h.dbResolver.DatabaseIDByRole(ctx, "tasks")
+	src, err := h.notionDB.SourceByRole(ctx, "tasks")
 	if err != nil {
 		h.logger.Error("resolving task database id", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to resolve task database")
 		return
 	}
 
-	pageID, err := h.notion.CreateTaskPage(ctx, taskDBID, req.Title, req.Due, req.Notes)
+	pageID, err := h.notion.CreateTask(ctx, &notion.CreateTaskParams{
+		DatabaseID:  src.DatabaseID,
+		Title:       req.Title,
+		DueDate:     req.Due,
+		Description: req.Notes,
+	})
 	if err != nil {
 		h.logger.Error("creating notion task", "error", err)
 		api.Error(w, http.StatusInternalServerError, "NOTION_ERROR", "failed to create task in Notion")
@@ -212,7 +206,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Sync to Notion before local update (best-effort)
 	if t, taskErr := h.store.TaskByID(ctx, id); taskErr == nil && t.NotionPageID != nil {
-		h.syncNotionTask(ctx, *t.NotionPageID, buildHTTPNotionProps(req))
+		h.syncNotionProps(ctx, *t.NotionPageID, buildHTTPNotionProps(req))
 	}
 
 	updated, err := h.store.Update(ctx, params)
@@ -300,7 +294,7 @@ func (h *Handler) Complete(w http.ResponseWriter, r *http.Request) {
 	// Sync to Notion (best-effort)
 	if t.NotionPageID != nil && h.notion != nil {
 		if notionErr := h.notion.UpdatePageStatus(ctx, *t.NotionPageID, "Done"); notionErr != nil {
-			h.logger.Error("updating notion task status", "error", notionErr)
+			h.logger.Warn("updating notion task status", "error", notionErr)
 		}
 	}
 
@@ -375,7 +369,7 @@ func (h *Handler) BatchMyDay(w http.ResponseWriter, r *http.Request) {
 
 		// Sync to Notion (best-effort)
 		if t, taskErr := h.store.TaskByID(ctx, id); taskErr == nil && t.NotionPageID != nil {
-			h.syncNotionTask(ctx, *t.NotionPageID, myDayTrue)
+			h.syncNotionProps(ctx, *t.NotionPageID, myDayTrue)
 		}
 	}
 
@@ -413,9 +407,9 @@ func parseDueDate(s string) (*time.Time, error) {
 	return &d, nil
 }
 
-// syncNotionTask updates a Notion page's properties as a best-effort operation.
+// syncNotionProps updates a Notion page's properties as a best-effort operation.
 // Errors are logged but not returned; callers should proceed regardless.
-func (h *Handler) syncNotionTask(ctx context.Context, pageID string, props map[string]any) {
+func (h *Handler) syncNotionProps(ctx context.Context, pageID string, props map[string]any) {
 	if h.notion == nil || len(props) == 0 {
 		return
 	}

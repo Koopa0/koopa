@@ -16,58 +16,83 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/event"
-	"github.com/koopa0/blog-backend/internal/goal"
-	"github.com/koopa0/blog-backend/internal/project"
-	"github.com/koopa0/blog-backend/internal/task"
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
 
-// sourceCacheTTL is how long a database_id → role mapping stays in cache.
+// sourceCacheTTL is how long a database_id -> role mapping stays in cache.
 const sourceCacheTTL = 10 * time.Minute
 
-// projectWriter upserts projects from Notion data.
-// Kept as interface so webhook handler tests can use mocks without a real database.
-type projectWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error)
-	UpdateLastActivity(ctx context.Context, notionPageID string) error
-	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
-	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
+// ProjectSyncInput holds extracted Notion properties for project sync.
+// All fields are primitives -- no json.RawMessage, no notion-specific types.
+type ProjectSyncInput struct {
+	PageID      string
+	Title       string
+	Status      string // raw Notion status name (e.g. "Doing", "Planned")
+	Description string
+	Area        string     // resolved from Tag relation
+	GoalID      *uuid.UUID // resolved from Goal relation
+	Deadline    *time.Time
 }
 
-// goalWriter upserts goals from Notion data.
-// Kept as interface so webhook handler tests can use mocks without a real database.
-type goalWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p *goal.UpsertByNotionParams) (*goal.Goal, error)
-	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
-	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
+// GoalSyncInput holds extracted Notion properties for goal sync.
+type GoalSyncInput struct {
+	PageID   string
+	Title    string
+	Status   string // raw Notion status name (e.g. "Dream", "Active")
+	Area     string // resolved from Tag relation
+	Deadline *time.Time
 }
 
-// taskWriter upserts tasks from Notion data.
-// Kept as interface so webhook handler tests can use mocks without a real database.
-type taskWriter interface {
-	UpsertByNotionPageID(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error)
-	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
-	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
+// TaskSyncInput holds extracted Notion properties for task sync.
+type TaskSyncInput struct {
+	PageID        string
+	Title         string
+	Status        string // raw Notion status name (e.g. "To Do", "Doing")
+	Due           *time.Time
+	Energy        string
+	Priority      string
+	RecurInterval *int32
+	RecurUnit     string
+	MyDay         bool
+	Description   string
+	ProjectPageID string // resolved project Notion page ID (with parent-task fallback)
 }
 
-// goalIDResolver resolves a Notion page ID to a local goal UUID.
-// Kept as interface so webhook handler tests can use mocks without a real database.
-type goalIDResolver interface {
-	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
-}
+// ProjectSyncFunc upserts a project from extracted Notion properties.
+// Wired in main.go to call project.Store methods.
+type ProjectSyncFunc func(ctx context.Context, input *ProjectSyncInput) error
+
+// GoalSyncFunc upserts a goal from extracted Notion properties.
+// Wired in main.go to call goal.Store methods.
+type GoalSyncFunc func(ctx context.Context, input *GoalSyncInput) error
+
+// TaskSyncFunc upserts a task from extracted Notion properties.
+// Wired in main.go to call task.Store methods.
+type TaskSyncFunc func(ctx context.Context, input *TaskSyncInput) error
 
 // Handler handles Notion webhook events.
 type Handler struct {
-	client        *Client
-	store         *Store
-	sourceCache   *ristretto.Cache[string, string]
-	projects      projectWriter
-	goals         goalWriter
-	tasks         taskWriter
-	jobs          exec.Submitter
-	events        activity.Recorder
-	projectStore  *project.Store
-	goalIDs       goalIDResolver
+	client      *Client
+	store       *Store
+	sourceCache *ristretto.Cache[string, string]
+
+	// Archivers handle trash/archive and orphan cleanup per role.
+	projectArchiver Archiver
+	goalArchiver    Archiver
+	taskArchiver    Archiver
+
+	// Resolvers provide cross-entity lookups without importing feature packages.
+	projectResolver ProjectResolver
+	goalResolver    GoalResolver
+
+	// Sync callbacks: notion extracts properties, feature packages own the upsert.
+	// Wired in main.go to call feature.Store methods.
+	projectSync ProjectSyncFunc
+	goalSync    GoalSyncFunc
+	taskSync    TaskSyncFunc
+
+	jobs          *exec.Runner
+	events        *activity.Store
 	dedup         *webhook.DeduplicationCache
 	bus           *event.Bus
 	webhookSecret string
@@ -85,18 +110,18 @@ type Handler struct {
 type HandlerOption func(*Handler)
 
 // WithEventRecorder sets the activity event recorder for Notion sync tracking.
-func WithEventRecorder(e activity.Recorder) HandlerOption {
+func WithEventRecorder(e *activity.Store) HandlerOption {
 	return func(h *Handler) { h.events = e }
 }
 
-// WithProjectStore sets the project store for slug and ID resolution.
-func WithProjectStore(ps *project.Store) HandlerOption {
-	return func(h *Handler) { h.projectStore = ps }
+// WithProjectResolver sets the project resolver for slug and ID lookups.
+func WithProjectResolver(pr ProjectResolver) HandlerOption {
+	return func(h *Handler) { h.projectResolver = pr }
 }
 
-// WithGoalIDResolver sets the goal ID resolver for project → goal FK resolution.
-func WithGoalIDResolver(r goalIDResolver) HandlerOption {
-	return func(h *Handler) { h.goalIDs = r }
+// WithGoalResolver sets the goal ID resolver for project -> goal FK resolution.
+func WithGoalResolver(gr GoalResolver) HandlerOption {
+	return func(h *Handler) { h.goalResolver = gr }
 }
 
 // WithDedup sets the deduplication cache for webhook replay protection.
@@ -109,15 +134,36 @@ func WithEventBus(b *event.Bus) HandlerOption {
 	return func(h *Handler) { h.bus = b }
 }
 
+// WithProjectSync sets the project archiver and sync callback.
+func WithProjectSync(archiver Archiver, syncFn ProjectSyncFunc) HandlerOption {
+	return func(h *Handler) {
+		h.projectArchiver = archiver
+		h.projectSync = syncFn
+	}
+}
+
+// WithGoalSync sets the goal archiver and sync callback.
+func WithGoalSync(archiver Archiver, syncFn GoalSyncFunc) HandlerOption {
+	return func(h *Handler) {
+		h.goalArchiver = archiver
+		h.goalSync = syncFn
+	}
+}
+
+// WithTaskSync sets the task archiver and sync callback.
+func WithTaskSync(archiver Archiver, syncFn TaskSyncFunc) HandlerOption {
+	return func(h *Handler) {
+		h.taskArchiver = archiver
+		h.taskSync = syncFn
+	}
+}
+
 // NewHandler returns a Notion webhook Handler.
 func NewHandler(
 	client *Client,
 	store *Store,
 	sourceCache *ristretto.Cache[string, string],
-	projects projectWriter,
-	goals goalWriter,
-	tasks taskWriter,
-	jobs exec.Submitter,
+	jobs *exec.Runner,
 	webhookSecret string,
 	logger *slog.Logger,
 	opts ...HandlerOption,
@@ -126,9 +172,6 @@ func NewHandler(
 		client:        client,
 		store:         store,
 		sourceCache:   sourceCache,
-		projects:      projects,
-		goals:         goals,
-		tasks:         tasks,
 		jobs:          jobs,
 		webhookSecret: webhookSecret,
 		logger:        logger,
@@ -137,7 +180,7 @@ func NewHandler(
 		opt(h)
 	}
 	if h.dedup == nil {
-		logger.Warn("notion handler created without dedup cache — replay protection disabled")
+		logger.Warn("notion handler created without dedup cache -- replay protection disabled")
 	}
 	return h
 }
@@ -329,23 +372,29 @@ func (h *Handler) SyncRoleAsync(ctx context.Context, role string) {
 
 // syncTargets builds the list of role-specific sync operations.
 func (h *Handler) syncTargets() []syncTarget {
-	return []syncTarget{
-		{
+	var targets []syncTarget
+	if h.projectArchiver != nil {
+		targets = append(targets, syncTarget{
 			role:          RoleProjects,
 			syncFn:        h.syncProjectFromResult,
-			archiveOrphan: h.projects.ArchiveOrphanNotion,
-		},
-		{
+			archiveOrphan: h.projectArchiver.ArchiveOrphanNotion,
+		})
+	}
+	if h.goalArchiver != nil {
+		targets = append(targets, syncTarget{
 			role:          RoleGoals,
 			syncFn:        h.syncGoalFromResult,
-			archiveOrphan: h.goals.ArchiveOrphanNotion,
-		},
-		{
+			archiveOrphan: h.goalArchiver.ArchiveOrphanNotion,
+		})
+	}
+	if h.taskArchiver != nil {
+		targets = append(targets, syncTarget{
 			role:          RoleTasks,
 			syncFn:        h.syncTaskFromResult,
-			archiveOrphan: h.tasks.ArchiveOrphanNotion,
-		},
+			archiveOrphan: h.taskArchiver.ArchiveOrphanNotion,
+		})
 	}
+	return targets
 }
 
 // staleSyncThreshold is the minimum time since last sync before a full sync is warranted.
@@ -431,7 +480,7 @@ func (h *Handler) resolveRole(ctx context.Context, dataSourceID string) string {
 		return role
 	}
 
-	// cache miss — query store
+	// cache miss -- query store
 	src, err := h.store.SourceByDatabaseID(ctx, dataSourceID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {

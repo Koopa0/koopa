@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dgraph-io/ristretto/v2"
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/golang-migrate/migrate/v4"
@@ -231,12 +230,48 @@ func run(logger *slog.Logger) error {
 	// notion webhook handler
 	notionHandler := notion.NewHandler(
 		notionClient, notionSourceStore, sourceCache,
-		projectStore, goalStore, taskStore, runner,
-		cfg.NotionWebhookSecret, logger,
+		runner, cfg.NotionWebhookSecret, logger,
 		notion.WithDedup(webhookDedup),
 		notion.WithEventRecorder(activityStore),
-		notion.WithProjectStore(projectStore),
-		notion.WithGoalIDResolver(goalStore),
+		notion.WithProjectResolver(projectStore),
+		notion.WithGoalResolver(goalStore),
+		notion.WithProjectSync(projectStore, func(ctx context.Context, input *notion.ProjectSyncInput) error {
+			_, err := projectStore.SyncFromNotion(ctx, &project.SyncFromNotionInput{
+				PageID:      input.PageID,
+				Title:       input.Title,
+				Status:      input.Status,
+				Description: input.Description,
+				Area:        input.Area,
+				GoalID:      input.GoalID,
+				Deadline:    input.Deadline,
+			})
+			return err
+		}),
+		notion.WithGoalSync(goalStore, func(ctx context.Context, input *notion.GoalSyncInput) error {
+			_, err := goalStore.SyncFromNotion(ctx, &goal.SyncFromNotionInput{
+				PageID:   input.PageID,
+				Title:    input.Title,
+				Status:   input.Status,
+				Area:     input.Area,
+				Deadline: input.Deadline,
+			})
+			return err
+		}),
+		notion.WithTaskSync(taskStore, func(ctx context.Context, input *notion.TaskSyncInput) error {
+			return taskStore.SyncFromNotion(ctx, &task.SyncFromNotionInput{
+				PageID:        input.PageID,
+				Title:         input.Title,
+				Status:        input.Status,
+				Due:           input.Due,
+				Energy:        input.Energy,
+				Priority:      input.Priority,
+				RecurInterval: input.RecurInterval,
+				RecurUnit:     input.RecurUnit,
+				MyDay:         input.MyDay,
+				Description:   input.Description,
+				ProjectPageID: input.ProjectPageID,
+			}, projectStore)
+		}),
 		notion.WithEventBus(bus),
 	)
 	defer notionHandler.Wait() // drain background SyncRole goroutines
@@ -339,11 +374,8 @@ func run(logger *slog.Logger) error {
 		}(),
 		Goal: goal.NewHandler(goalStore, logger),
 		Task: task.NewHandler(taskStore, logger,
-			task.WithNotion(
-				&notionTaskAdapter{client: notionClient},
-				&sourceDBResolver{store: notionSourceStore, cache: sourceCache},
-			),
-			task.WithProjectResolver(func(ctx context.Context, slug string) (uuid.UUID, string, error) {
+			task.WithNotion(notionClient, notionSourceStore),
+			task.WithHTTPProjectResolver(func(ctx context.Context, slug string) (uuid.UUID, string, error) {
 				proj, err := projectStore.ProjectBySlug(ctx, slug)
 				if err != nil {
 					proj, err = projectStore.ProjectByAlias(ctx, slug)
@@ -571,48 +603,4 @@ func runMigrations(databaseURL string, logger *slog.Logger) error {
 
 	logger.Info("migrations: applied successfully")
 	return nil
-}
-
-// notionTaskAdapter adapts notion.Client to task.NotionClient.
-// Lives in main.go because task and notion have a circular import
-// (notion imports task), so only the wiring layer can bridge them.
-type notionTaskAdapter struct {
-	client *notion.Client
-}
-
-func (a *notionTaskAdapter) UpdatePageStatus(ctx context.Context, pageID, status string) error {
-	return a.client.UpdatePageStatus(ctx, pageID, status)
-}
-
-func (a *notionTaskAdapter) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error {
-	return a.client.UpdatePageProperties(ctx, pageID, properties)
-}
-
-func (a *notionTaskAdapter) CreateTaskPage(ctx context.Context, databaseID, title, dueDate, description string) (string, error) {
-	return a.client.CreateTask(ctx, &notion.CreateTaskParams{
-		DatabaseID:  databaseID,
-		Title:       title,
-		DueDate:     dueDate,
-		Description: description,
-	})
-}
-
-// sourceDBResolver adapts notion.Store + cache to task.DBIDResolver.
-// Lives in main.go for the same reason as notionTaskAdapter: circular
-// import between notion and task prevents placing it in either package.
-type sourceDBResolver struct {
-	store *notion.Store
-	cache *ristretto.Cache[string, string]
-}
-
-func (r *sourceDBResolver) DatabaseIDByRole(ctx context.Context, role string) (string, error) {
-	if id, ok := r.cache.Get("role:" + role); ok {
-		return id, nil
-	}
-	src, err := r.store.SourceByRole(ctx, role)
-	if err != nil {
-		return "", err
-	}
-	r.cache.SetWithTTL("role:"+role, src.DatabaseID, 1, 10*time.Minute)
-	return src.DatabaseID, nil
 }

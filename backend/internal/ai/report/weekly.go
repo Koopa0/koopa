@@ -18,6 +18,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/github"
+	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/task"
 )
@@ -48,7 +49,7 @@ type Weekly struct {
 	contents       *content.Store
 	projects       *project.Store
 	commits        *github.Client
-	notifier       ai.Sender
+	notifier       notify.Notifier
 	budget         *budget.Budget
 	loc            *time.Location
 	logger         *slog.Logger
@@ -65,7 +66,7 @@ func NewWeekly(
 	contents *content.Store,
 	projects *project.Store,
 	commits *github.Client,
-	notifier ai.Sender,
+	notifier notify.Notifier,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,

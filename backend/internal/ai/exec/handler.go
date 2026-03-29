@@ -22,14 +22,14 @@ var storeErrors = []api.ErrMap{
 // Handler handles flow run admin HTTP requests.
 type Handler struct {
 	store          *Store
-	jobs           Submitter
+	jobs           *Runner
 	contentReader  *content.Store
 	contentUpdater *content.Store
 	logger         *slog.Logger
 }
 
 // NewHandler returns a flow run Handler.
-func NewHandler(store *Store, jobs Submitter, logger *slog.Logger) *Handler {
+func NewHandler(store *Store, jobs *Runner, logger *slog.Logger) *Handler {
 	return &Handler{store: store, jobs: jobs, logger: logger}
 }
 

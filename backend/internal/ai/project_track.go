@@ -12,6 +12,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/budget"
+	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
@@ -35,7 +36,7 @@ type ProjectTrack struct {
 	systemPrompt string
 	projects     *project.Store
 	updater      *project.Store
-	notifier     Sender
+	notifier     notify.Notifier
 	budget       *budget.Budget
 	logger       *slog.Logger
 }
@@ -47,7 +48,7 @@ func NewProjectTrack(
 	systemPrompt string,
 	projects *project.Store,
 	updater *project.Store,
-	notifier Sender,
+	notifier notify.Notifier,
 	tokenBudget *budget.Budget,
 	logger *slog.Logger,
 ) *ProjectTrack {

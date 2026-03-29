@@ -25,23 +25,11 @@ const semaphoreTimeout = 30 * time.Second
 // while preventing a hung AI API from holding a semaphore slot forever.
 const defaultFlowTimeout = 3 * time.Minute
 
-// runnerStore is the minimal store interface the Runner needs.
-// Kept as an interface so unit tests can substitute an in-memory mock
-// for the dispatch-loop / dedup / shutdown orchestration tests.
-type runnerStore interface {
-	CreateRun(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) (*Run, error)
-	Run(ctx context.Context, id uuid.UUID) (*Run, error)
-	PendingRunExists(ctx context.Context, flowName string, contentID *uuid.UUID) (bool, error)
-	UpdateRunning(ctx context.Context, id uuid.UUID) error
-	UpdateCompleted(ctx context.Context, id uuid.UUID, output json.RawMessage) error
-	UpdateFailed(ctx context.Context, id uuid.UUID, errMsg string) error
-}
-
 // Runner manages a pool of workers that execute AI flows.
 // Jobs are persisted to the flow_runs table before being dispatched
 // to the channel, ensuring recoverability via cron retry.
 type Runner struct {
-	store    runnerStore
+	store    *Store
 	registry *ai.Registry
 	alerter  Alerter
 	observer *MetricsObserver // optional: records execution metrics

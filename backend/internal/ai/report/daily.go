@@ -15,6 +15,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/ai"
 	"github.com/koopa0/blog-backend/internal/budget"
+	"github.com/koopa0/blog-backend/internal/notify"
 )
 
 // DailyInput is the optional JSON input for the daily-dev-log flow.
@@ -37,7 +38,7 @@ type Daily struct {
 	model        genkitai.Model
 	systemPrompt string
 	events       *activity.Store
-	notifier     ai.Sender
+	notifier     notify.Notifier
 	budget       *budget.Budget
 	loc          *time.Location
 	logger       *slog.Logger
@@ -49,7 +50,7 @@ func NewDaily(
 	model genkitai.Model,
 	systemPrompt string,
 	events *activity.Store,
-	notifier ai.Sender,
+	notifier notify.Notifier,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,

@@ -42,11 +42,6 @@ func CheckFinishReason(resp *genkitai.ModelResponse) error {
 // Exported for use by sub-packages.
 type GenkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
 
-// Sender sends a text notification.
-type Sender interface {
-	Send(ctx context.Context, text string) error
-}
-
 // Flow executes a named AI processing pipeline.
 // Each concrete flow struct implements this interface directly,
 // handling its own JSON marshaling (same pattern as http.Handler).

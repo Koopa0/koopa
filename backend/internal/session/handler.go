@@ -1,7 +1,6 @@
 package session
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -11,20 +10,9 @@ import (
 	"github.com/koopa0/blog-backend/internal/api"
 )
 
-// noteStore defines the store operations required by Handler.
-// Kept as an interface so handler tests can use a stub without a real database.
-type noteStore interface {
-	NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType *string) ([]Note, error)
-	ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error)
-	InsightsByStatus(ctx context.Context, status, project *string, limit int32) ([]Note, error)
-	CountInsightsByStatus(ctx context.Context, status *string) (int64, error)
-	NoteByID(ctx context.Context, id int64) (*Note, error)
-	UpdateNoteMetadata(ctx context.Context, p *UpdateMetadataParams) (*Note, error)
-}
-
 // Handler serves session note REST endpoints.
 type Handler struct {
-	store  noteStore
+	store  *Store
 	logger *slog.Logger
 }
 

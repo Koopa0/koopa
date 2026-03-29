@@ -3,7 +3,7 @@
 //
 // This is a cross-feature orchestration package: it needs data from content,
 // project, goal, and notion to produce a diff report. All dependencies are
-// injected via consumer-defined interfaces to avoid import cycles.
+// concrete types injected via the constructor.
 // It is intentionally a standalone package (not merged into pipeline or any
 // single feature) because reconciliation spans multiple feature boundaries.
 package reconcile
@@ -23,31 +23,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/project"
 )
-
-// directoryLister lists markdown file slugs in a directory.
-type directoryLister interface {
-	ListDirectory(ctx context.Context, path string) ([]string, error)
-}
-
-// obsidianSlugLister lists all content slugs sourced from Obsidian.
-type obsidianSlugLister interface {
-	ObsidianContentSlugs(ctx context.Context) ([]string, error)
-}
-
-// notionPageIDLister lists all synced Notion page IDs.
-type notionPageIDLister interface {
-	NotionPageIDs(ctx context.Context) ([]string, error)
-}
-
-// notionDBQuerier queries a Notion database and returns page IDs.
-type notionDBQuerier interface {
-	QueryPageIDs(ctx context.Context, databaseID string) ([]string, error)
-}
-
-// sender sends a text notification.
-type sender interface {
-	Send(ctx context.Context, text string) error
-}
 
 // Report holds the reconciliation results.
 type Report struct {
@@ -72,20 +47,15 @@ func (r *Report) HasIssues() bool {
 		len(r.GoalsMissing) > 0 || len(r.GoalsOrphaned) > 0
 }
 
-// roleLookup resolves a Notion database ID by system role.
-type roleLookup interface {
-	DatabaseIDByRole(ctx context.Context, role string) (string, error)
-}
-
 // Reconciler runs weekly reconciliation checks.
 type Reconciler struct {
-	github   directoryLister
-	content  obsidianSlugLister
-	projects notionPageIDLister
-	goals    notionPageIDLister
-	notionDB notionDBQuerier
-	notifier sender
-	roles    roleLookup
+	github   *github.Client
+	content  *content.Store
+	projects *project.Store
+	goals    *goal.Store
+	notionDB *notion.Client
+	notifier notify.Notifier
+	roles    *notion.Store
 	runs     *Store // optional: persists run history
 	logger   *slog.Logger
 }

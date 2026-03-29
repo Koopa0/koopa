@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/auth"
@@ -29,11 +30,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/topic"
 	"github.com/koopa0/blog-backend/internal/upload"
 )
-
-// Pinger checks database connectivity.
-type Pinger interface {
-	Ping(ctx context.Context) error
-}
 
 // Handlers holds all handler dependencies for route registration.
 type Handlers struct {
@@ -59,7 +55,7 @@ type Handlers struct {
 	Activity     *activity.Handler
 	Session      *session.Handler
 	Reconcile    *reconcile.Handler
-	Pool         Pinger
+	Pool         *pgxpool.Pool
 	Logger       *slog.Logger
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 
 	"github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/notify"
 	"github.com/koopa0/blog-backend/internal/task"
 )
 
@@ -28,7 +29,7 @@ type MorningOutput struct {
 type Morning struct {
 	gf       *ai.GenkitFlow
 	tasks    *task.Store
-	notifier ai.Sender
+	notifier notify.Notifier
 	loc      *time.Location
 	logger   *slog.Logger
 }
@@ -38,7 +39,7 @@ type Morning struct {
 func NewMorning(
 	g *genkit.Genkit,
 	tasks *task.Store,
-	notifier ai.Sender,
+	notifier notify.Notifier,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *Morning {

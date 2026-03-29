@@ -92,7 +92,7 @@ type WebhookRouter struct {
 	botLogin      string // GitHub login to ignore (self-loop protection)
 	contentSync   *ContentSync
 	dedup         *webhook.DeduplicationCache
-	events        activity.Recorder
+	events        *activity.Store
 	comparer      *github.Client
 	notionTasks   *notion.Client
 	projectRepo   *project.Store
@@ -120,7 +120,7 @@ func (wr *WebhookRouter) WithDedup(d *webhook.DeduplicationCache) {
 }
 
 // WithActivityRecorder sets the event recorder and GitHub comparer for activity tracking.
-func (wr *WebhookRouter) WithActivityRecorder(e activity.Recorder, c *github.Client) {
+func (wr *WebhookRouter) WithActivityRecorder(e *activity.Store, c *github.Client) {
 	wr.events = e
 	wr.comparer = c
 }
