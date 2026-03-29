@@ -69,8 +69,8 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 	}
 
 	// Update via Notion API if the task has a Notion page ID
-	if t.NotionPageID != nil && s.notionTasks != nil {
-		if notionErr := s.notionTasks.UpdatePageStatus(ctx, *t.NotionPageID, "Done"); notionErr != nil {
+	if t.NotionPageID != nil && s.notionClient != nil {
+		if notionErr := s.notionClient.UpdatePageStatus(ctx, *t.NotionPageID, "Done"); notionErr != nil {
 			return nil, CompleteTaskOutput{}, fmt.Errorf("updating notion task status: %w", notionErr)
 		}
 	}
@@ -180,7 +180,7 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 	if !validEnergy(input.Energy) {
 		return nil, CreateTaskOutput{}, fmt.Errorf("invalid energy %q (must be High or Low)", input.Energy)
 	}
-	if s.notionTasks == nil {
+	if s.notionClient == nil {
 		return nil, CreateTaskOutput{}, fmt.Errorf("notion task writer not configured")
 	}
 
@@ -198,7 +198,7 @@ func (s *Server) createTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 		}
 	}
 
-	pageID, err := s.notionTasks.CreateTask(ctx, &NotionCreateTaskParams{
+	pageID, err := s.notionClient.CreateTask(ctx, &notion.CreateTaskParams{
 		DatabaseID: taskDBID, Title: input.Title, DueDate: input.Due,
 		Description: input.Notes, Priority: input.Priority, Energy: input.Energy,
 		MyDay: input.MyDay, ProjectID: rp.notionPageID,
@@ -322,7 +322,7 @@ func (s *Server) updateTask(ctx context.Context, _ *mcp.CallToolRequest, input *
 // syncTaskToNotion syncs changed task properties to Notion.
 // It is best-effort: errors are logged but not returned.
 func (s *Server) syncTaskToNotion(ctx context.Context, t *task.Task, input *UpdateTaskInput, resolvedProject *project.Project) {
-	if t.NotionPageID == nil || s.notionTasks == nil {
+	if t.NotionPageID == nil || s.notionClient == nil {
 		return
 	}
 	notionProps := buildNotionTaskProps(input)
@@ -334,7 +334,7 @@ func (s *Server) syncTaskToNotion(ctx context.Context, t *task.Task, input *Upda
 	if len(notionProps) == 0 {
 		return
 	}
-	if notionErr := s.notionTasks.UpdatePageProperties(ctx, *t.NotionPageID, notionProps); notionErr != nil {
+	if notionErr := s.notionClient.UpdatePageProperties(ctx, *t.NotionPageID, notionProps); notionErr != nil {
 		s.logger.Warn("update_task: notion write-back failed", "task_id", t.ID, "error", notionErr)
 	}
 }
@@ -431,7 +431,7 @@ func (s *Server) batchMyDay(ctx context.Context, _ *mcp.CallToolRequest, input B
 
 // clearMyDay syncs My Day=false to Notion and clears all local My Day flags.
 func (s *Server) clearMyDay(ctx context.Context) (int, error) {
-	if s.notionTasks != nil {
+	if s.notionClient != nil {
 		currentMyDay, myDayErr := s.tasks.MyDayTasksWithNotionPageID(ctx)
 		if myDayErr != nil {
 			s.logger.Warn("batch_my_day: fetching notion page ids for clear", "error", myDayErr)
@@ -457,7 +457,7 @@ func (s *Server) setTaskMyDay(ctx context.Context, idStr string) error {
 		s.logger.Error("batch_my_day: setting my day", "task_id", idStr, "error", err)
 		return nil // best-effort: continue with remaining tasks
 	}
-	if s.notionTasks != nil {
+	if s.notionClient != nil {
 		t, taskErr := s.tasks.TaskByID(ctx, id)
 		if taskErr == nil && t.NotionPageID != nil {
 			s.syncMyDayToNotion(ctx, *t.NotionPageID, true)
@@ -469,11 +469,11 @@ func (s *Server) setTaskMyDay(ctx context.Context, idStr string) error {
 // syncMyDayToNotion updates the My Day checkbox for a task in Notion.
 // It is best-effort: errors are logged but not returned.
 func (s *Server) syncMyDayToNotion(ctx context.Context, notionPageID string, value bool) {
-	if s.notionTasks == nil || notionPageID == "" {
+	if s.notionClient == nil || notionPageID == "" {
 		return
 	}
 	props := map[string]any{"My Day": map[string]any{"checkbox": value}}
-	if err := s.notionTasks.UpdatePageProperties(ctx, notionPageID, props); err != nil {
+	if err := s.notionClient.UpdatePageProperties(ctx, notionPageID, props); err != nil {
 		s.logger.Warn("batch_my_day: notion sync failed", "notion_page_id", notionPageID, "error", err)
 	}
 }
@@ -870,7 +870,7 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	// Sync to Notion (best-effort)
-	if proj.NotionPageID != nil && s.notionTasks != nil {
+	if proj.NotionPageID != nil && s.notionClient != nil {
 		notionProps := map[string]any{
 			"Status": map[string]any{"status": map[string]string{"name": notion.LocalProjectStatusToNotion(status)}},
 		}
@@ -881,7 +881,7 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 				},
 			}
 		}
-		if notionErr := s.notionTasks.UpdatePageProperties(ctx, *proj.NotionPageID, notionProps); notionErr != nil {
+		if notionErr := s.notionClient.UpdatePageProperties(ctx, *proj.NotionPageID, notionProps); notionErr != nil {
 			s.logger.Warn("update_project_status: notion write-back failed", "project", proj.Slug, "error", notionErr)
 		}
 	}
@@ -928,9 +928,9 @@ func (s *Server) updateGoalStatus(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 
 	// Sync to Notion (best-effort)
-	if g.NotionPageID != nil && s.notionTasks != nil {
+	if g.NotionPageID != nil && s.notionClient != nil {
 		notionStatus := notion.LocalGoalStatusToNotion(status)
-		if notionErr := s.notionTasks.UpdatePageProperties(ctx, *g.NotionPageID, map[string]any{
+		if notionErr := s.notionClient.UpdatePageProperties(ctx, *g.NotionPageID, map[string]any{
 			"Status": map[string]any{"status": map[string]string{"name": notionStatus}},
 		}); notionErr != nil {
 			s.logger.Warn("update_goal_status: notion write-back failed", "goal", g.Title, "error", notionErr)

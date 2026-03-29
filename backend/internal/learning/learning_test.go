@@ -164,21 +164,3 @@ func TestWeaknessTrend(t *testing.T) {
 		})
 	}
 }
-
-func TestClamp(t *testing.T) {
-	tests := []struct {
-		val, min, max, def, want int
-	}{
-		{0, 1, 365, 90, 90},     // zero → default
-		{50, 1, 365, 90, 50},    // in range
-		{-5, 1, 365, 90, 1},     // below min → min
-		{1000, 1, 365, 90, 365}, // above max → max
-	}
-
-	for _, tt := range tests {
-		got := Clamp(tt.val, tt.min, tt.max, tt.def)
-		if got != tt.want {
-			t.Errorf("Clamp(%d, %d, %d, %d) = %d, want %d", tt.val, tt.min, tt.max, tt.def, got, tt.want)
-		}
-	}
-}

@@ -136,8 +136,8 @@ func buildServerOptions(
 
 	if cfg.NotionAPIKey != "" {
 		logger.Info("notion write tools enabled")
-		opts = append(opts, mcpkg.WithNotionTaskWriter(
-			notionAdapter{client: notion.NewClient(cfg.NotionAPIKey)},
+		opts = append(opts, mcpkg.WithNotionClient(
+			notion.NewClient(cfg.NotionAPIKey),
 			notionStore,
 		))
 	} else {
@@ -297,33 +297,6 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 		return fmt.Errorf("http server: %w", err)
 	}
 	return nil
-}
-
-// notionAdapter bridges the Notion client to mcpkg.NotionTaskWriter.
-// Stores a single Client instance so the rate limiter is shared across calls.
-type notionAdapter struct {
-	client *notion.Client
-}
-
-func (a notionAdapter) UpdatePageStatus(ctx context.Context, pageID, status string) error {
-	return a.client.UpdatePageStatus(ctx, pageID, status)
-}
-
-func (a notionAdapter) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]any) error {
-	return a.client.UpdatePageProperties(ctx, pageID, properties)
-}
-
-func (a notionAdapter) CreateTask(ctx context.Context, p *mcpkg.NotionCreateTaskParams) (string, error) {
-	return a.client.CreateTask(ctx, &notion.CreateTaskParams{
-		DatabaseID:  p.DatabaseID,
-		Title:       p.Title,
-		DueDate:     p.DueDate,
-		Description: p.Description,
-		Priority:    p.Priority,
-		Energy:      p.Energy,
-		MyDay:       p.MyDay,
-		ProjectID:   p.ProjectID,
-	})
 }
 
 // geminiQueryEmbedder generates query embedding vectors via Gemini.

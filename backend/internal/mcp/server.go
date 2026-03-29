@@ -39,10 +39,10 @@ type Server struct {
 	contents        *content.Store
 	goals           *goal.Store
 	projectWriter   *project.Store // same store, separate field for write operations
-	notionTasks     NotionTaskWriter
+	notionClient    *notion.Client
 	taskDBResolver  *notion.Store
 	sessions        *session.Store
-	activityWriter  activity.Recorder
+	activityWriter  *activity.Store
 	semanticNotes   *note.Store
 	queryEmbedder   QueryEmbedder
 	feeds           *feed.Store
@@ -64,10 +64,10 @@ func WithFeedStore(fs *feed.Store) ServerOption {
 	return func(s *Server) { s.feeds = fs }
 }
 
-// WithNotionTaskWriter sets the Notion task writer for complete/create operations.
-func WithNotionTaskWriter(n NotionTaskWriter, resolver *notion.Store) ServerOption {
+// WithNotionClient sets the Notion client for task create/complete/update operations.
+func WithNotionClient(c *notion.Client, resolver *notion.Store) ServerOption {
 	return func(s *Server) {
-		s.notionTasks = n
+		s.notionClient = c
 		s.taskDBResolver = resolver
 	}
 }
@@ -91,7 +91,7 @@ func WithProjectWriter(w *project.Store) ServerOption {
 }
 
 // WithActivityWriter enables activity event recording for task completion audit trail.
-func WithActivityWriter(w activity.Recorder) ServerOption {
+func WithActivityWriter(w *activity.Store) ServerOption {
 	return func(s *Server) { s.activityWriter = w }
 }
 

@@ -3,7 +3,6 @@ package learning
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -238,17 +237,4 @@ func extractResultTag(tags []string) string {
 		}
 	}
 	return ""
-}
-
-// Clamp constrains val to [minVal, maxVal], using defaultVal if val is 0.
-func Clamp(val, minVal, maxVal, defaultVal int) int {
-	if val == 0 {
-		return defaultVal
-	}
-	return max(minVal, min(val, maxVal))
-}
-
-// FormatPeriod returns a human-readable period string.
-func FormatPeriod(days int) string {
-	return fmt.Sprintf("%d days", days)
 }
