@@ -483,13 +483,6 @@ func NewServer(
 		}, s.triggerPipeline)
 	}
 
-	// C1-C2: invoke_content_polish and invoke_content_strategy REMOVED
-	// (AI-calls-AI anti-pattern — consumers should do polish/strategy directly)
-	// Genkit flow code retained in flow_tools.go for potential non-LLM consumers.
-
-	// C3: generate_social_excerpt REMOVED from MCP registry (deprecated, confirmed unused by all consumers).
-	// Handler code retained in flow_tools.go for potential non-MCP consumers.
-
 	// --- Learning analytics tools (B1-B3) ---
 
 	addTool(s, &mcp.Tool{
