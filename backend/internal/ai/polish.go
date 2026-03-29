@@ -32,12 +32,12 @@ type Polish struct {
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
-	content      ContentReader
+	content      *content.Store
 	logger       *slog.Logger
 }
 
 // NewPolish returns a Polish flow.
-func NewPolish(g *genkit.Genkit, model genkitai.Model, systemPrompt string, reader ContentReader, logger *slog.Logger) *Polish {
+func NewPolish(g *genkit.Genkit, model genkitai.Model, systemPrompt string, reader *content.Store, logger *slog.Logger) *Polish {
 	cp := &Polish{
 		g:            g,
 		model:        model,

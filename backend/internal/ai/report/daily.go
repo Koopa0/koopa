@@ -17,11 +17,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/budget"
 )
 
-// ActivityLister lists activity events within a time range.
-type ActivityLister interface {
-	EventsByTimeRange(ctx context.Context, start, end time.Time) ([]activity.Event, error)
-}
-
 // DailyInput is the optional JSON input for the daily-dev-log flow.
 // When empty, defaults to yesterday in the configured timezone.
 type DailyInput struct {
@@ -41,8 +36,8 @@ type Daily struct {
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
-	events       ActivityLister
-	notifier     Sender
+	events       *activity.Store
+	notifier     ai.Sender
 	budget       *budget.Budget
 	loc          *time.Location
 	logger       *slog.Logger
@@ -53,8 +48,8 @@ func NewDaily(
 	g *genkit.Genkit,
 	model genkitai.Model,
 	systemPrompt string,
-	events ActivityLister,
-	notifier Sender,
+	events *activity.Store,
+	notifier ai.Sender,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,

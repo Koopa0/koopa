@@ -18,21 +18,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
-// ProjectBySlugFinder finds a project by its slug.
-type ProjectBySlugFinder interface {
-	ProjectBySlug(ctx context.Context, slug string) (*project.Project, error)
-}
-
-// RepoCommitLister lists commits for a specific repository.
-type RepoCommitLister interface {
-	CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]github.Commit, error)
-}
-
-// ContentCreator creates a new content record.
-type ContentCreator interface {
-	CreateContent(ctx context.Context, p *content.CreateParams) (*content.Content, error)
-}
-
 // buildLogInput is the JSON input for the build-log-generate flow.
 type buildLogInput struct {
 	ProjectSlug string `json:"project_slug"`
@@ -58,9 +43,9 @@ type BuildLog struct {
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
-	projects     ProjectBySlugFinder
-	commits      RepoCommitLister
-	content      ContentCreator
+	projects     *project.Store
+	commits      *github.Client
+	content      *content.Store
 	budget       *budget.Budget
 	loc          *time.Location
 	logger       *slog.Logger
@@ -71,9 +56,9 @@ func NewBuildLog(
 	g *genkit.Genkit,
 	model genkitai.Model,
 	systemPrompt string,
-	projects ProjectBySlugFinder,
-	commits RepoCommitLister,
-	creator ContentCreator,
+	projects *project.Store,
+	commits *github.Client,
+	creator *content.Store,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,

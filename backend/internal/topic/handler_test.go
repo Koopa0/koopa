@@ -77,7 +77,12 @@ func (s *stubTopicStore) DeleteTopic(_ context.Context, _ uuid.UUID) error {
 	return s.deleteErr
 }
 
-// stubContentReader is a test double for the ContentReader interface.
+// contentReader is a test double interface for the content store.
+type contentReader interface {
+	ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, perPage int) ([]content.Content, int, error)
+}
+
+// stubContentReader is a test double for the contentReader interface.
 type stubContentReader struct {
 	contents []content.Content
 	total    int
@@ -97,19 +102,19 @@ func (s *stubContentReader) ContentsByTopicID(_ context.Context, _ uuid.UUID, _,
 // struct that embeds Handler but routes store calls through the stub.
 // This keeps the tests in-package (package topic) which gives access to
 // unexported fields.
-func newTestHandler(s handlerStore, cr ContentReader) *handlerUnderTest {
+func newTestHandler(s handlerStore, cr contentReader) *handlerUnderTest {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	// Build the real handler just for its topicCache — we'll override
-	// the store calls by wrapping the handler methods.
-	realH := NewHandler(nil, cr, logger)
-	return &handlerUnderTest{Handler: realH, stub: s}
+	// Build a real handler with nil content store — tests override via handlerUnderTest.
+	realH := NewHandler(nil, nil, logger)
+	return &handlerUnderTest{Handler: realH, stub: s, contentStub: cr}
 }
 
 // handlerUnderTest wraps Handler and routes store calls to the stub so that
 // handler logic (cache, validation, encoding) is exercised without hitting postgres.
 type handlerUnderTest struct {
 	*Handler
-	stub handlerStore
+	stub        handlerStore
+	contentStub contentReader
 }
 
 // List overrides Handler.List to inject the stub store.
@@ -135,7 +140,7 @@ func (h *handlerUnderTest) BySlug(w http.ResponseWriter, r *http.Request) {
 
 	page, perPage := api.ParsePagination(r)
 
-	contents, total, err := h.content.ContentsByTopicID(r.Context(), t.ID, page, perPage)
+	contents, total, err := h.contentStub.ContentsByTopicID(r.Context(), t.ID, page, perPage)
 	if err != nil {
 		h.logger.Error("listing topic contents", "slug", slug, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list topic contents")

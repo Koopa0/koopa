@@ -20,31 +20,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/topic"
 )
 
-// ContentReader reads content by ID.
-type ContentReader interface {
-	Content(ctx context.Context, id uuid.UUID) (*content.Content, error)
-}
-
-// ContentUpdater updates content fields.
-type ContentUpdater interface {
-	UpdateContent(ctx context.Context, id uuid.UUID, p *content.UpdateParams) (*content.Content, error)
-}
-
-// ReviewCreator creates a review queue entry.
-type ReviewCreator interface {
-	Create(ctx context.Context, contentID uuid.UUID, reviewLevel string, notes *string) (*review.Review, error)
-}
-
-// EmbeddingWriter writes embedding vectors to content.
-type EmbeddingWriter interface {
-	UpdateEmbedding(ctx context.Context, id uuid.UUID, embedding pgvector.Vector) error
-}
-
-// TopicLister returns all topic slugs for constrained tag classification.
-type TopicLister interface {
-	AllTopicSlugs(ctx context.Context) ([]topic.Slug, error)
-}
-
 // ContentReviewInput is the JSON input for the content-review flow.
 type ContentReviewInput struct {
 	ContentID string `json:"content_id"`
@@ -68,11 +43,11 @@ type ContentReview struct {
 	gf          *GenkitFlow
 	g           *genkit.Genkit
 	embedder    genkitai.Embedder
-	content     ContentReader
-	updater     ContentUpdater
-	embedWriter EmbeddingWriter
-	review      ReviewCreator
-	topics      TopicLister
+	content     *content.Store
+	updater     *content.Store
+	embedWriter *content.Store
+	review      *review.Store
+	topics      *topic.Store
 	proofread   Flow
 	excerpt     Flow
 	tags        Flow
@@ -85,11 +60,11 @@ type ContentReview struct {
 func NewContentReview(
 	g *genkit.Genkit,
 	embedder genkitai.Embedder,
-	contentReader ContentReader,
-	updater ContentUpdater,
-	embedWriter EmbeddingWriter,
-	reviewer ReviewCreator,
-	topics TopicLister,
+	contentReader *content.Store,
+	updater *content.Store,
+	embedWriter *content.Store,
+	reviewer *review.Store,
+	topics *topic.Store,
 	proofread Flow,
 	excerpt Flow,
 	tags Flow,

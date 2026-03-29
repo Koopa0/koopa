@@ -12,6 +12,8 @@ import (
 )
 
 // noteStore defines the store operations required by Handler.
+// Private interface: only *Store implements it in production;
+// tests use a stub in session_test.go.
 type noteStore interface {
 	NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType *string) ([]Note, error)
 	ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (int64, error)

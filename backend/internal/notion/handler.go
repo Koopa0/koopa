@@ -25,30 +25,30 @@ import (
 // sourceCacheTTL is how long a database_id → role mapping stays in cache.
 const sourceCacheTTL = 10 * time.Minute
 
-// ProjectWriter upserts projects from Notion data.
-type ProjectWriter interface {
+// projectWriter upserts projects from Notion data.
+type projectWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p *project.UpsertByNotionParams) (*project.Project, error)
 	UpdateLastActivity(ctx context.Context, notionPageID string) error
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
-// GoalWriter upserts goals from Notion data.
-type GoalWriter interface {
+// goalWriter upserts goals from Notion data.
+type goalWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p *goal.UpsertByNotionParams) (*goal.Goal, error)
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
-// TaskWriter upserts tasks from Notion data.
-type TaskWriter interface {
+// taskWriter upserts tasks from Notion data.
+type taskWriter interface {
 	UpsertByNotionPageID(ctx context.Context, p *task.UpsertByNotionParams) (*task.Task, error)
 	ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error)
 	ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error)
 }
 
-// GoalIDResolver resolves a Notion page ID to a local goal UUID.
-type GoalIDResolver interface {
+// goalIDResolver resolves a Notion page ID to a local goal UUID.
+type goalIDResolver interface {
 	IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error)
 }
 
@@ -57,13 +57,13 @@ type Handler struct {
 	client        *Client
 	store         *Store
 	sourceCache   *ristretto.Cache[string, string]
-	projects      ProjectWriter
-	goals         GoalWriter
-	tasks         TaskWriter
+	projects      projectWriter
+	goals         goalWriter
+	tasks         taskWriter
 	jobs          exec.Submitter
 	events        activity.Recorder
 	projectStore  *project.Store
-	goalIDs       GoalIDResolver
+	goalIDs       goalIDResolver
 	dedup         *webhook.DeduplicationCache
 	bus           *event.Bus
 	webhookSecret string
@@ -91,7 +91,7 @@ func WithProjectStore(ps *project.Store) HandlerOption {
 }
 
 // WithGoalIDResolver sets the goal ID resolver for project → goal FK resolution.
-func WithGoalIDResolver(r GoalIDResolver) HandlerOption {
+func WithGoalIDResolver(r goalIDResolver) HandlerOption {
 	return func(h *Handler) { h.goalIDs = r }
 }
 
@@ -110,9 +110,9 @@ func NewHandler(
 	client *Client,
 	store *Store,
 	sourceCache *ristretto.Cache[string, string],
-	projects ProjectWriter,
-	goals GoalWriter,
-	tasks TaskWriter,
+	projects projectWriter,
+	goals goalWriter,
+	tasks taskWriter,
 	jobs exec.Submitter,
 	webhookSecret string,
 	logger *slog.Logger,

@@ -1,9 +1,10 @@
 package feed
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
+
+	"context"
 
 	"github.com/google/uuid"
 
@@ -17,6 +18,7 @@ var storeErrors = []api.ErrMap{
 }
 
 // ManualFetcher fetches new items from a feed on demand.
+// Interface kept: prevents import cycle (feed → collector → feed).
 type ManualFetcher interface {
 	FetchFeed(ctx context.Context, f *Feed) ([]uuid.UUID, error)
 }

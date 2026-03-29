@@ -1,7 +1,6 @@
 package topic
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -19,25 +18,20 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT"},
 }
 
-// ContentReader reads published contents for a topic.
-type ContentReader interface {
-	ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, perPage int) ([]content.Content, int, error)
-}
-
 // topicsTTL is the cache duration for the full topics list.
 const topicsTTL = 10 * time.Minute
 
 // Handler handles topic HTTP requests.
 type Handler struct {
 	store      *Store
-	content    ContentReader
+	content    *content.Store
 	logger     *slog.Logger
 	topicCache *ristretto.Cache[string, []Topic]
 }
 
 // NewHandler returns a topic Handler.
 // The topic cache is created internally — it is an implementation detail of this handler.
-func NewHandler(store *Store, contentReader ContentReader, logger *slog.Logger) *Handler {
+func NewHandler(store *Store, contentReader *content.Store, logger *slog.Logger) *Handler {
 	topicCache, _ := ristretto.NewCache(&ristretto.Config[string, []Topic]{
 		NumCounters: 10, // 10x expected items (1 key: "topics")
 		MaxCost:     1,  // count-based: 1 item max

@@ -19,28 +19,28 @@ import (
 	"github.com/koopa0/blog-backend/internal/notion"
 )
 
-// DirectoryLister lists markdown file slugs in a directory.
-type DirectoryLister interface {
+// directoryLister lists markdown file slugs in a directory.
+type directoryLister interface {
 	ListDirectory(ctx context.Context, path string) ([]string, error)
 }
 
-// ObsidianSlugLister lists all content slugs sourced from Obsidian.
-type ObsidianSlugLister interface {
+// obsidianSlugLister lists all content slugs sourced from Obsidian.
+type obsidianSlugLister interface {
 	ObsidianContentSlugs(ctx context.Context) ([]string, error)
 }
 
-// NotionPageIDLister lists all synced Notion page IDs.
-type NotionPageIDLister interface {
+// notionPageIDLister lists all synced Notion page IDs.
+type notionPageIDLister interface {
 	NotionPageIDs(ctx context.Context) ([]string, error)
 }
 
-// NotionDBQuerier queries a Notion database and returns page IDs.
-type NotionDBQuerier interface {
+// notionDBQuerier queries a Notion database and returns page IDs.
+type notionDBQuerier interface {
 	QueryPageIDs(ctx context.Context, databaseID string) ([]string, error)
 }
 
-// Sender sends a text notification.
-type Sender interface {
+// sender sends a text notification.
+type sender interface {
 	Send(ctx context.Context, text string) error
 }
 
@@ -67,38 +67,38 @@ func (r *Report) HasIssues() bool {
 		len(r.GoalsMissing) > 0 || len(r.GoalsOrphaned) > 0
 }
 
-// RoleLookup resolves a Notion database ID by system role.
-type RoleLookup interface {
+// roleLookup resolves a Notion database ID by system role.
+type roleLookup interface {
 	DatabaseIDByRole(ctx context.Context, role string) (string, error)
 }
 
-// RunSaver persists reconcile run results.
-type RunSaver interface {
+// runSaver persists reconcile run results.
+type runSaver interface {
 	SaveRun(ctx context.Context, startedAt, completedAt time.Time, report *Report, errs []string) (int64, error)
 }
 
 // Reconciler runs weekly reconciliation checks.
 type Reconciler struct {
-	github   DirectoryLister
-	content  ObsidianSlugLister
-	projects NotionPageIDLister
-	goals    NotionPageIDLister
-	notionDB NotionDBQuerier
-	notifier Sender
-	roles    RoleLookup
-	runs     RunSaver // optional: persists run history
+	github   directoryLister
+	content  obsidianSlugLister
+	projects notionPageIDLister
+	goals    notionPageIDLister
+	notionDB notionDBQuerier
+	notifier sender
+	roles    roleLookup
+	runs     runSaver // optional: persists run history
 	logger   *slog.Logger
 }
 
 // New returns a Reconciler.
 func New(
-	github DirectoryLister,
-	content ObsidianSlugLister,
-	projects NotionPageIDLister,
-	goals NotionPageIDLister,
-	notionDB NotionDBQuerier,
-	notifier Sender,
-	roles RoleLookup,
+	github directoryLister,
+	content obsidianSlugLister,
+	projects notionPageIDLister,
+	goals notionPageIDLister,
+	notionDB notionDBQuerier,
+	notifier sender,
+	roles roleLookup,
 	logger *slog.Logger,
 ) *Reconciler {
 	return &Reconciler{
@@ -114,7 +114,7 @@ func New(
 }
 
 // WithRunSaver sets the optional run history store.
-func (r *Reconciler) WithRunSaver(rs RunSaver) {
+func (r *Reconciler) WithRunSaver(rs runSaver) {
 	r.runs = rs
 }
 

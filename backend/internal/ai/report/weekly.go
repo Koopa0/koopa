@@ -19,12 +19,8 @@ import (
 	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/github"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/task"
 )
-
-// CommitLister lists recent commits from a source repository.
-type CommitLister interface {
-	RecentCommits(ctx context.Context, since time.Time) ([]github.Commit, error)
-}
 
 // WeeklyInput is optional JSON input passed via Runner.Submit.
 // Health data is gathered at the cron layer and passed in as input.
@@ -34,12 +30,6 @@ type WeeklyInput struct {
 
 // ProjectCompletion is a convenience alias for ai.ProjectCompletion.
 type ProjectCompletion = ai.ProjectCompletion
-
-// TaskCompletionCounter counts tasks completed since a given time.
-type TaskCompletionCounter interface {
-	CompletedSince(ctx context.Context, since time.Time) (int64, error)
-	CompletedByProjectSince(ctx context.Context, since time.Time) ([]ai.ProjectCompletion, error)
-}
 
 // WeeklyOutput is the JSON output of the weekly-review flow.
 type WeeklyOutput struct {
@@ -52,13 +42,13 @@ type Weekly struct {
 	g              *genkit.Genkit
 	model          genkitai.Model
 	systemPrompt   string
-	tasks          TaskQuerier
-	taskCompletion TaskCompletionCounter
-	collected      RecentCollectedLister
-	contents       PublishedContentLister
-	projects       ActiveProjectLister
-	commits        CommitLister
-	notifier       Sender
+	tasks          *task.Store
+	taskCompletion *task.Store
+	collected      *entry.Store
+	contents       *content.Store
+	projects       *project.Store
+	commits        *github.Client
+	notifier       ai.Sender
 	budget         *budget.Budget
 	loc            *time.Location
 	logger         *slog.Logger
@@ -69,13 +59,13 @@ func NewWeekly(
 	g *genkit.Genkit,
 	model genkitai.Model,
 	systemPrompt string,
-	tasks TaskQuerier,
-	taskCompletion TaskCompletionCounter,
-	collects RecentCollectedLister,
-	contents PublishedContentLister,
-	projects ActiveProjectLister,
-	commits CommitLister,
-	notifier Sender,
+	tasks *task.Store,
+	taskCompletion *task.Store,
+	collects *entry.Store,
+	contents *content.Store,
+	projects *project.Store,
+	commits *github.Client,
+	notifier ai.Sender,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,

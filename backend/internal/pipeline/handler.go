@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,11 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/koopa0/blog-backend/internal/activity"
+	"github.com/koopa0/blog-backend/internal/ai/exec"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/event"
 	"github.com/koopa0/blog-backend/internal/feed"
+	"github.com/koopa0/blog-backend/internal/feed/collector"
+	"github.com/koopa0/blog-backend/internal/github"
 	"github.com/koopa0/blog-backend/internal/note"
+	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/project"
+	"github.com/koopa0/blog-backend/internal/reconcile"
 	"github.com/koopa0/blog-backend/internal/tag"
 	"github.com/koopa0/blog-backend/internal/webhook"
 )
@@ -24,23 +28,6 @@ import (
 // maxConcurrentOps limits the number of concurrent background operations
 // to prevent resource exhaustion from webhook floods.
 const maxConcurrentOps = 10
-
-// ---------------------------------------------------------------------------
-// Interface definitions (consumed by sub-structs)
-// ---------------------------------------------------------------------------
-
-// ContentReader reads content by slug.
-type ContentReader interface {
-	ContentBySlug(ctx context.Context, slug string) (*content.Content, error)
-}
-
-// ContentWriter creates, updates, or archives content in the database.
-type ContentWriter interface {
-	CreateContent(ctx context.Context, p *content.CreateParams) (*content.Content, error)
-	UpdateContent(ctx context.Context, id uuid.UUID, p *content.UpdateParams) (*content.Content, error)
-	PublishContent(ctx context.Context, id uuid.UUID) (*content.Content, error)
-	DeleteContent(ctx context.Context, id uuid.UUID) error
-}
 
 // TopicLookup resolves a topic slug to a UUID.
 type TopicLookup interface {
@@ -56,77 +43,10 @@ func (a *topicLookupFunc) TopicIDBySlug(ctx context.Context, slug string) (uuid.
 	return a.fn(ctx, slug)
 }
 
-// JobSubmitter submits a flow run for async processing.
-// Defined here (consumer) because importing flowrun would create an import cycle
-// (pipeline → flowrun → flow → pipeline). Identical contract: flowrun.Submitter.
-type JobSubmitter interface {
-	Submit(ctx context.Context, flowName string, input json.RawMessage, contentID *uuid.UUID) error
-}
-
-// GitHubFetcher retrieves raw file content and directory listings from a GitHub repository.
-type GitHubFetcher interface {
-	FileContent(ctx context.Context, path string) ([]byte, error)
-	ListDirectory(ctx context.Context, path string) ([]string, error)
-}
-
-// FeedCollector fetches new items from feeds and scores them.
-type FeedCollector interface {
-	FetchFeed(ctx context.Context, f *feed.Feed) ([]uuid.UUID, error)
-}
-
-// FeedLister lists feeds by schedule.
-type FeedLister interface {
-	EnabledFeeds(ctx context.Context) ([]feed.Feed, error)
-	EnabledFeedsBySchedule(ctx context.Context, schedule string) ([]feed.Feed, error)
-}
-
-// NoteUpserter upserts and archives obsidian knowledge notes.
-type NoteUpserter interface {
-	UpsertNote(ctx context.Context, p *note.UpsertParams) (*note.Note, error)
-	ContentHash(ctx context.Context, filePath string) (*string, error)
-	ArchiveNote(ctx context.Context, filePath string) error
-}
-
-// TagResolver normalizes raw tags and manages note-tag junction records.
-type TagResolver interface {
-	ResolveTags(ctx context.Context, rawTags []string) []tag.Resolved
-	SyncNoteTags(ctx context.Context, noteID int64, tagIDs []uuid.UUID) error
-}
-
-// GitHubComparer fetches diff stats between two commits.
-type GitHubComparer interface {
-	Compare(ctx context.Context, repo, base, head string) (*activity.DiffStats, error)
-}
-
-// ProjectRepoResolver resolves a GitHub repo full name to a project.
-type ProjectRepoResolver interface {
-	ProjectByRepo(ctx context.Context, repo string) (*project.Project, error)
-}
-
-// NoteEventRecorder records activity events for knowledge notes and links tags.
-type NoteEventRecorder interface {
+// noteEventRecorder records activity events for knowledge notes and links tags.
+type noteEventRecorder interface {
 	activity.Recorder
 	SyncEventTags(ctx context.Context, eventID int64, tagIDs []uuid.UUID) error
-}
-
-// NoteLinkSyncer syncs wikilink edges for a knowledge note.
-type NoteLinkSyncer interface {
-	SyncNoteLinks(ctx context.Context, noteID int64, links []note.Link) error
-}
-
-// NotionTaskUpdater updates a Notion page status.
-type NotionTaskUpdater interface {
-	UpdatePageStatus(ctx context.Context, pageID, status string) error
-}
-
-// Reconciler runs the full reconciliation check.
-type Reconciler interface {
-	Run(ctx context.Context) error
-}
-
-// NotionSyncer fetches all Notion pages and upserts them locally.
-type NotionSyncer interface {
-	SyncAll(ctx context.Context)
 }
 
 // ---------------------------------------------------------------------------
@@ -136,21 +56,21 @@ type NotionSyncer interface {
 // ContentSync synchronises Obsidian content and knowledge notes from GitHub.
 type ContentSync struct {
 	pool          *pgxpool.Pool
-	contentReader ContentReader
-	contentWriter ContentWriter
+	contentReader *content.Store
+	contentWriter *content.Store
 	topics        TopicLookup
-	fetcher       GitHubFetcher
-	jobs          JobSubmitter
-	notes         NoteUpserter
-	tags          TagResolver
-	noteEvents    NoteEventRecorder
-	noteLinks     NoteLinkSyncer
+	fetcher       *github.Client
+	jobs          *exec.Runner
+	notes         *note.Store
+	tags          *tag.Store
+	noteEvents    noteEventRecorder
+	noteLinks     *note.Store
 	logger        *slog.Logger
 }
 
 // NewContentSync returns a ContentSync with required dependencies.
 // pool is used for transactional note sync (upsert + tags + links in one tx).
-func NewContentSync(pool *pgxpool.Pool, cr ContentReader, cw ContentWriter, tl TopicLookup, fetcher GitHubFetcher, jobs JobSubmitter, logger *slog.Logger) *ContentSync {
+func NewContentSync(pool *pgxpool.Pool, cr, cw *content.Store, tl TopicLookup, fetcher *github.Client, jobs *exec.Runner, logger *slog.Logger) *ContentSync {
 	return &ContentSync{
 		pool:          pool,
 		contentReader: cr,
@@ -163,18 +83,18 @@ func NewContentSync(pool *pgxpool.Pool, cr ContentReader, cw ContentWriter, tl T
 }
 
 // WithNoteSync sets the note upserter and tag resolver for B1 knowledge note sync.
-func (cs *ContentSync) WithNoteSync(n NoteUpserter, t TagResolver) {
+func (cs *ContentSync) WithNoteSync(n *note.Store, t *tag.Store) {
 	cs.notes = n
 	cs.tags = t
 }
 
 // WithNoteEvents sets the note event recorder for B1 activity tracking.
-func (cs *ContentSync) WithNoteEvents(ne NoteEventRecorder) {
+func (cs *ContentSync) WithNoteEvents(ne noteEventRecorder) {
 	cs.noteEvents = ne
 }
 
 // WithNoteLinks sets the note link syncer for wikilink edge extraction.
-func (cs *ContentSync) WithNoteLinks(nl NoteLinkSyncer) {
+func (cs *ContentSync) WithNoteLinks(nl *note.Store) {
 	cs.noteLinks = nl
 }
 
@@ -190,10 +110,10 @@ type WebhookRouter struct {
 	contentSync   *ContentSync
 	dedup         *webhook.DeduplicationCache
 	events        activity.Recorder
-	comparer      GitHubComparer
-	notionTasks   NotionTaskUpdater
-	projectRepo   ProjectRepoResolver
-	jobs          JobSubmitter
+	comparer      *github.Client
+	notionTasks   *notion.Client
+	projectRepo   *project.Store
+	jobs          *exec.Runner
 	bus           *event.Bus
 	logger        *slog.Logger
 }
@@ -217,23 +137,23 @@ func (wr *WebhookRouter) WithDedup(d *webhook.DeduplicationCache) {
 }
 
 // WithActivityRecorder sets the event recorder and GitHub comparer for activity tracking.
-func (wr *WebhookRouter) WithActivityRecorder(e activity.Recorder, c GitHubComparer) {
+func (wr *WebhookRouter) WithActivityRecorder(e activity.Recorder, c *github.Client) {
 	wr.events = e
 	wr.comparer = c
 }
 
 // WithNotionTasks sets the Notion client for PR merge → task status updates.
-func (wr *WebhookRouter) WithNotionTasks(n NotionTaskUpdater) {
+func (wr *WebhookRouter) WithNotionTasks(n *notion.Client) {
 	wr.notionTasks = n
 }
 
 // WithProjectRepo sets the resolver for GitHub push event project attribution.
-func (wr *WebhookRouter) WithProjectRepo(r ProjectRepoResolver) {
+func (wr *WebhookRouter) WithProjectRepo(r *project.Store) {
 	wr.projectRepo = r
 }
 
 // WithJobs sets the job submitter for project-track flow submissions.
-func (wr *WebhookRouter) WithJobs(j JobSubmitter) {
+func (wr *WebhookRouter) WithJobs(j *exec.Runner) {
 	wr.jobs = j
 }
 
@@ -248,16 +168,16 @@ func (wr *WebhookRouter) WithEventBus(b *event.Bus) {
 
 // Triggers handles manually-triggered pipeline operations (collect, reconcile, etc.).
 type Triggers struct {
-	collector  FeedCollector
-	feeds      FeedLister
-	reconciler Reconciler
-	notionSync NotionSyncer
-	jobs       JobSubmitter
+	collector  *collector.Collector
+	feeds      *feed.Store
+	reconciler *reconcile.Reconciler
+	notionSync *notion.Handler
+	jobs       *exec.Runner
 	logger     *slog.Logger
 }
 
 // NewTriggers returns a Triggers with required dependencies.
-func NewTriggers(jobs JobSubmitter, logger *slog.Logger) *Triggers {
+func NewTriggers(jobs *exec.Runner, logger *slog.Logger) *Triggers {
 	return &Triggers{
 		jobs:   jobs,
 		logger: logger,
@@ -265,18 +185,18 @@ func NewTriggers(jobs JobSubmitter, logger *slog.Logger) *Triggers {
 }
 
 // WithCollector sets the feed collector and lister for the collect pipeline.
-func (tr *Triggers) WithCollector(c FeedCollector, f FeedLister) {
+func (tr *Triggers) WithCollector(c *collector.Collector, f *feed.Store) {
 	tr.collector = c
 	tr.feeds = f
 }
 
 // WithReconciler sets the reconciler for manual sync endpoints.
-func (tr *Triggers) WithReconciler(r Reconciler) {
+func (tr *Triggers) WithReconciler(r *reconcile.Reconciler) {
 	tr.reconciler = r
 }
 
 // WithNotionSync sets the Notion syncer for full sync.
-func (tr *Triggers) WithNotionSync(n NotionSyncer) {
+func (tr *Triggers) WithNotionSync(n *notion.Handler) {
 	tr.notionSync = n
 }
 

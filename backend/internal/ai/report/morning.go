@@ -11,20 +11,8 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 
 	"github.com/koopa0/blog-backend/internal/ai"
+	"github.com/koopa0/blog-backend/internal/task"
 )
-
-// TaskQuerier queries pending tasks from the local database.
-// Data freshness depends on the hourly Notion sync (SyncAll).
-// Staleness window: <=1 hour. If Notion is unreachable, tasks degrade gracefully
-// with stale data rather than failing outright.
-type TaskQuerier interface {
-	PendingTasks(ctx context.Context) ([]ai.PendingTask, error)
-}
-
-// Sender sends a text notification.
-type Sender interface {
-	Send(ctx context.Context, text string) error
-}
 
 // PendingTask is a convenience alias for ai.PendingTask.
 type PendingTask = ai.PendingTask
@@ -39,8 +27,8 @@ type MorningOutput struct {
 // reminding the user to open Claude for full planning.
 type Morning struct {
 	gf       *ai.GenkitFlow
-	tasks    TaskQuerier
-	notifier Sender
+	tasks    *task.Store
+	notifier ai.Sender
 	loc      *time.Location
 	logger   *slog.Logger
 }
@@ -49,8 +37,8 @@ type Morning struct {
 // No AI model or token budget needed — this is a deterministic nudge.
 func NewMorning(
 	g *genkit.Genkit,
-	tasks TaskQuerier,
-	notifier Sender,
+	tasks *task.Store,
+	notifier ai.Sender,
 	loc *time.Location,
 	logger *slog.Logger,
 ) *Morning {

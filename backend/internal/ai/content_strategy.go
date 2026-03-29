@@ -31,9 +31,9 @@ type ContentStrategy struct {
 	gf        *GenkitFlow
 	g         *genkit.Genkit
 	model     genkitai.Model
-	contents  PublishedContentLister
-	collected RecentCollectedLister
-	projects  ActiveProjectLister
+	contents  *content.Store
+	collected *entry.Store
+	projects  *project.Store
 	notifier  Sender
 	budget    *budget.Budget
 	loc       *time.Location
@@ -44,9 +44,9 @@ type ContentStrategy struct {
 func NewContentStrategy(
 	g *genkit.Genkit,
 	model genkitai.Model,
-	contents PublishedContentLister,
-	collects RecentCollectedLister,
-	projects ActiveProjectLister,
+	contents *content.Store,
+	collects *entry.Store,
+	projects *project.Store,
 	notifier Sender,
 	tokenBudget *budget.Budget,
 	loc *time.Location,

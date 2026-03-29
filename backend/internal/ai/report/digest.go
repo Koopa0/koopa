@@ -20,15 +20,6 @@ import (
 	"github.com/koopa0/blog-backend/internal/project"
 )
 
-// PublishedContentLister is a convenience alias for ai.PublishedContentLister.
-type PublishedContentLister = ai.PublishedContentLister
-
-// RecentCollectedLister is a convenience alias for ai.RecentCollectedLister.
-type RecentCollectedLister = ai.RecentCollectedLister
-
-// ActiveProjectLister is a convenience alias for ai.ActiveProjectLister.
-type ActiveProjectLister = ai.ActiveProjectLister
-
 // DigestInput is the JSON input for the digest-generate flow.
 type DigestInput struct {
 	StartDate string `json:"start_date"` // YYYY-MM-DD
@@ -46,9 +37,9 @@ type Digest struct {
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
-	contents     PublishedContentLister
-	collects     RecentCollectedLister
-	projects     ActiveProjectLister
+	contents     *content.Store
+	collects     *entry.Store
+	projects     *project.Store
 	budget       *budget.Budget
 	loc          *time.Location
 	logger       *slog.Logger
@@ -59,9 +50,9 @@ func NewDigest(
 	g *genkit.Genkit,
 	model genkitai.Model,
 	systemPrompt string,
-	contents PublishedContentLister,
-	collects RecentCollectedLister,
-	projects ActiveProjectLister,
+	contents *content.Store,
+	collects *entry.Store,
+	projects *project.Store,
 	tokenBudget *budget.Budget,
 	loc *time.Location,
 	logger *slog.Logger,

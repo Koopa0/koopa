@@ -1,7 +1,6 @@
 package exec
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -20,22 +19,12 @@ var storeErrors = []api.ErrMap{
 	{Target: content.ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
 }
 
-// ContentReader reads content by ID.
-type ContentReader interface {
-	Content(ctx context.Context, id uuid.UUID) (*content.Content, error)
-}
-
-// ContentUpdater updates content fields.
-type ContentUpdater interface {
-	UpdateContent(ctx context.Context, id uuid.UUID, p *content.UpdateParams) (*content.Content, error)
-}
-
 // Handler handles flow run admin HTTP requests.
 type Handler struct {
 	store          *Store
 	jobs           Submitter
-	contentReader  ContentReader
-	contentUpdater ContentUpdater
+	contentReader  *content.Store
+	contentUpdater *content.Store
 	logger         *slog.Logger
 }
 
@@ -45,7 +34,7 @@ func NewHandler(store *Store, jobs Submitter, logger *slog.Logger) *Handler {
 }
 
 // WithContentDeps sets optional content dependencies for polish endpoints.
-func (h *Handler) WithContentDeps(reader ContentReader, updater ContentUpdater) {
+func (h *Handler) WithContentDeps(reader, updater *content.Store) {
 	h.contentReader = reader
 	h.contentUpdater = updater
 }

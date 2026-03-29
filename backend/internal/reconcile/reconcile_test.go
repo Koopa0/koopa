@@ -89,13 +89,13 @@ func discardLogger() *slog.Logger {
 
 // newReconciler builds a Reconciler with the given fakes wired up.
 func newReconciler(
-	github DirectoryLister,
-	content ObsidianSlugLister,
-	projects NotionPageIDLister,
-	goals NotionPageIDLister,
-	notionDB NotionDBQuerier,
-	sender Sender,
-	roles RoleLookup,
+	github directoryLister,
+	content obsidianSlugLister,
+	projects notionPageIDLister,
+	goals notionPageIDLister,
+	notionDB notionDBQuerier,
+	sender sender,
+	roles roleLookup,
 ) *Reconciler {
 	return New(github, content, projects, goals, notionDB, sender, roles, discardLogger())
 }

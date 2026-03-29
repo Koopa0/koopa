@@ -19,6 +19,7 @@ import (
 
 	"github.com/koopa0/blog-backend/internal/feed"
 	"github.com/koopa0/blog-backend/internal/feed/entry"
+	"github.com/koopa0/blog-backend/internal/monitor"
 )
 
 const (
@@ -29,36 +30,18 @@ const (
 	userAgent           = "koopa0.dev/rss-collector (+https://koopa0.dev)"
 )
 
-// CollectedWriter creates collected data records.
-type CollectedWriter interface {
-	CreateItem(ctx context.Context, p *entry.CreateParams) (*entry.Item, error)
-	ItemByURLHash(ctx context.Context, urlHash string) (*entry.Item, error)
-}
-
-// FeedUpdater updates feed status after fetch.
-type FeedUpdater interface {
-	IncrementFailure(ctx context.Context, id uuid.UUID, errMsg string) error
-	ResetFailure(ctx context.Context, id uuid.UUID, etag, lastModified string) error
-}
-
-// KeywordLoader provides tracking keywords for relevance scoring.
-// Returns nil/empty when no keywords are configured.
-type KeywordLoader interface {
-	Keywords(ctx context.Context) ([]string, error)
-}
-
 // Collector fetches RSS feeds and writes new items to collected_data.
 type Collector struct {
-	writer   CollectedWriter
-	feeds    FeedUpdater
-	keywords KeywordLoader
+	writer   *entry.Store
+	feeds    *feed.Store
+	keywords *monitor.Store
 	client   *http.Client
 	limiter  *DomainLimiter
 	logger   *slog.Logger
 }
 
 // New returns a Collector.
-func New(writer CollectedWriter, feeds FeedUpdater, keywords KeywordLoader, logger *slog.Logger) *Collector {
+func New(writer *entry.Store, feeds *feed.Store, keywords *monitor.Store, logger *slog.Logger) *Collector {
 	client := &http.Client{
 		Timeout: requestTimeout,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {

@@ -39,7 +39,7 @@ type BookmarkGenerate struct {
 	gf     *GenkitFlow
 	g      *genkit.Genkit
 	model  genkitai.Model
-	reader CollectedReader
+	reader *entry.Store
 	budget *budget.Budget
 	logger *slog.Logger
 }
@@ -48,7 +48,7 @@ type BookmarkGenerate struct {
 func NewBookmarkGenerate(
 	g *genkit.Genkit,
 	model genkitai.Model,
-	reader CollectedReader,
+	reader *entry.Store,
 	tokenBudget *budget.Budget,
 	logger *slog.Logger,
 ) *BookmarkGenerate {

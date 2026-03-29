@@ -9,22 +9,11 @@ import (
 
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/google/uuid"
 	"google.golang.org/genai"
 
 	"github.com/koopa0/blog-backend/internal/budget"
 	"github.com/koopa0/blog-backend/internal/project"
 )
-
-// ProjectByRepoFinder finds a project by its GitHub repository name.
-type ProjectByRepoFinder interface {
-	ProjectByRepo(ctx context.Context, repo string) (*project.Project, error)
-}
-
-// ProjectDescriptionUpdater updates a project's long description.
-type ProjectDescriptionUpdater interface {
-	UpdateProject(ctx context.Context, id uuid.UUID, p *project.UpdateParams) (*project.Project, error)
-}
 
 // ProjectTrackOutput is the JSON output of the project-track flow.
 type ProjectTrackOutput struct {
@@ -44,8 +33,8 @@ type ProjectTrack struct {
 	g            *genkit.Genkit
 	model        genkitai.Model
 	systemPrompt string
-	projects     ProjectByRepoFinder
-	updater      ProjectDescriptionUpdater
+	projects     *project.Store
+	updater      *project.Store
 	notifier     Sender
 	budget       *budget.Budget
 	logger       *slog.Logger
@@ -56,8 +45,8 @@ func NewProjectTrack(
 	g *genkit.Genkit,
 	model genkitai.Model,
 	systemPrompt string,
-	projects ProjectByRepoFinder,
-	updater ProjectDescriptionUpdater,
+	projects *project.Store,
+	updater *project.Store,
 	notifier Sender,
 	tokenBudget *budget.Budget,
 	logger *slog.Logger,

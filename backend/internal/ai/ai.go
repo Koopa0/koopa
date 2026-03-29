@@ -8,15 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
-	"github.com/google/uuid"
-
-	"github.com/koopa0/blog-backend/internal/content"
-	"github.com/koopa0/blog-backend/internal/feed/entry"
-	"github.com/koopa0/blog-backend/internal/project"
 )
 
 // ErrContentBlocked indicates the model refused to generate due to safety or policy filters.
@@ -47,26 +41,6 @@ func CheckFinishReason(resp *genkitai.ModelResponse) error {
 // Every concrete flow stores one of these, created via genkit.DefineFlow in its constructor.
 // Exported for use by sub-packages.
 type GenkitFlow = core.Flow[json.RawMessage, json.RawMessage, struct{}]
-
-// CollectedReader reads collected items by ID.
-type CollectedReader interface {
-	Item(ctx context.Context, id uuid.UUID) (*entry.Item, error)
-}
-
-// PublishedContentLister lists published contents in a date range.
-type PublishedContentLister interface {
-	PublishedByDateRange(ctx context.Context, start, end time.Time) ([]content.Content, error)
-}
-
-// RecentCollectedLister lists recently collected data in a date range.
-type RecentCollectedLister interface {
-	RecentCollectedData(ctx context.Context, start, end time.Time, limit int32) ([]entry.Item, error)
-}
-
-// ActiveProjectLister lists active projects.
-type ActiveProjectLister interface {
-	ActiveProjects(ctx context.Context) ([]project.Project, error)
-}
 
 // Sender sends a text notification.
 type Sender interface {
