@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/koopa0/blog-backend/internal/learning"
 )
 
 // ==========================================================================
@@ -472,9 +474,9 @@ func TestNormalizeTag_Injection(t *testing.T) {
 	}
 
 	for _, input := range payloads {
-		got := normalizeTag(input)
+		got := learning.NormalizeTag(input)
 		if got != strings.ToLower(got) {
-			t.Errorf("normalizeTag(%q) = %q is not lowercase", input, got)
+			t.Errorf("NormalizeTag(%q) = %q is not lowercase", input, got)
 		}
 	}
 }

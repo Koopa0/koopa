@@ -1,4 +1,4 @@
-package mcp
+package learning
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 )
 
 // Controlled vocabulary for LeetCode/HackerRank learning session tags.
-// Source of truth — MCP tool description references this list.
+// Source of truth -- MCP tool description references this list.
 // Only enforced when project is "leetcode" or "hackerrank".
 
 // strictTagProjects are the projects that require strict tag validation.
@@ -54,15 +54,27 @@ func buildCanonicalTags() map[string]bool {
 	return m
 }
 
-// normalizeTag converts a tag to canonical form: lowercase, spaces to hyphens.
-func normalizeTag(t string) string {
+// NormalizeTag converts a tag to canonical form: lowercase, spaces to hyphens.
+func NormalizeTag(t string) string {
 	t = strings.ToLower(strings.TrimSpace(t))
 	return strings.ReplaceAll(t, " ", "-")
 }
 
-// validateLearningInput checks required fields and normalizes optional fields.
+// SessionInput holds the fields needed for learning session validation.
+// Decoupled from MCP input types so this package has no MCP dependency.
+type SessionInput struct {
+	Project    string
+	Topic      string
+	Title      string
+	Body       string
+	Source     string
+	Difficulty string
+	Tags       []string
+}
+
+// ValidateInput checks required fields and normalizes optional fields.
 // Returns validated tags on success.
-func validateLearningInput(input *LogLearningSessionInput) ([]string, error) {
+func ValidateInput(input *SessionInput) ([]string, error) {
 	if input.Project == "" {
 		return nil, fmt.Errorf("project is required (use \"none\" for learning not associated with any project)")
 	}
@@ -79,25 +91,25 @@ func validateLearningInput(input *LogLearningSessionInput) ([]string, error) {
 		input.Source = "discussion"
 	}
 	if input.Difficulty != "" {
-		d := normalizeTag(input.Difficulty)
+		d := NormalizeTag(input.Difficulty)
 		if d != "easy" && d != "medium" && d != "hard" {
 			return nil, fmt.Errorf("invalid difficulty %q (must be easy, medium, or hard)", input.Difficulty)
 		}
 	}
-	return validateLearningTags(input.Tags, input.Source)
+	return ValidateTags(input.Tags, input.Source)
 }
 
-// validateLearningTags normalizes and validates tags for learning sessions.
+// ValidateTags normalizes and validates tags for learning sessions.
 // When project is a strict-mode project (leetcode, hackerrank), rejects unknown tags.
 // For other projects, tags pass through with normalization only.
-func validateLearningTags(tags []string, project string) ([]string, error) {
+func ValidateTags(tags []string, project string) ([]string, error) {
 	if len(tags) == 0 {
 		return tags, nil
 	}
 
 	normalized := make([]string, len(tags))
 	for i, raw := range tags {
-		normalized[i] = normalizeTag(raw)
+		normalized[i] = NormalizeTag(raw)
 	}
 
 	// Only enforce strict validation for coding practice projects

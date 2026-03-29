@@ -13,6 +13,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/activity"
 	"github.com/koopa0/blog-backend/internal/content"
 	"github.com/koopa0/blog-backend/internal/goal"
+	"github.com/koopa0/blog-backend/internal/learning"
 	"github.com/koopa0/blog-backend/internal/notion"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/session"
@@ -496,7 +497,15 @@ type AutoCompletedTask struct {
 }
 
 func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest, input *LogLearningSessionInput) (*mcp.CallToolResult, LogLearningSessionOutput, error) {
-	tags, err := validateLearningInput(input)
+	tags, err := learning.ValidateInput(&learning.SessionInput{
+		Project:    input.Project,
+		Topic:      input.Topic,
+		Title:      input.Title,
+		Body:       input.Body,
+		Source:     input.Source,
+		Difficulty: input.Difficulty,
+		Tags:       input.Tags,
+	})
 	if err != nil {
 		return nil, LogLearningSessionOutput{}, err
 	}

@@ -1,4 +1,4 @@
-package mcp
+package learning
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// --- normalizeTag ---
+// --- NormalizeTag ---
 
 func TestNormalizeTag(t *testing.T) {
 	t.Parallel()
@@ -71,9 +71,9 @@ func TestNormalizeTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := normalizeTag(tt.input)
+			got := NormalizeTag(tt.input)
 			if got != tt.want {
-				t.Errorf("normalizeTag(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("NormalizeTag(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -86,28 +86,28 @@ func FuzzNormalizeTag(f *testing.F) {
 	f.Add("")
 	f.Add("weakness:pattern-recognition")
 	f.Fuzz(func(t *testing.T, input string) {
-		got := normalizeTag(input)
+		got := NormalizeTag(input)
 		// Must not panic.
 		// Invariant: result has no uppercase letters.
 		for _, r := range got {
 			if r >= 'A' && r <= 'Z' {
-				t.Errorf("normalizeTag(%q) = %q contains uppercase rune %q", input, got, r)
+				t.Errorf("NormalizeTag(%q) = %q contains uppercase rune %q", input, got, r)
 			}
 		}
 		// Invariant: result has no leading or trailing spaces.
 		if got != "" && (got[0] == ' ' || got[len(got)-1] == ' ') {
-			t.Errorf("normalizeTag(%q) = %q has leading/trailing space", input, got)
+			t.Errorf("NormalizeTag(%q) = %q has leading/trailing space", input, got)
 		}
 	})
 }
 
-// --- validateLearningInput ---
+// --- ValidateInput ---
 
-func TestValidateLearningInput(t *testing.T) {
+func TestValidateInput(t *testing.T) {
 	t.Parallel()
 
-	validBase := func() *LogLearningSessionInput {
-		return &LogLearningSessionInput{
+	validBase := func() *SessionInput {
+		return &SessionInput{
 			Project: "none",
 			Topic:   "two pointers",
 			Title:   "My Session",
@@ -117,7 +117,7 @@ func TestValidateLearningInput(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		input   *LogLearningSessionInput
+		input   *SessionInput
 		wantErr bool
 	}{
 		{
@@ -126,7 +126,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "missing project",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Project = ""
 				return i
@@ -135,7 +135,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "missing topic",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Topic = ""
 				return i
@@ -144,7 +144,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "missing title",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Title = ""
 				return i
@@ -153,7 +153,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "missing body",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Body = ""
 				return i
@@ -162,7 +162,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "valid difficulty easy",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Difficulty = "easy"
 				return i
@@ -170,7 +170,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "difficulty normalised from uppercase",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Difficulty = "MEDIUM"
 				return i
@@ -178,7 +178,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "invalid difficulty rejected",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Difficulty = "novice"
 				return i
@@ -187,7 +187,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "empty source defaults to discussion",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Source = ""
 				return i
@@ -195,7 +195,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "strict mode project with valid tags",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Project = "leetcode"
 				i.Source = "leetcode"
@@ -205,7 +205,7 @@ func TestValidateLearningInput(t *testing.T) {
 		},
 		{
 			name: "strict mode project with invalid tag",
-			input: func() *LogLearningSessionInput {
+			input: func() *SessionInput {
 				i := validBase()
 				i.Project = "leetcode"
 				i.Source = "leetcode"
@@ -219,23 +219,23 @@ func TestValidateLearningInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := validateLearningInput(tt.input)
+			_, err := ValidateInput(tt.input)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("validateLearningInput() expected error, got nil")
+					t.Fatal("ValidateInput() expected error, got nil")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("validateLearningInput() unexpected error: %v", err)
+				t.Fatalf("ValidateInput() unexpected error: %v", err)
 			}
 		})
 	}
 }
 
-// --- validateLearningTags ---
+// --- ValidateTags ---
 
-func TestValidateLearningTags(t *testing.T) {
+func TestValidateTags(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -322,18 +322,18 @@ func TestValidateLearningTags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := validateLearningTags(tt.tags, tt.project)
+			got, err := ValidateTags(tt.tags, tt.project)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("validateLearningTags() expected error, got nil")
+					t.Fatal("ValidateTags() expected error, got nil")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("validateLearningTags() unexpected error: %v", err)
+				t.Fatalf("ValidateTags() unexpected error: %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("validateLearningTags(%v, %q) mismatch (-want +got):\n%s", tt.tags, tt.project, diff)
+				t.Errorf("ValidateTags(%v, %q) mismatch (-want +got):\n%s", tt.tags, tt.project, diff)
 			}
 		})
 	}
