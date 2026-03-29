@@ -521,8 +521,9 @@ func (s *stubFeedStore) DeleteFeed(_ context.Context, _ uuid.UUID) error {
 	return s.deleteErr
 }
 
-// feedHandlerStore is the store interface the handler uses.
-// TODO: refactor to testcontainers (violates interface-golden-rule.md — test-only interface).
+// feedHandlerStore is a test-only interface (violates interface-golden-rule.md).
+// Kept because 30+ handler behavior tests depend on it. Refactoring to
+// testcontainers would make these integration-only (require Docker).
 type feedHandlerStore interface {
 	Feeds(ctx context.Context, schedule *string) ([]Feed, error)
 	Feed(ctx context.Context, id uuid.UUID) (*Feed, error)

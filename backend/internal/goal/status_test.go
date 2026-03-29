@@ -2,89 +2,45 @@ package goal
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/koopa0/blog-backend/internal/api"
 )
 
-// TestRegression_GoalStatusValidation verifies that an empty or unrecognized
-// status string returns HTTP 400, not a silent default or a successful update
-// with a zero-value status.
+// TestRegression_GoalStatusValidation verifies that the UpdateStatus handler
+// rejects invalid/empty status with 400, rather than silently defaulting.
 //
-// Regression: the original handler had no status validation — an empty
-// or unknown status string would fall through to the store with a zero-value
-// Status, silently corrupting the goal record. The fix adds:
-//   - empty status   → 400 MISSING_STATUS
-//   - unknown status → 400 INVALID_STATUS
-//
-// If the fix were reverted (validation removed), empty status would reach
-// UpdateStatus with status="" and this test would fail because it expects 400.
+// Regression: before the fix, sending an empty or unknown status string was
+// accepted without error, applying a silent default. Now it returns 400.
 func TestRegression_GoalStatusValidation(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
+	// Real Handler with nil store — validation rejects before store is called.
+	h := NewHandler(nil, slog.New(slog.DiscardHandler))
+
 	tests := []struct {
-		name       string
-		body       map[string]string
-		wantStatus int
-		wantCode   string
+		name     string
+		body     map[string]string
+		wantCode string
 	}{
-		{
-			name:       "empty status must return 400 not silent default",
-			body:       map[string]string{"status": ""},
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "MISSING_STATUS",
-		},
-		{
-			name:       "unknown status must return 400 not silent default",
-			body:       map[string]string{"status": "pending"},
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "INVALID_STATUS",
-		},
-		{
-			name:       "whitespace-only status must return 400",
-			body:       map[string]string{"status": "   "},
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "INVALID_STATUS",
-		},
-		{
-			name:       "numeric status must return 400",
-			body:       map[string]string{"status": "1"},
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "INVALID_STATUS",
-		},
-		{
-			name:       "status with leading space must return 400",
-			body:       map[string]string{"status": " done"},
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "INVALID_STATUS",
-		},
-		{
-			name:       "case-sensitive mismatch must return 400",
-			body:       map[string]string{"status": "DONE"},
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "INVALID_STATUS",
-		},
+		{name: "empty status string", body: map[string]string{"status": ""}, wantCode: "MISSING_STATUS"},
+		{name: "whitespace status", body: map[string]string{"status": " "}, wantCode: "INVALID_STATUS"},
+		{name: "unknown status", body: map[string]string{"status": "maybe"}, wantCode: "INVALID_STATUS"},
+		{name: "numeric status", body: map[string]string{"status": "123"}, wantCode: "INVALID_STATUS"},
+		{name: "SQL injection", body: map[string]string{"status": "';DROP--"}, wantCode: "INVALID_STATUS"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
-			// stubGoalStore is defined in goal_test.go (same package).
-			// updateStatusFn must never be called — validation rejects before store.
-			stub := &stubGoalStore{
-				updateStatusFn: func(_ context.Context, _ uuid.UUID, _ Status) (*Goal, error) {
-					t.Error("UpdateStatus was called despite invalid status — validation did not reject")
-					return nil, nil
-				},
-			}
-			h := newTestGoalHandler(stub)
 
 			bodyBytes, err := json.Marshal(tt.body)
 			if err != nil {
@@ -97,23 +53,15 @@ func TestRegression_GoalStatusValidation(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.UpdateStatus(w, req)
 
-			if w.Code != tt.wantStatus {
-				t.Errorf("UpdateStatus(%q) status = %d, want %d",
-					tt.body["status"], w.Code, tt.wantStatus)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("UpdateStatus(%q) status = %d, want 400", tt.name, w.Code)
 			}
-			if tt.wantCode != "" {
-				var eb struct {
-					Error struct {
-						Code string `json:"code"`
-					} `json:"error"`
-				}
-				if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
-					t.Fatalf("decoding error body: %v", err)
-				}
-				if eb.Error.Code != tt.wantCode {
-					t.Errorf("UpdateStatus(%q) error.code = %q, want %q",
-						tt.body["status"], eb.Error.Code, tt.wantCode)
-				}
+			var eb api.ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
+				t.Fatalf("decoding error: %v", err)
+			}
+			if eb.Error.Code != tt.wantCode {
+				t.Errorf("UpdateStatus(%q) error.code = %q, want %q", tt.name, eb.Error.Code, tt.wantCode)
 			}
 		})
 	}

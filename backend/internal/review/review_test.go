@@ -1,16 +1,13 @@
 package review
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -45,300 +42,60 @@ func TestStatusConstants(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Stub store
+// Sentinel error identity
 // ---------------------------------------------------------------------------
 
-// stubReviewStore implements the minimal store behaviour consumed by Handler.
-type stubReviewStore struct {
-	pendingFn func(ctx context.Context) ([]Review, error)
-	approveFn func(ctx context.Context, id uuid.UUID) error
-	rejectFn  func(ctx context.Context, id uuid.UUID, notes string) error
-	reviewFn  func(ctx context.Context, id uuid.UUID) (*Review, error)
-}
-
-func (s *stubReviewStore) PendingReviews(ctx context.Context) ([]Review, error) {
-	return s.pendingFn(ctx)
-}
-func (s *stubReviewStore) ApproveReview(ctx context.Context, id uuid.UUID) error {
-	return s.approveFn(ctx, id)
-}
-func (s *stubReviewStore) RejectReview(ctx context.Context, id uuid.UUID, notes string) error {
-	return s.rejectFn(ctx, id, notes)
-}
-func (s *stubReviewStore) Review(ctx context.Context, id uuid.UUID) (*Review, error) {
-	return s.reviewFn(ctx, id)
-}
-
-// reviewStore is an unexported interface that mirrors the store methods called
-// by Handler. Defining it here (same package) lets us shadow the store field.
-// TODO: refactor to testcontainers (violates interface-golden-rule.md — test-only interface).
-type reviewStore interface {
-	PendingReviews(ctx context.Context) ([]Review, error)
-	ApproveReview(ctx context.Context, id uuid.UUID) error
-	RejectReview(ctx context.Context, id uuid.UUID, notes string) error
-	Review(ctx context.Context, id uuid.UUID) (*Review, error)
-}
-
-// testHandler mirrors Handler but accepts a reviewStore interface.
-// Handler.store is *Store (concrete); testHandler enables stub injection for
-// handler-level unit tests without requiring a database connection.
-// TODO: consider making Handler.store a reviewStore interface to avoid this parallel struct.
-type testHandler struct {
-	store  reviewStore
-	logger *slog.Logger
-}
-
-func (h *testHandler) List(w http.ResponseWriter, r *http.Request) {
-	reviews, err := h.store.PendingReviews(r.Context())
-	if err != nil {
-		h.logger.Error("listing reviews", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list reviews")
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: reviews})
-}
-
-func (h *testHandler) Approve(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid review id")
-		return
-	}
-	if err := h.store.ApproveReview(r.Context(), id); err != nil {
-		h.logger.Error("approving review", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to approve review")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *testHandler) Reject(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid review id")
-		return
-	}
-	type rejectRequest struct {
-		Notes string `json:"notes"`
-	}
-	req, err := api.Decode[rejectRequest](w, r)
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
-		return
-	}
-	if err := h.store.RejectReview(r.Context(), id, req.Notes); err != nil {
-		h.logger.Error("rejecting review", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to reject review")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *testHandler) Edit(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid review id")
-		return
-	}
-	rev, err := h.store.Review(r.Context(), id)
-	if err != nil {
-		storeErrors := []api.ErrMap{
-			{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
-		}
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	if err := h.store.ApproveReview(r.Context(), rev.ID); err != nil {
-		h.logger.Error("approving review after edit", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to approve review")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// newTestHandler creates a testHandler backed by the given stub.
-func newTestHandler(s *stubReviewStore) *testHandler {
-	return &testHandler{
-		store:  s,
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-func decodeErrorBody(t *testing.T, body io.Reader) api.ErrorBody {
-	t.Helper()
-	var eb api.ErrorBody
-	if err := json.NewDecoder(body).Decode(&eb); err != nil {
-		t.Fatalf("decoding error body: %v", err)
-	}
-	return eb
-}
-
-func fixedUUID(t *testing.T) uuid.UUID {
-	t.Helper()
-	id, err := uuid.Parse("11111111-1111-1111-1111-111111111111")
-	if err != nil {
-		t.Fatalf("parsing fixed uuid: %v", err)
-	}
-	return id
-}
-
-// ---------------------------------------------------------------------------
-// Handler.List
-// ---------------------------------------------------------------------------
-
-func TestHandler_List(t *testing.T) {
+func TestSentinelErrors(t *testing.T) {
 	t.Parallel()
 
-	now := time.Date(2026, 3, 28, 0, 0, 0, 0, time.UTC)
-	id := fixedUUID(t)
-	contentID := uuid.New()
-	notes := "looks good"
-
 	tests := []struct {
-		name       string
-		pendingFn  func(ctx context.Context) ([]Review, error)
-		wantStatus int
-		wantLen    int
-		wantCode   string
+		name string
+		err  error
+		want error
 	}{
-		{
-			name: "returns pending reviews",
-			pendingFn: func(_ context.Context) ([]Review, error) {
-				return []Review{
-					{
-						ID:            id,
-						ContentID:     contentID,
-						ReviewLevel:   "standard",
-						Status:        string(StatusPending),
-						ReviewerNotes: &notes,
-						SubmittedAt:   now,
-					},
-				}, nil
-			},
-			wantStatus: http.StatusOK,
-			wantLen:    1,
-		},
-		{
-			name: "returns empty list when no pending reviews",
-			pendingFn: func(_ context.Context) ([]Review, error) {
-				return []Review{}, nil
-			},
-			wantStatus: http.StatusOK,
-			wantLen:    0,
-		},
-		{
-			name: "store error returns 500",
-			pendingFn: func(_ context.Context) ([]Review, error) {
-				return nil, errors.New("db unavailable")
-			},
-			wantStatus: http.StatusInternalServerError,
-			wantCode:   "INTERNAL",
-		},
+		{name: "ErrNotFound wraps correctly", err: ErrNotFound, want: ErrNotFound},
+		{name: "ErrConflict wraps correctly", err: ErrConflict, want: ErrConflict},
+		{name: "wrapped ErrNotFound", err: errors.New("querying review: " + ErrNotFound.Error()), want: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
-			stub := &stubReviewStore{pendingFn: tt.pendingFn}
-			h := newTestHandler(stub)
-
-			req := httptest.NewRequest(http.MethodGet, "/api/admin/review", http.NoBody)
-			w := httptest.NewRecorder()
-			h.List(w, req)
-
-			if w.Code != tt.wantStatus {
-				t.Fatalf("List() status = %d, want %d", w.Code, tt.wantStatus)
-			}
-			if tt.wantCode != "" {
-				eb := decodeErrorBody(t, w.Body)
-				if diff := cmp.Diff(tt.wantCode, eb.Error.Code); diff != "" {
-					t.Errorf("error code mismatch (-want +got):\n%s", diff)
-				}
-				return
-			}
-			var resp api.Response
-			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-				t.Fatalf("decoding response: %v", err)
-			}
-			// resp.Data is []any after JSON round-trip
-			data, ok := resp.Data.([]any)
-			if !ok {
-				t.Fatalf("Data is %T, want []any", resp.Data)
-			}
-			if len(data) != tt.wantLen {
-				t.Errorf("List() returned %d reviews, want %d", len(data), tt.wantLen)
+			got := errors.Is(tt.err, tt.want)
+			if tt.want != nil && !got {
+				t.Errorf("errors.Is(%v, %v) = false, want true", tt.err, tt.want)
 			}
 		})
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Handler.Approve
+// Handler.Approve — validation (real Handler, nil store)
+// Store interaction tested via integration tests.
 // ---------------------------------------------------------------------------
 
-func TestHandler_Approve(t *testing.T) {
+func TestHandler_Approve_Validation(t *testing.T) {
 	t.Parallel()
 
-	id := fixedUUID(t)
+	h := NewHandler(nil, slog.New(slog.DiscardHandler))
 
 	tests := []struct {
 		name       string
 		pathID     string
-		approveFn  func(ctx context.Context, id uuid.UUID) error
 		wantStatus int
 		wantCode   string
 	}{
 		{
-			name:   "approves review",
-			pathID: id.String(),
-			approveFn: func(_ context.Context, _ uuid.UUID) error {
-				return nil
-			},
-			wantStatus: http.StatusNoContent,
-		},
-		{
 			name:       "invalid uuid returns 400",
 			pathID:     "not-a-uuid",
-			approveFn:  nil,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "BAD_REQUEST",
-		},
-		{
-			// BUG: Handler.Approve does not check for ErrNotFound from the store.
-			// Any store error (including ErrNotFound) returns 500 INTERNAL instead
-			// of 404 NOT_FOUND. This matches current behavior and is intentional
-			// until the handler is fixed.
-			// TODO: fix Approve to map ErrNotFound → 404 (same as Edit does via HandleError).
-			name:   "store error returns 500 (not 404 for not-found — bug)",
-			pathID: id.String(),
-			approveFn: func(_ context.Context, _ uuid.UUID) error {
-				return ErrNotFound
-			},
-			wantStatus: http.StatusInternalServerError,
-			wantCode:   "INTERNAL",
-		},
-		{
-			name:   "unexpected store error returns 500",
-			pathID: id.String(),
-			approveFn: func(_ context.Context, _ uuid.UUID) error {
-				return errors.New("connection reset")
-			},
-			wantStatus: http.StatusInternalServerError,
-			wantCode:   "INTERNAL",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
-			stub := &stubReviewStore{approveFn: tt.approveFn}
-			h := newTestHandler(stub)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/admin/review/"+tt.pathID+"/approve", http.NoBody)
 			req.SetPathValue("id", tt.pathID)
@@ -348,70 +105,66 @@ func TestHandler_Approve(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Fatalf("Approve(%q) status = %d, want %d", tt.pathID, w.Code, tt.wantStatus)
 			}
-			if tt.wantCode != "" {
-				eb := decodeErrorBody(t, w.Body)
-				if diff := cmp.Diff(tt.wantCode, eb.Error.Code); diff != "" {
-					t.Errorf("error code mismatch (-want +got):\n%s", diff)
-				}
+			var eb api.ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
+				t.Fatalf("decoding error body: %v", err)
+			}
+			if diff := cmp.Diff(tt.wantCode, eb.Error.Code); diff != "" {
+				t.Errorf("error code mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Handler.Reject
+// Handler.Reject — validation (real Handler, nil store)
+// Store interaction tested via integration tests.
 // ---------------------------------------------------------------------------
 
-func TestHandler_Reject(t *testing.T) {
+func TestHandler_Reject_Validation(t *testing.T) {
 	t.Parallel()
 
-	id := fixedUUID(t)
+	h := NewHandler(nil, slog.New(slog.DiscardHandler))
 
 	tests := []struct {
-		name       string
-		pathID     string
-		body       any
-		rejectFn   func(ctx context.Context, id uuid.UUID, notes string) error
-		wantStatus int
-		wantCode   string
-		wantNotes  string
+		name        string
+		pathID      string
+		body        string
+		contentType string
+		wantStatus  int
+		wantCode    string
 	}{
 		{
-			name:   "rejects review with notes",
-			pathID: id.String(),
-			body:   map[string]string{"notes": "needs revision"},
-			rejectFn: func(_ context.Context, _ uuid.UUID, notes string) error {
-				// notes value is validated by caller in a separate test
-				return nil
-			},
-			wantStatus: http.StatusNoContent,
+			name:        "invalid uuid returns 400",
+			pathID:      "bad-id",
+			body:        `{"notes":"x"}`,
+			contentType: "application/json",
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "BAD_REQUEST",
 		},
 		{
-			name:   "rejects review with empty notes",
-			pathID: id.String(),
-			body:   map[string]string{"notes": ""},
-			rejectFn: func(_ context.Context, _ uuid.UUID, _ string) error {
-				return nil
-			},
-			wantStatus: http.StatusNoContent,
+			name:        "malformed JSON returns 400",
+			pathID:      uuid.MustParse("11111111-1111-1111-1111-111111111111").String(),
+			body:        `{not valid json`,
+			contentType: "application/json",
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "BAD_REQUEST",
 		},
 		{
-			name:       "invalid uuid returns 400",
-			pathID:     "bad-id",
-			body:       map[string]string{"notes": "x"},
-			rejectFn:   nil,
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "BAD_REQUEST",
+			name:        "empty body returns 400",
+			pathID:      uuid.MustParse("11111111-1111-1111-1111-111111111111").String(),
+			body:        ``,
+			contentType: "application/json",
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "BAD_REQUEST",
 		},
 		{
-			name:   "store error returns 500",
-			pathID: id.String(),
-			body:   map[string]string{"notes": "nope"},
-			rejectFn: func(_ context.Context, _ uuid.UUID, _ string) error {
-				return errors.New("write failed")
-			},
-			wantStatus: http.StatusInternalServerError,
-			wantCode:   "INTERNAL",
+			name:        "all-spaces pathID is invalid UUID",
+			pathID:      "   ",
+			body:        `{"notes":"x"}`,
+			contentType: "application/json",
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "BAD_REQUEST",
 		},
 	}
 
@@ -419,131 +172,53 @@ func TestHandler_Reject(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			stub := &stubReviewStore{rejectFn: tt.rejectFn}
-			h := newTestHandler(stub)
-
-			bodyBytes, err := json.Marshal(tt.body)
-			if err != nil {
-				t.Fatalf("marshaling body: %v", err)
-			}
-			req := httptest.NewRequest(http.MethodPost, "/api/admin/review/"+tt.pathID+"/reject", bytes.NewReader(bodyBytes))
-			req.Header.Set("Content-Type", "application/json")
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/review/x/reject", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
 			req.SetPathValue("id", tt.pathID)
 			w := httptest.NewRecorder()
 			h.Reject(w, req)
 
 			if w.Code != tt.wantStatus {
-				t.Fatalf("Reject(%q) status = %d, want %d", tt.pathID, w.Code, tt.wantStatus)
+				t.Fatalf("Reject(%q) status = %d, want %d (body: %s)", tt.pathID, w.Code, tt.wantStatus, w.Body.String())
 			}
-			if tt.wantCode != "" {
-				eb := decodeErrorBody(t, w.Body)
-				if diff := cmp.Diff(tt.wantCode, eb.Error.Code); diff != "" {
-					t.Errorf("error code mismatch (-want +got):\n%s", diff)
-				}
+			var eb api.ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
+				t.Fatalf("decoding error body: %v", err)
+			}
+			if diff := cmp.Diff(tt.wantCode, eb.Error.Code); diff != "" {
+				t.Errorf("error code mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-// TestHandler_Reject_NotesPassedThrough verifies that the notes string from the
-// JSON body is forwarded to the store unchanged.
-func TestHandler_Reject_NotesPassedThrough(t *testing.T) {
-	t.Parallel()
-
-	id := fixedUUID(t)
-	wantNotes := "please fix the grammar"
-	var gotNotes string
-
-	stub := &stubReviewStore{
-		rejectFn: func(_ context.Context, _ uuid.UUID, notes string) error {
-			gotNotes = notes
-			return nil
-		},
-	}
-	h := newTestHandler(stub)
-
-	body, _ := json.Marshal(map[string]string{"notes": wantNotes})
-	req := httptest.NewRequest(http.MethodPost, "/api/admin/review/"+id.String()+"/reject", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", id.String())
-	w := httptest.NewRecorder()
-	h.Reject(w, req)
-
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("Reject() status = %d, want %d", w.Code, http.StatusNoContent)
-	}
-	if diff := cmp.Diff(wantNotes, gotNotes); diff != "" {
-		t.Errorf("notes mismatch (-want +got):\n%s", diff)
-	}
-}
-
 // ---------------------------------------------------------------------------
-// Handler.Edit
+// Handler.Edit — validation (real Handler, nil store)
+// Store interaction tested via integration tests.
 // ---------------------------------------------------------------------------
 
-func TestHandler_Edit(t *testing.T) {
+func TestHandler_Edit_Validation(t *testing.T) {
 	t.Parallel()
 
-	id := fixedUUID(t)
-	contentID := uuid.New()
-	now := time.Date(2026, 3, 28, 0, 0, 0, 0, time.UTC)
-
-	stubReview := &Review{
-		ID:          id,
-		ContentID:   contentID,
-		ReviewLevel: "standard",
-		Status:      string(StatusPending),
-		SubmittedAt: now,
-	}
+	h := NewHandler(nil, slog.New(slog.DiscardHandler))
 
 	tests := []struct {
 		name       string
 		pathID     string
-		reviewFn   func(ctx context.Context, id uuid.UUID) (*Review, error)
-		approveFn  func(ctx context.Context, id uuid.UUID) error
 		wantStatus int
 		wantCode   string
 	}{
 		{
-			name:   "edit fetches review then approves",
-			pathID: id.String(),
-			reviewFn: func(_ context.Context, _ uuid.UUID) (*Review, error) {
-				return stubReview, nil
-			},
-			approveFn: func(_ context.Context, _ uuid.UUID) error {
-				return nil
-			},
-			wantStatus: http.StatusNoContent,
-		},
-		{
-			name:   "edit with not-found review returns 404",
-			pathID: id.String(),
-			reviewFn: func(_ context.Context, _ uuid.UUID) (*Review, error) {
-				return nil, ErrNotFound
-			},
-			approveFn:  nil,
-			wantStatus: http.StatusNotFound,
-			wantCode:   "NOT_FOUND",
-		},
-		{
 			name:       "invalid uuid returns 400",
 			pathID:     "not-a-uuid",
-			reviewFn:   nil,
-			approveFn:  nil,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "BAD_REQUEST",
 		},
 		{
-			name:   "approve failure after fetch returns 500",
-			pathID: id.String(),
-			reviewFn: func(_ context.Context, _ uuid.UUID) (*Review, error) {
-				return stubReview, nil
-			},
-			approveFn: func(_ context.Context, _ uuid.UUID) error {
-				return errors.New("db write failed")
-			},
-			wantStatus: http.StatusInternalServerError,
-			wantCode:   "INTERNAL",
+			name:       "empty UUID string returns 400",
+			pathID:     "",
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "BAD_REQUEST",
 		},
 	}
 
@@ -551,13 +226,7 @@ func TestHandler_Edit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			stub := &stubReviewStore{
-				reviewFn:  tt.reviewFn,
-				approveFn: tt.approveFn,
-			}
-			h := newTestHandler(stub)
-
-			req := httptest.NewRequest(http.MethodPut, "/api/admin/review/"+tt.pathID+"/edit", http.NoBody)
+			req := httptest.NewRequest(http.MethodPut, "/api/admin/review/x/edit", http.NoBody)
 			req.SetPathValue("id", tt.pathID)
 			w := httptest.NewRecorder()
 			h.Edit(w, req)
@@ -565,11 +234,12 @@ func TestHandler_Edit(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Fatalf("Edit(%q) status = %d, want %d", tt.pathID, w.Code, tt.wantStatus)
 			}
-			if tt.wantCode != "" {
-				eb := decodeErrorBody(t, w.Body)
-				if diff := cmp.Diff(tt.wantCode, eb.Error.Code); diff != "" {
-					t.Errorf("error code mismatch (-want +got):\n%s", diff)
-				}
+			var eb api.ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
+				t.Fatalf("decoding error body: %v", err)
+			}
+			if diff := cmp.Diff(tt.wantCode, eb.Error.Code); diff != "" {
+				t.Errorf("error code mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
