@@ -28,6 +28,10 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 
 系統由三個層級、四個 AI 消費者和三條資料流組成。
 
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="Architecture" width="720">
+</p>
+
 ### 三個層級
 
 **Notion + Obsidian** 是輸入層 — 我原本就在用的工具，現在作為資料來源接入，而不是孤立的 silo。Notion 透過 webhook 和排程同步提供任務、目標和專案。Obsidian 透過 git push 和 GitHub webhook 提供技術筆記。兩者都沒有被取代，而是獲得了一個能做到它們單獨做不到的事情的後端。
@@ -48,6 +52,10 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 | Cowork             | 內容管線、RSS 管理、系統維運 | `create_content`、`publish_content`、`trigger_pipeline`                         |
 
 ### 三條資料流
+
+<p align="center">
+  <img src="docs/images/data-flow.svg" alt="Data Flow" width="720">
+</p>
 
 **Obsidian → 網站**：vault → git push → GitHub webhook → `notes` 表（原始素材）→ AI 標籤 + 嵌入 → 策展 → `contents` 表 → 發佈 → 網站。
 

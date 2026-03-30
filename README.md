@@ -28,6 +28,10 @@ A side effect of this architecture: when multiple AI environments connect to the
 
 The system has three layers, four AI consumers, and three data flows.
 
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="Architecture" width="720">
+</p>
+
 ### Three layers
 
 **Notion + Obsidian** are the input layer — tools I already use, now connected as data sources rather than standalone silos. Notion provides tasks, goals, and projects via webhook and cron sync. Obsidian provides technical notes via git push and GitHub webhook. Neither is replaced; both gain a backend that can do things they can't do alone.
@@ -48,6 +52,10 @@ Each connects to the same MCP server but pulls different data subsets via the `s
 | Cowork                | Content pipeline, RSS management, system ops        | `create_content`, `publish_content`, `trigger_pipeline`                    |
 
 ### Three data flows
+
+<p align="center">
+  <img src="docs/images/data-flow.svg" alt="Data Flow" width="720">
+</p>
 
 **Obsidian → Website**: vault → git push → GitHub webhook → `notes` table → AI tags + embeddings → curate → `contents` table → publish → website.
 
