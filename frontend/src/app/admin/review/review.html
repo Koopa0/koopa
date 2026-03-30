@@ -60,7 +60,7 @@
     } @else {
     <!-- Review List -->
     <div class="space-y-3">
-      @for (review of reviews(); track review.id) {
+      @for (review of displayReviews(); track review.id) {
       <div
         class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
       >
@@ -73,13 +73,13 @@
               <span
                 class="rounded-sm border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400"
               >
-                {{ getContentTypeLabel(review.content_type) }}
+                {{ review.typeLabel }}
               </span>
               <span
                 class="rounded-full border px-2 py-0.5 text-[10px]"
-                [class]="getReviewLevelConfig(review.review_level).classes"
+                [class]="review.levelConfig.classes"
               >
-                {{ getReviewLevelConfig(review.review_level).label }}
+                {{ review.levelConfig.label }}
               </span>
             </div>
 

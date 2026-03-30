@@ -130,7 +130,7 @@
         @if (isExpanded(note.id)) {
         <div
           class="prose prose-invert prose-sm mt-3 max-w-none text-zinc-300"
-          [innerHTML]="parseMarkdown(note.content)"
+          [innerHTML]="getParsedMarkdown(note.id, note.content)"
         ></div>
         } @else {
         <div class="mt-1.5 line-clamp-3 text-sm text-zinc-400">

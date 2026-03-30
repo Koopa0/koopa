@@ -4,6 +4,7 @@ import {
   inject,
   input,
   signal,
+  computed,
   OnInit,
   DestroyRef,
 } from '@angular/core';
@@ -23,11 +24,7 @@ import {
 } from 'lucide-angular';
 import { ReviewService } from '../../core/services/review.service';
 import { NotificationService } from '../../core/services/notification.service';
-import type {
-  ApiReviewItem,
-  ReviewLevel,
-  ContentType,
-} from '../../core/models';
+import type { ApiReviewItem, ReviewLevel } from '../../core/models';
 import { contentTypeLabelEn } from '../../core/models';
 
 const REVIEW_LEVEL_CONFIG: Record<
@@ -64,6 +61,13 @@ export class ReviewComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
 
   protected readonly reviews = signal<ApiReviewItem[]>([]);
+  protected readonly displayReviews = computed(() =>
+    this.reviews().map((r) => ({
+      ...r,
+      levelConfig: REVIEW_LEVEL_CONFIG[r.review_level],
+      typeLabel: contentTypeLabelEn(r.content_type),
+    })),
+  );
   protected readonly isLoading = signal(false);
   protected readonly error = signal<string | null>(null);
 
@@ -161,16 +165,5 @@ export class ReviewComponent implements OnInit {
           this.notificationService.error('退回失敗');
         },
       });
-  }
-
-  protected getReviewLevelConfig(level: ReviewLevel): {
-    label: string;
-    classes: string;
-  } {
-    return REVIEW_LEVEL_CONFIG[level];
-  }
-
-  protected getContentTypeLabel(type: ContentType): string {
-    return contentTypeLabelEn(type);
   }
 }

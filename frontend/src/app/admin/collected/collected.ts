@@ -55,6 +55,14 @@ export class CollectedComponent implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly statusFilter = signal<CollectedStatus | null>(null);
 
+  protected readonly displayItems = computed(() =>
+    this.items().map((item) => ({
+      ...item,
+      displayTitle: item.ai_title_zh ?? item.title,
+      displaySummary: item.ai_summary_zh ?? item.ai_summary,
+    })),
+  );
+
   protected readonly totalPages = computed(() =>
     Math.ceil(this.totalItems() / ITEMS_PER_PAGE),
   );
@@ -189,26 +197,5 @@ export class CollectedComponent implements OnInit {
         },
         error: () => this.notificationService.error('Curate 失敗'),
       });
-  }
-
-  protected getScoreClass(score: number | null): string {
-    if (score === null) {
-      return 'border-zinc-600 bg-zinc-800 text-zinc-400';
-    }
-    if (score >= 70) {
-      return 'border-emerald-700 bg-emerald-900/30 text-emerald-400';
-    }
-    if (score >= 50) {
-      return 'border-amber-700 bg-amber-900/30 text-amber-400';
-    }
-    return 'border-red-700 bg-red-900/30 text-red-400';
-  }
-
-  protected getDisplayTitle(item: ApiCollectedItem): string {
-    return item.ai_title_zh ?? item.title;
-  }
-
-  protected getDisplaySummary(item: ApiCollectedItem): string | null {
-    return item.ai_summary_zh ?? item.ai_summary;
   }
 }

@@ -34,12 +34,38 @@ interface MetricsData {
 interface DayTrendBox {
   label: string;
   rate: number | null;
+  colorClass: string;
 }
 
 interface DayHeatmapEntry {
   label: string;
   avgCapacity: number | null;
   dataPoints: number;
+}
+
+interface DisplayHeatmapEntry extends DayHeatmapEntry {
+  opacityClass: string;
+  isHighest: boolean;
+}
+
+function rateToColorClass(rate: number | null): string {
+  if (rate === null) return 'text-zinc-600';
+  if (rate < 50) return 'text-red-400';
+  if (rate <= 80) return 'text-amber-400';
+  return 'text-emerald-400';
+}
+
+function computeHeatmapOpacity(
+  avgCapacity: number | null,
+  max: number,
+): string {
+  if (avgCapacity === null || max === 0) return 'opacity-20';
+  const ratio = avgCapacity / max;
+  if (ratio >= 0.8) return 'opacity-100';
+  if (ratio >= 0.6) return 'opacity-80';
+  if (ratio >= 0.4) return 'opacity-60';
+  if (ratio >= 0.2) return 'opacity-40';
+  return 'opacity-20';
 }
 
 @Component({
@@ -85,9 +111,11 @@ export class PlanningComponent implements OnInit {
       const dateStr = this.toDateString(d);
       const dayLabel = DAY_LABELS[d.getDay()];
       const match = data.find((m) => m.noteDate === dateStr);
+      const rate = match ? Math.round(match.completionRate * 100) : null;
       boxes.push({
         label: dayLabel,
-        rate: match ? Math.round(match.completionRate * 100) : null,
+        rate,
+        colorClass: rateToColorClass(rate),
       });
     }
 
@@ -100,6 +128,10 @@ export class PlanningComponent implements OnInit {
     const sum = boxes.reduce((acc, b) => acc + (b.rate ?? 0), 0);
     return Math.round(sum / boxes.length);
   });
+
+  protected readonly trendAvgColorClass = computed(() =>
+    rateToColorClass(this.trendAvg()),
+  );
 
   // ─── Block 2: Capacity 分析 ───
   protected readonly weekdayAvg = computed(() => {
@@ -158,11 +190,23 @@ export class PlanningComponent implements OnInit {
     return entries;
   });
 
-  protected readonly maxCapacity = computed(() => {
+  private readonly maxCapacity = computed(() => {
     const entries = this.heatmapEntries().filter((e) => e.avgCapacity !== null);
     if (entries.length === 0) return 0;
     return Math.max(...entries.map((e) => e.avgCapacity ?? 0));
   });
+
+  protected readonly displayHeatmapEntries = computed<DisplayHeatmapEntry[]>(
+    () => {
+      const max = this.maxCapacity();
+      return this.heatmapEntries().map((entry) => ({
+        ...entry,
+        opacityClass: computeHeatmapOpacity(entry.avgCapacity, max),
+        isHighest:
+          entry.avgCapacity !== null && entry.avgCapacity === max && max > 0,
+      }));
+    },
+  );
 
   // ─── Block 4: 月度摘要 ───
   protected readonly totalDaysTracked = computed(() => this.metrics().length);
@@ -219,40 +263,16 @@ export class PlanningComponent implements OnInit {
     return '→';
   });
 
-  // ─── Helpers for template ───
+  protected readonly overallRateColorClass = computed(() =>
+    rateToColorClass(this.overallAvgCompletionRate()),
+  );
 
-  protected rateColorClass(rate: number | null): string {
-    if (rate === null) return 'text-zinc-600';
-    if (rate < 50) return 'text-red-400';
-    if (rate <= 80) return 'text-amber-400';
-    return 'text-emerald-400';
-  }
-
-  protected heatmapOpacity(entry: DayHeatmapEntry): string {
-    const max = this.maxCapacity();
-    if (entry.avgCapacity === null || max === 0) return 'opacity-20';
-    const ratio = entry.avgCapacity / max;
-    if (ratio >= 0.8) return 'opacity-100';
-    if (ratio >= 0.6) return 'opacity-80';
-    if (ratio >= 0.4) return 'opacity-60';
-    if (ratio >= 0.2) return 'opacity-40';
-    return 'opacity-20';
-  }
-
-  protected isHighestCapacity(entry: DayHeatmapEntry): boolean {
-    return (
-      entry.avgCapacity !== null &&
-      entry.avgCapacity === this.maxCapacity() &&
-      this.maxCapacity() > 0
-    );
-  }
-
-  protected trendColorClass(): string {
+  protected readonly trendColorClass = computed(() => {
     const t = this.trend();
     if (t === '↑') return 'text-emerald-400';
     if (t === '↓') return 'text-red-400';
     return 'text-zinc-400';
-  }
+  });
 
   // ─── Lifecycle ───
 

@@ -111,7 +111,7 @@
     } @else {
     <!-- Card List -->
     <div class="space-y-3">
-      @for (item of items(); track item.id) {
+      @for (item of displayItems(); track item.id) {
       <div
         class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
         [class.opacity-50]="item.status === 'ignored'"
@@ -126,7 +126,7 @@
                 rel="noopener noreferrer"
                 class="line-clamp-1 text-sm font-medium text-zinc-200 no-underline hover:text-white"
               >
-                {{ getDisplayTitle(item) }}
+                {{ item.displayTitle }}
                 <lucide-icon
                   [img]="ExternalLinkIcon"
                   [size]="12"
@@ -135,9 +135,9 @@
               </a>
             </div>
 
-            @if (getDisplaySummary(item)) {
+            @if (item.displaySummary) {
             <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-400">
-              {{ getDisplaySummary(item) }}
+              {{ item.displaySummary }}
             </p>
             }
 

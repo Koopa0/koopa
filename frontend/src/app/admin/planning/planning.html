@@ -36,7 +36,7 @@
         @for (box of trendBoxes(); track $index) {
         <div class="flex w-12 flex-col items-center gap-1">
           <span class="text-[10px] text-zinc-500">{{ box.label }}</span>
-          <span class="text-sm font-medium" [class]="rateColorClass(box.rate)">
+          <span class="text-sm font-medium" [class]="box.colorClass">
             @if (box.rate !== null) { {{ box.rate }}% } @else { — }
           </span>
         </div>
@@ -45,7 +45,7 @@
       <p class="mt-4 text-xs text-zinc-500">
         14 天平均完成率：<span
           class="font-medium"
-          [class]="rateColorClass(trendAvg())"
+          [class]="trendAvgColorClass()"
           >{{ trendAvg() }}%</span
         >
       </p>
@@ -93,17 +93,17 @@
     <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-5">
       <h2 class="mb-4 text-sm font-medium text-zinc-300">Day-of-Week 熱力圖</h2>
       <div class="flex flex-wrap justify-center gap-3">
-        @for (entry of heatmapEntries(); track entry.label) {
+        @for (entry of displayHeatmapEntries(); track entry.label) {
         <div
           class="flex h-16 w-16 flex-col items-center justify-center rounded-full border border-zinc-700"
-          [class.ring-2]="isHighestCapacity(entry)"
-          [class.ring-amber-400]="isHighestCapacity(entry)"
+          [class.ring-2]="entry.isHighest"
+          [class.ring-amber-400]="entry.isHighest"
         >
           <span class="text-[10px] text-zinc-500">{{ entry.label }}</span>
           @if (entry.avgCapacity !== null) {
           <span
             class="text-sm font-semibold text-zinc-100"
-            [class]="heatmapOpacity(entry)"
+            [class]="entry.opacityClass"
           >
             {{ entry.avgCapacity }}
           </span>
@@ -127,10 +127,7 @@
         </div>
         <div class="text-center">
           <p class="text-xs text-zinc-500">平均完成率</p>
-          <p
-            class="text-lg font-semibold"
-            [class]="rateColorClass(overallAvgCompletionRate())"
-          >
+          <p class="text-lg font-semibold" [class]="overallRateColorClass()">
             {{ overallAvgCompletionRate() }}%
           </p>
         </div>

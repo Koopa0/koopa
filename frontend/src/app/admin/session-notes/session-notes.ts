@@ -88,6 +88,7 @@ export class SessionNotesComponent implements OnInit {
 
   protected loadNotes(): void {
     this.isLoading.set(true);
+    this.parsedMarkdownCache.set(new Map());
     this.sessionNoteService
       .list(undefined, undefined, this.daysFilter())
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -132,7 +133,20 @@ export class SessionNotesComponent implements OnInit {
     return TYPE_CLASSES[noteType] ?? DEFAULT_TYPE_CLASS;
   }
 
-  protected parseMarkdown(content: string): string {
-    return this.markdownService.parse(content);
+  // SECURITY_REVIEW: MarkdownService.parse() sanitizes output via DOMPurify with strict allowlist
+  protected parsedMarkdownCache = signal<Map<number, string>>(new Map());
+
+  protected getParsedMarkdown(id: number, content: string): string {
+    const cache = this.parsedMarkdownCache();
+    if (cache.has(id)) {
+      return cache.get(id)!;
+    }
+    const parsed = this.markdownService.parse(content);
+    this.parsedMarkdownCache.update((m) => {
+      const next = new Map(m);
+      next.set(id, parsed);
+      return next;
+    });
+    return parsed;
   }
 }
