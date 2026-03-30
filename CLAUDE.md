@@ -14,8 +14,7 @@
 ├── migrations/       → Numbered SQL: NNN_desc.up.sql / NNN_desc.down.sql
 ├── prompts/          → Genkit dotprompt files: <feature>/*.prompt
 ├── frontend/         → Angular 21 前端（SSR + Tailwind v4）
-├── docs/             → 共用設計文件
-│   └── PLATFORM-VISION.md  ← 完整平台設計（必讀）
+├── docs/             → 審計報告、MCP 工具參考
 ├── sqlc.yaml         → sqlc configuration (pgx/v5)
 ├── go.mod            → module github.com/Koopa0/koopa0.dev
 └── CLAUDE.md         → 你現在在讀的這份
@@ -25,9 +24,10 @@
 
 | 文件 | 用途 |
 |------|------|
-| `docs/PLATFORM-VISION.md` | **完整平台設計** — 系統架構、API spec、資料模型、執行階段 |
 | `frontend/CLAUDE.md` | Angular 前端開發規範（元件、規則、命名、測試） |
 | `.claude/rules/` | Go 後端開發規範（規則、命名、測試、安全） |
+| `docs/AUDIT-REPORT-2026-03-30.md` | 專案現況審計報告（系統拓撲、工具盤點、資料層、完成度矩陣） |
+| `docs/MCP-TOOLS-REFERENCE.md` | MCP 49 工具完整參考（參數、標記、條件啟用） |
 
 ## 平台三大面向
 
