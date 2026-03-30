@@ -1,4 +1,5 @@
-package mcp
+// Package mcpauth implements OAuth 2.1 with Google login and PKCE for the MCP server.
+package mcpauth
 
 import (
 	"context"
@@ -20,8 +21,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// OAuthConfig holds the parameters needed to create an OAuthProvider.
-type OAuthConfig struct {
+// Config holds the parameters needed to create a Provider.
+type Config struct {
 	StaticToken string         // MCP_TOKEN — accepted directly as Bearer token
 	AdminEmail  string         // only this email can authorize
 	BaseURL     string         // public URL (e.g. "https://mcp.koopa0.dev")
@@ -44,12 +45,12 @@ type pendingAuth struct {
 	expiresAt     time.Time
 }
 
-// maxClients is the upper bound on dynamic client registrations.
+// MaxClients is the upper bound on dynamic client registrations.
 // Prevents memory exhaustion from automated registration spam.
-const maxClients = 100
+const MaxClients = 100
 
-// OAuthProvider implements OAuth 2.1 with Google login and PKCE for the MCP server.
-type OAuthProvider struct {
+// Provider implements OAuth 2.1 with Google login and PKCE for the MCP server.
+type Provider struct {
 	staticToken string // MCP_TOKEN — accepted directly as Bearer token
 	baseURL     string
 	adminEmail  string
@@ -66,9 +67,9 @@ type OAuthProvider struct {
 	Done chan struct{}
 }
 
-// NewOAuthProvider creates an OAuthProvider and starts its cleanup goroutine.
-func NewOAuthProvider(cfg OAuthConfig, logger *slog.Logger) *OAuthProvider {
-	o := &OAuthProvider{
+// New creates a Provider and starts its cleanup goroutine.
+func New(cfg Config, logger *slog.Logger) *Provider {
+	o := &Provider{
 		staticToken:  cfg.StaticToken,
 		baseURL:      cfg.BaseURL,
 		adminEmail:   cfg.AdminEmail,
@@ -86,7 +87,7 @@ func NewOAuthProvider(cfg OAuthConfig, logger *slog.Logger) *OAuthProvider {
 }
 
 // cleanup periodically evicts expired entries to prevent memory leaks.
-func (o *OAuthProvider) cleanup() {
+func (o *Provider) cleanup() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -99,7 +100,7 @@ func (o *OAuthProvider) cleanup() {
 	}
 }
 
-func (o *OAuthProvider) evictExpired(now time.Time) {
+func (o *Provider) evictExpired(now time.Time) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for tok, exp := range o.tokens {
@@ -125,7 +126,7 @@ func (o *OAuthProvider) evictExpired(now time.Time) {
 }
 
 // ValidToken checks if a token is the static MCP_TOKEN or a valid OAuth-issued token.
-func (o *OAuthProvider) ValidToken(tok string) bool {
+func (o *Provider) ValidToken(tok string) bool {
 	if subtle.ConstantTimeCompare([]byte(tok), []byte(o.staticToken)) == 1 {
 		return true
 	}
@@ -135,7 +136,7 @@ func (o *OAuthProvider) ValidToken(tok string) bool {
 	return ok && time.Now().Before(exp)
 }
 
-func (o *OAuthProvider) issueToken() (accessToken string, accessTTL time.Duration, refreshToken string, refreshTTL time.Duration) { //nolint:unparam // refreshTTL used internally for storage
+func (o *Provider) issueToken() (accessToken string, accessTTL time.Duration, refreshToken string, refreshTTL time.Duration) { //nolint:unparam // refreshTTL used internally for storage
 	ab := make([]byte, 32)
 	_, _ = rand.Read(ab)
 	accessToken = hex.EncodeToString(ab)
@@ -153,7 +154,7 @@ func (o *OAuthProvider) issueToken() (accessToken string, accessTTL time.Duratio
 	return
 }
 
-func (o *OAuthProvider) consumeRefreshToken(rt string) bool {
+func (o *Provider) consumeRefreshToken(rt string) bool {
 	o.mu.Lock()
 	exp, ok := o.refreshToks[rt]
 	if ok {
@@ -164,7 +165,7 @@ func (o *OAuthProvider) consumeRefreshToken(rt string) bool {
 }
 
 // issueCode creates a one-time authorization code bound to a PKCE challenge.
-func (o *OAuthProvider) issueCode(codeChallenge string) string {
+func (o *Provider) issueCode(codeChallenge string) string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	code := hex.EncodeToString(b)
@@ -178,7 +179,7 @@ func (o *OAuthProvider) issueCode(codeChallenge string) string {
 }
 
 // consumeCode validates and removes an authorization code, returning its info.
-func (o *OAuthProvider) consumeCode(code string) (codeInfo, bool) {
+func (o *Provider) consumeCode(code string) (codeInfo, bool) {
 	o.mu.Lock()
 	ci, ok := o.codes[code]
 	if ok {
@@ -202,7 +203,7 @@ func verifyPKCE(codeVerifier, codeChallenge string) bool {
 }
 
 // Metadata handles GET /.well-known/oauth-authorization-server.
-func (o *OAuthProvider) Metadata(w http.ResponseWriter, _ *http.Request) {
+func (o *Provider) Metadata(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"issuer":                                o.baseURL,
@@ -249,7 +250,7 @@ func validRedirectURI(uri string) bool {
 
 // Authorize handles GET/POST /oauth/authorize.
 // Instead of auto-approving, it redirects to Google OAuth for authentication.
-func (o *OAuthProvider) Authorize(w http.ResponseWriter, r *http.Request) {
+func (o *Provider) Authorize(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
 	clientID := r.FormValue("client_id")
 	redirectURI := r.FormValue("redirect_uri")
@@ -300,7 +301,7 @@ func (o *OAuthProvider) Authorize(w http.ResponseWriter, r *http.Request) {
 // GoogleCallback handles GET /oauth/google/callback.
 // Verifies the Google login, checks admin email, then issues an MCP authorization
 // code and redirects back to the MCP client (e.g. Claude.ai).
-func (o *OAuthProvider) GoogleCallback(w http.ResponseWriter, r *http.Request) {
+func (o *Provider) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("state")
 	googleCode := r.URL.Query().Get("code")
 	if sessionID == "" || googleCode == "" {
@@ -380,7 +381,7 @@ func fetchGoogleEmail(ctx context.Context, cfg *oauth2.Config, token *oauth2.Tok
 }
 
 // Token handles POST /oauth/token.
-func (o *OAuthProvider) Token(w http.ResponseWriter, r *http.Request) {
+func (o *Provider) Token(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -434,7 +435,7 @@ func (o *OAuthProvider) Token(w http.ResponseWriter, r *http.Request) {
 }
 
 // Register handles POST /oauth/register (dynamic client registration per MCP spec).
-func (o *OAuthProvider) Register(w http.ResponseWriter, r *http.Request) {
+func (o *Provider) Register(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
 	var req struct {
 		RedirectURIs []string `json:"redirect_uris"`
@@ -455,7 +456,7 @@ func (o *OAuthProvider) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Atomic check-and-insert under a single lock hold to prevent TOCTOU race.
 	o.mu.Lock()
-	if len(o.clients) >= maxClients {
+	if len(o.clients) >= MaxClients {
 		o.mu.Unlock()
 		http.Error(w, "too many registered clients", http.StatusServiceUnavailable)
 		return
@@ -473,7 +474,7 @@ func (o *OAuthProvider) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (o *OAuthProvider) checkClientCredentials(r *http.Request) bool {
+func (o *Provider) checkClientCredentials(r *http.Request) bool {
 	cid := r.FormValue("client_id")
 	csec := r.FormValue("client_secret")
 	if cid == "" || csec == "" {
@@ -496,7 +497,7 @@ func jsonError(w http.ResponseWriter, errCode string, status int) {
 
 // BearerAuth wraps an http.Handler, accepting either the static MCP_TOKEN
 // or any OAuth-issued access token.
-func BearerAuth(next http.Handler, oauth *OAuthProvider) http.Handler {
+func BearerAuth(next http.Handler, oauth *Provider) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		const prefix = "Bearer "

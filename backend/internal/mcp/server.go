@@ -21,6 +21,7 @@ import (
 	"github.com/koopa0/blog-backend/internal/goal"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notion"
+	"github.com/koopa0/blog-backend/internal/oreilly"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
@@ -46,7 +47,7 @@ type Server struct {
 	semanticNotes   *note.Store
 	queryEmbedder   QueryEmbedder
 	feeds           *feed.Store
-	oreilly         *OReillyClient
+	oreilly         *oreilly.Client
 	systemStatus    *stats.Store
 	pipelineTrigger PipelineTrigger
 	recordToolCall  func(context.Context, ToolCallRecord) // optional telemetry
@@ -104,7 +105,7 @@ func WithSemanticSearch(ns *note.Store, qe QueryEmbedder) ServerOption {
 }
 
 // WithOReilly enables O'Reilly content search tools.
-func WithOReilly(client *OReillyClient) ServerOption {
+func WithOReilly(client *oreilly.Client) ServerOption {
 	return func(s *Server) { s.oreilly = client }
 }
 
@@ -138,31 +139,33 @@ func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption 
 	return func(s *Server) { s.recordToolCall = recorder }
 }
 
+// ServerDeps holds the required dependencies for NewServer.
+type ServerDeps struct {
+	Notes     *note.Store
+	Activity  *activity.Store
+	Projects  *project.Store
+	Collected *entry.Store
+	Stats     *stats.Store
+	Tasks     *task.Store
+	Contents  *content.Store
+	Sessions  *session.Store
+	Goals     *goal.Store
+	Logger    *slog.Logger
+}
+
 // NewServer creates an MCP server with all tools registered.
-func NewServer(
-	notes *note.Store,
-	activityReader *activity.Store,
-	projects *project.Store,
-	collectedStore *entry.Store,
-	statsStore *stats.Store,
-	tasks *task.Store,
-	contents *content.Store,
-	sessions *session.Store,
-	goals *goal.Store,
-	logger *slog.Logger,
-	opts ...ServerOption,
-) *Server {
+func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	s := &Server{
-		notes:     notes,
-		activity:  activityReader,
-		projects:  projects,
-		collected: collectedStore,
-		stats:     statsStore,
-		tasks:     tasks,
-		contents:  contents,
-		sessions:  sessions,
-		goals:     goals,
-		logger:    logger,
+		notes:     deps.Notes,
+		activity:  deps.Activity,
+		projects:  deps.Projects,
+		collected: deps.Collected,
+		stats:     deps.Stats,
+		tasks:     deps.Tasks,
+		contents:  deps.Contents,
+		sessions:  deps.Sessions,
+		goals:     deps.Goals,
+		logger:    deps.Logger,
 		loc:       time.UTC, // default; override with WithLocation
 	}
 	for _, opt := range opts {

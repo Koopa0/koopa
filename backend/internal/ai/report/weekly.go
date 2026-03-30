@@ -55,36 +55,37 @@ type Weekly struct {
 	logger         *slog.Logger
 }
 
+// WeeklyDeps bundles dependencies for the Weekly flow.
+type WeeklyDeps struct {
+	SystemPrompt   string
+	Tasks          *task.Store
+	TaskCompletion *task.Store
+	Collected      *entry.Store
+	Contents       *content.Store
+	Projects       *project.Store
+	Commits        *github.Client
+	Notifier       notify.Notifier
+	TokenBudget    *budget.Budget
+	Location       *time.Location
+	Logger         *slog.Logger
+}
+
 // NewWeekly returns a Weekly flow.
-func NewWeekly(
-	g *genkit.Genkit,
-	model genkitai.Model,
-	systemPrompt string,
-	tasks *task.Store,
-	taskCompletion *task.Store,
-	collects *entry.Store,
-	contents *content.Store,
-	projects *project.Store,
-	commits *github.Client,
-	notifier notify.Notifier,
-	tokenBudget *budget.Budget,
-	loc *time.Location,
-	logger *slog.Logger,
-) *Weekly {
+func NewWeekly(g *genkit.Genkit, model genkitai.Model, deps WeeklyDeps) *Weekly {
 	wr := &Weekly{
 		g:              g,
 		model:          model,
-		systemPrompt:   systemPrompt,
-		tasks:          tasks,
-		taskCompletion: taskCompletion,
-		collected:      collects,
-		contents:       contents,
-		projects:       projects,
-		commits:        commits,
-		notifier:       notifier,
-		budget:         tokenBudget,
-		loc:            loc,
-		logger:         logger,
+		systemPrompt:   deps.SystemPrompt,
+		tasks:          deps.Tasks,
+		taskCompletion: deps.TaskCompletion,
+		collected:      deps.Collected,
+		contents:       deps.Contents,
+		projects:       deps.Projects,
+		commits:        deps.Commits,
+		notifier:       deps.Notifier,
+		budget:         deps.TokenBudget,
+		loc:            deps.Location,
+		logger:         deps.Logger,
 	}
 	wr.gf = genkit.DefineFlow(g, "weekly-review", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		out, err := wr.run(ctx, input)

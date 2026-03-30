@@ -1,10 +1,10 @@
-package mcp
+package oreilly
 
 import (
 	"testing"
 )
 
-// --- extractFilename ---
+// --- ExtractFilename ---
 
 func TestExtractFilename(t *testing.T) {
 	t.Parallel()
@@ -54,15 +54,15 @@ func TestExtractFilename(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := extractFilename(tt.refID)
+			got := ExtractFilename(tt.refID)
 			if got != tt.want {
-				t.Errorf("extractFilename(%q) = %q, want %q", tt.refID, got, tt.want)
+				t.Errorf("ExtractFilename(%q) = %q, want %q", tt.refID, got, tt.want)
 			}
 		})
 	}
 }
 
-// --- stripHTML ---
+// --- StripHTML ---
 
 func TestStripHTML(t *testing.T) {
 	t.Parallel()
@@ -142,9 +142,9 @@ func TestStripHTML(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := stripHTML(tt.input)
+			got := StripHTML(tt.input)
 			if got != tt.want {
-				t.Errorf("stripHTML(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("StripHTML(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -159,12 +159,12 @@ func FuzzStripHTML(f *testing.F) {
 	f.Add("<!-- comment -->")
 	f.Add("<br/>")
 	f.Fuzz(func(t *testing.T, input string) {
-		got := stripHTML(input)
+		got := StripHTML(input)
 		// Must not panic.
 		// Invariant: result contains no '<' characters that are part of a complete tag.
 		// (Incomplete tags like "a < b" may remain — we only check for regression in length.)
 		if len(got) > len(input) {
-			t.Errorf("stripHTML(%q) = %q: output longer than input", input, got)
+			t.Errorf("StripHTML(%q) = %q: output longer than input", input, got)
 		}
 	})
 }

@@ -37,8 +37,10 @@ import (
 	"github.com/koopa0/blog-backend/internal/feed/entry"
 	"github.com/koopa0/blog-backend/internal/goal"
 	mcpkg "github.com/koopa0/blog-backend/internal/mcp"
+	"github.com/koopa0/blog-backend/internal/mcpauth"
 	"github.com/koopa0/blog-backend/internal/note"
 	"github.com/koopa0/blog-backend/internal/notion"
+	"github.com/koopa0/blog-backend/internal/oreilly"
 	"github.com/koopa0/blog-backend/internal/project"
 	"github.com/koopa0/blog-backend/internal/session"
 	"github.com/koopa0/blog-backend/internal/stats"
@@ -83,11 +85,18 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 		return err
 	}
 
-	server := mcpkg.NewServer(
-		noteStore, activityStore, projectStore, collectedStore,
-		statsStore, taskStore, contentStore, sessionStore, goalStore,
-		logger, opts...,
-	)
+	server := mcpkg.NewServer(mcpkg.ServerDeps{
+		Notes:     noteStore,
+		Activity:  activityStore,
+		Projects:  projectStore,
+		Collected: collectedStore,
+		Stats:     statsStore,
+		Tasks:     taskStore,
+		Contents:  contentStore,
+		Sessions:  sessionStore,
+		Goals:     goalStore,
+		Logger:    logger,
+	}, opts...)
 
 	switch cfg.Transport {
 	case "stdio":
@@ -190,7 +199,7 @@ func appendPipelineTrigger(opts []mcpkg.ServerOption, cfg *config, logger *slog.
 
 func appendOReillyOption(opts []mcpkg.ServerOption, cfg *config, logger *slog.Logger) []mcpkg.ServerOption {
 	if cfg.ORMJWT != "" {
-		opts = append(opts, mcpkg.WithOReilly(mcpkg.NewOReillyClient(cfg.ORMJWT)))
+		opts = append(opts, mcpkg.WithOReilly(oreilly.New(cfg.ORMJWT)))
 		logger.Info("O'Reilly content search enabled")
 	} else {
 		logger.Warn("ORM_JWT not set — search_oreilly_content will be unavailable")
@@ -236,7 +245,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 		return fmt.Errorf("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and ADMIN_EMAIL are required for HTTP transport")
 	}
 
-	oauth := mcpkg.NewOAuthProvider(mcpkg.OAuthConfig{
+	oauth := mcpauth.New(mcpauth.Config{
 		StaticToken: cfg.MCPToken,
 		AdminEmail:  cfg.AdminEmail,
 		BaseURL:     cfg.MCPBaseURL,
@@ -275,7 +284,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 	mux.HandleFunc("GET /oauth/google/callback", oauth.GoogleCallback)
 	mux.HandleFunc("POST /oauth/token", oauth.Token)
 	mux.HandleFunc("POST /oauth/register", oauth.Register)
-	mux.Handle("/mcp", mcpkg.BearerAuth(handler, oauth))
+	mux.Handle("/mcp", mcpauth.BearerAuth(handler, oauth))
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

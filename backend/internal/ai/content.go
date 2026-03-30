@@ -40,48 +40,44 @@ type ReviewResult = ProofreadOutput
 // ContentReview is the orchestrator flow that calls sub-flows (proofread, excerpt, tags)
 // and handles persistence (embedding, content update, review queue).
 type ContentReview struct {
-	gf          *GenkitFlow
-	g           *genkit.Genkit
-	embedder    genkitai.Embedder
-	content     *content.Store
-	updater     *content.Store
-	embedWriter *content.Store
-	review      *review.Store
-	topics      *topic.Store
-	proofread   Flow
-	excerpt     Flow
-	tags        Flow
-	logger      *slog.Logger
+	gf        *GenkitFlow
+	g         *genkit.Genkit
+	embedder  genkitai.Embedder
+	content   *content.Store
+	review    *review.Store
+	topics    *topic.Store
+	proofread Flow
+	excerpt   Flow
+	tags      Flow
+	logger    *slog.Logger
+}
+
+// ContentReviewDeps bundles dependencies for the ContentReview flow.
+type ContentReviewDeps struct {
+	Content   *content.Store
+	Review    *review.Store
+	Topics    *topic.Store
+	Embedder  genkitai.Embedder
+	Proofread Flow
+	Excerpt   Flow
+	Tags      Flow
+	Logger    *slog.Logger
 }
 
 // NewContentReview returns a ContentReview orchestrator flow.
-// The proofread, excerpt, and tags parameters accept any Flow implementation,
+// The Proofread, Excerpt, and Tags deps accept any Flow implementation,
 // enabling injection of either real sub-package flows or mocks.
-func NewContentReview(
-	g *genkit.Genkit,
-	embedder genkitai.Embedder,
-	contentReader *content.Store,
-	updater *content.Store,
-	embedWriter *content.Store,
-	reviewer *review.Store,
-	topics *topic.Store,
-	proofread Flow,
-	excerpt Flow,
-	tags Flow,
-	logger *slog.Logger,
-) *ContentReview {
+func NewContentReview(g *genkit.Genkit, deps ContentReviewDeps) *ContentReview {
 	cr := &ContentReview{
-		g:           g,
-		embedder:    embedder,
-		content:     contentReader,
-		updater:     updater,
-		embedWriter: embedWriter,
-		review:      reviewer,
-		topics:      topics,
-		proofread:   proofread,
-		excerpt:     excerpt,
-		tags:        tags,
-		logger:      logger,
+		g:         g,
+		embedder:  deps.Embedder,
+		content:   deps.Content,
+		review:    deps.Review,
+		topics:    deps.Topics,
+		proofread: deps.Proofread,
+		excerpt:   deps.Excerpt,
+		tags:      deps.Tags,
+		logger:    deps.Logger,
 	}
 	cr.gf = genkit.DefineFlow(g, "content-review", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in ContentReviewInput
@@ -262,7 +258,7 @@ func (cr *ContentReview) runEmbeddingStep(ctx context.Context, body string, cont
 			return nil, nil
 		}
 		vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
-		if storeErr := cr.embedWriter.UpdateEmbedding(ctx, contentID, vec); storeErr != nil {
+		if storeErr := cr.content.UpdateEmbedding(ctx, contentID, vec); storeErr != nil {
 			return nil, fmt.Errorf("storing embedding: %w", storeErr)
 		}
 		cr.logger.Info("embedding stored", "content_id", contentID, "dimensions", len(resp.Embeddings[0].Embedding))
@@ -283,7 +279,7 @@ func (cr *ContentReview) applyResults(ctx context.Context, contentID uuid.UUID, 
 		if len(pr.tags.Tags) > 0 {
 			updateParams.Tags = pr.tags.Tags
 		}
-		if _, updateErr := cr.updater.UpdateContent(ctx, contentID, updateParams); updateErr != nil {
+		if _, updateErr := cr.content.UpdateContent(ctx, contentID, updateParams); updateErr != nil {
 			return nil, fmt.Errorf("updating content: %w", updateErr)
 		}
 
