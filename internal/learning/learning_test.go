@@ -19,6 +19,16 @@ func entry(tags []string, daysAgo int) content.TagEntry {
 	}
 }
 
+func richEntry(tags []string, daysAgo int) content.RichTagEntry {
+	return content.RichTagEntry{
+		ID:        uuid.New(),
+		Slug:      "test-slug",
+		Title:     "test title",
+		Tags:      tags,
+		CreatedAt: time.Now().AddDate(0, 0, -daysAgo),
+	}
+}
+
 func TestCoverageMatrix(t *testing.T) {
 	entries := []content.TagEntry{
 		entry([]string{"dp", "ac-independent"}, 1),
@@ -94,26 +104,26 @@ func TestTagSummary(t *testing.T) {
 func TestWeaknessTrend(t *testing.T) {
 	tests := []struct {
 		name      string
-		entries   []content.TagEntry
+		entries   []content.RichTagEntry
 		tag       string
 		wantTrend string
 		wantCount int
 	}{
 		{
 			name:      "insufficient data",
-			entries:   []content.TagEntry{entry([]string{"weakness:x", "ac-independent"}, 1)},
+			entries:   []content.RichTagEntry{richEntry([]string{"weakness:x", "ac-independent"}, 1)},
 			tag:       "weakness:x",
 			wantTrend: "insufficient-data",
 			wantCount: 1,
 		},
 		{
 			name: "improving",
-			entries: []content.TagEntry{
-				entry([]string{"weakness:x", "ac-after-solution"}, 5),
-				entry([]string{"weakness:x", "ac-with-hints"}, 4),
-				entry([]string{"weakness:x", "ac-independent"}, 3),
-				entry([]string{"weakness:x", "ac-independent"}, 2),
-				entry([]string{"weakness:x", "ac-independent"}, 1),
+			entries: []content.RichTagEntry{
+				richEntry([]string{"weakness:x", "ac-after-solution"}, 5),
+				richEntry([]string{"weakness:x", "ac-with-hints"}, 4),
+				richEntry([]string{"weakness:x", "ac-independent"}, 3),
+				richEntry([]string{"weakness:x", "ac-independent"}, 2),
+				richEntry([]string{"weakness:x", "ac-independent"}, 1),
 			},
 			tag:       "weakness:x",
 			wantTrend: "improving",
@@ -121,12 +131,12 @@ func TestWeaknessTrend(t *testing.T) {
 		},
 		{
 			name: "declining",
-			entries: []content.TagEntry{
-				entry([]string{"weakness:x", "ac-independent"}, 5),
-				entry([]string{"weakness:x", "ac-after-solution"}, 4),
-				entry([]string{"weakness:x", "ac-after-solution"}, 3),
-				entry([]string{"weakness:x", "incomplete"}, 2),
-				entry([]string{"weakness:x", "incomplete"}, 1),
+			entries: []content.RichTagEntry{
+				richEntry([]string{"weakness:x", "ac-independent"}, 5),
+				richEntry([]string{"weakness:x", "ac-after-solution"}, 4),
+				richEntry([]string{"weakness:x", "ac-after-solution"}, 3),
+				richEntry([]string{"weakness:x", "incomplete"}, 2),
+				richEntry([]string{"weakness:x", "incomplete"}, 1),
 			},
 			tag:       "weakness:x",
 			wantTrend: "declining",
@@ -134,11 +144,11 @@ func TestWeaknessTrend(t *testing.T) {
 		},
 		{
 			name: "filters unrelated entries",
-			entries: []content.TagEntry{
-				entry([]string{"weakness:x", "ac-independent"}, 3),
-				entry([]string{"weakness:y", "ac-after-solution"}, 2), // different tag
-				entry([]string{"weakness:x", "ac-independent"}, 1),
-				entry([]string{"dp", "ac-independent"}, 1), // no weakness tag
+			entries: []content.RichTagEntry{
+				richEntry([]string{"weakness:x", "ac-independent"}, 3),
+				richEntry([]string{"weakness:y", "ac-after-solution"}, 2), // different tag
+				richEntry([]string{"weakness:x", "ac-independent"}, 1),
+				richEntry([]string{"dp", "ac-independent"}, 1), // no weakness tag
 			},
 			tag:       "weakness:x",
 			wantTrend: "insufficient-data", // only 2 matches
@@ -146,7 +156,7 @@ func TestWeaknessTrend(t *testing.T) {
 		},
 		{
 			name:      "no matches",
-			entries:   []content.TagEntry{entry([]string{"dp", "ac-independent"}, 1)},
+			entries:   []content.RichTagEntry{richEntry([]string{"dp", "ac-independent"}, 1)},
 			tag:       "weakness:nonexistent",
 			wantTrend: "insufficient-data",
 			wantCount: 0,
@@ -421,10 +431,10 @@ func TestWeaknessTrend_ChronologicalOrder(t *testing.T) {
 	// Entries arrive DESC from DB (most recent first).
 	// WeaknessTrend must reverse them to chronological order.
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	entries := []content.TagEntry{
-		{ID: uuid.New(), Tags: []string{"weakness:x", "ac-independent"}, CreatedAt: base.Add(2 * 24 * time.Hour)}, // newest
-		{ID: uuid.New(), Tags: []string{"weakness:x", "ac-after-solution"}, CreatedAt: base.Add(1 * 24 * time.Hour)},
-		{ID: uuid.New(), Tags: []string{"weakness:x", "incomplete"}, CreatedAt: base}, // oldest
+	entries := []content.RichTagEntry{
+		{ID: uuid.New(), Slug: "s3", Title: "t3", Tags: []string{"weakness:x", "ac-independent"}, CreatedAt: base.Add(2 * 24 * time.Hour)}, // newest
+		{ID: uuid.New(), Slug: "s2", Title: "t2", Tags: []string{"weakness:x", "ac-after-solution"}, CreatedAt: base.Add(1 * 24 * time.Hour)},
+		{ID: uuid.New(), Slug: "s1", Title: "t1", Tags: []string{"weakness:x", "incomplete"}, CreatedAt: base}, // oldest
 	}
 
 	result := WeaknessTrend(entries, "weakness:x", 30)
@@ -434,11 +444,11 @@ func TestWeaknessTrend_ChronologicalOrder(t *testing.T) {
 	}
 	// After reversal: oldest first → result should be incomplete, ac-after-solution, ac-independent
 	want := []WeaknessPoint{
-		{Date: base.Format(time.DateOnly), Result: "incomplete"},
-		{Date: base.Add(1 * 24 * time.Hour).Format(time.DateOnly), Result: "ac-after-solution"},
-		{Date: base.Add(2 * 24 * time.Hour).Format(time.DateOnly), Result: "ac-independent"},
+		{Date: base.Format(time.DateOnly), Result: "incomplete", Title: "t1", Slug: "s1"},
+		{Date: base.Add(1 * 24 * time.Hour).Format(time.DateOnly), Result: "ac-after-solution", Title: "t2", Slug: "s2"},
+		{Date: base.Add(2 * 24 * time.Hour).Format(time.DateOnly), Result: "ac-independent", Title: "t3", Slug: "s3"},
 	}
-	if diff := cmp.Diff(want, result.Occurrences, cmpopts.IgnoreFields(WeaknessPoint{}, "Title")); diff != "" {
+	if diff := cmp.Diff(want, result.Occurrences, cmpopts.IgnoreFields(WeaknessPoint{}, "Observation")); diff != "" {
 		t.Errorf("WeaknessTrend() chronological order mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -446,7 +456,7 @@ func TestWeaknessTrend_ChronologicalOrder(t *testing.T) {
 func TestWeaknessTrend_TagAndPeriodPassThrough(t *testing.T) {
 	t.Parallel()
 
-	result := WeaknessTrend(nil, "weakness:focus", 45)
+	result := WeaknessTrend(nil, "weakness:focus", 45) //nolint:staticcheck // nil slice is valid input
 	if result.Tag != "weakness:focus" {
 		t.Errorf("WeaknessTrend() Tag = %q, want %q", result.Tag, "weakness:focus")
 	}

@@ -314,7 +314,7 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 
 	addTool(s, &mcp.Tool{
 		Name:        "log_learning_session",
-		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Tags use a controlled vocabulary: topic tags (array, string, hash-table, two-pointers, sliding-window, binary-search, stack, queue, linked-list, tree, binary-tree, bst, graph, bfs, dfs, heap, trie, union-find, dp, greedy, backtracking, bit-manipulation, math, matrix, interval, topological-sort, sorting, design, simulation, prefix-sum, divide-and-conquer, segment-tree, binary-indexed-tree), result (ac-independent, ac-with-hints, ac-after-solution, incomplete), weakness:xxx, improvement:xxx. Difficulty: easy, medium, hard.",
+		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Tags use a controlled vocabulary: topic tags (array, string, hash-table, two-pointers, sliding-window, binary-search, stack, queue, linked-list, tree, binary-tree, bst, graph, bfs, dfs, heap, trie, union-find, dp, greedy, backtracking, bit-manipulation, math, matrix, interval, topological-sort, sorting, design, simulation, prefix-sum, divide-and-conquer, segment-tree, binary-indexed-tree), result (ac-independent, ac-with-hints, ac-after-solution, incomplete), weakness:xxx, improvement:xxx. Difficulty: easy, medium, hard. Optional: learning_type (leetcode, book-reading, course, system-design, language) and metadata (per-type structured data with weakness_observations, key_concepts, etc.).",
 		Annotations: additive,
 	}, s.logLearningSession)
 
@@ -513,7 +513,7 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 
 	addTool(s, &mcp.Tool{
 		Name:        "get_weakness_trend",
-		Description: "Time series of a specific weakness tag's occurrences with trend analysis. Returns chronological list of occurrences with their result tags, plus a computed trend (improving / stable / declining / insufficient-data). Use for tracking whether a weakness is getting better over time. Example: get_weakness_trend(project=\"leetcode\", tag=\"weakness:pattern-recognition\", days=60).",
+		Description: "Time series of a specific weakness tag's occurrences with trend analysis. Returns chronological list of occurrences with result tags, slug, title, and observation text (from structured metadata). Computed trend: improving / stable / declining / insufficient-data. Use for tracking whether a weakness is getting better over time. Example: get_weakness_trend(project=\"leetcode\", tag=\"weakness:pattern-recognition\", days=60).",
 		Annotations: readOnly,
 	}, s.getWeaknessTrend)
 

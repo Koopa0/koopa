@@ -490,6 +490,9 @@ type LogLearningSessionInput struct {
 	Project    string   `json:"project" jsonschema:"required" jsonschema_description:"project name, slug, or alias (use 'none' for unaffiliated learning)"`
 	Difficulty string   `json:"difficulty,omitempty" jsonschema_description:"easy, medium, or hard"`
 	ProblemURL string   `json:"problem_url,omitempty" jsonschema_description:"problem link"`
+
+	LearningType string         `json:"learning_type,omitempty" jsonschema_description:"optional structured type: leetcode, book-reading, course, system-design, language"`
+	Metadata     map[string]any `json:"metadata,omitempty" jsonschema_description:"optional per-type structured data (weakness_observations, key_concepts, etc.)"`
 }
 
 // LogLearningSessionOutput is the output of the log_learning_session tool.
@@ -526,6 +529,11 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		tags = []string{}
 	}
 
+	// Validate per-type structured metadata if provided.
+	if err := learning.ValidateLearningMetadata(input.LearningType, input.Metadata); err != nil {
+		return nil, LogLearningSessionOutput{}, fmt.Errorf("metadata validation: %w", err)
+	}
+
 	now := time.Now()
 	topicSlug := tag.Slugify(input.Topic)
 	slug := fmt.Sprintf("%s-til-%s", topicSlug, now.Format("2006-01-02"))
@@ -554,6 +562,18 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		}
 	}
 
+	// Serialize per-type metadata into ai_metadata JSONB if provided.
+	var aiMetadata json.RawMessage
+	if input.Metadata != nil {
+		if input.LearningType != "" {
+			input.Metadata["learning_type"] = input.LearningType
+		}
+		aiMetadata, err = json.Marshal(input.Metadata)
+		if err != nil {
+			return nil, LogLearningSessionOutput{}, fmt.Errorf("marshaling metadata: %w", err)
+		}
+	}
+
 	params := &content.CreateParams{
 		Slug:        slug,
 		Title:       input.Title,
@@ -566,6 +586,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		ReviewLevel: content.ReviewAuto,
 		Visibility:  content.VisibilityPrivate,
 		ProjectID:   projectID,
+		AIMetadata:  aiMetadata,
 	}
 	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-til-%s", topicSlug, now.Format("2006-01-02")), now)
 	if err != nil {

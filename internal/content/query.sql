@@ -254,3 +254,14 @@ WHERE type = @content_type::content_type
   AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id'))
   AND created_at >= @since
 ORDER BY created_at DESC;
+
+-- name: ContentRichTagEntries :many
+-- Fetch id, slug, title, tags, ai_metadata, and created_at for learning analytics
+-- that need structured metadata (weakness trend, learning timeline).
+-- Heavier than ContentTagsByTypeAndProject — only use when slug/title/metadata are needed.
+SELECT id, slug, title, tags, ai_metadata, created_at
+FROM contents
+WHERE type = @content_type::content_type
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id'))
+  AND created_at >= @since
+ORDER BY created_at DESC;

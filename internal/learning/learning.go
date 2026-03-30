@@ -3,6 +3,7 @@ package learning
 
 import (
 	"cmp"
+	"encoding/json"
 	"slices"
 	"strings"
 	"time"
@@ -132,13 +133,16 @@ type WeaknessTrendResult struct {
 
 // WeaknessPoint is a single occurrence of a weakness tag.
 type WeaknessPoint struct {
-	Date   string `json:"date"`
-	Result string `json:"result,omitempty"`
-	Title  string `json:"title,omitempty"`
+	Date        string `json:"date"`
+	Result      string `json:"result,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Slug        string `json:"slug,omitempty"`
+	Observation string `json:"observation,omitempty"`
 }
 
-// WeaknessTrend computes time-series and trend for a specific tag.
-func WeaknessTrend(entries []content.TagEntry, tag string, days int) WeaknessTrendResult {
+// WeaknessTrend computes time-series and trend for a specific tag
+// using RichTagEntry which includes slug, title, and ai_metadata.
+func WeaknessTrend(entries []content.RichTagEntry, tag string, days int) WeaknessTrendResult {
 	var occurrences []WeaknessPoint
 	for _, e := range entries {
 		hasTag := false
@@ -155,8 +159,11 @@ func WeaknessTrend(entries []content.TagEntry, tag string, days int) WeaknessTre
 			continue
 		}
 		occurrences = append(occurrences, WeaknessPoint{
-			Date:   e.CreatedAt.Format(time.DateOnly),
-			Result: result,
+			Date:        e.CreatedAt.Format(time.DateOnly),
+			Result:      result,
+			Title:       e.Title,
+			Slug:        e.Slug,
+			Observation: extractObservation(e.AIMetadata, tag),
 		})
 	}
 
@@ -169,6 +176,33 @@ func WeaknessTrend(entries []content.TagEntry, tag string, days int) WeaknessTre
 		Trend:       computeTrend(occurrences),
 		PeriodDays:  days,
 	}
+}
+
+// extractObservation returns the observation text for a specific weakness tag
+// from ai_metadata.weakness_observations. Returns empty string when metadata
+// is nil or the tag is not found.
+func extractObservation(metadata json.RawMessage, tag string) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &m); err != nil {
+		return ""
+	}
+	raw, ok := m["weakness_observations"]
+	if !ok {
+		return ""
+	}
+	var observations []WeaknessObservation
+	if err := json.Unmarshal(raw, &observations); err != nil {
+		return ""
+	}
+	for _, obs := range observations {
+		if obs.Tag == tag {
+			return obs.Observation
+		}
+	}
+	return ""
 }
 
 // computeTrend assesses improvement based on the last 5 results.

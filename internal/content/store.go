@@ -442,6 +442,44 @@ func (s *Store) TagEntries(ctx context.Context, contentType Type, projectID *uui
 	return entries, nil
 }
 
+// RichTagEntry is a content record with slug, title, and ai_metadata for learning
+// analytics that need structured metadata (weakness trend, learning timeline).
+// Heavier than TagEntry — only use when slug/title/metadata are needed.
+type RichTagEntry struct {
+	ID         uuid.UUID
+	Slug       string
+	Title      string
+	Tags       []string
+	AIMetadata json.RawMessage // nil when content has no structured metadata
+	CreatedAt  time.Time
+}
+
+// RichTagEntries returns entries with slug, title, and ai_metadata for a given
+// content type, optionally filtered by project. Used by get_weakness_trend and
+// get_learning_timeline which need per-entry metadata.
+func (s *Store) RichTagEntries(ctx context.Context, contentType Type, projectID *uuid.UUID, since time.Time) ([]RichTagEntry, error) {
+	rows, err := s.q.ContentRichTagEntries(ctx, db.ContentRichTagEntriesParams{
+		ContentType: db.ContentType(contentType),
+		ProjectID:   projectID,
+		Since:       since,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying rich tag entries: %w", err)
+	}
+	entries := make([]RichTagEntry, len(rows))
+	for i := range rows {
+		entries[i] = RichTagEntry{
+			ID:         rows[i].ID,
+			Slug:       rows[i].Slug,
+			Title:      rows[i].Title,
+			Tags:       rows[i].Tags,
+			AIMetadata: rows[i].AiMetadata,
+			CreatedAt:  rows[i].CreatedAt,
+		}
+	}
+	return entries, nil
+}
+
 // PublishedForRSS returns recent published content for RSS feed.
 func (s *Store) PublishedForRSS(ctx context.Context, limit int) ([]Content, error) {
 	rows, err := s.q.PublishedForRSS(ctx, int32(limit)) // #nosec G115 -- RSS limit is a small constant, not user-controlled

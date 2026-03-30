@@ -1086,6 +1086,60 @@ func (q *Queries) ContentEmbeddingBySlug(ctx context.Context, slug string) (Cont
 	return i, err
 }
 
+const contentRichTagEntries = `-- name: ContentRichTagEntries :many
+SELECT id, slug, title, tags, ai_metadata, created_at
+FROM contents
+WHERE type = $1::content_type
+  AND ($2::uuid IS NULL OR project_id = $2)
+  AND created_at >= $3
+ORDER BY created_at DESC
+`
+
+type ContentRichTagEntriesParams struct {
+	ContentType ContentType `json:"content_type"`
+	ProjectID   *uuid.UUID  `json:"project_id"`
+	Since       time.Time   `json:"since"`
+}
+
+type ContentRichTagEntriesRow struct {
+	ID         uuid.UUID       `json:"id"`
+	Slug       string          `json:"slug"`
+	Title      string          `json:"title"`
+	Tags       []string        `json:"tags"`
+	AiMetadata json.RawMessage `json:"ai_metadata"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+// Fetch id, slug, title, tags, ai_metadata, and created_at for learning analytics
+// that need structured metadata (weakness trend, learning timeline).
+// Heavier than ContentTagsByTypeAndProject — only use when slug/title/metadata are needed.
+func (q *Queries) ContentRichTagEntries(ctx context.Context, arg ContentRichTagEntriesParams) ([]ContentRichTagEntriesRow, error) {
+	rows, err := q.db.Query(ctx, contentRichTagEntries, arg.ContentType, arg.ProjectID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ContentRichTagEntriesRow{}
+	for rows.Next() {
+		var i ContentRichTagEntriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Tags,
+			&i.AiMetadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const contentTagsByTypeAndProject = `-- name: ContentTagsByTypeAndProject :many
 SELECT id, tags, created_at
 FROM contents

@@ -95,9 +95,9 @@ func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, i
 	days := clamp(input.Days, 1, 180, 30)
 	since := time.Now().AddDate(0, 0, -days)
 
-	entries, err := s.contents.TagEntries(ctx, content.TypeTIL, &proj.ID, since)
+	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
 	if err != nil {
-		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("querying tag entries: %w", err)
+		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("querying rich tag entries: %w", err)
 	}
 
 	return nil, learning.WeaknessTrend(entries, input.Tag, days), nil

@@ -85,9 +85,9 @@ func (h *Handler) WeaknessTrendHTTP(w http.ResponseWriter, r *http.Request) {
 	days := parseIntParam(r, "days", 1, 180, 30)
 	since := time.Now().AddDate(0, 0, -days)
 
-	entries, err := h.contents.TagEntries(r.Context(), content.TypeTIL, &proj.ID, since)
+	entries, err := h.contents.RichTagEntries(r.Context(), content.TypeTIL, &proj.ID, since)
 	if err != nil {
-		h.logger.Error("querying tag entries for weakness trend", "error", err)
+		h.logger.Error("querying rich tag entries for weakness trend", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query tag entries")
 		return
 	}

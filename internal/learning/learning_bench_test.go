@@ -57,8 +57,25 @@ func BenchmarkNormalizeTag(b *testing.B) {
 
 func BenchmarkWeaknessTrend(b *testing.B) {
 	b.ReportAllocs()
-	entries := benchEntries(200)
+	entries := benchRichEntries(200)
 	for b.Loop() {
 		WeaknessTrend(entries, "dp", 90)
 	}
+}
+
+// benchRichEntries returns n synthetic RichTagEntry values for weakness trend benchmarks.
+func benchRichEntries(n int) []content.RichTagEntry {
+	topics := []string{"dp", "graph", "two-pointers", "binary-search", "greedy"}
+	results := []string{"ac-independent", "ac-with-hints", "ac-after-solution", "incomplete"}
+	entries := make([]content.RichTagEntry, n)
+	for i := range n {
+		entries[i] = content.RichTagEntry{
+			ID:        uuid.New(),
+			Slug:      "bench-slug",
+			Title:     "bench title",
+			Tags:      []string{topics[i%len(topics)], results[i%len(results)]},
+			CreatedAt: time.Now().AddDate(0, 0, -(i % 365)),
+		}
+	}
+	return entries
 }
