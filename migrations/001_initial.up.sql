@@ -656,25 +656,40 @@ COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the
 
 CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);
 
--- === Spaced Retrieval ===
+-- === FSRS Spaced Retrieval ===
 
-CREATE TABLE retrieval_attempts (
+-- Card state: one row per (content_id, tag) pair, UPSERT on review.
+CREATE TABLE fsrs_cards (
     id            BIGSERIAL PRIMARY KEY,
     content_id    UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
     tag           TEXT,
-    quality       TEXT NOT NULL CHECK (quality IN ('easy', 'hard', 'failed')),
-    interval_days INT NOT NULL DEFAULT 0,
-    ease_factor   REAL NOT NULL DEFAULT 2.5,
-    next_due      DATE NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    card_state    JSONB NOT NULL,
+    due           TIMESTAMPTZ NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(content_id, tag)
 );
 
-COMMENT ON TABLE retrieval_attempts IS 'Spaced retrieval self-test results. One row per (content, tag) attempt. SM-2 fields drive get_retrieval_queue scheduling.';
-COMMENT ON COLUMN retrieval_attempts.tag IS 'Specific weakness or concept tag being tested. NULL means the whole content was tested, not a specific tag.';
-COMMENT ON COLUMN retrieval_attempts.quality IS 'Self-assessed recall quality: easy (remembered clearly), hard (struggled but got it), failed (could not recall).';
-COMMENT ON COLUMN retrieval_attempts.interval_days IS 'SM-2 interval used for this attempt. Next interval is computed from this + quality.';
-COMMENT ON COLUMN retrieval_attempts.ease_factor IS 'SM-2 ease factor. Starts at 2.5, adjusted by quality. Floor is 1.3.';
-COMMENT ON COLUMN retrieval_attempts.next_due IS 'Date when this (content, tag) pair should next be reviewed, computed by SM-2.';
+COMMENT ON TABLE fsrs_cards IS 'FSRS card state for spaced retrieval. One row per (content, tag) pair. card_state is serialized go-fsrs Card struct.';
+COMMENT ON COLUMN fsrs_cards.tag IS 'Specific weakness or concept tag. NULL means whole-content review.';
+COMMENT ON COLUMN fsrs_cards.card_state IS 'Serialized fsrs.Card (Due, Stability, Difficulty, Reps, Lapses, State, etc.). Opaque to SQL — only queried via Go unmarshal.';
+COMMENT ON COLUMN fsrs_cards.due IS 'Denormalized from card_state for index-based due-date queries.';
 
-CREATE INDEX idx_retrieval_next_due ON retrieval_attempts (next_due, content_id);
-CREATE INDEX idx_retrieval_content_tag ON retrieval_attempts (content_id, tag, created_at DESC);
+CREATE INDEX idx_fsrs_cards_due ON fsrs_cards (due);
+
+-- Review history: append-only log of every review event.
+CREATE TABLE fsrs_review_logs (
+    id             BIGSERIAL PRIMARY KEY,
+    card_id        BIGINT NOT NULL REFERENCES fsrs_cards(id) ON DELETE CASCADE,
+    rating         INT NOT NULL CHECK (rating BETWEEN 1 AND 4),
+    scheduled_days INT NOT NULL,
+    elapsed_days   INT NOT NULL,
+    state          INT NOT NULL,
+    reviewed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE fsrs_review_logs IS 'Append-only FSRS review history. One row per review event.';
+COMMENT ON COLUMN fsrs_review_logs.rating IS '1=Again(forgot), 2=Hard(partial), 3=Good(remembered), 4=Easy.';
+COMMENT ON COLUMN fsrs_review_logs.state IS 'Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.';
+
+CREATE INDEX idx_fsrs_review_logs_card ON fsrs_review_logs (card_id, reviewed_at DESC);

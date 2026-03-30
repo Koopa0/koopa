@@ -217,6 +217,10 @@ SELECT slug FROM contents WHERE source_type = 'obsidian' ORDER BY slug;
 -- name: ContentEmbeddingBySlug :one
 SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published' AND visibility = 'public';
 
+-- name: ContentEmbeddingBySlugAny :one
+-- Like ContentEmbeddingBySlug but without visibility filter (for private TILs).
+SELECT id, embedding FROM contents WHERE slug = $1 AND embedding IS NOT NULL;
+
 -- name: SimilarContents :many
 SELECT c.id, c.slug, c.title, c.excerpt, c.type,
        (1 - (c.embedding <=> @target_embedding::vector))::float8 AS similarity
@@ -267,3 +271,24 @@ WHERE c.type = @content_type::content_type
   AND (sqlc.narg('project_id')::uuid IS NULL OR c.project_id = sqlc.narg('project_id'))
   AND c.created_at >= @since
 ORDER BY c.created_at DESC;
+
+-- name: SimilarTILs :many
+-- Embedding-based similarity search across all TILs (including private).
+-- No visibility filter — TILs are private by default.
+SELECT c.id, c.slug, c.title, c.excerpt, c.type, c.tags,
+       (1 - (c.embedding <=> @target_embedding::vector))::float8 AS similarity
+FROM contents c
+WHERE c.type = 'til'
+  AND c.id != @exclude_id
+  AND c.embedding IS NOT NULL
+ORDER BY c.embedding <=> @target_embedding::vector
+LIMIT @max_results;
+
+-- name: ContentsWithoutEmbedding :many
+-- Contents that need embedding generation (TILs, articles, notes).
+SELECT id, slug, title, body FROM contents
+WHERE embedding IS NULL
+  AND type IN ('til', 'article', 'note')
+  AND body != ''
+ORDER BY created_at DESC
+LIMIT @lim;

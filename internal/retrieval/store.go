@@ -2,17 +2,19 @@ package retrieval
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
 )
 
-// Store handles retrieval attempt persistence and queue queries.
+// Store handles FSRS card persistence and queue queries.
 type Store struct {
 	q db.DBTX
 }
@@ -25,109 +27,113 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: dbtx}
 }
 
-// LogAttempt records a retrieval attempt, looking up the previous attempt for
-// SM-2 calculation. Returns the created attempt with computed scheduling.
-func (s *Store) LogAttempt(ctx context.Context, contentID uuid.UUID, tag *string, quality string, now time.Time) (*Attempt, error) {
-	if !ValidQuality(quality) {
-		return nil, fmt.Errorf("invalid quality %q", quality)
-	}
-
+// ReviewCard performs the full review cycle: get/create card → FSRS compute → upsert → log.
+func (s *Store) ReviewCard(ctx context.Context, contentID uuid.UUID, tag *string, rating fsrs.Rating, now time.Time) (*ReviewResult, error) {
 	q := db.New(s.q)
 
-	// Look up previous attempt for SM-2 continuity.
-	var prevInterval int
-	prevEase := 2.5
-
-	prev, err := q.LatestAttempt(ctx, db.LatestAttemptParams{
+	// 1. Get existing card (may not exist for first review).
+	var card *fsrs.Card
+	existing, err := q.GetCard(ctx, db.GetCardParams{
 		ContentID: contentID,
 		Tag:       tag,
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("querying latest attempt: %w", err)
+		return nil, fmt.Errorf("getting card: %w", err)
 	}
 	if err == nil {
-		prevInterval = int(prev.IntervalDays)
-		prevEase = float64(prev.EaseFactor)
+		var c fsrs.Card
+		if unmarshalErr := json.Unmarshal(existing.CardState, &c); unmarshalErr != nil {
+			return nil, fmt.Errorf("unmarshaling card state: %w", unmarshalErr)
+		}
+		card = &c
 	}
 
-	sm2 := SM2Calculate(prevInterval, prevEase, quality, now)
-	nextDue, parseErr := time.Parse(time.DateOnly, sm2.NextDue)
-	if parseErr != nil {
-		return nil, fmt.Errorf("parsing next due: %w", parseErr)
-	}
+	// 2. Compute FSRS.
+	newCard, reviewLog := Review(card, rating, now)
 
-	row, err := q.InsertAttempt(ctx, db.InsertAttemptParams{
-		ContentID:    contentID,
-		Tag:          tag,
-		Quality:      quality,
-		IntervalDays: int32(sm2.IntervalDays), // #nosec G115 -- SM-2 intervals are small (max ~365 days)
-		EaseFactor:   float32(sm2.EaseFactor),
-		NextDue:      nextDue,
+	// 3. Serialize and upsert card state.
+	cardJSON, err := json.Marshal(newCard)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling card state: %w", err)
+	}
+	cardID, err := q.UpsertCard(ctx, db.UpsertCardParams{
+		ContentID: contentID,
+		Tag:       tag,
+		CardState: cardJSON,
+		Due:       newCard.Due,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("inserting attempt: %w", err)
+		return nil, fmt.Errorf("upserting card: %w", err)
 	}
 
-	return &Attempt{
-		ID:           row.ID,
-		ContentID:    row.ContentID,
-		Tag:          row.Tag,
-		Quality:      row.Quality,
-		IntervalDays: int(row.IntervalDays),
-		EaseFactor:   float64(row.EaseFactor),
-		NextDue:      row.NextDue.Format(time.DateOnly),
-		CreatedAt:    row.CreatedAt,
+	// 4. Log review.
+	if err := q.InsertReviewLog(ctx, db.InsertReviewLogParams{
+		CardID:        cardID,
+		Rating:        int32(rating),                  // #nosec G115 -- Rating is 1-4
+		ScheduledDays: int32(reviewLog.ScheduledDays), // #nosec G115 -- days bounded by MaximumInterval
+		ElapsedDays:   int32(reviewLog.ElapsedDays),   // #nosec G115 -- days bounded by MaximumInterval
+		State:         int32(reviewLog.State),         // #nosec G115 -- State is 0-3
+		ReviewedAt:    now,
+	}); err != nil {
+		return nil, fmt.Errorf("inserting review log: %w", err)
+	}
+
+	return &ReviewResult{
+		CardID:    cardID,
+		Due:       newCard.Due,
+		Stability: newCard.Stability,
+		State:     StateString(newCard.State),
 	}, nil
 }
 
-// Queue returns items due for review: overdue SM-2 items + never-retrieved recent TILs.
-// projectSlug is optional (nil for all projects).
-func (s *Store) Queue(ctx context.Context, projectSlug *string, limit int) ([]DueItem, error) {
+// Queue returns items due for review: overdue FSRS cards + never-reviewed recent TILs.
+func (s *Store) Queue(ctx context.Context, projectID *uuid.UUID, now time.Time, limit int) ([]DueItem, error) {
 	q := db.New(s.q)
 
-	// 1. Items where SM-2 next_due has arrived.
-	dueRows, err := q.DueItems(ctx, db.DueItemsParams{
-		ProjectSlug: projectSlug,
-		Lim:         int32(limit), // #nosec G115 -- limit capped at 50 by caller
+	// 1. Due cards.
+	dueRows, err := q.DueCards(ctx, db.DueCardsParams{
+		Now:       now,
+		ProjectID: projectID,
+		Lim:       int32(limit), // #nosec G115 -- limit capped at 50 by caller
 	})
 	if err != nil {
-		return nil, fmt.Errorf("querying due items: %w", err)
+		return nil, fmt.Errorf("querying due cards: %w", err)
 	}
 
 	items := make([]DueItem, 0, len(dueRows)+limit)
 	for i := range dueRows {
 		r := &dueRows[i]
-		reason := "overdue"
-		if r.LastQuality == QualityFailed {
-			reason = "failed-recently"
+		var stability float64
+		var c fsrs.Card
+		if unmarshalErr := json.Unmarshal(r.CardState, &c); unmarshalErr == nil {
+			stability = c.Stability
 		}
-		nextDue := r.NextDue.Format(time.DateOnly)
-		lastAt := r.LastAttemptAt
+		due := r.Due
 		items = append(items, DueItem{
-			ContentID:     r.ContentID,
-			Slug:          r.Slug,
-			Title:         r.Title,
-			Tag:           r.Tag,
-			Reason:        reason,
-			LastQuality:   r.LastQuality,
-			LastAttemptAt: &lastAt,
-			NextDue:       &nextDue,
-			AIMetadata:    r.AiMetadata,
+			CardID:     r.CardID,
+			ContentID:  r.ContentID,
+			Slug:       r.Slug,
+			Title:      r.Title,
+			Tag:        r.Tag,
+			Reason:     "overdue",
+			Stability:  &stability,
+			Due:        &due,
+			AIMetadata: r.AiMetadata,
 		})
 	}
 
-	// 2. Recent TILs never retrieved (fill remaining slots).
+	// 2. Never-reviewed TILs (fill remaining slots).
 	remaining := limit - len(items)
 	if remaining <= 0 {
 		return items, nil
 	}
 
-	neverRows, err := q.NeverRetrievedItems(ctx, db.NeverRetrievedItemsParams{
-		ProjectSlug: projectSlug,
-		Lim:         int32(remaining), // #nosec G115 -- remaining capped at 50
+	neverRows, err := q.NeverReviewedTILs(ctx, db.NeverReviewedTILsParams{
+		ProjectID: projectID,
+		Lim:       int32(remaining), // #nosec G115 -- remaining capped at 50
 	})
 	if err != nil {
-		return nil, fmt.Errorf("querying never-retrieved items: %w", err)
+		return nil, fmt.Errorf("querying never-reviewed TILs: %w", err)
 	}
 
 	for _, r := range neverRows {
@@ -135,15 +141,10 @@ func (s *Store) Queue(ctx context.Context, projectSlug *string, limit int) ([]Du
 			ContentID:  r.ID,
 			Slug:       r.Slug,
 			Title:      r.Title,
-			Reason:     "never-retrieved",
+			Reason:     "never-reviewed",
 			AIMetadata: r.AiMetadata,
 		})
 	}
 
 	return items, nil
-}
-
-// QueueResult is the response shape for the retrieval queue MCP tool / HTTP endpoint.
-type QueueResult struct {
-	Items []DueItem `json:"items"`
 }

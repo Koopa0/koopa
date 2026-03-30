@@ -4,126 +4,114 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
+	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 )
 
-func TestSM2Calculate(t *testing.T) {
+func TestReview_NewCard(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
 
-	tests := []struct {
-		name         string
-		prevInterval int
-		prevEase     float64
-		quality      string
-		wantInterval int
-		wantEase     float64
-		wantNextDue  string
-	}{
-		{
-			name:         "first attempt easy",
-			prevInterval: 0, prevEase: 2.5,
-			quality:      QualityEasy,
-			wantInterval: 3, wantEase: 2.5,
-			wantNextDue: "2026-03-28",
-		},
-		{
-			name:         "first attempt hard",
-			prevInterval: 0, prevEase: 2.5,
-			quality:      QualityHard,
-			wantInterval: 1, wantEase: 2.5,
-			wantNextDue: "2026-03-26",
-		},
-		{
-			name:         "first attempt failed",
-			prevInterval: 0, prevEase: 2.5,
-			quality:      QualityFailed,
-			wantInterval: 1, wantEase: 2.5,
-			wantNextDue: "2026-03-26",
-		},
-		{
-			name:         "second attempt easy after 3 days",
-			prevInterval: 3, prevEase: 2.5,
-			quality:      QualityEasy,
-			wantInterval: 8, wantEase: 2.65,
-			wantNextDue: "2026-04-02",
-		},
-		{
-			name:         "second attempt hard after 1 day",
-			prevInterval: 1, prevEase: 2.5,
-			quality:      QualityHard,
-			wantInterval: 2, wantEase: 2.35,
-			wantNextDue: "2026-03-27",
-		},
-		{
-			name:         "hard always grows at least 1",
-			prevInterval: 1, prevEase: 1.3,
-			quality:      QualityHard,
-			wantInterval: 2, wantEase: 1.3, // already at floor
-			wantNextDue: "2026-03-27",
-		},
-		{
-			name:         "failed resets to 1",
-			prevInterval: 14, prevEase: 2.5,
-			quality:      QualityFailed,
-			wantInterval: 1, wantEase: 2.3,
-			wantNextDue: "2026-03-26",
-		},
-		{
-			name:         "ease floor at 1.3",
-			prevInterval: 3, prevEase: 1.35,
-			quality:      QualityFailed,
-			wantInterval: 1, wantEase: 1.3,
-			wantNextDue: "2026-03-26",
-		},
-		{
-			name:         "easy grows interval with multiplier",
-			prevInterval: 7, prevEase: 2.5,
-			quality:      QualityEasy,
-			wantInterval: 18, wantEase: 2.65,
-			wantNextDue: "2026-04-12",
-		},
-	}
+	// First review of a new card with "Good" rating.
+	card, log := Review(nil, fsrs.Good, now)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := SM2Calculate(tt.prevInterval, tt.prevEase, tt.quality, now)
-			want := SM2Result{
-				IntervalDays: tt.wantInterval,
-				EaseFactor:   tt.wantEase,
-				NextDue:      tt.wantNextDue,
-			}
-			if diff := cmp.Diff(want, got); diff != "" {
-				t.Errorf("SM2Calculate(%d, %.2f, %q) mismatch (-want +got):\n%s",
-					tt.prevInterval, tt.prevEase, tt.quality, diff)
-			}
-		})
+	if card.State != fsrs.Learning && card.State != fsrs.Review {
+		t.Errorf("Review(nil, Good) State = %d, want Learning(1) or Review(2)", card.State)
+	}
+	if card.Due.Before(now) {
+		t.Errorf("Review(nil, Good) Due = %v, want after %v", card.Due, now)
+	}
+	if log.Rating != fsrs.Good {
+		t.Errorf("Review(nil, Good) log.Rating = %d, want %d", log.Rating, fsrs.Good)
 	}
 }
 
-func TestValidQuality(t *testing.T) {
+func TestReview_AgainEntersRelearning(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
+
+	// Build up a card through learning into review state.
+	card, _ := Review(nil, fsrs.Good, now)
+	for card.State != fsrs.Review {
+		card, _ = Review(&card, fsrs.Good, card.Due)
+	}
+
+	// "Again" from review state should enter relearning.
+	card, log := Review(&card, fsrs.Again, card.Due)
+
+	if card.State != fsrs.Relearning {
+		t.Errorf("Review(Again from Review) State = %d, want Relearning(3)", card.State)
+	}
+	if card.Lapses < 1 {
+		t.Errorf("Review(Again) Lapses = %d, want >= 1", card.Lapses)
+	}
+	if log.Rating != fsrs.Again {
+		t.Errorf("Review(Again) log.Rating = %d, want %d", log.Rating, fsrs.Again)
+	}
+}
+
+func TestReview_GoodIntervalGrows(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
+
+	card, _ := Review(nil, fsrs.Good, now)
+	firstDue := card.Due
+
+	card, _ = Review(&card, fsrs.Good, card.Due)
+	secondDue := card.Due
+
+	card, _ = Review(&card, fsrs.Good, card.Due)
+	thirdDue := card.Due
+
+	// Intervals should grow: first < second < third.
+	firstInterval := firstDue.Sub(now)
+	secondInterval := secondDue.Sub(firstDue)
+	thirdInterval := thirdDue.Sub(secondDue)
+
+	if secondInterval <= firstInterval {
+		t.Errorf("second interval (%v) should be > first (%v)", secondInterval, firstInterval)
+	}
+	if thirdInterval <= secondInterval {
+		t.Errorf("third interval (%v) should be > second (%v)", thirdInterval, secondInterval)
+	}
+}
+
+func TestReview_ExistingCard(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
+
+	// Pass an existing card (non-nil).
+	existing := fsrs.NewCard()
+	card, log := Review(&existing, fsrs.Hard, now)
+
+	if card.Due.Before(now) {
+		t.Errorf("Review(existing, Hard) Due = %v, want after %v", card.Due, now)
+	}
+	if log.Rating != fsrs.Hard {
+		t.Errorf("Review(existing, Hard) log.Rating = %d, want %d", log.Rating, fsrs.Hard)
+	}
+}
+
+func TestStateString(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		quality string
-		want    bool
+		state fsrs.State
+		want  string
 	}{
-		{"easy", true},
-		{"hard", true},
-		{"failed", true},
-		{"", false},
-		{"medium", false},
-		{"Easy", false},
+		{fsrs.New, "new"},
+		{fsrs.Learning, "learning"},
+		{fsrs.Review, "review"},
+		{fsrs.Relearning, "relearning"},
+		{fsrs.State(99), "unknown"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.quality, func(t *testing.T) {
-			t.Parallel()
-			if got := ValidQuality(tt.quality); got != tt.want {
-				t.Errorf("ValidQuality(%q) = %v, want %v", tt.quality, got, tt.want)
-			}
-		})
+		if got := StateString(tt.state); got != tt.want {
+			t.Errorf("StateString(%d) = %q, want %q", tt.state, got, tt.want)
+		}
 	}
 }

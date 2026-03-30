@@ -1086,6 +1086,23 @@ func (q *Queries) ContentEmbeddingBySlug(ctx context.Context, slug string) (Cont
 	return i, err
 }
 
+const contentEmbeddingBySlugAny = `-- name: ContentEmbeddingBySlugAny :one
+SELECT id, embedding FROM contents WHERE slug = $1 AND embedding IS NOT NULL
+`
+
+type ContentEmbeddingBySlugAnyRow struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+// Like ContentEmbeddingBySlug but without visibility filter (for private TILs).
+func (q *Queries) ContentEmbeddingBySlugAny(ctx context.Context, slug string) (ContentEmbeddingBySlugAnyRow, error) {
+	row := q.db.QueryRow(ctx, contentEmbeddingBySlugAny, slug)
+	var i ContentEmbeddingBySlugAnyRow
+	err := row.Scan(&i.ID, &i.Embedding)
+	return i, err
+}
+
 const contentRichTagEntries = `-- name: ContentRichTagEntries :many
 SELECT c.id, c.slug, c.title, c.tags, c.ai_metadata, c.created_at,
        p.slug AS project_slug
@@ -1282,6 +1299,48 @@ func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const contentsWithoutEmbedding = `-- name: ContentsWithoutEmbedding :many
+SELECT id, slug, title, body FROM contents
+WHERE embedding IS NULL
+  AND type IN ('til', 'article', 'note')
+  AND body != ''
+ORDER BY created_at DESC
+LIMIT $1
+`
+
+type ContentsWithoutEmbeddingRow struct {
+	ID    uuid.UUID `json:"id"`
+	Slug  string    `json:"slug"`
+	Title string    `json:"title"`
+	Body  string    `json:"body"`
+}
+
+// Contents that need embedding generation (TILs, articles, notes).
+func (q *Queries) ContentsWithoutEmbedding(ctx context.Context, lim int32) ([]ContentsWithoutEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, contentsWithoutEmbedding, lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ContentsWithoutEmbeddingRow{}
+	for rows.Next() {
+		var i ContentsWithoutEmbeddingRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Body,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const countInsightsByStatus = `-- name: CountInsightsByStatus :one
@@ -2175,63 +2234,58 @@ func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const dueItems = `-- name: DueItems :many
-WITH current_retrieval_state AS (
-    SELECT DISTINCT ON (content_id, tag)
-        content_id, tag, quality, interval_days, ease_factor, next_due, created_at
-    FROM retrieval_attempts
-    ORDER BY content_id, tag, created_at DESC
-)
+const dueCards = `-- name: DueCards :many
 SELECT
-    s.content_id, s.tag, s.quality AS last_quality,
-    s.interval_days, s.ease_factor, s.next_due, s.created_at AS last_attempt_at,
-    c.slug, c.title, c.ai_metadata
-FROM current_retrieval_state s
-JOIN contents c ON c.id = s.content_id
+    fc.id AS card_id,
+    fc.content_id,
+    fc.tag,
+    fc.card_state,
+    fc.due,
+    c.slug,
+    c.title,
+    c.ai_metadata
+FROM fsrs_cards fc
+JOIN contents c ON c.id = fc.content_id
 LEFT JOIN projects p ON p.id = c.project_id
-WHERE s.next_due <= CURRENT_DATE + 1
-  AND ($1::text IS NULL OR p.slug = $1)
-ORDER BY s.next_due ASC, s.ease_factor ASC
-LIMIT $2
+WHERE fc.due <= $1
+  AND ($2::uuid IS NULL OR c.project_id = $2)
+ORDER BY fc.due ASC
+LIMIT $3
 `
 
-type DueItemsParams struct {
-	ProjectSlug *string `json:"project_slug"`
-	Lim         int32   `json:"lim"`
+type DueCardsParams struct {
+	Now       time.Time  `json:"now"`
+	ProjectID *uuid.UUID `json:"project_id"`
+	Lim       int32      `json:"lim"`
 }
 
-type DueItemsRow struct {
-	ContentID     uuid.UUID       `json:"content_id"`
-	Tag           *string         `json:"tag"`
-	LastQuality   string          `json:"last_quality"`
-	IntervalDays  int32           `json:"interval_days"`
-	EaseFactor    float32         `json:"ease_factor"`
-	NextDue       time.Time       `json:"next_due"`
-	LastAttemptAt time.Time       `json:"last_attempt_at"`
-	Slug          string          `json:"slug"`
-	Title         string          `json:"title"`
-	AiMetadata    json.RawMessage `json:"ai_metadata"`
+type DueCardsRow struct {
+	CardID     int64           `json:"card_id"`
+	ContentID  uuid.UUID       `json:"content_id"`
+	Tag        *string         `json:"tag"`
+	CardState  []byte          `json:"card_state"`
+	Due        time.Time       `json:"due"`
+	Slug       string          `json:"slug"`
+	Title      string          `json:"title"`
+	AiMetadata json.RawMessage `json:"ai_metadata"`
 }
 
-// Items where the most recent attempt's next_due has arrived.
-// Uses DISTINCT ON to get the latest attempt per (content_id, tag) pair.
-func (q *Queries) DueItems(ctx context.Context, arg DueItemsParams) ([]DueItemsRow, error) {
-	rows, err := q.db.Query(ctx, dueItems, arg.ProjectSlug, arg.Lim)
+// Cards where due <= now, ordered by most urgent first.
+func (q *Queries) DueCards(ctx context.Context, arg DueCardsParams) ([]DueCardsRow, error) {
+	rows, err := q.db.Query(ctx, dueCards, arg.Now, arg.ProjectID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []DueItemsRow{}
+	items := []DueCardsRow{}
 	for rows.Next() {
-		var i DueItemsRow
+		var i DueCardsRow
 		if err := rows.Scan(
+			&i.CardID,
 			&i.ContentID,
 			&i.Tag,
-			&i.LastQuality,
-			&i.IntervalDays,
-			&i.EaseFactor,
-			&i.NextDue,
-			&i.LastAttemptAt,
+			&i.CardState,
+			&i.Due,
 			&i.Slug,
 			&i.Title,
 			&i.AiMetadata,
@@ -2691,6 +2745,35 @@ func (q *Queries) FlowRunsCount(ctx context.Context, status NullFlowStatus) (int
 	return count, err
 }
 
+const getCard = `-- name: GetCard :one
+SELECT id, content_id, tag, card_state, due, created_at, updated_at
+FROM fsrs_cards
+WHERE content_id = $1
+  AND (($2::text IS NULL AND tag IS NULL) OR tag = $2)
+`
+
+type GetCardParams struct {
+	ContentID uuid.UUID `json:"content_id"`
+	Tag       *string   `json:"tag"`
+}
+
+// Get the current FSRS card for a (content_id, tag) pair.
+// tag IS NULL matches rows where tag is NULL (whole-content review).
+func (q *Queries) GetCard(ctx context.Context, arg GetCardParams) (FsrsCard, error) {
+	row := q.db.QueryRow(ctx, getCard, arg.ContentID, arg.Tag)
+	var i FsrsCard
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.Tag,
+		&i.CardState,
+		&i.Due,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const goalByNotionPageID = `-- name: GoalByNotionPageID :one
 SELECT id, title, description, status, area, quarter, deadline,
        notion_page_id, created_at, updated_at
@@ -2891,44 +2974,6 @@ func (q *Queries) InsertAliasWithTag(ctx context.Context, arg InsertAliasWithTag
 	return err
 }
 
-const insertAttempt = `-- name: InsertAttempt :one
-INSERT INTO retrieval_attempts (content_id, tag, quality, interval_days, ease_factor, next_due)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, content_id, tag, quality, interval_days, ease_factor, next_due, created_at
-`
-
-type InsertAttemptParams struct {
-	ContentID    uuid.UUID `json:"content_id"`
-	Tag          *string   `json:"tag"`
-	Quality      string    `json:"quality"`
-	IntervalDays int32     `json:"interval_days"`
-	EaseFactor   float32   `json:"ease_factor"`
-	NextDue      time.Time `json:"next_due"`
-}
-
-func (q *Queries) InsertAttempt(ctx context.Context, arg InsertAttemptParams) (RetrievalAttempt, error) {
-	row := q.db.QueryRow(ctx, insertAttempt,
-		arg.ContentID,
-		arg.Tag,
-		arg.Quality,
-		arg.IntervalDays,
-		arg.EaseFactor,
-		arg.NextDue,
-	)
-	var i RetrievalAttempt
-	err := row.Scan(
-		&i.ID,
-		&i.ContentID,
-		&i.Tag,
-		&i.Quality,
-		&i.IntervalDays,
-		&i.EaseFactor,
-		&i.NextDue,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const insertEventTag = `-- name: InsertEventTag :exec
 INSERT INTO activity_event_tags (event_id, tag_id)
 VALUES ($1, $2)
@@ -3037,6 +3082,32 @@ func (q *Queries) InsertReconcileRun(ctx context.Context, arg InsertReconcileRun
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertReviewLog = `-- name: InsertReviewLog :exec
+INSERT INTO fsrs_review_logs (card_id, rating, scheduled_days, elapsed_days, state, reviewed_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertReviewLogParams struct {
+	CardID        int64     `json:"card_id"`
+	Rating        int32     `json:"rating"`
+	ScheduledDays int32     `json:"scheduled_days"`
+	ElapsedDays   int32     `json:"elapsed_days"`
+	State         int32     `json:"state"`
+	ReviewedAt    time.Time `json:"reviewed_at"`
+}
+
+func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams) error {
+	_, err := q.db.Exec(ctx, insertReviewLog,
+		arg.CardID,
+		arg.Rating,
+		arg.ScheduledDays,
+		arg.ElapsedDays,
+		arg.State,
+		arg.ReviewedAt,
+	)
+	return err
 }
 
 const insertUnmappedAlias = `-- name: InsertUnmappedAlias :exec
@@ -3375,38 +3446,6 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 	var rejected bool
 	err := row.Scan(&rejected)
 	return rejected, err
-}
-
-const latestAttempt = `-- name: LatestAttempt :one
-SELECT id, content_id, tag, quality, interval_days, ease_factor, next_due, created_at
-FROM retrieval_attempts
-WHERE content_id = $1
-  AND (($2::text IS NULL AND tag IS NULL) OR tag = $2)
-ORDER BY created_at DESC
-LIMIT 1
-`
-
-type LatestAttemptParams struct {
-	ContentID uuid.UUID `json:"content_id"`
-	Tag       *string   `json:"tag"`
-}
-
-// Most recent attempt for a (content_id, tag) pair.
-// tag IS NULL matches rows where tag is NULL (whole-content retrieval).
-func (q *Queries) LatestAttempt(ctx context.Context, arg LatestAttemptParams) (RetrievalAttempt, error) {
-	row := q.db.QueryRow(ctx, latestAttempt, arg.ContentID, arg.Tag)
-	var i RetrievalAttempt
-	err := row.Scan(
-		&i.ID,
-		&i.ContentID,
-		&i.Tag,
-		&i.Quality,
-		&i.IntervalDays,
-		&i.EaseFactor,
-		&i.NextDue,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const latestCollectedByRecency = `-- name: LatestCollectedByRecency :many
@@ -3988,50 +4027,48 @@ func (q *Queries) MyDayTasksWithNotionPageID(ctx context.Context) ([]MyDayTasksW
 	return items, nil
 }
 
-const neverRetrievedItems = `-- name: NeverRetrievedItems :many
-SELECT c.id, c.slug, c.title, c.tags, c.ai_metadata, c.created_at
+const neverReviewedTILs = `-- name: NeverReviewedTILs :many
+SELECT c.id, c.slug, c.title, c.ai_metadata, c.created_at
 FROM contents c
 LEFT JOIN projects p ON p.id = c.project_id
 WHERE c.type = 'til'
-  AND ($1::text IS NULL OR p.slug = $1)
+  AND ($1::uuid IS NULL OR c.project_id = $1)
   AND c.created_at >= now() - interval '7 days'
   AND c.created_at <= now() - interval '1 day'
   AND NOT EXISTS (
-      SELECT 1 FROM retrieval_attempts ra WHERE ra.content_id = c.id
+      SELECT 1 FROM fsrs_cards fc WHERE fc.content_id = c.id
   )
 ORDER BY c.created_at ASC
 LIMIT $2
 `
 
-type NeverRetrievedItemsParams struct {
-	ProjectSlug *string `json:"project_slug"`
-	Lim         int32   `json:"lim"`
+type NeverReviewedTILsParams struct {
+	ProjectID *uuid.UUID `json:"project_id"`
+	Lim       int32      `json:"lim"`
 }
 
-type NeverRetrievedItemsRow struct {
+type NeverReviewedTILsRow struct {
 	ID         uuid.UUID       `json:"id"`
 	Slug       string          `json:"slug"`
 	Title      string          `json:"title"`
-	Tags       []string        `json:"tags"`
 	AiMetadata json.RawMessage `json:"ai_metadata"`
 	CreatedAt  time.Time       `json:"created_at"`
 }
 
-// Recent TIL entries (1-7 days old) that have never been tested.
-func (q *Queries) NeverRetrievedItems(ctx context.Context, arg NeverRetrievedItemsParams) ([]NeverRetrievedItemsRow, error) {
-	rows, err := q.db.Query(ctx, neverRetrievedItems, arg.ProjectSlug, arg.Lim)
+// Recent TIL entries (1-7 days old) that have no fsrs_card yet.
+func (q *Queries) NeverReviewedTILs(ctx context.Context, arg NeverReviewedTILsParams) ([]NeverReviewedTILsRow, error) {
+	rows, err := q.db.Query(ctx, neverReviewedTILs, arg.ProjectID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []NeverRetrievedItemsRow{}
+	items := []NeverReviewedTILsRow{}
 	for rows.Next() {
-		var i NeverRetrievedItemsRow
+		var i NeverReviewedTILsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Slug,
 			&i.Title,
-			&i.Tags,
 			&i.AiMetadata,
 			&i.CreatedAt,
 		); err != nil {
@@ -6412,6 +6449,63 @@ func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams
 	return items, nil
 }
 
+const similarTILs = `-- name: SimilarTILs :many
+SELECT c.id, c.slug, c.title, c.excerpt, c.type, c.tags,
+       (1 - (c.embedding <=> $1::vector))::float8 AS similarity
+FROM contents c
+WHERE c.type = 'til'
+  AND c.id != $2
+  AND c.embedding IS NOT NULL
+ORDER BY c.embedding <=> $1::vector
+LIMIT $3
+`
+
+type SimilarTILsParams struct {
+	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
+	ExcludeID       uuid.UUID          `json:"exclude_id"`
+	MaxResults      int32              `json:"max_results"`
+}
+
+type SimilarTILsRow struct {
+	ID         uuid.UUID   `json:"id"`
+	Slug       string      `json:"slug"`
+	Title      string      `json:"title"`
+	Excerpt    string      `json:"excerpt"`
+	Type       ContentType `json:"type"`
+	Tags       []string    `json:"tags"`
+	Similarity float64     `json:"similarity"`
+}
+
+// Embedding-based similarity search across all TILs (including private).
+// No visibility filter — TILs are private by default.
+func (q *Queries) SimilarTILs(ctx context.Context, arg SimilarTILsParams) ([]SimilarTILsRow, error) {
+	rows, err := q.db.Query(ctx, similarTILs, arg.TargetEmbedding, arg.ExcludeID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SimilarTILsRow{}
+	for rows.Next() {
+		var i SimilarTILsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Excerpt,
+			&i.Type,
+			&i.Tags,
+			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sourceByDatabaseID = `-- name: SourceByDatabaseID :one
 SELECT id, database_id, name, description, role, sync_mode, property_map,
        poll_interval, enabled, last_synced_at, created_at, updated_at
@@ -7751,6 +7845,36 @@ func (q *Queries) UpdateTopic(ctx context.Context, arg UpdateTopicParams) (Topic
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const upsertCard = `-- name: UpsertCard :one
+INSERT INTO fsrs_cards (content_id, tag, card_state, due)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (content_id, tag) DO UPDATE SET
+    card_state = EXCLUDED.card_state,
+    due        = EXCLUDED.due,
+    updated_at = now()
+RETURNING id
+`
+
+type UpsertCardParams struct {
+	ContentID uuid.UUID `json:"content_id"`
+	Tag       *string   `json:"tag"`
+	CardState []byte    `json:"card_state"`
+	Due       time.Time `json:"due"`
+}
+
+// Create or update a card's FSRS state and due date.
+func (q *Queries) UpsertCard(ctx context.Context, arg UpsertCardParams) (int64, error) {
+	row := q.db.QueryRow(ctx, upsertCard,
+		arg.ContentID,
+		arg.Tag,
+		arg.CardState,
+		arg.Due,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertGoalByNotionPageID = `-- name: UpsertGoalByNotionPageID :one

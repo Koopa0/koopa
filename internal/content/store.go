@@ -954,3 +954,72 @@ func rowToContent(r contentRow) Content {
 	}
 	return c
 }
+
+// SimilarTIL is a TIL content item returned by embedding similarity search.
+type SimilarTIL struct {
+	Slug       string   `json:"slug"`
+	Title      string   `json:"title"`
+	Tags       []string `json:"tags"`
+	Similarity float64  `json:"similarity"`
+}
+
+// SimilarTILs finds TILs semantically similar to the given content by embedding.
+// No visibility filter — TILs are private by default.
+func (s *Store) SimilarTILs(ctx context.Context, slug string, limit int) ([]SimilarTIL, error) {
+	r, err := s.q.ContentEmbeddingBySlugAny(ctx, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return []SimilarTIL{}, nil // no embedding → empty results
+		}
+		return nil, fmt.Errorf("querying embedding for %s: %w", slug, err)
+	}
+	if r.Embedding == nil {
+		return []SimilarTIL{}, nil
+	}
+
+	rows, err := s.q.SimilarTILs(ctx, db.SimilarTILsParams{
+		TargetEmbedding: *r.Embedding,
+		ExcludeID:       r.ID,
+		MaxResults:      int32(limit), // #nosec G115 -- limit bounded by handler
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying similar TILs: %w", err)
+	}
+
+	results := make([]SimilarTIL, len(rows))
+	for i, row := range rows {
+		results[i] = SimilarTIL{
+			Slug:       row.Slug,
+			Title:      row.Title,
+			Tags:       row.Tags,
+			Similarity: row.Similarity,
+		}
+	}
+	return results, nil
+}
+
+// EmbeddingCandidate is a content record that needs embedding generation.
+type EmbeddingCandidate struct {
+	ID    uuid.UUID
+	Slug  string
+	Title string
+	Body  string
+}
+
+// ContentsWithoutEmbedding returns content records that need embedding generation.
+func (s *Store) ContentsWithoutEmbedding(ctx context.Context, limit int32) ([]EmbeddingCandidate, error) {
+	rows, err := s.q.ContentsWithoutEmbedding(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing contents without embedding: %w", err)
+	}
+	candidates := make([]EmbeddingCandidate, len(rows))
+	for i, r := range rows {
+		candidates[i] = EmbeddingCandidate{
+			ID:    r.ID,
+			Slug:  r.Slug,
+			Title: r.Title,
+			Body:  r.Body,
+		}
+	}
+	return candidates, nil
+}

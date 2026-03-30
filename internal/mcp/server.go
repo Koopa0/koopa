@@ -538,18 +538,24 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		Annotations: readOnly,
 	}, s.synthesizeTopic)
 
+	addTool(s, &mcp.Tool{
+		Name:        "find_similar_content",
+		Description: "Find semantically similar TILs using embedding cosine similarity. Use when Learning Claude wants to discover cross-topic concept connections, or when reviewing a TIL and looking for related concepts. Requires content to have an embedding (generated hourly by cron). Returns empty array if no embedding exists.",
+		Annotations: readOnly,
+	}, s.findSimilarContent)
+
 	// --- Spaced retrieval tools (conditional: requires retrieval store) ---
 
 	if s.retrieval != nil {
 		addTool(s, &mcp.Tool{
 			Name:        "log_retrieval_attempt",
-			Description: "Record a spaced retrieval self-test result. Use when the user tests their recall of a TIL concept — 'remembered', 'forgot', 'struggled'. Computes next review date via SM-2. Required: content_slug, quality (easy/hard/failed). Optional: tag (specific weakness tag; omit for whole-content retrieval).",
+			Description: "Record a spaced retrieval self-test result using FSRS scheduling. Required: content_slug, rating (1=forgot, 2=partial recall, 3=remembered). Optional: tag (specific weakness tag; omit for whole-content retrieval). Returns next due date, memory stability, and card state.",
 			Annotations: additive,
 		}, s.logRetrievalAttempt)
 
 		addTool(s, &mcp.Tool{
 			Name:        "get_retrieval_queue",
-			Description: "Get TILs due for spaced retrieval review: overdue SM-2 items + recent TILs never tested. Use at the start of a learning session for review, or when the user asks 'what should I review'. Optional project filter; default limit 10.",
+			Description: "Get TILs due for spaced retrieval review: overdue FSRS cards + recent TILs never tested. Use at the start of a learning session for review, or when the user asks 'what should I review'. Optional project filter; default limit 10.",
 			Annotations: readOnly,
 		}, s.getRetrievalQueue)
 	}

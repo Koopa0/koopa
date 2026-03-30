@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
@@ -139,29 +140,29 @@ func (s *Server) getLearningTimeline(ctx context.Context, _ *mcp.CallToolRequest
 // LogRetrievalAttemptInput is the input for the log_retrieval_attempt tool.
 type LogRetrievalAttemptInput struct {
 	ContentSlug string  `json:"content_slug" jsonschema:"required" jsonschema_description:"TIL slug to record retrieval for"`
-	Quality     string  `json:"quality" jsonschema:"required" jsonschema_description:"recall quality: easy, hard, or failed"`
+	Rating      int     `json:"rating" jsonschema:"required" jsonschema_description:"recall quality: 1=forgot, 2=partial recall, 3=remembered"`
 	Tag         *string `json:"tag,omitempty" jsonschema_description:"specific weakness/concept tag (omit for whole-content retrieval)"`
 }
 
-func (s *Server) logRetrievalAttempt(ctx context.Context, _ *mcp.CallToolRequest, input LogRetrievalAttemptInput) (*mcp.CallToolResult, retrieval.Attempt, error) {
+func (s *Server) logRetrievalAttempt(ctx context.Context, _ *mcp.CallToolRequest, input LogRetrievalAttemptInput) (*mcp.CallToolResult, retrieval.ReviewResult, error) {
 	if input.ContentSlug == "" {
-		return nil, retrieval.Attempt{}, fmt.Errorf("content_slug is required")
+		return nil, retrieval.ReviewResult{}, fmt.Errorf("content_slug is required")
 	}
-	if !retrieval.ValidQuality(input.Quality) {
-		return nil, retrieval.Attempt{}, fmt.Errorf("invalid quality %q (valid: easy, hard, failed)", input.Quality)
+	if input.Rating < 1 || input.Rating > 4 {
+		return nil, retrieval.ReviewResult{}, fmt.Errorf("invalid rating %d (valid: 1=forgot, 2=partial, 3=remembered)", input.Rating)
 	}
 
 	c, err := s.contents.ContentBySlug(ctx, input.ContentSlug)
 	if err != nil {
-		return nil, retrieval.Attempt{}, fmt.Errorf("content not found: %s", input.ContentSlug)
+		return nil, retrieval.ReviewResult{}, fmt.Errorf("content not found: %s", input.ContentSlug)
 	}
 
-	attempt, err := s.retrieval.LogAttempt(ctx, c.ID, input.Tag, input.Quality, time.Now())
+	result, err := s.retrieval.ReviewCard(ctx, c.ID, input.Tag, fsrs.Rating(input.Rating), time.Now())
 	if err != nil {
-		return nil, retrieval.Attempt{}, fmt.Errorf("logging retrieval attempt: %w", err)
+		return nil, retrieval.ReviewResult{}, fmt.Errorf("recording review: %w", err)
 	}
 
-	return nil, *attempt, nil
+	return nil, *result, nil
 }
 
 // --- B6: get_retrieval_queue ---
@@ -173,21 +174,44 @@ type RetrievalQueueInput struct {
 }
 
 func (s *Server) getRetrievalQueue(ctx context.Context, _ *mcp.CallToolRequest, input RetrievalQueueInput) (*mcp.CallToolResult, retrieval.QueueResult, error) {
-	var projectSlug *string
+	var projectID *uuid.UUID
 	if input.Project != "" {
 		proj, err := s.resolveProjectChain(ctx, input.Project)
 		if err != nil {
 			return nil, retrieval.QueueResult{}, err
 		}
-		projectSlug = &proj.Slug
+		projectID = &proj.ID
 	}
 
 	limit := clamp(input.Limit, 1, 50, 10)
 
-	items, err := s.retrieval.Queue(ctx, projectSlug, limit)
+	items, err := s.retrieval.Queue(ctx, projectID, time.Now(), limit)
 	if err != nil {
 		return nil, retrieval.QueueResult{}, fmt.Errorf("querying retrieval queue: %w", err)
 	}
 
 	return nil, retrieval.QueueResult{Items: items}, nil
+}
+
+// --- B7: find_similar_content ---
+
+// FindSimilarContentInput is the input for the find_similar_content tool.
+type FindSimilarContentInput struct {
+	ContentSlug string `json:"content_slug" jsonschema:"required" jsonschema_description:"slug of the TIL to find similar content for"`
+	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 5, max 20)"`
+}
+
+func (s *Server) findSimilarContent(ctx context.Context, _ *mcp.CallToolRequest, input FindSimilarContentInput) (*mcp.CallToolResult, []content.SimilarTIL, error) {
+	if input.ContentSlug == "" {
+		return nil, nil, fmt.Errorf("content_slug is required")
+	}
+
+	limit := clamp(input.Limit, 1, 20, 5)
+
+	results, err := s.contents.SimilarTILs(ctx, input.ContentSlug, limit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("finding similar content: %w", err)
+	}
+
+	return nil, results, nil
 }

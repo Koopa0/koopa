@@ -244,9 +244,9 @@ func RegisterRoutes(mux *http.ServeMux, d *Handlers, authMid, rlMid func(http.Ha
 	mux.Handle("GET /api/admin/stats/weakness-trend", authMid(http.HandlerFunc(d.Learning.WeaknessTrendHTTP)))
 	mux.Handle("GET /api/admin/stats/learning-timeline", authMid(http.HandlerFunc(d.Learning.TimelineHTTP)))
 
-	// admin — spaced retrieval
+	// admin — spaced retrieval (FSRS)
 	if d.Retrieval != nil {
-		mux.Handle("POST /api/admin/retrieval-attempts", authMid(http.HandlerFunc(d.Retrieval.LogAttemptHTTP)))
-		mux.Handle("GET /api/admin/retrieval-queue", authMid(http.HandlerFunc(d.Retrieval.QueueHTTP)))
+		mux.Handle("POST /api/admin/retrieval/review", authMid(http.HandlerFunc(d.Retrieval.ReviewHTTP)))
+		mux.Handle("GET /api/admin/retrieval/queue", authMid(http.HandlerFunc(d.Retrieval.QueueHTTP)))
 	}
 }
