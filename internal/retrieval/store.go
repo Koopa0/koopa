@@ -108,17 +108,19 @@ func (s *Store) Queue(ctx context.Context, projectID *uuid.UUID, now time.Time, 
 		if unmarshalErr := json.Unmarshal(r.CardState, &c); unmarshalErr == nil {
 			stability = c.Stability
 		}
-		due := r.Due
+		tag := ""
+		if r.Tag != nil {
+			tag = *r.Tag
+		}
 		items = append(items, DueItem{
-			CardID:     r.CardID,
-			ContentID:  r.ContentID.String(),
-			Slug:       r.Slug,
-			Title:      r.Title,
-			Tag:        r.Tag,
-			Reason:     "overdue",
-			Stability:  &stability,
-			Due:        &due,
-			AIMetadata: r.AiMetadata,
+			CardID:    r.CardID,
+			ContentID: r.ContentID.String(),
+			Slug:      r.Slug,
+			Title:     r.Title,
+			Tag:       tag,
+			Reason:    "overdue",
+			Stability: stability,
+			Due:       r.Due.Format(time.RFC3339),
 		})
 	}
 
@@ -138,11 +140,10 @@ func (s *Store) Queue(ctx context.Context, projectID *uuid.UUID, now time.Time, 
 
 	for _, r := range neverRows {
 		items = append(items, DueItem{
-			ContentID:  r.ID.String(),
-			Slug:       r.Slug,
-			Title:      r.Title,
-			Reason:     "never-reviewed",
-			AIMetadata: r.AiMetadata,
+			ContentID: r.ID.String(),
+			Slug:      r.Slug,
+			Title:     r.Title,
+			Reason:    "never-reviewed",
 		})
 	}
 

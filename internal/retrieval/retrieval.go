@@ -5,7 +5,6 @@
 package retrieval
 
 import (
-	"encoding/json"
 	"time"
 
 	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
@@ -33,18 +32,18 @@ type ReviewResult struct {
 }
 
 // DueItem is a card that's due for review, enriched with content metadata.
-// ContentID is string (not uuid.UUID) because the MCP SDK schema generator
-// infers [16]byte as type:"array", causing output validation failure.
+// DueItem is a card that's due for review, enriched with content metadata.
+// Uses string for ContentID and Due to avoid MCP SDK schema inference issues
+// with uuid.UUID ([16]byte → "array") and json.RawMessage ([]byte → "array").
 type DueItem struct {
-	CardID     int64           `json:"card_id"`
-	ContentID  string          `json:"content_id"`
-	Slug       string          `json:"slug"`
-	Title      string          `json:"title"`
-	Tag        *string         `json:"tag,omitempty"`
-	Reason     string          `json:"reason"`
-	Stability  *float64        `json:"stability,omitempty"`
-	Due        *time.Time      `json:"due,omitempty"`
-	AIMetadata json.RawMessage `json:"ai_metadata,omitempty"`
+	CardID    int64   `json:"card_id"`
+	ContentID string  `json:"content_id"`
+	Slug      string  `json:"slug"`
+	Title     string  `json:"title"`
+	Tag       string  `json:"tag,omitempty"`
+	Reason    string  `json:"reason"`
+	Stability float64 `json:"stability,omitempty"`
+	Due       string  `json:"due,omitempty"`
 }
 
 // QueueResult is the response shape for the retrieval queue.
