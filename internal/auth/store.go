@@ -1,0 +1,129 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/Koopa0/koopa0.dev/internal/db"
+)
+
+// Store handles database operations for auth.
+type Store struct {
+	q *db.Queries
+}
+
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX) *Store {
+	return &Store{q: db.New(dbtx)}
+}
+
+// UserByID returns the user with the given ID.
+func (s *Store) UserByID(ctx context.Context, id uuid.UUID) (*User, error) {
+	row, err := s.q.UserByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying user by id: %w", err)
+	}
+	return &User{
+		ID:        row.ID,
+		Email:     row.Email,
+		Role:      row.Role,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, nil
+}
+
+// UpsertUserByEmail creates a user or updates the timestamp if email exists.
+func (s *Store) UpsertUserByEmail(ctx context.Context, email string) (*User, error) {
+	row, err := s.q.UpsertUserByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("upserting user by email: %w", err)
+	}
+	return &User{
+		ID:        row.ID,
+		Email:     row.Email,
+		Role:      row.Role,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, nil
+}
+
+// CreateRefreshToken stores a new refresh token hash.
+func (s *Store) CreateRefreshToken(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time) error {
+	err := s.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
+		UserID:    userID,
+		TokenHash: tokenHash,
+		ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return ErrConflict
+		}
+		return fmt.Errorf("creating refresh token: %w", err)
+	}
+	return nil
+}
+
+// RefreshTokenByHash returns the refresh token with the given hash.
+func (s *Store) RefreshTokenByHash(ctx context.Context, tokenHash string) (*RefreshToken, error) {
+	row, err := s.q.RefreshTokenByHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying refresh token: %w", err)
+	}
+	return &RefreshToken{
+		ID:        row.ID,
+		UserID:    row.UserID,
+		TokenHash: row.TokenHash,
+		ExpiresAt: row.ExpiresAt,
+		CreatedAt: row.CreatedAt,
+	}, nil
+}
+
+// ConsumeRefreshToken atomically deletes a refresh token by hash and returns it.
+// Returns ErrNotFound if the token does not exist (already consumed or never existed).
+func (s *Store) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error) {
+	row, err := s.q.ConsumeRefreshToken(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("consuming refresh token: %w", err)
+	}
+	return &RefreshToken{
+		ID:        row.ID,
+		UserID:    row.UserID,
+		TokenHash: row.TokenHash,
+		ExpiresAt: row.ExpiresAt,
+		CreatedAt: row.CreatedAt,
+	}, nil
+}
+
+// DeleteRefreshToken removes a refresh token by hash.
+func (s *Store) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
+	err := s.q.DeleteRefreshToken(ctx, tokenHash)
+	if err != nil {
+		return fmt.Errorf("deleting refresh token: %w", err)
+	}
+	return nil
+}
+
+// DeleteExpiredTokens removes all expired refresh tokens.
+func (s *Store) DeleteExpiredTokens(ctx context.Context) error {
+	err := s.q.DeleteExpiredTokens(ctx)
+	if err != nil {
+		return fmt.Errorf("deleting expired tokens: %w", err)
+	}
+	return nil
+}

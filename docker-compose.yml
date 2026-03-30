@@ -61,7 +61,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/blog?sslmode=disable
@@ -110,7 +110,7 @@ services:
 
   mcp:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile.mcp
     environment:
       DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/blog?sslmode=disable

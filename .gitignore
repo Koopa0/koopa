@@ -27,3 +27,9 @@ backend/vendor/
 # Claude
 .claude/
 .mcp.json
+
+# Build artifacts
+/app
+bin/
+*.exe
+.claude/session-learnings.log
