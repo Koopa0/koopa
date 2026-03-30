@@ -310,6 +310,11 @@ export class KnowledgeMetricsComponent implements OnInit {
 
   // ─── Actions ───
 
+  protected onProjectSelect(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    this.selectProject(target.value);
+  }
+
   protected toggleWeakness(tag: string): void {
     if (this.expandedWeakness() === tag) {
       this.expandedWeakness.set(null);

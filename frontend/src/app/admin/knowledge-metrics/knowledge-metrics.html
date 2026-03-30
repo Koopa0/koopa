@@ -11,7 +11,7 @@
     @if (projects().length > 1) {
     <select
       [value]="selectedProject()"
-      (change)="selectProject($any($event.target).value)"
+      (change)="onProjectSelect($event)"
       class="rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-hidden focus:border-zinc-500"
     >
       @for (p of projects(); track p.id) {
