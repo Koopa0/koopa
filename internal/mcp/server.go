@@ -555,7 +555,7 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	if s.retrieval != nil {
 		addTool(s, &mcp.Tool{
 			Name:        "log_retrieval_attempt",
-			Description: "Record a spaced retrieval self-test result using FSRS scheduling. Required: content_slug, rating (1=forgot, 2=partial recall, 3=remembered). Optional: tag (specific weakness tag; omit for whole-content retrieval). Returns next due date, memory stability, and card state.",
+			Description: "Record a spaced retrieval self-test result using FSRS scheduling. Required: content_slug, rating (1=Again/forgot, 2=Hard/partial recall, 3=Good/remembered, 4=Easy/automatic). Optional: tag (specific weakness tag; omit for whole-content retrieval). Returns next due date, memory stability, and card state (new/learning/review/relearning).",
 			Annotations: additive,
 		}, s.logRetrievalAttempt)
 
