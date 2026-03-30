@@ -101,10 +101,10 @@ type Stats struct {
 
 var (
 	// ErrNotFound indicates the collected data does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("entry: not found")
 
 	// ErrConflict indicates a duplicate URL hash.
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("entry: conflict")
 
 	// ErrInvalidInput indicates the request fails validation.
 	ErrInvalidInput = errors.New("invalid input")

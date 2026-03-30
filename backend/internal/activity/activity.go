@@ -63,8 +63,8 @@ type ChangelogEvent struct {
 
 var (
 	// ErrNotFound indicates the event does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("activity: not found")
 
 	// ErrConflict indicates a duplicate event (dedup hit).
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("activity: conflict")
 )

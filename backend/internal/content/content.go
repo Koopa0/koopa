@@ -210,8 +210,8 @@ type EmbeddingContent struct {
 
 var (
 	// ErrNotFound indicates the content does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("content: not found")
 
 	// ErrConflict indicates a duplicate slug.
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("content: conflict")
 )

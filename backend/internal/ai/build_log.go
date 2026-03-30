@@ -51,28 +51,29 @@ type BuildLog struct {
 	logger       *slog.Logger
 }
 
+// BuildLogDeps bundles dependencies for the BuildLog flow.
+type BuildLogDeps struct {
+	SystemPrompt string
+	Projects     *project.Store
+	Commits      *github.Client
+	Content      *content.Store
+	TokenBudget  *budget.Budget
+	Location     *time.Location
+	Logger       *slog.Logger
+}
+
 // NewBuildLog returns a BuildLog flow.
-func NewBuildLog(
-	g *genkit.Genkit,
-	model genkitai.Model,
-	systemPrompt string,
-	projects *project.Store,
-	commits *github.Client,
-	creator *content.Store,
-	tokenBudget *budget.Budget,
-	loc *time.Location,
-	logger *slog.Logger,
-) *BuildLog {
+func NewBuildLog(g *genkit.Genkit, model genkitai.Model, deps BuildLogDeps) *BuildLog {
 	bl := &BuildLog{
 		g:            g,
 		model:        model,
-		systemPrompt: systemPrompt,
-		projects:     projects,
-		commits:      commits,
-		content:      creator,
-		budget:       tokenBudget,
-		loc:          loc,
-		logger:       logger,
+		systemPrompt: deps.SystemPrompt,
+		projects:     deps.Projects,
+		commits:      deps.Commits,
+		content:      deps.Content,
+		budget:       deps.TokenBudget,
+		loc:          deps.Location,
+		logger:       deps.Logger,
 	}
 	bl.gf = genkit.DefineFlow(g, "build-log-generate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		out, err := bl.run(ctx, input)

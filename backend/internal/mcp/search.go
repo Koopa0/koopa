@@ -970,7 +970,7 @@ type sessionNoteResult struct {
 	CreatedAt string         `json:"created_at"`
 }
 
-func (s *Server) getSessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input GetSessionNotesInput) (*mcp.CallToolResult, GetSessionNotesOutput, error) {
+func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input GetSessionNotesInput) (*mcp.CallToolResult, GetSessionNotesOutput, error) {
 	if s.sessions == nil {
 		return nil, GetSessionNotesOutput{}, fmt.Errorf("session notes not configured")
 	}

@@ -33,8 +33,8 @@ const (
 
 var (
 	// ErrNotFound indicates the review does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("review: not found")
 
 	// ErrConflict indicates a duplicate or conflicting review operation.
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("review: conflict")
 )

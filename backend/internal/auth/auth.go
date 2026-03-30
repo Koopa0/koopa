@@ -55,5 +55,5 @@ type GoogleConfig struct {
 
 var (
 	// ErrNotFound indicates the requested record does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("auth: not found")
 )

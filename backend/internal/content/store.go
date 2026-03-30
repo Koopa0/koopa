@@ -87,10 +87,14 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		return nil, fmt.Errorf("querying content %s: %w", id, err)
 	}
 
-	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	c := rowToContent(contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
@@ -129,10 +133,14 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	ids := make([]uuid.UUID, len(rows))
 	for i := range rows {
 		r := rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 		ids[i] = r.ID
 	}
 
@@ -203,10 +211,14 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 		return nil, fmt.Errorf("querying content %s: %w", slug, err)
 	}
 
-	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	c := rowToContent(contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
@@ -236,10 +248,14 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 	contents := make([]Content, len(rows))
 	for i := range rows {
 		r := rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 	}
 
 	return contents, int(count), nil
@@ -270,10 +286,14 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 	contents := make([]Content, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 	}
 
 	return contents, int(count), nil
@@ -294,10 +314,14 @@ func (s *Store) SearchOR(ctx context.Context, query string, contentType *Type, p
 	contents := make([]Content, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 	}
 
 	return contents, len(contents), nil
@@ -323,10 +347,14 @@ func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage 
 	contents := make([]Content, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 	}
 
 	return contents, int(count), nil
@@ -347,10 +375,14 @@ func (s *Store) InternalSearchOR(ctx context.Context, query string, page, perPag
 	contents := make([]Content, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 	}
 
 	return contents, len(contents), nil
@@ -369,10 +401,14 @@ func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.T
 	contents := make([]Content, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 	}
 	return contents, nil
 }
@@ -439,10 +475,14 @@ func (s *Store) PublishedByDateRange(ctx context.Context, start, end time.Time) 
 	contents := make([]Content, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		contents[i] = rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-			string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-			r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-			r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
 	}
 	return contents, nil
 }
@@ -544,14 +584,22 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		return nil, fmt.Errorf("committing transaction: %w", commitErr)
 	}
 
-	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	c := rowToContent(contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
 
+	// Topic fetch is outside the transaction — content is already committed.
+	// On failure, return the content with empty topics rather than failing
+	// the entire operation (the content write succeeded).
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
-		return nil, err
+		c.Topics = []TopicRef{}
+		return &c, nil
 	}
 	c.Topics = topics
 
@@ -634,14 +682,21 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		return nil, fmt.Errorf("committing transaction: %w", commitErr)
 	}
 
-	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	c := rowToContent(contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
 
+	// Topic fetch is outside the transaction — update is already committed.
+	// On failure, return the content with empty topics rather than failing.
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
-		return nil, err
+		c.Topics = []TopicRef{}
+		return &c, nil
 	}
 	c.Topics = topics
 
@@ -744,10 +799,14 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 		return nil, fmt.Errorf("publishing content %s: %w", id, err)
 	}
 
-	c := rowToContent(r.ID, r.Slug, r.Title, r.Body, r.Excerpt,
-		string(r.Type), string(r.Status), r.Tags, r.Source, nullSourceTypeToPtr(r.SourceType),
-		r.SeriesID, r.SeriesOrder, string(r.ReviewLevel), r.Visibility, r.ProjectID, r.AiMetadata,
-		r.ReadingTime, r.CoverImage, r.PublishedAt, r.CreatedAt, r.UpdatedAt)
+	c := rowToContent(contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
@@ -788,40 +847,60 @@ func (s *Store) topicsForContents(ctx context.Context, ids []uuid.UUID) (map[uui
 	return result, nil
 }
 
-func rowToContent(
-	id uuid.UUID, slug, title, body, excerpt string,
-	typ, status string, tags []string,
-	source *string, sourceType *SourceType, seriesID *string, seriesOrder *int32,
-	reviewLevel, visibility string, projectID *uuid.UUID, aiMetadata json.RawMessage,
-	readingTime int32, coverImage *string, publishedAt *time.Time,
-	createdAt, updatedAt time.Time,
-) Content {
+// contentRow is the common field set shared by all sqlc-generated content row
+// types. Callers construct a contentRow from their specific row type, then pass
+// it to rowToContent. This eliminates a 21-parameter positional call.
+type contentRow struct {
+	ID          uuid.UUID
+	Slug        string
+	Title       string
+	Body        string
+	Excerpt     string
+	Type        db.ContentType
+	Status      db.ContentStatus
+	Tags        []string
+	Source      *string
+	SourceType  db.NullSourceType
+	SeriesID    *string
+	SeriesOrder *int32
+	ReviewLevel db.ReviewLevel
+	Visibility  string
+	ProjectID   *uuid.UUID
+	AiMetadata  json.RawMessage
+	ReadingTime int32
+	CoverImage  *string
+	PublishedAt *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func rowToContent(r contentRow) Content {
 	c := Content{
-		ID:          id,
-		Slug:        slug,
-		Title:       title,
-		Body:        body,
-		Excerpt:     excerpt,
-		Type:        Type(typ),
-		Status:      Status(status),
-		Tags:        tags,
-		Source:      source,
-		SourceType:  sourceType,
-		ReviewLevel: ReviewLevel(reviewLevel),
-		Visibility:  Visibility(visibility),
-		ProjectID:   projectID,
-		AIMetadata:  aiMetadata,
-		ReadingTime: int(readingTime),
-		CoverImage:  coverImage,
-		PublishedAt: publishedAt,
-		CreatedAt:   createdAt,
-		UpdatedAt:   updatedAt,
+		ID:          r.ID,
+		Slug:        r.Slug,
+		Title:       r.Title,
+		Body:        r.Body,
+		Excerpt:     r.Excerpt,
+		Type:        Type(r.Type),
+		Status:      Status(r.Status),
+		Tags:        r.Tags,
+		Source:      r.Source,
+		SourceType:  nullSourceTypeToPtr(r.SourceType),
+		ReviewLevel: ReviewLevel(r.ReviewLevel),
+		Visibility:  Visibility(r.Visibility),
+		ProjectID:   r.ProjectID,
+		AIMetadata:  r.AiMetadata,
+		ReadingTime: int(r.ReadingTime),
+		CoverImage:  r.CoverImage,
+		PublishedAt: r.PublishedAt,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
 	}
-	if seriesID != nil {
-		c.SeriesID = seriesID
+	if r.SeriesID != nil {
+		c.SeriesID = r.SeriesID
 	}
-	if seriesOrder != nil {
-		v := int(*seriesOrder)
+	if r.SeriesOrder != nil {
+		v := int(*r.SeriesOrder)
 		c.SeriesOrder = &v
 	}
 	return c

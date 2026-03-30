@@ -51,6 +51,16 @@ type PipelineResult struct {
 // Returns flows for: digest, morning-brief, weekly-review, daily-dev-log.
 type ReportFlowBuilder func(g *genkit.Genkit, model genkitai.Model) []Flow
 
+// PipelineDeps bundles non-config, non-store dependencies for AI pipeline setup.
+type PipelineDeps struct {
+	GitHub      *github.Client
+	Notifier    notify.Notifier
+	TokenBudget *budget.Budget
+	Location    *time.Location
+	Logger      *slog.Logger
+	ReportFlows ReportFlowBuilder
+}
+
 // Setup initializes the AI pipeline in either mock or real mode.
 // It constructs all flows in the ai package, delegates report flow construction
 // to the provided builder, and returns a registry + embedder for the wiring layer
@@ -59,15 +69,10 @@ func Setup(
 	ctx context.Context,
 	cfg PipelineConfig,
 	stores PipelineStores,
-	gh *github.Client,
-	notifier notify.Notifier,
-	tokenBudget *budget.Budget,
-	loc *time.Location,
-	logger *slog.Logger,
-	reportFlows ReportFlowBuilder,
+	deps PipelineDeps,
 ) (*PipelineResult, error) {
 	if cfg.MockMode {
-		logger.Info("starting in MOCK MODE — AI calls disabled")
+		deps.Logger.Info("starting in MOCK MODE — AI calls disabled")
 		registry := NewRegistry(
 			NewMockContentReview(),
 			NewMockContentProofread(),
@@ -118,33 +123,52 @@ func Setup(
 		return nil, fmt.Errorf("defining embedder: %w", err)
 	}
 
-	// construct flows in the ai package
-	contentProofread := NewProofread(g, geminiModel, ReviewSystemPrompt, logger)
-	contentExcerpt := NewExcerpt(g, geminiModel, ExcerptSystemPrompt, logger)
-	contentTags := NewTags(g, geminiModel, TagsSystemPrompt, logger)
-	contentReview := NewContentReview(
-		g, embedder,
-		stores.Content, stores.Content, stores.Content, stores.Review, stores.Topic,
-		contentProofread, contentExcerpt, contentTags,
-		logger,
-	)
-	contentPolish := NewPolish(g, claudeModel, PolishSystemPrompt, stores.Content, logger)
-	bookmarkGenerate := NewBookmarkGenerate(g, geminiModel, stores.Entry, tokenBudget, logger)
-	projectTrack := NewProjectTrack(
-		g, geminiModel, ProjectTrackSystemPrompt, stores.Project, stores.Project,
-		notifier, tokenBudget, logger,
-	)
-	contentStrategy := NewContentStrategy(
-		g, geminiModel, stores.Content, stores.Entry, stores.Project,
-		notifier, tokenBudget, loc, logger,
-	)
-	buildLog := NewBuildLog(
-		g, geminiModel, BuildLogSystemPrompt, stores.Project, gh, stores.Content,
-		tokenBudget, loc, logger,
-	)
+	// Construct flows in the ai package.
+	// All flow constructors return concrete types (never error) — they register
+	// a Genkit flow and store dependencies. No I/O or validation happens here.
+	contentProofread := NewProofread(g, geminiModel, ReviewSystemPrompt, deps.Logger)
+	contentExcerpt := NewExcerpt(g, geminiModel, ExcerptSystemPrompt, deps.Logger)
+	contentTags := NewTags(g, geminiModel, TagsSystemPrompt, deps.Logger)
+	contentReview := NewContentReview(g, ContentReviewDeps{
+		Content:   stores.Content,
+		Review:    stores.Review,
+		Topics:    stores.Topic,
+		Embedder:  embedder,
+		Proofread: contentProofread,
+		Excerpt:   contentExcerpt,
+		Tags:      contentTags,
+		Logger:    deps.Logger,
+	})
+	contentPolish := NewPolish(g, claudeModel, PolishSystemPrompt, stores.Content, deps.Logger)
+	bookmarkGenerate := NewBookmarkGenerate(g, geminiModel, stores.Entry, deps.TokenBudget, deps.Logger)
+	projectTrack := NewProjectTrack(g, geminiModel, ProjectTrackDeps{
+		SystemPrompt: ProjectTrackSystemPrompt,
+		Projects:     stores.Project,
+		Notifier:     deps.Notifier,
+		TokenBudget:  deps.TokenBudget,
+		Logger:       deps.Logger,
+	})
+	contentStrategy := NewContentStrategy(g, geminiModel, ContentStrategyDeps{
+		Contents:    stores.Content,
+		Collected:   stores.Entry,
+		Projects:    stores.Project,
+		Notifier:    deps.Notifier,
+		TokenBudget: deps.TokenBudget,
+		Location:    deps.Location,
+		Logger:      deps.Logger,
+	})
+	buildLog := NewBuildLog(g, geminiModel, BuildLogDeps{
+		SystemPrompt: BuildLogSystemPrompt,
+		Projects:     stores.Project,
+		Commits:      deps.GitHub,
+		Content:      stores.Content,
+		TokenBudget:  deps.TokenBudget,
+		Location:     deps.Location,
+		Logger:       deps.Logger,
+	})
 
 	// construct report sub-package flows via callback (avoids ai→ai/report cycle)
-	reports := reportFlows(g, geminiModel)
+	reports := deps.ReportFlows(g, geminiModel)
 
 	allFlows := make([]Flow, 0, 9+len(reports))
 	allFlows = append(allFlows,

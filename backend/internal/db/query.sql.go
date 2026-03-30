@@ -1811,42 +1811,6 @@ func (q *Queries) CreateTopic(ctx context.Context, arg CreateTopicParams) (Topic
 	return i, err
 }
 
-const createTrackingTopic = `-- name: CreateTrackingTopic :one
-INSERT INTO tracking_topics (name, keywords, sources, enabled, schedule)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at
-`
-
-type CreateTrackingTopicParams struct {
-	Name     string   `json:"name"`
-	Keywords []string `json:"keywords"`
-	Sources  []string `json:"sources"`
-	Enabled  bool     `json:"enabled"`
-	Schedule string   `json:"schedule"`
-}
-
-func (q *Queries) CreateTrackingTopic(ctx context.Context, arg CreateTrackingTopicParams) (TrackingTopic, error) {
-	row := q.db.QueryRow(ctx, createTrackingTopic,
-		arg.Name,
-		arg.Keywords,
-		arg.Sources,
-		arg.Enabled,
-		arg.Schedule,
-	)
-	var i TrackingTopic
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Keywords,
-		&i.Sources,
-		&i.Enabled,
-		&i.Schedule,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const curateCollected = `-- name: CurateCollected :one
 UPDATE collected_data SET status = 'curated', curated_content_id = $2
 WHERE id = $1
@@ -2150,15 +2114,6 @@ DELETE FROM topics WHERE id = $1
 
 func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTopic, id)
-	return err
-}
-
-const deleteTrackingTopic = `-- name: DeleteTrackingTopic :exec
-DELETE FROM tracking_topics WHERE id = $1
-`
-
-func (q *Queries) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteTrackingTopic, id)
 	return err
 }
 
@@ -3604,6 +3559,150 @@ func (q *Queries) MetricsHistory(ctx context.Context, sinceDate time.Time) ([]Se
 		return nil, err
 	}
 	return items, nil
+}
+
+const monitorCreate = `-- name: MonitorCreate :one
+INSERT INTO tracking_topics (name, keywords, sources, enabled, schedule)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at
+`
+
+type MonitorCreateParams struct {
+	Name     string   `json:"name"`
+	Keywords []string `json:"keywords"`
+	Sources  []string `json:"sources"`
+	Enabled  bool     `json:"enabled"`
+	Schedule string   `json:"schedule"`
+}
+
+func (q *Queries) MonitorCreate(ctx context.Context, arg MonitorCreateParams) (TrackingTopic, error) {
+	row := q.db.QueryRow(ctx, monitorCreate,
+		arg.Name,
+		arg.Keywords,
+		arg.Sources,
+		arg.Enabled,
+		arg.Schedule,
+	)
+	var i TrackingTopic
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Keywords,
+		&i.Sources,
+		&i.Enabled,
+		&i.Schedule,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const monitorDelete = `-- name: MonitorDelete :exec
+DELETE FROM tracking_topics WHERE id = $1
+`
+
+func (q *Queries) MonitorDelete(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, monitorDelete, id)
+	return err
+}
+
+const monitorTopicByID = `-- name: MonitorTopicByID :one
+SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
+FROM tracking_topics WHERE id = $1
+`
+
+func (q *Queries) MonitorTopicByID(ctx context.Context, id uuid.UUID) (TrackingTopic, error) {
+	row := q.db.QueryRow(ctx, monitorTopicByID, id)
+	var i TrackingTopic
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Keywords,
+		&i.Sources,
+		&i.Enabled,
+		&i.Schedule,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const monitorTopics = `-- name: MonitorTopics :many
+SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
+FROM tracking_topics ORDER BY created_at DESC
+`
+
+func (q *Queries) MonitorTopics(ctx context.Context) ([]TrackingTopic, error) {
+	rows, err := q.db.Query(ctx, monitorTopics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TrackingTopic{}
+	for rows.Next() {
+		var i TrackingTopic
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Keywords,
+			&i.Sources,
+			&i.Enabled,
+			&i.Schedule,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const monitorUpdate = `-- name: MonitorUpdate :one
+UPDATE tracking_topics SET
+    name = COALESCE($2, name),
+    keywords = COALESCE($3, keywords),
+    sources = COALESCE($4, sources),
+    enabled = COALESCE($5, enabled),
+    schedule = COALESCE($6, schedule),
+    updated_at = now()
+WHERE id = $1
+RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at
+`
+
+type MonitorUpdateParams struct {
+	ID       uuid.UUID `json:"id"`
+	Name     *string   `json:"name"`
+	Keywords []string  `json:"keywords"`
+	Sources  []string  `json:"sources"`
+	Enabled  *bool     `json:"enabled"`
+	Schedule *string   `json:"schedule"`
+}
+
+func (q *Queries) MonitorUpdate(ctx context.Context, arg MonitorUpdateParams) (TrackingTopic, error) {
+	row := q.db.QueryRow(ctx, monitorUpdate,
+		arg.ID,
+		arg.Name,
+		arg.Keywords,
+		arg.Sources,
+		arg.Enabled,
+		arg.Schedule,
+	)
+	var i TrackingTopic
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Keywords,
+		&i.Sources,
+		&i.Enabled,
+		&i.Schedule,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const myDayTasks = `-- name: MyDayTasks :many
@@ -6619,61 +6718,6 @@ func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) (
 	return items, nil
 }
 
-const trackingTopicByID = `-- name: TrackingTopicByID :one
-SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
-FROM tracking_topics WHERE id = $1
-`
-
-func (q *Queries) TrackingTopicByID(ctx context.Context, id uuid.UUID) (TrackingTopic, error) {
-	row := q.db.QueryRow(ctx, trackingTopicByID, id)
-	var i TrackingTopic
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Keywords,
-		&i.Sources,
-		&i.Enabled,
-		&i.Schedule,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const trackingTopics = `-- name: TrackingTopics :many
-SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
-FROM tracking_topics ORDER BY created_at DESC
-`
-
-func (q *Queries) TrackingTopics(ctx context.Context) ([]TrackingTopic, error) {
-	rows, err := q.db.Query(ctx, trackingTopics)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TrackingTopic{}
-	for rows.Next() {
-		var i TrackingTopic
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Keywords,
-			&i.Sources,
-			&i.Enabled,
-			&i.Schedule,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const updateCollectedFeedback = `-- name: UpdateCollectedFeedback :exec
 UPDATE collected_data SET user_feedback = $2, feedback_at = now() WHERE id = $1
 `
@@ -7447,50 +7491,6 @@ func (q *Queries) UpdateTopic(ctx context.Context, arg UpdateTopicParams) (Topic
 		&i.Description,
 		&i.Icon,
 		&i.SortOrder,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateTrackingTopic = `-- name: UpdateTrackingTopic :one
-UPDATE tracking_topics SET
-    name = COALESCE($2, name),
-    keywords = COALESCE($3, keywords),
-    sources = COALESCE($4, sources),
-    enabled = COALESCE($5, enabled),
-    schedule = COALESCE($6, schedule),
-    updated_at = now()
-WHERE id = $1
-RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at
-`
-
-type UpdateTrackingTopicParams struct {
-	ID       uuid.UUID `json:"id"`
-	Name     *string   `json:"name"`
-	Keywords []string  `json:"keywords"`
-	Sources  []string  `json:"sources"`
-	Enabled  *bool     `json:"enabled"`
-	Schedule *string   `json:"schedule"`
-}
-
-func (q *Queries) UpdateTrackingTopic(ctx context.Context, arg UpdateTrackingTopicParams) (TrackingTopic, error) {
-	row := q.db.QueryRow(ctx, updateTrackingTopic,
-		arg.ID,
-		arg.Name,
-		arg.Keywords,
-		arg.Sources,
-		arg.Enabled,
-		arg.Schedule,
-	)
-	var i TrackingTopic
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Keywords,
-		&i.Sources,
-		&i.Enabled,
-		&i.Schedule,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

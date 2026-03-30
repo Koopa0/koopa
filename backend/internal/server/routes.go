@@ -109,7 +109,7 @@ func RegisterRoutes(mux *http.ServeMux, d *Handlers, authMid, rlMid func(http.Ha
 	mux.Handle("GET /api/admin/review", authMid(http.HandlerFunc(d.Review.List)))
 	mux.Handle("POST /api/admin/review/{id}/approve", authMid(http.HandlerFunc(d.Review.Approve)))
 	mux.Handle("POST /api/admin/review/{id}/reject", authMid(http.HandlerFunc(d.Review.Reject)))
-	mux.Handle("PUT /api/admin/review/{id}/edit", authMid(http.HandlerFunc(d.Review.Edit)))
+	mux.Handle("PUT /api/admin/review/{id}/edit", authMid(http.HandlerFunc(d.Review.ApproveAfterEdit)))
 
 	// admin — collected
 	mux.Handle("GET /api/admin/collected", authMid(http.HandlerFunc(d.Entry.List)))

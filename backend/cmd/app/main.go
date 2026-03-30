@@ -171,20 +171,33 @@ func run(logger *slog.Logger) error {
 		Topic:   topicStore,
 		Entry:   entryStore,
 		Project: projectStore,
-	}, githubFetcher, notifier, tokenBudget, taipeiLoc, logger,
-		func(g *genkit.Genkit, model genkitai.Model) []aiflow.Flow {
+	}, aiflow.PipelineDeps{
+		GitHub:      githubFetcher,
+		Notifier:    notifier,
+		TokenBudget: tokenBudget,
+		Location:    taipeiLoc,
+		Logger:      logger,
+		ReportFlows: func(g *genkit.Genkit, model genkitai.Model) []aiflow.Flow {
 			return []aiflow.Flow{
 				aireport.NewDigest(g, model, aiflow.DigestSystemPrompt, contentStore, entryStore, projectStore, tokenBudget, taipeiLoc, logger),
 				aireport.NewMorning(g, taskStore, notifier, taipeiLoc, logger),
-				aireport.NewWeekly(
-					g, model, aiflow.WeeklyReviewSystemPrompt, taskStore, taskStore,
-					entryStore, contentStore, projectStore, githubFetcher,
-					notifier, tokenBudget, taipeiLoc, logger,
-				),
+				aireport.NewWeekly(g, model, aireport.WeeklyDeps{
+					SystemPrompt:   aiflow.WeeklyReviewSystemPrompt,
+					Tasks:          taskStore,
+					TaskCompletion: taskStore,
+					Collected:      entryStore,
+					Contents:       contentStore,
+					Projects:       projectStore,
+					Commits:        githubFetcher,
+					Notifier:       notifier,
+					TokenBudget:    tokenBudget,
+					Location:       taipeiLoc,
+					Logger:         logger,
+				}),
 				aireport.NewDaily(g, model, aiflow.DailyDevLogSystemPrompt, activityStore, notifier, tokenBudget, taipeiLoc, logger),
 			}
 		},
-	)
+	})
 	if err != nil {
 		return err
 	}

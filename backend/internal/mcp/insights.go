@@ -43,7 +43,7 @@ type insightEntry struct {
 	InvalidationCondition string   `json:"invalidation_condition,omitempty"`
 }
 
-func (s *Server) getActiveInsights(ctx context.Context, _ *mcp.CallToolRequest, input GetActiveInsightsInput) (*mcp.CallToolResult, GetActiveInsightsOutput, error) {
+func (s *Server) activeInsights(ctx context.Context, _ *mcp.CallToolRequest, input GetActiveInsightsInput) (*mcp.CallToolResult, GetActiveInsightsOutput, error) {
 	if s.sessions == nil {
 		return nil, GetActiveInsightsOutput{}, fmt.Errorf("session notes not configured")
 	}

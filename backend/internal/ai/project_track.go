@@ -35,32 +35,30 @@ type ProjectTrack struct {
 	model        genkitai.Model
 	systemPrompt string
 	projects     *project.Store
-	updater      *project.Store
 	notifier     notify.Notifier
 	budget       *budget.Budget
 	logger       *slog.Logger
 }
 
+// ProjectTrackDeps bundles dependencies for the ProjectTrack flow.
+type ProjectTrackDeps struct {
+	SystemPrompt string
+	Projects     *project.Store
+	Notifier     notify.Notifier
+	TokenBudget  *budget.Budget
+	Logger       *slog.Logger
+}
+
 // NewProjectTrack returns a ProjectTrack flow.
-func NewProjectTrack(
-	g *genkit.Genkit,
-	model genkitai.Model,
-	systemPrompt string,
-	projects *project.Store,
-	updater *project.Store,
-	notifier notify.Notifier,
-	tokenBudget *budget.Budget,
-	logger *slog.Logger,
-) *ProjectTrack {
+func NewProjectTrack(g *genkit.Genkit, model genkitai.Model, deps ProjectTrackDeps) *ProjectTrack {
 	pt := &ProjectTrack{
 		g:            g,
 		model:        model,
-		systemPrompt: systemPrompt,
-		projects:     projects,
-		updater:      updater,
-		notifier:     notifier,
-		budget:       tokenBudget,
-		logger:       logger,
+		systemPrompt: deps.SystemPrompt,
+		projects:     deps.Projects,
+		notifier:     deps.Notifier,
+		budget:       deps.TokenBudget,
+		logger:       deps.Logger,
 	}
 	pt.gf = genkit.DefineFlow(g, "project-track", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		out, err := pt.run(ctx, input)
@@ -130,7 +128,7 @@ func (pt *ProjectTrack) run(ctx context.Context, raw json.RawMessage) (ProjectTr
 	}
 
 	// Update project's long description with the progress update
-	_, err = pt.updater.UpdateProject(ctx, proj.ID, &project.UpdateParams{
+	_, err = pt.projects.UpdateProject(ctx, proj.ID, &project.UpdateParams{
 		LongDescription: &text,
 	})
 	if err != nil {

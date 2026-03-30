@@ -2,11 +2,23 @@
 package topic
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/koopa0/blog-backend/internal/content"
 )
+
+// ContentByTopicLister lists published content for a given topic.
+// Defined by the consumer (topic) — the producer (content.Store) satisfies it implicitly.
+type ContentByTopicLister interface {
+	ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, perPage int) ([]content.Content, int, error)
+}
+
+// compile-time verification
+var _ ContentByTopicLister = (*content.Store)(nil)
 
 // Topic represents a content category.
 type Topic struct {
@@ -53,8 +65,8 @@ type Slug struct {
 
 var (
 	// ErrNotFound indicates the topic does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("topic: not found")
 
 	// ErrConflict indicates a duplicate slug.
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("topic: conflict")
 )

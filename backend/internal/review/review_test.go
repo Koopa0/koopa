@@ -193,11 +193,11 @@ func TestHandler_Reject_Validation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Handler.Edit — validation (real Handler, nil store)
+// Handler.ApproveAfterEdit — validation (real Handler, nil store)
 // Store interaction tested via integration tests.
 // ---------------------------------------------------------------------------
 
-func TestHandler_Edit_Validation(t *testing.T) {
+func TestHandler_ApproveAfterEdit_Validation(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandler(nil, slog.New(slog.DiscardHandler))
@@ -229,10 +229,10 @@ func TestHandler_Edit_Validation(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPut, "/api/admin/review/x/edit", http.NoBody)
 			req.SetPathValue("id", tt.pathID)
 			w := httptest.NewRecorder()
-			h.Edit(w, req)
+			h.ApproveAfterEdit(w, req)
 
 			if w.Code != tt.wantStatus {
-				t.Fatalf("Edit(%q) status = %d, want %d", tt.pathID, w.Code, tt.wantStatus)
+				t.Fatalf("ApproveAfterEdit(%q) status = %d, want %d", tt.pathID, w.Code, tt.wantStatus)
 			}
 			var eb api.ErrorBody
 			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {

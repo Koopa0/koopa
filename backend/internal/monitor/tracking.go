@@ -40,5 +40,5 @@ type UpdateParams struct {
 
 var (
 	// ErrNotFound indicates the tracking topic does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("monitor: not found")
 )

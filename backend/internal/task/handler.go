@@ -12,6 +12,11 @@ import (
 	"github.com/koopa0/blog-backend/internal/notion"
 )
 
+// storeErrors maps store sentinel errors to HTTP responses.
+var storeErrors = []api.ErrMap{
+	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND"},
+}
+
 // Handler handles task HTTP requests.
 type Handler struct {
 	store    *Store
@@ -151,6 +156,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 	if upsertErr != nil {
 		h.logger.Error("local upsert after notion create", "error", upsertErr)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "task created in Notion but local save failed")
+		return
 	}
 
 	out := map[string]any{
@@ -211,8 +218,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.store.Update(ctx, params)
 	if err != nil {
-		h.logger.Error("updating task", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update task")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 
@@ -279,15 +285,14 @@ func (h *Handler) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := api.Decode[completeRequest](w, r)
-	_ = req // notes reserved for future use
+	// notes reserved for future use; decode is best-effort
+	_, _ = api.Decode[completeRequest](w, r)
 
 	ctx := r.Context()
 
 	t, err := h.store.TaskByID(ctx, id)
 	if err != nil {
-		h.logger.Error("querying task for complete", "id", id, "error", err)
-		api.Error(w, http.StatusNotFound, "NOT_FOUND", "task not found")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 

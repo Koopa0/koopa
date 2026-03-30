@@ -1,21 +1,5 @@
 package ai
 
-// PendingTask represents a task pending completion.
-// Defined in the parent ai package so that task/store.go can reference it
-// without importing the report sub-package.
-type PendingTask struct {
-	Title string
-	Due   string // YYYY-MM-DD or empty
-}
-
-// ProjectCompletion holds a per-project completion count.
-// Defined in the parent ai package so that task/store.go can reference it
-// without importing the report sub-package.
-type ProjectCompletion struct {
-	ProjectTitle string
-	Completed    int64
-}
-
 // NewMockDigestGenerate returns a mock Flow for MOCK_MODE.
 func NewMockDigestGenerate() Flow {
 	return &mockFlow{

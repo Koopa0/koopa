@@ -153,10 +153,10 @@ type UpdateParams struct {
 
 var (
 	// ErrNotFound indicates the feed does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("feed: not found")
 
 	// ErrConflict indicates a duplicate feed URL.
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("feed: conflict")
 )
 
 // ValidSchedule reports whether s is a known schedule value.

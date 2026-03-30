@@ -1,17 +1,17 @@
--- name: TrackingTopics :many
+-- name: MonitorTopics :many
 SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
 FROM tracking_topics ORDER BY created_at DESC;
 
--- name: TrackingTopicByID :one
+-- name: MonitorTopicByID :one
 SELECT id, name, keywords, sources, enabled, schedule, created_at, updated_at
 FROM tracking_topics WHERE id = $1;
 
--- name: CreateTrackingTopic :one
+-- name: MonitorCreate :one
 INSERT INTO tracking_topics (name, keywords, sources, enabled, schedule)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at;
 
--- name: UpdateTrackingTopic :one
+-- name: MonitorUpdate :one
 UPDATE tracking_topics SET
     name = COALESCE(sqlc.narg('name'), name),
     keywords = COALESCE(sqlc.narg('keywords'), keywords),
@@ -22,5 +22,5 @@ UPDATE tracking_topics SET
 WHERE id = $1
 RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at;
 
--- name: DeleteTrackingTopic :exec
+-- name: MonitorDelete :exec
 DELETE FROM tracking_topics WHERE id = $1;

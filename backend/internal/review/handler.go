@@ -45,8 +45,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.ApproveReview(r.Context(), id); err != nil {
-		h.logger.Error("approving review", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to approve review")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -69,33 +68,35 @@ func (h *Handler) Reject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Notes == "" {
+		api.Error(w, http.StatusBadRequest, "MISSING_NOTES", "rejection notes are required")
+		return
+	}
+
 	if err := h.store.RejectReview(r.Context(), id, req.Notes); err != nil {
-		h.logger.Error("rejecting review", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to reject review")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Edit handles PUT /api/admin/review/{id}/edit.
-func (h *Handler) Edit(w http.ResponseWriter, r *http.Request) {
+// ApproveAfterEdit handles PUT /api/admin/review/{id}/edit — approves a review
+// after the content has been edited externally. Validates the review exists before approving.
+func (h *Handler) ApproveAfterEdit(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid review id")
 		return
 	}
 
-	// Get the review to find the content ID
 	rev, err := h.store.Review(r.Context(), id)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 
-	// Approve the review after edit
 	if err := h.store.ApproveReview(r.Context(), rev.ID); err != nil {
-		h.logger.Error("approving review after edit", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to approve review")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 

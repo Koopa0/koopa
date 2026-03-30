@@ -2,9 +2,15 @@
 package task
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+var (
+	// ErrNotFound indicates the task does not exist.
+	ErrNotFound = errors.New("task: not found")
 )
 
 // Status represents a task's lifecycle status.
@@ -64,6 +70,20 @@ func (t *Task) NextDue() *time.Time {
 		next = base.AddDate(0, 0, interval)
 	}
 	return &next
+}
+
+// PendingTask represents a task pending completion.
+// Used by ai/report flows for lightweight task summaries.
+type PendingTask struct {
+	Title string
+	Due   string // YYYY-MM-DD or empty
+}
+
+// ProjectCompletion holds a per-project completion count.
+// Used by ai/report flows for weekly review summaries.
+type ProjectCompletion struct {
+	ProjectTitle string
+	Completed    int64
 }
 
 // PendingTaskDetail represents a pending task with project context for MCP tools.

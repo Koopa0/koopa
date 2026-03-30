@@ -1,9 +1,9 @@
-package mcp
+package mcpauth
 
 // oauth_adversarial_test.go — adversarial tests for the OAuth 2.1 provider.
 //
 // Attack surface:
-//   - Client registration: maxClients cap, concurrent registration race
+//   - Client registration: MaxClients cap, concurrent registration race
 //   - Token issuance and validation: expired tokens, tampered tokens, replay
 //   - PKCE: wrong verifier, empty verifier, SHA256 collision resistance
 //   - Redirect URI validation: open-redirect / SSRF bypass attempts
@@ -33,9 +33,9 @@ import (
 )
 
 // newTestOAuth returns a minimal OAuthProvider with a stopped cleanup goroutine.
-func newTestOAuth(t *testing.T) *OAuthProvider {
+func newTestOAuth(t *testing.T) *Provider {
 	t.Helper()
-	o := NewOAuthProvider(OAuthConfig{
+	o := New(Config{
 		StaticToken: "static-test-token",
 		AdminEmail:  "admin@example.com",
 		BaseURL:     "https://mcp.example.com",
@@ -46,7 +46,7 @@ func newTestOAuth(t *testing.T) *OAuthProvider {
 }
 
 // registerClient is a test helper that registers one client and returns its credentials.
-func registerClient(t *testing.T, o *OAuthProvider) (clientID, clientSecret string) {
+func registerClient(t *testing.T, o *Provider) (clientID, clientSecret string) {
 	t.Helper()
 	body := `{"redirect_uris":["https://claude.ai/oauth/callback"],"client_name":"test"}`
 	req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(body))
@@ -111,7 +111,7 @@ func TestValidRedirectURI(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Register — maxClients cap and TOCTOU race
+// Register — MaxClients cap and TOCTOU race
 // ---------------------------------------------------------------------------
 
 func TestRegister_MaxClientsCap(t *testing.T) {
@@ -119,7 +119,7 @@ func TestRegister_MaxClientsCap(t *testing.T) {
 	o := newTestOAuth(t)
 
 	// Fill up to capacity.
-	for range maxClients {
+	for range MaxClients {
 		body := `{"redirect_uris":["https://claude.ai/cb"]}`
 		req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(body))
 		w := httptest.NewRecorder()
@@ -135,19 +135,19 @@ func TestRegister_MaxClientsCap(t *testing.T) {
 	w := httptest.NewRecorder()
 	o.Register(w, req)
 	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("Register() at maxClients+1 status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+		t.Errorf("Register() at MaxClients+1 status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 	}
 }
 
-// TestRegister_ConcurrentRace fires maxClients+10 concurrent registrations and
-// verifies the final count never exceeds maxClients, catching the TOCTOU window
+// TestRegister_ConcurrentRace fires MaxClients+10 concurrent registrations and
+// verifies the final count never exceeds MaxClients, catching the TOCTOU window
 // between the capacity check and the map insertion in Register.
 func TestRegister_ConcurrentRace(t *testing.T) {
 	t.Parallel()
 	o := newTestOAuth(t)
 
 	var wg sync.WaitGroup
-	const goroutines = maxClients + 10
+	const goroutines = MaxClients + 10
 	results := make([]int, goroutines)
 
 	for i := range goroutines {
@@ -167,9 +167,9 @@ func TestRegister_ConcurrentRace(t *testing.T) {
 	finalCount := len(o.clients)
 	o.mu.Unlock()
 
-	// The map must never exceed maxClients regardless of timing.
-	if finalCount > maxClients {
-		t.Errorf("Register() concurrent: %d clients registered, max allowed is %d", finalCount, maxClients)
+	// The map must never exceed MaxClients regardless of timing.
+	if finalCount > MaxClients {
+		t.Errorf("Register() concurrent: %d clients registered, max allowed is %d", finalCount, MaxClients)
 	}
 
 	// Count rejections — must have at least 10 (the overflow goroutines).
@@ -943,9 +943,9 @@ func BenchmarkRegister(b *testing.B) {
 }
 
 // newTestOAuthB is the benchmark variant of newTestOAuth (accepts *testing.B).
-func newTestOAuthB(b *testing.B) *OAuthProvider {
+func newTestOAuthB(b *testing.B) *Provider {
 	b.Helper()
-	o := NewOAuthProvider(OAuthConfig{
+	o := New(Config{
 		StaticToken: "static-test-token",
 		AdminEmail:  "admin@example.com",
 		BaseURL:     "https://mcp.example.com",

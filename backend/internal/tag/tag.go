@@ -41,9 +41,9 @@ type Resolved struct {
 
 var (
 	// ErrNotFound indicates the tag or alias does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("tag: not found")
 	// ErrConflict indicates a duplicate slug or constraint violation.
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("tag: conflict")
 	// ErrHasReferences indicates a tag cannot be deleted because aliases or notes reference it.
 	ErrHasReferences = errors.New("has references")
 )

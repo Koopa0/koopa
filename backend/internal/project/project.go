@@ -118,8 +118,8 @@ type UpsertByNotionParams struct {
 
 var (
 	// ErrNotFound indicates the project does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("project: not found")
 
 	// ErrConflict indicates a duplicate slug.
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("project: conflict")
 )

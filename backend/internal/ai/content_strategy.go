@@ -41,28 +41,29 @@ type ContentStrategy struct {
 	logger    *slog.Logger
 }
 
+// ContentStrategyDeps bundles dependencies for the ContentStrategy flow.
+type ContentStrategyDeps struct {
+	Contents    *content.Store
+	Collected   *entry.Store
+	Projects    *project.Store
+	Notifier    notify.Notifier
+	TokenBudget *budget.Budget
+	Location    *time.Location
+	Logger      *slog.Logger
+}
+
 // NewContentStrategy returns a ContentStrategy flow.
-func NewContentStrategy(
-	g *genkit.Genkit,
-	model genkitai.Model,
-	contents *content.Store,
-	collects *entry.Store,
-	projects *project.Store,
-	notifier notify.Notifier,
-	tokenBudget *budget.Budget,
-	loc *time.Location,
-	logger *slog.Logger,
-) *ContentStrategy {
+func NewContentStrategy(g *genkit.Genkit, model genkitai.Model, deps ContentStrategyDeps) *ContentStrategy {
 	cs := &ContentStrategy{
 		g:         g,
 		model:     model,
-		contents:  contents,
-		collected: collects,
-		projects:  projects,
-		notifier:  notifier,
-		budget:    tokenBudget,
-		loc:       loc,
-		logger:    logger,
+		contents:  deps.Contents,
+		collected: deps.Collected,
+		projects:  deps.Projects,
+		notifier:  deps.Notifier,
+		budget:    deps.TokenBudget,
+		loc:       deps.Location,
+		logger:    deps.Logger,
 	}
 	cs.gf = genkit.DefineFlow(g, "content-strategy", func(ctx context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		out, err := cs.run(ctx)

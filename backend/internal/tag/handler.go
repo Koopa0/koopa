@@ -93,6 +93,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "at least one field must be provided")
 		return
 	}
+	if (p.Slug != nil && *p.Slug == "") || (p.Name != nil && *p.Name == "") {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "slug and name must not be empty")
+		return
+	}
 	if (p.Slug != nil && len(*p.Slug) > maxSlugLen) ||
 		(p.Name != nil && len(*p.Name) > maxNameLen) ||
 		(p.Description != nil && len(*p.Description) > maxDescLen) {
