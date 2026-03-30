@@ -19,6 +19,7 @@ sql:
       - "internal/notion/query.sql"
       - "internal/task/query.sql"
       - "internal/reconcile/query.sql"
+      - "internal/retrieval/query.sql"
     schema: "migrations/"
     gen:
       go:

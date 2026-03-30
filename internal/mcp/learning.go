@@ -10,6 +10,7 @@ import (
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
+	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 )
 
 // --- B1: get_tag_summary ---
@@ -131,4 +132,62 @@ func (s *Server) getLearningTimeline(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	return nil, learning.Timeline(entries, time.Now()), nil
+}
+
+// --- B5: log_retrieval_attempt ---
+
+// LogRetrievalAttemptInput is the input for the log_retrieval_attempt tool.
+type LogRetrievalAttemptInput struct {
+	ContentSlug string  `json:"content_slug" jsonschema:"required" jsonschema_description:"TIL slug to record retrieval for"`
+	Quality     string  `json:"quality" jsonschema:"required" jsonschema_description:"recall quality: easy, hard, or failed"`
+	Tag         *string `json:"tag,omitempty" jsonschema_description:"specific weakness/concept tag (omit for whole-content retrieval)"`
+}
+
+func (s *Server) logRetrievalAttempt(ctx context.Context, _ *mcp.CallToolRequest, input LogRetrievalAttemptInput) (*mcp.CallToolResult, retrieval.Attempt, error) {
+	if input.ContentSlug == "" {
+		return nil, retrieval.Attempt{}, fmt.Errorf("content_slug is required")
+	}
+	if !retrieval.ValidQuality(input.Quality) {
+		return nil, retrieval.Attempt{}, fmt.Errorf("invalid quality %q (valid: easy, hard, failed)", input.Quality)
+	}
+
+	c, err := s.contents.ContentBySlug(ctx, input.ContentSlug)
+	if err != nil {
+		return nil, retrieval.Attempt{}, fmt.Errorf("content not found: %s", input.ContentSlug)
+	}
+
+	attempt, err := s.retrieval.LogAttempt(ctx, c.ID, input.Tag, input.Quality, time.Now())
+	if err != nil {
+		return nil, retrieval.Attempt{}, fmt.Errorf("logging retrieval attempt: %w", err)
+	}
+
+	return nil, *attempt, nil
+}
+
+// --- B6: get_retrieval_queue ---
+
+// RetrievalQueueInput is the input for the get_retrieval_queue tool.
+type RetrievalQueueInput struct {
+	Project string `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
+	Limit   int    `json:"limit,omitempty" jsonschema_description:"max items to return (default 10, max 50)"`
+}
+
+func (s *Server) getRetrievalQueue(ctx context.Context, _ *mcp.CallToolRequest, input RetrievalQueueInput) (*mcp.CallToolResult, retrieval.QueueResult, error) {
+	var projectSlug *string
+	if input.Project != "" {
+		proj, err := s.resolveProjectChain(ctx, input.Project)
+		if err != nil {
+			return nil, retrieval.QueueResult{}, err
+		}
+		projectSlug = &proj.Slug
+	}
+
+	limit := clamp(input.Limit, 1, 50, 10)
+
+	items, err := s.retrieval.Queue(ctx, projectSlug, limit)
+	if err != nil {
+		return nil, retrieval.QueueResult{}, fmt.Errorf("querying retrieval queue: %w", err)
+	}
+
+	return nil, retrieval.QueueResult{Items: items}, nil
 }

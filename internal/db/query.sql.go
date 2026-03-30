@@ -2175,6 +2175,77 @@ func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const dueItems = `-- name: DueItems :many
+WITH current_retrieval_state AS (
+    SELECT DISTINCT ON (content_id, tag)
+        content_id, tag, quality, interval_days, ease_factor, next_due, created_at
+    FROM retrieval_attempts
+    ORDER BY content_id, tag, created_at DESC
+)
+SELECT
+    s.content_id, s.tag, s.quality AS last_quality,
+    s.interval_days, s.ease_factor, s.next_due, s.created_at AS last_attempt_at,
+    c.slug, c.title, c.ai_metadata
+FROM current_retrieval_state s
+JOIN contents c ON c.id = s.content_id
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE s.next_due <= CURRENT_DATE + 1
+  AND ($1::text IS NULL OR p.slug = $1)
+ORDER BY s.next_due ASC, s.ease_factor ASC
+LIMIT $2
+`
+
+type DueItemsParams struct {
+	ProjectSlug *string `json:"project_slug"`
+	Lim         int32   `json:"lim"`
+}
+
+type DueItemsRow struct {
+	ContentID     uuid.UUID       `json:"content_id"`
+	Tag           *string         `json:"tag"`
+	LastQuality   string          `json:"last_quality"`
+	IntervalDays  int32           `json:"interval_days"`
+	EaseFactor    float32         `json:"ease_factor"`
+	NextDue       time.Time       `json:"next_due"`
+	LastAttemptAt time.Time       `json:"last_attempt_at"`
+	Slug          string          `json:"slug"`
+	Title         string          `json:"title"`
+	AiMetadata    json.RawMessage `json:"ai_metadata"`
+}
+
+// Items where the most recent attempt's next_due has arrived.
+// Uses DISTINCT ON to get the latest attempt per (content_id, tag) pair.
+func (q *Queries) DueItems(ctx context.Context, arg DueItemsParams) ([]DueItemsRow, error) {
+	rows, err := q.db.Query(ctx, dueItems, arg.ProjectSlug, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DueItemsRow{}
+	for rows.Next() {
+		var i DueItemsRow
+		if err := rows.Scan(
+			&i.ContentID,
+			&i.Tag,
+			&i.LastQuality,
+			&i.IntervalDays,
+			&i.EaseFactor,
+			&i.NextDue,
+			&i.LastAttemptAt,
+			&i.Slug,
+			&i.Title,
+			&i.AiMetadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const enabledFeeds = `-- name: EnabledFeeds :many
 SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
@@ -2820,6 +2891,44 @@ func (q *Queries) InsertAliasWithTag(ctx context.Context, arg InsertAliasWithTag
 	return err
 }
 
+const insertAttempt = `-- name: InsertAttempt :one
+INSERT INTO retrieval_attempts (content_id, tag, quality, interval_days, ease_factor, next_due)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, content_id, tag, quality, interval_days, ease_factor, next_due, created_at
+`
+
+type InsertAttemptParams struct {
+	ContentID    uuid.UUID `json:"content_id"`
+	Tag          *string   `json:"tag"`
+	Quality      string    `json:"quality"`
+	IntervalDays int32     `json:"interval_days"`
+	EaseFactor   float32   `json:"ease_factor"`
+	NextDue      time.Time `json:"next_due"`
+}
+
+func (q *Queries) InsertAttempt(ctx context.Context, arg InsertAttemptParams) (RetrievalAttempt, error) {
+	row := q.db.QueryRow(ctx, insertAttempt,
+		arg.ContentID,
+		arg.Tag,
+		arg.Quality,
+		arg.IntervalDays,
+		arg.EaseFactor,
+		arg.NextDue,
+	)
+	var i RetrievalAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.Tag,
+		&i.Quality,
+		&i.IntervalDays,
+		&i.EaseFactor,
+		&i.NextDue,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertEventTag = `-- name: InsertEventTag :exec
 INSERT INTO activity_event_tags (event_id, tag_id)
 VALUES ($1, $2)
@@ -3266,6 +3375,38 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 	var rejected bool
 	err := row.Scan(&rejected)
 	return rejected, err
+}
+
+const latestAttempt = `-- name: LatestAttempt :one
+SELECT id, content_id, tag, quality, interval_days, ease_factor, next_due, created_at
+FROM retrieval_attempts
+WHERE content_id = $1
+  AND (($2::text IS NULL AND tag IS NULL) OR tag = $2)
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type LatestAttemptParams struct {
+	ContentID uuid.UUID `json:"content_id"`
+	Tag       *string   `json:"tag"`
+}
+
+// Most recent attempt for a (content_id, tag) pair.
+// tag IS NULL matches rows where tag is NULL (whole-content retrieval).
+func (q *Queries) LatestAttempt(ctx context.Context, arg LatestAttemptParams) (RetrievalAttempt, error) {
+	row := q.db.QueryRow(ctx, latestAttempt, arg.ContentID, arg.Tag)
+	var i RetrievalAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.Tag,
+		&i.Quality,
+		&i.IntervalDays,
+		&i.EaseFactor,
+		&i.NextDue,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const latestCollectedByRecency = `-- name: LatestCollectedByRecency :many
@@ -3837,6 +3978,63 @@ func (q *Queries) MyDayTasksWithNotionPageID(ctx context.Context) ([]MyDayTasksW
 	for rows.Next() {
 		var i MyDayTasksWithNotionPageIDRow
 		if err := rows.Scan(&i.ID, &i.NotionPageID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const neverRetrievedItems = `-- name: NeverRetrievedItems :many
+SELECT c.id, c.slug, c.title, c.tags, c.ai_metadata, c.created_at
+FROM contents c
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE c.type = 'til'
+  AND ($1::text IS NULL OR p.slug = $1)
+  AND c.created_at >= now() - interval '7 days'
+  AND c.created_at <= now() - interval '1 day'
+  AND NOT EXISTS (
+      SELECT 1 FROM retrieval_attempts ra WHERE ra.content_id = c.id
+  )
+ORDER BY c.created_at ASC
+LIMIT $2
+`
+
+type NeverRetrievedItemsParams struct {
+	ProjectSlug *string `json:"project_slug"`
+	Lim         int32   `json:"lim"`
+}
+
+type NeverRetrievedItemsRow struct {
+	ID         uuid.UUID       `json:"id"`
+	Slug       string          `json:"slug"`
+	Title      string          `json:"title"`
+	Tags       []string        `json:"tags"`
+	AiMetadata json.RawMessage `json:"ai_metadata"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+// Recent TIL entries (1-7 days old) that have never been tested.
+func (q *Queries) NeverRetrievedItems(ctx context.Context, arg NeverRetrievedItemsParams) ([]NeverRetrievedItemsRow, error) {
+	rows, err := q.db.Query(ctx, neverRetrievedItems, arg.ProjectSlug, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NeverRetrievedItemsRow{}
+	for rows.Next() {
+		var i NeverRetrievedItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Tags,
+			&i.AiMetadata,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

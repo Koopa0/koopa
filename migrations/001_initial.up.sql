@@ -655,3 +655,26 @@ COMMENT ON COLUMN reconcile_runs.total_drift IS 'Sum of all missing+orphaned cou
 COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
 
 CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);
+
+-- === Spaced Retrieval ===
+
+CREATE TABLE retrieval_attempts (
+    id            BIGSERIAL PRIMARY KEY,
+    content_id    UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+    tag           TEXT,
+    quality       TEXT NOT NULL CHECK (quality IN ('easy', 'hard', 'failed')),
+    interval_days INT NOT NULL DEFAULT 0,
+    ease_factor   REAL NOT NULL DEFAULT 2.5,
+    next_due      DATE NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE retrieval_attempts IS 'Spaced retrieval self-test results. One row per (content, tag) attempt. SM-2 fields drive get_retrieval_queue scheduling.';
+COMMENT ON COLUMN retrieval_attempts.tag IS 'Specific weakness or concept tag being tested. NULL means the whole content was tested, not a specific tag.';
+COMMENT ON COLUMN retrieval_attempts.quality IS 'Self-assessed recall quality: easy (remembered clearly), hard (struggled but got it), failed (could not recall).';
+COMMENT ON COLUMN retrieval_attempts.interval_days IS 'SM-2 interval used for this attempt. Next interval is computed from this + quality.';
+COMMENT ON COLUMN retrieval_attempts.ease_factor IS 'SM-2 ease factor. Starts at 2.5, adjusted by quality. Floor is 1.3.';
+COMMENT ON COLUMN retrieval_attempts.next_due IS 'Date when this (content, tag) pair should next be reviewed, computed by SM-2.';
+
+CREATE INDEX idx_retrieval_next_due ON retrieval_attempts (next_due, content_id);
+CREATE INDEX idx_retrieval_content_tag ON retrieval_attempts (content_id, tag, created_at DESC);

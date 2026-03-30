@@ -21,6 +21,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/pipeline"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/reconcile"
+	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 	"github.com/Koopa0/koopa0.dev/internal/review"
 	"github.com/Koopa0/koopa0.dev/internal/session"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
@@ -51,6 +52,7 @@ type Handlers struct {
 	Task         *task.Handler
 	Stats        *stats.Handler
 	Learning     *learning.Handler
+	Retrieval    *retrieval.Handler
 	Note         *note.Handler
 	Activity     *activity.Handler
 	Session      *session.Handler
@@ -241,4 +243,10 @@ func RegisterRoutes(mux *http.ServeMux, d *Handlers, authMid, rlMid func(http.Ha
 	mux.Handle("GET /api/admin/stats/tag-summary", authMid(http.HandlerFunc(d.Learning.TagSummaryHTTP)))
 	mux.Handle("GET /api/admin/stats/weakness-trend", authMid(http.HandlerFunc(d.Learning.WeaknessTrendHTTP)))
 	mux.Handle("GET /api/admin/stats/learning-timeline", authMid(http.HandlerFunc(d.Learning.TimelineHTTP)))
+
+	// admin — spaced retrieval
+	if d.Retrieval != nil {
+		mux.Handle("POST /api/admin/retrieval-attempts", authMid(http.HandlerFunc(d.Retrieval.LogAttemptHTTP)))
+		mux.Handle("GET /api/admin/retrieval-queue", authMid(http.HandlerFunc(d.Retrieval.QueueHTTP)))
+	}
 }

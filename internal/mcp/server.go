@@ -29,6 +29,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/notion"
 	"github.com/Koopa0/koopa0.dev/internal/oreilly"
 	"github.com/Koopa0/koopa0.dev/internal/project"
+	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 	"github.com/Koopa0/koopa0.dev/internal/session"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
 	"github.com/Koopa0/koopa0.dev/internal/task"
@@ -52,6 +53,7 @@ type Server struct {
 	feeds           *feed.Store
 	oreilly         *oreilly.Client
 	pipelineTrigger PipelineTrigger
+	retrieval       *retrieval.Store                      // optional: spaced retrieval
 	recordToolCall  func(context.Context, ToolCallRecord) // optional telemetry
 	lastTrigger     map[string]time.Time                  // rate limit: pipeline name -> last trigger time
 	triggerMu       sync.Mutex                            // protects lastTrigger
@@ -98,6 +100,11 @@ func WithProjectWriter(w *project.Store) ServerOption {
 			s.projects = w
 		}
 	}
+}
+
+// WithRetrieval enables spaced retrieval tools (log_retrieval_attempt, get_retrieval_queue).
+func WithRetrieval(rs *retrieval.Store) ServerOption {
+	return func(s *Server) { s.retrieval = rs }
 }
 
 // WithActivityWriter enables activity event recording for task completion audit trail.
@@ -530,6 +537,22 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		Description: "Synthesize knowledge across ALL content sources for a topic: articles, build logs, TILs, Obsidian notes, and RSS bookmarks. Produces a structured synthesis grouped by source type with gap analysis. Use when you need cross-source synthesis across 5+ related items or want to identify knowledge gaps. For quick lookups of 1-2 results, search_knowledge is faster and cheaper. Note: higher token cost than search tools due to multi-source aggregation.",
 		Annotations: readOnly,
 	}, s.synthesizeTopic)
+
+	// --- Spaced retrieval tools (conditional: requires retrieval store) ---
+
+	if s.retrieval != nil {
+		addTool(s, &mcp.Tool{
+			Name:        "log_retrieval_attempt",
+			Description: "Record a spaced retrieval self-test result. Use when the user tests their recall of a TIL concept — 'remembered', 'forgot', 'struggled'. Computes next review date via SM-2. Required: content_slug, quality (easy/hard/failed). Optional: tag (specific weakness tag; omit for whole-content retrieval).",
+			Annotations: additive,
+		}, s.logRetrievalAttempt)
+
+		addTool(s, &mcp.Tool{
+			Name:        "get_retrieval_queue",
+			Description: "Get TILs due for spaced retrieval review: overdue SM-2 items + recent TILs never tested. Use at the start of a learning session for review, or when the user asks 'what should I review'. Optional project filter; default limit 10.",
+			Annotations: readOnly,
+		}, s.getRetrievalQueue)
+	}
 
 	return s
 }
