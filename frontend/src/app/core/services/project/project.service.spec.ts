@@ -27,6 +27,11 @@ function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
     public: true,
     sort_order: 0,
     status: 'in-progress',
+    notion_page_id: null,
+    repo: null,
+    area: '',
+    deadline: null,
+    last_activity_at: null,
     created_at: '2026-01-10T10:00:00Z',
     updated_at: '2026-01-15T10:00:00Z',
     ...overrides,
@@ -78,7 +83,10 @@ describe('ProjectService', () => {
       });
 
       const req = httpMock.expectOne((r) => r.url.includes('/api/projects'));
-      req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+      req.flush('Server error', {
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
     });
   });
 
@@ -119,13 +127,18 @@ describe('ProjectService', () => {
         description: 'A new project',
         role: 'Developer',
       };
-      const mockResponse = createMockProject({ slug: 'new-project', title: 'New Project' });
+      const mockResponse = createMockProject({
+        slug: 'new-project',
+        title: 'New Project',
+      });
 
       service.createProject(request).subscribe((project) => {
         expect(project.title).toBe('New Project');
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/admin/projects'));
+      const req = httpMock.expectOne((r) =>
+        r.url.includes('/api/admin/projects'),
+      );
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(request);
       req.flush({ data: mockResponse });
@@ -136,9 +149,11 @@ describe('ProjectService', () => {
     it('should PUT to admin projects endpoint with id', () => {
       const mockResponse = createMockProject({ title: 'Updated Title' });
 
-      service.updateProject('proj-001', { title: 'Updated Title' }).subscribe((project) => {
-        expect(project.title).toBe('Updated Title');
-      });
+      service
+        .updateProject('proj-001', { title: 'Updated Title' })
+        .subscribe((project) => {
+          expect(project.title).toBe('Updated Title');
+        });
 
       const req = httpMock.expectOne((r) =>
         r.url.includes('/api/admin/projects/proj-001'),

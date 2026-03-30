@@ -9,9 +9,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ProjectDetailComponent } from './project-detail';
 import type { ApiProject } from '../../core/models';
 
-function createMockProject(
-  overrides: Partial<ApiProject> = {},
-): ApiProject {
+function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
   return {
     id: '1',
     slug: 'test-project',
@@ -31,6 +29,11 @@ function createMockProject(
     public: true,
     sort_order: 0,
     status: 'completed',
+    notion_page_id: null,
+    repo: null,
+    area: '',
+    deadline: null,
+    last_activity_at: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -65,7 +68,9 @@ describe('ProjectDetailComponent', () => {
   it('should create', () => {
     fixture.componentRef.setInput('slug', 'test-project');
     fixture.detectChanges();
-    const req = httpMock.expectOne((r) => r.url.includes('/api/projects/test-project'));
+    const req = httpMock.expectOne((r) =>
+      r.url.includes('/api/projects/test-project'),
+    );
     req.flush({ data: createMockProject() });
     expect(component).toBeTruthy();
   });

@@ -26,6 +26,7 @@ function buildMockArticle(overrides: Partial<ApiContent> = {}): ApiContent {
     series_id: null,
     series_order: null,
     review_level: 'auto',
+    visibility: 'public',
     ai_metadata: null,
     reading_time: 5,
     published_at: '2026-01-15T00:00:00Z',
@@ -35,7 +36,9 @@ function buildMockArticle(overrides: Partial<ApiContent> = {}): ApiContent {
   };
 }
 
-function buildMockMeta(overrides: Partial<ApiPaginationMeta> = {}): ApiPaginationMeta {
+function buildMockMeta(
+  overrides: Partial<ApiPaginationMeta> = {},
+): ApiPaginationMeta {
   return {
     total: 1,
     page: 1,
@@ -72,8 +75,8 @@ describe('ArticlesComponent', () => {
 
   it('should create', () => {
     fixture.detectChanges();
-    const req = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
     expect(component).toBeTruthy();
@@ -87,8 +90,8 @@ describe('ArticlesComponent', () => {
 
     fixture.detectChanges();
 
-    const req = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     req.flush({ data: mockArticles, meta: buildMockMeta({ total: 2 }) });
     fixture.detectChanges();
@@ -100,13 +103,17 @@ describe('ArticlesComponent', () => {
 
   it('should display articles in the template after loading', () => {
     const mockArticles = [
-      buildMockArticle({ id: '1', title: 'Angular Signals Guide', slug: 'angular-signals' }),
+      buildMockArticle({
+        id: '1',
+        title: 'Angular Signals Guide',
+        slug: 'angular-signals',
+      }),
     ];
 
     fixture.detectChanges();
 
-    const req = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     req.flush({ data: mockArticles, meta: buildMockMeta({ total: 1 }) });
     fixture.detectChanges();
@@ -118,21 +125,26 @@ describe('ArticlesComponent', () => {
   it('should set error signal when HTTP request fails', () => {
     fixture.detectChanges();
 
-    const req = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
-    req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+    req.flush('Server error', {
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
     fixture.detectChanges();
 
-    expect(component['error']()).toBe('Failed to load articles. Please try again later.');
+    expect(component['error']()).toBe(
+      'Failed to load articles. Please try again later.',
+    );
     expect(component['isLoading']()).toBe(false);
   });
 
   it('should show empty state when no articles returned', () => {
     fixture.detectChanges();
 
-    const req = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
     fixture.detectChanges();
@@ -149,8 +161,8 @@ describe('ArticlesComponent', () => {
     const skeletons = el.querySelectorAll('app-skeleton');
     expect(skeletons.length).toBeGreaterThan(0);
 
-    const req = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
   });
@@ -158,8 +170,8 @@ describe('ArticlesComponent', () => {
   it('should compute totalPages correctly', () => {
     fixture.detectChanges();
 
-    const req = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     req.flush({ data: [], meta: buildMockMeta({ total: 25 }) });
     fixture.detectChanges();
@@ -172,16 +184,16 @@ describe('ArticlesComponent', () => {
     fixture.detectChanges();
 
     // Initial load
-    const initialReq = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const initialReq = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     initialReq.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
 
     // Trigger clearFilters
     component['clearFilters']();
 
-    const reloadReq = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const reloadReq = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     reloadReq.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
 
@@ -192,21 +204,25 @@ describe('ArticlesComponent', () => {
   it('should change page and reload articles', () => {
     fixture.detectChanges();
 
-    const initialReq = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const initialReq = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     initialReq.flush({
-      data: Array.from({ length: 12 }, (_, i) => buildMockArticle({ id: `a${i}` })),
+      data: Array.from({ length: 12 }, (_, i) =>
+        buildMockArticle({ id: `a${i}` }),
+      ),
       meta: buildMockMeta({ total: 24 }),
     });
 
     component['onPageChange'](2);
 
-    const pageReq = httpTesting.expectOne((r) =>
-      r.url.includes('/api/contents') && r.method === 'GET',
+    const pageReq = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
     pageReq.flush({
-      data: Array.from({ length: 12 }, (_, i) => buildMockArticle({ id: `b${i}` })),
+      data: Array.from({ length: 12 }, (_, i) =>
+        buildMockArticle({ id: `b${i}` }),
+      ),
       meta: buildMockMeta({ total: 24, page: 2 }),
     });
 

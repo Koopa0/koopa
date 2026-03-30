@@ -69,6 +69,7 @@ describe('NotesComponent', () => {
           series_id: null,
           series_order: null,
           review_level: 'auto',
+    visibility: 'public',
           ai_metadata: null,
           reading_time: 2,
           published_at: '2026-01-01T00:00:00Z',

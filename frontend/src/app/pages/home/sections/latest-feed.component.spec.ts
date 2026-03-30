@@ -28,6 +28,7 @@ function createMockContent(
     series_id: null,
     series_order: null,
     review_level: 'auto',
+    visibility: 'public',
     ai_metadata: null,
     reading_time: 5,
     published_at: '2026-01-15T00:00:00Z',
@@ -90,9 +91,24 @@ describe('LatestFeedComponent', () => {
     fixture.detectChanges();
 
     const mockContents = [
-      createMockContent({ id: '1', slug: 'article-1', title: 'First Article', type: 'article' }),
-      createMockContent({ id: '2', slug: 'build-1', title: 'Build Log 1', type: 'build-log' }),
-      createMockContent({ id: '3', slug: 'til-1', title: 'TIL 1', type: 'til' }),
+      createMockContent({
+        id: '1',
+        slug: 'article-1',
+        title: 'First Article',
+        type: 'article',
+      }),
+      createMockContent({
+        id: '2',
+        slug: 'build-1',
+        title: 'Build Log 1',
+        type: 'build-log',
+      }),
+      createMockContent({
+        id: '3',
+        slug: 'til-1',
+        title: 'TIL 1',
+        type: 'til',
+      }),
     ];
 
     const req = httpMock.expectOne((r) => r.url.includes('/api/contents'));
