@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/koopa0/blog-backend/internal/db"
-	"github.com/koopa0/blog-backend/internal/ai"
 )
 
 // Store handles database operations for tasks.
@@ -38,19 +37,19 @@ func (s *Store) Tasks(ctx context.Context) ([]Task, error) {
 }
 
 // PendingTasks returns tasks that are not done, satisfying flow.TaskQuerier.
-func (s *Store) PendingTasks(ctx context.Context) ([]ai.PendingTask, error) {
+func (s *Store) PendingTasks(ctx context.Context) ([]PendingTask, error) {
 	rows, err := s.q.PendingTasks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing pending tasks: %w", err)
 	}
-	tasks := make([]ai.PendingTask, 0, len(rows))
+	tasks := make([]PendingTask, 0, len(rows))
 	for i := range rows {
 		r := &rows[i]
 		var due string
 		if r.Due != nil {
 			due = r.Due.Format(time.DateOnly)
 		}
-		tasks = append(tasks, ai.PendingTask{
+		tasks = append(tasks, PendingTask{
 			Title: r.Title,
 			Due:   due,
 		})
@@ -129,14 +128,14 @@ func (s *Store) CompletedSince(ctx context.Context, since time.Time) (int64, err
 }
 
 // CompletedByProjectSince returns per-project completion counts since the given time.
-func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([]ai.ProjectCompletion, error) {
+func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([]ProjectCompletion, error) {
 	rows, err := s.q.CompletedTasksByProjectSince(ctx, &since)
 	if err != nil {
 		return nil, fmt.Errorf("counting completed tasks by project: %w", err)
 	}
-	result := make([]ai.ProjectCompletion, len(rows))
+	result := make([]ProjectCompletion, len(rows))
 	for i := range rows {
-		result[i] = ai.ProjectCompletion{
+		result[i] = ProjectCompletion{
 			ProjectTitle: rows[i].ProjectTitle,
 			Completed:    rows[i].Completed,
 		}
@@ -241,6 +240,9 @@ func (s *Store) MyDayTasks(ctx context.Context) ([]MyDaySnapshot, error) {
 func (s *Store) TaskByID(ctx context.Context, id uuid.UUID) (*Task, error) {
 	r, err := s.q.TaskByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("querying task %s: %w", id, err)
 	}
 	t := rowToTask(&r)
@@ -251,6 +253,9 @@ func (s *Store) TaskByID(ctx context.Context, id uuid.UUID) (*Task, error) {
 func (s *Store) TaskByNotionPageID(ctx context.Context, notionPageID string) (*Task, error) {
 	r, err := s.q.TaskByNotionPageID(ctx, &notionPageID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("querying task by notion page %s: %w", notionPageID, err)
 	}
 	t := rowToTask(&r)
@@ -277,6 +282,9 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (
 		Status: db.TaskStatus(status),
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("updating task %s status to %s: %w", id, status, err)
 	}
 	t := rowToTask(&r)
@@ -439,6 +447,9 @@ func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Task, error) {
 	params.Assignee = p.Assignee
 	r, err := s.q.UpdateTask(ctx, params)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("updating task %s: %w", p.ID, err)
 	}
 	t := rowToTask(&r)

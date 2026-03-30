@@ -29,8 +29,8 @@ type WeeklyInput struct {
 	HealthIssues []string `json:"health_issues,omitempty"`
 }
 
-// ProjectCompletion is a convenience alias for ai.ProjectCompletion.
-type ProjectCompletion = ai.ProjectCompletion
+// ProjectCompletion is a convenience alias for task.ProjectCompletion.
+type ProjectCompletion = task.ProjectCompletion
 
 // WeeklyOutput is the JSON output of the weekly-review flow.
 type WeeklyOutput struct {

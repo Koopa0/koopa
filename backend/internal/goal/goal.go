@@ -52,5 +52,5 @@ type UpsertByNotionParams struct {
 
 var (
 	// ErrNotFound indicates the goal does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("goal: not found")
 )

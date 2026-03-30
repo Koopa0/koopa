@@ -10,10 +10,11 @@ import (
 // Entries expire after the configured TTL, and a background goroutine cleans
 // them up periodically.
 type DeduplicationCache struct {
-	mu      sync.Mutex
-	entries map[string]time.Time // delivery key → first seen time
-	ttl     time.Duration
-	done    chan struct{}
+	mu       sync.Mutex
+	entries  map[string]time.Time // delivery key → first seen time
+	ttl      time.Duration
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewDeduplicationCache returns a cache that expires entries after ttl.
@@ -42,9 +43,9 @@ func (c *DeduplicationCache) Seen(key string) bool {
 	return false
 }
 
-// Stop signals the cleanup goroutine to exit.
+// Stop signals the cleanup goroutine to exit. Safe to call multiple times.
 func (c *DeduplicationCache) Stop() {
-	close(c.done)
+	c.stopOnce.Do(func() { close(c.done) })
 }
 
 // cleanup removes expired entries every ttl/2.

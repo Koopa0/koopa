@@ -232,11 +232,11 @@ func TestHandler_Reject_Adversarial(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Handler.Edit — adversarial validation (real Handler, nil store)
+// Handler.ApproveAfterEdit — adversarial validation (real Handler, nil store)
 // Store interaction tested via integration tests.
 // ---------------------------------------------------------------------------
 
-func TestHandler_Edit_Adversarial(t *testing.T) {
+func TestHandler_ApproveAfterEdit_Adversarial(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandler(nil, slog.New(slog.DiscardHandler))
@@ -262,7 +262,7 @@ func TestHandler_Edit_Adversarial(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPut, "/api/admin/review/x/edit", http.NoBody)
 			req.SetPathValue("id", tt.pathID)
 			w := httptest.NewRecorder()
-			h.Edit(w, req)
+			h.ApproveAfterEdit(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Fatalf("Edit(%q) status = %d, want %d", tt.pathID, w.Code, tt.wantStatus)

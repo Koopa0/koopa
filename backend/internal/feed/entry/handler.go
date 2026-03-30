@@ -62,10 +62,13 @@ func (h *Handler) Curate(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
+	if req.ContentID == uuid.Nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "content_id is required")
+		return
+	}
 
 	if err := h.store.Curate(r.Context(), id, req.ContentID); err != nil {
-		h.logger.Error("curating collected data", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to curate")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -80,8 +83,7 @@ func (h *Handler) Ignore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.Ignore(r.Context(), id); err != nil {
-		h.logger.Error("ignoring collected data", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to ignore")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

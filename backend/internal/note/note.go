@@ -91,4 +91,4 @@ type MergedResult struct {
 	Score float64
 }
 
-var ErrNotFound = errors.New("not found")
+var ErrNotFound = errors.New("note: not found")

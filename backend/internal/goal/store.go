@@ -2,9 +2,11 @@ package goal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -93,6 +95,9 @@ func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (in
 func (s *Store) IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error) {
 	id, err := s.q.GoalIDByNotionPageID(ctx, &notionPageID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
 		return uuid.Nil, fmt.Errorf("resolving goal by notion page %s: %w", notionPageID, err)
 	}
 	return id, nil
@@ -102,6 +107,9 @@ func (s *Store) IDByNotionPageID(ctx context.Context, notionPageID string) (uuid
 func (s *Store) GoalByTitle(ctx context.Context, title string) (*Goal, error) {
 	r, err := s.q.GoalByTitle(ctx, title)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("querying goal by title %q: %w", title, err)
 	}
 	g := rowToGoal(&r)
@@ -115,6 +123,9 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (
 		Status: db.GoalStatus(status),
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("updating goal %s status: %w", id, err)
 	}
 	g := rowToGoal(&r)

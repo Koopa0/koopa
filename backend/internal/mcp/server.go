@@ -352,7 +352,7 @@ func NewServer(
 		Name:        "get_session_notes",
 		Description: "Retrieve session notes for a date or date range, optionally filtered by note_type (plan|reflection|context|metrics|insight). Set days (1-30, default 1) for lookback range. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Example: get_session_notes(note_type=\"plan\", days=7)",
 		Annotations: readOnly,
-	}, s.getSessionNotes)
+	}, s.sessionNotes)
 
 	// --- reflection tool ---
 
@@ -368,7 +368,7 @@ func NewServer(
 		Name:        "get_active_insights",
 		Description: "Get tracked insights (pattern observations and hypotheses) from past sessions. Use during morning planning to see unverified hypotheses that can inform today's schedule, or during evening reflection to review which insights have been confirmed or invalidated. Default returns unverified insights; use status='all' for everything.",
 		Annotations: readOnly,
-	}, s.getActiveInsights)
+	}, s.activeInsights)
 
 	addTool(s, &mcp.Tool{
 		Name:        "update_insight",

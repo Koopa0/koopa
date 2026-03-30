@@ -312,12 +312,17 @@ func (wr *WebhookRouter) fetchDiffMetadata(ctx context.Context, repo string, evt
 	if wr.comparer == nil || evt.Before == zeroSHA || !isSHA(evt.Before) || !isSHA(evt.After) {
 		return nil
 	}
-	stats, err := wr.comparer.Compare(ctx, repo, evt.Before, evt.After)
+	ghStats, err := wr.comparer.Compare(ctx, repo, evt.Before, evt.After)
 	if err != nil {
 		wr.logger.Warn("fetching diff stats", "repo", repo, "error", err)
 		return nil
 	}
-	stats.CommitCount = len(evt.Commits)
+	stats := activity.DiffStats{
+		LinesAdded:   ghStats.LinesAdded,
+		LinesRemoved: ghStats.LinesRemoved,
+		FilesChanged: ghStats.FilesChanged,
+		CommitCount:  len(evt.Commits),
+	}
 	data, err := json.Marshal(stats)
 	if err != nil {
 		return nil

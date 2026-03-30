@@ -95,6 +95,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
+	if (p.Slug != nil && *p.Slug == "") || (p.Title != nil && *p.Title == "") {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "slug and title must not be empty")
+		return
+	}
 
 	proj, err := h.store.UpdateProject(r.Context(), id, &p)
 	if err != nil {
@@ -113,8 +117,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.DeleteProject(r.Context(), id); err != nil {
-		h.logger.Error("deleting project", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete project")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

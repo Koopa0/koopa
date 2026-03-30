@@ -335,6 +335,14 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
+	if p.Type != nil && !p.Type.Valid() {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
+		return
+	}
+	if p.Visibility != nil && *p.Visibility != VisibilityPublic && *p.Visibility != VisibilityPrivate {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "visibility must be public or private")
+		return
+	}
 
 	c, err := h.store.UpdateContent(r.Context(), id, &p)
 	if err != nil {
@@ -666,6 +674,10 @@ func (h *Handler) AdminList(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := r.URL.Query().Get("visibility"); v != "" {
 		vis := Visibility(v)
+		if vis != VisibilityPublic && vis != VisibilityPrivate {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "visibility must be public or private")
+			return
+		}
 		f.Visibility = &vis
 	}
 

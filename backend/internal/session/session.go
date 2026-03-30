@@ -9,7 +9,7 @@ import (
 )
 
 // ErrNotFound indicates no session note exists for the given query.
-var ErrNotFound = errors.New("not found")
+var ErrNotFound = errors.New("session: not found")
 
 // Note represents a single session note (plan, reflection, context, metrics, or insight).
 type Note struct {

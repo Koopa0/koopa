@@ -12,10 +12,10 @@ import (
 // Sentinel errors for source operations.
 var (
 	// ErrNotFound indicates the requested source does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("notion: not found")
 
 	// ErrConflict indicates a unique constraint violation (duplicate database_id).
-	ErrConflict = errors.New("conflict")
+	ErrConflict = errors.New("notion: conflict")
 )
 
 // SyncMode constants for notion source sync strategies.

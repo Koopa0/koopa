@@ -24,14 +24,14 @@ const topicsTTL = 10 * time.Minute
 // Handler handles topic HTTP requests.
 type Handler struct {
 	store      *Store
-	content    *content.Store
+	content    ContentByTopicLister
 	logger     *slog.Logger
 	topicCache *ristretto.Cache[string, []Topic]
 }
 
 // NewHandler returns a topic Handler.
 // The topic cache is created internally — it is an implementation detail of this handler.
-func NewHandler(store *Store, contentReader *content.Store, logger *slog.Logger) *Handler {
+func NewHandler(store *Store, contentReader ContentByTopicLister, logger *slog.Logger) *Handler {
 	topicCache, _ := ristretto.NewCache(&ristretto.Config[string, []Topic]{
 		NumCounters: 10, // 10x expected items (1 key: "topics")
 		MaxCost:     1,  // count-based: 1 item max
@@ -128,6 +128,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	p, err := api.Decode[UpdateParams](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if (p.Slug != nil && *p.Slug == "") || (p.Name != nil && *p.Name == "") {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "slug and name must not be empty")
 		return
 	}
 

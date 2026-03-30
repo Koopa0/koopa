@@ -15,8 +15,8 @@ import (
 	"github.com/koopa0/blog-backend/internal/task"
 )
 
-// PendingTask is a convenience alias for ai.PendingTask.
-type PendingTask = ai.PendingTask
+// PendingTask is a convenience alias for task.PendingTask.
+type PendingTask = task.PendingTask
 
 // MorningOutput is the JSON output of the morning-brief flow.
 type MorningOutput struct {

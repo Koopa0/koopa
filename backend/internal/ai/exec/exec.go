@@ -45,5 +45,5 @@ type Filter struct {
 
 var (
 	// ErrNotFound indicates the flow run does not exist.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound = errors.New("exec: not found")
 )

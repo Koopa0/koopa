@@ -12,8 +12,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/koopa0/blog-backend/internal/activity"
 )
 
 // maxResponseSize is the upper bound for GitHub API response bodies (10 MB).
@@ -155,9 +153,17 @@ type compareFile struct {
 	Deletions int `json:"deletions"`
 }
 
+// DiffStats holds diff statistics from a GitHub compare response.
+type DiffStats struct {
+	LinesAdded   int `json:"lines_added"`
+	LinesRemoved int `json:"lines_removed"`
+	FilesChanged int `json:"files_changed"`
+	CommitCount  int `json:"commit_count"`
+}
+
 // Compare fetches diff stats between two commits using the GitHub Compare API.
 // repo is "owner/repo", base and head are commit SHAs.
-func (g *Client) Compare(ctx context.Context, repo, base, head string) (*activity.DiffStats, error) {
+func (g *Client) Compare(ctx context.Context, repo, base, head string) (*DiffStats, error) {
 	parts := strings.SplitN(repo, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("invalid repo format %q: expected owner/repo", repo)
@@ -194,7 +200,7 @@ func (g *Client) Compare(ctx context.Context, repo, base, head string) (*activit
 		removed += f.Deletions
 	}
 
-	return &activity.DiffStats{
+	return &DiffStats{
 		LinesAdded:   added,
 		LinesRemoved: removed,
 		FilesChanged: len(cmp.Files),
