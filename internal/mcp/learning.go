@@ -187,9 +187,11 @@ func (s *Server) getRetrievalQueue(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	items, err := s.retrieval.Queue(ctx, projectID, time.Now(), limit)
 	if err != nil {
+		s.logger.Error("get_retrieval_queue failed", "error", err, "project", input.Project, "limit", limit)
 		return nil, retrieval.QueueResult{}, fmt.Errorf("querying retrieval queue: %w", err)
 	}
 
+	s.logger.Info("get_retrieval_queue ok", "items", len(items), "project", input.Project)
 	return nil, retrieval.QueueResult{Items: items}, nil
 }
 
