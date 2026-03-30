@@ -88,8 +88,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.Delete(r.Context(), id); err != nil {
-		h.logger.Error("deleting tracking topic", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete tracking topic")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
