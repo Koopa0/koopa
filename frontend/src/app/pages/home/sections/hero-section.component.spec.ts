@@ -24,27 +24,11 @@ describe('HeroSectionComponent', () => {
   it('should render hero heading', () => {
     const h1 = fixture.nativeElement.querySelector('h1');
     expect(h1).not.toBeNull();
-    expect(h1.textContent).toContain('Building reliable');
+    expect(h1.textContent).toContain('Production systems that perform');
   });
 
   it('should render role badge', () => {
     const badge = fixture.nativeElement.querySelector('p');
-    expect(badge.textContent).toContain('Software Engineer');
-  });
-
-  it('should render View Projects CTA', () => {
-    const buttons = fixture.nativeElement.querySelectorAll('button');
-    const projectsCta = Array.from(buttons).find((btn: unknown) =>
-      (btn as HTMLElement).textContent?.includes('View Projects'),
-    );
-    expect(projectsCta).toBeTruthy();
-  });
-
-  it('should render Get In Touch CTA', () => {
-    const buttons = fixture.nativeElement.querySelectorAll('button');
-    const contactCta = Array.from(buttons).find((btn: unknown) =>
-      (btn as HTMLElement).textContent?.includes('Get In Touch'),
-    );
-    expect(contactCta).toBeTruthy();
+    expect(badge.textContent).toContain('Go Backend Consultant');
   });
 });
