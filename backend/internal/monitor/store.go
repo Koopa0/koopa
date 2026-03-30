@@ -21,35 +21,35 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
-// TrackingTopics returns all tracking topics.
-func (s *Store) TrackingTopics(ctx context.Context) ([]Topic, error) {
-	rows, err := s.q.TrackingTopics(ctx)
+// Topics returns all tracking topics.
+func (s *Store) Topics(ctx context.Context) ([]Topic, error) {
+	rows, err := s.q.MonitorTopics(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing tracking topics: %w", err)
 	}
 	topics := make([]Topic, len(rows))
 	for i := range rows {
 		r := rows[i]
-		topics[i] = dbToTrackingTopic(&r)
+		topics[i] = dbToTopic(&r)
 	}
 	return topics, nil
 }
 
-// TrackingTopicByID returns a single tracking topic by ID.
-func (s *Store) TrackingTopicByID(ctx context.Context, id uuid.UUID) (*Topic, error) {
-	r, err := s.q.TrackingTopicByID(ctx, id)
+// TopicByID returns a single tracking topic by ID.
+func (s *Store) TopicByID(ctx context.Context, id uuid.UUID) (*Topic, error) {
+	r, err := s.q.MonitorTopicByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("querying tracking topic %s: %w", id, err)
 	}
-	t := dbToTrackingTopic(&r)
+	t := dbToTopic(&r)
 	return &t, nil
 }
 
-// CreateTrackingTopic inserts a new tracking topic.
-func (s *Store) CreateTrackingTopic(ctx context.Context, p *CreateParams) (*Topic, error) {
+// Create inserts a new tracking topic.
+func (s *Store) Create(ctx context.Context, p *CreateParams) (*Topic, error) {
 	if p.Keywords == nil {
 		p.Keywords = []string{}
 	}
@@ -63,7 +63,7 @@ func (s *Store) CreateTrackingTopic(ctx context.Context, p *CreateParams) (*Topi
 	if p.Enabled != nil {
 		enabled = *p.Enabled
 	}
-	r, err := s.q.CreateTrackingTopic(ctx, db.CreateTrackingTopicParams{
+	r, err := s.q.MonitorCreate(ctx, db.MonitorCreateParams{
 		Name:     p.Name,
 		Keywords: p.Keywords,
 		Sources:  p.Sources,
@@ -73,13 +73,13 @@ func (s *Store) CreateTrackingTopic(ctx context.Context, p *CreateParams) (*Topi
 	if err != nil {
 		return nil, fmt.Errorf("creating tracking topic: %w", err)
 	}
-	t := dbToTrackingTopic(&r)
+	t := dbToTopic(&r)
 	return &t, nil
 }
 
-// UpdateTrackingTopic updates a tracking topic.
-func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Topic, error) {
-	r, err := s.q.UpdateTrackingTopic(ctx, db.UpdateTrackingTopicParams{
+// Update updates a tracking topic.
+func (s *Store) Update(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Topic, error) {
+	r, err := s.q.MonitorUpdate(ctx, db.MonitorUpdateParams{
 		ID:       id,
 		Name:     p.Name,
 		Keywords: p.Keywords,
@@ -93,13 +93,13 @@ func (s *Store) UpdateTrackingTopic(ctx context.Context, id uuid.UUID, p *Update
 		}
 		return nil, fmt.Errorf("updating tracking topic %s: %w", id, err)
 	}
-	t := dbToTrackingTopic(&r)
+	t := dbToTopic(&r)
 	return &t, nil
 }
 
-// DeleteTrackingTopic deletes a tracking topic by ID.
-func (s *Store) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
-	err := s.q.DeleteTrackingTopic(ctx, id)
+// Delete deletes a tracking topic by ID.
+func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
+	err := s.q.MonitorDelete(ctx, id)
 	if err != nil {
 		return fmt.Errorf("deleting tracking topic %s: %w", id, err)
 	}
@@ -109,7 +109,7 @@ func (s *Store) DeleteTrackingTopic(ctx context.Context, id uuid.UUID) error {
 // Keywords returns a deduplicated, lowercased list of all keywords
 // from enabled tracking topics. Satisfies collector.KeywordLoader.
 func (s *Store) Keywords(ctx context.Context) ([]string, error) {
-	topics, err := s.TrackingTopics(ctx)
+	topics, err := s.Topics(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +124,8 @@ func (s *Store) Keywords(ctx context.Context) ([]string, error) {
 	return all, nil
 }
 
-// dbToTrackingTopic converts a db.TrackingTopic to Topic.
-func dbToTrackingTopic(r *db.TrackingTopic) Topic {
+// dbToTopic converts a db.TrackingTopic to Topic.
+func dbToTopic(r *db.TrackingTopic) Topic {
 	return Topic{
 		ID:        r.ID,
 		Name:      r.Name,

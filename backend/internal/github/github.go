@@ -55,17 +55,17 @@ type fileResponse struct {
 }
 
 // FileContent fetches the raw content of a file from the repository's default branch.
-func (g *Client) FileContent(ctx context.Context, path string) ([]byte, error) {
-	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
+func (c *Client) FileContent(ctx context.Context, path string) ([]byte, error) {
+	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", c.repo, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := g.client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching file: %w", err)
 	}
@@ -104,17 +104,17 @@ type dirEntry struct {
 }
 
 // ListDirectory lists file names in a directory using the GitHub Contents API.
-func (g *Client) ListDirectory(ctx context.Context, path string) ([]string, error) {
-	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", g.repo, path)
+func (c *Client) ListDirectory(ctx context.Context, path string) ([]string, error) {
+	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", c.repo, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := g.client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("listing directory: %w", err)
 	}
@@ -163,7 +163,7 @@ type DiffStats struct {
 
 // Compare fetches diff stats between two commits using the GitHub Compare API.
 // repo is "owner/repo", base and head are commit SHAs.
-func (g *Client) Compare(ctx context.Context, repo, base, head string) (*DiffStats, error) {
+func (c *Client) Compare(ctx context.Context, repo, base, head string) (*DiffStats, error) {
 	parts := strings.SplitN(repo, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("invalid repo format %q: expected owner/repo", repo)
@@ -176,10 +176,10 @@ func (g *Client) Compare(ctx context.Context, repo, base, head string) (*DiffSta
 	if err != nil {
 		return nil, fmt.Errorf("creating compare request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := g.client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching compare: %w", err)
 	}
@@ -227,12 +227,12 @@ type commitResponse struct {
 }
 
 // RecentCommits lists commits for the configured repo since the given time.
-func (g *Client) RecentCommits(ctx context.Context, since time.Time) ([]Commit, error) {
-	return g.CommitsForRepo(ctx, g.repo, since)
+func (c *Client) RecentCommits(ctx context.Context, since time.Time) ([]Commit, error) {
+	return c.CommitsForRepo(ctx, c.repo, since)
 }
 
 // CommitsForRepo lists commits for an arbitrary repo since the given time using the GitHub Commits API.
-func (g *Client) CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]Commit, error) {
+func (c *Client) CommitsForRepo(ctx context.Context, repo string, since time.Time) ([]Commit, error) {
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/commits?since=%s&per_page=100",
 		repo, since.Format(time.RFC3339))
 
@@ -240,10 +240,10 @@ func (g *Client) CommitsForRepo(ctx context.Context, repo string, since time.Tim
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := g.client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching commits: %w", err)
 	}
