@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/google/uuid"
 	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 )
 
@@ -34,9 +33,11 @@ type ReviewResult struct {
 }
 
 // DueItem is a card that's due for review, enriched with content metadata.
+// ContentID is string (not uuid.UUID) because the MCP SDK schema generator
+// infers [16]byte as type:"array", causing output validation failure.
 type DueItem struct {
 	CardID     int64           `json:"card_id"`
-	ContentID  uuid.UUID       `json:"content_id"`
+	ContentID  string          `json:"content_id"`
 	Slug       string          `json:"slug"`
 	Title      string          `json:"title"`
 	Tag        *string         `json:"tag,omitempty"`

@@ -111,7 +111,7 @@ func (s *Store) Queue(ctx context.Context, projectID *uuid.UUID, now time.Time, 
 		due := r.Due
 		items = append(items, DueItem{
 			CardID:     r.CardID,
-			ContentID:  r.ContentID,
+			ContentID:  r.ContentID.String(),
 			Slug:       r.Slug,
 			Title:      r.Title,
 			Tag:        r.Tag,
@@ -138,7 +138,7 @@ func (s *Store) Queue(ctx context.Context, projectID *uuid.UUID, now time.Time, 
 
 	for _, r := range neverRows {
 		items = append(items, DueItem{
-			ContentID:  r.ID,
+			ContentID:  r.ID.String(),
 			Slug:       r.Slug,
 			Title:      r.Title,
 			Reason:     "never-reviewed",
