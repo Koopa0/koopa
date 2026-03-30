@@ -1,8 +1,8 @@
 # koopa0-knowledge MCP Tools Reference
 
-> 45 tools across 4 domains. Last audit: 2026-03-26.
-> Server: single Go binary (`/Users/koopa/blog/./`) + PostgreSQL.
-> Changes from audit: `get_platform_stats` removed (drift → `get_goal_progress`), `disable_feed` + `enable_feed` merged → `update_feed`.
+> 49 tools across 10 functional domains. Last audit: 2026-03-30.
+> Server: `koopa0-knowledge` v0.2.0 — Go binary (`cmd/mcp/`) + PostgreSQL (pgvector).
+> Transport: Streamable HTTP on port 8081 (OAuth2 via Google OIDC).
 
 ---
 
@@ -10,956 +10,938 @@
 
 | Domain | Tools | Purpose |
 |--------|-------|---------|
-| [Daily Workflow](#domain-1-daily-workflow-11-tools) | 11 | PDCA 循環：規劃、執行、回顧、調整 |
-| [Knowledge & Content](#domain-2-knowledge--content-13-tools) | 13 | 知識搜尋、內容 CRUD、O'Reilly、RSS 收藏 |
-| [Development & Learning](#domain-3-development--learning-8-tools) | 8 | 開發記錄、學習記錄、專案管理、學習分析 |
-| [System & Infrastructure](#domain-4-system--infrastructure-13-tools) | 13 | 系統監控、RSS feed 管理、目標追蹤、週報 |
+| [Daily Workflow](#1-daily-workflow-8-tools) | 8 | Morning/evening PDCA 循環：規劃、執行、回顧、調整 |
+| [Task Management](#2-task-management-5-tools) | 5 | 任務 CRUD、批次 My Day、Notion 雙向同步 |
+| [Knowledge Search](#3-knowledge-search-5-tools) | 5 | 跨源搜尋、內容詳情、主題合成、語意相似、決策日誌 |
+| [Content Pipeline](#4-content-pipeline-5-tools) | 5 | 內容 CRUD、發佈、佇列、RSS 書籤 |
+| [RSS / Feed Management](#5-rss--feed-management-6-tools) | 6 | 訂閱 CRUD、收集統計、RSS 摘要 |
+| [Project & Goal](#6-project--goal-5-tools) | 5 | 專案上下文、目標進度、狀態更新 |
+| [Learning Analytics](#7-learning-analytics-7-tools) | 7 | 開發/學習記錄、標籤統計、涵蓋矩陣、弱點趨勢、時間線 |
+| [O'Reilly Integration](#8-oreilly-integration-3-tools) | 3 | 搜尋、書籍目錄、章節閱讀（條件啟用） |
+| [System & Infrastructure](#9-system--infrastructure-3-tools) | 3 | 系統狀態、管線觸發、活動事件（部分條件啟用） |
+| [Spaced Retrieval (FSRS)](#10-spaced-retrieval-fsrs-2-tools) | 2 | 間隔重複回測、到期佇列（條件啟用） |
+
+### Annotation Legend
+
+| 標記 | 意義 |
+|------|------|
+| `readOnly` | 唯讀，不修改任何資料 |
+| `readOnly+openWorld` | 唯讀，但呼叫外部 API（O'Reilly） |
+| `additive` | 新增資料，不破壞既有資料 |
+| `additive+idempotent` | 更新/upsert，重複呼叫安全 |
+| `destructive` | 不可逆操作（刪除、發佈、完成recurring task） |
+| 🔒 | 條件啟用：需特定環境變數才註冊 |
 
 ---
 
-## Domain 1: Daily Workflow (11 tools)
+## 1. Daily Workflow (8 tools)
 
 每日 PDCA 循環的核心。Morning planning → execution → evening reflection → next morning。
 
-### 1. `get_morning_context`
+### `get_morning_context`
+
+> 早晨規劃一站式：一次拉回所有規劃所需資料。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 早晨規劃一站式：一次拉回所有規劃所需資料 |
-| **風險** | readOnly |
-| **主要環境** | HQ（全量）、Cowork（sections 過濾）、Claude Code（`["tasks","plan","build_logs"]`）、Learning（`["tasks","plan"]`） |
-| **實作** | `internal/mcp/morning_context.go`（1,135 行） |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/morning.go` |
 
-**參數**：
-- `sections` — 可選子集：tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions
-- `activity_days` — activity lookback（default 3）
-- `build_log_days` — build log lookback（default 7）
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `sections` | string[] | — | 限定回傳子集：tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions, pipeline_health, rss_highlights, agent_tasks, content_pipeline |
+| `activity_days` | int | — | activity lookback 天數（default 3） |
+| `build_log_days` | int | — | build log lookback 天數（default 7） |
 
-**返回資料**：overdue_tasks, today_tasks, my_day_tasks, upcoming_tasks, planning_history, latest_reflection, latest_plan, projects, goals, insights, rss_highlights, build_logs, pipeline_health, content_pipeline, agent_tasks, daily_summary, today_completions
-
-**觸發情境**：
-- 「早安」「good morning」「今天有什麼事」
-- Session start（任何環境）
-- `/checkin`（Claude Code）
-
-**備註**：sections 參數是關鍵設計 — 避免每個環境都拉全量。Claude Code 只需 3 個 section（~1/4 的資料量）。
+觸發情境：「早安」「good morning」「今天有什麼事」、session start、`/checkin`
 
 ---
 
-### 2. `get_reflection_context`
+### `get_reflection_context`
+
+> 晚間回顧一站式：today's plan vs actual completions。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 晚間回顧一站式：today's plan vs actual completions |
-| **風險** | readOnly |
-| **主要環境** | HQ |
-| **實作** | `internal/mcp/reflection_context.go`（272 行） |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/reflection.go` |
 
-**參數**：
-- `date` — 回顧哪天（default today，YYYY-MM-DD）
-
-**返回資料**：today_plan, today_completions, my_day_status, daily_summary, unverified_insights, planning_history, yesterday_adjustments
-
-**觸發情境**：
-- 「今天回顧」「reflection」「how did today go」
-- 晚間 PDCA Check 階段
-
-**備註**：和 `get_morning_context` 是對稱的 morning/evening bookend。底層共用 `buildPlanningHistory()` 等 6 個 helper。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `date` | string | — | 回顧日期 YYYY-MM-DD（default today） |
 
 ---
 
-### 3. `get_session_delta`
+### `get_session_delta`
+
+> 上次 session 到現在的所有變化。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 上次 session 到現在的所有變化（gap fill） |
-| **風險** | readOnly |
-| **主要環境** | HQ、Cowork |
-| **實作** | `internal/mcp/delta_tools.go`（324 行） |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/delta.go` |
 
-**參數**：
-- `since` — 起算時間（default: 上次 claude session note 的時間）
-
-**返回資料**：tasks_completed, tasks_created, tasks_became_overdue, build_logs, insight_changes, session_notes, metrics_trend
-
-**觸發情境**：
-- 「上次之後有什麼變化」「catch me up」「what happened since last time」
-- 隔了一天以上沒開 HQ
-
-**備註**：和 `get_morning_context` 有 ~30% 資料重疊，但語意不同：delta 專注「差異」，morning 專注「全貌」。delta 追蹤 task flow（哪些是新建的、哪些變 overdue），morning 沒有這個維度。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `since` | string | — | ISO date YYYY-MM-DD（default: 上次 claude session note 日期） |
 
 ---
 
-### 4. `save_session_note`
+### `get_weekly_summary`
+
+> 每週綜合摘要：任務完成、指標趨勢、專案健康、目標對齊。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 跨環境 context 橋樑：寫入 5 種類型的 session note |
-| **風險** | additive（建立新記錄） |
-| **主要環境** | 所有環境 |
-| **實作** | `internal/note/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/weekly.go` |
 
-**參數**：
-- `note_type` — **required**：plan \| reflection \| context \| metrics \| insight
-- `content` — **required**：note 內容（markdown）
-- `source` — **required**：claude \| claude-code \| manual
-- `metadata` — type-specific required fields（見下）
-- `date` — override date（default today）
-
-**Metadata 要求**：
-| Type | Required metadata |
-|------|-------------------|
-| plan | `reasoning`（why this plan）, `committed_task_ids` and/or `committed_items` |
-| metrics | `tasks_planned`, `tasks_completed`, `adjustments` |
-| insight | `hypothesis`, `invalidation_condition` |
-| reflection | 無 required |
-| context | 無 required |
-
-**觸發情境**：
-- Morning planning 結束後 → plan note
-- Evening reflection → reflection + metrics notes
-- 發現 pattern → insight note
-- 任何需要跨環境傳遞的 context → context note
-- Bug report workflow → context note（搭配 create_task）
-
-**備註**：Schema enforcement 是防止低品質資料的關鍵設計。insight 必須有 hypothesis + invalidation_condition，確保每個假說都是可證偽的。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `weeks_back` | int | — | 0=本週, 1=上週（default 0, max 4） |
+| `compare_previous` | bool | — | 包含上週比較數據與 delta |
 
 ---
 
-### 5. `get_session_notes`
+### `save_session_note`
+
+> 儲存跨環境 session 筆記。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 讀取指定日期/類型的 session notes |
-| **風險** | readOnly |
-| **主要環境** | 所有環境 |
-| **實作** | `internal/note/` |
+| 標記 | `additive` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `note_type` — 可選 filter：plan \| reflection \| context \| metrics \| insight
-- `days` — lookback 天數（default 1，max 30）
-- `date` — 指定日期（default today）
-
-**觸發情境**：
-- Learning session start → 讀 HQ 的 plan note
-- Claude Code `/checkin` → 讀 plan note
-- 回顧過去幾天的 insights → `get_session_notes(note_type="insight", days=7)`
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `note_type` | string | ✅ | plan, reflection, context, metrics, insight |
+| `content` | string | ✅ | 筆記內容 |
+| `source` | string | ✅ | claude, claude-code, manual |
+| `date` | string | — | YYYY-MM-DD（default today） |
+| `metadata` | object | — | insight: {hypothesis, invalidation_condition}; plan: {reasoning, committed_task_ids, committed_items}; metrics: {tasks_planned, tasks_completed, adjustments} |
 
 ---
 
-### 6. `create_task`
+### `get_session_notes`
+
+> 取得 session 筆記（依日期/類型）。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 在 Notion 建立新任務 |
-| **風險** | additive |
-| **主要環境** | HQ、Cowork（delegation）、Claude Code（follow-up） |
-| **實作** | `internal/task/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `title` — **required**
-- `project` — slug/alias/title
-- `due` — YYYY-MM-DD
-- `priority` — Low \| Medium \| High
-- `energy` — Low \| High（**不接受 Medium**）
-- `assignee` — human \| claude-code \| cowork
-- `my_day` — bool
-- `notes` — description text
-
-**觸發情境**：
-- 「add a task」「remind me to」「幫我建一個任務」
-- Bug report → `create_task(assignee="claude-code")`
-- Morning planning → 新增缺少的任務
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `date` | string | — | YYYY-MM-DD（default today） |
+| `note_type` | string | — | plan, reflection, context, metrics, insight |
+| `days` | int | — | 回溯天數（default 1, max 30） |
 
 ---
 
-### 7. `complete_task`
+### `get_active_insights`
+
+> 取得追蹤中的 insights（假說/觀察）。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 標記任務完成，recurring task 自動推進 due date |
-| **風險** | **destructive**（recurring due date 推進不可逆） |
-| **主要環境** | 所有環境 |
-| **實作** | `internal/task/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/insights.go` |
 
-**參數**：
-- `task_id` — UUID（二擇一）
-- `task_title` — fuzzy match（二擇一）
-- `notes` — completion notes
-
-**返回**：`remaining_my_day_tasks`（剩餘 My Day 任務）
-
-**觸發情境**：
-- 「done」「completed」「做完了」「這題寫完了」「OK next」
-
-**備註**：Always confirm the specific task before calling。Recurring task 完成後會自動設定下次 due date，這個操作不可逆。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `status` | string | — | unverified, verified, invalidated, all（default unverified） |
+| `project` | string | — | 依專案過濾 |
+| `limit` | int | — | 最大筆數（default 10） |
 
 ---
 
-### 8. `update_task`
+### `update_insight`
+
+> 更新 insight 狀態或附加證據。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 更新任務的任何屬性 |
-| **風險** | idempotent |
-| **主要環境** | HQ、Cowork |
-| **實作** | `internal/task/` |
+| 標記 | `additive+idempotent` |
+| 實作 | `internal/mcp/insights.go` |
 
-**參數**：
-- `task_id` / `task_title` — 識別任務（二擇一）
-- `new_title`, `due`, `priority`, `energy`, `project`, `my_day`, `status`, `notes`, `assignee` — 只更新提供的欄位
-
-**備註**：`notes` 是 append 到 description，不是覆蓋。完成任務用 `complete_task`，不要用 `update_task(status="Done")`。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `insight_id` | int64 | ✅ | session_note ID |
+| `status` | string | — | unverified, verified, invalidated, archived |
+| `append_evidence` | string | — | 新增支持證據 |
+| `append_counter_evidence` | string | — | 新增反面證據 |
+| `conclusion` | string | — | 驗證後結論 |
 
 ---
 
-### 9. `search_tasks`
+## 2. Task Management (5 tools)
+
+任務管理，雙向同步 Notion。
+
+### `search_tasks`
+
+> 搜尋/列出任務，支援多條件過濾。取代了舊的 `get_pending_tasks`。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 搜尋/列出任務（取代了原本的 `get_pending_tasks`） |
-| **風險** | readOnly |
-| **主要環境** | 所有環境 |
-| **實作** | `internal/task/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `query` — fuzzy match title + description
-- `status` — pending \| done \| all（default: all）
-- `assignee` — human \| claude-code \| cowork \| all
-- `project` — slug/alias/title
-- `completed_after` / `completed_before` — YYYY-MM-DD
-- `limit` — default 50
-
-**常用組合**：
-- 原本的 `get_pending_tasks` → `search_tasks(status="pending")`
-- Claude Code 的待辦 → `search_tasks(status="pending", assignee="claude-code")`
-- 查已完成 → `search_tasks(query="refactor", status="done", completed_after="2026-03-01")`
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `query` | string | — | 模糊搜尋 title + description |
+| `project` | string | — | 專案 slug/alias/title |
+| `status` | string | — | pending, done, all（default all） |
+| `assignee` | string | — | human, claude-code, cowork, all |
+| `completed_after` | string | — | YYYY-MM-DD（inclusive） |
+| `completed_before` | string | — | YYYY-MM-DD（inclusive） |
+| `limit` | int | — | 最大筆數（default 20, max 100） |
 
 ---
 
-### 10. `batch_my_day`
+### `create_task`
+
+> 在 Notion 建立新任務。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 批次設定 Notion My Day tasks |
-| **風險** | idempotent |
-| **主要環境** | HQ |
-| **實作** | `internal/task/` |
+| 標記 | `additive` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `task_ids` — UUID array
-- `clear` — bool（先清除之前的 My Day selections）
-
-**觸發情境**：
-- Morning planning 結束，使用者確認今日計畫後一次性設定
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `title` | string | ✅ | 任務標題 |
+| `project` | string | — | 專案 slug/alias/title |
+| `due` | string | — | YYYY-MM-DD |
+| `priority` | string | — | Low, Medium, High |
+| `energy` | string | — | Low, High |
+| `my_day` | bool | — | 加入 My Day |
+| `notes` | string | — | 描述文字 |
+| `assignee` | string | — | human, claude-code, cowork（default human） |
 
 ---
 
-### 11. `get_active_insights`
+### `complete_task`
+
+> 標記任務完成。recurring task 會推進到下次 due date。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 查看假說追蹤：unverified pattern observations 和 hypotheses |
-| **風險** | readOnly |
-| **主要環境** | HQ |
-| **實作** | `internal/session/` |
+| 標記 | `destructive`（recurring due date 推進不可逆） |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `status` — unverified（default）\| verified \| invalidated \| archived \| all
-- `project` — filter by project
-- `limit` — default 10
-
-**觸發情境**：
-- Morning planning → 檢查有沒有待驗證的假說
-- Evening reflection → 今天的資料是否支持/反駁某個假說
-- Weekly review → 整理所有 insights
-
-**備註**：Insights 有獨立 lifecycle（unverified → verified/invalidated → archived），14 天後 auto-archive。和 `update_insight` 配對使用。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `task_id` | string | — | UUID 或 Notion page ID |
+| `task_title` | string | — | 模糊匹配待辦任務標題（與 task_id 二擇一） |
+| `notes` | string | — | 完成備註 |
 
 ---
 
-## Domain 2: Knowledge & Content (13 tools)
+### `update_task`
 
-知識搜尋、內容管理、O'Reilly 學習資源、RSS 收藏。
-
-### 12. `search_knowledge`
+> 更新任務屬性。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 全域知識搜尋：搜尋所有 content types + Obsidian notes |
-| **風險** | readOnly |
-| **主要環境** | 所有環境 |
-| **實作** | `internal/content/` + `internal/obsidian/`（4 路並行搜尋） |
+| 標記 | `additive+idempotent` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `query` — **required**
-- `content_type` — article \| essay \| build-log \| til \| note \| bookmark \| digest \| obsidian-note
-- `project` — slug/alias/title
-- `after` / `before` — YYYY-MM-DD（**exclusive**，不包含指定日期）
-- `source` — leetcode \| book \| course \| discussion \| practice \| video（Obsidian note filter）
-- `context` — project name in frontmatter（Obsidian note filter）
-- `book` — book title（Obsidian note filter）
-- `limit` — default 10
-
-**搜尋引擎**：4 路並行 — content DB full-text + Obsidian text search + Obsidian semantic search (embedding) + dedup
-
-**常用組合**：
-- Spaced retrieval → `search_knowledge(content_type="til", after="3d ago", before="7d ago")`
-- 找 LeetCode 筆記 → `search_knowledge(query="binary search", content_type="obsidian-note", source="leetcode")`
-- 找過去寫過的文章 → `search_knowledge(query="value semantics")`
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `task_id` | string | — | UUID（與 task_title 二擇一） |
+| `task_title` | string | — | 模糊匹配 |
+| `new_title` | string | — | 重命名 |
+| `status` | string | — | To Do, Doing, Done |
+| `due` | string | — | YYYY-MM-DD |
+| `priority` | string | — | Low, Medium, High |
+| `energy` | string | — | Low, High |
+| `my_day` | bool | — | 設定/清除 My Day |
+| `project` | string | — | 專案 slug/alias/title |
+| `notes` | string | — | 追加描述 |
+| `assignee` | string | — | human, claude-code, cowork |
 
 ---
 
-### 13. `synthesize_topic` ⚠️
+### `batch_my_day`
+
+> 批次設定 Notion My Day。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 跨源知識合成 + gap analysis（**高 token 成本**） |
-| **風險** | readOnly |
-| **主要環境** | HQ、Cowork |
-| **實作** | `internal/mcp/content_tools.go`（176 行） |
-| **狀態** | ⚠️ 待觀察使用頻率（2026-04-09 telemetry review） |
+| 標記 | `additive+idempotent` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `query` — **required**
-- `max_sources` — default 15
-- `include_gap_analysis` — bool（default true）
-
-**它做什麼**（不使用 LLM，純 DB aggregation）：
-1. 呼叫 `searchKnowledge()`（4 路並行）
-2. 如果結果 < 5，fallback 逐詞搜尋
-3. 按 source type 分成 4 類：PracticalExperience / ExternalKnowledge / TheoreticalBasis / CommonPatterns
-4. Gap analysis：哪些類別缺少內容（靜態模板）
-
-**使用時機**：`search_knowledge` 返回 5+ 結果且需要跨源 synthesis 時。1-2 結果用 `search_knowledge` 就夠了。
-
-**待觀察原因**：LLM consumer 做分類可能比 rigid 規則更準確。保留的理由是「一次呼叫拿到跨源結果 + gap analysis，比 consumer 自己分多次 search 高效」。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `task_ids` | string[] | ✅ | 要設為 My Day 的 task UUIDs |
+| `clear` | bool | — | 是否先清除所有既有 My Day |
 
 ---
 
-### 14. `get_content_detail`
+## 3. Knowledge Search (5 tools)
+
+跨所有內容源的知識搜尋與合成。
+
+### `search_knowledge`
+
+> 跨所有內容類型搜尋：articles, build logs, TILs, notes, Obsidian notes。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 用 slug 拉取完整內容（body + metadata） |
-| **風險** | readOnly |
-| **主要環境** | HQ（editorial review）、Learning（spaced retrieval） |
-| **實作** | `internal/content/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/search.go` |
 
-**參數**：
-- `slug` — **required**
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `query` | string | ✅ | 搜尋關鍵字 |
+| `project` | string | — | 專案 slug/alias/title |
+| `after` | string | — | 排除此日期之前（YYYY-MM-DD, exclusive） |
+| `before` | string | — | 排除此日期之後（YYYY-MM-DD, exclusive） |
+| `content_type` | string | — | article, essay, build-log, til, note, bookmark, digest, obsidian-note |
+| `source` | string | — | Obsidian 篩選：leetcode, book, course, discussion, practice, video |
+| `context` | string | — | Obsidian 篩選：frontmatter 中的 project name |
+| `book` | string | — | Obsidian 篩選：書名 |
+| `limit` | int | — | 最大筆數（default 10, max 30） |
 
-**觸發情境**：`search_knowledge` 找到結果後，需要讀完整內容時。
+合併了舊的 `search_notes`。使用 `content_type="obsidian-note"` 搭配 source/context/book 來搜尋 Obsidian 筆記。
 
 ---
 
-### 15. `create_content`
+### `get_content_detail`
+
+> 依 slug 取得完整內容。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 建立內容草稿（7 種 content type） |
-| **風險** | additive |
-| **主要環境** | Cowork（content pipeline）、Claude Code（build-log fallback） |
-| **實作** | `internal/content/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/search.go` |
 
-**參數**：
-- `title` — **required**
-- `body` — **required**（markdown）
-- `content_type` — **required**：article \| essay \| build-log \| til \| note \| bookmark \| digest
-- `tags` — string array
-- `project` — slug/alias/title
-
-**備註**：建立的是 draft status。Coding session 用 `log_dev_session`（更結構化），不要直接用 create_content。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `slug` | string | ✅ | 內容 slug |
 
 ---
 
-### 16. `update_content`
+### `get_decision_log`
+
+> 取得 Obsidian 中 type=decision-log 的筆記。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 更新 draft/review 內容的任何屬性 |
-| **風險** | idempotent |
-| **主要環境** | Cowork |
-| **實作** | `internal/content/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/morning.go` |
 
-**參數**：
-- `content_id` — **required**
-- `title`, `body`, `content_type`, `tags`, `project` — 只更新提供的欄位
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | — | 依專案 context 過濾 |
+| `limit` | int | — | 最大筆數（default 20, max 50） |
 
 ---
 
-### 17. `publish_content`
+### `synthesize_topic`
+
+> 跨所有內容源的主題合成 + gap analysis。Token 成本較高。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 發布內容（status → published，不可逆） |
-| **風險** | **destructive** |
-| **主要環境** | Cowork（需 user 確認） |
-| **實作** | `internal/content/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/search.go` |
 
-**參數**：
-- `content_id` — **required**
-
-**備註**：Always confirm with user before calling。和 create/update 分開是「one tool, one risk level」原則的體現。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `query` | string | ✅ | 要合成的主題 |
+| `max_sources` | int | — | 最大來源數（default 15, max 30） |
+| `include_gap_analysis` | bool | — | 包含子主題涵蓋缺口（default true） |
 
 ---
 
-### 18. `list_content_queue`
+### `find_similar_content`
+
+> 基於 embedding cosine similarity 的語意相似搜尋。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 查看內容佇列：drafts、review、published、scheduled |
-| **風險** | readOnly |
-| **主要環境** | Cowork |
-| **實作** | `internal/content/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/search.go` |
 
-**參數**：
-- `view` — queue（default，draft + review）\| calendar（published 7d + scheduled）\| recent（published）
-- `content_type`, `status`, `limit` — optional filters
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `content_slug` | string | ✅ | 基準 TIL 的 slug |
+| `limit` | int | — | 最大筆數（default 5, max 20） |
 
 ---
 
-### 19. `get_decision_log`
+## 4. Content Pipeline (5 tools)
+
+內容 CRUD 與發佈管線。
+
+### `create_content`
+
+> 建立內容草稿。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 拉取所有 decision-log 類型的 Obsidian notes（不需要 search query） |
-| **風險** | readOnly |
-| **主要環境** | Claude Code（架構決策前） |
-| **實作** | `internal/note/`（37 行） |
+| 標記 | `additive` |
+| 實作 | `internal/mcp/content.go` |
 
-**參數**：
-- `project` — optional filter
-- `limit` — default 20
-
-**為什麼不能用 search_knowledge 取代**：
-- `search_knowledge` 必須提供 query（空 query 報錯）
-- `search_knowledge` 不能按 Obsidian note type 過濾
-- `get_decision_log` 返回全部 decision-log，不需要搜尋詞
-
-**觸發情境**：「上次為什麼選 X？」「之前有沒有類似的設計決策？」
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `title` | string | ✅ | 標題 |
+| `body` | string | ✅ | Markdown 內容 |
+| `content_type` | string | ✅ | article, essay, build-log, til, note, bookmark, digest |
+| `tags` | string[] | — | 標籤 |
+| `project` | string | — | 專案 slug/alias/title |
 
 ---
 
-### 20. `bookmark_rss_item`
+### `update_content`
+
+> 更新草稿或審核中內容的屬性。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 把 RSS collected item 轉成 bookmark content record（atomic 6-step operation） |
-| **風險** | additive |
-| **主要環境** | Cowork |
-| **實作** | `internal/mcp/system_tools.go`（70 行） |
+| 標記 | `additive+idempotent` |
+| 實作 | `internal/mcp/content.go` |
 
-**參數**：
-- `collected_id` — **required**
-- `notes` — 個人評語
-- `tags` — 額外 tags
-
-**它做什麼（6 步）**：
-1. 取得 collected item 資料
-2. 驗證 item 未被 curated
-3. 建立 bookmark content（auto-copy topics → tags, embed original content）
-4. 設定 ReviewLevel = ReviewLight
-5. 建立 content record
-6. 更新 collected item status → curated，設定 curated_content_id FK
-
-**為什麼不能用 `create_content` 取代**：`create_content` 只做第 5 步。其他 5 步（metadata 複製、FK linking、status 更新）都是 `bookmark_rss_item` 獨有的。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `content_id` | string | ✅ | 內容 UUID |
+| `title` | string | — | 新標題 |
+| `body` | string | — | 新內容 |
+| `content_type` | string | — | 變更類型 |
+| `tags` | string[] | — | 變更標籤 |
+| `project` | string | — | 變更專案 |
 
 ---
 
-### 21-23. O'Reilly 三件組
+### `publish_content`
 
-#### 21. `search_oreilly_content`
-
-| 屬性 | 值 |
-|------|-----|
-| **一句話** | 搜尋 O'Reilly Learning 的書/影片/課程 |
-| **風險** | readOnly |
-| **主要環境** | Learning |
-
-**參數**：`query`（required）, `formats`（book/video/article/course）, `publishers`, `authors`, `limit`
-
-#### 22. `get_oreilly_book_detail`
+> 發佈內容（不可逆）。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 取得書的章節目錄和結構 |
-| **風險** | readOnly |
-| **主要環境** | Learning |
+| 標記 | `destructive` |
+| 實作 | `internal/mcp/content.go` |
 
-**參數**：`archive_id`（required，from search results）
-
-#### 23. `read_oreilly_chapter`
-
-| 屬性 | 值 |
-|------|-----|
-| **一句話** | 讀取完整章節內容（plain text） |
-| **風險** | readOnly |
-| **主要環境** | Learning |
-
-**參數**：`archive_id`（required）, `filename`（required，from book detail chapters list）
-
-**三件組 pipeline**：search → detail（看目錄）→ read（讀章節）。Progressive disclosure 設計。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `content_id` | string | ✅ | 內容 UUID |
 
 ---
 
-### 24. `get_rss_highlights`
+### `list_content_queue`
+
+> 查看內容佇列。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 最近收集的 RSS 精選文章 |
-| **風險** | readOnly |
-| **主要環境** | Cowork（content pipeline 起點）、HQ |
-| **實作** | `internal/collected/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/content.go` |
 
-**參數**：
-- `days` — lookback（default 7）
-- `limit` — default 20
-- `sort_by` — relevance \| recent
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `view` | string | — | queue（default）, calendar, recent |
+| `status` | string | — | draft, review, published, all |
+| `content_type` | string | — | 內容類型過濾 |
+| `limit` | int | — | 最大筆數（default 20） |
 
 ---
 
-## Domain 3: Development & Learning (8 tools)
+### `bookmark_rss_item`
 
-開發記錄、學習記錄、專案管理、學習分析。
-
-### 25. `log_dev_session`
+> 將 RSS 項目存為書籤（建立 content record type=bookmark）。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 記錄 coding session 為 build-log（含跨環境 context bridge） |
-| **風險** | additive |
-| **主要環境** | Claude Code（top 1 tool） |
-| **實作** | `internal/content/` |
+| 標記 | `additive` |
+| 實作 | `internal/mcp/content.go` |
 
-**參數**：
-- `project` — **required**
-- `session_type` — **required**：feature \| refactor \| bugfix \| research \| infra
-- `title` — **required**
-- `body` — **required**（markdown）
-- `tags` — string array
-- `plan_summary` — 從 .claude/plans/ 摘要（**context bridge to HQ**）
-- `review_summary` — reviewer findings 摘要（**context bridge to HQ**）
-- `tier` — tier-1 \| tier-2 \| tier-3
-- `diff_stats` — e.g., "+120 -30"
-
-**觸發情境**：coding session 結束時，或 development-lifecycle auto-commit 後。
-
-**備註**：`plan_summary` 和 `review_summary` 是跨環境 context bridge 的關鍵 — HQ 不需要看 git diff，只需要讀摘要就能在 weekly review 理解開發進度。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `collected_id` | string | ✅ | collected_data 的 UUID |
+| `notes` | string | — | 個人評語 |
+| `tags` | string[] | — | 標籤 |
 
 ---
 
-### 26. `log_learning_session`
+## 5. RSS / Feed Management (6 tools)
+
+RSS 訂閱管理與收集統計。
+
+### `get_rss_highlights`
+
+> 取得最近收集的 RSS 文章。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 記錄學習成果（LeetCode / book / course），含 canonical tag validation |
-| **風險** | additive |
-| **主要環境** | Learning |
-| **實作** | `internal/content/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/morning.go` |
 
-**參數**：
-- `project` — **required**（e.g., "leetcode"）
-- `source` — **required**：leetcode \| book \| course \| discussion \| practice \| video
-- `title` — **required**
-- `body` — **required**（markdown）
-- `topic` — **required**（主題標籤）
-- `tags` — **controlled vocabulary**：
-  - Topic tags：array, string, hash-table, two-pointers, sliding-window, binary-search, stack, queue, linked-list, tree, binary-tree, bst, graph, bfs, dfs, heap, trie, union-find, dp, greedy, backtracking, bit-manipulation, math, matrix, interval, topological-sort, sorting, design, simulation, prefix-sum, divide-and-conquer, segment-tree, binary-indexed-tree
-  - Result：ac-independent \| ac-with-hints \| ac-after-solution \| incomplete
-  - Weakness/Improvement：`weakness:xxx`, `improvement:xxx`
-- `difficulty` — easy \| medium \| hard
-- `problem_url` — e.g., LeetCode URL
-
-**備註**：Canonical tag validation 是 Learning Analytics（coverage_matrix, tag_summary, weakness_trend）的基礎。Free-text tags 會讓分析查詢碎片化。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `days` | int | — | 回溯天數（default 7, max 365） |
+| `limit` | int | — | 最大筆數（default 20, max 100） |
+| `sort_by` | string | — | relevance（default）或 recency |
 
 ---
 
-### 27. `get_project_context`
+### `list_feeds`
+
+> 列出所有 RSS 訂閱。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 單一 project 的完整 context（details + activity + notes） |
-| **風險** | readOnly |
-| **主要環境** | Claude Code（Tier 3 feature 前） |
-| **實作** | `internal/project/` |
+| 標記 | `readOnly` 🔒 |
+| 實作 | `internal/mcp/feed.go` |
 
-**參數**：
-- `project` — **required**（slug/alias/title）
+無參數。
 
 ---
 
-### 28. `list_projects`
+### `add_feed`
+
+> 新增 RSS 訂閱。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 列出所有 active projects 概覽 |
-| **風險** | readOnly |
-| **主要環境** | HQ、Cowork |
-| **實作** | `internal/project/` |
+| 標記 | `additive` 🔒 |
+| 實作 | `internal/mcp/feed.go` |
 
-**參數**：`limit`
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `url` | string | ✅ | Feed URL |
+| `name` | string | ✅ | 顯示名稱 |
+| `schedule` | string | — | daily（default）, weekly |
+| `topics` | string[] | — | 主題標籤 |
 
 ---
 
-### 29. `update_project_status`
+### `update_feed`
+
+> 啟用/停用 feed。合併了舊的 `disable_feed` + `enable_feed`。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 更新 project status + optional review notes |
-| **風險** | idempotent |
-| **主要環境** | HQ（weekly review） |
-| **實作** | `internal/project/` |
+| 標記 | `additive+idempotent` 🔒 |
+| 實作 | `internal/mcp/feed.go` |
 
-**參數**：
-- `project` — **required**（slug/alias/title）
-- `status` — **required**
-- `review_notes` — optional
-- `expected_cadence` — optional（e.g., "daily", "weekly"）
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `feed_id` | string | ✅ | Feed UUID |
+| `enabled` | bool | ✅ | true 啟用 / false 停用 |
 
 ---
 
-### 30-32. Learning Analytics 三件組
+### `remove_feed`
 
-#### 30. `get_coverage_matrix`
-
-| 屬性 | 值 |
-|------|-----|
-| **一句話** | Topic × Result 矩陣：哪些練了、成績如何 |
-| **風險** | readOnly |
-| **主要環境** | Learning（Adaptive Coaching 核心） |
-
-**參數**：`project`（required）, `days`（lookback）
-
-**返回**：per-topic count, last practice date, result distribution（ac-independent / ac-with-hints / ac-after-solution / incomplete）
-
-#### 31. `get_tag_summary`
+> 永久刪除 feed。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | Tag 頻率統計，支援 prefix filter |
-| **風險** | readOnly |
-| **主要環境** | Learning |
+| 標記 | `destructive` 🔒 |
+| 實作 | `internal/mcp/feed.go` |
 
-**參數**：`project`（required）, `tag_prefix`（e.g., "weakness:"）, `days`
-
-**常用**：`get_tag_summary(project="leetcode", tag_prefix="weakness:")` → 所有 weakness tags 的出現次數
-
-#### 32. `get_weakness_trend`
-
-| 屬性 | 值 |
-|------|-----|
-| **一句話** | 單一 weakness tag 的時間序列 + trend（improving / stable / declining） |
-| **風險** | readOnly |
-| **主要環境** | Learning |
-
-**參數**：`project`（required）, `tag`（required, e.g., "weakness:pattern-recognition"）, `days`（default 60）
-
-**三件組使用流程**：`get_tag_summary` 找出高頻 weakness → `get_weakness_trend` 看趨勢 → `get_coverage_matrix` 看整體分佈 → 決定今天練什麼。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `feed_id` | string | ✅ | Feed UUID |
 
 ---
 
-## Domain 4: System & Infrastructure (13 tools)
+### `get_collection_stats`
 
-系統監控、RSS feed 管理、目標追蹤、insight lifecycle、週報。
-
-### 33. `get_system_status`
+> 收集管線統計：per-feed 數量、平均相關性、全域統計。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 系統 observability：flow runs、feed health、pipeline summaries |
-| **風險** | readOnly |
-| **主要環境** | Cowork |
-| **實作** | `internal/flowrun/` + `internal/flow/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/feed.go` |
 
-**參數**：
-- `scope` — summary（default）\| pipelines（per-flow aggregation）\| flows（recent individual runs）
-- `hours` — lookback（default 24）
-- `flow_name` — filter specific flow
-- `status` — filter by run status
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `feed_id` | string | — | 特定 feed UUID |
+| `days` | int | — | 回溯天數（default 30, max 90） |
 
 ---
 
-### 34. `get_collection_stats`
+## 6. Project & Goal (5 tools)
+
+專案與目標管理。
+
+### `list_projects`
+
+> 列出所有進行中的專案。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | RSS 收集品質統計：per-feed item counts、avg relevance scores |
-| **風險** | readOnly |
-| **主要環境** | Cowork |
-| **實作** | `internal/collected/`（raw SQL） |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/morning.go` |
 
-**參數**：
-- `feed_id` — optional（single feed filter）
-- `days` — lookback（default 30，max 90）
-
-**返回**：per-feed（total_items, avg_score, last_collected_at）+ global（total_items, total_feeds, avg_score, unread_count, curated_count）
-
-**和 `get_system_status` 的差異**：
-- `get_system_status` = infra layer（jobs 有沒有正常跑？）→ 查 `flow_runs` table
-- `get_collection_stats` = data quality layer（收了什麼？品質如何？）→ 查 `collected_data` table
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `limit` | int | — | 最大筆數（default 20, max 50） |
 
 ---
 
-### 35. `get_weekly_summary`
+### `get_project_context`
+
+> 取得單一專案完整上下文：詳情、活動、相關筆記。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 週報：per-project completions、metrics trends、project health、goal alignment |
-| **風險** | readOnly |
-| **主要環境** | HQ（weekly review） |
-| **實作** | `internal/session/` 或 `internal/stats/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/morning.go` |
 
-**參數**：
-- `weeks_back` — 0（this week，default）\| 1（last week）
-- `compare_previous` — bool（include previous week + delta）
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 name/slug/alias |
 
 ---
 
-### 36. `get_goal_progress`
+### `update_project_status`
+
+> 更新專案狀態。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 目標進度：per-goal on_track status、related projects、task completion rate |
-| **風險** | readOnly |
-| **主要環境** | HQ（weekly review） |
-| **實作** | `internal/goal/` |
+| 標記 | `additive+idempotent` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `area` — filter by area（e.g., "Career", "Learning"）
-- `status` — filter by goal status
-- `days` — task lookback（default 30）
-- `include_drift` — bool（**新增：原 `get_platform_stats` 的 drift analysis 搬到這裡**）
-
-**備註**：`include_drift=true` 提供 per-area goal-to-activity drift%，原本是 `get_platform_stats` 的獨有功能。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 name/slug/alias |
+| `status` | string | ✅ | Planned, Doing, Ongoing, On Hold, Done |
+| `review_notes` | string | — | 更新描述的備註 |
+| `expected_cadence` | string | — | daily, weekly, biweekly, monthly, on_hold |
 
 ---
 
-### 37. `update_goal_status`
+### `get_goal_progress`
+
+> 目標進度追蹤 + optional drift analysis。取代了舊的 `get_goals` 和 `get_platform_stats` 的 drift 功能。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 更新目標狀態 |
-| **風險** | idempotent |
-| **主要環境** | HQ |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/goals.go` |
 
-**參數**：
-- `goal_title` — **required**
-- `status` — **required**：not-started（Dream）\| in-progress（Active）\| done（Achieved）\| abandoned
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `days` | int | — | 回溯天數（default 30, max 90） |
+| `area` | string | — | 依 area 過濾 |
+| `status` | string | — | not-started, in-progress, done, abandoned |
+| `include_drift` | bool | — | 包含 goal-vs-activity drift 分析 |
 
 ---
 
-### 38. `update_insight`
+### `update_goal_status`
+
+> 更新目標狀態。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 更新 insight 狀態或追加證據 |
-| **風險** | idempotent |
-| **主要環境** | HQ（evening reflection） |
-| **實作** | `internal/session/` 或 `internal/note/` |
+| 標記 | `additive+idempotent` |
+| 實作 | `internal/mcp/goals.go` |
 
-**參數**：
-- `insight_id` — **required**（integer）
-- `status` — verified \| invalidated \| archived
-- `append_evidence` — 追加支持證據
-- `append_counter_evidence` — 追加反駁證據
-- `conclusion` — 結論
-
-**觸發情境**：Evening reflection 時，今天的資料支持或反駁某個假說。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `goal_title` | string | ✅ | 目標標題（case-insensitive match） |
+| `status` | string | ✅ | not-started, in-progress, done, abandoned |
 
 ---
 
-### 39. `get_learning_progress` ⚠️
+## 7. Learning Analytics (7 tools)
+
+開發記錄、學習記錄、與學習分析。
+
+### `log_dev_session`
+
+> 記錄開發 session 為 build-log。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 學習指標：note growth trends、weekly activity comparison、top tags |
-| **風險** | readOnly |
-| **主要環境** | Learning、HQ |
-| **實作** | `internal/stats/`（handler 25 行 + store 111 行 = 136 行） |
-| **狀態** | ⚠️ 有 P1 bug（只計 Obsidian notes，未 aggregate TIL）。修復後收兩週 telemetry |
+| 標記 | `additive` |
+| 實作 | `internal/mcp/write.go` |
 
-**返回**：
-- `notes`：total, last_week, last_month, by_type（e.g., `{"leetcode": 45, "book": 12}`）
-- `activity`：this_week vs last_week + trend（up/down/stable）
-- `top_tags`：top 10 tags by frequency
-
-**獨有資料**：`by_type` 分佈和 `top_tags` 在其他 tool 拿不到。
-
-**待修 P1 bug**：目前只查 `obsidian_notes` table，未 aggregate `contents` table 的 TIL entries。導致資料不完整，使用頻率 telemetry 可能被 bug 壓低。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 name/slug/alias |
+| `session_type` | string | ✅ | feature, refactor, bugfix, research, infra |
+| `title` | string | ✅ | 簡短摘要 |
+| `body` | string | ✅ | Markdown 內容 |
+| `tags` | string[] | — | 標籤 |
+| `plan_summary` | string | — | .claude/plans/ 摘要 |
+| `review_summary` | string | — | reviewer 發現摘要 |
+| `tier` | string | — | tier-1, tier-2, tier-3 |
+| `diff_stats` | string | — | e.g. "+120 -30" |
 
 ---
 
-### 40. `get_recent_activity`
+### `log_learning_session`
+
+> 記錄學習成果（LeetCode、書籍、課程、系統設計、語言學習）。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 近期開發活動事件（GitHub commits、PRs、Obsidian syncs、Notion changes） |
-| **風險** | readOnly |
-| **主要環境** | HQ |
-| **實作** | `internal/activity/` |
+| 標記 | `additive` |
+| 實作 | `internal/mcp/write.go` |
 
-**參數**：
-- `source` — github \| obsidian \| notion
-- `project` — slug/alias/title
-- `days` — lookback
-
-**和 `get_morning_context` 的差異**：morning_context 包含 activity 但不能按 source 過濾。`get_recent_activity` 提供 surgical query：「只看 GitHub activity for koopa0.dev in the last 3 days」。
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `topic` | string | ✅ | 學習主題 |
+| `source` | string | ✅ | leetcode, hackerrank, oreilly, ardanlabs, article, discussion |
+| `title` | string | ✅ | 簡短標題 |
+| `body` | string | ✅ | Markdown 內容 |
+| `project` | string | ✅ | 專案 slug/alias/title |
+| `tags` | string[] | — | 標籤（topic tags + weakness:xxx + improvement:xxx） |
+| `difficulty` | string | — | easy, medium, hard |
+| `problem_url` | string | — | 題目連結 |
+| `learning_type` | string | — | leetcode, book-reading, course, system-design, language |
+| `metadata` | object | — | per-type structured data（見 server.go 完整 schema） |
 
 ---
 
-### 41-44. Feed 管理
+### `get_learning_progress`
 
-#### 41. `add_feed`
-
-| 屬性 | 值 |
-|------|-----|
-| **一句話** | 新增 RSS/Atom feed 訂閱 |
-| **風險** | additive |
-
-**參數**：`url`（required）, `name`（required）, `schedule`（daily/weekly）, `topics`
-
-#### 42. `update_feed`
+> 學習指標：筆記成長趨勢、每週活動比較、top 標籤。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 更新 feed 屬性（啟用/停用） |
-| **風險** | idempotent |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/morning.go` |
 
-**參數**：`feed_id`（required）, `enabled`（bool）
-
-**備註**：合併了原本的 `disable_feed` + `enable_feed`。純 boolean toggle，不是 multiplexer pattern。
-
-#### 43. `remove_feed`
-
-| 屬性 | 值 |
-|------|-----|
-| **一句話** | 永久刪除 feed 訂閱（不可逆） |
-| **風險** | **destructive** |
-
-**參數**：`feed_id`（required）
-
-#### 44. `list_feeds`
-
-| 屬性 | 值 |
-|------|-----|
-| **一句話** | 列出所有 RSS feed 訂閱 |
-| **風險** | readOnly |
-
-**參數**：無
+無參數。
 
 ---
 
-### 45. `trigger_pipeline`
+### `get_tag_summary`
+
+> 專案 TIL 的標籤頻率統計。
 
 | 屬性 | 值 |
 |------|-----|
-| **一句話** | 手動觸發背景 pipeline（rss_collector / notion_sync） |
-| **風險** | **destructive**（non-cancellable side effect） |
-| **主要環境** | Cowork、Claude Code |
-| **實作** | `internal/pipeline/` |
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
 
-**參數**：
-- `pipeline` — **required**：rss_collector \| notion_sync
-
-**Rate limit**：每 pipeline 每 5 分鐘一次。
-
-**觸發情境**：
-- 剛加了新 feed，想立刻收
-- Deploy 了新的 scoring logic，想立刻測
-- Debug collection issues
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 slug/alias/title |
+| `tag_prefix` | string | — | 只回傳指定前綴的標籤 |
+| `days` | int | — | 回溯天數（default 90, max 365） |
 
 ---
 
-## Audit Decision Log
+### `get_coverage_matrix`
 
-### 已移除
+> 主題涵蓋矩陣：各 topic 的練習次數、最近日期、結果分佈。
 
-| Tool | 移除原因 | 替代方案 |
-|------|----------|----------|
-| `get_platform_stats` | 和 weekly_summary + system_status + learning_progress 三重重疊。10 類 count 統計無獨立價值 | Drift analysis → `get_goal_progress(include_drift=true)`。其他 counts 各自的 domain tool 已覆蓋 |
-| `disable_feed` | 和 `enable_feed` 完全相同程式碼，只差 boolean 值 | → `update_feed(feed_id, enabled: bool)` |
-| `enable_feed` | 同上 | 同上 |
-| `search_notes`（更早移除） | 80% 場景被 `search_knowledge` 覆蓋 | `search_knowledge(content_type="obsidian-note")` |
-| `generate_social_excerpt`（更早移除） | 已 deprecated | 直接讓 LLM consumer 生成 |
-| `get_pending_tasks`（更早移除） | 被更 flexible 的 search 取代 | `search_tasks(status="pending")` |
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
 
-### 確定保留（調查後消除疑慮）
-
-| Tool | 調查結果 | 保留理由 |
-|------|----------|----------|
-| `bookmark_rss_item` | 6-step atomic operation | `create_content` 只能做 1/6 步 |
-| `get_decision_log` | search_knowledge 不支援空 query 和 note type filter | 37 行 code，成本極低 |
-| `get_session_delta` | 和 morning_context 底層共用 helper 但語意不同 | 追蹤 task flow（新建/overdue）是 morning 沒有的維度 |
-| `get_collection_stats` | 和 system_status 不同層（data quality vs infra health） | 查不同 table，回答不同問題 |
-| `synthesize_topic` | 不使用 LLM，純 DB aggregation | 不違反 AI-calls-AI principle |
-
-### 待觀察（附帶行動）
-
-| Tool | 行動 | Review date |
-|------|------|-------------|
-| `synthesize_topic` | 等 telemetry | 2026-04-09 |
-| `get_learning_progress` | 先修 P1 bug（aggregate TIL），修完後收兩週乾淨 telemetry | 修 bug → 收 telemetry → 2026-04-09 review |
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 slug/alias/title |
+| `days` | int | — | 回溯天數（default 365, max 730） |
 
 ---
 
-## Risk Level Quick Reference
+### `get_weakness_trend`
 
-### Destructive（確認後才呼叫）
-`publish_content`, `remove_feed`, `trigger_pipeline`, `complete_task`（recurring due date 推進）
+> 弱點標籤時間序列趨勢分析。
 
-### Idempotent（安全重複呼叫）
-`update_task`, `update_content`, `batch_my_day`, `update_feed`, `update_goal_status`, `update_project_status`, `update_insight`
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
 
-### Additive（建立新記錄）
-`create_task`, `save_session_note`, `log_dev_session`, `log_learning_session`, `create_content`, `add_feed`, `bookmark_rss_item`
-
-### Read-Only（無副作用）
-其餘 24 個 tools
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 slug/alias/title |
+| `tag` | string | ✅ | 弱點標籤（e.g. weakness:pattern-recognition） |
+| `days` | int | — | 回溯天數（default 30, max 180） |
 
 ---
 
-## Standing Architectural Principles
+### `get_learning_timeline`
 
-These principles emerged from cross-environment review (Claude Code + Cowork + Learning + HQ) and real-world validation. They apply to all future MCP development.
+> 學習項目按天分組 + 連續天數統計。
 
-### P1: AI-calls-AI is an anti-pattern when the consumer is an LLM
-Server-side LLM invocation is only justified for orchestration that involves DB queries, embedding APIs, or multi-step pipelines the consumer can't execute. If the MCP consumer can do the task itself (like polishing prose), don't route it through HTTP → Go → Genkit → another LLM.
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
 
-### P2: One tool, one action, one risk level
-Don't use action multiplexer patterns (`manage_X(action=...)`). Each tool name should directly communicate its intent and risk level. MCP annotations (readOnlyHint, destructiveHint) work at tool level, not action level.
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | — | 專案 slug/alias/title（省略=全部） |
+| `days` | int | — | 回溯天數（default 14, max 90） |
 
-### P3: Convergence gate before expansion
-Before adding any tool: "How many sessions in the past two weeks failed because this tool didn't exist?" Zero → backlog. Three+ → build.
+---
 
-### P4: Schema enforcement for data quality
-Session notes have required metadata fields (insight needs hypothesis + invalidation_condition; plan needs reasoning; metrics needs adjustments). Strict validation prevents low-quality data from entering the knowledge base.
+## 8. O'Reilly Integration (3 tools)
 
-### P5: Session notes are context, tasks are action items
-Both are needed. A session note saying "there's a bug" without a task means nobody acts on it. A task without a session note means the fixer lacks context.
+🔒 條件啟用：需要 `ORM_JWT` 環境變數。
 
-### P6: Description quality > tool count
-47 well-described tools with 97%+ selection accuracy is better than 25 tools where you have to guess which one handles your edge case.
+### `search_oreilly_content`
 
-### P7: Freeze aggregate views at 4 — new features via surgical tools only
-**The biggest maintenance risk is not tool count, but aggregate view integration surface area.**
+> 搜尋 O'Reilly Learning 內容。
 
-Tools are either:
-- **Surgical** (~30 tools) — do one thing, clear boundaries, can't simplify further
-- **Aggregate views** (4 tools) — run N queries, assemble a big JSON
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly+openWorld` |
+| 實作 | `internal/mcp/oreilly_tools.go` |
 
-The 4 aggregate views (`get_morning_context`, `get_reflection_context`, `get_session_delta`, `get_weekly_summary`) are "convenience packs" of surgical tools. Every new feature creates 1-4 decision points: should it be in morning? weekly? delta? reflection? This is N×M maintenance cost.
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `query` | string | ✅ | 搜尋關鍵字 |
+| `formats` | string[] | — | book, video, article, course, interactive, audiobook |
+| `publishers` | string[] | — | 出版社過濾 |
+| `authors` | string[] | — | 作者過濾 |
+| `limit` | int | — | 最大筆數（default 10, max 50） |
 
-**Rule**: New features MUST only be exposed via surgical tools. Do NOT add new sections to aggregate views unless the feature is core to that view's purpose. Let AI consumers assemble context from surgical tools — aggregate views are convenience, not necessity.
+---
 
-**Why**: 4 aggregate views = 4 decision points per new feature = 4 places to maintain code. This cost grows with every feature and compounds over time. The cost of selection pressure (too many tools for LLM) is solved by good descriptions. The cost of integration surface area (too many aggregate views) is only solved by architectural discipline.
+### `get_oreilly_book_detail`
 
-### Deferred Evaluations (2026-04-09 telemetry review)
+> 取得書籍 metadata 和完整目錄。
 
-| Item | Signal to watch | Action if confirmed |
-|------|-----------------|---------------------|
-| `get_session_delta` overlap | 80%+ usage replaceable by `get_morning_context(since=...)` | Consider removing, add `since` param to morning_context |
-| `get_learning_progress` usage | Low usage even after P1 bug fix | Merge into `get_weekly_summary(area="learning")` |
-| `synthesize_topic` usage | Low usage despite no AI-calls-AI issue | Consider removing, LLM consumers can classify search results themselves |
-| Insight lifecycle ROI | 90%+ insights auto-archived without verify/invalidate | Simplify to tagged notes without lifecycle |
-| Genkit flow overhead | Deterministic flows not using LLM orchestration | Replace with plain Go functions |
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly+openWorld` |
+| 實作 | `internal/mcp/oreilly_tools.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `archive_id` | string | ✅ | 書籍 identifier |
+
+---
+
+### `read_oreilly_chapter`
+
+> 讀取書籍章節全文。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly+openWorld` |
+| 實作 | `internal/mcp/oreilly_tools.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `archive_id` | string | ✅ | 書籍 identifier |
+| `filename` | string | ✅ | 章節檔名（from book detail） |
+
+---
+
+## 9. System & Infrastructure (3 tools)
+
+### `get_recent_activity`
+
+> 最近的開發活動事件。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/morning.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `days` | int | — | 回溯天數（default 7, max 30） |
+| `source` | string | — | github, obsidian, notion |
+| `project` | string | — | 專案名稱 |
+
+---
+
+### `get_system_status`
+
+> 系統可觀測性：flow runs、feed health、pipeline 摘要。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` 🔒 |
+| 實作 | `internal/mcp/status.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `scope` | string | — | summary（default）, pipelines, flows |
+| `flow_name` | string | — | 依 flow 名稱過濾 |
+| `status` | string | — | completed, failed, running |
+| `hours` | int | — | 回溯小時數（default 24, max 168） |
+
+---
+
+### `trigger_pipeline`
+
+> 手動觸發管線。限速每 5 分鐘一次。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `destructive` 🔒 |
+| 實作 | `internal/mcp/status.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `pipeline` | string | ✅ | rss_collector 或 notion_sync |
+
+---
+
+## 10. Spaced Retrieval / FSRS (2 tools)
+
+🔒 條件啟用：需要 retrieval store（FSRS tables 存在且 store 非 nil）。
+
+### `log_retrieval_attempt`
+
+> 記錄 FSRS 間隔重複回測結果。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `additive` |
+| 實作 | `internal/mcp/learning.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `content_slug` | string | ✅ | TIL slug |
+| `rating` | int | ✅ | 1=Again, 2=Hard, 3=Good, 4=Easy |
+| `tag` | string | — | 特定弱點/概念標籤 |
+
+---
+
+### `get_retrieval_queue`
+
+> 取得到期的間隔重複佇列。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | — | 專案 slug/alias/title |
+| `limit` | int | — | 最大筆數（default 10, max 50） |
+
+---
+
+## Removed / Merged Tools (Historical)
+
+| 舊工具 | 處置 | 替代方式 |
+|--------|------|---------|
+| `search_notes` | 合併至 `search_knowledge` | 使用 `content_type="obsidian-note"` + source/context/book 參數 |
+| `get_pending_tasks` | 合併至 `search_tasks` | 使用 `status="pending"` |
+| `get_platform_stats` | 移除 | drift → `get_goal_progress(include_drift=true)`; overview → individual domain tools |
+| `disable_feed` + `enable_feed` | 合併至 `update_feed` | 使用 `enabled` boolean |
+| `generate_social_excerpt` | 移除（已 deprecated） | — |
+
+---
+
+## Conditional Registration Summary
+
+| 環境變數 | 影響的工具 |
+|----------|-----------|
+| `ORM_JWT` | `search_oreilly_content`, `get_oreilly_book_detail`, `read_oreilly_chapter` |
+| `ADMIN_API_URL` + `JWT_SECRET` + `ADMIN_EMAIL` | `get_system_status`, `trigger_pipeline` |
+| `NOTION_API_KEY` | `create_task`, `complete_task`（Notion sync 功能） |
+| retrieval store 非 nil | `log_retrieval_attempt`, `get_retrieval_queue` |
+| feeds store 非 nil | `list_feeds`, `add_feed`, `update_feed`, `remove_feed` |
