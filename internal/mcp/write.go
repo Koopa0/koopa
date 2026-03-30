@@ -739,6 +739,9 @@ func validateSessionNoteMetadata(noteType string, meta map[string]any) error {
 		if _, ok := meta["invalidation_condition"]; !ok {
 			return fmt.Errorf("insight metadata requires 'invalidation_condition' field")
 		}
+		if _, ok := meta["status"]; !ok {
+			meta["status"] = "unverified"
+		}
 	case "plan":
 		if _, ok := meta["reasoning"]; !ok {
 			return fmt.Errorf("plan metadata requires 'reasoning' field")

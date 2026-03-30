@@ -1,3 +1,10 @@
+-- name: ProjectByID :one
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       expected_cadence, created_at, updated_at
+FROM projects WHERE id = $1;
+
 -- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,

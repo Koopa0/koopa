@@ -4749,6 +4749,49 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 	return i, err
 }
 
+const projectByID = `-- name: ProjectByID :one
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       expected_cadence, created_at, updated_at
+FROM projects WHERE id = $1
+`
+
+func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error) {
+	row := q.db.QueryRow(ctx, projectByID, id)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.LongDescription,
+		&i.Role,
+		&i.TechStack,
+		&i.Highlights,
+		&i.Problem,
+		&i.Solution,
+		&i.Architecture,
+		&i.Results,
+		&i.GithubUrl,
+		&i.LiveUrl,
+		&i.Featured,
+		&i.Public,
+		&i.SortOrder,
+		&i.Status,
+		&i.NotionPageID,
+		&i.Repo,
+		&i.Area,
+		&i.GoalID,
+		&i.Deadline,
+		&i.LastActivityAt,
+		&i.ExpectedCadence,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const projectByRepo = `-- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,

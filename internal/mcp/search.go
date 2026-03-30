@@ -821,6 +821,7 @@ type ContentDetailOutput struct {
 	Type        string   `json:"type"`
 	Status      string   `json:"status"`
 	Tags        []string `json:"tags"`
+	Project     string   `json:"project,omitempty"`
 	ReadingTime int      `json:"reading_time"`
 	PublishedAt string   `json:"published_at,omitempty"`
 	CreatedAt   string   `json:"created_at"`
@@ -852,6 +853,11 @@ func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 	if c.PublishedAt != nil {
 		out.PublishedAt = c.PublishedAt.Format(time.RFC3339)
+	}
+	if c.ProjectID != nil {
+		if proj, projErr := s.projects.ProjectByID(ctx, *c.ProjectID); projErr == nil {
+			out.Project = proj.Slug
+		}
 	}
 
 	return nil, out, nil

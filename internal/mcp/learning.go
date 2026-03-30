@@ -140,7 +140,7 @@ func (s *Server) getLearningTimeline(ctx context.Context, _ *mcp.CallToolRequest
 // LogRetrievalAttemptInput is the input for the log_retrieval_attempt tool.
 type LogRetrievalAttemptInput struct {
 	ContentSlug string  `json:"content_slug" jsonschema:"required" jsonschema_description:"TIL slug to record retrieval for"`
-	Rating      int     `json:"rating" jsonschema:"required" jsonschema_description:"recall quality: 1=forgot, 2=partial recall, 3=remembered"`
+	Rating      int     `json:"rating" jsonschema:"required" jsonschema_description:"recall quality: 1=again(forgot), 2=hard(partial recall), 3=good(remembered), 4=easy"`
 	Tag         *string `json:"tag,omitempty" jsonschema_description:"specific weakness/concept tag (omit for whole-content retrieval)"`
 }
 
@@ -149,7 +149,7 @@ func (s *Server) logRetrievalAttempt(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, retrieval.ReviewResult{}, fmt.Errorf("content_slug is required")
 	}
 	if input.Rating < 1 || input.Rating > 4 {
-		return nil, retrieval.ReviewResult{}, fmt.Errorf("invalid rating %d (valid: 1=forgot, 2=partial, 3=remembered)", input.Rating)
+		return nil, retrieval.ReviewResult{}, fmt.Errorf("invalid rating %d (valid: 1=again, 2=hard, 3=good, 4=easy)", input.Rating)
 	}
 
 	c, err := s.contents.ContentBySlug(ctx, input.ContentSlug)

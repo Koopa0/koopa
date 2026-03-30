@@ -40,9 +40,10 @@ var ResultTags = map[string]bool{
 
 // CoverageMatrixResult is the topic × result breakdown.
 type CoverageMatrixResult struct {
-	Topics       []TopicCoverage `json:"topics"`
-	TotalEntries int             `json:"total_entries"`
-	PeriodDays   int             `json:"period_days"`
+	Topics          []TopicCoverage `json:"topics"`
+	TotalEntries    int             `json:"total_entries"`
+	PatternsCovered int             `json:"patterns_covered"`
+	PeriodDays      int             `json:"period_days"`
 }
 
 // TopicCoverage is a single topic's practice stats.
@@ -74,9 +75,10 @@ func CoverageMatrix(entries []content.TagEntry, days int) CoverageMatrixResult {
 	})
 
 	return CoverageMatrixResult{
-		Topics:       topics,
-		TotalEntries: len(entries),
-		PeriodDays:   days,
+		Topics:          topics,
+		TotalEntries:    len(entries),
+		PatternsCovered: len(topics),
+		PeriodDays:      days,
 	}
 }
 

@@ -58,6 +58,19 @@ func (s *Store) PublicProjects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
+// ProjectByID returns a single project by UUID.
+func (s *Store) ProjectByID(ctx context.Context, id uuid.UUID) (*Project, error) {
+	r, err := s.q.ProjectByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying project %s: %w", id, err)
+	}
+	p := rowToProject(&r)
+	return &p, nil
+}
+
 // ProjectBySlug returns a single project by slug.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error) {
 	r, err := s.q.ProjectBySlug(ctx, slug)

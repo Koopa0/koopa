@@ -320,8 +320,14 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	}, s.batchMyDay)
 
 	addTool(s, &mcp.Tool{
-		Name:        "log_learning_session",
-		Description: "Record a learning outcome — LeetCode solution, book chapter insight, course concept, or discussion takeaway. Tags use a controlled vocabulary: topic tags (array, string, hash-table, two-pointers, sliding-window, binary-search, stack, queue, linked-list, tree, binary-tree, bst, graph, bfs, dfs, heap, trie, union-find, dp, greedy, backtracking, bit-manipulation, math, matrix, interval, topological-sort, sorting, design, simulation, prefix-sum, divide-and-conquer, segment-tree, binary-indexed-tree), result (ac-independent, ac-with-hints, ac-after-solution, incomplete), weakness:xxx, improvement:xxx. Difficulty: easy, medium, hard. Optional: learning_type (leetcode, book-reading, course, system-design, language) and metadata (per-type structured data with weakness_observations, key_concepts, etc.).",
+		Name: "log_learning_session",
+		Description: "Record a learning outcome. Tags: topic (array, string, hash-table, two-pointers, sliding-window, binary-search, stack, queue, linked-list, tree, binary-tree, bst, graph, bfs, dfs, heap, trie, union-find, dp, greedy, backtracking, bit-manipulation, math, matrix, interval, topological-sort, sorting, design, simulation, prefix-sum, divide-and-conquer, segment-tree), result (ac-independent, ac-with-hints, ac-after-solution, incomplete), weakness:xxx, improvement:xxx. Difficulty: easy, medium, hard. " +
+			"Optional learning_type with per-type metadata schema: " +
+			"leetcode: {problem_number (int), pattern (string), complexity: {time, space}, weakness_observations: [{tag (required, e.g. weakness:complexity-analysis), observation (required, string), status (required: new|persistent|improving|graduated)}]}. " +
+			"book-reading: {book (string), chapter (string), sections (string[]), mode (feynman-recall|led-by-claude), key_concepts: [{name (required), understanding (required: clear|fuzzy|not-understood), connection (optional), retrieval_target (optional bool)}]}. " +
+			"course: {course, module, lesson, source_type, key_concepts (same as book-reading)}. " +
+			"system-design: {topic, source, design_exercise (bool), key_concepts (same), related_systems (string[])}. " +
+			"language: {language, activity_type, duration_minutes (int), platform, focus, notes}.",
 		Annotations: additive,
 	}, s.logLearningSession)
 
