@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -117,12 +118,13 @@ func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 // UpdateContentInput is the input for the update_content tool.
 type UpdateContentInput struct {
-	ContentID   string   `json:"content_id" jsonschema_description:"content UUID (required)"`
-	Title       string   `json:"title,omitempty"`
-	Body        string   `json:"body,omitempty"`
-	ContentType string   `json:"content_type,omitempty" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest"`
-	Tags        []string `json:"tags,omitempty"`
-	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
+	ContentID   string          `json:"content_id" jsonschema_description:"content UUID (required)"`
+	Title       string          `json:"title,omitempty"`
+	Body        string          `json:"body,omitempty"`
+	ContentType string          `json:"content_type,omitempty" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest"`
+	Tags        []string        `json:"tags,omitempty"`
+	Project     string          `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
+	Metadata    json.RawMessage `json:"metadata,omitempty" jsonschema_description:"ai_metadata JSONB (full replace when provided, unchanged when omitted)"`
 }
 
 func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, input *UpdateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
@@ -157,6 +159,9 @@ func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 			return nil, ContentActionOutput{}, projErr
 		}
 		p.ProjectID = &proj.ID
+	}
+	if len(input.Metadata) > 0 {
+		p.AIMetadata = input.Metadata
 	}
 
 	updated, err := s.contents.UpdateContent(ctx, id, p)
