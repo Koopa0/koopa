@@ -151,6 +151,24 @@ Every code change follows one of three tiers:
 | `test-strategy` | `/test-strategy` | Test type decision tree: determines WHICH tests to write |
 | `design-review` | `/design-review` | Deep design review: package purpose, naming, stdlib comparison |
 | `build-log` | `/build-log` | Record development session as a build log via MCP |
+| `ristretto` | `/ristretto` | In-memory cache patterns (single machine) |
+| `nats` | `/nats` | NATS Core + JetStream messaging patterns |
+| `go-types` | `/go-types` | Value vs pointer, receivers, nil pitfalls, slice/map behavior |
+| `go-interfaces` | `/go-interfaces` | Consumer-side interfaces, composition, testing with interfaces |
+| `go-generics` | `/go-generics` | When to use generics, constraints, comparable pitfall |
+| `go-testing-advanced` | `/go-testing-advanced` | Golden files, fixtures, coverage, go-cmp advanced |
+| `go-stdlib-patterns` | `/go-stdlib-patterns` | io, json, time, sort/slices, strings, context advanced |
+| `go-slog` | `/go-slog` | slog setup, logger injection, key naming, OTel correlation |
+| `go-iteration` | `/go-iteration` | Range-over-func, iter.Seq, push vs pull, channel vs iterator |
+| `go-performance` | `/go-performance` | Pre-allocation, escape analysis, sync.Pool, pprof |
+| `go-middleware` | `/go-middleware` | Middleware ordering (CORS before Auth WHY), chain composition |
+| `go-doc` | `/go-doc` | Go 1.19+ doc comments, links, headings, what to document |
+| `go-modules` | `/go-modules` | go.mod, MVS, vendoring, go.work, build tags |
+| `go-reflection` | `/go-reflection` | When to avoid reflect, struct tags, DeepEqual |
+| `go-unsafe` | `/go-unsafe` | When to avoid unsafe/cgo, cost analysis, safe alternatives |
+| `go-compliance-test` | `/go-compliance-test` | AI compliance traps, detection commands, self-check checklist |
+| `research` | `/research` | Targeted external research before planning (triggered by comprehend) |
+| `koopa0-dev` | `/koopa0-dev` | koopa0.dev MCP integration: session workflows, context bridge |
 
 ## Verification Workflow
 

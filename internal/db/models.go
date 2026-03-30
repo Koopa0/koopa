@@ -563,6 +563,33 @@ type FlowRun struct {
 	CreatedAt   time.Time       `json:"created_at"`
 }
 
+// FSRS card state for spaced retrieval. One row per (content, tag) pair. card_state is serialized go-fsrs Card struct.
+type FsrsCard struct {
+	ID        int64     `json:"id"`
+	ContentID uuid.UUID `json:"content_id"`
+	// Specific weakness or concept tag. NULL means whole-content review.
+	Tag *string `json:"tag"`
+	// Serialized fsrs.Card (Due, Stability, Difficulty, Reps, Lapses, State, etc.). Opaque to SQL — only queried via Go unmarshal.
+	CardState []byte `json:"card_state"`
+	// Denormalized from card_state for index-based due-date queries.
+	Due       time.Time `json:"due"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Append-only FSRS review history. One row per review event.
+type FsrsReviewLog struct {
+	ID     int64 `json:"id"`
+	CardID int64 `json:"card_id"`
+	// 1=Again(forgot), 2=Hard(partial), 3=Good(remembered), 4=Easy.
+	Rating        int32 `json:"rating"`
+	ScheduledDays int32 `json:"scheduled_days"`
+	ElapsedDays   int32 `json:"elapsed_days"`
+	// Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.
+	State      int32     `json:"state"`
+	ReviewedAt time.Time `json:"reviewed_at"`
+}
+
 type Goal struct {
 	ID           uuid.UUID  `json:"id"`
 	Title        string     `json:"title"`
