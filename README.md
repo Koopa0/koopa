@@ -6,13 +6,9 @@
   <strong>English</strong> | <a href="README.zh-TW.md">繁體中文</a>
 </p>
 
-A Go backend that turns Notion, Obsidian, and RSS into a unified system — where AI operates as a first-class user through 45 MCP tools.
+A Go backend that turns Notion, Obsidian, and RSS into a unified system — where AI operates as a first-class user through 49 MCP tools.
 
 Not a blog platform. Not another PKM app. This is personal infrastructure — the same system I use every day to plan tasks, track learning, collect and curate articles, and publish what's worth sharing. Multiple AI environments (Claude Web, Claude Code, Cowork) connect to the same Go server and PostgreSQL, coordinating through structured artifacts instead of starting every conversation from scratch.
-
-<p align="center">
-  <img src="docs/images/data-flow.png" alt="Data Flow" width="720">
-</p>
 
 ---
 
@@ -22,13 +18,9 @@ I manage a lot of moving parts every day — tasks, learning goals, technical re
 
 Notion and Obsidian are good at what they do. I still use both — Notion for task and goal management, Obsidian for technical notes. But the workflows I wanted didn't exist inside any single tool: cross-source semantic search across everything I've written, AI-driven daily planning loops, automated content pipelines that go from RSS feed to curated bookmark, hypothesis tracking that validates itself over time. The data was scattered across tools that couldn't talk to each other, and stitching them together manually didn't scale.
 
-So I built the layer that sits underneath. A Go server with PostgreSQL that integrates these tools as data sources, runs 13 AI flows through Genkit, and exposes 45 MCP tools for AI to operate the entire system. Notion syncs tasks and goals bidirectionally. Obsidian syncs notes with vector embeddings for semantic search. RSS feeds get TF-IDF scored and surfaced for review. Everything flows into one database, and AI helps run the loop — plan, execute, reflect, adjust.
+So I built the layer that sits underneath. A Go server with PostgreSQL that integrates these tools as data sources, runs 13 AI flows through Genkit, and exposes 49 MCP tools for AI to operate the entire system. Notion syncs tasks and goals bidirectionally. Obsidian syncs notes with vector embeddings for semantic search. RSS feeds get keyword-weighted relevance scoring and surfaced for review. Everything flows into one database, and AI helps run the loop — plan, execute, reflect, adjust.
 
 A side effect of this architecture: when multiple AI environments connect to the same backend, the "every session starts from zero" problem disappears. Claude Web plans my day, Claude Code picks up the tasks, Cowork runs the content pipeline — they all read and write the same data. No context is lost between sessions.
-
-<p align="center">
-  <img src="docs/images/architecture.png" alt="Architecture" width="720">
-</p>
 
 ---
 
@@ -42,24 +34,24 @@ The system has three layers, four AI consumers, and three data flows.
 
 **PostgreSQL** is the processing layer — one database that holds everything. Full-text search via tsvector + GIN, semantic search via pgvector + HNSW, and Reciprocal Rank Fusion to merge the results. This is where raw material becomes queryable, searchable, and connectable.
 
-**Go server + Angular frontend** is the output layer — an MCP server that exposes 45 tools for AI environments, a Genkit pipeline that runs 13 AI flows, and an Angular SSR frontend that publishes the finished product to the web.
+**Go server + Angular frontend** is the output layer — an MCP server that exposes 49 tools across 10 domains for AI environments, a Genkit pipeline that runs 13 AI flows, and an Angular SSR frontend that publishes the finished product to the web.
 
 ### Four AI consumers
 
 Each connects to the same MCP server but pulls different data subsets via the `sections` parameter:
 
-| Consumer              | Role                                                | Typical tools                                                      |
-| --------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
-| Claude Web (Daily)    | Morning planning, evening reflection, weekly review | `get_morning_context`, `save_session_note`, `batch_my_day`         |
-| Claude Web (Learning) | Study sessions, knowledge search, reading           | `log_learning_session`, `search_knowledge`, `read_oreilly_chapter` |
-| Claude Code           | Development, build logging, project tracking        | `get_project_context`, `log_dev_session`, `search_tasks`           |
-| Cowork                | Content pipeline, RSS management, system ops        | `create_content`, `publish_content`, `trigger_pipeline`            |
+| Consumer              | Role                                                | Typical tools                                                              |
+| --------------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
+| Claude Web (Daily)    | Morning planning, evening reflection, weekly review | `get_morning_context`, `save_session_note`, `batch_my_day`                 |
+| Claude Web (Learning) | Study sessions, knowledge search, reading           | `log_learning_session`, `get_retrieval_queue`, `search_knowledge`, `read_oreilly_chapter` |
+| Claude Code           | Development, build logging, project tracking        | `get_project_context`, `log_dev_session`, `search_tasks`                   |
+| Cowork                | Content pipeline, RSS management, system ops        | `create_content`, `publish_content`, `trigger_pipeline`                    |
 
 ### Three data flows
 
 **Obsidian → Website**: vault → git push → GitHub webhook → `notes` table → AI tags + embeddings → curate → `contents` table → publish → website.
 
-**RSS → Website**: feeds → scheduled fetch → TF-IDF scoring → `collected_data` table → admin review: curate (→ bookmark) / ignore / feedback (→ improve scoring). Each feed has filter config (deny paths, title patterns, tag filters).
+**RSS → Website**: feeds → scheduled fetch → keyword-weighted relevance scoring → `collected_data` table → admin review: curate (→ bookmark) / ignore / feedback (→ improve scoring). Each feed has filter config (deny paths, title patterns, tag filters).
 
 **Notion → System**: workspace → webhook / cron → route by role: `task` → tasks table, `goal` → goals table, `project` → projects table. Bidirectional — complete a task in the frontend, backend writes back to Notion.
 
@@ -72,10 +64,6 @@ Six concepts cover 80% of the system.
 ### Content — the finished product
 
 Anything published to the website is a content record. Seven types share one table and one lifecycle: `article` (in-depth technical writing), `essay` (personal/non-technical), `build-log` (project development records), `til` (Today I Learned), `note` (technical snippets), `bookmark` (curated external article + commentary), `digest` (weekly/monthly roundup).
-
-<p align="center">
-  <img src="docs/images/content-lifecycle.png" alt="Content Lifecycle" width="520">
-</p>
 
 Lifecycle: **draft** → **review** → **published**. Content = something you'd put your name on and let others see.
 
@@ -103,16 +91,22 @@ Projects have their own table with case study fields (problem / solution / archi
 
 ## MCP Design
 
-MCP (Model Context Protocol) is how AI environments interact with the system. 45 tools across four domains.
+MCP (Model Context Protocol) is how AI environments interact with the system. 49 tools across 10 domains.
 
-### Four domains
+### Ten domains
 
-| Domain                  | Tools | Purpose                                                                   |
-| ----------------------- | ----- | ------------------------------------------------------------------------- |
-| Daily Loop              | 11    | Plan → Execute → Reflect → Adjust. The daily work cycle                   |
-| Knowledge & Content     | 13    | Search, create, curate, publish. Content lifecycle + O'Reilly integration |
-| Development & Learning  | 8     | Build logs, learning records, weakness analysis, project tracking         |
-| System & Infrastructure | 13    | Monitoring, RSS management, goal tracking, insight lifecycle              |
+| Domain                | Tools | Purpose                                                         |
+| --------------------- | ----- | --------------------------------------------------------------- |
+| Daily Workflow        | 8     | Morning/evening PDCA cycle: plan, execute, reflect, adjust      |
+| Task Management       | 5     | Task CRUD, batch My Day, Notion bidirectional sync              |
+| Knowledge Search      | 5     | Cross-source search, topic synthesis, semantic similarity       |
+| Content Pipeline      | 5     | Content CRUD, publish, queue, RSS bookmark                      |
+| RSS / Feed Management | 6     | Feed CRUD, collection stats, RSS highlights                     |
+| Project & Goal        | 5     | Project context, goal progress, status updates                  |
+| Learning Analytics    | 7     | Dev/learning session logs, tag stats, coverage matrix, weakness trends |
+| O'Reilly Integration  | 3     | Search, book detail, chapter reading (conditional)              |
+| System & Infra        | 3     | System status, pipeline trigger, activity events                |
+| Spaced Retrieval      | 2     | FSRS-based retrieval practice, due queue (conditional)          |
 
 Full tool reference with parameters and risk levels: [`docs/MCP-TOOLS-REFERENCE.md`](docs/MCP-TOOLS-REFERENCE.md)
 
@@ -125,7 +119,7 @@ Full tool reference with parameters and risk levels: [`docs/MCP-TOOLS-REFERENCE.
 | Schema enforcement                   | Session notes have required metadata — insights must have hypothesis + falsification condition            |
 | Freeze aggregate views at 4          | morning / reflection / delta / weekly are convenience packs. New features add surgical tools only         |
 | Convergence before expansion         | Before adding a tool: "How many sessions degraded because this didn't exist?" 0 → backlog, 3+ → build now |
-| Description quality > tool count     | 45 well-described tools beat 25 ambiguous ones                                                            |
+| Description quality > tool count     | 49 well-described tools beat 25 ambiguous ones                                                            |
 
 ### Composition examples
 
@@ -143,7 +137,7 @@ These tools are building blocks — you compose them into workflows that fit you
 
 **`get_morning_context` supports `sections`**: different AI environments pull different data subsets. Claude Code only needs tasks + plan + build_logs (~1/4 of the data). This prevents token waste.
 
-**Learning uses FSRS for spaced retrieval**: when you review a TIL, the system records your recall quality (1–4) and computes the next review date using a forgetting curve model. Cards are created lazily on first review — no manual setup. The queue prioritizes overdue cards first, then surfaces never-reviewed TILs from the past week.
+**Learning uses FSRS for spaced retrieval**: when you review a TIL, the system records your recall quality (1-4) and computes the next review date using a forgetting curve model. Cards are created lazily on first review — no manual setup. The queue prioritizes overdue cards first, then surfaces never-reviewed TILs from the past week.
 
 **Learning uses controlled vocabulary**: 35+ standardized tags (two-pointers, sliding-window, dp...) + result tags (ac-independent, ac-with-hints...) + weakness tags (weakness:xxx). Standardization prevents query fragmentation.
 

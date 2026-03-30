@@ -6,13 +6,9 @@
   <a href="README.md">English</a> | <strong>繁體中文</strong>
 </p>
 
-一個用 Go 打造的後端系統，將 Notion、Obsidian 和 RSS 整合成統一平台 — AI 透過 45 個 MCP 工具作為系統的一級使用者。
+一個用 Go 打造的後端系統，將 Notion、Obsidian 和 RSS 整合成統一平台 — AI 透過 49 個 MCP 工具作為系統的一級使用者。
 
 這不是部落格平台，也不是又一個 PKM 應用程式。這是我每天實際在用的個人基礎設施 — 規劃任務、追蹤學習、收集與策展文章、發佈值得分享的內容。多個 AI 環境（Claude Web、Claude Code、Cowork）連接到同一個 Go server 和 PostgreSQL，透過結構化的 artifact 協調運作，而不是每次對話都從零開始。
-
-<p align="center">
-  <img src="docs/images/data-flow.png" alt="Data Flow" width="720">
-</p>
 
 ---
 
@@ -22,13 +18,9 @@
 
 Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任務和目標，Obsidian 寫技術筆記。但我想要的工作流程不存在於任何單一工具裡：跨所有來源的語義搜尋、AI 驅動的每日規劃循環、從 RSS 訂閱到策展書籤的自動化內容管線、能隨時間自我驗證的假說追蹤。資料散落在彼此無法溝通的工具之間，手動串接的方式無法擴展。
 
-所以我建了底下那一層。一個 Go server 搭配 PostgreSQL，將這些工具作為資料來源整合，透過 Genkit 執行 13 個 AI flow，並開放 45 個 MCP 工具讓 AI 操作整個系統。Notion 雙向同步任務和目標。Obsidian 同步筆記並產生向量嵌入以支援語義搜尋。RSS 訂閱經過 TF-IDF 評分後浮出供審閱。所有資料匯入同一個資料庫，AI 幫忙驅動整個循環 — 規劃、執行、反思、調整。
+所以我建了底下那一層。一個 Go server 搭配 PostgreSQL，將這些工具作為資料來源整合，透過 Genkit 執行 13 個 AI flow，並開放 49 個 MCP 工具讓 AI 操作整個系統。Notion 雙向同步任務和目標。Obsidian 同步筆記並產生向量嵌入以支援語義搜尋。RSS 訂閱經過加權關鍵字相關性評分後浮出供審閱。所有資料匯入同一個資料庫，AI 幫忙驅動整個循環 — 規劃、執行、反思、調整。
 
 這個架構帶來一個附帶效果：當多個 AI 環境連接到同一個後端，「每次 session 都從零開始」的問題自然消失了。Claude Web 規劃我的一天、Claude Code 接手任務、Cowork 執行內容管線 — 它們讀寫的是同一份資料。session 之間不會遺失任何上下文。
-
-<p align="center">
-  <img src="docs/images/architecture.png" alt="Architecture" width="720">
-</p>
 
 ---
 
@@ -42,24 +34,24 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 
 **PostgreSQL** 是處理層 — 一個資料庫承載所有資料。透過 tsvector + GIN 實現全文搜尋，透過 pgvector + HNSW 實現語義搜尋，再用 Reciprocal Rank Fusion 合併結果。原始素材在這裡變得可查詢、可搜尋、可關聯。
 
-**Go server + Angular 前端** 是輸出層 — 一個 MCP server 為 AI 環境開放 45 個工具、一條 Genkit 管線執行 13 個 AI flow、一個 Angular SSR 前端將成品發佈到網站。
+**Go server + Angular 前端** 是輸出層 — 一個 MCP server 為 AI 環境開放 49 個工具（橫跨 10 個領域）、一條 Genkit 管線執行 13 個 AI flow、一個 Angular SSR 前端將成品發佈到網站。
 
 ### 四個 AI 消費者
 
 每個都連接到同一個 MCP server，但透過 `sections` 參數拉取不同的資料子集：
 
-| 消費者             | 角色                         | 典型工具                                                           |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------ |
-| Claude Web（日常） | 晨間規劃、晚間反思、週報     | `get_morning_context`、`save_session_note`、`batch_my_day`         |
-| Claude Web（學習） | 學習 session、知識搜尋、閱讀 | `log_learning_session`、`search_knowledge`、`read_oreilly_chapter` |
-| Claude Code        | 開發、build log、專案追蹤    | `get_project_context`、`log_dev_session`、`search_tasks`           |
-| Cowork             | 內容管線、RSS 管理、系統維運 | `create_content`、`publish_content`、`trigger_pipeline`            |
+| 消費者             | 角色                         | 典型工具                                                                        |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------------------- |
+| Claude Web（日常） | 晨間規劃、晚間反思、週報     | `get_morning_context`、`save_session_note`、`batch_my_day`                      |
+| Claude Web（學習） | 學習 session、知識搜尋、閱讀 | `log_learning_session`、`get_retrieval_queue`、`search_knowledge`、`read_oreilly_chapter` |
+| Claude Code        | 開發、build log、專案追蹤    | `get_project_context`、`log_dev_session`、`search_tasks`                        |
+| Cowork             | 內容管線、RSS 管理、系統維運 | `create_content`、`publish_content`、`trigger_pipeline`                         |
 
 ### 三條資料流
 
 **Obsidian → 網站**：vault → git push → GitHub webhook → `notes` 表（原始素材）→ AI 標籤 + 嵌入 → 策展 → `contents` 表 → 發佈 → 網站。
 
-**RSS → 網站**：訂閱源 → 排程抓取 → TF-IDF 評分 → `collected_data` 表 → 管理員審閱：策展（→ 書籤）/ 忽略 / 回饋（→ 改善評分）。每個 feed 有過濾設定（排除路徑、標題模式、標籤過濾）。
+**RSS → 網站**：訂閱源 → 排程抓取 → 加權關鍵字相關性評分 → `collected_data` 表 → 管理員審閱：策展（→ 書籤）/ 忽略 / 回饋（→ 改善評分）。每個 feed 有過濾設定（排除路徑、標題模式、標籤過濾）。
 
 **Notion → 系統**：workspace → webhook / cron → 依角色分流：`task` → 任務表、`goal` → 目標表、`project` → 專案表。雙向同步 — 在前端完成任務，後端寫回 Notion。
 
@@ -72,10 +64,6 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 ### Content — 成品
 
 發佈到網站上的東西就是一筆 content 記錄。七種類型共用一張表和一個生命週期：`article`（深度技術文章）、`essay`（個人思考/非技術）、`build-log`（專案開發紀錄）、`til`（Today I Learned）、`note`（技術片段）、`bookmark`（策展的外部文章 + 評論）、`digest`（週報/月報）。
-
-<p align="center">
-  <img src="docs/images/content-lifecycle.png" alt="Content Lifecycle" width="520">
-</p>
 
 生命週期：**draft** → **review** → **published**。Content = 你願意署名並讓別人看到的東西。
 
@@ -103,16 +91,22 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 
 ## MCP 設計
 
-MCP（Model Context Protocol）是 AI 環境與系統互動的方式。45 個工具，橫跨四個領域。
+MCP（Model Context Protocol）是 AI 環境與系統互動的方式。49 個工具，橫跨 10 個領域。
 
-### 四個領域
+### 十個領域
 
-| 領域           | 工具數 | 用途                                                     |
-| -------------- | ------ | -------------------------------------------------------- |
-| 日常循環       | 11     | 規劃 → 執行 → 反思 → 調整。每日工作循環                  |
-| 知識與內容     | 13     | 搜尋、建立、策展、發佈。Content 生命週期 + O'Reilly 整合 |
-| 開發與學習     | 8      | Build log、學習紀錄、弱點分析、專案追蹤                  |
-| 系統與基礎設施 | 13     | 監控、RSS 管理、目標追蹤、insight 生命週期               |
+| 領域              | 工具數 | 用途                                                     |
+| ----------------- | ------ | -------------------------------------------------------- |
+| Daily Workflow    | 8      | 早晚 PDCA 循環：規劃、執行、反思、調整                  |
+| Task Management   | 5      | 任務 CRUD、批次 My Day、Notion 雙向同步                  |
+| Knowledge Search  | 5      | 跨源搜尋、主題合成、語義相似度                           |
+| Content Pipeline  | 5      | 內容 CRUD、發佈、佇列、RSS 書籤                          |
+| RSS / Feed Mgmt   | 6      | 訂閱 CRUD、收集統計、RSS 摘要                            |
+| Project & Goal    | 5      | 專案上下文、目標進度、狀態更新                           |
+| Learning Analytics| 7      | 開發/學習 session 記錄、標籤統計、涵蓋矩陣、弱點趨勢    |
+| O'Reilly 整合     | 3      | 搜尋、書籍目錄、章節閱讀（條件啟用）                     |
+| System & Infra    | 3      | 系統狀態、管線觸發、活動事件                             |
+| Spaced Retrieval  | 2      | FSRS 間隔複習、到期佇列（條件啟用）                      |
 
 完整工具參考（含參數和風險等級）：[`docs/MCP-TOOLS-REFERENCE.md`](docs/MCP-TOOLS-REFERENCE.md)
 
@@ -125,7 +119,7 @@ MCP（Model Context Protocol）是 AI 環境與系統互動的方式。45 個工
 | Schema 強制                      | Session note 有必填 metadata — insight 必須有假說 + 可證偽條件                   |
 | 聚合檢視凍結在 4 個              | morning / reflection / delta / weekly 是便利包。新功能只加手術刀型工具           |
 | 先收斂再擴展                     | 加工具之前問：「有幾個 session 因為缺這個工具而劣化？」 0 → backlog，3+ → 立即做 |
-| 描述品質 > 工具數量              | 45 個描述清晰的工具勝過 25 個語意模糊的                                          |
+| 描述品質 > 工具數量              | 49 個描述清晰的工具勝過 25 個語意模糊的                                          |
 
 ### 組合範例
 
@@ -161,7 +155,7 @@ MCP（Model Context Protocol）是 AI 環境與系統互動的方式。45 個工
 
 ---
 
-## 技術
+## 技術棧
 
 | 層級     | 技術                                            |
 | -------- | ----------------------------------------------- |
