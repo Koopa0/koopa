@@ -88,11 +88,16 @@ func WithGoalWriter(w *goal.Store) ServerOption {
 	return func(s *Server) { s.goals = w }
 }
 
-// WithProjectWriter enables project status update tools.
-// Uses the same *project.Store that provides reads; kept as an option so
-// writes remain opt-in at the wiring site.
+// WithProjectWriter overrides the project store for write operations.
+// After the store field consolidation, reads and writes share s.projects
+// (set via ServerDeps). This option exists for wiring sites that construct
+// a separate write-only store instance; pass nil to keep the default.
 func WithProjectWriter(w *project.Store) ServerOption {
-	return func(s *Server) { s.projects = w }
+	return func(s *Server) {
+		if w != nil {
+			s.projects = w
+		}
+	}
 }
 
 // WithActivityWriter enables activity event recording for task completion audit trail.
