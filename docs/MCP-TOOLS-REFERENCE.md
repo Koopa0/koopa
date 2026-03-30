@@ -1,7 +1,7 @@
 # koopa0-knowledge MCP Tools Reference
 
 > 45 tools across 4 domains. Last audit: 2026-03-26.
-> Server: single Go binary (`/Users/koopa/blog/backend/`) + PostgreSQL.
+> Server: single Go binary (`/Users/koopa/blog/./`) + PostgreSQL.
 > Changes from audit: `get_platform_stats` removed (drift → `get_goal_progress`), `disable_feed` + `enable_feed` merged → `update_feed`.
 
 ---
