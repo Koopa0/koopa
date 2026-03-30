@@ -28,6 +28,12 @@ backend/vendor/
 .claude/
 .mcp.json
 
+# Other AI tools
+.gemini/
+.agents/
+
+
+
 # Build artifacts
 /app
 bin/
