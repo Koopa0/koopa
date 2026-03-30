@@ -39,7 +39,7 @@ type oreillyResult struct {
 
 func (s *Server) searchOReillyContent(ctx context.Context, _ *mcp.CallToolRequest, input *SearchOReillyInput) (*mcp.CallToolResult, SearchOReillyOutput, error) {
 	if s.oreilly == nil {
-		return nil, SearchOReillyOutput{}, fmt.Errorf("O'Reilly search is not configured (ORM_JWT not set)")
+		return nil, SearchOReillyOutput{}, fmt.Errorf("oreilly search is not configured (ORM_JWT not set)")
 	}
 	if input.Query == "" {
 		return nil, SearchOReillyOutput{}, fmt.Errorf("query is required")
@@ -124,7 +124,7 @@ type sectionSummary struct {
 
 func (s *Server) getOReillyBookDetail(ctx context.Context, _ *mcp.CallToolRequest, input *BookDetailInput) (*mcp.CallToolResult, BookDetailOutput, error) {
 	if s.oreilly == nil {
-		return nil, BookDetailOutput{}, fmt.Errorf("O'Reilly search is not configured (ORM_JWT not set)")
+		return nil, BookDetailOutput{}, fmt.Errorf("oreilly search is not configured (ORM_JWT not set)")
 	}
 	if input.ArchiveID == "" {
 		return nil, BookDetailOutput{}, fmt.Errorf("archive_id is required")
@@ -188,7 +188,7 @@ type ReadChapterOutput struct {
 
 func (s *Server) readOReillyChapter(ctx context.Context, _ *mcp.CallToolRequest, input *ReadChapterInput) (*mcp.CallToolResult, ReadChapterOutput, error) {
 	if s.oreilly == nil {
-		return nil, ReadChapterOutput{}, fmt.Errorf("O'Reilly search is not configured (ORM_JWT not set)")
+		return nil, ReadChapterOutput{}, fmt.Errorf("oreilly search is not configured (ORM_JWT not set)")
 	}
 	if input.ArchiveID == "" || input.Filename == "" {
 		return nil, ReadChapterOutput{}, fmt.Errorf("archive_id and filename are required")

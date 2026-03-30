@@ -38,30 +38,38 @@ type TopicLookupFunc func(ctx context.Context, slug string) (uuid.UUID, error)
 
 // ContentSync synchronises Obsidian content and knowledge notes from GitHub.
 type ContentSync struct {
-	pool          *pgxpool.Pool
-	contentReader *content.Store
-	contentWriter *content.Store
-	topics        TopicLookupFunc
-	fetcher       *github.Client
-	jobs          *exec.Runner
-	notes         *note.Store
-	tags          *tag.Store
-	noteEvents    *activity.Store
-	noteLinks     *note.Store
-	logger        *slog.Logger
+	pool       *pgxpool.Pool
+	content    *content.Store
+	topics     TopicLookupFunc
+	fetcher    *github.Client
+	jobs       *exec.Runner
+	notes      *note.Store
+	tags       *tag.Store
+	noteEvents *activity.Store
+	noteLinks  *note.Store
+	logger     *slog.Logger
+}
+
+// ContentSyncDeps holds required dependencies for ContentSync.
+type ContentSyncDeps struct {
+	Pool    *pgxpool.Pool
+	Content *content.Store
+	Topics  TopicLookupFunc
+	Fetcher *github.Client
+	Jobs    *exec.Runner
+	Logger  *slog.Logger
 }
 
 // NewContentSync returns a ContentSync with required dependencies.
-// pool is used for transactional note sync (upsert + tags + links in one tx).
-func NewContentSync(pool *pgxpool.Pool, cr, cw *content.Store, tl TopicLookupFunc, fetcher *github.Client, jobs *exec.Runner, logger *slog.Logger) *ContentSync {
+// Pool is used for transactional note sync (upsert + tags + links in one tx).
+func NewContentSync(deps ContentSyncDeps) *ContentSync {
 	return &ContentSync{
-		pool:          pool,
-		contentReader: cr,
-		contentWriter: cw,
-		topics:        tl,
-		fetcher:       fetcher,
-		jobs:          jobs,
-		logger:        logger,
+		pool:    deps.Pool,
+		content: deps.Content,
+		topics:  deps.Topics,
+		fetcher: deps.Fetcher,
+		jobs:    deps.Jobs,
+		logger:  deps.Logger,
 	}
 }
 

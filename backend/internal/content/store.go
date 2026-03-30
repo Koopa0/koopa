@@ -530,11 +530,15 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		seriesOrder = &v
 	}
 
+	// Transaction exception: CreateContent starts its own tx because it must
+	// atomically insert content + sync topic junctions. Moving the tx boundary
+	// to every handler/caller would increase coupling with no safety gain —
+	// content creation is always a single logical operation.
 	pool, ok := s.dbtx.(interface {
 		Begin(ctx context.Context) (pgx.Tx, error)
 	})
 	if !ok {
-		return nil, fmt.Errorf("CreateContent requires a connection with Begin support")
+		return nil, fmt.Errorf("create content requires a connection with begin support")
 	}
 
 	tx, err := pool.Begin(ctx)
@@ -619,11 +623,12 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		seriesOrder = &v
 	}
 
+	// Transaction exception: same rationale as CreateContent (see above).
 	pool, ok := s.dbtx.(interface {
 		Begin(ctx context.Context) (pgx.Tx, error)
 	})
 	if !ok {
-		return nil, fmt.Errorf("UpdateContent requires a connection with Begin support")
+		return nil, fmt.Errorf("update content requires a connection with begin support")
 	}
 
 	tx, err := pool.Begin(ctx)

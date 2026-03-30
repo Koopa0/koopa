@@ -56,4 +56,7 @@ type GoogleConfig struct {
 var (
 	// ErrNotFound indicates the requested record does not exist.
 	ErrNotFound = errors.New("auth: not found")
+
+	// ErrConflict indicates a unique constraint violation (e.g. duplicate refresh token hash).
+	ErrConflict = errors.New("auth: conflict")
 )

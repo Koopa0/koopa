@@ -683,14 +683,14 @@ func (s *Server) searchNotesForKnowledge(ctx context.Context, query string, f *k
 
 // searchSemanticNotes performs embedding-based similarity search on notes.
 func (s *Server) searchSemanticNotes(ctx context.Context, query string, limit int) ([]note.SimilarityResult, error) {
-	if s.queryEmbedder == nil || s.semanticNotes == nil {
+	if s.queryEmbedder == nil || s.notes == nil {
 		return nil, nil
 	}
 	vec, err := s.queryEmbedder.EmbedQuery(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	return s.semanticNotes.SearchBySimilarity(ctx, vec, limit)
+	return s.notes.SearchBySimilarity(ctx, vec, limit)
 }
 
 // collectContentResults filters and converts content search results to knowledgeResult entries.
@@ -945,15 +945,15 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 
 // --- session notes (read) ---
 
-// GetSessionNotesInput is the input for the get_session_notes tool.
-type GetSessionNotesInput struct {
+// SessionNotesInput is the input for the get_session_notes tool.
+type SessionNotesInput struct {
 	Date     string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
 	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight"`
 	Days     int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
 }
 
-// GetSessionNotesOutput is the output of the get_session_notes tool.
-type GetSessionNotesOutput struct {
+// SessionNotesOutput is the output of the get_session_notes tool.
+type SessionNotesOutput struct {
 	Notes []sessionNoteResult `json:"notes"`
 }
 
@@ -970,9 +970,9 @@ type sessionNoteResult struct {
 	CreatedAt string         `json:"created_at"`
 }
 
-func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input GetSessionNotesInput) (*mcp.CallToolResult, GetSessionNotesOutput, error) {
+func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input SessionNotesInput) (*mcp.CallToolResult, SessionNotesOutput, error) {
 	if s.sessions == nil {
-		return nil, GetSessionNotesOutput{}, fmt.Errorf("session notes not configured")
+		return nil, SessionNotesOutput{}, fmt.Errorf("session notes not configured")
 	}
 
 	days := clamp(input.Days, 1, 30, 1)
@@ -982,7 +982,7 @@ func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input
 	if input.Date != "" {
 		parsed, err := time.Parse(time.DateOnly, input.Date)
 		if err != nil {
-			return nil, GetSessionNotesOutput{}, fmt.Errorf("invalid date %q (expected YYYY-MM-DD)", input.Date)
+			return nil, SessionNotesOutput{}, fmt.Errorf("invalid date %q (expected YYYY-MM-DD)", input.Date)
 		}
 		endDate = parsed
 	}
@@ -994,13 +994,13 @@ func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input
 		case "plan", "reflection", "context", "metrics", "insight":
 			noteType = &input.NoteType
 		default:
-			return nil, GetSessionNotesOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
+			return nil, SessionNotesOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
 		}
 	}
 
 	notes, err := s.sessions.NotesByDate(ctx, startDate, endDate, noteType)
 	if err != nil {
-		return nil, GetSessionNotesOutput{}, fmt.Errorf("querying session notes: %w", err)
+		return nil, SessionNotesOutput{}, fmt.Errorf("querying session notes: %w", err)
 	}
 
 	results := make([]sessionNoteResult, len(notes))
@@ -1021,7 +1021,7 @@ func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input
 		}
 	}
 
-	return nil, GetSessionNotesOutput{Notes: results}, nil
+	return nil, SessionNotesOutput{Notes: results}, nil
 }
 
 // --- write tools ---

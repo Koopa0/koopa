@@ -91,13 +91,13 @@ func (cs *ContentSync) syncFile(ctx context.Context, path string) error {
 	sourceType := content.SourceObsidian
 
 	// check if content already exists
-	existing, err := cs.contentReader.ContentBySlug(ctx, slug)
+	existing, err := cs.content.ContentBySlug(ctx, slug)
 	if err == nil && existing != nil {
 		return cs.updateExistingContent(ctx, existing, slug, parsed, body, contentType, sourceType, path, topicIDs)
 	}
 
 	// create new content
-	created, err := cs.contentWriter.CreateContent(ctx, &content.CreateParams{
+	created, err := cs.content.CreateContent(ctx, &content.CreateParams{
 		Slug:        slug,
 		Title:       parsed.Title,
 		Body:        body,
@@ -112,7 +112,7 @@ func (cs *ContentSync) syncFile(ctx context.Context, path string) error {
 	if errors.Is(err, content.ErrConflict) {
 		// Race: another webhook created this content between our read and write.
 		// Retry as an update instead of silently dropping the sync.
-		existing, readErr := cs.contentReader.ContentBySlug(ctx, slug)
+		existing, readErr := cs.content.ContentBySlug(ctx, slug)
 		if readErr != nil {
 			return fmt.Errorf("re-reading content %s after conflict: %w", slug, readErr)
 		}
@@ -124,7 +124,7 @@ func (cs *ContentSync) syncFile(ctx context.Context, path string) error {
 
 	// publish if the obsidian file is marked as published
 	if parsed.Published {
-		if _, err := cs.contentWriter.PublishContent(ctx, created.ID); err != nil {
+		if _, err := cs.content.PublishContent(ctx, created.ID); err != nil {
 			return fmt.Errorf("publishing content %s: %w", slug, err)
 		}
 	}
@@ -139,7 +139,7 @@ func (cs *ContentSync) updateExistingContent(ctx context.Context, existing *cont
 	if parsed.Published {
 		status = content.StatusPublished
 	}
-	_, updateErr := cs.contentWriter.UpdateContent(ctx, existing.ID, &content.UpdateParams{
+	_, updateErr := cs.content.UpdateContent(ctx, existing.ID, &content.UpdateParams{
 		Title:      &parsed.Title,
 		Body:       &body,
 		Type:       &contentType,
@@ -155,7 +155,7 @@ func (cs *ContentSync) updateExistingContent(ctx context.Context, existing *cont
 
 	// publish if the obsidian file is marked as published and not yet published
 	if parsed.Published && existing.Status != content.StatusPublished {
-		if _, publishErr := cs.contentWriter.PublishContent(ctx, existing.ID); publishErr != nil {
+		if _, publishErr := cs.content.PublishContent(ctx, existing.ID); publishErr != nil {
 			return fmt.Errorf("publishing content %s: %w", slug, publishErr)
 		}
 	}
@@ -199,13 +199,13 @@ func (cs *ContentSync) resolveTopics(ctx context.Context, slugs []string) []uuid
 func (cs *ContentSync) archiveRemovedFiles(ctx context.Context, files []string) {
 	for _, path := range files {
 		slug := slugFromPath(path)
-		existing, err := cs.contentReader.ContentBySlug(ctx, slug)
+		existing, err := cs.content.ContentBySlug(ctx, slug)
 		if err != nil {
 			// not found — already deleted or never synced, skip
 			cs.logger.Debug("removed file not found in db, skipping", "path", path, "slug", slug)
 			continue
 		}
-		if err := cs.contentWriter.DeleteContent(ctx, existing.ID); err != nil {
+		if err := cs.content.DeleteContent(ctx, existing.ID); err != nil {
 			cs.logger.Error("archiving removed file", "path", path, "slug", slug, "error", err)
 			continue
 		}

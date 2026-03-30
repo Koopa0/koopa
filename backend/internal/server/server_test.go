@@ -159,7 +159,12 @@ func testServer(t *testing.T) *httptest.Server {
 
 	feedCollector := collector.New(collectedStore, feedStore, monitorStore, logger)
 
-	contentSync := pipeline.NewContentSync(pool, contentStore, contentStore, nil, nil, runner, logger)
+	contentSync := pipeline.NewContentSync(pipeline.ContentSyncDeps{
+		Pool:    pool,
+		Content: contentStore,
+		Jobs:    runner,
+		Logger:  logger,
+	})
 	webhookRouter := pipeline.NewWebhookRouter("", "", "", contentSync, logger)
 	triggers := pipeline.NewTriggers(runner, logger)
 	triggers.WithCollector(feedCollector, feedStore)

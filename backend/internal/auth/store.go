@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -63,6 +65,9 @@ func (s *Store) CreateRefreshToken(ctx context.Context, userID uuid.UUID, tokenH
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return ErrConflict
+		}
 		return fmt.Errorf("creating refresh token: %w", err)
 	}
 	return nil

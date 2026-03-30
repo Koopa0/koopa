@@ -236,14 +236,20 @@ func TestGenerateAndValidateState(t *testing.T) {
 	h := &Handler{secret: []byte(testSecret)}
 
 	t.Run("valid state", func(t *testing.T) {
-		state := h.generateState()
+		state, err := h.generateState()
+		if err != nil {
+			t.Fatalf("generateState() unexpected error: %v", err)
+		}
 		if !h.validateState(state) {
 			t.Errorf("validateState(%q) = false, want true", state)
 		}
 	})
 
 	t.Run("tampered signature", func(t *testing.T) {
-		state := h.generateState()
+		state, err := h.generateState()
+		if err != nil {
+			t.Fatalf("generateState() unexpected error: %v", err)
+		}
 		// Flip a character in the signature portion
 		tampered := state[:len(state)-1] + "X"
 		if h.validateState(tampered) {
@@ -264,7 +270,10 @@ func TestGenerateAndValidateState(t *testing.T) {
 	})
 
 	t.Run("wrong secret", func(t *testing.T) {
-		state := h.generateState()
+		state, err := h.generateState()
+		if err != nil {
+			t.Fatalf("generateState() unexpected error: %v", err)
+		}
 		other := &Handler{secret: []byte("different-secret")}
 		if other.validateState(state) {
 			t.Error("validateState with wrong secret = true, want false")
@@ -365,7 +374,8 @@ func FuzzValidateState(f *testing.F) {
 	h := &Handler{secret: []byte(testSecret)}
 
 	// Seed with realistic values
-	f.Add(h.generateState())
+	seed, _ := h.generateState()
+	f.Add(seed)
 	f.Add("")
 	f.Add("1234567890.AAAA")
 	f.Add("not-a-state")

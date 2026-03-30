@@ -103,7 +103,7 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 
 	// Record activity event for audit trail (enables recurring task tracking).
 	// Project slug is resolved so goal_progress can attribute completions correctly.
-	if s.activityWriter != nil {
+	if s.activity != nil {
 		evTitle := fmt.Sprintf("Completed: %s", updated.Title)
 		sourceID := fmt.Sprintf("task-complete-%s-%s", updated.ID, time.Now().Format(time.DateOnly))
 		params := &activity.RecordParams{
@@ -117,7 +117,7 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 			params.Project = s.resolveProjectSlug(ctx, *updated.ProjectID)
 		}
 		//nolint:errcheck // best-effort: don't fail task completion on event recording error
-		s.activityWriter.CreateEvent(ctx, params)
+		s.activity.CreateEvent(ctx, params)
 	}
 
 	// Attach remaining My Day tasks for next-task suggestion
@@ -854,7 +854,7 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("status is required")
 	}
 
-	if s.projectWriter == nil {
+	if s.projects == nil {
 		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("project writer not configured")
 	}
 
@@ -864,7 +864,7 @@ func (s *Server) updateProjectStatus(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	status := mapInputProjectStatus(input.Status)
-	updated, err := s.projectWriter.UpdateStatus(ctx, proj.ID, status, input.ReviewNotes, input.ExpectedCadence)
+	updated, err := s.projects.UpdateStatus(ctx, proj.ID, status, input.ReviewNotes, input.ExpectedCadence)
 	if err != nil {
 		return nil, UpdateProjectStatusOutput{}, fmt.Errorf("updating project status: %w", err)
 	}

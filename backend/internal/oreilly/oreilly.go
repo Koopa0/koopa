@@ -180,7 +180,7 @@ func (c *Client) BookTOC(ctx context.Context, archiveID string) ([]TOCEntry, err
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("TOC API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("toc api returned status %d", resp.StatusCode)
 	}
 
 	// Raw TOC has reference_id like "9781835880302-/chap01.xhtml"; extract filename.

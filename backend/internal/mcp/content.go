@@ -198,9 +198,9 @@ func (s *Server) publishContent(ctx context.Context, _ *mcp.CallToolRequest, inp
 		return nil, ContentActionOutput{}, fmt.Errorf("publishing content: %w", err)
 	}
 
-	if s.activityWriter != nil {
+	if s.activity != nil {
 		evTitle := fmt.Sprintf("published: %s", published.Title)
-		_, actErr := s.activityWriter.CreateEvent(ctx, &activity.RecordParams{
+		_, actErr := s.activity.CreateEvent(ctx, &activity.RecordParams{
 			Timestamp: time.Now(),
 			Source:    "mcp",
 			EventType: "content_published",
