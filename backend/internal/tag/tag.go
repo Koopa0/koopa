@@ -12,24 +12,24 @@ import (
 
 // Tag is a canonical tag in the tags table.
 type Tag struct {
-	ID          uuid.UUID
-	Slug        string
-	Name        string
-	ParentID    *uuid.UUID
-	Description string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          uuid.UUID  `json:"id"`
+	Slug        string     `json:"slug"`
+	Name        string     `json:"name"`
+	ParentID    *uuid.UUID `json:"parent_id,omitempty"`
+	Description string     `json:"description"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 // Alias maps a raw tag string to a canonical tag (or nil if unmapped).
 type Alias struct {
-	ID          uuid.UUID
-	RawTag      string
-	TagID       *uuid.UUID
-	MatchMethod string
-	Confirmed   bool
-	ConfirmedAt *time.Time
-	CreatedAt   time.Time
+	ID          uuid.UUID  `json:"id"`
+	RawTag      string     `json:"raw_tag"`
+	TagID       *uuid.UUID `json:"tag_id,omitempty"`
+	MatchMethod string     `json:"match_method"`
+	Confirmed   bool       `json:"confirmed"`
+	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // Resolved is the result of the 4-step normalization pipeline for a single raw tag.

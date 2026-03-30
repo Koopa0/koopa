@@ -142,7 +142,10 @@ func TestGoogleCallback_MissingCode(t *testing.T) {
 	h := newTestHandler(t)
 	h.oauthCfg = buildOAuthConfig("cid", "csec", "https://example.com/cb")
 
-	state := h.generateState()
+	state, err := h.generateState()
+	if err != nil {
+		t.Fatalf("generateState() unexpected error: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+state, http.NoBody)
 	w := httptest.NewRecorder()
 	h.GoogleCallback(w, req)
@@ -421,10 +424,14 @@ func TestValidateState_Adversarial(t *testing.T) {
 		{name: "future timestamp", state: generateStateAt(h, time.Now().Add(24*time.Hour).Unix()), want: false},
 		{name: "correct format but wrong secret", state: func() string {
 			other := &Handler{secret: []byte("other")}
-			return other.generateState()
+			s, _ := other.generateState()
+			return s
 		}(), want: false},
 		// Valid generated state must pass.
-		{name: "freshly generated", state: h.generateState(), want: true},
+		{name: "freshly generated", state: func() string {
+			s, _ := h.generateState()
+			return s
+		}(), want: true},
 	}
 
 	for _, tt := range tests {
@@ -710,7 +717,10 @@ func TestGenerateState_UniqueEachCall(t *testing.T) {
 	const n = 20
 	seen := make(map[string]struct{}, n)
 	for range n {
-		state := h.generateState()
+		state, err := h.generateState()
+		if err != nil {
+			t.Fatalf("generateState() unexpected error: %v", err)
+		}
 		if _, dup := seen[state]; dup {
 			t.Errorf("generateState() produced duplicate: %q", state)
 		}
@@ -722,7 +732,10 @@ func TestGenerateState_Format(t *testing.T) {
 	t.Parallel()
 
 	h := &Handler{secret: []byte(testSecret)}
-	state := h.generateState()
+	state, err := h.generateState()
+	if err != nil {
+		t.Fatalf("generateState() unexpected error: %v", err)
+	}
 
 	// State format: ts.nonce.sig — three dot-separated parts.
 	parts := strings.Split(state, ".")
@@ -761,7 +774,7 @@ func BenchmarkSignAccessToken(b *testing.B) {
 func BenchmarkValidateState(b *testing.B) {
 	b.ReportAllocs()
 	h := &Handler{secret: []byte(testSecret)}
-	state := h.generateState()
+	state, _ := h.generateState()
 	for b.Loop() {
 		h.validateState(state)
 	}

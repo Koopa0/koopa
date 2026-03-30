@@ -1,4 +1,12 @@
 // Package pipeline handles webhook processing and content sync orchestration.
+//
+// Design note: pipeline is an orchestration layer that coordinates content sync
+// (GitHub → DB), webhook routing, and manual trigger endpoints. High import count
+// (15 packages) is inherent — sync requires content, note, tag, obsidian, github.
+// Internally split into ContentSync, WebhookRouter, and Triggers sub-structs with
+// a thin Handler facade. Sub-packaging was evaluated and rejected: the sub-structs
+// share the Handler's goroutine pool and backpressure, and splitting would require
+// exporting internal coordination types.
 package pipeline
 
 // PushEvent represents a GitHub push webhook payload.

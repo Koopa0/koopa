@@ -10,6 +10,9 @@ import (
 )
 
 // Response wraps data with optional pagination metadata.
+// Data is `any` because handlers return different domain types. Using generics
+// (Response[T]) was evaluated but would require every handler to specify the type
+// parameter, adding verbosity with no runtime safety gain (JSON encoding is untyped).
 type Response struct {
 	Data any   `json:"data"`
 	Meta *Meta `json:"meta,omitempty"`

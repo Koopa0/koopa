@@ -17,9 +17,6 @@ type ContentByTopicLister interface {
 	ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, perPage int) ([]content.Content, int, error)
 }
 
-// compile-time verification
-var _ ContentByTopicLister = (*content.Store)(nil)
-
 // Topic represents a content category.
 type Topic struct {
 	ID           uuid.UUID `json:"id"`

@@ -1,3 +1,9 @@
+// Design note: mcp is intentionally a wide package — it is a transport gateway
+// that exposes domain stores as MCP tools. High import count is inherent to this
+// role (same as server/ for HTTP routes). Tool handlers are organized by file
+// (search.go, content.go, goals.go, etc.) but share the Server struct for
+// connection lifecycle and telemetry. Sub-packaging was evaluated and rejected:
+// tools don't depend on each other, so splitting would only add export surface.
 package mcp
 
 import (
@@ -39,16 +45,12 @@ type Server struct {
 	tasks           *task.Store
 	contents        *content.Store
 	goals           *goal.Store
-	projectWriter   *project.Store // same store, separate field for write operations
 	notionClient    *notion.Client
 	taskDBResolver  *notion.Store
 	sessions        *session.Store
-	activityWriter  *activity.Store
-	semanticNotes   *note.Store
 	queryEmbedder   QueryEmbedder
 	feeds           *feed.Store
 	oreilly         *oreilly.Client
-	systemStatus    *stats.Store
 	pipelineTrigger PipelineTrigger
 	recordToolCall  func(context.Context, ToolCallRecord) // optional telemetry
 	lastTrigger     map[string]time.Time                  // rate limit: pipeline name -> last trigger time
@@ -87,19 +89,21 @@ func WithGoalWriter(w *goal.Store) ServerOption {
 }
 
 // WithProjectWriter enables project status update tools.
+// Uses the same *project.Store that provides reads; kept as an option so
+// writes remain opt-in at the wiring site.
 func WithProjectWriter(w *project.Store) ServerOption {
-	return func(s *Server) { s.projectWriter = w }
+	return func(s *Server) { s.projects = w }
 }
 
 // WithActivityWriter enables activity event recording for task completion audit trail.
 func WithActivityWriter(w *activity.Store) ServerOption {
-	return func(s *Server) { s.activityWriter = w }
+	return func(s *Server) { s.activity = w }
 }
 
 // WithSemanticSearch enables embedding-based semantic search for notes.
 func WithSemanticSearch(ns *note.Store, qe QueryEmbedder) ServerOption {
 	return func(s *Server) {
-		s.semanticNotes = ns
+		s.notes = ns
 		s.queryEmbedder = qe
 	}
 }
@@ -110,8 +114,10 @@ func WithOReilly(client *oreilly.Client) ServerOption {
 }
 
 // WithSystemStatus enables the get_system_status tool.
+// Uses the same *stats.Store that provides collection stats; kept as an
+// option so system-status tools remain opt-in at the wiring site.
 func WithSystemStatus(r *stats.Store) ServerOption {
-	return func(s *Server) { s.systemStatus = r }
+	return func(s *Server) { s.stats = r }
 }
 
 // WithPipelineTrigger enables the trigger_pipeline tool.
@@ -470,7 +476,7 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		Annotations: readOnly,
 	}, s.getCollectionStats)
 
-	if s.systemStatus != nil {
+	if s.stats != nil {
 		addTool(s, &mcp.Tool{
 			Name:        "get_system_status",
 			Description: "Get system observability: flow run stats, feed health, pipeline summaries, and recent flow runs. Scopes: summary (flow stats + feed health), pipelines (per-flow-name aggregation), flows (recent individual runs).",

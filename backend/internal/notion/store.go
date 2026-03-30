@@ -143,7 +143,7 @@ func (s *Store) SetRole(ctx context.Context, id uuid.UUID, role string) error {
 		Begin(ctx context.Context) (pgx.Tx, error)
 	})
 	if !ok {
-		return fmt.Errorf("SetRole requires a pool with Begin support")
+		return fmt.Errorf("set role requires a pool with begin support")
 	}
 
 	tx, err := pool.Begin(ctx)

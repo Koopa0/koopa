@@ -8,25 +8,25 @@ import (
 
 // Note represents a knowledge note from the obsidian_notes table.
 type Note struct {
-	ID           int64
-	FilePath     string
-	Title        *string
-	Type         *string
-	Source       *string
-	Context      *string
-	Status       *string
-	Tags         []string // raw frontmatter tags (JSONB)
-	Difficulty   *string
-	LeetcodeID   *int32
-	Book         *string
-	Chapter      *string
-	NotionTaskID *string
-	ContentText  *string
-	SearchText   *string
-	ContentHash  *string
-	GitCreatedAt *time.Time
-	GitUpdatedAt *time.Time
-	SyncedAt     *time.Time
+	ID           int64      `json:"id"`
+	FilePath     string     `json:"file_path"`
+	Title        *string    `json:"title,omitempty"`
+	Type         *string    `json:"type,omitempty"`
+	Source       *string    `json:"source,omitempty"`
+	Context      *string    `json:"context,omitempty"`
+	Status       *string    `json:"status,omitempty"`
+	Tags         []string   `json:"tags"` // raw frontmatter tags (JSONB)
+	Difficulty   *string    `json:"difficulty,omitempty"`
+	LeetcodeID   *int32     `json:"leetcode_id,omitempty"`
+	Book         *string    `json:"book,omitempty"`
+	Chapter      *string    `json:"chapter,omitempty"`
+	NotionTaskID *string    `json:"notion_task_id,omitempty"`
+	ContentText  *string    `json:"content_text,omitempty"`
+	SearchText   *string    `json:"search_text,omitempty"`
+	ContentHash  *string    `json:"content_hash,omitempty"`
+	GitCreatedAt *time.Time `json:"git_created_at,omitempty"`
+	GitUpdatedAt *time.Time `json:"git_updated_at,omitempty"`
+	SyncedAt     *time.Time `json:"synced_at,omitempty"`
 }
 
 // UpsertParams holds the parameters for upserting a knowledge note.

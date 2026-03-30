@@ -301,7 +301,14 @@ func run(logger *slog.Logger) error {
 	noteStore := note.NewStore(pool)
 
 	// pipeline: content sync (A1 + B1)
-	contentSync := pipeline.NewContentSync(pool, contentStore, contentStore, topicLookup, githubFetcher, runner, logger)
+	contentSync := pipeline.NewContentSync(pipeline.ContentSyncDeps{
+		Pool:    pool,
+		Content: contentStore,
+		Topics:  topicLookup,
+		Fetcher: githubFetcher,
+		Jobs:    runner,
+		Logger:  logger,
+	})
 	contentSync.WithNoteSync(noteStore, tagStore)
 	contentSync.WithNoteEvents(activityStore)
 	contentSync.WithNoteLinks(noteStore)

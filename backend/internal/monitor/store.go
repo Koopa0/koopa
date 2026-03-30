@@ -6,7 +6,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -71,6 +73,9 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Topic, error) {
 		Schedule: p.Schedule,
 	})
 	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return nil, ErrConflict
+		}
 		return nil, fmt.Errorf("creating tracking topic: %w", err)
 	}
 	t := dbToTopic(&r)

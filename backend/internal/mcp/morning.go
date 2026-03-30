@@ -1040,12 +1040,12 @@ func parseInsightBrief(n *session.Note) insightBrief {
 // fetchMorningPipelineHealth gets a quick pipeline health summary for the briefing.
 // Uses FlowRunsSince(24h) to align with get_system_status(scope=summary) time window.
 func (s *Server) fetchMorningPipelineHealth(ctx context.Context, out *MorningContextOutput) {
-	if s.systemStatus == nil {
+	if s.stats == nil {
 		return
 	}
 
 	since := time.Now().Add(-24 * time.Hour)
-	fs, err := s.systemStatus.FlowRunsSince(ctx, since, nil, nil)
+	fs, err := s.stats.FlowRunsSince(ctx, since, nil, nil)
 	if err != nil {
 		s.logger.Warn("morning: pipeline health failed", "error", err)
 		return
@@ -1057,7 +1057,7 @@ func (s *Server) fetchMorningPipelineHealth(ctx context.Context, out *MorningCon
 	}
 
 	var failingFeeds int
-	if fh, fhErr := s.systemStatus.FeedHealth(ctx); fhErr == nil {
+	if fh, fhErr := s.stats.FeedHealth(ctx); fhErr == nil {
 		failingFeeds = fh.FailingFeeds
 	}
 

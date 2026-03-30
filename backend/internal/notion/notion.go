@@ -1,4 +1,11 @@
-// Package notion handles Notion webhook events and API integration for UB 3.0.
+// Package notion handles Notion webhook events, API integration, and entity sync.
+//
+// Design note: this package intentionally covers API client, webhook handler,
+// property mapping, and sync orchestration as a single unit. The sync logic
+// uses callbacks (ProjectSyncFunc, GoalSyncFunc, TaskSyncFunc) to avoid importing
+// feature packages directly — feature stores own the upsert, notion owns the
+// property extraction. Further splitting was evaluated and rejected: the concerns
+// share the Client and source cache, and splitting would increase export surface.
 package notion
 
 import (

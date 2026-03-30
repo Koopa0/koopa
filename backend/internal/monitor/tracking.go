@@ -41,4 +41,7 @@ type UpdateParams struct {
 var (
 	// ErrNotFound indicates the tracking topic does not exist.
 	ErrNotFound = errors.New("monitor: not found")
+
+	// ErrConflict indicates a unique constraint violation (e.g. duplicate topic name).
+	ErrConflict = errors.New("monitor: conflict")
 )

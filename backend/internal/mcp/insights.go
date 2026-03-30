@@ -13,15 +13,15 @@ import (
 
 // --- get_active_insights ---
 
-// GetActiveInsightsInput is the input for the get_active_insights tool.
-type GetActiveInsightsInput struct {
+// ActiveInsightsInput is the input for the get_active_insights tool.
+type ActiveInsightsInput struct {
 	Status  string `json:"status,omitempty" jsonschema_description:"unverified, verified, invalidated, or all (default unverified)"`
 	Project string `json:"project,omitempty" jsonschema_description:"filter by project slug"`
 	Limit   int    `json:"limit,omitempty" jsonschema_description:"max insights to return (default 10)"`
 }
 
-// GetActiveInsightsOutput is the output of the get_active_insights tool.
-type GetActiveInsightsOutput struct {
+// ActiveInsightsOutput is the output of the get_active_insights tool.
+type ActiveInsightsOutput struct {
 	Insights        []insightEntry `json:"insights"`
 	Total           int            `json:"total"`
 	UnverifiedCount int64          `json:"unverified_count"`
@@ -43,9 +43,9 @@ type insightEntry struct {
 	InvalidationCondition string   `json:"invalidation_condition,omitempty"`
 }
 
-func (s *Server) activeInsights(ctx context.Context, _ *mcp.CallToolRequest, input GetActiveInsightsInput) (*mcp.CallToolResult, GetActiveInsightsOutput, error) {
+func (s *Server) activeInsights(ctx context.Context, _ *mcp.CallToolRequest, input ActiveInsightsInput) (*mcp.CallToolResult, ActiveInsightsOutput, error) {
 	if s.sessions == nil {
-		return nil, GetActiveInsightsOutput{}, fmt.Errorf("session notes not configured")
+		return nil, ActiveInsightsOutput{}, fmt.Errorf("session notes not configured")
 	}
 
 	// Lazy auto-archive: verified/invalidated insights older than 14 days → archived
@@ -76,7 +76,7 @@ func (s *Server) activeInsights(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 	notes, err := s.sessions.InsightsByStatus(ctx, statusFilter, projectFilter, int32(min(limit, 1000))) //nolint:gosec // limit is bounded by min()
 	if err != nil {
-		return nil, GetActiveInsightsOutput{}, fmt.Errorf("querying insights: %w", err)
+		return nil, ActiveInsightsOutput{}, fmt.Errorf("querying insights: %w", err)
 	}
 
 	unverifiedStatus := "unverified"
@@ -90,7 +90,7 @@ func (s *Server) activeInsights(ctx context.Context, _ *mcp.CallToolRequest, inp
 		insights = append(insights, parseInsightNote(&notes[i]))
 	}
 
-	return nil, GetActiveInsightsOutput{
+	return nil, ActiveInsightsOutput{
 		Insights:        insights,
 		Total:           len(insights),
 		UnverifiedCount: unverifiedCount,

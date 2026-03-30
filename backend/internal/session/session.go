@@ -8,8 +8,13 @@ import (
 	"time"
 )
 
-// ErrNotFound indicates no session note exists for the given query.
-var ErrNotFound = errors.New("session: not found")
+var (
+	// ErrNotFound indicates no session note exists for the given query.
+	ErrNotFound = errors.New("session: not found")
+
+	// ErrConflict indicates a unique constraint violation (e.g. duplicate session note).
+	ErrConflict = errors.New("session: conflict")
+)
 
 // Note represents a single session note (plan, reflection, context, metrics, or insight).
 type Note struct {

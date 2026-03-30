@@ -90,7 +90,7 @@ func (s *Server) getSystemStatus(ctx context.Context, _ *mcp.CallToolRequest, in
 }
 
 func (s *Server) statusScopeSummary(ctx context.Context, since time.Time, out *SystemStatusOutput) error {
-	fs, err := s.systemStatus.FlowRunsSince(ctx, since, nil, nil)
+	fs, err := s.stats.FlowRunsSince(ctx, since, nil, nil)
 	if err != nil {
 		return fmt.Errorf("querying flow stats: %w", err)
 	}
@@ -101,7 +101,7 @@ func (s *Server) statusScopeSummary(ctx context.Context, since time.Time, out *S
 		Running:   fs.Running,
 	}
 
-	fh, err := s.systemStatus.FeedHealth(ctx)
+	fh, err := s.stats.FeedHealth(ctx)
 	if err != nil {
 		return fmt.Errorf("querying feed health: %w", err)
 	}
@@ -114,7 +114,7 @@ func (s *Server) statusScopeSummary(ctx context.Context, since time.Time, out *S
 }
 
 func (s *Server) statusScopePipelines(ctx context.Context, since time.Time, out *SystemStatusOutput) error {
-	summaries, err := s.systemStatus.PipelineSummaries(ctx, since)
+	summaries, err := s.stats.PipelineSummaries(ctx, since)
 	if err != nil {
 		return fmt.Errorf("querying pipeline summaries: %w", err)
 	}
@@ -147,7 +147,7 @@ func (s *Server) statusScopeFlows(ctx context.Context, since time.Time, input *S
 		}
 	}
 
-	runs, err := s.systemStatus.RecentFlowRuns(ctx, since, flowName, status, 50)
+	runs, err := s.stats.RecentFlowRuns(ctx, since, flowName, status, 50)
 	if err != nil {
 		return fmt.Errorf("querying recent flow runs: %w", err)
 	}

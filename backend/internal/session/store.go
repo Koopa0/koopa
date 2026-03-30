@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/koopa0/blog-backend/internal/db"
 )
@@ -31,6 +33,9 @@ func (s *Store) CreateNote(ctx context.Context, p *CreateParams) (*Note, error) 
 		Metadata: p.Metadata,
 	})
 	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return nil, ErrConflict
+		}
 		return nil, fmt.Errorf("creating session note: %w", err)
 	}
 	n := rowToNote(&row)

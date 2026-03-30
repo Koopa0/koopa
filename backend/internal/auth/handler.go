@@ -65,7 +65,12 @@ func NewHandler(store *Store, jwtSecret string, gcfg *GoogleConfig, logger *slog
 
 // GoogleLogin handles GET /api/auth/google — returns Google OAuth URL for the frontend to redirect.
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
-	state := h.generateState()
+	state, err := h.generateState()
+	if err != nil {
+		h.logger.Error("generating oauth state", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to initiate login")
+		return
+	}
 	authURL := h.oauthCfg.AuthCodeURL(state, oauth2.SetAuthURLParam("login_hint", h.adminEmail))
 	api.Encode(w, http.StatusOK, api.Response{Data: map[string]string{"url": authURL}})
 }
@@ -229,19 +234,18 @@ func hashToken(token string) string {
 }
 
 // generateState creates an HMAC-signed timestamp for OAuth state parameter.
-func (h *Handler) generateState() string {
+func (h *Handler) generateState() (string, error) {
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	// Add random nonce to ensure uniqueness within the same second.
 	nonce := make([]byte, 8)
 	if _, err := rand.Read(nonce); err != nil {
-		// crypto/rand failure is fatal — cannot generate secure state.
-		panic("crypto/rand: " + err.Error())
+		return "", fmt.Errorf("generating oauth state: %w", err)
 	}
 	payload := ts + "." + base64.URLEncoding.EncodeToString(nonce)
 	mac := hmac.New(sha256.New, h.secret)
 	mac.Write([]byte(payload))
 	sig := base64.URLEncoding.EncodeToString(mac.Sum(nil))
-	return payload + "." + sig
+	return payload + "." + sig, nil
 }
 
 // validateState checks that the state is a valid HMAC-signed timestamp within maxAge.
