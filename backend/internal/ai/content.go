@@ -254,8 +254,7 @@ func (cr *ContentReview) runEmbeddingStep(ctx context.Context, body string, cont
 			return nil, fmt.Errorf("generating embedding: %w", embedErr)
 		}
 		if len(resp.Embeddings) == 0 || len(resp.Embeddings[0].Embedding) == 0 {
-			cr.logger.Warn("empty embedding response", "content_id", contentID)
-			return nil, nil
+			return nil, fmt.Errorf("empty embedding response for content %s", contentID)
 		}
 		vec := pgvector.NewVector(resp.Embeddings[0].Embedding)
 		if storeErr := cr.content.UpdateEmbedding(ctx, contentID, vec); storeErr != nil {
@@ -286,9 +285,12 @@ func (cr *ContentReview) applyResults(ctx context.Context, contentID uuid.UUID, 
 		if proofread.Level != "auto" {
 			notes := proofread.Notes
 			if _, reviewErr := cr.review.Create(ctx, contentID, proofread.Level, &notes); reviewErr != nil {
-				return nil, fmt.Errorf("creating review: %w", reviewErr)
+				// Content update already committed — log but don't fail the entire flow.
+				// A missing review entry is recoverable; a rolled-back content update is not.
+				cr.logger.Error("creating review after content update", "content_id", contentID, "error", reviewErr)
+			} else {
+				cr.logger.Info("content sent to review queue", "content_id", contentID, "level", proofread.Level)
 			}
-			cr.logger.Info("content sent to review queue", "content_id", contentID, "level", proofread.Level)
 		} else {
 			cr.logger.Info("content auto-approved", "content_id", contentID)
 		}

@@ -123,7 +123,9 @@ func Setup(
 		return nil, fmt.Errorf("defining embedder: %w", err)
 	}
 
-	// construct flows in the ai package
+	// Construct flows in the ai package.
+	// All flow constructors return concrete types (never error) — they register
+	// a Genkit flow and store dependencies. No I/O or validation happens here.
 	contentProofread := NewProofread(g, geminiModel, ReviewSystemPrompt, deps.Logger)
 	contentExcerpt := NewExcerpt(g, geminiModel, ExcerptSystemPrompt, deps.Logger)
 	contentTags := NewTags(g, geminiModel, TagsSystemPrompt, deps.Logger)

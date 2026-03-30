@@ -159,6 +159,8 @@ func buildGraphFromTopics(nodes []contentNode) ([]GraphNode, []GraphLink) {
 }
 
 // appendSimilarityEdges computes pairwise cosine similarity and appends deduplicated edges.
+// O(n²) in node count — bounded by maxGraphNodes (500) to ~125K comparisons.
+// Cached via singleflight + Ristretto so this runs at most once per graphTTL window.
 func appendSimilarityEdges(graphLinks []GraphLink, nodes []contentNode) []GraphLink {
 	topEdges := make([][]simEdge, len(nodes))
 

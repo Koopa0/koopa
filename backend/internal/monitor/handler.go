@@ -27,7 +27,7 @@ func NewHandler(store *Store, logger *slog.Logger) *Handler {
 
 // List handles GET /api/admin/tracking.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	topics, err := h.store.TrackingTopics(r.Context())
+	topics, err := h.store.Topics(r.Context())
 	if err != nil {
 		h.logger.Error("listing tracking topics", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list tracking topics")
@@ -48,7 +48,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.CreateTrackingTopic(r.Context(), &p)
+	t, err := h.store.Create(r.Context(), &p)
 	if err != nil {
 		h.logger.Error("creating tracking topic", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create tracking topic")
@@ -71,7 +71,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.store.UpdateTrackingTopic(r.Context(), id, &p)
+	t, err := h.store.Update(r.Context(), id, &p)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
@@ -87,7 +87,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteTrackingTopic(r.Context(), id); err != nil {
+	if err := h.store.Delete(r.Context(), id); err != nil {
 		h.logger.Error("deleting tracking topic", "id", id, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete tracking topic")
 		return

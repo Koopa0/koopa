@@ -5,10 +5,18 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/koopa0/blog-backend/internal/api"
 )
+
+// contentURL builds a URL from siteURL, content type, and slug,
+// trimming trailing slashes to prevent double-slash in output.
+func (h *Handler) contentURL(typ, slug string) string {
+	base := strings.TrimRight(h.siteURL, "/")
+	return fmt.Sprintf("%s/%s/%s", base, typ, slug)
+}
 
 // RSS handles GET /api/feed/rss.
 func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +66,7 @@ func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
 		}
 		items[i] = rssItem{
 			Title:       c.Title,
-			Link:        fmt.Sprintf("%s/%s/%s", h.siteURL, c.Type, c.Slug),
+			Link:        h.contentURL(string(c.Type), c.Slug),
 			Description: c.Excerpt,
 			PubDate:     pubDate,
 			GUID:        c.ID.String(),
@@ -126,7 +134,7 @@ func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
 	for i := range contents {
 		c := contents[i]
 		urls[i] = sitemapURL{
-			Loc:     fmt.Sprintf("%s/%s/%s", h.siteURL, c.Type, c.Slug),
+			Loc:     h.contentURL(string(c.Type), c.Slug),
 			LastMod: c.UpdatedAt.Format("2006-01-02"),
 		}
 	}

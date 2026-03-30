@@ -593,9 +593,13 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
+	// Topic fetch is outside the transaction — content is already committed.
+	// On failure, return the content with empty topics rather than failing
+	// the entire operation (the content write succeeded).
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
-		return nil, err
+		c.Topics = []TopicRef{}
+		return &c, nil
 	}
 	c.Topics = topics
 
@@ -687,9 +691,12 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
+	// Topic fetch is outside the transaction — update is already committed.
+	// On failure, return the content with empty topics rather than failing.
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
-		return nil, err
+		c.Topics = []TopicRef{}
+		return &c, nil
 	}
 	c.Topics = topics
 
