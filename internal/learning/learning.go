@@ -145,7 +145,7 @@ type WeaknessPoint struct {
 // WeaknessTrend computes time-series and trend for a specific tag
 // using RichTagEntry which includes slug, title, and ai_metadata.
 func WeaknessTrend(entries []content.RichTagEntry, tag string, days int) WeaknessTrendResult {
-	var occurrences []WeaknessPoint
+	occurrences := []WeaknessPoint{}
 	for _, e := range entries {
 		hasTag := false
 		var result string
