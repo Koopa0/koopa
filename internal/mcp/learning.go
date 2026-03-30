@@ -201,17 +201,23 @@ type FindSimilarContentInput struct {
 	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 5, max 20)"`
 }
 
-func (s *Server) findSimilarContent(ctx context.Context, _ *mcp.CallToolRequest, input FindSimilarContentInput) (*mcp.CallToolResult, []content.SimilarTIL, error) {
+// FindSimilarContentOutput wraps the slice result as an object (MCP SDK requires object output schema).
+type FindSimilarContentOutput struct {
+	Items []content.SimilarTIL `json:"items"`
+	Total int                  `json:"total"`
+}
+
+func (s *Server) findSimilarContent(ctx context.Context, _ *mcp.CallToolRequest, input FindSimilarContentInput) (*mcp.CallToolResult, FindSimilarContentOutput, error) {
 	if input.ContentSlug == "" {
-		return nil, nil, fmt.Errorf("content_slug is required")
+		return nil, FindSimilarContentOutput{}, fmt.Errorf("content_slug is required")
 	}
 
 	limit := clamp(input.Limit, 1, 20, 5)
 
 	results, err := s.contents.SimilarTILs(ctx, input.ContentSlug, limit)
 	if err != nil {
-		return nil, nil, fmt.Errorf("finding similar content: %w", err)
+		return nil, FindSimilarContentOutput{}, fmt.Errorf("finding similar content: %w", err)
 	}
 
-	return nil, results, nil
+	return nil, FindSimilarContentOutput{Items: results, Total: len(results)}, nil
 }
