@@ -1087,12 +1087,14 @@ func (q *Queries) ContentEmbeddingBySlug(ctx context.Context, slug string) (Cont
 }
 
 const contentRichTagEntries = `-- name: ContentRichTagEntries :many
-SELECT id, slug, title, tags, ai_metadata, created_at
-FROM contents
-WHERE type = $1::content_type
-  AND ($2::uuid IS NULL OR project_id = $2)
-  AND created_at >= $3
-ORDER BY created_at DESC
+SELECT c.id, c.slug, c.title, c.tags, c.ai_metadata, c.created_at,
+       p.slug AS project_slug
+FROM contents c
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE c.type = $1::content_type
+  AND ($2::uuid IS NULL OR c.project_id = $2)
+  AND c.created_at >= $3
+ORDER BY c.created_at DESC
 `
 
 type ContentRichTagEntriesParams struct {
@@ -1102,16 +1104,17 @@ type ContentRichTagEntriesParams struct {
 }
 
 type ContentRichTagEntriesRow struct {
-	ID         uuid.UUID       `json:"id"`
-	Slug       string          `json:"slug"`
-	Title      string          `json:"title"`
-	Tags       []string        `json:"tags"`
-	AiMetadata json.RawMessage `json:"ai_metadata"`
-	CreatedAt  time.Time       `json:"created_at"`
+	ID          uuid.UUID       `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Tags        []string        `json:"tags"`
+	AiMetadata  json.RawMessage `json:"ai_metadata"`
+	CreatedAt   time.Time       `json:"created_at"`
+	ProjectSlug *string         `json:"project_slug"`
 }
 
-// Fetch id, slug, title, tags, ai_metadata, and created_at for learning analytics
-// that need structured metadata (weakness trend, learning timeline).
+// Fetch id, slug, title, tags, ai_metadata, project slug, and created_at for learning
+// analytics that need structured metadata (weakness trend, learning timeline).
 // Heavier than ContentTagsByTypeAndProject — only use when slug/title/metadata are needed.
 func (q *Queries) ContentRichTagEntries(ctx context.Context, arg ContentRichTagEntriesParams) ([]ContentRichTagEntriesRow, error) {
 	rows, err := q.db.Query(ctx, contentRichTagEntries, arg.ContentType, arg.ProjectID, arg.Since)
@@ -1129,6 +1132,7 @@ func (q *Queries) ContentRichTagEntries(ctx context.Context, arg ContentRichTagE
 			&i.Tags,
 			&i.AiMetadata,
 			&i.CreatedAt,
+			&i.ProjectSlug,
 		); err != nil {
 			return nil, err
 		}

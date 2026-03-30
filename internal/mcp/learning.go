@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
@@ -101,4 +102,33 @@ func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 
 	return nil, learning.WeaknessTrend(entries, input.Tag, days), nil
+}
+
+// --- B4: get_learning_timeline ---
+
+// LearningTimelineInput is the input for the get_learning_timeline tool.
+type LearningTimelineInput struct {
+	Project string `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
+	Days    int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 14, max 90)"`
+}
+
+func (s *Server) getLearningTimeline(ctx context.Context, _ *mcp.CallToolRequest, input LearningTimelineInput) (*mcp.CallToolResult, learning.TimelineResult, error) {
+	var projectID *uuid.UUID
+	if input.Project != "" {
+		proj, err := s.resolveProjectChain(ctx, input.Project)
+		if err != nil {
+			return nil, learning.TimelineResult{}, err
+		}
+		projectID = &proj.ID
+	}
+
+	days := clamp(input.Days, 1, 90, 14)
+	since := time.Now().AddDate(0, 0, -days)
+
+	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, projectID, since)
+	if err != nil {
+		return nil, learning.TimelineResult{}, fmt.Errorf("querying rich tag entries: %w", err)
+	}
+
+	return nil, learning.Timeline(entries, time.Now()), nil
 }

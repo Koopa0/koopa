@@ -9,6 +9,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/api"
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/project"
+	"github.com/google/uuid"
 )
 
 // Handler handles learning analytics HTTP requests.
@@ -93,6 +94,33 @@ func (h *Handler) WeaknessTrendHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := WeaknessTrend(entries, tag, days)
+	api.Encode(w, http.StatusOK, api.Response{Data: result})
+}
+
+// TimelineHTTP handles GET /api/admin/stats/learning-timeline.
+// Query params: project (optional), days (default 14, max 90).
+func (h *Handler) TimelineHTTP(w http.ResponseWriter, r *http.Request) {
+	days := parseIntParam(r, "days", 1, 90, 14)
+	since := time.Now().AddDate(0, 0, -days)
+
+	var projectID *uuid.UUID
+	if slug := r.URL.Query().Get("project"); slug != "" {
+		proj, err := h.projects.ProjectBySlug(r.Context(), slug)
+		if err != nil {
+			api.Error(w, http.StatusNotFound, "NOT_FOUND", "project not found")
+			return
+		}
+		projectID = &proj.ID
+	}
+
+	entries, err := h.contents.RichTagEntries(r.Context(), content.TypeTIL, projectID, since)
+	if err != nil {
+		h.logger.Error("querying rich tag entries for timeline", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query entries")
+		return
+	}
+
+	result := Timeline(entries, time.Now())
 	api.Encode(w, http.StatusOK, api.Response{Data: result})
 }
 

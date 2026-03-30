@@ -517,6 +517,12 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		Annotations: readOnly,
 	}, s.getWeaknessTrend)
 
+	addTool(s, &mcp.Tool{
+		Name:        "get_learning_timeline",
+		Description: "Get recent learning entries grouped by day with summary stats (active days, current streak, project distribution). Returns per-entry structured metadata (weakness observations, key concepts) when available. Use at the start of a learning session for context, or when the user asks about recent learning activity. Optional project filter; defaults to 14-day lookback.",
+		Annotations: readOnly,
+	}, s.getLearningTimeline)
+
 	// --- Knowledge synthesis ---
 
 	addTool(s, &mcp.Tool{

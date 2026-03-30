@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/Koopa0/koopa0.dev/internal/activity"
 	"github.com/Koopa0/koopa0.dev/internal/ai/exec"
 	"github.com/Koopa0/koopa0.dev/internal/auth"
@@ -29,6 +28,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/task"
 	"github.com/Koopa0/koopa0.dev/internal/topic"
 	"github.com/Koopa0/koopa0.dev/internal/upload"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Handlers holds all handler dependencies for route registration.
@@ -240,4 +240,5 @@ func RegisterRoutes(mux *http.ServeMux, d *Handlers, authMid, rlMid func(http.Ha
 	mux.Handle("GET /api/admin/stats/coverage-matrix", authMid(http.HandlerFunc(d.Learning.CoverageMatrixHTTP)))
 	mux.Handle("GET /api/admin/stats/tag-summary", authMid(http.HandlerFunc(d.Learning.TagSummaryHTTP)))
 	mux.Handle("GET /api/admin/stats/weakness-trend", authMid(http.HandlerFunc(d.Learning.WeaknessTrendHTTP)))
+	mux.Handle("GET /api/admin/stats/learning-timeline", authMid(http.HandlerFunc(d.Learning.TimelineHTTP)))
 }

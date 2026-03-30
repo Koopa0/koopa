@@ -442,16 +442,17 @@ func (s *Store) TagEntries(ctx context.Context, contentType Type, projectID *uui
 	return entries, nil
 }
 
-// RichTagEntry is a content record with slug, title, and ai_metadata for learning
-// analytics that need structured metadata (weakness trend, learning timeline).
+// RichTagEntry is a content record with slug, title, ai_metadata, and project
+// for learning analytics that need structured metadata (weakness trend, timeline).
 // Heavier than TagEntry — only use when slug/title/metadata are needed.
 type RichTagEntry struct {
-	ID         uuid.UUID
-	Slug       string
-	Title      string
-	Tags       []string
-	AIMetadata json.RawMessage // nil when content has no structured metadata
-	CreatedAt  time.Time
+	ID          uuid.UUID
+	Slug        string
+	Title       string
+	Tags        []string
+	AIMetadata  json.RawMessage // nil when content has no structured metadata
+	ProjectSlug string          // empty when content has no project
+	CreatedAt   time.Time
 }
 
 // RichTagEntries returns entries with slug, title, and ai_metadata for a given
@@ -468,13 +469,18 @@ func (s *Store) RichTagEntries(ctx context.Context, contentType Type, projectID 
 	}
 	entries := make([]RichTagEntry, len(rows))
 	for i := range rows {
+		var projectSlug string
+		if rows[i].ProjectSlug != nil {
+			projectSlug = *rows[i].ProjectSlug
+		}
 		entries[i] = RichTagEntry{
-			ID:         rows[i].ID,
-			Slug:       rows[i].Slug,
-			Title:      rows[i].Title,
-			Tags:       rows[i].Tags,
-			AIMetadata: rows[i].AiMetadata,
-			CreatedAt:  rows[i].CreatedAt,
+			ID:          rows[i].ID,
+			Slug:        rows[i].Slug,
+			Title:       rows[i].Title,
+			Tags:        rows[i].Tags,
+			AIMetadata:  rows[i].AiMetadata,
+			ProjectSlug: projectSlug,
+			CreatedAt:   rows[i].CreatedAt,
 		}
 	}
 	return entries, nil
