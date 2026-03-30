@@ -42,6 +42,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/notion"
 	"github.com/Koopa0/koopa0.dev/internal/oreilly"
 	"github.com/Koopa0/koopa0.dev/internal/project"
+	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 	"github.com/Koopa0/koopa0.dev/internal/session"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
 	"github.com/Koopa0/koopa0.dev/internal/task"
@@ -167,6 +168,7 @@ func buildServerOptions(
 		mcpkg.WithSystemStatus(statsStore),
 	)
 
+	opts = append(opts, mcpkg.WithRetrieval(retrieval.NewStore(pool)))
 	opts = appendPipelineTrigger(opts, cfg, logger)
 	opts = appendOReillyOption(opts, cfg, logger)
 	opts = appendTelemetry(opts, pool, logger)

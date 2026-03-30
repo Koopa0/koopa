@@ -41,6 +41,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/pipeline"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/reconcile"
+	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 	"github.com/Koopa0/koopa0.dev/internal/review"
 	"github.com/Koopa0/koopa0.dev/internal/server"
 	"github.com/Koopa0/koopa0.dev/internal/session"
@@ -332,33 +333,36 @@ func run(logger *slog.Logger) error {
 	pipelineHandler := pipeline.NewHandler(contentSync, webhookRouter, triggers, logger)
 	defer pipelineHandler.Wait() // drain in-flight background operations before exit
 
-	// note embedder (nil in mock mode)
+	// embedders (nil in mock mode)
 	var noteEmbedder *note.Embedder
+	var contentEmbedder *content.Embedder
 	if aiRes.Embedder != nil {
 		noteEmbedder = note.NewEmbedder(noteStore, aiRes.Embedder, aiRes.Genkit, logger)
+		contentEmbedder = content.NewEmbedder(contentStore, aiRes.Embedder, aiRes.Genkit, logger)
 	}
 
 	// cron: register all scheduled jobs
 	cronScheduler := cron.New(cron.WithLocation(taipeiLoc))
 	defer cronScheduler.Stop()
 	registerCronJobs(cronScheduler, &cronDeps{
-		execStore:     execStore,
-		feedStore:     feedStore,
-		authStore:     authStore,
-		entryStore:    entryStore,
-		sessionStore:  sessionStore,
-		activityStore: activityStore,
-		projectStore:  projectStore,
-		noteStore:     noteStore,
-		runner:        runner,
-		feedCollector: feedCollector,
-		notifier:      notifier,
-		tokenBudget:   tokenBudget,
-		recon:         recon,
-		contentSync:   contentSync,
-		notionHandler: notionHandler,
-		noteEmbedder:  noteEmbedder,
-		logger:        logger,
+		execStore:       execStore,
+		feedStore:       feedStore,
+		authStore:       authStore,
+		entryStore:      entryStore,
+		sessionStore:    sessionStore,
+		activityStore:   activityStore,
+		projectStore:    projectStore,
+		noteStore:       noteStore,
+		runner:          runner,
+		feedCollector:   feedCollector,
+		notifier:        notifier,
+		tokenBudget:     tokenBudget,
+		recon:           recon,
+		contentSync:     contentSync,
+		notionHandler:   notionHandler,
+		noteEmbedder:    noteEmbedder,
+		contentEmbedder: contentEmbedder,
+		logger:          logger,
 	}, ctx)
 	cronScheduler.Start()
 
@@ -411,6 +415,7 @@ func run(logger *slog.Logger) error {
 		),
 		Stats:     stats.NewHandler(stats.NewStore(pool), logger),
 		Learning:  learning.NewHandler(contentStore, projectStore, logger),
+		Retrieval: retrieval.NewHandler(retrieval.NewStore(pool), contentStore, projectStore, logger),
 		Note:      note.NewHandler(noteStore, logger),
 		Activity:  activity.NewHandler(activityStore, logger),
 		Session:   session.NewHandler(sessionStore, logger),
@@ -457,23 +462,24 @@ func setupNotifiers(cfg *config, logger *slog.Logger) notify.Notifier {
 
 // cronDeps holds the dependencies needed to register cron jobs.
 type cronDeps struct {
-	execStore     *exec.Store
-	feedStore     *feed.Store
-	authStore     *auth.Store
-	entryStore    *entry.Store
-	sessionStore  *session.Store
-	activityStore *activity.Store
-	projectStore  *project.Store
-	noteStore     *note.Store
-	runner        *exec.Runner
-	feedCollector *collector.Collector
-	notifier      notify.Notifier
-	tokenBudget   *budget.Budget
-	recon         *reconcile.Reconciler
-	contentSync   *pipeline.ContentSync
-	notionHandler *notion.Handler
-	noteEmbedder  *note.Embedder // nil in mock mode
-	logger        *slog.Logger
+	execStore       *exec.Store
+	feedStore       *feed.Store
+	authStore       *auth.Store
+	entryStore      *entry.Store
+	sessionStore    *session.Store
+	activityStore   *activity.Store
+	projectStore    *project.Store
+	noteStore       *note.Store
+	runner          *exec.Runner
+	feedCollector   *collector.Collector
+	notifier        notify.Notifier
+	tokenBudget     *budget.Budget
+	recon           *reconcile.Reconciler
+	contentSync     *pipeline.ContentSync
+	notionHandler   *notion.Handler
+	noteEmbedder    *note.Embedder    // nil in mock mode
+	contentEmbedder *content.Embedder // nil in mock mode
+	logger          *slog.Logger
 }
 
 // registerCronJobs registers all scheduled jobs on the given cron scheduler.
@@ -572,7 +578,7 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context)
 		d.notionHandler.SyncAll(ctx)
 	})
 
-	// note embedding generation (hourly at :30, after sync at :15)
+	// embedding generation (hourly at :30, after sync at :15)
 	if d.noteEmbedder != nil {
 		addCron("30 * * * *", "note-embedding", func() {
 			ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
@@ -584,6 +590,22 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context)
 			}
 			if n > 0 {
 				d.logger.Info("cron: note embeddings generated", "count", n)
+			}
+		})
+	}
+
+	// content embedding generation (hourly at :35, after note embedding at :30)
+	if d.contentEmbedder != nil {
+		addCron("35 * * * *", "content-embedding", func() {
+			ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
+			defer cancel()
+			n, err := d.contentEmbedder.EmbedMissing(ctx, 20)
+			if err != nil {
+				d.logger.Error("cron: content embedding", "error", err)
+				return
+			}
+			if n > 0 {
+				d.logger.Info("cron: content embeddings generated", "count", n)
 			}
 		})
 	}
