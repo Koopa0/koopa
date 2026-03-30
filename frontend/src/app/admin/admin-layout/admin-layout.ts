@@ -21,7 +21,6 @@ import {
   Activity,
   Rss,
   Database,
-  ClipboardCheck,
   Tags,
   Menu,
   LogOut,
@@ -32,12 +31,12 @@ import {
   FolderOpen,
   ListTodo,
   Target,
-  FileCode,
   FileText,
   Lightbulb,
   BarChart3,
-  Workflow,
   Notebook,
+  Inbox,
+  Zap,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -86,7 +85,7 @@ export class AdminLayoutComponent {
 
   protected readonly navGroups: NavGroup[] = [
     {
-      title: 'Overview',
+      title: 'Daily',
       items: [
         {
           label: 'Dashboard',
@@ -102,76 +101,29 @@ export class AdminLayoutComponent {
           exact: false,
           disabled: false,
         },
-        {
-          label: 'Insights',
-          route: '/admin/insights',
-          icon: Lightbulb,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Flow Runs',
-          route: '/admin/flow-runs',
-          icon: Activity,
-          exact: false,
-          disabled: false,
-        },
       ],
     },
     {
-      title: 'Analytics',
+      title: 'Content',
       items: [
         {
-          label: 'Planning',
-          route: '/admin/planning',
-          icon: BarChart3,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Knowledge',
-          route: '/admin/knowledge-metrics',
-          icon: BookOpen,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'Pipeline',
-      items: [
-        {
-          label: 'Pipeline',
-          route: '/admin/pipeline',
-          icon: Workflow,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'RSS Feeds',
-          route: '/admin/feeds',
-          icon: Rss,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Collected',
-          route: '/admin/collected',
-          icon: Database,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Review Queue',
-          route: '/admin/review',
-          icon: ClipboardCheck,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Contents',
+          label: 'Library',
           route: '/admin/contents',
           icon: FileText,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Inbox',
+          route: '/admin/inbox',
+          icon: Inbox,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Feeds',
+          route: '/admin/feeds',
+          icon: Rss,
           exact: false,
           disabled: false,
         },
@@ -182,18 +134,43 @@ export class AdminLayoutComponent {
           exact: false,
           disabled: false,
         },
-        // Tracking 暫時隱藏 — tracking_topics 表尚無 cron 消費
-        // {
-        //   label: 'Tracking',
-        //   route: '/admin/tracking',
-        //   icon: Radar,
-        //   exact: false,
-        //   disabled: false,
-        // },
       ],
     },
     {
-      title: 'Notion',
+      title: 'Analytics',
+      items: [
+        {
+          label: 'Knowledge',
+          route: '/admin/knowledge-metrics',
+          icon: BookOpen,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Journal',
+          route: '/admin/journal',
+          icon: Notebook,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Insights',
+          route: '/admin/insights',
+          icon: Lightbulb,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Activity',
+          route: '/admin/activity',
+          icon: BarChart3,
+          exact: false,
+          disabled: false,
+        },
+      ],
+    },
+    {
+      title: 'Workspace',
       items: [
         {
           label: 'Projects',
@@ -216,39 +193,31 @@ export class AdminLayoutComponent {
           exact: false,
           disabled: false,
         },
-        {
-          label: 'Sources',
-          route: '/admin/notion-sources',
-          icon: BookOpen,
-          exact: false,
-          disabled: false,
-        },
       ],
     },
     {
-      title: 'Knowledge',
+      title: 'System',
       items: [
         {
-          label: 'Activity',
-          route: '/admin/activity',
+          label: 'Triggers',
+          route: '/admin/pipeline',
+          icon: Zap,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Flow Runs',
+          route: '/admin/flow-runs',
           icon: Activity,
           exact: false,
           disabled: false,
         },
         {
-          label: 'Session Notes',
-          route: '/admin/session-notes',
-          icon: Notebook,
+          label: 'Sources',
+          route: '/admin/notion-sources',
+          icon: Database,
           exact: false,
           disabled: false,
-        },
-        {
-          label: 'Build Logs',
-          route: '/admin/contents',
-          icon: FileCode,
-          exact: false,
-          disabled: false,
-          queryParams: { type: 'build-log' },
         },
       ],
     },

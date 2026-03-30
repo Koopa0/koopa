@@ -2,17 +2,14 @@ import {
   Component,
   ChangeDetectionStrategy,
   inject,
+  input,
   signal,
   computed,
   type OnInit,
   DestroyRef,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import {
-  LucideAngularModule,
-  BarChart3,
-  Loader2,
-} from 'lucide-angular';
+import { LucideAngularModule, BarChart3, Loader2 } from 'lucide-angular';
 import { SessionNoteService } from '../../core/services/session-note.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type { ApiSessionNote } from '../../core/models';
@@ -53,6 +50,8 @@ interface DayHeatmapEntry {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PlanningComponent implements OnInit {
+  readonly hideHeader = input(false);
+
   private readonly sessionNoteService = inject(SessionNoteService);
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
@@ -70,8 +69,8 @@ export class PlanningComponent implements OnInit {
       .filter((m): m is MetricsData => m !== null);
   });
 
-  protected readonly hasEnoughData = computed(() =>
-    this.metrics().length >= MIN_DATA_POINTS,
+  protected readonly hasEnoughData = computed(
+    () => this.metrics().length >= MIN_DATA_POINTS,
   );
 
   // ─── Block 1: 完成率趨勢（最近 14 天）───
@@ -146,10 +145,8 @@ export class PlanningComponent implements OnInit {
         entries.push({ label, avgCapacity: null, dataPoints: items.length });
       } else {
         const avg =
-          items.reduce(
-            (sum, m) => sum + m.tasksCommitted + m.tasksPulled,
-            0,
-          ) / items.length;
+          items.reduce((sum, m) => sum + m.tasksCommitted + m.tasksPulled, 0) /
+          items.length;
         entries.push({
           label,
           avgCapacity: Math.round(avg * 10) / 10,
@@ -162,9 +159,7 @@ export class PlanningComponent implements OnInit {
   });
 
   protected readonly maxCapacity = computed(() => {
-    const entries = this.heatmapEntries().filter(
-      (e) => e.avgCapacity !== null,
-    );
+    const entries = this.heatmapEntries().filter((e) => e.avgCapacity !== null);
     if (entries.length === 0) return 0;
     return Math.max(...entries.map((e) => e.avgCapacity ?? 0));
   });
@@ -180,9 +175,7 @@ export class PlanningComponent implements OnInit {
   });
 
   protected readonly bestAndWorstDay = computed(() => {
-    const entries = this.heatmapEntries().filter(
-      (e) => e.avgCapacity !== null,
-    );
+    const entries = this.heatmapEntries().filter((e) => e.avgCapacity !== null);
     if (entries.length === 0) return { best: '—', worst: '—' };
 
     let bestEntry = entries[0];
@@ -313,8 +306,7 @@ export class PlanningComponent implements OnInit {
     }
     const committed =
       data.reduce((s, m) => s + m.tasksCommitted, 0) / data.length;
-    const pulled =
-      data.reduce((s, m) => s + m.tasksPulled, 0) / data.length;
+    const pulled = data.reduce((s, m) => s + m.tasksPulled, 0) / data.length;
     return {
       total: Math.round((committed + pulled) * 10) / 10,
       committed: Math.round(committed * 10) / 10,

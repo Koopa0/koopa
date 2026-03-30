@@ -1,0 +1,53 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div>
+      <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+        <lucide-icon [img]="InboxIcon" [size]="24" />
+        Inbox
+      </h1>
+      <p class="mt-1 text-sm text-zinc-400">RSS 收集文章分類與內容審核</p>
+    </div>
+  </div>
+</section>
+
+<!-- Tabs -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <nav class="flex gap-6" aria-label="Tabs">
+      <button
+        type="button"
+        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
+        [class]="activeTab() === 'collected'
+          ? 'border-white text-white'
+          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
+        (click)="switchTab('collected')"
+      >
+        <span class="flex items-center gap-1.5">
+          <lucide-icon [img]="DatabaseIcon" [size]="14" />
+          收集文章
+        </span>
+      </button>
+      <button
+        type="button"
+        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
+        [class]="activeTab() === 'review'
+          ? 'border-white text-white'
+          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
+        (click)="switchTab('review')"
+      >
+        <span class="flex items-center gap-1.5">
+          <lucide-icon [img]="ClipboardCheckIcon" [size]="14" />
+          審核佇列
+        </span>
+      </button>
+    </nav>
+  </div>
+</section>
+
+<!-- Tab Content -->
+@if (activeTab() === 'collected') {
+<app-collected [hideHeader]="true" />
+} @else {
+<app-review [hideHeader]="true" />
+}

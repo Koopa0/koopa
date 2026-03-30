@@ -21,50 +21,71 @@
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
         <div class="text-xs text-zinc-500">Today's Progress</div>
         @if (todaySummary(); as ts) {
-          <div class="mt-1 text-sm font-medium text-zinc-100">
-            My Day: {{ ts.my_day_tasks_completed }}/{{ ts.my_day_tasks_total }}
-          </div>
-          <div class="mt-0.5 text-xs text-zinc-400">
-            {{ ts.my_day_tasks_total > 0 ? ((ts.my_day_tasks_completed / ts.my_day_tasks_total) * 100 | number: '1.0-0') + '%' : '0%' }} 完成率
-          </div>
+        <div class="mt-1 text-sm font-medium text-zinc-100">
+          My Day: {{ ts.my_day_tasks_completed }}/{{ ts.my_day_tasks_total }}
+        </div>
+        <div class="mt-0.5 text-xs text-zinc-400">
+          {{ ts.my_day_tasks_total > 0 ? ((ts.my_day_tasks_completed /
+          ts.my_day_tasks_total) * 100 | number: '1.0-0') + '%' : '0%' }} 完成率
+        </div>
         } @else {
-          <div class="mt-1 text-sm text-zinc-600">載入中...</div>
+        <div class="mt-1 text-sm text-zinc-600">載入中...</div>
         }
-        <a routerLink="/admin/today" class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300">→ Today</a>
+        <a
+          routerLink="/admin/today"
+          class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300"
+          >→ Today</a
+        >
       </div>
 
       <!-- Card 2: Active Insights -->
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
         <div class="text-xs text-zinc-500">Active Insights</div>
-        <div class="mt-1 text-sm font-medium text-zinc-100">{{ insightCount() }} 個待驗證</div>
+        <div class="mt-1 text-sm font-medium text-zinc-100">
+          {{ insightCount() }} 個待驗證
+        </div>
         @if (latestHypothesis()) {
-          <div class="mt-0.5 truncate text-xs text-zinc-400">{{ latestHypothesis() }}</div>
+        <div class="mt-0.5 truncate text-xs text-zinc-400">
+          {{ latestHypothesis() }}
+        </div>
         }
-        <a routerLink="/admin/insights" class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300">→ Insights</a>
+        <a
+          routerLink="/admin/insights"
+          class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300"
+          >→ Insights</a
+        >
       </div>
 
       <!-- Card 3: 本週 Capacity -->
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
         <div class="text-xs text-zinc-500">本週 Capacity</div>
         @if (weekCapacity() !== null) {
-          <div class="mt-1 flex items-center gap-1">
-            <span class="text-sm font-medium text-zinc-100">{{ weekCapacity() }}</span>
-            <span
-              class="text-xs"
-              [class]="capacityTrend() === 'up'
+        <div class="mt-1 flex items-center gap-1">
+          <span class="text-sm font-medium text-zinc-100"
+            >{{ weekCapacity() }}</span
+          >
+          <span
+            class="text-xs"
+            [class]="capacityTrend() === 'up'
                 ? 'text-emerald-400'
                 : capacityTrend() === 'down'
                   ? 'text-red-400'
                   : 'text-zinc-500'"
-            >
-              {{ capacityTrend() === 'up' ? '↑' : capacityTrend() === 'down' ? '↓' : '→' }}
-            </span>
-          </div>
-          <div class="mt-0.5 text-xs text-zinc-400">avg tasks/day</div>
+          >
+            {{ capacityTrend() === 'up' ? '↑' : capacityTrend() === 'down' ? '↓'
+            : '→' }}
+          </span>
+        </div>
+        <div class="mt-0.5 text-xs text-zinc-400">avg tasks/day</div>
         } @else {
-          <div class="mt-1 text-sm text-zinc-600">尚無資料</div>
+        <div class="mt-1 text-sm text-zinc-600">尚無資料</div>
         }
-        <a routerLink="/admin/planning" class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300">→ Planning</a>
+        <a
+          routerLink="/admin/journal"
+          [queryParams]="{ tab: 'analytics' }"
+          class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300"
+          >→ Analytics</a
+        >
       </div>
 
       <!-- Card 4: Quick Sync -->
@@ -78,10 +99,12 @@
             (click)="syncNotion()"
           >
             @if (isSyncingNotion()) {
-              <lucide-icon [img]="Loader2Icon" [size]="12" class="inline animate-spin" />
-            } @else {
-              Notion
-            }
+            <lucide-icon
+              [img]="Loader2Icon"
+              [size]="12"
+              class="inline animate-spin"
+            />
+            } @else { Notion }
           </button>
           <button
             type="button"
@@ -90,10 +113,12 @@
             (click)="syncObsidian()"
           >
             @if (isSyncingObsidian()) {
-              <lucide-icon [img]="Loader2Icon" [size]="12" class="inline animate-spin" />
-            } @else {
-              Obsidian
-            }
+            <lucide-icon
+              [img]="Loader2Icon"
+              [size]="12"
+              class="inline animate-spin"
+            />
+            } @else { Obsidian }
           </button>
           <button
             type="button"
@@ -102,10 +127,12 @@
             (click)="syncCollect()"
           >
             @if (isSyncingCollect()) {
-              <lucide-icon [img]="Loader2Icon" [size]="12" class="inline animate-spin" />
-            } @else {
-              Collect
-            }
+            <lucide-icon
+              [img]="Loader2Icon"
+              [size]="12"
+              class="inline animate-spin"
+            />
+            } @else { Collect }
           </button>
         </div>
       </div>
@@ -113,133 +140,159 @@
 
     <!-- Statistics Cards from API -->
     @if (isLoadingStats()) {
-      <div class="mb-8 flex items-center justify-center py-8">
-        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
-      </div>
+    <div class="mb-8 flex items-center justify-center py-8">
+      <lucide-icon
+        [img]="Loader2Icon"
+        [size]="24"
+        class="animate-spin text-zinc-500"
+      />
+    </div>
     } @else if (statCards().length > 0) {
-      <div class="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-        @for (card of statCards(); track card.label) {
-          <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-sm p-2" [class]="card.iconBg">
-                <lucide-icon [img]="card.icon" [size]="18" [class]="card.iconColor" />
-              </div>
-              <div class="min-w-0">
-                <div class="text-xl font-bold text-zinc-100">{{ card.value }}</div>
-                <div class="text-xs text-zinc-500">{{ card.label }}</div>
-              </div>
-            </div>
-            <div class="mt-2 truncate text-xs text-zinc-600">{{ card.sub }}</div>
+    <div
+      class="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6"
+    >
+      @for (card of statCards(); track card.label) {
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4">
+        <div class="flex items-center gap-3">
+          <div class="rounded-sm p-2" [class]="card.iconBg">
+            <lucide-icon
+              [img]="card.icon"
+              [size]="18"
+              [class]="card.iconColor"
+            />
           </div>
-        }
+          <div class="min-w-0">
+            <div class="text-xl font-bold text-zinc-100">{{ card.value }}</div>
+            <div class="text-xs text-zinc-500">{{ card.label }}</div>
+          </div>
+        </div>
+        <div class="mt-2 truncate text-xs text-zinc-600">{{ card.sub }}</div>
       </div>
+      }
+    </div>
     }
 
     <!-- Drift Report + Learning Dashboard -->
     <div class="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- Drift Report -->
       @if (drift(); as dr) {
-        <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
-          <div class="border-b border-zinc-800 px-6 py-4">
-            <h2 class="text-sm font-medium text-zinc-300">精力偏差分析</h2>
-            <p class="mt-0.5 text-xs text-zinc-600">{{ dr.period }}</p>
-          </div>
-          <div class="px-6 py-4">
-            @if (dr.areas.length === 0) {
-              <p class="py-4 text-center text-xs text-zinc-600">尚無偏差資料</p>
-            } @else {
-              <div class="space-y-3">
-                @for (area of dr.areas; track area.area) {
-                  <div>
-                    <div class="mb-1 flex items-center justify-between text-xs">
-                      <span class="font-medium text-zinc-300">{{ area.area }}</span>
-                      <span
-                        class="font-mono"
-                        [class]="area.drift_percent > 5
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
+        <div class="border-b border-zinc-800 px-6 py-4">
+          <h2 class="text-sm font-medium text-zinc-300">精力偏差分析</h2>
+          <p class="mt-0.5 text-xs text-zinc-600">{{ dr.period }}</p>
+        </div>
+        <div class="px-6 py-4">
+          @if (dr.areas.length === 0) {
+          <p class="py-4 text-center text-xs text-zinc-600">尚無偏差資料</p>
+          } @else {
+          <div class="space-y-3">
+            @for (area of dr.areas; track area.area) {
+            <div>
+              <div class="mb-1 flex items-center justify-between text-xs">
+                <span class="font-medium text-zinc-300">{{ area.area }}</span>
+                <span
+                  class="font-mono"
+                  [class]="area.drift_percent > 5
                           ? 'text-amber-400'
                           : area.drift_percent < -5
                             ? 'text-sky-400'
                             : 'text-zinc-500'"
-                      >
-                        {{ area.drift_percent > 0 ? '+' : '' }}{{ area.drift_percent | number: '1.0-0' }}%
-                      </span>
-                    </div>
-                    <!-- Stacked bar: goal% vs event% -->
-                    <div class="flex h-2 gap-0.5 overflow-hidden rounded-full">
-                      <div
-                        class="rounded-full bg-sky-700"
-                        [style.width.%]="area.goal_percent"
-                        title="Goal {{ area.goal_percent | number: '1.0-0' }}%"
-                      ></div>
-                      <div
-                        class="rounded-full bg-amber-700"
-                        [style.width.%]="area.event_percent"
-                        title="Activity {{ area.event_percent | number: '1.0-0' }}%"
-                      ></div>
-                    </div>
-                    <div class="mt-0.5 flex justify-between text-xs text-zinc-600">
-                      <span>Goals: {{ area.active_goals }}</span>
-                      <span>Events: {{ area.event_count }}</span>
-                    </div>
-                  </div>
-                }
+                >
+                  {{ area.drift_percent > 0 ? '+' : '' }}{{ area.drift_percent |
+                  number: '1.0-0' }}%
+                </span>
               </div>
-              <div class="mt-3 flex items-center gap-4 text-xs text-zinc-600">
-                <span class="flex items-center gap-1"><span class="inline-block size-2 rounded-full bg-sky-700"></span> Goal %</span>
-                <span class="flex items-center gap-1"><span class="inline-block size-2 rounded-full bg-amber-700"></span> Activity %</span>
+              <!-- Stacked bar: goal% vs event% -->
+              <div class="flex h-2 gap-0.5 overflow-hidden rounded-full">
+                <div
+                  class="rounded-full bg-sky-700"
+                  [style.width.%]="area.goal_percent"
+                  title="Goal {{ area.goal_percent | number: '1.0-0' }}%"
+                ></div>
+                <div
+                  class="rounded-full bg-amber-700"
+                  [style.width.%]="area.event_percent"
+                  title="Activity {{ area.event_percent | number: '1.0-0' }}%"
+                ></div>
               </div>
+              <div class="mt-0.5 flex justify-between text-xs text-zinc-600">
+                <span>Goals: {{ area.active_goals }}</span>
+                <span>Events: {{ area.event_count }}</span>
+              </div>
+            </div>
             }
           </div>
+          <div class="mt-3 flex items-center gap-4 text-xs text-zinc-600">
+            <span class="flex items-center gap-1"
+              ><span class="inline-block size-2 rounded-full bg-sky-700"></span>
+              Goal %</span
+            >
+            <span class="flex items-center gap-1"
+              ><span
+                class="inline-block size-2 rounded-full bg-amber-700"
+              ></span>
+              Activity %</span
+            >
+          </div>
+          }
         </div>
+      </div>
       }
 
       <!-- Learning Dashboard -->
       @if (learning(); as lr) {
-        <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
-          <div class="border-b border-zinc-800 px-6 py-4">
-            <h2 class="text-sm font-medium text-zinc-300">學習追蹤</h2>
-          </div>
-          <div class="px-6 py-4">
-            <!-- Quick stats -->
-            <div class="mb-4 grid grid-cols-3 gap-3">
-              <div class="text-center">
-                <div class="text-lg font-bold text-zinc-100">{{ lr.notes.last_week }}</div>
-                <div class="text-xs text-zinc-500">This Week</div>
+      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
+        <div class="border-b border-zinc-800 px-6 py-4">
+          <h2 class="text-sm font-medium text-zinc-300">學習追蹤</h2>
+        </div>
+        <div class="px-6 py-4">
+          <!-- Quick stats -->
+          <div class="mb-4 grid grid-cols-3 gap-3">
+            <div class="text-center">
+              <div class="text-lg font-bold text-zinc-100">
+                {{ lr.notes.last_week }}
               </div>
-              <div class="text-center">
-                <div class="flex items-center justify-center gap-1">
-                  <div class="text-lg font-bold text-zinc-100">{{ lr.activity.this_week }}</div>
-                  <span
-                    class="text-xs"
-                    [class]="lr.activity.trend === 'up'
+              <div class="text-xs text-zinc-500">This Week</div>
+            </div>
+            <div class="text-center">
+              <div class="flex items-center justify-center gap-1">
+                <div class="text-lg font-bold text-zinc-100">
+                  {{ lr.activity.this_week }}
+                </div>
+                <span
+                  class="text-xs"
+                  [class]="lr.activity.trend === 'up'
                       ? 'text-emerald-400'
                       : lr.activity.trend === 'down'
                         ? 'text-red-400'
                         : 'text-zinc-500'"
-                  >
-                    {{ lr.activity.trend === 'up' ? '↑' : lr.activity.trend === 'down' ? '↓' : '→' }}
-                  </span>
-                </div>
-                <div class="text-xs text-zinc-500">Activity</div>
+                >
+                  {{ lr.activity.trend === 'up' ? '↑' : lr.activity.trend ===
+                  'down' ? '↓' : '→' }}
+                </span>
               </div>
+              <div class="text-xs text-zinc-500">Activity</div>
             </div>
-
-            <!-- Top Tags -->
-            @if (lr.top_tags.length > 0) {
-              <div class="border-t border-zinc-800 pt-3">
-                <div class="mb-2 text-xs font-medium text-zinc-400">Top Tags</div>
-                <div class="flex flex-wrap gap-1.5">
-                  @for (tag of lr.top_tags.slice(0, 10); track tag.name) {
-                    <span class="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">
-                      {{ tag.name }}
-                      <span class="text-zinc-500">{{ tag.count }}</span>
-                    </span>
-                  }
-                </div>
-              </div>
-            }
           </div>
+
+          <!-- Top Tags -->
+          @if (lr.top_tags.length > 0) {
+          <div class="border-t border-zinc-800 pt-3">
+            <div class="mb-2 text-xs font-medium text-zinc-400">Top Tags</div>
+            <div class="flex flex-wrap gap-1.5">
+              @for (tag of lr.top_tags.slice(0, 10); track tag.name) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300"
+              >
+                {{ tag.name }}
+                <span class="text-zinc-500">{{ tag.count }}</span>
+              </span>
+              }
+            </div>
+          </div>
+          }
         </div>
+      </div>
       }
     </div>
 
@@ -269,7 +322,10 @@
             >
               <th scope="col" class="px-6 py-3 font-medium">Title</th>
               <th scope="col" class="px-6 py-3 font-medium">Status</th>
-              <th scope="col" class="hidden px-6 py-3 font-medium sm:table-cell">
+              <th
+                scope="col"
+                class="hidden px-6 py-3 font-medium sm:table-cell"
+              >
                 Updated
               </th>
               <th scope="col" class="px-6 py-3 font-medium">Actions</th>
@@ -327,7 +383,9 @@
       <div class="flex flex-col items-center gap-3 py-16 text-center">
         <lucide-icon [img]="FileTextIcon" [size]="40" class="text-zinc-700" />
         <h3 class="text-sm font-medium text-zinc-300">No articles yet</h3>
-        <p class="text-xs text-zinc-500">透過 Obsidian 或 Notion 同步來新增內容</p>
+        <p class="text-xs text-zinc-500">
+          透過 Obsidian 或 Notion 同步來新增內容
+        </p>
       </div>
       }
     </div>
@@ -341,7 +399,9 @@
         <lucide-icon [img]="FolderOpenIcon" [size]="20" class="text-zinc-400" />
         <div>
           <div class="text-sm font-medium text-zinc-200">Projects</div>
-          <div class="text-xs text-zinc-500">{{ projects().length }} 個專案</div>
+          <div class="text-xs text-zinc-500">
+            {{ projects().length }} 個專案
+          </div>
         </div>
       </a>
       <a
@@ -370,11 +430,11 @@
 
 <!-- Delete Confirmation Dialog -->
 @if (deleteTarget(); as target) {
-  <app-delete-confirm-dialog
-    [entityType]="deleteType() === 'article' ? 'Article' : 'Project'"
-    [entityTitle]="target.title"
-    [isDeleting]="isDeleting()"
-    (confirmed)="confirmDelete()"
-    (cancelled)="cancelDelete()"
-  />
+<app-delete-confirm-dialog
+  [entityType]="deleteType() === 'article' ? 'Article' : 'Project'"
+  [entityTitle]="target.title"
+  [isDeleting]="isDeleting()"
+  (confirmed)="confirmDelete()"
+  (cancelled)="cancelDelete()"
+/>
 }

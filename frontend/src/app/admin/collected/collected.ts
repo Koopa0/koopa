@@ -2,6 +2,7 @@ import {
   Component,
   ChangeDetectionStrategy,
   inject,
+  input,
   signal,
   computed,
   OnInit,
@@ -41,6 +42,8 @@ const ITEMS_PER_PAGE = 20;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CollectedComponent implements OnInit {
+  readonly hideHeader = input(false);
+
   private readonly collectedService = inject(CollectedService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly notificationService = inject(NotificationService);

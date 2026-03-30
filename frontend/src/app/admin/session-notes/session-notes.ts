@@ -2,6 +2,7 @@ import {
   Component,
   ChangeDetectionStrategy,
   inject,
+  input,
   signal,
   computed,
   OnInit,
@@ -33,7 +34,13 @@ const TYPE_CLASSES: Record<string, string> = {
 
 const DEFAULT_TYPE_CLASS = 'border-zinc-700 bg-zinc-800 text-zinc-400';
 
-const NOTE_TYPES = ['plan', 'reflection', 'metrics', 'insight', 'context'] as const;
+const NOTE_TYPES = [
+  'plan',
+  'reflection',
+  'metrics',
+  'insight',
+  'context',
+] as const;
 
 @Component({
   selector: 'app-session-notes',
@@ -43,6 +50,8 @@ const NOTE_TYPES = ['plan', 'reflection', 'metrics', 'insight', 'context'] as co
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SessionNotesComponent implements OnInit {
+  readonly hideHeader = input(false);
+
   private readonly sessionNoteService = inject(SessionNoteService);
   private readonly markdownService = inject(MarkdownService);
   private readonly notificationService = inject(NotificationService);
@@ -58,7 +67,9 @@ export class SessionNotesComponent implements OnInit {
   // ─── Derived ───
   protected readonly filteredNotes = computed(() => {
     const type = this.typeFilter();
-    return type ? this.notes().filter((n) => n.note_type === type) : this.notes();
+    return type
+      ? this.notes().filter((n) => n.note_type === type)
+      : this.notes();
   });
 
   // ─── Constants for template ───

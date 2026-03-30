@@ -1,7 +1,10 @@
 <!-- Header -->
+@if (!hideHeader()) {
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+    >
       <div>
         <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
           <lucide-icon [img]="NotebookIcon" [size]="24" />
@@ -20,11 +23,14 @@
     </div>
   </div>
 </section>
+}
 
 <!-- Filter Bar -->
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+    >
       <!-- Type pills -->
       <div class="flex flex-wrap gap-2">
         <button
@@ -38,16 +44,16 @@
           全部
         </button>
         @for (type of noteTypes; track type) {
-          <button
-            type="button"
-            class="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
-            [class]="typeFilter() === type
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+          [class]="typeFilter() === type
               ? 'border-white bg-white text-zinc-900'
               : typeClass(type)"
-            (click)="setTypeFilter(type)"
-          >
-            {{ type }}
-          </button>
+          (click)="setTypeFilter(type)"
+        >
+          {{ type }}
+        </button>
         }
       </div>
 
@@ -66,7 +72,9 @@
           <option [value]="60">60 天</option>
         </select>
         @if (filteredNotes().length > 0) {
-          <span class="text-xs text-zinc-600">{{ filteredNotes().length }} 筆</span>
+        <span class="text-xs text-zinc-600"
+          >{{ filteredNotes().length }} 筆</span
+        >
         }
       </div>
     </div>
@@ -77,51 +85,61 @@
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
     @if (isLoading()) {
-      <div class="flex items-center justify-center py-16">
-        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
-      </div>
+    <div class="flex items-center justify-center py-16">
+      <lucide-icon
+        [img]="Loader2Icon"
+        [size]="24"
+        class="animate-spin text-zinc-500"
+      />
+    </div>
     } @else if (filteredNotes().length === 0) {
-      <div class="flex flex-col items-center gap-3 py-16 text-center">
-        <lucide-icon [img]="NotebookIcon" [size]="40" class="text-zinc-700" />
-        <h3 class="text-sm font-medium text-zinc-300">沒有 Session Notes</h3>
-        <p class="text-xs text-zinc-500">透過 MCP 工具記錄的筆記會顯示在這裡</p>
-      </div>
+    <div class="flex flex-col items-center gap-3 py-16 text-center">
+      <lucide-icon [img]="NotebookIcon" [size]="40" class="text-zinc-700" />
+      <h3 class="text-sm font-medium text-zinc-300">沒有 Session Notes</h3>
+      <p class="text-xs text-zinc-500">透過 MCP 工具記錄的筆記會顯示在這裡</p>
+    </div>
     } @else {
-      <div class="space-y-3">
-        @for (note of filteredNotes(); track note.id) {
-          <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3 transition-colors hover:border-zinc-700">
-            <button
-              type="button"
-              class="flex w-full items-center gap-3 text-left"
-              (click)="toggleNote(note.id)"
-            >
-              <lucide-icon
-                [img]="isExpanded(note.id) ? ChevronDownIcon : ChevronRightIcon"
-                [size]="14"
-                class="shrink-0 text-zinc-500"
-              />
-              <span
-                class="inline-block shrink-0 rounded-full border px-2 py-0.5 text-xs"
-                [class]="typeClass(note.note_type)"
-              >
-                {{ note.note_type }}
-              </span>
-              <span class="shrink-0 text-xs text-zinc-500">{{ note.source }}</span>
-              <span class="min-w-0 flex-1"></span>
-              <span class="shrink-0 text-xs text-zinc-600">{{ note.note_date }}</span>
-            </button>
+    <div class="space-y-3">
+      @for (note of filteredNotes(); track note.id) {
+      <div
+        class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3 transition-colors hover:border-zinc-700"
+      >
+        <button
+          type="button"
+          class="flex w-full items-center gap-3 text-left"
+          (click)="toggleNote(note.id)"
+        >
+          <lucide-icon
+            [img]="isExpanded(note.id) ? ChevronDownIcon : ChevronRightIcon"
+            [size]="14"
+            class="shrink-0 text-zinc-500"
+          />
+          <span
+            class="inline-block shrink-0 rounded-full border px-2 py-0.5 text-xs"
+            [class]="typeClass(note.note_type)"
+          >
+            {{ note.note_type }}
+          </span>
+          <span class="shrink-0 text-xs text-zinc-500">{{ note.source }}</span>
+          <span class="min-w-0 flex-1"></span>
+          <span class="shrink-0 text-xs text-zinc-600"
+            >{{ note.note_date }}</span
+          >
+        </button>
 
-            @if (isExpanded(note.id)) {
-              <div
-                class="prose prose-invert prose-sm mt-3 max-w-none text-zinc-300"
-                [innerHTML]="parseMarkdown(note.content)"
-              ></div>
-            } @else {
-              <div class="mt-1.5 line-clamp-3 text-sm text-zinc-400">{{ note.content }}</div>
-            }
-          </div>
+        @if (isExpanded(note.id)) {
+        <div
+          class="prose prose-invert prose-sm mt-3 max-w-none text-zinc-300"
+          [innerHTML]="parseMarkdown(note.content)"
+        ></div>
+        } @else {
+        <div class="mt-1.5 line-clamp-3 text-sm text-zinc-400">
+          {{ note.content }}
+        </div>
         }
       </div>
+      }
+    </div>
     }
   </div>
 </section>

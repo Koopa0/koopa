@@ -2,6 +2,7 @@ import {
   Component,
   ChangeDetectionStrategy,
   inject,
+  input,
   signal,
   OnInit,
   DestroyRef,
@@ -22,14 +23,30 @@ import {
 } from 'lucide-angular';
 import { ReviewService } from '../../core/services/review.service';
 import { NotificationService } from '../../core/services/notification.service';
-import type { ApiReviewItem, ReviewLevel, ContentType } from '../../core/models';
+import type {
+  ApiReviewItem,
+  ReviewLevel,
+  ContentType,
+} from '../../core/models';
 import { contentTypeLabelEn } from '../../core/models';
 
-const REVIEW_LEVEL_CONFIG: Record<ReviewLevel, { label: string; classes: string }> = {
+const REVIEW_LEVEL_CONFIG: Record<
+  ReviewLevel,
+  { label: string; classes: string }
+> = {
   auto: { label: '自動', classes: 'border-zinc-600 bg-zinc-800 text-zinc-300' },
-  light: { label: '輕度', classes: 'border-sky-700 bg-sky-900/30 text-sky-400' },
-  standard: { label: '標準', classes: 'border-amber-700 bg-amber-900/30 text-amber-400' },
-  strict: { label: '嚴格', classes: 'border-red-700 bg-red-900/30 text-red-400' },
+  light: {
+    label: '輕度',
+    classes: 'border-sky-700 bg-sky-900/30 text-sky-400',
+  },
+  standard: {
+    label: '標準',
+    classes: 'border-amber-700 bg-amber-900/30 text-amber-400',
+  },
+  strict: {
+    label: '嚴格',
+    classes: 'border-red-700 bg-red-900/30 text-red-400',
+  },
 };
 
 @Component({
@@ -40,6 +57,8 @@ const REVIEW_LEVEL_CONFIG: Record<ReviewLevel, { label: string; classes: string 
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ReviewComponent implements OnInit {
+  readonly hideHeader = input(false);
+
   private readonly reviewService = inject(ReviewService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly notificationService = inject(NotificationService);
@@ -97,7 +116,9 @@ export class ReviewComponent implements OnInit {
         next: () => {
           this.processingId.set(null);
           this.reviews.update((list) => list.filter((r) => r.id !== review.id));
-          this.notificationService.success(`「${review.content_title}」已核准發布`);
+          this.notificationService.success(
+            `「${review.content_title}」已核准發布`,
+          );
         },
         error: () => {
           this.processingId.set(null);
@@ -142,12 +163,14 @@ export class ReviewComponent implements OnInit {
       });
   }
 
-  protected getReviewLevelConfig(level: ReviewLevel): { label: string; classes: string } {
+  protected getReviewLevelConfig(level: ReviewLevel): {
+    label: string;
+    classes: string;
+  } {
     return REVIEW_LEVEL_CONFIG[level];
   }
 
   protected getContentTypeLabel(type: ContentType): string {
     return contentTypeLabelEn(type);
   }
-
 }

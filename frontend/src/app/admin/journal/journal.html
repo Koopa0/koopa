@@ -1,0 +1,53 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div>
+      <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
+        <lucide-icon [img]="NotebookIcon" [size]="24" />
+        Journal
+      </h1>
+      <p class="mt-1 text-sm text-zinc-400">工作筆記、計劃、反思與規劃分析</p>
+    </div>
+  </div>
+</section>
+
+<!-- Tabs -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <nav class="flex gap-6" aria-label="Tabs">
+      <button
+        type="button"
+        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
+        [class]="activeTab() === 'notes'
+          ? 'border-white text-white'
+          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
+        (click)="switchTab('notes')"
+      >
+        <span class="flex items-center gap-1.5">
+          <lucide-icon [img]="NotebookIcon" [size]="14" />
+          Notes
+        </span>
+      </button>
+      <button
+        type="button"
+        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
+        [class]="activeTab() === 'analytics'
+          ? 'border-white text-white'
+          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
+        (click)="switchTab('analytics')"
+      >
+        <span class="flex items-center gap-1.5">
+          <lucide-icon [img]="BarChart3Icon" [size]="14" />
+          Analytics
+        </span>
+      </button>
+    </nav>
+  </div>
+</section>
+
+<!-- Tab Content -->
+@if (activeTab() === 'notes') {
+<app-session-notes [hideHeader]="true" />
+} @else {
+<app-planning [hideHeader]="true" />
+}

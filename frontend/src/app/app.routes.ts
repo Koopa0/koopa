@@ -169,17 +169,12 @@ export const routes: Routes = [
           import('./admin/feeds/feeds').then((m) => m.FeedsComponent),
       },
       {
-        path: 'collected',
+        path: 'inbox',
         loadComponent: () =>
-          import('./admin/collected/collected').then(
-            (m) => m.CollectedComponent,
-          ),
+          import('./admin/inbox/inbox').then((m) => m.InboxComponent),
       },
-      {
-        path: 'review',
-        loadComponent: () =>
-          import('./admin/review/review').then((m) => m.ReviewComponent),
-      },
+      { path: 'collected', redirectTo: 'inbox', pathMatch: 'full' },
+      { path: 'review', redirectTo: 'inbox', pathMatch: 'full' },
       {
         path: 'contents',
         loadComponent: () =>
@@ -205,12 +200,11 @@ export const routes: Routes = [
           import('./admin/activity/activity').then((m) => m.ActivityComponent),
       },
       {
-        path: 'session-notes',
+        path: 'journal',
         loadComponent: () =>
-          import('./admin/session-notes/session-notes').then(
-            (m) => m.SessionNotesComponent,
-          ),
+          import('./admin/journal/journal').then((m) => m.JournalComponent),
       },
+      { path: 'session-notes', redirectTo: 'journal', pathMatch: 'full' },
       {
         path: 'projects',
         loadComponent: () =>
@@ -238,11 +232,7 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./admin/insights/insights').then((m) => m.InsightsComponent),
       },
-      {
-        path: 'planning',
-        loadComponent: () =>
-          import('./admin/planning/planning').then((m) => m.PlanningComponent),
-      },
+      { path: 'planning', redirectTo: 'journal', pathMatch: 'full' },
       {
         path: 'knowledge-metrics',
         loadComponent: () =>
