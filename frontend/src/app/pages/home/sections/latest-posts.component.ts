@@ -69,7 +69,7 @@ const LATEST_POSTS_LIMIT = 6;
                 }}</span>
                 <span class="flex items-center gap-1">
                   <lucide-icon [img]="ClockIcon" [size]="12" />
-                  {{ article.reading_time }} min
+                  {{ article.reading_time_min }} min
                 </span>
               </div>
             </a>

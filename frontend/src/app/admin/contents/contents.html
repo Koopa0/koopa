@@ -109,16 +109,16 @@
                   <button
                     type="button"
                     class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors"
-                    [class]="item.visibility === 'public'
+                    [class]="item.is_public
                       ? 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'
                       : 'bg-red-900/30 text-red-400 hover:bg-red-900/50'"
                     (click)="toggleVisibility(item)"
                   >
                     <lucide-icon
-                      [img]="item.visibility === 'public' ? EyeIcon : EyeOffIcon"
+                      [img]="item.is_public ? EyeIcon : EyeOffIcon"
                       [size]="12"
                     />
-                    {{ item.visibility }}
+                    {{ item.is_public ? "public" : "private" }}
                   </button>
                 </td>
                 <td class="px-4 py-3 text-xs text-zinc-500">

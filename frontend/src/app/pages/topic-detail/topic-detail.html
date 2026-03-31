@@ -186,10 +186,10 @@
               {{ content.published_at | date: 'yyyy-MM-dd' }}
             </span>
             }
-            @if (content.reading_time) {
+            @if (content.reading_time_min) {
             <span class="flex items-center gap-1">
               <lucide-icon [img]="ClockIcon" [size]="12" />
-              {{ content.reading_time }} min
+              {{ content.reading_time_min }} min
             </span>
             }
           </div>

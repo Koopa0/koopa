@@ -126,15 +126,15 @@ export class AdminProjectsComponent implements OnInit {
   }
 
   protected togglePublic(project: ApiProject): void {
-    const newPublic = !project.public;
+    const newPublic = !project.is_public;
     this.projectService
-      .updateProject(project.id, { public: newPublic })
+      .updateProject(project.id, { is_public: newPublic })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.projects.update((list) =>
             list.map((p) =>
-              p.id === project.id ? { ...p, public: newPublic } : p,
+              p.id === project.id ? { ...p, is_public: newPublic } : p,
             ),
           );
           this.notificationService.success(newPublic ? '已設為公開' : '已設為非公開');

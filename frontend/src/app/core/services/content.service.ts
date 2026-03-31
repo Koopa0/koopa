@@ -9,7 +9,6 @@ import type {
   ApiRelatedContent,
   ApiKnowledgeGraph,
   ContentType,
-  ContentVisibility,
 } from '../models';
 
 /** Unified content API — maps to backend /api/contents */
@@ -65,13 +64,13 @@ export class ContentService {
     page?: number;
     perPage?: number;
     type?: ContentType;
-    visibility?: ContentVisibility;
+    is_public?: boolean;
   }): Observable<ApiListResponse<ApiContent>> {
     const query: Record<string, string | number> = {};
     if (params?.page) query['page'] = params.page;
     if (params?.perPage) query['per_page'] = params.perPage;
     if (params?.type) query['type'] = params.type;
-    if (params?.visibility) query['visibility'] = params.visibility;
+    if (params?.is_public != null) query['is_public'] = String(params.is_public);
     return this.api.getListData<ApiContent>('/api/admin/contents', query);
   }
 
@@ -99,8 +98,8 @@ export class ContentService {
   }
 
   /** Admin — toggle visibility */
-  setVisibility(id: string, visibility: ContentVisibility): Observable<ApiContent> {
-    return this.api.patchData<ApiContent>(`/api/admin/contents/${id}/visibility`, { visibility });
+  setVisibility(id: string, is_public: boolean): Observable<ApiContent> {
+    return this.api.patchData<ApiContent>(`/api/admin/contents/${id}/visibility`, { is_public });
   }
 
   /** Public — get related content by slug */

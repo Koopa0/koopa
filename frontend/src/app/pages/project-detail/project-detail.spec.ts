@@ -26,7 +26,7 @@ function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
     github_url: null,
     live_url: null,
     featured: false,
-    public: true,
+    is_public: true,
     sort_order: 0,
     status: 'completed',
     notion_page_id: null,

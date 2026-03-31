@@ -81,7 +81,7 @@ export class ProjectEditorComponent implements OnInit, HasUnsavedChanges {
       github_url: [''],
       live_url: [''],
       featured: [false],
-      public: [true],
+      is_public: [true],
       sort_order: [0],
       status: ['in-progress' as ProjectStatus, Validators.required],
     });
@@ -122,7 +122,7 @@ export class ProjectEditorComponent implements OnInit, HasUnsavedChanges {
           github_url: project.github_url ?? '',
           live_url: project.live_url ?? '',
           featured: project.featured,
-          public: project.public,
+          is_public: project.is_public,
           sort_order: project.sort_order,
           status: project.status,
         });
@@ -225,7 +225,7 @@ export class ProjectEditorComponent implements OnInit, HasUnsavedChanges {
         github_url: formValue.github_url || undefined,
         live_url: formValue.live_url || undefined,
         featured: formValue.featured,
-        public: formValue.public,
+        is_public: formValue.is_public,
         sort_order: formValue.sort_order,
         status: formValue.status,
       };
@@ -261,7 +261,7 @@ export class ProjectEditorComponent implements OnInit, HasUnsavedChanges {
         github_url: formValue.github_url || undefined,
         live_url: formValue.live_url || undefined,
         featured: formValue.featured,
-        public: formValue.public,
+        is_public: formValue.is_public,
         sort_order: formValue.sort_order,
         status: formValue.status,
       };

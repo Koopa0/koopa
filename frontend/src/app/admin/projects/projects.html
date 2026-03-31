@@ -107,15 +107,15 @@
                 <button
                   type="button"
                   class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none"
-                  [class]="project.public ? 'bg-emerald-600' : 'bg-zinc-700'"
+                  [class]="project.is_public ? 'bg-emerald-600' : 'bg-zinc-700'"
                   role="switch"
-                  [attr.aria-checked]="project.public"
+                  [attr.aria-checked]="project.is_public"
                   aria-label="Toggle public"
                   (click)="togglePublic(project)"
                 >
                   <span
                     class="pointer-events-none inline-block size-4 rounded-full bg-white shadow-xs ring-0 transition duration-200"
-                    [class]="project.public ? 'translate-x-4' : 'translate-x-0'"
+                    [class]="project.is_public ? 'translate-x-4' : 'translate-x-0'"
                   ></span>
                 </button>
                 @if (project.github_url) {

@@ -40,9 +40,9 @@ export interface ApiContent {
   series_id: string | null;
   series_order: number | null;
   review_level: ReviewLevel;
-  visibility: ContentVisibility;
+  is_public: boolean;
   ai_metadata: Record<string, unknown> | null;
-  reading_time: number;
+  reading_time_min: number;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -61,7 +61,6 @@ export type ContentStatus = 'draft' | 'review' | 'published' | 'archived';
 
 export type ReviewLevel = 'auto' | 'light' | 'standard' | 'strict';
 
-export type ContentVisibility = 'public' | 'private';
 
 /** Backend Topic object */
 export interface ApiTopic {
@@ -93,7 +92,7 @@ export interface ApiProject {
   github_url: string | null;
   live_url: string | null;
   featured: boolean;
-  public: boolean;
+  is_public: boolean;
   sort_order: number;
   status: ProjectStatus;
   notion_page_id: string | null;
@@ -248,8 +247,8 @@ export interface ApiCreateContentRequest {
   series_order?: number;
   review_level?: ReviewLevel;
   ai_metadata?: Record<string, unknown>;
-  reading_time?: number;
-  visibility?: ContentVisibility;
+  reading_time_min?: number;
+  is_public?: boolean;
 }
 
 export interface ApiUpdateContentRequest {
@@ -265,8 +264,8 @@ export interface ApiUpdateContentRequest {
   series_order?: number;
   review_level?: ReviewLevel;
   ai_metadata?: Record<string, unknown>;
-  reading_time?: number;
-  visibility?: ContentVisibility;
+  reading_time_min?: number;
+  is_public?: boolean;
 }
 
 /** Admin — Create/Update Project request */
@@ -285,7 +284,7 @@ export interface ApiCreateProjectRequest {
   github_url?: string;
   live_url?: string;
   featured?: boolean;
-  public?: boolean;
+  is_public?: boolean;
   sort_order?: number;
   status?: ProjectStatus;
 }
@@ -310,7 +309,7 @@ export interface ApiReviewItem {
   id: string;
   content_id: string;
   review_level: ReviewLevel;
-  visibility: ContentVisibility;
+  is_public: boolean;
   status: ReviewStatus;
   reviewer_notes: string | null;
   content_title: string;
@@ -372,7 +371,7 @@ export type CollectedFeedback = 'up' | 'down';
 export interface ApiCollectedItem {
   id: string;
   source_url: string;
-  source_name: string;
+  feed_name: string;
   title: string;
   original_content: string | null;
   ai_summary: string | null;

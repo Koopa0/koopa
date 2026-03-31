@@ -26,7 +26,6 @@ import { NotificationService } from '../../core/services/notification.service';
 import type {
   ApiContent,
   ContentType,
-  ContentVisibility,
 } from '../../core/models';
 
 const ITEMS_PER_PAGE = 20;
@@ -53,7 +52,7 @@ export class AdminContentsComponent implements OnInit {
   protected readonly totalItems = signal(0);
   protected readonly currentPage = signal(1);
   protected readonly isLoading = signal(false);
-  protected readonly visibilityFilter = signal<ContentVisibility | null>(null);
+  protected readonly visibilityFilter = signal<boolean | null>(null);
   protected readonly typeFilter = signal<ContentType | null>(null);
 
   protected readonly totalPages = computed(() =>
@@ -70,10 +69,10 @@ export class AdminContentsComponent implements OnInit {
   protected readonly EyeIcon = Eye;
   protected readonly EyeOffIcon = EyeOff;
 
-  protected readonly visibilityOptions: FilterOption<ContentVisibility>[] = [
+  protected readonly visibilityOptions: FilterOption<boolean>[] = [
     { label: 'All', value: null },
-    { label: 'Public', value: 'public' },
-    { label: 'Private', value: 'private' },
+    { label: 'Public', value: true },
+    { label: 'Private', value: false },
   ];
 
   protected readonly typeOptions: FilterOption<ContentType>[] = [
@@ -102,7 +101,7 @@ export class AdminContentsComponent implements OnInit {
         page: this.currentPage(),
         perPage: ITEMS_PER_PAGE,
         type: this.typeFilter() ?? undefined,
-        visibility: this.visibilityFilter() ?? undefined,
+        is_public: this.visibilityFilter() ?? undefined,
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -118,7 +117,7 @@ export class AdminContentsComponent implements OnInit {
       });
   }
 
-  protected onVisibilityFilter(value: ContentVisibility | null): void {
+  protected onVisibilityFilter(value: boolean | null): void {
     this.visibilityFilter.set(value);
     this.currentPage.set(1);
     this.loadItems();
@@ -136,20 +135,20 @@ export class AdminContentsComponent implements OnInit {
   }
 
   protected toggleVisibility(item: ApiContent): void {
-    const newVisibility: ContentVisibility =
-      item.visibility === 'public' ? 'private' : 'public';
+    const newIsPublic: boolean =
+      !item.is_public;
 
     this.contentService
-      .setVisibility(item.id, newVisibility)
+      .setVisibility(item.id, newIsPublic)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (updated) => {
           this.items.update((list) =>
             list.map((i) =>
-              i.id === item.id ? { ...i, visibility: updated.visibility } : i,
+              i.id === item.id ? { ...i, is_public: updated.is_public } : i,
             ),
           );
-          this.notificationService.success(`已切換為 ${updated.visibility}`);
+          this.notificationService.success(`已切換為 ${updated.is_public ? "public" : "private"}`);
         },
         error: () => this.notificationService.error('切換 visibility 失敗'),
       });
