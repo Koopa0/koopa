@@ -14,6 +14,15 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/db"
 )
 
+// RegressionCard is a card that regressed from Review to Relearning (rated Again).
+type RegressionCard struct {
+	ContentID  uuid.UUID `json:"content_id"`
+	Slug       string    `json:"slug"`
+	Title      string    `json:"title"`
+	Tag        string    `json:"tag,omitempty"`
+	ReviewedAt time.Time `json:"reviewed_at"`
+}
+
 // Store handles FSRS card persistence and queue queries.
 type Store struct {
 	q *db.Queries
@@ -148,4 +157,31 @@ func (s *Store) Queue(ctx context.Context, projectID *uuid.UUID, now time.Time, 
 	}
 
 	return items, nil
+}
+
+// Regressions returns cards that regressed: were in Review state but rated Again.
+// This is a direct regression signal — "I thought I knew this but forgot."
+func (s *Store) Regressions(ctx context.Context, projectID *uuid.UUID, since time.Time) ([]RegressionCard, error) {
+	rows, err := s.q.RegressionCards(ctx, db.RegressionCardsParams{
+		Since:     since,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying regression cards: %w", err)
+	}
+	cards := make([]RegressionCard, len(rows))
+	for i, r := range rows {
+		tag := ""
+		if r.Tag != nil {
+			tag = *r.Tag
+		}
+		cards[i] = RegressionCard{
+			ContentID:  r.ContentID,
+			Slug:       r.Slug,
+			Title:      r.Title,
+			Tag:        tag,
+			ReviewedAt: r.ReviewedAt,
+		}
+	}
+	return cards, nil
 }

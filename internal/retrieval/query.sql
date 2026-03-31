@@ -39,6 +39,25 @@ WHERE fc.due <= @now
 ORDER BY fc.due ASC
 LIMIT @lim;
 
+-- name: RegressionCards :many
+-- Cards that regressed: were in Review state (2) but rated Again (1).
+-- Indicates "I thought I knew this but forgot." Used for regression detection.
+SELECT
+    fc.content_id,
+    fc.tag,
+    rl.reviewed_at,
+    c.slug,
+    c.title
+FROM fsrs_review_logs rl
+JOIN fsrs_cards fc ON fc.id = rl.card_id
+JOIN contents c ON c.id = fc.content_id
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE rl.state = 2
+  AND rl.rating = 1
+  AND rl.reviewed_at >= @since
+  AND (sqlc.narg('project_id')::uuid IS NULL OR c.project_id = sqlc.narg('project_id'))
+ORDER BY rl.reviewed_at DESC;
+
 -- name: NeverReviewedTILs :many
 -- Recent TIL entries (1-7 days old) that have no fsrs_card yet.
 SELECT c.id, c.slug, c.title, c.ai_metadata, c.created_at

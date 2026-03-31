@@ -5981,6 +5981,65 @@ func (q *Queries) RefreshTokenByHash(ctx context.Context, tokenHash string) (Ref
 	return i, err
 }
 
+const regressionCards = `-- name: RegressionCards :many
+SELECT
+    fc.content_id,
+    fc.tag,
+    rl.reviewed_at,
+    c.slug,
+    c.title
+FROM fsrs_review_logs rl
+JOIN fsrs_cards fc ON fc.id = rl.card_id
+JOIN contents c ON c.id = fc.content_id
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE rl.state = 2
+  AND rl.rating = 1
+  AND rl.reviewed_at >= $1
+  AND ($2::uuid IS NULL OR c.project_id = $2)
+ORDER BY rl.reviewed_at DESC
+`
+
+type RegressionCardsParams struct {
+	Since     time.Time  `json:"since"`
+	ProjectID *uuid.UUID `json:"project_id"`
+}
+
+type RegressionCardsRow struct {
+	ContentID  uuid.UUID `json:"content_id"`
+	Tag        *string   `json:"tag"`
+	ReviewedAt time.Time `json:"reviewed_at"`
+	Slug       string    `json:"slug"`
+	Title      string    `json:"title"`
+}
+
+// Cards that regressed: were in Review state (2) but rated Again (1).
+// Indicates "I thought I knew this but forgot." Used for regression detection.
+func (q *Queries) RegressionCards(ctx context.Context, arg RegressionCardsParams) ([]RegressionCardsRow, error) {
+	rows, err := q.db.Query(ctx, regressionCards, arg.Since, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RegressionCardsRow{}
+	for rows.Next() {
+		var i RegressionCardsRow
+		if err := rows.Scan(
+			&i.ContentID,
+			&i.Tag,
+			&i.ReviewedAt,
+			&i.Slug,
+			&i.Title,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const rejectAlias = `-- name: RejectAlias :one
 UPDATE tag_aliases SET
     tag_id = NULL,

@@ -16,14 +16,18 @@ type TimelineDay struct {
 
 // TimelineEntry is a single learning record within a day.
 type TimelineEntry struct {
-	Slug                 string                `json:"slug"`
-	Title                string                `json:"title"`
-	ContentType          string                `json:"content_type"`
-	Result               string                `json:"result,omitempty"`
-	Tags                 []string              `json:"tags"`
-	LearningType         string                `json:"learning_type,omitempty"`
-	WeaknessObservations []WeaknessObservation `json:"weakness_observations,omitempty"`
-	KeyConcepts          []KeyConcept          `json:"key_concepts,omitempty"`
+	Slug                  string                  `json:"slug"`
+	Title                 string                  `json:"title"`
+	ContentType           string                  `json:"content_type"`
+	Result                string                  `json:"result,omitempty"`
+	Tags                  []string                `json:"tags"`
+	LearningType          string                  `json:"learning_type,omitempty"`
+	WeaknessObservations  []WeaknessObservation   `json:"weakness_observations,omitempty"`
+	KeyConcepts           []KeyConcept            `json:"key_concepts,omitempty"`
+	ConceptBreakdown      []ConceptBreakdownEntry `json:"concept_breakdown,omitempty"`
+	SolveContext          *SolveContext           `json:"solve_context,omitempty"`
+	VariationLinks        []VariationLink         `json:"variation_links,omitempty"`
+	AlternativeApproaches []AlternativeApproach   `json:"alternative_approaches,omitempty"`
 }
 
 // KeyConcept is a structured concept from book-reading, course, or system-design metadata.
@@ -55,13 +59,13 @@ func Timeline(entries []content.RichTagEntry, now time.Time) TimelineResult {
 	dayMap := make(map[string][]TimelineEntry)
 	projectCounts := make(map[string]int)
 
-	for _, e := range entries {
-		dateStr := e.CreatedAt.Format(time.DateOnly)
-		te := buildTimelineEntry(e)
+	for i := range entries {
+		dateStr := entries[i].CreatedAt.Format(time.DateOnly)
+		te := buildTimelineEntry(&entries[i])
 		dayMap[dateStr] = append(dayMap[dateStr], te)
 
-		if e.ProjectSlug != "" {
-			projectCounts[e.ProjectSlug]++
+		if entries[i].ProjectSlug != "" {
+			projectCounts[entries[i].ProjectSlug]++
 		}
 	}
 
@@ -115,7 +119,7 @@ func computeStreak(dayMap map[string][]TimelineEntry, now time.Time) int {
 
 // buildTimelineEntry converts a RichTagEntry to a TimelineEntry,
 // extracting structured metadata fields when present.
-func buildTimelineEntry(e content.RichTagEntry) TimelineEntry {
+func buildTimelineEntry(e *content.RichTagEntry) TimelineEntry {
 	te := TimelineEntry{
 		Slug:        e.Slug,
 		Title:       e.Title,
@@ -123,37 +127,40 @@ func buildTimelineEntry(e content.RichTagEntry) TimelineEntry {
 		Result:      extractResultTag(e.Tags),
 		Tags:        e.Tags,
 	}
-
-	if len(e.AIMetadata) == 0 {
-		return te
-	}
-
-	// Parse learning_type and structured fields from ai_metadata.
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(e.AIMetadata, &m); err != nil {
-		return te
-	}
-
-	if raw, ok := m["learning_type"]; ok {
-		var lt string
-		if err := json.Unmarshal(raw, &lt); err == nil {
-			te.LearningType = lt
-		}
-	}
-
-	if raw, ok := m["weakness_observations"]; ok {
-		var obs []WeaknessObservation
-		if err := json.Unmarshal(raw, &obs); err == nil {
-			te.WeaknessObservations = obs
-		}
-	}
-
-	if raw, ok := m["key_concepts"]; ok {
-		var kc []KeyConcept
-		if err := json.Unmarshal(raw, &kc); err == nil {
-			te.KeyConcepts = kc
-		}
-	}
-
+	enrichTimelineMetadata(&te, e.AIMetadata)
 	return te
+}
+
+// enrichTimelineMetadata extracts structured fields from ai_metadata into the entry.
+func enrichTimelineMetadata(te *TimelineEntry, metadata json.RawMessage) {
+	if len(metadata) == 0 {
+		return
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &m); err != nil {
+		return
+	}
+
+	unmarshalField(m, "learning_type", &te.LearningType)
+	unmarshalField(m, "weakness_observations", &te.WeaknessObservations)
+	unmarshalField(m, "key_concepts", &te.KeyConcepts)
+	unmarshalField(m, "concept_breakdown", &te.ConceptBreakdown)
+	unmarshalField(m, "variation_links", &te.VariationLinks)
+	unmarshalField(m, "alternative_approaches", &te.AlternativeApproaches)
+
+	if raw, ok := m["solve_context"]; ok {
+		var sc SolveContext
+		if err := json.Unmarshal(raw, &sc); err == nil {
+			te.SolveContext = &sc
+		}
+	}
+}
+
+// unmarshalField extracts a JSON field into dst if it exists.
+func unmarshalField[T any](m map[string]json.RawMessage, key string, dst *T) {
+	raw, ok := m[key]
+	if !ok {
+		return
+	}
+	_ = json.Unmarshal(raw, dst) // best-effort: ignore decode errors
 }

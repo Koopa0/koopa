@@ -65,12 +65,13 @@ func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, 
 	days := clamp(input.Days, 1, 730, 365)
 	since := time.Now().AddDate(0, 0, -days)
 
-	entries, err := s.contents.TagEntries(ctx, content.TypeTIL, &proj.ID, since)
+	// Use RichTagEntries to get ai_metadata for difficulty + concept mastery.
+	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
 	if err != nil {
-		return nil, learning.CoverageMatrixResult{}, fmt.Errorf("querying tag entries: %w", err)
+		return nil, learning.CoverageMatrixResult{}, fmt.Errorf("querying rich tag entries: %w", err)
 	}
 
-	return nil, learning.CoverageMatrix(entries, days), nil
+	return nil, learning.CoverageMatrixRich(entries, days), nil
 }
 
 // --- B3: get_weakness_trend ---
@@ -193,6 +194,112 @@ func (s *Server) getRetrievalQueue(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	s.logger.Info("get_retrieval_queue ok", "items", len(items), "project", input.Project)
 	return nil, retrieval.QueueResult{Items: items}, nil
+}
+
+// --- B8: get_mastery_map ---
+
+// MasteryMapInput is the input for the get_mastery_map tool.
+type MasteryMapInput struct {
+	Project  string   `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	Patterns []string `json:"patterns,omitempty" jsonschema_description:"optional filter: only include these patterns (e.g. [\"binary-search\", \"dp\"]). Omit for all patterns."`
+	Days     int      `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
+}
+
+func (s *Server) getMasteryMap(ctx context.Context, _ *mcp.CallToolRequest, input MasteryMapInput) (*mcp.CallToolResult, learning.MasteryMapResult, error) {
+	if input.Project == "" {
+		return nil, learning.MasteryMapResult{}, fmt.Errorf("project is required")
+	}
+
+	proj, err := s.resolveProjectChain(ctx, input.Project)
+	if err != nil {
+		return nil, learning.MasteryMapResult{}, err
+	}
+
+	days := clamp(input.Days, 1, 365, 30)
+	since := time.Now().AddDate(0, 0, -days)
+
+	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
+	if err != nil {
+		return nil, learning.MasteryMapResult{}, fmt.Errorf("querying rich tag entries: %w", err)
+	}
+
+	// Fetch FSRS regression signals (optional — nil retrieval store means no FSRS data).
+	var regressions []retrieval.RegressionCard
+	if s.retrieval != nil {
+		regressions, err = s.retrieval.Regressions(ctx, &proj.ID, since)
+		if err != nil {
+			// non-fatal: log and continue without regression data
+			s.logger.Warn("mastery map: failed to query regressions", "error", err)
+		}
+	}
+
+	return nil, learning.MasteryMap(entries, regressions, input.Patterns, days), nil
+}
+
+// --- B9: get_concept_gaps ---
+
+// ConceptGapsInput is the input for the get_concept_gaps tool.
+type ConceptGapsInput struct {
+	Project       string   `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	MasteryFilter []string `json:"mastery_filter,omitempty" jsonschema_description:"which mastery levels to include (default: [\"guided\", \"told\"]). Valid: independent, independent_after_hint, guided, told, not_explored."`
+	Days          int      `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
+}
+
+func (s *Server) getConceptGaps(ctx context.Context, _ *mcp.CallToolRequest, input ConceptGapsInput) (*mcp.CallToolResult, learning.ConceptGapsResult, error) {
+	if input.Project == "" {
+		return nil, learning.ConceptGapsResult{}, fmt.Errorf("project is required")
+	}
+
+	proj, err := s.resolveProjectChain(ctx, input.Project)
+	if err != nil {
+		return nil, learning.ConceptGapsResult{}, err
+	}
+
+	days := clamp(input.Days, 1, 365, 30)
+	since := time.Now().AddDate(0, 0, -days)
+
+	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
+	if err != nil {
+		return nil, learning.ConceptGapsResult{}, fmt.Errorf("querying rich tag entries: %w", err)
+	}
+
+	return nil, learning.ConceptGaps(entries, input.MasteryFilter, days), nil
+}
+
+// --- B10: get_variation_map ---
+
+// VariationMapInput is the input for the get_variation_map tool.
+type VariationMapInput struct {
+	Project            string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	Pattern            string `json:"pattern,omitempty" jsonschema_description:"optional pattern filter (e.g. \"binary-search\"). Omit for all patterns."`
+	IncludeUnattempted *bool  `json:"include_unattempted,omitempty" jsonschema_description:"include problems mentioned in variation_links but not yet solved (default true)"`
+	Days               int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
+}
+
+func (s *Server) getVariationMap(ctx context.Context, _ *mcp.CallToolRequest, input VariationMapInput) (*mcp.CallToolResult, learning.VariationMapResult, error) {
+	if input.Project == "" {
+		return nil, learning.VariationMapResult{}, fmt.Errorf("project is required")
+	}
+
+	proj, err := s.resolveProjectChain(ctx, input.Project)
+	if err != nil {
+		return nil, learning.VariationMapResult{}, err
+	}
+
+	days := clamp(input.Days, 1, 730, 365)
+	since := time.Now().AddDate(0, 0, -days)
+
+	includeUnattempted := true
+	if input.IncludeUnattempted != nil {
+		includeUnattempted = *input.IncludeUnattempted
+	}
+
+	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
+	if err != nil {
+		return nil, learning.VariationMapResult{}, fmt.Errorf("querying rich tag entries: %w", err)
+	}
+
+	return nil, learning.VariationMap(entries, input.Pattern, includeUnattempted, days), nil
 }
 
 // --- B7: find_similar_content ---

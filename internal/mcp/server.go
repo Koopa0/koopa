@@ -536,6 +536,24 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		Annotations: readOnly,
 	}, s.getLearningTimeline)
 
+	addTool(s, &mcp.Tool{
+		Name:        "get_mastery_map",
+		Description: "Composite per-pattern mastery view for a project's learning entries. Returns per-pattern: stage (unexplored/struggling/developing/solid), result distribution, difficulty distribution, concept mastery counts, weak concepts, unexplored approaches, weakness tag trends, variation coverage, and regression signals. One-call replacement for get_coverage_matrix + get_tag_summary + get_weakness_trend at session start. Optional pattern filter. Stage is computed deterministically; raw stage_signals are also returned for coach override.",
+		Annotations: readOnly,
+	}, s.getMasteryMap)
+
+	addTool(s, &mcp.Tool{
+		Name:        "get_concept_gaps",
+		Description: "Cross-pattern concept-level weakness analysis. Finds concepts that appear as guided/told across multiple problems regardless of pattern — identifies systemic weaknesses. Also returns coaching_history: all coaching hints given, sorted by recency. Use when looking for recurring concept gaps or reviewing coaching effectiveness.",
+		Annotations: readOnly,
+	}, s.getConceptGaps)
+
+	addTool(s, &mcp.Tool{
+		Name:        "get_variation_map",
+		Description: "Problem relationship graph from variation_links metadata. Groups problems into clusters (anchor + linked variations) and shows which linked problems haven't been attempted yet. Use for 'you solved A, now try A\\'' recommendations. Optional pattern filter.",
+		Annotations: readOnly,
+	}, s.getVariationMap)
+
 	// --- Knowledge synthesis ---
 
 	addTool(s, &mcp.Tool{

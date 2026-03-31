@@ -48,10 +48,18 @@ type CoverageMatrixResult struct {
 
 // TopicCoverage is a single topic's practice stats.
 type TopicCoverage struct {
-	Topic    string         `json:"topic"`
-	Count    int            `json:"count"`
-	LastDate string         `json:"last_date"`
-	Results  map[string]int `json:"results"`
+	Topic             string         `json:"topic"`
+	Count             int            `json:"count"`
+	LastDate          string         `json:"last_date"`
+	Results           map[string]int `json:"results"`
+	Difficulty        map[string]int `json:"difficulty,omitempty"`
+	AvgConceptMastery *ConceptRatios `json:"avg_concept_mastery,omitempty"`
+}
+
+// ConceptRatios is the average concept mastery breakdown for a topic.
+type ConceptRatios struct {
+	IndependentRate float64 `json:"independent_rate"`
+	GuidedRate      float64 `json:"guided_rate"`
 }
 
 // CoverageMatrix computes topic × result matrix from tag entries.
@@ -146,10 +154,10 @@ type WeaknessPoint struct {
 // using RichTagEntry which includes slug, title, and ai_metadata.
 func WeaknessTrend(entries []content.RichTagEntry, tag string, days int) WeaknessTrendResult {
 	occurrences := []WeaknessPoint{}
-	for _, e := range entries {
+	for i := range entries {
 		hasTag := false
 		var result string
-		for _, t := range e.Tags {
+		for _, t := range entries[i].Tags {
 			if t == tag {
 				hasTag = true
 			}
@@ -161,11 +169,11 @@ func WeaknessTrend(entries []content.RichTagEntry, tag string, days int) Weaknes
 			continue
 		}
 		occurrences = append(occurrences, WeaknessPoint{
-			Date:        e.CreatedAt.Format(time.DateOnly),
+			Date:        entries[i].CreatedAt.Format(time.DateOnly),
 			Result:      result,
-			Title:       e.Title,
-			Slug:        e.Slug,
-			Observation: extractObservation(e.AIMetadata, tag),
+			Title:       entries[i].Title,
+			Slug:        entries[i].Slug,
+			Observation: extractObservation(entries[i].AIMetadata, tag),
 		})
 	}
 
@@ -239,9 +247,14 @@ func computeTrend(points []WeaknessPoint) string {
 }
 
 type coverageData struct {
-	count    int
-	lastDate time.Time
-	results  map[string]int
+	count      int
+	lastDate   time.Time
+	results    map[string]int
+	difficulty map[string]int
+	// concept mastery counters (from ai_metadata.concept_breakdown)
+	conceptIndependent int
+	conceptGuided      int
+	conceptTotal       int
 }
 
 func buildCoverageData(entries []content.TagEntry) map[string]*coverageData {
@@ -254,7 +267,10 @@ func buildCoverageData(entries []content.TagEntry) map[string]*coverageData {
 			}
 			td, ok := data[tag]
 			if !ok {
-				td = &coverageData{results: make(map[string]int)}
+				td = &coverageData{
+					results:    make(map[string]int),
+					difficulty: make(map[string]int),
+				}
 				data[tag] = td
 			}
 			td.count++
@@ -267,6 +283,118 @@ func buildCoverageData(entries []content.TagEntry) map[string]*coverageData {
 		}
 	}
 	return data
+}
+
+// CoverageMatrixRich computes topic × result matrix from rich tag entries,
+// including difficulty distribution and concept mastery ratios.
+func CoverageMatrixRich(entries []content.RichTagEntry, days int) CoverageMatrixResult {
+	data := buildCoverageDataRich(entries)
+
+	topics := make([]TopicCoverage, 0, len(data))
+	for topic, td := range data {
+		tc := TopicCoverage{
+			Topic:      topic,
+			Count:      td.count,
+			LastDate:   td.lastDate.Format(time.DateOnly),
+			Results:    td.results,
+			Difficulty: td.difficulty,
+		}
+		if td.conceptTotal > 0 {
+			tc.AvgConceptMastery = &ConceptRatios{
+				IndependentRate: float64(td.conceptIndependent) / float64(td.conceptTotal),
+				GuidedRate:      float64(td.conceptGuided) / float64(td.conceptTotal),
+			}
+		}
+		topics = append(topics, tc)
+	}
+	slices.SortFunc(topics, func(a, b TopicCoverage) int {
+		if c := cmp.Compare(b.Count, a.Count); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Topic, b.Topic)
+	})
+
+	return CoverageMatrixResult{
+		Topics:          topics,
+		TotalEntries:    len(entries),
+		PatternsCovered: len(topics),
+		PeriodDays:      days,
+	}
+}
+
+func buildCoverageDataRich(entries []content.RichTagEntry) map[string]*coverageData {
+	data := make(map[string]*coverageData)
+	for i := range entries {
+		e := &entries[i]
+		result := extractResultTag(e.Tags)
+		concepts := parseConceptBreakdown(e.AIMetadata)
+		difficulty := extractDifficultyTag(e.Tags)
+
+		for _, tag := range e.Tags {
+			if !TopicTags[tag] {
+				continue
+			}
+			td := getOrCreateCoverage(data, tag)
+			td.count++
+			if e.CreatedAt.After(td.lastDate) {
+				td.lastDate = e.CreatedAt
+			}
+			if result != "" {
+				td.results[result]++
+			}
+			if difficulty != "" {
+				td.difficulty[difficulty]++
+			}
+			addConceptCounts(td, concepts)
+		}
+	}
+	return data
+}
+
+func getOrCreateCoverage(data map[string]*coverageData, key string) *coverageData {
+	td, ok := data[key]
+	if !ok {
+		td = &coverageData{
+			results:    make(map[string]int),
+			difficulty: make(map[string]int),
+		}
+		data[key] = td
+	}
+	return td
+}
+
+func addConceptCounts(td *coverageData, concepts []ConceptBreakdownEntry) {
+	for _, cb := range concepts {
+		td.conceptTotal++
+		switch cb.Mastery {
+		case "independent", "independent_after_hint":
+			td.conceptIndependent++
+		case "guided", "told":
+			td.conceptGuided++
+		}
+	}
+}
+
+func parseConceptBreakdown(metadata json.RawMessage) []ConceptBreakdownEntry {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var m struct {
+		ConceptBreakdown []ConceptBreakdownEntry `json:"concept_breakdown"`
+	}
+	if err := json.Unmarshal(metadata, &m); err != nil {
+		return nil
+	}
+	return m.ConceptBreakdown
+}
+
+func extractDifficultyTag(tags []string) string {
+	for _, t := range tags {
+		if DifficultyTags[t] {
+			return t
+		}
+	}
+	return ""
 }
 
 func extractResultTag(tags []string) string {
