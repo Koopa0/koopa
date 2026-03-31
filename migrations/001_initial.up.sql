@@ -537,12 +537,16 @@ INSERT INTO tags (slug, name) VALUES
     ('weakness:complexity-analysis', 'Weakness: Complexity Analysis'),
     ('weakness:implementation', 'Weakness: Implementation'),
     ('weakness:time-management', 'Weakness: Time Management'),
+    ('weakness:constraint-analysis', 'Weakness: Constraint Analysis'),
+    ('weakness:loop-condition', 'Weakness: Loop Condition'),
     ('improvement:pattern-recognition', 'Improvement: Pattern Recognition'),
     ('improvement:approach-selection', 'Improvement: Approach Selection'),
     ('improvement:state-transition', 'Improvement: State Transition'),
     ('improvement:edge-cases', 'Improvement: Edge Cases'),
     ('improvement:complexity-analysis', 'Improvement: Complexity Analysis'),
+    ('improvement:constraint-analysis', 'Improvement: Constraint Analysis'),
     ('improvement:implementation', 'Improvement: Implementation'),
+    ('improvement:loop-condition', 'Improvement: Loop Condition'),
     ('leetcode', 'LeetCode'), ('hackerrank', 'HackerRank')
 ON CONFLICT (slug) DO NOTHING;
 

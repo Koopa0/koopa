@@ -34,13 +34,15 @@ func buildCanonicalTags() map[string]bool {
 		"weakness": {
 			"weakness:pattern-recognition", "weakness:approach-selection",
 			"weakness:state-transition", "weakness:edge-cases",
-			"weakness:complexity-analysis", "weakness:implementation",
-			"weakness:time-management",
+			"weakness:complexity-analysis", "weakness:constraint-analysis",
+			"weakness:implementation", "weakness:time-management",
+			"weakness:loop-condition",
 		},
 		"improvement": {
 			"improvement:pattern-recognition", "improvement:approach-selection",
 			"improvement:state-transition", "improvement:edge-cases",
-			"improvement:complexity-analysis", "improvement:implementation",
+			"improvement:complexity-analysis", "improvement:constraint-analysis",
+			"improvement:implementation", "improvement:loop-condition",
 		},
 		"platform": {"leetcode", "hackerrank"},
 	}
