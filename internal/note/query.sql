@@ -2,11 +2,11 @@
 INSERT INTO obsidian_notes (
     file_path, title, type, source, context, status, tags,
     difficulty, leetcode_id, book, chapter, notion_task_id,
-    content_text, search_text, content_hash, synced_at
+    content_text, content_hash, synced_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12,
-    $13, $14, $15, now()
+    $13, $14, now()
 )
 ON CONFLICT (file_path) DO UPDATE SET
     title = EXCLUDED.title,
@@ -21,7 +21,6 @@ ON CONFLICT (file_path) DO UPDATE SET
     chapter = EXCLUDED.chapter,
     notion_task_id = EXCLUDED.notion_task_id,
     content_text = EXCLUDED.content_text,
-    search_text = EXCLUDED.search_text,
     content_hash = EXCLUDED.content_hash,
     synced_at = now()
 RETURNING *;

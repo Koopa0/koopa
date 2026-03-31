@@ -22,7 +22,6 @@ type Note struct {
 	Chapter      *string    `json:"chapter,omitempty"`
 	NotionTaskID *string    `json:"notion_task_id,omitempty"`
 	ContentText  *string    `json:"content_text,omitempty"`
-	SearchText   *string    `json:"search_text,omitempty"`
 	ContentHash  *string    `json:"content_hash,omitempty"`
 	GitCreatedAt *time.Time `json:"git_created_at,omitempty"`
 	GitUpdatedAt *time.Time `json:"git_updated_at,omitempty"`
@@ -44,7 +43,6 @@ type UpsertParams struct {
 	Chapter      *string
 	NotionTaskID *string
 	ContentText  *string
-	SearchText   *string
 	ContentHash  *string
 }
 

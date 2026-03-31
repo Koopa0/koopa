@@ -37,7 +37,8 @@ CREATE TYPE project_status AS ENUM (
 CREATE TABLE users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email         TEXT NOT NULL UNIQUE,
-    role          TEXT NOT NULL DEFAULT 'admin',
+    role          TEXT NOT NULL DEFAULT 'admin'
+                  CHECK (role = 'admin'),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -88,10 +89,9 @@ CREATE TABLE contents (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     embedding     vector(768),
-    search_text   TEXT,
     search_vector TSVECTOR GENERATED ALWAYS AS (
         setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('simple', coalesce(search_text, '')), 'C')
+        setweight(to_tsvector('simple', coalesce(left(body, 10000), '')), 'C')
     ) STORED
 );
 
@@ -142,7 +142,8 @@ CREATE TABLE projects (
     goal_id          UUID,
     deadline         TIMESTAMPTZ,
     last_activity_at TIMESTAMPTZ,
-    expected_cadence TEXT NOT NULL DEFAULT 'weekly',
+    expected_cadence TEXT NOT NULL DEFAULT 'weekly'
+                    CHECK (expected_cadence IN ('', 'daily', 'weekly', 'biweekly', 'monthly')),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -286,10 +287,13 @@ CREATE TABLE tasks (
     project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
     notion_page_id  TEXT UNIQUE,
     completed_at    TIMESTAMPTZ,
-    energy          TEXT NOT NULL DEFAULT '',
-    priority        TEXT NOT NULL DEFAULT '',
+    energy          TEXT NOT NULL DEFAULT ''
+                    CHECK (energy IN ('', 'High', 'Medium', 'Low')),
+    priority        TEXT NOT NULL DEFAULT ''
+                    CHECK (priority IN ('', 'High', 'Medium', 'Low')),
     recur_interval  INT,
-    recur_unit      TEXT NOT NULL DEFAULT '',
+    recur_unit      TEXT NOT NULL DEFAULT ''
+                    CHECK (recur_unit IN ('', 'Day(s)', 'Week(s)', 'Month(s)', 'Year(s)')),
     my_day          BOOLEAN NOT NULL DEFAULT false,
     description     TEXT NOT NULL DEFAULT '',
     assignee        TEXT NOT NULL DEFAULT 'human'
@@ -457,12 +461,11 @@ CREATE TABLE obsidian_notes (
     chapter         TEXT,
     notion_task_id  TEXT,
     content_text    TEXT,
-    search_text     TEXT,
     content_hash    TEXT,
     embedding       vector(768),
     search_vector   TSVECTOR GENERATED ALWAYS AS (
         setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('simple', coalesce(search_text, '')), 'C')
+        setweight(to_tsvector('simple', coalesce(left(content_text, 10000), '')), 'C')
     ) STORED,
     git_created_at  TIMESTAMPTZ,
     git_updated_at  TIMESTAMPTZ,
@@ -531,6 +534,8 @@ CREATE TABLE project_aliases (
     source         TEXT NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
 
 -- Partial indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_contents_published_at_pub

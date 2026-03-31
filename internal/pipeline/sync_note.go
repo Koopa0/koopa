@@ -108,9 +108,7 @@ func buildUpsertParams(path, bodyHash, body string, hashChanged bool, parsed *ob
 	}
 
 	if hashChanged {
-		searchText := obsidian.SplitCamelCase(body)
 		p.ContentText = &body
-		p.SearchText = &searchText
 	}
 
 	return p

@@ -521,7 +521,6 @@ type Content struct {
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`
 	Embedding    *pgvector_go.Vector `json:"embedding"`
-	SearchText   *string             `json:"search_text"`
 	SearchVector interface{}         `json:"search_vector"`
 }
 
@@ -642,7 +641,6 @@ type ObsidianNote struct {
 	Chapter      *string             `json:"chapter"`
 	NotionTaskID *string             `json:"notion_task_id"`
 	ContentText  *string             `json:"content_text"`
-	SearchText   *string             `json:"search_text"`
 	ContentHash  *string             `json:"content_hash"`
 	Embedding    *pgvector_go.Vector `json:"embedding"`
 	SearchVector interface{}         `json:"search_vector"`

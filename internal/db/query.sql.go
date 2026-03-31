@@ -1401,9 +1401,9 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 const createContent = `-- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status, tags, source, source_type,
                       series_id, series_order, review_level, visibility, project_id, ai_metadata,
-                      reading_time, cover_image, search_text)
+                      reading_time, cover_image)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-        $16, $17, left($3, 10000))
+        $16, $17)
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
           series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
           cover_image, published_at, created_at, updated_at
@@ -4137,7 +4137,7 @@ func (q *Queries) NeverReviewedTILs(ctx context.Context, arg NeverReviewedTILsPa
 }
 
 const noteByFilePath = `-- name: NoteByFilePath :one
-SELECT id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, search_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
+SELECT id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
 `
 
 func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (ObsidianNote, error) {
@@ -4158,7 +4158,6 @@ func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (Obsidian
 		&i.Chapter,
 		&i.NotionTaskID,
 		&i.ContentText,
-		&i.SearchText,
 		&i.ContentHash,
 		&i.Embedding,
 		&i.SearchVector,
@@ -7456,7 +7455,6 @@ UPDATE contents SET
     ai_metadata = COALESCE($16, ai_metadata),
     reading_time = COALESCE($17, reading_time),
     cover_image = COALESCE($18, cover_image),
-    search_text = left(COALESCE($4, body), 10000),
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
@@ -8305,11 +8303,11 @@ const upsertNote = `-- name: UpsertNote :one
 INSERT INTO obsidian_notes (
     file_path, title, type, source, context, status, tags,
     difficulty, leetcode_id, book, chapter, notion_task_id,
-    content_text, search_text, content_hash, synced_at
+    content_text, content_hash, synced_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12,
-    $13, $14, $15, now()
+    $13, $14, now()
 )
 ON CONFLICT (file_path) DO UPDATE SET
     title = EXCLUDED.title,
@@ -8324,10 +8322,9 @@ ON CONFLICT (file_path) DO UPDATE SET
     chapter = EXCLUDED.chapter,
     notion_task_id = EXCLUDED.notion_task_id,
     content_text = EXCLUDED.content_text,
-    search_text = EXCLUDED.search_text,
     content_hash = EXCLUDED.content_hash,
     synced_at = now()
-RETURNING id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, search_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at
+RETURNING id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at
 `
 
 type UpsertNoteParams struct {
@@ -8344,7 +8341,6 @@ type UpsertNoteParams struct {
 	Chapter      *string         `json:"chapter"`
 	NotionTaskID *string         `json:"notion_task_id"`
 	ContentText  *string         `json:"content_text"`
-	SearchText   *string         `json:"search_text"`
 	ContentHash  *string         `json:"content_hash"`
 }
 
@@ -8363,7 +8359,6 @@ func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Obsidia
 		arg.Chapter,
 		arg.NotionTaskID,
 		arg.ContentText,
-		arg.SearchText,
 		arg.ContentHash,
 	)
 	var i ObsidianNote
@@ -8382,7 +8377,6 @@ func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Obsidia
 		&i.Chapter,
 		&i.NotionTaskID,
 		&i.ContentText,
-		&i.SearchText,
 		&i.ContentHash,
 		&i.Embedding,
 		&i.SearchVector,

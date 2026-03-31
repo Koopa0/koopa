@@ -43,7 +43,6 @@ func (s *Store) UpsertNote(ctx context.Context, p *UpsertParams) (*Note, error) 
 		Chapter:      p.Chapter,
 		NotionTaskID: p.NotionTaskID,
 		ContentText:  p.ContentText,
-		SearchText:   p.SearchText,
 		ContentHash:  p.ContentHash,
 	})
 	if err != nil {
@@ -174,7 +173,6 @@ func toNote(row *db.ObsidianNote) Note {
 		Chapter:      row.Chapter,
 		NotionTaskID: row.NotionTaskID,
 		ContentText:  row.ContentText,
-		SearchText:   row.SearchText,
 		ContentHash:  row.ContentHash,
 		GitCreatedAt: row.GitCreatedAt,
 		GitUpdatedAt: row.GitUpdatedAt,
