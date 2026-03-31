@@ -565,10 +565,10 @@ func (q *Queries) ClearSourceRole(ctx context.Context, id uuid.UUID) (int64, err
 const collectedData = `-- name: CollectedData :many
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data
 WHERE ($3::collected_status IS NULL OR status = $3)
-ORDER BY collected_at DESC
+ORDER BY COALESCE(published_at, collected_at) DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -602,6 +602,7 @@ func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -616,7 +617,7 @@ func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([
 const collectedDataByID = `-- name: CollectedDataByID :one
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data WHERE id = $1
 `
 
@@ -638,6 +639,7 @@ func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (Collecte
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
+		&i.PublishedAt,
 	)
 	return i, err
 }
@@ -645,10 +647,10 @@ func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (Collecte
 const collectedDataByRelevance = `-- name: CollectedDataByRelevance :many
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data
 WHERE ($3::collected_status IS NULL OR status = $3)
-ORDER BY relevance_score DESC, collected_at DESC
+ORDER BY relevance_score DESC, COALESCE(published_at, collected_at) DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -682,6 +684,7 @@ func (q *Queries) CollectedDataByRelevance(ctx context.Context, arg CollectedDat
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -696,7 +699,7 @@ func (q *Queries) CollectedDataByRelevance(ctx context.Context, arg CollectedDat
 const collectedDataByURLHash = `-- name: CollectedDataByURLHash :one
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data WHERE url_hash = $1
 `
 
@@ -718,6 +721,7 @@ func (q *Queries) CollectedDataByURLHash(ctx context.Context, urlHash string) (C
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
+		&i.PublishedAt,
 	)
 	return i, err
 }
@@ -1363,11 +1367,11 @@ func (q *Queries) CountInsightsByStatus(ctx context.Context, status *string) (in
 }
 
 const createCollectedData = `-- name: CreateCollectedData :one
-INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id, relevance_score)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id, relevance_score, published_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, source_url, source_name, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
-          url_hash, user_feedback, feedback_at, feed_id
+          url_hash, user_feedback, feedback_at, feed_id, published_at
 `
 
 type CreateCollectedDataParams struct {
@@ -1379,6 +1383,7 @@ type CreateCollectedDataParams struct {
 	UrlHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id"`
 	RelevanceScore  float32    `json:"relevance_score"`
+	PublishedAt     *time.Time `json:"published_at"`
 }
 
 func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDataParams) (CollectedDatum, error) {
@@ -1391,6 +1396,7 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 		arg.UrlHash,
 		arg.FeedID,
 		arg.RelevanceScore,
+		arg.PublishedAt,
 	)
 	var i CollectedDatum
 	err := row.Scan(
@@ -1408,6 +1414,7 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
+		&i.PublishedAt,
 	)
 	return i, err
 }
@@ -1933,7 +1940,7 @@ UPDATE collected_data SET status = 'curated', curated_content_id = $2
 WHERE id = $1
 RETURNING id, source_url, source_name, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
-          url_hash, user_feedback, feedback_at, feed_id
+          url_hash, user_feedback, feedback_at, feed_id, published_at
 `
 
 type CurateCollectedParams struct {
@@ -1959,6 +1966,7 @@ func (q *Queries) CurateCollected(ctx context.Context, arg CurateCollectedParams
 		&i.UserFeedback,
 		&i.FeedbackAt,
 		&i.FeedID,
+		&i.PublishedAt,
 	)
 	return i, err
 }
@@ -2875,13 +2883,13 @@ func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
 const highPriorityRecentCollected = `-- name: HighPriorityRecentCollected :many
 SELECT cd.id, cd.source_url, cd.source_name, cd.title, cd.original_content,
        cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at
 FROM collected_data cd
 JOIN feeds f ON cd.feed_id = f.id
 WHERE f.priority = 'high'
   AND cd.status = 'unread'
   AND cd.collected_at >= $1
-ORDER BY cd.collected_at DESC
+ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT $2
 `
 
@@ -2915,6 +2923,7 @@ func (q *Queries) HighPriorityRecentCollected(ctx context.Context, arg HighPrior
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3451,7 +3460,7 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 const latestCollectedByRecency = `-- name: LatestCollectedByRecency :many
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data
 WHERE ($1::timestamptz IS NULL OR collected_at >= $1)
 ORDER BY collected_at DESC
@@ -3488,6 +3497,7 @@ func (q *Queries) LatestCollectedByRecency(ctx context.Context, arg LatestCollec
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3502,10 +3512,10 @@ func (q *Queries) LatestCollectedByRecency(ctx context.Context, arg LatestCollec
 const latestCollectedData = `-- name: LatestCollectedData :many
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data
 WHERE ($1::timestamptz IS NULL OR collected_at >= $1)
-ORDER BY relevance_score DESC, collected_at DESC
+ORDER BY COALESCE(published_at, collected_at) DESC
 LIMIT $2
 `
 
@@ -3540,6 +3550,7 @@ func (q *Queries) LatestCollectedData(ctx context.Context, arg LatestCollectedDa
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -4463,6 +4474,7 @@ SELECT rq.id, rq.content_id, rq.review_level::text AS rq_review_level,
 FROM review_queue rq
 JOIN contents c ON c.id = rq.content_id
 WHERE rq.status = 'pending'
+  AND c.status != 'published'
 ORDER BY rq.submitted_at
 `
 
@@ -5475,10 +5487,10 @@ func (q *Queries) ReassignNoteTags(ctx context.Context, arg ReassignNoteTagsPara
 const recentCollectedData = `-- name: RecentCollectedData :many
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data
 WHERE collected_at >= $1 AND collected_at < $2
-ORDER BY relevance_score DESC, collected_at DESC
+ORDER BY COALESCE(published_at, collected_at) DESC
 LIMIT $3
 `
 
@@ -5512,6 +5524,7 @@ func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDa
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -6897,11 +6910,11 @@ func (q *Queries) ToggleSourceEnabled(ctx context.Context, id uuid.UUID) (Notion
 const topRelevantCollected = `-- name: TopRelevantCollected :many
 SELECT id, source_url, source_name, title, original_content,
        relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id
+       url_hash, user_feedback, feedback_at, feed_id, published_at
 FROM collected_data
 WHERE collected_at >= $1
   AND status = 'unread'
-ORDER BY collected_at DESC
+ORDER BY COALESCE(published_at, collected_at) DESC
 LIMIT $2
 `
 
@@ -6937,6 +6950,7 @@ func (q *Queries) TopRelevantCollected(ctx context.Context, arg TopRelevantColle
 			&i.UserFeedback,
 			&i.FeedbackAt,
 			&i.FeedID,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}

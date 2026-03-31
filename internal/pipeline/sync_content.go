@@ -127,6 +127,7 @@ func (cs *ContentSync) syncFile(ctx context.Context, path string) error {
 		if _, err := cs.content.PublishContent(ctx, created.ID); err != nil {
 			return fmt.Errorf("publishing content %s: %w", slug, err)
 		}
+		return nil
 	}
 
 	cs.submitContentReview(ctx, created.ID)
@@ -160,7 +161,10 @@ func (cs *ContentSync) updateExistingContent(ctx context.Context, existing *cont
 		}
 	}
 
-	cs.submitContentReview(ctx, existing.ID)
+	// skip review for already-published content
+	if !parsed.Published {
+		cs.submitContentReview(ctx, existing.ID)
+	}
 	return nil
 }
 

@@ -495,6 +495,7 @@ type CollectedDatum struct {
 	UserFeedback     *string         `json:"user_feedback"`
 	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
 }
 
 type Content struct {

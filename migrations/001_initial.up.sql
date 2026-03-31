@@ -199,7 +199,8 @@ CREATE TABLE collected_data (
     url_hash           TEXT NOT NULL DEFAULT '',
     user_feedback      TEXT,
     feedback_at        TIMESTAMPTZ,
-    feed_id            UUID REFERENCES feeds(id) ON DELETE SET NULL
+    feed_id            UUID REFERENCES feeds(id) ON DELETE SET NULL,
+    published_at       TIMESTAMPTZ
 );
 
 CREATE INDEX idx_collected_data_status ON collected_data(status);

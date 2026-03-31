@@ -17,6 +17,7 @@ SELECT rq.id, rq.content_id, rq.review_level::text AS rq_review_level,
 FROM review_queue rq
 JOIN contents c ON c.id = rq.content_id
 WHERE rq.status = 'pending'
+  AND c.status != 'published'
 ORDER BY rq.submitted_at;
 
 -- name: ReviewByID :one

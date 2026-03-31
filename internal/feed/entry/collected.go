@@ -38,6 +38,7 @@ type Item struct {
 	Status           Status     `json:"status"`
 	CuratedContentID *uuid.UUID `json:"curated_content_id,omitempty"`
 	CollectedAt      time.Time  `json:"collected_at"`
+	PublishedAt      *time.Time `json:"published_at,omitempty"`
 	URLHash          string     `json:"url_hash"`
 	UserFeedback     *string    `json:"user_feedback,omitempty"`
 	FeedbackAt       *time.Time `json:"feedback_at,omitempty"`
@@ -65,6 +66,7 @@ type CreateParams struct {
 	URLHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id,omitempty"`
 	RelevanceScore  float32    `json:"relevance_score"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
 }
 
 // Filter holds collected data listing parameters.

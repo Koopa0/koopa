@@ -119,6 +119,7 @@ func (s *Store) CreateItem(ctx context.Context, p *CreateParams) (*Item, error) 
 		UrlHash:         p.URLHash,
 		FeedID:          p.FeedID,
 		RelevanceScore:  p.RelevanceScore,
+		PublishedAt:     p.PublishedAt,
 	})
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
@@ -277,6 +278,7 @@ func datumToItem(r *db.CollectedDatum) Item {
 		Status:           Status(r.Status),
 		CuratedContentID: r.CuratedContentID,
 		CollectedAt:      r.CollectedAt,
+		PublishedAt:      r.PublishedAt,
 		URLHash:          r.UrlHash,
 		UserFeedback:     r.UserFeedback,
 		FeedbackAt:       r.FeedbackAt,

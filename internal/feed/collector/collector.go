@@ -233,6 +233,7 @@ func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *fee
 		URLHash:         urlHash,
 		FeedID:          &f.ID,
 		RelevanceScore:  score,
+		PublishedAt:     item.PublishedParsed,
 	})
 	if err != nil {
 		if !errors.Is(err, entry.ErrConflict) {
