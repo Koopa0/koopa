@@ -158,13 +158,20 @@ code, pre {
   outline-offset: 2px;
 }
 
-/* View Transitions — route navigation cross-fade (opacity only, no movement) */
-::view-transition-old(root) {
+/* View Transitions — scoped to content area only.
+   Header, sidebar, and footer do NOT participate in route transitions. */
+::view-transition-old(page-content) {
   animation: 100ms ease-out both vt-fade-out;
 }
 
-::view-transition-new(root) {
+::view-transition-new(page-content) {
   animation: 150ms ease-out both vt-fade-in;
+}
+
+/* Suppress default root transition — only named elements transition. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
 }
 
 @keyframes vt-fade-out {
