@@ -1351,6 +1351,28 @@ func (q *Queries) ContentsWithoutEmbedding(ctx context.Context, lim int32) ([]Co
 	return items, nil
 }
 
+const countEventsBySourcePrefix = `-- name: CountEventsBySourcePrefix :one
+SELECT count(*)::int FROM activity_events
+WHERE event_type = $1
+  AND source_id LIKE $2 || '%'
+  AND timestamp >= $3
+`
+
+type CountEventsBySourcePrefixParams struct {
+	EventType    string    `json:"event_type"`
+	SourcePrefix *string   `json:"source_prefix"`
+	Since        time.Time `json:"since"`
+}
+
+// Count events matching an event_type and source_id prefix since a given time.
+// Used for double-complete detection: count today's task_completed events for a specific task.
+func (q *Queries) CountEventsBySourcePrefix(ctx context.Context, arg CountEventsBySourcePrefixParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countEventsBySourcePrefix, arg.EventType, arg.SourcePrefix, arg.Since)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countInsightsByStatus = `-- name: CountInsightsByStatus :one
 SELECT count(*) FROM session_notes
 WHERE note_type = 'insight'

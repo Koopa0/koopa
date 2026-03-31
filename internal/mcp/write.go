@@ -61,21 +61,21 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, CompleteTaskOutput{}, err
 	}
 
-	// Check if already completed today (recurring task double-complete detection)
-	var warning string
-	if t.CompletedAt != nil && t.CompletedAt.In(s.loc).Format(time.DateOnly) == time.Now().In(s.loc).Format(time.DateOnly) {
-		warning = fmt.Sprintf("This recurring task was already completed today (%s). Completing again will advance the due date further.",
-			t.CompletedAt.Format("2006-01-02 15:04"))
+	if t.IsRecurring() {
+		return s.completeRecurringTask(ctx, t, input.Notes)
 	}
+	return s.completeOneOffTask(ctx, t)
+}
 
-	// Update via Notion API if the task has a Notion page ID
+// completeOneOffTask handles completion for non-recurring tasks (original behavior).
+func (s *Server) completeOneOffTask(ctx context.Context, t *task.Task) (*mcp.CallToolResult, CompleteTaskOutput, error) {
+	// Update via Notion API
 	if t.NotionPageID != nil && s.notionClient != nil {
 		if notionErr := s.notionClient.UpdatePageStatus(ctx, *t.NotionPageID, "Done"); notionErr != nil {
 			return nil, CompleteTaskOutput{}, fmt.Errorf("updating notion task status: %w", notionErr)
 		}
 	}
 
-	// Update local DB
 	updated, err := s.tasks.UpdateStatus(ctx, t.ID, task.StatusDone)
 	if err != nil {
 		return nil, CompleteTaskOutput{}, fmt.Errorf("completing task: %w", err)
@@ -85,45 +85,124 @@ func (s *Server) completeTask(ctx context.Context, _ *mcp.CallToolRequest, input
 		TaskID:      updated.ID.String(),
 		Title:       updated.Title,
 		CompletedAt: time.Now().Format(time.RFC3339),
-		IsRecurring: updated.IsRecurring(),
-		Warning:     warning,
-	}
-
-	// Calculate next recurrence server-side (not from Notion — race with Automation)
-	if nextDue := updated.NextDue(); nextDue != nil {
-		nd := nextDue.Format(time.DateOnly)
-		out.NextRecurrence = &nd
+		IsRecurring: false,
 	}
 
 	s.logger.Info("task completed via mcp",
 		"task_id", updated.ID,
 		"title", updated.Title,
-		"is_recurring", updated.IsRecurring(),
+		"is_recurring", false,
 	)
 
-	// Record activity event for audit trail (enables recurring task tracking).
-	// Project slug is resolved so goal_progress can attribute completions correctly.
+	s.recordTaskCompletionEvent(ctx, updated)
+	out.RemainingMyDayTasks = s.fetchRemainingMyDay(ctx, updated.ID)
+	return nil, out, nil
+}
+
+// completeRecurringTask handles completion for recurring tasks:
+// log activity event → advance due to next cycle → reset status to todo → sync to Notion.
+func (s *Server) completeRecurringTask(ctx context.Context, t *task.Task, notes string) (*mcp.CallToolResult, CompleteTaskOutput, error) {
+	now := time.Now()
+
+	// Double-complete guard: check skip log activity for today (Asia/Taipei day boundary)
+	todayStart := now.In(s.loc).Truncate(24 * time.Hour)
+	skipCount, _ := s.tasks.SkipCountByTask(ctx, t.ID, todayStart) // best-effort
+	var warning string
+	if skipCount > 0 {
+		// skipCount here is reused to count completions today via activity_events
+		// Actually we should check activity_events for today's completions
+	}
+	_ = warning // will be set below if needed
+
+	// Check today's completions via activity_events for double-complete warning
 	if s.activity != nil {
-		evTitle := fmt.Sprintf("Completed: %s", updated.Title)
-		sourceID := fmt.Sprintf("task-complete-%s-%s", updated.ID, time.Now().Format(time.DateOnly))
-		params := &activity.RecordParams{
-			SourceID:  &sourceID,
-			Timestamp: time.Now(),
-			Source:    "mcp",
-			EventType: "task_completed",
-			Title:     &evTitle,
+		todayCompletions := s.countTodayCompletions(ctx, t.ID, todayStart)
+		if todayCompletions > 0 {
+			warning = fmt.Sprintf("This recurring task was already completed %d time(s) today. Completing again will advance the due date further.", todayCompletions)
 		}
-		if updated.ProjectID != nil {
-			params.Project = s.resolveProjectSlug(ctx, *updated.ProjectID)
-		}
-		//nolint:errcheck // best-effort: don't fail task completion on event recording error
-		s.activity.CreateEvent(ctx, params)
 	}
 
-	// Attach remaining My Day tasks for next-task suggestion
-	out.RemainingMyDayTasks = s.fetchRemainingMyDay(ctx, updated.ID)
+	// Calculate next due date
+	tomorrow := now.In(s.loc).AddDate(0, 0, 1).Truncate(24 * time.Hour)
+	nextDue := t.NextCycleDateOnOrAfter(tomorrow)
+	if nextDue == nil {
+		return nil, CompleteTaskOutput{}, fmt.Errorf("cannot calculate next due for recurring task %s", t.ID)
+	}
 
+	// Reset local DB: advance due, status=todo, my_day=false
+	updated, err := s.tasks.ResetRecurring(ctx, t.ID, *nextDue)
+	if err != nil {
+		return nil, CompleteTaskOutput{}, fmt.Errorf("resetting recurring task: %w", err)
+	}
+
+	// Sync to Notion: due=next, status=Not Started, My Day=false
+	if t.NotionPageID != nil && s.notionClient != nil {
+		props := map[string]any{
+			"Status": map[string]any{"status": map[string]string{"name": "To Do"}},
+			"My Day": map[string]any{"checkbox": false},
+			"Due":    map[string]any{"date": map[string]string{"start": nextDue.Format(time.DateOnly)}},
+		}
+		if notionErr := s.notionClient.UpdatePageProperties(ctx, *t.NotionPageID, props); notionErr != nil {
+			s.logger.Warn("recurring task notion sync failed", "task_id", t.ID, "error", notionErr)
+		}
+	}
+
+	nd := nextDue.Format(time.DateOnly)
+	out := CompleteTaskOutput{
+		TaskID:         updated.ID.String(),
+		Title:          updated.Title,
+		CompletedAt:    now.Format(time.RFC3339),
+		IsRecurring:    true,
+		NextRecurrence: &nd,
+		Warning:        warning,
+	}
+
+	s.logger.Info("recurring task completed via mcp",
+		"task_id", updated.ID,
+		"title", updated.Title,
+		"next_due", nd,
+	)
+
+	// Record activity event with unique sourceID (timestamp-based, not date-based)
+	s.recordTaskCompletionEvent(ctx, updated)
+	out.RemainingMyDayTasks = s.fetchRemainingMyDay(ctx, updated.ID)
 	return nil, out, nil
+}
+
+// recordTaskCompletionEvent records a task_completed activity event.
+// Uses timestamp-based sourceID to allow multiple completions per day for recurring tasks.
+func (s *Server) recordTaskCompletionEvent(ctx context.Context, t *task.Task) {
+	if s.activity == nil {
+		return
+	}
+	evTitle := fmt.Sprintf("Completed: %s", t.Title)
+	sourceID := fmt.Sprintf("task-complete-%s-%d", t.ID, time.Now().UnixMilli())
+	params := &activity.RecordParams{
+		SourceID:  &sourceID,
+		Timestamp: time.Now(),
+		Source:    "mcp",
+		EventType: "task_completed",
+		Title:     &evTitle,
+	}
+	if t.ProjectID != nil {
+		params.Project = s.resolveProjectSlug(ctx, *t.ProjectID)
+	}
+	//nolint:errcheck // best-effort
+	s.activity.CreateEvent(ctx, params)
+}
+
+// countTodayCompletions counts task_completed events for a task today.
+func (s *Server) countTodayCompletions(ctx context.Context, taskID uuid.UUID, todayStart time.Time) int {
+	if s.activity == nil {
+		return 0
+	}
+	prefix := fmt.Sprintf("task-complete-%s-", taskID)
+	count, err := s.activity.CountEventsByPrefix(ctx, "task_completed", prefix, todayStart)
+	if err != nil {
+		s.logger.Warn("counting today completions", "task_id", taskID, "error", err)
+		return 0
+	}
+	return count
 }
 
 // --- create_task ---

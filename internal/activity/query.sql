@@ -60,6 +60,14 @@ LIMIT @max_results;
 -- Cleanup: delete activity events older than the given cutoff.
 DELETE FROM activity_events WHERE timestamp < @cutoff;
 
+-- name: CountEventsBySourcePrefix :one
+-- Count events matching an event_type and source_id prefix since a given time.
+-- Used for double-complete detection: count today's task_completed events for a specific task.
+SELECT count(*)::int FROM activity_events
+WHERE event_type = @event_type
+  AND source_id LIKE @source_prefix || '%'
+  AND timestamp >= @since;
+
 -- name: CompletionEventsByProjectSince :many
 -- Count task completions per project from activity events since the given time.
 -- Captures both one-time and recurring task completions (recurring tasks reset

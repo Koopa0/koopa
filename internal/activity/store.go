@@ -165,6 +165,19 @@ func (s *Store) CompletionsByProjectSince(ctx context.Context, since time.Time) 
 	return result, nil
 }
 
+// CountEventsByPrefix counts events matching an event_type and source_id prefix since a given time.
+func (s *Store) CountEventsByPrefix(ctx context.Context, eventType, sourcePrefix string, since time.Time) (int, error) {
+	n, err := s.q.CountEventsBySourcePrefix(ctx, db.CountEventsBySourcePrefixParams{
+		EventType:    eventType,
+		SourcePrefix: &sourcePrefix,
+		Since:        since,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting events by prefix %q: %w", sourcePrefix, err)
+	}
+	return int(n), nil
+}
+
 // DeleteOldEvents deletes activity events with a timestamp before cutoff.
 // Returns the number of rows deleted.
 func (s *Store) DeleteOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
