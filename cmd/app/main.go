@@ -362,6 +362,8 @@ func run(logger *slog.Logger) error {
 		notionHandler:   notionHandler,
 		noteEmbedder:    noteEmbedder,
 		contentEmbedder: contentEmbedder,
+		taskStore:       taskStore,
+		notionClient:    notionClient,
 		logger:          logger,
 	}, ctx)
 	cronScheduler.Start()
@@ -479,6 +481,8 @@ type cronDeps struct {
 	notionHandler   *notion.Handler
 	noteEmbedder    *note.Embedder    // nil in mock mode
 	contentEmbedder *content.Embedder // nil in mock mode
+	taskStore       *task.Store
+	notionClient    *notion.Client
 	logger          *slog.Logger
 }
 
@@ -505,6 +509,10 @@ func registerCronJobs(scheduler *cron.Cron, d *cronDeps, appCtx context.Context)
 	// daily resets
 	addCron("0 0 * * *", "budget-reset", resetBudget(d.tokenBudget, d.logger))
 	addCron("0 1 * * *", "token-cleanup", cleanupExpiredTokens(appCtx, d.authStore, d.logger))
+
+	// My Day reset + recurring task advance (04:00 Asia/Taipei)
+	var dailyResetRunning atomic.Bool
+	addCron("0 4 * * *", "daily-reset", dailyReset(appCtx, d.taskStore, d.activityStore, d.notionClient, &dailyResetRunning, scheduler.Location(), d.logger))
 
 	// data retention cleanup — all follow the same pattern: delete old records, log count
 	addCron("0 3 * * *", "retention-events", retentionFunc(appCtx,
