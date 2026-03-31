@@ -104,9 +104,12 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Top
 
 // Delete deletes a tracking topic by ID.
 func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
-	err := s.q.MonitorDelete(ctx, id)
+	n, err := s.q.MonitorDelete(ctx, id)
 	if err != nil {
 		return fmt.Errorf("deleting tracking topic %s: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

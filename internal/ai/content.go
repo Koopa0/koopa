@@ -271,12 +271,9 @@ func (cr *ContentReview) applyResults(ctx context.Context, contentID uuid.UUID, 
 	_, err := genkit.Run(ctx, "update-content", func() (any, error) {
 		aiMetadata, _ := json.Marshal(proofread) // safe: struct contains only JSON-compatible types
 		updateParams := &content.UpdateParams{
-			Excerpt:     &pr.excerpt.Excerpt,
-			ReadingTime: &pr.readingTime,
-			AIMetadata:  aiMetadata,
-		}
-		if len(pr.tags.Tags) > 0 {
-			updateParams.Tags = pr.tags.Tags
+			Excerpt:        &pr.excerpt.Excerpt,
+			ReadingTimeMin: &pr.readingTime,
+			AIMetadata:     aiMetadata,
 		}
 		if _, updateErr := cr.content.UpdateContent(ctx, contentID, updateParams); updateErr != nil {
 			return nil, fmt.Errorf("updating content: %w", updateErr)

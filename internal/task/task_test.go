@@ -76,7 +76,7 @@ func TestTask_NextDue(t *testing.T) {
 			name: "recurring but no due date → nil",
 			task: Task{
 				RecurInterval: &interval1,
-				RecurUnit:     "Day(s)",
+				RecurUnit:     "days",
 			},
 			wantNil: true,
 		},
@@ -85,7 +85,7 @@ func TestTask_NextDue(t *testing.T) {
 			task: Task{
 				Due:           &base,
 				RecurInterval: &interval1,
-				RecurUnit:     "Day(s)",
+				RecurUnit:     "days",
 			},
 			wantDate: time.Date(2026, 1, 16, 0, 0, 0, 0, time.UTC),
 		},
@@ -94,7 +94,7 @@ func TestTask_NextDue(t *testing.T) {
 			task: Task{
 				Due:           &base,
 				RecurInterval: &interval1,
-				RecurUnit:     "Week(s)",
+				RecurUnit:     "weeks",
 			},
 			wantDate: time.Date(2026, 1, 22, 0, 0, 0, 0, time.UTC),
 		},
@@ -103,7 +103,7 @@ func TestTask_NextDue(t *testing.T) {
 			task: Task{
 				Due:           &base,
 				RecurInterval: &interval1,
-				RecurUnit:     "Month(s)",
+				RecurUnit:     "months",
 			},
 			wantDate: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC),
 		},
@@ -112,7 +112,7 @@ func TestTask_NextDue(t *testing.T) {
 			task: Task{
 				Due:           &base,
 				RecurInterval: &interval2,
-				RecurUnit:     "Year(s)",
+				RecurUnit:     "years",
 			},
 			wantDate: time.Date(2028, 1, 15, 0, 0, 0, 0, time.UTC),
 		},
@@ -130,7 +130,7 @@ func TestTask_NextDue(t *testing.T) {
 			task: Task{
 				Due:           &base,
 				RecurInterval: &interval7,
-				RecurUnit:     "Week(s)",
+				RecurUnit:     "weeks",
 			},
 			wantDate: time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC),
 		},
@@ -195,7 +195,7 @@ func TestTask_NextDue_MonthEndClamping(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			task := Task{Due: &tt.due, RecurInterval: &interval1, RecurUnit: "Month(s)"}
+			task := Task{Due: &tt.due, RecurInterval: &interval1, RecurUnit: "months"}
 			got := task.NextDue()
 			if got == nil {
 				t.Fatal("NextDue() = nil, want non-nil")
@@ -232,37 +232,37 @@ func TestTask_NextCycleDateOnOrAfter(t *testing.T) {
 		},
 		{
 			name:     "daily, 3 days overdue → today",
-			task:     Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			task:     Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "days"},
 			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			wantDate: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:     "weekly, 3 days overdue → next cycle (not today)",
-			task:     Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "Week(s)"},
+			task:     Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "weeks"},
 			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			wantDate: time.Date(2026, 4, 4, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:     "weekly, exactly on cycle → today",
-			task:     Task{Due: timePtr(2026, 3, 24), RecurInterval: &interval1, RecurUnit: "Week(s)"},
+			task:     Task{Due: timePtr(2026, 3, 24), RecurInterval: &interval1, RecurUnit: "weeks"},
 			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			wantDate: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:     "monthly, Jan 31 overdue in March → Apr 28 (clamped to 28 after Feb)",
-			task:     Task{Due: timePtr(2026, 1, 31), RecurInterval: &interval1, RecurUnit: "Month(s)"},
+			task:     Task{Due: timePtr(2026, 1, 31), RecurInterval: &interval1, RecurUnit: "months"},
 			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			wantDate: time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:     "due is already >= cutoff → returns due",
-			task:     Task{Due: timePtr(2026, 4, 5), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			task:     Task{Due: timePtr(2026, 4, 5), RecurInterval: &interval1, RecurUnit: "days"},
 			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			wantDate: time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:     "every 7 days, 10 days overdue → 3/21 + 14 = 4/4",
-			task:     Task{Due: timePtr(2026, 3, 21), RecurInterval: &interval7, RecurUnit: "Day(s)"},
+			task:     Task{Due: timePtr(2026, 3, 21), RecurInterval: &interval7, RecurUnit: "days"},
 			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			wantDate: time.Date(2026, 4, 4, 0, 0, 0, 0, time.UTC),
 		},
@@ -305,19 +305,19 @@ func TestTask_MissedOccurrences(t *testing.T) {
 	}{
 		{
 			name:   "daily, 3 days overdue → 3 missed",
-			task:   Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			task:   Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "days"},
 			cutoff: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			want:   []string{"2026-03-28", "2026-03-29", "2026-03-30"},
 		},
 		{
 			name:   "weekly, 10 days overdue → 1 missed",
-			task:   Task{Due: timePtr(2026, 3, 21), RecurInterval: &interval1, RecurUnit: "Week(s)"},
+			task:   Task{Due: timePtr(2026, 3, 21), RecurInterval: &interval1, RecurUnit: "weeks"},
 			cutoff: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			want:   []string{"2026-03-21", "2026-03-28"},
 		},
 		{
 			name:   "not overdue → empty",
-			task:   Task{Due: timePtr(2026, 4, 1), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			task:   Task{Due: timePtr(2026, 4, 1), RecurInterval: &interval1, RecurUnit: "days"},
 			cutoff: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
 			want:   nil,
 		},

@@ -16,7 +16,7 @@ import (
 
 // Store handles FSRS card persistence and queue queries.
 type Store struct {
-	q db.DBTX
+	q *db.Queries
 }
 
 // NewStore returns a Store backed by the given database connection.
@@ -24,12 +24,12 @@ func NewStore(dbtx db.DBTX) *Store {
 	if dbtx == nil {
 		panic("retrieval: nil dbtx")
 	}
-	return &Store{q: dbtx}
+	return &Store{q: db.New(dbtx)}
 }
 
 // ReviewCard performs the full review cycle: get/create card → FSRS compute → upsert → log.
 func (s *Store) ReviewCard(ctx context.Context, contentID uuid.UUID, tag *string, rating fsrs.Rating, now time.Time) (*ReviewResult, error) {
-	q := db.New(s.q)
+	q := s.q
 
 	// 1. Get existing card (may not exist for first review).
 	var card *fsrs.Card
@@ -88,7 +88,7 @@ func (s *Store) ReviewCard(ctx context.Context, contentID uuid.UUID, tag *string
 
 // Queue returns items due for review: overdue FSRS cards + never-reviewed recent TILs.
 func (s *Store) Queue(ctx context.Context, projectID *uuid.UUID, now time.Time, limit int) ([]DueItem, error) {
-	q := db.New(s.q)
+	q := s.q
 
 	// 1. Due cards.
 	dueRows, err := q.DueCards(ctx, db.DueCardsParams{

@@ -105,7 +105,7 @@ func RegisterRoutes(mux *http.ServeMux, d *Handlers, authMid, rlMid func(http.Ha
 	mux.Handle("PUT /api/admin/contents/{id}", authMid(http.HandlerFunc(d.Content.Update)))
 	mux.Handle("DELETE /api/admin/contents/{id}", authMid(http.HandlerFunc(d.Content.Delete)))
 	mux.Handle("POST /api/admin/contents/{id}/publish", authMid(http.HandlerFunc(d.Content.Publish)))
-	mux.Handle("PATCH /api/admin/contents/{id}/visibility", authMid(http.HandlerFunc(d.Content.SetVisibility)))
+	mux.Handle("PATCH /api/admin/contents/{id}/is-public", authMid(http.HandlerFunc(d.Content.SetIsPublic)))
 
 	// admin — review
 	mux.Handle("GET /api/admin/review", authMid(http.HandlerFunc(d.Review.List)))

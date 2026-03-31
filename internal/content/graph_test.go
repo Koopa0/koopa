@@ -557,10 +557,12 @@ func TestNullConverters_Nil(t *testing.T) {
 			t.Error("nullReviewLevel(nil).Valid = true, want false")
 		}
 	})
-	t.Run("nullVisibility(nil)", func(t *testing.T) {
+	t.Run("isPublic(false)", func(t *testing.T) {
 		t.Parallel()
-		if nullVisibility(nil) != nil {
-			t.Error("nullVisibility(nil) = non-nil, want nil")
+		// IsPublic is a plain bool — false is a valid zero value, no null wrapper needed.
+		c := Content{IsPublic: false}
+		if c.IsPublic != false {
+			t.Error("Content{IsPublic: false}.IsPublic = true, want false")
 		}
 	})
 }
@@ -578,19 +580,19 @@ func TestContent_JSONContract(t *testing.T) {
 	src := SourceObsidian
 	pub := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
 	c := Content{
-		Slug:        "test-slug",
-		Title:       "Test Title",
-		Body:        "body text",
-		Excerpt:     "excerpt",
-		Type:        TypeArticle,
-		Status:      StatusPublished,
-		Tags:        []string{"go", "testing"},
-		Topics:      []TopicRef{},
-		SourceType:  &src,
-		ReviewLevel: ReviewStandard,
-		Visibility:  VisibilityPublic,
-		ReadingTime: 5,
-		PublishedAt: &pub,
+		Slug:           "test-slug",
+		Title:          "Test Title",
+		Body:           "body text",
+		Excerpt:        "excerpt",
+		Type:           TypeArticle,
+		Status:         StatusPublished,
+		Tags:           []string{"go", "testing"},
+		Topics:         []TopicRef{},
+		SourceType:     &src,
+		ReviewLevel:    ReviewStandard,
+		IsPublic:       true,
+		ReadingTimeMin: 5,
+		PublishedAt:    &pub,
 	}
 
 	data, err := json.Marshal(c)
@@ -607,7 +609,7 @@ func TestContent_JSONContract(t *testing.T) {
 	requiredFields := []string{
 		"id", "slug", "title", "body", "excerpt",
 		"type", "status", "tags", "topics",
-		"review_level", "visibility", "reading_time",
+		"review_level", "is_public", "reading_time_min",
 		"created_at", "updated_at",
 	}
 	for _, field := range requiredFields {

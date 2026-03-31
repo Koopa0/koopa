@@ -189,7 +189,7 @@ func testServer(t *testing.T) *httptest.Server {
 		Upload:       upload.NewHandler(nil, "test-bucket", "http://localhost", logger),
 		Feed:         feed.NewHandler(feedStore, feedCollector, logger),
 		Notion:       notion.NewHandler(notionClient, notionStore, nil, runner, "", logger),
-		Tag:          tag.NewHandler(tagStore, pool, logger),
+		Tag:          tag.NewHandler(tagStore, logger),
 		Session:      session.NewHandler(sessionStore, logger),
 		Reconcile:    reconcile.NewHandler(reconcile.NewStore(pool), logger),
 		NotionSource: notion.NewSourceHandler(notionStore, notionClient, nil, logger),

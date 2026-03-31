@@ -16,9 +16,9 @@ func TestBuildDigestUserPrompt(t *testing.T) {
 
 	collectedItems := []entry.Item{
 		{
-			Title:      "PG Performance",
-			SourceName: "PG Blog",
-			SourceURL:  "https://pg.dev/perf",
+			Title:     "PG Performance",
+			FeedName:  "PG Blog",
+			SourceURL: "https://pg.dev/perf",
 		},
 	}
 

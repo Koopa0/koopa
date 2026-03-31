@@ -85,7 +85,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	if c.Visibility != VisibilityPublic {
+	if !c.IsPublic {
 		api.Error(w, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
@@ -157,12 +157,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if p.ReviewLevel == "" {
 		p.ReviewLevel = ReviewStandard
 	}
-	if p.Visibility == "" {
-		p.Visibility = VisibilityPublic
-	}
-	if p.Tags == nil {
-		p.Tags = []string{}
-	}
+	// IsPublic defaults to false (zero value for bool) — callers set explicitly if needed
 
 	c, err := h.store.CreateContent(r.Context(), &p)
 	if err != nil {
@@ -189,10 +184,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
 		return
 	}
-	if p.Visibility != nil && *p.Visibility != VisibilityPublic && *p.Visibility != VisibilityPrivate {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "visibility must be public or private")
-		return
-	}
+	// IsPublic is a bool pointer — no validation needed beyond JSON decode
 
 	c, err := h.store.UpdateContent(r.Context(), id, &p)
 	if err != nil {
@@ -281,9 +273,6 @@ func (h *Handler) parseFilter(r *http.Request) Filter {
 			f.Type = &ct
 		}
 	}
-	if tag := r.URL.Query().Get("tag"); tag != "" {
-		f.Tag = &tag
-	}
 	if s := r.URL.Query().Get("since"); s != "" {
 		if t, err := time.Parse(time.DateOnly, s); err == nil {
 			f.Since = &t
@@ -303,13 +292,18 @@ func (h *Handler) AdminList(w http.ResponseWriter, r *http.Request) {
 			f.Type = &ct
 		}
 	}
-	if v := r.URL.Query().Get("visibility"); v != "" {
-		vis := Visibility(v)
-		if vis != VisibilityPublic && vis != VisibilityPrivate {
-			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "visibility must be public or private")
+	if v := r.URL.Query().Get("is_public"); v != "" {
+		switch v {
+		case "true":
+			isPublic := true
+			f.IsPublic = &isPublic
+		case "false":
+			isPublic := false
+			f.IsPublic = &isPublic
+		default:
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "is_public must be true or false")
 			return
 		}
-		f.Visibility = &vis
 	}
 
 	contents, total, err := h.store.AdminContents(r.Context(), f)
@@ -321,28 +315,24 @@ func (h *Handler) AdminList(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, f.Page, f.PerPage))
 }
 
-// SetVisibility handles PATCH /api/admin/contents/{id}/visibility.
-func (h *Handler) SetVisibility(w http.ResponseWriter, r *http.Request) {
+// SetIsPublic handles PATCH /api/admin/contents/{id}/is-public.
+func (h *Handler) SetIsPublic(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
 		return
 	}
 
-	type visibilityBody struct {
-		Visibility Visibility `json:"visibility"`
+	type isPublicBody struct {
+		IsPublic bool `json:"is_public"`
 	}
-	body, decErr := api.Decode[visibilityBody](w, r)
+	body, decErr := api.Decode[isPublicBody](w, r)
 	if decErr != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
-	if body.Visibility != VisibilityPublic && body.Visibility != VisibilityPrivate {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "visibility must be public or private")
-		return
-	}
 
-	c, err := h.store.UpdateContent(r.Context(), id, &UpdateParams{Visibility: &body.Visibility})
+	c, err := h.store.UpdateContent(r.Context(), id, &UpdateParams{IsPublic: &body.IsPublic})
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return

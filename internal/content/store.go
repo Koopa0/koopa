@@ -57,15 +57,6 @@ func nullReviewLevel(rl *ReviewLevel) db.NullReviewLevel {
 	return db.NullReviewLevel{ReviewLevel: db.ReviewLevel(*rl), Valid: true}
 }
 
-// nullVisibility converts a *Visibility to *string for sqlc narg.
-func nullVisibility(v *Visibility) *string {
-	if v == nil {
-		return nil
-	}
-	s := string(*v)
-	return &s
-}
-
 // Store handles database operations for content.
 type Store struct {
 	dbtx db.DBTX
@@ -89,10 +80,10 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
@@ -101,6 +92,12 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		return nil, err
 	}
 	c.Topics = topics
+
+	tags, err := s.TagsForContent(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.Tags = tags
 
 	return &c, nil
 }
@@ -113,7 +110,6 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		Limit:       int32(f.PerPage),                // #nosec G115 -- pagination values are bounded by API layer
 		Offset:      int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
 		ContentType: ct,
-		Tag:         f.Tag,
 		Since:       f.Since,
 	})
 	if err != nil {
@@ -122,7 +118,6 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 
 	countRow, err := s.q.PublishedContentsCount(ctx, db.PublishedContentsCountParams{
 		ContentType: ct,
-		Tag:         f.Tag,
 		Since:       f.Since,
 	})
 	if err != nil {
@@ -135,22 +130,27 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		r := rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		ids[i] = r.ID
 	}
 
-	// batch fetch topics for all contents in a single query
+	// batch fetch topics and tags for all contents in a single query
 	topicMap, err := s.topicsForContents(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	tagMap, err := s.tagsForContents(ctx, ids)
 	if err != nil {
 		return nil, 0, err
 	}
 	for i := range contents {
 		contents[i].Topics = topicMap[contents[i].ID]
+		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(countRow), nil
@@ -164,7 +164,7 @@ func (s *Store) AdminContents(ctx context.Context, f AdminFilter) ([]Content, in
 		Limit:       int32(f.PerPage),                // #nosec G115 -- pagination values are bounded by API layer
 		Offset:      int32((f.Page - 1) * f.PerPage), // #nosec G115 -- pagination values are bounded by API layer
 		ContentType: ct,
-		Visibility:  nullVisibility(f.Visibility),
+		IsPublic:    f.IsPublic,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("admin listing contents: %w", err)
@@ -172,7 +172,7 @@ func (s *Store) AdminContents(ctx context.Context, f AdminFilter) ([]Content, in
 
 	countRow, err := s.q.AdminListContentsCount(ctx, db.AdminListContentsCountParams{
 		ContentType: ct,
-		Visibility:  nullVisibility(f.Visibility),
+		IsPublic:    f.IsPublic,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting admin contents: %w", err)
@@ -182,19 +182,18 @@ func (s *Store) AdminContents(ctx context.Context, f AdminFilter) ([]Content, in
 	for i := range rows {
 		r := rows[i]
 		contents[i] = Content{
-			ID:          r.ID,
-			Slug:        r.Slug,
-			Title:       r.Title,
-			Excerpt:     r.Excerpt,
-			Type:        Type(r.Type),
-			Status:      Status(r.Status),
-			Visibility:  Visibility(r.Visibility),
-			ProjectID:   r.ProjectID,
-			Tags:        r.Tags,
-			ReadingTime: int(r.ReadingTime),
-			PublishedAt: r.PublishedAt,
-			CreatedAt:   r.CreatedAt,
-			UpdatedAt:   r.UpdatedAt,
+			ID:             r.ID,
+			Slug:           r.Slug,
+			Title:          r.Title,
+			Excerpt:        r.Excerpt,
+			Type:           Type(r.Type),
+			Status:         Status(r.Status),
+			IsPublic:       r.IsPublic,
+			ProjectID:      r.ProjectID,
+			ReadingTimeMin: int(r.ReadingTimeMin),
+			PublishedAt:    r.PublishedAt,
+			CreatedAt:      r.CreatedAt,
+			UpdatedAt:      r.UpdatedAt,
 		}
 	}
 
@@ -213,10 +212,10 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
@@ -225,6 +224,12 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 		return nil, err
 	}
 	c.Topics = topics
+
+	tags, err := s.TagsForContent(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.Tags = tags
 
 	return &c, nil
 }
@@ -246,16 +251,26 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 	}
 
 	contents := make([]Content, len(rows))
+	ids := make([]uuid.UUID, len(rows))
 	for i := range rows {
 		r := rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
+		ids[i] = r.ID
+	}
+
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range contents {
+		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(count), nil
@@ -284,16 +299,26 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 	}
 
 	contents := make([]Content, len(rows))
+	ids := make([]uuid.UUID, len(rows))
 	for i := range rows {
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
+		ids[i] = r.ID
+	}
+
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range contents {
+		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(count), nil
@@ -301,30 +326,49 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 
 // SearchOR performs full-text search using OR semantics (any word matches).
 func (s *Store) SearchOR(ctx context.Context, query string, contentType *Type, page, perPage int) ([]Content, int, error) {
+	ct := nullContentType(contentType)
 	rows, err := s.q.SearchContentsOR(ctx, db.SearchContentsORParams{
 		PlaintoTsquery: query,
 		Limit:          int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
 		Offset:         int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
-		ContentType:    nullContentType(contentType),
+		ContentType:    ct,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("searching contents (OR): %w", err)
 	}
 
+	count, err := s.q.SearchContentsORCount(ctx, db.SearchContentsORCountParams{
+		PlaintoTsquery: query,
+		ContentType:    ct,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting search OR results: %w", err)
+	}
+
 	contents := make([]Content, len(rows))
+	ids := make([]uuid.UUID, len(rows))
 	for i := range rows {
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
+		ids[i] = r.ID
 	}
 
-	return contents, len(contents), nil
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range contents {
+		contents[i].Tags = tagMap[contents[i].ID]
+	}
+
+	return contents, int(count), nil
 }
 
 // InternalSearch performs full-text search on published content without visibility filter.
@@ -345,16 +389,26 @@ func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage 
 	}
 
 	contents := make([]Content, len(rows))
+	ids := make([]uuid.UUID, len(rows))
 	for i := range rows {
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
+		ids[i] = r.ID
+	}
+
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range contents {
+		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(count), nil
@@ -373,16 +427,26 @@ func (s *Store) InternalSearchOR(ctx context.Context, query string, page, perPag
 	}
 
 	contents := make([]Content, len(rows))
+	ids := make([]uuid.UUID, len(rows))
 	for i := range rows {
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
+		ids[i] = r.ID
+	}
+
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range contents {
+		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, len(contents), nil
@@ -403,10 +467,10 @@ func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.T
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 	}
@@ -422,8 +486,9 @@ type TagEntry struct {
 
 // TagEntries returns id, tags, and created_at for contents of a given type,
 // optionally filtered by project. Used for learning analytics aggregation.
+// Tags are loaded from the content_tags junction table via batch query.
 func (s *Store) TagEntries(ctx context.Context, contentType Type, projectID *uuid.UUID, since time.Time) ([]TagEntry, error) {
-	rows, err := s.q.ContentTagsByTypeAndProject(ctx, db.ContentTagsByTypeAndProjectParams{
+	rows, err := s.q.ContentRichTagEntries(ctx, db.ContentRichTagEntriesParams{
 		ContentType: db.ContentType(contentType),
 		ProjectID:   projectID,
 		Since:       since,
@@ -431,11 +496,19 @@ func (s *Store) TagEntries(ctx context.Context, contentType Type, projectID *uui
 	if err != nil {
 		return nil, fmt.Errorf("querying tag entries: %w", err)
 	}
+	ids := make([]uuid.UUID, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].ID
+	}
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("batch loading tags for tag entries: %w", err)
+	}
 	entries := make([]TagEntry, len(rows))
 	for i := range rows {
 		entries[i] = TagEntry{
 			ID:        rows[i].ID,
-			Tags:      rows[i].Tags,
+			Tags:      tagMap[rows[i].ID],
 			CreatedAt: rows[i].CreatedAt,
 		}
 	}
@@ -467,6 +540,14 @@ func (s *Store) RichTagEntries(ctx context.Context, contentType Type, projectID 
 	if err != nil {
 		return nil, fmt.Errorf("querying rich tag entries: %w", err)
 	}
+	ids := make([]uuid.UUID, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].ID
+	}
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("batch loading tags for rich tag entries: %w", err)
+	}
 	entries := make([]RichTagEntry, len(rows))
 	for i := range rows {
 		var projectSlug string
@@ -477,7 +558,7 @@ func (s *Store) RichTagEntries(ctx context.Context, contentType Type, projectID 
 			ID:          rows[i].ID,
 			Slug:        rows[i].Slug,
 			Title:       rows[i].Title,
-			Tags:        rows[i].Tags,
+			Tags:        tagMap[rows[i].ID],
 			AIMetadata:  rows[i].AiMetadata,
 			ProjectSlug: projectSlug,
 			CreatedAt:   rows[i].CreatedAt,
@@ -521,10 +602,10 @@ func (s *Store) PublishedByDateRange(ctx context.Context, start, end time.Time) 
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-			Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-			ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 	}
@@ -562,12 +643,8 @@ func (s *Store) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
 	return s.q.ObsidianContentSlugs(ctx)
 }
 
-// CreateContent inserts a new content and associates topics within a transaction.
+// CreateContent inserts a new content and associates topics and tags within a transaction.
 func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, error) {
-	if p.Visibility == "" {
-		p.Visibility = VisibilityPublic
-	}
-
 	var seriesOrder *int32
 	if p.SeriesOrder != nil {
 		v := int32(*p.SeriesOrder) // #nosec G115 -- series order is a small sequential value, not user-controlled
@@ -575,7 +652,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 	}
 
 	// Transaction exception: CreateContent starts its own tx because it must
-	// atomically insert content + sync topic junctions. Moving the tx boundary
+	// atomically insert content + sync topic/tag junctions. Moving the tx boundary
 	// to every handler/caller would increase coupling with no safety gain —
 	// content creation is always a single logical operation.
 	pool, ok := s.dbtx.(interface {
@@ -594,23 +671,22 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 	qtx := s.q.WithTx(tx)
 
 	r, err := qtx.CreateContent(ctx, db.CreateContentParams{
-		Slug:        p.Slug,
-		Title:       p.Title,
-		Body:        p.Body,
-		Excerpt:     p.Excerpt,
-		Type:        db.ContentType(p.Type),
-		Status:      db.ContentStatus(p.Status),
-		Tags:        p.Tags,
-		Source:      p.Source,
-		SourceType:  nullSourceType(p.SourceType),
-		SeriesID:    p.SeriesID,
-		SeriesOrder: seriesOrder,
-		ReviewLevel: db.ReviewLevel(p.ReviewLevel),
-		Visibility:  string(p.Visibility),
-		ProjectID:   p.ProjectID,
-		AiMetadata:  p.AIMetadata,
-		ReadingTime: int32(p.ReadingTime), // #nosec G115 -- reading time in minutes is bounded, not user-controlled
-		CoverImage:  p.CoverImage,
+		Slug:           p.Slug,
+		Title:          p.Title,
+		Body:           p.Body,
+		Excerpt:        p.Excerpt,
+		Type:           db.ContentType(p.Type),
+		Status:         db.ContentStatus(p.Status),
+		Source:         p.Source,
+		SourceType:     nullSourceType(p.SourceType),
+		SeriesID:       p.SeriesID,
+		SeriesOrder:    seriesOrder,
+		ReviewLevel:    db.ReviewLevel(p.ReviewLevel),
+		IsPublic:       p.IsPublic,
+		ProjectID:      p.ProjectID,
+		AiMetadata:     p.AIMetadata,
+		ReadingTimeMin: int32(p.ReadingTimeMin), // #nosec G115 -- reading time in minutes is bounded, not user-controlled
+		CoverImage:     p.CoverImage,
 	})
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
@@ -634,15 +710,15 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
-	// Topic fetch is outside the transaction — content is already committed.
-	// On failure, return the content with empty topics rather than failing
+	// Topic and tag fetch is outside the transaction — content is already committed.
+	// On failure, return the content with empty collections rather than failing
 	// the entire operation (the content write succeeded).
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
@@ -651,15 +727,22 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 	}
 	c.Topics = topics
 
+	tags, err := s.TagsForContent(ctx, c.ID)
+	if err != nil {
+		c.Tags = []string{}
+		return &c, nil
+	}
+	c.Tags = tags
+
 	return &c, nil
 }
 
 // UpdateContent updates a content and replaces topic associations within a transaction.
 func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Content, error) {
-	var readingTime *int32
-	if p.ReadingTime != nil {
-		v := int32(*p.ReadingTime) // #nosec G115 -- reading time in minutes is bounded, not user-controlled
-		readingTime = &v
+	var readingTimeMin *int32
+	if p.ReadingTimeMin != nil {
+		v := int32(*p.ReadingTimeMin) // #nosec G115 -- reading time in minutes is bounded, not user-controlled
+		readingTimeMin = &v
 	}
 	var seriesOrder *int32
 	if p.SeriesOrder != nil {
@@ -684,24 +767,23 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 	qtx := s.q.WithTx(tx)
 
 	r, err := qtx.UpdateContent(ctx, db.UpdateContentParams{
-		ID:          id,
-		Slug:        p.Slug,
-		Title:       p.Title,
-		Body:        p.Body,
-		Excerpt:     p.Excerpt,
-		ContentType: nullContentType(p.Type),
-		Status:      nullContentStatus(p.Status),
-		Tags:        p.Tags,
-		Source:      p.Source,
-		SourceType:  nullSourceType(p.SourceType),
-		SeriesID:    p.SeriesID,
-		SeriesOrder: seriesOrder,
-		ReviewLevel: nullReviewLevel(p.ReviewLevel),
-		Visibility:  nullVisibility(p.Visibility),
-		ProjectID:   p.ProjectID,
-		AiMetadata:  p.AIMetadata,
-		ReadingTime: readingTime,
-		CoverImage:  p.CoverImage,
+		ID:             id,
+		Slug:           p.Slug,
+		Title:          p.Title,
+		Body:           p.Body,
+		Excerpt:        p.Excerpt,
+		ContentType:    nullContentType(p.Type),
+		Status:         nullContentStatus(p.Status),
+		Source:         p.Source,
+		SourceType:     nullSourceType(p.SourceType),
+		SeriesID:       p.SeriesID,
+		SeriesOrder:    seriesOrder,
+		ReviewLevel:    nullReviewLevel(p.ReviewLevel),
+		IsPublic:       p.IsPublic,
+		ProjectID:      p.ProjectID,
+		AiMetadata:     p.AIMetadata,
+		ReadingTimeMin: readingTimeMin,
+		CoverImage:     p.CoverImage,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -733,21 +815,28 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
-	// Topic fetch is outside the transaction — update is already committed.
-	// On failure, return the content with empty topics rather than failing.
+	// Topic and tag fetch is outside the transaction — update is already committed.
+	// On failure, return the content with empty collections rather than failing.
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
 		c.Topics = []TopicRef{}
 		return &c, nil
 	}
 	c.Topics = topics
+
+	tags, err := s.TagsForContent(ctx, c.ID)
+	if err != nil {
+		c.Tags = []string{}
+		return &c, nil
+	}
+	c.Tags = tags
 
 	return &c, nil
 }
@@ -850,10 +939,10 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Tags: r.Tags, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
-		Visibility: r.Visibility, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
-		ReadingTime: r.ReadingTime, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
@@ -862,6 +951,12 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 		return nil, err
 	}
 	c.Topics = topics
+
+	tags, err := s.TagsForContent(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.Tags = tags
 
 	return &c, nil
 }
@@ -900,50 +995,48 @@ func (s *Store) topicsForContents(ctx context.Context, ids []uuid.UUID) (map[uui
 // types. Callers construct a contentRow from their specific row type, then pass
 // it to rowToContent. This eliminates a 21-parameter positional call.
 type contentRow struct {
-	ID          uuid.UUID
-	Slug        string
-	Title       string
-	Body        string
-	Excerpt     string
-	Type        db.ContentType
-	Status      db.ContentStatus
-	Tags        []string
-	Source      *string
-	SourceType  db.NullSourceType
-	SeriesID    *string
-	SeriesOrder *int32
-	ReviewLevel db.ReviewLevel
-	Visibility  string
-	ProjectID   *uuid.UUID
-	AiMetadata  json.RawMessage
-	ReadingTime int32
-	CoverImage  *string
-	PublishedAt *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID             uuid.UUID
+	Slug           string
+	Title          string
+	Body           string
+	Excerpt        string
+	Type           db.ContentType
+	Status         db.ContentStatus
+	Source         *string
+	SourceType     db.NullSourceType
+	SeriesID       *string
+	SeriesOrder    *int32
+	ReviewLevel    db.ReviewLevel
+	IsPublic       bool
+	ProjectID      *uuid.UUID
+	AiMetadata     json.RawMessage
+	ReadingTimeMin int32
+	CoverImage     *string
+	PublishedAt    *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
-func rowToContent(r contentRow) Content {
+func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct passed by value matches existing pattern across all call sites
 	c := Content{
-		ID:          r.ID,
-		Slug:        r.Slug,
-		Title:       r.Title,
-		Body:        r.Body,
-		Excerpt:     r.Excerpt,
-		Type:        Type(r.Type),
-		Status:      Status(r.Status),
-		Tags:        r.Tags,
-		Source:      r.Source,
-		SourceType:  nullSourceTypeToPtr(r.SourceType),
-		ReviewLevel: ReviewLevel(r.ReviewLevel),
-		Visibility:  Visibility(r.Visibility),
-		ProjectID:   r.ProjectID,
-		AIMetadata:  r.AiMetadata,
-		ReadingTime: int(r.ReadingTime),
-		CoverImage:  r.CoverImage,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt,
-		UpdatedAt:   r.UpdatedAt,
+		ID:             r.ID,
+		Slug:           r.Slug,
+		Title:          r.Title,
+		Body:           r.Body,
+		Excerpt:        r.Excerpt,
+		Type:           Type(r.Type),
+		Status:         Status(r.Status),
+		Source:         r.Source,
+		SourceType:     nullSourceTypeToPtr(r.SourceType),
+		ReviewLevel:    ReviewLevel(r.ReviewLevel),
+		IsPublic:       r.IsPublic,
+		ProjectID:      r.ProjectID,
+		AIMetadata:     r.AiMetadata,
+		ReadingTimeMin: int(r.ReadingTimeMin),
+		CoverImage:     r.CoverImage,
+		PublishedAt:    r.PublishedAt,
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
 	}
 	if r.SeriesID != nil {
 		c.SeriesID = r.SeriesID
@@ -953,6 +1046,36 @@ func rowToContent(r contentRow) Content {
 		c.SeriesOrder = &v
 	}
 	return c
+}
+
+// TagsForContent returns tag slugs for a single content item.
+func (s *Store) TagsForContent(ctx context.Context, contentID uuid.UUID) ([]string, error) {
+	rows, err := s.q.TagsForContent(ctx, contentID)
+	if err != nil {
+		return nil, fmt.Errorf("querying tags for content %s: %w", contentID, err)
+	}
+	tags := make([]string, len(rows))
+	for i, r := range rows {
+		tags[i] = r.Slug
+	}
+	return tags, nil
+}
+
+// tagsForContents fetches tags for multiple content IDs in a single query,
+// returning a map from content ID to tag slugs.
+func (s *Store) tagsForContents(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]string, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID][]string{}, nil
+	}
+	rows, err := s.q.TagsForContents(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("batch querying tags: %w", err)
+	}
+	result := make(map[uuid.UUID][]string, len(ids))
+	for _, r := range rows {
+		result[r.ContentID] = append(result[r.ContentID], r.Slug)
+	}
+	return result, nil
 }
 
 // SimilarTIL is a TIL content item returned by embedding similarity search.
@@ -986,12 +1109,21 @@ func (s *Store) SimilarTILs(ctx context.Context, slug string, limit int) ([]Simi
 		return nil, fmt.Errorf("querying similar TILs: %w", err)
 	}
 
+	ids := make([]uuid.UUID, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].ID
+	}
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("batch loading tags for similar TILs: %w", err)
+	}
+
 	results := make([]SimilarTIL, len(rows))
 	for i, row := range rows {
 		results[i] = SimilarTIL{
 			Slug:       row.Slug,
 			Title:      row.Title,
-			Tags:       row.Tags,
+			Tags:       tagMap[row.ID],
 			Similarity: row.Similarity,
 		}
 	}

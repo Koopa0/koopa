@@ -1,46 +1,46 @@
 -- name: ProjectByID :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE id = $1;
 
 -- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title;
 
 -- name: PublicProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
-FROM projects WHERE public = true
+FROM projects WHERE is_public = true
 ORDER BY featured DESC, sort_order, title;
 
 -- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE slug = $1;
 
 -- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE repo = $1;
 
 -- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
-                      problem, solution, architecture, results, github_url, live_url, featured, public, sort_order, status)
+                      problem, solution, architecture, results, github_url, live_url, featured, is_public, sort_order, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at;
 
 -- name: UpdateProject :one
@@ -59,20 +59,20 @@ UPDATE projects SET
     github_url = COALESCE(sqlc.narg('github_url'), github_url),
     live_url = COALESCE(sqlc.narg('live_url'), live_url),
     featured = COALESCE(sqlc.narg('featured'), featured),
-    public = COALESCE(sqlc.narg('public'), public),
+    is_public = COALESCE(sqlc.narg('is_public'), is_public),
     sort_order = COALESCE(sqlc.narg('sort_order'), sort_order),
     status = COALESCE(sqlc.narg('status')::project_status, status),
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at;
 
 -- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC;
@@ -109,7 +109,7 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     updated_at = now()
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline,
           last_activity_at, expected_cadence, created_at, updated_at;
 
 -- name: UpdateProjectLastActivity :exec
@@ -134,7 +134,7 @@ WHERE notion_page_id IS NOT NULL
 -- Resolve a project alias to a project via the project_aliases table.
 SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
-       p.results, p.github_url, p.live_url, p.featured, p.public, p.sort_order,
+       p.results, p.github_url, p.live_url, p.featured, p.is_public, p.sort_order,
        p.status, p.notion_page_id, p.repo, p.area, p.goal_id, p.deadline, p.last_activity_at,
        p.expected_cadence, p.created_at, p.updated_at
 FROM project_aliases pa
@@ -145,7 +145,7 @@ WHERE LOWER(pa.alias) = LOWER(@alias);
 -- Resolve a project by case-insensitive title match.
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1);
 
@@ -159,5 +159,5 @@ UPDATE projects SET
 WHERE id = @id
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at;

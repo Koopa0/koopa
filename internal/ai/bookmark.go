@@ -138,7 +138,7 @@ func (bg *BookmarkGenerate) run(ctx context.Context, in BookmarkGenerateInput) (
 // buildBookmarkUserPrompt assembles the user prompt for bookmark generation.
 func buildBookmarkUserPrompt(cd *entry.Item) string {
 	return fmt.Sprintf("標題：%s\n來源：%s\nURL：%s",
-		cd.Title, cd.SourceName, cd.SourceURL)
+		cd.Title, cd.FeedName, cd.SourceURL)
 }
 
 // NewMockBookmarkGenerate returns a mock Flow for MOCK_MODE.

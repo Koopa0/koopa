@@ -12,6 +12,14 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/db"
 )
 
+// derefOr returns the dereferenced pointer value, or the fallback if nil.
+func derefOr(p *string, fallback string) string {
+	if p != nil {
+		return *p
+	}
+	return fallback
+}
+
 // Store manages obsidian knowledge notes in the database.
 type Store struct {
 	q *db.Queries
@@ -35,7 +43,7 @@ func (s *Store) UpsertNote(ctx context.Context, p *UpsertParams) (*Note, error) 
 		Type:         p.Type,
 		Source:       p.Source,
 		Context:      p.Context,
-		Status:       p.Status,
+		Maturity:     derefOr(p.Maturity, "seed"),
 		Tags:         tagsJSON,
 		Difficulty:   p.Difficulty,
 		LeetcodeID:   p.LeetcodeID,
@@ -166,7 +174,7 @@ func toNote(row *db.ObsidianNote) Note {
 		Type:         row.Type,
 		Source:       row.Source,
 		Context:      row.Context,
-		Status:       row.Status,
+		Maturity:     &row.Maturity,
 		Difficulty:   row.Difficulty,
 		LeetcodeID:   row.LeetcodeID,
 		Book:         row.Book,
@@ -199,7 +207,7 @@ func toNoteFromSearch(r *db.SearchNotesByTextRow) Note {
 		Type:        r.Type,
 		Source:      r.Source,
 		Context:     r.Context,
-		Status:      r.Status,
+		Maturity:    &r.Maturity,
 		Difficulty:  r.Difficulty,
 		Book:        r.Book,
 		Chapter:     r.Chapter,
@@ -224,7 +232,7 @@ func toNoteFromFilterRow(r *db.SearchNotesByFiltersRow) Note {
 		Type:        r.Type,
 		Source:      r.Source,
 		Context:     r.Context,
-		Status:      r.Status,
+		Maturity:    &r.Maturity,
 		Difficulty:  r.Difficulty,
 		Book:        r.Book,
 		Chapter:     r.Chapter,
@@ -288,7 +296,7 @@ func (s *Store) SearchBySimilarity(ctx context.Context, queryVec pgvector.Vector
 			Type:        r.Type,
 			Source:      r.Source,
 			Context:     r.Context,
-			Status:      r.Status,
+			Maturity:    &r.Maturity,
 			Difficulty:  r.Difficulty,
 			Book:        r.Book,
 			Chapter:     r.Chapter,
@@ -315,7 +323,7 @@ func toNoteFromTypeRow(r *db.NotesByTypeAndContextRow) Note {
 		Type:        r.Type,
 		Source:      r.Source,
 		Context:     r.Context,
-		Status:      r.Status,
+		Maturity:    &r.Maturity,
 		Difficulty:  r.Difficulty,
 		Book:        r.Book,
 		Chapter:     r.Chapter,

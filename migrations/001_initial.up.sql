@@ -73,17 +73,15 @@ CREATE TABLE contents (
     excerpt       TEXT NOT NULL DEFAULT '',
     type          content_type NOT NULL,
     status        content_status NOT NULL DEFAULT 'draft',
-    tags          TEXT[] NOT NULL DEFAULT '{}',
     source        TEXT,
     source_type   source_type,
     series_id     TEXT,
     series_order  INT,
     review_level  review_level NOT NULL DEFAULT 'standard',
     ai_metadata   JSONB,
-    reading_time  INT NOT NULL DEFAULT 0,
+    reading_time_min INT NOT NULL DEFAULT 0,
     cover_image   TEXT,
-    visibility    TEXT NOT NULL DEFAULT 'public'
-                  CHECK (visibility IN ('public', 'private')),
+    is_public     BOOLEAN NOT NULL DEFAULT true,
     project_id    UUID,
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -92,19 +90,26 @@ CREATE TABLE contents (
     search_vector TSVECTOR GENERATED ALWAYS AS (
         setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
         setweight(to_tsvector('simple', coalesce(left(body, 10000), '')), 'C')
-    ) STORED
+    ) STORED,
+    CONSTRAINT chk_contents_series CHECK (
+        (series_id IS NULL AND series_order IS NULL) OR
+        (series_id IS NOT NULL AND series_order IS NOT NULL)
+    )
 );
+
+COMMENT ON COLUMN contents.reading_time_min IS 'Estimated reading time in minutes. Computed from body word count. Always >= 0.';
+COMMENT ON COLUMN contents.ai_metadata IS 'AI pipeline metadata (JSONB). Structure: {summary: string, keywords: string[], quality_score: float, review_notes: string}. Set by Genkit flows.';
+COMMENT ON COLUMN contents.is_public IS 'Whether this content is visible on the public website. Private content is admin/MCP only.';
 
 CREATE INDEX idx_contents_status ON contents(status);
 CREATE INDEX idx_contents_type ON contents(type);
 CREATE INDEX idx_contents_published_at ON contents(published_at DESC NULLS LAST);
-CREATE INDEX idx_contents_tags ON contents USING GIN(tags);
 CREATE INDEX idx_contents_search ON contents USING GIN(search_vector);
 CREATE INDEX idx_contents_series ON contents(series_id, series_order) WHERE series_id IS NOT NULL;
 CREATE INDEX idx_contents_embedding_hnsw ON contents USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
-CREATE INDEX idx_contents_visibility ON contents(status, visibility)
-    WHERE status = 'published' AND visibility = 'public';
+CREATE INDEX idx_contents_is_public ON contents(status, is_public)
+    WHERE status = 'published' AND is_public = true;
 
 CREATE INDEX idx_contents_project_id ON contents(project_id) WHERE project_id IS NOT NULL;
 CREATE INDEX idx_contents_created_at ON contents(created_at DESC);
@@ -133,7 +138,7 @@ CREATE TABLE projects (
     github_url       TEXT,
     live_url         TEXT,
     featured         BOOLEAN NOT NULL DEFAULT false,
-    public           BOOLEAN NOT NULL DEFAULT false,
+    is_public        BOOLEAN NOT NULL DEFAULT false,
     sort_order       INT NOT NULL DEFAULT 0,
     status           project_status NOT NULL DEFAULT 'in-progress',
     notion_page_id   TEXT UNIQUE,
@@ -152,7 +157,7 @@ CREATE INDEX idx_projects_featured ON projects(featured DESC, sort_order);
 CREATE INDEX idx_projects_lower_title ON projects (LOWER(title));
 CREATE INDEX idx_projects_repo ON projects (repo) WHERE repo IS NOT NULL;
 CREATE INDEX idx_projects_status ON projects (status) WHERE status NOT IN ('completed', 'archived');
-CREATE INDEX idx_projects_public ON projects (featured DESC, sort_order) WHERE public = true;
+CREATE INDEX idx_projects_is_public ON projects (featured DESC, sort_order) WHERE is_public = true;
 
 CREATE TABLE review_queue (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -163,6 +168,8 @@ CREATE TABLE review_queue (
     submitted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     reviewed_at    TIMESTAMPTZ
 );
+
+COMMENT ON COLUMN review_queue.content_id IS 'References the content under review. ON DELETE CASCADE — if content is deleted, its review record is removed. ArchiveContent (soft delete) does not trigger this.';
 
 CREATE INDEX idx_review_queue_status ON review_queue(status);
 CREATE INDEX idx_review_queue_content_id ON review_queue(content_id);
@@ -189,15 +196,17 @@ CREATE TABLE feeds (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON COLUMN feeds.filter_config IS 'Feed-specific content filter rules (JSONB). Structure: {deny_paths: string[], deny_title_patterns: string[], deny_tags: string[]}. Empty {} means no filtering.';
+COMMENT ON COLUMN feeds.topics IS 'Topic slugs this feed covers. Values must match topics.slug but no FK enforced (array elements). Kept in sync manually.';
+
 CREATE INDEX idx_feeds_schedule ON feeds (schedule) WHERE enabled = true;
 
 CREATE TABLE collected_data (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_url         TEXT NOT NULL,
-    source_name        TEXT NOT NULL,
     title              TEXT NOT NULL,
-    original_content   TEXT,
-    relevance_score    REAL NOT NULL DEFAULT 0,
+    original_content   TEXT NOT NULL DEFAULT '',
+    relevance_score    DOUBLE PRECISION NOT NULL DEFAULT 0,
     topics             TEXT[] NOT NULL DEFAULT '{}',
     status             collected_status NOT NULL DEFAULT 'unread',
     curated_content_id UUID REFERENCES contents(id) ON DELETE SET NULL,
@@ -209,11 +218,15 @@ CREATE TABLE collected_data (
     published_at       TIMESTAMPTZ
 );
 
+COMMENT ON COLUMN collected_data.topics IS 'Topic slugs assigned by relevance scoring. Same coupling to topics.slug as feeds.topics.';
+COMMENT ON COLUMN collected_data.feed_id IS 'Source feed reference. NULL after feed deletion (ON DELETE SET NULL) — collected items are retained for curation without source attribution.';
+
 CREATE INDEX idx_collected_data_status ON collected_data(status);
 CREATE INDEX idx_collected_data_relevance ON collected_data(relevance_score DESC);
 CREATE UNIQUE INDEX idx_collected_data_url_hash ON collected_data (url_hash) WHERE url_hash != '';
 CREATE INDEX idx_collected_data_feed_id ON collected_data (feed_id) WHERE feed_id IS NOT NULL;
 CREATE INDEX idx_collected_data_collected_at ON collected_data (collected_at DESC);
+CREATE INDEX idx_collected_data_unread_at ON collected_data (collected_at DESC) WHERE status = 'unread';
 
 CREATE TABLE tracking_topics (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -266,6 +279,8 @@ CREATE TABLE goals (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON COLUMN goals.quarter IS 'Expected format: "Q1 2026" or "2026-Q1". No CHECK constraint — values come from Notion upstream.';
+
 CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
 
 -- FK: projects.goal_id -> goals.id (defined here because goals table comes after projects)
@@ -288,12 +303,12 @@ CREATE TABLE tasks (
     notion_page_id  TEXT UNIQUE,
     completed_at    TIMESTAMPTZ,
     energy          TEXT NOT NULL DEFAULT ''
-                    CHECK (energy IN ('', 'High', 'Medium', 'Low')),
+                    CHECK (energy IN ('', 'high', 'medium', 'low')),
     priority        TEXT NOT NULL DEFAULT ''
-                    CHECK (priority IN ('', 'High', 'Medium', 'Low')),
+                    CHECK (priority IN ('', 'high', 'medium', 'low')),
     recur_interval  INT,
     recur_unit      TEXT NOT NULL DEFAULT ''
-                    CHECK (recur_unit IN ('', 'Day(s)', 'Week(s)', 'Month(s)', 'Year(s)')),
+                    CHECK (recur_unit IN ('', 'days', 'weeks', 'months', 'years')),
     my_day          BOOLEAN NOT NULL DEFAULT false,
     description     TEXT NOT NULL DEFAULT '',
     assignee        TEXT NOT NULL DEFAULT 'human'
@@ -443,6 +458,7 @@ CREATE INDEX idx_activity_events_type ON activity_events (event_type);
 CREATE UNIQUE INDEX idx_activity_events_dedup
     ON activity_events (source, event_type, source_id)
     WHERE source_id IS NOT NULL;
+CREATE INDEX idx_activity_events_source_id ON activity_events (source_id text_pattern_ops) WHERE source_id IS NOT NULL;
 
 -- Obsidian notes — knowledge notes from vault
 CREATE TABLE obsidian_notes (
@@ -452,8 +468,8 @@ CREATE TABLE obsidian_notes (
     type            TEXT,
     source          TEXT,
     context         TEXT,
-    status          TEXT DEFAULT 'seed'
-                    CHECK (status IS NULL OR status IN ('seed', 'evergreen', 'stub', 'archived')),
+    maturity        TEXT NOT NULL DEFAULT 'seed'
+                    CHECK (maturity IN ('seed', 'evergreen', 'stub', 'archived')),
     tags            JSONB,
     difficulty      TEXT,
     leetcode_id     INT,
@@ -472,11 +488,15 @@ CREATE TABLE obsidian_notes (
     synced_at       TIMESTAMPTZ DEFAULT now()
 );
 
+COMMENT ON COLUMN obsidian_notes.maturity IS 'Zettelkasten note maturity level: seed (new idea), stub (incomplete), evergreen (mature, reliable), archived (no longer relevant).';
+COMMENT ON COLUMN obsidian_notes.tags IS 'Raw frontmatter tags array (JSONB). Canonical mapping is in obsidian_note_tags via tag resolution pipeline.';
+
 CREATE INDEX idx_obsidian_notes_type ON obsidian_notes (type);
 CREATE INDEX idx_obsidian_notes_context ON obsidian_notes (context);
 CREATE INDEX idx_obsidian_notes_search ON obsidian_notes USING GIN(search_vector);
 CREATE INDEX idx_obsidian_notes_embedding ON obsidian_notes
     USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+CREATE INDEX idx_obsidian_notes_synced_at ON obsidian_notes(synced_at DESC);
 
 -- Tags — canonical tag registry with hierarchy
 CREATE TABLE tags (
@@ -525,15 +545,28 @@ CREATE TABLE activity_event_tags (
 
 CREATE INDEX idx_activity_event_tags_tag ON activity_event_tags(tag_id);
 
+-- Junction: contents ↔ tags
+CREATE TABLE content_tags (
+    content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+    tag_id     UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (content_id, tag_id)
+);
+
+CREATE INDEX idx_content_tags_tag_id ON content_tags(tag_id);
+
+COMMENT ON COLUMN content_tags.content_id IS 'References the content record. CASCADE deletes tag associations when content is deleted.';
+COMMENT ON COLUMN content_tags.tag_id IS 'References the canonical tag. CASCADE deletes associations when tag is merged/deleted. Distinct from content_topics: topics are curated categories, tags are raw labels resolved through the tag alias pipeline.';
+
 -- Project aliases — maps variant project names to canonical
 CREATE TABLE project_aliases (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    alias          TEXT NOT NULL UNIQUE,
-    canonical_name TEXT NOT NULL,
-    project_id     UUID REFERENCES projects(id) ON DELETE CASCADE,
-    source         TEXT NOT NULL,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alias      TEXT NOT NULL UNIQUE,
+    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON COLUMN project_aliases.project_id IS 'References the canonical project. ON DELETE CASCADE — aliases are meaningless without the project. Asymmetric with tasks/contents which use SET NULL.';
 
 CREATE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
 
@@ -568,6 +601,8 @@ CREATE TABLE notion_sources (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON COLUMN notion_sources.property_map IS 'Maps Notion database properties to local fields (JSONB). Structure varies by role. Empty {} means default mapping.';
+
 -- Indexes for SourceByRole and SourceByDatabaseID query patterns.
 CREATE INDEX idx_notion_sources_role_enabled ON notion_sources (role) WHERE enabled = true AND role IS NOT NULL;
 CREATE INDEX idx_notion_sources_db_enabled ON notion_sources (database_id) WHERE enabled = true;
@@ -582,6 +617,8 @@ CREATE TABLE note_links (
     link_text       TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON COLUMN note_links.target_path IS 'Wikilink target file path. May reference notes not yet synced — forward/broken links are expected in the knowledge graph.';
 
 CREATE INDEX idx_note_links_source ON note_links (source_note_id);
 CREATE INDEX idx_note_links_target ON note_links (target_path);
@@ -735,4 +772,3 @@ COMMENT ON COLUMN task_skip_log.task_id IS 'The recurring task this skip belongs
 COMMENT ON COLUMN task_skip_log.original_due IS 'The due date the task had when the skip was detected by cron.';
 COMMENT ON COLUMN task_skip_log.skipped_date IS 'The occurrence date that was missed (the date the task should have been done).';
 COMMENT ON COLUMN task_skip_log.reason IS 'Why the occurrence was skipped: auto-expired (cron detected overdue) or manual (user explicitly skipped).';
-

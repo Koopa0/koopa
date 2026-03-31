@@ -308,7 +308,7 @@ func writeWeeklyCollectedSection(b *strings.Builder, rssItems []entry.Item, rssE
 		b.WriteString("無符合條件的文章\n")
 	default:
 		for i := range rssItems {
-			fmt.Fprintf(b, "- %s（%s）\n", rssItems[i].Title, rssItems[i].SourceName)
+			fmt.Fprintf(b, "- %s（%s）\n", rssItems[i].Title, rssItems[i].FeedName)
 		}
 	}
 }

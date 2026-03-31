@@ -192,7 +192,7 @@ func BuildDigestUserPrompt(
 		for i := range collectedData {
 			cd := &collectedData[i]
 			fmt.Fprintf(&b, "- **%s**\n  來源: %s\n  URL: %s\n\n",
-				cd.Title, cd.SourceName, cd.SourceURL)
+				cd.Title, cd.FeedName, cd.SourceURL)
 		}
 	}
 

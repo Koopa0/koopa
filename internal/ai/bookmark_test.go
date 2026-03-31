@@ -9,9 +9,9 @@ import (
 
 func TestBuildBookmarkUserPrompt(t *testing.T) {
 	cd := &entry.Item{
-		Title:      "Understanding Go Memory Model",
-		SourceName: "Go Blog",
-		SourceURL:  "https://go.dev/blog/memory",
+		Title:     "Understanding Go Memory Model",
+		FeedName:  "Go Blog",
+		SourceURL: "https://go.dev/blog/memory",
 	}
 
 	got := buildBookmarkUserPrompt(cd)

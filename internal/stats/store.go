@@ -576,7 +576,7 @@ func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboar
 }
 
 func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) error {
-	// Aggregate tags from BOTH obsidian_note_tags junction AND contents.tags TEXT[].
+	// Aggregate tags from BOTH obsidian_note_tags and content_tags junction tables.
 	tagRows, err := s.dbtx.Query(ctx, `
 		SELECT name, SUM(cnt)::int AS total FROM (
 			SELECT t.name, COUNT(ont.note_id) AS cnt
@@ -584,10 +584,12 @@ func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) erro
 			JOIN obsidian_note_tags ont ON ont.tag_id = t.id
 			GROUP BY t.id, t.name
 			UNION ALL
-			SELECT UNNEST(tags) AS name, COUNT(*) AS cnt
-			FROM contents
-			WHERE type = 'til' AND tags != '{}'
-			GROUP BY UNNEST(tags)
+			SELECT t.name, COUNT(ct.content_id) AS cnt
+			FROM tags t
+			JOIN content_tags ct ON ct.tag_id = t.id
+			JOIN contents c ON c.id = ct.content_id
+			WHERE c.type = 'til'
+			GROUP BY t.id, t.name
 		) combined
 		GROUP BY name
 		ORDER BY total DESC

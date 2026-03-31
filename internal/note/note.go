@@ -14,7 +14,7 @@ type Note struct {
 	Type         *string    `json:"type,omitempty"`
 	Source       *string    `json:"source,omitempty"`
 	Context      *string    `json:"context,omitempty"`
-	Status       *string    `json:"status,omitempty"`
+	Maturity     *string    `json:"maturity,omitempty"`
 	Tags         []string   `json:"tags"` // raw frontmatter tags (JSONB)
 	Difficulty   *string    `json:"difficulty,omitempty"`
 	LeetcodeID   *int32     `json:"leetcode_id,omitempty"`
@@ -35,7 +35,7 @@ type UpsertParams struct {
 	Type         *string
 	Source       *string
 	Context      *string
-	Status       *string
+	Maturity     *string
 	Tags         []string // raw frontmatter tags → stored as JSONB
 	Difficulty   *string
 	LeetcodeID   *int32

@@ -212,7 +212,7 @@ func writeTrendingSection(b *strings.Builder, rssItems []entry.Item, rssErr erro
 	default:
 		limit := min(len(rssItems), 10)
 		for i := range rssItems[:limit] {
-			fmt.Fprintf(b, "- %s（%s）\n", rssItems[i].Title, rssItems[i].SourceName)
+			fmt.Fprintf(b, "- %s（%s）\n", rssItems[i].Title, rssItems[i].FeedName)
 		}
 	}
 }

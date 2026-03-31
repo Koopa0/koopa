@@ -16,12 +16,13 @@ import (
 
 // Store manages tag normalization and note-tag associations.
 type Store struct {
-	q *db.Queries
+	q    *db.Queries
+	dbtx db.DBTX
 }
 
 // NewStore returns a tag Store backed by the given connection (pool or tx).
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{q: db.New(dbtx)}
+	return &Store{q: db.New(dbtx), dbtx: dbtx}
 }
 
 // maxRawTagLen is the maximum length for a raw tag string.
@@ -350,7 +351,20 @@ func (s *Store) BackfillNoteTags(ctx context.Context) (*BackfillResult, error) {
 
 // MergeTags merges source tag into target tag within a transaction.
 // Reassigns all aliases, note-tags, and event-tags, then deletes the source tag.
-func (s *Store) MergeTags(ctx context.Context, tx pgx.Tx, sourceID, targetID uuid.UUID) (*MergeResult, error) {
+func (s *Store) MergeTags(ctx context.Context, sourceID, targetID uuid.UUID) (*MergeResult, error) {
+	pool, ok := s.dbtx.(interface {
+		Begin(ctx context.Context) (pgx.Tx, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("merge tags requires a connection with begin support")
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning merge transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback is no-op after commit
+
 	txQ := s.q.WithTx(tx)
 
 	// Delete duplicate aliases then reassign (tag_aliases.tag_id is nullable → *uuid.UUID)
@@ -397,6 +411,10 @@ func (s *Store) MergeTags(ctx context.Context, tx pgx.Tx, sourceID, targetID uui
 	// Delete the source tag (now has no references)
 	if err := txQ.DeleteTag(ctx, sourceID); err != nil {
 		return nil, fmt.Errorf("deleting source tag %s: %w", sourceID, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing merge transaction: %w", err)
 	}
 
 	return &MergeResult{

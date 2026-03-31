@@ -481,12 +481,12 @@ type ActivityEventTag struct {
 }
 
 type CollectedDatum struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	SourceName       string          `json:"source_name"`
-	Title            string          `json:"title"`
-	OriginalContent  *string         `json:"original_content"`
-	RelevanceScore   float32         `json:"relevance_score"`
+	ID              uuid.UUID `json:"id"`
+	SourceUrl       string    `json:"source_url"`
+	Title           string    `json:"title"`
+	OriginalContent string    `json:"original_content"`
+	RelevanceScore  float64   `json:"relevance_score"`
+	// Topic slugs assigned by relevance scoring. Same coupling to topics.slug as feeds.topics.
 	Topics           []string        `json:"topics"`
 	Status           CollectedStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
@@ -494,34 +494,44 @@ type CollectedDatum struct {
 	UrlHash          string          `json:"url_hash"`
 	UserFeedback     *string         `json:"user_feedback"`
 	FeedbackAt       *time.Time      `json:"feedback_at"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
+	// Source feed reference. NULL after feed deletion (ON DELETE SET NULL) — collected items are retained for curation without source attribution.
+	FeedID      *uuid.UUID `json:"feed_id"`
+	PublishedAt *time.Time `json:"published_at"`
 }
 
 type Content struct {
-	ID           uuid.UUID           `json:"id"`
-	Slug         string              `json:"slug"`
-	Title        string              `json:"title"`
-	Body         string              `json:"body"`
-	Excerpt      string              `json:"excerpt"`
-	Type         ContentType         `json:"type"`
-	Status       ContentStatus       `json:"status"`
-	Tags         []string            `json:"tags"`
-	Source       *string             `json:"source"`
-	SourceType   NullSourceType      `json:"source_type"`
-	SeriesID     *string             `json:"series_id"`
-	SeriesOrder  *int32              `json:"series_order"`
-	ReviewLevel  ReviewLevel         `json:"review_level"`
-	AiMetadata   json.RawMessage     `json:"ai_metadata"`
-	ReadingTime  int32               `json:"reading_time"`
-	CoverImage   *string             `json:"cover_image"`
-	Visibility   string              `json:"visibility"`
+	ID          uuid.UUID      `json:"id"`
+	Slug        string         `json:"slug"`
+	Title       string         `json:"title"`
+	Body        string         `json:"body"`
+	Excerpt     string         `json:"excerpt"`
+	Type        ContentType    `json:"type"`
+	Status      ContentStatus  `json:"status"`
+	Source      *string        `json:"source"`
+	SourceType  NullSourceType `json:"source_type"`
+	SeriesID    *string        `json:"series_id"`
+	SeriesOrder *int32         `json:"series_order"`
+	ReviewLevel ReviewLevel    `json:"review_level"`
+	// AI pipeline metadata (JSONB). Structure: {summary: string, keywords: string[], quality_score: float, review_notes: string}. Set by Genkit flows.
+	AiMetadata json.RawMessage `json:"ai_metadata"`
+	// Estimated reading time in minutes. Computed from body word count. Always >= 0.
+	ReadingTimeMin int32   `json:"reading_time_min"`
+	CoverImage     *string `json:"cover_image"`
+	// Whether this content is visible on the public website. Private content is admin/MCP only.
+	IsPublic     bool                `json:"is_public"`
 	ProjectID    *uuid.UUID          `json:"project_id"`
 	PublishedAt  *time.Time          `json:"published_at"`
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`
 	Embedding    *pgvector_go.Vector `json:"embedding"`
-	SearchVector interface{}         `json:"search_vector"`
+	SearchVector string              `json:"search_vector"`
+}
+
+type ContentTag struct {
+	// References the content record. CASCADE deletes tag associations when content is deleted.
+	ContentID uuid.UUID `json:"content_id"`
+	// References the canonical tag. CASCADE deletes associations when tag is merged/deleted. Distinct from content_topics: topics are curated categories, tags are raw labels resolved through the tag alias pipeline.
+	TagID uuid.UUID `json:"tag_id"`
 }
 
 type ContentTopic struct {
@@ -530,10 +540,11 @@ type ContentTopic struct {
 }
 
 type Feed struct {
-	ID                  uuid.UUID  `json:"id"`
-	Url                 string     `json:"url"`
-	Name                string     `json:"name"`
-	Schedule            string     `json:"schedule"`
+	ID       uuid.UUID `json:"id"`
+	Url      string    `json:"url"`
+	Name     string    `json:"name"`
+	Schedule string    `json:"schedule"`
+	// Topic slugs this feed covers. Values must match topics.slug but no FK enforced (array elements). Kept in sync manually.
 	Topics              []string   `json:"topics"`
 	Enabled             bool       `json:"enabled"`
 	Priority            string     `json:"priority"`
@@ -543,9 +554,10 @@ type Feed struct {
 	ConsecutiveFailures int32      `json:"consecutive_failures"`
 	LastError           string     `json:"last_error"`
 	DisabledReason      string     `json:"disabled_reason"`
-	FilterConfig        []byte     `json:"filter_config"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	// Feed-specific content filter rules (JSONB). Structure: {deny_paths: string[], deny_title_patterns: string[], deny_tags: string[]}. Empty {} means no filtering.
+	FilterConfig json.RawMessage `json:"filter_config"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 type FlowRun struct {
@@ -591,11 +603,12 @@ type FsrsReviewLog struct {
 }
 
 type Goal struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	Description  string     `json:"description"`
-	Status       GoalStatus `json:"status"`
-	Area         string     `json:"area"`
+	ID          uuid.UUID  `json:"id"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Status      GoalStatus `json:"status"`
+	Area        string     `json:"area"`
+	// Expected format: "Q1 2026" or "2026-Q1". No CHECK constraint — values come from Notion upstream.
 	Quarter      string     `json:"quarter"`
 	Deadline     *time.Time `json:"deadline"`
 	NotionPageID *string    `json:"notion_page_id"`
@@ -604,20 +617,22 @@ type Goal struct {
 }
 
 type NoteLink struct {
-	ID           int64     `json:"id"`
-	SourceNoteID int64     `json:"source_note_id"`
-	TargetPath   string    `json:"target_path"`
-	LinkText     *string   `json:"link_text"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           int64 `json:"id"`
+	SourceNoteID int64 `json:"source_note_id"`
+	// Wikilink target file path. May reference notes not yet synced — forward/broken links are expected in the knowledge graph.
+	TargetPath string    `json:"target_path"`
+	LinkText   *string   `json:"link_text"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type NotionSource struct {
-	ID           uuid.UUID  `json:"id"`
-	DatabaseID   string     `json:"database_id"`
-	Name         string     `json:"name"`
-	Description  string     `json:"description"`
-	Role         *string    `json:"role"`
-	SyncMode     string     `json:"sync_mode"`
+	ID          uuid.UUID `json:"id"`
+	DatabaseID  string    `json:"database_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Role        *string   `json:"role"`
+	SyncMode    string    `json:"sync_mode"`
+	// Maps Notion database properties to local fields (JSONB). Structure varies by role. Empty {} means default mapping.
 	PropertyMap  []byte     `json:"property_map"`
 	PollInterval string     `json:"poll_interval"`
 	Enabled      bool       `json:"enabled"`
@@ -627,13 +642,15 @@ type NotionSource struct {
 }
 
 type ObsidianNote struct {
-	ID           int64               `json:"id"`
-	FilePath     string              `json:"file_path"`
-	Title        *string             `json:"title"`
-	Type         *string             `json:"type"`
-	Source       *string             `json:"source"`
-	Context      *string             `json:"context"`
-	Status       *string             `json:"status"`
+	ID       int64   `json:"id"`
+	FilePath string  `json:"file_path"`
+	Title    *string `json:"title"`
+	Type     *string `json:"type"`
+	Source   *string `json:"source"`
+	Context  *string `json:"context"`
+	// Zettelkasten note maturity level: seed (new idea), stub (incomplete), evergreen (mature, reliable), archived (no longer relevant).
+	Maturity string `json:"maturity"`
+	// Raw frontmatter tags array (JSONB). Canonical mapping is in obsidian_note_tags via tag resolution pipeline.
 	Tags         json.RawMessage     `json:"tags"`
 	Difficulty   *string             `json:"difficulty"`
 	LeetcodeID   *int32              `json:"leetcode_id"`
@@ -643,7 +660,7 @@ type ObsidianNote struct {
 	ContentText  *string             `json:"content_text"`
 	ContentHash  *string             `json:"content_hash"`
 	Embedding    *pgvector_go.Vector `json:"embedding"`
-	SearchVector interface{}         `json:"search_vector"`
+	SearchVector string              `json:"search_vector"`
 	GitCreatedAt *time.Time          `json:"git_created_at"`
 	GitUpdatedAt *time.Time          `json:"git_updated_at"`
 	SyncedAt     *time.Time          `json:"synced_at"`
@@ -670,7 +687,7 @@ type Project struct {
 	GithubUrl       *string       `json:"github_url"`
 	LiveUrl         *string       `json:"live_url"`
 	Featured        bool          `json:"featured"`
-	Public          bool          `json:"public"`
+	IsPublic        bool          `json:"is_public"`
 	SortOrder       int32         `json:"sort_order"`
 	Status          ProjectStatus `json:"status"`
 	NotionPageID    *string       `json:"notion_page_id"`
@@ -685,12 +702,12 @@ type Project struct {
 }
 
 type ProjectAlias struct {
-	ID            uuid.UUID  `json:"id"`
-	Alias         string     `json:"alias"`
-	CanonicalName string     `json:"canonical_name"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	Source        string     `json:"source"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID    uuid.UUID `json:"id"`
+	Alias string    `json:"alias"`
+	// References the canonical project. ON DELETE CASCADE — aliases are meaningless without the project. Asymmetric with tasks/contents which use SET NULL.
+	ProjectID *uuid.UUID `json:"project_id"`
+	Source    string     `json:"source"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // History of weekly reconciliation runs for system health monitoring and drift trend analysis.
@@ -722,7 +739,8 @@ type RefreshToken struct {
 }
 
 type ReviewQueue struct {
-	ID            uuid.UUID    `json:"id"`
+	ID uuid.UUID `json:"id"`
+	// References the content under review. ON DELETE CASCADE — if content is deleted, its review record is removed. ArchiveContent (soft delete) does not trigger this.
 	ContentID     uuid.UUID    `json:"content_id"`
 	ReviewLevel   ReviewLevel  `json:"review_level"`
 	Status        ReviewStatus `json:"status"`
@@ -819,15 +837,15 @@ type ToolUsageSummary struct {
 	ToolName       string         `json:"tool_name"`
 	Calls          int64          `json:"calls"`
 	AvgMs          int32          `json:"avg_ms"`
-	MaxMs          interface{}    `json:"max_ms"`
+	MaxMs          *int32         `json:"max_ms"`
 	P95Ms          int32          `json:"p95_ms"`
 	Errors         int64          `json:"errors"`
 	ErrorRate      pgtype.Numeric `json:"error_rate"`
 	EmptyResults   int64          `json:"empty_results"`
 	AvgInputBytes  int32          `json:"avg_input_bytes"`
 	AvgOutputBytes int32          `json:"avg_output_bytes"`
-	FirstSeen      interface{}    `json:"first_seen"`
-	LastSeen       interface{}    `json:"last_seen"`
+	FirstSeen      *time.Time     `json:"first_seen"`
+	LastSeen       *time.Time     `json:"last_seen"`
 }
 
 type Topic struct {

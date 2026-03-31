@@ -22,5 +22,5 @@ UPDATE tracking_topics SET
 WHERE id = $1
 RETURNING id, name, keywords, sources, enabled, schedule, created_at, updated_at;
 
--- name: MonitorDelete :exec
+-- name: MonitorDelete :execrows
 DELETE FROM tracking_topics WHERE id = $1;

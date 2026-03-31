@@ -35,7 +35,7 @@ func decodeError(t *testing.T, w *httptest.ResponseRecorder) api.ErrorBody {
 // newHandler builds a Handler with nil internals — sufficient for tests that
 // only exercise validation paths and never reach the store or pool.
 func newHandler() *Handler {
-	return NewHandler(nil, nil, slog.New(slog.DiscardHandler))
+	return NewHandler(nil, slog.New(slog.DiscardHandler))
 }
 
 // --- Create handler tests ---

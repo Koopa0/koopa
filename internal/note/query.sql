@@ -1,6 +1,6 @@
 -- name: UpsertNote :one
 INSERT INTO obsidian_notes (
-    file_path, title, type, source, context, status, tags,
+    file_path, title, type, source, context, maturity, tags,
     difficulty, leetcode_id, book, chapter, notion_task_id,
     content_text, content_hash, synced_at
 ) VALUES (
@@ -13,7 +13,7 @@ ON CONFLICT (file_path) DO UPDATE SET
     type = EXCLUDED.type,
     source = EXCLUDED.source,
     context = EXCLUDED.context,
-    status = EXCLUDED.status,
+    maturity = EXCLUDED.maturity,
     tags = EXCLUDED.tags,
     difficulty = EXCLUDED.difficulty,
     leetcode_id = EXCLUDED.leetcode_id,
@@ -32,27 +32,27 @@ SELECT * FROM obsidian_notes WHERE file_path = $1;
 SELECT content_hash FROM obsidian_notes WHERE file_path = $1;
 
 -- name: ArchiveNote :exec
-UPDATE obsidian_notes SET status = 'archived', synced_at = now()
-WHERE file_path = $1 AND status != 'archived';
+UPDATE obsidian_notes SET maturity = 'archived', synced_at = now()
+WHERE file_path = $1 AND maturity != 'archived';
 
 -- name: SearchNotesByText :many
 -- Full-text search on obsidian_notes using the search_vector GIN index.
 -- Uses websearch_to_tsquery('simple', ...) for user-friendly query syntax.
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at,
        ts_rank(search_vector, websearch_to_tsquery('simple', @query)) AS rank
 FROM obsidian_notes
 WHERE search_vector @@ websearch_to_tsquery('simple', @query)
-  AND (status IS NULL OR status != 'archived')
+  AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY rank DESC
 LIMIT @max_results;
 
 -- name: SearchNotesByFilters :many
 -- Filter notes by frontmatter fields and date range. NULL parameters are ignored.
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at
 FROM obsidian_notes
-WHERE (status IS NULL OR status != 'archived')
+WHERE (maturity IS NULL OR maturity != 'archived')
   AND (sqlc.narg('filter_type')::text IS NULL OR type = sqlc.narg('filter_type'))
   AND (sqlc.narg('filter_source')::text IS NULL OR source = sqlc.narg('filter_source'))
   AND (sqlc.narg('filter_context')::text IS NULL OR context = sqlc.narg('filter_context'))
@@ -64,11 +64,11 @@ LIMIT @max_results;
 
 -- name: NotesByTypeAndContext :many
 -- List notes by type, optionally filtered by context. Used for decision-log retrieval.
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at
 FROM obsidian_notes
 WHERE type = @note_type
-  AND (status IS NULL OR status != 'archived')
+  AND (maturity IS NULL OR maturity != 'archived')
   AND (sqlc.narg('filter_context')::text IS NULL OR context = sqlc.narg('filter_context'))
 ORDER BY synced_at DESC
 LIMIT @max_results;
@@ -81,18 +81,18 @@ UPDATE obsidian_notes SET embedding = $2 WHERE id = $1;
 -- Find notes that need embedding generation.
 SELECT id, file_path, title, content_text
 FROM obsidian_notes
-WHERE embedding IS NULL AND (status IS NULL OR status != 'archived')
+WHERE embedding IS NULL AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY synced_at DESC
 LIMIT @batch_size;
 
 -- name: SearchNotesBySimilarity :many
 -- Semantic search: find notes closest to a query embedding vector.
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at,
        (1 - (embedding <=> @query_embedding::vector))::float8 AS similarity
 FROM obsidian_notes
 WHERE embedding IS NOT NULL
-  AND (status IS NULL OR status != 'archived')
+  AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY embedding <=> @query_embedding::vector
 LIMIT @max_results;
 

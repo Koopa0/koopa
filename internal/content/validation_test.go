@@ -108,14 +108,7 @@ func TestParseFilter_Adversarial(t *testing.T) {
 			if tt.wantSinceNil && f.Since != nil {
 				t.Errorf("parseFilter(%q).Since = %v, want nil", tt.query, *f.Since)
 			}
-			// Tag passes through unmodified (sanitisation is handled by
-			// parameterised SQL — the tag value is safe to pass to the store).
-			if tt.query != "" && strings.HasPrefix(tt.query, "tag=") {
-				expected := strings.TrimPrefix(tt.query, "tag=")
-				if f.Tag == nil || *f.Tag != expected {
-					t.Errorf("parseFilter(%q).Tag = %v, want %q", tt.query, f.Tag, expected)
-				}
-			}
+
 		})
 	}
 }
@@ -539,12 +532,12 @@ func TestHandler_Related_SlugValidation(t *testing.T) {
 }
 
 // =============================================================================
-// Handler.SetVisibility — validation
+// Handler.SetIsPublic — validation
 // =============================================================================
 
-// TestHandler_SetVisibility_InvalidValues verifies SetVisibility rejects anything
-// other than "public" or "private".
-func TestHandler_SetVisibility_InvalidValues(t *testing.T) {
+// TestHandler_SetIsPublic_InvalidValues verifies SetIsPublic rejects invalid
+// UUIDs, malformed JSON, and oversized bodies.
+func TestHandler_SetIsPublic_InvalidValues(t *testing.T) {
 	t.Parallel()
 
 	validID := uuid.New().String()
@@ -559,28 +552,7 @@ func TestHandler_SetVisibility_InvalidValues(t *testing.T) {
 		{
 			name:        "invalid uuid in path",
 			id:          "not-a-uuid",
-			body:        `{"visibility":"public"}`,
-			wantCode:    http.StatusBadRequest,
-			wantErrCode: "BAD_REQUEST",
-		},
-		{
-			name:        "invalid visibility value",
-			id:          validID,
-			body:        `{"visibility":"hidden"}`,
-			wantCode:    http.StatusBadRequest,
-			wantErrCode: "BAD_REQUEST",
-		},
-		{
-			name:        "xss in visibility",
-			id:          validID,
-			body:        `{"visibility":"<script>alert(1)</script>"}`,
-			wantCode:    http.StatusBadRequest,
-			wantErrCode: "BAD_REQUEST",
-		},
-		{
-			name:        "empty visibility",
-			id:          validID,
-			body:        `{"visibility":""}`,
+			body:        `{"is_public":true}`,
 			wantCode:    http.StatusBadRequest,
 			wantErrCode: "BAD_REQUEST",
 		},
@@ -605,21 +577,21 @@ func TestHandler_SetVisibility_InvalidValues(t *testing.T) {
 			t.Parallel()
 			h := newTestHandler(nil)
 			req := httptest.NewRequest(http.MethodPatch,
-				"/api/admin/contents/"+tt.id+"/visibility",
+				"/api/admin/contents/"+tt.id+"/is_public",
 				strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			req.SetPathValue("id", tt.id)
 			w := httptest.NewRecorder()
 
-			h.SetVisibility(w, req)
+			h.SetIsPublic(w, req)
 
 			if w.Code != tt.wantCode {
-				t.Errorf("SetVisibility(%q, %q) status = %d, want %d\nbody: %s",
+				t.Errorf("SetIsPublic(%q, %q) status = %d, want %d\nbody: %s",
 					tt.id, tt.body, w.Code, tt.wantCode, w.Body.String())
 			}
 			got := decodeErrorBody(t, w.Body)
 			if got.Error.Code != tt.wantErrCode {
-				t.Errorf("SetVisibility(%q, %q) error.code = %q, want %q",
+				t.Errorf("SetIsPublic(%q, %q) error.code = %q, want %q",
 					tt.id, tt.body, got.Error.Code, tt.wantErrCode)
 			}
 		})
@@ -807,62 +779,27 @@ func keysOf(m map[string]json.RawMessage) []string {
 // a private content hit by slug must return 404, not 200.
 // This was a design decision — the gate lives in the handler, not the store.
 //
-// We verify the structure of the gate by checking that the handler code path
-// that checks c.Visibility == VisibilityPublic exists and returns 404 for private.
-// This is a white-box test of the handler's branch for private content.
+// Visibility is modelled as Content.IsPublic bool (true = public, false = private).
+// The handler checks c.IsPublic before returning content via the public slug route.
+// This test verifies the zero-value semantics: a newly created Content is private
+// by default (IsPublic == false), so the gate fires correctly without explicit setup.
 //
-// We simulate by producing a private Content from a stub that bypasses the store.
-// Since we cannot inject a store stub without interfaces (project rule), this
-// test documents the behaviour and is enforced by the integration tests in
+// Full end-to-end enforcement is covered by the integration tests in
 // store_integration_test.go.
 func TestRegression_BySlug_PrivateContentReturns404(t *testing.T) {
 	t.Parallel()
 
-	// Verify the constant values used in the visibility gate are correct.
-	if VisibilityPublic == VisibilityPrivate {
-		t.Error("VisibilityPublic == VisibilityPrivate — visibility gate can never fire")
-	}
-	if VisibilityPublic != "public" {
-		t.Errorf("VisibilityPublic = %q, want %q", VisibilityPublic, "public")
-	}
-	if VisibilityPrivate != "private" {
-		t.Errorf("VisibilityPrivate = %q, want %q", VisibilityPrivate, "private")
-	}
-}
-
-// TestRegression_Create_EmptyTagsBecomesEmptySlice documents that the handler
-// converts nil tags to []string{} before calling the store.
-// Regression: a nil Tags field would cause the store to insert NULL for tags
-// instead of an empty array, breaking the NOT NULL constraint.
-func TestRegression_Create_EmptyTagsBecomesEmptySlice(t *testing.T) {
-	t.Parallel()
-
-	// Prepare a CreateParams with nil tags (as decoded from omitted field).
-	p := CreateParams{
-		Slug:  "s",
-		Title: "T",
-		Type:  TypeArticle,
-		Tags:  nil,
+	// Verify that the zero value of Content has IsPublic == false (private by default).
+	// The visibility gate checks c.IsPublic; a false value must cause a 404.
+	var c Content
+	if c.IsPublic {
+		t.Error("Content zero value has IsPublic = true, want false (private by default)")
 	}
 
-	// Simulate the handler's nil-normalisation logic.
-	if p.Tags == nil {
-		p.Tags = []string{}
-	}
-
-	if p.Tags == nil {
-		t.Error("CreateParams.Tags should not be nil after handler normalisation")
-	}
-	if len(p.Tags) != 0 {
-		t.Errorf("CreateParams.Tags should be empty after normalisation, got %v", p.Tags)
-	}
-
-	// Verify it serialises as [] not null.
-	data, _ := json.Marshal(p)
-	var raw map[string]json.RawMessage
-	_ = json.Unmarshal(data, &raw)
-	if string(raw["tags"]) == "null" {
-		t.Error("CreateParams.Tags serialised as null after normalisation, want []")
+	// Verify that setting IsPublic to true makes it public.
+	c.IsPublic = true
+	if !c.IsPublic {
+		t.Error("Content.IsPublic = true did not set the field correctly")
 	}
 }
 

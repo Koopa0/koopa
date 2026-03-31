@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa0.dev/internal/api"
 )
@@ -27,13 +26,12 @@ const (
 // Handler handles tag and alias admin HTTP requests.
 type Handler struct {
 	store  *Store
-	pool   *pgxpool.Pool
 	logger *slog.Logger
 }
 
-// NewHandler returns a tag Handler. Pool is needed for transactional merge operations.
-func NewHandler(store *Store, pool *pgxpool.Pool, logger *slog.Logger) *Handler {
-	return &Handler{store: store, pool: pool, logger: logger}
+// NewHandler returns a tag Handler.
+func NewHandler(store *Store, logger *slog.Logger) *Handler {
+	return &Handler{store: store, logger: logger}
 }
 
 // List handles GET /api/admin/tags — returns all canonical tags.
@@ -258,24 +256,10 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := h.pool.Begin(r.Context())
-	if err != nil {
-		h.logger.Error("beginning merge transaction", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to begin transaction")
-		return
-	}
-	defer tx.Rollback(r.Context()) //nolint:errcheck // rollback on committed tx is no-op
-
-	result, err := h.store.MergeTags(r.Context(), tx, p.SourceID, p.TargetID)
+	result, err := h.store.MergeTags(r.Context(), p.SourceID, p.TargetID)
 	if err != nil {
 		h.logger.Error("merging tags", "source", p.SourceID, "target", p.TargetID, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to merge tags")
-		return
-	}
-
-	if err := tx.Commit(r.Context()); err != nil {
-		h.logger.Error("committing merge transaction", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to commit merge")
 		return
 	}
 

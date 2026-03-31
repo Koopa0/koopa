@@ -422,7 +422,7 @@ func run(logger *slog.Logger) error {
 		Upload: upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger),
 		Feed:   feed.NewHandler(feedStore, feedCollector, logger),
 		Notion: notionHandler,
-		Tag:    tag.NewHandler(tagStore, pool, logger),
+		Tag:    tag.NewHandler(tagStore, logger),
 		NotionSource: func() *notion.SourceHandler {
 			sh := notion.NewSourceHandler(notionSourceStore, notionClient, sourceCache, logger)
 			sh.SetSyncer(notionHandler)

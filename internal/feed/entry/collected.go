@@ -30,10 +30,10 @@ const (
 type Item struct {
 	ID               uuid.UUID  `json:"id"`
 	SourceURL        string     `json:"source_url"`
-	SourceName       string     `json:"source_name"`
+	FeedName         string     `json:"feed_name"`
 	Title            string     `json:"title"`
 	OriginalContent  *string    `json:"original_content,omitempty"`
-	RelevanceScore   float32    `json:"relevance_score"`
+	RelevanceScore   float64    `json:"relevance_score"`
 	Topics           []string   `json:"topics"`
 	Status           Status     `json:"status"`
 	CuratedContentID *uuid.UUID `json:"curated_content_id,omitempty"`
@@ -59,13 +59,12 @@ const (
 // CreateParams are the parameters for creating collected data.
 type CreateParams struct {
 	SourceURL       string     `json:"source_url"`
-	SourceName      string     `json:"source_name"`
 	Title           string     `json:"title"`
-	OriginalContent *string    `json:"original_content,omitempty"`
+	OriginalContent string     `json:"original_content"`
 	Topics          []string   `json:"topics"`
 	URLHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id,omitempty"`
-	RelevanceScore  float32    `json:"relevance_score"`
+	RelevanceScore  float64    `json:"relevance_score"`
 	PublishedAt     *time.Time `json:"published_at,omitempty"`
 }
 

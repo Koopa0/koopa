@@ -49,7 +49,7 @@ func (t *Task) IsRecurring() bool {
 
 // NextDue calculates the next due date based on recurrence settings.
 // Returns nil if the task is not recurring or has no due date.
-// For Month(s), clamps to the last day of the target month to prevent drift
+// For months, clamps to the last day of the target month to prevent drift
 // (e.g., Jan 31 + 1 month = Feb 28, not Mar 3).
 func (t *Task) NextDue() *time.Time {
 	if !t.IsRecurring() || t.Due == nil {
@@ -60,8 +60,8 @@ func (t *Task) NextDue() *time.Time {
 }
 
 // NextCycleDateOnOrAfter returns the first recurrence date on or after cutoff.
-// For Day(s)/Week(s), this is calculated mathematically.
-// For Month(s)/Year(s), this loops with clamped month arithmetic.
+// For days/weeks, this is calculated mathematically.
+// For months/years, this loops with clamped month arithmetic.
 // Returns nil if the task is not recurring or has no due date.
 func (t *Task) NextCycleDateOnOrAfter(cutoff time.Time) *time.Time {
 	if !t.IsRecurring() || t.Due == nil {
@@ -77,19 +77,19 @@ func (t *Task) NextCycleDateOnOrAfter(cutoff time.Time) *time.Time {
 	}
 
 	switch t.RecurUnit {
-	case "Day(s)":
+	case "days":
 		days := daysBetween(baseDate, cutoffDate)
 		cycles := (days + interval - 1) / interval // ceil division
 		next := baseDate.AddDate(0, 0, cycles*interval)
 		return &next
-	case "Week(s)":
+	case "weeks":
 		days := daysBetween(baseDate, cutoffDate)
 		stepDays := interval * 7
 		cycles := (days + stepDays - 1) / stepDays
 		next := baseDate.AddDate(0, 0, cycles*stepDays)
 		return &next
 	default:
-		// Month(s), Year(s), or unknown: loop with clamped arithmetic
+		// months, years, or unknown: loop with clamped arithmetic
 		cur := baseDate
 		for cur.Before(cutoffDate) {
 			cur = advanceDate(cur, interval, t.RecurUnit)
@@ -117,13 +117,13 @@ func (t *Task) MissedOccurrences(cutoff time.Time) []time.Time {
 // advanceDate moves a date forward by interval units, clamping months to avoid drift.
 func advanceDate(base time.Time, interval int, unit string) time.Time {
 	switch unit {
-	case "Day(s)":
+	case "days":
 		return base.AddDate(0, 0, interval)
-	case "Week(s)":
+	case "weeks":
 		return base.AddDate(0, 0, interval*7)
-	case "Month(s)":
+	case "months":
 		return addMonthsClamped(base, interval)
-	case "Year(s)":
+	case "years":
 		return addMonthsClamped(base, interval*12)
 	default:
 		return base.AddDate(0, 0, interval)

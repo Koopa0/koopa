@@ -58,7 +58,7 @@ func (s *Server) curateCollectedItem(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	sourceType := content.SourceExternal
-	body := fmt.Sprintf("source: %s\nurl: %s\n\n", item.SourceName, item.SourceURL)
+	body := fmt.Sprintf("source: %s\nurl: %s\n\n", item.FeedName, item.SourceURL)
 	if input.Notes != "" {
 		body += input.Notes + "\n\n"
 	}
@@ -81,7 +81,6 @@ func (s *Server) curateCollectedItem(ctx context.Context, _ *mcp.CallToolRequest
 		Body:        body,
 		Type:        content.TypeBookmark,
 		Status:      content.StatusDraft,
-		Tags:        tags,
 		Source:      &item.SourceURL,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewLight,

@@ -178,7 +178,6 @@ func (bl *BuildLog) run(ctx context.Context, raw json.RawMessage) (BuildLogOutpu
 		Body:        llmOut.Body,
 		Type:        content.TypeBuildLog,
 		Status:      content.StatusDraft,
-		Tags:        llmOut.Tags,
 		SourceType:  &sourceType,
 		Source:      &source,
 		ReviewLevel: content.ReviewLight,

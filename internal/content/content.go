@@ -53,14 +53,6 @@ const (
 	SourceManual      SourceType = "manual"
 )
 
-// Visibility controls whether content is shown on the public site.
-type Visibility string
-
-const (
-	VisibilityPublic  Visibility = "public"
-	VisibilityPrivate Visibility = "private"
-)
-
 // ReviewLevel represents the review strictness.
 type ReviewLevel string
 
@@ -80,28 +72,28 @@ type TopicRef struct {
 
 // Content represents a piece of content.
 type Content struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        Type            `json:"type"`
-	Status      Status          `json:"status"`
-	Tags        []string        `json:"tags"`
-	Topics      []TopicRef      `json:"topics"`
-	Source      *string         `json:"source,omitempty"`
-	SourceType  *SourceType     `json:"source_type,omitempty"`
-	SeriesID    *string         `json:"series_id,omitempty"`
-	SeriesOrder *int            `json:"series_order,omitempty"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  Visibility      `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id,omitempty"`
-	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
-	ReadingTime int             `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image,omitempty"`
-	PublishedAt *time.Time      `json:"published_at,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           Type            `json:"type"`
+	Status         Status          `json:"status"`
+	Tags           []string        `json:"tags"`
+	Topics         []TopicRef      `json:"topics"`
+	Source         *string         `json:"source,omitempty"`
+	SourceType     *SourceType     `json:"source_type,omitempty"`
+	SeriesID       *string         `json:"series_id,omitempty"`
+	SeriesOrder    *int            `json:"series_order,omitempty"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id,omitempty"`
+	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
+	ReadingTimeMin int             `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image,omitempty"`
+	PublishedAt    *time.Time      `json:"published_at,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 // Filter holds content listing parameters.
@@ -109,60 +101,57 @@ type Filter struct {
 	Page    int
 	PerPage int
 	Type    *Type
-	Tag     *string
 	Since   *time.Time
 }
 
 // AdminFilter holds admin content listing parameters.
 type AdminFilter struct {
-	Page       int
-	PerPage    int
-	Type       *Type
-	Visibility *Visibility
+	Page     int
+	PerPage  int
+	Type     *Type
+	IsPublic *bool
 }
 
 // CreateParams are the parameters for creating content.
 type CreateParams struct {
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        Type            `json:"type"`
-	Status      Status          `json:"status"`
-	Tags        []string        `json:"tags"`
-	TopicIDs    []uuid.UUID     `json:"topic_ids"`
-	Source      *string         `json:"source,omitempty"`
-	SourceType  *SourceType     `json:"source_type,omitempty"`
-	SeriesID    *string         `json:"series_id,omitempty"`
-	SeriesOrder *int            `json:"series_order,omitempty"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  Visibility      `json:"visibility,omitempty"`
-	ProjectID   *uuid.UUID      `json:"project_id,omitempty"`
-	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
-	ReadingTime int             `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image,omitempty"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           Type            `json:"type"`
+	Status         Status          `json:"status"`
+	TopicIDs       []uuid.UUID     `json:"topic_ids"`
+	Source         *string         `json:"source,omitempty"`
+	SourceType     *SourceType     `json:"source_type,omitempty"`
+	SeriesID       *string         `json:"series_id,omitempty"`
+	SeriesOrder    *int            `json:"series_order,omitempty"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id,omitempty"`
+	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
+	ReadingTimeMin int             `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image,omitempty"`
 }
 
 // UpdateParams are the parameters for updating content.
 type UpdateParams struct {
-	Slug        *string         `json:"slug,omitempty"`
-	Title       *string         `json:"title,omitempty"`
-	Body        *string         `json:"body,omitempty"`
-	Excerpt     *string         `json:"excerpt,omitempty"`
-	Type        *Type           `json:"type,omitempty"`
-	Status      *Status         `json:"status,omitempty"`
-	Tags        []string        `json:"tags,omitempty"`
-	TopicIDs    []uuid.UUID     `json:"topic_ids,omitempty"`
-	Source      *string         `json:"source,omitempty"`
-	SourceType  *SourceType     `json:"source_type,omitempty"`
-	SeriesID    *string         `json:"series_id,omitempty"`
-	SeriesOrder *int            `json:"series_order,omitempty"`
-	ReviewLevel *ReviewLevel    `json:"review_level,omitempty"`
-	Visibility  *Visibility     `json:"visibility,omitempty"`
-	ProjectID   *uuid.UUID      `json:"project_id,omitempty"`
-	AIMetadata  json.RawMessage `json:"ai_metadata,omitempty"`
-	ReadingTime *int            `json:"reading_time,omitempty"`
-	CoverImage  *string         `json:"cover_image,omitempty"`
+	Slug           *string         `json:"slug,omitempty"`
+	Title          *string         `json:"title,omitempty"`
+	Body           *string         `json:"body,omitempty"`
+	Excerpt        *string         `json:"excerpt,omitempty"`
+	Type           *Type           `json:"type,omitempty"`
+	Status         *Status         `json:"status,omitempty"`
+	TopicIDs       []uuid.UUID     `json:"topic_ids,omitempty"`
+	Source         *string         `json:"source,omitempty"`
+	SourceType     *SourceType     `json:"source_type,omitempty"`
+	SeriesID       *string         `json:"series_id,omitempty"`
+	SeriesOrder    *int            `json:"series_order,omitempty"`
+	ReviewLevel    *ReviewLevel    `json:"review_level,omitempty"`
+	IsPublic       *bool           `json:"is_public,omitempty"`
+	ProjectID      *uuid.UUID      `json:"project_id,omitempty"`
+	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
+	ReadingTimeMin *int            `json:"reading_time_min,omitempty"`
+	CoverImage     *string         `json:"cover_image,omitempty"`
 }
 
 // RelatedContent is a content item with a similarity score.

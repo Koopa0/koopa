@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +12,15 @@ import (
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
 )
+
+// escapeILIKE escapes special ILIKE characters in user input to prevent
+// wildcard injection (%, _) in ILIKE patterns.
+func escapeILIKE(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
 
 // Store handles database operations for tasks.
 type Store struct {
@@ -154,8 +164,13 @@ func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug, assign
 
 // SearchTasks searches tasks by title/description with optional filters.
 func (s *Store) SearchTasks(ctx context.Context, query, projectSlug, statusFilter, assignee *string, completedAfter, completedBefore *time.Time, maxResults int32) ([]SearchTaskDetail, error) {
+	var escapedQuery *string
+	if query != nil {
+		v := escapeILIKE(*query)
+		escapedQuery = &v
+	}
 	rows, err := s.q.SearchTasks(ctx, db.SearchTasksParams{
-		Query:           query,
+		Query:           escapedQuery,
 		ProjectSlug:     projectSlug,
 		StatusFilter:    statusFilter,
 		Assignee:        assignee,
@@ -240,7 +255,8 @@ func (s *Store) TaskByNotionPageID(ctx context.Context, notionPageID string) (*T
 
 // PendingTasksByTitle finds pending tasks matching a title (case-insensitive contains).
 func (s *Store) PendingTasksByTitle(ctx context.Context, title string) ([]Task, error) {
-	rows, err := s.q.PendingTasksByTitle(ctx, &title)
+	escaped := escapeILIKE(title)
+	rows, err := s.q.PendingTasksByTitle(ctx, &escaped)
 	if err != nil {
 		return nil, fmt.Errorf("searching pending tasks by title %q: %w", title, err)
 	}
@@ -559,7 +575,8 @@ func (s *Store) SkipHistoryByProject(ctx context.Context, projectID uuid.UUID, s
 		return nil, fmt.Errorf("querying skip history for project %s: %w", projectID, err)
 	}
 	records := make([]SkipRecordWithTitle, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		records[i] = SkipRecordWithTitle{
 			SkipRecord: SkipRecord{
 				ID:          r.ID,

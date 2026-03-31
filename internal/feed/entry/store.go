@@ -39,38 +39,56 @@ func (s *Store) Items(ctx context.Context, f Filter) ([]Item, int, error) {
 	limit := int32(f.PerPage)                 // #nosec G115 -- pagination values are bounded by API layer
 	offset := int32((f.Page - 1) * f.PerPage) // #nosec G115 -- pagination values are bounded by API layer
 
-	var (
-		rows []db.CollectedDatum
-		err  error
-	)
 	if f.Sort == "relevance" {
-		rows, err = s.q.CollectedDataByRelevance(ctx, db.CollectedDataByRelevanceParams{
+		rows, err := s.q.CollectedDataByRelevance(ctx, db.CollectedDataByRelevanceParams{
 			Limit:  limit,
 			Offset: offset,
 			Status: status,
 		})
-	} else {
-		rows, err = s.q.CollectedData(ctx, db.CollectedDataParams{
-			Limit:  limit,
-			Offset: offset,
-			Status: status,
-		})
+		if err != nil {
+			return nil, 0, fmt.Errorf("listing collected data: %w", err)
+		}
+		count, err := s.q.CollectedDataCount(ctx, status)
+		if err != nil {
+			return nil, 0, fmt.Errorf("counting collected data: %w", err)
+		}
+		data := make([]Item, len(rows))
+		for i := range rows {
+			r := &rows[i]
+			data[i] = rowToItem(collectedRow{
+				ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+				RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+				CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+				UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+				PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+			})
+		}
+		return data, int(count), nil
 	}
+
+	rows, err := s.q.CollectedData(ctx, db.CollectedDataParams{
+		Limit:  limit,
+		Offset: offset,
+		Status: status,
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing collected data: %w", err)
 	}
-
 	count, err := s.q.CollectedDataCount(ctx, status)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting collected data: %w", err)
 	}
-
 	data := make([]Item, len(rows))
 	for i := range rows {
-		r := rows[i]
-		data[i] = datumToItem(&r)
+		r := &rows[i]
+		data[i] = rowToItem(collectedRow{
+			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+		})
 	}
-
 	return data, int(count), nil
 }
 
@@ -83,7 +101,13 @@ func (s *Store) Item(ctx context.Context, id uuid.UUID) (*Item, error) {
 		}
 		return nil, fmt.Errorf("querying collected data %s: %w", id, err)
 	}
-	d := datumToItem(&r)
+	d := rowToItem(collectedRow{
+		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+		RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+		UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+	})
 	return &d, nil
 }
 
@@ -112,7 +136,6 @@ func (s *Store) Ignore(ctx context.Context, id uuid.UUID) error {
 func (s *Store) CreateItem(ctx context.Context, p *CreateParams) (*Item, error) {
 	r, err := s.q.CreateCollectedData(ctx, db.CreateCollectedDataParams{
 		SourceUrl:       p.SourceURL,
-		SourceName:      p.SourceName,
 		Title:           p.Title,
 		OriginalContent: p.OriginalContent,
 		Topics:          p.Topics,
@@ -140,7 +163,13 @@ func (s *Store) ItemByURLHash(ctx context.Context, urlHash string) (*Item, error
 		}
 		return nil, fmt.Errorf("querying collected data by url hash %s: %w", urlHash, err)
 	}
-	d := datumToItem(&r)
+	d := rowToItem(collectedRow{
+		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+		RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+		UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+	})
 	return &d, nil
 }
 
@@ -168,7 +197,14 @@ func (s *Store) RecentCollectedData(ctx context.Context, start, end time.Time, l
 	}
 	data := make([]Item, len(rows))
 	for i := range rows {
-		data[i] = datumToItem(&rows[i])
+		r := &rows[i]
+		data[i] = rowToItem(collectedRow{
+			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+		})
 	}
 	return data, nil
 }
@@ -185,7 +221,14 @@ func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxRe
 	}
 	data := make([]Item, len(rows))
 	for i := range rows {
-		data[i] = datumToItem(&rows[i])
+		r := &rows[i]
+		data[i] = rowToItem(collectedRow{
+			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+		})
 	}
 	return data, nil
 }
@@ -201,7 +244,14 @@ func (s *Store) TopRelevantCollected(ctx context.Context, since time.Time, maxRe
 	}
 	data := make([]Item, len(rows))
 	for i := range rows {
-		data[i] = datumToItem(&rows[i])
+		r := &rows[i]
+		data[i] = rowToItem(collectedRow{
+			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+		})
 	}
 	return data, nil
 }
@@ -217,7 +267,14 @@ func (s *Store) LatestByRecency(ctx context.Context, since *time.Time, maxResult
 	}
 	data := make([]Item, len(rows))
 	for i := range rows {
-		data[i] = datumToItem(&rows[i])
+		r := &rows[i]
+		data[i] = rowToItem(collectedRow{
+			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+		})
 	}
 	return data, nil
 }
@@ -233,7 +290,14 @@ func (s *Store) HighPriorityRecent(ctx context.Context, since time.Time, maxResu
 	}
 	data := make([]Item, len(rows))
 	for i := range rows {
-		data[i] = datumToItem(&rows[i])
+		r := &rows[i]
+		data[i] = rowToItem(collectedRow{
+			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+		})
 	}
 	return data, nil
 }
@@ -260,19 +324,66 @@ func (s *Store) TopItems(ctx context.Context, limit int) ([]Item, error) {
 	}
 	items := make([]Item, len(rows))
 	for i := range rows {
-		items[i] = datumToItem(&rows[i])
+		r := &rows[i]
+		items[i] = rowToItem(collectedRow{
+			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
+			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
+			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
+		})
 	}
 	return items, nil
 }
 
-// datumToItem converts a db.CollectedDatum to Item.
+// collectedRow is the common field set shared by all sqlc-generated collected data
+// row types. Each query returns a different Row type (CollectedDataRow, LatestCollectedDataRow, etc.)
+// but they all share the same fields including FeedName from the LEFT JOIN.
+type collectedRow struct {
+	ID               uuid.UUID
+	SourceUrl        string //nolint:staticcheck,revive // matches sqlc-generated field name
+	Title            string
+	OriginalContent  string
+	RelevanceScore   float64
+	Topics           []string
+	Status           db.CollectedStatus
+	CuratedContentID *uuid.UUID
+	CollectedAt      time.Time
+	UrlHash          string //nolint:staticcheck,revive // matches sqlc-generated field name
+	UserFeedback     *string
+	FeedbackAt       *time.Time
+	FeedID           *uuid.UUID
+	PublishedAt      *time.Time
+	FeedName         string
+}
+
+func rowToItem(r collectedRow) Item { //nolint:gocritic // hugeParam: struct passed by value matches codebase pattern
+	return Item{
+		ID:               r.ID,
+		SourceURL:        r.SourceUrl,
+		FeedName:         r.FeedName,
+		Title:            r.Title,
+		OriginalContent:  &r.OriginalContent,
+		RelevanceScore:   r.RelevanceScore,
+		Topics:           r.Topics,
+		Status:           Status(r.Status),
+		CuratedContentID: r.CuratedContentID,
+		CollectedAt:      r.CollectedAt,
+		PublishedAt:      r.PublishedAt,
+		URLHash:          r.UrlHash,
+		UserFeedback:     r.UserFeedback,
+		FeedbackAt:       r.FeedbackAt,
+		FeedID:           r.FeedID,
+	}
+}
+
+// datumToItem converts a db.CollectedDatum to Item (used for CreateCollectedData which returns CollectedDatum).
 func datumToItem(r *db.CollectedDatum) Item {
 	return Item{
 		ID:               r.ID,
 		SourceURL:        r.SourceUrl,
-		SourceName:       r.SourceName,
 		Title:            r.Title,
-		OriginalContent:  r.OriginalContent,
+		OriginalContent:  &r.OriginalContent,
 		RelevanceScore:   r.RelevanceScore,
 		Topics:           r.Topics,
 		Status:           Status(r.Status),

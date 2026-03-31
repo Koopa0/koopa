@@ -325,7 +325,7 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	for i := range data {
 		items[i] = rssItem{
 			Title:       data[i].Title,
-			SourceName:  data[i].SourceName,
+			SourceName:  data[i].FeedName,
 			URL:         data[i].SourceURL,
 			Topics:      data[i].Topics,
 			CollectedAt: data[i].CollectedAt.Format(time.RFC3339),
@@ -848,7 +848,7 @@ func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, i
 		Type:        string(c.Type),
 		Status:      string(c.Status),
 		Tags:        c.Tags,
-		ReadingTime: c.ReadingTime,
+		ReadingTime: c.ReadingTimeMin,
 		CreatedAt:   c.CreatedAt.Format(time.RFC3339),
 	}
 	if c.PublishedAt != nil {
@@ -1086,7 +1086,8 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	source := fmt.Sprintf("claude-code:%s", input.SessionType)
 	sourceType := content.SourceAIGenerated
 
-	tags := ensureTag(input.Tags, input.SessionType)
+	// TODO: tags from ensureTag(input.Tags, input.SessionType) should be resolved
+	// to tag IDs and written to content_tags junction table after content creation.
 
 	// Prepend metadata header so the frontend can parse project/session_type
 	var bodyBuilder strings.Builder
@@ -1113,11 +1114,10 @@ func (s *Server) logDevSession(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		Body:        body,
 		Type:        content.TypeBuildLog,
 		Status:      content.StatusPublished,
-		Tags:        tags,
 		Source:      &source,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
-		Visibility:  content.VisibilityPublic,
+		IsPublic:    true,
 		ProjectID:   &proj.ID,
 	}
 	created, err := s.createContentWithRetry(ctx, params, fmt.Sprintf("%s-dev-log-%s", proj.Slug, now.Format("2006-01-02")), now)

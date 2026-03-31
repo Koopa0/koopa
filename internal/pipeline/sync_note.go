@@ -87,7 +87,7 @@ func buildUpsertParams(path, bodyHash, body string, hashChanged bool, parsed *ob
 		p.Context = &parsed.Context
 	}
 	if parsed.Status != "" {
-		p.Status = &parsed.Status
+		p.Maturity = &parsed.Status
 	}
 	p.Tags = parsed.Tags
 	if parsed.Difficulty != "" {

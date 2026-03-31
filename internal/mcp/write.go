@@ -592,7 +592,8 @@ type AutoCompletedTask struct {
 }
 
 func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest, input *LogLearningSessionInput) (*mcp.CallToolResult, LogLearningSessionOutput, error) {
-	tags, err := learning.ValidateInput(&learning.SessionInput{
+	// TODO: resolved tags should be written to content_tags junction table after content creation.
+	_, err := learning.ValidateInput(&learning.SessionInput{
 		Project:    input.Project,
 		Topic:      input.Topic,
 		Title:      input.Title,
@@ -604,10 +605,6 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		return nil, LogLearningSessionOutput{}, err
 	}
-	if tags == nil {
-		tags = []string{}
-	}
-
 	// Validate per-type structured metadata if provided.
 	if err := learning.ValidateLearningMetadata(input.LearningType, input.Metadata); err != nil {
 		return nil, LogLearningSessionOutput{}, fmt.Errorf("metadata validation: %w", err)
@@ -635,9 +632,6 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	if input.Project != "" && input.Project != "none" {
 		if proj, projErr := s.resolveProjectChain(ctx, input.Project); projErr == nil {
 			projectID = &proj.ID
-			tags = ensureTag(tags, proj.Slug)
-		} else {
-			tags = ensureTag(tags, strings.ToLower(input.Project))
 		}
 	}
 
@@ -659,11 +653,10 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		Body:        body,
 		Type:        content.TypeTIL,
 		Status:      content.StatusPublished,
-		Tags:        tags,
 		Source:      &source,
 		SourceType:  &sourceType,
 		ReviewLevel: content.ReviewAuto,
-		Visibility:  content.VisibilityPrivate,
+		IsPublic:    false,
 		ProjectID:   projectID,
 		AIMetadata:  aiMetadata,
 	}

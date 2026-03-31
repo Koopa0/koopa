@@ -663,7 +663,7 @@ func (s *Server) fetchMorningRSSHighlights(ctx context.Context, out *MorningCont
 		out.UrgentRSS = append(out.UrgentRSS, urgentRSSItem{
 			ID:          urgent[i].ID.String(),
 			Title:       urgent[i].Title,
-			SourceName:  urgent[i].SourceName,
+			SourceName:  urgent[i].FeedName,
 			URL:         urgent[i].SourceURL,
 			Topics:      urgent[i].Topics,
 			CollectedAt: urgent[i].CollectedAt.Format(time.RFC3339),
@@ -1085,7 +1085,7 @@ func (s *Server) fetchMorningRSSHighlightItems(ctx context.Context, out *Morning
 	for i := range items {
 		highlights[i] = rssHighlightItem{
 			Title:      items[i].Title,
-			SourceName: items[i].SourceName,
+			SourceName: items[i].FeedName,
 			Score:      float64(items[i].RelevanceScore),
 			URL:        items[i].SourceURL,
 		}

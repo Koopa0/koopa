@@ -14,6 +14,35 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
+const abandonGoalByNotionPageID = `-- name: AbandonGoalByNotionPageID :execrows
+UPDATE goals SET status = 'abandoned', updated_at = now()
+WHERE notion_page_id = $1 AND status != 'abandoned'
+`
+
+// Abandon a single goal by its Notion page ID (used when Notion page is trashed).
+func (q *Queries) AbandonGoalByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
+	result, err := q.db.Exec(ctx, abandonGoalByNotionPageID, notionPageID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const abandonOrphanNotionGoals = `-- name: AbandonOrphanNotionGoals :execrows
+UPDATE goals SET status = 'abandoned', updated_at = now()
+WHERE notion_page_id IS NOT NULL
+  AND notion_page_id != ALL($1::text[])
+  AND status != 'abandoned'
+`
+
+func (q *Queries) AbandonOrphanNotionGoals(ctx context.Context, activeIds []string) (int64, error) {
+	result, err := q.db.Exec(ctx, abandonOrphanNotionGoals, activeIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const activeProjectSlugsWithRepo = `-- name: ActiveProjectSlugsWithRepo :many
 SELECT slug FROM projects
 WHERE status IN ('in-progress', 'maintained')
@@ -46,7 +75,7 @@ func (q *Queries) ActiveProjectSlugsWithRepo(ctx context.Context, since *time.Ti
 const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC
@@ -77,7 +106,7 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 			&i.GithubUrl,
 			&i.LiveUrl,
 			&i.Featured,
-			&i.Public,
+			&i.IsPublic,
 			&i.SortOrder,
 			&i.Status,
 			&i.NotionPageID,
@@ -100,6 +129,21 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 	return items, nil
 }
 
+const addContentTag = `-- name: AddContentTag :exec
+INSERT INTO content_tags (content_id, tag_id) VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AddContentTagParams struct {
+	ContentID uuid.UUID `json:"content_id"`
+	TagID     uuid.UUID `json:"tag_id"`
+}
+
+func (q *Queries) AddContentTag(ctx context.Context, arg AddContentTagParams) error {
+	_, err := q.db.Exec(ctx, addContentTag, arg.ContentID, arg.TagID)
+	return err
+}
+
 const addContentTopic = `-- name: AddContentTopic :exec
 INSERT INTO content_topics (content_id, topic_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING
@@ -116,11 +160,11 @@ func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams
 }
 
 const adminListContents = `-- name: AdminListContents :many
-SELECT id, slug, title, excerpt, type, status, visibility, project_id, tags,
-       reading_time, published_at, created_at, updated_at
+SELECT id, slug, title, excerpt, type, status, is_public, project_id,
+       reading_time_min, published_at, created_at, updated_at
 FROM contents
 WHERE ($3::content_type IS NULL OR type = $3)
-  AND ($4::text IS NULL OR visibility = $4)
+  AND ($4::bool IS NULL OR is_public = $4)
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -129,32 +173,31 @@ type AdminListContentsParams struct {
 	Limit       int32           `json:"limit"`
 	Offset      int32           `json:"offset"`
 	ContentType NullContentType `json:"content_type"`
-	Visibility  *string         `json:"visibility"`
+	IsPublic    *bool           `json:"is_public"`
 }
 
 type AdminListContentsRow struct {
-	ID          uuid.UUID     `json:"id"`
-	Slug        string        `json:"slug"`
-	Title       string        `json:"title"`
-	Excerpt     string        `json:"excerpt"`
-	Type        ContentType   `json:"type"`
-	Status      ContentStatus `json:"status"`
-	Visibility  string        `json:"visibility"`
-	ProjectID   *uuid.UUID    `json:"project_id"`
-	Tags        []string      `json:"tags"`
-	ReadingTime int32         `json:"reading_time"`
-	PublishedAt *time.Time    `json:"published_at"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
-// Admin list: all statuses, all visibilities, with optional type and visibility filter.
+// Admin list: all statuses, with optional type and is_public filter.
 func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsParams) ([]AdminListContentsRow, error) {
 	rows, err := q.db.Query(ctx, adminListContents,
 		arg.Limit,
 		arg.Offset,
 		arg.ContentType,
-		arg.Visibility,
+		arg.IsPublic,
 	)
 	if err != nil {
 		return nil, err
@@ -170,10 +213,9 @@ func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsPa
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
-			&i.Tags,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -191,16 +233,16 @@ func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsPa
 const adminListContentsCount = `-- name: AdminListContentsCount :one
 SELECT COUNT(*) FROM contents
 WHERE ($1::content_type IS NULL OR type = $1)
-  AND ($2::text IS NULL OR visibility = $2)
+  AND ($2::bool IS NULL OR is_public = $2)
 `
 
 type AdminListContentsCountParams struct {
 	ContentType NullContentType `json:"content_type"`
-	Visibility  *string         `json:"visibility"`
+	IsPublic    *bool           `json:"is_public"`
 }
 
 func (q *Queries) AdminListContentsCount(ctx context.Context, arg AdminListContentsCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminListContentsCount, arg.ContentType, arg.Visibility)
+	row := q.db.QueryRow(ctx, adminListContentsCount, arg.ContentType, arg.IsPublic)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -295,7 +337,7 @@ func (q *Queries) AliasesByExactRawTags(ctx context.Context, rawTags []string) (
 const allPublishedSlugs = `-- name: AllPublishedSlugs :many
 SELECT slug, type, updated_at
 FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
 ORDER BY updated_at DESC
 `
 
@@ -372,43 +414,14 @@ func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const archiveGoalByNotionPageID = `-- name: ArchiveGoalByNotionPageID :execrows
-UPDATE goals SET status = 'abandoned', updated_at = now()
-WHERE notion_page_id = $1 AND status != 'abandoned'
-`
-
-// Archive a single goal by its Notion page ID (used when Notion page is trashed).
-func (q *Queries) ArchiveGoalByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveGoalByNotionPageID, notionPageID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const archiveNote = `-- name: ArchiveNote :exec
-UPDATE obsidian_notes SET status = 'archived', synced_at = now()
-WHERE file_path = $1 AND status != 'archived'
+UPDATE obsidian_notes SET maturity = 'archived', synced_at = now()
+WHERE file_path = $1 AND maturity != 'archived'
 `
 
 func (q *Queries) ArchiveNote(ctx context.Context, filePath string) error {
 	_, err := q.db.Exec(ctx, archiveNote, filePath)
 	return err
-}
-
-const archiveOrphanNotionGoals = `-- name: ArchiveOrphanNotionGoals :execrows
-UPDATE goals SET status = 'abandoned', updated_at = now()
-WHERE notion_page_id IS NOT NULL
-  AND notion_page_id != ALL($1::text[])
-  AND status != 'abandoned'
-`
-
-func (q *Queries) ArchiveOrphanNotionGoals(ctx context.Context, activeIds []string) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveOrphanNotionGoals, activeIds)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const archiveOrphanNotionProjects = `-- name: ArchiveOrphanNotionProjects :execrows
@@ -567,12 +580,14 @@ func (q *Queries) ClearSourceRole(ctx context.Context, id uuid.UUID) (int64, err
 }
 
 const collectedData = `-- name: CollectedData :many
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data
-WHERE ($3::collected_status IS NULL OR status = $3)
-ORDER BY COALESCE(published_at, collected_at) DESC
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE ($3::collected_status IS NULL OR cd.status = $3)
+ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -582,19 +597,36 @@ type CollectedDataParams struct {
 	Status NullCollectedStatus `json:"status"`
 }
 
-func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([]CollectedDatum, error) {
+type CollectedDataRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
+func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([]CollectedDataRow, error) {
 	rows, err := q.db.Query(ctx, collectedData, arg.Limit, arg.Offset, arg.Status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CollectedDatum{}
+	items := []CollectedDataRow{}
 	for rows.Next() {
-		var i CollectedDatum
+		var i CollectedDataRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
-			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
 			&i.RelevanceScore,
@@ -607,6 +639,7 @@ func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([
 			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -619,19 +652,39 @@ func (q *Queries) CollectedData(ctx context.Context, arg CollectedDataParams) ([
 }
 
 const collectedDataByID = `-- name: CollectedDataByID :one
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data WHERE id = $1
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE cd.id = $1
 `
 
-func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (CollectedDatum, error) {
+type CollectedDataByIDRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
+func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (CollectedDataByIDRow, error) {
 	row := q.db.QueryRow(ctx, collectedDataByID, id)
-	var i CollectedDatum
+	var i CollectedDataByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.SourceUrl,
-		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
 		&i.RelevanceScore,
@@ -644,17 +697,20 @@ func (q *Queries) CollectedDataByID(ctx context.Context, id uuid.UUID) (Collecte
 		&i.FeedbackAt,
 		&i.FeedID,
 		&i.PublishedAt,
+		&i.FeedName,
 	)
 	return i, err
 }
 
 const collectedDataByRelevance = `-- name: CollectedDataByRelevance :many
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data
-WHERE ($3::collected_status IS NULL OR status = $3)
-ORDER BY relevance_score DESC, COALESCE(published_at, collected_at) DESC
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE ($3::collected_status IS NULL OR cd.status = $3)
+ORDER BY cd.relevance_score DESC, COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -664,19 +720,36 @@ type CollectedDataByRelevanceParams struct {
 	Status NullCollectedStatus `json:"status"`
 }
 
-func (q *Queries) CollectedDataByRelevance(ctx context.Context, arg CollectedDataByRelevanceParams) ([]CollectedDatum, error) {
+type CollectedDataByRelevanceRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
+func (q *Queries) CollectedDataByRelevance(ctx context.Context, arg CollectedDataByRelevanceParams) ([]CollectedDataByRelevanceRow, error) {
 	rows, err := q.db.Query(ctx, collectedDataByRelevance, arg.Limit, arg.Offset, arg.Status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CollectedDatum{}
+	items := []CollectedDataByRelevanceRow{}
 	for rows.Next() {
-		var i CollectedDatum
+		var i CollectedDataByRelevanceRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
-			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
 			&i.RelevanceScore,
@@ -689,6 +762,7 @@ func (q *Queries) CollectedDataByRelevance(ctx context.Context, arg CollectedDat
 			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -701,19 +775,39 @@ func (q *Queries) CollectedDataByRelevance(ctx context.Context, arg CollectedDat
 }
 
 const collectedDataByURLHash = `-- name: CollectedDataByURLHash :one
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data WHERE url_hash = $1
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE cd.url_hash = $1
 `
 
-func (q *Queries) CollectedDataByURLHash(ctx context.Context, urlHash string) (CollectedDatum, error) {
+type CollectedDataByURLHashRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
+func (q *Queries) CollectedDataByURLHash(ctx context.Context, urlHash string) (CollectedDataByURLHashRow, error) {
 	row := q.db.QueryRow(ctx, collectedDataByURLHash, urlHash)
-	var i CollectedDatum
+	var i CollectedDataByURLHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.SourceUrl,
-		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
 		&i.RelevanceScore,
@@ -726,6 +820,7 @@ func (q *Queries) CollectedDataByURLHash(ctx context.Context, urlHash string) (C
 		&i.FeedbackAt,
 		&i.FeedID,
 		&i.PublishedAt,
+		&i.FeedName,
 	)
 	return i, err
 }
@@ -912,34 +1007,33 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (Re
 }
 
 const contentByID = `-- name: ContentByID :one
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE id = $1
 `
 
 type ContentByIDRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow, error) {
@@ -953,16 +1047,15 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Tags,
 		&i.Source,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
 		&i.ReviewLevel,
-		&i.Visibility,
+		&i.IsPublic,
 		&i.ProjectID,
 		&i.AiMetadata,
-		&i.ReadingTime,
+		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -972,34 +1065,33 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 }
 
 const contentBySlug = `-- name: ContentBySlug :one
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE slug = $1
 `
 
 type ContentBySlugRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlugRow, error) {
@@ -1013,16 +1105,15 @@ func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlug
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Tags,
 		&i.Source,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
 		&i.ReviewLevel,
-		&i.Visibility,
+		&i.IsPublic,
 		&i.ProjectID,
 		&i.AiMetadata,
-		&i.ReadingTime,
+		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -1032,7 +1123,7 @@ func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlug
 }
 
 const contentEmbeddingBySlug = `-- name: ContentEmbeddingBySlug :one
-SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published' AND visibility = 'public'
+SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published' AND is_public = true
 `
 
 type ContentEmbeddingBySlugRow struct {
@@ -1065,7 +1156,7 @@ func (q *Queries) ContentEmbeddingBySlugAny(ctx context.Context, slug string) (C
 }
 
 const contentRichTagEntries = `-- name: ContentRichTagEntries :many
-SELECT c.id, c.slug, c.title, c.tags, c.ai_metadata, c.created_at,
+SELECT c.id, c.slug, c.title, c.ai_metadata, c.created_at,
        p.slug AS project_slug
 FROM contents c
 LEFT JOIN projects p ON p.id = c.project_id
@@ -1085,15 +1176,13 @@ type ContentRichTagEntriesRow struct {
 	ID          uuid.UUID       `json:"id"`
 	Slug        string          `json:"slug"`
 	Title       string          `json:"title"`
-	Tags        []string        `json:"tags"`
 	AiMetadata  json.RawMessage `json:"ai_metadata"`
 	CreatedAt   time.Time       `json:"created_at"`
 	ProjectSlug *string         `json:"project_slug"`
 }
 
-// Fetch id, slug, title, tags, ai_metadata, project slug, and created_at for learning
+// Fetch id, slug, title, ai_metadata, project slug, and created_at for learning
 // analytics that need structured metadata (weakness trend, learning timeline).
-// Heavier than ContentTagsByTypeAndProject — only use when slug/title/metadata are needed.
 func (q *Queries) ContentRichTagEntries(ctx context.Context, arg ContentRichTagEntriesParams) ([]ContentRichTagEntriesRow, error) {
 	rows, err := q.db.Query(ctx, contentRichTagEntries, arg.ContentType, arg.ProjectID, arg.Since)
 	if err != nil {
@@ -1107,7 +1196,6 @@ func (q *Queries) ContentRichTagEntries(ctx context.Context, arg ContentRichTagE
 			&i.ID,
 			&i.Slug,
 			&i.Title,
-			&i.Tags,
 			&i.AiMetadata,
 			&i.CreatedAt,
 			&i.ProjectSlug,
@@ -1122,57 +1210,14 @@ func (q *Queries) ContentRichTagEntries(ctx context.Context, arg ContentRichTagE
 	return items, nil
 }
 
-const contentTagsByTypeAndProject = `-- name: ContentTagsByTypeAndProject :many
-SELECT id, tags, created_at
-FROM contents
-WHERE type = $1::content_type
-  AND ($2::uuid IS NULL OR project_id = $2)
-  AND created_at >= $3
-ORDER BY created_at DESC
-`
-
-type ContentTagsByTypeAndProjectParams struct {
-	ContentType ContentType `json:"content_type"`
-	ProjectID   *uuid.UUID  `json:"project_id"`
-	Since       time.Time   `json:"since"`
-}
-
-type ContentTagsByTypeAndProjectRow struct {
-	ID        uuid.UUID `json:"id"`
-	Tags      []string  `json:"tags"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Fetch id, tags, and created_at for learning analytics aggregation.
-// Used by MCP get_tag_summary, get_coverage_matrix, get_weakness_trend.
-func (q *Queries) ContentTagsByTypeAndProject(ctx context.Context, arg ContentTagsByTypeAndProjectParams) ([]ContentTagsByTypeAndProjectRow, error) {
-	rows, err := q.db.Query(ctx, contentTagsByTypeAndProject, arg.ContentType, arg.ProjectID, arg.Since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ContentTagsByTypeAndProjectRow{}
-	for rows.Next() {
-		var i ContentTagsByTypeAndProjectRow
-		if err := rows.Scan(&i.ID, &i.Tags, &i.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const contentsByTopicID = `-- name: ContentsByTopicID :many
-SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status, c.tags,
+SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status,
        c.source, c.source_type, c.series_id, c.series_order, c.review_level,
-       c.visibility, c.project_id, c.ai_metadata, c.reading_time, c.cover_image,
+       c.is_public, c.project_id, c.ai_metadata, c.reading_time_min, c.cover_image,
        c.published_at, c.created_at, c.updated_at
 FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
-WHERE ct.topic_id = $1 AND c.status = 'published' AND c.visibility = 'public'
+WHERE ct.topic_id = $1 AND c.status = 'published' AND c.is_public = true
 ORDER BY c.published_at DESC NULLS LAST
 LIMIT $2 OFFSET $3
 `
@@ -1184,27 +1229,26 @@ type ContentsByTopicIDParams struct {
 }
 
 type ContentsByTopicIDRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) ContentsByTopicID(ctx context.Context, arg ContentsByTopicIDParams) ([]ContentsByTopicIDRow, error) {
@@ -1224,16 +1268,15 @@ func (q *Queries) ContentsByTopicID(ctx context.Context, arg ContentsByTopicIDPa
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -1252,7 +1295,7 @@ func (q *Queries) ContentsByTopicID(ctx context.Context, arg ContentsByTopicIDPa
 const contentsByTopicIDCount = `-- name: ContentsByTopicIDCount :one
 SELECT COUNT(*) FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
-WHERE ct.topic_id = $1 AND c.status = 'published' AND c.visibility = 'public'
+WHERE ct.topic_id = $1 AND c.status = 'published' AND c.is_public = true
 `
 
 func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID) (int64, error) {
@@ -1346,29 +1389,27 @@ func (q *Queries) CountInsightsByStatus(ctx context.Context, status *string) (in
 }
 
 const createCollectedData = `-- name: CreateCollectedData :one
-INSERT INTO collected_data (source_url, source_name, title, original_content, topics, url_hash, feed_id, relevance_score, published_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, source_url, source_name, title, original_content,
+INSERT INTO collected_data (source_url, title, original_content, topics, url_hash, feed_id, relevance_score, published_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, source_url, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
           url_hash, user_feedback, feedback_at, feed_id, published_at
 `
 
 type CreateCollectedDataParams struct {
 	SourceUrl       string     `json:"source_url"`
-	SourceName      string     `json:"source_name"`
 	Title           string     `json:"title"`
-	OriginalContent *string    `json:"original_content"`
+	OriginalContent string     `json:"original_content"`
 	Topics          []string   `json:"topics"`
 	UrlHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id"`
-	RelevanceScore  float32    `json:"relevance_score"`
+	RelevanceScore  float64    `json:"relevance_score"`
 	PublishedAt     *time.Time `json:"published_at"`
 }
 
 func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDataParams) (CollectedDatum, error) {
 	row := q.db.QueryRow(ctx, createCollectedData,
 		arg.SourceUrl,
-		arg.SourceName,
 		arg.Title,
 		arg.OriginalContent,
 		arg.Topics,
@@ -1381,7 +1422,6 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 	err := row.Scan(
 		&i.ID,
 		&i.SourceUrl,
-		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
 		&i.RelevanceScore,
@@ -1399,58 +1439,56 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 }
 
 const createContent = `-- name: CreateContent :one
-INSERT INTO contents (slug, title, body, excerpt, type, status, tags, source, source_type,
-                      series_id, series_order, review_level, visibility, project_id, ai_metadata,
-                      reading_time, cover_image)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-        $16, $17)
-RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+INSERT INTO contents (slug, title, body, excerpt, type, status, source, source_type,
+                      series_id, series_order, review_level, is_public, project_id, ai_metadata,
+                      reading_time_min, cover_image)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+        $15, $16)
+RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+          series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
 type CreateContentParams struct {
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
 }
 
 type CreateContentRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (CreateContentRow, error) {
@@ -1461,16 +1499,15 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.Excerpt,
 		arg.Type,
 		arg.Status,
-		arg.Tags,
 		arg.Source,
 		arg.SourceType,
 		arg.SeriesID,
 		arg.SeriesOrder,
 		arg.ReviewLevel,
-		arg.Visibility,
+		arg.IsPublic,
 		arg.ProjectID,
 		arg.AiMetadata,
-		arg.ReadingTime,
+		arg.ReadingTimeMin,
 		arg.CoverImage,
 	)
 	var i CreateContentRow
@@ -1482,16 +1519,15 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Tags,
 		&i.Source,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
 		&i.ReviewLevel,
-		&i.Visibility,
+		&i.IsPublic,
 		&i.ProjectID,
 		&i.AiMetadata,
-		&i.ReadingTime,
+		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -1556,11 +1592,11 @@ RETURNING id, url, name, schedule, topics, enabled, priority, etag, last_modifie
 `
 
 type CreateFeedParams struct {
-	Url          string   `json:"url"`
-	Name         string   `json:"name"`
-	Schedule     string   `json:"schedule"`
-	Topics       []string `json:"topics"`
-	FilterConfig []byte   `json:"filter_config"`
+	Url          string          `json:"url"`
+	Name         string          `json:"name"`
+	Schedule     string          `json:"schedule"`
+	Topics       []string        `json:"topics"`
+	FilterConfig json.RawMessage `json:"filter_config"`
 }
 
 func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error) {
@@ -1663,11 +1699,11 @@ func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (Session
 
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
-                      problem, solution, architecture, results, github_url, live_url, featured, public, sort_order, status)
+                      problem, solution, architecture, results, github_url, live_url, featured, is_public, sort_order, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -1686,7 +1722,7 @@ type CreateProjectParams struct {
 	GithubUrl       *string       `json:"github_url"`
 	LiveUrl         *string       `json:"live_url"`
 	Featured        bool          `json:"featured"`
-	Public          bool          `json:"public"`
+	IsPublic        bool          `json:"is_public"`
 	SortOrder       int32         `json:"sort_order"`
 	Status          ProjectStatus `json:"status"`
 }
@@ -1707,7 +1743,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.GithubUrl,
 		arg.LiveUrl,
 		arg.Featured,
-		arg.Public,
+		arg.IsPublic,
 		arg.SortOrder,
 		arg.Status,
 	)
@@ -1728,7 +1764,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -1943,7 +1979,7 @@ func (q *Queries) CreateTopic(ctx context.Context, arg CreateTopicParams) (Topic
 const curateCollected = `-- name: CurateCollected :one
 UPDATE collected_data SET status = 'curated', curated_content_id = $2
 WHERE id = $1
-RETURNING id, source_url, source_name, title, original_content,
+RETURNING id, source_url, title, original_content,
           relevance_score, topics, status, curated_content_id, collected_at,
           url_hash, user_feedback, feedback_at, feed_id, published_at
 `
@@ -1959,7 +1995,6 @@ func (q *Queries) CurateCollected(ctx context.Context, arg CurateCollectedParams
 	err := row.Scan(
 		&i.ID,
 		&i.SourceUrl,
-		&i.SourceName,
 		&i.Title,
 		&i.OriginalContent,
 		&i.RelevanceScore,
@@ -2023,6 +2058,15 @@ DELETE FROM tag_aliases WHERE id = $1
 // Admin: delete an alias.
 func (q *Queries) DeleteAlias(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAlias, id)
+	return err
+}
+
+const deleteContentTags = `-- name: DeleteContentTags :exec
+DELETE FROM content_tags WHERE content_id = $1
+`
+
+func (q *Queries) DeleteContentTags(ctx context.Context, contentID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteContentTags, contentID)
 	return err
 }
 
@@ -2886,9 +2930,10 @@ func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
 }
 
 const highPriorityRecentCollected = `-- name: HighPriorityRecentCollected :many
-SELECT cd.id, cd.source_url, cd.source_name, cd.title, cd.original_content,
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
 FROM collected_data cd
 JOIN feeds f ON cd.feed_id = f.id
 WHERE f.priority = 'high'
@@ -2903,20 +2948,37 @@ type HighPriorityRecentCollectedParams struct {
 	MaxResults int32     `json:"max_results"`
 }
 
+type HighPriorityRecentCollectedRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
 // Get unread collected data from high-priority feeds in the past N hours.
-func (q *Queries) HighPriorityRecentCollected(ctx context.Context, arg HighPriorityRecentCollectedParams) ([]CollectedDatum, error) {
+func (q *Queries) HighPriorityRecentCollected(ctx context.Context, arg HighPriorityRecentCollectedParams) ([]HighPriorityRecentCollectedRow, error) {
 	rows, err := q.db.Query(ctx, highPriorityRecentCollected, arg.Since, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CollectedDatum{}
+	items := []HighPriorityRecentCollectedRow{}
 	for rows.Next() {
-		var i CollectedDatum
+		var i HighPriorityRecentCollectedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
-			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
 			&i.RelevanceScore,
@@ -2929,6 +2991,7 @@ func (q *Queries) HighPriorityRecentCollected(ctx context.Context, arg HighPrior
 			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -3270,8 +3333,8 @@ func (q *Queries) InsightsSince(ctx context.Context, sinceDate time.Time) ([]Ses
 }
 
 const internalSearchContents = `-- name: InternalSearchContents :many
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
@@ -3287,27 +3350,26 @@ type InternalSearchContentsParams struct {
 }
 
 type InternalSearchContentsRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 // Internal search without visibility filter (for MCP tools).
@@ -3328,16 +3390,15 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -3367,8 +3428,8 @@ func (q *Queries) InternalSearchContentsCount(ctx context.Context, websearchToTs
 }
 
 const internalSearchContentsOR = `-- name: InternalSearchContentsOR :many
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published'
@@ -3384,27 +3445,26 @@ type InternalSearchContentsORParams struct {
 }
 
 type InternalSearchContentsORRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 // Internal OR search without visibility filter (for MCP tools).
@@ -3425,16 +3485,15 @@ func (q *Queries) InternalSearchContentsOR(ctx context.Context, arg InternalSear
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -3463,12 +3522,14 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 }
 
 const latestCollectedByRecency = `-- name: LatestCollectedByRecency :many
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data
-WHERE ($1::timestamptz IS NULL OR collected_at >= $1)
-ORDER BY collected_at DESC
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE ($1::timestamptz IS NULL OR cd.collected_at >= $1)
+ORDER BY cd.collected_at DESC
 LIMIT $2
 `
 
@@ -3477,20 +3538,37 @@ type LatestCollectedByRecencyParams struct {
 	MaxResults int32      `json:"max_results"`
 }
 
+type LatestCollectedByRecencyRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
 // Get latest collected data ordered by recency (collected_at DESC), optionally filtered by time.
-func (q *Queries) LatestCollectedByRecency(ctx context.Context, arg LatestCollectedByRecencyParams) ([]CollectedDatum, error) {
+func (q *Queries) LatestCollectedByRecency(ctx context.Context, arg LatestCollectedByRecencyParams) ([]LatestCollectedByRecencyRow, error) {
 	rows, err := q.db.Query(ctx, latestCollectedByRecency, arg.Since, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CollectedDatum{}
+	items := []LatestCollectedByRecencyRow{}
 	for rows.Next() {
-		var i CollectedDatum
+		var i LatestCollectedByRecencyRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
-			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
 			&i.RelevanceScore,
@@ -3503,6 +3581,7 @@ func (q *Queries) LatestCollectedByRecency(ctx context.Context, arg LatestCollec
 			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -3515,12 +3594,14 @@ func (q *Queries) LatestCollectedByRecency(ctx context.Context, arg LatestCollec
 }
 
 const latestCollectedData = `-- name: LatestCollectedData :many
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data
-WHERE ($1::timestamptz IS NULL OR collected_at >= $1)
-ORDER BY COALESCE(published_at, collected_at) DESC
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE ($1::timestamptz IS NULL OR cd.collected_at >= $1)
+ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT $2
 `
 
@@ -3529,21 +3610,38 @@ type LatestCollectedDataParams struct {
 	MaxResults int32      `json:"max_results"`
 }
 
+type LatestCollectedDataRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
 // Get latest collected data, optionally filtered by time range.
 // When days is NULL, returns the latest N items regardless of time.
-func (q *Queries) LatestCollectedData(ctx context.Context, arg LatestCollectedDataParams) ([]CollectedDatum, error) {
+func (q *Queries) LatestCollectedData(ctx context.Context, arg LatestCollectedDataParams) ([]LatestCollectedDataRow, error) {
 	rows, err := q.db.Query(ctx, latestCollectedData, arg.Since, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CollectedDatum{}
+	items := []LatestCollectedDataRow{}
 	for rows.Next() {
-		var i CollectedDatum
+		var i LatestCollectedDataRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
-			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
 			&i.RelevanceScore,
@@ -3556,6 +3654,7 @@ func (q *Queries) LatestCollectedData(ctx context.Context, arg LatestCollectedDa
 			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -3851,13 +3950,16 @@ func (q *Queries) MonitorCreate(ctx context.Context, arg MonitorCreateParams) (T
 	return i, err
 }
 
-const monitorDelete = `-- name: MonitorDelete :exec
+const monitorDelete = `-- name: MonitorDelete :execrows
 DELETE FROM tracking_topics WHERE id = $1
 `
 
-func (q *Queries) MonitorDelete(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, monitorDelete, id)
-	return err
+func (q *Queries) MonitorDelete(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, monitorDelete, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const monitorTopicByID = `-- name: MonitorTopicByID :one
@@ -4137,7 +4239,7 @@ func (q *Queries) NeverReviewedTILs(ctx context.Context, arg NeverReviewedTILsPa
 }
 
 const noteByFilePath = `-- name: NoteByFilePath :one
-SELECT id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
+SELECT id, file_path, title, type, source, context, maturity, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
 `
 
 func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (ObsidianNote, error) {
@@ -4150,7 +4252,7 @@ func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (Obsidian
 		&i.Type,
 		&i.Source,
 		&i.Context,
-		&i.Status,
+		&i.Maturity,
 		&i.Tags,
 		&i.Difficulty,
 		&i.LeetcodeID,
@@ -4258,11 +4360,11 @@ func (q *Queries) NotesByDate(ctx context.Context, arg NotesByDateParams) ([]Ses
 }
 
 const notesByTypeAndContext = `-- name: NotesByTypeAndContext :many
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at
 FROM obsidian_notes
 WHERE type = $1
-  AND (status IS NULL OR status != 'archived')
+  AND (maturity IS NULL OR maturity != 'archived')
   AND ($2::text IS NULL OR context = $2)
 ORDER BY synced_at DESC
 LIMIT $3
@@ -4281,7 +4383,7 @@ type NotesByTypeAndContextRow struct {
 	Type        *string         `json:"type"`
 	Source      *string         `json:"source"`
 	Context     *string         `json:"context"`
-	Status      *string         `json:"status"`
+	Maturity    string          `json:"maturity"`
 	Tags        json.RawMessage `json:"tags"`
 	Difficulty  *string         `json:"difficulty"`
 	Book        *string         `json:"book"`
@@ -4307,7 +4409,7 @@ func (q *Queries) NotesByTypeAndContext(ctx context.Context, arg NotesByTypeAndC
 			&i.Type,
 			&i.Source,
 			&i.Context,
-			&i.Status,
+			&i.Maturity,
 			&i.Tags,
 			&i.Difficulty,
 			&i.Book,
@@ -4360,7 +4462,7 @@ func (q *Queries) NotesWithRawTags(ctx context.Context) ([]NotesWithRawTagsRow, 
 const notesWithoutEmbedding = `-- name: NotesWithoutEmbedding :many
 SELECT id, file_path, title, content_text
 FROM obsidian_notes
-WHERE embedding IS NULL AND (status IS NULL OR status != 'archived')
+WHERE embedding IS NULL AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY synced_at DESC
 LIMIT $1
 `
@@ -4810,7 +4912,7 @@ func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksW
 const projectByAlias = `-- name: ProjectByAlias :one
 SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
-       p.results, p.github_url, p.live_url, p.featured, p.public, p.sort_order,
+       p.results, p.github_url, p.live_url, p.featured, p.is_public, p.sort_order,
        p.status, p.notion_page_id, p.repo, p.area, p.goal_id, p.deadline, p.last_activity_at,
        p.expected_cadence, p.created_at, p.updated_at
 FROM project_aliases pa
@@ -4838,7 +4940,7 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -4857,7 +4959,7 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 const projectByID = `-- name: ProjectByID :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE id = $1
 `
@@ -4881,7 +4983,7 @@ func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -4900,7 +5002,7 @@ func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error
 const projectByRepo = `-- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE repo = $1
 `
@@ -4924,7 +5026,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -4943,7 +5045,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 const projectBySlug = `-- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE slug = $1
 `
@@ -4967,7 +5069,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -4986,7 +5088,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 const projectByTitle = `-- name: ProjectByTitle :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1)
 `
@@ -5011,7 +5113,7 @@ func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, er
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -5054,7 +5156,7 @@ func (q *Queries) ProjectSlugByNotionPageID(ctx context.Context, notionPageID *s
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title
 `
@@ -5084,7 +5186,7 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.GithubUrl,
 			&i.LiveUrl,
 			&i.Featured,
-			&i.Public,
+			&i.IsPublic,
 			&i.SortOrder,
 			&i.Status,
 			&i.NotionPageID,
@@ -5110,9 +5212,9 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 const publicProjects = `-- name: PublicProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
-FROM projects WHERE public = true
+FROM projects WHERE is_public = true
 ORDER BY featured DESC, sort_order, title
 `
 
@@ -5141,7 +5243,7 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 			&i.GithubUrl,
 			&i.LiveUrl,
 			&i.Featured,
-			&i.Public,
+			&i.IsPublic,
 			&i.SortOrder,
 			&i.Status,
 			&i.NotionPageID,
@@ -5167,33 +5269,32 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 const publishContent = `-- name: PublishContent :one
 UPDATE contents SET status = 'published', published_at = now(), updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+          series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
 type PublishContentRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishContentRow, error) {
@@ -5207,16 +5308,15 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Tags,
 		&i.Source,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
 		&i.ReviewLevel,
-		&i.Visibility,
+		&i.IsPublic,
 		&i.ProjectID,
 		&i.AiMetadata,
-		&i.ReadingTime,
+		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -5227,7 +5327,7 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 
 const publishedContentCountSince = `-- name: PublishedContentCountSince :one
 SELECT count(*) FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND published_at >= $1
 `
 
@@ -5239,14 +5339,13 @@ func (q *Queries) PublishedContentCountSince(ctx context.Context, publishedAt *t
 }
 
 const publishedContents = `-- name: PublishedContents :many
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND ($3::content_type IS NULL OR type = $3)
-  AND ($4::text IS NULL OR $4 = ANY(tags))
-  AND ($5::timestamptz IS NULL OR published_at >= $5)
+  AND ($4::timestamptz IS NULL OR published_at >= $4)
 ORDER BY published_at DESC NULLS LAST
 LIMIT $1 OFFSET $2
 `
@@ -5255,32 +5354,30 @@ type PublishedContentsParams struct {
 	Limit       int32           `json:"limit"`
 	Offset      int32           `json:"offset"`
 	ContentType NullContentType `json:"content_type"`
-	Tag         *string         `json:"tag"`
 	Since       *time.Time      `json:"since"`
 }
 
 type PublishedContentsRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsParams) ([]PublishedContentsRow, error) {
@@ -5288,7 +5385,6 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 		arg.Limit,
 		arg.Offset,
 		arg.ContentType,
-		arg.Tag,
 		arg.Since,
 	)
 	if err != nil {
@@ -5306,16 +5402,15 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -5332,46 +5427,47 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 }
 
 const publishedContentsByDateRange = `-- name: PublishedContentsByDateRange :many
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND published_at >= $1 AND published_at < $2
 ORDER BY published_at DESC
+LIMIT $3
 `
 
 type PublishedContentsByDateRangeParams struct {
 	PublishedAt   *time.Time `json:"published_at"`
 	PublishedAt_2 *time.Time `json:"published_at_2"`
+	Limit         int32      `json:"limit"`
 }
 
 type PublishedContentsByDateRangeRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) PublishedContentsByDateRange(ctx context.Context, arg PublishedContentsByDateRangeParams) ([]PublishedContentsByDateRangeRow, error) {
-	rows, err := q.db.Query(ctx, publishedContentsByDateRange, arg.PublishedAt, arg.PublishedAt_2)
+	rows, err := q.db.Query(ctx, publishedContentsByDateRange, arg.PublishedAt, arg.PublishedAt_2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -5387,16 +5483,15 @@ func (q *Queries) PublishedContentsByDateRange(ctx context.Context, arg Publishe
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -5414,20 +5509,18 @@ func (q *Queries) PublishedContentsByDateRange(ctx context.Context, arg Publishe
 
 const publishedContentsCount = `-- name: PublishedContentsCount :one
 SELECT COUNT(*) FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND ($1::content_type IS NULL OR type = $1)
-  AND ($2::text IS NULL OR $2 = ANY(tags))
-  AND ($3::timestamptz IS NULL OR published_at >= $3)
+  AND ($2::timestamptz IS NULL OR published_at >= $2)
 `
 
 type PublishedContentsCountParams struct {
 	ContentType NullContentType `json:"content_type"`
-	Tag         *string         `json:"tag"`
 	Since       *time.Time      `json:"since"`
 }
 
 func (q *Queries) PublishedContentsCount(ctx context.Context, arg PublishedContentsCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, publishedContentsCount, arg.ContentType, arg.Tag, arg.Since)
+	row := q.db.QueryRow(ctx, publishedContentsCount, arg.ContentType, arg.Since)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -5436,7 +5529,7 @@ func (q *Queries) PublishedContentsCount(ctx context.Context, arg PublishedConte
 const publishedForRSS = `-- name: PublishedForRSS :many
 SELECT id, slug, title, excerpt, type, published_at, updated_at
 FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
 ORDER BY published_at DESC NULLS LAST
 LIMIT $1
 `
@@ -5482,7 +5575,7 @@ func (q *Queries) PublishedForRSS(ctx context.Context, limit int32) ([]Published
 const publishedWithEmbeddings = `-- name: PublishedWithEmbeddings :many
 SELECT id, slug, title, type, embedding
 FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND embedding IS NOT NULL
 `
 
@@ -5578,12 +5671,14 @@ func (q *Queries) ReassignNoteTags(ctx context.Context, arg ReassignNoteTagsPara
 }
 
 const recentCollectedData = `-- name: RecentCollectedData :many
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data
-WHERE collected_at >= $1 AND collected_at < $2
-ORDER BY COALESCE(published_at, collected_at) DESC
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE cd.collected_at >= $1 AND cd.collected_at < $2
+ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT $3
 `
 
@@ -5593,19 +5688,36 @@ type RecentCollectedDataParams struct {
 	Limit         int32     `json:"limit"`
 }
 
-func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDataParams) ([]CollectedDatum, error) {
+type RecentCollectedDataRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
+func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDataParams) ([]RecentCollectedDataRow, error) {
 	rows, err := q.db.Query(ctx, recentCollectedData, arg.CollectedAt, arg.CollectedAt_2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CollectedDatum{}
+	items := []RecentCollectedDataRow{}
 	for rows.Next() {
-		var i CollectedDatum
+		var i RecentCollectedDataRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
-			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
 			&i.RelevanceScore,
@@ -5618,6 +5730,7 @@ func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDa
 			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -5630,8 +5743,8 @@ func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDa
 }
 
 const recentContentsByType = `-- name: RecentContentsByType :many
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE type = $1::content_type
@@ -5647,27 +5760,26 @@ type RecentContentsByTypeParams struct {
 }
 
 type RecentContentsByTypeRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 // Get recent contents of a specific type, ordered by creation date.
@@ -5689,16 +5801,15 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -6089,11 +6200,11 @@ func (q *Queries) ReviewByID(ctx context.Context, id uuid.UUID) (ReviewByIDRow, 
 }
 
 const searchContents = `-- name: SearchContents :many
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND search_vector @@ websearch_to_tsquery('simple', $1)
   AND ($4::content_type IS NULL OR type = $4)
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
@@ -6108,27 +6219,26 @@ type SearchContentsParams struct {
 }
 
 type SearchContentsRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) ([]SearchContentsRow, error) {
@@ -6153,16 +6263,15 @@ func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) 
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -6180,7 +6289,7 @@ func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) 
 
 const searchContentsCount = `-- name: SearchContentsCount :one
 SELECT COUNT(*) FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND search_vector @@ websearch_to_tsquery('simple', $1)
   AND ($2::content_type IS NULL OR type = $2)
 `
@@ -6198,11 +6307,11 @@ func (q *Queries) SearchContentsCount(ctx context.Context, arg SearchContentsCou
 }
 
 const searchContentsOR = `-- name: SearchContentsOR :many
-SELECT id, slug, title, body, excerpt, type, status, tags, source, source_type,
-       series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND is_public = true
   AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
   AND ($4::content_type IS NULL OR type = $4)
 ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
@@ -6217,27 +6326,26 @@ type SearchContentsORParams struct {
 }
 
 type SearchContentsORRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 // Fallback search using OR semantics: splits query into words and matches any.
@@ -6263,16 +6371,15 @@ func (q *Queries) SearchContentsOR(ctx context.Context, arg SearchContentsORPara
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Tags,
 			&i.Source,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
 			&i.ReviewLevel,
-			&i.Visibility,
+			&i.IsPublic,
 			&i.ProjectID,
 			&i.AiMetadata,
-			&i.ReadingTime,
+			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
 			&i.CreatedAt,
@@ -6288,11 +6395,30 @@ func (q *Queries) SearchContentsOR(ctx context.Context, arg SearchContentsORPara
 	return items, nil
 }
 
+const searchContentsORCount = `-- name: SearchContentsORCount :one
+SELECT COUNT(*) FROM contents
+WHERE status = 'published' AND is_public = true
+  AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
+  AND ($2::content_type IS NULL OR type = $2)
+`
+
+type SearchContentsORCountParams struct {
+	PlaintoTsquery string          `json:"plainto_tsquery"`
+	ContentType    NullContentType `json:"content_type"`
+}
+
+func (q *Queries) SearchContentsORCount(ctx context.Context, arg SearchContentsORCountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, searchContentsORCount, arg.PlaintoTsquery, arg.ContentType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const searchNotesByFilters = `-- name: SearchNotesByFilters :many
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at
 FROM obsidian_notes
-WHERE (status IS NULL OR status != 'archived')
+WHERE (maturity IS NULL OR maturity != 'archived')
   AND ($1::text IS NULL OR type = $1)
   AND ($2::text IS NULL OR source = $2)
   AND ($3::text IS NULL OR context = $3)
@@ -6320,7 +6446,7 @@ type SearchNotesByFiltersRow struct {
 	Type        *string         `json:"type"`
 	Source      *string         `json:"source"`
 	Context     *string         `json:"context"`
-	Status      *string         `json:"status"`
+	Maturity    string          `json:"maturity"`
 	Tags        json.RawMessage `json:"tags"`
 	Difficulty  *string         `json:"difficulty"`
 	Book        *string         `json:"book"`
@@ -6354,7 +6480,7 @@ func (q *Queries) SearchNotesByFilters(ctx context.Context, arg SearchNotesByFil
 			&i.Type,
 			&i.Source,
 			&i.Context,
-			&i.Status,
+			&i.Maturity,
 			&i.Tags,
 			&i.Difficulty,
 			&i.Book,
@@ -6373,12 +6499,12 @@ func (q *Queries) SearchNotesByFilters(ctx context.Context, arg SearchNotesByFil
 }
 
 const searchNotesBySimilarity = `-- name: SearchNotesBySimilarity :many
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at,
        (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM obsidian_notes
 WHERE embedding IS NOT NULL
-  AND (status IS NULL OR status != 'archived')
+  AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY embedding <=> $1::vector
 LIMIT $2
 `
@@ -6395,7 +6521,7 @@ type SearchNotesBySimilarityRow struct {
 	Type        *string         `json:"type"`
 	Source      *string         `json:"source"`
 	Context     *string         `json:"context"`
-	Status      *string         `json:"status"`
+	Maturity    string          `json:"maturity"`
 	Tags        json.RawMessage `json:"tags"`
 	Difficulty  *string         `json:"difficulty"`
 	Book        *string         `json:"book"`
@@ -6422,7 +6548,7 @@ func (q *Queries) SearchNotesBySimilarity(ctx context.Context, arg SearchNotesBy
 			&i.Type,
 			&i.Source,
 			&i.Context,
-			&i.Status,
+			&i.Maturity,
 			&i.Tags,
 			&i.Difficulty,
 			&i.Book,
@@ -6442,12 +6568,12 @@ func (q *Queries) SearchNotesBySimilarity(ctx context.Context, arg SearchNotesBy
 }
 
 const searchNotesByText = `-- name: SearchNotesByText :many
-SELECT id, file_path, title, type, source, context, status, tags,
+SELECT id, file_path, title, type, source, context, maturity, tags,
        difficulty, book, chapter, content_text, synced_at,
        ts_rank(search_vector, websearch_to_tsquery('simple', $1)) AS rank
 FROM obsidian_notes
 WHERE search_vector @@ websearch_to_tsquery('simple', $1)
-  AND (status IS NULL OR status != 'archived')
+  AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY rank DESC
 LIMIT $2
 `
@@ -6464,7 +6590,7 @@ type SearchNotesByTextRow struct {
 	Type        *string         `json:"type"`
 	Source      *string         `json:"source"`
 	Context     *string         `json:"context"`
-	Status      *string         `json:"status"`
+	Maturity    string          `json:"maturity"`
 	Tags        json.RawMessage `json:"tags"`
 	Difficulty  *string         `json:"difficulty"`
 	Book        *string         `json:"book"`
@@ -6492,7 +6618,7 @@ func (q *Queries) SearchNotesByText(ctx context.Context, arg SearchNotesByTextPa
 			&i.Type,
 			&i.Source,
 			&i.Context,
-			&i.Status,
+			&i.Maturity,
 			&i.Tags,
 			&i.Difficulty,
 			&i.Book,
@@ -6640,7 +6766,7 @@ const similarContents = `-- name: SimilarContents :many
 SELECT c.id, c.slug, c.title, c.excerpt, c.type,
        (1 - (c.embedding <=> $1::vector))::float8 AS similarity
 FROM contents c
-WHERE c.status = 'published' AND c.visibility = 'public'
+WHERE c.status = 'published' AND c.is_public = true
   AND c.id != $2
   AND c.embedding IS NOT NULL
 ORDER BY c.embedding <=> $1::vector
@@ -6690,7 +6816,7 @@ func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams
 }
 
 const similarTILs = `-- name: SimilarTILs :many
-SELECT c.id, c.slug, c.title, c.excerpt, c.type, c.tags,
+SELECT c.id, c.slug, c.title, c.excerpt, c.type,
        (1 - (c.embedding <=> $1::vector))::float8 AS similarity
 FROM contents c
 WHERE c.type = 'til'
@@ -6712,7 +6838,6 @@ type SimilarTILsRow struct {
 	Title      string      `json:"title"`
 	Excerpt    string      `json:"excerpt"`
 	Type       ContentType `json:"type"`
-	Tags       []string    `json:"tags"`
 	Similarity float64     `json:"similarity"`
 }
 
@@ -6733,7 +6858,6 @@ func (q *Queries) SimilarTILs(ctx context.Context, arg SimilarTILsParams) ([]Sim
 			&i.Title,
 			&i.Excerpt,
 			&i.Type,
-			&i.Tags,
 			&i.Similarity,
 		); err != nil {
 			return nil, err
@@ -7021,6 +7145,78 @@ func (q *Queries) TagBySlug(ctx context.Context, slug string) (Tag, error) {
 	return i, err
 }
 
+const tagsForContent = `-- name: TagsForContent :many
+SELECT t.id, t.slug, t.name
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+WHERE ct.content_id = $1
+`
+
+type TagsForContentRow struct {
+	ID   uuid.UUID `json:"id"`
+	Slug string    `json:"slug"`
+	Name string    `json:"name"`
+}
+
+func (q *Queries) TagsForContent(ctx context.Context, contentID uuid.UUID) ([]TagsForContentRow, error) {
+	rows, err := q.db.Query(ctx, tagsForContent, contentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TagsForContentRow{}
+	for rows.Next() {
+		var i TagsForContentRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const tagsForContents = `-- name: TagsForContents :many
+SELECT ct.content_id, t.id, t.slug, t.name
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+WHERE ct.content_id = ANY($1::uuid[])
+`
+
+type TagsForContentsRow struct {
+	ContentID uuid.UUID `json:"content_id"`
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+}
+
+func (q *Queries) TagsForContents(ctx context.Context, dollar_1 []uuid.UUID) ([]TagsForContentsRow, error) {
+	rows, err := q.db.Query(ctx, tagsForContents, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TagsForContentsRow{}
+	for rows.Next() {
+		var i TagsForContentsRow
+		if err := rows.Scan(
+			&i.ContentID,
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const taskByID = `-- name: TaskByID :one
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
@@ -7205,13 +7401,15 @@ func (q *Queries) ToggleSourceEnabled(ctx context.Context, id uuid.UUID) (Notion
 }
 
 const topRelevantCollected = `-- name: TopRelevantCollected :many
-SELECT id, source_url, source_name, title, original_content,
-       relevance_score, topics, status, curated_content_id, collected_at,
-       url_hash, user_feedback, feedback_at, feed_id, published_at
-FROM collected_data
-WHERE collected_at >= $1
-  AND status = 'unread'
-ORDER BY COALESCE(published_at, collected_at) DESC
+SELECT cd.id, cd.source_url, cd.title, cd.original_content,
+       cd.relevance_score, cd.topics, cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       COALESCE(f.name, '') AS feed_name
+FROM collected_data cd
+LEFT JOIN feeds f ON cd.feed_id = f.id
+WHERE cd.collected_at >= $1
+  AND cd.status = 'unread'
+ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT $2
 `
 
@@ -7220,22 +7418,39 @@ type TopRelevantCollectedParams struct {
 	MaxResults int32     `json:"max_results"`
 }
 
+type TopRelevantCollectedRow struct {
+	ID               uuid.UUID       `json:"id"`
+	SourceUrl        string          `json:"source_url"`
+	Title            string          `json:"title"`
+	OriginalContent  string          `json:"original_content"`
+	RelevanceScore   float64         `json:"relevance_score"`
+	Topics           []string        `json:"topics"`
+	Status           CollectedStatus `json:"status"`
+	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	UrlHash          string          `json:"url_hash"`
+	UserFeedback     *string         `json:"user_feedback"`
+	FeedbackAt       *time.Time      `json:"feedback_at"`
+	FeedID           *uuid.UUID      `json:"feed_id"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	FeedName         string          `json:"feed_name"`
+}
+
 // Get top unread collected data since a given time.
 // Score filter removed: scoring pipeline not yet active, all items have score=0.
 // When scoring is implemented, restore relevance_score > 0.5 threshold.
-func (q *Queries) TopRelevantCollected(ctx context.Context, arg TopRelevantCollectedParams) ([]CollectedDatum, error) {
+func (q *Queries) TopRelevantCollected(ctx context.Context, arg TopRelevantCollectedParams) ([]TopRelevantCollectedRow, error) {
 	rows, err := q.db.Query(ctx, topRelevantCollected, arg.Since, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CollectedDatum{}
+	items := []TopRelevantCollectedRow{}
 	for rows.Next() {
-		var i CollectedDatum
+		var i TopRelevantCollectedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
-			&i.SourceName,
 			&i.Title,
 			&i.OriginalContent,
 			&i.RelevanceScore,
@@ -7248,6 +7463,7 @@ func (q *Queries) TopRelevantCollected(ctx context.Context, arg TopRelevantColle
 			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
+			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -7444,67 +7660,64 @@ UPDATE contents SET
     excerpt = COALESCE($5, excerpt),
     type = COALESCE($6::content_type, type),
     status = COALESCE($7::content_status, status),
-    tags = COALESCE($8, tags),
-    source = COALESCE($9, source),
-    source_type = COALESCE($10::source_type, source_type),
-    series_id = COALESCE($11, series_id),
-    series_order = COALESCE($12, series_order),
-    review_level = COALESCE($13::review_level, review_level),
-    visibility = COALESCE($14, visibility),
-    project_id = COALESCE($15, project_id),
-    ai_metadata = COALESCE($16, ai_metadata),
-    reading_time = COALESCE($17, reading_time),
-    cover_image = COALESCE($18, cover_image),
+    source = COALESCE($8, source),
+    source_type = COALESCE($9::source_type, source_type),
+    series_id = COALESCE($10, series_id),
+    series_order = COALESCE($11, series_order),
+    review_level = COALESCE($12::review_level, review_level),
+    is_public = COALESCE($13, is_public),
+    project_id = COALESCE($14, project_id),
+    ai_metadata = COALESCE($15, ai_metadata),
+    reading_time_min = COALESCE($16, reading_time_min),
+    cover_image = COALESCE($17, cover_image),
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status, tags, source, source_type,
-          series_id, series_order, review_level, visibility, project_id, ai_metadata, reading_time,
+RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+          series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
 type UpdateContentParams struct {
-	ID          uuid.UUID         `json:"id"`
-	Slug        *string           `json:"slug"`
-	Title       *string           `json:"title"`
-	Body        *string           `json:"body"`
-	Excerpt     *string           `json:"excerpt"`
-	ContentType NullContentType   `json:"content_type"`
-	Status      NullContentStatus `json:"status"`
-	Tags        []string          `json:"tags"`
-	Source      *string           `json:"source"`
-	SourceType  NullSourceType    `json:"source_type"`
-	SeriesID    *string           `json:"series_id"`
-	SeriesOrder *int32            `json:"series_order"`
-	ReviewLevel NullReviewLevel   `json:"review_level"`
-	Visibility  *string           `json:"visibility"`
-	ProjectID   *uuid.UUID        `json:"project_id"`
-	AiMetadata  json.RawMessage   `json:"ai_metadata"`
-	ReadingTime *int32            `json:"reading_time"`
-	CoverImage  *string           `json:"cover_image"`
+	ID             uuid.UUID         `json:"id"`
+	Slug           *string           `json:"slug"`
+	Title          *string           `json:"title"`
+	Body           *string           `json:"body"`
+	Excerpt        *string           `json:"excerpt"`
+	ContentType    NullContentType   `json:"content_type"`
+	Status         NullContentStatus `json:"status"`
+	Source         *string           `json:"source"`
+	SourceType     NullSourceType    `json:"source_type"`
+	SeriesID       *string           `json:"series_id"`
+	SeriesOrder    *int32            `json:"series_order"`
+	ReviewLevel    NullReviewLevel   `json:"review_level"`
+	IsPublic       *bool             `json:"is_public"`
+	ProjectID      *uuid.UUID        `json:"project_id"`
+	AiMetadata     json.RawMessage   `json:"ai_metadata"`
+	ReadingTimeMin *int32            `json:"reading_time_min"`
+	CoverImage     *string           `json:"cover_image"`
 }
 
 type UpdateContentRow struct {
-	ID          uuid.UUID       `json:"id"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        ContentType     `json:"type"`
-	Status      ContentStatus   `json:"status"`
-	Tags        []string        `json:"tags"`
-	Source      *string         `json:"source"`
-	SourceType  NullSourceType  `json:"source_type"`
-	SeriesID    *string         `json:"series_id"`
-	SeriesOrder *int32          `json:"series_order"`
-	ReviewLevel ReviewLevel     `json:"review_level"`
-	Visibility  string          `json:"visibility"`
-	ProjectID   *uuid.UUID      `json:"project_id"`
-	AiMetadata  json.RawMessage `json:"ai_metadata"`
-	ReadingTime int32           `json:"reading_time"`
-	CoverImage  *string         `json:"cover_image"`
-	PublishedAt *time.Time      `json:"published_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
@@ -7516,16 +7729,15 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.Excerpt,
 		arg.ContentType,
 		arg.Status,
-		arg.Tags,
 		arg.Source,
 		arg.SourceType,
 		arg.SeriesID,
 		arg.SeriesOrder,
 		arg.ReviewLevel,
-		arg.Visibility,
+		arg.IsPublic,
 		arg.ProjectID,
 		arg.AiMetadata,
-		arg.ReadingTime,
+		arg.ReadingTimeMin,
 		arg.CoverImage,
 	)
 	var i UpdateContentRow
@@ -7537,16 +7749,15 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Tags,
 		&i.Source,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
 		&i.ReviewLevel,
-		&i.Visibility,
+		&i.IsPublic,
 		&i.ProjectID,
 		&i.AiMetadata,
-		&i.ReadingTime,
+		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -7758,14 +7969,14 @@ UPDATE projects SET
     github_url = COALESCE($13, github_url),
     live_url = COALESCE($14, live_url),
     featured = COALESCE($15, featured),
-    public = COALESCE($16, public),
+    is_public = COALESCE($16, is_public),
     sort_order = COALESCE($17, sort_order),
     status = COALESCE($18::project_status, status),
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -7785,7 +7996,7 @@ type UpdateProjectParams struct {
 	GithubUrl       *string           `json:"github_url"`
 	LiveUrl         *string           `json:"live_url"`
 	Featured        *bool             `json:"featured"`
-	Public          *bool             `json:"public"`
+	IsPublic        *bool             `json:"is_public"`
 	SortOrder       *int32            `json:"sort_order"`
 	Status          NullProjectStatus `json:"status"`
 }
@@ -7807,7 +8018,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.GithubUrl,
 		arg.LiveUrl,
 		arg.Featured,
-		arg.Public,
+		arg.IsPublic,
 		arg.SortOrder,
 		arg.Status,
 	)
@@ -7828,7 +8039,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -7863,7 +8074,7 @@ UPDATE projects SET
 WHERE id = $4
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -7899,7 +8110,7 @@ func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStat
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,
@@ -8301,7 +8512,7 @@ func (q *Queries) UpsertGoalByNotionPageID(ctx context.Context, arg UpsertGoalBy
 
 const upsertNote = `-- name: UpsertNote :one
 INSERT INTO obsidian_notes (
-    file_path, title, type, source, context, status, tags,
+    file_path, title, type, source, context, maturity, tags,
     difficulty, leetcode_id, book, chapter, notion_task_id,
     content_text, content_hash, synced_at
 ) VALUES (
@@ -8314,7 +8525,7 @@ ON CONFLICT (file_path) DO UPDATE SET
     type = EXCLUDED.type,
     source = EXCLUDED.source,
     context = EXCLUDED.context,
-    status = EXCLUDED.status,
+    maturity = EXCLUDED.maturity,
     tags = EXCLUDED.tags,
     difficulty = EXCLUDED.difficulty,
     leetcode_id = EXCLUDED.leetcode_id,
@@ -8324,7 +8535,7 @@ ON CONFLICT (file_path) DO UPDATE SET
     content_text = EXCLUDED.content_text,
     content_hash = EXCLUDED.content_hash,
     synced_at = now()
-RETURNING id, file_path, title, type, source, context, status, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at
+RETURNING id, file_path, title, type, source, context, maturity, tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at
 `
 
 type UpsertNoteParams struct {
@@ -8333,7 +8544,7 @@ type UpsertNoteParams struct {
 	Type         *string         `json:"type"`
 	Source       *string         `json:"source"`
 	Context      *string         `json:"context"`
-	Status       *string         `json:"status"`
+	Maturity     string          `json:"maturity"`
 	Tags         json.RawMessage `json:"tags"`
 	Difficulty   *string         `json:"difficulty"`
 	LeetcodeID   *int32          `json:"leetcode_id"`
@@ -8351,7 +8562,7 @@ func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Obsidia
 		arg.Type,
 		arg.Source,
 		arg.Context,
-		arg.Status,
+		arg.Maturity,
 		arg.Tags,
 		arg.Difficulty,
 		arg.LeetcodeID,
@@ -8369,7 +8580,7 @@ func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Obsidia
 		&i.Type,
 		&i.Source,
 		&i.Context,
-		&i.Status,
+		&i.Maturity,
 		&i.Tags,
 		&i.Difficulty,
 		&i.LeetcodeID,
@@ -8419,7 +8630,7 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     updated_at = now()
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, public, sort_order, status, notion_page_id, repo, area, goal_id, deadline,
+          featured, is_public, sort_order, status, notion_page_id, repo, area, goal_id, deadline,
           last_activity_at, expected_cadence, created_at, updated_at
 `
 
@@ -8462,7 +8673,7 @@ func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertPro
 		&i.GithubUrl,
 		&i.LiveUrl,
 		&i.Featured,
-		&i.Public,
+		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
 		&i.NotionPageID,

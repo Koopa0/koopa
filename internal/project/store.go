@@ -107,7 +107,7 @@ func (s *Store) CreateProject(ctx context.Context, p *CreateParams) (*Project, e
 		GithubUrl:       p.GithubURL,
 		LiveUrl:         p.LiveURL,
 		Featured:        p.Featured,
-		Public:          p.Public,
+		IsPublic:        p.IsPublic,
 		SortOrder:       int32(p.SortOrder), // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 		Status:          db.ProjectStatus(p.Status),
 	})
@@ -144,7 +144,7 @@ func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p *UpdateParams
 		GithubUrl:       p.GithubURL,
 		LiveUrl:         p.LiveURL,
 		Featured:        p.Featured,
-		Public:          p.Public,
+		IsPublic:        p.IsPublic,
 		SortOrder:       sortOrder,
 		Status:          nullProjectStatus(p.Status),
 	})
@@ -368,7 +368,7 @@ func rowToProject(r *db.Project) Project {
 		GithubURL:       r.GithubUrl,
 		LiveURL:         r.LiveUrl,
 		Featured:        r.Featured,
-		Public:          r.Public,
+		IsPublic:        r.IsPublic,
 		SortOrder:       int(r.SortOrder),
 		Status:          Status(r.Status),
 		NotionPageID:    r.NotionPageID,

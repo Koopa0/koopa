@@ -226,13 +226,12 @@ func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *fee
 
 	cd, err := c.writer.CreateItem(ctx, &entry.CreateParams{
 		SourceURL:       item.Link,
-		SourceName:      f.Name,
 		Title:           item.Title,
-		OriginalContent: &content,
+		OriginalContent: content,
 		Topics:          f.Topics,
 		URLHash:         urlHash,
 		FeedID:          &f.ID,
-		RelevanceScore:  score,
+		RelevanceScore:  float64(score),
 		PublishedAt:     item.PublishedParsed,
 	})
 	if err != nil {

@@ -68,25 +68,36 @@ func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-// ArchiveByNotionPageID marks a single goal as abandoned by its Notion page ID.
+// ArchiveByNotionPageID satisfies the notion.Archiver interface.
+// Goals use "abandoned" status (not "archived") when trashed in Notion.
 func (s *Store) ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error) {
-	n, err := s.q.ArchiveGoalByNotionPageID(ctx, &notionPageID)
+	return s.AbandonByNotionPageID(ctx, notionPageID)
+}
+
+// ArchiveOrphanNotion satisfies the notion.Archiver interface.
+func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
+	return s.AbandonOrphanNotion(ctx, activeIDs)
+}
+
+// AbandonByNotionPageID marks a single goal as abandoned by its Notion page ID.
+func (s *Store) AbandonByNotionPageID(ctx context.Context, notionPageID string) (int64, error) {
+	n, err := s.q.AbandonGoalByNotionPageID(ctx, &notionPageID)
 	if err != nil {
-		return 0, fmt.Errorf("archiving goal by notion page %s: %w", notionPageID, err)
+		return 0, fmt.Errorf("abandoning goal by notion page %s: %w", notionPageID, err)
 	}
 	return n, nil
 }
 
-// ArchiveOrphanNotion marks goals as abandoned if their notion_page_id
-// is not in the given list of active IDs. Returns the number of archived goals.
-// Returns 0 immediately if activeIDs is empty to avoid archiving all records.
-func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
+// AbandonOrphanNotion marks goals as abandoned if their notion_page_id
+// is not in the given list of active IDs. Returns the number of abandoned goals.
+// Returns 0 immediately if activeIDs is empty to avoid abandoning all records.
+func (s *Store) AbandonOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
 	if len(activeIDs) == 0 {
 		return 0, nil
 	}
-	n, err := s.q.ArchiveOrphanNotionGoals(ctx, activeIDs)
+	n, err := s.q.AbandonOrphanNotionGoals(ctx, activeIDs)
 	if err != nil {
-		return 0, fmt.Errorf("archiving orphan notion goals: %w", err)
+		return 0, fmt.Errorf("abandoning orphan notion goals: %w", err)
 	}
 	return n, nil
 }

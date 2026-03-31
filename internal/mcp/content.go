@@ -81,9 +81,8 @@ func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		Body:        input.Body,
 		Type:        ct,
 		Status:      content.StatusDraft,
-		Tags:        input.Tags,
 		ReviewLevel: content.ReviewStandard,
-		Visibility:  content.VisibilityPublic,
+		IsPublic:    true,
 	}
 
 	if input.Project != "" {
@@ -147,9 +146,6 @@ func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 			return nil, ContentActionOutput{}, fmt.Errorf("invalid content_type %q", input.ContentType)
 		}
 		p.Type = &ct
-	}
-	if len(input.Tags) > 0 {
-		p.Tags = input.Tags
 	}
 	if input.Project != "" {
 		proj, projErr := s.resolveProjectChain(ctx, input.Project)
