@@ -431,9 +431,11 @@ UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), 
 WHERE notion_page_id IS NOT NULL
   AND notion_page_id != ALL($1::text[])
   AND status != 'done'
+  AND (recur_interval IS NULL OR recur_interval <= 0)
 `
 
-// Mark tasks as done if their notion_page_id is not in the active set.
+// Mark non-recurring tasks as done if their notion_page_id is not in the active set.
+// Recurring tasks are excluded — they should never be archived by sync.
 func (q *Queries) ArchiveOrphanNotionTasks(ctx context.Context, activeIds []string) (int64, error) {
 	result, err := q.db.Exec(ctx, archiveOrphanNotionTasks, activeIds)
 	if err != nil {
@@ -476,9 +478,11 @@ func (q *Queries) ArchiveStaleInsights(ctx context.Context, cutoff time.Time) (i
 const archiveTaskByNotionPageID = `-- name: ArchiveTaskByNotionPageID :execrows
 UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
 WHERE notion_page_id = $1 AND status != 'done'
+  AND (recur_interval IS NULL OR recur_interval <= 0)
 `
 
-// Mark a single task as done by its Notion page ID (used when Notion page is trashed).
+// Mark a single non-recurring task as done by its Notion page ID (used when Notion page is trashed).
+// Recurring tasks are excluded — they should never be archived by sync.
 func (q *Queries) ArchiveTaskByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
 	result, err := q.db.Exec(ctx, archiveTaskByNotionPageID, notionPageID)
 	if err != nil {
@@ -1817,6 +1821,32 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Cre
 		&i.ReviewedAt,
 	)
 	return i, err
+}
+
+const createSkipRecord = `-- name: CreateSkipRecord :exec
+
+INSERT INTO task_skip_log (task_id, original_due, skipped_date, reason)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (task_id, skipped_date) DO NOTHING
+`
+
+type CreateSkipRecordParams struct {
+	TaskID      uuid.UUID `json:"task_id"`
+	OriginalDue time.Time `json:"original_due"`
+	SkippedDate time.Time `json:"skipped_date"`
+	Reason      string    `json:"reason"`
+}
+
+// === Skip Log Queries ===
+// Insert a single skip record. ON CONFLICT ensures idempotency on cron re-run.
+func (q *Queries) CreateSkipRecord(ctx context.Context, arg CreateSkipRecordParams) error {
+	_, err := q.db.Exec(ctx, createSkipRecord,
+		arg.TaskID,
+		arg.OriginalDue,
+		arg.SkippedDate,
+		arg.Reason,
+	)
+	return err
 }
 
 const createSource = `-- name: CreateSource :one
@@ -3954,6 +3984,44 @@ func (q *Queries) MonitorUpdate(ctx context.Context, arg MonitorUpdateParams) (T
 	return i, err
 }
 
+const myDayIncompleteTaskIDs = `-- name: MyDayIncompleteTaskIDs :many
+SELECT id, title, notion_page_id, recur_interval FROM tasks
+WHERE my_day = true AND status != 'done'
+`
+
+type MyDayIncompleteTaskIDsRow struct {
+	ID            uuid.UUID `json:"id"`
+	Title         string    `json:"title"`
+	NotionPageID  *string   `json:"notion_page_id"`
+	RecurInterval *int32    `json:"recur_interval"`
+}
+
+// Get My Day tasks that are not done (for incomplete logging before daily reset).
+func (q *Queries) MyDayIncompleteTaskIDs(ctx context.Context) ([]MyDayIncompleteTaskIDsRow, error) {
+	rows, err := q.db.Query(ctx, myDayIncompleteTaskIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MyDayIncompleteTaskIDsRow{}
+	for rows.Next() {
+		var i MyDayIncompleteTaskIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.NotionPageID,
+			&i.RecurInterval,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const myDayTasks = `-- name: MyDayTasks :many
 SELECT t.id, t.title, t.status, t.due, t.project_id,
        t.energy, t.priority, t.assignee,
@@ -4446,6 +4514,57 @@ func (q *Queries) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const overdueRecurringTasks = `-- name: OverdueRecurringTasks :many
+
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       my_day, description, assignee, created_at, updated_at
+FROM tasks
+WHERE status != 'done'
+  AND recur_interval IS NOT NULL AND recur_interval > 0
+  AND due < $1
+ORDER BY due ASC
+`
+
+// === Recurring Task System Queries ===
+// Get all overdue recurring tasks (due < today, not done).
+func (q *Queries) OverdueRecurringTasks(ctx context.Context, today *time.Time) ([]Task, error) {
+	rows, err := q.db.Query(ctx, overdueRecurringTasks, today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Task{}
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.NotionPageID,
+			&i.CompletedAt,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.MyDay,
+			&i.Description,
+			&i.Assignee,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -5709,6 +5828,55 @@ func (q *Queries) RecurringTaskByProject(ctx context.Context, arg RecurringTaskB
 	return i, err
 }
 
+const recurringTasksDueToday = `-- name: RecurringTasksDueToday :many
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       my_day, description, assignee, created_at, updated_at
+FROM tasks
+WHERE status != 'done'
+  AND recur_interval IS NOT NULL AND recur_interval > 0
+  AND due <= $1
+ORDER BY due ASC
+`
+
+// Get recurring tasks due on or before today (for My Day auto-populate).
+func (q *Queries) RecurringTasksDueToday(ctx context.Context, today *time.Time) ([]Task, error) {
+	rows, err := q.db.Query(ctx, recurringTasksDueToday, today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Task{}
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.NotionPageID,
+			&i.CompletedAt,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.MyDay,
+			&i.Description,
+			&i.Assignee,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const refreshTokenByHash = `-- name: RefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens
@@ -5830,6 +5998,48 @@ type ResetFeedFailureParams struct {
 func (q *Queries) ResetFeedFailure(ctx context.Context, arg ResetFeedFailureParams) error {
 	_, err := q.db.Exec(ctx, resetFeedFailure, arg.ID, arg.Etag, arg.LastModified)
 	return err
+}
+
+const resetRecurringTask = `-- name: ResetRecurringTask :one
+UPDATE tasks SET
+    due = $1,
+    status = 'todo',
+    my_day = false,
+    updated_at = now()
+WHERE id = $2
+RETURNING id, title, status, due, project_id, notion_page_id,
+          completed_at, energy, priority, recur_interval, recur_unit,
+          my_day, description, assignee, created_at, updated_at
+`
+
+type ResetRecurringTaskParams struct {
+	Due *time.Time `json:"due"`
+	ID  uuid.UUID  `json:"id"`
+}
+
+// Reset a recurring task after completion: advance due, reset status to todo, clear my_day.
+func (q *Queries) ResetRecurringTask(ctx context.Context, arg ResetRecurringTaskParams) (Task, error) {
+	row := q.db.QueryRow(ctx, resetRecurringTask, arg.Due, arg.ID)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.Due,
+		&i.ProjectID,
+		&i.NotionPageID,
+		&i.CompletedAt,
+		&i.Energy,
+		&i.Priority,
+		&i.RecurInterval,
+		&i.RecurUnit,
+		&i.MyDay,
+		&i.Description,
+		&i.Assignee,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const retryableFlowRuns = `-- name: RetryableFlowRuns :many
@@ -6551,6 +6761,119 @@ func (q *Queries) SimilarTILs(ctx context.Context, arg SimilarTILsParams) ([]Sim
 			&i.Type,
 			&i.Tags,
 			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const skipCountByTask = `-- name: SkipCountByTask :one
+SELECT count(*)::int FROM task_skip_log
+WHERE task_id = $1 AND skipped_date >= $2
+`
+
+type SkipCountByTaskParams struct {
+	TaskID uuid.UUID `json:"task_id"`
+	Since  time.Time `json:"since"`
+}
+
+// Count skips for a specific task within a date range.
+func (q *Queries) SkipCountByTask(ctx context.Context, arg SkipCountByTaskParams) (int32, error) {
+	row := q.db.QueryRow(ctx, skipCountByTask, arg.TaskID, arg.Since)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const skipHistoryByProject = `-- name: SkipHistoryByProject :many
+SELECT sl.id, sl.task_id, sl.original_due, sl.skipped_date, sl.reason, sl.created_at,
+       t.title AS task_title
+FROM task_skip_log sl
+JOIN tasks t ON t.id = sl.task_id
+WHERE t.project_id = $1
+  AND sl.skipped_date >= $2
+ORDER BY sl.skipped_date DESC
+`
+
+type SkipHistoryByProjectParams struct {
+	ProjectID *uuid.UUID `json:"project_id"`
+	Since     time.Time  `json:"since"`
+}
+
+type SkipHistoryByProjectRow struct {
+	ID          uuid.UUID `json:"id"`
+	TaskID      uuid.UUID `json:"task_id"`
+	OriginalDue time.Time `json:"original_due"`
+	SkippedDate time.Time `json:"skipped_date"`
+	Reason      string    `json:"reason"`
+	CreatedAt   time.Time `json:"created_at"`
+	TaskTitle   string    `json:"task_title"`
+}
+
+// Get skip history for all tasks under a project within a date range.
+func (q *Queries) SkipHistoryByProject(ctx context.Context, arg SkipHistoryByProjectParams) ([]SkipHistoryByProjectRow, error) {
+	rows, err := q.db.Query(ctx, skipHistoryByProject, arg.ProjectID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SkipHistoryByProjectRow{}
+	for rows.Next() {
+		var i SkipHistoryByProjectRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.OriginalDue,
+			&i.SkippedDate,
+			&i.Reason,
+			&i.CreatedAt,
+			&i.TaskTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const skipHistoryByTask = `-- name: SkipHistoryByTask :many
+SELECT id, task_id, original_due, skipped_date, reason, created_at
+FROM task_skip_log
+WHERE task_id = $1
+  AND skipped_date >= $2
+ORDER BY skipped_date DESC
+`
+
+type SkipHistoryByTaskParams struct {
+	TaskID uuid.UUID `json:"task_id"`
+	Since  time.Time `json:"since"`
+}
+
+// Get skip history for a specific task within a date range.
+func (q *Queries) SkipHistoryByTask(ctx context.Context, arg SkipHistoryByTaskParams) ([]TaskSkipLog, error) {
+	rows, err := q.db.Query(ctx, skipHistoryByTask, arg.TaskID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskSkipLog{}
+	for rows.Next() {
+		var i TaskSkipLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.OriginalDue,
+			&i.SkippedDate,
+			&i.Reason,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -7797,6 +8120,24 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 	return i, err
 }
 
+const updateTaskDue = `-- name: UpdateTaskDue :execrows
+UPDATE tasks SET due = $1, updated_at = now() WHERE id = $2
+`
+
+type UpdateTaskDueParams struct {
+	Due *time.Time `json:"due"`
+	ID  uuid.UUID  `json:"id"`
+}
+
+// Update only the due date for a task (used by cron advance and complete_task recurring reset).
+func (q *Queries) UpdateTaskDue(ctx context.Context, arg UpdateTaskDueParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateTaskDue, arg.Due, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateTaskMyDay = `-- name: UpdateTaskMyDay :execrows
 UPDATE tasks SET my_day = $1, updated_at = now()
 WHERE id = $2 AND status != 'done'
@@ -8177,7 +8518,15 @@ VALUES ($1, $2::task_status, $3, $4, $5,
 ON CONFLICT (notion_page_id) DO UPDATE SET
     title          = EXCLUDED.title,
     status         = EXCLUDED.status,
-    due            = EXCLUDED.due,
+    due            = CASE
+        -- For recurring tasks, don't overwrite local due if it's ahead of incoming Notion due.
+        -- This prevents hourly SyncAll from reverting cron's due date advance.
+        WHEN tasks.recur_interval IS NOT NULL AND tasks.recur_interval > 0
+             AND tasks.due IS NOT NULL AND EXCLUDED.due IS NOT NULL
+             AND tasks.due > EXCLUDED.due
+        THEN tasks.due
+        ELSE EXCLUDED.due
+    END,
     project_id     = EXCLUDED.project_id,
     completed_at   = CASE
         WHEN EXCLUDED.status = 'done' AND tasks.completed_at IS NULL THEN now()

@@ -456,6 +456,149 @@ func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Task, error) {
 	return &t, nil
 }
 
+// OverdueRecurringTasks returns all recurring tasks with due < today.
+func (s *Store) OverdueRecurringTasks(ctx context.Context, today time.Time) ([]Task, error) {
+	rows, err := s.q.OverdueRecurringTasks(ctx, &today)
+	if err != nil {
+		return nil, fmt.Errorf("listing overdue recurring tasks: %w", err)
+	}
+	tasks := make([]Task, len(rows))
+	for i := range rows {
+		tasks[i] = rowToTask(&rows[i])
+	}
+	return tasks, nil
+}
+
+// RecurringTasksDueToday returns recurring tasks with due <= today (for My Day auto-populate).
+func (s *Store) RecurringTasksDueToday(ctx context.Context, today time.Time) ([]Task, error) {
+	rows, err := s.q.RecurringTasksDueToday(ctx, &today)
+	if err != nil {
+		return nil, fmt.Errorf("listing recurring tasks due today: %w", err)
+	}
+	tasks := make([]Task, len(rows))
+	for i := range rows {
+		tasks[i] = rowToTask(&rows[i])
+	}
+	return tasks, nil
+}
+
+// UpdateDue updates only the due date for a task.
+func (s *Store) UpdateDue(ctx context.Context, id uuid.UUID, due time.Time) error {
+	n, err := s.q.UpdateTaskDue(ctx, db.UpdateTaskDueParams{ID: id, Due: &due})
+	if err != nil {
+		return fmt.Errorf("updating task %s due: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ResetRecurring advances a recurring task's due date, resets status to todo, and clears my_day.
+func (s *Store) ResetRecurring(ctx context.Context, id uuid.UUID, nextDue time.Time) (*Task, error) {
+	r, err := s.q.ResetRecurringTask(ctx, db.ResetRecurringTaskParams{ID: id, Due: &nextDue})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("resetting recurring task %s: %w", id, err)
+	}
+	t := rowToTask(&r)
+	return &t, nil
+}
+
+// MyDayIncompleteTaskIDs returns tasks in My Day that are not done (for daily reset logging).
+func (s *Store) MyDayIncompleteTaskIDs(ctx context.Context) ([]db.MyDayIncompleteTaskIDsRow, error) {
+	return s.q.MyDayIncompleteTaskIDs(ctx)
+}
+
+// LogSkip inserts a skip record. Idempotent via ON CONFLICT DO NOTHING.
+func (s *Store) LogSkip(ctx context.Context, taskID uuid.UUID, originalDue, skippedDate time.Time, reason string) error {
+	return s.q.CreateSkipRecord(ctx, db.CreateSkipRecordParams{
+		TaskID:      taskID,
+		OriginalDue: originalDue,
+		SkippedDate: skippedDate,
+		Reason:      reason,
+	})
+}
+
+// SkipRecord represents a single skip event.
+type SkipRecord struct {
+	ID          uuid.UUID `json:"id"`
+	TaskID      uuid.UUID `json:"task_id"`
+	OriginalDue time.Time `json:"original_due"`
+	SkippedDate time.Time `json:"skipped_date"`
+	Reason      string    `json:"reason"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// SkipHistoryByTask returns skip records for a task since a given date.
+func (s *Store) SkipHistoryByTask(ctx context.Context, taskID uuid.UUID, since time.Time) ([]SkipRecord, error) {
+	rows, err := s.q.SkipHistoryByTask(ctx, db.SkipHistoryByTaskParams{
+		TaskID: taskID,
+		Since:  since,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying skip history for task %s: %w", taskID, err)
+	}
+	records := make([]SkipRecord, len(rows))
+	for i, r := range rows {
+		records[i] = SkipRecord{
+			ID:          r.ID,
+			TaskID:      r.TaskID,
+			OriginalDue: r.OriginalDue,
+			SkippedDate: r.SkippedDate,
+			Reason:      r.Reason,
+			CreatedAt:   r.CreatedAt,
+		}
+	}
+	return records, nil
+}
+
+// SkipCountByTask returns the number of skips for a task since a given date.
+func (s *Store) SkipCountByTask(ctx context.Context, taskID uuid.UUID, since time.Time) (int, error) {
+	n, err := s.q.SkipCountByTask(ctx, db.SkipCountByTaskParams{
+		TaskID: taskID,
+		Since:  since,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting skips for task %s: %w", taskID, err)
+	}
+	return int(n), nil
+}
+
+// SkipRecordWithTitle includes task title for project-level queries.
+type SkipRecordWithTitle struct {
+	SkipRecord
+	TaskTitle string `json:"task_title"`
+}
+
+// SkipHistoryByProject returns skip records for all tasks under a project.
+func (s *Store) SkipHistoryByProject(ctx context.Context, projectID uuid.UUID, since time.Time) ([]SkipRecordWithTitle, error) {
+	rows, err := s.q.SkipHistoryByProject(ctx, db.SkipHistoryByProjectParams{
+		ProjectID: &projectID,
+		Since:     since,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying skip history for project %s: %w", projectID, err)
+	}
+	records := make([]SkipRecordWithTitle, len(rows))
+	for i, r := range rows {
+		records[i] = SkipRecordWithTitle{
+			SkipRecord: SkipRecord{
+				ID:          r.ID,
+				TaskID:      r.TaskID,
+				OriginalDue: r.OriginalDue,
+				SkippedDate: r.SkippedDate,
+				Reason:      r.Reason,
+				CreatedAt:   r.CreatedAt,
+			},
+			TaskTitle: r.TaskTitle,
+		}
+	}
+	return records, nil
+}
+
 func rowToTask(r *db.Task) Task {
 	return Task{
 		ID:            r.ID,

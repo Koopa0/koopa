@@ -715,17 +715,3 @@ COMMENT ON COLUMN task_skip_log.original_due IS 'The due date the task had when 
 COMMENT ON COLUMN task_skip_log.skipped_date IS 'The occurrence date that was missed (the date the task should have been done).';
 COMMENT ON COLUMN task_skip_log.reason IS 'Why the occurrence was skipped: auto-expired (cron detected overdue) or manual (user explicitly skipped).';
 
--- Per-completion log for recurring tasks (supports "X completions this week").
-CREATE TABLE task_completion_log (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    notes        TEXT NOT NULL DEFAULT ''
-);
-
-CREATE INDEX idx_task_completion_log_task ON task_completion_log(task_id, completed_at DESC);
-
-COMMENT ON TABLE task_completion_log IS 'Per-completion log for recurring tasks. Multiple records per task per day are allowed (e.g., 3 LeetCode problems).';
-COMMENT ON COLUMN task_completion_log.task_id IS 'The recurring task that was completed. CASCADE deletes history when task is deleted.';
-COMMENT ON COLUMN task_completion_log.completed_at IS 'When the task was completed, in server time. Double-complete guard uses Asia/Taipei day boundary.';
-COMMENT ON COLUMN task_completion_log.notes IS 'Optional completion notes (e.g., LeetCode problem name).';

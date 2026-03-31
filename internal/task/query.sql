@@ -23,7 +23,15 @@ VALUES (@title, @status::task_status, @due, @project_id, @notion_page_id,
 ON CONFLICT (notion_page_id) DO UPDATE SET
     title          = EXCLUDED.title,
     status         = EXCLUDED.status,
-    due            = EXCLUDED.due,
+    due            = CASE
+        -- For recurring tasks, don't overwrite local due if it's ahead of incoming Notion due.
+        -- This prevents hourly SyncAll from reverting cron's due date advance.
+        WHEN tasks.recur_interval IS NOT NULL AND tasks.recur_interval > 0
+             AND tasks.due IS NOT NULL AND EXCLUDED.due IS NOT NULL
+             AND tasks.due > EXCLUDED.due
+        THEN tasks.due
+        ELSE EXCLUDED.due
+    END,
     project_id     = EXCLUDED.project_id,
     completed_at   = CASE
         WHEN EXCLUDED.status = 'done' AND tasks.completed_at IS NULL THEN now()
@@ -46,16 +54,20 @@ RETURNING id, title, status, due, project_id, notion_page_id,
 SELECT notion_page_id FROM tasks WHERE notion_page_id IS NOT NULL ORDER BY title;
 
 -- name: ArchiveTaskByNotionPageID :execrows
--- Mark a single task as done by its Notion page ID (used when Notion page is trashed).
+-- Mark a single non-recurring task as done by its Notion page ID (used when Notion page is trashed).
+-- Recurring tasks are excluded — they should never be archived by sync.
 UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
-WHERE notion_page_id = $1 AND status != 'done';
+WHERE notion_page_id = $1 AND status != 'done'
+  AND (recur_interval IS NULL OR recur_interval <= 0);
 
 -- name: ArchiveOrphanNotionTasks :execrows
--- Mark tasks as done if their notion_page_id is not in the active set.
+-- Mark non-recurring tasks as done if their notion_page_id is not in the active set.
+-- Recurring tasks are excluded — they should never be archived by sync.
 UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
 WHERE notion_page_id IS NOT NULL
   AND notion_page_id != ALL(@active_ids::text[])
-  AND status != 'done';
+  AND status != 'done'
+  AND (recur_interval IS NULL OR recur_interval <= 0);
 
 -- name: CompletedTasksSince :one
 -- Count tasks completed since a given time.
@@ -255,3 +267,80 @@ FROM tasks t
 LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.my_day = true AND t.status != 'done'
 ORDER BY t.due ASC NULLS LAST, t.priority DESC, t.created_at;
+
+-- === Recurring Task System Queries ===
+
+-- name: OverdueRecurringTasks :many
+-- Get all overdue recurring tasks (due < today, not done).
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       my_day, description, assignee, created_at, updated_at
+FROM tasks
+WHERE status != 'done'
+  AND recur_interval IS NOT NULL AND recur_interval > 0
+  AND due < @today
+ORDER BY due ASC;
+
+-- name: RecurringTasksDueToday :many
+-- Get recurring tasks due on or before today (for My Day auto-populate).
+SELECT id, title, status, due, project_id, notion_page_id,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       my_day, description, assignee, created_at, updated_at
+FROM tasks
+WHERE status != 'done'
+  AND recur_interval IS NOT NULL AND recur_interval > 0
+  AND due <= @today
+ORDER BY due ASC;
+
+-- name: UpdateTaskDue :execrows
+-- Update only the due date for a task (used by cron advance and complete_task recurring reset).
+UPDATE tasks SET due = @due, updated_at = now() WHERE id = @id;
+
+-- name: ResetRecurringTask :one
+-- Reset a recurring task after completion: advance due, reset status to todo, clear my_day.
+UPDATE tasks SET
+    due = @due,
+    status = 'todo',
+    my_day = false,
+    updated_at = now()
+WHERE id = @id
+RETURNING id, title, status, due, project_id, notion_page_id,
+          completed_at, energy, priority, recur_interval, recur_unit,
+          my_day, description, assignee, created_at, updated_at;
+
+-- name: MyDayIncompleteTaskIDs :many
+-- Get My Day tasks that are not done (for incomplete logging before daily reset).
+SELECT id, title, notion_page_id, recur_interval FROM tasks
+WHERE my_day = true AND status != 'done';
+
+-- === Skip Log Queries ===
+
+-- name: CreateSkipRecord :exec
+-- Insert a single skip record. ON CONFLICT ensures idempotency on cron re-run.
+INSERT INTO task_skip_log (task_id, original_due, skipped_date, reason)
+VALUES (@task_id, @original_due, @skipped_date, @reason)
+ON CONFLICT (task_id, skipped_date) DO NOTHING;
+
+-- name: SkipHistoryByTask :many
+-- Get skip history for a specific task within a date range.
+SELECT id, task_id, original_due, skipped_date, reason, created_at
+FROM task_skip_log
+WHERE task_id = @task_id
+  AND skipped_date >= @since
+ORDER BY skipped_date DESC;
+
+-- name: SkipCountByTask :one
+-- Count skips for a specific task within a date range.
+SELECT count(*)::int FROM task_skip_log
+WHERE task_id = @task_id AND skipped_date >= @since;
+
+-- name: SkipHistoryByProject :many
+-- Get skip history for all tasks under a project within a date range.
+SELECT sl.id, sl.task_id, sl.original_due, sl.skipped_date, sl.reason, sl.created_at,
+       t.title AS task_title
+FROM task_skip_log sl
+JOIN tasks t ON t.id = sl.task_id
+WHERE t.project_id = @project_id
+  AND sl.skipped_date >= @since
+ORDER BY sl.skipped_date DESC;
+
