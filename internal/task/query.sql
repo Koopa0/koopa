@@ -69,9 +69,6 @@ WHERE notion_page_id IS NOT NULL
   AND status != 'done'
   AND (recur_interval IS NULL OR recur_interval <= 0);
 
--- name: CompletedTasksSince :one
--- Count tasks completed since a given time.
-SELECT count(*) FROM tasks WHERE status = 'done' AND completed_at >= @since;
 
 -- name: PendingTasksWithProject :many
 -- List pending tasks with project info, sorted by deadline priority then last-touched.
@@ -91,14 +88,6 @@ ORDER BY
     t.updated_at ASC
 LIMIT sqlc.arg('max_results');
 
--- name: CompletedTasksByProjectSince :many
--- Count tasks completed per project since a given time. NULL project grouped as '(no project)'.
-SELECT COALESCE(p.title, '(no project)') AS project_title, count(*) AS completed
-FROM tasks t
-LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.status = 'done' AND t.completed_at >= @since
-GROUP BY p.title
-ORDER BY completed DESC;
 
 -- name: TaskByID :one
 -- Get a task by ID.

@@ -119,31 +119,6 @@ func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (in
 	return n, nil
 }
 
-// CompletedSince counts tasks completed since the given time.
-func (s *Store) CompletedSince(ctx context.Context, since time.Time) (int64, error) {
-	n, err := s.q.CompletedTasksSince(ctx, &since)
-	if err != nil {
-		return 0, fmt.Errorf("counting completed tasks: %w", err)
-	}
-	return n, nil
-}
-
-// CompletedByProjectSince returns per-project completion counts since the given time.
-func (s *Store) CompletedByProjectSince(ctx context.Context, since time.Time) ([]ProjectCompletion, error) {
-	rows, err := s.q.CompletedTasksByProjectSince(ctx, &since)
-	if err != nil {
-		return nil, fmt.Errorf("counting completed tasks by project: %w", err)
-	}
-	result := make([]ProjectCompletion, len(rows))
-	for i := range rows {
-		result[i] = ProjectCompletion{
-			ProjectTitle: rows[i].ProjectTitle,
-			Completed:    rows[i].Completed,
-		}
-	}
-	return result, nil
-}
-
 // PendingTasksWithProject returns pending tasks with project context for MCP tools.
 func (s *Store) PendingTasksWithProject(ctx context.Context, projectSlug, assignee *string, maxResults int32) ([]PendingTaskDetail, error) {
 	rows, err := s.q.PendingTasksWithProject(ctx, db.PendingTasksWithProjectParams{

@@ -296,42 +296,6 @@ func TestTasks_ReturnsAll(t *testing.T) {
 	}
 }
 
-func TestCompletedSince(t *testing.T) {
-	s := setup(t)
-	ctx := t.Context()
-
-	since := time.Now().Add(-1 * time.Hour)
-
-	// Create a done task (completed_at = now()).
-	_, err := s.UpsertByNotionPageID(ctx, &UpsertByNotionParams{
-		Title:        "Completed recently",
-		Status:       StatusDone,
-		NotionPageID: "comp-001",
-		Assignee:     "human",
-	})
-	if err != nil {
-		t.Fatalf("UpsertByNotionPageID() error: %v", err)
-	}
-	// Create a non-done task.
-	_, err = s.UpsertByNotionPageID(ctx, &UpsertByNotionParams{
-		Title:        "Still pending",
-		Status:       StatusTodo,
-		NotionPageID: "comp-002",
-		Assignee:     "human",
-	})
-	if err != nil {
-		t.Fatalf("UpsertByNotionPageID() error: %v", err)
-	}
-
-	count, err := s.CompletedSince(ctx, since)
-	if err != nil {
-		t.Fatalf("CompletedSince() error: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("CompletedSince() = %d, want 1", count)
-	}
-}
-
 func TestCompletedTasksDetailSince(t *testing.T) {
 	s := setup(t)
 	ctx := t.Context()

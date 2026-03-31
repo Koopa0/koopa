@@ -742,41 +742,6 @@ func (q *Queries) CollectedDataCount(ctx context.Context, status NullCollectedSt
 	return count, err
 }
 
-const completedTasksByProjectSince = `-- name: CompletedTasksByProjectSince :many
-SELECT COALESCE(p.title, '(no project)') AS project_title, count(*) AS completed
-FROM tasks t
-LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.status = 'done' AND t.completed_at >= $1
-GROUP BY p.title
-ORDER BY completed DESC
-`
-
-type CompletedTasksByProjectSinceRow struct {
-	ProjectTitle string `json:"project_title"`
-	Completed    int64  `json:"completed"`
-}
-
-// Count tasks completed per project since a given time. NULL project grouped as '(no project)'.
-func (q *Queries) CompletedTasksByProjectSince(ctx context.Context, since *time.Time) ([]CompletedTasksByProjectSinceRow, error) {
-	rows, err := q.db.Query(ctx, completedTasksByProjectSince, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []CompletedTasksByProjectSinceRow{}
-	for rows.Next() {
-		var i CompletedTasksByProjectSinceRow
-		if err := rows.Scan(&i.ProjectTitle, &i.Completed); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const completedTasksDetailSince = `-- name: CompletedTasksDetailSince :many
 SELECT t.id, t.title, t.completed_at, t.project_id,
        COALESCE(p.title, '') AS project_title
@@ -819,18 +784,6 @@ func (q *Queries) CompletedTasksDetailSince(ctx context.Context, since *time.Tim
 		return nil, err
 	}
 	return items, nil
-}
-
-const completedTasksSince = `-- name: CompletedTasksSince :one
-SELECT count(*) FROM tasks WHERE status = 'done' AND completed_at >= $1
-`
-
-// Count tasks completed since a given time.
-func (q *Queries) CompletedTasksSince(ctx context.Context, since *time.Time) (int64, error) {
-	row := q.db.QueryRow(ctx, completedTasksSince, since)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const completedTitlesSince = `-- name: CompletedTitlesSince :many

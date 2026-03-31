@@ -215,6 +215,7 @@ func run(logger *slog.Logger) error {
 					SystemPrompt:   aiflow.WeeklyReviewSystemPrompt,
 					Tasks:          taskStore,
 					TaskCompletion: taskStore,
+					Activity:       activityStore,
 					Collected:      entryStore,
 					Contents:       contentStore,
 					Projects:       projectStore,

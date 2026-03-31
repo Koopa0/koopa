@@ -13,6 +13,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/genai"
 
+	"github.com/Koopa0/koopa0.dev/internal/activity"
 	"github.com/Koopa0/koopa0.dev/internal/ai"
 	"github.com/Koopa0/koopa0.dev/internal/budget"
 	"github.com/Koopa0/koopa0.dev/internal/content"
@@ -45,6 +46,7 @@ type Weekly struct {
 	systemPrompt   string
 	tasks          *task.Store
 	taskCompletion *task.Store
+	activityStore  *activity.Store
 	collected      *entry.Store
 	contents       *content.Store
 	projects       *project.Store
@@ -60,6 +62,7 @@ type WeeklyDeps struct {
 	SystemPrompt   string
 	Tasks          *task.Store
 	TaskCompletion *task.Store
+	Activity       *activity.Store
 	Collected      *entry.Store
 	Contents       *content.Store
 	Projects       *project.Store
@@ -78,6 +81,7 @@ func NewWeekly(g *genkit.Genkit, model genkitai.Model, deps WeeklyDeps) *Weekly 
 		systemPrompt:   deps.SystemPrompt,
 		tasks:          deps.Tasks,
 		taskCompletion: deps.TaskCompletion,
+		activityStore:  deps.Activity,
 		collected:      deps.Collected,
 		contents:       deps.Contents,
 		projects:       deps.Projects,
@@ -149,10 +153,18 @@ func (wr *Weekly) run(ctx context.Context, rawInput json.RawMessage) (WeeklyOutp
 		tasks, taskErr = wr.tasks.PendingTasks(ctx)
 	})
 	wg.Go(func() {
-		completedCount, completedErr = wr.taskCompletion.CompletedSince(ctx, weekAgo)
-	})
-	wg.Go(func() {
-		completedByProj, completedProjErr = wr.taskCompletion.CompletedByProjectSince(ctx, weekAgo)
+		// Use activity_events for completion counts (captures recurring task completions).
+		projCompletions, completedProjErr := wr.activityStore.CompletionsByProjectSince(ctx, weekAgo)
+		if completedProjErr == nil {
+			var total int64
+			completedByProj = make([]task.ProjectCompletion, len(projCompletions))
+			for i, pc := range projCompletions {
+				completedByProj[i] = task.ProjectCompletion{ProjectTitle: pc.ProjectTitle, Completed: pc.Completed}
+				total += pc.Completed
+			}
+			completedCount = total
+		}
+		completedErr = completedProjErr
 	})
 	wg.Go(func() {
 		rssItems, rssErr = wr.collected.RecentCollectedData(ctx, weekAgo, now, reviewCollectedLimit)
