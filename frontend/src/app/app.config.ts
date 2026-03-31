@@ -38,10 +38,18 @@ export const appConfig: ApplicationConfig = {
       withViewTransitions({
         skipInitialTransition: true,
         onViewTransitionCreated: ({ transition, from, to }) => {
-          const fromUrl = '/' + from.url.map((s) => s.path).join('/');
-          const toUrl = '/' + to.url.map((s) => s.path).join('/');
+          const fullPath = (route: import('@angular/router').ActivatedRouteSnapshot): string => {
+            const parts: string[] = [];
+            let cur: import('@angular/router').ActivatedRouteSnapshot | null = route;
+            while (cur) {
+              parts.unshift(...cur.url.map((s) => s.path));
+              cur = cur.parent;
+            }
+            return '/' + parts.join('/');
+          };
           const isAdminNav =
-            fromUrl.startsWith('/admin') && toUrl.startsWith('/admin');
+            fullPath(from).startsWith('/admin') &&
+            fullPath(to).startsWith('/admin');
           if (isAdminNav) {
             transition.skipTransition();
           }
