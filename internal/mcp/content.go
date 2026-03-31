@@ -216,9 +216,9 @@ func (s *Server) publishContent(ctx context.Context, _ *mcp.CallToolRequest, inp
 	}, nil
 }
 
-// --- get_content_pipeline tool ---
+// --- list_content_queue ---
 
-// ContentPipelineInput is the input for the get_content_pipeline tool.
+// ContentPipelineInput is the input for the list_content_queue tool.
 type ContentPipelineInput struct {
 	View        string `json:"view,omitempty" jsonschema_description:"queue|calendar|recent (default: queue)"`
 	Status      string `json:"status,omitempty" jsonschema_description:"draft|review|published|all"`
@@ -226,7 +226,7 @@ type ContentPipelineInput struct {
 	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 20)"`
 }
 
-// ContentPipelineOutput is the output for the get_content_pipeline tool.
+// ContentPipelineOutput is the output for the list_content_queue tool.
 type ContentPipelineOutput struct {
 	View  string                 `json:"view"`
 	Items []contentPipelineEntry `json:"items"`

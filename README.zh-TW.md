@@ -6,7 +6,7 @@
   <a href="README.md">English</a> | <strong>繁體中文</strong>
 </p>
 
-一個用 Go 打造的後端系統，將 Notion、Obsidian 和 RSS 整合成統一平台 — AI 透過 49 個 MCP 工具作為系統的一級使用者。
+一個用 Go 打造的後端系統，將 Notion、Obsidian 和 RSS 整合成統一平台 — AI 透過 52 個 MCP 工具作為系統的一級使用者。
 
 這不是部落格平台，也不是又一個 PKM 應用程式。這是我每天實際在用的個人基礎設施 — 規劃任務、追蹤學習、收集與策展文章、發佈值得分享的內容。多個 AI 環境（Claude Web、Claude Code、Cowork）連接到同一個 Go server 和 PostgreSQL，透過結構化的 artifact 協調運作，而不是每次對話都從零開始。
 
@@ -18,7 +18,7 @@
 
 Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任務和目標，Obsidian 寫技術筆記。但我想要的工作流程不存在於任何單一工具裡：跨所有來源的語義搜尋、AI 驅動的每日規劃循環、從 RSS 訂閱到策展書籤的自動化內容管線、能隨時間自我驗證的假說追蹤。資料散落在彼此無法溝通的工具之間，手動串接的方式無法擴展。
 
-所以我建了底下那一層。一個 Go server 搭配 PostgreSQL，將這些工具作為資料來源整合，透過 Genkit 執行 13 個 AI flow，並開放 49 個 MCP 工具讓 AI 操作整個系統。Notion 雙向同步任務和目標。Obsidian 同步筆記並產生向量嵌入以支援語義搜尋。RSS 訂閱經過加權關鍵字相關性評分後浮出供審閱。所有資料匯入同一個資料庫，AI 幫忙驅動整個循環 — 規劃、執行、反思、調整。
+所以我建了底下那一層。一個 Go server 搭配 PostgreSQL，將這些工具作為資料來源整合，透過 Genkit 執行 13 個 AI flow，並開放 52 個 MCP 工具讓 AI 操作整個系統。Notion 雙向同步任務和目標。Obsidian 同步筆記並產生向量嵌入以支援語義搜尋。RSS 訂閱經過加權關鍵字相關性評分後浮出供審閱。所有資料匯入同一個資料庫，AI 幫忙驅動整個循環 — 規劃、執行、反思、調整。
 
 這個架構帶來一個附帶效果：當多個 AI 環境連接到同一個後端，「每次 session 都從零開始」的問題自然消失了。Claude Web 規劃我的一天、Claude Code 接手任務、Cowork 執行內容管線 — 它們讀寫的是同一份資料。session 之間不會遺失任何上下文。
 
@@ -38,7 +38,7 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 
 **PostgreSQL** 是處理層 — 一個資料庫承載所有資料。透過 tsvector + GIN 實現全文搜尋，透過 pgvector + HNSW 實現語義搜尋，再用 Reciprocal Rank Fusion 合併結果。原始素材在這裡變得可查詢、可搜尋、可關聯。
 
-**Go server + Angular 前端** 是輸出層 — 一個 MCP server 為 AI 環境開放 49 個工具（橫跨 10 個領域）、一條 Genkit 管線執行 13 個 AI flow、一個 Angular SSR 前端將成品發佈到網站。
+**Go server + Angular 前端** 是輸出層 — 一個 MCP server 為 AI 環境開放 52 個工具（橫跨 10 個領域）、一條 Genkit 管線執行 13 個 AI flow、一個 Angular SSR 前端將成品發佈到網站。
 
 ### 四個 AI 消費者
 
@@ -99,7 +99,7 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 
 ## MCP 設計
 
-MCP（Model Context Protocol）是 AI 環境與系統互動的方式。49 個工具，橫跨 10 個領域。
+MCP（Model Context Protocol）是 AI 環境與系統互動的方式。52 個工具，橫跨 10 個領域。
 
 ### 十個領域
 
@@ -111,7 +111,7 @@ MCP（Model Context Protocol）是 AI 環境與系統互動的方式。49 個工
 | Content Pipeline  | 5      | 內容 CRUD、發佈、佇列、RSS 書籤                          |
 | RSS / Feed Mgmt   | 6      | 訂閱 CRUD、收集統計、RSS 摘要                            |
 | Project & Goal    | 5      | 專案上下文、目標進度、狀態更新                           |
-| Learning Analytics| 7      | 開發/學習 session 記錄、標籤統計、涵蓋矩陣、弱點趨勢    |
+| Learning Analytics| 10     | 開發/學習 session 記錄、標籤統計、涵蓋矩陣、弱點趨勢、mastery map、concept gaps、variation map |
 | O'Reilly 整合     | 3      | 搜尋、書籍目錄、章節閱讀（條件啟用）                     |
 | System & Infra    | 3      | 系統狀態、管線觸發、活動事件                             |
 | Spaced Retrieval  | 2      | FSRS 間隔複習、到期佇列（條件啟用）                      |

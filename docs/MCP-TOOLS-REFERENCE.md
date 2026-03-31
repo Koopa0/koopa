@@ -1,6 +1,6 @@
 # koopa0-knowledge MCP Tools Reference
 
-> 49 tools across 10 functional domains. Last audit: 2026-03-30.
+> 52 tools across 10 functional domains. Last audit: 2026-03-31.
 > Server: `koopa0-knowledge` v0.2.0 — Go binary (`cmd/mcp/`) + PostgreSQL (pgvector).
 > Transport: Streamable HTTP on port 8081 (OAuth2 via Google OIDC).
 
@@ -16,7 +16,7 @@
 | [Content Pipeline](#4-content-pipeline-5-tools) | 5 | 內容 CRUD、發佈、佇列、RSS 書籤 |
 | [RSS / Feed Management](#5-rss--feed-management-6-tools) | 6 | 訂閱 CRUD、收集統計、RSS 摘要 |
 | [Project & Goal](#6-project--goal-5-tools) | 5 | 專案上下文、目標進度、狀態更新 |
-| [Learning Analytics](#7-learning-analytics-7-tools) | 7 | 開發/學習記錄、標籤統計、涵蓋矩陣、弱點趨勢、時間線 |
+| [Learning Analytics](#7-learning-analytics-10-tools) | 10 | 開發/學習記錄、標籤統計、涵蓋矩陣、弱點趨勢、時間線、mastery map、concept gaps、variation map |
 | [O'Reilly Integration](#8-oreilly-integration-3-tools) | 3 | 搜尋、書籍目錄、章節閱讀（條件啟用） |
 | [System & Infrastructure](#9-system--infrastructure-3-tools) | 3 | 系統狀態、管線觸發、活動事件（部分條件啟用） |
 | [Spaced Retrieval (FSRS)](#10-spaced-retrieval-fsrs-2-tools) | 2 | 間隔重複回測、到期佇列（條件啟用） |
@@ -651,7 +651,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-## 7. Learning Analytics (7 tools)
+## 7. Learning Analytics (10 tools)
 
 開發記錄、學習記錄、與學習分析。
 
@@ -778,6 +778,62 @@ RSS 訂閱管理與收集統計。
 |------|------|------|------|
 | `project` | string | — | 專案 slug/alias/title（省略=全部） |
 | `days` | int | — | 回溯天數（default 14, max 90） |
+
+### `mastery_map`
+
+> 複合式 per-pattern 精熟度視圖。一次呼叫取代 coverage_matrix + tag_summary + weakness_trend。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 slug/alias/title |
+| `patterns` | string[] | — | 只包含這些 pattern（省略=全部） |
+| `days` | int | — | 回溯天數（default 30, max 365） |
+
+回傳 per-pattern：stage（unexplored/struggling/developing/solid）、result 分佈、difficulty 分佈、concept mastery 計數、weak concepts、unexplored approaches、weakness tag 趨勢、variation coverage、regression signals、raw stage_signals。
+
+---
+
+### `concept_gaps`
+
+> 跨 pattern concept 級弱點分析。找出跨多題出現 guided/told 的 systemic gaps。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 slug/alias/title |
+| `mastery_filter` | string[] | — | 包含哪些 mastery 等級（default: guided, told） |
+| `days` | int | — | 回溯天數（default 30, max 365） |
+
+回傳 systemic_gaps（跨 2+ TIL 的弱點 concept）和 coaching_history（所有 coaching hints，按時間倒序）。
+
+---
+
+### `variation_map`
+
+> 題目關係圖：從 variation_links metadata 建構 cluster。
+
+| 屬性 | 值 |
+|------|-----|
+| 標記 | `readOnly` |
+| 實作 | `internal/mcp/learning.go` |
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `project` | string | ✅ | 專案 slug/alias/title |
+| `pattern` | string | — | pattern 過濾（省略=全部） |
+| `include_unattempted` | bool | — | 包含尚未嘗試的 linked problems（default true） |
+| `days` | int | — | 回溯天數（default 365, max 730） |
+
+回傳 clusters（anchor problem + linked variations）和 isolated_problems（無 variation links 的題目）。
 
 ---
 
