@@ -10,7 +10,7 @@ WHERE content_id = @content_id
 -- Create or update a card's FSRS state and due date.
 INSERT INTO fsrs_cards (content_id, tag, card_state, due)
 VALUES (@content_id, @tag, @card_state, @due)
-ON CONFLICT (content_id, tag) DO UPDATE SET
+ON CONFLICT (content_id, COALESCE(tag, '')) DO UPDATE SET
     card_state = EXCLUDED.card_state,
     due        = EXCLUDED.due,
     updated_at = now()

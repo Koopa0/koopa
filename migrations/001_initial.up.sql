@@ -107,6 +107,7 @@ CREATE INDEX idx_contents_visibility ON contents(status, visibility)
     WHERE status = 'published' AND visibility = 'public';
 
 CREATE INDEX idx_contents_project_id ON contents(project_id) WHERE project_id IS NOT NULL;
+CREATE INDEX idx_contents_created_at ON contents(created_at DESC);
 
 CREATE TABLE content_topics (
     content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
@@ -148,6 +149,9 @@ CREATE TABLE projects (
 
 CREATE INDEX idx_projects_featured ON projects(featured DESC, sort_order);
 CREATE INDEX idx_projects_lower_title ON projects (LOWER(title));
+CREATE INDEX idx_projects_repo ON projects (repo) WHERE repo IS NOT NULL;
+CREATE INDEX idx_projects_status ON projects (status) WHERE status NOT IN ('completed', 'archived');
+CREATE INDEX idx_projects_public ON projects (featured DESC, sort_order) WHERE public = true;
 
 CREATE TABLE review_queue (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -171,7 +175,8 @@ CREATE TABLE feeds (
     schedule             TEXT NOT NULL,
     topics               TEXT[] NOT NULL DEFAULT '{}',
     enabled              BOOLEAN NOT NULL DEFAULT true,
-    priority             TEXT NOT NULL DEFAULT 'normal',
+    priority             TEXT NOT NULL DEFAULT 'normal'
+                         CHECK (priority IN ('normal', 'high', 'low')),
     etag                 TEXT NOT NULL DEFAULT '',
     last_modified        TEXT NOT NULL DEFAULT '',
     last_fetched_at      TIMESTAMPTZ,
@@ -207,6 +212,7 @@ CREATE INDEX idx_collected_data_status ON collected_data(status);
 CREATE INDEX idx_collected_data_relevance ON collected_data(relevance_score DESC);
 CREATE UNIQUE INDEX idx_collected_data_url_hash ON collected_data (url_hash) WHERE url_hash != '';
 CREATE INDEX idx_collected_data_feed_id ON collected_data (feed_id) WHERE feed_id IS NOT NULL;
+CREATE INDEX idx_collected_data_collected_at ON collected_data (collected_at DESC);
 
 CREATE TABLE tracking_topics (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -428,7 +434,7 @@ CREATE TABLE activity_events (
 );
 
 CREATE INDEX idx_activity_events_timestamp ON activity_events (timestamp DESC);
-CREATE INDEX idx_activity_events_project ON activity_events (project);
+CREATE INDEX idx_activity_events_project ON activity_events (project, timestamp DESC) WHERE project IS NOT NULL;
 CREATE INDEX idx_activity_events_type ON activity_events (event_type);
 CREATE UNIQUE INDEX idx_activity_events_dedup
     ON activity_events (source, event_type, source_id)
@@ -442,7 +448,8 @@ CREATE TABLE obsidian_notes (
     type            TEXT,
     source          TEXT,
     context         TEXT,
-    status          TEXT DEFAULT 'seed',
+    status          TEXT DEFAULT 'seed'
+                    CHECK (status IS NULL OR status IN ('seed', 'evergreen', 'stub', 'archived')),
     tags            JSONB,
     difficulty      TEXT,
     leetcode_id     INT,
@@ -486,7 +493,8 @@ CREATE TABLE tag_aliases (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_tag       TEXT NOT NULL UNIQUE,
     tag_id        UUID REFERENCES tags(id) ON DELETE CASCADE,
-    match_method  TEXT NOT NULL DEFAULT 'manual',
+    match_method  TEXT NOT NULL DEFAULT 'manual'
+                  CHECK (match_method IN ('manual', 'exact', 'case-insensitive', 'unmapped', 'rejected')),
     confirmed     BOOLEAN NOT NULL DEFAULT false,
     confirmed_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -529,8 +537,9 @@ CREATE INDEX IF NOT EXISTS idx_contents_published_at_pub
     ON contents (published_at DESC NULLS LAST)
     WHERE status = 'published';
 
-CREATE INDEX IF NOT EXISTS idx_contents_source_obsidian
-    ON contents (source_type)
+-- Index on slug for Obsidian content lookup (source_type alone has zero selectivity in a partial index).
+CREATE INDEX IF NOT EXISTS idx_contents_obsidian_slug
+    ON contents (slug)
     WHERE source_type = 'obsidian';
 
 CREATE INDEX IF NOT EXISTS idx_flow_runs_completed
@@ -554,7 +563,9 @@ CREATE TABLE notion_sources (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_notion_sources_enabled ON notion_sources (id) WHERE enabled = true;
+-- Indexes for SourceByRole and SourceByDatabaseID query patterns.
+CREATE INDEX idx_notion_sources_role_enabled ON notion_sources (role) WHERE enabled = true AND role IS NOT NULL;
+CREATE INDEX idx_notion_sources_db_enabled ON notion_sources (database_id) WHERE enabled = true;
 CREATE UNIQUE INDEX idx_notion_sources_role ON notion_sources (role) WHERE role IS NOT NULL;
 
 -- === Wikilink Edges ===
@@ -576,8 +587,10 @@ CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_p
 CREATE TABLE session_notes (
     id          BIGSERIAL PRIMARY KEY,
     note_date   DATE NOT NULL,
-    note_type   TEXT NOT NULL,  -- plan, reflection, context, metrics, insight
-    source      TEXT NOT NULL,  -- claude, claude-code, manual
+    note_type   TEXT NOT NULL
+                CHECK (note_type IN ('plan', 'reflection', 'context', 'metrics', 'insight')),
+    source      TEXT NOT NULL
+                CHECK (source IN ('claude', 'claude-code', 'manual')),
     content     TEXT NOT NULL,
     metadata    JSONB,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -667,9 +680,12 @@ CREATE TABLE fsrs_cards (
     card_state    JSONB NOT NULL,
     due           TIMESTAMPTZ NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(content_id, tag)
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- UNIQUE on (content_id, tag) with NULL handling: COALESCE tag to empty string for uniqueness.
+-- This prevents duplicate (content_id, NULL) rows which plain UNIQUE(content_id, tag) allows.
+CREATE UNIQUE INDEX idx_fsrs_cards_content_tag ON fsrs_cards (content_id, COALESCE(tag, ''));
 
 COMMENT ON TABLE fsrs_cards IS 'FSRS card state for spaced retrieval. One row per (content, tag) pair. card_state is serialized go-fsrs Card struct.';
 COMMENT ON COLUMN fsrs_cards.tag IS 'Specific weakness or concept tag. NULL means whole-content review.';

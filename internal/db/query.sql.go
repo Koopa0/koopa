@@ -8223,7 +8223,7 @@ func (q *Queries) UpdateTopic(ctx context.Context, arg UpdateTopicParams) (Topic
 const upsertCard = `-- name: UpsertCard :one
 INSERT INTO fsrs_cards (content_id, tag, card_state, due)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT (content_id, tag) DO UPDATE SET
+ON CONFLICT (content_id, COALESCE(tag, '')) DO UPDATE SET
     card_state = EXCLUDED.card_state,
     due        = EXCLUDED.due,
     updated_at = now()
