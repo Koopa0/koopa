@@ -34,7 +34,6 @@ import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
 import { TableOfContentsComponent } from '../../shared/table-of-contents/table-of-contents.component';
 import { RelatedArticlesComponent } from '../../shared/related-articles/related-articles.component';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 @Component({
   selector: 'app-article-detail',
@@ -47,8 +46,6 @@ import { fadeInUp } from '../../shared/animations/fade-in.animation';
   ],
   templateUrl: './article-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class ArticleDetailComponent implements OnInit {
   /** Route param: articles/:id */

@@ -18,7 +18,6 @@ import {
 } from 'lucide-angular';
 import { TagService } from '../../core/services/tag.service';
 import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
 import type { ApiContent } from '../../core/models';
@@ -29,8 +28,6 @@ import type { ApiContent } from '../../core/models';
   imports: [RouterLink, DatePipe, LucideAngularModule, SkeletonComponent],
   templateUrl: './tag.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class TagComponent implements OnInit {
   /** Route param: tags/:tag */

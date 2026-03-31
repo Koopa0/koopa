@@ -32,7 +32,6 @@ import {
   ArticleFilters,
 } from '../../core/services/article.service';
 import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import type { ApiContent } from '../../core/models';
@@ -52,8 +51,6 @@ const SEARCH_DEBOUNCE_MS = 300;
   ],
   templateUrl: './articles.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class ArticlesComponent implements OnInit {
   private readonly articleService = inject(ArticleService);

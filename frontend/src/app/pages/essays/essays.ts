@@ -28,7 +28,6 @@ import {
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import type { ApiContent } from '../../core/models';
@@ -48,8 +47,6 @@ const SEARCH_DEBOUNCE_MS = 300;
   ],
   templateUrl: './essays.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class EssaysComponent implements OnInit {
   private readonly contentService = inject(ContentService);

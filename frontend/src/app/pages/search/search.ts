@@ -27,7 +27,6 @@ import {
   publicContentTypes,
 } from '../../core/models';
 import type { ApiContent, ContentType, ApiPaginationMeta } from '../../core/models';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 const RESULTS_PER_PAGE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -38,8 +37,6 @@ const SEARCH_DEBOUNCE_MS = 300;
   imports: [RouterLink, DatePipe, LucideAngularModule],
   templateUrl: './search.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class SearchComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);

@@ -13,7 +13,6 @@ import { environment } from '../../../environments/environment';
 import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiTopic } from '../../core/models';
 
 @Component({
@@ -22,8 +21,6 @@ import type { ApiTopic } from '../../core/models';
   imports: [RouterLink, LucideAngularModule],
   templateUrl: './topics.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class TopicsComponent implements OnInit {
   private readonly topicService = inject(TopicService);

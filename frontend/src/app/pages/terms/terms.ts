@@ -6,15 +6,12 @@ import {
 } from '@angular/core';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 @Component({
   selector: 'app-terms',
   standalone: true,
   templateUrl: './terms.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class TermsComponent implements OnInit {
   private readonly seoService = inject(SeoService);

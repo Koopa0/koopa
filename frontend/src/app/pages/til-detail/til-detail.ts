@@ -21,7 +21,6 @@ import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { SeoService } from '../../core/services/seo/seo.service';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiContent } from '../../core/models';
 
 @Component({
@@ -30,8 +29,6 @@ import type { ApiContent } from '../../core/models';
   imports: [RouterLink, DatePipe, LucideAngularModule],
   templateUrl: './til-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class TilDetailComponent implements OnInit {
   /** Route param: til/:slug */

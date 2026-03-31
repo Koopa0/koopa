@@ -158,21 +158,21 @@ code, pre {
   outline-offset: 2px;
 }
 
-/* View Transitions — route navigation cross-fade */
+/* View Transitions — route navigation cross-fade (opacity only, no movement) */
 ::view-transition-old(root) {
-  animation: 200ms ease-out both vt-fade-out;
+  animation: 100ms ease-out both vt-fade-out;
 }
 
 ::view-transition-new(root) {
-  animation: 300ms ease-out 80ms both vt-fade-in;
+  animation: 150ms ease-out both vt-fade-in;
 }
 
 @keyframes vt-fade-out {
-  to { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 0; }
 }
 
 @keyframes vt-fade-in {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; }
 }
 
 /* Display font for headings — breaks the "everything is Inter" AI feel */

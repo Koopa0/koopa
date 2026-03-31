@@ -12,7 +12,6 @@ import {
 } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 
 interface UseItem {
   name: string;
@@ -74,8 +73,6 @@ const USE_CATEGORIES: UseCategory[] = [
   imports: [LucideAngularModule],
   templateUrl: './uses.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class UsesComponent {
   private readonly seoService = inject(SeoService);

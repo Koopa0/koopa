@@ -26,7 +26,6 @@ import {
 import { environment } from '../../../environments/environment';
 import { TopicService, type RelatedTag } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import {
   CONTENT_TYPE_CONFIG,
   contentTypeRoute,
@@ -41,8 +40,6 @@ const CONTENTS_PER_PAGE = 12;
   imports: [RouterLink, DatePipe, LucideAngularModule],
   templateUrl: './topic-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class TopicDetailComponent implements OnInit {
   /** Route param: topics/:slug */

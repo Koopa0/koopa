@@ -18,7 +18,6 @@ import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiContent } from '../../core/models';
 
 @Component({
@@ -27,8 +26,6 @@ import type { ApiContent } from '../../core/models';
   imports: [RouterLink, DatePipe, LucideAngularModule],
   templateUrl: './notes.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class NotesComponent implements OnInit {
   private readonly contentService = inject(ContentService);

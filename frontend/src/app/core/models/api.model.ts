@@ -381,6 +381,7 @@ export interface ApiCollectedItem {
   status: CollectedStatus;
   curated_content_id: string | null;
   collected_at: string;
+  published_at: string | null;
   url_hash: string;
   ai_score: number | null;
   ai_score_reason: string | null;

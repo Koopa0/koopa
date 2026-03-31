@@ -20,7 +20,6 @@ import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import { fadeInUp } from '../../shared/animations/fade-in.animation';
 import type { ApiProject, ProjectStatus } from '../../core/models';
 
 @Component({
@@ -29,8 +28,6 @@ import type { ApiProject, ProjectStatus } from '../../core/models';
   imports: [RouterLink, LucideAngularModule],
   templateUrl: './projects.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  animations: [fadeInUp],
-  host: { '[@fadeInUp]': '' },
 })
 export class ProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);

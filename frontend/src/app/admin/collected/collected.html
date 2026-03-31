@@ -145,7 +145,7 @@
               class="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500"
             >
               <span>{{ item.source_name }}</span>
-              <span>{{ item.collected_at | date: 'MM/dd HH:mm' }}</span>
+              <span>{{ (item.published_at || item.collected_at) | date: 'MM/dd HH:mm' }}</span>
               @if (item.topics.length > 0) { @for (topic of item.topics; track
               topic) {
               <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400"
