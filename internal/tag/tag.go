@@ -111,6 +111,10 @@ func Slugify(raw string) string {
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
 			b.WriteRune(unicode.ToLower(r))
 			prev = false
+		case r == ':':
+			// Preserve colon as-is for namespace tags (weakness:xxx, improvement:xxx).
+			b.WriteRune(r)
+			prev = false
 		case r == '-' || r == '_' || r == ' ' || r == '/' || r == '.':
 			if !prev && b.Len() > 0 {
 				b.WriteByte('-')

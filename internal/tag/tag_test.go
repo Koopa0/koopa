@@ -63,7 +63,11 @@ func TestSlugify(t *testing.T) {
 		// Adversarial: path traversal — dots and slashes become hyphens
 		{name: "path traversal dots and slashes", input: "../../etc/passwd", want: "etc-passwd"},
 		// backslash is not in the special-char whitelist, stripped without separator
-		{name: "windows path backslash", input: `C:\Windows\System32`, want: "cwindowssystem32"},
+		// colon preserved (namespace delimiter for weakness:xxx, improvement:xxx)
+		{name: "windows path backslash", input: `C:\Windows\System32`, want: "c:windowssystem32"},
+		// namespace tags — colon preserved
+		{name: "weakness namespace tag", input: "weakness:implementation", want: "weakness:implementation"},
+		{name: "improvement namespace tag", input: "Improvement:Edge-Cases", want: "improvement:edge-cases"},
 	}
 
 	for _, tt := range tests {
