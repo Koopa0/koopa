@@ -814,18 +814,18 @@ type ContentDetailInput struct {
 
 // ContentDetailOutput is the output for the content_detail tool.
 type ContentDetailOutput struct {
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Body        string          `json:"body"`
-	Excerpt     string          `json:"excerpt"`
-	Type        string          `json:"type"`
-	Status      string          `json:"status"`
-	Tags        []string        `json:"tags"`
-	Project     string          `json:"project,omitempty"`
-	Metadata    json.RawMessage `json:"metadata,omitempty"`
-	ReadingTime int             `json:"reading_time"`
-	PublishedAt string          `json:"published_at,omitempty"`
-	CreatedAt   string          `json:"created_at"`
+	Slug        string         `json:"slug"`
+	Title       string         `json:"title"`
+	Body        string         `json:"body"`
+	Excerpt     string         `json:"excerpt"`
+	Type        string         `json:"type"`
+	Status      string         `json:"status"`
+	Tags        []string       `json:"tags"`
+	Project     string         `json:"project,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"` // map not json.RawMessage: MCP SDK infers []byte as "array" schema
+	ReadingTime int            `json:"reading_time"`
+	PublishedAt string         `json:"published_at,omitempty"`
+	CreatedAt   string         `json:"created_at"`
 }
 
 func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, input ContentDetailInput) (*mcp.CallToolResult, ContentDetailOutput, error) {
@@ -841,6 +841,14 @@ func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, i
 		return nil, ContentDetailOutput{}, fmt.Errorf("querying content: %w", err)
 	}
 
+	// Unmarshal ai_metadata to map[string]any for MCP SDK compatibility.
+	// MCP SDK infers json.RawMessage ([]byte) as JSON schema "array" type,
+	// which causes serialization failures. See retrieval.DueItem for precedent.
+	var metadata map[string]any
+	if len(c.AIMetadata) > 0 {
+		_ = json.Unmarshal(c.AIMetadata, &metadata) // best-effort
+	}
+
 	out := ContentDetailOutput{
 		Slug:        c.Slug,
 		Title:       c.Title,
@@ -849,7 +857,7 @@ func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, i
 		Type:        string(c.Type),
 		Status:      string(c.Status),
 		Tags:        c.Tags,
-		Metadata:    c.AIMetadata,
+		Metadata:    metadata,
 		ReadingTime: c.ReadingTimeMin,
 		CreatedAt:   c.CreatedAt.Format(time.RFC3339),
 	}

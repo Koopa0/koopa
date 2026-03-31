@@ -511,6 +511,41 @@ CREATE TABLE tags (
 
 CREATE INDEX idx_tags_parent ON tags(parent_id);
 
+-- Seed canonical LeetCode/HackerRank tags.
+-- Strict-validated by learning/vocab.go; must exist in tags table for resolution.
+INSERT INTO tags (slug, name) VALUES
+    ('array', 'Array'), ('string', 'String'), ('hash-table', 'Hash Table'),
+    ('two-pointers', 'Two Pointers'), ('sliding-window', 'Sliding Window'),
+    ('binary-search', 'Binary Search'), ('stack', 'Stack'), ('queue', 'Queue'),
+    ('monotonic-stack', 'Monotonic Stack'), ('linked-list', 'Linked List'),
+    ('tree', 'Tree'), ('binary-tree', 'Binary Tree'), ('bst', 'BST'),
+    ('graph', 'Graph'), ('bfs', 'BFS'), ('dfs', 'DFS'),
+    ('heap', 'Heap'), ('trie', 'Trie'), ('union-find', 'Union Find'),
+    ('dp', 'Dynamic Programming'), ('greedy', 'Greedy'), ('backtracking', 'Backtracking'),
+    ('bit-manipulation', 'Bit Manipulation'), ('math', 'Math'), ('matrix', 'Matrix'),
+    ('interval', 'Interval'), ('topological-sort', 'Topological Sort'),
+    ('sorting', 'Sorting'), ('simulation', 'Simulation'), ('prefix-sum', 'Prefix Sum'),
+    ('divide-and-conquer', 'Divide and Conquer'), ('segment-tree', 'Segment Tree'),
+    ('design', 'Design'),
+    ('easy', 'Easy'), ('medium', 'Medium'), ('hard', 'Hard'),
+    ('ac-independent', 'AC Independent'), ('ac-with-hints', 'AC With Hints'),
+    ('ac-after-solution', 'AC After Solution'), ('incomplete', 'Incomplete'),
+    ('weakness:pattern-recognition', 'Weakness: Pattern Recognition'),
+    ('weakness:approach-selection', 'Weakness: Approach Selection'),
+    ('weakness:state-transition', 'Weakness: State Transition'),
+    ('weakness:edge-cases', 'Weakness: Edge Cases'),
+    ('weakness:complexity-analysis', 'Weakness: Complexity Analysis'),
+    ('weakness:implementation', 'Weakness: Implementation'),
+    ('weakness:time-management', 'Weakness: Time Management'),
+    ('improvement:pattern-recognition', 'Improvement: Pattern Recognition'),
+    ('improvement:approach-selection', 'Improvement: Approach Selection'),
+    ('improvement:state-transition', 'Improvement: State Transition'),
+    ('improvement:edge-cases', 'Improvement: Edge Cases'),
+    ('improvement:complexity-analysis', 'Improvement: Complexity Analysis'),
+    ('improvement:implementation', 'Improvement: Implementation'),
+    ('leetcode', 'LeetCode'), ('hackerrank', 'HackerRank')
+ON CONFLICT (slug) DO NOTHING;
+
 -- Tag aliases — maps raw tags to canonical tags
 CREATE TABLE tag_aliases (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
