@@ -1,7 +1,6 @@
 # koopa0-knowledge MCP Tools Reference
 
-> 52 tools across 10 functional domains. Last audit: 2026-03-31.
-> Server: `koopa0-knowledge` v0.2.0 — Go binary (`cmd/mcp/`) + PostgreSQL (pgvector).
+> 54 tools across 10 functional domains. Last audit: 2026-03-31.> Server: `koopa0-knowledge` v0.2.0 — Go binary (`cmd/mcp/`) + PostgreSQL (pgvector).
 > Transport: Streamable HTTP on port 8081 (OAuth2 via Google OIDC).
 
 ---
@@ -16,8 +15,7 @@
 | [Content Pipeline](#4-content-pipeline-5-tools) | 5 | 內容 CRUD、發佈、佇列、RSS 書籤 |
 | [RSS / Feed Management](#5-rss--feed-management-6-tools) | 6 | 訂閱 CRUD、收集統計、RSS 摘要 |
 | [Project & Goal](#6-project--goal-5-tools) | 5 | 專案上下文、目標進度、狀態更新 |
-| [Learning Analytics](#7-learning-analytics-10-tools) | 10 | 開發/學習記錄、標籤統計、涵蓋矩陣、弱點趨勢、時間線、mastery map、concept gaps、variation map |
-| [O'Reilly Integration](#8-oreilly-integration-3-tools) | 3 | 搜尋、書籍目錄、章節閱讀（條件啟用） |
+| [Learning Analytics](#7-learning-analytics-12-tools) | 12 | 開發/學習記錄、標籤統計、涵蓋矩陣、弱點趨勢、時間線、mastery map、concept gaps、variation map、skip/completion history || [O'Reilly Integration](#8-oreilly-integration-3-tools) | 3 | 搜尋、書籍目錄、章節閱讀（條件啟用） |
 | [System & Infrastructure](#9-system--infrastructure-3-tools) | 3 | 系統狀態、管線觸發、活動事件（部分條件啟用） |
 | [Spaced Retrieval (FSRS)](#10-spaced-retrieval-fsrs-2-tools) | 2 | 間隔重複回測、到期佇列（條件啟用） |
 
@@ -651,8 +649,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-## 7. Learning Analytics (10 tools)
-
+## 7. Learning Analytics (12 tools)
 開發記錄、學習記錄、與學習分析。
 
 ### `log_dev_session`

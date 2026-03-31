@@ -33,8 +33,7 @@
 │   ├── github/       → GitHub REST API client (contents, commits, compare)
 │   ├── goal/         → Goal CRUD + Notion sync
 │   ├── learning/     → Learning analytics (coverage matrix, weakness trends, timeline)
-│   ├── mcp/          → MCP server: 52 tools across all domains
-│   ├── mcpauth/      → MCP OAuth2 authentication (Google OIDC)
+│   ├── mcp/          → MCP server: 54 tools across all domains│   ├── mcpauth/      → MCP OAuth2 authentication (Google OIDC)
 │   ├── monitor/      → Tracking topics CRUD
 │   ├── note/         → Obsidian note store, embedder, wikilink parsing
 │   ├── notify/       → Notification providers (LINE, Telegram, multi, noop)
@@ -108,8 +107,7 @@
 
 ## 2. MCP Server — 工具盤點
 
-### 已註冊工具列表（52 個）
-
+### 已註冊工具列表（54 個）
 MCP server name: `koopa0-knowledge`。所有工具最後修改日期：2026-03-30。
 
 | # | 工具名稱 | 功能描述 | 有測試 |
@@ -667,8 +665,7 @@ Backend/frontend 使用 non-root `app` user。
 | **GitHub Webhook** | ✅ 完整 | `internal/pipeline/webhook.go`; push event → Obsidian sync; deduplication |
 | **AI Content Pipeline** | ✅ 完整 | `internal/ai/` 15 files; 14 flows; mock mode; token budget; structured output |
 | **Flow 執行引擎** | ✅ 完整 | `internal/ai/exec/` 7 files; runner with retry; alerter; Prometheus metrics observer |
-| **MCP Server** | ✅ 完整 | `internal/mcp/` 26 files, 11 test files; 52 tools; HTTP transport; OAuth2 auth |
-| **MCP OAuth2 認證** | ✅ 完整 | `internal/mcpauth/` 4 files, 3 test files |
+| **MCP Server** | ✅ 完整 | `internal/mcp/` 26 files, 11 test files; 54 tools; HTTP transport; OAuth2 auth || **MCP OAuth2 認證** | ✅ 完整 | `internal/mcpauth/` 4 files, 3 test files |
 | **Session Notes 跨環境** | ✅ 完整 | `internal/session/` 5 files, 2 test files; plan/reflection/insight/metrics types |
 | **活動事件追蹤** | ✅ 完整 | `internal/activity/` 7 files, 2 test files; multi-source event log |
 | **學習分析** | ✅ 完整 | `internal/learning/` 11 files, 6 test files; coverage matrix, tag summary, weakness trend, timeline |

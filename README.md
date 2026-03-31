@@ -6,8 +6,7 @@
   <strong>English</strong> | <a href="README.zh-TW.md">繁體中文</a>
 </p>
 
-A Go backend that turns Notion, Obsidian, and RSS into a unified system — where AI operates as a first-class user through 52 MCP tools.
-
+A Go backend that turns Notion, Obsidian, and RSS into a unified system — where AI operates as a first-class user through 54 MCP tools.
 Not a blog platform. Not another PKM app. This is personal infrastructure — the same system I use every day to plan tasks, track learning, collect and curate articles, and publish what's worth sharing. Multiple AI environments (Claude Web, Claude Code, Cowork) connect to the same Go server and PostgreSQL, coordinating through structured artifacts instead of starting every conversation from scratch.
 
 ---
@@ -18,8 +17,7 @@ I manage a lot of moving parts every day — tasks, learning goals, technical re
 
 Notion and Obsidian are good at what they do. I still use both — Notion for task and goal management, Obsidian for technical notes. But the workflows I wanted didn't exist inside any single tool: cross-source semantic search across everything I've written, AI-driven daily planning loops, automated content pipelines that go from RSS feed to curated bookmark, hypothesis tracking that validates itself over time. The data was scattered across tools that couldn't talk to each other, and stitching them together manually didn't scale.
 
-So I built the layer that sits underneath. A Go server with PostgreSQL that integrates these tools as data sources, runs 13 AI flows through Genkit, and exposes 52 MCP tools for AI to operate the entire system. Notion syncs tasks and goals bidirectionally. Obsidian syncs notes with vector embeddings for semantic search. RSS feeds get keyword-weighted relevance scoring and surfaced for review. Everything flows into one database, and AI helps run the loop — plan, execute, reflect, adjust.
-
+So I built the layer that sits underneath. A Go server with PostgreSQL that integrates these tools as data sources, runs 13 AI flows through Genkit, and exposes 54 MCP tools for AI to operate the entire system. Notion syncs tasks and goals bidirectionally. Obsidian syncs notes with vector embeddings for semantic search. RSS feeds get keyword-weighted relevance scoring and surfaced for review. Everything flows into one database, and AI helps run the loop — plan, execute, reflect, adjust.
 A side effect of this architecture: when multiple AI environments connect to the same backend, the "every session starts from zero" problem disappears. Claude Web plans my day, Claude Code picks up the tasks, Cowork runs the content pipeline — they all read and write the same data. No context is lost between sessions.
 
 ---
@@ -38,8 +36,7 @@ The system has three layers, four AI consumers, and three data flows.
 
 **PostgreSQL** is the processing layer — one database that holds everything. Full-text search via tsvector + GIN, semantic search via pgvector + HNSW, and Reciprocal Rank Fusion to merge the results. This is where raw material becomes queryable, searchable, and connectable.
 
-**Go server + Angular frontend** is the output layer — an MCP server that exposes 52 tools across 10 domains for AI environments, a Genkit pipeline that runs 13 AI flows, and an Angular SSR frontend that publishes the finished product to the web.
-
+**Go server + Angular frontend** is the output layer — an MCP server that exposes 54 tools across 10 domains for AI environments, a Genkit pipeline that runs 13 AI flows, and an Angular SSR frontend that publishes the finished product to the web.
 ### Four AI consumers
 
 Each connects to the same MCP server but pulls different data subsets via the `sections` parameter:
@@ -99,8 +96,7 @@ Projects have their own table with case study fields (problem / solution / archi
 
 ## MCP Design
 
-MCP (Model Context Protocol) is how AI environments interact with the system. 52 tools across 10 domains.
-
+MCP (Model Context Protocol) is how AI environments interact with the system. 54 tools across 10 domains.
 ### Ten domains
 
 | Domain                | Tools | Purpose                                                         |
@@ -111,8 +107,7 @@ MCP (Model Context Protocol) is how AI environments interact with the system. 52
 | Content Pipeline      | 5     | Content CRUD, publish, queue, RSS bookmark                      |
 | RSS / Feed Management | 6     | Feed CRUD, collection stats, RSS highlights                     |
 | Project & Goal        | 5     | Project context, goal progress, status updates                  |
-| Learning Analytics    | 10    | Dev/learning session logs, tag stats, coverage matrix, weakness trends, mastery map, concept gaps, variation map |
-| O'Reilly Integration  | 3     | Search, book detail, chapter reading (conditional)              |
+| Learning Analytics    | 12    | Dev/learning session logs, tag stats, coverage matrix, weakness trends, mastery map, concept gaps, variation map, skip/completion history || O'Reilly Integration  | 3     | Search, book detail, chapter reading (conditional)              |
 | System & Infra        | 3     | System status, pipeline trigger, activity events                |
 | Spaced Retrieval      | 2     | FSRS-based retrieval practice, due queue (conditional)          |
 
