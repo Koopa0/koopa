@@ -158,6 +158,35 @@ func run(logger *slog.Logger) error {
 	// notion client (used by morning brief flow and webhook handler)
 	notionClient := notion.NewClient(cfg.NotionAPIKey)
 
+	// Set up recurring task Done handler: when Notion sync reports Done for a
+	// recurring task, complete-and-advance instead of writing status='done'.
+	taskStore.SetRecurringDoneHandler(func(ctx context.Context, t *task.Task) error {
+		tomorrow := time.Now().AddDate(0, 0, 1)
+		nextDue := t.NextCycleDateOnOrAfter(tomorrow)
+		if nextDue == nil {
+			return fmt.Errorf("cannot calculate next due for recurring task %s", t.ID)
+		}
+		if _, resetErr := taskStore.ResetRecurring(ctx, t.ID, *nextDue); resetErr != nil {
+			return fmt.Errorf("resetting recurring task %s: %w", t.ID, resetErr)
+		}
+		evTitle := fmt.Sprintf("Completed: %s", t.Title)
+		sourceID := fmt.Sprintf("task-complete-%s-%d", t.ID, time.Now().UnixMilli())
+		//nolint:errcheck // best-effort
+		activityStore.CreateEvent(ctx, &activity.RecordParams{
+			SourceID: &sourceID, Timestamp: time.Now(),
+			Source: "notion", EventType: "task_completed", Title: &evTitle,
+		})
+		if t.NotionPageID != nil {
+			props := map[string]any{
+				"Status": map[string]any{"status": map[string]string{"name": "To Do"}},
+				"My Day": map[string]any{"checkbox": false},
+				"Due":    map[string]any{"date": map[string]string{"start": nextDue.Format(time.DateOnly)}},
+			}
+			_ = notionClient.UpdatePageProperties(ctx, *t.NotionPageID, props)
+		}
+		return nil
+	})
+
 	// github client (used by weekly review flow and pipeline handler)
 	githubFetcher := github.NewClient(cfg.GitHubToken, cfg.GitHubRepo)
 

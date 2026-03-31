@@ -14,7 +14,8 @@ import (
 
 // Store handles database operations for tasks.
 type Store struct {
-	q *db.Queries
+	q                    *db.Queries
+	recurringDoneHandler RecurringDoneHandler // set via SetRecurringDoneHandler
 }
 
 // NewStore returns a Store backed by the given database connection.
