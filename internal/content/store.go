@@ -529,8 +529,8 @@ type RichTagEntry struct {
 }
 
 // RichTagEntries returns entries with slug, title, and ai_metadata for a given
-// content type, optionally filtered by project. Used by get_weakness_trend and
-// get_learning_timeline which need per-entry metadata.
+// content type, optionally filtered by project. Used by weakness_trend and
+// learning_timeline which need per-entry metadata.
 func (s *Store) RichTagEntries(ctx context.Context, contentType Type, projectID *uuid.UUID, since time.Time) ([]RichTagEntry, error) {
 	rows, err := s.q.ContentRichTagEntries(ctx, db.ContentRichTagEntriesParams{
 		ContentType: db.ContentType(contentType),

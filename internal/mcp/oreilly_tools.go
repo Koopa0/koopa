@@ -92,14 +92,14 @@ func (s *Server) searchOReillyContent(ctx context.Context, _ *mcp.CallToolReques
 	return nil, out, nil
 }
 
-// --- get_oreilly_book_detail ---
+// --- oreilly_book_detail ---
 
-// BookDetailInput is the input for the get_oreilly_book_detail tool.
+// BookDetailInput is the input for the oreilly_book_detail tool.
 type BookDetailInput struct {
 	ArchiveID string `json:"archive_id" jsonschema_description:"book identifier from search results (e.g. '9781835880302')"`
 }
 
-// BookDetailOutput is the output of the get_oreilly_book_detail tool.
+// BookDetailOutput is the output of the oreilly_book_detail tool.
 type BookDetailOutput struct {
 	Title           string           `json:"title"`
 	Identifier      string           `json:"identifier"`

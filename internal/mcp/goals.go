@@ -9,7 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// GoalProgressInput is the input for the get_goal_progress tool.
+// GoalProgressInput is the input for the goal_progress tool.
 type GoalProgressInput struct {
 	Days         int    `json:"days,omitempty" jsonschema_description:"lookback period in days for task counting. Default 30, max 90."`
 	Area         string `json:"area,omitempty" jsonschema_description:"filter goals by area"`

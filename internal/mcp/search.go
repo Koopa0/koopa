@@ -73,12 +73,12 @@ func toFilterEntries(filterResults []note.Note) []searchResultEntry {
 	return entries
 }
 
-// ProjectContextInput is the input for the get_project_context tool.
+// ProjectContextInput is the input for the project_context tool.
 type ProjectContextInput struct {
 	Project string `json:"project" jsonschema_description:"project name slug or alias (required)"`
 }
 
-// ProjectContextOutput is the output for the get_project_context tool.
+// ProjectContextOutput is the output for the project_context tool.
 type ProjectContextOutput struct {
 	Project        projectSummary   `json:"project"`
 	RecentActivity []activityResult `json:"recent_activity"`
@@ -188,14 +188,14 @@ func (s *Server) fetchRelatedGoals(ctx context.Context, goalID *uuid.UUID) []goa
 	return []goalBrief{}
 }
 
-// RecentActivityInput is the input for the get_recent_activity tool.
+// RecentActivityInput is the input for the recent_activity tool.
 type RecentActivityInput struct {
 	Days    int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
 	Source  string `json:"source,omitempty" jsonschema_description:"filter by source (e.g. github obsidian notion)"`
 	Project string `json:"project,omitempty" jsonschema_description:"filter by project name"`
 }
 
-// RecentActivityOutput is the output for the get_recent_activity tool.
+// RecentActivityOutput is the output for the recent_activity tool.
 type RecentActivityOutput struct {
 	Period         string                      `json:"period"`
 	EventsBySource map[string][]activityResult `json:"events_by_source"`
@@ -234,13 +234,13 @@ func (s *Server) getRecentActivity(ctx context.Context, _ *mcp.CallToolRequest, 
 	}, nil
 }
 
-// DecisionLogInput is the input for the get_decision_log tool.
+// DecisionLogInput is the input for the decision_log tool.
 type DecisionLogInput struct {
 	Project string `json:"project,omitempty" jsonschema_description:"filter by project context"`
 	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
-// DecisionLogOutput is the output for the get_decision_log tool.
+// DecisionLogOutput is the output for the decision_log tool.
 type DecisionLogOutput struct {
 	Decisions []noteResult `json:"decisions"`
 	Total     int          `json:"total"`
@@ -274,14 +274,14 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // --- Phase 1 new tools ---
 
-// RSSHighlightsInput is the input for the get_rss_highlights tool.
+// RSSHighlightsInput is the input for the rss_highlights tool.
 type RSSHighlightsInput struct {
 	Days   int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 365)"`
 	Limit  int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 	SortBy string `json:"sort_by,omitempty" jsonschema_description:"sort order: relevance (default) or recency"`
 }
 
-// RSSHighlightsOutput is the output for the get_rss_highlights tool.
+// RSSHighlightsOutput is the output for the rss_highlights tool.
 type RSSHighlightsOutput struct {
 	Items []rssItem `json:"items"`
 	Total int       `json:"total"`
@@ -336,7 +336,7 @@ func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, i
 	return nil, RSSHighlightsOutput{Items: items, Total: len(items)}, nil
 }
 
-// get_platform_stats REMOVED — drift analysis moved to get_goal_progress(include_drift=true).
+// get_platform_stats REMOVED — drift analysis moved to goal_progress(include_drift=true).
 // Overview stats covered by individual domain tools (system_status, weekly_summary, learning_progress).
 // stats.Overview() is still used by internal/stats/handler.go for the HTTP endpoint.
 
@@ -807,12 +807,12 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	return nil, SearchKnowledgeOutput{Results: results, Total: len(results)}, nil
 }
 
-// ContentDetailInput is the input for the get_content_detail tool.
+// ContentDetailInput is the input for the content_detail tool.
 type ContentDetailInput struct {
 	Slug string `json:"slug" jsonschema_description:"content slug (required)"`
 }
 
-// ContentDetailOutput is the output for the get_content_detail tool.
+// ContentDetailOutput is the output for the content_detail tool.
 type ContentDetailOutput struct {
 	Slug        string   `json:"slug"`
 	Title       string   `json:"title"`
@@ -894,10 +894,10 @@ func (s *Server) listProjects(ctx context.Context, _ *mcp.CallToolRequest, input
 	return nil, ListProjectsOutput{Projects: summaries, Total: len(summaries)}, nil
 }
 
-// LearningProgressInput is the input for the get_learning_progress tool.
+// LearningProgressInput is the input for the learning_progress tool.
 type LearningProgressInput struct{}
 
-// LearningProgressOutput is the output for the get_learning_progress tool.
+// LearningProgressOutput is the output for the learning_progress tool.
 type LearningProgressOutput struct {
 	Notes    learningNotes    `json:"notes"`
 	Activity learningActivity `json:"activity"`
@@ -951,14 +951,14 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 
 // --- session notes (read) ---
 
-// SessionNotesInput is the input for the get_session_notes tool.
+// SessionNotesInput is the input for the session_notes tool.
 type SessionNotesInput struct {
 	Date     string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
 	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight"`
 	Days     int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
 }
 
-// SessionNotesOutput is the output of the get_session_notes tool.
+// SessionNotesOutput is the output of the session_notes tool.
 type SessionNotesOutput struct {
 	Notes []sessionNoteResult `json:"notes"`
 }

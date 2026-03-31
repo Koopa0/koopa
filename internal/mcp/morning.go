@@ -14,7 +14,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
-// MorningContextInput is the input for the get_morning_context tool.
+// MorningContextInput is the input for the morning_context tool.
 type MorningContextInput struct {
 	ActivityDays int      `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
 	BuildLogDays int      `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
@@ -1038,7 +1038,7 @@ func parseInsightBrief(n *session.Note) insightBrief {
 }
 
 // fetchMorningPipelineHealth gets a quick pipeline health summary for the briefing.
-// Uses FlowRunsSince(24h) to align with get_system_status(scope=summary) time window.
+// Uses FlowRunsSince(24h) to align with system_status(scope=summary) time window.
 func (s *Server) fetchMorningPipelineHealth(ctx context.Context, out *MorningContextOutput) {
 	if s.stats == nil {
 		return

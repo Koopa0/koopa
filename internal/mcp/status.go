@@ -10,7 +10,7 @@ import (
 
 // --- get_system_status tool ---
 
-// SystemStatusInput is the input for the get_system_status tool.
+// SystemStatusInput is the input for the system_status tool.
 type SystemStatusInput struct {
 	Scope    string `json:"scope,omitempty" jsonschema_description:"summary|pipelines|flows (default: summary)"`
 	FlowName string `json:"flow_name,omitempty" jsonschema_description:"filter by flow name (only for scope=flows)"`
@@ -18,7 +18,7 @@ type SystemStatusInput struct {
 	Hours    int    `json:"hours,omitempty" jsonschema_description:"lookback hours (default: 24, max: 168)"`
 }
 
-// SystemStatusOutput is the output for the get_system_status tool.
+// SystemStatusOutput is the output for the system_status tool.
 type SystemStatusOutput struct {
 	Scope      string              `json:"scope"`
 	Hours      int                 `json:"hours"`

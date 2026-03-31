@@ -46,9 +46,9 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 
 | 消費者             | 角色                         | 典型工具                                                                        |
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------- |
-| Claude Web（日常） | 晨間規劃、晚間反思、週報     | `get_morning_context`、`save_session_note`、`batch_my_day`                      |
-| Claude Web（學習） | 學習 session、知識搜尋、閱讀 | `log_learning_session`、`get_retrieval_queue`、`search_knowledge`、`read_oreilly_chapter` |
-| Claude Code        | 開發、build log、專案追蹤    | `get_project_context`、`log_dev_session`、`search_tasks`                        |
+| Claude Web（日常） | 晨間規劃、晚間反思、週報     | `morning_context`、`save_session_note`、`my_day`                      |
+| Claude Web（學習） | 學習 session、知識搜尋、閱讀 | `log_learning_session`、`retrieval_queue`、`search_knowledge`、`read_oreilly_chapter` |
+| Claude Code        | 開發、build log、專案追蹤    | `project_context`、`log_dev_session`、`search_tasks`                        |
 | Cowork             | 內容管線、RSS 管理、系統維運 | `create_content`、`publish_content`、`trigger_pipeline`                         |
 
 ### 三條資料流
@@ -133,17 +133,17 @@ MCP（Model Context Protocol）是 AI 環境與系統互動的方式。49 個工
 
 這些工具是積木 — 你可以組合成任何符合需求的工作流程：
 
-- **早晨**：`get_morning_context` → 審閱 insight → 決定計劃 → `save_session_note(type=plan)` → `batch_my_day`
+- **早晨**：`morning_context` → 審閱 insight → 決定計劃 → `save_session_note(type=plan)` → `my_day`
 - **開發中**：發現問題 → `create_task` + `save_session_note(type=context)`
-- **傍晚**：`get_reflection_context` → 驗證假說 → `update_insight` → `save_session_note(type=metrics)`
-- **學習**：`get_retrieval_queue` → 練習回憶 → `log_retrieval_attempt(rating)` → FSRS 自動排程下次複習
+- **傍晚**：`reflection_context` → 驗證假說 → `update_insight` → `save_session_note(type=metrics)`
+- **學習**：`retrieval_queue` → 練習回憶 → `log_retrieval_attempt(rating)` → FSRS 自動排程下次複習
 - **知識工作**：`search_knowledge`（四路並行：content 全文 + Obsidian 文字 + Obsidian 語義 + 去重，以 RRF 排序）→ `synthesize_topic` → `create_content`
 
 ### 關鍵技術細節
 
 **搜尋是四路並行的**：content 全文搜尋 + Obsidian 文字搜尋 + Obsidian 語義搜尋（pgvector 嵌入）+ 去重。結果以 Reciprocal Rank Fusion 排序。
 
-**`get_morning_context` 支援 `sections` 參數**：不同 AI 環境拉取不同的資料子集。Claude Code 只需要 tasks + plan + build_logs（約 1/4 的資料量），避免浪費 token。
+**`morning_context` 支援 `sections` 參數**：不同 AI 環境拉取不同的資料子集。Claude Code 只需要 tasks + plan + build_logs（約 1/4 的資料量），避免浪費 token。
 
 **學習使用 FSRS 實現間隔複習**：複習一筆 TIL 時，系統記錄你的回憶品質（1–4），並依遺忘曲線模型計算下次複習日期。Card 在首次複習時自動建立，無需手動設定。佇列優先排出逾期的 card，再補上過去一週未複習過的 TIL。
 

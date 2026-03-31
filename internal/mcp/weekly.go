@@ -13,7 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// WeeklySummaryInput is the input for the get_weekly_summary tool.
+// WeeklySummaryInput is the input for the weekly_summary tool.
 type WeeklySummaryInput struct {
 	WeeksBack       int  `json:"weeks_back,omitempty" jsonschema_description:"0 = current week, 1 = last week. Default 0, max 4."`
 	ComparePrevious bool `json:"compare_previous,omitempty" jsonschema_description:"include previous week data and delta comparison"`

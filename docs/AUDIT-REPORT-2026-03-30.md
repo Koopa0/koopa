@@ -114,34 +114,34 @@ MCP server name: `koopa0-knowledge`。所有工具最後修改日期：2026-03-3
 
 | # | 工具名稱 | 功能描述 | 有測試 |
 |---|---------|---------|--------|
-| 1 | `get_project_context` | 依名稱/slug/alias 取得單一專案完整上下文 | 間接（morning_test） |
-| 2 | `get_recent_activity` | 取得最近開發活動事件，可依 source/project 過濾 | 間接 |
-| 3 | `get_decision_log` | 取得 Obsidian 中 type=decision-log 的筆記 | 間接 |
-| 4 | `get_rss_highlights` | 取得最近收集的 RSS 文章 | 間接 |
+| 1 | `project_context` | 依名稱/slug/alias 取得單一專案完整上下文 | 間接（morning_test） |
+| 2 | `recent_activity` | 取得最近開發活動事件，可依 source/project 過濾 | 間接 |
+| 3 | `decision_log` | 取得 Obsidian 中 type=decision-log 的筆記 | 間接 |
+| 4 | `rss_highlights` | 取得最近收集的 RSS 文章 | 間接 |
 | 5 | `search_tasks` | 搜尋/列出任務，支援多條件過濾 | 間接 |
 | 6 | `search_knowledge` | 跨所有內容類型搜尋 | ✅ search_test.go (5) |
-| 7 | `get_content_detail` | 依 slug 取得完整內容 | ✅ content_test.go |
+| 7 | `content_detail` | 依 slug 取得完整內容 | ✅ content_test.go |
 | 8 | `list_projects` | 列出所有進行中的專案 | 間接 |
-| 9 | `get_learning_progress` | 學習指標：筆記成長、每週活動、標籤統計 | 間接 |
+| 9 | `learning_progress` | 學習指標：筆記成長、每週活動、標籤統計 | 間接 |
 | 10 | `log_dev_session` | 記錄開發 session 為 build-log | ✅ write_test.go |
 | 11 | `complete_task` | 標記任務完成 | ✅ write_test.go |
 | 12 | `create_task` | 在 Notion 建立新任務 | ✅ write_test.go |
 | 13 | `update_task` | 更新任務屬性 | ✅ write_test.go |
-| 14 | `batch_my_day` | 批次設定 Notion My Day | ✅ write_test.go |
+| 14 | `my_day` | 批次設定 Notion My Day | ✅ write_test.go |
 | 15 | `log_learning_session` | 記錄學習成果（LeetCode 等） | ✅ write_test.go |
 | 16 | `update_project_status` | 更新專案狀態 | ✅ write_test.go |
 | 17 | `update_goal_status` | 更新目標狀態 | ✅ goals_test.go |
-| 18 | `get_morning_context` | 每日規劃所需的完整上下文（一次呼叫） | ✅ morning_test.go (12) |
-| 19 | `get_session_delta` | 上次 session 以來的變化 | ✅ delta_test.go (2) |
-| 20 | `get_weekly_summary` | 每週綜合摘要 | ✅ weekly_test.go (3) |
-| 21 | `get_goal_progress` | 目標進度追蹤 | ✅ goals_test.go |
+| 18 | `morning_context` | 每日規劃所需的完整上下文（一次呼叫） | ✅ morning_test.go (12) |
+| 19 | `session_delta` | 上次 session 以來的變化 | ✅ delta_test.go (2) |
+| 20 | `weekly_summary` | 每週綜合摘要 | ✅ weekly_test.go (3) |
+| 21 | `goal_progress` | 目標進度追蹤 | ✅ goals_test.go |
 | 22 | `save_session_note` | 儲存跨環境 session 筆記 | ✅ write_test.go |
-| 23 | `get_session_notes` | 取得 session 筆記（依日期/類型） | 間接 |
-| 24 | `get_reflection_context` | 晚間反思所需完整上下文 | 間接 |
-| 25 | `get_active_insights` | 取得追蹤中的 insights（假說/觀察） | ✅ insights_test.go (6) |
+| 23 | `session_notes` | 取得 session 筆記（依日期/類型） | 間接 |
+| 24 | `reflection_context` | 晚間反思所需完整上下文 | 間接 |
+| 25 | `active_insights` | 取得追蹤中的 insights（假說/觀察） | ✅ insights_test.go (6) |
 | 26 | `update_insight` | 更新 insight 狀態或附加證據 | ✅ insights_test.go |
 | 27 | `search_oreilly_content` | 搜尋 O'Reilly Learning 內容 | 無（條件註冊） |
-| 28 | `get_oreilly_book_detail` | 取得 O'Reilly 書籍目錄 | 無（條件註冊） |
+| 28 | `oreilly_book_detail` | 取得 O'Reilly 書籍目錄 | 無（條件註冊） |
 | 29 | `read_oreilly_chapter` | 讀取 O'Reilly 書籍章節 | 無（條件註冊） |
 | 30 | `bookmark_rss_item` | 將 RSS 項目存為書籤 | ✅ content_test.go |
 | 31 | `create_content` | 建立內容草稿 | ✅ content_test.go |
@@ -152,17 +152,17 @@ MCP server name: `koopa0-knowledge`。所有工具最後修改日期：2026-03-3
 | 36 | `add_feed` | 新增 RSS 訂閱 | ✅ feed_test.go |
 | 37 | `update_feed` | 更新 RSS 訂閱（啟用/停用） | ✅ feed_test.go |
 | 38 | `remove_feed` | 刪除 RSS 訂閱 | ✅ feed_test.go |
-| 39 | `get_collection_stats` | 收集管線統計 | 間接 |
-| 40 | `get_system_status` | 系統可觀測性：flow runs、feed health | 間接（條件註冊） |
+| 39 | `collection_stats` | 收集管線統計 | 間接 |
+| 40 | `system_status` | 系統可觀測性：flow runs、feed health | 間接（條件註冊） |
 | 41 | `trigger_pipeline` | 手動觸發管線（rss_collector / notion_sync） | 間接（條件註冊） |
-| 42 | `get_tag_summary` | 專案 TIL 的標籤頻率統計 | 間接 |
-| 43 | `get_coverage_matrix` | 主題涵蓋矩陣（各 topic 練習次數/結果分佈） | 間接 |
-| 44 | `get_weakness_trend` | 弱點標籤時間序列趨勢 | 間接 |
-| 45 | `get_learning_timeline` | 學習項目按天分組 + 連續天數統計 | 間接 |
+| 42 | `tag_summary` | 專案 TIL 的標籤頻率統計 | 間接 |
+| 43 | `coverage_matrix` | 主題涵蓋矩陣（各 topic 練習次數/結果分佈） | 間接 |
+| 44 | `weakness_trend` | 弱點標籤時間序列趨勢 | 間接 |
+| 45 | `learning_timeline` | 學習項目按天分組 + 連續天數統計 | 間接 |
 | 46 | `synthesize_topic` | 跨所有內容源的主題合成 | ✅ search_test.go |
 | 47 | `find_similar_content` | 基於 embedding 的相似內容搜尋 | ✅ search_test.go |
 | 48 | `log_retrieval_attempt` | 記錄 FSRS 間隔重複回測結果 | 間接（條件註冊） |
-| 49 | `get_retrieval_queue` | 取得到期的間隔重複佇列 | 間接（條件註冊） |
+| 49 | `retrieval_queue` | 取得到期的間隔重複佇列 | 間接（條件註冊） |
 
 備註：「條件註冊」表示該工具僅在特定環境變數存在時才註冊（O'Reilly: `ORM_JWT`; system_status/trigger_pipeline: `ADMIN_API_URL` + `JWT_SECRET` + `ADMIN_EMAIL`; retrieval: `retrieval != nil`）。
 
@@ -187,16 +187,16 @@ MCP server name: `koopa0-knowledge`。所有工具最後修改日期：2026-03-3
 
 | 功能域 | 工具數 | 工具名稱 |
 |--------|--------|---------|
-| 日常工作流 (Morning/Evening/Session) | 8 | `get_morning_context`, `get_session_delta`, `get_reflection_context`, `get_weekly_summary`, `save_session_note`, `get_session_notes`, `get_active_insights`, `update_insight` |
-| 任務管理 | 5 | `search_tasks`, `create_task`, `complete_task`, `update_task`, `batch_my_day` |
-| 知識搜尋 | 5 | `search_knowledge`, `get_content_detail`, `synthesize_topic`, `find_similar_content`, `get_decision_log` |
+| 日常工作流 (Morning/Evening/Session) | 8 | `morning_context`, `session_delta`, `reflection_context`, `weekly_summary`, `save_session_note`, `session_notes`, `active_insights`, `update_insight` |
+| 任務管理 | 5 | `search_tasks`, `create_task`, `complete_task`, `update_task`, `my_day` |
+| 知識搜尋 | 5 | `search_knowledge`, `content_detail`, `synthesize_topic`, `find_similar_content`, `decision_log` |
 | 內容管線 | 5 | `create_content`, `update_content`, `publish_content`, `list_content_queue`, `bookmark_rss_item` |
-| RSS/Feed 管理 | 6 | `list_feeds`, `add_feed`, `update_feed`, `remove_feed`, `get_rss_highlights`, `get_collection_stats` |
-| 專案/目標 | 5 | `list_projects`, `get_project_context`, `update_project_status`, `get_goal_progress`, `update_goal_status` |
-| 學習分析 | 7 | `get_learning_progress`, `log_learning_session`, `get_tag_summary`, `get_coverage_matrix`, `get_weakness_trend`, `get_learning_timeline`, `log_dev_session` |
-| O'Reilly 整合 | 3 | `search_oreilly_content`, `get_oreilly_book_detail`, `read_oreilly_chapter` |
-| 系統運維 | 3 | `get_system_status`, `trigger_pipeline`, `get_recent_activity` |
-| 間隔重複 (FSRS) | 2 | `log_retrieval_attempt`, `get_retrieval_queue` |
+| RSS/Feed 管理 | 6 | `list_feeds`, `add_feed`, `update_feed`, `remove_feed`, `rss_highlights`, `collection_stats` |
+| 專案/目標 | 5 | `list_projects`, `project_context`, `update_project_status`, `goal_progress`, `update_goal_status` |
+| 學習分析 | 7 | `learning_progress`, `log_learning_session`, `tag_summary`, `coverage_matrix`, `weakness_trend`, `learning_timeline`, `log_dev_session` |
+| O'Reilly 整合 | 3 | `search_oreilly_content`, `oreilly_book_detail`, `read_oreilly_chapter` |
+| 系統運維 | 3 | `system_status`, `trigger_pipeline`, `recent_activity` |
+| 間隔重複 (FSRS) | 2 | `log_retrieval_attempt`, `retrieval_queue` |
 
 ---
 

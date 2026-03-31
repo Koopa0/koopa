@@ -12,7 +12,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/session"
 )
 
-// SessionDeltaInput is the input for the get_session_delta tool.
+// SessionDeltaInput is the input for the session_delta tool.
 type SessionDeltaInput struct {
 	Since string `json:"since,omitempty" jsonschema_description:"ISO date YYYY-MM-DD. Default: date of last Claude.ai session note."`
 }

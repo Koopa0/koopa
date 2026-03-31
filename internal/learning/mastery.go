@@ -11,7 +11,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 )
 
-// MasteryMapResult is the response for the get_mastery_map tool.
+// MasteryMapResult is the response for the mastery_map tool.
 type MasteryMapResult struct {
 	Patterns   []PatternMastery `json:"patterns"`
 	PeriodDays int              `json:"period_days"`
@@ -521,7 +521,7 @@ func parseEntryData(e *content.RichTagEntry) entryData {
 
 // --- Concept Gaps ---
 
-// ConceptGapsResult is the response for the get_concept_gaps tool.
+// ConceptGapsResult is the response for the concept_gaps tool.
 type ConceptGapsResult struct {
 	SystemicGaps    []SystemicGap    `json:"systemic_gaps"`
 	CoachingHistory []CoachingRecord `json:"coaching_history"`
@@ -643,7 +643,7 @@ func extractPrimaryPattern(tags []string) string {
 
 // --- Variation Map ---
 
-// VariationMapResult is the response for the get_variation_map tool.
+// VariationMapResult is the response for the variation_map tool.
 type VariationMapResult struct {
 	Clusters         []VariationCluster `json:"clusters"`
 	IsolatedProblems []IsolatedProblem  `json:"isolated_problems"`

@@ -102,7 +102,7 @@ func WithProjectWriter(w *project.Store) ServerOption {
 	}
 }
 
-// WithRetrieval enables spaced retrieval tools (log_retrieval_attempt, get_retrieval_queue).
+// WithRetrieval enables spaced retrieval tools (log_retrieval_attempt, retrieval_queue).
 func WithRetrieval(rs *retrieval.Store) ServerOption {
 	return func(s *Server) { s.retrieval = rs }
 }
@@ -125,7 +125,7 @@ func WithOReilly(client *oreilly.Client) ServerOption {
 	return func(s *Server) { s.oreilly = client }
 }
 
-// WithSystemStatus enables the get_system_status tool.
+// WithSystemStatus enables the system_status tool.
 // Uses the same *stats.Store that provides collection stats; kept as an
 // option so system-status tools remain opt-in at the wiring site.
 func WithSystemStatus(r *stats.Store) ServerOption {
@@ -226,19 +226,19 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	// on search_knowledge. Use content_type="obsidian-note" to search notes only.
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_project_context",
+		Name:        "project_context",
 		Description: "Get full context for a single project by name, slug, or alias. Returns project details, recent activity, and related notes. Use list_projects first if you need to see all projects.",
 		Annotations: readOnly,
 	}, s.getProjectContext)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_recent_activity",
+		Name:        "recent_activity",
 		Description: "Get recent development activity events, optionally filtered by source (github, obsidian, notion) or project name. Groups results by source. Use when the user asks what they've been working on, wants a summary of recent progress, or needs to understand time allocation.",
 		Annotations: readOnly,
 	}, s.getRecentActivity)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_decision_log",
+		Name:        "decision_log",
 		Description: "Retrieve decision-log notes from Obsidian (notes with type=decision-log in frontmatter), optionally filtered by project context. Unlike search_knowledge which searches by text query, this returns all decision-log entries without requiring a search term. Use when looking for past architectural decisions, design rationale, or 'why did we choose X' questions.",
 		Annotations: readOnly,
 	}, s.getDecisionLog)
@@ -246,12 +246,12 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	// --- new Phase 1 tools ---
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_rss_highlights",
+		Name:        "rss_highlights",
 		Description: "Get recently collected RSS articles from tracked feeds, ordered by most recent first. Use when the user asks about recent tech news, wants reading recommendations, or needs to know what's trending in their tracked topics.",
 		Annotations: readOnly,
 	}, s.getRSSHighlights)
 
-	// get_platform_stats REMOVED — drift analysis moved to get_goal_progress(include_drift=true).
+	// get_platform_stats REMOVED — drift analysis moved to goal_progress(include_drift=true).
 	// Overview stats covered by individual domain tools (system_status, weekly_summary, learning_progress).
 
 	// get_pending_tasks MERGED into search_tasks (A3).
@@ -270,19 +270,19 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	}, s.searchKnowledge)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_content_detail",
+		Name:        "content_detail",
 		Description: "Get the full content of an article, build log, TIL, or note by slug. Returns complete body text, tags, topics, and metadata. Use after search_knowledge to read the full content of a specific result.",
 		Annotations: readOnly,
 	}, s.getContentDetail)
 
 	addTool(s, &mcp.Tool{
 		Name:        "list_projects",
-		Description: "List all active projects with status, area, tech stack, and URLs. Use when the user wants to see all their projects at a glance, needs to pick which project to work on, or asks about project health. For deep context on a single project, follow up with get_project_context.",
+		Description: "List all active projects with status, area, tech stack, and URLs. Use when the user wants to see all their projects at a glance, needs to pick which project to work on, or asks about project health. For deep context on a single project, follow up with project_context.",
 		Annotations: readOnly,
 	}, s.listProjects)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_learning_progress",
+		Name:        "learning_progress",
 		Description: "Get learning metrics: note growth trends, weekly activity comparison, and top knowledge tags. Use when the user asks about their learning progress, wants to know what topics they've been studying, or needs motivation data.",
 		Annotations: readOnly,
 	}, s.getLearningProgress)
@@ -314,7 +314,7 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	}, s.updateTask)
 
 	addTool(s, &mcp.Tool{
-		Name:        "batch_my_day",
+		Name:        "my_day",
 		Description: "Set today's planned tasks on Notion My Day. Use at the end of morning planning after the user confirms the daily schedule. Optionally clears previous My Day selections first.",
 		Annotations: additiveIdempotent,
 	}, s.batchMyDay)
@@ -344,25 +344,25 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	}, s.updateGoalStatus)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_morning_context",
+		Name:        "morning_context",
 		Description: "Get everything needed for daily planning in one call. Use when the user starts their day ('good morning', '早安', 'what should I work on today'). This should be the FIRST tool called in a morning planning session. Returns four task lists: overdue_tasks (past due), today_tasks (due today, not yet committed), my_day_tasks (explicitly committed via Notion My Day), upcoming_tasks (due within 7 days). Optional sections parameter limits response: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions. Examples: Full daily planning (omit sections), Learning session: sections=[\"tasks\",\"plan\"], Claude Code session: sections=[\"tasks\",\"plan\",\"build_logs\",\"activity\"].",
 		Annotations: readOnly,
 	}, s.getMorningContext)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_session_delta",
+		Name:        "session_delta",
 		Description: "Show what changed since the last Claude.ai session: tasks completed, tasks created, tasks that became overdue, build logs, insight changes, session notes, and metrics trend. Use when resuming after a gap, e.g. 'what happened since last time', '上次之後有什麼變化', 'catch me up'. Defaults to changes since the last claude session note.",
 		Annotations: readOnly,
 	}, s.getSessionDelta)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_weekly_summary",
+		Name:        "weekly_summary",
 		Description: "Get a comprehensive weekly summary: task completion by project, metrics trends, project health, insight activity, goal alignment, highlights and concerns. Set weeks_back=1 for last week. Set compare_previous=true to include previous week data and delta (tasks completed diff, avg capacity diff).",
 		Annotations: readOnly,
 	}, s.getWeeklySummary)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_goal_progress",
+		Name:        "goal_progress",
 		Description: "Show progress toward each active goal: related projects, tasks completed in the lookback period, weekly task rate, and on-track assessment. Supports optional area and status filters. Set include_drift=true for goal-vs-activity alignment analysis (per-area drift%). Use when reviewing goals, '目標進度', 'goal check', 'am I on track', or to list goals with filtering (replaces get_goals).",
 		Annotations: readOnly,
 	}, s.getGoalProgress)
@@ -376,23 +376,23 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	}, s.saveSessionNote)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_session_notes",
-		Description: "Retrieve session notes for a date or date range, optionally filtered by note_type (plan|reflection|context|metrics|insight). Set days (1-30, default 1) for lookback range. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Example: get_session_notes(note_type=\"plan\", days=7)",
+		Name:        "session_notes",
+		Description: "Retrieve session notes for a date or date range, optionally filtered by note_type (plan|reflection|context|metrics|insight). Set days (1-30, default 1) for lookback range. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Example: session_notes(note_type=\"plan\", days=7)",
 		Annotations: readOnly,
 	}, s.sessionNotes)
 
 	// --- reflection tool ---
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_reflection_context",
-		Description: "Get everything needed for evening reflection in one call: today's plan vs actual completions, My Day task status, daily summary metrics, unverified insights for review, planning history, and yesterday's adjustments. Use when doing evening reflection, '今天做了什麼', 'reflection time', 'how did today go'. This is the evening counterpart to get_morning_context.",
+		Name:        "reflection_context",
+		Description: "Get everything needed for evening reflection in one call: today's plan vs actual completions, My Day task status, daily summary metrics, unverified insights for review, planning history, and yesterday's adjustments. Use when doing evening reflection, '今天做了什麼', 'reflection time', 'how did today go'. This is the evening counterpart to morning_context.",
 		Annotations: readOnly,
 	}, s.getReflectionContext)
 
 	// --- insight tools ---
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_active_insights",
+		Name:        "active_insights",
 		Description: "Get tracked insights (pattern observations and hypotheses) from past sessions. Use during morning planning to see unverified hypotheses that can inform today's schedule, or during evening reflection to review which insights have been confirmed or invalidated. Default returns unverified insights; use status='all' for everything.",
 		Annotations: readOnly,
 	}, s.activeInsights)
@@ -413,14 +413,14 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		}, s.searchOReillyContent)
 
 		addTool(s, &mcp.Tool{
-			Name:        "get_oreilly_book_detail",
+			Name:        "oreilly_book_detail",
 			Description: "Get book metadata and full table of contents from O'Reilly Learning. Use after search_oreilly_content to see a book's chapters and structure before reading. Returns chapter titles, filenames (for read_oreilly_chapter), estimated reading time, and section headings.",
 			Annotations: readOnlyOpenWorld,
 		}, s.getOReillyBookDetail)
 
 		addTool(s, &mcp.Tool{
 			Name:        "read_oreilly_chapter",
-			Description: "Read the full text content of an O'Reilly book chapter. Use after get_oreilly_book_detail to read specific chapters. Requires archive_id and filename (from book detail chapters list). Returns plain text content stripped of HTML formatting.",
+			Description: "Read the full text content of an O'Reilly book chapter. Use after oreilly_book_detail to read specific chapters. Requires archive_id and filename (from book detail chapters list). Returns plain text content stripped of HTML formatting.",
 			Annotations: readOnlyOpenWorld,
 		}, s.readOReillyChapter)
 	}
@@ -489,14 +489,14 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	}
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_collection_stats",
+		Name:        "collection_stats",
 		Description: "Get collection pipeline statistics: per-feed item counts, average relevance scores, last collection timestamps, and global totals. Optionally filter by feed_id and lookback period (days, default 30, max 90).",
 		Annotations: readOnly,
 	}, s.getCollectionStats)
 
 	if s.stats != nil {
 		addTool(s, &mcp.Tool{
-			Name:        "get_system_status",
+			Name:        "system_status",
 			Description: "Get system observability: flow run stats, feed health, pipeline summaries, and recent flow runs. Scopes: summary (flow stats + feed health), pipelines (per-flow-name aggregation), flows (recent individual runs).",
 			Annotations: readOnly,
 		}, s.getSystemStatus)
@@ -513,43 +513,43 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 	// --- Learning analytics tools (B1-B3) ---
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_tag_summary",
-		Description: "Aggregate tag frequency for a project's TIL entries. Returns each tag with its occurrence count, optionally filtered by prefix. Use for learning analytics: get_tag_summary(project=\"leetcode\") for all tags, get_tag_summary(project=\"leetcode\", tag_prefix=\"weakness:\") for weaknesses only.",
+		Name:        "tag_summary",
+		Description: "Aggregate tag frequency for a project's TIL entries. Returns each tag with its occurrence count, optionally filtered by prefix. Use for learning analytics: tag_summary(project=\"leetcode\") for all tags, tag_summary(project=\"leetcode\", tag_prefix=\"weakness:\") for weaknesses only.",
 		Annotations: readOnly,
 	}, s.getTagSummary)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_coverage_matrix",
+		Name:        "coverage_matrix",
 		Description: "Coverage matrix of topic patterns for a project's TIL entries. For each topic tag (e.g. two-pointers, dp, graph), returns: total count, last practice date, and result distribution (ac-independent / ac-with-hints / ac-after-solution / incomplete). Use for adaptive coaching: identifying under-practiced or low-accuracy topics.",
 		Annotations: readOnly,
 	}, s.getCoverageMatrix)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_weakness_trend",
-		Description: "Time series of a specific weakness tag's occurrences with trend analysis. Returns chronological list of occurrences with result tags, slug, title, and observation text (from structured metadata). Computed trend: improving / stable / declining / insufficient-data. Use for tracking whether a weakness is getting better over time. Example: get_weakness_trend(project=\"leetcode\", tag=\"weakness:pattern-recognition\", days=60).",
+		Name:        "weakness_trend",
+		Description: "Time series of a specific weakness tag's occurrences with trend analysis. Returns chronological list of occurrences with result tags, slug, title, and observation text (from structured metadata). Computed trend: improving / stable / declining / insufficient-data. Use for tracking whether a weakness is getting better over time. Example: weakness_trend(project=\"leetcode\", tag=\"weakness:pattern-recognition\", days=60).",
 		Annotations: readOnly,
 	}, s.getWeaknessTrend)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_learning_timeline",
+		Name:        "learning_timeline",
 		Description: "Get recent learning entries grouped by day with summary stats (active days, current streak, project distribution). Returns per-entry structured metadata (weakness observations, key concepts) when available. Use at the start of a learning session for context, or when the user asks about recent learning activity. Optional project filter; defaults to 14-day lookback.",
 		Annotations: readOnly,
 	}, s.getLearningTimeline)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_mastery_map",
-		Description: "Composite per-pattern mastery view for a project's learning entries. Returns per-pattern: stage (unexplored/struggling/developing/solid), result distribution, difficulty distribution, concept mastery counts, weak concepts, unexplored approaches, weakness tag trends, variation coverage, and regression signals. One-call replacement for get_coverage_matrix + get_tag_summary + get_weakness_trend at session start. Optional pattern filter. Stage is computed deterministically; raw stage_signals are also returned for coach override.",
+		Name:        "mastery_map",
+		Description: "Composite per-pattern mastery view for a project's learning entries. Returns per-pattern: stage (unexplored/struggling/developing/solid), result distribution, difficulty distribution, concept mastery counts, weak concepts, unexplored approaches, weakness tag trends, variation coverage, and regression signals. One-call replacement for coverage_matrix + tag_summary + weakness_trend at session start. Optional pattern filter. Stage is computed deterministically; raw stage_signals are also returned for coach override.",
 		Annotations: readOnly,
 	}, s.getMasteryMap)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_concept_gaps",
+		Name:        "concept_gaps",
 		Description: "Cross-pattern concept-level weakness analysis. Finds concepts that appear as guided/told across multiple problems regardless of pattern — identifies systemic weaknesses. Also returns coaching_history: all coaching hints given, sorted by recency. Use when looking for recurring concept gaps or reviewing coaching effectiveness.",
 		Annotations: readOnly,
 	}, s.getConceptGaps)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_variation_map",
+		Name:        "variation_map",
 		Description: "Problem relationship graph from variation_links metadata. Groups problems into clusters (anchor + linked variations) and shows which linked problems haven't been attempted yet. Use for 'you solved A, now try A\\'' recommendations. Optional pattern filter.",
 		Annotations: readOnly,
 	}, s.getVariationMap)
@@ -578,7 +578,7 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		}, s.logRetrievalAttempt)
 
 		addTool(s, &mcp.Tool{
-			Name:        "get_retrieval_queue",
+			Name:        "retrieval_queue",
 			Description: "Get TILs due for spaced retrieval review: overdue FSRS cards + recent TILs never tested. Use at the start of a learning session for review, or when the user asks 'what should I review'. Optional project filter; default limit 10.",
 			Annotations: readOnly,
 		}, s.getRetrievalQueue)
@@ -586,13 +586,13 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 
 	// --- recurring task history tools ---
 	addTool(s, &mcp.Tool{
-		Name:        "get_skip_history",
+		Name:        "skip_history",
 		Description: "Get skip history for recurring tasks: how many times missed and on which dates. Filter by task_id, project_id, or both. Default 30 days lookback. Use when reviewing recurring task adherence, '過去一個月 skip 了幾次', 'LeetCode skip trend'.",
 		Annotations: readOnly,
 	}, s.getSkipHistory)
 
 	addTool(s, &mcp.Tool{
-		Name:        "get_completion_history",
+		Name:        "completion_history",
 		Description: "Get completion history for recurring tasks from activity_events. Filter by task_id, project_id, or both. Default 30 days lookback. Use when asking '這週 LeetCode 做了幾題', 'monthly completion rate', '英文學習完成幾天'.",
 		Annotations: readOnly,
 	}, s.getCompletionHistory)

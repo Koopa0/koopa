@@ -14,9 +14,9 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 )
 
-// --- B1: get_tag_summary ---
+// --- B1: tag_summary ---
 
-// TagSummaryInput is the input for the get_tag_summary tool.
+// TagSummaryInput is the input for the tag_summary tool.
 type TagSummaryInput struct {
 	Project   string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
 	TagPrefix string `json:"tag_prefix,omitempty" jsonschema_description:"only return tags starting with this prefix (e.g. weakness: or improvement:)"`
@@ -44,9 +44,9 @@ func (s *Server) getTagSummary(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	return nil, learning.TagSummary(entries, input.TagPrefix, days), nil
 }
 
-// --- B2: get_coverage_matrix ---
+// --- B2: coverage_matrix ---
 
-// CoverageMatrixInput is the input for the get_coverage_matrix tool.
+// CoverageMatrixInput is the input for the coverage_matrix tool.
 type CoverageMatrixInput struct {
 	Project string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
 	Days    int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
@@ -74,9 +74,9 @@ func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, 
 	return nil, learning.CoverageMatrixRich(entries, days), nil
 }
 
-// --- B3: get_weakness_trend ---
+// --- B3: weakness_trend ---
 
-// WeaknessTrendInput is the input for the get_weakness_trend tool.
+// WeaknessTrendInput is the input for the weakness_trend tool.
 type WeaknessTrendInput struct {
 	Project string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
 	Tag     string `json:"tag" jsonschema_description:"weakness tag to track (e.g. weakness:constraint-analysis). Required."`
@@ -109,7 +109,7 @@ func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // --- B4: get_learning_timeline ---
 
-// LearningTimelineInput is the input for the get_learning_timeline tool.
+// LearningTimelineInput is the input for the learning_timeline tool.
 type LearningTimelineInput struct {
 	Project string `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
 	Days    int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 14, max 90)"`
@@ -168,7 +168,7 @@ func (s *Server) logRetrievalAttempt(ctx context.Context, _ *mcp.CallToolRequest
 
 // --- B6: get_retrieval_queue ---
 
-// RetrievalQueueInput is the input for the get_retrieval_queue tool.
+// RetrievalQueueInput is the input for the retrieval_queue tool.
 type RetrievalQueueInput struct {
 	Project string `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
 	Limit   int    `json:"limit,omitempty" jsonschema_description:"max items to return (default 10, max 50)"`
@@ -198,7 +198,7 @@ func (s *Server) getRetrievalQueue(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // --- B8: get_mastery_map ---
 
-// MasteryMapInput is the input for the get_mastery_map tool.
+// MasteryMapInput is the input for the mastery_map tool.
 type MasteryMapInput struct {
 	Project  string   `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
 	Patterns []string `json:"patterns,omitempty" jsonschema_description:"optional filter: only include these patterns (e.g. [\"binary-search\", \"dp\"]). Omit for all patterns."`
@@ -238,7 +238,7 @@ func (s *Server) getMasteryMap(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 // --- B9: get_concept_gaps ---
 
-// ConceptGapsInput is the input for the get_concept_gaps tool.
+// ConceptGapsInput is the input for the concept_gaps tool.
 type ConceptGapsInput struct {
 	Project       string   `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
 	MasteryFilter []string `json:"mastery_filter,omitempty" jsonschema_description:"which mastery levels to include (default: [\"guided\", \"told\"]). Valid: independent, independent_after_hint, guided, told, not_explored."`
@@ -268,7 +268,7 @@ func (s *Server) getConceptGaps(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // --- B10: get_variation_map ---
 
-// VariationMapInput is the input for the get_variation_map tool.
+// VariationMapInput is the input for the variation_map tool.
 type VariationMapInput struct {
 	Project            string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
 	Pattern            string `json:"pattern,omitempty" jsonschema_description:"optional pattern filter (e.g. \"binary-search\"). Omit for all patterns."`

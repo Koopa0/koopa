@@ -261,13 +261,13 @@ func parseFeedID(raw string) (uuid.UUID, error) {
 
 // --- get_collection_stats tool ---
 
-// CollectionStatsInput is the input for the get_collection_stats tool.
+// CollectionStatsInput is the input for the collection_stats tool.
 type CollectionStatsInput struct {
 	FeedID string `json:"feed_id,omitempty" jsonschema_description:"specific feed UUID (omit for global stats)"`
 	Days   int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default: 30, max: 90)"`
 }
 
-// CollectionStatsOutput is the output for the get_collection_stats tool.
+// CollectionStatsOutput is the output for the collection_stats tool.
 type CollectionStatsOutput struct {
 	Feeds  []feedCollectionStat `json:"feeds"`
 	Global globalCollectionStat `json:"global"`

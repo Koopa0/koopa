@@ -467,15 +467,15 @@ func (s *Server) buildUpdateTaskParams(ctx context.Context, taskID uuid.UUID, in
 	return params, resolvedProj, nil
 }
 
-// --- batch_my_day ---
+// --- my_day ---
 
-// BatchMyDayInput is the input for the batch_my_day tool.
+// BatchMyDayInput is the input for the my_day tool.
 type BatchMyDayInput struct {
 	TaskIDs []string `json:"task_ids" jsonschema_description:"task UUIDs to set as My Day"`
 	Clear   bool     `json:"clear,omitempty" jsonschema_description:"clear all existing My Day first"`
 }
 
-// BatchMyDayOutput is the output of the batch_my_day tool.
+// BatchMyDayOutput is the output of the my_day tool.
 type BatchMyDayOutput struct {
 	Cleared    int              `json:"cleared,omitempty"`
 	Set        int              `json:"set"`
@@ -513,7 +513,7 @@ func (s *Server) clearMyDay(ctx context.Context) (int, error) {
 	if s.notionClient != nil {
 		currentMyDay, myDayErr := s.tasks.MyDayTasksWithNotionPageID(ctx)
 		if myDayErr != nil {
-			s.logger.Warn("batch_my_day: fetching notion page ids for clear", "error", myDayErr)
+			s.logger.Warn("my_day: fetching notion page ids for clear", "error", myDayErr)
 		}
 		for _, t := range currentMyDay {
 			s.syncMyDayToNotion(ctx, t.NotionPageID, false)
@@ -533,7 +533,7 @@ func (s *Server) setTaskMyDay(ctx context.Context, idStr string) error {
 		return fmt.Errorf("invalid task_id %q: %w", idStr, parseErr)
 	}
 	if err := s.tasks.UpdateMyDay(ctx, id, true); err != nil {
-		s.logger.Error("batch_my_day: setting my day", "task_id", idStr, "error", err)
+		s.logger.Error("my_day: setting my day", "task_id", idStr, "error", err)
 		return nil // best-effort: continue with remaining tasks
 	}
 	if s.notionClient != nil {
@@ -553,7 +553,7 @@ func (s *Server) syncMyDayToNotion(ctx context.Context, notionPageID string, val
 	}
 	props := map[string]any{"My Day": map[string]any{"checkbox": value}}
 	if err := s.notionClient.UpdatePageProperties(ctx, notionPageID, props); err != nil {
-		s.logger.Warn("batch_my_day: notion sync failed", "notion_page_id", notionPageID, "error", err)
+		s.logger.Warn("my_day: notion sync failed", "notion_page_id", notionPageID, "error", err)
 	}
 }
 
@@ -1217,16 +1217,16 @@ func buildNotionTaskProps(input *UpdateTaskInput) map[string]any {
 	return props
 }
 
-// --- get_skip_history ---
+// --- skip_history ---
 
-// SkipHistoryInput is the input for the get_skip_history tool.
+// SkipHistoryInput is the input for the skip_history tool.
 type SkipHistoryInput struct {
 	TaskID    string `json:"task_id,omitempty" jsonschema_description:"filter by task UUID"`
 	ProjectID string `json:"project_id,omitempty" jsonschema_description:"filter by project UUID"`
 	Days      int    `json:"days,omitempty" jsonschema_description:"lookback days (default 30)"`
 }
 
-// SkipHistoryOutput is the output of the get_skip_history tool.
+// SkipHistoryOutput is the output of the skip_history tool.
 type SkipHistoryOutput struct {
 	TotalSkips int              `json:"total_skips"`
 	Records    []skipHistoryRow `json:"records"`
@@ -1295,16 +1295,16 @@ func (s *Server) getSkipHistory(ctx context.Context, _ *mcp.CallToolRequest, inp
 	return nil, out, fmt.Errorf("either task_id or project_id is required")
 }
 
-// --- get_completion_history ---
+// --- completion_history ---
 
-// CompletionHistoryInput is the input for the get_completion_history tool.
+// CompletionHistoryInput is the input for the completion_history tool.
 type CompletionHistoryInput struct {
 	TaskID    string `json:"task_id,omitempty" jsonschema_description:"filter by task UUID"`
 	ProjectID string `json:"project_id,omitempty" jsonschema_description:"filter by project UUID"`
 	Days      int    `json:"days,omitempty" jsonschema_description:"lookback days (default 30)"`
 }
 
-// CompletionHistoryOutput is the output of the get_completion_history tool.
+// CompletionHistoryOutput is the output of the completion_history tool.
 type CompletionHistoryOutput struct {
 	TotalCompletions int                    `json:"total_completions"`
 	Records          []completionHistoryRow `json:"records"`

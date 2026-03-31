@@ -38,7 +38,7 @@
 
 每日 PDCA 循環的核心。Morning planning → execution → evening reflection → next morning。
 
-### `get_morning_context`
+### `morning_context`
 
 > 早晨規劃一站式：一次拉回所有規劃所需資料。
 
@@ -57,7 +57,7 @@
 
 ---
 
-### `get_reflection_context`
+### `reflection_context`
 
 > 晚間回顧一站式：today's plan vs actual completions。
 
@@ -72,7 +72,7 @@
 
 ---
 
-### `get_session_delta`
+### `session_delta`
 
 > 上次 session 到現在的所有變化。
 
@@ -87,7 +87,7 @@
 
 ---
 
-### `get_weekly_summary`
+### `weekly_summary`
 
 > 每週綜合摘要：任務完成、指標趨勢、專案健康、目標對齊。
 
@@ -122,7 +122,7 @@
 
 ---
 
-### `get_session_notes`
+### `session_notes`
 
 > 取得 session 筆記（依日期/類型）。
 
@@ -139,7 +139,7 @@
 
 ---
 
-### `get_active_insights`
+### `active_insights`
 
 > 取得追蹤中的 insights（假說/觀察）。
 
@@ -264,7 +264,7 @@
 
 ---
 
-### `batch_my_day`
+### `my_day`
 
 > 批次設定 Notion My Day。
 
@@ -309,7 +309,7 @@
 
 ---
 
-### `get_content_detail`
+### `content_detail`
 
 > 依 slug 取得完整內容。
 
@@ -324,7 +324,7 @@
 
 ---
 
-### `get_decision_log`
+### `decision_log`
 
 > 取得 Obsidian 中 type=decision-log 的筆記。
 
@@ -470,7 +470,7 @@
 
 RSS 訂閱管理與收集統計。
 
-### `get_rss_highlights`
+### `rss_highlights`
 
 > 取得最近收集的 RSS 文章。
 
@@ -549,7 +549,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_collection_stats`
+### `collection_stats`
 
 > 收集管線統計：per-feed 數量、平均相關性、全域統計。
 
@@ -584,7 +584,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_project_context`
+### `project_context`
 
 > 取得單一專案完整上下文：詳情、活動、相關筆記。
 
@@ -617,7 +617,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_goal_progress`
+### `goal_progress`
 
 > 目標進度追蹤 + optional drift analysis。取代了舊的 `get_goals` 和 `get_platform_stats` 的 drift 功能。
 
@@ -702,7 +702,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_learning_progress`
+### `learning_progress`
 
 > 學習指標：筆記成長趨勢、每週活動比較、top 標籤。
 
@@ -715,7 +715,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_tag_summary`
+### `tag_summary`
 
 > 專案 TIL 的標籤頻率統計。
 
@@ -732,7 +732,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_coverage_matrix`
+### `coverage_matrix`
 
 > 主題涵蓋矩陣：各 topic 的練習次數、最近日期、結果分佈。
 
@@ -748,7 +748,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_weakness_trend`
+### `weakness_trend`
 
 > 弱點標籤時間序列趨勢分析。
 
@@ -765,7 +765,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_learning_timeline`
+### `learning_timeline`
 
 > 學習項目按天分組 + 連續天數統計。
 
@@ -804,7 +804,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_oreilly_book_detail`
+### `oreilly_book_detail`
 
 > 取得書籍 metadata 和完整目錄。
 
@@ -837,7 +837,7 @@ RSS 訂閱管理與收集統計。
 
 ## 9. System & Infrastructure (3 tools)
 
-### `get_recent_activity`
+### `recent_activity`
 
 > 最近的開發活動事件。
 
@@ -854,7 +854,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_system_status`
+### `system_status`
 
 > 系統可觀測性：flow runs、feed health、pipeline 摘要。
 
@@ -908,7 +908,7 @@ RSS 訂閱管理與收集統計。
 
 ---
 
-### `get_retrieval_queue`
+### `retrieval_queue`
 
 > 取得到期的間隔重複佇列。
 
@@ -940,8 +940,8 @@ RSS 訂閱管理與收集統計。
 
 | 環境變數 | 影響的工具 |
 |----------|-----------|
-| `ORM_JWT` | `search_oreilly_content`, `get_oreilly_book_detail`, `read_oreilly_chapter` |
-| `ADMIN_API_URL` + `JWT_SECRET` + `ADMIN_EMAIL` | `get_system_status`, `trigger_pipeline` |
+| `ORM_JWT` | `search_oreilly_content`, `oreilly_book_detail`, `read_oreilly_chapter` |
+| `ADMIN_API_URL` + `JWT_SECRET` + `ADMIN_EMAIL` | `system_status`, `trigger_pipeline` |
 | `NOTION_API_KEY` | `create_task`, `complete_task`（Notion sync 功能） |
-| retrieval store 非 nil | `log_retrieval_attempt`, `get_retrieval_queue` |
+| retrieval store 非 nil | `log_retrieval_attempt`, `retrieval_queue` |
 | feeds store 非 nil | `list_feeds`, `add_feed`, `update_feed`, `remove_feed` |

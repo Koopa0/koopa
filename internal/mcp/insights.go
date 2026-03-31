@@ -13,7 +13,7 @@ import (
 
 // --- get_active_insights ---
 
-// ActiveInsightsInput is the input for the get_active_insights tool.
+// ActiveInsightsInput is the input for the active_insights tool.
 type ActiveInsightsInput struct {
 	Status  string `json:"status,omitempty" jsonschema_description:"unverified, verified, invalidated, or all (default unverified)"`
 	Project string `json:"project,omitempty" jsonschema_description:"filter by project slug"`

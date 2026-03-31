@@ -10,7 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// ReflectionContextInput is the input for the get_reflection_context tool.
+// ReflectionContextInput is the input for the reflection_context tool.
 type ReflectionContextInput struct {
 	Date string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
 }

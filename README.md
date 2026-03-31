@@ -46,9 +46,9 @@ Each connects to the same MCP server but pulls different data subsets via the `s
 
 | Consumer              | Role                                                | Typical tools                                                              |
 | --------------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
-| Claude Web (Daily)    | Morning planning, evening reflection, weekly review | `get_morning_context`, `save_session_note`, `batch_my_day`                 |
-| Claude Web (Learning) | Study sessions, knowledge search, reading           | `log_learning_session`, `get_retrieval_queue`, `search_knowledge`, `read_oreilly_chapter` |
-| Claude Code           | Development, build logging, project tracking        | `get_project_context`, `log_dev_session`, `search_tasks`                   |
+| Claude Web (Daily)    | Morning planning, evening reflection, weekly review | `morning_context`, `save_session_note`, `my_day`                 |
+| Claude Web (Learning) | Study sessions, knowledge search, reading           | `log_learning_session`, `retrieval_queue`, `search_knowledge`, `read_oreilly_chapter` |
+| Claude Code           | Development, build logging, project tracking        | `project_context`, `log_dev_session`, `search_tasks`                   |
 | Cowork                | Content pipeline, RSS management, system ops        | `create_content`, `publish_content`, `trigger_pipeline`                    |
 
 ### Three data flows
@@ -133,17 +133,17 @@ Full tool reference with parameters and risk levels: [`docs/MCP-TOOLS-REFERENCE.
 
 These tools are building blocks — you compose them into workflows that fit your needs:
 
-- **Morning**: `get_morning_context` → review insights → decide plan → `save_session_note(type=plan)` → `batch_my_day`
+- **Morning**: `morning_context` → review insights → decide plan → `save_session_note(type=plan)` → `my_day`
 - **Mid-development**: spot an issue → `create_task` + `save_session_note(type=context)`
-- **Evening**: `get_reflection_context` → validate hypotheses → `update_insight` → `save_session_note(type=metrics)`
-- **Learning**: `get_retrieval_queue` → practice recall → `log_retrieval_attempt(rating)` → FSRS schedules next review automatically
+- **Evening**: `reflection_context` → validate hypotheses → `update_insight` → `save_session_note(type=metrics)`
+- **Learning**: `retrieval_queue` → practice recall → `log_retrieval_attempt(rating)` → FSRS schedules next review automatically
 - **Knowledge work**: `search_knowledge` (4-way parallel: content full-text + Obsidian text + Obsidian semantic + dedup, ranked by RRF) → `synthesize_topic` → `create_content`
 
 ### Key technical details
 
 **Search is 4-way parallel**: content full-text search + Obsidian text search + Obsidian semantic search (pgvector embeddings) + dedup. Results ranked by Reciprocal Rank Fusion.
 
-**`get_morning_context` supports `sections`**: different AI environments pull different data subsets. Claude Code only needs tasks + plan + build_logs (~1/4 of the data). This prevents token waste.
+**`morning_context` supports `sections`**: different AI environments pull different data subsets. Claude Code only needs tasks + plan + build_logs (~1/4 of the data). This prevents token waste.
 
 **Learning uses FSRS for spaced retrieval**: when you review a TIL, the system records your recall quality (1-4) and computes the next review date using a forgetting curve model. Cards are created lazily on first review — no manual setup. The queue prioritizes overdue cards first, then surfaces never-reviewed TILs from the past week.
 
