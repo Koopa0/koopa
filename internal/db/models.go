@@ -782,6 +782,31 @@ type Task struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+// Per-completion log for recurring tasks. Multiple records per task per day are allowed (e.g., 3 LeetCode problems).
+type TaskCompletionLog struct {
+	ID uuid.UUID `json:"id"`
+	// The recurring task that was completed. CASCADE deletes history when task is deleted.
+	TaskID uuid.UUID `json:"task_id"`
+	// When the task was completed, in server time. Double-complete guard uses Asia/Taipei day boundary.
+	CompletedAt time.Time `json:"completed_at"`
+	// Optional completion notes (e.g., LeetCode problem name).
+	Notes string `json:"notes"`
+}
+
+// Per-occurrence skip history for recurring tasks. One row per missed recurrence cycle.
+type TaskSkipLog struct {
+	ID uuid.UUID `json:"id"`
+	// The recurring task this skip belongs to. CASCADE deletes history when task is deleted.
+	TaskID uuid.UUID `json:"task_id"`
+	// The due date the task had when the skip was detected by cron.
+	OriginalDue time.Time `json:"original_due"`
+	// The occurrence date that was missed (the date the task should have been done).
+	SkippedDate time.Time `json:"skipped_date"`
+	// Why the occurrence was skipped: auto-expired (cron detected overdue) or manual (user explicitly skipped).
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type ToolCallLog struct {
 	ID         uuid.UUID `json:"id"`
 	ToolName   string    `json:"tool_name"`

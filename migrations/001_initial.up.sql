@@ -694,3 +694,38 @@ COMMENT ON COLUMN fsrs_review_logs.rating IS '1=Again(forgot), 2=Hard(partial), 
 COMMENT ON COLUMN fsrs_review_logs.state IS 'Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.';
 
 CREATE INDEX idx_fsrs_review_logs_card ON fsrs_review_logs (card_id, reviewed_at DESC);
+
+-- === Task Recurring System ===
+
+-- Skip history for recurring tasks (per missed occurrence).
+CREATE TABLE task_skip_log (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    original_due DATE NOT NULL,
+    skipped_date DATE NOT NULL,
+    reason       TEXT NOT NULL DEFAULT 'auto-expired'
+        CHECK (reason IN ('auto-expired', 'manual')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(task_id, skipped_date)
+);
+
+COMMENT ON TABLE task_skip_log IS 'Per-occurrence skip history for recurring tasks. One row per missed recurrence cycle.';
+COMMENT ON COLUMN task_skip_log.task_id IS 'The recurring task this skip belongs to. CASCADE deletes history when task is deleted.';
+COMMENT ON COLUMN task_skip_log.original_due IS 'The due date the task had when the skip was detected by cron.';
+COMMENT ON COLUMN task_skip_log.skipped_date IS 'The occurrence date that was missed (the date the task should have been done).';
+COMMENT ON COLUMN task_skip_log.reason IS 'Why the occurrence was skipped: auto-expired (cron detected overdue) or manual (user explicitly skipped).';
+
+-- Per-completion log for recurring tasks (supports "X completions this week").
+CREATE TABLE task_completion_log (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    notes        TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX idx_task_completion_log_task ON task_completion_log(task_id, completed_at DESC);
+
+COMMENT ON TABLE task_completion_log IS 'Per-completion log for recurring tasks. Multiple records per task per day are allowed (e.g., 3 LeetCode problems).';
+COMMENT ON COLUMN task_completion_log.task_id IS 'The recurring task that was completed. CASCADE deletes history when task is deleted.';
+COMMENT ON COLUMN task_completion_log.completed_at IS 'When the task was completed, in server time. Double-complete guard uses Asia/Taipei day boundary.';
+COMMENT ON COLUMN task_completion_log.notes IS 'Optional completion notes (e.g., LeetCode problem name).';
