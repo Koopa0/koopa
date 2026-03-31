@@ -38,8 +38,10 @@ export const appConfig: ApplicationConfig = {
       withViewTransitions({
         skipInitialTransition: true,
         onViewTransitionCreated: ({ transition, from, to }) => {
+          const fromUrl = '/' + from.url.map((s) => s.path).join('/');
+          const toUrl = '/' + to.url.map((s) => s.path).join('/');
           const isAdminNav =
-            from.startsWith('/admin') && to.startsWith('/admin');
+            fromUrl.startsWith('/admin') && toUrl.startsWith('/admin');
           if (isAdminNav) {
             transition.skipTransition();
           }
