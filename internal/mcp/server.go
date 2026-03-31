@@ -32,6 +32,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 	"github.com/Koopa0/koopa0.dev/internal/session"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
+	"github.com/Koopa0/koopa0.dev/internal/tag"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
@@ -53,6 +54,7 @@ type Server struct {
 	feeds           *feed.Store
 	oreilly         *oreilly.Client
 	pipelineTrigger PipelineTrigger
+	tags            *tag.Store                            // optional: tag resolution for learning sessions
 	retrieval       *retrieval.Store                      // optional: spaced retrieval
 	recordToolCall  func(context.Context, ToolCallRecord) // optional telemetry
 	lastTrigger     map[string]time.Time                  // rate limit: pipeline name -> last trigger time
@@ -100,6 +102,11 @@ func WithProjectWriter(w *project.Store) ServerOption {
 			s.projects = w
 		}
 	}
+}
+
+// WithTagStore enables tag resolution for learning session tools.
+func WithTagStore(ts *tag.Store) ServerOption {
+	return func(s *Server) { s.tags = ts }
 }
 
 // WithRetrieval enables spaced retrieval tools (log_retrieval_attempt, retrieval_queue).

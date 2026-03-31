@@ -814,17 +814,18 @@ type ContentDetailInput struct {
 
 // ContentDetailOutput is the output for the content_detail tool.
 type ContentDetailOutput struct {
-	Slug        string   `json:"slug"`
-	Title       string   `json:"title"`
-	Body        string   `json:"body"`
-	Excerpt     string   `json:"excerpt"`
-	Type        string   `json:"type"`
-	Status      string   `json:"status"`
-	Tags        []string `json:"tags"`
-	Project     string   `json:"project,omitempty"`
-	ReadingTime int      `json:"reading_time"`
-	PublishedAt string   `json:"published_at,omitempty"`
-	CreatedAt   string   `json:"created_at"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+	Excerpt     string          `json:"excerpt"`
+	Type        string          `json:"type"`
+	Status      string          `json:"status"`
+	Tags        []string        `json:"tags"`
+	Project     string          `json:"project,omitempty"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	ReadingTime int             `json:"reading_time"`
+	PublishedAt string          `json:"published_at,omitempty"`
+	CreatedAt   string          `json:"created_at"`
 }
 
 func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, input ContentDetailInput) (*mcp.CallToolResult, ContentDetailOutput, error) {
@@ -848,6 +849,7 @@ func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, i
 		Type:        string(c.Type),
 		Status:      string(c.Status),
 		Tags:        c.Tags,
+		Metadata:    c.AIMetadata,
 		ReadingTime: c.ReadingTimeMin,
 		CreatedAt:   c.CreatedAt.Format(time.RFC3339),
 	}

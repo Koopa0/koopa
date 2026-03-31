@@ -477,6 +477,14 @@ func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.T
 	return contents, nil
 }
 
+// AddContentTag inserts a tag association for a content record.
+func (s *Store) AddContentTag(ctx context.Context, contentID, tagID uuid.UUID) error {
+	return s.q.AddContentTag(ctx, db.AddContentTagParams{
+		ContentID: contentID,
+		TagID:     tagID,
+	})
+}
+
 // TagEntry is a lightweight record for learning analytics aggregation.
 type TagEntry struct {
 	ID        uuid.UUID

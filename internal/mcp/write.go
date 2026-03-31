@@ -592,8 +592,7 @@ type AutoCompletedTask struct {
 }
 
 func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest, input *LogLearningSessionInput) (*mcp.CallToolResult, LogLearningSessionOutput, error) {
-	// TODO: resolved tags should be written to content_tags junction table after content creation.
-	_, err := learning.ValidateInput(&learning.SessionInput{
+	validatedTags, err := learning.ValidateInput(&learning.SessionInput{
 		Project:    input.Project,
 		Topic:      input.Topic,
 		Title:      input.Title,
@@ -665,10 +664,25 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, LogLearningSessionOutput{}, fmt.Errorf("creating learning session: %w", err)
 	}
 
+	// Persist tags to content_tags junction table via tag resolution pipeline.
+	if s.tags != nil && len(validatedTags) > 0 {
+		resolved := s.tags.ResolveTags(ctx, validatedTags)
+		for _, r := range resolved {
+			if r.TagID == nil {
+				continue // unmapped tag — skip, admin will review
+			}
+			if addErr := s.contents.AddContentTag(ctx, created.ID, *r.TagID); addErr != nil {
+				s.logger.Warn("log_learning_session: failed to add tag",
+					"content_id", created.ID, "tag", r.RawTag, "error", addErr)
+			}
+		}
+	}
+
 	s.logger.Info("learning session logged",
 		"content_id", created.ID,
 		"topic", input.Topic,
 		"source", input.Source,
+		"tags_count", len(validatedTags),
 	)
 
 	out := LogLearningSessionOutput{
