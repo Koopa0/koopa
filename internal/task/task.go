@@ -49,27 +49,109 @@ func (t *Task) IsRecurring() bool {
 
 // NextDue calculates the next due date based on recurrence settings.
 // Returns nil if the task is not recurring or has no due date.
+// For Month(s), clamps to the last day of the target month to prevent drift
+// (e.g., Jan 31 + 1 month = Feb 28, not Mar 3).
 func (t *Task) NextDue() *time.Time {
+	if !t.IsRecurring() || t.Due == nil {
+		return nil
+	}
+	next := advanceDate(*t.Due, int(*t.RecurInterval), t.RecurUnit)
+	return &next
+}
+
+// NextCycleDateOnOrAfter returns the first recurrence date on or after cutoff.
+// For Day(s)/Week(s), this is calculated mathematically.
+// For Month(s)/Year(s), this loops with clamped month arithmetic.
+// Returns nil if the task is not recurring or has no due date.
+func (t *Task) NextCycleDateOnOrAfter(cutoff time.Time) *time.Time {
 	if !t.IsRecurring() || t.Due == nil {
 		return nil
 	}
 	base := *t.Due
 	interval := int(*t.RecurInterval)
-	var next time.Time
+	cutoffDate := truncateToDate(cutoff)
+	baseDate := truncateToDate(base)
+
+	if !baseDate.Before(cutoffDate) {
+		return &baseDate
+	}
+
 	switch t.RecurUnit {
 	case "Day(s)":
-		next = base.AddDate(0, 0, interval)
+		days := daysBetween(baseDate, cutoffDate)
+		cycles := (days + interval - 1) / interval // ceil division
+		next := baseDate.AddDate(0, 0, cycles*interval)
+		return &next
 	case "Week(s)":
-		next = base.AddDate(0, 0, interval*7)
-	case "Month(s)":
-		next = base.AddDate(0, interval, 0)
-	case "Year(s)":
-		next = base.AddDate(interval, 0, 0)
+		days := daysBetween(baseDate, cutoffDate)
+		stepDays := interval * 7
+		cycles := (days + stepDays - 1) / stepDays
+		next := baseDate.AddDate(0, 0, cycles*stepDays)
+		return &next
 	default:
-		// unknown unit, assume days
-		next = base.AddDate(0, 0, interval)
+		// Month(s), Year(s), or unknown: loop with clamped arithmetic
+		cur := baseDate
+		for cur.Before(cutoffDate) {
+			cur = advanceDate(cur, interval, t.RecurUnit)
+		}
+		return &cur
 	}
-	return &next
+}
+
+// MissedOccurrences returns all occurrence dates between the current due and cutoff (exclusive).
+// Each returned date represents one missed recurrence cycle.
+func (t *Task) MissedOccurrences(cutoff time.Time) []time.Time {
+	if !t.IsRecurring() || t.Due == nil {
+		return nil
+	}
+	cutoffDate := truncateToDate(cutoff)
+	cur := truncateToDate(*t.Due)
+	var missed []time.Time
+	for cur.Before(cutoffDate) {
+		missed = append(missed, cur)
+		cur = advanceDate(cur, int(*t.RecurInterval), t.RecurUnit)
+	}
+	return missed
+}
+
+// advanceDate moves a date forward by interval units, clamping months to avoid drift.
+func advanceDate(base time.Time, interval int, unit string) time.Time {
+	switch unit {
+	case "Day(s)":
+		return base.AddDate(0, 0, interval)
+	case "Week(s)":
+		return base.AddDate(0, 0, interval*7)
+	case "Month(s)":
+		return addMonthsClamped(base, interval)
+	case "Year(s)":
+		return addMonthsClamped(base, interval*12)
+	default:
+		return base.AddDate(0, 0, interval)
+	}
+}
+
+// addMonthsClamped adds months to a date, clamping the day to the last day of
+// the target month. This prevents Jan 31 + 1 month from becoming Mar 3.
+func addMonthsClamped(base time.Time, months int) time.Time {
+	y, m, d := base.Date()
+	targetMonth := time.Month(int(m) + months)
+	// last day of target month: day 0 of the following month
+	lastDay := time.Date(y, targetMonth+1, 0, 0, 0, 0, 0, base.Location()).Day()
+	if d > lastDay {
+		d = lastDay
+	}
+	return time.Date(y, targetMonth, d, 0, 0, 0, 0, base.Location())
+}
+
+// truncateToDate strips the time component, keeping only year/month/day.
+func truncateToDate(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+// daysBetween returns the number of days between a and b (b - a).
+func daysBetween(a, b time.Time) int {
+	return int(b.Sub(a).Hours() / 24)
 }
 
 // PendingTask represents a task pending completion.

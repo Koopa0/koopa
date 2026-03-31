@@ -157,6 +157,193 @@ func TestTask_NextDue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Task.NextDue — month-end clamping
+// ---------------------------------------------------------------------------
+
+func TestTask_NextDue_MonthEndClamping(t *testing.T) {
+	t.Parallel()
+
+	interval1 := int32(1)
+
+	tests := []struct {
+		name     string
+		due      time.Time
+		wantDate time.Time
+	}{
+		{
+			name:     "Jan 31 + 1 month = Feb 28 (non-leap)",
+			due:      time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "Jan 31 + 1 month = Feb 29 (leap year)",
+			due:      time.Date(2028, 1, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2028, 2, 29, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "Mar 31 + 1 month = Apr 30",
+			due:      time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "Feb 28 + 1 month = Mar 28 (not 31)",
+			due:      time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 3, 28, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			task := Task{Due: &tt.due, RecurInterval: &interval1, RecurUnit: "Month(s)"}
+			got := task.NextDue()
+			if got == nil {
+				t.Fatal("NextDue() = nil, want non-nil")
+			}
+			if !got.Equal(tt.wantDate) {
+				t.Errorf("NextDue() = %v, want %v", got.Format(time.DateOnly), tt.wantDate.Format(time.DateOnly))
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task.NextCycleDateOnOrAfter
+// ---------------------------------------------------------------------------
+
+func TestTask_NextCycleDateOnOrAfter(t *testing.T) {
+	t.Parallel()
+
+	interval1 := int32(1)
+	interval7 := int32(7)
+
+	tests := []struct {
+		name     string
+		task     Task
+		cutoff   time.Time
+		wantNil  bool
+		wantDate time.Time
+	}{
+		{
+			name:    "not recurring → nil",
+			task:    Task{Due: timePtr(2026, 1, 1)},
+			cutoff:  time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantNil: true,
+		},
+		{
+			name:     "daily, 3 days overdue → today",
+			task:     Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "weekly, 3 days overdue → next cycle (not today)",
+			task:     Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "Week(s)"},
+			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 4, 4, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "weekly, exactly on cycle → today",
+			task:     Task{Due: timePtr(2026, 3, 24), RecurInterval: &interval1, RecurUnit: "Week(s)"},
+			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "monthly, Jan 31 overdue in March → Apr 28 (clamped to 28 after Feb)",
+			task:     Task{Due: timePtr(2026, 1, 31), RecurInterval: &interval1, RecurUnit: "Month(s)"},
+			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "due is already >= cutoff → returns due",
+			task:     Task{Due: timePtr(2026, 4, 5), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:     "every 7 days, 10 days overdue → 3/21 + 14 = 4/4",
+			task:     Task{Due: timePtr(2026, 3, 21), RecurInterval: &interval7, RecurUnit: "Day(s)"},
+			cutoff:   time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			wantDate: time.Date(2026, 4, 4, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.task.NextCycleDateOnOrAfter(tt.cutoff)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("NextCycleDateOnOrAfter() = %v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("NextCycleDateOnOrAfter() = nil, want non-nil")
+			}
+			if !got.Equal(tt.wantDate) {
+				t.Errorf("NextCycleDateOnOrAfter() = %v, want %v", got.Format(time.DateOnly), tt.wantDate.Format(time.DateOnly))
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task.MissedOccurrences
+// ---------------------------------------------------------------------------
+
+func TestTask_MissedOccurrences(t *testing.T) {
+	t.Parallel()
+
+	interval1 := int32(1)
+
+	tests := []struct {
+		name   string
+		task   Task
+		cutoff time.Time
+		want   []string // YYYY-MM-DD
+	}{
+		{
+			name:   "daily, 3 days overdue → 3 missed",
+			task:   Task{Due: timePtr(2026, 3, 28), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			cutoff: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			want:   []string{"2026-03-28", "2026-03-29", "2026-03-30"},
+		},
+		{
+			name:   "weekly, 10 days overdue → 1 missed",
+			task:   Task{Due: timePtr(2026, 3, 21), RecurInterval: &interval1, RecurUnit: "Week(s)"},
+			cutoff: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			want:   []string{"2026-03-21", "2026-03-28"},
+		},
+		{
+			name:   "not overdue → empty",
+			task:   Task{Due: timePtr(2026, 4, 1), RecurInterval: &interval1, RecurUnit: "Day(s)"},
+			cutoff: time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+			want:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.task.MissedOccurrences(tt.cutoff)
+			var gotStr []string
+			for _, d := range got {
+				gotStr = append(gotStr, d.Format(time.DateOnly))
+			}
+			if diff := cmp.Diff(tt.want, gotStr); diff != "" {
+				t.Errorf("MissedOccurrences() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func timePtr(y int, m time.Month, d int) *time.Time {
+	t := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	return &t
+}
+
+// ---------------------------------------------------------------------------
 // ValidAssignee
 // ---------------------------------------------------------------------------
 
