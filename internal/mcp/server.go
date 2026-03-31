@@ -566,6 +566,19 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 		}, s.getRetrievalQueue)
 	}
 
+	// --- recurring task history tools ---
+	addTool(s, &mcp.Tool{
+		Name:        "get_skip_history",
+		Description: "Get skip history for recurring tasks: how many times missed and on which dates. Filter by task_id, project_id, or both. Default 30 days lookback. Use when reviewing recurring task adherence, '過去一個月 skip 了幾次', 'LeetCode skip trend'.",
+		Annotations: readOnly,
+	}, s.getSkipHistory)
+
+	addTool(s, &mcp.Tool{
+		Name:        "get_completion_history",
+		Description: "Get completion history for recurring tasks from activity_events. Filter by task_id, project_id, or both. Default 30 days lookback. Use when asking '這週 LeetCode 做了幾題', 'monthly completion rate', '英文學習完成幾天'.",
+		Annotations: readOnly,
+	}, s.getCompletionHistory)
+
 	return s
 }
 
