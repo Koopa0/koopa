@@ -99,6 +99,11 @@ var DifficultyTags = map[string]bool{
 	"easy": true, "medium": true, "hard": true,
 }
 
+// stagePriority orders patterns by urgency for sorting: struggling first, solid last.
+var stagePriority = map[string]int{
+	"struggling": 0, "developing": 1, "unexplored": 2, "solid": 3,
+}
+
 // leetcodeMetadata is the parsed ai_metadata structure for LeetCode TILs.
 type leetcodeMetadata struct {
 	ProblemNumber         int                     `json:"problem_number"`
@@ -127,7 +132,7 @@ type entryData struct {
 	meta      leetcodeMetadata
 }
 
-// MasteryMap computes per-pattern mastery assessment from TIL entries and FSRS data.
+// groupByPattern groups entries into per-topic patternData and tracks attempted problem numbers.
 func groupByPattern(entries []content.RichTagEntry, patterns []string) (byPattern map[string]*patternData, attempted map[int]bool) {
 	patternFilter := make(map[string]bool, len(patterns))
 	for _, p := range patterns {
@@ -198,7 +203,7 @@ func MasteryMap(entries []content.RichTagEntry, regressions []retrieval.Regressi
 		result = append(result, pm)
 	}
 
-	stagePriority := map[string]int{"struggling": 0, "developing": 1, "unexplored": 2, "solid": 3}
+	// stagePriority orders patterns by urgency: struggling first, solid last.
 	slices.SortFunc(result, func(a, b PatternMastery) int {
 		pa, pb := stagePriority[a.Stage], stagePriority[b.Stage]
 		if pa != pb {
