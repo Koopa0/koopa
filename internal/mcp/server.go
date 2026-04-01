@@ -771,7 +771,11 @@ func (s *Server) createContentWithRetry(ctx context.Context, params *content.Cre
 // a Cowork serialization bug (anthropics/claude-code#26027).
 func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error)) {
 	if tool.InputSchema == nil {
-		schema, err := jsonschema.ForType(reflect.TypeFor[I](), &jsonschema.ForOptions{
+		rt := reflect.TypeFor[I]()
+		if rt.Kind() == reflect.Pointer {
+			rt = rt.Elem()
+		}
+		schema, err := jsonschema.ForType(rt, &jsonschema.ForOptions{
 			TypeSchemas: flexIntTypeSchemas,
 		})
 		if err == nil {
