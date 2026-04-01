@@ -5,11 +5,10 @@ import {
   signal,
   computed,
   OnInit,
-  DestroyRef,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { rxResource } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
   FileText,
@@ -20,11 +19,14 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  X,
+  ExternalLink,
 } from 'lucide-angular';
 import { ContentService } from '../../core/services/content.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type {
   ApiContent,
+  ApiListResponse,
   ContentType,
 } from '../../core/models';
 
@@ -33,6 +35,13 @@ const ITEMS_PER_PAGE = 20;
 interface FilterOption<T> {
   label: string;
   value: T | null;
+}
+
+interface ContentRequest {
+  page: number;
+  perPage: number;
+  type?: ContentType;
+  is_public?: boolean;
 }
 
 @Component({
@@ -44,17 +53,27 @@ interface FilterOption<T> {
 })
 export class AdminContentsComponent implements OnInit {
   private readonly contentService = inject(ContentService);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly notificationService = inject(NotificationService);
   private readonly route = inject(ActivatedRoute);
 
-  protected readonly items = signal<ApiContent[]>([]);
-  protected readonly totalItems = signal(0);
   protected readonly currentPage = signal(1);
-  protected readonly isLoading = signal(false);
   protected readonly visibilityFilter = signal<boolean | null>(null);
   protected readonly typeFilter = signal<ContentType | null>(null);
+  protected readonly selectedItem = signal<ApiContent | null>(null);
 
+  private readonly contentsResource = rxResource<ApiListResponse<ApiContent>, ContentRequest>({
+    params: () => ({
+      page: this.currentPage(),
+      perPage: ITEMS_PER_PAGE,
+      type: this.typeFilter() ?? undefined,
+      is_public: this.visibilityFilter() ?? undefined,
+    }),
+    stream: ({ params }) => this.contentService.adminList(params),
+  });
+
+  protected readonly items = computed(() => this.contentsResource.value()?.data ?? []);
+  protected readonly totalItems = computed(() => this.contentsResource.value()?.meta.total ?? 0);
+  protected readonly isLoading = computed(() => this.contentsResource.isLoading());
   protected readonly totalPages = computed(() =>
     Math.ceil(this.totalItems() / ITEMS_PER_PAGE),
   );
@@ -68,6 +87,8 @@ export class AdminContentsComponent implements OnInit {
   protected readonly ChevronRightIcon = ChevronRight;
   protected readonly EyeIcon = Eye;
   protected readonly EyeOffIcon = EyeOff;
+  protected readonly XIcon = X;
+  protected readonly ExternalLinkIcon = ExternalLink;
 
   protected readonly visibilityOptions: FilterOption<boolean>[] = [
     { label: 'All', value: null },
@@ -90,65 +111,52 @@ export class AdminContentsComponent implements OnInit {
     if (typeParam && this.typeOptions.some((o) => o.value === typeParam)) {
       this.typeFilter.set(typeParam);
     }
-    this.loadItems();
   }
 
-  protected loadItems(): void {
-    this.isLoading.set(true);
-
-    this.contentService
-      .adminList({
-        page: this.currentPage(),
-        perPage: ITEMS_PER_PAGE,
-        type: this.typeFilter() ?? undefined,
-        is_public: this.visibilityFilter() ?? undefined,
-      })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (response) => {
-          this.items.set(response.data);
-          this.totalItems.set(response.meta.total);
-          this.isLoading.set(false);
-        },
-        error: () => {
-          this.notificationService.error('無法載入內容列表');
-          this.isLoading.set(false);
-        },
-      });
+  protected reload(): void {
+    this.contentsResource.reload();
   }
 
   protected onVisibilityFilter(value: boolean | null): void {
     this.visibilityFilter.set(value);
     this.currentPage.set(1);
-    this.loadItems();
+    this.selectedItem.set(null);
   }
 
   protected onTypeFilter(value: ContentType | null): void {
     this.typeFilter.set(value);
     this.currentPage.set(1);
-    this.loadItems();
+    this.selectedItem.set(null);
   }
 
   protected goToPage(page: number): void {
     this.currentPage.set(page);
-    this.loadItems();
+    this.selectedItem.set(null);
   }
 
-  protected toggleVisibility(item: ApiContent): void {
-    const newIsPublic: boolean =
-      !item.is_public;
+  protected selectItem(item: ApiContent): void {
+    this.selectedItem.update((prev) => (prev?.id === item.id ? null : item));
+  }
+
+  protected closeDetail(): void {
+    this.selectedItem.set(null);
+  }
+
+  protected toggleVisibility(item: ApiContent, event: Event): void {
+    event.stopPropagation();
+    const newIsPublic = !item.is_public;
 
     this.contentService
       .setVisibility(item.id, newIsPublic)
-      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (updated) => {
-          this.items.update((list) =>
-            list.map((i) =>
-              i.id === item.id ? { ...i, is_public: updated.is_public } : i,
-            ),
+          this.contentsResource.reload();
+          if (this.selectedItem()?.id === item.id) {
+            this.selectedItem.set({ ...item, is_public: updated.is_public });
+          }
+          this.notificationService.success(
+            `已切換為 ${updated.is_public ? 'public' : 'private'}`,
           );
-          this.notificationService.success(`已切換為 ${updated.is_public ? "public" : "private"}`);
         },
         error: () => this.notificationService.error('切換 visibility 失敗'),
       });

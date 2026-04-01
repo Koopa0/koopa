@@ -12,7 +12,7 @@
       <button
         type="button"
         class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
-        (click)="loadItems()"
+        (click)="reload()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="16" />
         重新整理
@@ -74,7 +74,13 @@
           </thead>
           <tbody class="divide-y divide-zinc-800">
             @for (item of items(); track item.id) {
-              <tr class="text-zinc-300 hover:bg-zinc-900/30">
+              <tr
+                class="cursor-pointer text-zinc-300 transition-colors"
+                [class]="selectedItem()?.id === item.id
+                  ? 'bg-zinc-800/60'
+                  : 'hover:bg-zinc-900/30'"
+                (click)="selectItem(item)"
+              >
                 <td class="max-w-xs truncate px-4 py-3 font-medium text-zinc-100">
                   {{ item.title }}
                   @if (item.tags.length > 0) {
@@ -112,7 +118,7 @@
                     [class]="item.is_public
                       ? 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'
                       : 'bg-red-900/30 text-red-400 hover:bg-red-900/50'"
-                    (click)="toggleVisibility(item)"
+                    (click)="toggleVisibility(item, $event)"
                   >
                     <lucide-icon
                       [img]="item.is_public ? EyeIcon : EyeOffIcon"
@@ -128,6 +134,7 @@
                   <a
                     [routerLink]="['/admin/editor', item.id]"
                     class="text-xs text-zinc-500 hover:text-zinc-300"
+                    (click)="$event.stopPropagation()"
                   >
                     編輯
                   </a>
@@ -137,6 +144,94 @@
           </tbody>
         </table>
       </div>
+
+      <!-- Detail Panel -->
+      @if (selectedItem(); as selected) {
+        <div class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/50 p-6">
+          <div class="mb-4 flex items-start justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-zinc-100">{{ selected.title }}</h2>
+              <p class="mt-1 text-xs text-zinc-500">{{ selected.slug }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <a
+                [routerLink]="['/admin/editor', selected.id]"
+                class="inline-flex items-center gap-1 rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+              >
+                <lucide-icon [img]="ExternalLinkIcon" [size]="12" />
+                編輯
+              </a>
+              <button
+                type="button"
+                class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                (click)="closeDetail()"
+              >
+                <lucide-icon [img]="XIcon" [size]="16" />
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div>
+              <dt class="text-xs text-zinc-500">Type</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.type }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-zinc-500">Status</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.status }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-zinc-500">Visibility</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.is_public ? 'Public' : 'Private' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-zinc-500">Review Level</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.review_level }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-zinc-500">Created</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.created_at | date: 'yyyy-MM-dd HH:mm' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-zinc-500">Updated</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.updated_at | date: 'yyyy-MM-dd HH:mm' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-zinc-500">Published</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.published_at ? (selected.published_at | date: 'yyyy-MM-dd HH:mm') : '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-zinc-500">Reading Time</dt>
+              <dd class="mt-1 text-zinc-300">{{ selected.reading_time_min }} min</dd>
+            </div>
+          </div>
+
+          @if (selected.source) {
+            <div class="mt-4">
+              <dt class="text-xs text-zinc-500">Source</dt>
+              <dd class="mt-1 text-xs text-zinc-400">{{ selected.source }} ({{ selected.source_type }})</dd>
+            </div>
+          }
+
+          @if (selected.tags.length > 0) {
+            <div class="mt-4">
+              <dt class="text-xs text-zinc-500">Tags</dt>
+              <dd class="mt-1 flex flex-wrap gap-1">
+                @for (tag of selected.tags; track tag) {
+                  <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">{{ tag }}</span>
+                }
+              </dd>
+            </div>
+          }
+
+          @if (selected.excerpt) {
+            <div class="mt-4">
+              <dt class="text-xs text-zinc-500">Excerpt</dt>
+              <dd class="mt-1 text-sm leading-relaxed text-zinc-400">{{ selected.excerpt }}</dd>
+            </div>
+          }
+        </div>
+      }
 
       @if (totalPages() > 1) {
         <div class="mt-4 flex items-center justify-between">
