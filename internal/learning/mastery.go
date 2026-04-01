@@ -13,8 +13,9 @@ import (
 
 // MasteryMapResult is the response for the mastery_map tool.
 type MasteryMapResult struct {
-	Patterns   []PatternMastery `json:"patterns"`
-	PeriodDays int              `json:"period_days"`
+	Patterns      []PatternMastery `json:"patterns"`
+	KnownConcepts []string         `json:"known_concepts"` // deduplicated concept strings across all entries, for naming reuse
+	PeriodDays    int              `json:"period_days"`
 }
 
 // PatternMastery is the mastery assessment for a single algorithmic pattern.
@@ -213,8 +214,9 @@ func MasteryMap(entries []content.RichTagEntry, regressions []retrieval.Regressi
 	})
 
 	return MasteryMapResult{
-		Patterns:   result,
-		PeriodDays: days,
+		Patterns:      result,
+		KnownConcepts: collectKnownConcepts(entries),
+		PeriodDays:    days,
 	}
 }
 
@@ -503,6 +505,27 @@ func computeStage(signals StageSignals, weaknessTags []WeaknessTagSummary) (stag
 		}
 		return "struggling", reason
 	}
+}
+
+// collectKnownConcepts extracts all unique concept strings from entries.
+// Coach uses this list to reuse existing concept names instead of creating duplicates.
+func collectKnownConcepts(entries []content.RichTagEntry) []string {
+	seen := make(map[string]bool)
+	for i := range entries {
+		ed := parseEntryData(&entries[i])
+		for _, cb := range ed.meta.ConceptBreakdown {
+			key := strings.ToLower(strings.TrimSpace(cb.Concept))
+			if key != "" {
+				seen[key] = true
+			}
+		}
+	}
+	concepts := make([]string, 0, len(seen))
+	for c := range seen {
+		concepts = append(concepts, c)
+	}
+	slices.Sort(concepts)
+	return concepts
 }
 
 func parseEntryData(e *content.RichTagEntry) entryData {
