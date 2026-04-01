@@ -766,9 +766,9 @@ func (s *Server) autoCompleteRecurringTask(ctx context.Context, projectInput str
 // Metadata uses map[string]any so the MCP JSON Schema renders as an object
 // (json.RawMessage would serialize as array[integer] — a bare byte slice).
 type SaveSessionNoteInput struct {
-	NoteType string         `json:"note_type" jsonschema_description:"plan, reflection, context, metrics, or insight (required)"`
+	NoteType string         `json:"note_type" jsonschema_description:"plan, reflection, context, metrics, insight, directive, or report (required)"`
 	Content  string         `json:"content" jsonschema_description:"note content text (required)"`
-	Source   string         `json:"source" jsonschema_description:"claude, claude-code, or manual (required)"`
+	Source   string         `json:"source" jsonschema_description:"claude, claude-code, manual, or department identifier: hq, learning-studio, content-studio, research-lab (required)"`
 	Date     string         `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
 	Metadata map[string]any `json:"metadata,omitempty" jsonschema_description:"optional JSON metadata object (e.g. {tasks_planned: 3, tasks_completed: 1, completion_rate: 33})"`
 }
@@ -795,17 +795,17 @@ func validateSessionNoteInput(input SaveSessionNoteInput) error {
 	}
 
 	switch input.NoteType {
-	case "plan", "reflection", "context", "metrics", "insight":
+	case "plan", "reflection", "context", "metrics", "insight", "directive", "report":
 		// valid
 	default:
-		return fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
+		return fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, insight, directive, or report)", input.NoteType)
 	}
 
 	switch input.Source {
-	case "claude", "claude-code", "manual":
+	case "claude", "claude-code", "manual", "hq", "learning-studio", "content-studio", "research-lab":
 		// valid
 	default:
-		return fmt.Errorf("invalid source %q (must be claude, claude-code, or manual)", input.Source)
+		return fmt.Errorf("invalid source %q (must be claude, claude-code, manual, hq, learning-studio, content-studio, or research-lab)", input.Source)
 	}
 
 	if err := validateSessionNoteMetadata(input.NoteType, input.Metadata); err != nil {
@@ -1235,9 +1235,9 @@ func buildNotionTaskProps(input *UpdateTaskInput) map[string]any {
 
 // SkipHistoryInput is the input for the skip_history tool.
 type SkipHistoryInput struct {
-	TaskID    string `json:"task_id,omitempty" jsonschema_description:"filter by task UUID"`
-	ProjectID string `json:"project_id,omitempty" jsonschema_description:"filter by project UUID"`
-	Days      int    `json:"days,omitempty" jsonschema_description:"lookback days (default 30)"`
+	TaskID    string  `json:"task_id,omitempty" jsonschema_description:"filter by task UUID"`
+	ProjectID string  `json:"project_id,omitempty" jsonschema_description:"filter by project UUID"`
+	Days      FlexInt `json:"days,omitempty" jsonschema_description:"lookback days (default 30)"`
 }
 
 // SkipHistoryOutput is the output of the skip_history tool.
@@ -1255,7 +1255,7 @@ type skipHistoryRow struct {
 }
 
 func (s *Server) getSkipHistory(ctx context.Context, _ *mcp.CallToolRequest, input SkipHistoryInput) (*mcp.CallToolResult, SkipHistoryOutput, error) {
-	days := input.Days
+	days := int(input.Days)
 	if days <= 0 {
 		days = 30
 	}
@@ -1313,9 +1313,9 @@ func (s *Server) getSkipHistory(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // CompletionHistoryInput is the input for the completion_history tool.
 type CompletionHistoryInput struct {
-	TaskID    string `json:"task_id,omitempty" jsonschema_description:"filter by task UUID"`
-	ProjectID string `json:"project_id,omitempty" jsonschema_description:"filter by project UUID"`
-	Days      int    `json:"days,omitempty" jsonschema_description:"lookback days (default 30)"`
+	TaskID    string  `json:"task_id,omitempty" jsonschema_description:"filter by task UUID"`
+	ProjectID string  `json:"project_id,omitempty" jsonschema_description:"filter by project UUID"`
+	Days      FlexInt `json:"days,omitempty" jsonschema_description:"lookback days (default 30)"`
 }
 
 // CompletionHistoryOutput is the output of the completion_history tool.
@@ -1331,7 +1331,7 @@ type completionHistoryRow struct {
 }
 
 func (s *Server) getCompletionHistory(ctx context.Context, _ *mcp.CallToolRequest, input CompletionHistoryInput) (*mcp.CallToolResult, CompletionHistoryOutput, error) {
-	days := input.Days
+	days := int(input.Days)
 	if days <= 0 {
 		days = 30
 	}

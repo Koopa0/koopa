@@ -15,7 +15,7 @@ type SearchOReillyInput struct {
 	Formats    []string `json:"formats,omitempty" jsonschema_description:"content formats: book, video, article, course, interactive, audiobook"`
 	Publishers []string `json:"publishers,omitempty" jsonschema_description:"filter by publisher (e.g. 'O'Reilly Media, Inc.')"`
 	Authors    []string `json:"authors,omitempty" jsonschema_description:"filter by author name"`
-	Limit      int      `json:"limit,omitempty" jsonschema_description:"max results (default 10, max 50)"`
+	Limit      FlexInt  `json:"limit,omitempty" jsonschema_description:"max results (default 10, max 50)"`
 }
 
 // SearchOReillyOutput is the output of the search_oreilly_content tool.
@@ -48,7 +48,7 @@ func (s *Server) searchOReillyContent(ctx context.Context, _ *mcp.CallToolReques
 		return nil, SearchOReillyOutput{}, fmt.Errorf("query too long (max %d characters)", maxQueryLen)
 	}
 
-	limit := clamp(input.Limit, 1, 50, 10)
+	limit := clamp(int(input.Limit), 1, 50, 10)
 
 	result, err := s.oreilly.Search(ctx, &oreilly.SearchParams{
 		Query:      input.Query,

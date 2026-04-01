@@ -15,7 +15,7 @@ import (
 
 // WeeklySummaryInput is the input for the weekly_summary tool.
 type WeeklySummaryInput struct {
-	WeeksBack       int  `json:"weeks_back,omitempty" jsonschema_description:"0 = current week, 1 = last week. Default 0, max 4."`
+	WeeksBack       FlexInt `json:"weeks_back,omitempty" jsonschema_description:"0 = current week, 1 = last week. Default 0, max 4."`
 	ComparePrevious bool `json:"compare_previous,omitempty" jsonschema_description:"include previous week data and delta comparison"`
 }
 
@@ -88,7 +88,7 @@ type weeklyGoal struct {
 }
 
 func (s *Server) getWeeklySummary(ctx context.Context, _ *mcp.CallToolRequest, input WeeklySummaryInput) (*mcp.CallToolResult, WeeklySummaryOutput, error) {
-	weeksBack := clamp(input.WeeksBack, 0, 4, 0)
+	weeksBack := clamp(int(input.WeeksBack), 0, 4, 0)
 
 	now := time.Now().In(s.loc)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)

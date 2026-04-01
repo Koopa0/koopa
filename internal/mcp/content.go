@@ -220,10 +220,10 @@ func (s *Server) publishContent(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // ContentPipelineInput is the input for the list_content_queue tool.
 type ContentPipelineInput struct {
-	View        string `json:"view,omitempty" jsonschema_description:"queue|calendar|recent (default: queue)"`
-	Status      string `json:"status,omitempty" jsonschema_description:"draft|review|published|all"`
-	ContentType string `json:"content_type,omitempty"`
-	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 20)"`
+	View        string  `json:"view,omitempty" jsonschema_description:"queue|calendar|recent (default: queue)"`
+	Status      string  `json:"status,omitempty" jsonschema_description:"draft|review|published|all"`
+	ContentType string  `json:"content_type,omitempty"`
+	Limit       FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20)"`
 }
 
 // ContentPipelineOutput is the output for the list_content_queue tool.
@@ -278,7 +278,7 @@ func (s *Server) getContentPipeline(ctx context.Context, _ *mcp.CallToolRequest,
 	if view == "" {
 		view = "queue"
 	}
-	limit := clamp(input.Limit, 1, 100, 20)
+	limit := clamp(int(input.Limit), 1, 100, 20)
 
 	// Fetch a generous page from AdminContents and filter in memory.
 	var typeFilter *content.Type
@@ -383,9 +383,9 @@ func filterRecentView(all []content.Content) []content.Content {
 
 // SynthesizeTopicInput is the input for the synthesize_topic tool.
 type SynthesizeTopicInput struct {
-	Query              string `json:"query" jsonschema_description:"topic to synthesize (required)"`
-	MaxSources         int    `json:"max_sources,omitempty" jsonschema_description:"max source items to use (default 15, max 30)"`
-	IncludeGapAnalysis *bool  `json:"include_gap_analysis,omitempty" jsonschema_description:"include sub-topic coverage gaps (default true)"`
+	Query              string  `json:"query" jsonschema_description:"topic to synthesize (required)"`
+	MaxSources         FlexInt `json:"max_sources,omitempty" jsonschema_description:"max source items to use (default 15, max 30)"`
+	IncludeGapAnalysis *bool   `json:"include_gap_analysis,omitempty" jsonschema_description:"include sub-topic coverage gaps (default true)"`
 }
 
 // SynthesizeTopicOutput is the output for the synthesize_topic tool.
@@ -561,12 +561,12 @@ func (s *Server) synthesizeTopic(ctx context.Context, _ *mcp.CallToolRequest, in
 	if input.Query == "" {
 		return nil, SynthesizeTopicOutput{}, fmt.Errorf("query is required")
 	}
-	maxSources := clamp(input.MaxSources, 5, 30, 15)
+	maxSources := clamp(int(input.MaxSources), 5, 30, 15)
 
 	// Step 1: search and broaden
 	_, searchOut, err := s.searchKnowledge(ctx, nil, &SearchKnowledgeInput{
 		Query: input.Query,
-		Limit: maxSources,
+		Limit: FlexInt(maxSources),
 	})
 	if err != nil {
 		return nil, SynthesizeTopicOutput{}, fmt.Errorf("searching knowledge: %w", err)

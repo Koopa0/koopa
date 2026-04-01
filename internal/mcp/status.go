@@ -15,7 +15,7 @@ type SystemStatusInput struct {
 	Scope    string `json:"scope,omitempty" jsonschema_description:"summary|pipelines|flows (default: summary)"`
 	FlowName string `json:"flow_name,omitempty" jsonschema_description:"filter by flow name (only for scope=flows)"`
 	Status   string `json:"status,omitempty" jsonschema_description:"completed|failed|running (only for scope=flows)"`
-	Hours    int    `json:"hours,omitempty" jsonschema_description:"lookback hours (default: 24, max: 168)"`
+	Hours    FlexInt `json:"hours,omitempty" jsonschema_description:"lookback hours (default: 24, max: 168)"`
 }
 
 // SystemStatusOutput is the output for the system_status tool.
@@ -66,7 +66,7 @@ func (s *Server) getSystemStatus(ctx context.Context, _ *mcp.CallToolRequest, in
 		scope = "summary"
 	}
 
-	hours := clamp(input.Hours, 1, 168, 24)
+	hours := clamp(int(input.Hours), 1, 168, 24)
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
 
 	out := SystemStatusOutput{Scope: scope, Hours: hours}

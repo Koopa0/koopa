@@ -17,7 +17,7 @@ import (
 type ActiveInsightsInput struct {
 	Status  string `json:"status,omitempty" jsonschema_description:"unverified, verified, invalidated, or all (default unverified)"`
 	Project string `json:"project,omitempty" jsonschema_description:"filter by project slug"`
-	Limit   int    `json:"limit,omitempty" jsonschema_description:"max insights to return (default 10)"`
+	Limit   FlexInt `json:"limit,omitempty" jsonschema_description:"max insights to return (default 10)"`
 }
 
 // ActiveInsightsOutput is the output of the get_active_insights tool.
@@ -62,7 +62,7 @@ func (s *Server) activeInsights(ctx context.Context, _ *mcp.CallToolRequest, inp
 	if status == "" {
 		status = "unverified"
 	}
-	limit := clamp(input.Limit, 1, 100, 10)
+	limit := clamp(int(input.Limit), 1, 100, 10)
 
 	var statusFilter *string
 	if status != "all" {

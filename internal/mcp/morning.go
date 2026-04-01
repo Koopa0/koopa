@@ -16,8 +16,8 @@ import (
 
 // MorningContextInput is the input for the morning_context tool.
 type MorningContextInput struct {
-	ActivityDays int      `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
-	BuildLogDays int      `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
+	ActivityDays FlexInt  `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
+	BuildLogDays FlexInt  `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
 	Sections     []string `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions, pipeline_health, rss_highlights, agent_tasks, content_pipeline"`
 }
 
@@ -204,8 +204,8 @@ type goalBrief struct {
 }
 
 func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, input MorningContextInput) (*mcp.CallToolResult, MorningContextOutput, error) {
-	activityDays := clamp(input.ActivityDays, 1, 14, 3)
-	buildLogDays := clamp(input.BuildLogDays, 1, 30, 7)
+	activityDays := clamp(int(input.ActivityDays), 1, 14, 3)
+	buildLogDays := clamp(int(input.BuildLogDays), 1, 30, 7)
 
 	now := time.Now().In(s.loc)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)

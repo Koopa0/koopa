@@ -4,17 +4,17 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // GoalProgressInput is the input for the goal_progress tool.
 type GoalProgressInput struct {
-	Days         int    `json:"days,omitempty" jsonschema_description:"lookback period in days for task counting. Default 30, max 90."`
-	Area         string `json:"area,omitempty" jsonschema_description:"filter goals by area"`
-	Status       string `json:"status,omitempty" jsonschema_description:"filter goals by status (not-started, in-progress, done, abandoned)"`
-	IncludeDrift bool   `json:"include_drift,omitempty" jsonschema_description:"include goal-vs-activity drift analysis showing per-area alignment percentages"`
+	Days         FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days for task counting. Default 30, max 90."`
+	Area         string  `json:"area,omitempty" jsonschema_description:"filter goals by area"`
+	Status       string  `json:"status,omitempty" jsonschema_description:"filter goals by status (not-started, in-progress, done, abandoned)"`
+	IncludeDrift bool    `json:"include_drift,omitempty" jsonschema_description:"include goal-vs-activity drift analysis showing per-area alignment percentages"`
 }
 
 // GoalProgressOutput shows progress toward each active goal.
@@ -52,7 +52,7 @@ type goalProgressDetail struct {
 }
 
 func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, input GoalProgressInput) (*mcp.CallToolResult, GoalProgressOutput, error) {
-	days := clamp(input.Days, 7, 90, 30)
+	days := clamp(int(input.Days), 7, 90, 30)
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	since := today.AddDate(0, 0, -days)
@@ -79,7 +79,7 @@ func (s *Server) getGoalProgress(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	out := GoalProgressOutput{Goals: result}
 	if input.IncludeDrift {
-		s.attachDriftAnalysis(ctx, &out, input.Days)
+		s.attachDriftAnalysis(ctx, &out, int(input.Days))
 	}
 
 	return nil, out, nil

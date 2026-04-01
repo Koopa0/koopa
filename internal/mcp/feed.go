@@ -264,7 +264,7 @@ func parseFeedID(raw string) (uuid.UUID, error) {
 // CollectionStatsInput is the input for the collection_stats tool.
 type CollectionStatsInput struct {
 	FeedID string `json:"feed_id,omitempty" jsonschema_description:"specific feed UUID (omit for global stats)"`
-	Days   int    `json:"days,omitempty" jsonschema_description:"lookback period in days (default: 30, max: 90)"`
+	Days   FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default: 30, max: 90)"`
 }
 
 // CollectionStatsOutput is the output for the collection_stats tool.
@@ -291,7 +291,7 @@ type globalCollectionStat struct {
 }
 
 func (s *Server) getCollectionStats(ctx context.Context, _ *mcp.CallToolRequest, input CollectionStatsInput) (*mcp.CallToolResult, CollectionStatsOutput, error) {
-	days := clamp(input.Days, 1, 90, 30)
+	days := clamp(int(input.Days), 1, 90, 30)
 
 	var feedID *uuid.UUID
 	if input.FeedID != "" {

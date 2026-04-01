@@ -22,14 +22,14 @@ import (
 
 // SearchNotesInput is the input for the search_notes tool.
 type SearchNotesInput struct {
-	Query   string `json:"query,omitempty" jsonschema_description:"free-text search query"`
-	Type    string `json:"type,omitempty" jsonschema_description:"filter by note type (til|article|note|build-log|bookmark|essay|digest)"`
-	Source  string `json:"source,omitempty" jsonschema_description:"filter by source (leetcode|book|course|discussion|practice|video)"`
-	Context string `json:"context,omitempty" jsonschema_description:"filter by context (e.g. project name)"`
-	Book    string `json:"book,omitempty" jsonschema_description:"filter by book name"`
-	After   string `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD)"`
-	Before  string `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD)"`
-	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 50)"`
+	Query   string  `json:"query,omitempty" jsonschema_description:"free-text search query"`
+	Type    string  `json:"type,omitempty" jsonschema_description:"filter by note type (til|article|note|build-log|bookmark|essay|digest)"`
+	Source  string  `json:"source,omitempty" jsonschema_description:"filter by source (leetcode|book|course|discussion|practice|video)"`
+	Context string  `json:"context,omitempty" jsonschema_description:"filter by context (e.g. project name)"`
+	Book    string  `json:"book,omitempty" jsonschema_description:"filter by book name"`
+	After   string  `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD)"`
+	Before  string  `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD)"`
+	Limit   FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 50)"`
 }
 
 // SearchNotesOutput is the output for the search_notes tool.
@@ -190,7 +190,7 @@ func (s *Server) fetchRelatedGoals(ctx context.Context, goalID *uuid.UUID) []goa
 
 // RecentActivityInput is the input for the recent_activity tool.
 type RecentActivityInput struct {
-	Days    int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
+	Days    FlexInt `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
 	Source  string `json:"source,omitempty" jsonschema_description:"filter by source (e.g. github obsidian notion)"`
 	Project string `json:"project,omitempty" jsonschema_description:"filter by project name"`
 }
@@ -203,7 +203,7 @@ type RecentActivityOutput struct {
 }
 
 func (s *Server) getRecentActivity(ctx context.Context, _ *mcp.CallToolRequest, input RecentActivityInput) (*mcp.CallToolResult, RecentActivityOutput, error) {
-	days := clamp(input.Days, 1, 30, 7)
+	days := clamp(int(input.Days), 1, 30, 7)
 
 	now := time.Now()
 	start := now.AddDate(0, 0, -days)
@@ -237,7 +237,7 @@ func (s *Server) getRecentActivity(ctx context.Context, _ *mcp.CallToolRequest, 
 // DecisionLogInput is the input for the decision_log tool.
 type DecisionLogInput struct {
 	Project string `json:"project,omitempty" jsonschema_description:"filter by project context"`
-	Limit   int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
+	Limit   FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
 // DecisionLogOutput is the output for the decision_log tool.
@@ -247,7 +247,7 @@ type DecisionLogOutput struct {
 }
 
 func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, input DecisionLogInput) (*mcp.CallToolResult, DecisionLogOutput, error) {
-	limit := clamp(input.Limit, 1, 50, 20)
+	limit := clamp(int(input.Limit), 1, 50, 20)
 
 	var filterCtx *string
 	if input.Project != "" {
@@ -276,8 +276,8 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 // RSSHighlightsInput is the input for the rss_highlights tool.
 type RSSHighlightsInput struct {
-	Days   int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 365)"`
-	Limit  int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
+	Days   FlexInt `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 365)"`
+	Limit  FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 	SortBy string `json:"sort_by,omitempty" jsonschema_description:"sort order: relevance (default) or recency"`
 }
 
@@ -297,8 +297,8 @@ type rssItem struct {
 }
 
 func (s *Server) getRSSHighlights(ctx context.Context, _ *mcp.CallToolRequest, input RSSHighlightsInput) (*mcp.CallToolResult, RSSHighlightsOutput, error) {
-	days := clamp(input.Days, 1, 365, 7)
-	limit := clamp(input.Limit, 1, 100, 20)
+	days := clamp(int(input.Days), 1, 365, 7)
+	limit := clamp(int(input.Limit), 1, 100, 20)
 
 	var data []entry.Item
 	var err error
@@ -390,7 +390,7 @@ type SearchTasksInput struct {
 	Assignee        string `json:"assignee,omitempty" jsonschema_description:"human|claude-code|cowork|all (default: all)"`
 	CompletedAfter  string `json:"completed_after,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or after this date)"`
 	CompletedBefore string `json:"completed_before,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or before this date)"`
-	Limit           int    `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
+	Limit           FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 }
 
 // SearchTasksOutput is the output for the search_tasks tool.
@@ -418,7 +418,7 @@ type searchTaskResult struct {
 }
 
 func (s *Server) searchTasks(ctx context.Context, _ *mcp.CallToolRequest, input *SearchTasksInput) (*mcp.CallToolResult, SearchTasksOutput, error) {
-	limit := clamp(input.Limit, 1, 100, 20)
+	limit := clamp(int(input.Limit), 1, 100, 20)
 	filters := s.parseTaskSearchFilters(ctx, input)
 
 	tasks, err := s.tasks.SearchTasks(ctx, filters.query, filters.projectSlug, filters.status, filters.assignee, filters.completedAfter, filters.completedBefore, int32(limit)) // #nosec G115 -- limit is clamped 1-100
@@ -524,7 +524,7 @@ type SearchKnowledgeInput struct {
 	Source      string `json:"source,omitempty" jsonschema_description:"filter Obsidian notes by source (leetcode|book|course|discussion|practice|video). Only applies when searching notes."`
 	Context     string `json:"context,omitempty" jsonschema_description:"filter Obsidian notes by context/project name in frontmatter. Only applies when searching notes."`
 	Book        string `json:"book,omitempty" jsonschema_description:"filter Obsidian notes by book title in frontmatter. Only applies when searching notes."`
-	Limit       int    `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
+	Limit       FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
 }
 
 // SearchKnowledgeOutput is the output for the search_knowledge tool.
@@ -559,7 +559,7 @@ type knowledgeFilters struct {
 // parseKnowledgeFilters resolves project, date, type, and note filters from raw input.
 func (s *Server) parseKnowledgeFilters(ctx context.Context, input *SearchKnowledgeInput) knowledgeFilters {
 	f := knowledgeFilters{
-		limit: clamp(input.Limit, 1, 30, 10),
+		limit: clamp(int(input.Limit), 1, 30, 10),
 	}
 
 	if input.Project != "" {
@@ -875,7 +875,7 @@ func (s *Server) getContentDetail(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // ListProjectsInput is the input for the list_projects tool.
 type ListProjectsInput struct {
-	Limit int `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
+	Limit FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
 // ListProjectsOutput is the output for the list_projects tool.
@@ -885,7 +885,7 @@ type ListProjectsOutput struct {
 }
 
 func (s *Server) listProjects(ctx context.Context, _ *mcp.CallToolRequest, input ListProjectsInput) (*mcp.CallToolResult, ListProjectsOutput, error) {
-	limit := clamp(input.Limit, 1, 50, 20)
+	limit := clamp(int(input.Limit), 1, 50, 20)
 
 	projects, err := s.projects.ActiveProjects(ctx)
 	if err != nil {
@@ -966,7 +966,7 @@ type SessionNotesInput struct {
 	Date     string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
 	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight, directive, report"`
 	Source   string `json:"source,omitempty" jsonschema_description:"filter by source: claude, claude-code, manual, hq, learning-studio, content-studio, research-lab"`
-	Days     int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
+	Days     FlexInt `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
 }
 
 // SessionNotesOutput is the output of the session_notes tool.
@@ -992,7 +992,7 @@ func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, SessionNotesOutput{}, fmt.Errorf("session notes not configured")
 	}
 
-	days := clamp(input.Days, 1, 30, 1)
+	days := clamp(int(input.Days), 1, 30, 1)
 
 	now := time.Now().UTC()
 	endDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)

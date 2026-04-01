@@ -12,11 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -763,7 +765,19 @@ func (s *Server) createContentWithRetry(ctx context.Context, params *content.Cre
 // addTool registers a tool with optional telemetry wrapping.
 // When s.recordToolCall is set, each tool call records name, duration, error status,
 // input/output sizes, and empty-result detection.
+//
+// If tool.InputSchema is nil, addTool generates the schema with FlexInt support
+// so that integer fields accept both JSON numbers and strings. This works around
+// a Cowork serialization bug (anthropics/claude-code#26027).
 func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error)) {
+	if tool.InputSchema == nil {
+		schema, err := jsonschema.ForType(reflect.TypeFor[I](), &jsonschema.ForOptions{
+			TypeSchemas: flexIntTypeSchemas,
+		})
+		if err == nil {
+			tool.InputSchema = schema
+		}
+	}
 	if s.recordToolCall == nil {
 		mcp.AddTool(s.server, tool, handler)
 		return
