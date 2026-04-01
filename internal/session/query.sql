@@ -5,12 +5,13 @@ VALUES (@note_date, @note_type, @source, @content, @metadata)
 RETURNING id, note_date, note_type, source, content, metadata, created_at;
 
 -- name: NotesByDate :many
--- List session notes for a date range, optionally filtered by type.
+-- List session notes for a date range, optionally filtered by type and/or source.
 SELECT id, note_date, note_type, source, content, metadata, created_at
 FROM session_notes
 WHERE note_date >= @start_date
   AND note_date <= @end_date
   AND (sqlc.narg('note_type')::text IS NULL OR note_type = sqlc.narg('note_type'))
+  AND (sqlc.narg('source')::text IS NULL OR source = sqlc.narg('source'))
 ORDER BY created_at DESC;
 
 -- name: LatestNoteByType :one
@@ -105,7 +106,7 @@ ORDER BY created_at DESC;
 
 -- name: DeleteOldNotes :execrows
 -- Cleanup: delete short-lived notes (plan/reflection/context) after short_cutoff,
--- and long-lived notes (metrics/insight) after long_cutoff.
+-- and long-lived notes (metrics/insight/directive/report) after long_cutoff.
 DELETE FROM session_notes
-WHERE (note_type NOT IN ('metrics', 'insight') AND note_date < @short_cutoff)
-   OR (note_type IN ('metrics', 'insight') AND note_date < @long_cutoff);
+WHERE (note_type NOT IN ('metrics', 'insight', 'directive', 'report') AND note_date < @short_cutoff)
+   OR (note_type IN ('metrics', 'insight', 'directive', 'report') AND note_date < @long_cutoff);

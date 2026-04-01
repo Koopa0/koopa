@@ -378,13 +378,13 @@ func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
 
 	addTool(s, &mcp.Tool{
 		Name:        "save_session_note",
-		Description: "Save a session note for cross-environment context sharing. note_type: plan|reflection|context|metrics|insight. source: claude|claude-code|manual. Required metadata by type — insight: {hypothesis, invalidation_condition}; plan: {reasoning (required), committed_task_ids (UUID array) and/or committed_items (free-text string array)}; metrics: {tasks_planned, tasks_completed, adjustments}; context and reflection: no required metadata.",
+		Description: "Save a session note for cross-environment context sharing. note_type: plan|reflection|context|metrics|insight|directive|report. directive: cross-department command (e.g. HQ → Learning Studio, HQ → Content Studio, HQ → Research Lab, HQ → Claude Code). report: department output report back to HQ (e.g. Learning Studio → HQ). source: claude|claude-code|manual or department identifier (hq, learning-studio, content-studio, research-lab). Required metadata by type — insight: {hypothesis, invalidation_condition}; plan: {reasoning (required), committed_task_ids (UUID array) and/or committed_items (free-text string array)}; metrics: {tasks_planned, tasks_completed, adjustments}; directive: {from, to, priority (optional)}; report: {from, to (optional)}; context and reflection: no required metadata.",
 		Annotations: additive,
 	}, s.saveSessionNote)
 
 	addTool(s, &mcp.Tool{
 		Name:        "session_notes",
-		Description: "Retrieve session notes for a date or date range, optionally filtered by note_type (plan|reflection|context|metrics|insight). Set days (1-30, default 1) for lookback range. Use when starting a development session to see today's plan, or when doing evening reflection to review the day. Example: session_notes(note_type=\"plan\", days=7)",
+		Description: "Retrieve session notes for a date or date range, optionally filtered by note_type (plan|reflection|context|metrics|insight|directive|report) and/or source (claude|claude-code|manual|hq|learning-studio|content-studio|research-lab). Set days (1-30, default 1) for lookback range. Use when starting a development session to see today's plan, reading cross-department directives, or reviewing reports from a specific department. Example: session_notes(note_type=\"directive\", source=\"hq\", days=7)",
 		Annotations: readOnly,
 	}, s.sessionNotes)
 

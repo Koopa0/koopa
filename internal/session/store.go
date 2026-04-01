@@ -42,12 +42,13 @@ func (s *Store) CreateNote(ctx context.Context, p *CreateParams) (*Note, error) 
 	return &n, nil
 }
 
-// NotesByDate returns session notes within a date range, optionally filtered by type.
-func (s *Store) NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType *string) ([]Note, error) {
+// NotesByDate returns session notes within a date range, optionally filtered by type and/or source.
+func (s *Store) NotesByDate(ctx context.Context, startDate, endDate time.Time, noteType, source *string) ([]Note, error) {
 	rows, err := s.q.NotesByDate(ctx, db.NotesByDateParams{
 		StartDate: startDate,
 		EndDate:   endDate,
 		NoteType:  noteType,
+		Source:    source,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing session notes: %w", err)

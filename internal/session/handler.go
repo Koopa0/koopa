@@ -54,15 +54,26 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var noteType *string
 	if t := q.Get("type"); t != "" {
 		switch t {
-		case "plan", "reflection", "context", "metrics", "insight":
+		case "plan", "reflection", "context", "metrics", "insight", "directive", "report":
 			noteType = &t
 		default:
-			api.Error(w, http.StatusBadRequest, "INVALID_TYPE", "type must be plan, reflection, context, metrics, or insight")
+			api.Error(w, http.StatusBadRequest, "INVALID_TYPE", "type must be plan, reflection, context, metrics, insight, directive, or report")
 			return
 		}
 	}
 
-	notes, err := h.store.NotesByDate(r.Context(), startDate, endDate, noteType)
+	var source *string
+	if s := q.Get("source"); s != "" {
+		switch s {
+		case "claude", "claude-code", "manual", "hq", "learning-studio", "content-studio", "research-lab":
+			source = &s
+		default:
+			api.Error(w, http.StatusBadRequest, "INVALID_SOURCE", "source must be claude, claude-code, manual, hq, learning-studio, content-studio, or research-lab")
+			return
+		}
+	}
+
+	notes, err := h.store.NotesByDate(r.Context(), startDate, endDate, noteType, source)
 	if err != nil {
 		h.logger.Error("listing session notes", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list session notes")

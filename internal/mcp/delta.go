@@ -214,7 +214,7 @@ func (s *Server) fetchDeltaSessionData(ctx context.Context, out *SessionDeltaOut
 		out.InsightsChanged = append(out.InsightsChanged, parseInsightDelta(&insightNotes[i]))
 	}
 
-	notes, notesErr := s.sessions.NotesByDate(ctx, since, today, nil)
+	notes, notesErr := s.sessions.NotesByDate(ctx, since, today, nil, nil)
 	if notesErr != nil {
 		s.logger.Error("session_delta: session notes", "error", notesErr)
 	}

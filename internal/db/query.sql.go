@@ -2221,8 +2221,8 @@ func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64
 
 const deleteOldNotes = `-- name: DeleteOldNotes :execrows
 DELETE FROM session_notes
-WHERE (note_type NOT IN ('metrics', 'insight') AND note_date < $1)
-   OR (note_type IN ('metrics', 'insight') AND note_date < $2)
+WHERE (note_type NOT IN ('metrics', 'insight', 'directive', 'report') AND note_date < $1)
+   OR (note_type IN ('metrics', 'insight', 'directive', 'report') AND note_date < $2)
 `
 
 type DeleteOldNotesParams struct {
@@ -2231,7 +2231,7 @@ type DeleteOldNotesParams struct {
 }
 
 // Cleanup: delete short-lived notes (plan/reflection/context) after short_cutoff,
-// and long-lived notes (metrics/insight) after long_cutoff.
+// and long-lived notes (metrics/insight/directive/report) after long_cutoff.
 func (q *Queries) DeleteOldNotes(ctx context.Context, arg DeleteOldNotesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteOldNotes, arg.ShortCutoff, arg.LongCutoff)
 	if err != nil {
@@ -4321,6 +4321,7 @@ FROM session_notes
 WHERE note_date >= $1
   AND note_date <= $2
   AND ($3::text IS NULL OR note_type = $3)
+  AND ($4::text IS NULL OR source = $4)
 ORDER BY created_at DESC
 `
 
@@ -4328,11 +4329,17 @@ type NotesByDateParams struct {
 	StartDate time.Time `json:"start_date"`
 	EndDate   time.Time `json:"end_date"`
 	NoteType  *string   `json:"note_type"`
+	Source    *string   `json:"source"`
 }
 
-// List session notes for a date range, optionally filtered by type.
+// List session notes for a date range, optionally filtered by type and/or source.
 func (q *Queries) NotesByDate(ctx context.Context, arg NotesByDateParams) ([]SessionNote, error) {
-	rows, err := q.db.Query(ctx, notesByDate, arg.StartDate, arg.EndDate, arg.NoteType)
+	rows, err := q.db.Query(ctx, notesByDate,
+		arg.StartDate,
+		arg.EndDate,
+		arg.NoteType,
+		arg.Source,
+	)
 	if err != nil {
 		return nil, err
 	}

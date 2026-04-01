@@ -36,17 +36,18 @@ The system has three layers, four AI consumers, and three data flows.
 
 **PostgreSQL** is the processing layer — one database that holds everything. Full-text search via tsvector + GIN, semantic search via pgvector + HNSW, and Reciprocal Rank Fusion to merge the results. This is where raw material becomes queryable, searchable, and connectable.
 
-**Go server + Angular frontend** is the output layer — an MCP server that exposes 54 tools across 10 domains for AI environments, a Genkit pipeline that runs 13 AI flows, and an Angular SSR frontend that publishes the finished product to the web.
-### Four AI consumers
+**Go server + Angular frontend** is the output layer — an MCP server that exposes 55 tools across 10 domains for AI environments, a Genkit pipeline that runs 13 AI flows, and an Angular SSR frontend that publishes the finished product to the web.
+### Five AI consumers
 
-Each connects to the same MCP server but pulls different data subsets via the `sections` parameter:
+Each connects to the same MCP server (`koopa0-knowledge`) but serves a different department role:
 
-| Consumer              | Role                                                | Typical tools                                                              |
-| --------------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
-| Claude Web (Daily)    | Morning planning, evening reflection, weekly review | `morning_context`, `save_session_note`, `my_day`                 |
-| Claude Web (Learning) | Study sessions, knowledge search, reading           | `log_learning_session`, `retrieval_queue`, `search_knowledge`, `read_oreilly_chapter` |
-| Claude Code           | Development, build logging, project tracking        | `project_context`, `log_dev_session`, `search_tasks`                   |
-| Cowork                | Content pipeline, RSS management, system ops        | `create_content`, `publish_content`, `trigger_pipeline`                    |
+| Consumer         | Environment | Role                                    | Typical tools                                                              |
+| ---------------- | ----------- | --------------------------------------- | -------------------------------------------------------------------------- |
+| Studio HQ        | Cowork      | 營運中心 + 個人助理                      | `morning_context`, `save_session_note`, `my_day`, `goal_progress`          |
+| Learning Studio  | Cowork      | 學習教練                                | `mastery_map`, `retrieval_queue`, `log_learning_session`, `read_oreilly_chapter` |
+| Content Studio   | Cowork      | 內容部門                                | `list_content_queue`, `create_content`, `publish_content`, `rss_highlights` |
+| Research Lab     | Cowork      | 研究部門                                | `search_knowledge`, `synthesize_topic`, `decision_log`, `project_context`  |
+| Claude Code      | Terminal    | 開發夥伴                                | `project_context`, `log_dev_session`, `search_tasks`                       |
 
 ### Three data flows
 

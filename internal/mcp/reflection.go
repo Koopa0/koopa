@@ -114,7 +114,7 @@ func (s *Server) fetchReflectionPlan(ctx context.Context, out *ReflectionContext
 	}
 
 	planType := "plan"
-	notes, err := s.sessions.NotesByDate(ctx, today, tomorrow, &planType)
+	notes, err := s.sessions.NotesByDate(ctx, today, tomorrow, &planType, nil)
 	if err != nil || len(notes) == 0 {
 		return
 	}

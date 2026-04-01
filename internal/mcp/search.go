@@ -964,7 +964,8 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 // SessionNotesInput is the input for the session_notes tool.
 type SessionNotesInput struct {
 	Date     string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
-	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight"`
+	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight, directive, report"`
+	Source   string `json:"source,omitempty" jsonschema_description:"filter by source: claude, claude-code, manual, hq, learning-studio, content-studio, research-lab"`
 	Days     int    `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
 }
 
@@ -1007,14 +1008,24 @@ func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input
 	var noteType *string
 	if input.NoteType != "" {
 		switch input.NoteType {
-		case "plan", "reflection", "context", "metrics", "insight":
+		case "plan", "reflection", "context", "metrics", "insight", "directive", "report":
 			noteType = &input.NoteType
 		default:
-			return nil, SessionNotesOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, or insight)", input.NoteType)
+			return nil, SessionNotesOutput{}, fmt.Errorf("invalid note_type %q (must be plan, reflection, context, metrics, insight, directive, or report)", input.NoteType)
 		}
 	}
 
-	notes, err := s.sessions.NotesByDate(ctx, startDate, endDate, noteType)
+	var source *string
+	if input.Source != "" {
+		switch input.Source {
+		case "claude", "claude-code", "manual", "hq", "learning-studio", "content-studio", "research-lab":
+			source = &input.Source
+		default:
+			return nil, SessionNotesOutput{}, fmt.Errorf("invalid source %q (must be claude, claude-code, manual, hq, learning-studio, content-studio, or research-lab)", input.Source)
+		}
+	}
+
+	notes, err := s.sessions.NotesByDate(ctx, startDate, endDate, noteType, source)
 	if err != nil {
 		return nil, SessionNotesOutput{}, fmt.Errorf("querying session notes: %w", err)
 	}
