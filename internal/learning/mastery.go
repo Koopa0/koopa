@@ -476,6 +476,13 @@ func isDeveloping(s StageSignals, decline bool) bool {
 	return s.ProblemsSolved >= 3 && s.ACIndependentRate >= 0.5 && !decline
 }
 
+// computeStage uses rule-based thresholds for stage classification.
+//
+// TODO(checkpoint-50): Evaluate replacing with PFA (Performance Factor Analysis)
+// when per-concept observation count >= 5. PFA uses logistic regression on
+// success/failure counts — compatible with existing concept_mastery structure.
+// Current rule-based approach is equivalent to SM-2-era heuristics; FSRS-level
+// continuous model would be PFA or BKT. See docs/mastery-system-review-decisions.md.
 func computeStage(signals StageSignals, weaknessTags []WeaknessTagSummary) (stage, reason string) {
 	decline := hasDeclineTrend(weaknessTags)
 	n := signals.ProblemsSolved
@@ -509,6 +516,10 @@ func computeStage(signals StageSignals, weaknessTags []WeaknessTagSummary) (stag
 
 // collectKnownConcepts extracts all unique concept strings from entries.
 // Coach uses this list to reuse existing concept names instead of creating duplicates.
+//
+// TODO(checkpoint-20): If fragmentation > 30% (most concepts appear only once),
+// add pg_trgm similarity() dedup here — merge concepts with similarity > 0.85.
+// See docs/mastery-system-review-decisions.md § Checkpoint 1.
 func collectKnownConcepts(entries []content.RichTagEntry) []string {
 	seen := make(map[string]bool)
 	for i := range entries {
@@ -578,6 +589,12 @@ type CoachingRecord struct {
 
 // ConceptGaps scans all concept_breakdowns and finds concepts that appear as
 // guided/told across multiple TILs. Groups by exact concept string (normalized).
+//
+// TODO(checkpoint-20): Exact match will miss semantically identical concepts
+// with different wording ("Recognize binary search applicability" vs "Identify
+// when to use binary search"). If fragmentation is observed, add pg_trgm
+// similarity() grouping or Levenshtein-based merge at this aggregation layer.
+// See docs/mastery-system-review-decisions.md § Checkpoint 1.
 func ConceptGaps(entries []content.RichTagEntry, masteryFilter []string, days int) ConceptGapsResult {
 	// Default filter: guided + told.
 	filterSet := make(map[string]bool, len(masteryFilter))
