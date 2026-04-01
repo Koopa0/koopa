@@ -48,8 +48,8 @@ func (s *Server) getTagSummary(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 // CoverageMatrixInput is the input for the coverage_matrix tool.
 type CoverageMatrixInput struct {
-	Project string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Days    FlexInt    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
+	Project string  `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	Days    FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
 }
 
 func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, input CoverageMatrixInput) (*mcp.CallToolResult, learning.CoverageMatrixResult, error) {
@@ -78,9 +78,9 @@ func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // WeaknessTrendInput is the input for the weakness_trend tool.
 type WeaknessTrendInput struct {
-	Project string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Tag     string `json:"tag" jsonschema_description:"weakness tag to track (e.g. weakness:constraint-analysis). Required."`
-	Days    FlexInt    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 180)"`
+	Project string  `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	Tag     string  `json:"tag" jsonschema_description:"weakness tag to track (e.g. weakness:constraint-analysis). Required."`
+	Days    FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 180)"`
 }
 
 func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, input WeaknessTrendInput) (*mcp.CallToolResult, learning.WeaknessTrendResult, error) {
@@ -111,8 +111,8 @@ func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, i
 
 // LearningTimelineInput is the input for the learning_timeline tool.
 type LearningTimelineInput struct {
-	Project string `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
-	Days    FlexInt    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 14, max 90)"`
+	Project string  `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
+	Days    FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 14, max 90)"`
 }
 
 func (s *Server) getLearningTimeline(ctx context.Context, _ *mcp.CallToolRequest, input LearningTimelineInput) (*mcp.CallToolResult, learning.TimelineResult, error) {
@@ -201,9 +201,9 @@ func (s *Server) getRetrievalQueue(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // MasteryMapInput is the input for the mastery_map tool.
 type MasteryMapInput struct {
-	Project  string   `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Patterns []string `json:"patterns,omitempty" jsonschema_description:"optional filter: only include these patterns (e.g. [\"binary-search\", \"dp\"]). Omit for all patterns."`
-	Days     FlexInt      `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
+	Project  string          `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	Patterns FlexStringSlice `json:"patterns,omitempty" jsonschema_description:"optional filter: only include these patterns (e.g. [\"binary-search\", \"dp\"]). Omit for all patterns."`
+	Days     FlexInt         `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
 }
 
 func (s *Server) getMasteryMap(ctx context.Context, _ *mcp.CallToolRequest, input MasteryMapInput) (*mcp.CallToolResult, learning.MasteryMapResult, error) {
@@ -234,16 +234,16 @@ func (s *Server) getMasteryMap(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		}
 	}
 
-	return nil, learning.MasteryMap(entries, regressions, input.Patterns, days), nil
+	return nil, learning.MasteryMap(entries, regressions, []string(input.Patterns), days), nil
 }
 
 // --- B9: get_concept_gaps ---
 
 // ConceptGapsInput is the input for the concept_gaps tool.
 type ConceptGapsInput struct {
-	Project       string   `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	MasteryFilter []string `json:"mastery_filter,omitempty" jsonschema_description:"which mastery levels to include (default: [\"guided\", \"told\"]). Valid: independent, independent_after_hint, guided, told, not_explored."`
-	Days          FlexInt      `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
+	Project       string          `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	MasteryFilter FlexStringSlice `json:"mastery_filter,omitempty" jsonschema_description:"which mastery levels to include (default: [\"guided\", \"told\"]). Valid: independent, independent_after_hint, guided, told, not_explored."`
+	Days          FlexInt         `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
 }
 
 func (s *Server) getConceptGaps(ctx context.Context, _ *mcp.CallToolRequest, input ConceptGapsInput) (*mcp.CallToolResult, learning.ConceptGapsResult, error) {
@@ -264,17 +264,17 @@ func (s *Server) getConceptGaps(ctx context.Context, _ *mcp.CallToolRequest, inp
 		return nil, learning.ConceptGapsResult{}, fmt.Errorf("querying rich tag entries: %w", err)
 	}
 
-	return nil, learning.ConceptGaps(entries, input.MasteryFilter, days), nil
+	return nil, learning.ConceptGaps(entries, []string(input.MasteryFilter), days), nil
 }
 
 // --- B10: get_variation_map ---
 
 // VariationMapInput is the input for the variation_map tool.
 type VariationMapInput struct {
-	Project            string `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Pattern            string `json:"pattern,omitempty" jsonschema_description:"optional pattern filter (e.g. \"binary-search\"). Omit for all patterns."`
-	IncludeUnattempted *bool  `json:"include_unattempted,omitempty" jsonschema_description:"include problems mentioned in variation_links but not yet solved (default true)"`
-	Days               FlexInt    `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
+	Project            string  `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
+	Pattern            string  `json:"pattern,omitempty" jsonschema_description:"optional pattern filter (e.g. \"binary-search\"). Omit for all patterns."`
+	IncludeUnattempted *bool   `json:"include_unattempted,omitempty" jsonschema_description:"include problems mentioned in variation_links but not yet solved (default true)"`
+	Days               FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
 }
 
 func (s *Server) getVariationMap(ctx context.Context, _ *mcp.CallToolRequest, input VariationMapInput) (*mcp.CallToolResult, learning.VariationMapResult, error) {

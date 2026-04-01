@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -95,7 +96,7 @@ func TestFlexIntSchemaValidation(t *testing.T) {
 	}
 
 	schema, err := jsonschema.ForType(reflect.TypeFor[input](), &jsonschema.ForOptions{
-		TypeSchemas: flexIntTypeSchemas,
+		TypeSchemas: flexTypeSchemas,
 	})
 	if err != nil {
 		t.Fatalf("generating schema: %v", err)
@@ -150,5 +151,125 @@ func TestFlexIntOmitempty(t *testing.T) {
 	}
 	if diff := cmp.Diff(`{"days":7}`, string(got)); diff != "" {
 		t.Errorf("non-zero FlexInt (-want +got):\n%s", diff)
+	}
+}
+
+func TestFlexStringSliceUnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    FlexStringSlice
+		wantErr bool
+	}{
+		{name: "array", input: `["a","b"]`, want: FlexStringSlice{"a", "b"}},
+		{name: "empty array", input: `[]`, want: FlexStringSlice{}},
+		{name: "null", input: `null`, want: nil},
+		{name: "string-encoded array", input: `"[\"a\",\"b\"]"`, want: FlexStringSlice{"a", "b"}},
+		{name: "string-encoded empty", input: `"[]"`, want: FlexStringSlice{}},
+		{name: "plain string", input: `"hello"`, wantErr: true},
+		{name: "string-encoded int array", input: `"[1, 2]"`, wantErr: true},
+		{name: "integer", input: `7`, wantErr: true},
+		{name: "boolean", input: `true`, wantErr: true},
+		{name: "exceeds max length", input: `["` + strings.Repeat(`","`, maxFlexStringSliceLen) + `"]`, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got FlexStringSlice
+			err := got.UnmarshalJSON([]byte(tt.input))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("want error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFlexStringSliceSegmentioUnmarshal(t *testing.T) {
+	type input struct {
+		Tags FlexStringSlice `json:"tags,omitempty"`
+	}
+
+	tests := []struct {
+		name    string
+		json    string
+		want    input
+		wantErr bool
+	}{
+		{name: "array", json: `{"tags":["a","b"]}`, want: input{Tags: FlexStringSlice{"a", "b"}}},
+		{name: "string", json: `{"tags":"[\"a\",\"b\"]"}`, want: input{Tags: FlexStringSlice{"a", "b"}}},
+		{name: "omitted", json: `{}`, want: input{}},
+		{name: "invalid type", json: `{"tags":7}`, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dec := segjson.NewDecoder(bytes.NewReader([]byte(tt.json)))
+			var got input
+			err := dec.Decode(&got)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("want error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFlexStringSliceSchemaValidation(t *testing.T) {
+	type input struct {
+		Tags FlexStringSlice `json:"tags,omitempty"`
+	}
+
+	schema, err := jsonschema.ForType(reflect.TypeFor[input](), &jsonschema.ForOptions{
+		TypeSchemas: flexTypeSchemas,
+	})
+	if err != nil {
+		t.Fatalf("generating schema: %v", err)
+	}
+
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		t.Fatalf("resolving schema: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		value   map[string]any
+		wantErr bool
+	}{
+		{name: "array", value: map[string]any{"tags": []any{"a", "b"}}},
+		{name: "string", value: map[string]any{"tags": `["a","b"]`}},
+		{name: "null", value: map[string]any{"tags": nil}},
+		{name: "omitted", value: map[string]any{}},
+		{name: "integer", value: map[string]any{"tags": 7}, wantErr: true},
+		{name: "boolean", value: map[string]any{"tags": true}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := resolved.Validate(&tt.value)
+			if tt.wantErr && err == nil {
+				t.Fatal("want error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
 	}
 }

@@ -191,8 +191,8 @@ func (s *Server) fetchRelatedGoals(ctx context.Context, goalID *uuid.UUID) []goa
 // RecentActivityInput is the input for the recent_activity tool.
 type RecentActivityInput struct {
 	Days    FlexInt `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 30)"`
-	Source  string `json:"source,omitempty" jsonschema_description:"filter by source (e.g. github obsidian notion)"`
-	Project string `json:"project,omitempty" jsonschema_description:"filter by project name"`
+	Source  string  `json:"source,omitempty" jsonschema_description:"filter by source (e.g. github obsidian notion)"`
+	Project string  `json:"project,omitempty" jsonschema_description:"filter by project name"`
 }
 
 // RecentActivityOutput is the output for the recent_activity tool.
@@ -236,7 +236,7 @@ func (s *Server) getRecentActivity(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // DecisionLogInput is the input for the decision_log tool.
 type DecisionLogInput struct {
-	Project string `json:"project,omitempty" jsonschema_description:"filter by project context"`
+	Project string  `json:"project,omitempty" jsonschema_description:"filter by project context"`
 	Limit   FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 50)"`
 }
 
@@ -278,7 +278,7 @@ func (s *Server) getDecisionLog(ctx context.Context, _ *mcp.CallToolRequest, inp
 type RSSHighlightsInput struct {
 	Days   FlexInt `json:"days,omitempty" jsonschema_description:"number of days to look back (default 7 max 365)"`
 	Limit  FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
-	SortBy string `json:"sort_by,omitempty" jsonschema_description:"sort order: relevance (default) or recency"`
+	SortBy string  `json:"sort_by,omitempty" jsonschema_description:"sort order: relevance (default) or recency"`
 }
 
 // RSSHighlightsOutput is the output for the rss_highlights tool.
@@ -384,12 +384,12 @@ func toTaskResult(t *task.PendingTaskDetail, today time.Time) taskResult {
 
 // SearchTasksInput is the input for the search_tasks tool.
 type SearchTasksInput struct {
-	Query           string `json:"query,omitempty" jsonschema_description:"search title and description (fuzzy match)"`
-	Project         string `json:"project,omitempty" jsonschema_description:"filter by project slug, alias, or title"`
-	Status          string `json:"status,omitempty" jsonschema_description:"pending|done|all (default: all)"`
-	Assignee        string `json:"assignee,omitempty" jsonschema_description:"human|claude-code|cowork|all (default: all)"`
-	CompletedAfter  string `json:"completed_after,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or after this date)"`
-	CompletedBefore string `json:"completed_before,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or before this date)"`
+	Query           string  `json:"query,omitempty" jsonschema_description:"search title and description (fuzzy match)"`
+	Project         string  `json:"project,omitempty" jsonschema_description:"filter by project slug, alias, or title"`
+	Status          string  `json:"status,omitempty" jsonschema_description:"pending|done|all (default: all)"`
+	Assignee        string  `json:"assignee,omitempty" jsonschema_description:"human|claude-code|cowork|all (default: all)"`
+	CompletedAfter  string  `json:"completed_after,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or after this date)"`
+	CompletedBefore string  `json:"completed_before,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (inclusive — tasks completed on or before this date)"`
 	Limit           FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 20 max 100)"`
 }
 
@@ -516,14 +516,14 @@ func toSearchTaskResult(t *task.SearchTaskDetail, today time.Time) searchTaskRes
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.
 type SearchKnowledgeInput struct {
-	Query       string `json:"query" jsonschema_description:"search query (required)"`
-	Project     string `json:"project,omitempty" jsonschema_description:"filter results by project name, slug, or alias"`
-	After       string `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD, exclusive — results strictly after this date)"`
-	Before      string `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD, exclusive)"`
-	ContentType string `json:"content_type,omitempty" jsonschema_description:"filter by content type (article|essay|build-log|til|note|bookmark|digest|obsidian-note). Use obsidian-note to search only Obsidian knowledge notes."`
-	Source      string `json:"source,omitempty" jsonschema_description:"filter Obsidian notes by source (leetcode|book|course|discussion|practice|video). Only applies when searching notes."`
-	Context     string `json:"context,omitempty" jsonschema_description:"filter Obsidian notes by context/project name in frontmatter. Only applies when searching notes."`
-	Book        string `json:"book,omitempty" jsonschema_description:"filter Obsidian notes by book title in frontmatter. Only applies when searching notes."`
+	Query       string  `json:"query" jsonschema_description:"search query (required)"`
+	Project     string  `json:"project,omitempty" jsonschema_description:"filter results by project name, slug, or alias"`
+	After       string  `json:"after,omitempty" jsonschema_description:"only results after this date (YYYY-MM-DD, exclusive — results strictly after this date)"`
+	Before      string  `json:"before,omitempty" jsonschema_description:"only results before this date (YYYY-MM-DD, exclusive)"`
+	ContentType string  `json:"content_type,omitempty" jsonschema_description:"filter by content type (article|essay|build-log|til|note|bookmark|digest|obsidian-note). Use obsidian-note to search only Obsidian knowledge notes."`
+	Source      string  `json:"source,omitempty" jsonschema_description:"filter Obsidian notes by source (leetcode|book|course|discussion|practice|video). Only applies when searching notes."`
+	Context     string  `json:"context,omitempty" jsonschema_description:"filter Obsidian notes by context/project name in frontmatter. Only applies when searching notes."`
+	Book        string  `json:"book,omitempty" jsonschema_description:"filter Obsidian notes by book title in frontmatter. Only applies when searching notes."`
 	Limit       FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 10 max 30)"`
 }
 
@@ -963,9 +963,9 @@ func (s *Server) getLearningProgress(ctx context.Context, _ *mcp.CallToolRequest
 
 // SessionNotesInput is the input for the session_notes tool.
 type SessionNotesInput struct {
-	Date     string `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
-	NoteType string `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight, directive, report"`
-	Source   string `json:"source,omitempty" jsonschema_description:"filter by source: claude, claude-code, manual, hq, learning-studio, content-studio, research-lab"`
+	Date     string  `json:"date,omitempty" jsonschema_description:"ISO date YYYY-MM-DD (default today)"`
+	NoteType string  `json:"note_type,omitempty" jsonschema_description:"filter by type: plan, reflection, context, metrics, insight, directive, report"`
+	Source   string  `json:"source,omitempty" jsonschema_description:"filter by source: claude, claude-code, manual, hq, learning-studio, content-studio, research-lab"`
 	Days     FlexInt `json:"days,omitempty" jsonschema_description:"number of days to look back (default 1, max 30)"`
 }
 
@@ -1055,15 +1055,15 @@ func (s *Server) sessionNotes(ctx context.Context, _ *mcp.CallToolRequest, input
 
 // DevSessionInput is the input for the log_dev_session tool.
 type DevSessionInput struct {
-	Project       string   `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
-	SessionType   string   `json:"session_type" jsonschema_description:"type of work: feature, refactor, bugfix, research, infra (required)"`
-	Title         string   `json:"title" jsonschema_description:"short summary of what was done (required)"`
-	Body          string   `json:"body" jsonschema_description:"markdown body with sections: what was done, decisions, problems solved, impact (required)"`
-	Tags          []string `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
-	PlanSummary   string   `json:"plan_summary,omitempty" jsonschema_description:"summary of .claude/plans/<feature>.md — design goals, key decisions, implementation approach"`
-	ReviewSummary string   `json:"review_summary,omitempty" jsonschema_description:"go-reviewer/review-code findings summary (e.g. critical:0 high:1 medium:3)"`
-	Tier          string   `json:"tier,omitempty" jsonschema_description:"change tier: tier-1|tier-2|tier-3"`
-	DiffStats     string   `json:"diff_stats,omitempty" jsonschema_description:"diff size (e.g. +120 -30)"`
+	Project       string          `json:"project" jsonschema_description:"project name, slug, or alias (required)"`
+	SessionType   string          `json:"session_type" jsonschema_description:"type of work: feature, refactor, bugfix, research, infra (required)"`
+	Title         string          `json:"title" jsonschema_description:"short summary of what was done (required)"`
+	Body          string          `json:"body" jsonschema_description:"markdown body with sections: what was done, decisions, problems solved, impact (required)"`
+	Tags          FlexStringSlice `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
+	PlanSummary   string          `json:"plan_summary,omitempty" jsonschema_description:"summary of .claude/plans/<feature>.md — design goals, key decisions, implementation approach"`
+	ReviewSummary string          `json:"review_summary,omitempty" jsonschema_description:"go-reviewer/review-code findings summary (e.g. critical:0 high:1 medium:3)"`
+	Tier          string          `json:"tier,omitempty" jsonschema_description:"change tier: tier-1|tier-2|tier-3"`
+	DiffStats     string          `json:"diff_stats,omitempty" jsonschema_description:"diff size (e.g. +120 -30)"`
 }
 
 // DevSessionOutput is the output of the log_dev_session tool.

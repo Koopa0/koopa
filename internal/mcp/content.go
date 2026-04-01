@@ -48,11 +48,11 @@ type ContentActionOutput struct {
 
 // CreateContentInput is the input for the create_content tool.
 type CreateContentInput struct {
-	Title       string   `json:"title" jsonschema_description:"content title (required)"`
-	Body        string   `json:"body" jsonschema_description:"markdown body (required)"`
-	ContentType string   `json:"content_type" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest (required)"`
-	Tags        []string `json:"tags,omitempty"`
-	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
+	Title       string          `json:"title" jsonschema_description:"content title (required)"`
+	Body        string          `json:"body" jsonschema_description:"markdown body (required)"`
+	ContentType string          `json:"content_type" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest (required)"`
+	Tags        FlexStringSlice `json:"tags,omitempty"`
+	Project     string          `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
 }
 
 func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, input *CreateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
@@ -99,10 +99,13 @@ func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, ContentActionOutput{}, fmt.Errorf("creating content: %w", err)
 	}
 
+	s.resolveAndLinkTags(ctx, created.ID, []string(input.Tags), "create_content")
+
 	s.logger.Info("content created via create_content",
 		"content_id", created.ID,
 		"slug", created.Slug,
 		"type", input.ContentType,
+		"tags_count", len(input.Tags),
 	)
 
 	return nil, ContentActionOutput{
@@ -116,12 +119,12 @@ func (s *Server) createContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 // UpdateContentInput is the input for the update_content tool.
 type UpdateContentInput struct {
-	ContentID   string   `json:"content_id" jsonschema_description:"content UUID (required)"`
-	Title       string   `json:"title,omitempty"`
-	Body        string   `json:"body,omitempty"`
-	ContentType string   `json:"content_type,omitempty" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest"`
-	Tags        []string `json:"tags,omitempty"`
-	Project     string   `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
+	ContentID   string          `json:"content_id" jsonschema_description:"content UUID (required)"`
+	Title       string          `json:"title,omitempty"`
+	Body        string          `json:"body,omitempty"`
+	ContentType string          `json:"content_type,omitempty" jsonschema_description:"article|build-log|til|bookmark|essay|note|digest"`
+	Tags        FlexStringSlice `json:"tags,omitempty"`
+	Project     string          `json:"project,omitempty" jsonschema_description:"project slug/alias/title"`
 }
 
 func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, input *UpdateContentInput) (*mcp.CallToolResult, ContentActionOutput, error) {
@@ -163,6 +166,8 @@ func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, ContentActionOutput{}, fmt.Errorf("updating content: %w", err)
 	}
 
+	s.resolveAndLinkTags(ctx, id, []string(input.Tags), "update_content")
+
 	return nil, ContentActionOutput{
 		ContentID: updated.ID.String(),
 		Slug:      updated.Slug,
@@ -170,6 +175,24 @@ func (s *Server) updateContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		Title:     updated.Title,
 		Message:   "content updated",
 	}, nil
+}
+
+// resolveAndLinkTags resolves raw tag strings and links them to a content record.
+// Best-effort: failures are logged but do not block the caller.
+func (s *Server) resolveAndLinkTags(ctx context.Context, contentID uuid.UUID, tags []string, caller string) {
+	if s.tags == nil || len(tags) == 0 {
+		return
+	}
+	resolved := s.tags.ResolveTags(ctx, tags)
+	for _, r := range resolved {
+		if r.TagID == nil {
+			continue
+		}
+		if err := s.contents.AddContentTag(ctx, contentID, *r.TagID); err != nil {
+			s.logger.Warn(caller+": failed to add tag",
+				"content_id", contentID, "tag", r.RawTag, "error", err)
+		}
+	}
 }
 
 // PublishContentInput is the input for the publish_content tool.

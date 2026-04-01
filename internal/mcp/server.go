@@ -1,8 +1,9 @@
-// Design note: mcp is intentionally a wide package — it is a transport gateway
-// that exposes domain stores as MCP tools. High import count is inherent to this
-// role (same as server/ for HTTP routes). Tool handlers are organized by file
-// (search.go, content.go, goals.go, etc.) but share the Server struct for
-// connection lifecycle and telemetry. Sub-packaging was evaluated and rejected:
+// Package mcp is a transport gateway that exposes domain stores as MCP tools.
+//
+// High import count is inherent to this role (same as server/ for HTTP routes).
+// Tool handlers are organized by file (search.go, content.go, goals.go, etc.)
+// but share the Server struct for connection lifecycle and telemetry.
+// Sub-packaging was evaluated and rejected:
 // tools don't depend on each other, so splitting would only add export surface.
 package mcp
 
@@ -181,7 +182,7 @@ type ServerDeps struct {
 }
 
 // NewServer creates an MCP server with all tools registered.
-func NewServer(deps ServerDeps, opts ...ServerOption) *Server {
+func NewServer(deps *ServerDeps, opts ...ServerOption) *Server {
 	s := &Server{
 		notes:     deps.Notes,
 		activity:  deps.Activity,
@@ -776,7 +777,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 			rt = rt.Elem()
 		}
 		schema, err := jsonschema.ForType(rt, &jsonschema.ForOptions{
-			TypeSchemas: flexIntTypeSchemas,
+			TypeSchemas: flexTypeSchemas,
 		})
 		if err == nil {
 			tool.InputSchema = schema

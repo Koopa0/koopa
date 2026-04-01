@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"slices"
 	"time"
 
@@ -19,9 +21,9 @@ import (
 
 // CurateInput is the input for the bookmark_rss_item tool.
 type CurateInput struct {
-	CollectedID string   `json:"collected_id" jsonschema_description:"UUID of the collected_data item to curate (required)"`
-	Notes       string   `json:"notes,omitempty" jsonschema_description:"personal notes or commentary on why this is valuable"`
-	Tags        []string `json:"tags,omitempty" jsonschema_description:"tags for the bookmark"`
+	CollectedID string          `json:"collected_id" jsonschema_description:"UUID of the collected_data item to curate (required)"`
+	Notes       string          `json:"notes,omitempty" jsonschema_description:"personal notes or commentary on why this is valuable"`
+	Tags        FlexStringSlice `json:"tags,omitempty" jsonschema_description:"tags for the bookmark"`
 }
 
 // CurateOutput is the output of the bookmark_rss_item tool.
@@ -66,7 +68,7 @@ func (s *Server) curateCollectedItem(ctx context.Context, _ *mcp.CallToolRequest
 		body += "---\n\n" + *item.OriginalContent
 	}
 
-	tags := input.Tags
+	tags := []string(input.Tags)
 	if tags == nil {
 		tags = []string{}
 	}
@@ -163,10 +165,10 @@ func (s *Server) listFeeds(ctx context.Context, _ *mcp.CallToolRequest, _ ListFe
 
 // AddFeedInput is the input for the add_feed tool.
 type AddFeedInput struct {
-	URL      string   `json:"url" jsonschema_description:"feed URL (required)"`
-	Name     string   `json:"name" jsonschema_description:"feed name (required)"`
-	Schedule string   `json:"schedule,omitempty" jsonschema_description:"daily or weekly (default: daily)"`
-	Topics   []string `json:"topics,omitempty" jsonschema_description:"topic tags for the feed"`
+	URL      string          `json:"url" jsonschema_description:"feed URL (required)"`
+	Name     string          `json:"name" jsonschema_description:"feed name (required)"`
+	Schedule string          `json:"schedule,omitempty" jsonschema_description:"daily or weekly (default: daily)"`
+	Topics   FlexStringSlice `json:"topics,omitempty" jsonschema_description:"topic tags for the feed"`
 }
 
 // AddFeedOutput is the output for the add_feed tool.
@@ -179,6 +181,9 @@ func (s *Server) addFeed(ctx context.Context, _ *mcp.CallToolRequest, input AddF
 	if input.URL == "" || input.Name == "" {
 		return nil, AddFeedOutput{}, fmt.Errorf("url and name are required")
 	}
+	if err := validateFeedURL(input.URL); err != nil {
+		return nil, AddFeedOutput{}, err
+	}
 	schedule := input.Schedule
 	if schedule == "" {
 		schedule = feed.ScheduleDaily
@@ -190,7 +195,7 @@ func (s *Server) addFeed(ctx context.Context, _ *mcp.CallToolRequest, input AddF
 		URL:      input.URL,
 		Name:     input.Name,
 		Schedule: schedule,
-		Topics:   input.Topics,
+		Topics:   []string(input.Topics),
 	})
 	if err != nil {
 		if errors.Is(err, feed.ErrConflict) {
@@ -200,6 +205,36 @@ func (s *Server) addFeed(ctx context.Context, _ *mcp.CallToolRequest, input AddF
 	}
 	fb := toFeedBrief(created)
 	return nil, AddFeedOutput{Feed: fb, Message: "feed created"}, nil
+}
+
+// validateFeedURL checks that the URL uses http(s) and does not point to a private IP.
+func validateFeedURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid feed URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("feed URL must use http or https scheme, got %q", u.Scheme)
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Not an IP literal — resolve to check for private IPs.
+		addrs, lookupErr := net.LookupIP(host)
+		if lookupErr != nil {
+			return fmt.Errorf("cannot resolve feed host %q: %w", host, lookupErr)
+		}
+		for _, a := range addrs {
+			if a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() {
+				return fmt.Errorf("feed URL must not resolve to a private address")
+			}
+		}
+		return nil
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return fmt.Errorf("feed URL must not point to a private address")
+	}
+	return nil
 }
 
 // FeedIDInput is shared input for remove_feed.
@@ -263,7 +298,7 @@ func parseFeedID(raw string) (uuid.UUID, error) {
 
 // CollectionStatsInput is the input for the collection_stats tool.
 type CollectionStatsInput struct {
-	FeedID string `json:"feed_id,omitempty" jsonschema_description:"specific feed UUID (omit for global stats)"`
+	FeedID string  `json:"feed_id,omitempty" jsonschema_description:"specific feed UUID (omit for global stats)"`
 	Days   FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default: 30, max: 90)"`
 }
 

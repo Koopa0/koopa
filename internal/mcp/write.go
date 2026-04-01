@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -101,20 +102,12 @@ func (s *Server) completeOneOffTask(ctx context.Context, t *task.Task) (*mcp.Cal
 
 // completeRecurringTask handles completion for recurring tasks:
 // log activity event → advance due to next cycle → reset status to todo → sync to Notion.
-func (s *Server) completeRecurringTask(ctx context.Context, t *task.Task, notes string) (*mcp.CallToolResult, CompleteTaskOutput, error) {
+func (s *Server) completeRecurringTask(ctx context.Context, t *task.Task, _ string) (*mcp.CallToolResult, CompleteTaskOutput, error) {
 	now := time.Now()
 
-	// Double-complete guard: check skip log activity for today (Asia/Taipei day boundary)
+	// Double-complete guard: check activity_events for today (Asia/Taipei day boundary)
 	todayStart := now.In(s.loc).Truncate(24 * time.Hour)
-	skipCount, _ := s.tasks.SkipCountByTask(ctx, t.ID, todayStart) // best-effort
 	var warning string
-	if skipCount > 0 {
-		// skipCount here is reused to count completions today via activity_events
-		// Actually we should check activity_events for today's completions
-	}
-	_ = warning // will be set below if needed
-
-	// Check today's completions via activity_events for double-complete warning
 	if s.activity != nil {
 		todayCompletions := s.countTodayCompletions(ctx, t.ID, todayStart)
 		if todayCompletions > 0 {
@@ -471,8 +464,8 @@ func (s *Server) buildUpdateTaskParams(ctx context.Context, taskID uuid.UUID, in
 
 // BatchMyDayInput is the input for the my_day tool.
 type BatchMyDayInput struct {
-	TaskIDs []string `json:"task_ids" jsonschema_description:"task UUIDs to set as My Day"`
-	Clear   bool     `json:"clear,omitempty" jsonschema_description:"clear all existing My Day first"`
+	TaskIDs FlexStringSlice `json:"task_ids" jsonschema_description:"task UUIDs to set as My Day"`
+	Clear   bool            `json:"clear,omitempty" jsonschema_description:"clear all existing My Day first"`
 }
 
 // BatchMyDayOutput is the output of the my_day tool.
@@ -561,14 +554,14 @@ func (s *Server) syncMyDayToNotion(ctx context.Context, notionPageID string, val
 
 // LogLearningSessionInput is the input for the log_learning_session tool.
 type LogLearningSessionInput struct {
-	Topic      string   `json:"topic" jsonschema:"required" jsonschema_description:"what was learned"`
-	Source     string   `json:"source" jsonschema:"required" jsonschema_description:"leetcode, hackerrank, oreilly, ardanlabs, article, discussion"`
-	Title      string   `json:"title" jsonschema:"required" jsonschema_description:"short title"`
-	Body       string   `json:"body" jsonschema:"required" jsonschema_description:"markdown content: approach, concepts, insights"`
-	Tags       []string `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
-	Project    string   `json:"project" jsonschema:"required" jsonschema_description:"project name, slug, or alias (use 'none' for unaffiliated learning)"`
-	Difficulty string   `json:"difficulty,omitempty" jsonschema_description:"easy, medium, or hard"`
-	ProblemURL string   `json:"problem_url,omitempty" jsonschema_description:"problem link"`
+	Topic      string          `json:"topic" jsonschema:"required" jsonschema_description:"what was learned"`
+	Source     string          `json:"source" jsonschema:"required" jsonschema_description:"leetcode, hackerrank, oreilly, ardanlabs, article, discussion"`
+	Title      string          `json:"title" jsonschema:"required" jsonschema_description:"short title"`
+	Body       string          `json:"body" jsonschema:"required" jsonschema_description:"markdown content: approach, concepts, insights"`
+	Tags       FlexStringSlice `json:"tags,omitempty" jsonschema_description:"tags for categorization"`
+	Project    string          `json:"project" jsonschema:"required" jsonschema_description:"project name, slug, or alias (use 'none' for unaffiliated learning)"`
+	Difficulty string          `json:"difficulty,omitempty" jsonschema_description:"easy, medium, or hard"`
+	ProblemURL string          `json:"problem_url,omitempty" jsonschema_description:"problem link"`
 
 	LearningType string         `json:"learning_type,omitempty" jsonschema_description:"optional structured type: leetcode, book-reading, course, system-design, language"`
 	Metadata     map[string]any `json:"metadata,omitempty" jsonschema_description:"optional per-type structured data (weakness_observations, key_concepts, etc.)"`
@@ -599,14 +592,14 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		Body:       input.Body,
 		Source:     input.Source,
 		Difficulty: input.Difficulty,
-		Tags:       input.Tags,
+		Tags:       []string(input.Tags),
 	})
 	if err != nil {
 		return nil, LogLearningSessionOutput{}, err
 	}
 	// Validate per-type structured metadata if provided.
-	if err := learning.ValidateLearningMetadata(input.LearningType, input.Metadata); err != nil {
-		return nil, LogLearningSessionOutput{}, fmt.Errorf("metadata validation: %w", err)
+	if metaErr := learning.ValidateLearningMetadata(input.LearningType, input.Metadata); metaErr != nil {
+		return nil, LogLearningSessionOutput{}, fmt.Errorf("metadata validation: %w", metaErr)
 	}
 
 	now := time.Now()
@@ -615,35 +608,13 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	source := fmt.Sprintf("claude:%s", input.Source)
 	sourceType := content.SourceAIGenerated
 
-	// Add metadata to body only if not already present (Claude often includes these in the body)
-	body := input.Body
-	if input.ProblemURL != "" && !strings.Contains(body, input.ProblemURL) {
-		body = fmt.Sprintf("**Problem**: %s\n\n%s", input.ProblemURL, body)
-	}
-	if input.Difficulty != "" && !strings.Contains(strings.ToLower(body), strings.ToLower(input.Difficulty)) {
-		body = fmt.Sprintf("**Difficulty**: %s\n\n%s", input.Difficulty, body)
-	}
+	body := buildLearningBody(input)
 
-	// Resolve project to store ID on the content record.
-	// Also add project slug as a tag so contentMatchesProject can find it
-	// even when the FK is missing (e.g. project not yet in projects table).
-	var projectID *uuid.UUID
-	if input.Project != "" && input.Project != "none" {
-		if proj, projErr := s.resolveProjectChain(ctx, input.Project); projErr == nil {
-			projectID = &proj.ID
-		}
-	}
+	projectID := s.resolveOptionalProject(ctx, input.Project)
 
-	// Serialize per-type metadata into ai_metadata JSONB if provided.
-	var aiMetadata json.RawMessage
-	if input.Metadata != nil {
-		if input.LearningType != "" {
-			input.Metadata["learning_type"] = input.LearningType
-		}
-		aiMetadata, err = json.Marshal(input.Metadata)
-		if err != nil {
-			return nil, LogLearningSessionOutput{}, fmt.Errorf("marshaling metadata: %w", err)
-		}
+	aiMetadata, err := marshalLearningMetadata(input.LearningType, input.Metadata)
+	if err != nil {
+		return nil, LogLearningSessionOutput{}, err
 	}
 
 	params := &content.CreateParams{
@@ -664,19 +635,7 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, LogLearningSessionOutput{}, fmt.Errorf("creating learning session: %w", err)
 	}
 
-	// Persist tags to content_tags junction table via tag resolution pipeline.
-	if s.tags != nil && len(validatedTags) > 0 {
-		resolved := s.tags.ResolveTags(ctx, validatedTags)
-		for _, r := range resolved {
-			if r.TagID == nil {
-				continue // unmapped tag — skip, admin will review
-			}
-			if addErr := s.contents.AddContentTag(ctx, created.ID, *r.TagID); addErr != nil {
-				s.logger.Warn("log_learning_session: failed to add tag",
-					"content_id", created.ID, "tag", r.RawTag, "error", addErr)
-			}
-		}
-	}
+	s.resolveAndLinkTags(ctx, created.ID, validatedTags, "log_learning_session")
 
 	s.logger.Info("learning session logged",
 		"content_id", created.ID,
@@ -704,6 +663,47 @@ func (s *Server) logLearningSession(ctx context.Context, _ *mcp.CallToolRequest,
 	}
 
 	return nil, out, nil
+}
+
+// buildLearningBody prepends problem URL and difficulty to the body if not already present.
+func buildLearningBody(input *LogLearningSessionInput) string {
+	body := input.Body
+	if input.ProblemURL != "" && !strings.Contains(body, input.ProblemURL) {
+		if u, err := url.Parse(input.ProblemURL); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+			body = fmt.Sprintf("**Problem**: %s\n\n%s", input.ProblemURL, body)
+		}
+	}
+	if input.Difficulty != "" && !strings.Contains(strings.ToLower(body), strings.ToLower(input.Difficulty)) {
+		body = fmt.Sprintf("**Difficulty**: %s\n\n%s", input.Difficulty, body)
+	}
+	return body
+}
+
+// resolveOptionalProject returns the project UUID if the input is a valid project, nil otherwise.
+func (s *Server) resolveOptionalProject(ctx context.Context, projectInput string) *uuid.UUID {
+	if projectInput == "" || projectInput == "none" {
+		return nil
+	}
+	proj, err := s.resolveProjectChain(ctx, projectInput)
+	if err != nil {
+		return nil
+	}
+	return &proj.ID
+}
+
+// marshalLearningMetadata serializes per-type metadata into ai_metadata JSONB.
+func marshalLearningMetadata(learningType string, metadata map[string]any) (json.RawMessage, error) {
+	if metadata == nil {
+		return nil, nil
+	}
+	if learningType != "" {
+		metadata["learning_type"] = learningType
+	}
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling metadata: %w", err)
+	}
+	return data, nil
 }
 
 // autoCompleteRecurringTask finds and completes a recurring task matching the
@@ -1294,13 +1294,13 @@ func (s *Server) getSkipHistory(ctx context.Context, _ *mcp.CallToolRequest, inp
 			return nil, out, fmt.Errorf("querying project skip history: %w", err)
 		}
 		out.TotalSkips = len(records)
-		for _, r := range records {
+		for i := range records {
 			out.Records = append(out.Records, skipHistoryRow{
-				TaskID:      r.TaskID.String(),
-				TaskTitle:   r.TaskTitle,
-				OriginalDue: r.OriginalDue.Format(time.DateOnly),
-				SkippedDate: r.SkippedDate.Format(time.DateOnly),
-				Reason:      r.Reason,
+				TaskID:      records[i].TaskID.String(),
+				TaskTitle:   records[i].TaskTitle,
+				OriginalDue: records[i].OriginalDue.Format(time.DateOnly),
+				SkippedDate: records[i].SkippedDate.Format(time.DateOnly),
+				Reason:      records[i].Reason,
 			})
 		}
 		return nil, out, nil

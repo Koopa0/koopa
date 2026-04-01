@@ -16,9 +16,9 @@ import (
 
 // MorningContextInput is the input for the morning_context tool.
 type MorningContextInput struct {
-	ActivityDays FlexInt  `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
-	BuildLogDays FlexInt  `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
-	Sections     []string `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions, pipeline_health, rss_highlights, agent_tasks, content_pipeline"`
+	ActivityDays FlexInt         `json:"activity_days,omitempty" jsonschema_description:"days of activity to include (default 3)"`
+	BuildLogDays FlexInt         `json:"build_log_days,omitempty" jsonschema_description:"days of build logs to include (default 7)"`
+	Sections     FlexStringSlice `json:"sections,omitempty" jsonschema_description:"only include these sections (default: all). Valid values: tasks, activity, build_logs, projects, goals, insights, reflection, planning_history, rss, plan, completions, pipeline_health, rss_highlights, agent_tasks, content_pipeline"`
 }
 
 // MorningContextOutput is the aggregated output for daily planning.
@@ -215,7 +215,7 @@ func (s *Server) getMorningContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		Date: now.Format("2006-01-02 (Monday)"),
 	}
 
-	wantSection := buildSectionSet(input.Sections)
+	wantSection := buildSectionSet([]string(input.Sections))
 	want := sectionChecker(wantSection)
 
 	var allTasks []task.PendingTaskDetail

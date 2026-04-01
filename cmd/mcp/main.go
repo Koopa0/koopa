@@ -87,7 +87,7 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 		return err
 	}
 
-	server := mcpkg.NewServer(mcpkg.ServerDeps{
+	server := mcpkg.NewServer(&mcpkg.ServerDeps{
 		Notes:     noteStore,
 		Activity:  activityStore,
 		Projects:  projectStore,
@@ -167,9 +167,6 @@ func buildServerOptions(
 		mcpkg.WithActivityWriter(activityStore),
 		mcpkg.WithFeedStore(feedStore),
 		mcpkg.WithSystemStatus(statsStore),
-	)
-
-	opts = append(opts,
 		mcpkg.WithRetrieval(retrieval.NewStore(pool)),
 		mcpkg.WithTagStore(tag.NewStore(pool)),
 	)

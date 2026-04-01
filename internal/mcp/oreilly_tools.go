@@ -11,11 +11,11 @@ import (
 
 // SearchOReillyInput is the input schema for the search_oreilly_content tool.
 type SearchOReillyInput struct {
-	Query      string   `json:"query" jsonschema_description:"search query (e.g. 'kubernetes', 'Go concurrency')"`
-	Formats    []string `json:"formats,omitempty" jsonschema_description:"content formats: book, video, article, course, interactive, audiobook"`
-	Publishers []string `json:"publishers,omitempty" jsonschema_description:"filter by publisher (e.g. 'O'Reilly Media, Inc.')"`
-	Authors    []string `json:"authors,omitempty" jsonschema_description:"filter by author name"`
-	Limit      FlexInt  `json:"limit,omitempty" jsonschema_description:"max results (default 10, max 50)"`
+	Query      string          `json:"query" jsonschema_description:"search query (e.g. 'kubernetes', 'Go concurrency')"`
+	Formats    FlexStringSlice `json:"formats,omitempty" jsonschema_description:"content formats: book, video, article, course, interactive, audiobook"`
+	Publishers FlexStringSlice `json:"publishers,omitempty" jsonschema_description:"filter by publisher (e.g. 'O'Reilly Media, Inc.')"`
+	Authors    FlexStringSlice `json:"authors,omitempty" jsonschema_description:"filter by author name"`
+	Limit      FlexInt         `json:"limit,omitempty" jsonschema_description:"max results (default 10, max 50)"`
 }
 
 // SearchOReillyOutput is the output of the search_oreilly_content tool.
@@ -52,9 +52,9 @@ func (s *Server) searchOReillyContent(ctx context.Context, _ *mcp.CallToolReques
 
 	result, err := s.oreilly.Search(ctx, &oreilly.SearchParams{
 		Query:      input.Query,
-		Formats:    input.Formats,
-		Publishers: input.Publishers,
-		Authors:    input.Authors,
+		Formats:    []string(input.Formats),
+		Publishers: []string(input.Publishers),
+		Authors:    []string(input.Authors),
 		Limit:      limit,
 	})
 	if err != nil {

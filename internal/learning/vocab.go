@@ -102,9 +102,9 @@ func ValidateInput(input *SessionInput) ([]string, error) {
 }
 
 // ValidateTags normalizes and validates tags for learning sessions.
-// When project is a strict-mode project (leetcode, hackerrank), rejects unknown tags.
-// For other projects, tags pass through with normalization only.
-func ValidateTags(tags []string, project string) ([]string, error) {
+// When source is a strict-mode platform (leetcode, hackerrank), rejects unknown tags.
+// For other sources, tags pass through with normalization only.
+func ValidateTags(tags []string, source string) ([]string, error) {
 	if len(tags) == 0 {
 		return tags, nil
 	}
@@ -114,8 +114,8 @@ func ValidateTags(tags []string, project string) ([]string, error) {
 		normalized[i] = NormalizeTag(raw)
 	}
 
-	// Only enforce strict validation for coding practice projects
-	if !strictTagProjects[strings.ToLower(project)] {
+	// Only enforce strict validation for coding practice platforms
+	if !strictTagProjects[strings.ToLower(source)] {
 		return normalized, nil
 	}
 
@@ -130,7 +130,7 @@ func ValidateTags(tags []string, project string) ([]string, error) {
 			"topic (array, dp, graph, ...), difficulty (easy/medium/hard), "+
 			"result (ac-independent/ac-with-hints/ac-after-solution/incomplete), "+
 			"weakness:xxx, improvement:xxx, platform (leetcode/hackerrank)",
-			project, strings.Join(invalid, ", "))
+			source, strings.Join(invalid, ", "))
 	}
 
 	return normalized, nil
