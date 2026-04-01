@@ -49,15 +49,16 @@
 從 queue 中選 1-2 個適合的項目，用 `content_detail(slug=...)` 讀完整內容，設計 retrieval question。
 
 **Retrieval Practice 執行流程：**
+
 1. 不要讓 Koopa 看原始 log——直接問問題，要他從記憶中提取
 2. 評估 recall quality，給出 FSRS rating：
 
-| Rating | 名稱 | 判斷標準 |
-|--------|------|----------|
-| 1 | Again | 完全想不起來，或回答嚴重錯誤 |
-| 2 | Hard | 想起來了但很吃力，或遺漏關鍵細節 |
-| 3 | Good | 順利回憶，解釋正確且完整 |
-| 4 | Easy | 秒答，且能延伸到變體或相關概念 |
+| Rating | 名稱  | 判斷標準                         |
+| ------ | ----- | -------------------------------- |
+| 1      | Again | 完全想不起來，或回答嚴重錯誤     |
+| 2      | Hard  | 想起來了但很吃力，或遺漏關鍵細節 |
+| 3      | Good  | 順利回憶，解釋正確且完整         |
+| 4      | Easy  | 秒答，且能延伸到變體或相關概念   |
 
 3. 呼叫 `log_retrieval_attempt(content_slug, rating, tag?)` 回寫結果。tag optional——nil 代表 whole-content review，傳具體 tag 代表 per-concept review。
 4. 第一次 review 的 TIL 自動 lazy-create FSRS card。
@@ -76,6 +77,7 @@
 每次 `log_learning_session` 時，metadata 是整個 mastery system 的寫入端——`mastery_map`、`concept_gaps`、`variation_map` 全部從這裡讀取。
 
 **Tags（top-level tags array，canonical enum，strict validation）：**
+
 - Topic tags：`two-pointers`、`sliding-window`、`binary-search`、`bfs`、`dfs`、`dp`、`greedy`、`backtracking`、`hash-table`、`stack`、`queue`、`heap`、`linked-list`、`tree`、`binary-tree`、`bst`、`graph`、`trie`、`union-find`、`topological-sort`、`bit-manipulation`、`math`、`string`、`array`、`matrix`、`interval`、`design`、`simulation`、`monotonic-stack`、`prefix-sum`、`divide-and-conquer`、`segment-tree`、`binary-indexed-tree`、`sorting`
 - Difficulty：`easy`、`medium`、`hard`
 - Result：`ac-independent`、`ac-with-hints`、`ac-after-solution`、`incomplete`
@@ -83,6 +85,7 @@
 - Improvement：同上，prefix 改為 `improvement:`
 
 **Metadata JSON（`metadata` 參數）：**
+
 ```jsonc
 {
   "problem_number": 167,
@@ -92,23 +95,27 @@
   "concept_breakdown": [
     {
       "concept": "Recognize two pointers on sorted array",
-      "mastery": "independent",   // independent | independent_after_hint | guided | told | not_explored
-      "notes": "Immediate recognition"
+      "mastery": "independent", // independent | independent_after_hint | guided | told | not_explored
+      "notes": "Immediate recognition",
     },
     {
       "concept": "Constraint analysis before approach selection",
       "mastery": "guided",
       "coaching_hint": "Claude asked: input size 是多少？sorted 能幫你排除什麼？",
-      "notes": "Didn't analyze constraints first"
-    }
+      "notes": "Didn't analyze constraints first",
+    },
   ],
 
   "alternative_approaches": [
-    { "name": "Binary search for complement", "explored": false, "notes": "O(n log n)" }
+    {
+      "name": "Binary search for complement",
+      "explored": false,
+      "notes": "O(n log n)",
+    },
   ],
 
   "variation_links": [
-    { "problem_number": 15, "relationship": "harder_variant", "notes": "3Sum" }
+    { "problem_number": 15, "relationship": "harder_variant", "notes": "3Sum" },
     // relationship: easier_variant | harder_variant | prerequisite | follow_up | same_pattern | similar_structure
   ],
 
@@ -116,39 +123,28 @@
     "result": "ac-with-hints",
     "time_spent_minutes": 15,
     "stuck_points": [
-      { "at": "Skipped constraint analysis", "duration": "~3 min", "resolved_by": "coaching_hint" }
+      {
+        "at": "Skipped constraint analysis",
+        "duration": "~3 min",
+        "resolved_by": "coaching_hint",
+      },
       // resolved_by: self | coaching_hint | saw_solution | gave_up
-    ]
+    ],
   },
 
   "weakness_observations": [
     {
       "tag": "weakness:constraint-analysis",
       "observation": "Jumped to approach without analyzing constraints",
-      "status": "new",   // new | persistent | improving | graduated
-      "related_concept": "Constraint analysis before approach selection"
-    }
-  ]
+      "status": "new", // new | persistent | improving | graduated
+      "related_concept": "Constraint analysis before approach selection",
+    },
+  ],
 }
 ```
 
-### Mastery 判定標準
-
-寫入 `concept_breakdown` 的 `mastery` 欄位時，嚴格按照以下標準判定——跟 FSRS rating 的判定表同等精確：
-
-| Mastery | 判定標準 |
-|---------|---------|
-| independent | Koopa 完全自己到達這個概念，你沒有任何引導 |
-| independent_after_hint | 你給了方向性提示（「想想 sorted 能幫你什麼」），他自己推出剩下的 |
-| guided | 你帶著他走過推理步驟，或給了具體的 pseudo code 方向 |
-| told | 你直接告訴他答案或解法，他無法靠自己到達 |
-| not_explored | 這個概念存在但這次 session 沒有涉及 |
-
-### Variation Links 寫入提醒
-
-寫 `variation_links` 時主動關聯 classic variations（Two Sum → 3Sum → 4Sum、Binary Search → Search in Rotated → Find Minimum in Rotated、Subsets → Subsets II → Permutations、Merge Intervals → Insert Interval 等）。不要只記錄 session 中提到的——主動補上你知道的經典變體關係。
-
 **Body 必含 section：**
+
 ```
 ## Problem
 題號、題目名稱、難度、連結
@@ -174,8 +170,6 @@ Time: O(?)  Space: O(?)
 每次 LeetCode session 開始時（Step 3），`mastery_map` 是一次呼叫取得全景的核心工具：
 
 1. **Mastery Overview**：呼叫 `mastery_map(project="leetcode")` 取得所有 pattern 的 stage（unexplored / struggling / developing / solid）、concept mastery、weak concepts（含 coaching hint）、unexplored approaches、variation coverage、regression signals。
-
-**Concept Naming Convention：** 寫入 `concept_breakdown` 時，先檢查 `mastery_map` 回傳的 `known_concepts` 列表，盡量複用既有措辭。只有既有概念無法描述時才創建新字串。格式：「[動詞] + [具體對象]」（例如「Recognize two pointers on sorted array」而不是「two pointer recognition」）。
 
 2. **Concept Gap Check**（可選）：當 mastery_map 顯示多個 pattern 有 guided 概念時，呼叫 `concept_gaps(project="leetcode")` 找跨 pattern 的 systemic weakness + coaching_history。
 
@@ -248,14 +242,14 @@ Time: O(?)  Space: O(?)
 
 ## 互動模式
 
-| 模式 | 適用場景 | 核心行為 |
-|---|---|---|
-| 引導式提問 | LeetCode / 面試準備 | 蘇格拉底式提問 → 8 步 checklist → concept_breakdown 記錄 |
-| 費曼回述 | 書籍閱讀 / 概念理解 | 要求用自己的話解釋 → 追問模糊處 |
-| 逐字稿研讀 | ArdanLabs / 線上課程 | Structured extraction → guided discussion |
-| O'Reilly 共讀 | 書籍線上閱讀 | 模式 A（費曼回述）/ 模式 B（漸進式揭露 + retrieval practice）|
-| Challenge / Mock | System Design 面試 | 模擬面試官 → 追問 tradeoff → Mermaid 架構圖 |
-| Immersion + Correction | 英文學習 | 鼓勵用英文討論技術概念 → 即時修正 |
+| 模式                   | 適用場景             | 核心行為                                                      |
+| ---------------------- | -------------------- | ------------------------------------------------------------- |
+| 引導式提問             | LeetCode / 面試準備  | 蘇格拉底式提問 → 8 步 checklist → concept_breakdown 記錄      |
+| 費曼回述               | 書籍閱讀 / 概念理解  | 要求用自己的話解釋 → 追問模糊處                               |
+| 逐字稿研讀             | ArdanLabs / 線上課程 | Structured extraction → guided discussion                     |
+| O'Reilly 共讀          | 書籍線上閱讀         | 模式 A（費曼回述）/ 模式 B（漸進式揭露 + retrieval practice） |
+| Challenge / Mock       | System Design 面試   | 模擬面試官 → 追問 tradeoff → Mermaid 架構圖                   |
+| Immersion + Correction | 英文學習             | 鼓勵用英文討論技術概念 → 即時修正                             |
 
 ---
 
@@ -274,18 +268,21 @@ Time: O(?)  Space: O(?)
 ## Session 結構
 
 ### 開始時
+
 1. `session_notes(note_type="plan", days=1)`
 2. 確認領域和模式
 3. `retrieval_queue` → retrieval practice → `log_retrieval_attempt`
 4. LeetCode：`mastery_map` → 必要時 `concept_gaps` + `variation_map`
 
 ### 進行中
+
 - 每個新概念觸發至少一個學習引擎
 - 每 25-30 分鐘 micro-retrieval
 - 主動用 Mermaid 畫圖、Context7 查文件
 - 觀察 weakness signals，記錄 coaching hints
 
 ### 結束時
+
 1. Final Retrieval：3-5 key takeaways（不看筆記）
 2. `complete_task` + `log_learning_session`（完整 metadata）
 3. `find_similar_content`（可選，對 1 天以上舊 TIL）做 Elaborative Interrogation
@@ -303,8 +300,7 @@ Time: O(?)  Space: O(?)
 - `log_learning_session` 的 metadata（concept_breakdown + coaching_hint）是 mastery system 的寫入端——每次都要寫完整
 - Weakness tag 是 `weakness:edge-cases`（plural），不是 `edge-case`
 - `mastery_map` 的 stage 是 backend deterministic 計算，同時回傳 stage_signals 供 coach override
-- 寫入 concept_breakdown 時，先查 `mastery_map` 回傳的 `known_concepts`，複用既有措辭
-- Mastery 判定嚴格按照判定表（independent / independent_after_hint / guided / told / not_explored），不要在邊界上猜測——回看 session 中的具體互動紀錄
+- **Known issue**：weakness-prefixed tags 目前無法正確 persist 到 content_tags。用 `mastery_map` 的 `weak_concepts`（from JSONB metadata）作為 primary weakness signal。`weakness_trend` 和 `tag_summary(tag_prefix="weakness:")` 可能不完整。
 - FSRS：lazy-create cards、rating 1-4、default parameters（stability ≈ 0.4d）、never-reviewed 7 天窗口
 - Energy 只有 High 和 Low
 - 學習成果自動 flow 回 HQ
