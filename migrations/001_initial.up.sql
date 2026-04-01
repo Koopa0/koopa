@@ -669,9 +669,9 @@ CREATE TABLE session_notes (
     id          BIGSERIAL PRIMARY KEY,
     note_date   DATE NOT NULL,
     note_type   TEXT NOT NULL
-                CHECK (note_type IN ('plan', 'reflection', 'context', 'metrics', 'insight')),
+                CHECK (note_type IN ('plan', 'reflection', 'context', 'metrics', 'insight', 'directive', 'report')),
     source      TEXT NOT NULL
-                CHECK (source IN ('claude', 'claude-code', 'manual')),
+                CHECK (source IN ('claude', 'claude-code', 'manual', 'hq', 'learning-studio', 'content-studio', 'research-lab')),
     content     TEXT NOT NULL,
     metadata    JSONB,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()

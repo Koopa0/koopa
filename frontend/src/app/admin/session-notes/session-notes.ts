@@ -30,6 +30,8 @@ const TYPE_CLASSES: Record<string, string> = {
   metrics: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
   insight: 'border-amber-800 bg-amber-900/30 text-amber-400',
   context: 'border-zinc-600 bg-zinc-800 text-zinc-300',
+  directive: 'border-red-800 bg-red-900/30 text-red-400',
+  report: 'border-teal-800 bg-teal-900/30 text-teal-400',
 };
 
 const DEFAULT_TYPE_CLASS = 'border-zinc-700 bg-zinc-800 text-zinc-400';
@@ -40,6 +42,8 @@ const NOTE_TYPES = [
   'metrics',
   'insight',
   'context',
+  'directive',
+  'report',
 ] as const;
 
 @Component({
