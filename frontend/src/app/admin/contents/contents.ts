@@ -29,6 +29,7 @@ import {
   Calendar,
 } from 'lucide-angular';
 import { ContentService } from '../../core/services/content.service';
+import { MarkdownService } from '../../core/services/markdown.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type {
   ApiContent,
@@ -59,6 +60,7 @@ interface ContentRequest {
 })
 export class AdminContentsComponent implements OnInit {
   private readonly contentService = inject(ContentService);
+  private readonly markdownService = inject(MarkdownService);
   private readonly notificationService = inject(NotificationService);
   private readonly route = inject(ActivatedRoute);
 
@@ -214,6 +216,10 @@ export class AdminContentsComponent implements OnInit {
       },
       error: () => this.notificationService.error('切換 visibility 失敗'),
     });
+  }
+
+  protected parseMarkdown(content: string): string {
+    return this.markdownService.parse(content);
   }
 
   protected statusColor(status: string): string {

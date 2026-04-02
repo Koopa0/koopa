@@ -355,12 +355,11 @@
             <dt class="text-[11px] uppercase tracking-wider text-zinc-500">
               Body
             </dt>
-            <dd class="mt-2">
-              <pre
-                class="max-h-80 overflow-y-auto rounded-sm bg-zinc-900 p-3 text-xs leading-relaxed text-zinc-400"
-              >
-{{ selected.body }}</pre
-              >
+            <dd class="mt-2 max-h-96 overflow-y-auto">
+              <div
+                class="prose prose-sm prose-invert prose-zinc max-w-none"
+                [innerHTML]="parseMarkdown(selected.body)"
+              ></div>
             </dd>
           </div>
           }
