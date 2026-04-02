@@ -797,9 +797,9 @@ CREATE TABLE directives (
         CHECK (acknowledged_by IS NULL OR acknowledged_by = target)
 );
 
-COMMENT ON TABLE directives IS 'IPC — cross-project instructions. Source dispatches work to target. Target acknowledges receipt; completion is tracked via reports.in_response_to FK.';
-COMMENT ON COLUMN directives.source IS 'Who issued this directive. FK to participant. Go layer validates source.platform = claude-cowork.';
-COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive must have a target. Go layer validates target.platform = claude-cowork.';
+COMMENT ON TABLE directives IS 'IPC — Cowork-internal coordination instructions. Scoped to claude-cowork platform only. For cross-platform work dispatch (e.g. HQ → Claude Code), use tasks.assignee instead. Source dispatches work to target. Target acknowledges receipt; completion is tracked via reports.in_response_to FK.';
+COMMENT ON COLUMN directives.source IS 'Who issued this directive. FK to participant. Go layer validates source.platform = claude-cowork. Any Cowork department can issue directives (not limited to HQ — supports cross-department coordination like content-studio → research-lab).';
+COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive must have a target. Go layer validates target.platform = claude-cowork. Cross-platform targets (claude-code projects) are out of scope — use tasks.assignee for that.';
 COMMENT ON COLUMN directives.priority IS 'p0 = immediate, p1 = today, p2 = this week.';
 COMMENT ON COLUMN directives.acknowledged_at IS 'When target picked up this directive. NULL = unacknowledged.';
 COMMENT ON COLUMN directives.acknowledged_by IS 'Must equal target (chk_ack_must_be_target). Go layer validates platform = claude-cowork.';
@@ -822,7 +822,7 @@ CREATE TABLE reports (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE reports IS 'IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion is determined by report content/metadata (follow_up_needed), not by cardinality constraint.';
+COMMENT ON TABLE reports IS 'IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion signal: currently inferred from report metadata (follow_up_needed) — acceptable for early stage. When completion needs to be systemically queried (dashboard, overdue detection, completion rate), upgrade to directives.resolved_at or report metadata.kind = progress|final|addendum.';
 COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant.';
 COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
 COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.';
