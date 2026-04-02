@@ -1,6 +1,8 @@
 # Koopa Studio — Cowork System
 
-> 4 個 Cowork Project 組成的虛擬工作室。跨 project 通訊透過 koopa0.dev MCP 的 `session_notes` 機制。
+> 4 個 Cowork Project 組成的虛擬工作室。跨 project 通訊透過 `directives` + `reports` IPC 機制。
+
+> **⚠️ OUTDATED SECTIONS**: This doc's IPC protocol, migration plan, and health check SQL were written for the `session_notes` single-table model. The schema has since been redesigned into `directives` + `reports` + `journal` + `insights` (4 tables). Source of truth for the current schema: `migrations/001_initial.up.sql`. Source of truth for Go/MCP impact: `docs/SCHEMA-V2-MIGRATION-IMPACT.md`. This doc will be rewritten after Go code migration is complete.
 
 ---
 
