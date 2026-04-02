@@ -348,6 +348,22 @@
             </dd>
           </div>
           }
+
+          <!-- Body -->
+          @if (selected.body) {
+          <div class="mt-4 border-t border-zinc-800 pt-4">
+            <dt class="text-[11px] uppercase tracking-wider text-zinc-500">
+              Body
+            </dt>
+            <dd class="mt-2">
+              <pre
+                class="max-h-80 overflow-y-auto rounded-sm bg-zinc-900 p-3 text-xs leading-relaxed text-zinc-400"
+              >
+{{ selected.body }}</pre
+              >
+            </dd>
+          </div>
+          }
         </div>
         }
       </div>
