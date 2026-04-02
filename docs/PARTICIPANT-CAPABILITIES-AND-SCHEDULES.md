@@ -11,6 +11,7 @@
 Schema v2 established `platform → participant` as the identity model. Currently, routing rules (who can issue/receive directives, who can write reports) are enforced by Go validation checking `participant.platform = 'claude-cowork'`. This hard-codes platform identity into business rules.
 
 This doc promotes two changes:
+
 1. **Capability flags on participant** — routing rules become data, not code
 2. **`participant_schedules` table** — schedules are participant-owned standing instructions
 
@@ -26,15 +27,16 @@ All routing, assignment, and scheduling happens at the participant level. Platfo
 
 Participant capabilities determine what each actor can do:
 
-| Capability | Meaning |
-|-----------|---------|
-| `can_issue_directives` | Can create directives targeting other participants |
-| `can_receive_directives` | Can be targeted by directives |
-| `can_write_reports` | Can create reports (directive-driven or self-initiated) |
-| `task_assignable` | Can be assigned as `tasks.assignee` |
-| `can_own_schedules` | Can have recurring scheduled sessions |
+| Capability               | Meaning                                                 |
+| ------------------------ | ------------------------------------------------------- |
+| `can_issue_directives`   | Can create directives targeting other participants      |
+| `can_receive_directives` | Can be targeted by directives                           |
+| `can_write_reports`      | Can create reports (directive-driven or self-initiated) |
+| `task_assignable`        | Can be assigned as `tasks.assignee`                     |
+| `can_own_schedules`      | Can have recurring scheduled sessions                   |
 
 Go validation changes from:
+
 ```go
 // OLD — platform hard-code
 if targetParticipant.Platform != "claude-cowork" {
@@ -51,24 +53,24 @@ if !targetParticipant.CanReceiveDirectives {
 
 Not speculative — these are known, already-described requirements:
 
-| Participant | Schedule | Described in |
-|-------------|----------|-------------|
-| HQ | Morning briefing (daily) | `docs/Koopa-HQ.md` §晨間 Briefing 流程 |
-| Content Studio | Pipeline check + RSS scan | `docs/Koopa-Content-Studio.md` §你自己的 Scheduled Tasks |
-| Research Lab | Industry trend scan (weekly) | `docs/Koopa-Research-Lab.md` §你自己的 Scheduled Tasks |
-| Learning Studio | (manual, not scheduled) | `docs/Koopa-Learning.md` |
-| Claude Code projects | Potential: backlog triage, health check, report to HQ | Future |
+| Participant          | Schedule                                              | Described in                                             |
+| -------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| HQ                   | Morning briefing (daily)                              | `docs/Koopa-HQ.md` §晨間 Briefing 流程                   |
+| Content Studio       | Pipeline check + RSS scan                             | `docs/Koopa-Content-Studio.md` §你自己的 Scheduled Tasks |
+| Research Lab         | Industry trend scan (weekly)                          | `docs/Koopa-Research-Lab.md` §你自己的 Scheduled Tasks   |
+| Learning Studio      | (manual, not scheduled)                               | `docs/Koopa-Learning.md`                                 |
+| Claude Code projects | Potential: backlog triage, health check, report to HQ | Future                                                   |
 
 ---
 
 ## What We're NOT Locking In (二級策略)
 
-| Deferred | Why |
-|----------|-----|
-| Pair-specific routing (`A can directive B but not C`) | Current rules are participant-level capabilities, not pair matrix |
-| Fixed SOP for directive/report flow | Who issues, who receives = capability config, not schema invariant |
-| execution_backend behavior parity | Backends have different capabilities — define interface, don't assume homogeneity |
-| Automatic dispatch / scheduler daemon | Short term: platform-native schedule. Long term: koopa-owned scheduler |
+| Deferred                                              | Why                                                                               |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Pair-specific routing (`A can directive B but not C`) | Current rules are participant-level capabilities, not pair matrix                 |
+| Fixed SOP for directive/report flow                   | Who issues, who receives = capability config, not schema invariant                |
+| execution_backend behavior parity                     | Backends have different capabilities — define interface, don't assume homogeneity |
+| Automatic dispatch / scheduler daemon                 | Short term: platform-native schedule. Long term: koopa-owned scheduler            |
 
 ---
 
@@ -84,18 +86,19 @@ ALTER TABLE participant ADD COLUMN can_own_schedules       BOOLEAN NOT NULL DEFA
 
 ### Seed values
 
-| participant | platform | issue_dir | recv_dir | write_rep | recv_task | own_sched |
-|-------------|----------|-----------|----------|-----------|-----------|-----------|
-| hq | claude-cowork | ✅ | ❌ | ✅ | ✅ | ✅ |
-| content-studio | claude-cowork | ✅ | ✅ | ✅ | ✅ | ✅ |
-| research-lab | claude-cowork | ✅ | ✅ | ✅ | ✅ | ✅ |
-| learning-studio | claude-cowork | ❌ | ✅ | ✅ | ✅ | ❌ |
-| koopa0.dev | claude-code | ❌ | ❌ | ❌ | ✅ | ✅ |
-| go-spec | claude-code | ❌ | ❌ | ❌ | ✅ | ❌ |
-| claude | claude-web | ❌ | ❌ | ❌ | ❌ | ❌ |
-| human | human | ❌ | ❌ | ❌ | ❌ | ❌ |
+| participant     | platform      | issue_dir | recv_dir | write_rep | task_assignable | own_sched |
+| --------------- | ------------- | --------- | -------- | --------- | --------- | --------- |
+| hq              | claude-cowork | ✅        | ❌       | ✅        | ✅        | ✅        |
+| content-studio  | claude-cowork | ✅        | ✅       | ✅        | ✅        | ✅        |
+| research-lab    | claude-cowork | ✅        | ✅       | ✅        | ✅        | ✅        |
+| learning-studio | claude-cowork | ❌        | ✅       | ✅        | ✅        | ❌        |
+| koopa0.dev      | claude-code   | ❌        | ❌       | ❌        | ✅        | ✅        |
+| go-spec         | claude-code   | ❌        | ❌       | ❌        | ✅        | ❌        |
+| claude          | claude-web    | ❌        | ❌       | ❌        | ❌        | ❌        |
+| human           | human         | ❌        | ❌       | ❌        | ❌        | ❌        |
 
 **Design notes:**
+
 - HQ `can_receive_directives = false` — HQ dispatches, doesn't receive. If cross-department directives emerge (content-studio → research-lab), both already have `can_issue` + `can_receive`.
 - `learning-studio` `can_issue_directives = false` — learning is interactive coaching, not a coordinator.
 - `learning-studio` `can_own_schedules = false` — learning sessions are manual, not scheduled.
@@ -230,12 +233,12 @@ Detection: SELECT ps.* FROM participant_schedules ps JOIN participant p ON ps.pa
 
 ### Execution backend capability matrix (documented, not schema-enforced)
 
-| Backend | Runs without local machine | Min interval | Local file access | MCP access | Can push to GitHub |
-|---------|---------------------------|-------------|-------------------|------------|-------------------|
-| `cowork_desktop` | ❌ (needs Desktop app + machine awake) | ~1 min | ✅ | ✅ (connectors) | ❌ |
-| `claude_code` | Mixed — cloud subtask: ✅; desktop/loop: ❌ | cloud: 1h; desktop/loop: 1m | cloud: ❌; desktop: ✅ | ✅ | ✅ |
-| `github_actions` | ✅ (GitHub cloud) | per workflow | ❌ (runner only) | ❌ | ✅ |
-| `koopa_native` | ✅ (koopa server) | any | ✅ (server-side) | ✅ (built-in) | depends |
+| Backend          | Runs without local machine                  | Min interval                | Local file access      | MCP access      | Can push to GitHub |
+| ---------------- | ------------------------------------------- | --------------------------- | ---------------------- | --------------- | ------------------ |
+| `cowork_desktop` | ❌ (needs Desktop app + machine awake)      | ~1 min                      | ✅                     | ✅ (connectors) | ❌                 |
+| `claude_code`    | Mixed — cloud subtask: ✅; desktop/loop: ❌ | cloud: 1h; desktop/loop: 1m | cloud: ❌; desktop: ✅ | ✅              | ✅                 |
+| `github_actions` | ✅ (GitHub cloud)                           | per workflow                | ❌ (runner only)       | ❌              | ✅                 |
+| `koopa_native`   | ✅ (koopa server)                           | any                         | ✅ (server-side)       | ✅ (built-in)   | depends            |
 
 **This matrix is documentation, not schema.** Backend behavior differences are too nuanced for CHECK constraints. Go layer + documentation is the right enforcement level.
 
@@ -314,29 +317,29 @@ New: Go layer validates participant.can_write_reports = true.
 
 ## Go impact summary
 
-| Change | Files |
-|--------|-------|
-| `participant` struct: add 5 boolean fields | `internal/platform/` (new package or existing) |
-| Directive source validation: `platform == claude-cowork` → `can_issue_directives` | `internal/mcp/write.go` (or new `internal/directive/`) |
-| Directive target validation: same pattern | same |
-| Report source validation: same pattern | same |
-| Task assignee validation: check `task_assignable` | `internal/mcp/write.go` |
-| Schedule CRUD: new store/handler | `internal/schedule/` (new package) |
-| Schedule run recording | `internal/schedule/` — INSERT schedule_runs + UPDATE last_run_* |
-| New MCP tools: `list_schedules`, `schedule_detail`, maybe `trigger_schedule` | `internal/mcp/server.go` |
+| Change                                                                            | Files                                                            |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `participant` struct: add 5 boolean fields                                        | `internal/platform/` (new package or existing)                   |
+| Directive source validation: `platform == claude-cowork` → `can_issue_directives` | `internal/mcp/write.go` (or new `internal/directive/`)           |
+| Directive target validation: same pattern                                         | same                                                             |
+| Report source validation: same pattern                                            | same                                                             |
+| Task assignee validation: check `task_assignable`                                 | `internal/mcp/write.go`                                          |
+| Schedule CRUD: new store/handler                                                  | `internal/schedule/` (new package)                               |
+| Schedule run recording                                                            | `internal/schedule/` — INSERT schedule*runs + UPDATE last_run*\* |
+| New MCP tools: `list_schedules`, `schedule_detail`, maybe `trigger_schedule`      | `internal/mcp/server.go`                                         |
 
 ---
 
 ## Decision record
 
-| Decision | Chose | Rejected | Why |
-|----------|-------|----------|-----|
-| Routing model | Capability flags on participant | routing_policies table | Current rules are per-participant, not per-pair. Upgrade path documented. |
-| Schedule ownership | participant_schedules table | Platform-native only | Known requirements exist. Dashboard foundation needed. |
-| execution_backend | TEXT CHECK enum | Separate backends table | Fixed set of known backends. Backend capabilities documented, not schema-enforced. |
-| Backend capability enforcement | Documentation + Go validation | DB constraints | Nuances too complex for CHECK — min interval, file access, cloud/local differ per backend |
-| missed_run_policy | 3-value enum (skip/run_once/queue_all) | Omit | Platform-specific behavior mapped to normalized policy intent |
-| Run history | schedule_runs table from day one | last_run_* columns only | Avoid feeds.consecutive_failures pattern — full history enables trend analysis |
-| execution_backend granularity | claude_code (merged) | claude_code_cloud/desktop/loop (split) | No current code path distinguishes modes. Split when needed — easier than rename |
-| can_receive_tasks naming | `task_assignable` | `can_receive_tasks` | Precision over naming consistency — receive implies inbox semantics that tasks don't have |
-| COMMENT style | Describe check semantics, not current snapshot | "Currently: Cowork departments" | Snapshot descriptions expire. Semantic descriptions don't. |
+| Decision                       | Chose                                          | Rejected                               | Why                                                                                       |
+| ------------------------------ | ---------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Routing model                  | Capability flags on participant                | routing_policies table                 | Current rules are per-participant, not per-pair. Upgrade path documented.                 |
+| Schedule ownership             | participant_schedules table                    | Platform-native only                   | Known requirements exist. Dashboard foundation needed.                                    |
+| execution_backend              | TEXT CHECK enum                                | Separate backends table                | Fixed set of known backends. Backend capabilities documented, not schema-enforced.        |
+| Backend capability enforcement | Documentation + Go validation                  | DB constraints                         | Nuances too complex for CHECK — min interval, file access, cloud/local differ per backend |
+| missed_run_policy              | 3-value enum (skip/run_once/queue_all)         | Omit                                   | Platform-specific behavior mapped to normalized policy intent                             |
+| Run history                    | schedule_runs table from day one               | last*run*\* columns only               | Avoid feeds.consecutive_failures pattern — full history enables trend analysis            |
+| execution_backend granularity  | claude_code (merged)                           | claude_code_cloud/desktop/loop (split) | No current code path distinguishes modes. Split when needed — easier than rename          |
+| can_receive_tasks naming       | `task_assignable`                              | `can_receive_tasks`                    | Precision over naming consistency — receive implies inbox semantics that tasks don't have |
+| COMMENT style                  | Describe check semantics, not current snapshot | "Currently: Cowork departments"        | Snapshot descriptions expire. Semantic descriptions don't.                                |

@@ -1019,7 +1019,10 @@ CREATE TABLE participant_schedules (
     CONSTRAINT chk_cron_has_expr
         CHECK (trigger_type <> 'cron' OR schedule_expr IS NOT NULL),
     CONSTRAINT chk_interval_has_expr
-        CHECK (trigger_type <> 'interval' OR schedule_expr IS NOT NULL)
+        CHECK (trigger_type <> 'interval' OR schedule_expr IS NOT NULL),
+    CONSTRAINT chk_manual_no_expr
+        CHECK (trigger_type <> 'manual' OR schedule_expr IS NULL),
+    UNIQUE (participant, name)
 );
 
 COMMENT ON TABLE participant_schedules IS 'Participant-owned standing instructions that spawn sessions on a recurring basis. Schedule defines WHAT and WHEN; execution_backend defines WHERE and HOW.';
@@ -1027,11 +1030,11 @@ COMMENT ON COLUMN participant_schedules.participant IS 'Owner. FK to participant
 COMMENT ON COLUMN participant_schedules.name IS 'Human-readable schedule name (e.g. Morning Briefing, RSS Pipeline Check).';
 COMMENT ON COLUMN participant_schedules.purpose IS 'One-line description of what this schedule achieves.';
 COMMENT ON COLUMN participant_schedules.trigger_type IS 'cron = fixed times. interval = recurring period. manual = only triggered by API/UI.';
-COMMENT ON COLUMN participant_schedules.schedule_expr IS 'Cron expression (0 8 * * *) or interval (1h, 30m). NULL for manual triggers.';
+COMMENT ON COLUMN participant_schedules.schedule_expr IS 'Cron expression for trigger_type=cron (e.g. "0 8 * * *"). Go time.Duration string for trigger_type=interval (e.g. "1h", "30m", "2h30m"). NULL for trigger_type=manual. Format validated by Go, not DB.';
 COMMENT ON COLUMN participant_schedules.execution_backend IS 'Which runtime executes this schedule. cowork_desktop = Claude Desktop Cowork. claude_code = Claude Code (cloud/desktop/loop). github_actions = GitHub CI. koopa_native = koopa server scheduler (future).';
 COMMENT ON COLUMN participant_schedules.instruction_template IS 'Prompt/instructions for the spawned session. May reference MCP tools, participant instructions, etc.';
 COMMENT ON COLUMN participant_schedules.expected_outputs IS 'Expected artifact types from each run. Convention: bare name = IPC table (directive, report, journal, insight); colon-separated = table:kind filter (journal:plan, journal:reflection). Monitoring validation is Go-side, not DB-enforced. If automated completeness checking is added, this column format becomes a contract.';
-COMMENT ON COLUMN participant_schedules.missed_run_policy IS 'skip = silently miss. run_once_on_wake = catch up with one run. queue_all = run all missed occurrences. Behavior depends on execution_backend capabilities.';
+COMMENT ON COLUMN participant_schedules.missed_run_policy IS 'Normalized catch-up intent: skip = silently miss, run_once_on_wake = catch up with one run, queue_all = run all missed occurrences. Backend support may vary — Go execution layer maps unsupported combinations to actual runtime behavior.';
 COMMENT ON COLUMN participant_schedules.last_run_at IS 'Denormalized from schedule_runs for quick lookup. NULL = never run.';
 COMMENT ON COLUMN participant_schedules.last_run_status IS 'Denormalized from schedule_runs. NULL = never run.';
 COMMENT ON COLUMN participant_schedules.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
@@ -1050,7 +1053,7 @@ CREATE TABLE schedule_runs (
 );
 
 COMMENT ON TABLE schedule_runs IS 'Append-only execution history for participant_schedules. Full history from day one — enables trend analysis, hit rate, and failure diagnosis.';
-COMMENT ON COLUMN schedule_runs.status IS 'success = completed and produced expected outputs. failure = errored. skipped = missed_run_policy decided to skip.';
+COMMENT ON COLUMN schedule_runs.status IS 'success = run completed without execution error. failure = errored. skipped = missed_run_policy decided to skip. Note: success does not guarantee expected_outputs were produced — output completeness is a separate monitoring concern.';
 COMMENT ON COLUMN schedule_runs.error IS 'Error details on failure. NULL on success/skip.';
 COMMENT ON COLUMN schedule_runs.metadata IS 'Run-specific data: produced artifact IDs, execution duration, backend-specific info.';
 
