@@ -13,6 +13,9 @@
 --      Open (external input) = plain TEXT.
 --   3. Absence = NULL, never empty string.
 --      NULL means "not set / not applicable". '' is never a valid absence marker.
+--   4. updated_at is application-managed, not trigger-managed.
+--      Every UPDATE query must explicitly SET updated_at = now().
+--      No triggers — see database.md. This is a project-wide convention, not per-table.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -353,17 +356,21 @@ CREATE TABLE feeds (
     enabled              BOOLEAN NOT NULL DEFAULT true,
     priority             TEXT NOT NULL DEFAULT 'normal'
                          CHECK (priority IN ('normal', 'high', 'low')),
-    etag                 TEXT NOT NULL DEFAULT '',
-    last_modified        TEXT NOT NULL DEFAULT '',
+    etag                 TEXT,
+    last_modified        TEXT,
     last_fetched_at      TIMESTAMPTZ,
     consecutive_failures INT NOT NULL DEFAULT 0,
-    last_error           TEXT NOT NULL DEFAULT '',
-    disabled_reason      TEXT NOT NULL DEFAULT '',
+    last_error           TEXT,
+    disabled_reason      TEXT,
     filter_config        JSONB NOT NULL DEFAULT '{}',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON COLUMN feeds.etag IS 'HTTP ETag header from last fetch. NULL = never fetched or server did not return ETag.';
+COMMENT ON COLUMN feeds.last_modified IS 'HTTP Last-Modified header from last fetch. NULL = never fetched or server did not return it.';
+COMMENT ON COLUMN feeds.last_error IS 'Error message from last failed fetch. NULL = no error (last fetch succeeded or never fetched).';
+COMMENT ON COLUMN feeds.disabled_reason IS 'Why this feed was disabled. NULL = not disabled or no reason recorded.';
 COMMENT ON COLUMN feeds.filter_config IS 'Feed-specific filter rules (JSONB). Structure: {deny_paths, deny_title_patterns, deny_tags}. Empty {} = no filtering.';
 
 CREATE INDEX idx_feeds_schedule ON feeds (schedule) WHERE enabled = true;
@@ -713,7 +720,7 @@ COMMENT ON TABLE messages IS 'IPC layer — cross-project directives and reports
 COMMENT ON COLUMN messages.kind IS 'directive = HQ instruction to department. report = department output back to HQ.';
 COMMENT ON COLUMN messages.target IS 'Recipient participant. Required for directives. Go layer validates target.platform = claude-cowork (only Cowork projects can receive directives). Optional for reports.';
 COMMENT ON COLUMN messages.priority IS 'p0 = immediate, p1 = today, p2 = this week. Required for directives.';
-COMMENT ON COLUMN messages.in_response_to IS 'Causal link — which directive this report responds to. Nullable for self-initiated reports.';
+COMMENT ON COLUMN messages.in_response_to IS 'Causal link — which directive this report responds to. Nullable for self-initiated reports. LIMITATION: DB only guarantees the responding row is a report (chk_response_only_report). DB CANNOT guarantee the referenced parent is a directive — CHECK constraints cannot cross-reference rows. Go layer MUST validate: referenced message.kind = directive before INSERT. If this invariant is ever violated, the causal model is corrupted. If splitting into directives/reports tables becomes justified, this becomes a natural FK.';
 COMMENT ON COLUMN messages.acknowledged_at IS 'When the target picked up this directive. NULL = unacknowledged. Only directives can be acknowledged (chk_ack_only_directive).';
 COMMENT ON COLUMN messages.acknowledged_by IS 'Which participant acknowledged. Must equal target (chk_ack_must_be_target). Go layer validates platform = claude-cowork.';
 COMMENT ON COLUMN messages.metadata IS 'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs.';
@@ -788,7 +795,11 @@ COMMENT ON COLUMN review_cards.tag_id IS 'Canonical tag for per-concept review. 
 COMMENT ON COLUMN review_cards.card_state IS 'Serialized algorithm state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.';
 COMMENT ON COLUMN review_cards.due IS 'Denormalized from card_state for index-based due-date queries.';
 
-CREATE UNIQUE INDEX idx_review_cards_content_tag ON review_cards (content_id, COALESCE(tag_id, '00000000-0000-0000-0000-000000000000'));
+-- Two partial indexes: cleaner than COALESCE sentinel UUID trick.
+-- One whole-content card per content (tag_id IS NULL).
+-- One card per (content, tag) pair (tag_id IS NOT NULL).
+CREATE UNIQUE INDEX idx_review_cards_whole ON review_cards (content_id) WHERE tag_id IS NULL;
+CREATE UNIQUE INDEX idx_review_cards_tagged ON review_cards (content_id, tag_id) WHERE tag_id IS NOT NULL;
 CREATE INDEX idx_review_cards_due ON review_cards (due);
 
 CREATE TABLE review_logs (
