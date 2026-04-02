@@ -188,7 +188,7 @@ COMMENT ON COLUMN participant_schedules.schedule_expr IS 'Cron expression for tr
 COMMENT ON COLUMN participant_schedules.execution_backend IS 'Which runtime executes this schedule. Determines capabilities and constraints — see execution backend matrix below.';
 COMMENT ON COLUMN participant_schedules.instruction_template IS 'Prompt/instructions for the spawned session. May reference MCP tools, participant instructions, etc.';
 COMMENT ON COLUMN participant_schedules.expected_outputs IS 'Expected artifact types from each run. Convention: bare name = IPC table (directive, report, journal, insight); colon-separated = table:kind filter (journal:plan, journal:reflection). Monitoring validation is Go-side, not DB-enforced. If automated completeness checking is added, this column format becomes a contract.';
-COMMENT ON COLUMN participant_schedules.missed_run_policy IS 'Normalized catch-up intent: skip = silently miss, run_once_on_wake = catch up with one run, queue_all = run all missed occurrences. Backend support may vary — Go execution layer maps unsupported combinations to actual runtime behavior.';
+COMMENT ON COLUMN participant_schedules.missed_run_policy IS 'Normalized catch-up intent: skip = silently miss, run_once_on_wake = catch up with one run, queue_all = run all missed occurrences. Backend support may vary — Go execution layer maps unsupported combinations to closest available behavior and logs the deviation.';
 COMMENT ON COLUMN participant_schedules.last_run_at IS 'Denormalized from schedule_runs for quick lookup. NULL = never run.';
 COMMENT ON COLUMN participant_schedules.last_run_status IS 'Denormalized from schedule_runs. NULL = never run.';
 ```
