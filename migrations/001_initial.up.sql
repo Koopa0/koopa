@@ -367,7 +367,7 @@ CREATE TABLE feed_entries (
     status             feed_entry_status NOT NULL DEFAULT 'unread',
     curated_content_id UUID REFERENCES contents(id) ON DELETE SET NULL,
     collected_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    url_hash           TEXT NOT NULL DEFAULT '',
+    url_hash           TEXT,
     user_feedback      TEXT,
     feedback_at        TIMESTAMPTZ,
     feed_id            UUID REFERENCES feeds(id) ON DELETE SET NULL,
@@ -380,7 +380,7 @@ COMMENT ON COLUMN feed_entries.curated_content_id IS 'If curated into a bookmark
 
 CREATE INDEX idx_feed_entries_status ON feed_entries(status);
 CREATE INDEX idx_feed_entries_relevance ON feed_entries(relevance_score DESC);
-CREATE UNIQUE INDEX idx_feed_entries_url_hash ON feed_entries (url_hash) WHERE url_hash != '';
+CREATE UNIQUE INDEX idx_feed_entries_url_hash ON feed_entries (url_hash) WHERE url_hash IS NOT NULL;
 CREATE INDEX idx_feed_entries_feed_id ON feed_entries (feed_id) WHERE feed_id IS NOT NULL;
 CREATE INDEX idx_feed_entries_collected_at ON feed_entries (collected_at DESC);
 CREATE INDEX idx_feed_entries_unread_at ON feed_entries (collected_at DESC) WHERE status = 'unread';
@@ -453,13 +453,21 @@ CREATE TABLE tasks (
     description     TEXT NOT NULL DEFAULT '',
     assignee        TEXT NOT NULL DEFAULT 'human' REFERENCES participant(name),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_completed_at_consistency
+        CHECK ((status = 'done' AND completed_at IS NOT NULL)
+            OR (status <> 'done' AND completed_at IS NULL)),
+    CONSTRAINT chk_recurrence_pair
+        CHECK ((recur_interval IS NULL AND recur_unit IS NULL)
+            OR (recur_interval IS NOT NULL AND recur_unit IS NOT NULL AND recur_interval > 0))
 );
 
 COMMENT ON COLUMN tasks.energy IS 'Required energy level. NULL = not set.';
 COMMENT ON COLUMN tasks.priority IS 'Task priority. NULL = not set.';
 COMMENT ON COLUMN tasks.recur_unit IS 'Recurrence unit. NULL = non-recurring task.';
-COMMENT ON COLUMN tasks.assignee IS 'Who executes this task. FK to participant. Default human.';
+COMMENT ON COLUMN tasks.assignee IS 'Who executes this task. FK to participant. Default human. Seed data in 001 must include participant(human).';
+COMMENT ON COLUMN tasks.updated_at IS 'Set explicitly by application in UPDATE queries. No trigger — application-managed.';
 
 CREATE INDEX idx_tasks_status ON tasks (status) WHERE status != 'done';
 CREATE INDEX idx_tasks_project ON tasks (project_id) WHERE project_id IS NOT NULL;
@@ -492,7 +500,7 @@ COMMENT ON COLUMN task_skips.reason IS 'auto-expired (cron detected overdue) or 
 
 CREATE TABLE sources (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    database_id     TEXT NOT NULL UNIQUE,
+    external_id     TEXT NOT NULL UNIQUE,
     name            TEXT NOT NULL,
     description     TEXT NOT NULL DEFAULT '',
     provider        TEXT NOT NULL DEFAULT 'notion'
@@ -512,7 +520,7 @@ COMMENT ON COLUMN sources.provider IS 'Which external platform this source conne
 COMMENT ON COLUMN sources.property_map IS 'Maps external properties to local fields (JSONB). Structure varies by provider and role.';
 
 CREATE INDEX idx_sources_role_enabled ON sources (role) WHERE enabled = true AND role IS NOT NULL;
-CREATE INDEX idx_sources_db_enabled ON sources (database_id) WHERE enabled = true;
+CREATE INDEX idx_sources_ext_enabled ON sources (external_id) WHERE enabled = true;
 CREATE UNIQUE INDEX idx_sources_role ON sources (role) WHERE role IS NOT NULL;
 
 -- ============================================================
@@ -528,7 +536,7 @@ CREATE TABLE notes (
     context         TEXT,
     maturity        TEXT NOT NULL DEFAULT 'seed'
                     CHECK (maturity IN ('seed', 'evergreen', 'stub', 'archived')),
-    tags            JSONB,
+    raw_tags        JSONB,
     difficulty      TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
     leetcode_id     INT,
     book            TEXT,
@@ -548,7 +556,7 @@ CREATE TABLE notes (
 
 COMMENT ON TABLE notes IS 'Knowledge notes synced from external vaults. Platform-agnostic — source column indicates origin (obsidian, logseq, etc).';
 COMMENT ON COLUMN notes.maturity IS 'Zettelkasten maturity: seed (new), stub (incomplete), evergreen (mature), archived.';
-COMMENT ON COLUMN notes.tags IS 'Raw frontmatter tags (JSONB array). Canonical mapping via note_tags junction + tag_aliases pipeline.';
+COMMENT ON COLUMN notes.raw_tags IS 'Raw frontmatter tags (JSONB array). Ingestion snapshot — canonical mapping via note_tags junction + tag_aliases pipeline.';
 COMMENT ON COLUMN notes.type IS 'Note type from frontmatter (e.g. leetcode, book-note, dev-log, til, note). Open-ended — values defined by vault conventions.';
 COMMENT ON COLUMN notes.source IS 'Knowledge source context (e.g. leetcode, claude, oreilly, ardanlabs). Not the sync platform — that is the vault system.';
 COMMENT ON COLUMN notes.context IS 'Project or domain context for this note (e.g. project slug). Free text — used for MCP search filtering.';
@@ -671,19 +679,28 @@ CREATE TABLE messages (
 
     CONSTRAINT chk_directive_fields
         CHECK (kind <> 'directive' OR (target IS NOT NULL AND priority IS NOT NULL)),
+    CONSTRAINT chk_report_no_priority
+        CHECK (kind <> 'report' OR priority IS NULL),
+    CONSTRAINT chk_no_self_target
+        CHECK (target IS NULL OR source <> target),
+    CONSTRAINT chk_response_only_report
+        CHECK (in_response_to IS NULL OR kind = 'report'),
     CONSTRAINT chk_ack_pair
         CHECK ((acknowledged_at IS NULL AND acknowledged_by IS NULL)
             OR (acknowledged_at IS NOT NULL AND acknowledged_by IS NOT NULL)),
     CONSTRAINT chk_ack_only_directive
-        CHECK (acknowledged_at IS NULL OR kind = 'directive')
+        CHECK (acknowledged_at IS NULL OR kind = 'directive'),
+    CONSTRAINT chk_ack_must_be_target
+        CHECK (acknowledged_by IS NULL OR acknowledged_by = target)
 );
 
 COMMENT ON TABLE messages IS 'IPC layer — cross-project directives and reports. PostgreSQL is the message bus.';
 COMMENT ON COLUMN messages.kind IS 'directive = HQ instruction to department. report = department output back to HQ.';
-COMMENT ON COLUMN messages.target IS 'Recipient participant. Required for directives (Go validates department only). Optional for reports.';
+COMMENT ON COLUMN messages.target IS 'Recipient participant. Required for directives. Go layer validates target.platform = claude-cowork (only Cowork projects can receive directives). Optional for reports.';
 COMMENT ON COLUMN messages.priority IS 'p0 = immediate, p1 = today, p2 = this week. Required for directives.';
 COMMENT ON COLUMN messages.in_response_to IS 'Causal link — which directive this report responds to. Nullable for self-initiated reports.';
-COMMENT ON COLUMN messages.acknowledged_at IS 'When the target department picked up this directive. NULL = unacknowledged.';
+COMMENT ON COLUMN messages.acknowledged_at IS 'When the target picked up this directive. NULL = unacknowledged. Only directives can be acknowledged (chk_ack_only_directive).';
+COMMENT ON COLUMN messages.acknowledged_by IS 'Which participant acknowledged. Must equal target (chk_ack_must_be_target). Go layer validates platform = claude-cowork.';
 COMMENT ON COLUMN messages.metadata IS 'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs.';
 
 CREATE INDEX idx_messages_date ON messages (note_date DESC);
@@ -728,6 +745,7 @@ CREATE TABLE insights (
 );
 
 COMMENT ON TABLE insights IS 'Hypothesis tracking — AI spots patterns, records falsification conditions, system tracks evidence over time.';
+COMMENT ON COLUMN insights.source IS 'Which participant generated this insight. FK to participant.';
 COMMENT ON COLUMN insights.status IS 'Lifecycle: unverified → verified/invalidated → archived.';
 COMMENT ON COLUMN insights.hypothesis IS 'The pattern or prediction being tracked.';
 COMMENT ON COLUMN insights.invalidation_condition IS 'What would disprove this hypothesis.';
@@ -743,7 +761,7 @@ CREATE INDEX idx_insights_date ON insights (note_date DESC);
 CREATE TABLE review_cards (
     id         BIGSERIAL PRIMARY KEY,
     content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-    tag        TEXT,
+    tag_id     UUID REFERENCES tags(id) ON DELETE SET NULL,
     card_state JSONB NOT NULL,
     due        TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -751,11 +769,11 @@ CREATE TABLE review_cards (
 );
 
 COMMENT ON TABLE review_cards IS 'Spaced repetition card state. One row per (content, tag) pair. Algorithm-agnostic naming — currently FSRS.';
-COMMENT ON COLUMN review_cards.tag IS 'Specific concept tag for per-concept review. NULL = whole-content review.';
+COMMENT ON COLUMN review_cards.tag_id IS 'Canonical tag for per-concept review. NULL = whole-content review. FK to tags table.';
 COMMENT ON COLUMN review_cards.card_state IS 'Serialized algorithm state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.';
 COMMENT ON COLUMN review_cards.due IS 'Denormalized from card_state for index-based due-date queries.';
 
-CREATE UNIQUE INDEX idx_review_cards_content_tag ON review_cards (content_id, COALESCE(tag, ''));
+CREATE UNIQUE INDEX idx_review_cards_content_tag ON review_cards (content_id, COALESCE(tag_id, '00000000-0000-0000-0000-000000000000'));
 CREATE INDEX idx_review_cards_due ON review_cards (due);
 
 CREATE TABLE review_logs (
