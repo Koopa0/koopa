@@ -682,16 +682,14 @@ COMMENT ON COLUMN project_aliases.project_id IS 'References canonical project. C
 CREATE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
 
 -- ============================================================
--- IPC: messages (was: session_notes WHERE note_type IN ('directive','report'))
+-- IPC: directives (HQ → departments)
 -- ============================================================
 
-CREATE TABLE messages (
+CREATE TABLE directives (
     id              BIGSERIAL PRIMARY KEY,
-    kind            TEXT NOT NULL CHECK (kind IN ('directive', 'report')),
     source          TEXT NOT NULL REFERENCES participant(name),
-    target          TEXT REFERENCES participant(name),
-    priority        TEXT CHECK (priority IN ('p0', 'p1', 'p2')),
-    in_response_to  BIGINT REFERENCES messages(id),
+    target          TEXT NOT NULL REFERENCES participant(name),
+    priority        TEXT NOT NULL CHECK (priority IN ('p0', 'p1', 'p2')),
     acknowledged_at TIMESTAMPTZ,
     acknowledged_by TEXT REFERENCES participant(name),
     content         TEXT NOT NULL,
@@ -699,34 +697,47 @@ CREATE TABLE messages (
     note_date       DATE NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT chk_directive_fields
-        CHECK (kind <> 'directive' OR (target IS NOT NULL AND priority IS NOT NULL)),
-    CONSTRAINT chk_report_no_priority
-        CHECK (kind <> 'report' OR priority IS NULL),
     CONSTRAINT chk_no_self_target
-        CHECK (target IS NULL OR source <> target),
-    CONSTRAINT chk_response_only_report
-        CHECK (in_response_to IS NULL OR kind = 'report'),
+        CHECK (source <> target),
     CONSTRAINT chk_ack_pair
         CHECK ((acknowledged_at IS NULL AND acknowledged_by IS NULL)
             OR (acknowledged_at IS NOT NULL AND acknowledged_by IS NOT NULL)),
-    CONSTRAINT chk_ack_only_directive
-        CHECK (acknowledged_at IS NULL OR kind = 'directive'),
     CONSTRAINT chk_ack_must_be_target
         CHECK (acknowledged_by IS NULL OR acknowledged_by = target)
 );
 
-COMMENT ON TABLE messages IS 'IPC layer — cross-project directives and reports. PostgreSQL is the message bus.';
-COMMENT ON COLUMN messages.kind IS 'directive = HQ instruction to department. report = department output back to HQ.';
-COMMENT ON COLUMN messages.target IS 'Recipient participant. Required for directives. Go layer validates target.platform = claude-cowork (only Cowork projects can receive directives). Optional for reports.';
-COMMENT ON COLUMN messages.priority IS 'p0 = immediate, p1 = today, p2 = this week. Required for directives.';
-COMMENT ON COLUMN messages.in_response_to IS 'Causal link — which directive this report responds to. Nullable for self-initiated reports. LIMITATION: DB only guarantees the responding row is a report (chk_response_only_report). DB CANNOT guarantee the referenced parent is a directive — CHECK constraints cannot cross-reference rows. Go layer MUST validate: referenced message.kind = directive before INSERT. If this invariant is ever violated, the causal model is corrupted. If splitting into directives/reports tables becomes justified, this becomes a natural FK.';
-COMMENT ON COLUMN messages.acknowledged_at IS 'When the target picked up this directive. NULL = unacknowledged. Only directives can be acknowledged (chk_ack_only_directive).';
-COMMENT ON COLUMN messages.acknowledged_by IS 'Which participant acknowledged. Must equal target (chk_ack_must_be_target). Go layer validates platform = claude-cowork.';
-COMMENT ON COLUMN messages.metadata IS 'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs.';
+COMMENT ON TABLE directives IS 'IPC — cross-project instructions. Source dispatches work to target. Target acknowledges receipt; completion is tracked via reports.in_response_to FK.';
+COMMENT ON COLUMN directives.source IS 'Who issued this directive. FK to participant. Go layer validates source.platform = claude-cowork.';
+COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive must have a target. Go layer validates target.platform = claude-cowork.';
+COMMENT ON COLUMN directives.priority IS 'p0 = immediate, p1 = today, p2 = this week.';
+COMMENT ON COLUMN directives.acknowledged_at IS 'When target picked up this directive. NULL = unacknowledged.';
+COMMENT ON COLUMN directives.acknowledged_by IS 'Must equal target (chk_ack_must_be_target). Go layer validates platform = claude-cowork.';
+COMMENT ON COLUMN directives.metadata IS 'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs.';
 
-CREATE INDEX idx_messages_date ON messages (note_date DESC);
-CREATE INDEX idx_messages_kind ON messages (note_date, kind);
+CREATE INDEX idx_directives_date ON directives (note_date DESC);
+CREATE INDEX idx_directives_target ON directives (target, note_date DESC);
+
+-- ============================================================
+-- IPC: reports (departments → HQ, or self-initiated)
+-- ============================================================
+
+CREATE TABLE reports (
+    id              BIGSERIAL PRIMARY KEY,
+    source          TEXT NOT NULL REFERENCES participant(name),
+    in_response_to  BIGINT REFERENCES directives(id),
+    content         TEXT NOT NULL,
+    metadata        JSONB,
+    note_date       DATE NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE reports IS 'IPC — department output. May respond to a specific directive (in_response_to FK to directives), or be self-initiated (in_response_to NULL).';
+COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant.';
+COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
+COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.';
+
+CREATE INDEX idx_reports_date ON reports (note_date DESC);
+CREATE INDEX idx_reports_directive ON reports (in_response_to) WHERE in_response_to IS NOT NULL;
 
 -- ============================================================
 -- IPC: journal (was: session_notes WHERE note_type IN ('plan','context','reflection','metrics'))
