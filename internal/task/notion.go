@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,6 +69,10 @@ type RecurringDoneHandler func(ctx context.Context, t *Task) error
 // If the incoming status is "Done" for a recurring task and recurringDoneHandler is set,
 // the handler is called instead of writing status='done'.
 func (s *Store) SyncFromNotion(ctx context.Context, input *SyncFromNotionInput, projectResolver ProjectResolver) error {
+	// Normalize Notion select values (e.g. "High" → "high") to match DB CHECK constraints.
+	input.Energy = strings.ToLower(input.Energy)
+	input.Priority = strings.ToLower(input.Priority)
+
 	localStatus := MapNotionStatus(input.Status)
 
 	var projectID *uuid.UUID
