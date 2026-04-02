@@ -591,7 +591,7 @@ CREATE TABLE sources (
     role            TEXT CHECK (role IN ('projects', 'tasks', 'books', 'goals')),
     sync_mode       TEXT NOT NULL DEFAULT 'full',
     property_map    JSONB NOT NULL DEFAULT '{}',
-    poll_interval   TEXT NOT NULL DEFAULT '15 minutes',
+    poll_interval   INTERVAL NOT NULL DEFAULT '15 minutes',
     enabled         BOOLEAN NOT NULL DEFAULT true,
     last_synced_at  TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -604,7 +604,7 @@ COMMENT ON COLUMN sources.provider IS 'Which external platform this source conne
 COMMENT ON COLUMN sources.role IS 'What kind of data this source provides. NULL = not categorized. UNIQUE partial index — one source per role.';
 COMMENT ON COLUMN sources.sync_mode IS 'Sync strategy: full (re-sync all), incremental (changes only).';
 COMMENT ON COLUMN sources.property_map IS 'Maps external properties to local fields (JSONB). Structure varies by provider and role.';
-COMMENT ON COLUMN sources.poll_interval IS 'How often to poll for changes. PostgreSQL interval format (e.g. 15 minutes).';
+COMMENT ON COLUMN sources.poll_interval IS 'How often to poll for changes. PostgreSQL INTERVAL type — DB validates format.';
 COMMENT ON COLUMN sources.last_synced_at IS 'Last successful sync timestamp. NULL = never synced.';
 COMMENT ON COLUMN sources.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
@@ -897,7 +897,7 @@ CREATE TABLE review_logs (
     rating         INT NOT NULL CHECK (rating BETWEEN 1 AND 4),
     scheduled_days INT NOT NULL,
     elapsed_days   INT NOT NULL,
-    state          INT NOT NULL,
+    state          INT NOT NULL CHECK (state BETWEEN 0 AND 3),
     reviewed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
