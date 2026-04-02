@@ -65,7 +65,10 @@ export class AdminContentsComponent implements OnInit {
   protected readonly currentPage = signal(1);
   protected readonly visibilityFilter = signal<boolean | null>(null);
   protected readonly typeFilter = signal<ContentType | null>(null);
-  protected readonly selectedItem = signal<ApiContent | null>(null);
+  protected readonly selectedItemId = signal<string | null>(null);
+  protected readonly detailItem = signal<ApiContent | null>(null);
+  protected readonly isDetailLoading = signal(false);
+  protected readonly isDetailVisible = signal(false);
 
   private readonly contentsResource = rxResource<
     ApiListResponse<ApiContent>,
@@ -149,26 +152,49 @@ export class AdminContentsComponent implements OnInit {
   protected onVisibilityFilter(value: boolean | null): void {
     this.visibilityFilter.set(value);
     this.currentPage.set(1);
-    this.selectedItem.set(null);
+    this.closeDetail();
   }
 
   protected onTypeFilter(value: ContentType | null): void {
     this.typeFilter.set(value);
     this.currentPage.set(1);
-    this.selectedItem.set(null);
+    this.closeDetail();
   }
 
   protected goToPage(page: number): void {
     this.currentPage.set(page);
-    this.selectedItem.set(null);
+    this.closeDetail();
   }
 
   protected selectItem(item: ApiContent): void {
-    this.selectedItem.update((prev) => (prev?.id === item.id ? null : item));
+    if (this.selectedItemId() === item.id) {
+      this.closeDetail();
+      return;
+    }
+
+    this.selectedItemId.set(item.id);
+    this.isDetailLoading.set(true);
+    this.isDetailVisible.set(false);
+
+    this.contentService.adminGet(item.id).subscribe({
+      next: (full) => {
+        this.detailItem.set(full);
+        this.isDetailLoading.set(false);
+        // Trigger enter animation on next frame
+        requestAnimationFrame(() => this.isDetailVisible.set(true));
+      },
+      error: () => {
+        this.notificationService.error('載入內容詳情失敗');
+        this.isDetailLoading.set(false);
+        this.selectedItemId.set(null);
+      },
+    });
   }
 
   protected closeDetail(): void {
-    this.selectedItem.set(null);
+    this.isDetailVisible.set(false);
+    this.selectedItemId.set(null);
+    this.detailItem.set(null);
   }
 
   protected toggleVisibility(item: ApiContent, event: Event): void {
@@ -178,8 +204,9 @@ export class AdminContentsComponent implements OnInit {
     this.contentService.setVisibility(item.id, newIsPublic).subscribe({
       next: (updated) => {
         this.contentsResource.reload();
-        if (this.selectedItem()?.id === item.id) {
-          this.selectedItem.set({ ...item, is_public: updated.is_public });
+        const detail = this.detailItem();
+        if (detail?.id === item.id) {
+          this.detailItem.set({ ...detail, is_public: updated.is_public });
         }
         this.notificationService.success(
           `已切換為 ${updated.is_public ? 'public' : 'private'}`,

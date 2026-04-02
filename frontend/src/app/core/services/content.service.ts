@@ -44,7 +44,10 @@ export class ContentService {
     const query: Record<string, string | number> = {};
     if (params?.page) query['page'] = params.page;
     if (params?.perPage) query['per_page'] = params.perPage;
-    return this.api.getListData<ApiContent>(`/api/contents/by-type/${type}`, query);
+    return this.api.getListData<ApiContent>(
+      `/api/contents/by-type/${type}`,
+      query,
+    );
   }
 
   /** Full-text search (public) */
@@ -59,6 +62,11 @@ export class ContentService {
     return this.api.getListData<ApiContent>('/api/search', query);
   }
 
+  /** Admin — get single content by ID (full fields, no is_public check) */
+  adminGet(id: string): Observable<ApiContent> {
+    return this.api.getData<ApiContent>(`/api/admin/contents/${id}`);
+  }
+
   /** Admin — list all contents (no visibility/status filter) */
   adminList(params?: {
     page?: number;
@@ -70,7 +78,8 @@ export class ContentService {
     if (params?.page) query['page'] = params.page;
     if (params?.perPage) query['per_page'] = params.perPage;
     if (params?.type) query['type'] = params.type;
-    if (params?.is_public != null) query['is_public'] = String(params.is_public);
+    if (params?.is_public != null)
+      query['is_public'] = String(params.is_public);
     return this.api.getListData<ApiContent>('/api/admin/contents', query);
   }
 
@@ -99,12 +108,17 @@ export class ContentService {
 
   /** Admin — toggle visibility */
   setVisibility(id: string, is_public: boolean): Observable<ApiContent> {
-    return this.api.patchData<ApiContent>(`/api/admin/contents/${id}/visibility`, { is_public });
+    return this.api.patchData<ApiContent>(
+      `/api/admin/contents/${id}/visibility`,
+      { is_public },
+    );
   }
 
   /** Public — get related content by slug */
   getRelated(slug: string): Observable<ApiRelatedContent[]> {
-    return this.api.getData<ApiRelatedContent[]>(`/api/contents/related/${slug}`);
+    return this.api.getData<ApiRelatedContent[]>(
+      `/api/contents/related/${slug}`,
+    );
   }
 
   /** Public — get knowledge graph (rate-limited) */
