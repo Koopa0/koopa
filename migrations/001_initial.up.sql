@@ -1,22 +1,3 @@
--- koopa0.dev schema v2 — full rewrite (2026-04-02)
--- All naming, structure, and normalization decisions from:
---   docs/SCHEMA-AUDIT-2026-04-02.md
---   docs/Ipc protocol decision doc final.md
---
--- Three principles governing every column:
---   1. Raw ingestion vs canonical truth?
---      Raw = plain TEXT, no CHECK. Canonical = ENUM or FK or CHECK.
---      Quasi-canonical (raw input actively used for query/filter) = plain TEXT + COMMENT marking it.
---   2. Closed contract vs evolving taxonomy?
---      Closed (Go-defined, stable) = CREATE TYPE ENUM.
---      Evolving (may add values) = TEXT CHECK (...).
---      Open (external input) = plain TEXT.
---   3. Absence = NULL, never empty string.
---      NULL means "not set / not applicable". '' is never a valid absence marker.
---   4. updated_at is application-managed, not trigger-managed.
---      Every UPDATE query must explicitly SET updated_at = now().
---      No triggers — see database.md. This is a project-wide convention, not per-table.
-
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================================
@@ -73,6 +54,10 @@ CREATE TYPE event_type AS ENUM (
 
 -- ============================================================
 -- Identity model: platform → participant
+--
+-- IMPORTANT: The INSERT statements below are part of the schema, not optional seed data.
+-- tasks.assignee DEFAULT 'human' and all FK references to participant(name)
+-- will fail if these INSERTs are missing. Do not skip them.
 -- ============================================================
 
 CREATE TABLE platform (
@@ -803,6 +788,7 @@ COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive 
 COMMENT ON COLUMN directives.priority IS 'p0 = immediate, p1 = today, p2 = this week.';
 COMMENT ON COLUMN directives.acknowledged_at IS 'When target picked up this directive. NULL = unacknowledged.';
 COMMENT ON COLUMN directives.acknowledged_by IS 'Must equal target (chk_ack_must_be_target). Go layer validates platform = claude-cowork.';
+COMMENT ON COLUMN directives.note_date IS 'Business date this directive belongs to. Inherited naming from session_notes lineage — semantically this is the issued date.';
 COMMENT ON COLUMN directives.metadata IS 'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs.';
 
 CREATE INDEX idx_directives_date ON directives (note_date DESC);
@@ -823,8 +809,9 @@ CREATE TABLE reports (
 );
 
 COMMENT ON TABLE reports IS 'IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion signal: currently inferred from report metadata (follow_up_needed) — acceptable for early stage. When completion needs to be systemically queried (dashboard, overdue detection, completion rate), upgrade to directives.resolved_at or report metadata.kind = progress|final|addendum.';
-COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant. Scoped to claude-cowork platform (same as directives) — reports are Cowork department output. Go layer validates source.platform = claude-cowork.';
+COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant. Currently limited to claude-cowork participants by Go validation. May expand if cross-platform reporting is needed (e.g. Claude Code session producing a report on behalf of a department).';
 COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
+COMMENT ON COLUMN reports.note_date IS 'Business date this report belongs to. Inherited naming from session_notes lineage — semantically this is the reported date.';
 COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.';
 
 CREATE INDEX idx_reports_date ON reports (note_date DESC);
