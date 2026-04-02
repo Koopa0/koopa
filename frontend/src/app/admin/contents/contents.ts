@@ -21,6 +21,12 @@ import {
   EyeOff,
   X,
   ExternalLink,
+  Clock,
+  Tag,
+  BookOpen,
+  Globe,
+  Lock,
+  Calendar,
 } from 'lucide-angular';
 import { ContentService } from '../../core/services/content.service';
 import { NotificationService } from '../../core/services/notification.service';
@@ -61,7 +67,10 @@ export class AdminContentsComponent implements OnInit {
   protected readonly typeFilter = signal<ContentType | null>(null);
   protected readonly selectedItem = signal<ApiContent | null>(null);
 
-  private readonly contentsResource = rxResource<ApiListResponse<ApiContent>, ContentRequest>({
+  private readonly contentsResource = rxResource<
+    ApiListResponse<ApiContent>,
+    ContentRequest
+  >({
     params: () => ({
       page: this.currentPage(),
       perPage: ITEMS_PER_PAGE,
@@ -71,9 +80,21 @@ export class AdminContentsComponent implements OnInit {
     stream: ({ params }) => this.contentService.adminList(params),
   });
 
-  protected readonly items = computed(() => this.contentsResource.value()?.data ?? []);
-  protected readonly totalItems = computed(() => this.contentsResource.value()?.meta.total ?? 0);
-  protected readonly isLoading = computed(() => this.contentsResource.isLoading());
+  protected readonly items = computed(() => {
+    const data = this.contentsResource.value()?.data ?? [];
+    // Backend AdminList doesn't populate tags/topics — normalize nulls to empty arrays
+    return data.map((item) => ({
+      ...item,
+      tags: item.tags ?? [],
+      topics: item.topics ?? [],
+    }));
+  });
+  protected readonly totalItems = computed(
+    () => this.contentsResource.value()?.meta.total ?? 0,
+  );
+  protected readonly isLoading = computed(() =>
+    this.contentsResource.isLoading(),
+  );
   protected readonly totalPages = computed(() =>
     Math.ceil(this.totalItems() / ITEMS_PER_PAGE),
   );
@@ -89,6 +110,12 @@ export class AdminContentsComponent implements OnInit {
   protected readonly EyeOffIcon = EyeOff;
   protected readonly XIcon = X;
   protected readonly ExternalLinkIcon = ExternalLink;
+  protected readonly ClockIcon = Clock;
+  protected readonly TagIcon = Tag;
+  protected readonly BookOpenIcon = BookOpen;
+  protected readonly GlobeIcon = Globe;
+  protected readonly LockIcon = Lock;
+  protected readonly CalendarIcon = Calendar;
 
   protected readonly visibilityOptions: FilterOption<boolean>[] = [
     { label: 'All', value: null },
@@ -107,7 +134,9 @@ export class AdminContentsComponent implements OnInit {
   ];
 
   ngOnInit(): void {
-    const typeParam = this.route.snapshot.queryParamMap.get('type') as ContentType | null;
+    const typeParam = this.route.snapshot.queryParamMap.get(
+      'type',
+    ) as ContentType | null;
     if (typeParam && this.typeOptions.some((o) => o.value === typeParam)) {
       this.typeFilter.set(typeParam);
     }
@@ -146,19 +175,32 @@ export class AdminContentsComponent implements OnInit {
     event.stopPropagation();
     const newIsPublic = !item.is_public;
 
-    this.contentService
-      .setVisibility(item.id, newIsPublic)
-      .subscribe({
-        next: (updated) => {
-          this.contentsResource.reload();
-          if (this.selectedItem()?.id === item.id) {
-            this.selectedItem.set({ ...item, is_public: updated.is_public });
-          }
-          this.notificationService.success(
-            `已切換為 ${updated.is_public ? 'public' : 'private'}`,
-          );
-        },
-        error: () => this.notificationService.error('切換 visibility 失敗'),
-      });
+    this.contentService.setVisibility(item.id, newIsPublic).subscribe({
+      next: (updated) => {
+        this.contentsResource.reload();
+        if (this.selectedItem()?.id === item.id) {
+          this.selectedItem.set({ ...item, is_public: updated.is_public });
+        }
+        this.notificationService.success(
+          `已切換為 ${updated.is_public ? 'public' : 'private'}`,
+        );
+      },
+      error: () => this.notificationService.error('切換 visibility 失敗'),
+    });
+  }
+
+  protected statusColor(status: string): string {
+    switch (status) {
+      case 'published':
+        return 'bg-emerald-900/30 text-emerald-400';
+      case 'draft':
+        return 'bg-zinc-800 text-zinc-400';
+      case 'review':
+        return 'bg-amber-900/30 text-amber-400';
+      case 'archived':
+        return 'bg-zinc-800 text-zinc-500';
+      default:
+        return 'bg-zinc-800 text-zinc-400';
+    }
   }
 }
