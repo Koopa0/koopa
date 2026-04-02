@@ -38,6 +38,7 @@ DROP TABLE IF EXISTS topics;
 DROP TABLE IF EXISTS participant;
 DROP TABLE IF EXISTS platform;
 
+DROP TYPE IF EXISTS event_type;
 DROP TYPE IF EXISTS task_status;
 DROP TYPE IF EXISTS project_status;
 DROP TYPE IF EXISTS goal_status;

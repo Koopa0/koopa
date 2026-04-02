@@ -2,6 +2,17 @@
 -- All naming, structure, and normalization decisions from:
 --   docs/SCHEMA-AUDIT-2026-04-02.md
 --   docs/Ipc protocol decision doc final.md
+--
+-- Three principles governing every column:
+--   1. Raw ingestion vs canonical truth?
+--      Raw = plain TEXT, no CHECK. Canonical = ENUM or FK or CHECK.
+--      Quasi-canonical (raw input actively used for query/filter) = plain TEXT + COMMENT marking it.
+--   2. Closed contract vs evolving taxonomy?
+--      Closed (Go-defined, stable) = CREATE TYPE ENUM.
+--      Evolving (may add values) = TEXT CHECK (...).
+--      Open (external input) = plain TEXT.
+--   3. Absence = NULL, never empty string.
+--      NULL means "not set / not applicable". '' is never a valid absence marker.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -47,6 +58,14 @@ CREATE TYPE project_status AS ENUM (
 
 CREATE TYPE task_status AS ENUM (
     'todo', 'in-progress', 'done'
+);
+
+CREATE TYPE event_type AS ENUM (
+    'note_created', 'note_updated',
+    'push', 'pull_request',
+    'project_update', 'task_status_change', 'book_progress', 'goal_update',
+    'task_completed', 'content_published',
+    'my_day_incomplete'
 );
 
 -- ============================================================
@@ -97,10 +116,12 @@ CREATE TABLE users (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email      TEXT NOT NULL UNIQUE,
     role       TEXT NOT NULL DEFAULT 'admin'
-               CHECK (role = 'admin'),
+               CHECK (role IN ('admin')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON COLUMN users.role IS 'Single-value placeholder. Currently only admin exists. If no second role materializes by public API launch, delete this column. CHECK uses IN() syntax for easy extension.';
 
 CREATE TABLE refresh_tokens (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -160,8 +181,8 @@ CREATE TABLE goals (
     title          TEXT NOT NULL,
     description    TEXT NOT NULL DEFAULT '',
     status         goal_status NOT NULL DEFAULT 'not-started',
-    area           TEXT NOT NULL DEFAULT '',
-    quarter        TEXT NOT NULL DEFAULT '',
+    area           TEXT,
+    quarter        TEXT,
     deadline       TIMESTAMPTZ,
     notion_page_id TEXT UNIQUE,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -183,7 +204,7 @@ CREATE TABLE projects (
     title            TEXT NOT NULL,
     description      TEXT NOT NULL DEFAULT '',
     long_description TEXT,
-    role             TEXT NOT NULL DEFAULT '',
+    role             TEXT,
     tech_stack       TEXT[] NOT NULL DEFAULT '{}',
     highlights       TEXT[] NOT NULL DEFAULT '{}',
     problem          TEXT,
@@ -198,7 +219,7 @@ CREATE TABLE projects (
     status           project_status NOT NULL DEFAULT 'in-progress',
     notion_page_id   TEXT UNIQUE,
     repo             TEXT,
-    area             TEXT NOT NULL DEFAULT '',
+    area             TEXT,
     goal_id          UUID REFERENCES goals(id) ON DELETE SET NULL,
     deadline         TIMESTAMPTZ,
     last_activity_at TIMESTAMPTZ,
@@ -367,20 +388,21 @@ CREATE TABLE feed_entries (
     status             feed_entry_status NOT NULL DEFAULT 'unread',
     curated_content_id UUID REFERENCES contents(id) ON DELETE SET NULL,
     collected_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    url_hash           TEXT,
+    url_hash           TEXT NOT NULL,
     user_feedback      TEXT,
     feedback_at        TIMESTAMPTZ,
     feed_id            UUID REFERENCES feeds(id) ON DELETE SET NULL,
     published_at       TIMESTAMPTZ
 );
 
-COMMENT ON TABLE feed_entries IS 'RSS feed items collected by the fetch pipeline. Topics inherited from feed via feed_topics junction.';
+COMMENT ON TABLE feed_entries IS 'RSS feed items collected by the fetch pipeline. IMPORTANT SEMANTICS: topics are inherited from feed via feed_topics junction at QUERY TIME, not snapshot at ingestion. This means changing a feed''s topics retroactively changes all its entries'' topic associations. This is a deliberate product choice — topics represent current feed configuration, not historical classification. If historical topic tracking is needed, add feed_entry_topics snapshot table.';
+COMMENT ON COLUMN feed_entries.url_hash IS 'Dedup identity — SHA256 of canonical source_url. NOT NULL — every entry must have dedup identity. Pipeline computes before INSERT.';
 COMMENT ON COLUMN feed_entries.feed_id IS 'Source feed. NULL after feed deletion (SET NULL) — entries retained for curation.';
 COMMENT ON COLUMN feed_entries.curated_content_id IS 'If curated into a bookmark/article, references the content record.';
 
 CREATE INDEX idx_feed_entries_status ON feed_entries(status);
 CREATE INDEX idx_feed_entries_relevance ON feed_entries(relevance_score DESC);
-CREATE UNIQUE INDEX idx_feed_entries_url_hash ON feed_entries (url_hash) WHERE url_hash IS NOT NULL;
+CREATE UNIQUE INDEX idx_feed_entries_url_hash ON feed_entries (url_hash);
 CREATE INDEX idx_feed_entries_feed_id ON feed_entries (feed_id) WHERE feed_id IS NOT NULL;
 CREATE INDEX idx_feed_entries_collected_at ON feed_entries (collected_at DESC);
 CREATE INDEX idx_feed_entries_unread_at ON feed_entries (collected_at DESC) WHERE status = 'unread';
@@ -559,7 +581,7 @@ COMMENT ON COLUMN notes.maturity IS 'Zettelkasten maturity: seed (new), stub (in
 COMMENT ON COLUMN notes.raw_tags IS 'Raw frontmatter tags (JSONB array). Ingestion snapshot — canonical mapping via note_tags junction + tag_aliases pipeline.';
 COMMENT ON COLUMN notes.type IS 'Note type from frontmatter (e.g. leetcode, book-note, dev-log, til, note). Open-ended — values defined by vault conventions.';
 COMMENT ON COLUMN notes.source IS 'Knowledge source context (e.g. leetcode, claude, oreilly, ardanlabs). Not the sync platform — that is the vault system.';
-COMMENT ON COLUMN notes.context IS 'Project or domain context for this note (e.g. project slug). Free text — used for MCP search filtering.';
+COMMENT ON COLUMN notes.context IS 'Project or domain context (e.g. project slug). QUASI-CANONICAL — comes from frontmatter (raw), but actively used by MCP search filtering and morning_context. Not FK because vault may reference projects not yet in DB. Treat as soft reference, not pure raw field.';
 COMMENT ON COLUMN notes.difficulty IS 'Problem difficulty. Primarily for LeetCode notes.';
 
 CREATE INDEX idx_notes_type ON notes (type);
@@ -602,14 +624,7 @@ CREATE TABLE events (
     id          BIGSERIAL PRIMARY KEY,
     source_id   TEXT,
     timestamp   TIMESTAMPTZ NOT NULL,
-    event_type  TEXT NOT NULL
-                CHECK (event_type IN (
-                    'note_created', 'note_updated',
-                    'push', 'pull_request',
-                    'project_update', 'task_status_change', 'book_progress', 'goal_update',
-                    'task_completed', 'content_published',
-                    'my_day_incomplete'
-                )),
+    event_type  event_type NOT NULL,
     source      TEXT NOT NULL,
     project     TEXT,
     repo        TEXT,
@@ -622,7 +637,7 @@ CREATE TABLE events (
 
 COMMENT ON TABLE events IS 'Unified event log from all sources (GitHub, Notion, Obsidian sync, MCP, cron).';
 COMMENT ON COLUMN events.source_id IS 'Event ID in the origin system (e.g. GitHub delivery ID). Used for dedup.';
-COMMENT ON COLUMN events.event_type IS 'Event classification. Closed enum — all values defined in Go code.';
+COMMENT ON COLUMN events.event_type IS 'Event classification. PostgreSQL ENUM — closed contract, all values defined in Go code. Adding a new event type requires ALTER TYPE + Go code change.';
 COMMENT ON COLUMN events.source IS 'Origin system name (github, notion, obsidian, mcp, cron). NOT a participant — this is system-level.';
 COMMENT ON COLUMN events.project IS 'Related project slug. Not FK — may reference projects not yet created or since renamed.';
 COMMENT ON COLUMN events.repo IS 'GitHub repository full name (e.g. Koopa0/koopa0.dev).';
