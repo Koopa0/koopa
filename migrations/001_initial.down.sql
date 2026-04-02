@@ -3,6 +3,8 @@
 DROP VIEW IF EXISTS tool_daily_trend;
 DROP VIEW IF EXISTS tool_usage_summary;
 
+DROP TABLE IF EXISTS schedule_runs;
+DROP TABLE IF EXISTS participant_schedules;
 DROP TABLE IF EXISTS reconcile_runs;
 DROP TABLE IF EXISTS tool_call_logs;
 DROP TABLE IF EXISTS review_logs;

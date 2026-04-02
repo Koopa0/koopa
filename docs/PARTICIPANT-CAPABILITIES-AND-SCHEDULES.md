@@ -1,7 +1,7 @@
 # Design Doc: Participant Capabilities & Schedules
 
 **Date**: 2026-04-03
-**Status**: Draft — pending review
+**Status**: Reviewed — incorporating feedback
 **Prerequisite**: Schema v2 (signed off 2026-04-02)
 
 ---
@@ -31,7 +31,7 @@ Participant capabilities determine what each actor can do:
 | `can_issue_directives` | Can create directives targeting other participants |
 | `can_receive_directives` | Can be targeted by directives |
 | `can_write_reports` | Can create reports (directive-driven or self-initiated) |
-| `can_receive_tasks` | Can be assigned as `tasks.assignee` |
+| `task_assignable` | Can be assigned as `tasks.assignee` |
 | `can_own_schedules` | Can have recurring scheduled sessions |
 
 Go validation changes from:
@@ -78,7 +78,7 @@ Not speculative — these are known, already-described requirements:
 ALTER TABLE participant ADD COLUMN can_issue_directives   BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE participant ADD COLUMN can_receive_directives  BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE participant ADD COLUMN can_write_reports       BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE participant ADD COLUMN can_receive_tasks       BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE participant ADD COLUMN task_assignable       BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE participant ADD COLUMN can_own_schedules       BOOLEAN NOT NULL DEFAULT false;
 ```
 
@@ -105,10 +105,13 @@ ALTER TABLE participant ADD COLUMN can_own_schedules       BOOLEAN NOT NULL DEFA
 ### COMMENT
 
 ```sql
-COMMENT ON COLUMN participant.can_issue_directives IS 'Whether this participant can create directives. Go validation checks this instead of platform name. Currently: Cowork departments except learning-studio.';
+COMMENT ON COLUMN participant.can_issue_directives IS 'Whether this participant can create directives. Go validation checks this flag, not platform name.';
+
+-- Also update participant.platform COMMENT:
+COMMENT ON COLUMN participant.platform IS 'Execution context (claude-cowork, claude-code, claude-web, human). Informational — routing and capability decisions are driven by capability flags, not platform name.';
 COMMENT ON COLUMN participant.can_receive_directives IS 'Whether this participant can be targeted by directives. Go validation checks this instead of platform name.';
 COMMENT ON COLUMN participant.can_write_reports IS 'Whether this participant can create reports (directive-driven or self-initiated).';
-COMMENT ON COLUMN participant.can_receive_tasks IS 'Whether this participant can be assigned as tasks.assignee.';
+COMMENT ON COLUMN participant.task_assignable IS 'Whether this participant can be assigned as tasks.assignee.';
 COMMENT ON COLUMN participant.can_own_schedules IS 'Whether this participant can have entries in participant_schedules.';
 ```
 
@@ -145,9 +148,7 @@ CREATE TABLE participant_schedules (
     execution_backend     TEXT NOT NULL
                           CHECK (execution_backend IN (
                               'cowork_desktop',
-                              'claude_code_cloud',
-                              'claude_code_desktop',
-                              'claude_code_loop',
+                              'claude_code',
                               'github_actions',
                               'koopa_native'
                           )),
@@ -182,10 +183,49 @@ COMMENT ON COLUMN participant_schedules.trigger_type IS 'cron = fixed times (sch
 COMMENT ON COLUMN participant_schedules.schedule_expr IS 'Cron expression (0 8 * * *) or interval (1h, 30m). NULL for manual triggers.';
 COMMENT ON COLUMN participant_schedules.execution_backend IS 'Which runtime executes this schedule. Determines capabilities and constraints — see execution backend matrix below.';
 COMMENT ON COLUMN participant_schedules.instruction_template IS 'Prompt/instructions for the spawned session. May reference MCP tools, participant instructions, etc.';
-COMMENT ON COLUMN participant_schedules.expected_outputs IS 'What artifacts this schedule should produce (e.g. directive, report, journal context). Used for monitoring completeness.';
+COMMENT ON COLUMN participant_schedules.expected_outputs IS 'Expected artifact types from each run. Convention: bare name = IPC table (directive, report, journal, insight); colon-separated = table:kind filter (journal:plan, journal:reflection). Monitoring validation is Go-side, not DB-enforced. If automated completeness checking is added, this column format becomes a contract.';
 COMMENT ON COLUMN participant_schedules.missed_run_policy IS 'skip = silently miss. run_once_on_wake = catch up with one run. queue_all = run all missed occurrences.';
-COMMENT ON COLUMN participant_schedules.last_run_at IS 'When this schedule last executed. NULL = never run.';
-COMMENT ON COLUMN participant_schedules.last_run_status IS 'Result of last execution. NULL = never run.';
+COMMENT ON COLUMN participant_schedules.last_run_at IS 'Denormalized from schedule_runs for quick lookup. NULL = never run.';
+COMMENT ON COLUMN participant_schedules.last_run_status IS 'Denormalized from schedule_runs. NULL = never run.';
+```
+
+### Schedule run history
+
+```sql
+CREATE TABLE schedule_runs (
+    id          BIGSERIAL PRIMARY KEY,
+    schedule_id UUID NOT NULL REFERENCES participant_schedules(id) ON DELETE CASCADE,
+    status      TEXT NOT NULL CHECK (status IN ('success', 'failure', 'skipped')),
+    started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at    TIMESTAMPTZ,
+    error       TEXT,
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE schedule_runs IS 'Append-only execution history for participant_schedules. Avoids the feeds.consecutive_failures pattern — full history from day one enables trend analysis, hit rate, and failure diagnosis.';
+COMMENT ON COLUMN schedule_runs.status IS 'success = completed and produced expected outputs. failure = errored. skipped = missed_run_policy decided to skip.';
+COMMENT ON COLUMN schedule_runs.error IS 'Error details on failure. NULL on success/skip.';
+COMMENT ON COLUMN schedule_runs.metadata IS 'Run-specific data: produced artifact IDs, execution duration, backend-specific info.';
+
+CREATE INDEX idx_schedule_runs_schedule ON schedule_runs (schedule_id, started_at DESC);
+```
+
+**Note:** `participant_schedules.last_run_at` / `last_run_status` are denormalized cache of the latest `schedule_runs` row. Avoids querying history for every schedule list view. Go must update both atomically.
+
+### Cross-table invariant: can_own_schedules ↔ participant_schedules
+
+```
+INVARIANT: If participant.can_own_schedules is flipped from true → false,
+all participant_schedules rows for that participant must be set to enabled = false.
+
+Enforcement: Go layer — UpdateParticipant handler checks for this transition
+and cascades the disable. Not a DB trigger (project rule: no triggers for business logic).
+
+This is NOT enforced by DB constraints (cross-table CHECK impossible).
+If violated: orphaned enabled schedules whose owner has lost capability.
+Detection: SELECT ps.* FROM participant_schedules ps JOIN participant p ON ps.participant = p.name
+           WHERE ps.enabled = true AND p.can_own_schedules = false;
 ```
 
 ### Execution backend capability matrix (documented, not schema-enforced)
@@ -193,13 +233,13 @@ COMMENT ON COLUMN participant_schedules.last_run_status IS 'Result of last execu
 | Backend | Runs without local machine | Min interval | Local file access | MCP access | Can push to GitHub |
 |---------|---------------------------|-------------|-------------------|------------|-------------------|
 | `cowork_desktop` | ❌ (needs Desktop app + machine awake) | ~1 min | ✅ | ✅ (connectors) | ❌ |
-| `claude_code_cloud` | ✅ (Anthropic cloud) | 1 hour | ❌ (fresh clone) | ✅ (if configured) | ✅ (PR) |
-| `claude_code_desktop` | ❌ (needs Desktop app + machine awake) | 1 min | ✅ | ✅ | ✅ |
-| `claude_code_loop` | ❌ (session-scoped, 7-day expiry) | 1 min | ✅ | ✅ | ✅ |
+| `claude_code` | Mixed — cloud subtask: ✅; desktop/loop: ❌ | cloud: 1h; desktop/loop: 1m | cloud: ❌; desktop: ✅ | ✅ | ✅ |
 | `github_actions` | ✅ (GitHub cloud) | per workflow | ❌ (runner only) | ❌ | ✅ |
 | `koopa_native` | ✅ (koopa server) | any | ✅ (server-side) | ✅ (built-in) | depends |
 
 **This matrix is documentation, not schema.** Backend behavior differences are too nuanced for CHECK constraints. Go layer + documentation is the right enforcement level.
+
+**Why `claude_code` is one value, not three:** Claude Code has cloud/desktop/loop execution modes, but they share the same participant and MCP tool surface. The mode distinction is an operational concern (where does it run), not a scheduling concern (what does it do). If mode-specific behavior (e.g. missed_run_policy differs between cloud and desktop) becomes important, split into `claude_code_cloud` / `claude_code_desktop` at that time.
 
 ### Seed schedule data (002_seed.up.sql)
 
@@ -240,7 +280,7 @@ Old: IPC — Cowork-internal coordination instructions. Scoped to claude-cowork 
      For cross-platform work dispatch (e.g. HQ → Claude Code), use tasks.assignee instead.
 
 New: IPC — coordination instructions between participants. Source must have can_issue_directives = true,
-     target must have can_receive_directives = true (Go-validated). Currently: Cowork departments.
+     target must have can_receive_directives = true (Go-validated).
      For work assignment to execution agents, use tasks.assignee.
 ```
 
@@ -266,8 +306,8 @@ New: Go layer validates participant.can_receive_directives = true.
 Old: Currently limited to claude-cowork participants by Go validation. May expand if cross-platform
      reporting is needed.
 
-New: Go layer validates participant.can_write_reports = true. Currently: Cowork departments.
-     Expandable by setting can_write_reports = true on other participants.
+New: Go layer validates participant.can_write_reports = true.
+     Expandable by setting capability flag on any participant.
 ```
 
 ---
@@ -280,8 +320,9 @@ New: Go layer validates participant.can_write_reports = true. Currently: Cowork 
 | Directive source validation: `platform == claude-cowork` → `can_issue_directives` | `internal/mcp/write.go` (or new `internal/directive/`) |
 | Directive target validation: same pattern | same |
 | Report source validation: same pattern | same |
-| Task assignee validation: check `can_receive_tasks` | `internal/mcp/write.go` |
+| Task assignee validation: check `task_assignable` | `internal/mcp/write.go` |
 | Schedule CRUD: new store/handler | `internal/schedule/` (new package) |
+| Schedule run recording | `internal/schedule/` — INSERT schedule_runs + UPDATE last_run_* |
 | New MCP tools: `list_schedules`, `schedule_detail`, maybe `trigger_schedule` | `internal/mcp/server.go` |
 
 ---
@@ -295,3 +336,7 @@ New: Go layer validates participant.can_write_reports = true. Currently: Cowork 
 | execution_backend | TEXT CHECK enum | Separate backends table | Fixed set of known backends. Backend capabilities documented, not schema-enforced. |
 | Backend capability enforcement | Documentation + Go validation | DB constraints | Nuances too complex for CHECK — min interval, file access, cloud/local differ per backend |
 | missed_run_policy | 3-value enum (skip/run_once/queue_all) | Omit | Platform-specific behavior mapped to normalized policy intent |
+| Run history | schedule_runs table from day one | last_run_* columns only | Avoid feeds.consecutive_failures pattern — full history enables trend analysis |
+| execution_backend granularity | claude_code (merged) | claude_code_cloud/desktop/loop (split) | No current code path distinguishes modes. Split when needed — easier than rename |
+| can_receive_tasks naming | `task_assignable` | `can_receive_tasks` | Precision over naming consistency — receive implies inbox semantics that tasks don't have |
+| COMMENT style | Describe check semantics, not current snapshot | "Currently: Cowork departments" | Snapshot descriptions expire. Semantic descriptions don't. |

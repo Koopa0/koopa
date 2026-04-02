@@ -77,26 +77,36 @@ INSERT INTO platform(name, description) VALUES
     ('human', 'Direct human operation');
 
 CREATE TABLE participant (
-    name        TEXT PRIMARY KEY,
-    platform    TEXT NOT NULL REFERENCES platform(name),
-    description TEXT NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    name                    TEXT PRIMARY KEY,
+    platform                TEXT NOT NULL REFERENCES platform(name),
+    description             TEXT NOT NULL DEFAULT '',
+    can_issue_directives    BOOLEAN NOT NULL DEFAULT false,
+    can_receive_directives  BOOLEAN NOT NULL DEFAULT false,
+    can_write_reports       BOOLEAN NOT NULL DEFAULT false,
+    task_assignable         BOOLEAN NOT NULL DEFAULT false,
+    can_own_schedules       BOOLEAN NOT NULL DEFAULT false,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE participant IS 'An actor in the system — a Cowork project, a Claude Code project, or a human operator. Platform determines the context.';
+COMMENT ON TABLE participant IS 'An actor in the system — a Cowork project, a Claude Code project, or a human operator. Capability flags determine what each participant can do in the IPC protocol.';
 COMMENT ON COLUMN participant.name IS 'Unique identifier used as source/target in directives, source in reports/journal/insights, and assignee in tasks.';
-COMMENT ON COLUMN participant.platform IS 'Which platform this participant belongs to. Determines communication capabilities. Go layer uses this for validation: directive target must be on claude-cowork platform.';
+COMMENT ON COLUMN participant.platform IS 'Execution context (claude-cowork, claude-code, claude-web, human). Informational — routing and capability decisions are driven by capability flags, not platform name.';
 COMMENT ON COLUMN participant.description IS 'Human-readable role description for this participant.';
+COMMENT ON COLUMN participant.can_issue_directives IS 'Whether this participant can create directives. Go validation checks this flag, not platform name.';
+COMMENT ON COLUMN participant.can_receive_directives IS 'Whether this participant can be targeted by directives.';
+COMMENT ON COLUMN participant.can_write_reports IS 'Whether this participant can create reports (directive-driven or self-initiated).';
+COMMENT ON COLUMN participant.task_assignable IS 'Whether this participant can be assigned as tasks.assignee.';
+COMMENT ON COLUMN participant.can_own_schedules IS 'Whether this participant can have entries in participant_schedules. INVARIANT: if flipped true → false, Go must cascade-disable all participant_schedules for this participant.';
 
-INSERT INTO participant(name, platform, description) VALUES
-    ('hq', 'claude-cowork', 'Studio HQ — CEO, decisions, delegation'),
-    ('content-studio', 'claude-cowork', 'Content strategy, writing, publishing'),
-    ('research-lab', 'claude-cowork', 'Deep research, structured reports'),
-    ('learning-studio', 'claude-cowork', 'LeetCode coaching, spaced repetition'),
-    ('koopa0.dev', 'claude-code', 'koopa0.dev development project'),
-    ('go-spec', 'claude-code', 'Go spec configuration project'),
-    ('claude', 'claude-web', 'General Claude Web session'),
-    ('human', 'human', 'Koopa — direct manual operation');
+INSERT INTO participant(name, platform, description, can_issue_directives, can_receive_directives, can_write_reports, task_assignable, can_own_schedules) VALUES
+    ('hq',              'claude-cowork', 'Studio HQ — CEO, decisions, delegation',       true,  false, true,  true,  true),
+    ('content-studio',  'claude-cowork', 'Content strategy, writing, publishing',         true,  true,  true,  true,  true),
+    ('research-lab',    'claude-cowork', 'Deep research, structured reports',              true,  true,  true,  true,  true),
+    ('learning-studio', 'claude-cowork', 'LeetCode coaching, spaced repetition',          false, true,  true,  true,  false),
+    ('koopa0.dev',      'claude-code',   'koopa0.dev development project',                false, false, false, true,  true),
+    ('go-spec',         'claude-code',   'Go spec configuration project',                 false, false, false, true,  false),
+    ('claude',          'claude-web',    'General Claude Web session',                     false, false, false, false, false),
+    ('human',           'human',         'Koopa — direct manual operation',                false, false, false, false, false);
 
 -- ============================================================
 -- Core domain: topics, tags, users
@@ -782,12 +792,12 @@ CREATE TABLE directives (
         CHECK (acknowledged_by IS NULL OR acknowledged_by = target)
 );
 
-COMMENT ON TABLE directives IS 'IPC — Cowork-internal coordination instructions. Scoped to claude-cowork platform only. For cross-platform work dispatch (e.g. HQ → Claude Code), use tasks.assignee instead. Source dispatches work to target. Target acknowledges receipt; completion is tracked via reports.in_response_to FK.';
-COMMENT ON COLUMN directives.source IS 'Who issued this directive. FK to participant. Go layer validates source.platform = claude-cowork. Any Cowork department can issue directives (not limited to HQ — supports cross-department coordination like content-studio → research-lab).';
-COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive must have a target. Go layer validates target.platform = claude-cowork. Cross-platform targets (claude-code projects) are out of scope — use tasks.assignee for that.';
+COMMENT ON TABLE directives IS 'IPC — coordination instructions between participants. Source must have can_issue_directives = true, target must have can_receive_directives = true (Go-validated). For work assignment to execution agents, use tasks.assignee.';
+COMMENT ON COLUMN directives.source IS 'Who issued this directive. FK to participant. Go layer validates participant.can_issue_directives = true.';
+COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive must have a target. Go layer validates participant.can_receive_directives = true.';
 COMMENT ON COLUMN directives.priority IS 'p0 = immediate, p1 = today, p2 = this week.';
 COMMENT ON COLUMN directives.acknowledged_at IS 'When target picked up this directive. NULL = unacknowledged.';
-COMMENT ON COLUMN directives.acknowledged_by IS 'Must equal target (chk_ack_must_be_target). Go layer validates platform = claude-cowork.';
+COMMENT ON COLUMN directives.acknowledged_by IS 'Must equal target (chk_ack_must_be_target).';
 COMMENT ON COLUMN directives.note_date IS 'Business date this directive belongs to. Inherited naming from session_notes lineage — semantically this is the issued date.';
 COMMENT ON COLUMN directives.metadata IS 'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs.';
 
@@ -809,7 +819,7 @@ CREATE TABLE reports (
 );
 
 COMMENT ON TABLE reports IS 'IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion signal: currently inferred from report metadata (follow_up_needed) — acceptable for early stage. When completion needs to be systemically queried (dashboard, overdue detection, completion rate), upgrade to directives.resolved_at or report metadata.kind = progress|final|addendum.';
-COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant. Currently limited to claude-cowork participants by Go validation. May expand if cross-platform reporting is needed (e.g. Claude Code session producing a report on behalf of a department).';
+COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant. Go layer validates participant.can_write_reports = true. Expandable by setting capability flag on any participant.';
 COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
 COMMENT ON COLUMN reports.note_date IS 'Business date this report belongs to. Inherited naming from session_notes lineage — semantically this is the reported date.';
 COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.';
@@ -982,3 +992,66 @@ COMMENT ON COLUMN reconcile_runs.total_drift IS 'Sum of all missing+orphaned cou
 COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
 
 CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);
+
+-- ============================================================
+-- Participant schedules + run history
+-- ============================================================
+
+CREATE TABLE participant_schedules (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    participant           TEXT NOT NULL REFERENCES participant(name),
+    name                  TEXT NOT NULL,
+    purpose               TEXT NOT NULL,
+    trigger_type          TEXT NOT NULL CHECK (trigger_type IN ('cron', 'interval', 'manual')),
+    schedule_expr         TEXT,
+    execution_backend     TEXT NOT NULL
+                          CHECK (execution_backend IN ('cowork_desktop', 'claude_code', 'github_actions', 'koopa_native')),
+    instruction_template  TEXT NOT NULL,
+    expected_outputs      TEXT[] NOT NULL DEFAULT '{}',
+    missed_run_policy     TEXT NOT NULL DEFAULT 'skip'
+                          CHECK (missed_run_policy IN ('skip', 'run_once_on_wake', 'queue_all')),
+    enabled               BOOLEAN NOT NULL DEFAULT true,
+    last_run_at           TIMESTAMPTZ,
+    last_run_status       TEXT CHECK (last_run_status IN ('success', 'failure', 'skipped')),
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_cron_has_expr
+        CHECK (trigger_type <> 'cron' OR schedule_expr IS NOT NULL),
+    CONSTRAINT chk_interval_has_expr
+        CHECK (trigger_type <> 'interval' OR schedule_expr IS NOT NULL)
+);
+
+COMMENT ON TABLE participant_schedules IS 'Participant-owned standing instructions that spawn sessions on a recurring basis. Schedule defines WHAT and WHEN; execution_backend defines WHERE and HOW.';
+COMMENT ON COLUMN participant_schedules.participant IS 'Owner. FK to participant. Go validates participant.can_own_schedules = true.';
+COMMENT ON COLUMN participant_schedules.name IS 'Human-readable schedule name (e.g. Morning Briefing, RSS Pipeline Check).';
+COMMENT ON COLUMN participant_schedules.purpose IS 'One-line description of what this schedule achieves.';
+COMMENT ON COLUMN participant_schedules.trigger_type IS 'cron = fixed times. interval = recurring period. manual = only triggered by API/UI.';
+COMMENT ON COLUMN participant_schedules.schedule_expr IS 'Cron expression (0 8 * * *) or interval (1h, 30m). NULL for manual triggers.';
+COMMENT ON COLUMN participant_schedules.execution_backend IS 'Which runtime executes this schedule. cowork_desktop = Claude Desktop Cowork. claude_code = Claude Code (cloud/desktop/loop). github_actions = GitHub CI. koopa_native = koopa server scheduler (future).';
+COMMENT ON COLUMN participant_schedules.instruction_template IS 'Prompt/instructions for the spawned session. May reference MCP tools, participant instructions, etc.';
+COMMENT ON COLUMN participant_schedules.expected_outputs IS 'Expected artifact types from each run. Convention: bare name = IPC table (directive, report, journal, insight); colon-separated = table:kind filter (journal:plan, journal:reflection). Monitoring validation is Go-side, not DB-enforced. If automated completeness checking is added, this column format becomes a contract.';
+COMMENT ON COLUMN participant_schedules.missed_run_policy IS 'skip = silently miss. run_once_on_wake = catch up with one run. queue_all = run all missed occurrences. Behavior depends on execution_backend capabilities.';
+COMMENT ON COLUMN participant_schedules.last_run_at IS 'Denormalized from schedule_runs for quick lookup. NULL = never run.';
+COMMENT ON COLUMN participant_schedules.last_run_status IS 'Denormalized from schedule_runs. NULL = never run.';
+COMMENT ON COLUMN participant_schedules.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
+
+CREATE INDEX idx_participant_schedules_participant ON participant_schedules (participant);
+
+CREATE TABLE schedule_runs (
+    id          BIGSERIAL PRIMARY KEY,
+    schedule_id UUID NOT NULL REFERENCES participant_schedules(id) ON DELETE CASCADE,
+    status      TEXT NOT NULL CHECK (status IN ('success', 'failure', 'skipped')),
+    started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at    TIMESTAMPTZ,
+    error       TEXT,
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE schedule_runs IS 'Append-only execution history for participant_schedules. Full history from day one — enables trend analysis, hit rate, and failure diagnosis.';
+COMMENT ON COLUMN schedule_runs.status IS 'success = completed and produced expected outputs. failure = errored. skipped = missed_run_policy decided to skip.';
+COMMENT ON COLUMN schedule_runs.error IS 'Error details on failure. NULL on success/skip.';
+COMMENT ON COLUMN schedule_runs.metadata IS 'Run-specific data: produced artifact IDs, execution duration, backend-specific info.';
+
+CREATE INDEX idx_schedule_runs_schedule ON schedule_runs (schedule_id, started_at DESC);

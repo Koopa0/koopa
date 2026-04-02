@@ -163,3 +163,28 @@ BEGIN
         END LOOP;
     END LOOP;
 END $$;
+
+-- ============================================================
+-- Participant schedules (known schedules from Cowork instructions)
+-- ============================================================
+
+INSERT INTO participant_schedules (participant, name, purpose, trigger_type, schedule_expr, execution_backend, instruction_template, expected_outputs, missed_run_policy) VALUES
+    ('hq', 'Morning Briefing', 'Daily briefing: tasks, projects, goals, insights, RSS highlights',
+     'cron', '0 8 * * *', 'cowork_desktop',
+     'Execute morning briefing flow: morning_context → produce briefing → write directives for departments',
+     '{"directive", "journal:plan"}', 'run_once_on_wake'),
+
+    ('hq', 'Weekly Review', 'Weekly summary and next-week planning',
+     'cron', '0 17 * * 5', 'cowork_desktop',
+     'Execute weekly review: weekly_summary → review department reports → write reflection + new directives',
+     '{"directive", "journal:reflection"}', 'run_once_on_wake'),
+
+    ('content-studio', 'Pipeline Check', 'Daily content pipeline health + RSS monitoring',
+     'cron', '0 14 * * *', 'cowork_desktop',
+     'Read directives → list_content_queue → rss_highlights → write report',
+     '{"report"}', 'skip'),
+
+    ('research-lab', 'Industry Scan', 'Weekly industry trend scanning',
+     'cron', '0 9 * * 1', 'cowork_desktop',
+     'Read directives → RSS + web search → produce industry trend report',
+     '{"report"}', 'skip');
