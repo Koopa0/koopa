@@ -83,6 +83,7 @@ CREATE TABLE platform (
 
 COMMENT ON TABLE platform IS 'AI environment or human context. Each platform hosts one or more participants (projects/agents).';
 COMMENT ON COLUMN platform.name IS 'Platform identifier: claude-cowork, claude-code, claude-web, human.';
+COMMENT ON COLUMN platform.description IS 'Human-readable description of this platform.';
 
 INSERT INTO platform(name, description) VALUES
     ('claude-cowork', 'Claude Desktop Cowork — multi-project virtual studio'),
@@ -99,7 +100,8 @@ CREATE TABLE participant (
 
 COMMENT ON TABLE participant IS 'An actor in the system — a Cowork project, a Claude Code project, or a human operator. Platform determines the context.';
 COMMENT ON COLUMN participant.name IS 'Unique identifier used as source/target in messages and assignee in tasks.';
-COMMENT ON COLUMN participant.platform IS 'Which platform this participant belongs to. Determines communication capabilities.';
+COMMENT ON COLUMN participant.platform IS 'Which platform this participant belongs to. Determines communication capabilities. Go layer uses this for validation: directive target must be on claude-cowork platform.';
+COMMENT ON COLUMN participant.description IS 'Human-readable role description for this participant.';
 
 INSERT INTO participant(name, platform, description) VALUES
     ('hq', 'claude-cowork', 'Studio HQ — CEO, decisions, delegation'),
@@ -124,7 +126,10 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON TABLE users IS 'System users. Currently single-admin only.';
+COMMENT ON COLUMN users.email IS 'Login identity. Unique.';
 COMMENT ON COLUMN users.role IS 'Single-value placeholder. Currently only admin exists. If no second role materializes by public API launch, delete this column. CHECK uses IN() syntax for easy extension.';
+COMMENT ON COLUMN users.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE TABLE refresh_tokens (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -133,6 +138,11 @@ CREATE TABLE refresh_tokens (
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON TABLE refresh_tokens IS 'JWT refresh token hashes. One user may have multiple active tokens (multi-device).';
+COMMENT ON COLUMN refresh_tokens.user_id IS 'Token owner. CASCADE — user deletion invalidates all tokens.';
+COMMENT ON COLUMN refresh_tokens.token_hash IS 'Bcrypt or SHA256 hash of the actual token. Never store plaintext.';
+COMMENT ON COLUMN refresh_tokens.expires_at IS 'Absolute expiration. Tokens past this time are invalid and eligible for cleanup.';
 
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
@@ -148,6 +158,11 @@ CREATE TABLE topics (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON TABLE topics IS 'High-level knowledge domains (Go, AI, System Design). 10-20, manually managed. Used for content categorization and feed association.';
+COMMENT ON COLUMN topics.slug IS 'URL-safe identifier (e.g. system-design). Used in feed_topics and content_topics junctions.';
+COMMENT ON COLUMN topics.icon IS 'Optional emoji or icon identifier for UI display.';
+COMMENT ON COLUMN topics.sort_order IS 'Display ordering. Lower = higher priority.';
+
 CREATE TABLE tags (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug        TEXT NOT NULL UNIQUE,
@@ -157,6 +172,10 @@ CREATE TABLE tags (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON TABLE tags IS 'Canonical tag registry. Fine-grained labels (two-pointers, error-handling). Auto-extracted from notes, resolved through tag_aliases pipeline.';
+COMMENT ON COLUMN tags.slug IS 'Canonical form (e.g. two-pointers, dp). Controlled vocabulary for LeetCode patterns, weaknesses, improvements.';
+COMMENT ON COLUMN tags.parent_id IS 'Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.';
 
 CREATE INDEX idx_tags_parent ON tags(parent_id);
 
@@ -170,6 +189,12 @@ CREATE TABLE tag_aliases (
     confirmed_at TIMESTAMPTZ,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON TABLE tag_aliases IS 'Maps raw tag strings (from frontmatter/external) to canonical tags. Pipeline: raw_tag → lookup alias → resolve to tag_id.';
+COMMENT ON COLUMN tag_aliases.raw_tag IS 'Original tag string as found in source (e.g. "golang", "JS", "dynamic-programming").';
+COMMENT ON COLUMN tag_aliases.tag_id IS 'Resolved canonical tag. NULL for unmapped/rejected aliases.';
+COMMENT ON COLUMN tag_aliases.match_method IS 'How the alias was resolved: exact, case-insensitive, manual (admin), unmapped (pending), rejected (admin declined).';
+COMMENT ON COLUMN tag_aliases.confirmed IS 'Whether an admin has verified this mapping. Unconfirmed auto-matches may be wrong.';
 
 CREATE INDEX idx_tag_aliases_tag ON tag_aliases(tag_id);
 CREATE INDEX idx_tag_aliases_confirmed ON tag_aliases(confirmed);
@@ -192,8 +217,13 @@ CREATE TABLE goals (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON COLUMN goals.quarter IS 'Format: "Q1 2026" or "2026-Q1". No CHECK — values from Notion upstream.';
-COMMENT ON COLUMN goals.area IS 'PARA methodology Area — long-term responsibility domain (e.g. Backend, Learning, Studio).';
+COMMENT ON TABLE goals IS 'Strategic goals synced from Notion. Tracks quarterly objectives with status lifecycle.';
+COMMENT ON COLUMN goals.status IS 'Lifecycle: not-started → in-progress → done/abandoned.';
+COMMENT ON COLUMN goals.area IS 'PARA methodology Area — long-term responsibility domain (e.g. Backend, Learning, Studio). NULL = unclassified.';
+COMMENT ON COLUMN goals.quarter IS 'Target quarter (e.g. "Q1 2026"). No CHECK — values from Notion upstream. NULL = no quarter assigned.';
+COMMENT ON COLUMN goals.deadline IS 'Hard deadline if any. NULL = no deadline.';
+COMMENT ON COLUMN goals.notion_page_id IS 'Notion page ID for bidirectional sync. UNIQUE — one goal per Notion page.';
+COMMENT ON COLUMN goals.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
 
@@ -231,12 +261,24 @@ CREATE TABLE projects (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON COLUMN projects.role IS 'User role in this project (e.g. Lead Engineer, Sole Developer).';
-COMMENT ON COLUMN projects.area IS 'PARA methodology Area — long-term responsibility domain (e.g. Backend, Learning, Studio).';
-COMMENT ON COLUMN projects.repo IS 'GitHub repository full name (e.g. Koopa0/koopa0.dev). Used by activity event resolution.';
-COMMENT ON COLUMN projects.github_url IS 'Full GitHub repository URL.';
-COMMENT ON COLUMN projects.live_url IS 'Production deployment URL.';
+COMMENT ON TABLE projects IS 'Portfolio projects with case study fields. Synced from Notion or created manually. Links to contents (build-logs, articles) and tasks.';
+COMMENT ON COLUMN projects.role IS 'User role in this project (e.g. Lead Engineer, Sole Developer). NULL = not specified.';
+COMMENT ON COLUMN projects.area IS 'PARA methodology Area — long-term responsibility domain (e.g. Backend, Learning, Studio). NULL = unclassified.';
+COMMENT ON COLUMN projects.repo IS 'GitHub repository full name (e.g. Koopa0/koopa0.dev). Used by activity event resolution and webhook routing.';
+COMMENT ON COLUMN projects.github_url IS 'Full GitHub repository URL. NULL = no public repo.';
+COMMENT ON COLUMN projects.live_url IS 'Production deployment URL. NULL = not deployed.';
 COMMENT ON COLUMN projects.expected_cadence IS 'Expected development activity frequency. NULL = not set.';
+COMMENT ON COLUMN projects.long_description IS 'Extended description for project detail page. NULL = use description.';
+COMMENT ON COLUMN projects.problem IS 'Case study: what problem this project solves. NULL = not a case study.';
+COMMENT ON COLUMN projects.solution IS 'Case study: how the problem was solved.';
+COMMENT ON COLUMN projects.architecture IS 'Case study: system architecture description.';
+COMMENT ON COLUMN projects.results IS 'Case study: measurable outcomes.';
+COMMENT ON COLUMN projects.featured IS 'Whether to show on the public portfolio homepage.';
+COMMENT ON COLUMN projects.is_public IS 'Whether this project is visible on the public website.';
+COMMENT ON COLUMN projects.notion_page_id IS 'Notion page ID for bidirectional sync. UNIQUE — one project per Notion page.';
+COMMENT ON COLUMN projects.goal_id IS 'Which strategic goal this project serves. SET NULL on goal deletion.';
+COMMENT ON COLUMN projects.last_activity_at IS 'Timestamp of most recent activity event for this project. Updated by cron.';
+COMMENT ON COLUMN projects.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_projects_featured ON projects(featured DESC, sort_order);
 CREATE INDEX idx_projects_lower_title ON projects (LOWER(title));
@@ -281,11 +323,22 @@ CREATE TABLE contents (
     )
 );
 
+COMMENT ON TABLE contents IS 'Published content — the finished product. Seven types share one table and one lifecycle: draft → review → published → archived.';
+COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs.';
+COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, note, bookmark, digest.';
+COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → review → published. archived = soft delete.';
+COMMENT ON COLUMN contents.source IS 'Origin identifier — Obsidian file path, external URL, or NULL for manually created content.';
+COMMENT ON COLUMN contents.source_type IS 'Origin system classification. Different dimension from participant — this is WHERE content came from, not WHO created it.';
+COMMENT ON COLUMN contents.series_id IS 'Groups content into a series. Paired with series_order (chk_contents_series).';
+COMMENT ON COLUMN contents.series_order IS 'Position within the series. Paired with series_id (chk_contents_series).';
+COMMENT ON COLUMN contents.review_level IS 'AI review strictness: auto (publish immediately), light, standard, strict (human approval required).';
 COMMENT ON COLUMN contents.reading_time_min IS 'Estimated reading time in minutes. Computed from body word count. Always >= 0.';
 COMMENT ON COLUMN contents.ai_metadata IS 'AI pipeline metadata (JSONB). Structure: {summary, keywords, quality_score, review_notes}. Set by Genkit flows.';
 COMMENT ON COLUMN contents.is_public IS 'Whether this content is visible on the public website. Private content is admin/MCP only.';
-COMMENT ON COLUMN contents.source IS 'Origin identifier — Obsidian file path, external URL, or NULL for manually created content.';
-COMMENT ON COLUMN contents.source_type IS 'Origin system classification. Different dimension from participant — this is WHERE content came from, not WHO created it.';
+COMMENT ON COLUMN contents.project_id IS 'Associated project. SET NULL on project deletion — content survives independently.';
+COMMENT ON COLUMN contents.published_at IS 'When content was published. NULL = not yet published.';
+COMMENT ON COLUMN contents.embedding IS 'pgvector embedding (768d) for semantic search via HNSW index.';
+COMMENT ON COLUMN contents.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_contents_status ON contents(status);
 CREATE INDEX idx_contents_type ON contents(type);
@@ -311,6 +364,8 @@ CREATE TABLE content_topics (
     topic_id   UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
     PRIMARY KEY (content_id, topic_id)
 );
+
+COMMENT ON TABLE content_topics IS 'Junction: content ↔ topic. Many-to-many. Curated knowledge domain categories.';
 
 CREATE INDEX idx_content_topics_topic_id ON content_topics(topic_id);
 
@@ -367,11 +422,18 @@ CREATE TABLE feeds (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON TABLE feeds IS 'RSS/Atom feed subscriptions. Fetch pipeline pulls entries on schedule, scores relevance, and surfaces for curation.';
+COMMENT ON COLUMN feeds.url IS 'Feed URL (RSS/Atom). Unique — one subscription per URL.';
+COMMENT ON COLUMN feeds.schedule IS 'Fetch frequency: daily, weekly, etc. Used by cron scheduler.';
+COMMENT ON COLUMN feeds.priority IS 'Feed importance for relevance scoring: high feeds get boosted scores.';
 COMMENT ON COLUMN feeds.etag IS 'HTTP ETag header from last fetch. NULL = never fetched or server did not return ETag.';
 COMMENT ON COLUMN feeds.last_modified IS 'HTTP Last-Modified header from last fetch. NULL = never fetched or server did not return it.';
 COMMENT ON COLUMN feeds.last_error IS 'Error message from last failed fetch. NULL = no error (last fetch succeeded or never fetched).';
 COMMENT ON COLUMN feeds.disabled_reason IS 'Why this feed was disabled. NULL = not disabled or no reason recorded.';
+COMMENT ON COLUMN feeds.consecutive_failures IS 'Number of consecutive fetch failures. Reset to 0 on success. Auto-disable threshold in Go.';
+COMMENT ON COLUMN feeds.last_fetched_at IS 'When the feed was last successfully fetched. NULL = never fetched.';
 COMMENT ON COLUMN feeds.filter_config IS 'Feed-specific filter rules (JSONB). Structure: {deny_paths, deny_title_patterns, deny_tags}. Empty {} = no filtering.';
+COMMENT ON COLUMN feeds.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_feeds_schedule ON feeds (schedule) WHERE enabled = true;
 
@@ -405,7 +467,14 @@ CREATE TABLE feed_entries (
 COMMENT ON TABLE feed_entries IS 'RSS feed items collected by the fetch pipeline. IMPORTANT SEMANTICS: topics are inherited from feed via feed_topics junction at QUERY TIME, not snapshot at ingestion. This means changing a feed''s topics retroactively changes all its entries'' topic associations. This is a deliberate product choice — topics represent current feed configuration, not historical classification. If historical topic tracking is needed, add feed_entry_topics snapshot table.';
 COMMENT ON COLUMN feed_entries.url_hash IS 'Dedup identity — SHA256 of canonical source_url. NOT NULL — every entry must have dedup identity. Pipeline computes before INSERT.';
 COMMENT ON COLUMN feed_entries.feed_id IS 'Source feed. NULL after feed deletion (SET NULL) — entries retained for curation.';
-COMMENT ON COLUMN feed_entries.curated_content_id IS 'If curated into a bookmark/article, references the content record.';
+COMMENT ON COLUMN feed_entries.source_url IS 'Original article URL.';
+COMMENT ON COLUMN feed_entries.relevance_score IS 'Keyword-weighted relevance score computed by fetch pipeline. Higher = more relevant to tracked topics.';
+COMMENT ON COLUMN feed_entries.status IS 'Curation lifecycle: unread → read → curated/ignored.';
+COMMENT ON COLUMN feed_entries.curated_content_id IS 'If curated into a bookmark/article, references the content record. SET NULL on content deletion.';
+COMMENT ON COLUMN feed_entries.collected_at IS 'When the pipeline first fetched this entry.';
+COMMENT ON COLUMN feed_entries.user_feedback IS 'Admin feedback on relevance scoring quality. Used to tune scoring parameters.';
+COMMENT ON COLUMN feed_entries.feedback_at IS 'When feedback was given. NULL = no feedback.';
+COMMENT ON COLUMN feed_entries.published_at IS 'Original publication date from the feed. NULL if feed did not provide it.';
 
 CREATE INDEX idx_feed_entries_status ON feed_entries(status);
 CREATE INDEX idx_feed_entries_relevance ON feed_entries(relevance_score DESC);
@@ -430,7 +499,7 @@ CREATE TABLE topic_monitors (
     UNIQUE(topic_id)
 );
 
-COMMENT ON TABLE topic_monitors IS 'Active monitoring rules per topic. Keywords drive web search, schedule controls frequency. One monitor per topic max.';
+COMMENT ON TABLE topic_monitors IS 'Active monitoring rules per topic. Keywords drive web search, schedule controls frequency. One monitor per topic max. Name comes from topics.name — not duplicated here.';
 COMMENT ON COLUMN topic_monitors.keywords IS 'Search keywords for this topic. Used by monitoring pipeline to discover new content.';
 COMMENT ON COLUMN topic_monitors.sources IS 'Specific source URLs or domains to monitor for this topic.';
 
@@ -545,8 +614,14 @@ CREATE TABLE sources (
 );
 
 COMMENT ON TABLE sources IS 'External data source sync configuration. Platform-agnostic — provider column distinguishes Notion, Linear, etc.';
+COMMENT ON COLUMN sources.external_id IS 'Identifier in the external system (e.g. Notion database ID). UNIQUE — one source config per external resource.';
 COMMENT ON COLUMN sources.provider IS 'Which external platform this source connects to.';
+COMMENT ON COLUMN sources.role IS 'What kind of data this source provides. NULL = not categorized. UNIQUE partial index — one source per role.';
+COMMENT ON COLUMN sources.sync_mode IS 'Sync strategy: full (re-sync all), incremental (changes only).';
 COMMENT ON COLUMN sources.property_map IS 'Maps external properties to local fields (JSONB). Structure varies by provider and role.';
+COMMENT ON COLUMN sources.poll_interval IS 'How often to poll for changes. PostgreSQL interval format (e.g. 15 minutes).';
+COMMENT ON COLUMN sources.last_synced_at IS 'Last successful sync timestamp. NULL = never synced.';
+COMMENT ON COLUMN sources.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_sources_role_enabled ON sources (role) WHERE enabled = true AND role IS NOT NULL;
 CREATE INDEX idx_sources_ext_enabled ON sources (external_id) WHERE enabled = true;
@@ -590,6 +665,16 @@ COMMENT ON COLUMN notes.type IS 'Note type from frontmatter (e.g. leetcode, book
 COMMENT ON COLUMN notes.source IS 'Knowledge source context (e.g. leetcode, claude, oreilly, ardanlabs). Not the sync platform — that is the vault system.';
 COMMENT ON COLUMN notes.context IS 'Project or domain context (e.g. project slug). QUASI-CANONICAL — comes from frontmatter (raw), but actively used by MCP search filtering and morning_context. Not FK because vault may reference projects not yet in DB. Treat as soft reference, not pure raw field.';
 COMMENT ON COLUMN notes.difficulty IS 'Problem difficulty. Primarily for LeetCode notes.';
+COMMENT ON COLUMN notes.leetcode_id IS 'LeetCode problem number. NULL for non-LeetCode notes.';
+COMMENT ON COLUMN notes.book IS 'Book title if this note is from a book reading session.';
+COMMENT ON COLUMN notes.chapter IS 'Chapter identifier within the book.';
+COMMENT ON COLUMN notes.notion_task_id IS 'Linked Notion task ID. Used to associate notes with learning tasks.';
+COMMENT ON COLUMN notes.content_text IS 'Full text content extracted from the note file. Used for full-text search.';
+COMMENT ON COLUMN notes.content_hash IS 'SHA256 of content_text. Used for change detection during sync — skip re-processing if unchanged.';
+COMMENT ON COLUMN notes.embedding IS 'pgvector embedding (768d) for semantic search via HNSW index.';
+COMMENT ON COLUMN notes.git_created_at IS 'File creation time from git log. NULL if not tracked by git.';
+COMMENT ON COLUMN notes.git_updated_at IS 'File last modification time from git log. NULL if not tracked by git.';
+COMMENT ON COLUMN notes.synced_at IS 'When this note was last synced from the vault.';
 
 CREATE INDEX idx_notes_type ON notes (type);
 CREATE INDEX idx_notes_context ON notes (context);
@@ -649,6 +734,9 @@ COMMENT ON COLUMN events.source IS 'Origin system name (github, notion, obsidian
 COMMENT ON COLUMN events.project IS 'Related project slug. Not FK — may reference projects not yet created or since renamed.';
 COMMENT ON COLUMN events.repo IS 'GitHub repository full name (e.g. Koopa0/koopa0.dev).';
 COMMENT ON COLUMN events.ref IS 'Git ref (branch name or tag).';
+COMMENT ON COLUMN events.title IS 'Event summary (e.g. commit message, PR title, task name).';
+COMMENT ON COLUMN events.body IS 'Event detail body. May contain markdown.';
+COMMENT ON COLUMN events.metadata IS 'Event-specific structured data (JSONB). GitHub: diff stats. Notion: changed fields.';
 
 CREATE INDEX idx_events_timestamp ON events (timestamp DESC);
 CREATE INDEX idx_events_project ON events (project, timestamp DESC) WHERE project IS NOT NULL;
@@ -677,7 +765,10 @@ CREATE TABLE project_aliases (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON TABLE project_aliases IS 'Maps variant project names to canonical project. Used by activity event and MCP search to resolve fuzzy project references.';
+COMMENT ON COLUMN project_aliases.alias IS 'Variant name (e.g. repo name, Notion title variant). UNIQUE — one alias maps to one project.';
 COMMENT ON COLUMN project_aliases.project_id IS 'References canonical project. CASCADE — aliases meaningless without project.';
+COMMENT ON COLUMN project_aliases.source IS 'Where this alias was discovered (e.g. github, notion, manual).';
 
 CREATE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
 
@@ -844,6 +935,8 @@ CREATE TABLE tool_call_logs (
     output_bytes INTEGER
 );
 
+COMMENT ON TABLE tool_call_logs IS 'MCP tool call telemetry. One row per tool invocation. Used by tool_usage_summary and tool_daily_trend views.';
+COMMENT ON COLUMN tool_call_logs.tool_name IS 'MCP tool name (e.g. morning_context, search_knowledge).';
 COMMENT ON COLUMN tool_call_logs.is_empty IS 'True when search/list tool returned 0 results — signals misuse or missing data.';
 COMMENT ON COLUMN tool_call_logs.input_bytes IS 'Approximate JSON byte size of tool input.';
 COMMENT ON COLUMN tool_call_logs.output_bytes IS 'Approximate JSON byte size of tool output.';
@@ -899,5 +992,6 @@ CREATE TABLE reconcile_runs (
 COMMENT ON TABLE reconcile_runs IS 'Weekly reconciliation run history for system health and drift trend analysis.';
 COMMENT ON COLUMN reconcile_runs.completed_at IS 'NULL until run finishes. NULL + old started_at = crashed run.';
 COMMENT ON COLUMN reconcile_runs.total_drift IS 'Sum of all missing+orphaned counts. Zero = fully consistent.';
+COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
 
 CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);
