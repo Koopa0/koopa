@@ -99,7 +99,7 @@ CREATE TABLE participant (
 );
 
 COMMENT ON TABLE participant IS 'An actor in the system — a Cowork project, a Claude Code project, or a human operator. Platform determines the context.';
-COMMENT ON COLUMN participant.name IS 'Unique identifier used as source/target in messages and assignee in tasks.';
+COMMENT ON COLUMN participant.name IS 'Unique identifier used as source/target in directives, source in reports/journal/insights, and assignee in tasks.';
 COMMENT ON COLUMN participant.platform IS 'Which platform this participant belongs to. Determines communication capabilities. Go layer uses this for validation: directive target must be on claude-cowork platform.';
 COMMENT ON COLUMN participant.description IS 'Human-readable role description for this participant.';
 
@@ -823,7 +823,7 @@ CREATE TABLE reports (
 );
 
 COMMENT ON TABLE reports IS 'IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion signal: currently inferred from report metadata (follow_up_needed) — acceptable for early stage. When completion needs to be systemically queried (dashboard, overdue detection, completion rate), upgrade to directives.resolved_at or report metadata.kind = progress|final|addendum.';
-COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant.';
+COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant. Scoped to claude-cowork platform (same as directives) — reports are Cowork department output. Go layer validates source.platform = claude-cowork.';
 COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
 COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.';
 
