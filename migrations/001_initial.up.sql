@@ -559,7 +559,7 @@ CREATE TABLE tasks (
 COMMENT ON COLUMN tasks.energy IS 'Required energy level. NULL = not set.';
 COMMENT ON COLUMN tasks.priority IS 'Task priority. NULL = not set.';
 COMMENT ON COLUMN tasks.recur_unit IS 'Recurrence unit. NULL = non-recurring task.';
-COMMENT ON COLUMN tasks.assignee IS 'Who executes this task. FK to participant. Default human. Seed data in 001 must include participant(human).';
+COMMENT ON COLUMN tasks.assignee IS 'Who executes this task. FK to participant. Default human. Go layer validates participant.task_assignable = true.';
 COMMENT ON COLUMN tasks.updated_at IS 'Set explicitly by application in UPDATE queries. No trigger — application-managed.';
 
 CREATE INDEX idx_tasks_status ON tasks (status) WHERE status != 'done';
