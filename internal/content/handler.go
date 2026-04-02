@@ -281,6 +281,22 @@ func (h *Handler) parseFilter(r *http.Request) Filter {
 	return f
 }
 
+// AdminGet handles GET /api/admin/contents/{id}.
+func (h *Handler) AdminGet(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
+		return
+	}
+
+	c, err := h.store.Content(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: c})
+}
+
 // AdminList handles GET /api/admin/contents.
 func (h *Handler) AdminList(w http.ResponseWriter, r *http.Request) {
 	page, perPage := api.ParsePagination(r)
