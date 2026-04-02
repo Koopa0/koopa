@@ -242,12 +242,9 @@ Zed IDE
 2. **每個 Project 明確列出讀/寫的 note_type + source** — 不靠記憶，寫在 instructions 裡
 3. **Directive 加結構化 metadata** — 目標部門、優先級用固定格式，方便 filter
 
-**中期（需改 code，deferred to post-production-mode）：**
+**中期（需改 code，排定下週實施）：**
 
-4. **加 `target` 欄位** — directive 目前靠 content 裡的文字標明目標部門，應加 DB 欄位讓 query 能 filter by target
-5. **加 `status` 欄位** — directive 寫入後狀態是 `pending`，部門讀取後變 `acknowledged`，完成後變 `completed`
-6. **加 `parent_id` 欄位** — report 可連結到它回應的 directive，建立因果鏈
-7. **加 validation middleware** — 在 MCP 層驗證 content 是否包含必要 section（如 directive 必須有目標部門）
+見下方「IPC 協議補強計劃」。
 
 ### 如何驗證（定期健檢）
 
@@ -281,15 +278,210 @@ GROUP BY source;
 
 ---
 
+## IPC 協議補強計劃
+
+> 研究日期：2026-04-02。排定下週實施。
+
+### 為什麼不是微服務問題
+
+這個系統**不是分散式系統**。4 個 Cowork project 透過同一個 MCP server 寫入同一個 PostgreSQL — 沒有多 DB、沒有網路分區、不會同時執行。CAP 三選二、2PC、saga pattern 全部不適用。
+
+真正的問題是 **contract enforcement + delivery guarantee**，是 message queue 設計問題。
+
+### 現狀分析（from codebase audit）
+
+**Schema（DDL）**：`migrations/001_initial.up.sql:668-682`
+- 7 note_type + 7 source 有 CHECK constraint（DB 層強制）
+- `metadata` JSONB nullable，無 DB 層 schema 驗證
+- 無 unique constraint — append-only，允許重複
+
+**Application 層 validation（`internal/mcp/write.go:786-853`）**：
+
+| note_type | 必填 metadata | 可選 | 問題 |
+|-----------|--------------|------|------|
+| `insight` | `hypothesis`, `invalidation_condition` | `status`(default unverified), `category`, `project`, evidence arrays | ✅ 最嚴格 |
+| `plan` | `reasoning`, `committed_task_ids` or `committed_items` | `buffer_task_ids` | ✅ 有要求 |
+| `metrics` | `tasks_planned`, `tasks_completed`, `adjustments` | — | ✅ 有要求 |
+| **`directive`** | **無** | `from`, `to`, `priority` | ❌ **完全自由** |
+| **`report`** | **無** | `from`, `to` | ❌ **完全自由** |
+| `context` | 無 | — | ⚠️ 可接受（內部用） |
+| `reflection` | 無 | — | ⚠️ 可接受（內部用） |
+
+**索引**：3 個 — `(note_date DESC)`, `(note_date, note_type)`, partial functional `(metadata->>'status') WHERE note_type='insight'`。**無 JSONB GIN index**。
+
+**Retention**：每日 3:45 AM 清理。短期 30 天（plan, reflection, context）、長期 365 天（metrics, insight, directive, report）。
+
+### 四個問題 → 四個解法
+
+| # | 問題 | 解法 | 機制 | 影響範圍 |
+|---|------|------|------|----------|
+| 1 | Directive metadata 無 schema | **強制 `target` + `priority`** | Go validation + DB CHECK constraint | `write.go` + migration |
+| 2 | 無 delivery confirmation | **加 `consumed_at` + `consumed_by` 欄位** | `ALTER TABLE ADD COLUMN` | migration + query.sql |
+| 3 | Report 無因果鏈 | **強制 `in_response_to` metadata** | Go validation + DB CHECK | `write.go` + migration |
+| 4 | 無 targeting query | **expression index on `metadata->>'target'`** | `CREATE INDEX` | migration only |
+
+### 實施方案
+
+#### Migration（一個 migration file）
+
+```sql
+-- 1. Delivery confirmation columns
+ALTER TABLE session_notes ADD COLUMN consumed_at TIMESTAMPTZ;
+ALTER TABLE session_notes ADD COLUMN consumed_by TEXT;
+
+-- 2. Directive schema enforcement (DB safety net)
+ALTER TABLE session_notes ADD CONSTRAINT chk_directive_metadata
+  CHECK (note_type != 'directive' OR (
+    metadata IS NOT NULL
+    AND metadata ? 'target'
+    AND metadata ? 'priority'
+    AND metadata->>'target' IN ('content-studio', 'research-lab', 'learning-studio', 'claude-code')
+    AND metadata->>'priority' IN ('p0', 'p1', 'p2')
+  ));
+
+-- 3. Report causal link enforcement
+ALTER TABLE session_notes ADD CONSTRAINT chk_report_metadata
+  CHECK (note_type != 'report' OR (
+    metadata IS NOT NULL
+    AND metadata ? 'in_response_to'
+  ));
+
+-- 4. Expression index for targeting query
+CREATE INDEX idx_session_notes_directive_target
+  ON session_notes ((metadata->>'target'))
+  WHERE note_type = 'directive';
+
+-- 5. Index for unconsumed directives query
+CREATE INDEX idx_session_notes_unconsumed
+  ON session_notes (note_type, consumed_at)
+  WHERE consumed_at IS NULL;
+```
+
+#### Go validation 補強（`internal/mcp/write.go`）
+
+```go
+// validateSessionNoteMetadata — add cases for directive and report
+
+case "directive":
+    target, _ := metadata["target"].(string)
+    priority, _ := metadata["priority"].(string)
+    if target == "" {
+        return fmt.Errorf("directive metadata requires 'target' (content-studio|research-lab|learning-studio|claude-code)")
+    }
+    validTargets := map[string]bool{"content-studio": true, "research-lab": true, "learning-studio": true, "claude-code": true}
+    if !validTargets[target] {
+        return fmt.Errorf("invalid directive target %q", target)
+    }
+    if priority == "" {
+        return fmt.Errorf("directive metadata requires 'priority' (p0|p1|p2)")
+    }
+
+case "report":
+    if metadata["in_response_to"] == nil {
+        return fmt.Errorf("report metadata requires 'in_response_to' (directive session_note ID)")
+    }
+```
+
+#### Consumption query（`internal/session/query.sql`）
+
+```sql
+-- name: ConsumeDirective :one
+UPDATE session_notes
+SET consumed_at = now(), consumed_by = @consumer
+WHERE id = @id
+  AND consumed_at IS NULL
+RETURNING id, note_date, note_type, source, content, metadata, consumed_at, consumed_by, created_at;
+
+-- name: UnconsumedDirectives :many
+SELECT id, note_date, note_type, source, content, metadata, created_at
+FROM session_notes
+WHERE note_type = 'directive'
+  AND consumed_at IS NULL
+  AND (sqlc.narg('target')::text IS NULL OR metadata->>'target' = sqlc.narg('target'))
+ORDER BY created_at ASC;
+```
+
+#### MCP tool 更新
+
+| Tool | 改動 |
+|------|------|
+| `save_session_note` | directive/report 加必填 metadata 欄位 |
+| `session_notes` | directive query 加 `target` filter；返回 `consumed_at` |
+| **新增** `consume_directive` | 部門標記 directive 為已讀 | 
+
+#### Instructions 更新
+
+所有 Cowork project 的 session 啟動流程改為：
+
+```
+Step 0: 讀取未消費的 directive
+        session_notes(note_type="directive", target="content-studio", unconsumed=true)
+        
+Step 0.5: 標記為已讀
+        consume_directive(id=<directive_id>)
+```
+
+### 設計決策記錄
+
+| 決策 | 選擇 | 排除 | 原因 |
+|------|------|------|------|
+| Delivery confirmation | `consumed_at` + `consumed_by` columns | Outbox pattern relay | 單一 DB，不需要 relay process |
+| Schema validation | DB CHECK + Go validation 雙層 | pg_jsonschema extension | 不加部署依賴；CHECK 做 safety net，Go 做 UX |
+| Targeting | JSONB metadata `target` field + expression index | 新增 top-level `target` column | 不改 table schema，用 JSONB + index 達成相同效果 |
+| Causal linking | `in_response_to` in report metadata | `parent_id` column | 同上，JSONB 裡做 |
+| Concurrent safety | 暫不需要 SKIP LOCKED | FOR UPDATE SKIP LOCKED | 目前不會同時執行，但 migration 加了 `consumed_at` 後未來可防禦性加入 |
+| CloudEvents spec | 不採用 | 採用完整 spec | 過度正式化，但借用 envelope 概念（routing 和 payload 分離） |
+| LISTEN/NOTIFY | 不採用 | — | Agent 是異步 session，不是長駐 listener |
+| GIN index on metadata | 不加 | 全 metadata GIN index | 只需要 `target` 的 expression index，GIN 太重 |
+
+### 影響評估
+
+| 維度 | 影響 |
+|------|------|
+| **Migration** | 1 個 migration file，加 2 column + 2 CHECK + 2 index |
+| **Go 改動** | `write.go`（validation）+ `query.sql`（新 query）+ `search.go`（filter）+ `server.go`（新 tool） |
+| **Instructions** | 4 個 Cowork project instructions 更新 session 啟動流程 |
+| **Breaking change** | ⚠️ 現有 directive/report 沒有 metadata → 需要 data migration 或 CHECK constraint 只對新資料生效 |
+| **向後相容** | CHECK constraint 用 `note_type != 'directive' OR (...)` 格式 — 不影響其他 note_type |
+
+### 向後相容策略
+
+現有的 directive/report 沒有 metadata。兩個選擇：
+
+**選項 A（推薦）**：CHECK constraint 只對新資料生效 — 加 `AND created_at > '2026-04-07'` 條件
+```sql
+ALTER TABLE session_notes ADD CONSTRAINT chk_directive_metadata
+  CHECK (note_type != 'directive' OR created_at <= '2026-04-07' OR (
+    metadata IS NOT NULL AND metadata ? 'target' AND metadata ? 'priority'
+  ));
+```
+
+**選項 B**：data migration — 為現有 directive 補上 metadata（但現有 directive 的 target 在 content 文字裡，需要解析）
+
+### 研究來源
+
+- [Transactional Outbox Pattern](https://microservices.io/patterns/data/transactional-outbox.html)
+- [PostgreSQL SKIP LOCKED as Message Queue](https://www.inferable.ai/blog/posts/postgres-skip-locked)
+- [Event Sourcing with PostgreSQL JSONB](https://softwaremill.com/implementing-event-sourcing-using-a-relational-database/)
+- [JSONB Schema Validation with CHECK constraints](https://www.enterprisedb.com/blog/validating-shape-your-json-data)
+- [pg_jsonschema (Supabase)](https://supabase.com/docs/guides/database/extensions/pg_jsonschema)
+- [CloudEvents Spec](https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md)
+- [PostgreSQL JSONB Indexing Best Practices (AWS)](https://aws.amazon.com/blogs/database/postgresql-as-a-json-database-advanced-patterns-and-best-practices/)
+
+---
+
 ## 已知問題
 
 | 問題 | 嚴重度 | 狀態 | 解法 |
 |------|--------|------|------|
-| Content Studio 用 `"ceo-directive"` 讀 directive — 不在 enum 裡 | **P0** | 需修正 instructions | 改為 `"directive"` |
-| Content Studio 用 `"department-output"` 寫 report — 不在 enum 裡 | **P0** | 需修正 instructions | 改為 `"report"` |
-| MCP-TOOLS-REFERENCE.md 的 note_type/source enum 過時 | P1 | 需更新文件 | 對齊後端 `write.go:797-808` |
+| Content Studio 用 `"ceo-directive"` 讀 directive | **P0** | ✅ 已修正 (2026-04-02) | 改為 `"directive"` |
+| Content Studio 用 `"department-output"` 寫 report | **P0** | ✅ 已修正 (2026-04-02) | 改為 `"report"` |
+| MCP-TOOLS-REFERENCE.md 的 note_type/source enum 過時 | P1 | ✅ 已修正 (2026-04-02) | 對齊後端 `write.go:797-808` |
+| Directive metadata 無 schema（target, priority 不強制） | **P1** | 排定下週 | CHECK constraint + Go validation |
+| Report 無因果鏈（不知回應哪個 directive） | **P1** | 排定下週 | `in_response_to` metadata |
+| 無 delivery confirmation | P1 | 排定下週 | `consumed_at` + `consumed_by` columns |
+| 無 targeting query（不能 filter by 目標部門） | P2 | 排定下週 | expression index on `metadata->>'target'` |
 | Desktop Schedule 需聚焦 Cowork view 才觸發 | P2 | Anthropic 已知 bug | 改用 Cloud Schedule |
-| Directive 無 target 欄位，靠 content 文字標明 | P3 | 設計限制 | 中期加 DB 欄位（deferred） |
 
 ---
 
