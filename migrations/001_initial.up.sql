@@ -1,8 +1,13 @@
--- Phase A: Initial schema for koopa0.dev knowledge engine
+-- koopa0.dev schema v2 — full rewrite (2026-04-02)
+-- All naming, structure, and normalization decisions from:
+--   docs/SCHEMA-AUDIT-2026-04-02.md
+--   docs/Ipc protocol decision doc final.md
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- === Enums ===
+-- ============================================================
+-- Enums
+-- ============================================================
 
 CREATE TYPE content_type AS ENUM (
     'article', 'essay', 'build-log', 'til', 'note', 'bookmark', 'digest'
@@ -24,23 +29,77 @@ CREATE TYPE review_status AS ENUM (
     'pending', 'approved', 'rejected', 'edited'
 );
 
-CREATE TYPE collected_status AS ENUM (
+CREATE TYPE feed_entry_status AS ENUM (
     'unread', 'read', 'curated', 'ignored'
+);
+
+CREATE TYPE flow_status AS ENUM (
+    'pending', 'running', 'completed', 'failed'
+);
+
+CREATE TYPE goal_status AS ENUM (
+    'not-started', 'in-progress', 'done', 'abandoned'
 );
 
 CREATE TYPE project_status AS ENUM (
     'planned', 'in-progress', 'on-hold', 'completed', 'maintained', 'archived'
 );
 
--- === Tables ===
+CREATE TYPE task_status AS ENUM (
+    'todo', 'in-progress', 'done'
+);
+
+-- ============================================================
+-- Identity model: platform → participant
+-- ============================================================
+
+CREATE TABLE platform (
+    name        TEXT PRIMARY KEY,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE platform IS 'AI environment or human context. Each platform hosts one or more participants (projects/agents).';
+COMMENT ON COLUMN platform.name IS 'Platform identifier: claude-cowork, claude-code, claude-web, human.';
+
+INSERT INTO platform(name, description) VALUES
+    ('claude-cowork', 'Claude Desktop Cowork — multi-project virtual studio'),
+    ('claude-code', 'Claude Code CLI — development agent'),
+    ('claude-web', 'Claude Web — general conversation'),
+    ('human', 'Direct human operation');
+
+CREATE TABLE participant (
+    name        TEXT PRIMARY KEY,
+    platform    TEXT NOT NULL REFERENCES platform(name),
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE participant IS 'An actor in the system — a Cowork project, a Claude Code project, or a human operator. Platform determines the context.';
+COMMENT ON COLUMN participant.name IS 'Unique identifier used as source/target in messages and assignee in tasks.';
+COMMENT ON COLUMN participant.platform IS 'Which platform this participant belongs to. Determines communication capabilities.';
+
+INSERT INTO participant(name, platform, description) VALUES
+    ('hq', 'claude-cowork', 'Studio HQ — CEO, decisions, delegation'),
+    ('content-studio', 'claude-cowork', 'Content strategy, writing, publishing'),
+    ('research-lab', 'claude-cowork', 'Deep research, structured reports'),
+    ('learning-studio', 'claude-cowork', 'LeetCode coaching, spaced repetition'),
+    ('koopa0.dev', 'claude-code', 'koopa0.dev development project'),
+    ('go-spec', 'claude-code', 'Go spec configuration project'),
+    ('claude', 'claude-web', 'General Claude Web session'),
+    ('human', 'human', 'Koopa — direct manual operation');
+
+-- ============================================================
+-- Core domain: topics, tags, users
+-- ============================================================
 
 CREATE TABLE users (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email         TEXT NOT NULL UNIQUE,
-    role          TEXT NOT NULL DEFAULT 'admin'
-                  CHECK (role = 'admin'),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email      TEXT NOT NULL UNIQUE,
+    role       TEXT NOT NULL DEFAULT 'admin'
+               CHECK (role = 'admin'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE refresh_tokens (
@@ -65,62 +124,58 @@ CREATE TABLE topics (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE contents (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug          TEXT NOT NULL UNIQUE,
-    title         TEXT NOT NULL,
-    body          TEXT NOT NULL DEFAULT '',
-    excerpt       TEXT NOT NULL DEFAULT '',
-    type          content_type NOT NULL,
-    status        content_status NOT NULL DEFAULT 'draft',
-    source        TEXT,
-    source_type   source_type,
-    series_id     TEXT,
-    series_order  INT,
-    review_level  review_level NOT NULL DEFAULT 'standard',
-    ai_metadata   JSONB,
-    reading_time_min INT NOT NULL DEFAULT 0,
-    cover_image   TEXT,
-    is_public     BOOLEAN NOT NULL DEFAULT true,
-    project_id    UUID,
-    published_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    embedding     vector(768),
-    search_vector TSVECTOR GENERATED ALWAYS AS (
-        setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('simple', coalesce(left(body, 10000), '')), 'C')
-    ) STORED,
-    CONSTRAINT chk_contents_series CHECK (
-        (series_id IS NULL AND series_order IS NULL) OR
-        (series_id IS NOT NULL AND series_order IS NOT NULL)
-    )
+CREATE TABLE tags (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    parent_id   UUID REFERENCES tags(id) ON DELETE SET NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON COLUMN contents.reading_time_min IS 'Estimated reading time in minutes. Computed from body word count. Always >= 0.';
-COMMENT ON COLUMN contents.ai_metadata IS 'AI pipeline metadata (JSONB). Structure: {summary: string, keywords: string[], quality_score: float, review_notes: string}. Set by Genkit flows.';
-COMMENT ON COLUMN contents.is_public IS 'Whether this content is visible on the public website. Private content is admin/MCP only.';
+CREATE INDEX idx_tags_parent ON tags(parent_id);
 
-CREATE INDEX idx_contents_status ON contents(status);
-CREATE INDEX idx_contents_type ON contents(type);
-CREATE INDEX idx_contents_published_at ON contents(published_at DESC NULLS LAST);
-CREATE INDEX idx_contents_search ON contents USING GIN(search_vector);
-CREATE INDEX idx_contents_series ON contents(series_id, series_order) WHERE series_id IS NOT NULL;
-CREATE INDEX idx_contents_embedding_hnsw ON contents USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
-CREATE INDEX idx_contents_is_public ON contents(status, is_public)
-    WHERE status = 'published' AND is_public = true;
-
-CREATE INDEX idx_contents_project_id ON contents(project_id) WHERE project_id IS NOT NULL;
-CREATE INDEX idx_contents_created_at ON contents(created_at DESC);
-
-CREATE TABLE content_topics (
-    content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-    topic_id   UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-    PRIMARY KEY (content_id, topic_id)
+CREATE TABLE tag_aliases (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    raw_tag      TEXT NOT NULL UNIQUE,
+    tag_id       UUID REFERENCES tags(id) ON DELETE CASCADE,
+    match_method TEXT NOT NULL DEFAULT 'manual'
+                 CHECK (match_method IN ('manual', 'exact', 'case-insensitive', 'unmapped', 'rejected')),
+    confirmed    BOOLEAN NOT NULL DEFAULT false,
+    confirmed_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_content_topics_topic_id ON content_topics(topic_id);
+CREATE INDEX idx_tag_aliases_tag ON tag_aliases(tag_id);
+CREATE INDEX idx_tag_aliases_confirmed ON tag_aliases(confirmed);
+CREATE INDEX idx_tag_aliases_lower_raw_tag ON tag_aliases (LOWER(raw_tag));
+
+-- ============================================================
+-- Goals (before projects, projects FK to goals)
+-- ============================================================
+
+CREATE TABLE goals (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title          TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    status         goal_status NOT NULL DEFAULT 'not-started',
+    area           TEXT NOT NULL DEFAULT '',
+    quarter        TEXT NOT NULL DEFAULT '',
+    deadline       TIMESTAMPTZ,
+    notion_page_id TEXT UNIQUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON COLUMN goals.quarter IS 'Format: "Q1 2026" or "2026-Q1". No CHECK — values from Notion upstream.';
+COMMENT ON COLUMN goals.area IS 'PARA methodology Area — long-term responsibility domain (e.g. Backend, Learning, Studio).';
+
+CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
+
+-- ============================================================
+-- Projects (after goals, before contents)
+-- ============================================================
 
 CREATE TABLE projects (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -144,20 +199,110 @@ CREATE TABLE projects (
     notion_page_id   TEXT UNIQUE,
     repo             TEXT,
     area             TEXT NOT NULL DEFAULT '',
-    goal_id          UUID,
+    goal_id          UUID REFERENCES goals(id) ON DELETE SET NULL,
     deadline         TIMESTAMPTZ,
     last_activity_at TIMESTAMPTZ,
-    expected_cadence TEXT NOT NULL DEFAULT 'weekly'
-                    CHECK (expected_cadence IN ('', 'daily', 'weekly', 'biweekly', 'monthly')),
+    expected_cadence TEXT CHECK (expected_cadence IN ('daily', 'weekly', 'biweekly', 'monthly')),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON COLUMN projects.role IS 'User role in this project (e.g. Lead Engineer, Sole Developer).';
+COMMENT ON COLUMN projects.area IS 'PARA methodology Area — long-term responsibility domain (e.g. Backend, Learning, Studio).';
+COMMENT ON COLUMN projects.repo IS 'GitHub repository full name (e.g. Koopa0/koopa0.dev). Used by activity event resolution.';
+COMMENT ON COLUMN projects.github_url IS 'Full GitHub repository URL.';
+COMMENT ON COLUMN projects.live_url IS 'Production deployment URL.';
+COMMENT ON COLUMN projects.expected_cadence IS 'Expected development activity frequency. NULL = not set.';
 
 CREATE INDEX idx_projects_featured ON projects(featured DESC, sort_order);
 CREATE INDEX idx_projects_lower_title ON projects (LOWER(title));
 CREATE INDEX idx_projects_repo ON projects (repo) WHERE repo IS NOT NULL;
 CREATE INDEX idx_projects_status ON projects (status) WHERE status NOT IN ('completed', 'archived');
 CREATE INDEX idx_projects_is_public ON projects (featured DESC, sort_order) WHERE is_public = true;
+CREATE INDEX idx_projects_goal_id ON projects(goal_id) WHERE goal_id IS NOT NULL;
+
+-- ============================================================
+-- Contents
+-- ============================================================
+
+CREATE TABLE contents (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug          TEXT NOT NULL UNIQUE,
+    title         TEXT NOT NULL,
+    body          TEXT NOT NULL DEFAULT '',
+    excerpt       TEXT NOT NULL DEFAULT '',
+    type          content_type NOT NULL,
+    status        content_status NOT NULL DEFAULT 'draft',
+    source        TEXT,
+    source_type   source_type,
+    series_id     TEXT,
+    series_order  INT,
+    review_level  review_level NOT NULL DEFAULT 'standard',
+    ai_metadata   JSONB,
+    reading_time_min INT NOT NULL DEFAULT 0,
+    cover_image   TEXT,
+    is_public     BOOLEAN NOT NULL DEFAULT true,
+    project_id    UUID REFERENCES projects(id) ON DELETE SET NULL,
+    published_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding     vector(768),
+    search_vector TSVECTOR GENERATED ALWAYS AS (
+        setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('simple', coalesce(left(body, 10000), '')), 'C')
+    ) STORED,
+    CONSTRAINT chk_contents_series CHECK (
+        (series_id IS NULL AND series_order IS NULL) OR
+        (series_id IS NOT NULL AND series_order IS NOT NULL)
+    )
+);
+
+COMMENT ON COLUMN contents.reading_time_min IS 'Estimated reading time in minutes. Computed from body word count. Always >= 0.';
+COMMENT ON COLUMN contents.ai_metadata IS 'AI pipeline metadata (JSONB). Structure: {summary, keywords, quality_score, review_notes}. Set by Genkit flows.';
+COMMENT ON COLUMN contents.is_public IS 'Whether this content is visible on the public website. Private content is admin/MCP only.';
+COMMENT ON COLUMN contents.source IS 'Origin identifier — Obsidian file path, external URL, or NULL for manually created content.';
+COMMENT ON COLUMN contents.source_type IS 'Origin system classification. Different dimension from participant — this is WHERE content came from, not WHO created it.';
+
+CREATE INDEX idx_contents_status ON contents(status);
+CREATE INDEX idx_contents_type ON contents(type);
+CREATE INDEX idx_contents_published_at ON contents(published_at DESC NULLS LAST);
+CREATE INDEX idx_contents_search ON contents USING GIN(search_vector);
+CREATE INDEX idx_contents_series ON contents(series_id, series_order) WHERE series_id IS NOT NULL;
+CREATE INDEX idx_contents_embedding_hnsw ON contents USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+CREATE INDEX idx_contents_is_public ON contents(status, is_public)
+    WHERE status = 'published' AND is_public = true;
+CREATE INDEX idx_contents_project_id ON contents(project_id) WHERE project_id IS NOT NULL;
+CREATE INDEX idx_contents_created_at ON contents(created_at DESC);
+CREATE INDEX idx_contents_published_at_pub ON contents (published_at DESC NULLS LAST)
+    WHERE status = 'published';
+CREATE INDEX idx_contents_obsidian_slug ON contents (slug) WHERE source_type = 'obsidian';
+
+-- ============================================================
+-- Junction: contents ↔ topics, contents ↔ tags
+-- ============================================================
+
+CREATE TABLE content_topics (
+    content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+    topic_id   UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    PRIMARY KEY (content_id, topic_id)
+);
+
+CREATE INDEX idx_content_topics_topic_id ON content_topics(topic_id);
+
+CREATE TABLE content_tags (
+    content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+    tag_id     UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (content_id, tag_id)
+);
+
+COMMENT ON COLUMN content_tags.tag_id IS 'References canonical tag. Distinct from content_topics: topics are curated categories, tags are raw labels resolved through the alias pipeline.';
+
+CREATE INDEX idx_content_tags_tag_id ON content_tags(tag_id);
+
+-- ============================================================
+-- Review queue
+-- ============================================================
 
 CREATE TABLE review_queue (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -169,19 +314,21 @@ CREATE TABLE review_queue (
     reviewed_at    TIMESTAMPTZ
 );
 
-COMMENT ON COLUMN review_queue.content_id IS 'References the content under review. ON DELETE CASCADE — if content is deleted, its review record is removed. ArchiveContent (soft delete) does not trigger this.';
+COMMENT ON COLUMN review_queue.content_id IS 'References content under review. ON DELETE CASCADE — content deletion removes review record.';
 
 CREATE INDEX idx_review_queue_status ON review_queue(status);
 CREATE INDEX idx_review_queue_content_id ON review_queue(content_id);
-CREATE UNIQUE INDEX idx_review_queue_pending_content
-    ON review_queue (content_id) WHERE status = 'pending';
+CREATE UNIQUE INDEX idx_review_queue_pending_content ON review_queue (content_id) WHERE status = 'pending';
+
+-- ============================================================
+-- Feeds + feed entries (was: feeds + collected_data)
+-- ============================================================
 
 CREATE TABLE feeds (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     url                  TEXT NOT NULL UNIQUE,
     name                 TEXT NOT NULL,
     schedule             TEXT NOT NULL,
-    topics               TEXT[] NOT NULL DEFAULT '{}',
     enabled              BOOLEAN NOT NULL DEFAULT true,
     priority             TEXT NOT NULL DEFAULT 'normal'
                          CHECK (priority IN ('normal', 'high', 'low')),
@@ -196,19 +343,28 @@ CREATE TABLE feeds (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON COLUMN feeds.filter_config IS 'Feed-specific content filter rules (JSONB). Structure: {deny_paths: string[], deny_title_patterns: string[], deny_tags: string[]}. Empty {} means no filtering.';
-COMMENT ON COLUMN feeds.topics IS 'Topic slugs this feed covers. Values must match topics.slug but no FK enforced (array elements). Kept in sync manually.';
+COMMENT ON COLUMN feeds.filter_config IS 'Feed-specific filter rules (JSONB). Structure: {deny_paths, deny_title_patterns, deny_tags}. Empty {} = no filtering.';
 
 CREATE INDEX idx_feeds_schedule ON feeds (schedule) WHERE enabled = true;
 
-CREATE TABLE collected_data (
+-- Junction: feeds ↔ topics (was: feeds.topics TEXT[])
+CREATE TABLE feed_topics (
+    feed_id  UUID NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    topic_id UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    PRIMARY KEY (feed_id, topic_id)
+);
+
+COMMENT ON TABLE feed_topics IS 'Which topics a feed covers. Replaces the old feeds.topics TEXT[] — proper FK instead of stringly-typed array.';
+
+CREATE INDEX idx_feed_topics_topic ON feed_topics(topic_id);
+
+CREATE TABLE feed_entries (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_url         TEXT NOT NULL,
     title              TEXT NOT NULL,
     original_content   TEXT NOT NULL DEFAULT '',
     relevance_score    DOUBLE PRECISION NOT NULL DEFAULT 0,
-    topics             TEXT[] NOT NULL DEFAULT '{}',
-    status             collected_status NOT NULL DEFAULT 'unread',
+    status             feed_entry_status NOT NULL DEFAULT 'unread',
     curated_content_id UUID REFERENCES contents(id) ON DELETE SET NULL,
     collected_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     url_hash           TEXT NOT NULL DEFAULT '',
@@ -218,30 +374,40 @@ CREATE TABLE collected_data (
     published_at       TIMESTAMPTZ
 );
 
-COMMENT ON COLUMN collected_data.topics IS 'Topic slugs assigned by relevance scoring. Same coupling to topics.slug as feeds.topics.';
-COMMENT ON COLUMN collected_data.feed_id IS 'Source feed reference. NULL after feed deletion (ON DELETE SET NULL) — collected items are retained for curation without source attribution.';
+COMMENT ON TABLE feed_entries IS 'RSS feed items collected by the fetch pipeline. Topics inherited from feed via feed_topics junction.';
+COMMENT ON COLUMN feed_entries.feed_id IS 'Source feed. NULL after feed deletion (SET NULL) — entries retained for curation.';
+COMMENT ON COLUMN feed_entries.curated_content_id IS 'If curated into a bookmark/article, references the content record.';
 
-CREATE INDEX idx_collected_data_status ON collected_data(status);
-CREATE INDEX idx_collected_data_relevance ON collected_data(relevance_score DESC);
-CREATE UNIQUE INDEX idx_collected_data_url_hash ON collected_data (url_hash) WHERE url_hash != '';
-CREATE INDEX idx_collected_data_feed_id ON collected_data (feed_id) WHERE feed_id IS NOT NULL;
-CREATE INDEX idx_collected_data_collected_at ON collected_data (collected_at DESC);
-CREATE INDEX idx_collected_data_unread_at ON collected_data (collected_at DESC) WHERE status = 'unread';
+CREATE INDEX idx_feed_entries_status ON feed_entries(status);
+CREATE INDEX idx_feed_entries_relevance ON feed_entries(relevance_score DESC);
+CREATE UNIQUE INDEX idx_feed_entries_url_hash ON feed_entries (url_hash) WHERE url_hash != '';
+CREATE INDEX idx_feed_entries_feed_id ON feed_entries (feed_id) WHERE feed_id IS NOT NULL;
+CREATE INDEX idx_feed_entries_collected_at ON feed_entries (collected_at DESC);
+CREATE INDEX idx_feed_entries_unread_at ON feed_entries (collected_at DESC) WHERE status = 'unread';
 
-CREATE TABLE tracking_topics (
+-- ============================================================
+-- Topic monitors (was: tracking_topics)
+-- ============================================================
+
+CREATE TABLE topic_monitors (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name       TEXT NOT NULL,
+    topic_id   UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
     keywords   TEXT[] NOT NULL DEFAULT '{}',
     sources    TEXT[] NOT NULL DEFAULT '{}',
-    enabled    BOOLEAN NOT NULL DEFAULT true,
     schedule   TEXT NOT NULL DEFAULT '0 */6 * * *',
+    enabled    BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(topic_id)
 );
 
--- === Flow Runs ===
+COMMENT ON TABLE topic_monitors IS 'Active monitoring rules per topic. Keywords drive web search, schedule controls frequency. One monitor per topic max.';
+COMMENT ON COLUMN topic_monitors.keywords IS 'Search keywords for this topic. Used by monitoring pipeline to discover new content.';
+COMMENT ON COLUMN topic_monitors.sources IS 'Specific source URLs or domains to monitor for this topic.';
 
-CREATE TYPE flow_status AS ENUM ('pending', 'running', 'completed', 'failed');
+-- ============================================================
+-- Flow runs (AI pipeline execution log)
+-- ============================================================
 
 CREATE TABLE flow_runs (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -258,41 +424,18 @@ CREATE TABLE flow_runs (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+COMMENT ON TABLE flow_runs IS 'Genkit AI flow execution records. Each row = one run of a flow. Retryable via attempt/max_attempts.';
+
 CREATE INDEX idx_flow_runs_status ON flow_runs (status);
 CREATE INDEX idx_flow_runs_retry ON flow_runs (created_at) WHERE status = 'failed';
 CREATE INDEX idx_flow_runs_created_at ON flow_runs (created_at DESC);
 CREATE INDEX idx_flow_runs_content_id ON flow_runs (content_id) WHERE content_id IS NOT NULL;
 CREATE INDEX idx_flow_runs_dedup ON flow_runs (content_id, flow_name, status) WHERE status IN ('pending', 'running');
+CREATE INDEX idx_flow_runs_completed ON flow_runs (content_id, flow_name, ended_at DESC) WHERE status = 'completed';
 
-CREATE TYPE goal_status AS ENUM ('not-started', 'in-progress', 'done', 'abandoned');
-
-CREATE TABLE goals (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title          TEXT NOT NULL,
-    description    TEXT NOT NULL DEFAULT '',
-    status         goal_status NOT NULL DEFAULT 'not-started',
-    area           TEXT NOT NULL DEFAULT '',
-    quarter        TEXT NOT NULL DEFAULT '',
-    deadline       TIMESTAMPTZ,
-    notion_page_id TEXT UNIQUE,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON COLUMN goals.quarter IS 'Expected format: "Q1 2026" or "2026-Q1". No CHECK constraint — values come from Notion upstream.';
-
-CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
-
--- FK: projects.goal_id -> goals.id (defined here because goals table comes after projects)
-ALTER TABLE projects ADD CONSTRAINT fk_projects_goal FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE SET NULL;
-CREATE INDEX idx_projects_goal_id ON projects(goal_id) WHERE goal_id IS NOT NULL;
-
--- FK: contents.project_id -> projects.id (defined here because projects table comes after contents)
-ALTER TABLE contents ADD CONSTRAINT fk_contents_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL;
-
--- === Tasks (synced from Notion) ===
-
-CREATE TYPE task_status AS ENUM ('todo', 'in-progress', 'done');
+-- ============================================================
+-- Tasks
+-- ============================================================
 
 CREATE TABLE tasks (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -302,166 +445,81 @@ CREATE TABLE tasks (
     project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
     notion_page_id  TEXT UNIQUE,
     completed_at    TIMESTAMPTZ,
-    energy          TEXT NOT NULL DEFAULT ''
-                    CHECK (energy IN ('', 'high', 'medium', 'low')),
-    priority        TEXT NOT NULL DEFAULT ''
-                    CHECK (priority IN ('', 'high', 'medium', 'low')),
+    energy          TEXT CHECK (energy IN ('high', 'medium', 'low')),
+    priority        TEXT CHECK (priority IN ('high', 'medium', 'low')),
     recur_interval  INT,
-    recur_unit      TEXT NOT NULL DEFAULT ''
-                    CHECK (recur_unit IN ('', 'days', 'weeks', 'months', 'years')),
+    recur_unit      TEXT CHECK (recur_unit IN ('days', 'weeks', 'months', 'years')),
     my_day          BOOLEAN NOT NULL DEFAULT false,
     description     TEXT NOT NULL DEFAULT '',
-    assignee        TEXT NOT NULL DEFAULT 'human'
-                    CHECK (assignee IN ('human', 'claude-code', 'cowork')),
+    assignee        TEXT NOT NULL DEFAULT 'human' REFERENCES participant(name),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON COLUMN tasks.energy IS 'Required energy level. NULL = not set.';
+COMMENT ON COLUMN tasks.priority IS 'Task priority. NULL = not set.';
+COMMENT ON COLUMN tasks.recur_unit IS 'Recurrence unit. NULL = non-recurring task.';
+COMMENT ON COLUMN tasks.assignee IS 'Who executes this task. FK to participant. Default human.';
 
 CREATE INDEX idx_tasks_status ON tasks (status) WHERE status != 'done';
 CREATE INDEX idx_tasks_project ON tasks (project_id) WHERE project_id IS NOT NULL;
 CREATE INDEX idx_tasks_completed ON tasks (completed_at) WHERE status = 'done';
 CREATE INDEX idx_tasks_my_day ON tasks (my_day) WHERE my_day = true AND status != 'done';
 
--- Seed topics
-INSERT INTO topics (slug, name, sort_order) VALUES
-('go',             'Go',              1),
-('rust',           'Rust',            2),
-('angular',        'Angular',         3),
-('flutter',        'Flutter',         4),
-('dart',           'Dart',            5),
-('frontend',       'Frontend',        6),
-('mobile',         'Mobile',          7),
-('ai',             'AI',              8),
-('llm',            'LLM',             9),
-('ml',             'Machine Learning', 10),
-('claude',         'Claude',          11),
-('kubernetes',     'Kubernetes',      12),
-('docker',         'Docker',          13),
-('infra',          'Infrastructure',  14),
-('networking',     'Networking',      15),
-('workers',        'Workers',         16),
-('devops',         'DevOps',          17),
-('system-design',  'System Design',   18),
-('database',       'Database',        19),
-('security',       'Security',        20),
-('performance',    'Performance',     21),
-('design',         'Design',          22),
-('career',         'Career',          23),
-('open-source',    'Open Source',     24)
-ON CONFLICT (slug) DO NOTHING;
+-- ============================================================
+-- Task skips (was: task_skip_log)
+-- ============================================================
 
--- Seed feeds
-INSERT INTO feeds (url, name, schedule, topics, filter_config) VALUES
-('https://www.ardanlabs.com/index.xml', 'Ardan Labs', 'daily',
- '{"go","rust","kubernetes","ai","devops","design"}',
- '{"deny_paths":["/news","/events","/team-live-training-courses","/self-paced-courses","/training","/self-paced-teams","/self-paced-individuals"]}'),
-
-('https://go.dev/blog/feed.atom', 'The Go Blog', 'daily',
- '{"go"}', '{}'),
-
-('https://golangweekly.com/rss/', 'Golang Weekly', 'weekly',
- '{"go"}',
- '{"deny_title_patterns":["(?i)sponsored"]}'),
-
-('https://www.alexedwards.net/static/feed.rss', 'Alex Edwards', 'daily',
- '{"go"}', '{}'),
-
-('https://blog.rust-lang.org/feed.xml', 'Rust Blog', 'daily',
- '{"rust"}', '{}'),
-
-('https://this-week-in-rust.org/atom.xml', 'This Week in Rust', 'weekly',
- '{"rust"}', '{}'),
-
-('https://blog.angular.dev/feed', 'Angular Blog', 'daily',
- '{"angular","frontend"}', '{}'),
-
-('https://blog.flutter.dev/feed', 'Flutter Blog', 'daily',
- '{"flutter","dart","mobile"}', '{}'),
-
-('https://blog.cloudflare.com/rss/', 'Cloudflare Blog', 'daily',
- '{"infra","networking","workers"}',
- '{"deny_title_patterns":["(?i)birthday week","(?i)speed week","(?i)developer week","(?i)security week","(?i)innovation week","(?i)impact week","(?i)welcome to .* week","(?i)new pricing","(?i)announcing .* plan"],"deny_tags":["product-news","partners","case-study","legal"]}'),
-
-('https://simonwillison.net/atom/everything/', 'Simon Willison''s Weblog', 'daily',
- '{"ai","llm"}', '{}'),
-
-('https://research.google/blog/rss/', 'Google Research Blog', 'daily',
- '{"ai","ml"}',
- '{"deny_title_patterns":["(?i)health","(?i)medical","(?i)quantum","(?i)biology","(?i)climate","(?i)flood","(?i)wildfire"]}'),
-
-('https://www.latent.space/feed', 'Latent Space', 'weekly',
- '{"ai","llm"}', '{}'),
-
-('https://blog.google/technology/ai/rss/', 'Google AI Blog', 'daily',
- '{"ai","llm","ml"}',
- '{"deny_title_patterns":["(?i)health","(?i)medical","(?i)quantum"]}'),
-
-('https://deepmind.google/blog/rss.xml', 'DeepMind Blog', 'weekly',
- '{"ai","ml"}', '{}'),
-
-('https://developers.googleblog.com/feeds/posts/default', 'Google Developers Blog', 'daily',
- '{"go","angular","flutter","ai","mobile","frontend"}',
- '{"deny_title_patterns":["(?i)devfest","(?i)women techmakers","(?i)student"]}'),
-
-('https://cloud.google.com/blog/rss', 'Google Cloud Blog', 'daily',
- '{"kubernetes","docker","infra","database","ai"}',
- '{"deny_title_patterns":["(?i)customer story","(?i)case study","(?i)partner","(?i)pricing","(?i)event recap"]}'),
-
-('https://blog.google/technology/developers/rss/', 'Google Dev Updates', 'weekly',
- '{"go","angular","flutter","ai"}', '{}'),
-
-('https://huggingface.co/blog/feed.xml', 'Hugging Face Blog', 'daily',
- '{"ai","llm","ml"}',
- '{"deny_title_patterns":["(?i)community update","(?i)partnership"],"deny_tags":["community","partnerships"]}'),
-
-('https://blog.bytebytego.com/feed', 'ByteByteGo', 'weekly',
- '{"system-design"}',
- '{"deny_title_patterns":["(?i)black friday","(?i)discount","(?i)course launch"]}'),
-
-('https://www.anthropic.com/rss.xml', 'Anthropic Blog', 'daily',
- '{"ai","llm"}', '{}')
-
-ON CONFLICT (url) DO NOTHING;
-
--- Set high priority feeds
-UPDATE feeds SET priority = 'high' WHERE name IN (
-    'Anthropic Blog',
-    'The Go Blog',
-    'Google AI Blog',
-    'Google Developers Blog',
-    'Rust Blog',
-    'Simon Willison''s Weblog',
-    'Ardan Labs'
+CREATE TABLE task_skips (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    original_due DATE NOT NULL,
+    skipped_date DATE NOT NULL,
+    reason       TEXT NOT NULL DEFAULT 'auto-expired'
+        CHECK (reason IN ('auto-expired', 'manual')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(task_id, skipped_date)
 );
 
--- === Phase 1: Knowledge Engine ===
+COMMENT ON TABLE task_skips IS 'Per-occurrence skip history for recurring tasks.';
+COMMENT ON COLUMN task_skips.original_due IS 'Due date when skip was detected by cron.';
+COMMENT ON COLUMN task_skips.skipped_date IS 'The occurrence date that was missed.';
+COMMENT ON COLUMN task_skips.reason IS 'auto-expired (cron detected overdue) or manual (user skipped).';
 
--- Activity events — unified event log from all sources
-CREATE TABLE activity_events (
-    id          BIGSERIAL PRIMARY KEY,
-    source_id   TEXT,
-    timestamp   TIMESTAMPTZ NOT NULL,
-    event_type  TEXT NOT NULL,
-    source      TEXT NOT NULL,
-    project     TEXT,
-    repo        TEXT,
-    ref         TEXT,
-    title       TEXT,
-    body        TEXT,
-    metadata    JSONB,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+-- ============================================================
+-- Sources (was: notion_sources — platform-agnostic)
+-- ============================================================
+
+CREATE TABLE sources (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    database_id     TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    provider        TEXT NOT NULL DEFAULT 'notion'
+                    CHECK (provider IN ('notion', 'linear', 'github')),
+    role            TEXT CHECK (role IN ('projects', 'tasks', 'books', 'goals')),
+    sync_mode       TEXT NOT NULL DEFAULT 'full',
+    property_map    JSONB NOT NULL DEFAULT '{}',
+    poll_interval   TEXT NOT NULL DEFAULT '15 minutes',
+    enabled         BOOLEAN NOT NULL DEFAULT true,
+    last_synced_at  TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_activity_events_timestamp ON activity_events (timestamp DESC);
-CREATE INDEX idx_activity_events_project ON activity_events (project, timestamp DESC) WHERE project IS NOT NULL;
-CREATE INDEX idx_activity_events_type ON activity_events (event_type);
-CREATE UNIQUE INDEX idx_activity_events_dedup
-    ON activity_events (source, event_type, source_id)
-    WHERE source_id IS NOT NULL;
-CREATE INDEX idx_activity_events_source_id ON activity_events (source_id text_pattern_ops) WHERE source_id IS NOT NULL;
+COMMENT ON TABLE sources IS 'External data source sync configuration. Platform-agnostic — provider column distinguishes Notion, Linear, etc.';
+COMMENT ON COLUMN sources.provider IS 'Which external platform this source connects to.';
+COMMENT ON COLUMN sources.property_map IS 'Maps external properties to local fields (JSONB). Structure varies by provider and role.';
 
--- Obsidian notes — knowledge notes from vault
-CREATE TABLE obsidian_notes (
+CREATE INDEX idx_sources_role_enabled ON sources (role) WHERE enabled = true AND role IS NOT NULL;
+CREATE INDEX idx_sources_db_enabled ON sources (database_id) WHERE enabled = true;
+CREATE UNIQUE INDEX idx_sources_role ON sources (role) WHERE role IS NOT NULL;
+
+-- ============================================================
+-- Notes (was: obsidian_notes — platform-agnostic)
+-- ============================================================
+
+CREATE TABLE notes (
     id              BIGSERIAL PRIMARY KEY,
     file_path       TEXT UNIQUE NOT NULL,
     title           TEXT,
@@ -471,7 +529,7 @@ CREATE TABLE obsidian_notes (
     maturity        TEXT NOT NULL DEFAULT 'seed'
                     CHECK (maturity IN ('seed', 'evergreen', 'stub', 'archived')),
     tags            JSONB,
-    difficulty      TEXT,
+    difficulty      TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
     leetcode_id     INT,
     book            TEXT,
     chapter         TEXT,
@@ -488,115 +546,99 @@ CREATE TABLE obsidian_notes (
     synced_at       TIMESTAMPTZ DEFAULT now()
 );
 
-COMMENT ON COLUMN obsidian_notes.maturity IS 'Zettelkasten note maturity level: seed (new idea), stub (incomplete), evergreen (mature, reliable), archived (no longer relevant).';
-COMMENT ON COLUMN obsidian_notes.tags IS 'Raw frontmatter tags array (JSONB). Canonical mapping is in obsidian_note_tags via tag resolution pipeline.';
+COMMENT ON TABLE notes IS 'Knowledge notes synced from external vaults. Platform-agnostic — source column indicates origin (obsidian, logseq, etc).';
+COMMENT ON COLUMN notes.maturity IS 'Zettelkasten maturity: seed (new), stub (incomplete), evergreen (mature), archived.';
+COMMENT ON COLUMN notes.tags IS 'Raw frontmatter tags (JSONB array). Canonical mapping via note_tags junction + tag_aliases pipeline.';
+COMMENT ON COLUMN notes.type IS 'Note type from frontmatter (e.g. leetcode, book-note, dev-log, til, note). Open-ended — values defined by vault conventions.';
+COMMENT ON COLUMN notes.source IS 'Knowledge source context (e.g. leetcode, claude, oreilly, ardanlabs). Not the sync platform — that is the vault system.';
+COMMENT ON COLUMN notes.context IS 'Project or domain context for this note (e.g. project slug). Free text — used for MCP search filtering.';
+COMMENT ON COLUMN notes.difficulty IS 'Problem difficulty. Primarily for LeetCode notes.';
 
-CREATE INDEX idx_obsidian_notes_type ON obsidian_notes (type);
-CREATE INDEX idx_obsidian_notes_context ON obsidian_notes (context);
-CREATE INDEX idx_obsidian_notes_search ON obsidian_notes USING GIN(search_vector);
-CREATE INDEX idx_obsidian_notes_embedding ON obsidian_notes
-    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-CREATE INDEX idx_obsidian_notes_synced_at ON obsidian_notes(synced_at DESC);
+CREATE INDEX idx_notes_type ON notes (type);
+CREATE INDEX idx_notes_context ON notes (context);
+CREATE INDEX idx_notes_search ON notes USING GIN(search_vector);
+CREATE INDEX idx_notes_embedding ON notes USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+CREATE INDEX idx_notes_synced_at ON notes(synced_at DESC);
 
--- Tags — canonical tag registry with hierarchy
-CREATE TABLE tags (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug        TEXT NOT NULL UNIQUE,
-    name        TEXT NOT NULL,
-    parent_id   UUID REFERENCES tags(id) ON DELETE SET NULL,
-    description TEXT NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_tags_parent ON tags(parent_id);
-
--- Seed canonical LeetCode/HackerRank tags.
--- Strict-validated by learning/vocab.go; must exist in tags table for resolution.
-INSERT INTO tags (slug, name) VALUES
-    ('array', 'Array'), ('string', 'String'), ('hash-table', 'Hash Table'),
-    ('two-pointers', 'Two Pointers'), ('sliding-window', 'Sliding Window'),
-    ('binary-search', 'Binary Search'), ('stack', 'Stack'), ('queue', 'Queue'),
-    ('monotonic-stack', 'Monotonic Stack'), ('linked-list', 'Linked List'),
-    ('tree', 'Tree'), ('binary-tree', 'Binary Tree'), ('bst', 'BST'),
-    ('graph', 'Graph'), ('bfs', 'BFS'), ('dfs', 'DFS'),
-    ('heap', 'Heap'), ('trie', 'Trie'), ('union-find', 'Union Find'),
-    ('dp', 'Dynamic Programming'), ('greedy', 'Greedy'), ('backtracking', 'Backtracking'),
-    ('bit-manipulation', 'Bit Manipulation'), ('math', 'Math'), ('matrix', 'Matrix'),
-    ('interval', 'Interval'), ('topological-sort', 'Topological Sort'),
-    ('sorting', 'Sorting'), ('simulation', 'Simulation'), ('prefix-sum', 'Prefix Sum'),
-    ('divide-and-conquer', 'Divide and Conquer'), ('segment-tree', 'Segment Tree'),
-    ('design', 'Design'),
-    ('easy', 'Easy'), ('medium', 'Medium'), ('hard', 'Hard'),
-    ('ac-independent', 'AC Independent'), ('ac-with-hints', 'AC With Hints'),
-    ('ac-after-solution', 'AC After Solution'), ('incomplete', 'Incomplete'),
-    ('weakness:pattern-recognition', 'Weakness: Pattern Recognition'),
-    ('weakness:approach-selection', 'Weakness: Approach Selection'),
-    ('weakness:state-transition', 'Weakness: State Transition'),
-    ('weakness:edge-cases', 'Weakness: Edge Cases'),
-    ('weakness:complexity-analysis', 'Weakness: Complexity Analysis'),
-    ('weakness:implementation', 'Weakness: Implementation'),
-    ('weakness:time-management', 'Weakness: Time Management'),
-    ('weakness:constraint-analysis', 'Weakness: Constraint Analysis'),
-    ('weakness:loop-condition', 'Weakness: Loop Condition'),
-    ('improvement:pattern-recognition', 'Improvement: Pattern Recognition'),
-    ('improvement:approach-selection', 'Improvement: Approach Selection'),
-    ('improvement:state-transition', 'Improvement: State Transition'),
-    ('improvement:edge-cases', 'Improvement: Edge Cases'),
-    ('improvement:complexity-analysis', 'Improvement: Complexity Analysis'),
-    ('improvement:constraint-analysis', 'Improvement: Constraint Analysis'),
-    ('improvement:implementation', 'Improvement: Implementation'),
-    ('improvement:loop-condition', 'Improvement: Loop Condition'),
-    ('leetcode', 'LeetCode'), ('hackerrank', 'HackerRank')
-ON CONFLICT (slug) DO NOTHING;
-
--- Tag aliases — maps raw tags to canonical tags
-CREATE TABLE tag_aliases (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    raw_tag       TEXT NOT NULL UNIQUE,
-    tag_id        UUID REFERENCES tags(id) ON DELETE CASCADE,
-    match_method  TEXT NOT NULL DEFAULT 'manual'
-                  CHECK (match_method IN ('manual', 'exact', 'case-insensitive', 'unmapped', 'rejected')),
-    confirmed     BOOLEAN NOT NULL DEFAULT false,
-    confirmed_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_tag_aliases_tag ON tag_aliases(tag_id);
-CREATE INDEX idx_tag_aliases_confirmed ON tag_aliases(confirmed);
-CREATE INDEX idx_tag_aliases_lower_raw_tag ON tag_aliases (LOWER(raw_tag));
-
--- Junction: obsidian notes ↔ tags
-CREATE TABLE obsidian_note_tags (
-    note_id  BIGINT NOT NULL REFERENCES obsidian_notes(id) ON DELETE CASCADE,
+-- Junction: notes ↔ tags (was: obsidian_note_tags)
+CREATE TABLE note_tags (
+    note_id  BIGINT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
     tag_id   UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (note_id, tag_id)
 );
 
-CREATE INDEX idx_obsidian_note_tags_tag ON obsidian_note_tags(tag_id);
+CREATE INDEX idx_note_tags_tag ON note_tags(tag_id);
 
--- Junction: activity events ↔ tags
-CREATE TABLE activity_event_tags (
-    event_id  BIGINT NOT NULL REFERENCES activity_events(id) ON DELETE CASCADE,
+-- Note wikilink edges (knowledge graph)
+CREATE TABLE note_links (
+    id              BIGSERIAL PRIMARY KEY,
+    source_note_id  BIGINT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    target_path     TEXT NOT NULL,
+    link_text       TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE note_links IS 'Wikilink edges between notes. Drives the knowledge graph API.';
+COMMENT ON COLUMN note_links.target_path IS 'Wikilink target file path. May reference notes not yet synced — forward/broken links expected.';
+
+CREATE INDEX idx_note_links_source ON note_links (source_note_id);
+CREATE INDEX idx_note_links_target ON note_links (target_path);
+CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_path);
+
+-- ============================================================
+-- Events (was: activity_events)
+-- ============================================================
+
+CREATE TABLE events (
+    id          BIGSERIAL PRIMARY KEY,
+    source_id   TEXT,
+    timestamp   TIMESTAMPTZ NOT NULL,
+    event_type  TEXT NOT NULL
+                CHECK (event_type IN (
+                    'note_created', 'note_updated',
+                    'push', 'pull_request',
+                    'project_update', 'task_status_change', 'book_progress', 'goal_update',
+                    'task_completed', 'content_published',
+                    'my_day_incomplete'
+                )),
+    source      TEXT NOT NULL,
+    project     TEXT,
+    repo        TEXT,
+    ref         TEXT,
+    title       TEXT,
+    body        TEXT,
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE events IS 'Unified event log from all sources (GitHub, Notion, Obsidian sync, MCP, cron).';
+COMMENT ON COLUMN events.source_id IS 'Event ID in the origin system (e.g. GitHub delivery ID). Used for dedup.';
+COMMENT ON COLUMN events.event_type IS 'Event classification. Closed enum — all values defined in Go code.';
+COMMENT ON COLUMN events.source IS 'Origin system name (github, notion, obsidian, mcp, cron). NOT a participant — this is system-level.';
+COMMENT ON COLUMN events.project IS 'Related project slug. Not FK — may reference projects not yet created or since renamed.';
+COMMENT ON COLUMN events.repo IS 'GitHub repository full name (e.g. Koopa0/koopa0.dev).';
+COMMENT ON COLUMN events.ref IS 'Git ref (branch name or tag).';
+
+CREATE INDEX idx_events_timestamp ON events (timestamp DESC);
+CREATE INDEX idx_events_project ON events (project, timestamp DESC) WHERE project IS NOT NULL;
+CREATE INDEX idx_events_type ON events (event_type);
+CREATE UNIQUE INDEX idx_events_dedup ON events (source, event_type, source_id) WHERE source_id IS NOT NULL;
+CREATE INDEX idx_events_source_id ON events (source_id text_pattern_ops) WHERE source_id IS NOT NULL;
+
+-- Junction: events ↔ tags (was: activity_event_tags)
+CREATE TABLE event_tags (
+    event_id  BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     tag_id    UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (event_id, tag_id)
 );
 
-CREATE INDEX idx_activity_event_tags_tag ON activity_event_tags(tag_id);
+CREATE INDEX idx_event_tags_tag ON event_tags(tag_id);
 
--- Junction: contents ↔ tags
-CREATE TABLE content_tags (
-    content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-    tag_id     UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (content_id, tag_id)
-);
+-- ============================================================
+-- Project aliases
+-- ============================================================
 
-CREATE INDEX idx_content_tags_tag_id ON content_tags(tag_id);
-
-COMMENT ON COLUMN content_tags.content_id IS 'References the content record. CASCADE deletes tag associations when content is deleted.';
-COMMENT ON COLUMN content_tags.tag_id IS 'References the canonical tag. CASCADE deletes associations when tag is merged/deleted. Distinct from content_topics: topics are curated categories, tags are raw labels resolved through the tag alias pipeline.';
-
--- Project aliases — maps variant project names to canonical
 CREATE TABLE project_aliases (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     alias      TEXT NOT NULL UNIQUE,
@@ -605,83 +647,136 @@ CREATE TABLE project_aliases (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON COLUMN project_aliases.project_id IS 'References the canonical project. ON DELETE CASCADE — aliases are meaningless without the project. Asymmetric with tasks/contents which use SET NULL.';
+COMMENT ON COLUMN project_aliases.project_id IS 'References canonical project. CASCADE — aliases meaningless without project.';
 
 CREATE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
 
--- Partial indexes for common query patterns
-CREATE INDEX IF NOT EXISTS idx_contents_published_at_pub
-    ON contents (published_at DESC NULLS LAST)
-    WHERE status = 'published';
+-- ============================================================
+-- IPC: messages (was: session_notes WHERE note_type IN ('directive','report'))
+-- ============================================================
 
--- Index on slug for Obsidian content lookup (source_type alone has zero selectivity in a partial index).
-CREATE INDEX IF NOT EXISTS idx_contents_obsidian_slug
-    ON contents (slug)
-    WHERE source_type = 'obsidian';
-
-CREATE INDEX IF NOT EXISTS idx_flow_runs_completed
-    ON flow_runs (content_id, flow_name, ended_at DESC)
-    WHERE status = 'completed';
-
--- === Notion Source Registry ===
-
-CREATE TABLE notion_sources (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    database_id     TEXT NOT NULL UNIQUE,
-    name            TEXT NOT NULL,
-    description     TEXT NOT NULL DEFAULT '',
-    role            TEXT CHECK (role IN ('projects', 'tasks', 'books', 'goals')),
-    sync_mode       TEXT NOT NULL DEFAULT 'full',
-    property_map    JSONB NOT NULL DEFAULT '{}',
-    poll_interval   TEXT NOT NULL DEFAULT '15 minutes',
-    enabled         BOOLEAN NOT NULL DEFAULT true,
-    last_synced_at  TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON COLUMN notion_sources.property_map IS 'Maps Notion database properties to local fields (JSONB). Structure varies by role. Empty {} means default mapping.';
-
--- Indexes for SourceByRole and SourceByDatabaseID query patterns.
-CREATE INDEX idx_notion_sources_role_enabled ON notion_sources (role) WHERE enabled = true AND role IS NOT NULL;
-CREATE INDEX idx_notion_sources_db_enabled ON notion_sources (database_id) WHERE enabled = true;
-CREATE UNIQUE INDEX idx_notion_sources_role ON notion_sources (role) WHERE role IS NOT NULL;
-
--- === Wikilink Edges ===
-
-CREATE TABLE note_links (
+CREATE TABLE messages (
     id              BIGSERIAL PRIMARY KEY,
-    source_note_id  BIGINT NOT NULL REFERENCES obsidian_notes(id) ON DELETE CASCADE,
-    target_path     TEXT NOT NULL,
-    link_text       TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    kind            TEXT NOT NULL CHECK (kind IN ('directive', 'report')),
+    source          TEXT NOT NULL REFERENCES participant(name),
+    target          TEXT REFERENCES participant(name),
+    priority        TEXT CHECK (priority IN ('p0', 'p1', 'p2')),
+    in_response_to  BIGINT REFERENCES messages(id),
+    acknowledged_at TIMESTAMPTZ,
+    acknowledged_by TEXT REFERENCES participant(name),
+    content         TEXT NOT NULL,
+    metadata        JSONB,
+    note_date       DATE NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_directive_fields
+        CHECK (kind <> 'directive' OR (target IS NOT NULL AND priority IS NOT NULL)),
+    CONSTRAINT chk_ack_pair
+        CHECK ((acknowledged_at IS NULL AND acknowledged_by IS NULL)
+            OR (acknowledged_at IS NOT NULL AND acknowledged_by IS NOT NULL)),
+    CONSTRAINT chk_ack_only_directive
+        CHECK (acknowledged_at IS NULL OR kind = 'directive')
 );
 
-COMMENT ON COLUMN note_links.target_path IS 'Wikilink target file path. May reference notes not yet synced — forward/broken links are expected in the knowledge graph.';
+COMMENT ON TABLE messages IS 'IPC layer — cross-project directives and reports. PostgreSQL is the message bus.';
+COMMENT ON COLUMN messages.kind IS 'directive = HQ instruction to department. report = department output back to HQ.';
+COMMENT ON COLUMN messages.target IS 'Recipient participant. Required for directives (Go validates department only). Optional for reports.';
+COMMENT ON COLUMN messages.priority IS 'p0 = immediate, p1 = today, p2 = this week. Required for directives.';
+COMMENT ON COLUMN messages.in_response_to IS 'Causal link — which directive this report responds to. Nullable for self-initiated reports.';
+COMMENT ON COLUMN messages.acknowledged_at IS 'When the target department picked up this directive. NULL = unacknowledged.';
+COMMENT ON COLUMN messages.metadata IS 'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs.';
 
-CREATE INDEX idx_note_links_source ON note_links (source_note_id);
-CREATE INDEX idx_note_links_target ON note_links (target_path);
-CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_path);
+CREATE INDEX idx_messages_date ON messages (note_date DESC);
+CREATE INDEX idx_messages_kind ON messages (note_date, kind);
 
--- === Session Notes (cross-environment context bridge) ===
+-- ============================================================
+-- IPC: journal (was: session_notes WHERE note_type IN ('plan','context','reflection','metrics'))
+-- ============================================================
 
-CREATE TABLE session_notes (
-    id          BIGSERIAL PRIMARY KEY,
-    note_date   DATE NOT NULL,
-    note_type   TEXT NOT NULL
-                CHECK (note_type IN ('plan', 'reflection', 'context', 'metrics', 'insight', 'directive', 'report')),
-    source      TEXT NOT NULL
-                CHECK (source IN ('claude', 'claude-code', 'manual', 'hq', 'learning-studio', 'content-studio', 'research-lab')),
-    content     TEXT NOT NULL,
-    metadata    JSONB,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE journal (
+    id         BIGSERIAL PRIMARY KEY,
+    kind       TEXT NOT NULL CHECK (kind IN ('plan', 'context', 'reflection', 'metrics')),
+    source     TEXT NOT NULL REFERENCES participant(name),
+    content    TEXT NOT NULL,
+    metadata   JSONB,
+    note_date  DATE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_session_notes_date ON session_notes (note_date DESC);
-CREATE INDEX idx_session_notes_type ON session_notes (note_date, note_type);
-CREATE INDEX idx_session_notes_insight_status ON session_notes ((metadata->>'status')) WHERE note_type = 'insight';
+COMMENT ON TABLE journal IS 'Session log — plans, context snapshots, reflections, metrics. Self-directed, not cross-project.';
+COMMENT ON COLUMN journal.kind IS 'plan = daily plan. context = end-of-session state. reflection = review. metrics = quantitative snapshot.';
+COMMENT ON COLUMN journal.metadata IS 'plan: {reasoning, committed_task_ids, committed_items}. metrics: {tasks_planned, tasks_completed, adjustments}.';
 
--- === MCP Tool Call Telemetry ===
+CREATE INDEX idx_journal_date ON journal (note_date DESC);
+CREATE INDEX idx_journal_kind ON journal (note_date, kind);
+
+-- ============================================================
+-- IPC: insights (was: session_notes WHERE note_type = 'insight')
+-- ============================================================
+
+CREATE TABLE insights (
+    id                       BIGSERIAL PRIMARY KEY,
+    source                   TEXT NOT NULL REFERENCES participant(name),
+    content                  TEXT NOT NULL,
+    status                   TEXT NOT NULL DEFAULT 'unverified'
+                             CHECK (status IN ('unverified', 'verified', 'invalidated', 'archived')),
+    hypothesis               TEXT NOT NULL,
+    invalidation_condition   TEXT NOT NULL,
+    metadata                 JSONB,
+    note_date                DATE NOT NULL,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE insights IS 'Hypothesis tracking — AI spots patterns, records falsification conditions, system tracks evidence over time.';
+COMMENT ON COLUMN insights.status IS 'Lifecycle: unverified → verified/invalidated → archived.';
+COMMENT ON COLUMN insights.hypothesis IS 'The pattern or prediction being tracked.';
+COMMENT ON COLUMN insights.invalidation_condition IS 'What would disprove this hypothesis.';
+COMMENT ON COLUMN insights.metadata IS 'supporting_evidence, counter_evidence, conclusion, category, project, tags.';
+
+CREATE INDEX idx_insights_status ON insights (status);
+CREATE INDEX idx_insights_date ON insights (note_date DESC);
+
+-- ============================================================
+-- Spaced repetition: review_cards + review_logs (was: fsrs_*)
+-- ============================================================
+
+CREATE TABLE review_cards (
+    id         BIGSERIAL PRIMARY KEY,
+    content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+    tag        TEXT,
+    card_state JSONB NOT NULL,
+    due        TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE review_cards IS 'Spaced repetition card state. One row per (content, tag) pair. Algorithm-agnostic naming — currently FSRS.';
+COMMENT ON COLUMN review_cards.tag IS 'Specific concept tag for per-concept review. NULL = whole-content review.';
+COMMENT ON COLUMN review_cards.card_state IS 'Serialized algorithm state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.';
+COMMENT ON COLUMN review_cards.due IS 'Denormalized from card_state for index-based due-date queries.';
+
+CREATE UNIQUE INDEX idx_review_cards_content_tag ON review_cards (content_id, COALESCE(tag, ''));
+CREATE INDEX idx_review_cards_due ON review_cards (due);
+
+CREATE TABLE review_logs (
+    id             BIGSERIAL PRIMARY KEY,
+    card_id        BIGINT NOT NULL REFERENCES review_cards(id) ON DELETE CASCADE,
+    rating         INT NOT NULL CHECK (rating BETWEEN 1 AND 4),
+    scheduled_days INT NOT NULL,
+    elapsed_days   INT NOT NULL,
+    state          INT NOT NULL,
+    reviewed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE review_logs IS 'Append-only review history. One row per review event.';
+COMMENT ON COLUMN review_logs.rating IS '1=Again (forgot), 2=Hard (partial), 3=Good (remembered), 4=Easy.';
+COMMENT ON COLUMN review_logs.state IS 'Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.';
+
+CREATE INDEX idx_review_logs_card ON review_logs (card_id, reviewed_at DESC);
+
+-- ============================================================
+-- Telemetry
+-- ============================================================
 
 CREATE TABLE tool_call_logs (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -694,13 +789,12 @@ CREATE TABLE tool_call_logs (
     output_bytes INTEGER
 );
 
-COMMENT ON COLUMN tool_call_logs.is_empty IS 'True when a search/list tool returned 0 results — signals misuse or missing data.';
-COMMENT ON COLUMN tool_call_logs.input_bytes IS 'Approximate JSON byte size of tool input. Helps identify unexpectedly large payloads.';
-COMMENT ON COLUMN tool_call_logs.output_bytes IS 'Approximate JSON byte size of tool output. Helps identify tools returning excessive data.';
+COMMENT ON COLUMN tool_call_logs.is_empty IS 'True when search/list tool returned 0 results — signals misuse or missing data.';
+COMMENT ON COLUMN tool_call_logs.input_bytes IS 'Approximate JSON byte size of tool input.';
+COMMENT ON COLUMN tool_call_logs.output_bytes IS 'Approximate JSON byte size of tool output.';
 
 CREATE INDEX idx_tool_call_logs_name_time ON tool_call_logs (tool_name, called_at DESC);
 
--- Telemetry analysis views — run SELECT * instead of remembering queries.
 CREATE VIEW tool_usage_summary AS
 SELECT tool_name,
        COUNT(*)                                                               AS calls,
@@ -727,87 +821,28 @@ FROM tool_call_logs
 GROUP BY called_at::date
 ORDER BY day DESC;
 
--- Reconcile runs — history of weekly Obsidian↔Notion reconciliation
+-- ============================================================
+-- Reconciliation
+-- ============================================================
+
 CREATE TABLE reconcile_runs (
     id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     started_at          TIMESTAMPTZ NOT NULL,
-    completed_at        TIMESTAMPTZ,          -- NULL if still running or crashed
-    obsidian_missing    INT NOT NULL DEFAULT 0, -- files in GitHub but not in content DB
-    obsidian_orphaned   INT NOT NULL DEFAULT 0, -- content in DB but not in GitHub
-    notion_proj_missing INT NOT NULL DEFAULT 0, -- projects in Notion but not local
-    notion_proj_orphan  INT NOT NULL DEFAULT 0, -- local projects not in Notion
-    notion_goal_missing INT NOT NULL DEFAULT 0, -- goals in Notion but not local
-    notion_goal_orphan  INT NOT NULL DEFAULT 0, -- local goals not in Notion
-    total_drift         INT NOT NULL DEFAULT 0, -- sum of all drift counts
-    error_count         INT NOT NULL DEFAULT 0, -- number of errors during run
-    errors              JSONB,                   -- error details array, NULL if no errors
+    completed_at        TIMESTAMPTZ,
+    obsidian_missing    INT NOT NULL DEFAULT 0,
+    obsidian_orphaned   INT NOT NULL DEFAULT 0,
+    notion_proj_missing INT NOT NULL DEFAULT 0,
+    notion_proj_orphan  INT NOT NULL DEFAULT 0,
+    notion_goal_missing INT NOT NULL DEFAULT 0,
+    notion_goal_orphan  INT NOT NULL DEFAULT 0,
+    total_drift         INT NOT NULL DEFAULT 0,
+    error_count         INT NOT NULL DEFAULT 0,
+    errors              JSONB,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE reconcile_runs IS 'History of weekly reconciliation runs for system health monitoring and drift trend analysis.';
+COMMENT ON TABLE reconcile_runs IS 'Weekly reconciliation run history for system health and drift trend analysis.';
 COMMENT ON COLUMN reconcile_runs.completed_at IS 'NULL until run finishes. NULL + old started_at = crashed run.';
 COMMENT ON COLUMN reconcile_runs.total_drift IS 'Sum of all missing+orphaned counts. Zero = fully consistent.';
-COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
 
 CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);
-
--- === FSRS Spaced Retrieval ===
-
--- Card state: one row per (content_id, tag) pair, UPSERT on review.
-CREATE TABLE fsrs_cards (
-    id            BIGSERIAL PRIMARY KEY,
-    content_id    UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-    tag           TEXT,
-    card_state    JSONB NOT NULL,
-    due           TIMESTAMPTZ NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- UNIQUE on (content_id, tag) with NULL handling: COALESCE tag to empty string for uniqueness.
--- This prevents duplicate (content_id, NULL) rows which plain UNIQUE(content_id, tag) allows.
-CREATE UNIQUE INDEX idx_fsrs_cards_content_tag ON fsrs_cards (content_id, COALESCE(tag, ''));
-
-COMMENT ON TABLE fsrs_cards IS 'FSRS card state for spaced retrieval. One row per (content, tag) pair. card_state is serialized go-fsrs Card struct.';
-COMMENT ON COLUMN fsrs_cards.tag IS 'Specific weakness or concept tag. NULL means whole-content review.';
-COMMENT ON COLUMN fsrs_cards.card_state IS 'Serialized fsrs.Card (Due, Stability, Difficulty, Reps, Lapses, State, etc.). Opaque to SQL — only queried via Go unmarshal.';
-COMMENT ON COLUMN fsrs_cards.due IS 'Denormalized from card_state for index-based due-date queries.';
-
-CREATE INDEX idx_fsrs_cards_due ON fsrs_cards (due);
-
--- Review history: append-only log of every review event.
-CREATE TABLE fsrs_review_logs (
-    id             BIGSERIAL PRIMARY KEY,
-    card_id        BIGINT NOT NULL REFERENCES fsrs_cards(id) ON DELETE CASCADE,
-    rating         INT NOT NULL CHECK (rating BETWEEN 1 AND 4),
-    scheduled_days INT NOT NULL,
-    elapsed_days   INT NOT NULL,
-    state          INT NOT NULL,
-    reviewed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE fsrs_review_logs IS 'Append-only FSRS review history. One row per review event.';
-COMMENT ON COLUMN fsrs_review_logs.rating IS '1=Again(forgot), 2=Hard(partial), 3=Good(remembered), 4=Easy.';
-COMMENT ON COLUMN fsrs_review_logs.state IS 'Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.';
-
-CREATE INDEX idx_fsrs_review_logs_card ON fsrs_review_logs (card_id, reviewed_at DESC);
-
--- === Task Recurring System ===
-
--- Skip history for recurring tasks (per missed occurrence).
-CREATE TABLE task_skip_log (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    original_due DATE NOT NULL,
-    skipped_date DATE NOT NULL,
-    reason       TEXT NOT NULL DEFAULT 'auto-expired'
-        CHECK (reason IN ('auto-expired', 'manual')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(task_id, skipped_date)
-);
-
-COMMENT ON TABLE task_skip_log IS 'Per-occurrence skip history for recurring tasks. One row per missed recurrence cycle.';
-COMMENT ON COLUMN task_skip_log.task_id IS 'The recurring task this skip belongs to. CASCADE deletes history when task is deleted.';
-COMMENT ON COLUMN task_skip_log.original_due IS 'The due date the task had when the skip was detected by cron.';
-COMMENT ON COLUMN task_skip_log.skipped_date IS 'The occurrence date that was missed (the date the task should have been done).';
-COMMENT ON COLUMN task_skip_log.reason IS 'Why the occurrence was skipped: auto-expired (cron detected overdue) or manual (user explicitly skipped).';
