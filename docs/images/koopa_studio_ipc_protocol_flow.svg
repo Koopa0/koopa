@@ -1,0 +1,252 @@
+<svg viewBox="0 0 720 1020" xmlns="http://www.w3.org/2000/svg">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .bg { fill: #FAFAF8; }
+  .th { font-size: 14px; font-weight: 500; fill: #2C2C2A; }
+  .ts { font-size: 12px; font-weight: 400; fill: #5F5E5A; }
+  .conn { stroke: #B4B2A9; stroke-width: 1; }
+  .dash { stroke-dasharray: 4 3; }
+
+  .c-purple > rect { fill: #CECBF6; stroke: #7F77DD; stroke-width: 1; }
+  .c-purple > .th { fill: #26215C; } .c-purple > .ts { fill: #534AB7; }
+
+  .c-blue > rect { fill: #B5D4F4; stroke: #378ADD; stroke-width: 1; }
+  .c-blue > .th { fill: #042C53; } .c-blue > .ts { fill: #185FA5; }
+
+  .c-teal > rect { fill: #9FE1CB; stroke: #1D9E75; stroke-width: 1; }
+  .c-teal > .th { fill: #04342C; } .c-teal > .ts { fill: #0F6E56; }
+
+  .c-coral > rect { fill: #F5C4B3; stroke: #D85A30; stroke-width: 1; }
+  .c-coral > .th { fill: #4A1B0C; } .c-coral > .ts { fill: #993C1D; }
+
+  .c-pink > rect { fill: #F4C0D1; stroke: #D4537E; stroke-width: 1; }
+  .c-pink > .th { fill: #4B1528; } .c-pink > .ts { fill: #993556; }
+
+  .c-amber > rect { fill: #FAC775; stroke: #BA7517; stroke-width: 1; }
+  .c-amber > .th { fill: #412402; } .c-amber > .ts { fill: #854F0B; }
+
+  .c-gray > rect { fill: #D3D1C7; stroke: #888780; stroke-width: 1; }
+  .c-gray > .th { fill: #2C2C2A; } .c-gray > .ts { fill: #5F5E5A; }
+
+  .lane-bg { fill: #E6F1FB; opacity: 0.3; }
+  .zone-bg { fill: #F1EFE8; opacity: 0.15; stroke: #B4B2A9; stroke-width: 0.5; stroke-dasharray: 4 3; }
+  .legend-bg { fill: #F1EFE8; stroke: #B4B2A9; stroke-width: 0.5; }
+
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #1a1a18; }
+    .th { fill: #D3D1C7; } .ts { fill: #888780; }
+    .conn { stroke: #444441; }
+
+    .c-purple > rect { fill: #26215C; stroke: #AFA9EC; }
+    .c-purple > .th { fill: #CECBF6; } .c-purple > .ts { fill: #AFA9EC; }
+
+    .c-blue > rect { fill: #042C53; stroke: #85B7EB; }
+    .c-blue > .th { fill: #B5D4F4; } .c-blue > .ts { fill: #85B7EB; }
+
+    .c-teal > rect { fill: #04342C; stroke: #5DCAA5; }
+    .c-teal > .th { fill: #9FE1CB; } .c-teal > .ts { fill: #5DCAA5; }
+
+    .c-coral > rect { fill: #4A1B0C; stroke: #F0997B; }
+    .c-coral > .th { fill: #F5C4B3; } .c-coral > .ts { fill: #F0997B; }
+
+    .c-pink > rect { fill: #4B1528; stroke: #ED93B1; }
+    .c-pink > .th { fill: #F4C0D1; } .c-pink > .ts { fill: #ED93B1; }
+
+    .c-amber > rect { fill: #412402; stroke: #EF9F27; }
+    .c-amber > .th { fill: #FAC775; } .c-amber > .ts { fill: #EF9F27; }
+
+    .c-gray > rect { fill: #2C2C2A; stroke: #5F5E5A; }
+    .c-gray > .th { fill: #D3D1C7; } .c-gray > .ts { fill: #888780; }
+
+    .lane-bg { fill: #042C53; opacity: 0.25; }
+    .zone-bg { fill: #2C2C2A; opacity: 0.3; stroke: #444441; }
+    .legend-bg { fill: #2C2C2A; stroke: #444441; }
+  }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
+    markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke"
+      stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect class="bg" width="720" height="1020" rx="16"/>
+
+<!-- Title -->
+<text class="th" x="360" y="32" text-anchor="middle">Koopa Studio — IPC protocol flow</text>
+<text class="ts" x="360" y="50" text-anchor="middle">session_notes table as cross-project message bus</text>
+
+<!-- PostgreSQL central lane -->
+<rect class="lane-bg" x="290" y="68" width="140" height="912" rx="10"/>
+<g class="c-blue">
+  <rect x="302" y="76" width="116" height="40" rx="8"/>
+  <text class="th" x="360" y="96" text-anchor="middle" dominant-baseline="central">PostgreSQL</text>
+</g>
+<text class="ts" x="360" y="132" text-anchor="middle">session_notes</text>
+
+<!-- HQ swimlane -->
+<rect class="zone-bg" x="24" y="152" width="240" height="530" rx="12"/>
+<g class="c-purple">
+  <rect x="64" y="164" width="160" height="40" rx="8"/>
+  <text class="th" x="144" y="184" text-anchor="middle" dominant-baseline="central">Studio HQ</text>
+</g>
+<text class="ts" x="144" y="216" text-anchor="middle">source: hq</text>
+
+<!-- Content Studio swimlane -->
+<rect class="zone-bg" x="456" y="152" width="240" height="278" rx="12"/>
+<g class="c-teal">
+  <rect x="486" y="164" width="170" height="40" rx="8"/>
+  <text class="th" x="571" y="184" text-anchor="middle" dominant-baseline="central">Content Studio</text>
+</g>
+<text class="ts" x="571" y="216" text-anchor="middle">source: content-studio</text>
+
+<!-- Research Lab swimlane -->
+<rect class="zone-bg" x="456" y="450" width="240" height="278" rx="12"/>
+<g class="c-coral">
+  <rect x="486" y="462" width="170" height="40" rx="8"/>
+  <text class="th" x="571" y="482" text-anchor="middle" dominant-baseline="central">Research Lab</text>
+</g>
+<text class="ts" x="571" y="514" text-anchor="middle">source: research-lab</text>
+
+<!-- Learning Studio swimlane -->
+<rect class="zone-bg" x="456" y="748" width="240" height="232" rx="12"/>
+<g class="c-pink">
+  <rect x="486" y="760" width="170" height="40" rx="8"/>
+  <text class="th" x="571" y="780" text-anchor="middle" dominant-baseline="central">Learning Studio</text>
+</g>
+<text class="ts" x="571" y="812" text-anchor="middle">source: learning-studio</text>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- FLOW 1: HQ writes directive                     -->
+<!-- ═══════════════════════════════════════════════ -->
+<g class="c-purple">
+  <rect x="54" y="240" width="170" height="50" rx="6"/>
+  <text class="th" x="139" y="258" text-anchor="middle" dominant-baseline="central">1. Write directive</text>
+  <text class="ts" x="139" y="278" text-anchor="middle" dominant-baseline="central">type: directive</text>
+</g>
+<line x1="224" y1="265" x2="298" y2="265" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- FLOW 2: Content Studio reads directive -->
+<line x1="422" y1="252" x2="486" y2="252" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g class="c-teal">
+  <rect x="486" y="232" width="190" height="50" rx="6"/>
+  <text class="th" x="581" y="250" text-anchor="middle" dominant-baseline="central">2. Read directive</text>
+  <text class="ts" x="581" y="270" text-anchor="middle" dominant-baseline="central">session start</text>
+</g>
+
+<!-- FLOW 3: Content Studio executes -->
+<g class="c-teal">
+  <rect x="486" y="298" width="190" height="36" rx="6"/>
+  <text class="th" x="581" y="316" text-anchor="middle" dominant-baseline="central">3. Execute work</text>
+</g>
+
+<!-- FLOW 4: Content Studio writes report -->
+<g class="c-teal">
+  <rect x="486" y="350" width="190" height="50" rx="6"/>
+  <text class="th" x="581" y="368" text-anchor="middle" dominant-baseline="central">4. Write report</text>
+  <text class="ts" x="581" y="388" text-anchor="middle" dominant-baseline="central">type: report</text>
+</g>
+<line x1="486" y1="375" x2="422" y2="375" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- FLOW 5: HQ reads reports (morning briefing) -->
+<line x1="298" y1="380" x2="224" y2="380" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g class="c-purple">
+  <rect x="54" y="354" width="170" height="50" rx="6"/>
+  <text class="th" x="139" y="372" text-anchor="middle" dominant-baseline="central">5. Read reports</text>
+  <text class="ts" x="139" y="392" text-anchor="middle" dominant-baseline="central">morning briefing</text>
+</g>
+
+<!-- FLOW 6: HQ writes new directive -->
+<g class="c-purple">
+  <rect x="54" y="422" width="170" height="50" rx="6"/>
+  <text class="th" x="139" y="440" text-anchor="middle" dominant-baseline="central">6. New directive</text>
+  <text class="ts" x="139" y="460" text-anchor="middle" dominant-baseline="central">type: directive</text>
+</g>
+<line x1="224" y1="447" x2="298" y2="447" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- Research Lab: same directive→report cycle       -->
+<!-- ═══════════════════════════════════════════════ -->
+<line x1="422" y1="545" x2="486" y2="545" stroke="#D85A30" stroke-width="1.5" marker-end="url(#arrow)"/>
+<g class="c-coral">
+  <rect x="486" y="526" width="190" height="50" rx="6"/>
+  <text class="th" x="581" y="544" text-anchor="middle" dominant-baseline="central">Read directive</text>
+  <text class="ts" x="581" y="564" text-anchor="middle" dominant-baseline="central">session start</text>
+</g>
+
+<g class="c-coral">
+  <rect x="486" y="592" width="190" height="36" rx="6"/>
+  <text class="th" x="581" y="610" text-anchor="middle" dominant-baseline="central">Execute research</text>
+</g>
+
+<g class="c-coral">
+  <rect x="486" y="644" width="190" height="50" rx="6"/>
+  <text class="th" x="581" y="662" text-anchor="middle" dominant-baseline="central">Write report</text>
+  <text class="ts" x="581" y="682" text-anchor="middle" dominant-baseline="central">type: report</text>
+</g>
+<line x1="486" y1="669" x2="422" y2="669" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- Learning Studio: reads PLAN (not directive!)    -->
+<!-- Amber dashed arrow = visually distinct path     -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<!-- HQ writes plan -->
+<g class="c-purple">
+  <rect x="54" y="496" width="170" height="50" rx="6"/>
+  <text class="th" x="139" y="514" text-anchor="middle" dominant-baseline="central">Write plan</text>
+  <text class="ts" x="139" y="534" text-anchor="middle" dominant-baseline="central">type: plan</text>
+</g>
+<line x1="224" y1="521" x2="298" y2="521" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- Learning reads plan — AMBER DASHED to distinguish from directive reads -->
+<line x1="422" y1="845" x2="486" y2="845" stroke="#BA7517" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<g class="c-amber">
+  <rect x="486" y="826" width="190" height="50" rx="6"/>
+  <text class="th" x="581" y="844" text-anchor="middle" dominant-baseline="central">Read plan</text>
+  <text class="ts" x="581" y="864" text-anchor="middle" dominant-baseline="central">type: plan (not directive)</text>
+</g>
+
+<g class="c-pink">
+  <rect x="486" y="892" width="190" height="36" rx="6"/>
+  <text class="th" x="581" y="910" text-anchor="middle" dominant-baseline="central">Execute coaching</text>
+</g>
+
+<g class="c-pink">
+  <rect x="486" y="944" width="190" height="36" rx="6"/>
+  <text class="th" x="581" y="962" text-anchor="middle" dominant-baseline="central">Write report</text>
+</g>
+<line x1="486" y1="962" x2="422" y2="962" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- Context self-loop (all projects)                -->
+<!-- ═══════════════════════════════════════════════ -->
+<g class="c-gray">
+  <rect x="54" y="580" width="170" height="68" rx="6"/>
+  <text class="th" x="139" y="602" text-anchor="middle" dominant-baseline="central">All projects</text>
+  <text class="ts" x="139" y="622" text-anchor="middle" dominant-baseline="central">Write context at</text>
+  <text class="ts" x="139" y="638" text-anchor="middle" dominant-baseline="central">session end</text>
+</g>
+<path d="M224 614 L258 614 L258 700 L306 700" fill="none" stroke="#888780" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<text class="ts" x="252" y="664" text-anchor="end">type: context</text>
+<text class="ts" x="252" y="680" text-anchor="end">→ self (next session)</text>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- Legend + note_type enum                         -->
+<!-- ═══════════════════════════════════════════════ -->
+<rect class="legend-bg" x="36" y="718" width="224" height="74" rx="8"/>
+<text class="th" x="148" y="738" text-anchor="middle">note_type enum</text>
+<text class="ts" x="48" y="756">directive · report · plan · context</text>
+<text class="ts" x="48" y="772">reflection · metrics · insight</text>
+
+<rect class="legend-bg" x="36" y="806" width="224" height="108" rx="8"/>
+<text class="th" x="148" y="826" text-anchor="middle">Legend</text>
+<line x1="48" y1="846" x2="92" y2="846" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text class="ts" x="102" y="850">Write to DB</text>
+<line x1="92" y1="870" x2="48" y2="870" stroke="#534AB7" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text class="ts" x="102" y="874">Read from DB</text>
+<line x1="48" y1="894" x2="92" y2="894" stroke="#BA7517" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<text class="ts" x="102" y="898">Read plan (Learning only)</text>
+
+</svg>

@@ -37,16 +37,17 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 **PostgreSQL** 是處理層 — 一個資料庫承載所有資料。透過 tsvector + GIN 實現全文搜尋，透過 pgvector + HNSW 實現語義搜尋，再用 Reciprocal Rank Fusion 合併結果。原始素材在這裡變得可查詢、可搜尋、可關聯。
 
 **Go server + Angular 前端** 是輸出層 — 一個 MCP server 為 AI 環境開放 54 個工具（橫跨 10 個領域）、一條 Genkit 管線執行 13 個 AI flow、一個 Angular SSR 前端將成品發佈到網站。
-### 四個 AI 消費者
+### 五個 AI 消費者
 
-每個都連接到同一個 MCP server，但透過 `sections` 參數拉取不同的資料子集：
+每個都連接到同一個 MCP server（`koopa0-knowledge`），但擔任不同的部門角色：
 
-| 消費者             | 角色                         | 典型工具                                                                        |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------------------- |
-| Claude Web（日常） | 晨間規劃、晚間反思、週報     | `morning_context`、`save_session_note`、`my_day`                      |
-| Claude Web（學習） | 學習 session、知識搜尋、閱讀 | `log_learning_session`、`retrieval_queue`、`search_knowledge`、`read_oreilly_chapter` |
-| Claude Code        | 開發、build log、專案追蹤    | `project_context`、`log_dev_session`、`search_tasks`                        |
-| Cowork             | 內容管線、RSS 管理、系統維運 | `create_content`、`publish_content`、`trigger_pipeline`                         |
+| 消費者           | 環境    | 角色                                    | 典型工具                                                              |
+| ---------------- | ------- | --------------------------------------- | --------------------------------------------------------------------- |
+| Studio HQ        | Cowork  | 營運中心 + 個人助理                      | `morning_context`、`save_session_note`、`my_day`、`goal_progress`     |
+| Learning Studio  | Cowork  | 學習教練                                | `mastery_map`、`retrieval_queue`、`log_learning_session`、`read_oreilly_chapter` |
+| Content Studio   | Cowork  | 內容部門                                | `list_content_queue`、`create_content`、`publish_content`、`rss_highlights` |
+| Research Lab     | Cowork  | 研究部門                                | `search_knowledge`、`synthesize_topic`、`decision_log`、`project_context` |
+| Claude Code      | Terminal | 開發夥伴                                | `project_context`、`log_dev_session`、`search_tasks`                  |
 
 ### 三條資料流
 
@@ -80,9 +81,25 @@ Notion 和 Obsidian 各自都很好用，我現在也還在用 — Notion 管任
 
 **Topic** 是高層級的知識領域（Go、System Design、AI）— 10-20 個，手動管理。**Tag** 是細粒度的標籤（pgvector、error-handling）— 從 Obsidian 筆記自動提取。Tag 有別名系統，將不同寫法對應到正規形式（`golang` → `go`、`JS` → `javascript`）。未知的原始 tag 會建立未映射的別名，等待管理員映射、確認或拒絕。
 
-### Session Note — AI 的工作日誌
+### Session Note — AI 的工作日誌與 IPC 協議
 
-由 AI flow 自動生成，不是使用者手寫的，不公開。五種類型：`plan`（每日）、`reflection`（每週）、`context`（session 結束時）、`metrics`（定期資料快照）、`insight`（假說紀錄 — 見下方）。
+Session note 有兩個用途。第一，它們是 AI 生成的工作產物（計劃、反思、指標）。第二 — 這是不那麼明顯的部分 — 它們是 Cowork project 之間的**跨 process 通訊協議**。當 Studio HQ 寫入一條 `directive`，Content Studio 在下次 session 啟動時讀取它。當 Research Lab 完成分析，它寫入一份 `report` 供 HQ 在晨間簡報中讀取。PostgreSQL 就是 message bus；`note_type` 和 `source` 是 routing key。
+
+七種類型，後端嚴格驗證：
+
+| 類型 | 用途 | 寫入者 | 讀取者 |
+|------|------|--------|--------|
+| `directive` | HQ 對部門的指令 | HQ | Content Studio、Research Lab、Learning |
+| `report` | 部門向 HQ 回報的產出 | Content Studio、Research Lab、Learning | HQ |
+| `plan` | 每日/每週計劃 | HQ | Learning、Content Studio |
+| `context` | Session 結束時的狀態，供下次 session 使用 | 所有 | 同 project |
+| `reflection` | 晚間回顧 | 所有 | HQ |
+| `metrics` | 量化資料快照 | HQ、Learning | HQ |
+| `insight` | 假說追蹤（見下方） | 所有 | HQ |
+
+七種 source 標識發送者：`hq`、`content-studio`、`research-lab`、`learning-studio`、`claude-code`、`claude`、`manual`。
+
+無效的 `note_type` 或 `source` 值會在 API 層被拒絕 — 這是強制的，不是建議的。完整協議規範：[`docs/COWORK-SYSTEM.md`](docs/COWORK-SYSTEM.md)
 
 ### Insight — 假說追蹤
 
@@ -143,6 +160,35 @@ MCP（Model Context Protocol）是 AI 環境與系統互動的方式。54 個工
 **學習使用 FSRS 實現間隔複習**：複習一筆 TIL 時，系統記錄你的回憶品質（1–4），並依遺忘曲線模型計算下次複習日期。Card 在首次複習時自動建立，無需手動設定。佇列優先排出逾期的 card，再補上過去一週未複習過的 TIL。
 
 **學習使用受控詞彙**：35+ 標準化標籤（two-pointers、sliding-window、dp...）+ 結果標籤（ac-independent、ac-with-hints...）+ 弱點標籤（weakness:xxx）。標準化防止查詢碎片化。
+
+---
+
+## Cowork 系統
+
+四個 Claude Desktop Cowork project 組成一個虛擬工作室。每個都有自己的 instructions、memory 和排程任務 — 但共享同一個 PostgreSQL，透過 MCP server 讓 `session_notes` 成為它們之間的 message bus。
+
+| Project | 角色 | 寫入 | 讀取 |
+|---------|------|------|------|
+| **Studio HQ** | CEO — 決策、分配、不做執行 | `directive`、`plan`、`metrics` | 所有部門的 `report` |
+| **Content Studio** | 內容策略、寫稿、發佈管理 | `report`、`context` | HQ 的 `directive` |
+| **Research Lab** | 深度研究、結構化報告 | `report`、`context` | HQ 的 `directive` |
+| **Learning Studio** | LeetCode coaching、間隔複習、知識建構 | `report`、`context`、`metrics` | HQ 的 `plan` |
+
+Claude Code（terminal）是第五個消費者 — 負責開發任務，但不參與 directive/report 循環。
+
+### 通訊流程
+
+HQ 寫入 directive → MCP 存入 `session_notes` → 部門在下次 session 啟動時讀取 → 執行 → 寫入 report → HQ 在晨間簡報讀取 report → 做決策 → 寫入新的 directive。每天循環。
+
+<p align="center">
+  <img src="docs/images/koopa_studio_ipc_protocol_flow.svg" alt="IPC Protocol Flow" width="720">
+</p>
+
+### 排程
+
+Cloud Scheduled Tasks（`claude.ai/code/scheduled`）跑在 Anthropic 基礎設施上 — 不需要本機。HQ 每日晨間簡報、Content Studio 下午檢查管線、Research Lab 每週產業掃描。
+
+完整協議規範、通訊矩陣、健康檢查、已知問題：[`docs/COWORK-SYSTEM.md`](docs/COWORK-SYSTEM.md)
 
 ---
 

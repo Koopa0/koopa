@@ -112,9 +112,9 @@
 
 | 參數 | 類型 | 必填 | 說明 |
 |------|------|------|------|
-| `note_type` | string | ✅ | plan, reflection, context, metrics, insight |
+| `note_type` | string | ✅ | plan, reflection, context, metrics, insight, directive, report |
 | `content` | string | ✅ | 筆記內容 |
-| `source` | string | ✅ | claude, claude-code, manual |
+| `source` | string | ✅ | claude, claude-code, manual, hq, learning-studio, content-studio, research-lab |
 | `date` | string | — | YYYY-MM-DD（default today） |
 | `metadata` | object | — | insight: {hypothesis, invalidation_condition}; plan: {reasoning, committed_task_ids, committed_items}; metrics: {tasks_planned, tasks_completed, adjustments} |
 
@@ -132,7 +132,7 @@
 | 參數 | 類型 | 必填 | 說明 |
 |------|------|------|------|
 | `date` | string | — | YYYY-MM-DD（default today） |
-| `note_type` | string | — | plan, reflection, context, metrics, insight |
+| `note_type` | string | — | plan, reflection, context, metrics, insight, directive, report |
 | `days` | int | — | 回溯天數（default 1, max 30） |
 
 ---

@@ -71,7 +71,7 @@ Koopa 的對外定位是 **Go Backend Expert** — 高併發系統、IoT data pi
 ### Step 0：檢查 HQ 指令
 
 ```
-session_notes(note_type="ceo-directive", days=3)
+session_notes(note_type="directive", days=3)
 ```
 
 HQ 可能會下達內容指令，例如：
@@ -170,7 +170,7 @@ bookmark_rss_item(collected_id="...", notes="值得寫一篇 Go 角度的分析"
 
 ```
 save_session_note(
-  note_type="department-output",
+  note_type="report",
   source="content-studio",
   content="""
   ## Content Studio Session Report — [日期]
