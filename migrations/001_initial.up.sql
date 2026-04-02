@@ -822,7 +822,7 @@ CREATE TABLE reports (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE reports IS 'IPC — department output. May respond to a specific directive (in_response_to FK to directives), or be self-initiated (in_response_to NULL).';
+COMMENT ON TABLE reports IS 'IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion is determined by report content/metadata (follow_up_needed), not by cardinality constraint.';
 COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant.';
 COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
 COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.';
