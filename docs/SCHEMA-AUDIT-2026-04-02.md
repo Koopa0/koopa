@@ -1,6 +1,6 @@
 # Schema Audit — 2026-04-02
 
-> 全表語義審查。趁資料接近零，一次處理所有命名和結構問題。
+> 全表語義審查。資料接近零，一次處理所有命名、結構和正規化問題。
 
 ---
 
@@ -11,254 +11,302 @@ Migration：`migrations/001_initial.up.sql`（唯一 migration file）
 
 ---
 
-## P0：結構性拆分（已決策）
+## 1. 結構性拆分
 
-### `session_notes` → `messages` + `journal` + `insights`
+### 1.1 `session_notes` → `messages` + `journal` + `insights`
 
-見 `docs/Ipc protocol decision doc final.md`。三表設計已確定，不重複。
+已決策。見 `docs/Ipc protocol decision doc final.md`。
 
----
-
-## P1：表改名
-
-### `collected_data` → `feed_entries`
-
-| 項目 | 說明 |
-|------|------|
-| **問題** | `collected_data` 是 generic 名詞，不表達這是 RSS feed 收集的文章 |
-| **Go code** | package 已經叫 `internal/feed/entry/`，Go 層已用 `entry` 語義 |
-| **業界慣例** | Miniflux（Go + PostgreSQL）用 `entries`，Atom spec 用 `entry`，RSS spec 用 `item` |
-| **決定** | `feed_entries` — 加 `feed_` prefix 因為 `entries` 太 generic |
-| **影響** | `internal/feed/entry/query.sql` 裡的表名、sqlc generated code、migrations |
-
-### `tracking_topics` → 保留但加 COMMENT
-
-| 項目 | 說明 |
-|------|------|
-| **問題** | 和 `topics` 表容易混淆，零 COMMENT |
-| **Go code** | `internal/monitor/` 有完整 CRUD，routes 掛在 `/api/admin/tracking`，main.go 有 wiring。**在用，不能 DROP** |
-| **語義區分** | `topics` = 靜態的知識領域分類（Go, AI, System Design）。`tracking_topics` = 主動監測的關鍵字組合，驅動 web scraping/API 收集 |
-| **決定** | 保留表名（改名影響 routes + monitor package），但加完整 COMMENT |
+- `messages`：directive, report（IPC 層，有 target/priority/acknowledged_at/in_response_to）
+- `journal`：plan, context, reflection, metrics（session 日誌層）
+- `insights`：insight（知識層，hypothesis/status 升格為 column）
 
 ---
 
-## P2：統一身份模型
+## 2. Topic 正規化
 
-### 現狀：3 套獨立的 actor vocabulary
+### 2.1 現狀：5 個地方各自定義 "topic"
+
+```
+topics                   → 正規 table（UUID, slug, name）           ✅ canonical
+content_topics           → junction table（content ↔ topics）       ✅ 正確
+feeds.topics             → TEXT[] 陣列，"must match topics.slug"    ❌ 沒 FK
+collected_data.topics    → TEXT[] 陣列，同上                        ❌ 沒 FK
+tracking_topics          → 完全獨立的表                              ❌ 沒關聯到 topics
+```
+
+### 2.2 正規化設計
+
+```
+topics (single source of truth)
+│
+├── content_topics     (junction: content ↔ topic)     ✅ 已有，不動
+├── feed_topics        (junction: feed ↔ topic)        ← 取代 feeds.topics TEXT[]
+└── topic_monitors     (1:1 monitoring config)         ← 取代 tracking_topics
+```
+
+**`feed_entry_topics` 不建** — entry 透過 `feed_entries.feed_id` JOIN `feed_topics` 繼承 feed 的 topics。一層就夠，不需要多一層 junction。如果未來需要 entry-level 精細度，放 `feed_entries.metadata` JSONB。
+
+### 2.3 改動明細
+
+#### `feeds.topics TEXT[]` → `feed_topics` junction
+
+```sql
+CREATE TABLE feed_topics (
+    feed_id  UUID NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    topic_id UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    PRIMARY KEY (feed_id, topic_id)
+);
+CREATE INDEX idx_feed_topics_topic ON feed_topics(topic_id);
+```
+
+刪除 `feeds.topics` 欄位。現有資料 backfill：用 `topics.slug` 做 lookup。
+
+#### `collected_data.topics TEXT[]` → 刪除
+
+Entry 透過 feed 繼承 topics，不需要自己的 topics 欄位。Relevance scoring 的 topic 匹配結果放 `feed_entries.metadata` 的 `matched_topics` key（如有需要）。
+
+#### `tracking_topics` → `topic_monitors`
+
+```sql
+CREATE TABLE topic_monitors (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    topic_id   UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    keywords   TEXT[] NOT NULL DEFAULT '{}',
+    sources    TEXT[] NOT NULL DEFAULT '{}',
+    schedule   TEXT NOT NULL DEFAULT '0 */6 * * *',
+    enabled    BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(topic_id)
+);
+
+COMMENT ON TABLE topic_monitors IS '針對特定 topic 的主動監測規則。keywords 驅動 web search，schedule 控制頻率。一個 topic 最多一個 monitor。';
+```
+
+`tracking_topics.name` 消失 — name 就是 `topics.name`，不重複儲存。
+
+Go 影響：`internal/monitor/` package 的 Store/Handler 需要改 query（JOIN topics）。Routes 可以保持 `/api/admin/tracking`。
+
+---
+
+## 3. 表改名
+
+### 3.1 `collected_data` → `feed_entries`
+
+| 項目 | 說明 |
+|------|------|
+| **問題** | `collected_data` generic，不表達這是 RSS feed 收集的文章 |
+| **Go code** | package 已叫 `internal/feed/entry/`，Go 層已用 `entry` 語義 |
+| **業界慣例** | Miniflux（Go + PostgreSQL）：`entries`；Atom spec：`entry`；RSS spec：`item` |
+| **決定** | `feed_entries` — 加 `feed_` prefix 避免 `entries` 太 generic |
+
+### 3.2 `collected_status` enum → `feed_entry_status`
+
+配合表改名，enum 也正名。
+
+---
+
+## 4. 統一身份模型
+
+### 4.1 現狀：3 套獨立的 actor vocabulary
 
 | 位置 | 值 | 語義 |
 |------|-----|------|
-| `session_notes.source` CHECK | `claude, claude-code, manual, hq, content-studio, research-lab, learning-studio` | 「誰寫了這筆 note」 |
-| `tasks.assignee` CHECK | `human, claude-code, cowork` | 「誰來做這個 task」 |
-| `contents.source_type` ENUM | `obsidian, notion, ai-generated, external, manual` | 「內容從哪來」 |
+| `session_notes.source` CHECK | claude, claude-code, manual, hq, content-studio, research-lab, learning-studio | 「誰寫了這筆 note」 |
+| `tasks.assignee` CHECK | human, claude-code, cowork | 「誰來做這個 task」 |
+| `contents.source_type` ENUM | obsidian, notion, ai-generated, external, manual | 「內容從哪來」 |
 
-三套各自定義，沒有共享。`claude-code` 出現在兩個地方但 CHECK 不同。
+三套各自定義，`claude-code` 出現在兩處但 CHECK 不同。
 
-### 統一身份層次
+### 4.2 設計：`participant` lookup table
 
+```sql
+CREATE TABLE participant (
+    name TEXT PRIMARY KEY,
+    role TEXT NOT NULL CHECK (role IN ('human', 'department', 'agent'))
+);
+
+INSERT INTO participant(name, role) VALUES
+    ('human', 'human'),
+    ('hq', 'department'),
+    ('content-studio', 'department'),
+    ('research-lab', 'department'),
+    ('learning-studio', 'department'),
+    ('claude', 'agent'),
+    ('claude-code', 'agent'),
+    ('claude-web', 'agent'),
+    ('claude-cowork', 'agent');
 ```
-participant (lookup table)
-├── role: 'human'
-│   └── human
-├── role: 'department'
-│   ├── hq
-│   ├── content-studio
-│   ├── research-lab
-│   └── learning-studio
-└── role: 'agent'
-    ├── claude-code
-    ├── claude-web
-    ├── claude-cowork
-    └── claude（generic fallback）
-```
 
-**注意**：原本的 `role` 值 `executor` 改為 `agent` — 更準確描述 AI 執行者身份，不和 human 混淆。`manual` 合併到 `human`（手動操作就是人類操作）。
+- `role = 'human'`：人類操作者（合併原本的 `manual`）
+- `role = 'department'`：Cowork 部門（directive target / report source / acknowledge 主體）
+- `role = 'agent'`：AI 執行者（描述「誰在操作」）
 
-### 各表如何引用
+### 4.3 各表引用
 
-| 表 | 欄位 | FK 到 participant | 限制 |
-|----|------|-------------------|------|
+| 表 | 欄位 | FK 到 participant | Go 層限制 |
+|----|------|-------------------|-----------|
 | `messages` | `source` | FK | 所有 role |
-| `messages` | `target` | FK | 僅 `role = 'department'`（Go 層 validate） |
-| `messages` | `acknowledged_by` | FK | 僅 `role = 'department'` |
+| `messages` | `target` | FK | 僅 department |
+| `messages` | `acknowledged_by` | FK | 僅 department |
 | `journal` | `source` | FK | 所有 role |
 | `insights` | `source` | FK | 所有 role |
-| `tasks` | `assignee` | FK | 所有 role（human, agent, department 都可能是 assignee） |
+| `tasks` | `assignee` | FK | 所有 role |
 
-### `contents.source_type` 不整合
+### 4.4 不整合的：`contents.source_type`
 
-`source_type` 的語義是「內容來源系統」（obsidian, notion），不是「誰」。跟 participant 是不同維度。保持獨立 ENUM。
+`source_type` ENUM（obsidian, notion, ai-generated, external, manual）的語義是「內容來源系統」，不是「誰」。和 participant 是不同維度。保持獨立 ENUM。
 
 ---
 
-## P3：空字串 → NULL
+## 5. 空字串 → NULL
 
-### 現狀
+### 5.1 現狀
+
+4 個欄位用 `''` 代替 `NULL` 表示「未設定」：
 
 ```sql
 -- tasks
-energy   TEXT NOT NULL DEFAULT '' CHECK (energy IN ('', 'high', 'medium', 'low')),
-priority TEXT NOT NULL DEFAULT '' CHECK (priority IN ('', 'high', 'medium', 'low')),
-recur_unit TEXT NOT NULL DEFAULT '' CHECK (recur_unit IN ('', 'days', 'weeks', ...)),
-assignee TEXT NOT NULL DEFAULT 'human' CHECK (assignee IN ('human', 'claude-code', 'cowork')),
+energy     TEXT NOT NULL DEFAULT '' CHECK (energy IN ('', 'high', 'medium', 'low'))
+priority   TEXT NOT NULL DEFAULT '' CHECK (priority IN ('', 'high', 'medium', 'low'))
+recur_unit TEXT NOT NULL DEFAULT '' CHECK (recur_unit IN ('', 'days', 'weeks', 'months', 'years'))
 
 -- projects
-expected_cadence TEXT NOT NULL DEFAULT 'weekly' CHECK (expected_cadence IN ('', 'daily', ...)),
+expected_cadence TEXT NOT NULL DEFAULT 'weekly' CHECK (expected_cadence IN ('', 'daily', 'weekly', 'biweekly', 'monthly'))
 ```
 
-### 問題
+### 5.2 問題
 
-`''`（空字串）和 `NULL` 語義不同：
-- `NULL` = 「未設定」「不適用」
-- `''` = 「我刻意選了空」
+`NULL` = 未設定。`''` = 刻意選了空。Go zero-value 便利性推動的語義錯誤。
 
-用 `''` 做 default 是 Go zero-value 的便利性推動的，但語義錯誤。
-
-### 改法
+### 5.3 改法
 
 ```sql
--- 改為 nullable，去掉空字串
-energy   TEXT CHECK (energy IN ('high', 'medium', 'low')),     -- NULL = 未設定
-priority TEXT CHECK (priority IN ('high', 'medium', 'low')),   -- NULL = 未設定
-recur_unit TEXT CHECK (recur_unit IN ('days', 'weeks', 'months', 'years')), -- NULL = 不循環
-
--- Go 層：string → *string（sqlc 自動處理 nullable）
+energy           TEXT CHECK (energy IN ('high', 'medium', 'low')),
+priority         TEXT CHECK (priority IN ('high', 'medium', 'low')),
+recur_unit       TEXT CHECK (recur_unit IN ('days', 'weeks', 'months', 'years')),
+expected_cadence TEXT CHECK (expected_cadence IN ('daily', 'weekly', 'biweekly', 'monthly')),
 ```
 
-`expected_cadence` 類似處理。`assignee` 保持 NOT NULL DEFAULT 'human' — 每個 task 必須有 assignee。
+全部 nullable，NULL = 未設定。`assignee` 保持 NOT NULL DEFAULT 'human'（task 必須有 assignee），改 FK 到 `participant`。
 
-### Go 影響
-
-sqlc 會生成 `*string` 代替 `string`。所有讀寫這些欄位的 Go code 需要處理 nil。影響範圍：
-- `internal/task/task.go`（struct 定義）
-- `internal/task/store.go`（type conversion）
-- `internal/task/handler.go`（API response）
-- `internal/mcp/write.go`、`search.go`（MCP tools）
-
-成本不低但你說不管成本。既然資料可以 DROP 重建，就做。
+Go 影響：`string` → `*string`（sqlc nullable handling）。影響 `internal/task/`、`internal/mcp/`。
 
 ---
 
-## P4：欄位命名和 COMMENT 補充
+## 6. 欄位 COMMENT 補充
 
-### `projects` — PARA 模型
+### 6.1 `projects`（PARA 模型）
 
-| 欄位 | 問題 | 修正 |
-|------|------|------|
-| `role` | 使用者在專案中扮演的角色？完全沒 COMMENT | 加 COMMENT：`使用者在此專案中的角色（如 Lead Engineer, Sole Developer）` |
-| `area` | PARA 的 Area？沒 COMMENT | 加 COMMENT：`PARA methodology Area — 長期持續的責任領域（如 Backend, Learning, Studio）` |
+```sql
+COMMENT ON COLUMN projects.role IS '使用者在此專案中扮演的角色（如 Lead Engineer, Sole Developer）。';
+COMMENT ON COLUMN projects.area IS 'PARA methodology Area — 長期持續的責任領域（如 Backend, Learning, Studio）。';
+```
 
-### `obsidian_notes` — 多欄位缺 CHECK 和 COMMENT
+### 6.2 `obsidian_notes`
 
-| 欄位 | 問題 | 修正 |
-|------|------|------|
-| `type` | 無 CHECK，有效值是什麼？ | 需要你確認有效值，加 CHECK |
-| `source` | 第 N 個 `source` 欄位，和其他表語義不同 | 加 COMMENT 說明這是「Obsidian 筆記的來源上下文」（如 book, course, project） |
-| `context` | 什麼 context？ | 加 COMMENT |
-| `difficulty` | LeetCode difficulty？無 CHECK | 如果是 LeetCode，加 CHECK IN ('easy', 'medium', 'hard') |
-| `tags` JSONB | 為什麼不用 junction table？ | 已有 COMMENT 說明是 raw frontmatter，mapping 在 `obsidian_note_tags`。保持 |
-
-### `activity_events` — 缺 CHECK 和 COMMENT
-
-| 欄位 | 問題 | 修正 |
-|------|------|------|
-| `event_type` | 無 CHECK。有效值？ | 需要你確認：github-push, github-pr, notion-update, obsidian-sync...? |
-| `source` | 另一個 `source`，語義是「事件來源系統」 | 加 COMMENT 區分：這是 event source（github, notion），不是 participant |
-| `project` | TEXT，應該是 FK 到 projects？ | 檢查是否可以加 FK |
-| `repo` | 什麼 repo？ | 加 COMMENT |
-| `ref` | Git ref？ | 加 COMMENT |
-
-### `tracking_topics`
-
-| 欄位 | 問題 | 修正 |
-|------|------|------|
-| 整張表 | 0 個 COMMENT | 加 TABLE COMMENT + 每個欄位 COMMENT |
-| 和 `topics` 關係 | 無文件 | COMMENT 說明：tracking_topics 驅動主動監測，topics 是知識分類 |
-
----
-
-## P5：Enum 整理
-
-### 現有 enum 類型（CREATE TYPE ... AS ENUM）
-
-| Enum | 值 | 用在 |
-|------|-----|------|
-| `content_type` | article, essay, build-log, til, note, bookmark, digest | contents.type |
-| `content_status` | draft, review, published, archived | contents.status |
-| `source_type` | obsidian, notion, ai-generated, external, manual | contents.source_type |
-| `review_level` | auto, light, standard, strict | contents.review_level, review_queue.review_level |
-| `review_status` | pending, approved, rejected, edited | review_queue.status |
-| `collected_status` | unread, read, curated, ignored | collected_data.status |
-| `flow_status` | pending, running, completed, failed | flow_runs.status |
-| `goal_status` | not-started, in-progress, done, abandoned | goals.status |
-| `project_status` | planned, in-progress, on-hold, completed, maintained, archived | projects.status |
-| `task_status` | todo, in-progress, done | tasks.status |
-
-### 問題
-
-`collected_status` → 如果表改名為 `feed_entries`，enum 應改名為 `feed_entry_status`。
-
-其他 enum 命名合理，不改。
-
----
-
-## P6：`contents.source` 欄位混淆
-
-| 欄位 | 語義 |
+| 欄位 | 修正 |
 |------|------|
-| `contents.source` | 原始來源的 identifier（如 Obsidian file path, URL） |
-| `contents.source_type` | 原始來源的系統分類（obsidian, notion, manual） |
+| `type` | 需確認有效值後加 CHECK + COMMENT |
+| `source` | 加 COMMENT：筆記的來源上下文（book title, course name），不是 participant |
+| `context` | 加 COMMENT（需確認語義） |
+| `difficulty` | 若僅 LeetCode 用，加 CHECK IN ('easy', 'medium', 'hard') + COMMENT |
 
-兩個欄位語義接近，名字容易混淆。更好的命名：
-- `source` → `origin`（原始來源 identifier）
-- `source_type` → 保持（或 `origin_type`）
+### 6.3 `activity_events`
 
-**但改名成本高**（影響所有 content 相關 query + MCP tools），且不會造成 bug。**記錄但不在這次改。**
+| 欄位 | 修正 |
+|------|------|
+| `event_type` | 需確認有效值後加 CHECK + COMMENT |
+| `source` | 加 COMMENT：事件來源系統（github, notion），不是 participant |
+| `project` | 加 COMMENT。考慮是否改為 FK（可能是 free text，Notion project 名可能不在 projects 表） |
+| `repo` | 加 COMMENT：GitHub repository full name（如 Koopa0/koopa0.dev） |
+| `ref` | 加 COMMENT：Git ref（branch name or tag） |
 
----
+### 6.4 `topic_monitors`（取代 `tracking_topics`）
 
-## 改動清單（按優先序）
-
-### 必做（結構性）
-
-| # | 改動 | 影響 |
-|---|------|------|
-| 1 | `session_notes` 拆為 `messages` + `journal` + `insights` | 新表 + 資料遷移 + DROP 舊表 |
-| 2 | `participant` lookup table（含 `role`） | 新表 + FK |
-| 3 | `collected_data` → `feed_entries` | ALTER TABLE RENAME |
-| 4 | `collected_status` enum → `feed_entry_status` | ALTER TYPE RENAME |
-| 5 | `tasks.assignee` → FK 到 `participant` | DROP CHECK + ADD FK |
-| 6 | 空字串 → NULL（tasks: energy, priority, recur_unit; projects: expected_cadence） | ALTER COLUMN + DROP CHECK + 新 CHECK |
-
-### 應做（語義完善）
-
-| # | 改動 | 影響 |
-|---|------|------|
-| 7 | `tracking_topics` 加完整 COMMENT | COMMENT ON TABLE/COLUMN |
-| 8 | `projects.role`, `projects.area` 加 COMMENT | COMMENT ON COLUMN |
-| 9 | `obsidian_notes` 多欄位加 CHECK + COMMENT | 需確認有效值 |
-| 10 | `activity_events` 多欄位加 COMMENT | COMMENT ON COLUMN |
+新表自帶完整 COMMENT（見 §2.3）。
 
 ---
 
-## 待你確認
+## 7. Enum 整理
 
-| # | 問題 | 需要你回答 |
-|---|------|-----------|
-| 1 | `obsidian_notes.type` 的有效值是什麼？ | 看 Go code 或 Obsidian frontmatter |
-| 2 | `obsidian_notes.source` 的語義是什麼？ | book name? course name? |
-| 3 | `obsidian_notes.context` 的語義是什麼？ | 什麼 context? |
-| 4 | `obsidian_notes.difficulty` 是否只用於 LeetCode？ | 加 CHECK? |
-| 5 | `activity_events.event_type` 的有效值？ | 需要列出 |
-| 6 | `activity_events.project` 是否應該 FK 到 `projects`？ | 或者是 free text 因為可能不在 projects 表？ |
-| 7 | `participant` 的 `role` 用 `agent` 還是 `executor`？ | 我建議 `agent` |
-| 8 | `manual` 是否合併到 `human`？ | 或保持為獨立 participant？ |
+| 現有 Enum | 改動 |
+|-----------|------|
+| `collected_status` | → `feed_entry_status`（配合表改名） |
+| 其他 9 個 enum | 命名合理，不改 |
+
+---
+
+## 8. 記錄但不改
+
+| 項目 | 原因 |
+|------|------|
+| `contents.source` 欄位名混淆（vs `source_type`） | 改名成本高，不造成 bug |
+| `projects.tech_stack TEXT[]` | 原子值，不是 FK reference，array 合理 |
+| `projects.highlights TEXT[]` | 同上 |
+| `topic_monitors.keywords TEXT[]` | 搜尋關鍵字，原子值 |
+| `topic_monitors.sources TEXT[]` | 來源 URL，原子值 |
+
+---
+
+## 9. 全部改動清單
+
+### 結構性改動
+
+| # | 改動 | 類型 |
+|---|------|------|
+| 1 | `session_notes` 拆為 `messages` + `journal` + `insights` | 拆表 |
+| 2 | 建 `participant` lookup table（name, role） | 新表 |
+| 3 | 建 `feed_topics` junction table | 新表 |
+| 4 | 建 `topic_monitors`（取代 `tracking_topics`） | 新表 + DROP 舊表 |
+| 5 | `collected_data` → `feed_entries` | 改名 |
+| 6 | `collected_status` → `feed_entry_status` | 改名 |
+| 7 | 刪除 `feeds.topics TEXT[]` 欄位 | DROP COLUMN |
+| 8 | 刪除 `feed_entries.topics TEXT[]` 欄位（原 `collected_data.topics`） | DROP COLUMN |
+| 9 | `tasks.assignee` CHECK → FK 到 `participant` | DROP CHECK + ADD FK |
+| 10 | DROP `session_notes.source` CHECK → FK 到 `participant` | DROP CHECK + ADD FK |
+| 11 | 空字串 → nullable（tasks: energy/priority/recur_unit; projects: expected_cadence） | ALTER COLUMN |
+
+### 語義完善
+
+| # | 改動 | 類型 |
+|---|------|------|
+| 12 | `projects.role`, `projects.area` 加 COMMENT | COMMENT |
+| 13 | `obsidian_notes` 多欄位加 CHECK + COMMENT | COMMENT + CHECK |
+| 14 | `activity_events` 多欄位加 COMMENT | COMMENT |
+
+### 資料遷移
+
+| # | 步驟 |
+|---|------|
+| 15 | `session_notes` → INSERT INTO messages/journal/insights → DROP session_notes |
+| 16 | `feeds.topics TEXT[]` → INSERT INTO feed_topics → DROP feeds.topics |
+| 17 | `tracking_topics` → INSERT INTO topic_monitors（JOIN topics by name/slug）→ DROP tracking_topics |
+| 18 | Backfill: tasks/projects 空字串 → NULL |
+| 19 | Backfill: messages (directive) 補 target + priority |
+
+---
+
+## 10. 待確認
+
+| # | 問題 |
+|---|------|
+| 1 | `obsidian_notes.type` 有效值？ |
+| 2 | `obsidian_notes.source` 語義？（book name? course name?） |
+| 3 | `obsidian_notes.context` 語義？ |
+| 4 | `obsidian_notes.difficulty` 僅 LeetCode 用？ |
+| 5 | `activity_events.event_type` 有效值？ |
+| 6 | `activity_events.project` 是否改 FK 到 `projects`？（可能有不在 projects 表的值） |
+| 7 | `participant.role` 用 `agent` 還是 `executor`？（建議 `agent`） |
+| 8 | `manual` 合併到 `human` 還是保持獨立？（建議合併） |
+| 9 | `tracking_topics` 的現有資料能否對應到 `topics` 表？（需確認 name 是否 match） |
 
 ---
 
 ## 資料來源
 
-- [Miniflux — Go RSS Reader, uses `entries` table](https://github.com/miniflux/v2)
-- [FreshRSS — uses `entry` table](https://deepwiki.com/FreshRSS/FreshRSS/5.1-database-schema)
+- [Miniflux — Go RSS Reader, `entries` table](https://github.com/miniflux/v2)
+- [FreshRSS — `entry` table](https://deepwiki.com/FreshRSS/FreshRSS/5.1-database-schema)
 - [Atom spec — `entry` element](https://www.rfc-editor.org/rfc/rfc4287#section-4.1.2)
 - [Google Reader API — `items` concept](https://www.davd.io/posts/2025-02-05-reimplementing-google-reader-api-in-2025/)
