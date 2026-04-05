@@ -758,6 +758,7 @@ CREATE TABLE daily_plan_items (
     selected_by TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
     position    INT NOT NULL DEFAULT 0,
     reason      TEXT,
+    journal_id  BIGINT REFERENCES journal(id) ON DELETE SET NULL,
     status      TEXT NOT NULL DEFAULT 'planned'
                 CHECK (status IN ('planned', 'done', 'deferred', 'dropped')),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -775,6 +776,8 @@ CREATE INDEX idx_daily_plan_items_active
 
 CREATE INDEX idx_daily_plan_items_task
     ON daily_plan_items (task_id);
+CREATE INDEX idx_daily_plan_items_journal
+    ON daily_plan_items (journal_id) WHERE journal_id IS NOT NULL;
 
 COMMENT ON TABLE daily_plan_items IS
     'Daily commitment records. Each row represents a task selected for '
@@ -792,6 +795,12 @@ COMMENT ON COLUMN daily_plan_items.selected_by IS
     'or human (manual selection via MCP tool).';
 COMMENT ON COLUMN daily_plan_items.position IS
     'Ordering within a day''s plan. 0-based. Semantic: first item = highest priority for today.';
+COMMENT ON COLUMN daily_plan_items.journal_id IS
+    'Optional link to the journal(kind=''plan'') entry that drove this planning session. '
+    'All items from the same planning session share the same journal_id. '
+    'Enables "which reasoning led to these task selections" queries. '
+    'Symmetric with learning_sessions.journal_id — session produces journal entry, '
+    'journal_id links back. SET NULL on journal deletion.';
 COMMENT ON COLUMN daily_plan_items.reason IS
     'Optional rationale for selecting this task today. NULL = no specific reason recorded.';
 COMMENT ON COLUMN daily_plan_items.status IS
