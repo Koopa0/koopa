@@ -25,13 +25,11 @@ func loadConfig(logger *slog.Logger) config {
 
 	cfg.DatabaseURL = requireEnv("DATABASE_URL", logger)
 
-	// Default participant: "hq" for HTTP transport (Claude Desktop Cowork),
-	// "claude-code" for stdio transport (Claude Code CLI).
-	defaultParticipant := "hq"
-	if cfg.Transport == "stdio" {
-		defaultParticipant = "claude-code"
-	}
-	cfg.Participant = envOr("KOOPA_MCP_PARTICIPANT", defaultParticipant)
+	// Default participant: "human" (safest default).
+	// Each Cowork project's instructions tell the AI to pass as: "hq"
+	// in tool calls. The server trusts the caller's self-identification
+	// and validates via capability flags, not transport identity.
+	cfg.Participant = envOr("KOOPA_MCP_PARTICIPANT", "human")
 
 	// HTTP transport requires MCP_TOKEN + Google OAuth
 	cfg.MCPToken = os.Getenv("MCP_TOKEN")

@@ -71,7 +71,7 @@ func (s *Server) resolveProposalFields(ctx context.Context, entityType string, f
 	case "milestone":
 		warnings = s.resolveMilestoneFields(ctx, resolved)
 	case "directive":
-		warnings = s.resolveDirectiveFields(resolved)
+		warnings = s.resolveDirectiveFields(ctx, resolved)
 	case "insight":
 		warnings = resolveInsightFields(resolved)
 	}
@@ -138,10 +138,10 @@ func (s *Server) resolveMilestoneFields(ctx context.Context, f map[string]any) [
 	return w
 }
 
-func (s *Server) resolveDirectiveFields(f map[string]any) []string {
+func (s *Server) resolveDirectiveFields(ctx context.Context, f map[string]any) []string {
 	var w []string
 	if _, ok := f["source"]; !ok {
-		f["source"] = s.participant
+		f["source"] = s.callerIdentity(ctx)
 	}
 	if _, ok := f["target"]; !ok {
 		w = append(w, "target is required for directive")
@@ -374,7 +374,7 @@ func (s *Server) commitInsight(ctx context.Context, fields map[string]any) (stri
 	}
 
 	ins, err := s.insights.Create(ctx, &insight.CreateParams{
-		Source:                s.participant,
+		Source:                s.callerIdentity(ctx),
 		Content:               content,
 		Hypothesis:            hypothesis,
 		InvalidationCondition: invalidation,

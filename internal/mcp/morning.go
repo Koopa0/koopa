@@ -131,7 +131,7 @@ func (s *Server) fillGoals(ctx context.Context, out *MorningContextOutput) {
 }
 
 func (s *Server) fillDirectives(ctx context.Context, out *MorningContextOutput) {
-	if dirs, err := s.directives.UnackedForTarget(ctx, s.participant); err == nil {
+	if dirs, err := s.directives.UnackedForTarget(ctx, s.callerIdentity(ctx)); err == nil {
 		out.UnackedDirectives = dirs
 	} else {
 		s.logger.Warn("morning_context: unacked directives", "error", err)

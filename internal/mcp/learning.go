@@ -175,7 +175,7 @@ func (s *Server) endSession(ctx context.Context, _ *sdkmcp.CallToolRequest, inpu
 	if input.Reflection != nil && *input.Reflection != "" {
 		entry, jErr := s.journal.Create(ctx, &journal.CreateParams{
 			Kind:      journal.KindReflection,
-			Source:    s.participant,
+			Source:    s.callerIdentity(ctx),
 			Content:   *input.Reflection,
 			EntryDate: s.today(),
 		})

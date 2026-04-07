@@ -38,7 +38,7 @@ func (s *Server) writeJournal(ctx context.Context, _ *sdkmcp.CallToolRequest, in
 
 	entry, err := s.journal.Create(ctx, &journal.CreateParams{
 		Kind:      kind,
-		Source:    s.participant,
+		Source:    s.callerIdentity(ctx),
 		Content:   input.Content,
 		Metadata:  input.Metadata,
 		EntryDate: s.today(),

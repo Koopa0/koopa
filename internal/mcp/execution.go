@@ -250,7 +250,7 @@ func (s *Server) planDay(ctx context.Context, _ *sdkmcp.CallToolRequest, input P
 		dpi, err := s.dayplan.Create(ctx, &daily.CreateItemParams{
 			PlanDate:   date,
 			TaskID:     taskID,
-			SelectedBy: s.participant,
+			SelectedBy: s.callerIdentity(ctx),
 			Position:   int32(pos),
 			JournalID:  journalID,
 		})

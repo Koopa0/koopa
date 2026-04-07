@@ -315,6 +315,30 @@ func (s *Server) HTTPHandler() http.Handler {
 	}, nil)
 }
 
+// callerIdentity returns the participant name for the current call.
+// Checks context first (set by "as" field in tool input), falls back to server default.
+func (s *Server) callerIdentity(ctx context.Context) string {
+	if v, ok := ctx.Value(callerKey{}).(string); ok && v != "" {
+		return v
+	}
+	return s.participant
+}
+
+type callerKey struct{}
+
+// extractCallerIdentity checks for an "as" field in the raw arguments
+// and stores it in context. This lets each Cowork project self-identify
+// without server-level configuration.
+func (s *Server) extractCallerIdentity(ctx context.Context, args json.RawMessage) context.Context {
+	var peek struct {
+		As string `json:"as"`
+	}
+	if json.Unmarshal(args, &peek) == nil && peek.As != "" {
+		return context.WithValue(ctx, callerKey{}, peek.As)
+	}
+	return ctx
+}
+
 // today returns the current date in the user's timezone.
 func (s *Server) today() time.Time {
 	now := time.Now().In(s.loc)
@@ -387,6 +411,11 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 
 	s.server.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		start := time.Now()
+
+		// Extract optional "as" field for per-call participant override.
+		// Project instructions tell each AI: "在所有 tool call 中傳入 as: 'hq'"
+		ctx = s.extractCallerIdentity(ctx, req.Params.Arguments)
+
 		var input I
 		if err := json.Unmarshal(req.Params.Arguments, &input); err != nil {
 			return toolResultError(fmt.Sprintf("invalid input: %v", err)), nil

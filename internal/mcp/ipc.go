@@ -32,7 +32,7 @@ func (s *Server) fileReport(ctx context.Context, _ *sdkmcp.CallToolRequest, inpu
 
 	source := input.Source
 	if source == "" {
-		source = s.participant
+		source = s.callerIdentity(ctx)
 	}
 
 	// Validate source can write reports (reuse directive store's participant query).
@@ -88,15 +88,15 @@ func (s *Server) acknowledgeDirective(ctx context.Context, _ *sdkmcp.CallToolReq
 		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("valid directive_id is required")
 	}
 
-	d, err := s.directives.Acknowledge(ctx, id, s.participant)
+	d, err := s.directives.Acknowledge(ctx, id, s.callerIdentity(ctx))
 	if err != nil {
 		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledging directive: %w", err)
 	}
 
-	s.logger.Info("acknowledge_directive", "id", d.ID, "by", s.participant)
+	s.logger.Info("acknowledge_directive", "id", d.ID, "by", s.callerIdentity(ctx))
 	return nil, AcknowledgeDirectiveOutput{
 		DirectiveID:    d.ID,
-		AcknowledgedBy: s.participant,
+		AcknowledgedBy: s.callerIdentity(ctx),
 		Acknowledged:   true,
 	}, nil
 }

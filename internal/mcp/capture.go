@@ -61,7 +61,7 @@ func (s *Server) captureInbox(ctx context.Context, _ *sdkmcp.CallToolRequest, in
 		Energy:      input.Energy,
 		Priority:    nil,
 		Assignee:    assignee,
-		CreatedBy:   s.participant,
+		CreatedBy:   s.callerIdentity(ctx),
 	})
 	if err != nil {
 		return nil, CaptureInboxOutput{}, fmt.Errorf("capturing to inbox: %w", err)
