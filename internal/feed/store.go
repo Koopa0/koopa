@@ -13,24 +13,17 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
-	"github.com/Koopa0/koopa0.dev/internal/notify"
 )
 
 // Store handles database operations for feeds.
 type Store struct {
 	q      *db.Queries
-	alerts notify.Notifier
 	logger *slog.Logger
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX, logger *slog.Logger) *Store {
 	return &Store{q: db.New(dbtx), logger: logger}
-}
-
-// SetAlerts sets the alert sender for auto-disable notifications.
-func (s *Store) SetAlerts(alerts notify.Notifier) {
-	s.alerts = alerts
 }
 
 // Feeds returns all feeds, optionally filtered by schedule.
@@ -175,14 +168,6 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 		DisabledReason: &reason,
 	}); err != nil {
 		return fmt.Errorf("auto-disabling feed %s: %w", id, err)
-	}
-
-	if s.alerts != nil {
-		msg := fmt.Sprintf("[ALERT] Feed auto-disabled\nFeed ID: %s\nFailures: %d\nLast error: %s",
-			id, failures, errMsg)
-		if sendErr := s.alerts.Send(ctx, msg); sendErr != nil {
-			s.logger.Error("sending feed disable alert", "feed_id", id, "error", sendErr)
-		}
 	}
 
 	return nil
