@@ -17,26 +17,18 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
   LayoutDashboard,
-  Calendar,
   Activity,
   Rss,
-  Database,
   Tags,
   Menu,
   LogOut,
   Home,
   PanelLeftClose,
   PanelLeft,
-  BookOpen,
   FolderOpen,
-  ListTodo,
   Target,
   FileText,
-  Lightbulb,
-  BarChart3,
-  Notebook,
   Inbox,
-  Zap,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -85,7 +77,7 @@ export class AdminLayoutComponent {
 
   protected readonly navGroups: NavGroup[] = [
     {
-      title: 'Daily',
+      title: '總覽',
       items: [
         {
           label: 'Dashboard',
@@ -94,17 +86,10 @@ export class AdminLayoutComponent {
           exact: true,
           disabled: false,
         },
-        {
-          label: 'Today',
-          route: '/admin/today',
-          icon: Calendar,
-          exact: false,
-          disabled: false,
-        },
       ],
     },
     {
-      title: 'Content',
+      title: '內容',
       items: [
         {
           label: 'Library',
@@ -137,52 +122,12 @@ export class AdminLayoutComponent {
       ],
     },
     {
-      title: 'Analytics',
-      items: [
-        {
-          label: 'Knowledge',
-          route: '/admin/knowledge-metrics',
-          icon: BookOpen,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Journal',
-          route: '/admin/journal',
-          icon: Notebook,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Insights',
-          route: '/admin/insights',
-          icon: Lightbulb,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Activity',
-          route: '/admin/activity',
-          icon: BarChart3,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'Workspace',
+      title: '管理',
       items: [
         {
           label: 'Projects',
           route: '/admin/projects',
           icon: FolderOpen,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Tasks',
-          route: '/admin/tasks',
-          icon: ListTodo,
           exact: false,
           disabled: false,
         },
@@ -193,29 +138,10 @@ export class AdminLayoutComponent {
           exact: false,
           disabled: false,
         },
-      ],
-    },
-    {
-      title: 'System',
-      items: [
         {
-          label: 'Triggers',
-          route: '/admin/pipeline',
-          icon: Zap,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Flow Runs',
-          route: '/admin/flow-runs',
+          label: 'Activity',
+          route: '/admin/activity',
           icon: Activity,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Sources',
-          route: '/admin/notion-sources',
-          icon: Database,
           exact: false,
           disabled: false,
         },

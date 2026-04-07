@@ -152,18 +152,6 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'today',
-        loadComponent: () =>
-          import('./admin/today/today').then((m) => m.TodayComponent),
-      },
-      {
-        path: 'flow-runs',
-        loadComponent: () =>
-          import('./admin/flow-runs/flow-runs').then(
-            (m) => m.FlowRunsComponent,
-          ),
-      },
-      {
         path: 'feeds',
         loadComponent: () =>
           import('./admin/feeds/feeds').then((m) => m.FeedsComponent),
@@ -174,7 +162,6 @@ export const routes: Routes = [
           import('./admin/inbox/inbox').then((m) => m.InboxComponent),
       },
       { path: 'collected', redirectTo: 'inbox', pathMatch: 'full' },
-      { path: 'review', redirectTo: 'inbox', pathMatch: 'full' },
       {
         path: 'contents',
         loadComponent: () =>
@@ -188,23 +175,10 @@ export const routes: Routes = [
           import('./admin/tags/tags').then((m) => m.TagsComponent),
       },
       {
-        path: 'notion-sources',
-        loadComponent: () =>
-          import('./admin/notion-sources/notion-sources').then(
-            (m) => m.NotionSourcesComponent,
-          ),
-      },
-      {
         path: 'activity',
         loadComponent: () =>
           import('./admin/activity/activity').then((m) => m.ActivityComponent),
       },
-      {
-        path: 'journal',
-        loadComponent: () =>
-          import('./admin/journal/journal').then((m) => m.JournalComponent),
-      },
-      { path: 'session-notes', redirectTo: 'journal', pathMatch: 'full' },
       {
         path: 'projects',
         loadComponent: () =>
@@ -213,37 +187,9 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'tasks',
-        loadComponent: () =>
-          import('./admin/tasks/tasks').then((m) => m.TasksComponent),
-      },
-      {
         path: 'goals',
         loadComponent: () =>
           import('./admin/goals/goals').then((m) => m.GoalsComponent),
-      },
-      {
-        path: 'tracking',
-        loadComponent: () =>
-          import('./admin/tracking/tracking').then((m) => m.TrackingComponent),
-      },
-      {
-        path: 'insights',
-        loadComponent: () =>
-          import('./admin/insights/insights').then((m) => m.InsightsComponent),
-      },
-      { path: 'planning', redirectTo: 'journal', pathMatch: 'full' },
-      {
-        path: 'knowledge-metrics',
-        loadComponent: () =>
-          import('./admin/knowledge-metrics/knowledge-metrics').then(
-            (m) => m.KnowledgeMetricsComponent,
-          ),
-      },
-      {
-        path: 'pipeline',
-        loadComponent: () =>
-          import('./admin/pipeline/pipeline').then((m) => m.PipelineComponent),
       },
       {
         path: 'editor',

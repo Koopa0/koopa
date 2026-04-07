@@ -1,25 +1,13 @@
 <!-- Header -->
-<section class="border-b border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
-          <lucide-icon [img]="ActivityIcon" [size]="24" />
-          Activity
-        </h1>
-        <p class="mt-1 text-sm text-zinc-400">工作 Sessions 與每日活動時間線</p>
-      </div>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
-        (click)="activeTab() === 'sessions' ? loadSessions() : loadChangelog()"
-      >
-        <lucide-icon [img]="RefreshCwIcon" [size]="16" />
-        重新整理
-      </button>
-    </div>
-  </div>
-</section>
+<app-page-header title="Activity" description="工作 Sessions 與每日活動時間線">
+  <button
+    type="button"
+    class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+    (click)="activeTab() === 'sessions' ? loadSessions() : loadChangelog()"
+  >
+    <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+  </button>
+</app-page-header>
 
 <!-- Tabs -->
 <section class="border-b border-zinc-800 bg-zinc-950">
@@ -58,176 +46,189 @@
 <!-- Content -->
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-
     <!-- ═══ Sessions Tab ═══ -->
     @if (activeTab() === 'sessions') {
-      <!-- Controls -->
-      <div class="mb-6 flex items-center gap-4">
-        <label for="session-days" class="text-sm text-zinc-400">期間：</label>
-        <select
-          id="session-days"
-          class="rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
-          [ngModel]="sessionDays()"
-          (ngModelChange)="updateSessionDays($event)"
-        >
-          <option [value]="3">3 天</option>
-          <option [value]="7">7 天</option>
-          <option [value]="14">14 天</option>
-          <option [value]="30">30 天</option>
-        </select>
-        @if (sessions().length > 0) {
-          <span class="text-xs text-zinc-600">
-            {{ sessions().length }} sessions · {{ totalSessionTime() }} events
-          </span>
-        }
-      </div>
-
-      @if (isLoadingSessions()) {
-        <div class="flex items-center justify-center py-16">
-          <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
-        </div>
-      } @else if (sessions().length === 0) {
-        <div class="flex flex-col items-center gap-3 py-16 text-center">
-          <lucide-icon [img]="ClockIcon" [size]="40" class="text-zinc-700" />
-          <h3 class="text-sm font-medium text-zinc-300">沒有 Session 資料</h3>
-          <p class="text-xs text-zinc-500">活動事件會依 30 分鐘間隔自動分組為 sessions</p>
-        </div>
-      } @else {
-        <div class="space-y-3">
-          @for (session of sessions(); track $index) {
-            <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700">
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div class="min-w-0 flex-1">
-                  <!-- Time range -->
-                  <div class="flex items-center gap-2 text-sm text-zinc-200">
-                    <lucide-icon [img]="ClockIcon" [size]="14" class="text-zinc-500" />
-                    <span>{{ session.start | date: 'MM/dd HH:mm' }}</span>
-                    <span class="text-zinc-600">→</span>
-                    <span>{{ session.end | date: 'HH:mm' }}</span>
-                    <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400">
-                      {{ formatDuration(session.duration) }}
-                    </span>
-                  </div>
-
-                  <!-- Sources + Projects -->
-                  <div class="mt-2 flex flex-wrap gap-1.5">
-                    @for (source of session.sources; track source) {
-                      <span
-                        class="inline-block rounded-full border px-2 py-0.5 text-xs"
-                        [class]="getSourceClass(source)"
-                      >
-                        {{ source }}
-                      </span>
-                    }
-                    @for (project of session.projects; track project) {
-                      <span class="inline-block rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">
-                        {{ project }}
-                      </span>
-                    }
-                  </div>
-                </div>
-
-                <!-- Event count -->
-                <div class="shrink-0 text-right">
-                  <div class="text-lg font-bold text-zinc-200">{{ session.event_count }}</div>
-                  <div class="text-xs text-zinc-600">events</div>
-                </div>
-              </div>
-            </div>
-          }
-        </div>
+    <div class="mb-6 flex items-center gap-4">
+      <label for="session-days" class="text-sm text-zinc-400">期間：</label>
+      <select
+        id="session-days"
+        class="rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-hidden"
+        [ngModel]="sessionDays()"
+        (ngModelChange)="updateSessionDays($event)"
+      >
+        <option [value]="3">3 天</option>
+        <option [value]="7">7 天</option>
+        <option [value]="14">14 天</option>
+        <option [value]="30">30 天</option>
+      </select>
+      @if (sessions().length > 0) {
+      <span class="text-xs text-zinc-600">
+        {{ sessions().length }} sessions · {{ totalSessionTime() }} events
+      </span>
       }
-    }
+    </div>
+
+    @if (isLoadingSessions()) {
+    <div class="flex items-center justify-center py-16">
+      <app-loading-spinner size="lg" class="text-zinc-500" />
+    </div>
+    } @else if (sessions().length === 0) {
+    <app-empty-state
+      [icon]="ClockIcon"
+      title="沒有 Session 資料"
+      description="活動事件會依 30 分鐘間隔自動分組為 sessions"
+    />
+    } @else {
+    <div class="space-y-3">
+      @for (session of sessions(); track $index) {
+      <div
+        class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+      >
+        <div
+          class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 text-sm text-zinc-200">
+              <lucide-icon
+                [img]="ClockIcon"
+                [size]="14"
+                class="text-zinc-500"
+              />
+              <span>{{ session.start | date: 'MM/dd HH:mm' }}</span>
+              <span class="text-zinc-600">→</span>
+              <span>{{ session.end | date: 'HH:mm' }}</span>
+              <span
+                class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
+              >
+                {{ formatDuration(session.duration) }}
+              </span>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              @for (source of session.sources; track source) {
+              <app-status-badge
+                [variant]="source === 'github' ? 'neutral'
+                          : source === 'obsidian' ? 'info'
+                          : source === 'rss' ? 'warning'
+                          : source === 'manual' ? 'success'
+                          : 'neutral'"
+                >{{ source }}</app-status-badge
+              >
+              } @for (project of session.projects; track project) {
+              <app-status-badge variant="neutral"
+                >{{ project }}</app-status-badge
+              >
+              }
+            </div>
+          </div>
+          <div class="shrink-0 text-right">
+            <div class="text-lg font-bold text-zinc-200">
+              {{ session.event_count }}
+            </div>
+            <div class="text-xs text-zinc-600">events</div>
+          </div>
+        </div>
+      </div>
+      }
+    </div>
+    } }
 
     <!-- ═══ Changelog Tab ═══ -->
     @if (activeTab() === 'changelog') {
-      <!-- Controls -->
-      <div class="mb-6 flex items-center gap-4">
-        <label for="changelog-days" class="text-sm text-zinc-400">期間：</label>
-        <select
-          id="changelog-days"
-          class="rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-none"
-          [ngModel]="changelogDays()"
-          (ngModelChange)="updateChangelogDays($event)"
+    <div class="mb-6 flex items-center gap-4">
+      <label for="changelog-days" class="text-sm text-zinc-400">期間：</label>
+      <select
+        id="changelog-days"
+        class="rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-hidden"
+        [ngModel]="changelogDays()"
+        (ngModelChange)="updateChangelogDays($event)"
+      >
+        <option [value]="7">7 天</option>
+        <option [value]="14">14 天</option>
+        <option [value]="30">30 天</option>
+        <option [value]="60">60 天</option>
+      </select>
+      @if (changelog().length > 0) {
+      <span class="text-xs text-zinc-600">
+        {{ changelog().length }} 天 · {{ totalEvents() }} events
+      </span>
+      }
+    </div>
+
+    @if (isLoadingChangelog()) {
+    <div class="flex items-center justify-center py-16">
+      <app-loading-spinner size="lg" class="text-zinc-500" />
+    </div>
+    } @else if (changelog().length === 0) {
+    <app-empty-state
+      [icon]="CalendarIcon"
+      title="沒有 Changelog 資料"
+      description="活動事件會按日期分組顯示"
+    />
+    } @else {
+    <div class="space-y-2">
+      @for (day of changelog(); track day.date) {
+      <div
+        class="rounded-xs border border-zinc-800 bg-zinc-900/50 transition-colors hover:border-zinc-700"
+      >
+        <button
+          type="button"
+          class="flex w-full items-center justify-between px-4 py-3 text-left"
+          (click)="toggleDate(day.date)"
         >
-          <option [value]="7">7 天</option>
-          <option [value]="14">14 天</option>
-          <option [value]="30">30 天</option>
-          <option [value]="60">60 天</option>
-        </select>
-        @if (changelog().length > 0) {
-          <span class="text-xs text-zinc-600">
-            {{ changelog().length }} 天 · {{ totalEvents() }} events
+          <div class="flex items-center gap-3">
+            <lucide-icon
+              [img]="isDateExpanded(day.date) ? ChevronDownIcon : ChevronRightIcon"
+              [size]="16"
+              class="text-zinc-500"
+            />
+            <span class="text-sm font-medium text-zinc-200"
+              >{{ day.date }}</span
+            >
+          </div>
+          <span
+            class="rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs text-zinc-400"
+          >
+            {{ day.event_count }}
           </span>
-        }
-      </div>
+        </button>
 
-      @if (isLoadingChangelog()) {
-        <div class="flex items-center justify-center py-16">
-          <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
-        </div>
-      } @else if (changelog().length === 0) {
-        <div class="flex flex-col items-center gap-3 py-16 text-center">
-          <lucide-icon [img]="CalendarIcon" [size]="40" class="text-zinc-700" />
-          <h3 class="text-sm font-medium text-zinc-300">沒有 Changelog 資料</h3>
-          <p class="text-xs text-zinc-500">活動事件會按日期分組顯示</p>
-        </div>
-      } @else {
-        <div class="space-y-2">
-          @for (day of changelog(); track day.date) {
-            <!-- Day row (collapsible) -->
-            <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 transition-colors hover:border-zinc-700">
-              <button
-                type="button"
-                class="flex w-full items-center justify-between px-4 py-3 text-left"
-                (click)="toggleDate(day.date)"
+        @if (isDateExpanded(day.date)) {
+        <div class="border-t border-zinc-800 px-4 py-2">
+          <div class="space-y-1.5">
+            @for (event of day.events; track $index) {
+            <div class="flex items-center gap-3 py-1.5 text-sm">
+              <span class="w-12 shrink-0 text-xs text-zinc-600">
+                {{ event.timestamp | date: 'HH:mm' }}
+              </span>
+              <app-status-badge
+                [variant]="event.source === 'github' ? 'neutral'
+                            : event.source === 'obsidian' ? 'info'
+                            : event.source === 'rss' ? 'warning'
+                            : event.source === 'manual' ? 'success'
+                            : 'neutral'"
+                >{{ event.source }}</app-status-badge
               >
-                <div class="flex items-center gap-3">
-                  <lucide-icon
-                    [img]="isDateExpanded(day.date) ? ChevronDownIcon : ChevronRightIcon"
-                    [size]="16"
-                    class="text-zinc-500"
-                  />
-                  <span class="text-sm font-medium text-zinc-200">{{ day.date }}</span>
-                </div>
-                <span class="rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs text-zinc-400">
-                  {{ day.event_count }}
-                </span>
-              </button>
-
-              <!-- Expanded events -->
-              @if (isDateExpanded(day.date)) {
-                <div class="border-t border-zinc-800 px-4 py-2">
-                  <div class="space-y-1.5">
-                    @for (event of day.events; track $index) {
-                      <div class="flex items-center gap-3 py-1.5 text-sm">
-                        <span class="w-12 shrink-0 text-xs text-zinc-600">
-                          {{ event.timestamp | date: 'HH:mm' }}
-                        </span>
-                        <span
-                          class="inline-block shrink-0 rounded-full border px-2 py-0.5 text-xs"
-                          [class]="getSourceClass(event.source)"
-                        >
-                          {{ event.source }}
-                        </span>
-                        <span class="shrink-0 text-xs text-zinc-500">{{ event.event_type }}</span>
-                        <span class="min-w-0 truncate text-zinc-300">
-                          {{ event.title || '—' }}
-                        </span>
-                        @if (event.project) {
-                          <span class="shrink-0 rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400">
-                            {{ event.project }}
-                          </span>
-                        }
-                      </div>
-                    }
-                  </div>
-                </div>
+              <span class="shrink-0 text-xs text-zinc-500"
+                >{{ event.event_type }}</span
+              >
+              <span class="min-w-0 truncate text-zinc-300"
+                >{{ event.title || '—' }}</span
+              >
+              @if (event.project) {
+              <span
+                class="shrink-0 rounded-xs bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
+              >
+                {{ event.project }}
+              </span>
               }
             </div>
-          }
+            }
+          </div>
         </div>
+        }
+      </div>
       }
-    }
+    </div>
+    } }
   </div>
 </section>

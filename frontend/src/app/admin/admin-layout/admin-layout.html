@@ -36,7 +36,7 @@
     <button
       type="button"
       (click)="toggleSidebar()"
-      class="hidden rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 md:flex"
+      class="hidden rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 md:flex"
       [attr.aria-label]="isSidebarOpen() ? '收合側邊欄' : '展開側邊欄'"
     >
       @if (isSidebarOpen()) {
@@ -62,14 +62,14 @@
       @for (item of group.items; track item.route) {
       @if (item.disabled) {
       <span
-        class="flex items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-600 cursor-not-allowed"
+        class="flex items-center gap-3 rounded-xs px-2 py-2 text-sm text-zinc-600 cursor-not-allowed"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
         [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (即將推出)' : '即將推出'"
       >
         <lucide-icon [img]="item.icon" [size]="18" class="shrink-0" />
         @if (isSidebarOpen() || isMobileSidebarOpen()) {
         <span>{{ item.label }}</span>
-        <span class="ml-auto rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">
+        <span class="ml-auto rounded-xs bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">
           Soon
         </span>
         }
@@ -80,7 +80,7 @@
         [queryParams]="item.queryParams ?? {}"
         routerLinkActive="bg-zinc-800 text-white"
         [routerLinkActiveOptions]="{ exact: item.exact }"
-        class="flex items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
+        class="flex items-center gap-3 rounded-xs px-2 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
         [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label : null"
       >
@@ -100,7 +100,7 @@
     <button
       type="button"
       (click)="logout()"
-      class="flex w-full items-center gap-3 rounded-sm px-2 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
+      class="flex w-full items-center gap-3 rounded-xs px-2 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
       [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
       [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? 'Sign out' : null"
     >

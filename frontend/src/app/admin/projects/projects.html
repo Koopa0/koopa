@@ -16,7 +16,7 @@
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+        class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         (click)="loadProjects()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="16" />
@@ -61,7 +61,7 @@
     } @else {
       <div class="space-y-3">
         @for (project of filteredProjects(); track project.id) {
-          <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700">
+          <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <!-- Info -->
               <div class="min-w-0 flex-1">
@@ -74,7 +74,7 @@
                     {{ getStatusLabel(project.status) }}
                   </span>
                   @if (project.area) {
-                    <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500">{{ project.area }}</span>
+                    <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500">{{ project.area }}</span>
                   }
                   @if (project.featured) {
                     <span class="text-xs text-amber-500">★</span>
@@ -85,7 +85,7 @@
                   @if (project.tech_stack.length > 0) {
                     <div class="flex flex-wrap gap-1">
                       @for (tech of project.tech_stack.slice(0, 4); track tech) {
-                        <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{{ tech }}</span>
+                        <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{{ tech }}</span>
                       }
                       @if (project.tech_stack.length > 4) {
                         <span class="text-zinc-600">+{{ project.tech_stack.length - 4 }}</span>
@@ -106,7 +106,7 @@
                 <!-- Public toggle -->
                 <button
                   type="button"
-                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none"
+                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-hidden"
                   [class]="project.is_public ? 'bg-emerald-600' : 'bg-zinc-700'"
                   role="switch"
                   [attr.aria-checked]="project.is_public"
@@ -123,7 +123,7 @@
                     [href]="project.github_url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                    class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                     aria-label="GitHub"
                   >
                     <lucide-icon [img]="GithubIcon" [size]="16" />
@@ -134,7 +134,7 @@
                     [href]="project.live_url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                    class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                     aria-label="Live"
                   >
                     <lucide-icon [img]="ExternalLinkIcon" [size]="16" />
@@ -142,14 +142,14 @@
                 }
                 <a
                   [routerLink]="['/admin/project-editor', project.id]"
-                  class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                  class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                   aria-label="編輯"
                 >
                   <lucide-icon [img]="PencilIcon" [size]="16" />
                 </a>
                 <button
                   type="button"
-                  class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
+                  class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
                   aria-label="刪除"
                   (click)="requestDelete(project)"
                 >

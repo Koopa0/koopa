@@ -6,7 +6,7 @@
         <button
           type="button"
           (click)="cancel()"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+          class="rounded-xs p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
           aria-label="Go back"
         >
           <lucide-icon [img]="ArrowLeftIcon" [size]="20" />
@@ -19,12 +19,10 @@
         type="button"
         (click)="save()"
         [disabled]="isSaving()"
-        class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+        class="inline-flex items-center gap-2 rounded-xs bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
       >
         @if (isSaving()) {
-        <span
-          class="size-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
-        ></span>
+        <app-loading-spinner size="sm" />
         Saving... } @else {
         <lucide-icon [img]="SaveIcon" [size]="16" />
         Save }
@@ -38,7 +36,7 @@
   <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
     <form [formGroup]="projectForm" (ngSubmit)="save()" class="space-y-6">
       <!-- Basic Info -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-6">
         <h2 class="mb-4 text-sm font-medium text-zinc-400">Basic Info</h2>
 
         <div class="space-y-4">
@@ -51,7 +49,7 @@
               id="title"
               type="text"
               formControlName="title"
-              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               placeholder="Project name"
             />
             @if (getFieldError('title')) {
@@ -70,7 +68,7 @@
               id="slug"
               type="text"
               formControlName="slug"
-              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               placeholder="project-slug"
             />
             @if (getFieldError('slug')) {
@@ -87,7 +85,7 @@
               id="description"
               formControlName="description"
               rows="3"
-              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               placeholder="A short description of the project"
             ></textarea>
             @if (getFieldError('description')) {
@@ -109,7 +107,7 @@
               id="long_description"
               formControlName="long_description"
               rows="4"
-              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               placeholder="Detailed project description (optional)"
             ></textarea>
           </div>
@@ -124,7 +122,7 @@
                 id="role"
                 type="text"
                 formControlName="role"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
                 placeholder="Full-Stack Developer"
               />
             </div>
@@ -137,7 +135,7 @@
               <select
                 id="status"
                 formControlName="status"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 outline-hidden focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 outline-hidden focus:border-zinc-500"
               >
                 @for (option of statusOptions; track option.value) {
                 <option [value]="option.value">{{ option.label }}</option>
@@ -156,7 +154,7 @@
                 id="sort_order"
                 type="number"
                 formControlName="sort_order"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
               />
             </div>
 
@@ -176,7 +174,7 @@
       </div>
 
       <!-- Links -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-6">
         <h2 class="mb-4 text-sm font-medium text-zinc-400">Links</h2>
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -188,7 +186,7 @@
               id="github_url"
               type="url"
               formControlName="github_url"
-              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               placeholder="https://github.com/..."
             />
           </div>
@@ -200,7 +198,7 @@
               id="live_url"
               type="url"
               formControlName="live_url"
-              class="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+              class="w-full rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               placeholder="https://..."
             />
           </div>
@@ -208,7 +206,7 @@
       </div>
 
       <!-- Tech Stack -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-6">
         <h2 class="mb-4 text-sm font-medium text-zinc-400">Tech Stack</h2>
 
         <div class="mb-3 flex gap-2">
@@ -217,13 +215,13 @@
             [value]="newTech()"
             (input)="onTechInput($event)"
             (keydown)="onTechKeydown($event)"
-            class="flex-1 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+            class="flex-1 rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
             placeholder="Enter a technology, press Enter to add"
           />
           <button
             type="button"
             (click)="addTech()"
-            class="rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+            class="rounded-xs border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
           >
             <lucide-icon [img]="PlusIcon" [size]="16" />
           </button>
@@ -232,7 +230,7 @@
         <div class="flex flex-wrap gap-2">
           @for (tech of techStack; track tech) {
           <span
-            class="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300"
+            class="inline-flex items-center gap-1.5 rounded-xs bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300"
           >
             {{ tech }}
             <button
@@ -248,7 +246,7 @@
       </div>
 
       <!-- Highlights -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6">
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-6">
         <h2 class="mb-4 text-sm font-medium text-zinc-400">Highlights</h2>
 
         <div class="mb-3 flex gap-2">
@@ -257,13 +255,13 @@
             [value]="newHighlight()"
             (input)="onHighlightInput($event)"
             (keydown)="onHighlightKeydown($event)"
-            class="flex-1 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+            class="flex-1 rounded-xs border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
             placeholder="Enter a project highlight, press Enter to add"
           />
           <button
             type="button"
             (click)="addHighlight()"
-            class="rounded-sm border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+            class="rounded-xs border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
           >
             <lucide-icon [img]="PlusIcon" [size]="16" />
           </button>
@@ -272,7 +270,7 @@
         <div class="space-y-2">
           @for (highlight of highlights; track $index) {
           <div
-            class="flex items-center gap-2 rounded-sm bg-zinc-800 px-3 py-2 text-sm text-zinc-300"
+            class="flex items-center gap-2 rounded-xs bg-zinc-800 px-3 py-2 text-sm text-zinc-300"
           >
             <span class="flex-1">{{ highlight }}</span>
             <button
@@ -292,19 +290,17 @@
         <button
           type="button"
           (click)="cancel()"
-          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          class="rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         >
           Cancel
         </button>
         <button
           type="submit"
           [disabled]="isSaving()"
-          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          class="inline-flex items-center gap-2 rounded-xs bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
         >
           @if (isSaving()) {
-          <span
-            class="size-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900"
-          ></span>
+          <app-loading-spinner size="sm" />
           Saving... } @else {
           <lucide-icon [img]="SaveIcon" [size]="16" />
           {{ isNewProject() ? 'Create Project' : 'Update Project' }} }

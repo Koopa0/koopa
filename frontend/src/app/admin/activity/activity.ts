@@ -15,13 +15,18 @@ import {
   Activity,
   Clock,
   Calendar,
-  Loader2,
   RefreshCw,
   ChevronDown,
   ChevronRight,
 } from 'lucide-angular';
 import { ActivityService } from '../../core/services/activity.service';
 import { NotificationService } from '../../core/services/notification.service';
+import {
+  PageHeaderComponent,
+  EmptyStateComponent,
+  LoadingSpinnerComponent,
+  StatusBadgeComponent,
+} from '../../shared/components';
 import type { ApiSession, ApiChangelogDay } from '../../core/models';
 
 type ActiveTab = 'sessions' | 'changelog';
@@ -39,7 +44,15 @@ const DEFAULT_SOURCE_CLASS = 'border-zinc-700 bg-zinc-800 text-zinc-400';
 @Component({
   selector: 'app-activity',
   standalone: true,
-  imports: [DatePipe, FormsModule, LucideAngularModule],
+  imports: [
+    DatePipe,
+    FormsModule,
+    LucideAngularModule,
+    PageHeaderComponent,
+    EmptyStateComponent,
+    LoadingSpinnerComponent,
+    StatusBadgeComponent,
+  ],
   templateUrl: './activity.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -74,7 +87,6 @@ export class ActivityComponent implements OnInit {
   protected readonly ActivityIcon = Activity;
   protected readonly ClockIcon = Clock;
   protected readonly CalendarIcon = Calendar;
-  protected readonly Loader2Icon = Loader2;
   protected readonly RefreshCwIcon = RefreshCw;
   protected readonly ChevronDownIcon = ChevronDown;
   protected readonly ChevronRightIcon = ChevronRight;

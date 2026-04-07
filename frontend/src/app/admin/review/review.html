@@ -16,7 +16,7 @@
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+        class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         (click)="loadReviews()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="16" />
@@ -32,7 +32,7 @@
     <!-- Error -->
     @if (error()) {
     <div
-      class="mb-4 rounded-sm border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400"
+      class="mb-4 rounded-xs border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400"
     >
       {{ error() }}
     </div>
@@ -62,7 +62,7 @@
     <div class="space-y-3">
       @for (review of displayReviews(); track review.id) {
       <div
-        class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+        class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0 flex-1">
@@ -71,7 +71,7 @@
                 {{ review.content_title }}
               </h3>
               <span
-                class="rounded-sm border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                class="rounded-xs border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400"
               >
                 {{ review.typeLabel }}
               </span>
@@ -111,7 +111,7 @@
             } @else {
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-sm border border-emerald-700 bg-emerald-900/20 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-900/40"
+              class="inline-flex items-center gap-1.5 rounded-xs border border-emerald-700 bg-emerald-900/20 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-900/40"
               (click)="approveReview(review)"
             >
               <lucide-icon [img]="CheckCircle2Icon" [size]="14" />
@@ -119,7 +119,7 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-sm border border-red-700 bg-red-900/20 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/40"
+              class="inline-flex items-center gap-1.5 rounded-xs border border-red-700 bg-red-900/20 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/40"
               (click)="openRejectDialog(review)"
             >
               <lucide-icon [img]="XCircleIcon" [size]="14" />
@@ -146,7 +146,7 @@
   aria-modal="true"
 >
   <div
-    class="mx-4 w-full max-w-md rounded-sm border border-zinc-700 bg-zinc-900 shadow-xl"
+    class="mx-4 w-full max-w-md rounded-xs border border-zinc-700 bg-zinc-900 shadow-xl"
     (click)="$event.stopPropagation()"
     (keydown.escape)="closeRejectDialog()"
     tabindex="-1"
@@ -157,7 +157,7 @@
       <h2 class="text-lg font-semibold text-zinc-100">退回審核</h2>
       <button
         type="button"
-        class="rounded-sm p-1 text-zinc-400 hover:text-zinc-200"
+        class="rounded-xs p-1 text-zinc-400 hover:text-zinc-200"
         (click)="closeRejectDialog()"
         aria-label="關閉"
       >
@@ -185,7 +185,7 @@
         rows="3"
         [value]="rejectNotes()"
         (input)="onRejectNotesChange($event)"
-        class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
+        class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
         placeholder="退回原因或修改建議..."
       ></textarea>
     </div>
@@ -193,14 +193,14 @@
     <div class="flex justify-end gap-3 border-t border-zinc-800 px-6 py-4">
       <button
         type="button"
-        class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+        class="rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
         (click)="closeRejectDialog()"
       >
         取消
       </button>
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-sm bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+        class="inline-flex items-center gap-2 rounded-xs bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
         (click)="confirmReject()"
         [disabled]="isRejecting()"
       >
