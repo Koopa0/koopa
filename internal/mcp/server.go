@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,8 +15,12 @@ import (
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
+	"github.com/Koopa0/koopa0.dev/internal/directive"
+	"github.com/Koopa0/koopa0.dev/internal/goal"
+	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/project"
+	"github.com/Koopa0/koopa0.dev/internal/report"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
@@ -30,10 +35,17 @@ type Server struct {
 	contents *content.Store
 	projects *project.Store
 
+	// Phase 2 stores
+	goals      *goal.Store
+	directives *directive.Store
+	reports    *report.Store
+	insights   *insight.Store
+
 	// Configuration
-	participant string         // calling participant name (from env)
-	loc         *time.Location // user timezone for day boundaries
-	logger      *slog.Logger
+	participant    string         // calling participant name (from env)
+	loc            *time.Location // user timezone for day boundaries
+	proposalSecret []byte         // HMAC key for proposal tokens
+	logger         *slog.Logger
 
 	// Telemetry
 	recordToolCall func(context.Context, ToolCallRecord)
@@ -67,13 +79,17 @@ func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption 
 	return func(s *Server) { s.recordToolCall = recorder }
 }
 
-// NewServer creates an MCP v2 server with Phase 1 tools registered.
+// NewServer creates an MCP v2 server with all registered tools.
 func NewServer(
 	tasks *task.Store,
 	js *journal.Store,
 	dayplan *daily.Store,
 	contents *content.Store,
 	projects *project.Store,
+	goals *goal.Store,
+	directives *directive.Store,
+	reports *report.Store,
+	insights *insight.Store,
 	logger *slog.Logger,
 	opts ...ServerOption,
 ) *Server {
@@ -83,10 +99,21 @@ func NewServer(
 		dayplan:     dayplan,
 		contents:    contents,
 		projects:    projects,
+		goals:       goals,
+		directives:  directives,
+		reports:     reports,
+		insights:    insights,
 		logger:      logger,
 		participant: "human",
 		loc:         time.UTC,
 	}
+	// Auto-generate proposal HMAC secret. Ephemeral — proposals don't survive restarts.
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		panic("mcp: failed to generate proposal secret: " + err.Error())
+	}
+	s.proposalSecret = secret
+
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -160,6 +187,44 @@ func NewServer(
 		Description: "Create a journal entry. Kind: plan (daily plan reasoning), context (session state snapshot), reflection (review), metrics (quantitative snapshot). Use for session logging and reflection.",
 		Annotations: additive,
 	}, s.writeJournal)
+
+	// --- Phase 2: Intent & IPC ---
+
+	addTool(s, &mcp.Tool{
+		Name:        "propose_commitment",
+		Description: "Propose creating a goal, project, milestone, directive, or insight. Returns a preview and signed proposal token. Does NOT write to the database. Use when the user wants to create a high-commitment entity — present the preview for approval before calling commit_proposal.",
+		Annotations: readOnly,
+	}, s.proposeCommitment)
+
+	addTool(s, &mcp.Tool{
+		Name:        "commit_proposal",
+		Description: "Commit a previously proposed entity using the proposal_token from propose_commitment. Creates the entity in the database. Supports optional modifications to override fields before commit.",
+		Annotations: additive,
+	}, s.commitProposal)
+
+	addTool(s, &mcp.Tool{
+		Name:        "goal_progress",
+		Description: "Show active goals with milestone progress (completed/total), area, quarter, and deadline. Use for goal reviews, weekly planning, or 'am I on track' questions.",
+		Annotations: readOnly,
+	}, s.goalProgress)
+
+	addTool(s, &mcp.Tool{
+		Name:        "file_report",
+		Description: "Create a report. Optionally links to a directive via in_response_to. Source must be a participant with can_write_reports. Use when a participant needs to report output back to HQ or the directive issuer.",
+		Annotations: additive,
+	}, s.fileReport)
+
+	addTool(s, &mcp.Tool{
+		Name:        "acknowledge_directive",
+		Description: "Mark a directive as acknowledged by the calling participant. Validates the caller is the target. Use when the AI picks up a directive during morning_context.",
+		Annotations: additiveIdempotent,
+	}, s.acknowledgeDirective)
+
+	addTool(s, &mcp.Tool{
+		Name:        "track_insight",
+		Description: "Update an existing insight. Actions: verify (hypothesis confirmed), invalidate (hypothesis disproven), archive (retire), add_evidence (append supporting data). Insight creation goes through propose_commitment.",
+		Annotations: additiveIdempotent,
+	}, s.trackInsight)
 
 	return s
 }

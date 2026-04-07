@@ -1,0 +1,96 @@
+package directive
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/Koopa0/koopa0.dev/internal/db"
+)
+
+// Store handles database operations for directives.
+type Store struct {
+	q *db.Queries
+}
+
+// NewStore returns a Store backed by the given database connection.
+func NewStore(dbtx db.DBTX) *Store {
+	return &Store{q: db.New(dbtx)}
+}
+
+// Create inserts a new directive.
+func (s *Store) Create(ctx context.Context, p *CreateParams) (*Directive, error) {
+	row, err := s.q.CreateDirective(ctx, db.CreateDirectiveParams{
+		Source:     p.Source,
+		Target:     p.Target,
+		Priority:   p.Priority,
+		Content:    p.Content,
+		Metadata:   p.Metadata,
+		IssuedDate: p.IssuedDate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating directive: %w", err)
+	}
+	return rowToDirective(&row), nil
+}
+
+// ByID returns a single directive by ID.
+func (s *Store) ByID(ctx context.Context, id int64) (*Directive, error) {
+	row, err := s.q.DirectiveByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying directive %d: %w", id, err)
+	}
+	return rowToDirective(&row), nil
+}
+
+// Acknowledge marks a directive as acknowledged by the target.
+func (s *Store) Acknowledge(ctx context.Context, id int64, acknowledgedBy string) (*Directive, error) {
+	row, err := s.q.AcknowledgeDirective(ctx, db.AcknowledgeDirectiveParams{
+		ID:             id,
+		AcknowledgedBy: &acknowledgedBy,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("acknowledging directive %d: %w", id, err)
+	}
+	return rowToDirective(&row), nil
+}
+
+// UnackedForTarget returns unacknowledged directives for a participant.
+func (s *Store) UnackedForTarget(ctx context.Context, target string) ([]Directive, error) {
+	rows, err := s.q.UnackedDirectivesForTarget(ctx, target)
+	if err != nil {
+		return nil, fmt.Errorf("querying unacked directives for %s: %w", target, err)
+	}
+	result := make([]Directive, len(rows))
+	for i := range rows {
+		result[i] = *rowToDirective(&rows[i])
+	}
+	return result, nil
+}
+
+func rowToDirective(r *db.Directive) *Directive {
+	d := &Directive{
+		ID:             r.ID,
+		Source:         r.Source,
+		Target:         r.Target,
+		Priority:       r.Priority,
+		AcknowledgedAt: r.AcknowledgedAt,
+		AcknowledgedBy: r.AcknowledgedBy,
+		Content:        r.Content,
+		IssuedDate:     r.IssuedDate,
+		CreatedAt:      r.CreatedAt,
+	}
+	if r.Metadata != nil {
+		_ = json.Unmarshal(r.Metadata, &d.Metadata)
+	}
+	return d
+}

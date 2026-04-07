@@ -43,6 +43,97 @@ func (q *Queries) AbandonOrphanNotionGoals(ctx context.Context, activeIds []stri
 	return result.RowsAffected(), nil
 }
 
+const acknowledgeDirective = `-- name: AcknowledgeDirective :one
+UPDATE directives
+SET acknowledged_at = now(), acknowledged_by = $1
+WHERE id = $2 AND acknowledged_at IS NULL
+RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
+`
+
+type AcknowledgeDirectiveParams struct {
+	AcknowledgedBy *string `json:"acknowledged_by"`
+	ID             int64   `json:"id"`
+}
+
+func (q *Queries) AcknowledgeDirective(ctx context.Context, arg AcknowledgeDirectiveParams) (Directive, error) {
+	row := q.db.QueryRow(ctx, acknowledgeDirective, arg.AcknowledgedBy, arg.ID)
+	var i Directive
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Target,
+		&i.Priority,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
+		&i.Content,
+		&i.Metadata,
+		&i.IssuedDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const activeGoals = `-- name: ActiveGoals :many
+SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
+       g.created_at, g.updated_at,
+       COALESCE(a.name, '') AS area_name,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL) AS milestone_done
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE g.status = 'in-progress'
+ORDER BY g.deadline NULLS LAST, g.created_at
+`
+
+type ActiveGoalsRow struct {
+	ID             uuid.UUID  `json:"id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	Status         GoalStatus `json:"status"`
+	AreaID         *uuid.UUID `json:"area_id"`
+	Quarter        *string    `json:"quarter"`
+	Deadline       *time.Time `json:"deadline"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	AreaName       string     `json:"area_name"`
+	MilestoneTotal int64      `json:"milestone_total"`
+	MilestoneDone  int64      `json:"milestone_done"`
+}
+
+// Goals that are in-progress, with milestone counts.
+func (q *Queries) ActiveGoals(ctx context.Context) ([]ActiveGoalsRow, error) {
+	rows, err := q.db.Query(ctx, activeGoals)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ActiveGoalsRow{}
+	for rows.Next() {
+		var i ActiveGoalsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.AreaID,
+			&i.Quarter,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AreaName,
+			&i.MilestoneTotal,
+			&i.MilestoneDone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const activeProjectSlugsWithRepo = `-- name: ActiveProjectSlugsWithRepo :many
 SELECT slug FROM projects
 WHERE status IN ('in-progress', 'maintained')
@@ -1452,6 +1543,46 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 	return i, err
 }
 
+const createDirective = `-- name: CreateDirective :one
+INSERT INTO directives (source, target, priority, content, metadata, issued_date)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
+`
+
+type CreateDirectiveParams struct {
+	Source     string          `json:"source"`
+	Target     string          `json:"target"`
+	Priority   string          `json:"priority"`
+	Content    string          `json:"content"`
+	Metadata   json.RawMessage `json:"metadata"`
+	IssuedDate time.Time       `json:"issued_date"`
+}
+
+func (q *Queries) CreateDirective(ctx context.Context, arg CreateDirectiveParams) (Directive, error) {
+	row := q.db.QueryRow(ctx, createDirective,
+		arg.Source,
+		arg.Target,
+		arg.Priority,
+		arg.Content,
+		arg.Metadata,
+		arg.IssuedDate,
+	)
+	var i Directive
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Target,
+		&i.Priority,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
+		&i.Content,
+		&i.Metadata,
+		&i.IssuedDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createEntry = `-- name: CreateEntry :one
 INSERT INTO journal (kind, source, content, metadata, entry_date)
 VALUES ($1, $2, $3, $4, $5)
@@ -1611,6 +1742,87 @@ func (q *Queries) CreateFlowRun(ctx context.Context, arg CreateFlowRunParams) (F
 	return i, err
 }
 
+const createGoal = `-- name: CreateGoal :one
+INSERT INTO goals (title, description, status, area_id, quarter, deadline)
+VALUES ($1, $2, $3::goal_status, $4, $5, $6)
+RETURNING id, title, description, status, area_id, quarter, deadline,
+          notion_page_id, created_at, updated_at
+`
+
+type CreateGoalParams struct {
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Status      GoalStatus `json:"status"`
+	AreaID      *uuid.UUID `json:"area_id"`
+	Quarter     *string    `json:"quarter"`
+	Deadline    *time.Time `json:"deadline"`
+}
+
+// Create a new goal (v2: PostgreSQL-native).
+func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, error) {
+	row := q.db.QueryRow(ctx, createGoal,
+		arg.Title,
+		arg.Description,
+		arg.Status,
+		arg.AreaID,
+		arg.Quarter,
+		arg.Deadline,
+	)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.AreaID,
+		&i.Quarter,
+		&i.Deadline,
+		&i.NotionPageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createInsight = `-- name: CreateInsight :one
+INSERT INTO insights (source, content, hypothesis, invalidation_condition, metadata, observed_date)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+`
+
+type CreateInsightParams struct {
+	Source                string          `json:"source"`
+	Content               string          `json:"content"`
+	Hypothesis            string          `json:"hypothesis"`
+	InvalidationCondition string          `json:"invalidation_condition"`
+	Metadata              json.RawMessage `json:"metadata"`
+	ObservedDate          time.Time       `json:"observed_date"`
+}
+
+func (q *Queries) CreateInsight(ctx context.Context, arg CreateInsightParams) (Insight, error) {
+	row := q.db.QueryRow(ctx, createInsight,
+		arg.Source,
+		arg.Content,
+		arg.Hypothesis,
+		arg.InvalidationCondition,
+		arg.Metadata,
+		arg.ObservedDate,
+	)
+	var i Insight
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Content,
+		&i.Status,
+		&i.Hypothesis,
+		&i.InvalidationCondition,
+		&i.Metadata,
+		&i.ObservedDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createItem = `-- name: CreateItem :one
 INSERT INTO daily_plan_items (plan_date, task_id, selected_by, position, reason, journal_id)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -1653,6 +1865,51 @@ func (q *Queries) CreateItem(ctx context.Context, arg CreateItemParams) (DailyPl
 		&i.Reason,
 		&i.JournalID,
 		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createMilestone = `-- name: CreateMilestone :one
+INSERT INTO milestones (goal_id, title, description, target_deadline)
+VALUES ($1, $2, $3, $4)
+RETURNING id, goal_id, title, description, target_deadline, completed_at, created_at, updated_at
+`
+
+type CreateMilestoneParams struct {
+	GoalID         uuid.UUID  `json:"goal_id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	TargetDeadline *time.Time `json:"target_deadline"`
+}
+
+type CreateMilestoneRow struct {
+	ID             uuid.UUID  `json:"id"`
+	GoalID         uuid.UUID  `json:"goal_id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	TargetDeadline *time.Time `json:"target_deadline"`
+	CompletedAt    *time.Time `json:"completed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+func (q *Queries) CreateMilestone(ctx context.Context, arg CreateMilestoneParams) (CreateMilestoneRow, error) {
+	row := q.db.QueryRow(ctx, createMilestone,
+		arg.GoalID,
+		arg.Title,
+		arg.Description,
+		arg.TargetDeadline,
+	)
+	var i CreateMilestoneRow
+	err := row.Scan(
+		&i.ID,
+		&i.GoalID,
+		&i.Title,
+		&i.Description,
+		&i.TargetDeadline,
+		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1756,6 +2013,41 @@ type CreateRefreshTokenParams struct {
 func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) error {
 	_, err := q.db.Exec(ctx, createRefreshToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
 	return err
+}
+
+const createReport = `-- name: CreateReport :one
+INSERT INTO reports (source, in_response_to, content, metadata, reported_date)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, source, in_response_to, content, metadata, reported_date, created_at
+`
+
+type CreateReportParams struct {
+	Source       string          `json:"source"`
+	InResponseTo *int64          `json:"in_response_to"`
+	Content      string          `json:"content"`
+	Metadata     json.RawMessage `json:"metadata"`
+	ReportedDate time.Time       `json:"reported_date"`
+}
+
+func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Report, error) {
+	row := q.db.QueryRow(ctx, createReport,
+		arg.Source,
+		arg.InResponseTo,
+		arg.Content,
+		arg.Metadata,
+		arg.ReportedDate,
+	)
+	var i Report
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.InResponseTo,
+		&i.Content,
+		&i.Metadata,
+		&i.ReportedDate,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createReview = `-- name: CreateReview :one
@@ -2227,6 +2519,29 @@ DELETE FROM topics WHERE id = $1
 func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTopic, id)
 	return err
+}
+
+const directiveByID = `-- name: DirectiveByID :one
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
+FROM directives WHERE id = $1
+`
+
+func (q *Queries) DirectiveByID(ctx context.Context, id int64) (Directive, error) {
+	row := q.db.QueryRow(ctx, directiveByID, id)
+	var i Directive
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Target,
+		&i.Priority,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
+		&i.Content,
+		&i.Metadata,
+		&i.IssuedDate,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const enabledFeeds = `-- name: EnabledFeeds :many
@@ -2743,6 +3058,30 @@ func (q *Queries) FlowRunsCount(ctx context.Context, status NullFlowStatus) (int
 	return count, err
 }
 
+const goalByID = `-- name: GoalByID :one
+SELECT id, title, description, status, area_id, quarter, deadline,
+       notion_page_id, created_at, updated_at
+FROM goals WHERE id = $1
+`
+
+func (q *Queries) GoalByID(ctx context.Context, id uuid.UUID) (Goal, error) {
+	row := q.db.QueryRow(ctx, goalByID, id)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.AreaID,
+		&i.Quarter,
+		&i.Deadline,
+		&i.NotionPageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const goalByNotionPageID = `-- name: GoalByNotionPageID :one
 SELECT id, title, description, status, area_id, quarter, deadline,
        notion_page_id, created_at, updated_at
@@ -3037,6 +3376,71 @@ ON CONFLICT (raw_tag) DO NOTHING
 func (q *Queries) InsertUnmappedAlias(ctx context.Context, rawTag string) error {
 	_, err := q.db.Exec(ctx, insertUnmappedAlias, rawTag)
 	return err
+}
+
+const insightByID = `-- name: InsightByID :one
+SELECT id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+FROM insights WHERE id = $1
+`
+
+func (q *Queries) InsightByID(ctx context.Context, id int64) (Insight, error) {
+	row := q.db.QueryRow(ctx, insightByID, id)
+	var i Insight
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Content,
+		&i.Status,
+		&i.Hypothesis,
+		&i.InvalidationCondition,
+		&i.Metadata,
+		&i.ObservedDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insightsByStatus = `-- name: InsightsByStatus :many
+SELECT id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+FROM insights
+WHERE ($1::text IS NULL OR status = $1)
+ORDER BY observed_date DESC, created_at DESC
+LIMIT $2
+`
+
+type InsightsByStatusParams struct {
+	Status     *string `json:"status"`
+	MaxResults int32   `json:"max_results"`
+}
+
+func (q *Queries) InsightsByStatus(ctx context.Context, arg InsightsByStatusParams) ([]Insight, error) {
+	rows, err := q.db.Query(ctx, insightsByStatus, arg.Status, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Insight{}
+	for rows.Next() {
+		var i Insight
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Content,
+			&i.Status,
+			&i.Hypothesis,
+			&i.InvalidationCondition,
+			&i.Metadata,
+			&i.ObservedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const internalSearchContents = `-- name: InternalSearchContents :many
@@ -5285,6 +5689,47 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 	return items, nil
 }
 
+const recentReports = `-- name: RecentReports :many
+SELECT id, source, in_response_to, content, metadata, reported_date, created_at
+FROM reports
+WHERE reported_date >= $1
+ORDER BY reported_date DESC, created_at DESC
+LIMIT $2
+`
+
+type RecentReportsParams struct {
+	SinceDate  time.Time `json:"since_date"`
+	MaxResults int32     `json:"max_results"`
+}
+
+func (q *Queries) RecentReports(ctx context.Context, arg RecentReportsParams) ([]Report, error) {
+	rows, err := q.db.Query(ctx, recentReports, arg.SinceDate, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Report{}
+	for rows.Next() {
+		var i Report
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.InResponseTo,
+			&i.Content,
+			&i.Metadata,
+			&i.ReportedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recurringTaskByProject = `-- name: RecurringTaskByProject :one
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
@@ -5468,6 +5913,60 @@ func (q *Queries) RelatedTagsForTopic(ctx context.Context, arg RelatedTagsForTop
 	for rows.Next() {
 		var i RelatedTagsForTopicRow
 		if err := rows.Scan(&i.Tag, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reportByID = `-- name: ReportByID :one
+SELECT id, source, in_response_to, content, metadata, reported_date, created_at
+FROM reports WHERE id = $1
+`
+
+func (q *Queries) ReportByID(ctx context.Context, id int64) (Report, error) {
+	row := q.db.QueryRow(ctx, reportByID, id)
+	var i Report
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.InResponseTo,
+		&i.Content,
+		&i.Metadata,
+		&i.ReportedDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const reportsByDirective = `-- name: ReportsByDirective :many
+SELECT id, source, in_response_to, content, metadata, reported_date, created_at
+FROM reports WHERE in_response_to = $1
+ORDER BY reported_date DESC, created_at DESC
+`
+
+func (q *Queries) ReportsByDirective(ctx context.Context, directiveID *int64) ([]Report, error) {
+	rows, err := q.db.Query(ctx, reportsByDirective, directiveID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Report{}
+	for rows.Next() {
+		var i Report
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.InResponseTo,
+			&i.Content,
+			&i.Metadata,
+			&i.ReportedDate,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -7019,6 +7518,82 @@ func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) (
 	return items, nil
 }
 
+const unackedDirectivesForTarget = `-- name: UnackedDirectivesForTarget :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
+FROM directives
+WHERE target = $1 AND acknowledged_at IS NULL
+ORDER BY issued_date DESC, created_at DESC
+`
+
+func (q *Queries) UnackedDirectivesForTarget(ctx context.Context, target string) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, unackedDirectivesForTarget, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const unverifiedInsights = `-- name: UnverifiedInsights :many
+SELECT id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+FROM insights
+WHERE status = 'unverified'
+ORDER BY observed_date DESC, created_at DESC
+LIMIT $1
+`
+
+func (q *Queries) UnverifiedInsights(ctx context.Context, maxResults int32) ([]Insight, error) {
+	rows, err := q.db.Query(ctx, unverifiedInsights, maxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Insight{}
+	for rows.Next() {
+		var i Insight
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Content,
+			&i.Status,
+			&i.Hypothesis,
+			&i.InvalidationCondition,
+			&i.Metadata,
+			&i.ObservedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateCollectedFeedback = `-- name: UpdateCollectedFeedback :exec
 UPDATE feed_entries SET user_feedback = $2, feedback_at = now() WHERE id = $1
 `
@@ -7283,6 +7858,62 @@ func (q *Queries) UpdateGoalStatus(ctx context.Context, arg UpdateGoalStatusPara
 		&i.NotionPageID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateInsightMetadata = `-- name: UpdateInsightMetadata :one
+UPDATE insights SET metadata = $1
+WHERE id = $2
+RETURNING id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+`
+
+type UpdateInsightMetadataParams struct {
+	Metadata json.RawMessage `json:"metadata"`
+	ID       int64           `json:"id"`
+}
+
+func (q *Queries) UpdateInsightMetadata(ctx context.Context, arg UpdateInsightMetadataParams) (Insight, error) {
+	row := q.db.QueryRow(ctx, updateInsightMetadata, arg.Metadata, arg.ID)
+	var i Insight
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Content,
+		&i.Status,
+		&i.Hypothesis,
+		&i.InvalidationCondition,
+		&i.Metadata,
+		&i.ObservedDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateInsightStatus = `-- name: UpdateInsightStatus :one
+UPDATE insights SET status = $1
+WHERE id = $2
+RETURNING id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+`
+
+type UpdateInsightStatusParams struct {
+	Status string `json:"status"`
+	ID     int64  `json:"id"`
+}
+
+func (q *Queries) UpdateInsightStatus(ctx context.Context, arg UpdateInsightStatusParams) (Insight, error) {
+	row := q.db.QueryRow(ctx, updateInsightStatus, arg.Status, arg.ID)
+	var i Insight
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Content,
+		&i.Status,
+		&i.Hypothesis,
+		&i.InvalidationCondition,
+		&i.Metadata,
+		&i.ObservedDate,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -7759,7 +8390,7 @@ type UpsertGoalByNotionPageIDParams struct {
 	Title        string     `json:"title"`
 	Description  string     `json:"description"`
 	Status       GoalStatus `json:"status"`
-	Area         *uuid.UUID `json:"area"`
+	AreaID       *uuid.UUID `json:"area_id"`
 	Quarter      *string    `json:"quarter"`
 	Deadline     *time.Time `json:"deadline"`
 	NotionPageID *string    `json:"notion_page_id"`
@@ -7770,7 +8401,7 @@ func (q *Queries) UpsertGoalByNotionPageID(ctx context.Context, arg UpsertGoalBy
 		arg.Title,
 		arg.Description,
 		arg.Status,
-		arg.Area,
+		arg.AreaID,
 		arg.Quarter,
 		arg.Deadline,
 		arg.NotionPageID,

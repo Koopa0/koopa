@@ -17,6 +17,9 @@ sql:
       - "internal/task/query.sql"
       - "internal/journal/query.sql"
       - "internal/daily/query.sql"
+      - "internal/directive/query.sql"
+      - "internal/report/query.sql"
+      - "internal/insight/query.sql"
     schema: "migrations/"
     gen:
       go:
