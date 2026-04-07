@@ -249,7 +249,7 @@ Step 2: 寫 context
 | `docs/Koopa-Content-Studio.md` | Tool 名稱、session 流程 |
 | `docs/Koopa-Research-Lab.md` | Tool 名稱、session 流程 |
 | `docs/Koopa-Learning.md` | Tool 名稱、session 流程 |
-| `docs/COWORK-SYSTEM.md` | IPC 協議全部更新 |
+| `docs/COWORK-SYSTEM.md` | Removed (04-04) — superseded by role-specific docs |
 | `docs/MCP-TOOLS-REFERENCE.md` | Tool 列表全部更新 |
 | `README.md` / `README.zh-TW.md` | Session Note 描述、IPC 流程 |
 
@@ -296,7 +296,47 @@ Step 2: 寫 context
 
 ---
 
-## 7. 實施順序建議
+## 7. 新增表（2026-04-04 signed off）
+
+### 7.1 `milestones`
+
+| 層 | 改動 |
+|----|------|
+| **新 package** | `internal/milestone/` — milestone.go, store.go, query.sql |
+| **MCP tools** | `goal_progress` 增加 milestone 完成率；`weekly_summary` 增加 milestone deadline 分析 |
+| **Notion sync** | 延後 — schema 預留 `notion_page_id`，sync 邏輯以後加 |
+
+### 7.2 `daily_plan_items`
+
+| 層 | 改動 |
+|----|------|
+| **新 package** | `internal/dailyplan/` — dailyplan.go, store.go, query.sql, handler.go |
+| **取代** | `tasks.my_day` 欄位（已刪除）、`journal.metadata.committed_task_ids`（已廢除） |
+| **MCP tools** | `my_day` → 改為 UPSERT daily_plan_items；`morning_context` / `reflection_context` 讀 daily_plan_items |
+| **Cron** | 4-step pipeline 全面重寫：auto-defer incomplete → auto-populate recurring → Notion sync |
+| **Go coordination** | task completion handler 需同步 UPDATE daily_plan_items.status = 'done' |
+
+### 7.3 `tasks` 改動
+
+| 欄位 | 改動 | Go 影響 |
+|------|------|---------|
+| `my_day` | 移除 | 所有 `MyDay bool` 從 struct 移除，`UpdateMyDay` / `ClearAllMyDay` / `MyDayTasks` 等 store 方法移除 |
+
+### 7.4 `event_type` enum 改動
+
+| 值 | 改動 | Go 影響 |
+|-----|------|---------|
+| `my_day_incomplete` | 移除 | `stepLogIncomplete` cron step 移除，由 daily_plan_items.status = 'deferred' 取代 |
+
+### 7.5 `journal.metadata` comment 更新
+
+| 改動 | 說明 |
+|------|------|
+| `committed_task_ids` 廢除 | plan metadata 只保留 `{reasoning}`；task selection tracked in daily_plan_items |
+
+---
+
+## 8. 實施順序建議
 
 | 步驟 | 內容 | 阻擋 |
 |------|------|------|
@@ -305,6 +345,7 @@ Step 2: 寫 context
 | 3 | Run `002_seed.up.sql`（seed data） | — |
 | 4 | `sqlc generate` | 需要先改所有 query.sql |
 | 5 | Go code 改動（type rename, store 方法, handler） | 依 sqlc generated code |
-| 6 | MCP server 改動（tool 拆分/改名） | 依 store 層完成 |
-| 7 | Cowork instructions 更新 | 依 MCP tool 定案 |
-| 8 | README / docs 更新 | 最後 |
+| 6 | MCP server 改動（tool 拆分/改名 + daily plan tools） | 依 store 層完成 |
+| 7 | Cron pipeline 重寫（daily plan rollover） | 依 daily plan store 完成 |
+| 8 | Cowork instructions 更新 | 依 MCP tool 定案 |
+| 9 | README / docs 更新 | 最後 |

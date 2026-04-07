@@ -1,6 +1,19 @@
 -- Seed data — separated from schema definition for clarity.
 
 -- ============================================================
+-- Areas (PARA Areas of Responsibility)
+-- ============================================================
+
+INSERT INTO areas (slug, name, description, sort_order) VALUES
+    ('backend',   'Backend',   'Go API development, system design, infrastructure',  1),
+    ('learning',  'Learning',  'Language study, LeetCode, books, courses',            2),
+    ('studio',    'Studio',    'Content production, writing, publishing',             3),
+    ('frontend',  'Frontend',  'Angular, UI/UX, SSR',                                4),
+    ('career',    'Career',    'GDE application, community, professional growth',     5),
+    ('ops',       'Ops',       'DevOps, deployment, monitoring, VPS',                 6)
+ON CONFLICT (slug) DO NOTHING;
+
+-- ============================================================
 -- Topics
 -- ============================================================
 

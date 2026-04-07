@@ -1,7 +1,7 @@
 # Design Doc: Participant Capabilities & Schedules
 
 **Date**: 2026-04-03
-**Status**: Reviewed — incorporating feedback
+**Status**: Signed off — implemented in 001_initial.up.sql
 **Prerequisite**: Schema v2 (signed off 2026-04-02)
 
 ---

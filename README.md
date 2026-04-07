@@ -99,7 +99,7 @@ Seven types, strictly validated by the backend:
 
 Seven sources identify the sender: `hq`, `content-studio`, `research-lab`, `learning-studio`, `claude-code`, `claude`, `manual`.
 
-Invalid `note_type` or `source` values are rejected at the API level — this is enforced, not advisory. Full protocol specification: [`docs/COWORK-SYSTEM.md`](docs/COWORK-SYSTEM.md)
+Invalid `note_type` or `source` values are rejected at the API level — this is enforced, not advisory. Protocol defined by role-specific docs ([`Koopa-HQ`](docs/Koopa-HQ.md), [`Koopa-Learning`](docs/Koopa-Learning.md), etc.) and [`PARTICIPANT-CAPABILITIES-AND-SCHEDULES`](docs/PARTICIPANT-CAPABILITIES-AND-SCHEDULES.md).
 
 ### Insight — hypothesis tracking
 
@@ -188,7 +188,7 @@ HQ writes a directive → MCP stores it in `session_notes` → Department reads 
 
 Cloud Scheduled Tasks (`claude.ai/code/scheduled`) run on Anthropic infrastructure — no local machine required. HQ runs a morning briefing daily, Content Studio checks the pipeline in the afternoon, Research Lab scans industry trends weekly.
 
-Full protocol specification, communication matrix, health checks, and known issues: [`docs/COWORK-SYSTEM.md`](docs/COWORK-SYSTEM.md)
+Participant capabilities and scheduling: [`docs/PARTICIPANT-CAPABILITIES-AND-SCHEDULES.md`](docs/PARTICIPANT-CAPABILITIES-AND-SCHEDULES.md)
 
 ---
 
