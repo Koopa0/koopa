@@ -62,12 +62,13 @@ func (s *Server) mcCreateContent(ctx context.Context, input ManageContentInput) 
 	}
 
 	c, err := s.contents.CreateContent(ctx, &content.CreateParams{
-		Slug:      slug,
-		Title:     *input.Title,
-		Body:      body,
-		Type:      content.Type(*input.ContentType),
-		Status:    content.StatusDraft,
-		ProjectID: projectID,
+		Slug:        slug,
+		Title:       *input.Title,
+		Body:        body,
+		Type:        content.Type(*input.ContentType),
+		Status:      content.StatusDraft,
+		ReviewLevel: content.ReviewStandard,
+		ProjectID:   projectID,
 	})
 	if err != nil {
 		return nil, ManageContentOutput{}, fmt.Errorf("creating content: %w", err)

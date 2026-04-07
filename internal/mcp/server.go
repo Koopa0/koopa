@@ -93,16 +93,6 @@ func WithLocation(loc *time.Location) ServerOption {
 	return func(s *Server) { s.loc = loc }
 }
 
-// WithFeedStore enables feed management tools.
-func WithFeedStore(fs *feed.Store) ServerOption {
-	return func(s *Server) { s.feeds = fs }
-}
-
-// WithStats enables system status tool.
-func WithStats(ss *stats.Store) ServerOption {
-	return func(s *Server) { s.stats = ss }
-}
-
 // WithTelemetry enables async tool call logging.
 func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption {
 	return func(s *Server) { s.recordToolCall = recorder }
@@ -123,6 +113,8 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		insights:    insight.NewStore(pool),
 		learn:       learning.NewStore(pool),
 		feedEntries: entry.NewStore(pool),
+		feeds:       feed.NewStore(pool, logger),
+		stats:       stats.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
 		participant: "human",
@@ -281,13 +273,11 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		Annotations: additive,
 	}, s.manageContent)
 
-	if s.feeds != nil {
-		addTool(s, &mcp.Tool{
-			Name:        "manage_feeds",
-			Description: "Feed management: list, add (url+name), update (enable/disable), remove. Use for RSS feed subscription management.",
-			Annotations: additive,
-		}, s.manageFeeds)
-	}
+	addTool(s, &mcp.Tool{
+		Name:        "manage_feeds",
+		Description: "Feed management: list, add (url+name), update (enable/disable), remove. Use for RSS feed subscription management.",
+		Annotations: additive,
+	}, s.manageFeeds)
 
 	addTool(s, &mcp.Tool{
 		Name:        "system_status",
