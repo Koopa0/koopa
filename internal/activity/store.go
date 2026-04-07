@@ -33,7 +33,7 @@ func (s *Store) CreateEvent(ctx context.Context, p *RecordParams) (int64, error)
 	id, err := s.q.CreateEvent(ctx, db.CreateEventParams{
 		SourceID:  p.SourceID,
 		Timestamp: p.Timestamp,
-		EventType: p.EventType,
+		EventType: db.EventType(p.EventType),
 		Source:    p.Source,
 		Project:   p.Project,
 		Repo:      p.Repo,
@@ -64,7 +64,7 @@ func (s *Store) EventsByTimeRange(ctx context.Context, start, end time.Time) ([]
 			ID:        r.ID,
 			SourceID:  r.SourceID,
 			Timestamp: r.Timestamp,
-			EventType: r.EventType,
+			EventType: string(r.EventType),
 			Source:    r.Source,
 			Project:   r.Project,
 			Repo:      r.Repo,
@@ -97,7 +97,7 @@ func (s *Store) EventsByFilters(ctx context.Context, start, end time.Time, sourc
 			ID:        r.ID,
 			SourceID:  r.SourceID,
 			Timestamp: r.Timestamp,
-			EventType: r.EventType,
+			EventType: string(r.EventType),
 			Source:    r.Source,
 			Project:   r.Project,
 			Repo:      r.Repo,
@@ -127,7 +127,7 @@ func (s *Store) EventsByProject(ctx context.Context, projectName string, limit i
 			ID:        r.ID,
 			SourceID:  r.SourceID,
 			Timestamp: r.Timestamp,
-			EventType: r.EventType,
+			EventType: string(r.EventType),
 			Source:    r.Source,
 			Project:   r.Project,
 			Repo:      r.Repo,
@@ -168,7 +168,7 @@ func (s *Store) CompletionsByProjectSince(ctx context.Context, since time.Time) 
 // CountEventsByPrefix counts events matching an event_type and source_id prefix since a given time.
 func (s *Store) CountEventsByPrefix(ctx context.Context, eventType, sourcePrefix string, since time.Time) (int, error) {
 	n, err := s.q.CountEventsBySourcePrefix(ctx, db.CountEventsBySourcePrefixParams{
-		EventType:    eventType,
+		EventType:    db.EventType(eventType),
 		SourcePrefix: &sourcePrefix,
 		Since:        since,
 	})

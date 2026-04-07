@@ -1,10 +1,10 @@
 -- name: Goals :many
-SELECT id, title, description, status, area, quarter, deadline,
+SELECT id, title, description, status, area_id, quarter, deadline,
        notion_page_id, created_at, updated_at
 FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC;
 
 -- name: GoalByNotionPageID :one
-SELECT id, title, description, status, area, quarter, deadline,
+SELECT id, title, description, status, area_id, quarter, deadline,
        notion_page_id, created_at, updated_at
 FROM goals WHERE notion_page_id = @notion_page_id;
 
@@ -16,7 +16,7 @@ SELECT id FROM goals WHERE notion_page_id = $1;
 SELECT notion_page_id FROM goals WHERE notion_page_id IS NOT NULL ORDER BY title;
 
 -- name: UpsertGoalByNotionPageID :one
-INSERT INTO goals (title, description, status, area, quarter, deadline, notion_page_id)
+INSERT INTO goals (title, description, status, area_id, quarter, deadline, notion_page_id)
 VALUES (@title, @description, @status::goal_status, @area, @quarter, @deadline, @notion_page_id)
 ON CONFLICT (notion_page_id) DO UPDATE SET
     title       = EXCLUDED.title,
@@ -26,7 +26,7 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     quarter     = EXCLUDED.quarter,
     deadline    = EXCLUDED.deadline,
     updated_at  = now()
-RETURNING id, title, description, status, area, quarter, deadline,
+RETURNING id, title, description, status, area_id, quarter, deadline,
           notion_page_id, created_at, updated_at;
 
 -- name: AbandonGoalByNotionPageID :execrows
@@ -46,11 +46,11 @@ UPDATE goals SET
     status = @status::goal_status,
     updated_at = now()
 WHERE id = @id
-RETURNING id, title, description, status, area, quarter, deadline,
+RETURNING id, title, description, status, area_id, quarter, deadline,
           notion_page_id, created_at, updated_at;
 
 -- name: GoalByTitle :one
 -- Find a goal by case-insensitive title match.
-SELECT id, title, description, status, area, quarter, deadline,
+SELECT id, title, description, status, area_id, quarter, deadline,
        notion_page_id, created_at, updated_at
 FROM goals WHERE LOWER(title) = LOWER(@title);

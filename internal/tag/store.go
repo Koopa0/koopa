@@ -321,7 +321,7 @@ func (s *Store) BackfillNoteTags(ctx context.Context) (*BackfillResult, error) {
 	result := &BackfillResult{}
 	for _, row := range rows {
 		var rawTags []string
-		if err := json.Unmarshal(row.Tags, &rawTags); err != nil {
+		if err := json.Unmarshal(row.RawTags, &rawTags); err != nil {
 			continue // skip notes with malformed tags JSONB
 		}
 		if len(rawTags) == 0 {

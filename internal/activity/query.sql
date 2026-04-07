@@ -3,14 +3,14 @@
 -- with a non-null source_id; null-source_id events are always inserted.
 -- Returns the event ID on both fresh insert and dedup hit.
 -- The DO UPDATE SET id = id is a no-op that forces RETURNING to work on conflict.
-INSERT INTO activity_events (
+INSERT INTO events (
     source_id, timestamp, event_type, source,
     project, repo, ref, title, body, metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 ON CONFLICT (source, event_type, source_id) WHERE source_id IS NOT NULL
-DO UPDATE SET id = activity_events.id
+DO UPDATE SET id = events.id
 RETURNING id;
 
 -- name: EventsByTimeRange :many
@@ -19,20 +19,20 @@ RETURNING id;
 -- Hard cap prevents unbounded result sets from wide time ranges.
 SELECT id, source_id, timestamp, event_type, source,
        project, repo, ref, title, body, metadata, created_at
-FROM activity_events
+FROM events
 WHERE timestamp >= @start_time AND timestamp < @end_time
 ORDER BY timestamp DESC
 LIMIT 5000;
 
 -- name: InsertEventTag :exec
 -- Link an activity event to a canonical tag. Silently ignores duplicates.
-INSERT INTO activity_event_tags (event_id, tag_id)
+INSERT INTO event_tags (event_id, tag_id)
 VALUES ($1, $2)
 ON CONFLICT (event_id, tag_id) DO NOTHING;
 
 -- name: InsertEventTags :exec
 -- Bulk-link an activity event to multiple canonical tags. Silently ignores duplicates.
-INSERT INTO activity_event_tags (event_id, tag_id)
+INSERT INTO event_tags (event_id, tag_id)
 SELECT @event_id, unnest(@tag_ids::uuid[])
 ON CONFLICT DO NOTHING;
 
@@ -40,7 +40,7 @@ ON CONFLICT DO NOTHING;
 -- List activity events within a time range with optional source and project filters.
 SELECT id, source_id, timestamp, event_type, source,
        project, repo, ref, title, body, metadata, created_at
-FROM activity_events
+FROM events
 WHERE timestamp >= @start_time AND timestamp < @end_time
   AND (sqlc.narg('filter_source')::text IS NULL OR source = sqlc.narg('filter_source'))
   AND (sqlc.narg('filter_project')::text IS NULL OR project = sqlc.narg('filter_project'))
@@ -51,19 +51,19 @@ LIMIT @max_results;
 -- List recent activity events for a specific project name.
 SELECT id, source_id, timestamp, event_type, source,
        project, repo, ref, title, body, metadata, created_at
-FROM activity_events
+FROM events
 WHERE project = @project_name
 ORDER BY timestamp DESC
 LIMIT @max_results;
 
 -- name: DeleteOldEvents :execrows
 -- Cleanup: delete activity events older than the given cutoff.
-DELETE FROM activity_events WHERE timestamp < @cutoff;
+DELETE FROM events WHERE timestamp < @cutoff;
 
 -- name: CountEventsBySourcePrefix :one
 -- Count events matching an event_type and source_id prefix since a given time.
 -- Used for double-complete detection: count today's task_completed events for a specific task.
-SELECT count(*)::int FROM activity_events
+SELECT count(*)::int FROM events
 WHERE event_type = @event_type
   AND source_id LIKE @source_prefix || '%'
   AND timestamp >= @since;
@@ -81,7 +81,7 @@ WITH completions AS (
            COALESCE(project, '') AS project_slug,
            title,
            timestamp::date AS completed_date
-    FROM activity_events
+    FROM events
     WHERE timestamp >= @since
       AND (
           event_type = 'task_completed'

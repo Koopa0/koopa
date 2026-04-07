@@ -242,11 +242,8 @@ func writeKnowledgeGapSection(b *strings.Builder, published []content.Content, r
 		}
 	}
 	rssTags := make(map[string]int)
-	for i := range rssItems {
-		for _, tag := range rssItems[i].Topics {
-			rssTags[tag]++
-		}
-	}
+	// TODO: Topics removed from feed_entries in v2 schema. Populate from feed_topics junction if needed.
+	_ = rssItems
 
 	writeTagDistribution(b, "自己的發佈主題分佈：\n", ownTags)
 	writeTagDistribution(b, "\nRSS 高分文章主題分佈：\n", rssTags)

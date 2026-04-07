@@ -14,12 +14,12 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/db"
 )
 
-// nullCollectedStatus converts a *string to db.NullCollectedStatus.
-func nullCollectedStatus(s *string) db.NullCollectedStatus {
+// nullCollectedStatus converts a *string to db.NullFeedEntryStatus.
+func nullCollectedStatus(s *string) db.NullFeedEntryStatus {
 	if s == nil {
-		return db.NullCollectedStatus{}
+		return db.NullFeedEntryStatus{}
 	}
-	return db.NullCollectedStatus{CollectedStatus: db.CollectedStatus(*s), Valid: true}
+	return db.NullFeedEntryStatus{FeedEntryStatus: db.FeedEntryStatus(*s), Valid: true}
 }
 
 // Store handles database operations for collected data.
@@ -57,7 +57,7 @@ func (s *Store) Items(ctx context.Context, f Filter) ([]Item, int, error) {
 			r := &rows[i]
 			data[i] = rowToItem(collectedRow{
 				ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-				RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+				RelevanceScore: r.RelevanceScore, Status: r.Status,
 				CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 				UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 				PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -83,7 +83,7 @@ func (s *Store) Items(ctx context.Context, f Filter) ([]Item, int, error) {
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			RelevanceScore: r.RelevanceScore, Status: r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -103,7 +103,7 @@ func (s *Store) Item(ctx context.Context, id uuid.UUID) (*Item, error) {
 	}
 	d := rowToItem(collectedRow{
 		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-		RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+		RelevanceScore: r.RelevanceScore, Status: r.Status,
 		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 		UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -138,7 +138,6 @@ func (s *Store) CreateItem(ctx context.Context, p *CreateParams) (*Item, error) 
 		SourceUrl:       p.SourceURL,
 		Title:           p.Title,
 		OriginalContent: p.OriginalContent,
-		Topics:          p.Topics,
 		UrlHash:         p.URLHash,
 		FeedID:          p.FeedID,
 		RelevanceScore:  p.RelevanceScore,
@@ -165,7 +164,7 @@ func (s *Store) ItemByURLHash(ctx context.Context, urlHash string) (*Item, error
 	}
 	d := rowToItem(collectedRow{
 		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-		RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+		RelevanceScore: r.RelevanceScore, Status: r.Status,
 		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 		UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -200,7 +199,7 @@ func (s *Store) RecentCollectedData(ctx context.Context, start, end time.Time, l
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			RelevanceScore: r.RelevanceScore, Status: r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -224,7 +223,7 @@ func (s *Store) LatestCollectedData(ctx context.Context, since *time.Time, maxRe
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			RelevanceScore: r.RelevanceScore, Status: r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -247,7 +246,7 @@ func (s *Store) TopRelevantCollected(ctx context.Context, since time.Time, maxRe
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			RelevanceScore: r.RelevanceScore, Status: r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -270,7 +269,7 @@ func (s *Store) LatestByRecency(ctx context.Context, since *time.Time, maxResult
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			RelevanceScore: r.RelevanceScore, Status: r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -293,7 +292,7 @@ func (s *Store) HighPriorityRecent(ctx context.Context, since time.Time, maxResu
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			RelevanceScore: r.RelevanceScore, Status: r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -327,7 +326,7 @@ func (s *Store) TopItems(ctx context.Context, limit int) ([]Item, error) {
 		r := &rows[i]
 		items[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Topics: r.Topics, Status: r.Status,
+			RelevanceScore: r.RelevanceScore, Status: r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
 			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
@@ -345,8 +344,7 @@ type collectedRow struct {
 	Title            string
 	OriginalContent  string
 	RelevanceScore   float64
-	Topics           []string
-	Status           db.CollectedStatus
+	Status           db.FeedEntryStatus
 	CuratedContentID *uuid.UUID
 	CollectedAt      time.Time
 	UrlHash          string //nolint:staticcheck,revive // matches sqlc-generated field name
@@ -365,7 +363,6 @@ func rowToItem(r collectedRow) Item { //nolint:gocritic // hugeParam: struct pas
 		Title:            r.Title,
 		OriginalContent:  &r.OriginalContent,
 		RelevanceScore:   r.RelevanceScore,
-		Topics:           r.Topics,
 		Status:           Status(r.Status),
 		CuratedContentID: r.CuratedContentID,
 		CollectedAt:      r.CollectedAt,
@@ -377,15 +374,14 @@ func rowToItem(r collectedRow) Item { //nolint:gocritic // hugeParam: struct pas
 	}
 }
 
-// datumToItem converts a db.CollectedDatum to Item (used for CreateCollectedData which returns CollectedDatum).
-func datumToItem(r *db.CollectedDatum) Item {
+// datumToItem converts a db.FeedEntry to Item (used for CreateCollectedData which returns FeedEntry).
+func datumToItem(r *db.FeedEntry) Item {
 	return Item{
 		ID:               r.ID,
 		SourceURL:        r.SourceUrl,
 		Title:            r.Title,
 		OriginalContent:  &r.OriginalContent,
 		RelevanceScore:   r.RelevanceScore,
-		Topics:           r.Topics,
 		Status:           Status(r.Status),
 		CuratedContentID: r.CuratedContentID,
 		CollectedAt:      r.CollectedAt,

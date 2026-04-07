@@ -31,8 +31,8 @@ type Goal struct {
 	Title        string     `json:"title"`
 	Description  string     `json:"description"`
 	Status       Status     `json:"status"`
-	Area         string     `json:"area"`
-	Quarter      string     `json:"quarter"`
+	AreaID       *uuid.UUID `json:"area_id,omitempty"`
+	Quarter      *string    `json:"quarter,omitempty"`
 	Deadline     *time.Time `json:"deadline,omitempty"`
 	NotionPageID *string    `json:"notion_page_id,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -44,8 +44,8 @@ type UpsertByNotionParams struct {
 	Title        string
 	Description  string
 	Status       Status
-	Area         string
-	Quarter      string
+	Area         *uuid.UUID
+	Quarter      *string
 	Deadline     *time.Time
 	NotionPageID string
 }

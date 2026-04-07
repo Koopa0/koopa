@@ -53,7 +53,7 @@ type SyncFromNotionInput struct {
 	Title       string
 	Status      string // raw Notion status name
 	Description string
-	Area        string
+	AreaID      *uuid.UUID
 	GoalID      *uuid.UUID
 	Deadline    *time.Time
 }
@@ -77,7 +77,7 @@ func (s *Store) SyncFromNotion(ctx context.Context, input *SyncFromNotionInput) 
 		Title:        input.Title,
 		Description:  input.Description,
 		Status:       localStatus,
-		Area:         input.Area,
+		AreaID:       input.AreaID,
 		GoalID:       input.GoalID,
 		Deadline:     input.Deadline,
 		NotionPageID: input.PageID,

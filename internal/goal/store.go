@@ -149,7 +149,7 @@ func rowToGoal(r *db.Goal) Goal {
 		Title:        r.Title,
 		Description:  r.Description,
 		Status:       Status(r.Status),
-		Area:         r.Area,
+		AreaID:       r.AreaID,
 		Quarter:      r.Quarter,
 		Deadline:     r.Deadline,
 		NotionPageID: r.NotionPageID,

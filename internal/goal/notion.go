@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // MapNotionStatus maps a Notion goal status to the local enum.
@@ -45,7 +47,7 @@ type SyncFromNotionInput struct {
 	PageID   string
 	Title    string
 	Status   string // raw Notion status name
-	Area     string
+	Area     *uuid.UUID
 	Deadline *time.Time
 }
 

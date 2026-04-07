@@ -8,18 +8,15 @@ sql:
       - "internal/project/query.sql"
       - "internal/review/query.sql"
       - "internal/feed/entry/query.sql"
-      - "internal/monitor/query.sql"
       - "internal/ai/exec/query.sql"
       - "internal/feed/query.sql"
       - "internal/goal/query.sql"
       - "internal/tag/query.sql"
       - "internal/note/query.sql"
       - "internal/activity/query.sql"
-      - "internal/session/query.sql"
-      - "internal/notion/query.sql"
       - "internal/task/query.sql"
-      - "internal/reconcile/query.sql"
-      - "internal/retrieval/query.sql"
+      - "internal/journal/query.sql"
+      - "internal/daily/query.sql"
     schema: "migrations/"
     gen:
       go:
@@ -76,27 +73,12 @@ sql:
               type: "Vector"
               pointer: true
             nullable: true
-          # N2: tsvector GENERATED columns — never written from Go, map to string
+          # tsvector GENERATED columns — never written from Go, map to string
           - column: "contents.search_vector"
             go_type: "string"
-          - column: "obsidian_notes.search_vector"
+          - column: "notes.search_vector"
             go_type: "string"
-          # N3: ToolUsageSummary view nullable aggregates → concrete types
-          - column: "tool_usage_summary.max_ms"
-            go_type:
-              type: "int32"
-              pointer: true
-          - column: "tool_usage_summary.first_seen"
-            go_type:
-              import: "time"
-              type: "Time"
-              pointer: true
-          - column: "tool_usage_summary.last_seen"
-            go_type:
-              import: "time"
-              type: "Time"
-              pointer: true
-          # N8: feeds.filter_config non-nullable JSONB → json.RawMessage (not []byte)
+          # feeds.filter_config non-nullable JSONB → json.RawMessage
           - column: "feeds.filter_config"
             go_type:
               import: "encoding/json"

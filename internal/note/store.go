@@ -44,7 +44,7 @@ func (s *Store) UpsertNote(ctx context.Context, p *UpsertParams) (*Note, error) 
 		Source:       p.Source,
 		Context:      p.Context,
 		Maturity:     derefOr(p.Maturity, "seed"),
-		Tags:         tagsJSON,
+		RawTags:      tagsJSON,
 		Difficulty:   p.Difficulty,
 		LeetcodeID:   p.LeetcodeID,
 		Book:         p.Book,
@@ -165,8 +165,8 @@ func (s *Store) SyncNoteLinks(ctx context.Context, noteID int64, links []Link) e
 	return nil
 }
 
-// toNote converts a db.ObsidianNote to a domain Note.
-func toNote(row *db.ObsidianNote) Note {
+// toNote converts a db.Note to a domain Note.
+func toNote(row *db.Note) Note {
 	n := Note{
 		ID:           row.ID,
 		FilePath:     row.FilePath,
@@ -184,12 +184,12 @@ func toNote(row *db.ObsidianNote) Note {
 		ContentHash:  row.ContentHash,
 		GitCreatedAt: row.GitCreatedAt,
 		GitUpdatedAt: row.GitUpdatedAt,
-		SyncedAt:     row.SyncedAt,
+		SyncedAt:     &row.SyncedAt,
 	}
 
 	// Decode JSONB tags
-	if row.Tags != nil {
-		_ = json.Unmarshal(row.Tags, &n.Tags) // best-effort
+	if row.RawTags != nil {
+		_ = json.Unmarshal(row.RawTags, &n.Tags) // best-effort
 	}
 	if n.Tags == nil {
 		n.Tags = []string{}
@@ -212,10 +212,10 @@ func toNoteFromSearch(r *db.SearchNotesByTextRow) Note {
 		Book:        r.Book,
 		Chapter:     r.Chapter,
 		ContentText: r.ContentText,
-		SyncedAt:    r.SyncedAt,
+		SyncedAt:    &r.SyncedAt,
 	}
-	if r.Tags != nil {
-		_ = json.Unmarshal(r.Tags, &n.Tags) // best-effort
+	if r.RawTags != nil {
+		_ = json.Unmarshal(r.RawTags, &n.Tags) // best-effort
 	}
 	if n.Tags == nil {
 		n.Tags = []string{}
@@ -237,10 +237,10 @@ func toNoteFromFilterRow(r *db.SearchNotesByFiltersRow) Note {
 		Book:        r.Book,
 		Chapter:     r.Chapter,
 		ContentText: r.ContentText,
-		SyncedAt:    r.SyncedAt,
+		SyncedAt:    &r.SyncedAt,
 	}
-	if r.Tags != nil {
-		_ = json.Unmarshal(r.Tags, &n.Tags) // best-effort
+	if r.RawTags != nil {
+		_ = json.Unmarshal(r.RawTags, &n.Tags) // best-effort
 	}
 	if n.Tags == nil {
 		n.Tags = []string{}
@@ -301,10 +301,10 @@ func (s *Store) SearchBySimilarity(ctx context.Context, queryVec pgvector.Vector
 			Book:        r.Book,
 			Chapter:     r.Chapter,
 			ContentText: r.ContentText,
-			SyncedAt:    r.SyncedAt,
+			SyncedAt:    &r.SyncedAt,
 		}
-		if r.Tags != nil {
-			_ = json.Unmarshal(r.Tags, &n.Tags) // best-effort
+		if r.RawTags != nil {
+			_ = json.Unmarshal(r.RawTags, &n.Tags) // best-effort
 		}
 		if n.Tags == nil {
 			n.Tags = []string{}
@@ -328,10 +328,10 @@ func toNoteFromTypeRow(r *db.NotesByTypeAndContextRow) Note {
 		Book:        r.Book,
 		Chapter:     r.Chapter,
 		ContentText: r.ContentText,
-		SyncedAt:    r.SyncedAt,
+		SyncedAt:    &r.SyncedAt,
 	}
-	if r.Tags != nil {
-		_ = json.Unmarshal(r.Tags, &n.Tags) // best-effort
+	if r.RawTags != nil {
+		_ = json.Unmarshal(r.RawTags, &n.Tags) // best-effort
 	}
 	if n.Tags == nil {
 		n.Tags = []string{}

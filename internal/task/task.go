@@ -1,7 +1,8 @@
-// Package task provides task tracking synced from Notion.
+// Package task provides task tracking with GTD-informed lifecycle.
 package task
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -17,12 +18,14 @@ var (
 type Status string
 
 const (
+	StatusInbox      Status = "inbox"
 	StatusTodo       Status = "todo"
 	StatusInProgress Status = "in-progress"
 	StatusDone       Status = "done"
+	StatusSomeday    Status = "someday"
 )
 
-// Task represents a task synced from Notion.
+// Task represents a task with GTD lifecycle.
 type Task struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
@@ -31,16 +34,19 @@ type Task struct {
 	ProjectID     *uuid.UUID `json:"project_id,omitempty"`
 	NotionPageID  *string    `json:"notion_page_id,omitempty"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	Energy        string     `json:"energy,omitempty"`
-	Priority      string     `json:"priority,omitempty"`
+	Energy        *string    `json:"energy,omitempty"`
+	Priority      *string    `json:"priority,omitempty"`
 	RecurInterval *int32     `json:"recur_interval,omitempty"`
-	RecurUnit     string     `json:"recur_unit,omitempty"`
-	MyDay         bool       `json:"my_day"`
+	RecurUnit     *string    `json:"recur_unit,omitempty"`
 	Description   string     `json:"description,omitempty"`
 	Assignee      string     `json:"assignee"`
+	CreatedBy     string     `json:"created_by"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
+
+// RecurringDoneHandler is called when a recurring task is completed.
+type RecurringDoneHandler func(ctx context.Context, t *Task) error
 
 // IsRecurring reports whether the task has a recurrence schedule.
 func (t *Task) IsRecurring() bool {
@@ -55,20 +61,18 @@ func (t *Task) NextDue() *time.Time {
 	if !t.IsRecurring() || t.Due == nil {
 		return nil
 	}
-	next := advanceDate(*t.Due, int(*t.RecurInterval), t.RecurUnit)
+	next := advanceDate(*t.Due, int(*t.RecurInterval), derefStr(t.RecurUnit))
 	return &next
 }
 
 // NextCycleDateOnOrAfter returns the first recurrence date on or after cutoff.
-// For days/weeks, this is calculated mathematically.
-// For months/years, this loops with clamped month arithmetic.
-// Returns nil if the task is not recurring or has no due date.
 func (t *Task) NextCycleDateOnOrAfter(cutoff time.Time) *time.Time {
 	if !t.IsRecurring() || t.Due == nil {
 		return nil
 	}
 	base := *t.Due
 	interval := int(*t.RecurInterval)
+	unit := derefStr(t.RecurUnit)
 	cutoffDate := truncateToDate(cutoff)
 	baseDate := truncateToDate(base)
 
@@ -76,7 +80,7 @@ func (t *Task) NextCycleDateOnOrAfter(cutoff time.Time) *time.Time {
 		return &baseDate
 	}
 
-	switch t.RecurUnit {
+	switch unit {
 	case "days":
 		days := daysBetween(baseDate, cutoffDate)
 		cycles := (days + interval - 1) / interval // ceil division
@@ -92,7 +96,7 @@ func (t *Task) NextCycleDateOnOrAfter(cutoff time.Time) *time.Time {
 		// months, years, or unknown: loop with clamped arithmetic
 		cur := baseDate
 		for cur.Before(cutoffDate) {
-			cur = advanceDate(cur, interval, t.RecurUnit)
+			cur = advanceDate(cur, interval, unit)
 		}
 		return &cur
 	}
@@ -109,7 +113,7 @@ func (t *Task) MissedOccurrences(cutoff time.Time) []time.Time {
 	var missed []time.Time
 	for cur.Before(cutoffDate) {
 		missed = append(missed, cur)
-		cur = advanceDate(cur, int(*t.RecurInterval), t.RecurUnit)
+		cur = advanceDate(cur, int(*t.RecurInterval), derefStr(t.RecurUnit))
 	}
 	return missed
 }
@@ -154,21 +158,26 @@ func daysBetween(a, b time.Time) int {
 	return int(b.Sub(a).Hours() / 24)
 }
 
-// PendingTask represents a task pending completion.
-// Used by ai/report flows for lightweight task summaries.
+func derefStr(p *string) string {
+	if p != nil {
+		return *p
+	}
+	return ""
+}
+
+// PendingTask represents a task pending completion (lightweight).
 type PendingTask struct {
 	Title string
-	Due   string // YYYY-MM-DD or empty
+	Due   string
 }
 
 // ProjectCompletion holds a per-project completion count.
-// Used by ai/report flows for weekly review summaries.
 type ProjectCompletion struct {
 	ProjectTitle string
 	Completed    int64
 }
 
-// PendingTaskDetail represents a pending task with project context for MCP tools.
+// PendingTaskDetail represents a pending task with project context.
 type PendingTaskDetail struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
@@ -176,11 +185,10 @@ type PendingTaskDetail struct {
 	Due           *time.Time `json:"due,omitempty"`
 	ProjectTitle  string     `json:"project_title"`
 	ProjectSlug   string     `json:"project_slug"`
-	Energy        string     `json:"energy,omitempty"`
-	Priority      string     `json:"priority,omitempty"`
+	Energy        *string    `json:"energy,omitempty"`
+	Priority      *string    `json:"priority,omitempty"`
 	RecurInterval *int32     `json:"recur_interval,omitempty"`
-	RecurUnit     string     `json:"recur_unit,omitempty"`
-	MyDay         bool       `json:"my_day"`
+	RecurUnit     *string    `json:"recur_unit,omitempty"`
 	Assignee      string     `json:"assignee"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
@@ -194,44 +202,15 @@ type SearchTaskDetail struct {
 	Due           *time.Time `json:"due,omitempty"`
 	ProjectTitle  string     `json:"project_title"`
 	ProjectSlug   string     `json:"project_slug"`
-	Energy        string     `json:"energy,omitempty"`
-	Priority      string     `json:"priority,omitempty"`
+	Energy        *string    `json:"energy,omitempty"`
+	Priority      *string    `json:"priority,omitempty"`
 	RecurInterval *int32     `json:"recur_interval,omitempty"`
-	RecurUnit     string     `json:"recur_unit,omitempty"`
-	MyDay         bool       `json:"my_day"`
+	RecurUnit     *string    `json:"recur_unit,omitempty"`
 	Assignee      string     `json:"assignee"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
 	Description   string     `json:"description,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
-}
-
-// MyDaySnapshot represents a task in the My Day list for response enrichment.
-type MyDaySnapshot struct {
-	ID           uuid.UUID `json:"id"`
-	Title        string    `json:"title"`
-	ProjectTitle string    `json:"project_title"`
-	Energy       string    `json:"energy,omitempty"`
-	Priority     string    `json:"priority,omitempty"`
-	Assignee     string    `json:"assignee"`
-}
-
-// ValidAssignee reports whether a is a known assignee value.
-func ValidAssignee(a string) bool {
-	switch a {
-	case "human", "claude-code", "cowork":
-		return true
-	}
-	return false
-}
-
-// DailySummaryHint holds computed task counts for metrics (replaces manual counting).
-type DailySummaryHint struct {
-	MyDayTasksTotal     int      `json:"my_day_tasks_total"`
-	MyDayTasksCompleted int      `json:"my_day_tasks_completed"`
-	NonMyDayCompleted   int      `json:"non_my_day_completed"`
-	TotalCompleted      int      `json:"total_completed"`
-	CompletedTitles     []string `json:"completed_titles"`
 }
 
 // CompletedTaskDetail represents a completed task with project context.
@@ -250,25 +229,11 @@ type CreatedTaskDetail struct {
 	ProjectTitle string    `json:"project_title"`
 }
 
-// MyDayNotionTask holds the minimal fields needed for Notion My Day sync.
-type MyDayNotionTask struct {
-	ID           uuid.UUID
-	NotionPageID string
-}
-
-// UpsertByNotionParams are the parameters for upserting a task from Notion.
-// CompletedAt is managed by the DB: set on first transition to done, preserved thereafter.
-type UpsertByNotionParams struct {
-	Title         string
-	Status        Status
-	Due           *time.Time
-	ProjectID     *uuid.UUID
-	NotionPageID  string
-	Energy        string
-	Priority      string
-	RecurInterval *int32
-	RecurUnit     string
-	MyDay         bool
-	Description   string
-	Assignee      string
+// ValidAssignee reports whether a is a known assignee value.
+func ValidAssignee(a string) bool {
+	switch a {
+	case "human", "claude-code", "cowork":
+		return true
+	}
+	return false
 }

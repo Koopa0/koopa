@@ -1,6 +1,6 @@
 -- name: UpsertNote :one
-INSERT INTO obsidian_notes (
-    file_path, title, type, source, context, maturity, tags,
+INSERT INTO notes (
+    file_path, title, type, source, context, maturity, raw_tags,
     difficulty, leetcode_id, book, chapter, notion_task_id,
     content_text, content_hash, synced_at
 ) VALUES (
@@ -14,7 +14,7 @@ ON CONFLICT (file_path) DO UPDATE SET
     source = EXCLUDED.source,
     context = EXCLUDED.context,
     maturity = EXCLUDED.maturity,
-    tags = EXCLUDED.tags,
+    raw_tags = EXCLUDED.raw_tags,
     difficulty = EXCLUDED.difficulty,
     leetcode_id = EXCLUDED.leetcode_id,
     book = EXCLUDED.book,
@@ -26,22 +26,22 @@ ON CONFLICT (file_path) DO UPDATE SET
 RETURNING *;
 
 -- name: NoteByFilePath :one
-SELECT * FROM obsidian_notes WHERE file_path = $1;
+SELECT * FROM notes WHERE file_path = $1;
 
 -- name: NoteContentHash :one
-SELECT content_hash FROM obsidian_notes WHERE file_path = $1;
+SELECT content_hash FROM notes WHERE file_path = $1;
 
 -- name: ArchiveNote :exec
-UPDATE obsidian_notes SET maturity = 'archived', synced_at = now()
+UPDATE notes SET maturity = 'archived', synced_at = now()
 WHERE file_path = $1 AND maturity != 'archived';
 
 -- name: SearchNotesByText :many
--- Full-text search on obsidian_notes using the search_vector GIN index.
+-- Full-text search on notes using the search_vector GIN index.
 -- Uses websearch_to_tsquery('simple', ...) for user-friendly query syntax.
-SELECT id, file_path, title, type, source, context, maturity, tags,
+SELECT id, file_path, title, type, source, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at,
        ts_rank(search_vector, websearch_to_tsquery('simple', @query)) AS rank
-FROM obsidian_notes
+FROM notes
 WHERE search_vector @@ websearch_to_tsquery('simple', @query)
   AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY rank DESC
@@ -49,9 +49,9 @@ LIMIT @max_results;
 
 -- name: SearchNotesByFilters :many
 -- Filter notes by frontmatter fields and date range. NULL parameters are ignored.
-SELECT id, file_path, title, type, source, context, maturity, tags,
+SELECT id, file_path, title, type, source, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at
-FROM obsidian_notes
+FROM notes
 WHERE (maturity IS NULL OR maturity != 'archived')
   AND (sqlc.narg('filter_type')::text IS NULL OR type = sqlc.narg('filter_type'))
   AND (sqlc.narg('filter_source')::text IS NULL OR source = sqlc.narg('filter_source'))
@@ -64,9 +64,9 @@ LIMIT @max_results;
 
 -- name: NotesByTypeAndContext :many
 -- List notes by type, optionally filtered by context. Used for decision-log retrieval.
-SELECT id, file_path, title, type, source, context, maturity, tags,
+SELECT id, file_path, title, type, source, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at
-FROM obsidian_notes
+FROM notes
 WHERE type = @note_type
   AND (maturity IS NULL OR maturity != 'archived')
   AND (sqlc.narg('filter_context')::text IS NULL OR context = sqlc.narg('filter_context'))
@@ -75,22 +75,22 @@ LIMIT @max_results;
 
 -- name: UpdateNoteEmbedding :exec
 -- Store embedding vector for a note.
-UPDATE obsidian_notes SET embedding = $2 WHERE id = $1;
+UPDATE notes SET embedding = $2 WHERE id = $1;
 
 -- name: NotesWithoutEmbedding :many
 -- Find notes that need embedding generation.
 SELECT id, file_path, title, content_text
-FROM obsidian_notes
+FROM notes
 WHERE embedding IS NULL AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY synced_at DESC
 LIMIT @batch_size;
 
 -- name: SearchNotesBySimilarity :many
 -- Semantic search: find notes closest to a query embedding vector.
-SELECT id, file_path, title, type, source, context, maturity, tags,
+SELECT id, file_path, title, type, source, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at,
        (1 - (embedding <=> @query_embedding::vector))::float8 AS similarity
-FROM obsidian_notes
+FROM notes
 WHERE embedding IS NOT NULL
   AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY embedding <=> @query_embedding::vector
