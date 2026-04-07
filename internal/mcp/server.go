@@ -268,7 +268,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	addTool(s, &mcp.Tool{
 		Name:        "learning_dashboard",
-		Description: "Learning analytics: recent sessions, streaks, and activity. Views: overview (default), timeline. Filter by domain and lookback period.",
+		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts), weaknesses (cross-pattern weakness analysis), retrieval (spaced review queue), timeline (sessions with attempt stats), variations (problem relationship graph). Filter by domain and lookback period.",
 		Annotations: readOnly,
 	}, s.learningDashboard)
 

@@ -71,3 +71,77 @@ SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.seve
 FROM attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
 WHERE ao.attempt_id = @attempt_id;
+
+-- name: ConceptMastery :many
+-- Per-concept mastery with signal counts from attempt_observations.
+-- Used by learning_dashboard mastery view.
+SELECT c.id, c.slug, c.name, c.domain, c.kind,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'weakness') AS weakness_count,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'mastery') AS mastery_count,
+       COUNT(*) AS total_observations,
+       MAX(ao.created_at) AS last_observed_at
+FROM concepts c
+JOIN attempt_observations ao ON ao.concept_id = c.id
+JOIN attempts a ON a.id = ao.attempt_id
+WHERE (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
+  AND a.attempted_at >= @since
+GROUP BY c.id
+ORDER BY total_observations DESC;
+
+-- name: WeaknessAnalysis :many
+-- Cross-pattern weakness analysis from attempt_observations.
+-- Used by learning_dashboard weaknesses view.
+SELECT c.slug AS concept_slug, c.name AS concept_name, c.domain,
+       ao.category,
+       COUNT(*) AS occurrence_count,
+       COUNT(*) FILTER (WHERE ao.severity = 'critical') AS critical_count,
+       COUNT(*) FILTER (WHERE ao.severity = 'moderate') AS moderate_count,
+       COUNT(*) FILTER (WHERE ao.severity = 'minor') AS minor_count,
+       MAX(ao.created_at) AS last_seen_at
+FROM attempt_observations ao
+JOIN concepts c ON c.id = ao.concept_id
+JOIN attempts a ON a.id = ao.attempt_id
+WHERE ao.signal_type = 'weakness'
+  AND (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
+  AND a.attempted_at >= @since
+GROUP BY c.slug, c.name, c.domain, ao.category
+ORDER BY critical_count DESC, occurrence_count DESC;
+
+-- name: RetrievalQueue :many
+-- Items due for spaced review from review_cards.
+-- Used by learning_dashboard retrieval view.
+SELECT rc.id AS card_id, rc.due,
+       li.id AS item_id, li.title, li.domain, li.difficulty, li.external_id
+FROM review_cards rc
+JOIN learning_items li ON li.id = rc.learning_item_id
+WHERE rc.due <= @due_before
+  AND (sqlc.narg('domain')::text IS NULL OR li.domain = sqlc.narg('domain'))
+ORDER BY rc.due ASC
+LIMIT @max_results;
+
+-- name: SessionTimeline :many
+-- Recent sessions grouped by day with attempt counts.
+-- Used by learning_dashboard timeline view.
+SELECT ls.id, ls.domain, ls.session_mode, ls.started_at, ls.ended_at,
+       COUNT(a.id) AS attempt_count,
+       COUNT(*) FILTER (WHERE a.outcome IN ('solved_independent', 'completed')) AS success_count
+FROM learning_sessions ls
+LEFT JOIN attempts a ON a.session_id = ls.id
+WHERE (sqlc.narg('domain')::text IS NULL OR ls.domain = sqlc.narg('domain'))
+  AND ls.started_at >= @since
+GROUP BY ls.id
+ORDER BY ls.started_at DESC;
+
+-- name: ItemVariations :many
+-- Problem relationship graph from item_relations.
+-- Used by learning_dashboard variations view.
+SELECT ir.id AS relation_id, ir.relation_type,
+       src.id AS source_id, src.title AS source_title, src.domain AS source_domain,
+       tgt.id AS target_id, tgt.title AS target_title, tgt.domain AS target_domain
+FROM item_relations ir
+JOIN learning_items src ON src.id = ir.source_item_id
+JOIN learning_items tgt ON tgt.id = ir.target_item_id
+WHERE (sqlc.narg('domain')::text IS NULL OR src.domain = sqlc.narg('domain'))
+ORDER BY ir.created_at DESC
+LIMIT @max_results;

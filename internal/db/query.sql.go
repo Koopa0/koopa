@@ -1084,6 +1084,73 @@ func (q *Queries) CompletionEventsByProjectSince(ctx context.Context, since time
 	return items, nil
 }
 
+const conceptMastery = `-- name: ConceptMastery :many
+SELECT c.id, c.slug, c.name, c.domain, c.kind,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'weakness') AS weakness_count,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'mastery') AS mastery_count,
+       COUNT(*) AS total_observations,
+       MAX(ao.created_at) AS last_observed_at
+FROM concepts c
+JOIN attempt_observations ao ON ao.concept_id = c.id
+JOIN attempts a ON a.id = ao.attempt_id
+WHERE ($1::text IS NULL OR c.domain = $1)
+  AND a.attempted_at >= $2
+GROUP BY c.id
+ORDER BY total_observations DESC
+`
+
+type ConceptMasteryParams struct {
+	Domain *string   `json:"domain"`
+	Since  time.Time `json:"since"`
+}
+
+type ConceptMasteryRow struct {
+	ID                uuid.UUID   `json:"id"`
+	Slug              string      `json:"slug"`
+	Name              string      `json:"name"`
+	Domain            string      `json:"domain"`
+	Kind              string      `json:"kind"`
+	WeaknessCount     int64       `json:"weakness_count"`
+	ImprovementCount  int64       `json:"improvement_count"`
+	MasteryCount      int64       `json:"mastery_count"`
+	TotalObservations int64       `json:"total_observations"`
+	LastObservedAt    interface{} `json:"last_observed_at"`
+}
+
+// Per-concept mastery with signal counts from attempt_observations.
+// Used by learning_dashboard mastery view.
+func (q *Queries) ConceptMastery(ctx context.Context, arg ConceptMasteryParams) ([]ConceptMasteryRow, error) {
+	rows, err := q.db.Query(ctx, conceptMastery, arg.Domain, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ConceptMasteryRow{}
+	for rows.Next() {
+		var i ConceptMasteryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Domain,
+			&i.Kind,
+			&i.WeaknessCount,
+			&i.ImprovementCount,
+			&i.MasteryCount,
+			&i.TotalObservations,
+			&i.LastObservedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const confirmAlias = `-- name: ConfirmAlias :one
 UPDATE tag_aliases SET
     confirmed = true,
@@ -3944,6 +4011,65 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 	return rejected, err
 }
 
+const itemVariations = `-- name: ItemVariations :many
+SELECT ir.id AS relation_id, ir.relation_type,
+       src.id AS source_id, src.title AS source_title, src.domain AS source_domain,
+       tgt.id AS target_id, tgt.title AS target_title, tgt.domain AS target_domain
+FROM item_relations ir
+JOIN learning_items src ON src.id = ir.source_item_id
+JOIN learning_items tgt ON tgt.id = ir.target_item_id
+WHERE ($1::text IS NULL OR src.domain = $1)
+ORDER BY ir.created_at DESC
+LIMIT $2
+`
+
+type ItemVariationsParams struct {
+	Domain     *string `json:"domain"`
+	MaxResults int32   `json:"max_results"`
+}
+
+type ItemVariationsRow struct {
+	RelationID   uuid.UUID `json:"relation_id"`
+	RelationType string    `json:"relation_type"`
+	SourceID     uuid.UUID `json:"source_id"`
+	SourceTitle  string    `json:"source_title"`
+	SourceDomain string    `json:"source_domain"`
+	TargetID     uuid.UUID `json:"target_id"`
+	TargetTitle  string    `json:"target_title"`
+	TargetDomain string    `json:"target_domain"`
+}
+
+// Problem relationship graph from item_relations.
+// Used by learning_dashboard variations view.
+func (q *Queries) ItemVariations(ctx context.Context, arg ItemVariationsParams) ([]ItemVariationsRow, error) {
+	rows, err := q.db.Query(ctx, itemVariations, arg.Domain, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ItemVariationsRow{}
+	for rows.Next() {
+		var i ItemVariationsRow
+		if err := rows.Scan(
+			&i.RelationID,
+			&i.RelationType,
+			&i.SourceID,
+			&i.SourceTitle,
+			&i.SourceDomain,
+			&i.TargetID,
+			&i.TargetTitle,
+			&i.TargetDomain,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const itemsByDate = `-- name: ItemsByDate :many
 SELECT
     dpi.id, dpi.plan_date, dpi.task_id, dpi.selected_by, dpi.position,
@@ -6480,6 +6606,63 @@ func (q *Queries) ResetRecurringTask(ctx context.Context, arg ResetRecurringTask
 	return i, err
 }
 
+const retrievalQueue = `-- name: RetrievalQueue :many
+SELECT rc.id AS card_id, rc.due,
+       li.id AS item_id, li.title, li.domain, li.difficulty, li.external_id
+FROM review_cards rc
+JOIN learning_items li ON li.id = rc.learning_item_id
+WHERE rc.due <= $1
+  AND ($2::text IS NULL OR li.domain = $2)
+ORDER BY rc.due ASC
+LIMIT $3
+`
+
+type RetrievalQueueParams struct {
+	DueBefore  time.Time `json:"due_before"`
+	Domain     *string   `json:"domain"`
+	MaxResults int32     `json:"max_results"`
+}
+
+type RetrievalQueueRow struct {
+	CardID     int64     `json:"card_id"`
+	Due        time.Time `json:"due"`
+	ItemID     uuid.UUID `json:"item_id"`
+	Title      string    `json:"title"`
+	Domain     string    `json:"domain"`
+	Difficulty *string   `json:"difficulty"`
+	ExternalID *string   `json:"external_id"`
+}
+
+// Items due for spaced review from review_cards.
+// Used by learning_dashboard retrieval view.
+func (q *Queries) RetrievalQueue(ctx context.Context, arg RetrievalQueueParams) ([]RetrievalQueueRow, error) {
+	rows, err := q.db.Query(ctx, retrievalQueue, arg.DueBefore, arg.Domain, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RetrievalQueueRow{}
+	for rows.Next() {
+		var i RetrievalQueueRow
+		if err := rows.Scan(
+			&i.CardID,
+			&i.Due,
+			&i.ItemID,
+			&i.Title,
+			&i.Domain,
+			&i.Difficulty,
+			&i.ExternalID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const retryableFlowRuns = `-- name: RetryableFlowRuns :many
 UPDATE flow_runs SET status = 'pending'
 WHERE (status = 'failed' AND attempt < max_attempts)
@@ -7115,6 +7298,63 @@ func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (LearningSessio
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const sessionTimeline = `-- name: SessionTimeline :many
+SELECT ls.id, ls.domain, ls.session_mode, ls.started_at, ls.ended_at,
+       COUNT(a.id) AS attempt_count,
+       COUNT(*) FILTER (WHERE a.outcome IN ('solved_independent', 'completed')) AS success_count
+FROM learning_sessions ls
+LEFT JOIN attempts a ON a.session_id = ls.id
+WHERE ($1::text IS NULL OR ls.domain = $1)
+  AND ls.started_at >= $2
+GROUP BY ls.id
+ORDER BY ls.started_at DESC
+`
+
+type SessionTimelineParams struct {
+	Domain *string   `json:"domain"`
+	Since  time.Time `json:"since"`
+}
+
+type SessionTimelineRow struct {
+	ID           uuid.UUID  `json:"id"`
+	Domain       string     `json:"domain"`
+	SessionMode  string     `json:"session_mode"`
+	StartedAt    time.Time  `json:"started_at"`
+	EndedAt      *time.Time `json:"ended_at"`
+	AttemptCount int64      `json:"attempt_count"`
+	SuccessCount int64      `json:"success_count"`
+}
+
+// Recent sessions grouped by day with attempt counts.
+// Used by learning_dashboard timeline view.
+func (q *Queries) SessionTimeline(ctx context.Context, arg SessionTimelineParams) ([]SessionTimelineRow, error) {
+	rows, err := q.db.Query(ctx, sessionTimeline, arg.Domain, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionTimelineRow{}
+	for rows.Next() {
+		var i SessionTimelineRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Domain,
+			&i.SessionMode,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.AttemptCount,
+			&i.SuccessCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const similarContents = `-- name: SimilarContents :many
@@ -9205,4 +9445,71 @@ func (q *Queries) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const weaknessAnalysis = `-- name: WeaknessAnalysis :many
+SELECT c.slug AS concept_slug, c.name AS concept_name, c.domain,
+       ao.category,
+       COUNT(*) AS occurrence_count,
+       COUNT(*) FILTER (WHERE ao.severity = 'critical') AS critical_count,
+       COUNT(*) FILTER (WHERE ao.severity = 'moderate') AS moderate_count,
+       COUNT(*) FILTER (WHERE ao.severity = 'minor') AS minor_count,
+       MAX(ao.created_at) AS last_seen_at
+FROM attempt_observations ao
+JOIN concepts c ON c.id = ao.concept_id
+JOIN attempts a ON a.id = ao.attempt_id
+WHERE ao.signal_type = 'weakness'
+  AND ($1::text IS NULL OR c.domain = $1)
+  AND a.attempted_at >= $2
+GROUP BY c.slug, c.name, c.domain, ao.category
+ORDER BY critical_count DESC, occurrence_count DESC
+`
+
+type WeaknessAnalysisParams struct {
+	Domain *string   `json:"domain"`
+	Since  time.Time `json:"since"`
+}
+
+type WeaknessAnalysisRow struct {
+	ConceptSlug     string      `json:"concept_slug"`
+	ConceptName     string      `json:"concept_name"`
+	Domain          string      `json:"domain"`
+	Category        string      `json:"category"`
+	OccurrenceCount int64       `json:"occurrence_count"`
+	CriticalCount   int64       `json:"critical_count"`
+	ModerateCount   int64       `json:"moderate_count"`
+	MinorCount      int64       `json:"minor_count"`
+	LastSeenAt      interface{} `json:"last_seen_at"`
+}
+
+// Cross-pattern weakness analysis from attempt_observations.
+// Used by learning_dashboard weaknesses view.
+func (q *Queries) WeaknessAnalysis(ctx context.Context, arg WeaknessAnalysisParams) ([]WeaknessAnalysisRow, error) {
+	rows, err := q.db.Query(ctx, weaknessAnalysis, arg.Domain, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WeaknessAnalysisRow{}
+	for rows.Next() {
+		var i WeaknessAnalysisRow
+		if err := rows.Scan(
+			&i.ConceptSlug,
+			&i.ConceptName,
+			&i.Domain,
+			&i.Category,
+			&i.OccurrenceCount,
+			&i.CriticalCount,
+			&i.ModerateCount,
+			&i.MinorCount,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

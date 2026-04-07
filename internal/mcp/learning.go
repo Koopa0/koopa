@@ -211,14 +211,19 @@ func (s *Server) endSession(ctx context.Context, _ *sdkmcp.CallToolRequest, inpu
 
 type LearningDashboardInput struct {
 	Domain *string `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
-	View   *string `json:"view,omitempty" jsonschema_description:"View: overview (default), timeline"`
+	View   *string `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
 	Days   FlexInt `json:"days,omitempty" jsonschema_description:"Lookback period in days (default 30)"`
 }
 
 type LearningDashboardOutput struct {
-	View     string                 `json:"view"`
-	Sessions []learnsession.Session `json:"sessions"`
-	Total    int                    `json:"total"`
+	View       string `json:"view"`
+	Total      int    `json:"total"`
+	Sessions   any    `json:"sessions,omitempty"`
+	Mastery    any    `json:"mastery,omitempty"`
+	Weaknesses any    `json:"weaknesses,omitempty"`
+	Retrieval  any    `json:"retrieval,omitempty"`
+	Timeline   any    `json:"timeline,omitempty"`
+	Variations any    `json:"variations,omitempty"`
 }
 
 func (s *Server) learningDashboard(ctx context.Context, _ *sdkmcp.CallToolRequest, input LearningDashboardInput) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
@@ -235,15 +240,93 @@ func (s *Server) learningDashboard(ctx context.Context, _ *sdkmcp.CallToolReques
 		domain = input.Domain
 	}
 
+	switch view {
+	case "overview":
+		return s.dashboardOverview(ctx, domain, since)
+	case "mastery":
+		return s.dashboardMastery(ctx, domain, since)
+	case "weaknesses":
+		return s.dashboardWeaknesses(ctx, domain, since)
+	case "retrieval":
+		return s.dashboardRetrieval(ctx, domain)
+	case "timeline":
+		return s.dashboardTimeline(ctx, domain, since)
+	case "variations":
+		return s.dashboardVariations(ctx, domain)
+	default:
+		return nil, LearningDashboardOutput{}, fmt.Errorf("unknown view %q", view)
+	}
+}
+
+func (s *Server) dashboardOverview(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
 	sessions, err := s.learn.RecentSessions(ctx, domain, since, 50)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying sessions: %w", err)
 	}
-
 	return nil, LearningDashboardOutput{
-		View:     view,
+		View:     "overview",
 		Sessions: sessions,
 		Total:    len(sessions),
+	}, nil
+}
+
+func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	rows, err := s.learn.ConceptMastery(ctx, domain, since)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:    "mastery",
+		Mastery: rows,
+		Total:   len(rows),
+	}, nil
+}
+
+func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	rows, err := s.learn.WeaknessAnalysis(ctx, domain, since)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying weakness analysis: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:       "weaknesses",
+		Weaknesses: rows,
+		Total:      len(rows),
+	}, nil
+}
+
+func (s *Server) dashboardRetrieval(ctx context.Context, domain *string) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	items, err := s.learn.RetrievalQueue(ctx, domain, time.Now(), 50)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying retrieval queue: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:      "retrieval",
+		Retrieval: items,
+		Total:     len(items),
+	}, nil
+}
+
+func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	sessions, err := s.learn.SessionTimeline(ctx, domain, since)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying session timeline: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:     "timeline",
+		Timeline: sessions,
+		Total:    len(sessions),
+	}, nil
+}
+
+func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	relations, err := s.learn.ItemVariations(ctx, domain, 100)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying item variations: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:       "variations",
+		Variations: relations,
+		Total:      len(relations),
 	}, nil
 }
 
