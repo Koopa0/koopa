@@ -38,7 +38,7 @@ type Project struct {
 	Title           string     `json:"title"`
 	Description     string     `json:"description"`
 	LongDescription *string    `json:"long_description,omitempty"`
-	Role            string     `json:"role"`
+	Role            *string    `json:"role,omitempty"`
 	TechStack       []string   `json:"tech_stack"`
 	Highlights      []string   `json:"highlights"`
 	Problem         *string    `json:"problem,omitempty"`
@@ -53,11 +53,11 @@ type Project struct {
 	Status          Status     `json:"status"`
 	NotionPageID    *string    `json:"notion_page_id,omitempty"`
 	Repo            *string    `json:"repo,omitempty"`
-	Area            string     `json:"area"`
+	AreaID          *uuid.UUID `json:"area_id,omitempty"`
 	GoalID          *uuid.UUID `json:"goal_id,omitempty"`
 	Deadline        *time.Time `json:"deadline,omitempty"`
 	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
-	ExpectedCadence string     `json:"expected_cadence"`
+	ExpectedCadence *string    `json:"expected_cadence,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
@@ -68,7 +68,7 @@ type CreateParams struct {
 	Title           string   `json:"title"`
 	Description     string   `json:"description"`
 	LongDescription *string  `json:"long_description,omitempty"`
-	Role            string   `json:"role"`
+	Role            *string  `json:"role,omitempty"`
 	TechStack       []string `json:"tech_stack"`
 	Highlights      []string `json:"highlights"`
 	Problem         *string  `json:"problem,omitempty"`
@@ -102,18 +102,6 @@ type UpdateParams struct {
 	IsPublic        *bool    `json:"is_public,omitempty"`
 	SortOrder       *int     `json:"sort_order,omitempty"`
 	Status          *Status  `json:"status,omitempty"`
-}
-
-// UpsertByNotionParams are the parameters for upserting a project from Notion.
-type UpsertByNotionParams struct {
-	Slug         string
-	Title        string
-	Description  string
-	Status       Status
-	Area         string
-	GoalID       *uuid.UUID
-	Deadline     *time.Time
-	NotionPageID string
 }
 
 var (

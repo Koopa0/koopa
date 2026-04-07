@@ -11,7 +11,7 @@
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        class="inline-flex items-center gap-1.5 rounded-xs border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
         (click)="reload()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="14" />
@@ -76,7 +76,7 @@
           @for (item of items(); track item.id) {
           <button
             type="button"
-            class="group w-full rounded-sm px-3 py-2.5 text-left transition-colors"
+            class="group w-full rounded-xs px-3 py-2.5 text-left transition-colors"
             [class]="selectedItemId() === item.id
                   ? 'bg-zinc-800'
                   : 'hover:bg-zinc-900'"
@@ -192,14 +192,14 @@
             <div class="ml-4 flex shrink-0 items-center gap-2">
               <a
                 [routerLink]="['/admin/editor', selected.id]"
-                class="inline-flex items-center gap-1 rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+                class="inline-flex items-center gap-1 rounded-xs border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
               >
                 <lucide-icon [img]="ExternalLinkIcon" [size]="12" />
                 編輯
               </a>
               <button
                 type="button"
-                class="rounded-sm p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                class="rounded-xs p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                 (click)="closeDetail()"
               >
                 <lucide-icon [img]="XIcon" [size]="16" />
@@ -329,7 +329,7 @@
             <dd class="mt-2 flex flex-wrap gap-1.5">
               @for (tag of selected.tags; track tag) {
               <span
-                class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
+                class="rounded-xs bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
                 >{{ tag }}</span
               >
               }

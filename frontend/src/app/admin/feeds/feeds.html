@@ -14,7 +14,7 @@
       <div class="flex gap-2">
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
           (click)="loadFeeds()"
         >
           <lucide-icon [img]="RefreshCwIcon" [size]="16" />
@@ -22,7 +22,7 @@
         </button>
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
+          class="inline-flex items-center gap-2 rounded-xs bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
           (click)="openCreateDialog()"
         >
           <lucide-icon [img]="PlusIcon" [size]="16" />
@@ -37,7 +37,7 @@
   <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
     <!-- Error -->
     @if (error()) {
-      <div class="mb-4 rounded-sm border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+      <div class="mb-4 rounded-xs border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
         {{ error() }}
       </div>
     }
@@ -55,7 +55,7 @@
       </div>
     } @else {
       <!-- Feed Table -->
-      <div class="overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-900/50">
+      <div class="overflow-x-auto rounded-xs border border-zinc-800 bg-zinc-900/50">
         <table class="w-full">
           <thead>
             <tr class="border-b border-zinc-800 text-left text-xs text-zinc-500">
@@ -79,7 +79,7 @@
                   @if (feed.topics.length > 0) {
                     <div class="mt-1 flex flex-wrap gap-1">
                       @for (topic of feed.topics; track topic) {
-                        <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                        <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
                           {{ topic }}
                         </span>
                       }
@@ -88,22 +88,22 @@
                   @if ((feed.filter_config.deny_paths?.length ?? 0) + (feed.filter_config.deny_title_patterns?.length ?? 0) + (feed.filter_config.allow_tags?.length ?? 0) + (feed.filter_config.deny_tags?.length ?? 0) > 0) {
                     <div class="mt-1 flex flex-wrap gap-1">
                       @for (path of feed.filter_config.deny_paths ?? []; track $index) {
-                        <span class="rounded-sm border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
+                        <span class="rounded-xs border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
                           −{{ path }}
                         </span>
                       }
                       @for (pattern of feed.filter_config.deny_title_patterns ?? []; track $index) {
-                        <span class="rounded-sm border border-amber-800/40 bg-amber-900/15 px-1.5 py-0.5 text-[10px] text-amber-400">
+                        <span class="rounded-xs border border-amber-800/40 bg-amber-900/15 px-1.5 py-0.5 text-[10px] text-amber-400">
                           −{{ formatPattern(pattern) }}
                         </span>
                       }
                       @for (tag of feed.filter_config.allow_tags ?? []; track $index) {
-                        <span class="rounded-sm border border-emerald-800/40 bg-emerald-900/15 px-1.5 py-0.5 text-[10px] text-emerald-400">
+                        <span class="rounded-xs border border-emerald-800/40 bg-emerald-900/15 px-1.5 py-0.5 text-[10px] text-emerald-400">
                           +{{ tag }}
                         </span>
                       }
                       @for (tag of feed.filter_config.deny_tags ?? []; track $index) {
-                        <span class="rounded-sm border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
+                        <span class="rounded-xs border border-red-800/40 bg-red-900/15 px-1.5 py-0.5 text-[10px] text-red-400">
                           −{{ tag }}
                         </span>
                       }
@@ -153,7 +153,7 @@
                   <div class="flex items-center gap-1">
                     <button
                       type="button"
-                      class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                      class="rounded-xs p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                       aria-label="抓取"
                       (click)="fetchNow(feed)"
                       [disabled]="fetchingId() === feed.id"
@@ -166,7 +166,7 @@
                     </button>
                     <button
                       type="button"
-                      class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                      class="rounded-xs p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                       aria-label="編輯"
                       (click)="openEditDialog(feed)"
                     >
@@ -174,7 +174,7 @@
                     </button>
                     <button
                       type="button"
-                      class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-red-400"
+                      class="rounded-xs p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-red-400"
                       aria-label="刪除"
                       (click)="requestDelete(feed)"
                     >
@@ -201,7 +201,7 @@
     (keydown.escape)="closeDialog()"
   >
     <div
-      class="mx-4 w-full max-w-lg rounded-sm border border-zinc-700 bg-zinc-900 shadow-xl"
+      class="mx-4 w-full max-w-lg rounded-xs border border-zinc-700 bg-zinc-900 shadow-xl"
       cdkTrapFocus
       cdkTrapFocusAutoCapture
     >
@@ -211,7 +211,7 @@
         </h2>
         <button
           type="button"
-          class="rounded-sm p-1 text-zinc-400 hover:text-zinc-200"
+          class="rounded-xs p-1 text-zinc-400 hover:text-zinc-200"
           (click)="closeDialog()"
           aria-label="關閉"
         >
@@ -227,7 +227,7 @@
             type="text"
             [value]="formName()"
             (input)="onFormNameChange($event)"
-            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
             placeholder="例：Hacker News"
           />
         </div>
@@ -239,7 +239,7 @@
             type="url"
             [value]="formUrl()"
             (input)="onFormUrlChange($event)"
-            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+            class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
             placeholder="https://example.com/feed.xml"
           />
         </div>
@@ -250,7 +250,7 @@
             id="feed-schedule"
             [value]="formSchedule()"
             (change)="onFormScheduleChange($event)"
-            class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none"
+            class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-hidden"
           >
             <option value="hourly_4">Every 4 hours</option>
             <option value="daily">Daily</option>
@@ -265,7 +265,7 @@
               @for (topic of topics(); track topic.id) {
                 <button
                   type="button"
-                  class="rounded-sm border px-2.5 py-1 text-xs transition-colors"
+                  class="rounded-xs border px-2.5 py-1 text-xs transition-colors"
                   [class]="formTopics().includes(topic.name)
                     ? 'border-white bg-white text-zinc-900'
                     : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
@@ -279,7 +279,7 @@
         }
 
         <!-- Filter Config -->
-        <div class="space-y-3 rounded-sm border border-zinc-800 bg-zinc-800/30 p-4">
+        <div class="space-y-3 rounded-xs border border-zinc-800 bg-zinc-800/30 p-4">
           <p class="text-sm font-medium text-zinc-300">過濾規則</p>
 
           <!-- Deny Paths -->
@@ -287,7 +287,7 @@
             <label for="filter-deny-paths" class="mb-1 block text-xs text-zinc-400">排除路徑 (deny_paths)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (path of formDenyPaths(); track $index) {
-                <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
+                <span class="inline-flex items-center gap-1 rounded-xs border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
                   {{ path }}
                   <button type="button" class="hover:text-red-300" (click)="removeFilterItem('denyPaths', $index)" aria-label="移除">
                     <lucide-icon [img]="XIcon" [size]="12" />
@@ -298,7 +298,7 @@
             <input
               id="filter-deny-paths"
               type="text"
-              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              class="mt-1.5 w-full rounded-xs border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
               placeholder="/news, /events … 按 Enter 新增"
               (keydown)="onFilterKeydown($event, 'denyPaths')"
             />
@@ -309,7 +309,7 @@
             <label for="filter-deny-title" class="mb-1 block text-xs text-zinc-400">排除標題 (regex)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (pattern of formDenyTitlePatterns(); track $index) {
-                <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
+                <span class="inline-flex items-center gap-1 rounded-xs border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
                   {{ pattern }}
                   <button type="button" class="hover:text-red-300" (click)="removeFilterItem('denyTitlePatterns', $index)" aria-label="移除">
                     <lucide-icon [img]="XIcon" [size]="12" />
@@ -320,7 +320,7 @@
             <input
               id="filter-deny-title"
               type="text"
-              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              class="mt-1.5 w-full rounded-xs border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
               placeholder="(?i)sponsored … 按 Enter 新增"
               (keydown)="onFilterKeydown($event, 'denyTitlePatterns')"
             />
@@ -331,7 +331,7 @@
             <label for="filter-allow-tags" class="mb-1 block text-xs text-zinc-400">允許標籤 (allow_tags)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (tag of formAllowTags(); track $index) {
-                <span class="inline-flex items-center gap-1 rounded-sm border border-emerald-800/50 bg-emerald-900/20 px-2 py-0.5 text-xs text-emerald-400">
+                <span class="inline-flex items-center gap-1 rounded-xs border border-emerald-800/50 bg-emerald-900/20 px-2 py-0.5 text-xs text-emerald-400">
                   {{ tag }}
                   <button type="button" class="hover:text-emerald-300" (click)="removeFilterItem('allowTags', $index)" aria-label="移除">
                     <lucide-icon [img]="XIcon" [size]="12" />
@@ -342,7 +342,7 @@
             <input
               id="filter-allow-tags"
               type="text"
-              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              class="mt-1.5 w-full rounded-xs border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
               placeholder="go, rust … 按 Enter 新增"
               (keydown)="onFilterKeydown($event, 'allowTags')"
             />
@@ -353,7 +353,7 @@
             <label for="filter-deny-tags" class="mb-1 block text-xs text-zinc-400">排除標籤 (deny_tags)</label>
             <div class="flex flex-wrap gap-1.5">
               @for (tag of formDenyTags(); track $index) {
-                <span class="inline-flex items-center gap-1 rounded-sm border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
+                <span class="inline-flex items-center gap-1 rounded-xs border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs text-red-400">
                   {{ tag }}
                   <button type="button" class="hover:text-red-300" (click)="removeFilterItem('denyTags', $index)" aria-label="移除">
                     <lucide-icon [img]="XIcon" [size]="12" />
@@ -364,7 +364,7 @@
             <input
               id="filter-deny-tags"
               type="text"
-              class="mt-1.5 w-full rounded-sm border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              class="mt-1.5 w-full rounded-xs border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
               placeholder="careers, legal … 按 Enter 新增"
               (keydown)="onFilterKeydown($event, 'denyTags')"
             />
@@ -375,14 +375,14 @@
       <div class="flex justify-end gap-3 border-t border-zinc-800 px-6 py-4">
         <button
           type="button"
-          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          class="rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
           (click)="closeDialog()"
         >
           取消
         </button>
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          class="inline-flex items-center gap-2 rounded-xs bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
           (click)="saveFeed()"
           [disabled]="isSaving() || !formName() || !formUrl()"
         >
@@ -406,7 +406,7 @@
     (keydown.escape)="cancelDelete()"
   >
     <div
-      class="mx-4 w-full max-w-sm rounded-sm border border-zinc-700 bg-zinc-900 p-6 shadow-xl"
+      class="mx-4 w-full max-w-sm rounded-xs border border-zinc-700 bg-zinc-900 p-6 shadow-xl"
       cdkTrapFocus
       cdkTrapFocusAutoCapture
     >
@@ -420,14 +420,14 @@
       <div class="mt-6 flex justify-end gap-3">
         <button
           type="button"
-          class="rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+          class="rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
           (click)="cancelDelete()"
         >
           取消
         </button>
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-sm bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          class="inline-flex items-center gap-2 rounded-xs bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
           (click)="confirmDelete()"
           [disabled]="isDeleting()"
         >

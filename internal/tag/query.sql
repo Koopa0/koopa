@@ -32,15 +32,15 @@ VALUES ($1, $2, $3, false)
 ON CONFLICT (raw_tag) DO NOTHING;
 
 -- name: DeleteNoteTagsByNoteID :exec
-DELETE FROM obsidian_note_tags WHERE note_id = $1;
+DELETE FROM note_tags WHERE note_id = $1;
 
 -- name: InsertNoteTag :exec
-INSERT INTO obsidian_note_tags (note_id, tag_id)
+INSERT INTO note_tags (note_id, tag_id)
 VALUES ($1, $2)
 ON CONFLICT (note_id, tag_id) DO NOTHING;
 
 -- name: InsertNoteTags :exec
-INSERT INTO obsidian_note_tags (note_id, tag_id)
+INSERT INTO note_tags (note_id, tag_id)
 SELECT @note_id, unnest(@tag_ids::uuid[])
 ON CONFLICT DO NOTHING;
 
@@ -79,7 +79,7 @@ SELECT COUNT(*)::int AS count FROM tag_aliases WHERE tag_id = $1;
 
 -- Admin: count note-tag junctions referencing a tag.
 -- name: NoteTagCountByTagID :one
-SELECT COUNT(*)::int AS count FROM obsidian_note_tags WHERE tag_id = $1;
+SELECT COUNT(*)::int AS count FROM note_tags WHERE tag_id = $1;
 
 -- Admin: list aliases with optional unmapped filter.
 -- name: ListAliases :many
@@ -123,8 +123,8 @@ DELETE FROM tag_aliases WHERE id = $1;
 
 -- Backfill: list notes that have raw tags in JSONB.
 -- name: NotesWithRawTags :many
-SELECT id, tags FROM obsidian_notes
-WHERE tags IS NOT NULL AND tags::text != 'null' AND tags::text != '[]'
+SELECT id, raw_tags FROM notes
+WHERE raw_tags IS NOT NULL AND raw_tags::text != 'null' AND raw_tags::text != '[]'
 ORDER BY id;
 
 -- Merge: delete duplicate aliases before reassignment (source aliases whose raw_tag already exists under target).
@@ -142,23 +142,23 @@ UPDATE tag_aliases SET tag_id = $1 WHERE tag_aliases.tag_id = $2;
 -- Merge: delete duplicate note-tags before reassignment.
 -- name: DeleteDuplicateNoteTags :execrows
 -- $1 = source_id, $2 = target_id
-DELETE FROM obsidian_note_tags
-WHERE obsidian_note_tags.tag_id = $1
-  AND obsidian_note_tags.note_id IN (SELECT ont.note_id FROM obsidian_note_tags ont WHERE ont.tag_id = $2);
+DELETE FROM note_tags
+WHERE note_tags.tag_id = $1
+  AND note_tags.note_id IN (SELECT ont.note_id FROM note_tags ont WHERE ont.tag_id = $2);
 
 -- Merge: reassign remaining note-tags from source to target.
 -- name: ReassignNoteTags :execrows
 -- $1 = target_id, $2 = source_id
-UPDATE obsidian_note_tags SET tag_id = $1 WHERE obsidian_note_tags.tag_id = $2;
+UPDATE note_tags SET tag_id = $1 WHERE note_tags.tag_id = $2;
 
 -- Merge: delete duplicate event-tags before reassignment.
 -- name: DeleteDuplicateEventTags :execrows
 -- $1 = source_id, $2 = target_id
-DELETE FROM activity_event_tags
-WHERE activity_event_tags.tag_id = $1
-  AND activity_event_tags.event_id IN (SELECT aet.event_id FROM activity_event_tags aet WHERE aet.tag_id = $2);
+DELETE FROM event_tags
+WHERE event_tags.tag_id = $1
+  AND event_tags.event_id IN (SELECT aet.event_id FROM event_tags aet WHERE aet.tag_id = $2);
 
 -- Merge: reassign remaining event-tags from source to target.
 -- name: ReassignEventTags :execrows
 -- $1 = target_id, $2 = source_id
-UPDATE activity_event_tags SET tag_id = $1 WHERE activity_event_tags.tag_id = $2;
+UPDATE event_tags SET tag_id = $1 WHERE event_tags.tag_id = $2;

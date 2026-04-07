@@ -16,7 +16,7 @@
     <div class="flex items-center gap-3">
       <button
         type="button"
-        class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        class="rounded-xs p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
         (click)="cancel()"
       >
         <lucide-icon [img]="ArrowLeftIcon" [size]="18" />
@@ -30,7 +30,7 @@
       @if (!isNewArticle()) {
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-sm border border-violet-700 px-3 py-1.5 text-sm text-violet-300 transition-colors hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50"
+          class="inline-flex items-center gap-1.5 rounded-xs border border-violet-700 px-3 py-1.5 text-sm text-violet-300 transition-colors hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50"
           (click)="triggerPolish()"
           [disabled]="isPolishing() || isSaving() || polishState() === 'ready'"
         >
@@ -45,7 +45,7 @@
       }
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800 disabled:opacity-50"
+        class="inline-flex items-center gap-1.5 rounded-xs border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-800 disabled:opacity-50"
         (click)="saveDraft()"
         [disabled]="isSaving()"
       >
@@ -54,7 +54,7 @@
       </button>
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-sm bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+        class="inline-flex items-center gap-1.5 rounded-xs bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
         (click)="publish()"
         [disabled]="isSaving()"
       >
@@ -83,7 +83,7 @@
         <div class="flex items-center gap-2">
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-sm border border-emerald-700 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-400 transition-colors hover:bg-emerald-900/50"
+            class="inline-flex items-center gap-1.5 rounded-xs border border-emerald-700 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-400 transition-colors hover:bg-emerald-900/50"
             (click)="approvePolish()"
           >
             <lucide-icon [img]="CheckIcon" [size]="14" />
@@ -91,14 +91,14 @@
           </button>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+            class="inline-flex items-center gap-1.5 rounded-xs border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
             (click)="applyPolish()"
           >
             僅套用到編輯器
           </button>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-sm border border-red-800 px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-900/30"
+            class="inline-flex items-center gap-1.5 rounded-xs border border-red-800 px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-900/30"
             (click)="discardPolish()"
           >
             <lucide-icon [img]="RotateCcwIcon" [size]="14" />
@@ -115,7 +115,7 @@
     <div class="flex flex-col gap-6 lg:flex-row">
       <!-- Sidebar: Article Info -->
       <div class="w-full shrink-0 lg:w-80">
-        <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-5">
+        <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-5">
           <h2
             class="mb-4 flex items-center gap-2 text-sm font-medium text-zinc-300"
           >
@@ -134,7 +134,7 @@
                 type="text"
                 formControlName="title"
                 placeholder="Enter a compelling title"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               />
               @if (getFieldError('title')) {
               <p class="mt-1 text-xs text-red-400">
@@ -153,7 +153,7 @@
                 type="text"
                 formControlName="slug"
                 placeholder="article-url-slug"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               />
               @if (getFieldError('slug')) {
               <p class="mt-1 text-xs text-red-400">
@@ -172,7 +172,7 @@
                 formControlName="excerpt"
                 rows="3"
                 placeholder="Brief description of the article (max 200 chars)"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500 focus:border-zinc-500"
               ></textarea>
               <div class="mt-1 flex items-center justify-between">
                 @if (getFieldError('excerpt')) {
@@ -198,7 +198,7 @@
                 id="content-type"
                 [value]="contentType()"
                 (change)="contentType.set($any($event.target).value)"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
               >
                 @for (option of editorTypeOptions; track option.value) {
                 <option [value]="option.value">{{ option.label }}</option>
@@ -215,7 +215,7 @@
               <select
                 id="article-status"
                 formControlName="status"
-                class="w-full rounded-sm border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
+                class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
               >
                 @for (option of statusOptions; track option.value) {
                 <option [value]="option.value">{{ option.label }}</option>
@@ -233,13 +233,13 @@
                 <img
                   [src]="articleForm.get('cover_image')?.value"
                   alt="Cover preview"
-                  class="w-full rounded-sm border border-zinc-700 aspect-video object-cover"
+                  class="w-full rounded-xs border border-zinc-700 aspect-video object-cover"
                   width="640"
                   height="360"
                 />
                 <button
                   type="button"
-                  class="absolute right-1.5 top-1.5 rounded-sm bg-zinc-900/80 p-1 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-red-400"
+                  class="absolute right-1.5 top-1.5 rounded-xs bg-zinc-900/80 p-1 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-red-400"
                   (click)="removeCoverImage()"
                   title="移除封面圖片"
                   aria-label="移除封面圖片"
@@ -249,7 +249,7 @@
               </div>
               }
               <label
-                class="flex cursor-pointer items-center justify-center gap-2 rounded-sm border border-dashed border-zinc-700 px-3 py-3 text-sm text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-300"
+                class="flex cursor-pointer items-center justify-center gap-2 rounded-xs border border-dashed border-zinc-700 px-3 py-3 text-sm text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-300"
                 [class.pointer-events-none]="isUploading()"
                 [class.opacity-50]="isUploading()"
               >
@@ -322,7 +322,7 @@
 
       <!-- Main: Editor -->
       <div class="min-w-0 flex-1">
-        <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
+        <div class="rounded-xs border border-zinc-800 bg-zinc-900/50">
           <!-- Tab Bar -->
           @let tab = selectedTab();
           <div class="flex items-center border-b border-zinc-800">
@@ -376,7 +376,7 @@
             >
               <button
                 type="button"
-                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                class="rounded-xs p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Bold"
                 aria-label="Bold"
                 (click)="insertBold()"
@@ -385,7 +385,7 @@
               </button>
               <button
                 type="button"
-                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                class="rounded-xs p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Italic"
                 aria-label="Italic"
                 (click)="insertItalic()"
@@ -394,7 +394,7 @@
               </button>
               <button
                 type="button"
-                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                class="rounded-xs p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Link"
                 aria-label="Link"
                 (click)="insertLink()"
@@ -403,7 +403,7 @@
               </button>
               <button
                 type="button"
-                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                class="rounded-xs p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Code"
                 aria-label="Code"
                 (click)="insertCode()"
@@ -412,7 +412,7 @@
               </button>
               <button
                 type="button"
-                class="rounded-sm p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                class="rounded-xs p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                 title="Image"
                 aria-label="Image"
                 (click)="insertImage()"

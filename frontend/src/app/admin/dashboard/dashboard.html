@@ -6,139 +6,22 @@
     >
       <div>
         <h1 class="text-2xl font-bold text-zinc-100">Dashboard</h1>
-        <p class="mt-1 text-sm text-zinc-400">平台總覽</p>
+        <p class="mt-1 text-sm text-zinc-400">內容管理總覽</p>
       </div>
-      <app-pipeline-actions />
+      <a
+        routerLink="/admin/editor"
+        class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 no-underline transition-colors hover:bg-zinc-700"
+      >
+        <lucide-icon [img]="FileEditIcon" [size]="16" />
+        新增文章
+      </a>
     </div>
   </div>
 </section>
 
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <!-- Summary Cards -->
-    <div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <!-- Card 1: Today's Progress -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-        <div class="text-xs text-zinc-500">Today's Progress</div>
-        @if (todaySummary(); as ts) {
-        <div class="mt-1 text-sm font-medium text-zinc-100">
-          My Day: {{ ts.my_day_tasks_completed }}/{{ ts.my_day_tasks_total }}
-        </div>
-        <div class="mt-0.5 text-xs text-zinc-400">
-          {{ ts.my_day_tasks_total > 0 ? ((ts.my_day_tasks_completed /
-          ts.my_day_tasks_total) * 100 | number: '1.0-0') + '%' : '0%' }} 完成率
-        </div>
-        } @else {
-        <div class="mt-1 text-sm text-zinc-600">載入中...</div>
-        }
-        <a
-          routerLink="/admin/today"
-          class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300"
-          >→ Today</a
-        >
-      </div>
-
-      <!-- Card 2: Active Insights -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-        <div class="text-xs text-zinc-500">Active Insights</div>
-        <div class="mt-1 text-sm font-medium text-zinc-100">
-          {{ insightCount() }} 個待驗證
-        </div>
-        @if (latestHypothesis()) {
-        <div class="mt-0.5 truncate text-xs text-zinc-400">
-          {{ latestHypothesis() }}
-        </div>
-        }
-        <a
-          routerLink="/admin/insights"
-          class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300"
-          >→ Insights</a
-        >
-      </div>
-
-      <!-- Card 3: 本週 Capacity -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-        <div class="text-xs text-zinc-500">本週 Capacity</div>
-        @if (weekCapacity() !== null) {
-        <div class="mt-1 flex items-center gap-1">
-          <span class="text-sm font-medium text-zinc-100"
-            >{{ weekCapacity() }}</span
-          >
-          <span
-            class="text-xs"
-            [class]="capacityTrend() === 'up'
-                ? 'text-emerald-400'
-                : capacityTrend() === 'down'
-                  ? 'text-red-400'
-                  : 'text-zinc-500'"
-          >
-            {{ capacityTrend() === 'up' ? '↑' : capacityTrend() === 'down' ? '↓'
-            : '→' }}
-          </span>
-        </div>
-        <div class="mt-0.5 text-xs text-zinc-400">avg tasks/day</div>
-        } @else {
-        <div class="mt-1 text-sm text-zinc-600">尚無資料</div>
-        }
-        <a
-          routerLink="/admin/journal"
-          [queryParams]="{ tab: 'analytics' }"
-          class="mt-2 inline-block text-xs text-zinc-500 no-underline hover:text-zinc-300"
-          >→ Analytics</a
-        >
-      </div>
-
-      <!-- Card 4: Quick Sync -->
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-        <div class="text-xs text-zinc-500">Quick Sync</div>
-        <div class="mt-2 flex items-center gap-2">
-          <button
-            type="button"
-            class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
-            [disabled]="isSyncingNotion()"
-            (click)="syncNotion()"
-          >
-            @if (isSyncingNotion()) {
-            <lucide-icon
-              [img]="Loader2Icon"
-              [size]="12"
-              class="inline animate-spin"
-            />
-            } @else { Notion }
-          </button>
-          <button
-            type="button"
-            class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
-            [disabled]="isSyncingObsidian()"
-            (click)="syncObsidian()"
-          >
-            @if (isSyncingObsidian()) {
-            <lucide-icon
-              [img]="Loader2Icon"
-              [size]="12"
-              class="inline animate-spin"
-            />
-            } @else { Obsidian }
-          </button>
-          <button
-            type="button"
-            class="rounded-sm border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
-            [disabled]="isSyncingCollect()"
-            (click)="syncCollect()"
-          >
-            @if (isSyncingCollect()) {
-            <lucide-icon
-              [img]="Loader2Icon"
-              [size]="12"
-              class="inline animate-spin"
-            />
-            } @else { Collect }
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Statistics Cards from API -->
+    <!-- Statistics Cards -->
     @if (isLoadingStats()) {
     <div class="mb-8 flex items-center justify-center py-8">
       <lucide-icon
@@ -148,13 +31,14 @@
       />
     </div>
     } @else if (statCards().length > 0) {
-    <div
-      class="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6"
-    >
+    <div class="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
       @for (card of statCards(); track card.label) {
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4">
+      <a
+        [routerLink]="card.route"
+        class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 no-underline transition-colors hover:border-zinc-700"
+      >
         <div class="flex items-center gap-3">
-          <div class="rounded-sm p-2" [class]="card.iconBg">
+          <div class="rounded-xs p-2" [class]="card.iconBg">
             <lucide-icon
               [img]="card.icon"
               [size]="18"
@@ -167,16 +51,16 @@
           </div>
         </div>
         <div class="mt-2 truncate text-xs text-zinc-600">{{ card.sub }}</div>
-      </div>
+      </a>
       }
     </div>
     }
 
-    <!-- Drift Report + Learning Dashboard -->
+    <!-- Drift Report + Active Projects -->
     <div class="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- Drift Report -->
       @if (drift(); as dr) {
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50">
         <div class="border-b border-zinc-800 px-6 py-4">
           <h2 class="text-sm font-medium text-zinc-300">精力偏差分析</h2>
           <p class="mt-0.5 text-xs text-zinc-600">{{ dr.period }}</p>
@@ -202,7 +86,6 @@
                   number: '1.0-0' }}%
                 </span>
               </div>
-              <!-- Stacked bar: goal% vs event% -->
               <div class="flex h-2 gap-0.5 overflow-hidden rounded-full">
                 <div
                   class="rounded-full bg-sky-700"
@@ -239,77 +122,68 @@
       </div>
       }
 
-      <!-- Learning Dashboard -->
-      @if (learning(); as lr) {
-      <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
-        <div class="border-b border-zinc-800 px-6 py-4">
-          <h2 class="text-sm font-medium text-zinc-300">學習追蹤</h2>
+      <!-- Active Projects -->
+      <div class="rounded-xs border border-zinc-800 bg-zinc-900/50">
+        <div
+          class="flex items-center justify-between border-b border-zinc-800 px-6 py-4"
+        >
+          <h2 class="text-sm font-medium text-zinc-300">進行中的專案</h2>
+          <a
+            routerLink="/admin/projects"
+            class="text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-300"
+          >
+            全部專案
+          </a>
         </div>
         <div class="px-6 py-4">
-          <!-- Quick stats -->
-          <div class="mb-4 grid grid-cols-3 gap-3">
-            <div class="text-center">
-              <div class="text-lg font-bold text-zinc-100">
-                {{ lr.notes.last_week }}
-              </div>
-              <div class="text-xs text-zinc-500">This Week</div>
-            </div>
-            <div class="text-center">
-              <div class="flex items-center justify-center gap-1">
-                <div class="text-lg font-bold text-zinc-100">
-                  {{ lr.activity.this_week }}
+          @if (activeProjects().length === 0) {
+          <p class="py-4 text-center text-xs text-zinc-600">
+            目前沒有進行中的專案
+          </p>
+          } @else {
+          <div class="space-y-3">
+            @for (project of activeProjects(); track project.id) {
+            <div
+              class="flex items-center justify-between rounded-xs border border-zinc-800 px-4 py-3"
+            >
+              <div class="min-w-0">
+                <div class="truncate text-sm font-medium text-zinc-200">
+                  {{ project.title }}
                 </div>
-                <span
-                  class="text-xs"
-                  [class]="lr.activity.trend === 'up'
-                      ? 'text-emerald-400'
-                      : lr.activity.trend === 'down'
-                        ? 'text-red-400'
-                        : 'text-zinc-500'"
-                >
-                  {{ lr.activity.trend === 'up' ? '↑' : lr.activity.trend ===
-                  'down' ? '↓' : '→' }}
-                </span>
+                @if (project.description) {
+                <div class="mt-0.5 line-clamp-1 text-xs text-zinc-500">
+                  {{ project.description }}
+                </div>
+                }
               </div>
-              <div class="text-xs text-zinc-500">Activity</div>
-            </div>
-          </div>
-
-          <!-- Top Tags -->
-          @if (lr.top_tags.length > 0) {
-          <div class="border-t border-zinc-800 pt-3">
-            <div class="mb-2 text-xs font-medium text-zinc-400">Top Tags</div>
-            <div class="flex flex-wrap gap-1.5">
-              @for (tag of lr.top_tags.slice(0, 10); track tag.name) {
               <span
-                class="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300"
+                class="ml-3 shrink-0 rounded-full border px-2 py-0.5 text-xs"
+                [class]="getProjectStatusClass(project.status)"
               >
-                {{ tag.name }}
-                <span class="text-zinc-500">{{ tag.count }}</span>
+                {{ getProjectStatusLabel(project.status) }}
               </span>
-              }
             </div>
+            }
           </div>
           }
         </div>
       </div>
-      }
     </div>
 
     <!-- Recent Articles -->
-    <div class="rounded-sm border border-zinc-800 bg-zinc-900/50">
+    <div class="rounded-xs border border-zinc-800 bg-zinc-900/50">
       <div
         class="flex items-center justify-between border-b border-zinc-800 px-6 py-4"
       >
         <h2 class="flex items-center gap-2 text-sm font-medium text-zinc-300">
           <lucide-icon [img]="ClockIcon" [size]="16" />
-          Recently Updated Articles
+          最近更新的內容
         </h2>
         <a
-          routerLink="/articles"
+          routerLink="/admin/contents"
           class="text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-300"
         >
-          View All
+          全部內容
         </a>
       </div>
 
@@ -358,16 +232,23 @@
               <td class="px-6 py-4">
                 <div class="flex items-center gap-1">
                   <a
+                    [routerLink]="['/admin/editor', article.id]"
+                    class="rounded-xs p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                    aria-label="編輯文章"
+                  >
+                    <lucide-icon [img]="FileEditIcon" [size]="14" />
+                  </a>
+                  <a
                     [routerLink]="['/articles', article.id]"
-                    class="rounded-sm p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-                    aria-label="Preview article"
+                    class="rounded-xs p-1.5 text-zinc-400 no-underline transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                    aria-label="預覽文章"
                   >
                     <lucide-icon [img]="EyeIcon" [size]="14" />
                   </a>
                   <button
                     type="button"
-                    class="rounded-sm p-1.5 text-zinc-400 transition-colors hover:bg-red-900/30 hover:text-red-400"
-                    aria-label="Delete article"
+                    class="rounded-xs p-1.5 text-zinc-400 transition-colors hover:bg-red-900/30 hover:text-red-400"
+                    aria-label="刪除文章"
                     (click)="requestDeleteArticle(article.id, article.title)"
                   >
                     <lucide-icon [img]="Trash2Icon" [size]="14" />
@@ -382,10 +263,8 @@
       } @else {
       <div class="flex flex-col items-center gap-3 py-16 text-center">
         <lucide-icon [img]="FileTextIcon" [size]="40" class="text-zinc-700" />
-        <h3 class="text-sm font-medium text-zinc-300">No articles yet</h3>
-        <p class="text-xs text-zinc-500">
-          透過 Obsidian 或 Notion 同步來新增內容
-        </p>
+        <h3 class="text-sm font-medium text-zinc-300">尚無內容</h3>
+        <p class="text-xs text-zinc-500">點擊右上角「新增文章」開始建立內容</p>
       </div>
       }
     </div>
@@ -394,7 +273,7 @@
     <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
       <a
         routerLink="/admin/projects"
-        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
+        class="flex items-center gap-3 rounded-xs border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
       >
         <lucide-icon [img]="FolderOpenIcon" [size]="20" class="text-zinc-400" />
         <div>
@@ -405,23 +284,23 @@
         </div>
       </a>
       <a
-        routerLink="/admin/tasks"
-        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
-      >
-        <lucide-icon [img]="ClockIcon" [size]="20" class="text-zinc-400" />
-        <div>
-          <div class="text-sm font-medium text-zinc-200">Tasks</div>
-          <div class="text-xs text-zinc-500">Notion 任務看板</div>
-        </div>
-      </a>
-      <a
         routerLink="/admin/goals"
-        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
+        class="flex items-center gap-3 rounded-xs border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
       >
         <lucide-icon [img]="TrendingUpIcon" [size]="20" class="text-zinc-400" />
         <div>
           <div class="text-sm font-medium text-zinc-200">Goals</div>
           <div class="text-xs text-zinc-500">目標追蹤</div>
+        </div>
+      </a>
+      <a
+        routerLink="/admin/activity"
+        class="flex items-center gap-3 rounded-xs border border-zinc-800 bg-zinc-900/50 px-5 py-4 no-underline transition-colors hover:border-zinc-700"
+      >
+        <lucide-icon [img]="BookOpenIcon" [size]="20" class="text-zinc-400" />
+        <div>
+          <div class="text-sm font-medium text-zinc-200">Activity</div>
+          <div class="text-xs text-zinc-500">活動紀錄</div>
         </div>
       </a>
     </div>

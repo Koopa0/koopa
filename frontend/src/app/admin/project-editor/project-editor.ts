@@ -17,6 +17,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LucideAngularModule, ArrowLeft, Save, Plus, X } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { LoadingSpinnerComponent } from '../../shared/components';
 import type {
   ProjectStatus,
   ApiCreateProjectRequest,
@@ -27,7 +28,7 @@ import type { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard'
 @Component({
   selector: 'app-project-editor',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule],
+  imports: [ReactiveFormsModule, LucideAngularModule, LoadingSpinnerComponent],
   templateUrl: './project-editor.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -86,11 +87,9 @@ export class ProjectEditorComponent implements OnInit, HasUnsavedChanges {
       status: ['in-progress' as ProjectStatus, Validators.required],
     });
 
-    this.projectForm.valueChanges
-      .pipe(takeUntilDestroyed())
-      .subscribe(() => {
-        this.isFormDirty.set(true);
-      });
+    this.projectForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.isFormDirty.set(true);
+    });
   }
 
   hasUnsavedChanges(): boolean {

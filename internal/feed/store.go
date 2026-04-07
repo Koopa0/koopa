@@ -13,24 +13,17 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
-	"github.com/Koopa0/koopa0.dev/internal/notify"
 )
 
 // Store handles database operations for feeds.
 type Store struct {
 	q      *db.Queries
-	alerts notify.Notifier
 	logger *slog.Logger
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX, logger *slog.Logger) *Store {
 	return &Store{q: db.New(dbtx), logger: logger}
-}
-
-// SetAlerts sets the alert sender for auto-disable notifications.
-func (s *Store) SetAlerts(alerts notify.Notifier) {
-	s.alerts = alerts
 }
 
 // Feeds returns all feeds, optionally filtered by schedule.
@@ -102,7 +95,6 @@ func (s *Store) CreateFeed(ctx context.Context, p *CreateParams) (*Feed, error) 
 		Url:          p.URL,
 		Name:         p.Name,
 		Schedule:     p.Schedule,
-		Topics:       topics,
 		FilterConfig: filterJSON,
 	})
 	if err != nil {
@@ -130,7 +122,6 @@ func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p *UpdateParams) (
 		Url:          p.URL,
 		Name:         p.Name,
 		Schedule:     p.Schedule,
-		Topics:       p.Topics,
 		Enabled:      p.Enabled,
 		FilterConfig: filterJSON,
 	})
@@ -160,7 +151,7 @@ func (s *Store) DeleteFeed(ctx context.Context, id uuid.UUID) error {
 func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg string) error {
 	failures, err := s.q.IncrementFeedFailure(ctx, db.IncrementFeedFailureParams{
 		ID:        id,
-		LastError: errMsg,
+		LastError: &errMsg,
 	})
 	if err != nil {
 		return fmt.Errorf("incrementing feed failure %s: %w", id, err)
@@ -174,17 +165,9 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 	s.logger.Warn("auto-disabling feed", "feed_id", id, "failures", failures)
 	if err := s.q.AutoDisableFeed(ctx, db.AutoDisableFeedParams{
 		ID:             id,
-		DisabledReason: reason,
+		DisabledReason: &reason,
 	}); err != nil {
 		return fmt.Errorf("auto-disabling feed %s: %w", id, err)
-	}
-
-	if s.alerts != nil {
-		msg := fmt.Sprintf("[ALERT] Feed auto-disabled\nFeed ID: %s\nFailures: %d\nLast error: %s",
-			id, failures, errMsg)
-		if sendErr := s.alerts.Send(ctx, msg); sendErr != nil {
-			s.logger.Error("sending feed disable alert", "feed_id", id, "error", sendErr)
-		}
 	}
 
 	return nil
@@ -194,8 +177,8 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 func (s *Store) ResetFailure(ctx context.Context, id uuid.UUID, etag, lastModified string) error {
 	if err := s.q.ResetFeedFailure(ctx, db.ResetFeedFailureParams{
 		ID:           id,
-		Etag:         etag,
-		LastModified: lastModified,
+		Etag:         &etag,
+		LastModified: &lastModified,
 	}); err != nil {
 		return fmt.Errorf("resetting feed failure %s: %w", id, err)
 	}
@@ -209,17 +192,24 @@ func dbToFeed(r *db.Feed) Feed {
 		URL:                 r.Url,
 		Name:                r.Name,
 		Schedule:            r.Schedule,
-		Topics:              r.Topics,
 		Enabled:             r.Enabled,
 		Priority:            r.Priority,
-		Etag:                r.Etag,
-		LastModified:        r.LastModified,
+		Etag:                derefStr(r.Etag),
+		LastModified:        derefStr(r.LastModified),
 		LastFetchedAt:       r.LastFetchedAt,
 		ConsecutiveFailures: int(r.ConsecutiveFailures),
-		LastError:           r.LastError,
-		DisabledReason:      r.DisabledReason,
+		LastError:           derefStr(r.LastError),
+		DisabledReason:      derefStr(r.DisabledReason),
 		Filter:              ParseFilterConfig(r.FilterConfig),
 		CreatedAt:           r.CreatedAt,
 		UpdatedAt:           r.UpdatedAt,
 	}
+}
+
+// derefStr safely dereferences a *string, returning "" for nil.
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

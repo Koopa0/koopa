@@ -71,7 +71,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: map[string]any{
 		"title":      updated.Title,
 		"status":     string(updated.Status),
-		"area":       updated.Area,
+		"area_id":    updated.AreaID,
 		"updated_at": updated.UpdatedAt,
 	}})
 }

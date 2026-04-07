@@ -34,7 +34,6 @@ type Item struct {
 	Title            string     `json:"title"`
 	OriginalContent  *string    `json:"original_content,omitempty"`
 	RelevanceScore   float64    `json:"relevance_score"`
-	Topics           []string   `json:"topics"`
 	Status           Status     `json:"status"`
 	CuratedContentID *uuid.UUID `json:"curated_content_id,omitempty"`
 	CollectedAt      time.Time  `json:"collected_at"`
@@ -61,7 +60,6 @@ type CreateParams struct {
 	SourceURL       string     `json:"source_url"`
 	Title           string     `json:"title"`
 	OriginalContent string     `json:"original_content"`
-	Topics          []string   `json:"topics"`
 	URLHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id,omitempty"`
 	RelevanceScore  float64    `json:"relevance_score"`

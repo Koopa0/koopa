@@ -2,332 +2,359 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa0.dev/internal/content"
+	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
-	"github.com/Koopa0/koopa0.dev/internal/retrieval"
 )
 
-// --- B1: tag_summary ---
+// --- start_session ---
 
-// TagSummaryInput is the input for the tag_summary tool.
-type TagSummaryInput struct {
-	Project   string  `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	TagPrefix string  `json:"tag_prefix,omitempty" jsonschema_description:"only return tags starting with this prefix (e.g. weakness: or improvement:)"`
-	Days      FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 90, max 365)"`
+type StartSessionInput struct {
+	Domain          string  `json:"domain" jsonschema:"required" jsonschema_description:"Learning domain (e.g. leetcode, japanese, system-design)"`
+	Mode            string  `json:"mode" jsonschema:"required" jsonschema_description:"Session mode: retrieval, practice, mixed, review, reading"`
+	DailyPlanItemID *string `json:"daily_plan_item_id,omitempty" jsonschema_description:"Optional UUID linking to daily plan"`
 }
 
-func (s *Server) getTagSummary(ctx context.Context, _ *mcp.CallToolRequest, input TagSummaryInput) (*mcp.CallToolResult, learning.TagSummaryResult, error) {
-	if input.Project == "" {
-		return nil, learning.TagSummaryResult{}, fmt.Errorf("project is required")
-	}
-
-	proj, err := s.resolveProjectChain(ctx, input.Project)
-	if err != nil {
-		return nil, learning.TagSummaryResult{}, err
-	}
-
-	days := clamp(int(input.Days), 1, 365, 90)
-	since := time.Now().AddDate(0, 0, -days)
-
-	entries, err := s.contents.TagEntries(ctx, content.TypeTIL, &proj.ID, since)
-	if err != nil {
-		return nil, learning.TagSummaryResult{}, fmt.Errorf("querying tag entries: %w", err)
-	}
-
-	return nil, learning.TagSummary(entries, input.TagPrefix, days), nil
+type StartSessionOutput struct {
+	Session learning.Session `json:"session"`
 }
 
-// --- B2: coverage_matrix ---
-
-// CoverageMatrixInput is the input for the coverage_matrix tool.
-type CoverageMatrixInput struct {
-	Project string  `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Days    FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
-}
-
-func (s *Server) getCoverageMatrix(ctx context.Context, _ *mcp.CallToolRequest, input CoverageMatrixInput) (*mcp.CallToolResult, learning.CoverageMatrixResult, error) {
-	if input.Project == "" {
-		return nil, learning.CoverageMatrixResult{}, fmt.Errorf("project is required")
+func (s *Server) startSession(ctx context.Context, _ *sdkmcp.CallToolRequest, input StartSessionInput) (*sdkmcp.CallToolResult, StartSessionOutput, error) {
+	if input.Domain == "" {
+		return nil, StartSessionOutput{}, fmt.Errorf("domain is required")
 	}
 
-	proj, err := s.resolveProjectChain(ctx, input.Project)
-	if err != nil {
-		return nil, learning.CoverageMatrixResult{}, err
+	mode := learning.Mode(input.Mode)
+	switch mode {
+	case learning.ModeRetrieval, learning.ModePractice, learning.ModeMixed,
+		learning.ModeReview, learning.ModeReading:
+		// valid
+	default:
+		return nil, StartSessionOutput{}, fmt.Errorf("invalid mode %q", input.Mode)
 	}
 
-	days := clamp(int(input.Days), 1, 730, 365)
-	since := time.Now().AddDate(0, 0, -days)
-
-	// Use RichTagEntries to get ai_metadata for difficulty + concept mastery.
-	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
-	if err != nil {
-		return nil, learning.CoverageMatrixResult{}, fmt.Errorf("querying rich tag entries: %w", err)
-	}
-
-	return nil, learning.CoverageMatrixRich(entries, days), nil
-}
-
-// --- B3: weakness_trend ---
-
-// WeaknessTrendInput is the input for the weakness_trend tool.
-type WeaknessTrendInput struct {
-	Project string  `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Tag     string  `json:"tag" jsonschema_description:"weakness tag to track (e.g. weakness:constraint-analysis). Required."`
-	Days    FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 180)"`
-}
-
-func (s *Server) getWeaknessTrend(ctx context.Context, _ *mcp.CallToolRequest, input WeaknessTrendInput) (*mcp.CallToolResult, learning.WeaknessTrendResult, error) {
-	if input.Project == "" {
-		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("project is required")
-	}
-	if input.Tag == "" {
-		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("tag is required")
-	}
-
-	proj, err := s.resolveProjectChain(ctx, input.Project)
-	if err != nil {
-		return nil, learning.WeaknessTrendResult{}, err
-	}
-
-	days := clamp(int(input.Days), 1, 180, 30)
-	since := time.Now().AddDate(0, 0, -days)
-
-	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
-	if err != nil {
-		return nil, learning.WeaknessTrendResult{}, fmt.Errorf("querying rich tag entries: %w", err)
-	}
-
-	return nil, learning.WeaknessTrend(entries, input.Tag, days), nil
-}
-
-// --- B4: get_learning_timeline ---
-
-// LearningTimelineInput is the input for the learning_timeline tool.
-type LearningTimelineInput struct {
-	Project string  `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
-	Days    FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 14, max 90)"`
-}
-
-func (s *Server) getLearningTimeline(ctx context.Context, _ *mcp.CallToolRequest, input LearningTimelineInput) (*mcp.CallToolResult, learning.TimelineResult, error) {
-	var projectID *uuid.UUID
-	if input.Project != "" {
-		proj, err := s.resolveProjectChain(ctx, input.Project)
+	var planItemID *uuid.UUID
+	if input.DailyPlanItemID != nil && *input.DailyPlanItemID != "" {
+		id, err := uuid.Parse(*input.DailyPlanItemID)
 		if err != nil {
-			return nil, learning.TimelineResult{}, err
+			return nil, StartSessionOutput{}, fmt.Errorf("invalid daily_plan_item_id: %w", err)
 		}
-		projectID = &proj.ID
+		planItemID = &id
 	}
 
-	days := clamp(int(input.Days), 1, 90, 14)
-	since := time.Now().AddDate(0, 0, -days)
-
-	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, projectID, since)
+	session, err := s.learn.StartSession(ctx, input.Domain, mode, planItemID)
 	if err != nil {
-		return nil, learning.TimelineResult{}, fmt.Errorf("querying rich tag entries: %w", err)
+		return nil, StartSessionOutput{}, fmt.Errorf("starting session: %w", err)
 	}
 
-	return nil, learning.Timeline(entries, time.Now()), nil
+	s.logger.Info("start_session", "id", session.ID, "domain", input.Domain, "mode", input.Mode)
+	return nil, StartSessionOutput{Session: *session}, nil
 }
 
-// --- B5: log_retrieval_attempt ---
+// --- record_attempt ---
 
-// LogRetrievalAttemptInput is the input for the log_retrieval_attempt tool.
-type LogRetrievalAttemptInput struct {
-	ContentSlug string  `json:"content_slug" jsonschema:"required" jsonschema_description:"TIL slug to record retrieval for"`
-	Rating      FlexInt `json:"rating" jsonschema:"required" jsonschema_description:"recall quality: 1=again(forgot), 2=hard(partial recall), 3=good(remembered), 4=easy"`
-	Tag         *string `json:"tag,omitempty" jsonschema_description:"specific weakness/concept tag (omit for whole-content retrieval)"`
+type RecordAttemptInput struct {
+	SessionID    string             `json:"session_id" jsonschema:"required" jsonschema_description:"Active session UUID"`
+	Item         AttemptItem        `json:"item" jsonschema:"required" jsonschema_description:"Learning item"`
+	Outcome      string             `json:"outcome" jsonschema:"required" jsonschema_description:"Semantic (got it, needed help, etc) or raw enum"`
+	Duration     *FlexInt           `json:"duration_minutes,omitempty" jsonschema_description:"Time spent in minutes"`
+	StuckAt      *string            `json:"stuck_at,omitempty" jsonschema_description:"Where you got stuck (free text)"`
+	Approach     *string            `json:"approach_used,omitempty" jsonschema_description:"Approach used (free text)"`
+	Observations []ObservationInput `json:"observations,omitempty" jsonschema_description:"Concept observations"`
 }
 
-func (s *Server) logRetrievalAttempt(ctx context.Context, _ *mcp.CallToolRequest, input LogRetrievalAttemptInput) (*mcp.CallToolResult, retrieval.ReviewResult, error) {
-	if input.ContentSlug == "" {
-		return nil, retrieval.ReviewResult{}, fmt.Errorf("content_slug is required")
-	}
-	rating := int(input.Rating)
-	if rating < 1 || rating > 4 {
-		return nil, retrieval.ReviewResult{}, fmt.Errorf("invalid rating %d (valid: 1=again, 2=hard, 3=good, 4=easy)", rating)
-	}
+type AttemptItem struct {
+	Title      string  `json:"title" jsonschema:"required"`
+	ExternalID *string `json:"external_id,omitempty"`
+	Domain     *string `json:"domain,omitempty"`
+	Difficulty *string `json:"difficulty,omitempty"`
+}
 
-	c, err := s.contents.ContentBySlug(ctx, input.ContentSlug)
+type ObservationInput struct {
+	Concept    string  `json:"concept" jsonschema:"required" jsonschema_description:"Concept slug"`
+	Signal     string  `json:"signal" jsonschema:"required" jsonschema_description:"weakness, improvement, or mastery"`
+	Category   string  `json:"category" jsonschema:"required" jsonschema_description:"Domain-specific category"`
+	Severity   *string `json:"severity,omitempty" jsonschema_description:"minor, moderate, critical (weakness only)"`
+	Detail     *string `json:"detail,omitempty"`
+	Confidence string  `json:"confidence,omitempty" jsonschema_description:"high or low (default high)"`
+}
+
+type RecordAttemptOutput struct {
+	Attempt              learning.Attempt `json:"attempt"`
+	ObservationsRecorded int                  `json:"observations_recorded"`
+	PendingObservations  []ObservationInput   `json:"pending_observations,omitempty"`
+}
+
+//nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
+func (s *Server) recordAttempt(ctx context.Context, _ *sdkmcp.CallToolRequest, input RecordAttemptInput) (*sdkmcp.CallToolResult, RecordAttemptOutput, error) {
+	sessionID, err := uuid.Parse(input.SessionID)
 	if err != nil {
-		return nil, retrieval.ReviewResult{}, fmt.Errorf("content not found: %s", input.ContentSlug)
+		return nil, RecordAttemptOutput{}, fmt.Errorf("invalid session_id: %w", err)
 	}
 
-	result, err := s.retrieval.ReviewCard(ctx, c.ID, input.Tag, fsrs.Rating(rating), time.Now())
+	// Verify session is active.
+	session, err := s.learn.ActiveSession(ctx)
 	if err != nil {
-		return nil, retrieval.ReviewResult{}, fmt.Errorf("recording review: %w", err)
+		return nil, RecordAttemptOutput{}, fmt.Errorf("no active session: %w", err)
+	}
+	if session.ID != sessionID {
+		return nil, RecordAttemptOutput{}, fmt.Errorf("session %s is not the active session", sessionID)
 	}
 
-	return nil, *result, nil
-}
+	// Map outcome.
+	outcome, err := learning.MapOutcome(session.Mode, input.Outcome)
+	if err != nil {
+		return nil, RecordAttemptOutput{}, err
+	}
 
-// --- B6: get_retrieval_queue ---
+	// Find or create item.
+	domain := session.Domain
+	if input.Item.Domain != nil && *input.Item.Domain != "" {
+		domain = *input.Item.Domain
+	}
+	itemID, err := s.learn.FindOrCreateItem(ctx, domain, input.Item.Title, input.Item.ExternalID, input.Item.Difficulty)
+	if err != nil {
+		return nil, RecordAttemptOutput{}, err
+	}
 
-// RetrievalQueueInput is the input for the retrieval_queue tool.
-type RetrievalQueueInput struct {
-	Project string  `json:"project,omitempty" jsonschema_description:"project slug, alias, or title (optional — omit for all projects)"`
-	Limit   FlexInt `json:"limit,omitempty" jsonschema_description:"max items to return (default 10, max 50)"`
-}
-
-func (s *Server) getRetrievalQueue(ctx context.Context, _ *mcp.CallToolRequest, input RetrievalQueueInput) (*mcp.CallToolResult, retrieval.QueueResult, error) {
-	var projectID *uuid.UUID
-	if input.Project != "" {
-		proj, err := s.resolveProjectChain(ctx, input.Project)
-		if err != nil {
-			return nil, retrieval.QueueResult{}, err
+	// Record attempt.
+	var dur *int32
+	if input.Duration != nil {
+		d := clamp(int(*input.Duration), 1, 1440, 0) // cap at 24 hours
+		if d > 0 {
+			v := int32(d) // #nosec G115 — clamped above
+			dur = &v
 		}
-		projectID = &proj.ID
 	}
-
-	limit := clamp(int(input.Limit), 1, 50, 10)
-
-	items, err := s.retrieval.Queue(ctx, projectID, time.Now(), limit)
+	var metadata json.RawMessage
+	attempt, err := s.learn.RecordAttempt(ctx, itemID, sessionID, outcome, dur, input.StuckAt, input.Approach, metadata)
 	if err != nil {
-		s.logger.Error("get_retrieval_queue failed", "error", err, "project", input.Project, "limit", limit)
-		return nil, retrieval.QueueResult{}, fmt.Errorf("querying retrieval queue: %w", err)
+		return nil, RecordAttemptOutput{}, err
 	}
+	attempt.ItemTitle = input.Item.Title
+	attempt.ItemExternalID = input.Item.ExternalID
 
-	s.logger.Info("get_retrieval_queue ok", "items", len(items), "project", input.Project)
-	return nil, retrieval.QueueResult{Items: items}, nil
+	recorded, pending := s.processObservations(ctx, attempt.ID, domain, input.Observations)
+
+	s.logger.Info("record_attempt", "session", sessionID, "item", input.Item.Title, "outcome", outcome,
+		"observations", recorded, "pending", len(pending))
+	return nil, RecordAttemptOutput{
+		Attempt:              *attempt,
+		ObservationsRecorded: recorded,
+		PendingObservations:  pending,
+	}, nil
 }
 
-// --- B8: get_mastery_map ---
+// --- end_session ---
 
-// MasteryMapInput is the input for the mastery_map tool.
-type MasteryMapInput struct {
-	Project  string          `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Patterns FlexStringSlice `json:"patterns,omitempty" jsonschema_description:"optional filter: only include these patterns (e.g. [\"binary-search\", \"dp\"]). Omit for all patterns."`
-	Days     FlexInt         `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
+type EndSessionInput struct {
+	SessionID  string  `json:"session_id" jsonschema:"required" jsonschema_description:"Session UUID to end"`
+	Reflection *string `json:"reflection,omitempty" jsonschema_description:"Optional reflection text (creates journal entry)"`
 }
 
-func (s *Server) getMasteryMap(ctx context.Context, _ *mcp.CallToolRequest, input MasteryMapInput) (*mcp.CallToolResult, learning.MasteryMapResult, error) {
-	if input.Project == "" {
-		return nil, learning.MasteryMapResult{}, fmt.Errorf("project is required")
-	}
+type EndSessionOutput struct {
+	Session  learning.Session   `json:"session"`
+	Attempts []learning.Attempt `json:"attempts"`
+	Duration string                 `json:"duration"`
+}
 
-	proj, err := s.resolveProjectChain(ctx, input.Project)
+func (s *Server) endSession(ctx context.Context, _ *sdkmcp.CallToolRequest, input EndSessionInput) (*sdkmcp.CallToolResult, EndSessionOutput, error) {
+	sessionID, err := uuid.Parse(input.SessionID)
 	if err != nil {
-		return nil, learning.MasteryMapResult{}, err
+		return nil, EndSessionOutput{}, fmt.Errorf("invalid session_id: %w", err)
 	}
 
+	// Optionally create reflection journal entry.
+	var journalID *int64
+	if input.Reflection != nil && *input.Reflection != "" {
+		entry, jErr := s.journal.Create(ctx, &journal.CreateParams{
+			Kind:      journal.KindReflection,
+			Source:    s.participant,
+			Content:   *input.Reflection,
+			EntryDate: s.today(),
+		})
+		if jErr == nil {
+			journalID = &entry.ID
+		} else {
+			s.logger.Warn("end_session: journal creation failed", "error", jErr)
+		}
+	}
+
+	session, err := s.learn.EndSession(ctx, sessionID, journalID)
+	if err != nil {
+		return nil, EndSessionOutput{}, fmt.Errorf("ending session: %w", err)
+	}
+
+	attempts, _ := s.learn.AttemptsBySession(ctx, sessionID)
+
+	duration := "unknown"
+	if session.EndedAt != nil {
+		dur := session.EndedAt.Sub(session.StartedAt)
+		duration = fmt.Sprintf("%dm", int(dur.Minutes()))
+	}
+
+	s.logger.Info("end_session", "id", sessionID, "duration", duration, "attempts", len(attempts))
+	return nil, EndSessionOutput{
+		Session:  *session,
+		Attempts: attempts,
+		Duration: duration,
+	}, nil
+}
+
+// --- learning_dashboard ---
+
+type LearningDashboardInput struct {
+	Domain *string `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
+	View   *string `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
+	Days   FlexInt `json:"days,omitempty" jsonschema_description:"Lookback period in days (default 30)"`
+}
+
+type LearningDashboardOutput struct {
+	View       string                           `json:"view"`
+	Total      int                              `json:"total"`
+	Sessions   []learning.Session           `json:"sessions,omitempty"`
+	Mastery    []learning.ConceptMasteryRow `json:"mastery,omitempty"`
+	Weaknesses []learning.WeaknessRow       `json:"weaknesses,omitempty"`
+	Retrieval  []learning.RetrievalItem     `json:"retrieval,omitempty"`
+	Timeline   []learning.TimelineSession   `json:"timeline,omitempty"`
+	Variations []learning.ItemRelation      `json:"variations,omitempty"`
+}
+
+func (s *Server) learningDashboard(ctx context.Context, _ *sdkmcp.CallToolRequest, input LearningDashboardInput) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
 	days := clamp(int(input.Days), 1, 365, 30)
 	since := time.Now().AddDate(0, 0, -days)
 
-	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
-	if err != nil {
-		return nil, learning.MasteryMapResult{}, fmt.Errorf("querying rich tag entries: %w", err)
+	view := "overview"
+	if input.View != nil && *input.View != "" {
+		view = *input.View
 	}
 
-	// Fetch FSRS regression signals (optional — nil retrieval store means no FSRS data).
-	var regressions []retrieval.RegressionCard
-	if s.retrieval != nil {
-		regressions, err = s.retrieval.Regressions(ctx, &proj.ID, since)
-		if err != nil {
-			// non-fatal: log and continue without regression data
-			s.logger.Warn("mastery map: failed to query regressions", "error", err)
+	var domain *string
+	if input.Domain != nil && *input.Domain != "" {
+		domain = input.Domain
+	}
+
+	switch view {
+	case "overview":
+		return s.dashboardOverview(ctx, domain, since)
+	case "mastery":
+		return s.dashboardMastery(ctx, domain, since)
+	case "weaknesses":
+		return s.dashboardWeaknesses(ctx, domain, since)
+	case "retrieval":
+		return s.dashboardRetrieval(ctx, domain)
+	case "timeline":
+		return s.dashboardTimeline(ctx, domain, since)
+	case "variations":
+		return s.dashboardVariations(ctx, domain)
+	default:
+		return nil, LearningDashboardOutput{}, fmt.Errorf("unknown view %q", view)
+	}
+}
+
+func (s *Server) dashboardOverview(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	sessions, err := s.learn.RecentSessions(ctx, domain, since, 50)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying sessions: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:     "overview",
+		Sessions: sessions,
+		Total:    len(sessions),
+	}, nil
+}
+
+func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	rows, err := s.learn.ConceptMastery(ctx, domain, since)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:    "mastery",
+		Mastery: rows,
+		Total:   len(rows),
+	}, nil
+}
+
+func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	rows, err := s.learn.WeaknessAnalysis(ctx, domain, since)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying weakness analysis: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:       "weaknesses",
+		Weaknesses: rows,
+		Total:      len(rows),
+	}, nil
+}
+
+func (s *Server) dashboardRetrieval(ctx context.Context, domain *string) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	items, err := s.learn.RetrievalQueue(ctx, domain, time.Now(), 50)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying retrieval queue: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:      "retrieval",
+		Retrieval: items,
+		Total:     len(items),
+	}, nil
+}
+
+func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	sessions, err := s.learn.SessionTimeline(ctx, domain, since)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying session timeline: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:     "timeline",
+		Timeline: sessions,
+		Total:    len(sessions),
+	}, nil
+}
+
+func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+	relations, err := s.learn.ItemVariations(ctx, domain, 100)
+	if err != nil {
+		return nil, LearningDashboardOutput{}, fmt.Errorf("querying item variations: %w", err)
+	}
+	return nil, LearningDashboardOutput{
+		View:       "variations",
+		Variations: relations,
+		Total:      len(relations),
+	}, nil
+}
+
+// processObservations records high-confidence observations and returns low-confidence ones as pending.
+func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) (int, []ObservationInput) {
+	var recorded int
+	var pending []ObservationInput
+	for i := range observations {
+		obs := &observations[i]
+		confidence := obs.Confidence
+		if confidence == "" {
+			confidence = "high"
 		}
+		if confidence == "low" {
+			pending = append(pending, *obs)
+			continue
+		}
+
+		conceptID, cErr := s.learn.FindOrCreateConcept(ctx, obs.Concept, obs.Concept, domain, "skill")
+		if cErr != nil {
+			s.logger.Warn("observation: concept creation failed", "concept", obs.Concept, "error", cErr)
+			continue
+		}
+		if _, oErr := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail); oErr != nil {
+			s.logger.Warn("observation: recording failed", "concept", obs.Concept, "error", oErr)
+			continue
+		}
+		recorded++
 	}
-
-	return nil, learning.MasteryMap(entries, regressions, []string(input.Patterns), days), nil
-}
-
-// --- B9: get_concept_gaps ---
-
-// ConceptGapsInput is the input for the concept_gaps tool.
-type ConceptGapsInput struct {
-	Project       string          `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	MasteryFilter FlexStringSlice `json:"mastery_filter,omitempty" jsonschema_description:"which mastery levels to include (default: [\"guided\", \"told\"]). Valid: independent, independent_after_hint, guided, told, not_explored."`
-	Days          FlexInt         `json:"days,omitempty" jsonschema_description:"lookback period in days (default 30, max 365)"`
-}
-
-func (s *Server) getConceptGaps(ctx context.Context, _ *mcp.CallToolRequest, input ConceptGapsInput) (*mcp.CallToolResult, learning.ConceptGapsResult, error) {
-	if input.Project == "" {
-		return nil, learning.ConceptGapsResult{}, fmt.Errorf("project is required")
-	}
-
-	proj, err := s.resolveProjectChain(ctx, input.Project)
-	if err != nil {
-		return nil, learning.ConceptGapsResult{}, err
-	}
-
-	days := clamp(int(input.Days), 1, 365, 30)
-	since := time.Now().AddDate(0, 0, -days)
-
-	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
-	if err != nil {
-		return nil, learning.ConceptGapsResult{}, fmt.Errorf("querying rich tag entries: %w", err)
-	}
-
-	return nil, learning.ConceptGaps(entries, []string(input.MasteryFilter), days), nil
-}
-
-// --- B10: get_variation_map ---
-
-// VariationMapInput is the input for the variation_map tool.
-type VariationMapInput struct {
-	Project            string  `json:"project" jsonschema_description:"project slug, alias, or title (required)"`
-	Pattern            string  `json:"pattern,omitempty" jsonschema_description:"optional pattern filter (e.g. \"binary-search\"). Omit for all patterns."`
-	IncludeUnattempted *bool   `json:"include_unattempted,omitempty" jsonschema_description:"include problems mentioned in variation_links but not yet solved (default true)"`
-	Days               FlexInt `json:"days,omitempty" jsonschema_description:"lookback period in days (default 365, max 730)"`
-}
-
-func (s *Server) getVariationMap(ctx context.Context, _ *mcp.CallToolRequest, input VariationMapInput) (*mcp.CallToolResult, learning.VariationMapResult, error) {
-	if input.Project == "" {
-		return nil, learning.VariationMapResult{}, fmt.Errorf("project is required")
-	}
-
-	proj, err := s.resolveProjectChain(ctx, input.Project)
-	if err != nil {
-		return nil, learning.VariationMapResult{}, err
-	}
-
-	days := clamp(int(input.Days), 1, 730, 365)
-	since := time.Now().AddDate(0, 0, -days)
-
-	includeUnattempted := true
-	if input.IncludeUnattempted != nil {
-		includeUnattempted = *input.IncludeUnattempted
-	}
-
-	entries, err := s.contents.RichTagEntries(ctx, content.TypeTIL, &proj.ID, since)
-	if err != nil {
-		return nil, learning.VariationMapResult{}, fmt.Errorf("querying rich tag entries: %w", err)
-	}
-
-	return nil, learning.VariationMap(entries, input.Pattern, includeUnattempted, days), nil
-}
-
-// --- B7: find_similar_content ---
-
-// FindSimilarContentInput is the input for the find_similar_content tool.
-type FindSimilarContentInput struct {
-	ContentSlug string  `json:"content_slug" jsonschema:"required" jsonschema_description:"slug of the TIL to find similar content for"`
-	Limit       FlexInt `json:"limit,omitempty" jsonschema_description:"max results (default 5, max 20)"`
-}
-
-// FindSimilarContentOutput wraps the slice result as an object (MCP SDK requires object output schema).
-type FindSimilarContentOutput struct {
-	Items []content.SimilarTIL `json:"items"`
-	Total int                  `json:"total"`
-}
-
-func (s *Server) findSimilarContent(ctx context.Context, _ *mcp.CallToolRequest, input FindSimilarContentInput) (*mcp.CallToolResult, FindSimilarContentOutput, error) {
-	if input.ContentSlug == "" {
-		return nil, FindSimilarContentOutput{}, fmt.Errorf("content_slug is required")
-	}
-
-	limit := clamp(int(input.Limit), 1, 20, 5)
-
-	results, err := s.contents.SimilarTILs(ctx, input.ContentSlug, limit)
-	if err != nil {
-		return nil, FindSimilarContentOutput{}, fmt.Errorf("finding similar content: %w", err)
-	}
-
-	return nil, FindSimilarContentOutput{Items: results, Total: len(results)}, nil
+	return recorded, pending
 }

@@ -1,46 +1,40 @@
 <!-- Header -->
+<app-page-header
+  title="Goals"
+  [description]="tabCounts().all + ' 個目標 · ' + tabCounts().active + ' active · ' + tabCounts().achieved + ' achieved'"
+>
+  <button
+    type="button"
+    class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+    (click)="loadGoals()"
+  >
+    <lucide-icon [img]="RefreshCwIcon" [size]="16" />
+  </button>
+</app-page-header>
+
+<!-- Filter tabs -->
 <section class="border-b border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
-          <lucide-icon [img]="TargetIcon" [size]="24" />
-          Goals
-        </h1>
-        <p class="mt-1 text-sm text-zinc-400">
-          {{ tabCounts().all }} 個目標 · {{ tabCounts().active }} active · {{ tabCounts().achieved }} achieved
-        </p>
-      </div>
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <div class="flex gap-1 py-3">
+      @for (tab of filterTabs; track tab.value) {
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
-        (click)="loadGoals()"
-      >
-        <lucide-icon [img]="RefreshCwIcon" [size]="16" />
-      </button>
-    </div>
-
-    <!-- Filter tabs -->
-    <div class="mt-4 flex rounded-sm border border-zinc-700">
-      @for (tab of filterTabs; track tab.value) {
-        <button
-          type="button"
-          class="flex items-center gap-1.5 px-4 py-2 text-xs transition-colors first:rounded-l-sm last:rounded-r-sm"
-          [class]="activeTab() === tab.value
+        class="flex items-center gap-1.5 rounded-xs px-4 py-1.5 text-xs transition-colors"
+        [class]="activeTab() === tab.value
             ? 'bg-zinc-700 text-zinc-100'
-            : 'text-zinc-500 hover:text-zinc-300'"
-          (click)="setTab(tab.value)"
-        >
-          {{ tab.label }}
-          <span
-            class="rounded-full px-1.5 py-0.5 text-xs"
-            [class]="activeTab() === tab.value
+            : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'"
+        (click)="setTab(tab.value)"
+      >
+        {{ tab.label }}
+        <span
+          class="rounded-full px-1.5 py-0.5 text-xs"
+          [class]="activeTab() === tab.value
               ? 'bg-zinc-600 text-zinc-200'
               : 'bg-zinc-800 text-zinc-500'"
-          >
-            {{ getTabCount(tab.value) }}
-          </span>
-        </button>
+        >
+          {{ getTabCount(tab.value) }}
+        </span>
+      </button>
       }
     </div>
   </div>
@@ -50,110 +44,107 @@
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
     @if (isLoading()) {
-      <div class="flex items-center justify-center py-16">
-        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
-      </div>
+    <div class="flex items-center justify-center py-16">
+      <app-loading-spinner size="lg" class="text-zinc-500" />
+    </div>
     } @else if (filteredGoals().length === 0) {
-      <div class="flex flex-col items-center gap-3 py-16 text-center">
-        <lucide-icon [img]="TargetIcon" [size]="40" class="text-zinc-700" />
-        @switch (activeTab()) {
-          @case ('active') {
-            <h3 class="text-sm font-medium text-zinc-300">沒有進行中的目標</h3>
-            <p class="text-xs text-zinc-500">所有目標已完成或尚未開始</p>
-          }
-          @case ('achieved') {
-            <h3 class="text-sm font-medium text-zinc-300">尚無已達成的目標</h3>
-            <p class="text-xs text-zinc-500">完成目標後會顯示在這裡</p>
-          }
-          @case ('abandoned') {
-            <h3 class="text-sm font-medium text-zinc-300">沒有已放棄的目標</h3>
-            <p class="text-xs text-zinc-500">放棄的目標會顯示在這裡</p>
-          }
-          @default {
-            <h3 class="text-sm font-medium text-zinc-300">尚無目標</h3>
-            <p class="text-xs text-zinc-500">從 Notion Goals database 同步後顯示</p>
-          }
-        }
-      </div>
+    <app-empty-state
+      [icon]="TargetIcon"
+      [title]="activeTab() === 'active' ? '沒有進行中的目標'
+          : activeTab() === 'achieved' ? '尚無已達成的目標'
+          : activeTab() === 'abandoned' ? '沒有已放棄的目標'
+          : '尚無目標'"
+      [description]="activeTab() === 'active' ? '所有目標已完成或尚未開始'
+          : activeTab() === 'achieved' ? '完成目標後會顯示在這裡'
+          : activeTab() === 'abandoned' ? '放棄的目標會顯示在這裡'
+          : '目標由 MCP 管理，這裡唯讀顯示'"
+    />
     } @else {
-      <div class="space-y-8">
-        @for (group of groupedGoals(); track group.key) {
-          <!-- Group header -->
-          <div>
-            <div class="mb-3 flex items-center gap-2">
-              <h2 class="text-sm font-medium text-zinc-300">{{ group.key }}</h2>
-              <span class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500">
-                {{ group.goals.length }}
-              </span>
+    <div class="space-y-8">
+      @for (group of groupedGoals(); track group.key) {
+      <div>
+        <div class="mb-3 flex items-center gap-2">
+          <h2 class="text-sm font-medium text-zinc-300">{{ group.key }}</h2>
+          <span
+            class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500"
+          >
+            {{ group.goals.length }}
+          </span>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          @for (goal of group.goals; track goal.id) {
+          <div
+            class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <h3 class="text-sm font-medium text-zinc-200">
+                {{ goal.title }}
+              </h3>
+              <select
+                class="shrink-0 cursor-pointer rounded-xs border px-2 py-0.5 text-xs focus:outline-hidden"
+                [class]="getStatusClass(goal.status)"
+                [ngModel]="goal.status"
+                (ngModelChange)="updateStatus(goal, $event)"
+                [attr.aria-label]="'更新「' + goal.title + '」狀態'"
+              >
+                @for (opt of statusOptions; track opt.value) {
+                <option [value]="opt.value" class="bg-zinc-900 text-zinc-200">
+                  {{ opt.label }}
+                </option>
+                }
+              </select>
             </div>
 
-            <!-- Goal cards grid -->
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              @for (goal of group.goals; track goal.id) {
-                <div
-                  class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
-                >
-                  <!-- Title + Status dropdown -->
-                  <div class="flex items-start justify-between gap-2">
-                    <h3 class="text-sm font-medium text-zinc-200">{{ goal.title }}</h3>
-                    <select
-                      class="shrink-0 cursor-pointer rounded-sm border px-2 py-0.5 text-xs outline-none"
-                      [class]="getStatusClass(goal.status)"
-                      [ngModel]="goal.status"
-                      (ngModelChange)="updateStatus(goal, $event)"
-                    >
-                      @for (opt of statusOptions; track opt.value) {
-                        <option [value]="opt.value" class="bg-zinc-900 text-zinc-200">{{ opt.label }}</option>
-                      }
-                    </select>
-                  </div>
+            @if (goal.description) {
+            <div class="mt-2">
+              @if (isDescriptionExpanded(goal.id)) {
+              <p class="text-xs text-zinc-400">{{ goal.description }}</p>
+              <button
+                type="button"
+                (click)="toggleDescription(goal.id)"
+                class="mt-1 flex items-center gap-0.5 text-xs text-zinc-600 hover:text-zinc-400"
+              >
+                <lucide-icon [img]="ChevronUpIcon" [size]="12" />
+                收合
+              </button>
+              } @else {
+              <button
+                type="button"
+                class="mt-0 w-full text-left"
+                (click)="toggleDescription(goal.id)"
+              >
+                <p class="line-clamp-2 text-xs text-zinc-500">
+                  {{ goal.description }}
+                </p>
+              </button>
+              }
+            </div>
+            }
 
-                  <!-- Description -->
-                  @if (goal.description) {
-                    <div class="mt-2">
-                      @if (isDescriptionExpanded(goal.id)) {
-                        <p class="text-xs text-zinc-400">{{ goal.description }}</p>
-                        <button
-                          (click)="toggleDescription(goal.id)"
-                          class="mt-1 flex items-center gap-0.5 text-xs text-zinc-600 hover:text-zinc-400"
-                        >
-                          <lucide-icon [img]="ChevronUpIcon" [size]="12" />
-                          收合
-                        </button>
-                      } @else {
-                        <p
-                          class="line-clamp-2 cursor-pointer text-xs text-zinc-500"
-                          tabindex="0"
-                          role="button"
-                          (click)="toggleDescription(goal.id)"
-                          (keyup.enter)="toggleDescription(goal.id)"
-                        >
-                          {{ goal.description }}
-                        </p>
-                      }
-                    </div>
-                  }
-
-                  <!-- Metadata row -->
-                  <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
-                    @if (goal.area) {
-                      <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{{ goal.area }}</span>
-                    }
-                    @if (goal.quarter) {
-                      <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-500">{{ goal.quarter }}</span>
-                    }
-                    @if (goal.deadline) {
-                      <span [class]="deadlineClass(goal)">
-                        {{ formatDeadline(goal.deadline) }} · {{ deadlineLabel(goal) }}
-                      </span>
-                    }
-                  </div>
-                </div>
+            <div
+              class="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600"
+            >
+              @if (goal.area) {
+              <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-zinc-400"
+                >{{ goal.area }}</span
+              >
+              } @if (goal.quarter) {
+              <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-zinc-500"
+                >{{ goal.quarter }}</span
+              >
+              } @if (goal.deadline) {
+              <span [class]="deadlineClass(goal)">
+                {{ formatDeadline(goal.deadline) }} · {{ deadlineLabel(goal) }}
+              </span>
               }
             </div>
           </div>
-        }
+          }
+        </div>
       </div>
+      }
+    </div>
     }
   </div>
 </section>

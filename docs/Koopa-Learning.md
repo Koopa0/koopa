@@ -23,6 +23,25 @@
 
 ---
 
+## Schema 對齊（v2.1 Learning Analytics）
+
+Schema v2.1 新增 7 張表，與本文件的 JSONB 工作流共存。兩套機制互補，不取代：
+
+| 機制 | 用途 | 資料流 |
+|------|------|--------|
+| `log_learning_session` metadata JSONB | Session 中即時記錄（concept_breakdown, coaching hints, variation_links） | 寫入端 — coaching prompt 產出 |
+| `concepts` + `attempt_observations` 表 | 正規化分析（weakness overview, progression tracking, drill-down） | 讀取端 — dashboard / analytics 消費 |
+| `learning_items` 表 | 學習標的 registry（LeetCode 題目、書本章節、文法 drill） | 持久層 — item 在 note 之前就存在 |
+| `attempts` 表 | 離散嘗試紀錄（outcome, duration, approach） | 結構化歷史 — 取代散落在 metadata 裡的 solve_context |
+| `review_cards` (unified) | FSRS 排程，target 可以是 content_id 或 learning_item_id | 排程層 — "何時複習" |
+| `item_relations` 表 | variation / prerequisite graph | 推薦層 — post-session analysis 自動填充 |
+
+**MCP 工具更新時機**：當 Go 實作完成後，`log_learning_session` 應同時寫入 `attempts` + `attempt_observations`，`mastery_map` / `concept_gaps` 應改讀正規化表。在那之前，JSONB 工作流繼續運作。
+
+**設計紀錄**：`docs/LEARNING-ANALYTICS-SCHEMA-DESIGN.md`
+
+---
+
 ## Session 啟動流程
 
 每次 session 開始時，按以下順序執行：

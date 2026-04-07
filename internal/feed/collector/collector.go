@@ -19,7 +19,6 @@ import (
 
 	"github.com/Koopa0/koopa0.dev/internal/feed"
 	"github.com/Koopa0/koopa0.dev/internal/feed/entry"
-	"github.com/Koopa0/koopa0.dev/internal/monitor"
 )
 
 const (
@@ -32,16 +31,15 @@ const (
 
 // Collector fetches RSS feeds and writes new items to collected_data.
 type Collector struct {
-	writer   *entry.Store
-	feeds    *feed.Store
-	keywords *monitor.Store
-	client   *http.Client
-	limiter  *DomainLimiter
-	logger   *slog.Logger
+	writer  *entry.Store
+	feeds   *feed.Store
+	client  *http.Client
+	limiter *DomainLimiter
+	logger  *slog.Logger
 }
 
 // New returns a Collector.
-func New(writer *entry.Store, feeds *feed.Store, keywords *monitor.Store, logger *slog.Logger) *Collector {
+func New(writer *entry.Store, feeds *feed.Store, logger *slog.Logger) *Collector {
 	client := &http.Client{
 		Timeout: requestTimeout,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
@@ -52,12 +50,11 @@ func New(writer *entry.Store, feeds *feed.Store, keywords *monitor.Store, logger
 		},
 	}
 	return &Collector{
-		writer:   writer,
-		feeds:    feeds,
-		keywords: keywords,
-		client:   client,
-		limiter:  NewDomainLimiter(2 * time.Second),
-		logger:   logger,
+		writer:  writer,
+		feeds:   feeds,
+		client:  client,
+		limiter: NewDomainLimiter(2 * time.Second),
+		logger:  logger,
 	}
 }
 
@@ -96,8 +93,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f *feed.Feed) ([]uuid.UUID, e
 		return nil, nil // 304 Not Modified
 	}
 
-	keywords := c.loadKeywords(ctx, logger)
-	newIDs := c.processItems(ctx, parsed.Items, f, keywords, logger)
+	newIDs := c.processItems(ctx, parsed.Items, f, nil, logger)
 
 	logger.Info("feed fetched", "total_items", len(parsed.Items), "new_items", len(newIDs))
 	return newIDs, nil
@@ -228,7 +224,6 @@ func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *fee
 		SourceURL:       item.Link,
 		Title:           item.Title,
 		OriginalContent: content,
-		Topics:          f.Topics,
 		URLHash:         urlHash,
 		FeedID:          &f.ID,
 		RelevanceScore:  float64(score),
@@ -272,19 +267,6 @@ func normalizeURL(rawURL string) string {
 	u.RawQuery = q.Encode()
 
 	return u.String()
-}
-
-// loadKeywords returns normalized tracking keywords for scoring (best-effort, never fails).
-func (c *Collector) loadKeywords(ctx context.Context, logger *slog.Logger) []string {
-	if c.keywords == nil {
-		return nil
-	}
-	kw, err := c.keywords.Keywords(ctx)
-	if err != nil {
-		logger.Error("loading tracking keywords", "error", err)
-		return nil
-	}
-	return NormalizeKeywords(kw)
 }
 
 // itemContent extracts the best available content from a feed item.

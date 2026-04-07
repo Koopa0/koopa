@@ -19,9 +19,7 @@ import {
   Check,
   X,
   Link,
-  Loader2,
   RefreshCw,
-  Filter,
   ArrowRight,
   Merge,
   Database,
@@ -29,6 +27,15 @@ import {
 import { TagAdminService } from '../../core/services/tag-admin.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { DeleteConfirmDialogComponent } from '../shared/delete-confirm-dialog.component';
+import {
+  PageHeaderComponent,
+  DataTableComponent,
+  EmptyStateComponent,
+  LoadingSpinnerComponent,
+  StatusBadgeComponent,
+  ModalComponent,
+  FormFieldComponent,
+} from '../../shared/components';
 import type {
   ApiTag,
   ApiTagAlias,
@@ -79,6 +86,13 @@ const MATCH_METHOD_CLASSES: Record<AliasMatchMethod, string> = {
     FormsModule,
     LucideAngularModule,
     DeleteConfirmDialogComponent,
+    PageHeaderComponent,
+    DataTableComponent,
+    EmptyStateComponent,
+    LoadingSpinnerComponent,
+    StatusBadgeComponent,
+    ModalComponent,
+    FormFieldComponent,
   ],
   templateUrl: './tags.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -112,7 +126,9 @@ export class TagsComponent implements OnInit {
   /** 排序：root tags 先，每個 root 下面接它的 children */
   protected readonly sortedTags = computed(() => {
     const all = this.tags();
-    const roots = all.filter((t) => t.parent_id === null).sort((a, b) => a.name.localeCompare(b.name));
+    const roots = all
+      .filter((t) => t.parent_id === null)
+      .sort((a, b) => a.name.localeCompare(b.name));
     const result: ApiTag[] = [];
     for (const root of roots) {
       result.push(root);
@@ -150,7 +166,8 @@ export class TagsComponent implements OnInit {
   );
 
   protected readonly pendingCount = computed(
-    () => this.aliases().filter((a) => a.tag_id !== null && !a.confirmed).length,
+    () =>
+      this.aliases().filter((a) => a.tag_id !== null && !a.confirmed).length,
   );
 
   /** 追蹤每個 alias 正在選擇的 tag_id（for map dropdown） */
@@ -177,9 +194,7 @@ export class TagsComponent implements OnInit {
   protected readonly CheckIcon = Check;
   protected readonly XIcon = X;
   protected readonly LinkIcon = Link;
-  protected readonly Loader2Icon = Loader2;
   protected readonly RefreshCwIcon = RefreshCw;
-  protected readonly FilterIcon = Filter;
   protected readonly ArrowRightIcon = ArrowRight;
   protected readonly MergeIcon = Merge;
   protected readonly DatabaseIcon = Database;
@@ -239,7 +254,10 @@ export class TagsComponent implements OnInit {
     this.isTagDialogOpen.set(false);
   }
 
-  protected updateTagFormField(field: keyof TagFormData, value: string | null): void {
+  protected updateTagFormField(
+    field: keyof TagFormData,
+    value: string | null,
+  ): void {
     this.tagForm.update((f) => ({ ...f, [field]: value }));
     if (field === 'slug') {
       this.tagSlugError.set(null);
@@ -414,7 +432,11 @@ export class TagsComponent implements OnInit {
   }
 
   protected requestDeleteAlias(alias: ApiTagAlias): void {
-    this.deleteTarget.set({ id: alias.id, label: alias.raw_tag, type: 'alias' });
+    this.deleteTarget.set({
+      id: alias.id,
+      label: alias.raw_tag,
+      type: 'alias',
+    });
   }
 
   // ─── Delete dialog ───
@@ -449,7 +471,9 @@ export class TagsComponent implements OnInit {
       error: (err) => {
         this.isDeleting.set(false);
         if (err?.status === 409) {
-          this.notificationService.error('此 Tag 仍有 alias 或筆記引用，請先處理');
+          this.notificationService.error(
+            '此 Tag 仍有 alias 或筆記引用，請先處理',
+          );
         } else {
           this.notificationService.error('刪除失敗');
         }

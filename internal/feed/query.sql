@@ -1,5 +1,5 @@
 -- name: Feeds :many
-SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
+SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds
@@ -7,28 +7,29 @@ WHERE (sqlc.narg('schedule')::text IS NULL OR schedule = sqlc.narg('schedule'))
 ORDER BY created_at DESC;
 
 -- name: FeedByID :one
-SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
+SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds WHERE id = $1;
 
 -- name: EnabledFeeds :many
-SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
+SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds WHERE enabled = true
 ORDER BY created_at;
 
 -- name: EnabledFeedsBySchedule :many
-SELECT id, url, name, schedule, topics, enabled, priority, etag, last_modified,
+SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
        last_fetched_at, consecutive_failures, last_error, disabled_reason,
        filter_config, created_at, updated_at
 FROM feeds WHERE enabled = true AND schedule = $1;
 
 -- name: CreateFeed :one
-INSERT INTO feeds (url, name, schedule, topics, filter_config)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, url, name, schedule, topics, enabled, priority, etag, last_modified,
+-- NOTE: topics are now managed via feed_topics junction table, not a column on feeds.
+INSERT INTO feeds (url, name, schedule, filter_config)
+VALUES ($1, $2, $3, $4)
+RETURNING id, url, name, schedule, enabled, priority, etag, last_modified,
           last_fetched_at, consecutive_failures, last_error, disabled_reason,
           filter_config, created_at, updated_at;
 
@@ -37,12 +38,11 @@ UPDATE feeds SET
     url = COALESCE(sqlc.narg('url'), url),
     name = COALESCE(sqlc.narg('name'), name),
     schedule = COALESCE(sqlc.narg('schedule'), schedule),
-    topics = COALESCE(sqlc.narg('topics'), topics),
     enabled = COALESCE(sqlc.narg('enabled'), enabled),
     filter_config = COALESCE(sqlc.narg('filter_config'), filter_config),
     updated_at = now()
 WHERE id = $1
-RETURNING id, url, name, schedule, topics, enabled, priority, etag, last_modified,
+RETURNING id, url, name, schedule, enabled, priority, etag, last_modified,
           last_fetched_at, consecutive_failures, last_error, disabled_reason,
           filter_config, created_at, updated_at;
 

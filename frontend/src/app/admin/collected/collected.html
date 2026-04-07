@@ -16,7 +16,7 @@
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+        class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         (click)="loadItems()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="16" />
@@ -87,7 +87,7 @@
     <!-- Error -->
     @if (error()) {
     <div
-      class="mb-4 rounded-sm border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400"
+      class="mb-4 rounded-xs border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400"
     >
       {{ error() }}
     </div>
@@ -113,7 +113,7 @@
     <div class="space-y-3">
       @for (item of displayItems(); track item.id) {
       <div
-        class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+        class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
         [class.opacity-50]="item.status === 'ignored'"
       >
         <div class="flex items-start gap-4">
@@ -148,7 +148,7 @@
               <span>{{ (item.published_at || item.collected_at) | date: 'MM/dd HH:mm' }}</span>
               @if (item.topics.length > 0) { @for (topic of item.topics; track
               topic) {
-              <span class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-zinc-400"
+              <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-zinc-400"
                 >{{ topic }}</span
               >
               } }
@@ -159,7 +159,7 @@
           <div class="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              class="rounded-sm p-1.5 transition-colors"
+              class="rounded-xs p-1.5 transition-colors"
               [class]="item.user_feedback === 'up'
                     ? 'bg-emerald-900/30 text-emerald-400'
                     : 'text-zinc-500 hover:bg-zinc-800 hover:text-emerald-400'"
@@ -170,7 +170,7 @@
             </button>
             <button
               type="button"
-              class="rounded-sm p-1.5 transition-colors"
+              class="rounded-xs p-1.5 transition-colors"
               [class]="item.user_feedback === 'down'
                     ? 'bg-red-900/30 text-red-400'
                     : 'text-zinc-500 hover:bg-zinc-800 hover:text-red-400'"
@@ -182,7 +182,7 @@
             @if (item.status !== 'ignored' && item.status !== 'curated') {
             <button
               type="button"
-              class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-emerald-400"
+              class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-emerald-400"
               aria-label="加入書籤"
               (click)="curateItem(item)"
             >
@@ -190,7 +190,7 @@
             </button>
             <button
               type="button"
-              class="rounded-sm p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
               aria-label="忽略"
               (click)="ignoreItem(item)"
             >
@@ -211,7 +211,7 @@
     >
       <button
         type="button"
-        class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+        class="rounded-xs border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
         [disabled]="currentPage() === 1"
         (click)="onPageChange(currentPage() - 1)"
         aria-label="Previous page"
@@ -221,7 +221,7 @@
       @if (visiblePages()[0] > 1) {
       <button
         type="button"
-        class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
+        class="rounded-xs border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
         (click)="onPageChange(1)"
         [attr.aria-current]="currentPage() === 1 ? 'page' : null"
         [attr.aria-label]="'Page 1'"
@@ -233,7 +233,7 @@
       } } @for (page of visiblePages(); track page) {
       <button
         type="button"
-        class="rounded-sm border px-3 py-1.5 text-xs transition-colors"
+        class="rounded-xs border px-3 py-1.5 text-xs transition-colors"
         [class]="page === currentPage()
                 ? 'border-white bg-white text-zinc-900'
                 : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
@@ -249,7 +249,7 @@
       }
       <button
         type="button"
-        class="rounded-sm border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
+        class="rounded-xs border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500"
         (click)="onPageChange(totalPages())"
         [attr.aria-current]="currentPage() === totalPages() ? 'page' : null"
         [attr.aria-label]="'Page ' + totalPages()"
@@ -259,7 +259,7 @@
       }
       <button
         type="button"
-        class="rounded-sm border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
+        class="rounded-xs border border-zinc-700 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 disabled:opacity-30"
         [disabled]="currentPage() === totalPages()"
         (click)="onPageChange(currentPage() + 1)"
         aria-label="Next page"
