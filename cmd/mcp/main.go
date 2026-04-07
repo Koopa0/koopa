@@ -20,19 +20,8 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"github.com/Koopa0/koopa0.dev/internal/content"
-	"github.com/Koopa0/koopa0.dev/internal/daily"
-	"github.com/Koopa0/koopa0.dev/internal/directive"
-	"github.com/Koopa0/koopa0.dev/internal/goal"
-	"github.com/Koopa0/koopa0.dev/internal/insight"
-	"github.com/Koopa0/koopa0.dev/internal/journal"
-	"github.com/Koopa0/koopa0.dev/internal/learnsession"
 	mcpkg "github.com/Koopa0/koopa0.dev/internal/mcp"
 	"github.com/Koopa0/koopa0.dev/internal/mcpauth"
-	"github.com/Koopa0/koopa0.dev/internal/note"
-	"github.com/Koopa0/koopa0.dev/internal/project"
-	"github.com/Koopa0/koopa0.dev/internal/report"
-	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
 func main() {
@@ -60,20 +49,7 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
 	}
 
-	server := mcpkg.NewServer(
-		task.NewStore(pool),
-		journal.NewStore(pool),
-		daily.NewStore(pool),
-		content.NewStore(pool),
-		project.NewStore(pool),
-		note.NewStore(pool),
-		goal.NewStore(pool),
-		directive.NewStore(pool),
-		report.NewStore(pool),
-		insight.NewStore(pool),
-		learnsession.NewStore(pool),
-		pool,
-		logger,
+	server := mcpkg.NewServer(pool, logger,
 		mcpkg.WithLocation(taipeiLoc),
 		mcpkg.WithParticipant(cfg.Participant),
 	)

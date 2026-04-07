@@ -7,6 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+//nolint:gocognit // test complexity is acceptable for comprehensive table-driven tests
 func TestProposalRoundTrip(t *testing.T) {
 	secret := []byte("test-secret-32-bytes-long-enough")
 
@@ -110,12 +111,12 @@ func TestProposalExpiry(t *testing.T) {
 	secret := []byte("test-secret-32-bytes-long-enough")
 
 	// Fresh token should be valid.
-	token, err := signProposal(secret, "goal", map[string]any{"title": "test"})
-	if err != nil {
-		t.Fatalf("signProposal: %v", err)
+	token, signErr := signProposal(secret, "goal", map[string]any{"title": "test"})
+	if signErr != nil {
+		t.Fatalf("signProposal: %v", signErr)
 	}
-	if _, err := verifyProposal(secret, token); err != nil {
-		t.Fatalf("fresh token rejected: %v", err)
+	if _, verifyErr := verifyProposal(secret, token); verifyErr != nil {
+		t.Fatalf("fresh token rejected: %v", verifyErr)
 	}
 
 	// Manually create expired token using encodeToken.

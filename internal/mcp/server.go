@@ -105,35 +105,20 @@ func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption 
 	return func(s *Server) { s.recordToolCall = recorder }
 }
 
-// NewServer creates an MCP v2 server with all registered tools.
-func NewServer(
-	tasks *task.Store,
-	js *journal.Store,
-	dayplan *daily.Store,
-	contents *content.Store,
-	projects *project.Store,
-	notes *note.Store,
-	goals *goal.Store,
-	directives *directive.Store,
-	reports *report.Store,
-	insights *insight.Store,
-	learn *learnsession.Store,
-	pool *pgxpool.Pool,
-	logger *slog.Logger,
-	opts ...ServerOption,
-) *Server {
+// NewServer creates an MCP v2 server. All stores are created from the pool.
+func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *Server {
 	s := &Server{
-		tasks:       tasks,
-		journal:     js,
-		dayplan:     dayplan,
-		contents:    contents,
-		projects:    projects,
-		notes:       notes,
-		goals:       goals,
-		directives:  directives,
-		reports:     reports,
-		insights:    insights,
-		learn:       learn,
+		tasks:       task.NewStore(pool),
+		journal:     journal.NewStore(pool),
+		dayplan:     daily.NewStore(pool),
+		contents:    content.NewStore(pool),
+		projects:    project.NewStore(pool),
+		notes:       note.NewStore(pool),
+		goals:       goal.NewStore(pool),
+		directives:  directive.NewStore(pool),
+		reports:     report.NewStore(pool),
+		insights:    insight.NewStore(pool),
+		learn:       learnsession.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
 		participant: "human",
