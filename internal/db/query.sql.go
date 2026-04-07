@@ -14,35 +14,6 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
-const abandonGoalByNotionPageID = `-- name: AbandonGoalByNotionPageID :execrows
-UPDATE goals SET status = 'abandoned', updated_at = now()
-WHERE notion_page_id = $1 AND status != 'abandoned'
-`
-
-// Abandon a single goal by its Notion page ID (used when Notion page is trashed).
-func (q *Queries) AbandonGoalByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
-	result, err := q.db.Exec(ctx, abandonGoalByNotionPageID, notionPageID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const abandonOrphanNotionGoals = `-- name: AbandonOrphanNotionGoals :execrows
-UPDATE goals SET status = 'abandoned', updated_at = now()
-WHERE notion_page_id IS NOT NULL
-  AND notion_page_id != ALL($1::text[])
-  AND status != 'abandoned'
-`
-
-func (q *Queries) AbandonOrphanNotionGoals(ctx context.Context, activeIds []string) (int64, error) {
-	result, err := q.db.Exec(ctx, abandonOrphanNotionGoals, activeIds)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const acknowledgeDirective = `-- name: AcknowledgeDirective :one
 UPDATE directives
 SET acknowledged_at = now(), acknowledged_by = $1
@@ -127,35 +98,6 @@ func (q *Queries) ActiveGoals(ctx context.Context) ([]ActiveGoalsRow, error) {
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const activeProjectSlugsWithRepo = `-- name: ActiveProjectSlugsWithRepo :many
-SELECT slug FROM projects
-WHERE status IN ('in-progress', 'maintained')
-  AND repo IS NOT NULL AND repo != ''
-  AND last_activity_at >= $1
-ORDER BY title
-`
-
-// List slugs of active projects that have a linked repository and recent activity.
-func (q *Queries) ActiveProjectSlugsWithRepo(ctx context.Context, since *time.Time) ([]string, error) {
-	rows, err := q.db.Query(ctx, activeProjectSlugsWithRepo, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var slug string
-		if err := rows.Scan(&slug); err != nil {
-			return nil, err
-		}
-		items = append(items, slug)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -539,21 +481,6 @@ func (q *Queries) ArchiveNote(ctx context.Context, filePath string) error {
 	return err
 }
 
-const archiveOrphanNotionProjects = `-- name: ArchiveOrphanNotionProjects :execrows
-UPDATE projects SET status = 'archived', updated_at = now()
-WHERE notion_page_id IS NOT NULL
-  AND notion_page_id != ALL($1::text[])
-  AND status != 'archived'
-`
-
-func (q *Queries) ArchiveOrphanNotionProjects(ctx context.Context, activeIds []string) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveOrphanNotionProjects, activeIds)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const archiveOrphanNotionTasks = `-- name: ArchiveOrphanNotionTasks :execrows
 UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
 WHERE notion_page_id IS NOT NULL
@@ -566,20 +493,6 @@ WHERE notion_page_id IS NOT NULL
 // Recurring tasks are excluded — they should never be archived by sync.
 func (q *Queries) ArchiveOrphanNotionTasks(ctx context.Context, activeIds []string) (int64, error) {
 	result, err := q.db.Exec(ctx, archiveOrphanNotionTasks, activeIds)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const archiveProjectByNotionPageID = `-- name: ArchiveProjectByNotionPageID :execrows
-UPDATE projects SET status = 'archived', updated_at = now()
-WHERE notion_page_id = $1 AND status != 'archived'
-`
-
-// Archive a single project by its Notion page ID (used when Notion page is trashed).
-func (q *Queries) ArchiveProjectByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveProjectByNotionPageID, notionPageID)
 	if err != nil {
 		return 0, err
 	}
@@ -1915,38 +1828,6 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 	return i, err
 }
 
-const createFlowRun = `-- name: CreateFlowRun :one
-INSERT INTO flow_runs (flow_name, content_id, input)
-VALUES ($1, $2, $3)
-RETURNING id, flow_name, content_id, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
-`
-
-type CreateFlowRunParams struct {
-	FlowName  string     `json:"flow_name"`
-	ContentID *uuid.UUID `json:"content_id"`
-	Input     []byte     `json:"input"`
-}
-
-func (q *Queries) CreateFlowRun(ctx context.Context, arg CreateFlowRunParams) (FlowRun, error) {
-	row := q.db.QueryRow(ctx, createFlowRun, arg.FlowName, arg.ContentID, arg.Input)
-	var i FlowRun
-	err := row.Scan(
-		&i.ID,
-		&i.FlowName,
-		&i.ContentID,
-		&i.Input,
-		&i.Output,
-		&i.Status,
-		&i.Error,
-		&i.Attempt,
-		&i.MaxAttempts,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const createGoal = `-- name: CreateGoal :one
 INSERT INTO goals (title, description, status, area_id, quarter, deadline)
 VALUES ($1, $2, $3::goal_status, $4, $5, $6)
@@ -2705,19 +2586,6 @@ func (q *Queries) DeleteNoteTagsByNoteID(ctx context.Context, noteID int64) erro
 	return err
 }
 
-const deleteOldCompletedRuns = `-- name: DeleteOldCompletedRuns :execrows
-DELETE FROM flow_runs WHERE status IN ('completed', 'failed') AND created_at < $1
-`
-
-// Cleanup: delete completed/failed flow runs older than the given cutoff.
-func (q *Queries) DeleteOldCompletedRuns(ctx context.Context, cutoff time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteOldCompletedRuns, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const deleteOldEvents = `-- name: DeleteOldEvents :execrows
 DELETE FROM events WHERE timestamp < $1
 `
@@ -3315,128 +3183,6 @@ func (q *Queries) FindOrCreateItem(ctx context.Context, arg FindOrCreateItemPara
 	return i, err
 }
 
-const flowFailureStats = `-- name: FlowFailureStats :many
-SELECT flow_name,
-       COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE status = 'failed') AS failed
-FROM flow_runs
-WHERE created_at >= $1
-GROUP BY flow_name
-HAVING COUNT(*) FILTER (WHERE status = 'failed') > 0
-ORDER BY failed DESC
-`
-
-type FlowFailureStatsRow struct {
-	FlowName string `json:"flow_name"`
-	Total    int64  `json:"total"`
-	Failed   int64  `json:"failed"`
-}
-
-// Per-flow failure counts since a given time (for health checks).
-func (q *Queries) FlowFailureStats(ctx context.Context, since time.Time) ([]FlowFailureStatsRow, error) {
-	rows, err := q.db.Query(ctx, flowFailureStats, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []FlowFailureStatsRow{}
-	for rows.Next() {
-		var i FlowFailureStatsRow
-		if err := rows.Scan(&i.FlowName, &i.Total, &i.Failed); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const flowRunByID = `-- name: FlowRunByID :one
-SELECT id, flow_name, content_id, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
-FROM flow_runs WHERE id = $1
-`
-
-func (q *Queries) FlowRunByID(ctx context.Context, id uuid.UUID) (FlowRun, error) {
-	row := q.db.QueryRow(ctx, flowRunByID, id)
-	var i FlowRun
-	err := row.Scan(
-		&i.ID,
-		&i.FlowName,
-		&i.ContentID,
-		&i.Input,
-		&i.Output,
-		&i.Status,
-		&i.Error,
-		&i.Attempt,
-		&i.MaxAttempts,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const flowRuns = `-- name: FlowRuns :many
-SELECT id, flow_name, content_id, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
-FROM flow_runs
-WHERE ($3::flow_status IS NULL OR status = $3)
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
-`
-
-type FlowRunsParams struct {
-	Limit  int32          `json:"limit"`
-	Offset int32          `json:"offset"`
-	Status NullFlowStatus `json:"status"`
-}
-
-func (q *Queries) FlowRuns(ctx context.Context, arg FlowRunsParams) ([]FlowRun, error) {
-	rows, err := q.db.Query(ctx, flowRuns, arg.Limit, arg.Offset, arg.Status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []FlowRun{}
-	for rows.Next() {
-		var i FlowRun
-		if err := rows.Scan(
-			&i.ID,
-			&i.FlowName,
-			&i.ContentID,
-			&i.Input,
-			&i.Output,
-			&i.Status,
-			&i.Error,
-			&i.Attempt,
-			&i.MaxAttempts,
-			&i.StartedAt,
-			&i.EndedAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const flowRunsCount = `-- name: FlowRunsCount :one
-SELECT COUNT(*) FROM flow_runs
-WHERE ($1::flow_status IS NULL OR status = $1)
-`
-
-func (q *Queries) FlowRunsCount(ctx context.Context, status NullFlowStatus) (int64, error) {
-	row := q.db.QueryRow(ctx, flowRunsCount, status)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const goalByID = `-- name: GoalByID :one
 SELECT id, title, description, status, area_id, quarter, deadline,
        notion_page_id, created_at, updated_at
@@ -3445,30 +3191,6 @@ FROM goals WHERE id = $1
 
 func (q *Queries) GoalByID(ctx context.Context, id uuid.UUID) (Goal, error) {
 	row := q.db.QueryRow(ctx, goalByID, id)
-	var i Goal
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Description,
-		&i.Status,
-		&i.AreaID,
-		&i.Quarter,
-		&i.Deadline,
-		&i.NotionPageID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const goalByNotionPageID = `-- name: GoalByNotionPageID :one
-SELECT id, title, description, status, area_id, quarter, deadline,
-       notion_page_id, created_at, updated_at
-FROM goals WHERE notion_page_id = $1
-`
-
-func (q *Queries) GoalByNotionPageID(ctx context.Context, notionPageID *string) (Goal, error) {
-	row := q.db.QueryRow(ctx, goalByNotionPageID, notionPageID)
 	var i Goal
 	err := row.Scan(
 		&i.ID,
@@ -3508,18 +3230,6 @@ func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const goalIDByNotionPageID = `-- name: GoalIDByNotionPageID :one
-SELECT id FROM goals WHERE notion_page_id = $1
-`
-
-// Resolve a Notion page ID to a goal UUID.
-func (q *Queries) GoalIDByNotionPageID(ctx context.Context, notionPageID *string) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, goalIDByNotionPageID, notionPageID)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
 }
 
 const goals = `-- name: Goals :many
@@ -4355,39 +4065,6 @@ func (q *Queries) LatestCollectedData(ctx context.Context, arg LatestCollectedDa
 	return items, nil
 }
 
-const latestCompletedRunByContentAndFlow = `-- name: LatestCompletedRunByContentAndFlow :one
-SELECT id, flow_name, content_id, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
-FROM flow_runs
-WHERE flow_name = $1 AND content_id = $2 AND status = 'completed'
-ORDER BY ended_at DESC
-LIMIT 1
-`
-
-type LatestCompletedRunByContentAndFlowParams struct {
-	FlowName  string     `json:"flow_name"`
-	ContentID *uuid.UUID `json:"content_id"`
-}
-
-func (q *Queries) LatestCompletedRunByContentAndFlow(ctx context.Context, arg LatestCompletedRunByContentAndFlowParams) (FlowRun, error) {
-	row := q.db.QueryRow(ctx, latestCompletedRunByContentAndFlow, arg.FlowName, arg.ContentID)
-	var i FlowRun
-	err := row.Scan(
-		&i.ID,
-		&i.FlowName,
-		&i.ContentID,
-		&i.Input,
-		&i.Output,
-		&i.Status,
-		&i.Error,
-		&i.Attempt,
-		&i.MaxAttempts,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const latestEntryByKind = `-- name: LatestEntryByKind :one
 SELECT id, kind, source, content, metadata, entry_date, created_at
 FROM journal
@@ -4738,54 +4415,6 @@ func (q *Queries) NotesWithoutEmbedding(ctx context.Context, batchSize int32) ([
 	return items, nil
 }
 
-const notionGoalPageIDs = `-- name: NotionGoalPageIDs :many
-SELECT notion_page_id FROM goals WHERE notion_page_id IS NOT NULL ORDER BY title
-`
-
-func (q *Queries) NotionGoalPageIDs(ctx context.Context) ([]*string, error) {
-	rows, err := q.db.Query(ctx, notionGoalPageIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []*string{}
-	for rows.Next() {
-		var notion_page_id *string
-		if err := rows.Scan(&notion_page_id); err != nil {
-			return nil, err
-		}
-		items = append(items, notion_page_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const notionProjectPageIDs = `-- name: NotionProjectPageIDs :many
-SELECT notion_page_id FROM projects WHERE notion_page_id IS NOT NULL ORDER BY title
-`
-
-func (q *Queries) NotionProjectPageIDs(ctx context.Context) ([]*string, error) {
-	rows, err := q.db.Query(ctx, notionProjectPageIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []*string{}
-	for rows.Next() {
-		var notion_page_id *string
-		if err := rows.Scan(&notion_page_id); err != nil {
-			return nil, err
-		}
-		items = append(items, notion_page_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const notionTaskPageIDs = `-- name: NotionTaskPageIDs :many
 SELECT notion_page_id FROM tasks WHERE notion_page_id IS NOT NULL ORDER BY title
 `
@@ -5104,25 +4733,6 @@ func (q *Queries) PendingReviews(ctx context.Context) ([]PendingReviewsRow, erro
 		return nil, err
 	}
 	return items, nil
-}
-
-const pendingRunExists = `-- name: PendingRunExists :one
-SELECT EXISTS(
-    SELECT 1 FROM flow_runs
-    WHERE flow_name = $1 AND content_id = $2 AND status IN ('pending', 'running')
-) AS exists
-`
-
-type PendingRunExistsParams struct {
-	FlowName  string     `json:"flow_name"`
-	ContentID *uuid.UUID `json:"content_id"`
-}
-
-func (q *Queries) PendingRunExists(ctx context.Context, arg PendingRunExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, pendingRunExists, arg.FlowName, arg.ContentID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }
 
 const pendingTasks = `-- name: PendingTasks :many
@@ -5514,30 +5124,6 @@ func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, er
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const projectIDByNotionPageID = `-- name: ProjectIDByNotionPageID :one
-SELECT id FROM projects WHERE notion_page_id = $1
-`
-
-// Resolve a Notion page ID to a project UUID.
-func (q *Queries) ProjectIDByNotionPageID(ctx context.Context, notionPageID *string) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, projectIDByNotionPageID, notionPageID)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
-}
-
-const projectSlugByNotionPageID = `-- name: ProjectSlugByNotionPageID :one
-SELECT slug FROM projects WHERE notion_page_id = $1
-`
-
-// Resolve a Notion page ID to a project slug.
-func (q *Queries) ProjectSlugByNotionPageID(ctx context.Context, notionPageID *string) (string, error) {
-	row := q.db.QueryRow(ctx, projectSlugByNotionPageID, notionPageID)
-	var slug string
-	err := row.Scan(&slug)
-	return slug, err
 }
 
 const projects = `-- name: Projects :many
@@ -6652,47 +6238,6 @@ func (q *Queries) RetrievalQueue(ctx context.Context, arg RetrievalQueueParams) 
 			&i.Domain,
 			&i.Difficulty,
 			&i.ExternalID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const retryableFlowRuns = `-- name: RetryableFlowRuns :many
-UPDATE flow_runs SET status = 'pending'
-WHERE (status = 'failed' AND attempt < max_attempts)
-   OR (status = 'pending' AND attempt < max_attempts AND created_at < now() - INTERVAL '5 minutes')
-   OR (status = 'running' AND attempt < max_attempts AND started_at < now() - INTERVAL '10 minutes')
-RETURNING id, flow_name, content_id, input, output, status, error, attempt, max_attempts, started_at, ended_at, created_at
-`
-
-func (q *Queries) RetryableFlowRuns(ctx context.Context) ([]FlowRun, error) {
-	rows, err := q.db.Query(ctx, retryableFlowRuns)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []FlowRun{}
-	for rows.Next() {
-		var i FlowRun
-		if err := rows.Scan(
-			&i.ID,
-			&i.FlowName,
-			&i.ContentID,
-			&i.Input,
-			&i.Output,
-			&i.Status,
-			&i.Error,
-			&i.Attempt,
-			&i.MaxAttempts,
-			&i.StartedAt,
-			&i.EndedAt,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -8491,46 +8036,6 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 	return i, err
 }
 
-const updateFlowRunCompleted = `-- name: UpdateFlowRunCompleted :exec
-UPDATE flow_runs SET status = 'completed', output = $2, ended_at = now()
-WHERE id = $1
-`
-
-type UpdateFlowRunCompletedParams struct {
-	ID     uuid.UUID       `json:"id"`
-	Output json.RawMessage `json:"output"`
-}
-
-func (q *Queries) UpdateFlowRunCompleted(ctx context.Context, arg UpdateFlowRunCompletedParams) error {
-	_, err := q.db.Exec(ctx, updateFlowRunCompleted, arg.ID, arg.Output)
-	return err
-}
-
-const updateFlowRunFailed = `-- name: UpdateFlowRunFailed :exec
-UPDATE flow_runs SET status = 'failed', error = $2, ended_at = now()
-WHERE id = $1
-`
-
-type UpdateFlowRunFailedParams struct {
-	ID    uuid.UUID `json:"id"`
-	Error *string   `json:"error"`
-}
-
-func (q *Queries) UpdateFlowRunFailed(ctx context.Context, arg UpdateFlowRunFailedParams) error {
-	_, err := q.db.Exec(ctx, updateFlowRunFailed, arg.ID, arg.Error)
-	return err
-}
-
-const updateFlowRunRunning = `-- name: UpdateFlowRunRunning :exec
-UPDATE flow_runs SET status = 'running', started_at = now(), attempt = attempt + 1
-WHERE id = $1
-`
-
-func (q *Queries) UpdateFlowRunRunning(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, updateFlowRunRunning, id)
-	return err
-}
-
 const updateGoalStatus = `-- name: UpdateGoalStatus :one
 UPDATE goals SET
     status = $1::goal_status,
@@ -8785,16 +8290,6 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const updateProjectLastActivity = `-- name: UpdateProjectLastActivity :exec
-UPDATE projects SET last_activity_at = now(), updated_at = now()
-WHERE notion_page_id = $1
-`
-
-func (q *Queries) UpdateProjectLastActivity(ctx context.Context, notionPageID *string) error {
-	_, err := q.db.Exec(ctx, updateProjectLastActivity, notionPageID)
-	return err
 }
 
 const updateProjectStatus = `-- name: UpdateProjectStatus :one
@@ -9073,57 +8568,6 @@ func (q *Queries) UpdateTopic(ctx context.Context, arg UpdateTopicParams) (Topic
 	return i, err
 }
 
-const upsertGoalByNotionPageID = `-- name: UpsertGoalByNotionPageID :one
-INSERT INTO goals (title, description, status, area_id, quarter, deadline, notion_page_id)
-VALUES ($1, $2, $3::goal_status, $4, $5, $6, $7)
-ON CONFLICT (notion_page_id) DO UPDATE SET
-    title       = EXCLUDED.title,
-    description = EXCLUDED.description,
-    status      = EXCLUDED.status,
-    area        = EXCLUDED.area,
-    quarter     = EXCLUDED.quarter,
-    deadline    = EXCLUDED.deadline,
-    updated_at  = now()
-RETURNING id, title, description, status, area_id, quarter, deadline,
-          notion_page_id, created_at, updated_at
-`
-
-type UpsertGoalByNotionPageIDParams struct {
-	Title        string     `json:"title"`
-	Description  string     `json:"description"`
-	Status       GoalStatus `json:"status"`
-	AreaID       *uuid.UUID `json:"area_id"`
-	Quarter      *string    `json:"quarter"`
-	Deadline     *time.Time `json:"deadline"`
-	NotionPageID *string    `json:"notion_page_id"`
-}
-
-func (q *Queries) UpsertGoalByNotionPageID(ctx context.Context, arg UpsertGoalByNotionPageIDParams) (Goal, error) {
-	row := q.db.QueryRow(ctx, upsertGoalByNotionPageID,
-		arg.Title,
-		arg.Description,
-		arg.Status,
-		arg.AreaID,
-		arg.Quarter,
-		arg.Deadline,
-		arg.NotionPageID,
-	)
-	var i Goal
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Description,
-		&i.Status,
-		&i.AreaID,
-		&i.Quarter,
-		&i.Deadline,
-		&i.NotionPageID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const upsertNote = `-- name: UpsertNote :one
 INSERT INTO notes (
     file_path, title, type, source, context, maturity, raw_tags,
@@ -9229,78 +8673,6 @@ type UpsertNoteLinkParams struct {
 func (q *Queries) UpsertNoteLink(ctx context.Context, arg UpsertNoteLinkParams) error {
 	_, err := q.db.Exec(ctx, upsertNoteLink, arg.SourceNoteID, arg.TargetPath, arg.LinkText)
 	return err
-}
-
-const upsertProjectByNotionPageID = `-- name: UpsertProjectByNotionPageID :one
-INSERT INTO projects (slug, title, description, status, area_id, goal_id, deadline, notion_page_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (notion_page_id) DO UPDATE SET
-    title = EXCLUDED.title,
-    description = EXCLUDED.description,
-    status = EXCLUDED.status,
-    area_id = EXCLUDED.area_id,
-    goal_id = EXCLUDED.goal_id,
-    deadline = EXCLUDED.deadline,
-    updated_at = now()
-RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
-          problem, solution, architecture, results, github_url, live_url,
-          featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline,
-          last_activity_at, expected_cadence, created_at, updated_at
-`
-
-type UpsertProjectByNotionPageIDParams struct {
-	Slug         string        `json:"slug"`
-	Title        string        `json:"title"`
-	Description  string        `json:"description"`
-	Status       ProjectStatus `json:"status"`
-	AreaID       *uuid.UUID    `json:"area_id"`
-	GoalID       *uuid.UUID    `json:"goal_id"`
-	Deadline     *time.Time    `json:"deadline"`
-	NotionPageID *string       `json:"notion_page_id"`
-}
-
-func (q *Queries) UpsertProjectByNotionPageID(ctx context.Context, arg UpsertProjectByNotionPageIDParams) (Project, error) {
-	row := q.db.QueryRow(ctx, upsertProjectByNotionPageID,
-		arg.Slug,
-		arg.Title,
-		arg.Description,
-		arg.Status,
-		arg.AreaID,
-		arg.GoalID,
-		arg.Deadline,
-		arg.NotionPageID,
-	)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Description,
-		&i.LongDescription,
-		&i.Role,
-		&i.TechStack,
-		&i.Highlights,
-		&i.Problem,
-		&i.Solution,
-		&i.Architecture,
-		&i.Results,
-		&i.GithubUrl,
-		&i.LiveUrl,
-		&i.Featured,
-		&i.IsPublic,
-		&i.SortOrder,
-		&i.Status,
-		&i.NotionPageID,
-		&i.Repo,
-		&i.AreaID,
-		&i.GoalID,
-		&i.Deadline,
-		&i.LastActivityAt,
-		&i.ExpectedCadence,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const upsertTaskByNotionPageID = `-- name: UpsertTaskByNotionPageID :one

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -220,117 +219,6 @@ func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error
 	}
 	p := rowToProject(&r)
 	return &p, nil
-}
-
-// UpsertByNotionPageID upserts a project by its Notion page ID.
-// If the generated slug conflicts with an existing project, a numeric
-// suffix is appended (e.g. "-2", "-3") up to 5 attempts.
-func (s *Store) UpsertByNotionPageID(ctx context.Context, p *UpsertByNotionParams) (*Project, error) {
-	slug := p.Slug
-	for i := range 5 {
-		r, err := s.q.UpsertProjectByNotionPageID(ctx, db.UpsertProjectByNotionPageIDParams{
-			Slug:         slug,
-			Title:        p.Title,
-			Description:  p.Description,
-			Status:       db.ProjectStatus(p.Status),
-			AreaID:       p.AreaID,
-			GoalID:       p.GoalID,
-			Deadline:     p.Deadline,
-			NotionPageID: &p.NotionPageID,
-		})
-		if err != nil {
-			if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "projects_slug_key" {
-				// suffix: "title-2", "title-3", … "title-6"
-				slug = fmt.Sprintf("%s-%d", p.Slug, i+2)
-				continue
-			}
-			return nil, fmt.Errorf("upserting project by notion page %s: %w", p.NotionPageID, err)
-		}
-		proj := rowToProject(&r)
-		return &proj, nil
-	}
-	return nil, fmt.Errorf("upserting project by notion page %s: slug conflict after retries", p.NotionPageID)
-}
-
-// UpdateLastActivity sets last_activity_at to now for the project identified by Notion page ID.
-func (s *Store) UpdateLastActivity(ctx context.Context, notionPageID string) error {
-	if err := s.q.UpdateProjectLastActivity(ctx, &notionPageID); err != nil {
-		return fmt.Errorf("updating last activity for notion page %s: %w", notionPageID, err)
-	}
-	return nil
-}
-
-// NotionPageIDs returns all notion page IDs for projects synced from Notion.
-func (s *Store) NotionPageIDs(ctx context.Context) ([]string, error) {
-	ptrs, err := s.q.NotionProjectPageIDs(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing project notion page ids: %w", err)
-	}
-	ids := make([]string, 0, len(ptrs))
-	for _, p := range ptrs {
-		if p != nil {
-			ids = append(ids, *p)
-		}
-	}
-	return ids, nil
-}
-
-// ArchiveByNotionPageID marks a single project as archived by its Notion page ID.
-// Used when a Notion page is trashed. Returns rows affected (0 if not found or already archived).
-func (s *Store) ArchiveByNotionPageID(ctx context.Context, notionPageID string) (int64, error) {
-	n, err := s.q.ArchiveProjectByNotionPageID(ctx, &notionPageID)
-	if err != nil {
-		return 0, fmt.Errorf("archiving project by notion page %s: %w", notionPageID, err)
-	}
-	return n, nil
-}
-
-// ArchiveOrphanNotion marks projects as archived if their notion_page_id
-// is not in the given list of active IDs. Returns the number of archived projects.
-// Returns 0 immediately if activeIDs is empty to avoid archiving all records.
-func (s *Store) ArchiveOrphanNotion(ctx context.Context, activeIDs []string) (int64, error) {
-	if len(activeIDs) == 0 {
-		return 0, nil
-	}
-	n, err := s.q.ArchiveOrphanNotionProjects(ctx, activeIDs)
-	if err != nil {
-		return 0, fmt.Errorf("archiving orphan notion projects: %w", err)
-	}
-	return n, nil
-}
-
-// SlugByNotionPageID returns the slug of a project identified by its Notion page ID.
-func (s *Store) SlugByNotionPageID(ctx context.Context, notionPageID string) (string, error) {
-	slug, err := s.q.ProjectSlugByNotionPageID(ctx, &notionPageID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrNotFound
-		}
-		return "", fmt.Errorf("querying project slug by notion page id %s: %w", notionPageID, err)
-	}
-	return slug, nil
-}
-
-// IDByNotionPageID returns the UUID of a project identified by its Notion page ID.
-func (s *Store) IDByNotionPageID(ctx context.Context, notionPageID string) (uuid.UUID, error) {
-	id, err := s.q.ProjectIDByNotionPageID(ctx, &notionPageID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.UUID{}, ErrNotFound
-		}
-		return uuid.UUID{}, fmt.Errorf("querying project id by notion page id %s: %w", notionPageID, err)
-	}
-	return id, nil
-}
-
-// ActiveSlugsWithRepo returns slugs of active projects that have a linked
-// repository and activity since the given time.
-func (s *Store) ActiveSlugsWithRepo(ctx context.Context, since time.Time) ([]string, error) {
-	slugs, err := s.q.ActiveProjectSlugsWithRepo(ctx, &since)
-	if err != nil {
-		return nil, fmt.Errorf("listing active project slugs with repo: %w", err)
-	}
-	return slugs, nil
 }
 
 // UpdateStatus updates a project's status and optionally its description and expected cadence.

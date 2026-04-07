@@ -8,7 +8,6 @@ sql:
       - "internal/project/query.sql"
       - "internal/review/query.sql"
       - "internal/feed/entry/query.sql"
-      - "internal/ai/exec/query.sql"
       - "internal/feed/query.sql"
       - "internal/goal/query.sql"
       - "internal/tag/query.sql"

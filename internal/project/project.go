@@ -104,18 +104,6 @@ type UpdateParams struct {
 	Status          *Status  `json:"status,omitempty"`
 }
 
-// UpsertByNotionParams are the parameters for upserting a project from Notion.
-type UpsertByNotionParams struct {
-	Slug         string
-	Title        string
-	Description  string
-	Status       Status
-	AreaID       *uuid.UUID
-	GoalID       *uuid.UUID
-	Deadline     *time.Time
-	NotionPageID string
-}
-
 var (
 	// ErrNotFound indicates the project does not exist.
 	ErrNotFound = errors.New("project: not found")

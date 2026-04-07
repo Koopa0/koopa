@@ -77,58 +77,8 @@ SELECT id, slug, title, description, long_description, role, tech_stack, highlig
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC;
 
--- name: ProjectSlugByNotionPageID :one
--- Resolve a Notion page ID to a project slug.
-SELECT slug FROM projects WHERE notion_page_id = $1;
-
--- name: ProjectIDByNotionPageID :one
--- Resolve a Notion page ID to a project UUID.
-SELECT id FROM projects WHERE notion_page_id = $1;
-
--- name: ActiveProjectSlugsWithRepo :many
--- List slugs of active projects that have a linked repository and recent activity.
-SELECT slug FROM projects
-WHERE status IN ('in-progress', 'maintained')
-  AND repo IS NOT NULL AND repo != ''
-  AND last_activity_at >= @since
-ORDER BY title;
-
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;
-
--- name: UpsertProjectByNotionPageID :one
-INSERT INTO projects (slug, title, description, status, area_id, goal_id, deadline, notion_page_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (notion_page_id) DO UPDATE SET
-    title = EXCLUDED.title,
-    description = EXCLUDED.description,
-    status = EXCLUDED.status,
-    area_id = EXCLUDED.area_id,
-    goal_id = EXCLUDED.goal_id,
-    deadline = EXCLUDED.deadline,
-    updated_at = now()
-RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
-          problem, solution, architecture, results, github_url, live_url,
-          featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline,
-          last_activity_at, expected_cadence, created_at, updated_at;
-
--- name: UpdateProjectLastActivity :exec
-UPDATE projects SET last_activity_at = now(), updated_at = now()
-WHERE notion_page_id = $1;
-
--- name: NotionProjectPageIDs :many
-SELECT notion_page_id FROM projects WHERE notion_page_id IS NOT NULL ORDER BY title;
-
--- name: ArchiveProjectByNotionPageID :execrows
--- Archive a single project by its Notion page ID (used when Notion page is trashed).
-UPDATE projects SET status = 'archived', updated_at = now()
-WHERE notion_page_id = $1 AND status != 'archived';
-
--- name: ArchiveOrphanNotionProjects :execrows
-UPDATE projects SET status = 'archived', updated_at = now()
-WHERE notion_page_id IS NOT NULL
-  AND notion_page_id != ALL(@active_ids::text[])
-  AND status != 'archived';
 
 -- name: ProjectByAlias :one
 -- Resolve a project alias to a project via the project_aliases table.

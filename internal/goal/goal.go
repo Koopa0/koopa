@@ -1,4 +1,4 @@
-// Package goal provides goal tracking synced from Notion.
+// Package goal provides goal tracking.
 package goal
 
 import (
@@ -25,7 +25,7 @@ const (
 	StatusAbandoned Status = "abandoned"
 )
 
-// Goal represents a personal goal synced from Notion.
+// Goal represents a personal goal.
 type Goal struct {
 	ID           uuid.UUID  `json:"id"`
 	Title        string     `json:"title"`
@@ -37,17 +37,6 @@ type Goal struct {
 	NotionPageID *string    `json:"notion_page_id,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
-}
-
-// UpsertByNotionParams are the parameters for upserting a goal from Notion.
-type UpsertByNotionParams struct {
-	Title        string
-	Description  string
-	Status       Status
-	Area         *uuid.UUID
-	Quarter      *string
-	Deadline     *time.Time
-	NotionPageID string
 }
 
 var (
