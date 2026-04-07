@@ -83,7 +83,7 @@ func (s *Store) queryContentStats(ctx context.Context, cs *ContentStats) error {
 }
 
 func (s *Store) queryCollectedStats(ctx context.Context, cs *CollectedStats) error {
-	rows, err := s.dbtx.Query(ctx, `SELECT status::text, COUNT(*) FROM collected_data GROUP BY status`)
+	rows, err := s.dbtx.Query(ctx, `SELECT status::text, COUNT(*) FROM feed_entries GROUP BY status`)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func (s *Store) queryReviewStats(ctx context.Context, rs *ReviewStats) error {
 }
 
 func (s *Store) queryNoteStats(ctx context.Context, ns *NoteStats) error {
-	rows, err := s.dbtx.Query(ctx, `SELECT COALESCE(type, 'unknown'), COUNT(*) FROM obsidian_notes GROUP BY type`)
+	rows, err := s.dbtx.Query(ctx, `SELECT COALESCE(type, 'unknown'), COUNT(*) FROM notes GROUP BY type`)
 	if err != nil {
 		return err
 	}
@@ -200,8 +200,9 @@ func (s *Store) queryActivityStats(ctx context.Context, as *ActivityStats) error
 }
 
 func (s *Store) querySourceStats(ctx context.Context, ss *SourceStats) error {
+	// v2: notion_sources removed. Sources table tracks generic sync sources.
 	return s.dbtx.QueryRow(ctx,
-		`SELECT COUNT(*), COUNT(*) FILTER (WHERE enabled) FROM notion_sources`,
+		`SELECT COUNT(*), COUNT(*) FILTER (WHERE enabled) FROM sources`,
 	).Scan(&ss.Total, &ss.Enabled)
 }
 
@@ -236,9 +237,11 @@ func (s *Store) Drift(ctx context.Context, days int) (*DriftReport, error) {
 
 func (s *Store) queryGoalsByArea(ctx context.Context) (map[string]int, int, error) { //nolint:gocritic // named results conflict with local := declarations
 	rows, err := s.dbtx.Query(ctx, `
-		SELECT COALESCE(area, 'unset'), COUNT(*)
-		FROM goals WHERE status IN ('not-started', 'in-progress')
-		GROUP BY area`)
+		SELECT COALESCE(a.name, 'unset'), COUNT(*)
+		FROM goals g
+		LEFT JOIN areas a ON a.id = g.area_id
+		WHERE g.status IN ('not-started', 'in-progress')
+		GROUP BY a.name`)
 	if err != nil {
 		return nil, 0, fmt.Errorf("querying goals by area: %w", err)
 	}
@@ -263,11 +266,12 @@ func (s *Store) queryGoalsByArea(ctx context.Context) (map[string]int, int, erro
 
 func (s *Store) queryEventsByArea(ctx context.Context, days int) (map[string]int, int, error) { //nolint:gocritic // named results conflict with local := declarations
 	rows, err := s.dbtx.Query(ctx, `
-		SELECT COALESCE(p.area, 'unset'), COUNT(*)
+		SELECT COALESCE(a.name, 'unset'), COUNT(*)
 		FROM activity_events ae
 		LEFT JOIN projects p ON ae.project = p.slug OR (p.repo IS NOT NULL AND p.repo != '' AND ae.project = p.repo)
+		LEFT JOIN areas a ON a.id = p.area_id
 		WHERE ae.timestamp > now() - make_interval(days => $1)
-		GROUP BY p.area`, days)
+		GROUP BY a.name`, days)
 	if err != nil {
 		return nil, 0, fmt.Errorf("querying events by area: %w", err)
 	}
@@ -479,7 +483,7 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	// missing (e.g. obsidian sync not yet configured).
 	var hasData bool
 
-	// Note growth (obsidian_notes + contents TIL entries)
+	// Note growth (notes + contents TIL entries)
 	if err := s.learningNoteGrowth(ctx, ld); err != nil {
 		slog.Warn("learning: note growth query failed, returning zeros", "error", err)
 	} else {
@@ -493,7 +497,7 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 		hasData = true
 	}
 
-	// Top tags by count (obsidian_note_tags + contents TIL tags)
+	// Top tags by count (note_tags + contents TIL tags)
 	if err := s.learningTopTags(ctx, ld); err != nil {
 		slog.Warn("learning: top tags query failed, returning zeros", "error", err)
 	} else {
@@ -510,8 +514,8 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 }
 
 func (s *Store) learningNoteGrowth(ctx context.Context, ld *LearningDashboard) error {
-	// Aggregate from BOTH obsidian_notes AND contents (TIL entries).
-	// obsidian_notes uses synced_at; contents uses created_at.
+	// Aggregate from BOTH notes AND contents (TIL entries).
+	// notes uses synced_at; contents uses created_at.
 	err := s.dbtx.QueryRow(ctx, `
 		SELECT
 			COALESCE(o.total, 0) + COALESCE(c.total, 0),
@@ -521,7 +525,7 @@ func (s *Store) learningNoteGrowth(ctx context.Context, ld *LearningDashboard) e
 			(SELECT COUNT(*) AS total,
 				COUNT(*) FILTER (WHERE synced_at > now() - interval '7 days') AS last_week,
 				COUNT(*) FILTER (WHERE synced_at > now() - interval '30 days') AS last_month
-			 FROM obsidian_notes) o,
+			 FROM notes) o,
 			(SELECT COUNT(*) AS total,
 				COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS last_week,
 				COUNT(*) FILTER (WHERE created_at > now() - interval '30 days') AS last_month
@@ -531,10 +535,10 @@ func (s *Store) learningNoteGrowth(ctx context.Context, ld *LearningDashboard) e
 		return fmt.Errorf("note growth: %w", err)
 	}
 
-	// By-type breakdown: obsidian_notes types + TIL count from contents.
+	// By-type breakdown: notes types + TIL count from contents.
 	noteRows, err := s.dbtx.Query(ctx, `
 		SELECT type, SUM(cnt)::int FROM (
-			SELECT COALESCE(type, 'unknown') AS type, COUNT(*) AS cnt FROM obsidian_notes GROUP BY type
+			SELECT COALESCE(type, 'unknown') AS type, COUNT(*) AS cnt FROM notes GROUP BY type
 			UNION ALL
 			SELECT 'til' AS type, COUNT(*) AS cnt FROM contents WHERE type = 'til'
 		) combined
@@ -576,12 +580,12 @@ func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboar
 }
 
 func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) error {
-	// Aggregate tags from BOTH obsidian_note_tags and content_tags junction tables.
+	// Aggregate tags from BOTH note_tags and content_tags junction tables.
 	tagRows, err := s.dbtx.Query(ctx, `
 		SELECT name, SUM(cnt)::int AS total FROM (
 			SELECT t.name, COUNT(ont.note_id) AS cnt
 			FROM tags t
-			JOIN obsidian_note_tags ont ON ont.tag_id = t.id
+			JOIN note_tags ont ON ont.tag_id = t.id
 			GROUP BY t.id, t.name
 			UNION ALL
 			SELECT t.name, COUNT(ct.content_id) AS cnt

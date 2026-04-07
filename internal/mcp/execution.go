@@ -12,6 +12,21 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
+// normalizePriority maps shorthand priority values to the DB enum.
+// Accepts: high/medium/low (direct), p1/p2/p3 (shorthand), h/m/l (abbreviation).
+func normalizePriority(s string) string {
+	switch s {
+	case "high", "p1", "h":
+		return "high"
+	case "medium", "p2", "m":
+		return "medium"
+	case "low", "p3", "l":
+		return "low"
+	default:
+		return s // pass through, DB will reject if invalid
+	}
+}
+
 // --- advance_work ---
 
 // AdvanceWorkInput is the input for the advance_work tool.
@@ -96,14 +111,14 @@ func (s *Server) advanceClarify(ctx context.Context, taskID uuid.UUID, input Adv
 		}
 		params.Due = &t
 	}
-	params.Priority = input.Priority
+	if input.Priority != nil {
+		p := normalizePriority(*input.Priority)
+		params.Priority = &p
+	}
 	params.Energy = input.Energy
 
 	if input.Project != "" {
-		id, err := uuid.Parse(input.Project)
-		if err == nil {
-			params.ProjectID = &id
-		}
+		params.ProjectID = s.resolveProjectID(ctx, input.Project)
 	}
 
 	updated, err := s.tasks.Update(ctx, params)

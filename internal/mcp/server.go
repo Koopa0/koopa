@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -369,6 +370,8 @@ func toolResultText(text string) *mcp.CallToolResult {
 
 // addTool registers a tool with optional telemetry wrapping.
 // If tool.InputSchema is nil, addTool generates the schema with FlexInt support.
+// Array fields in the schema are post-processed to remove nullable type
+// (Go slices generate ["null","array"] but MCP clients may stringify nullable arrays).
 func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error)) {
 	if tool.InputSchema == nil {
 		var zero I
@@ -378,6 +381,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 		if err != nil {
 			panic(fmt.Sprintf("mcp: schema generation failed for %s: %v", tool.Name, err))
 		}
+		fixNullableArrays(schema)
 		tool.InputSchema = schema
 	}
 
@@ -442,6 +446,27 @@ func clamp(v, lo, hi, def int) int {
 		return hi
 	}
 	return v
+}
+
+// fixNullableArrays walks a schema and converts ["null","array"] to "array"
+// for all properties. Go slices generate nullable types, but MCP clients
+// (Claude Desktop) may stringify nullable arrays. Making them non-nullable
+// ensures clients send actual JSON arrays.
+func fixNullableArrays(s *jsonschema.Schema) {
+	for _, prop := range s.Properties {
+		if prop == nil {
+			continue
+		}
+		// Convert ["null","array"] → "array"
+		if len(prop.Types) == 2 && slices.Contains(prop.Types, "null") && slices.Contains(prop.Types, "array") {
+			prop.Types = nil
+			prop.Type = "array"
+		}
+		// Recurse into object properties
+		if len(prop.Properties) > 0 {
+			fixNullableArrays(prop)
+		}
+	}
 }
 
 // reflectType is a helper for jsonschema type mapping.

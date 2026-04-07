@@ -65,7 +65,7 @@ func (s *Server) resolveProposalFields(ctx context.Context, entityType string, f
 
 	switch entityType {
 	case "goal":
-		warnings = resolveGoalFields(resolved)
+		warnings = s.resolveGoalFields(ctx, resolved)
 	case "project":
 		warnings = s.resolveProjectFields(ctx, resolved)
 	case "milestone":
@@ -78,13 +78,25 @@ func (s *Server) resolveProposalFields(ctx context.Context, entityType string, f
 	return resolved, warnings
 }
 
-func resolveGoalFields(f map[string]any) []string {
+func (s *Server) resolveGoalFields(ctx context.Context, f map[string]any) []string {
 	var w []string
 	if _, ok := f["title"]; !ok {
 		w = append(w, "title is required for goal")
 	}
-	if _, ok := f["area_id"]; !ok {
-		w = append(w, "no area_id specified — goal will be unscoped")
+	// Resolve area slug/name → area_id UUID
+	if areaSlug, ok := f["area"].(string); ok && areaSlug != "" {
+		var areaID uuid.UUID
+		err := s.pool.QueryRow(ctx,
+			`SELECT id FROM areas WHERE slug = $1 OR LOWER(name) = LOWER($1)`, areaSlug,
+		).Scan(&areaID)
+		if err == nil {
+			f["area_id"] = areaID.String()
+			delete(f, "area")
+		} else {
+			w = append(w, fmt.Sprintf("area %q not found — goal will be unscoped", areaSlug))
+		}
+	} else if _, ok := f["area_id"]; !ok {
+		w = append(w, "no area specified — goal will be unscoped")
 	}
 	return w
 }
