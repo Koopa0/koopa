@@ -216,14 +216,14 @@ type LearningDashboardInput struct {
 }
 
 type LearningDashboardOutput struct {
-	View       string `json:"view"`
-	Total      int    `json:"total"`
-	Sessions   any    `json:"sessions,omitempty"`
-	Mastery    any    `json:"mastery,omitempty"`
-	Weaknesses any    `json:"weaknesses,omitempty"`
-	Retrieval  any    `json:"retrieval,omitempty"`
-	Timeline   any    `json:"timeline,omitempty"`
-	Variations any    `json:"variations,omitempty"`
+	View       string                           `json:"view"`
+	Total      int                              `json:"total"`
+	Sessions   []learnsession.Session           `json:"sessions,omitempty"`
+	Mastery    []learnsession.ConceptMasteryRow `json:"mastery,omitempty"`
+	Weaknesses []learnsession.WeaknessRow       `json:"weaknesses,omitempty"`
+	Retrieval  []learnsession.RetrievalItem     `json:"retrieval,omitempty"`
+	Timeline   []learnsession.TimelineSession   `json:"timeline,omitempty"`
+	Variations []learnsession.ItemRelation      `json:"variations,omitempty"`
 }
 
 func (s *Server) learningDashboard(ctx context.Context, _ *sdkmcp.CallToolRequest, input LearningDashboardInput) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {

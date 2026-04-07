@@ -47,6 +47,8 @@ func recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 }
 
 // statusRecorder captures the status code written to the response.
+// Implements Unwrap() so http.Flusher and other optional interfaces
+// are still accessible through the wrapped ResponseWriter.
 type statusRecorder struct {
 	http.ResponseWriter
 	code int
@@ -55,6 +57,12 @@ type statusRecorder struct {
 func (sr *statusRecorder) WriteHeader(code int) {
 	sr.code = code
 	sr.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap returns the underlying ResponseWriter, enabling Go 1.20+
+// response writer interface discovery (http.Flusher, http.Hijacker, etc.).
+func (sr *statusRecorder) Unwrap() http.ResponseWriter {
+	return sr.ResponseWriter
 }
 
 // logging logs each request with method, path, status, and duration.
