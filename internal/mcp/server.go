@@ -406,6 +406,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 			panic(fmt.Sprintf("mcp: schema generation failed for %s: %v", tool.Name, err))
 		}
 		fixNullableArrays(schema)
+		injectCallerIdentityField(schema)
 		tool.InputSchema = schema
 	}
 
@@ -496,6 +497,23 @@ func fixNullableArrays(s *jsonschema.Schema) {
 			fixNullableArrays(prop)
 		}
 	}
+}
+
+// injectCallerIdentityField adds the "as" property to a tool schema and
+// removes additionalProperties:false so the MCP client can pass it.
+// This enables caller self-identification: each Cowork project's instructions
+// tell the AI to pass as:"hq" (or "content-studio", etc.) in every tool call.
+func injectCallerIdentityField(s *jsonschema.Schema) {
+	if s.Properties == nil {
+		s.Properties = map[string]*jsonschema.Schema{}
+	}
+	s.Properties["as"] = &jsonschema.Schema{
+		Type:        "string",
+		Description: "Caller participant identity (e.g. hq, content-studio). Set by project instructions.",
+	}
+	// Allow the "as" field to pass through — jsonschema-go sets
+	// additionalProperties:false by default which would reject it.
+	s.AdditionalProperties = nil
 }
 
 // reflectType is a helper for jsonschema type mapping.

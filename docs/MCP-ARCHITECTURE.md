@@ -245,23 +245,58 @@ Platform: human
 
 ---
 
-## 4. 場景設計（按 Participant 角色）
+## 4. Trust Model — Caller Self-Identification
 
-### 4.1 HQ（Studio CEO）— 最常用
+### 為什麼不用密碼學驗證 identity?
+
+MCP 的 caller 不是隨機的 HTTP client — 它是被使用者授權的、有 system prompt 指導的 AI agent。
+信任邊界不在 transport layer（哪個 connection），而在 application layer（這個 participant 有沒有權限）。
+
+```
+傳統 API:  caller 可能是惡意的 → JWT / certificate 驗證 identity
+MCP:       caller 是被授權的 AI → prompt 定義 identity → capability 限制操作
+```
+
+### 實作：`as` 參數
+
+每個 tool call 都可以帶 `as` 欄位宣告自己的 participant identity：
+
+```json
+{ "as": "hq", "title": "審查 PR #123", ... }
+```
+
+- Server 信任 `as` 值（和 MCP 的 trust model 一致）
+- Server 用 capability flags 驗證該 participant 是否有權限做這個操作
+- 如果沒有 `as`，fallback 到 server 的 `KOOPA_MCP_PARTICIPANT` env（default: `"human"`）
+
+### Project Instructions 約定
+
+每個 Cowork project 的 instructions 必須包含：
+```
+你是 hq（Studio HQ — CEO, decisions, delegation）。
+在所有 MCP tool call 中傳入 as: "hq"。
+你可以 issue directives 和 write reports。
+```
+
+---
+
+## 5. 場景設計（按 Participant 角色）
+
+### 5.1 HQ（Studio CEO）— 最常用
 
 **晨間啟動：**
 ```
-morning_context → 看到 overdue tasks + unacked directives + pending reports
-  → acknowledge_directive（收到指令）
-  → plan_day（安排今天的任務）
-  → 如有新想法 → capture_inbox
-  → 如有重要決策 → propose_commitment(type=insight)
+morning_context(as:"hq") → 看到 overdue tasks + unacked directives + pending reports
+  → acknowledge_directive(as:"hq", ...)
+  → plan_day(as:"hq", items:[...])
+  → 如有新想法 → capture_inbox(as:"hq", title:"...")
+  → 如有重要決策 → propose_commitment(as:"hq", type:insight, ...)
 ```
 
 **委派工作：**
 ```
-propose_commitment(type=directive, source=hq, target=content-studio, content="寫一篇 Go generics 文章")
-  → commit_proposal
+propose_commitment(as:"hq", type:directive, fields:{source:"hq", target:"content-studio", content:"寫一篇 Go generics 文章"})
+  → commit_proposal(as:"hq", proposal_token:"...")
   → 等 content-studio 收到（acknowledge_directive）
   → 等 content-studio 回報（file_report）
 ```
@@ -334,7 +369,7 @@ session_delta → 「上次之後發生了什麼？」
 
 ---
 
-## 5. 決策原則
+## 6. 決策原則
 
 ### 5.1 Semantic Maturity（語意成熟度）
 
@@ -377,7 +412,7 @@ AI 建立 entity 前，必須評估使用者輸入的成熟度：
 
 ---
 
-## 6. 技術架構
+## 7. 技術架構
 
 ```
 ┌─────────────────────┐     ┌──────────────────────┐
@@ -405,7 +440,7 @@ AI 建立 entity 前，必須評估使用者輸入的成熟度：
 
 ---
 
-## 7. 開放討論：場景需求
+## 8. 開放討論：場景需求
 
 以下場景尚未有對應工具，歡迎各 participant 提出需求：
 
@@ -420,7 +455,7 @@ AI 建立 entity 前，必須評估使用者輸入的成熟度：
 
 ---
 
-## 8. 審查指南
+## 9. 審查指南
 
 第三方審查者請關注：
 

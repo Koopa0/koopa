@@ -127,13 +127,18 @@ Token 有效期 10 分鐘，HMAC-SHA256 簽名防篡改。
 
 ---
 
-## Participant Resolution
+## Participant Resolution — Caller Self-Identification
 
-每個寫入工具需要解析呼叫者身份。MCP server 從啟動設定取得：
-- `KOOPA_MCP_PARTICIPANT=claude-code` → Claude Code
-- `KOOPA_MCP_PARTICIPANT=hq` → Claude Desktop Cowork HQ
+每個 tool call 都可以帶 `as` 欄位宣告 caller identity：
+```json
+{ "as": "hq", "title": "審查 PR #123", ... }
+```
 
-例外：`propose_commitment(type=directive)` 在 fields 中明確指定 source/target。
+- Server 信任 `as`（MCP trust model），用 capability flags 驗證權限
+- 沒有 `as` 時，fallback 到 `KOOPA_MCP_PARTICIPANT` env（default: `"human"`）
+- 每個 Cowork project 的 instructions 指定：`在所有 tool call 中傳入 as: "hq"`
+
+完整 trust model 說明見 `docs/MCP-ARCHITECTURE.md` §4。
 
 ---
 
