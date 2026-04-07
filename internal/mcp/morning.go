@@ -7,6 +7,9 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/daily"
+	"github.com/Koopa0/koopa0.dev/internal/directive"
+	"github.com/Koopa0/koopa0.dev/internal/goal"
+	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
@@ -15,20 +18,21 @@ import (
 
 // MorningContextInput is the input for the morning_context tool.
 type MorningContextInput struct {
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, plan_history"`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, directives, insights, plan_history"`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
 // MorningContextOutput is the output of the morning_context tool.
 type MorningContextOutput struct {
-	Date           string                   `json:"date"`
-	OverdueTasks   []task.PendingTaskDetail `json:"overdue_tasks"`
-	TodayTasks     []task.PendingTaskDetail `json:"today_tasks"`
-	CommittedTasks []daily.Item             `json:"committed_tasks"`
-	UpcomingTasks  []task.PendingTaskDetail `json:"upcoming_tasks"`
-	PlanHistory    []journal.Entry          `json:"plan_history"`
-	// Phase 2 will add: active_goals, unacked_directives, pending_reports, unverified_insights
-	// Phase 4 will add: rss_highlights
+	Date               string                   `json:"date"`
+	OverdueTasks       []task.PendingTaskDetail `json:"overdue_tasks"`
+	TodayTasks         []task.PendingTaskDetail `json:"today_tasks"`
+	CommittedTasks     []daily.Item             `json:"committed_tasks"`
+	UpcomingTasks      []task.PendingTaskDetail `json:"upcoming_tasks"`
+	ActiveGoals        []goal.ActiveGoalSummary `json:"active_goals"`
+	UnackedDirectives  []directive.Directive    `json:"unacked_directives"`
+	UnverifiedInsights []insight.Insight        `json:"unverified_insights"`
+	PlanHistory        []journal.Entry          `json:"plan_history"`
 }
 
 func (s *Server) morningContext(ctx context.Context, _ *sdkmcp.CallToolRequest, input MorningContextInput) (*sdkmcp.CallToolResult, MorningContextOutput, error) {
@@ -41,22 +45,27 @@ func (s *Server) morningContext(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 		date = t
 	}
 
+	all := len(input.Sections) == 0
 	sections := map[string]bool{}
-	if len(input.Sections) == 0 {
-		sections["tasks"] = true
-		sections["plan_history"] = true
-	} else {
-		for _, s := range input.Sections {
-			sections[s] = true
-		}
+	for _, sec := range input.Sections {
+		sections[sec] = true
 	}
 
 	out := MorningContextOutput{Date: date.Format(time.DateOnly)}
 
-	if sections["tasks"] {
+	if all || sections["tasks"] {
 		s.fillMorningTasks(ctx, date, &out)
 	}
-	if sections["plan_history"] {
+	if all || sections["goals"] {
+		s.fillGoals(ctx, &out)
+	}
+	if all || sections["directives"] {
+		s.fillDirectives(ctx, &out)
+	}
+	if all || sections["insights"] {
+		s.fillInsights(ctx, &out)
+	}
+	if all || sections["plan_history"] {
 		s.fillPlanHistory(ctx, date, &out)
 	}
 
@@ -64,28 +73,24 @@ func (s *Server) morningContext(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 }
 
 func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *MorningContextOutput) {
-	// Overdue tasks
 	if rows, err := s.tasks.OverdueTasks(ctx, date); err == nil {
 		out.OverdueTasks = rows
 	} else {
 		s.logger.Warn("morning_context: overdue tasks", "error", err)
 	}
 
-	// Today's tasks (due today, not yet in plan)
 	if rows, err := s.tasks.TasksDueOn(ctx, date); err == nil {
 		out.TodayTasks = rows
 	} else {
 		s.logger.Warn("morning_context: today tasks", "error", err)
 	}
 
-	// Committed daily plan items
 	if items, err := s.dayplan.ItemsByDate(ctx, date); err == nil {
 		out.CommittedTasks = items
 	} else {
 		s.logger.Warn("morning_context: committed tasks", "error", err)
 	}
 
-	// Upcoming tasks (next 7 days)
 	weekEnd := date.AddDate(0, 0, 7)
 	if rows, err := s.tasks.TasksDueInRange(ctx, date, weekEnd); err == nil {
 		out.UpcomingTasks = rows
@@ -93,18 +98,38 @@ func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *Morn
 		s.logger.Warn("morning_context: upcoming tasks", "error", err)
 	}
 
-	// Yesterday's unfinished plan items
+	// Yesterday's unfinished plan items surface as overdue.
 	yesterday := date.AddDate(0, 0, -1)
 	if items, err := s.dayplan.ItemsByDate(ctx, yesterday); err == nil {
-		var unfinished []daily.Item
 		for i := range items {
 			if items[i].Status == daily.StatusPlanned {
-				unfinished = append(unfinished, items[i])
+				out.OverdueTasks = append(out.OverdueTasks, planItemToTaskDetail(&items[i]))
 			}
 		}
-		if len(unfinished) > 0 {
-			out.OverdueTasks = append(out.OverdueTasks, convertPlanItemsToTaskDetails(unfinished)...)
-		}
+	}
+}
+
+func (s *Server) fillGoals(ctx context.Context, out *MorningContextOutput) {
+	if goals, err := s.goals.ActiveGoals(ctx); err == nil {
+		out.ActiveGoals = goals
+	} else {
+		s.logger.Warn("morning_context: active goals", "error", err)
+	}
+}
+
+func (s *Server) fillDirectives(ctx context.Context, out *MorningContextOutput) {
+	if dirs, err := s.directives.UnackedForTarget(ctx, s.participant); err == nil {
+		out.UnackedDirectives = dirs
+	} else {
+		s.logger.Warn("morning_context: unacked directives", "error", err)
+	}
+}
+
+func (s *Server) fillInsights(ctx context.Context, out *MorningContextOutput) {
+	if ins, err := s.insights.Unverified(ctx, 10); err == nil {
+		out.UnverifiedInsights = ins
+	} else {
+		s.logger.Warn("morning_context: unverified insights", "error", err)
 	}
 }
 
@@ -118,20 +143,16 @@ func (s *Server) fillPlanHistory(ctx context.Context, date time.Time, out *Morni
 	}
 }
 
-func convertPlanItemsToTaskDetails(items []daily.Item) []task.PendingTaskDetail {
-	result := make([]task.PendingTaskDetail, len(items))
-	for i := range items {
-		result[i] = task.PendingTaskDetail{
-			ID:           items[i].TaskID,
-			Title:        items[i].TaskTitle,
-			Status:       task.Status(items[i].TaskStatus),
-			Due:          items[i].TaskDue,
-			Energy:       items[i].TaskEnergy,
-			Priority:     items[i].TaskPriority,
-			Assignee:     items[i].TaskAssignee,
-			ProjectTitle: items[i].ProjectTitle,
-			ProjectSlug:  items[i].ProjectSlug,
-		}
+func planItemToTaskDetail(item *daily.Item) task.PendingTaskDetail {
+	return task.PendingTaskDetail{
+		ID:           item.TaskID,
+		Title:        item.TaskTitle,
+		Status:       task.Status(item.TaskStatus),
+		Due:          item.TaskDue,
+		Energy:       item.TaskEnergy,
+		Priority:     item.TaskPriority,
+		Assignee:     item.TaskAssignee,
+		ProjectTitle: item.ProjectTitle,
+		ProjectSlug:  item.ProjectSlug,
 	}
-	return result
 }

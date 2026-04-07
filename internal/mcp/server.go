@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
@@ -21,8 +22,10 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/learnsession"
+	"github.com/Koopa0/koopa0.dev/internal/note"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/report"
+	"github.com/Koopa0/koopa0.dev/internal/stats"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
@@ -36,6 +39,7 @@ type Server struct {
 	dayplan  *daily.Store
 	contents *content.Store
 	projects *project.Store
+	notes    *note.Store
 
 	// Phase 2 stores
 	goals      *goal.Store
@@ -46,8 +50,12 @@ type Server struct {
 	// Phase 3 stores
 	learn *learnsession.Store
 
-	// Phase 4 stores (optional — feed management)
+	// Phase 4 stores (optional)
 	feeds *feed.Store
+	stats *stats.Store
+
+	// Database pool for cross-store transactions
+	pool *pgxpool.Pool
 
 	// Configuration
 	participant    string         // calling participant name (from env)
@@ -87,6 +95,11 @@ func WithFeedStore(fs *feed.Store) ServerOption {
 	return func(s *Server) { s.feeds = fs }
 }
 
+// WithStats enables system status tool.
+func WithStats(ss *stats.Store) ServerOption {
+	return func(s *Server) { s.stats = ss }
+}
+
 // WithTelemetry enables async tool call logging.
 func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption {
 	return func(s *Server) { s.recordToolCall = recorder }
@@ -99,11 +112,13 @@ func NewServer(
 	dayplan *daily.Store,
 	contents *content.Store,
 	projects *project.Store,
+	notes *note.Store,
 	goals *goal.Store,
 	directives *directive.Store,
 	reports *report.Store,
 	insights *insight.Store,
 	learn *learnsession.Store,
+	pool *pgxpool.Pool,
 	logger *slog.Logger,
 	opts ...ServerOption,
 ) *Server {
@@ -113,11 +128,13 @@ func NewServer(
 		dayplan:     dayplan,
 		contents:    contents,
 		projects:    projects,
+		notes:       notes,
 		goals:       goals,
 		directives:  directives,
 		reports:     reports,
 		insights:    insights,
 		learn:       learn,
+		pool:        pool,
 		logger:      logger,
 		participant: "human",
 		loc:         time.UTC,

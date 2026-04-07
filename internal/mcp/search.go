@@ -8,6 +8,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
+	"github.com/Koopa0/koopa0.dev/internal/note"
 )
 
 // --- search_knowledge ---
@@ -63,7 +64,7 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		ct = &t
 	}
 
-	contents, total, err := s.contents.Search(ctx, input.Query, ct, 1, limit)
+	contents, _, err := s.contents.Search(ctx, input.Query, ct, 1, limit)
 	if err != nil {
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("searching content: %w", err)
 	}
@@ -80,15 +81,29 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *sdkmcp.CallToolRequest,
 		results = append(results, s.contentToResult(ctx, c))
 	}
 
-	if after != nil || before != nil {
-		total = len(results)
+	// Also search notes (Obsidian knowledge notes).
+	if s.notes != nil {
+		noteResults, nErr := s.notes.SearchByText(ctx, input.Query, limit)
+		if nErr == nil {
+			for i := range noteResults {
+				nr := &noteResults[i]
+				results = append(results, noteToResult(nr))
+			}
+		}
 	}
 
 	return nil, SearchKnowledgeOutput{
 		Results: results,
-		Total:   total,
+		Total:   len(results),
 		Query:   input.Query,
 	}, nil
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func (s *Server) contentToResult(ctx context.Context, c *content.Content) SearchKnowledgeResult {
@@ -107,6 +122,31 @@ func (s *Server) contentToResult(ctx context.Context, c *content.Content) Search
 		Tags:        c.Tags,
 		Project:     projectTitle,
 		CreatedAt:   c.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+func noteToResult(nr *note.SearchResult) SearchKnowledgeResult {
+	title := nr.FilePath
+	if nr.Title != nil {
+		title = *nr.Title
+	}
+	excerpt := ""
+	if nr.ContentText != nil {
+		excerpt = truncate(*nr.ContentText, 200)
+	}
+	createdStr := ""
+	if nr.GitCreatedAt != nil {
+		createdStr = nr.GitCreatedAt.Format(time.RFC3339)
+	} else if nr.SyncedAt != nil {
+		createdStr = nr.SyncedAt.Format(time.RFC3339)
+	}
+	return SearchKnowledgeResult{
+		ID:          fmt.Sprintf("%d", nr.ID),
+		Title:       title,
+		Slug:        nr.FilePath,
+		ContentType: "note",
+		Excerpt:     excerpt,
+		CreatedAt:   createdStr,
 	}
 }
 

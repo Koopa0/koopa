@@ -11,6 +11,7 @@ import (
 
 	"github.com/Koopa0/koopa0.dev/internal/directive"
 	"github.com/Koopa0/koopa0.dev/internal/insight"
+	"github.com/Koopa0/koopa0.dev/internal/project"
 )
 
 // --- propose_commitment ---
@@ -248,9 +249,40 @@ func (s *Server) commitGoal(ctx context.Context, fields map[string]any) (string,
 }
 
 func (s *Server) commitProject(ctx context.Context, fields map[string]any) (string, error) {
-	// TODO: wire project.Store.Create when project creation is needed.
-	// For now, projects are created via admin or Notion sync.
-	return "", fmt.Errorf("project creation not yet implemented in Phase 2")
+	title, _ := fields["title"].(string)
+	slug, _ := fields["slug"].(string)
+	description, _ := fields["description"].(string)
+
+	if title == "" || slug == "" {
+		return "", fmt.Errorf("title and slug are required for project")
+	}
+
+	var goalID, areaID *uuid.UUID
+	if v, ok := fields["goal_id"].(string); ok {
+		if id, err := uuid.Parse(v); err == nil {
+			goalID = &id
+		}
+	}
+	if v, ok := fields["area_id"].(string); ok {
+		if id, err := uuid.Parse(v); err == nil {
+			areaID = &id
+		}
+	}
+
+	_ = goalID // goal/area linking via project update — not supported in CreateParams yet
+	_ = areaID
+
+	p, err := s.projects.CreateProject(ctx, &project.CreateParams{
+		Slug:        slug,
+		Title:       title,
+		Description: description,
+		Status:      project.StatusPlanned,
+	})
+	if err != nil {
+		return "", fmt.Errorf("creating project: %w", err)
+	}
+
+	return p.ID.String(), nil
 }
 
 func (s *Server) commitMilestone(ctx context.Context, fields map[string]any) (string, error) {

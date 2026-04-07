@@ -4878,6 +4878,39 @@ func (q *Queries) OverdueTasks(ctx context.Context, today *time.Time) ([]Overdue
 	return items, nil
 }
 
+const participantByName = `-- name: ParticipantByName :one
+SELECT name, platform, description, can_issue_directives, can_receive_directives,
+       can_write_reports, task_assignable, can_own_schedules
+FROM participant WHERE name = $1
+`
+
+type ParticipantByNameRow struct {
+	Name                 string `json:"name"`
+	Platform             string `json:"platform"`
+	Description          string `json:"description"`
+	CanIssueDirectives   bool   `json:"can_issue_directives"`
+	CanReceiveDirectives bool   `json:"can_receive_directives"`
+	CanWriteReports      bool   `json:"can_write_reports"`
+	TaskAssignable       bool   `json:"task_assignable"`
+	CanOwnSchedules      bool   `json:"can_own_schedules"`
+}
+
+func (q *Queries) ParticipantByName(ctx context.Context, name string) (ParticipantByNameRow, error) {
+	row := q.db.QueryRow(ctx, participantByName, name)
+	var i ParticipantByNameRow
+	err := row.Scan(
+		&i.Name,
+		&i.Platform,
+		&i.Description,
+		&i.CanIssueDirectives,
+		&i.CanReceiveDirectives,
+		&i.CanWriteReports,
+		&i.TaskAssignable,
+		&i.CanOwnSchedules,
+	)
+	return i, err
+}
+
 const pendingReviewExistsForContent = `-- name: PendingReviewExistsForContent :one
 SELECT EXISTS(
     SELECT 1 FROM review_queue

@@ -21,8 +21,33 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
-// Create inserts a new directive.
+// ValidateCapabilities checks that source can issue and target can receive directives.
+func (s *Store) ValidateCapabilities(ctx context.Context, source, target string) error {
+	src, err := s.q.ParticipantByName(ctx, source)
+	if err != nil {
+		return fmt.Errorf("source participant %q not found: %w", source, err)
+	}
+	if !src.CanIssueDirectives {
+		return fmt.Errorf("participant %q cannot issue directives", source)
+	}
+
+	tgt, err := s.q.ParticipantByName(ctx, target)
+	if err != nil {
+		return fmt.Errorf("target participant %q not found: %w", target, err)
+	}
+	if !tgt.CanReceiveDirectives {
+		return fmt.Errorf("participant %q cannot receive directives", target)
+	}
+
+	return nil
+}
+
+// Create inserts a new directive after validating participant capabilities.
 func (s *Store) Create(ctx context.Context, p *CreateParams) (*Directive, error) {
+	if err := s.ValidateCapabilities(ctx, p.Source, p.Target); err != nil {
+		return nil, err
+	}
+
 	row, err := s.q.CreateDirective(ctx, db.CreateDirectiveParams{
 		Source:     p.Source,
 		Target:     p.Target,

@@ -126,7 +126,17 @@ func (s *Server) advanceTransition(ctx context.Context, taskID uuid.UUID, status
 }
 
 func (s *Server) advanceComplete(ctx context.Context, taskID uuid.UUID) (*sdkmcp.CallToolResult, AdvanceWorkOutput, error) {
-	updated, err := s.tasks.UpdateStatus(ctx, taskID, task.StatusDone)
+	// Use a transaction for task completion + daily plan item side effect.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, AdvanceWorkOutput{}, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+
+	txTasks := task.NewStore(tx)
+	txDayplan := daily.NewStore(tx)
+
+	updated, err := txTasks.UpdateStatus(ctx, taskID, task.StatusDone)
 	if err != nil {
 		return nil, AdvanceWorkOutput{}, fmt.Errorf("completing task: %w", err)
 	}
@@ -135,7 +145,7 @@ func (s *Server) advanceComplete(ctx context.Context, taskID uuid.UUID) (*sdkmcp
 
 	// Side effect: update today's daily_plan_item if exists.
 	today := s.today()
-	if completeErr := s.dayplan.CompleteByTask(ctx, taskID, today); completeErr == nil {
+	if completeErr := txDayplan.CompleteByTask(ctx, taskID, today); completeErr == nil {
 		out.PlanItemUpdated = true
 	}
 
@@ -144,7 +154,7 @@ func (s *Server) advanceComplete(ctx context.Context, taskID uuid.UUID) (*sdkmcp
 		tomorrow := today.AddDate(0, 0, 1)
 		nextDue := updated.NextCycleDateOnOrAfter(tomorrow)
 		if nextDue != nil {
-			resetted, resetErr := s.tasks.ResetRecurring(ctx, taskID, *nextDue)
+			resetted, resetErr := txTasks.ResetRecurring(ctx, taskID, *nextDue)
 			if resetErr == nil {
 				out.Task = *resetted
 				out.RecurringAdvanced = true
@@ -152,6 +162,10 @@ func (s *Server) advanceComplete(ctx context.Context, taskID uuid.UUID) (*sdkmcp
 				out.NextDue = &d
 			}
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, AdvanceWorkOutput{}, fmt.Errorf("committing task completion: %w", err)
 	}
 
 	s.logger.Info("advance_work", "action", "complete", "task_id", taskID,
