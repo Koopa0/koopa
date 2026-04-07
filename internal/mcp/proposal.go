@@ -39,6 +39,11 @@ func signProposal(secret []byte, entityType string, fields map[string]any) (stri
 		Nonce:     base64.RawURLEncoding.EncodeToString(nonce),
 	}
 
+	return encodeToken(secret, payload)
+}
+
+// encodeToken HMAC-signs a payload and returns the token string.
+func encodeToken(secret []byte, payload proposalPayload) (string, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("marshaling proposal: %w", err)
@@ -48,12 +53,9 @@ func signProposal(secret []byte, entityType string, fields map[string]any) (stri
 	mac.Write(data)
 	sig := mac.Sum(nil)
 
-	// Token format: base64url(payload) + "." + base64url(signature)
-	token := base64.RawURLEncoding.EncodeToString(data) +
+	return base64.RawURLEncoding.EncodeToString(data) +
 		"." +
-		base64.RawURLEncoding.EncodeToString(sig)
-
-	return token, nil
+		base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
 // verifyProposal verifies and decodes a proposal token.
