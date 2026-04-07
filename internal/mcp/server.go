@@ -18,6 +18,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/directive"
 	"github.com/Koopa0/koopa0.dev/internal/feed"
+	"github.com/Koopa0/koopa0.dev/internal/feed/entry"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
@@ -51,8 +52,9 @@ type Server struct {
 	learn *learnsession.Store
 
 	// Phase 4 stores (optional)
-	feeds *feed.Store
-	stats *stats.Store
+	feeds       *feed.Store
+	feedEntries *entry.Store
+	stats       *stats.Store
 
 	// Database pool for cross-store transactions
 	pool *pgxpool.Pool
@@ -119,6 +121,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		reports:     report.NewStore(pool),
 		insights:    insight.NewStore(pool),
 		learn:       learnsession.NewStore(pool),
+		feedEntries: entry.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
 		participant: "human",

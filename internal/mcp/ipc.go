@@ -35,6 +35,13 @@ func (s *Server) fileReport(ctx context.Context, _ *sdkmcp.CallToolRequest, inpu
 		source = s.participant
 	}
 
+	// Validate source can write reports (reuse directive store's participant query).
+	if p, pErr := s.directives.ParticipantByName(ctx, source); pErr != nil {
+		return nil, FileReportOutput{}, fmt.Errorf("participant %q not found: %w", source, pErr)
+	} else if !p.CanWriteReports {
+		return nil, FileReportOutput{}, fmt.Errorf("participant %q does not have can_write_reports capability", source)
+	}
+
 	var inResponseTo *int64
 	if input.InResponseTo != nil {
 		v := int64(*input.InResponseTo)

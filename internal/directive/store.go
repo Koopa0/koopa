@@ -21,6 +21,30 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
+// Participant holds resolved participant capabilities.
+type Participant struct {
+	Name                 string
+	CanIssueDirectives   bool
+	CanReceiveDirectives bool
+	CanWriteReports      bool
+	TaskAssignable       bool
+}
+
+// ParticipantByName returns a participant's capabilities.
+func (s *Store) ParticipantByName(ctx context.Context, name string) (*Participant, error) {
+	row, err := s.q.ParticipantByName(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("participant %q not found: %w", name, err)
+	}
+	return &Participant{
+		Name:                 row.Name,
+		CanIssueDirectives:   row.CanIssueDirectives,
+		CanReceiveDirectives: row.CanReceiveDirectives,
+		CanWriteReports:      row.CanWriteReports,
+		TaskAssignable:       row.TaskAssignable,
+	}, nil
+}
+
 // ValidateCapabilities checks that source can issue and target can receive directives.
 func (s *Store) ValidateCapabilities(ctx context.Context, source, target string) error {
 	src, err := s.q.ParticipantByName(ctx, source)

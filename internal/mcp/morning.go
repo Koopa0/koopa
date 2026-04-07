@@ -32,7 +32,16 @@ type MorningContextOutput struct {
 	ActiveGoals        []goal.ActiveGoalSummary `json:"active_goals"`
 	UnackedDirectives  []directive.Directive    `json:"unacked_directives"`
 	UnverifiedInsights []insight.Insight        `json:"unverified_insights"`
+	RSSHighlights      []RSSHighlight           `json:"rss_highlights"`
 	PlanHistory        []journal.Entry          `json:"plan_history"`
+}
+
+// RSSHighlight is a recent high-priority RSS item.
+type RSSHighlight struct {
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	FeedName  string `json:"feed_name"`
+	CreatedAt string `json:"created_at"`
 }
 
 func (s *Server) morningContext(ctx context.Context, _ *sdkmcp.CallToolRequest, input MorningContextInput) (*sdkmcp.CallToolResult, MorningContextOutput, error) {
@@ -45,31 +54,35 @@ func (s *Server) morningContext(ctx context.Context, _ *sdkmcp.CallToolRequest, 
 		date = t
 	}
 
-	all := len(input.Sections) == 0
-	sections := map[string]bool{}
-	for _, sec := range input.Sections {
-		sections[sec] = true
-	}
-
 	out := MorningContextOutput{Date: date.Format(time.DateOnly)}
-
-	if all || sections["tasks"] {
-		s.fillMorningTasks(ctx, date, &out)
-	}
-	if all || sections["goals"] {
-		s.fillGoals(ctx, &out)
-	}
-	if all || sections["directives"] {
-		s.fillDirectives(ctx, &out)
-	}
-	if all || sections["insights"] {
-		s.fillInsights(ctx, &out)
-	}
-	if all || sections["plan_history"] {
-		s.fillPlanHistory(ctx, date, &out)
-	}
-
+	s.fillMorningSections(ctx, date, input.Sections, &out)
 	return nil, out, nil
+}
+
+func (s *Server) fillMorningSections(ctx context.Context, date time.Time, requested FlexStringSlice, out *MorningContextOutput) {
+	all := len(requested) == 0
+	has := map[string]bool{}
+	for _, sec := range requested {
+		has[sec] = true
+	}
+	if all || has["tasks"] {
+		s.fillMorningTasks(ctx, date, out)
+	}
+	if all || has["goals"] {
+		s.fillGoals(ctx, out)
+	}
+	if all || has["directives"] {
+		s.fillDirectives(ctx, out)
+	}
+	if all || has["insights"] {
+		s.fillInsights(ctx, out)
+	}
+	if all || has["rss"] {
+		s.fillRSSHighlights(ctx, date, out)
+	}
+	if all || has["plan_history"] {
+		s.fillPlanHistory(ctx, date, out)
+	}
 }
 
 func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *MorningContextOutput) {
@@ -140,6 +153,26 @@ func (s *Server) fillPlanHistory(ctx context.Context, date time.Time, out *Morni
 		out.PlanHistory = entries
 	} else {
 		s.logger.Warn("morning_context: plan history", "error", err)
+	}
+}
+
+func (s *Server) fillRSSHighlights(ctx context.Context, date time.Time, out *MorningContextOutput) {
+	if s.feedEntries == nil {
+		return
+	}
+	since := date.AddDate(0, 0, -2)
+	items, err := s.feedEntries.HighPriorityRecent(ctx, since, 10)
+	if err != nil {
+		s.logger.Warn("morning_context: rss highlights", "error", err)
+		return
+	}
+	for i := range items {
+		out.RSSHighlights = append(out.RSSHighlights, RSSHighlight{
+			Title:     items[i].Title,
+			URL:       items[i].SourceURL,
+			FeedName:  items[i].FeedName,
+			CreatedAt: items[i].CollectedAt.Format(time.RFC3339),
+		})
 	}
 }
 
