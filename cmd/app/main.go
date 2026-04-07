@@ -13,6 +13,10 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa0.dev/internal/activity"
@@ -44,6 +48,10 @@ func run(logger *slog.Logger) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+
+	if err := runMigrations(cfg.DatabaseURL, logger); err != nil {
+		return err
+	}
 
 	pool, err := connectDB(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -179,4 +187,23 @@ func connectDB(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("pinging database: %w", pingErr)
 	}
 	return pool, nil
+}
+
+func runMigrations(databaseURL string, logger *slog.Logger) error {
+	m, err := migrate.New("file://migrations", "pgx5://"+databaseURL[len("postgres://"):])
+	if err != nil {
+		return fmt.Errorf("creating migrator: %w", err)
+	}
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("running migrations: %w", err)
+	}
+	srcErr, dbErr := m.Close()
+	if srcErr != nil {
+		return fmt.Errorf("closing migration source: %w", srcErr)
+	}
+	if dbErr != nil {
+		return fmt.Errorf("closing migration db: %w", dbErr)
+	}
+	logger.Info("migrations applied")
+	return nil
 }
