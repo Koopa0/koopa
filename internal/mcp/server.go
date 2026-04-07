@@ -294,6 +294,20 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		Annotations: readOnly,
 	}, s.systemStatus)
 
+	// --- Extra: Cross-session & Aggregation ---
+
+	addTool(s, &mcp.Tool{
+		Name:        "session_delta",
+		Description: "What changed since last session: tasks created/completed, journal entries, learning sessions. Default lookback: 24 hours. Use at session start to bridge context.",
+		Annotations: readOnly,
+	}, s.sessionDelta)
+
+	addTool(s, &mcp.Tool{
+		Name:        "weekly_summary",
+		Description: "Week retrospective: tasks completed, journal entries, learning sessions, concept mastery. Defaults to current week (Monday-Sunday). Use for weekly reviews.",
+		Annotations: readOnly,
+	}, s.weeklySummary)
+
 	return s
 }
 
