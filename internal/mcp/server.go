@@ -19,6 +19,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
+	"github.com/Koopa0/koopa0.dev/internal/learnsession"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/report"
 	"github.com/Koopa0/koopa0.dev/internal/task"
@@ -40,6 +41,9 @@ type Server struct {
 	directives *directive.Store
 	reports    *report.Store
 	insights   *insight.Store
+
+	// Phase 3 stores
+	learn *learnsession.Store
 
 	// Configuration
 	participant    string         // calling participant name (from env)
@@ -90,6 +94,7 @@ func NewServer(
 	directives *directive.Store,
 	reports *report.Store,
 	insights *insight.Store,
+	learn *learnsession.Store,
 	logger *slog.Logger,
 	opts ...ServerOption,
 ) *Server {
@@ -103,6 +108,7 @@ func NewServer(
 		directives:  directives,
 		reports:     reports,
 		insights:    insights,
+		learn:       learn,
 		logger:      logger,
 		participant: "human",
 		loc:         time.UTC,
@@ -225,6 +231,32 @@ func NewServer(
 		Description: "Update an existing insight. Actions: verify (hypothesis confirmed), invalidate (hypothesis disproven), archive (retire), add_evidence (append supporting data). Insight creation goes through propose_commitment.",
 		Annotations: additiveIdempotent,
 	}, s.trackInsight)
+
+	// --- Phase 3: Learning Domain ---
+
+	addTool(s, &mcp.Tool{
+		Name:        "start_session",
+		Description: "Begin a learning session. Required: domain (e.g. leetcode, japanese), mode (retrieval/practice/mixed/review/reading). Validates no other active session exists. Use when the user wants to start a learning/practice session.",
+		Annotations: additive,
+	}, s.startSession)
+
+	addTool(s, &mcp.Tool{
+		Name:        "record_attempt",
+		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Auto-creates learning items and concepts. High-confidence observations are written directly; low-confidence returned as pending.",
+		Annotations: additive,
+	}, s.recordAttempt)
+
+	addTool(s, &mcp.Tool{
+		Name:        "end_session",
+		Description: "End the active learning session. Optional reflection text creates a journal entry linked to the session. Returns session summary with all attempts.",
+		Annotations: additive,
+	}, s.endSession)
+
+	addTool(s, &mcp.Tool{
+		Name:        "learning_dashboard",
+		Description: "Learning analytics: recent sessions, streaks, and activity. Views: overview (default), timeline. Filter by domain and lookback period.",
+		Annotations: readOnly,
+	}, s.learningDashboard)
 
 	return s
 }

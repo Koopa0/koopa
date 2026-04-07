@@ -26,6 +26,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
+	"github.com/Koopa0/koopa0.dev/internal/learnsession"
 	mcpkg "github.com/Koopa0/koopa0.dev/internal/mcp"
 	"github.com/Koopa0/koopa0.dev/internal/mcpauth"
 	"github.com/Koopa0/koopa0.dev/internal/project"
@@ -68,6 +69,7 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 		directive.NewStore(pool),
 		report.NewStore(pool),
 		insight.NewStore(pool),
+		learnsession.NewStore(pool),
 		logger,
 		mcpkg.WithLocation(taipeiLoc),
 		mcpkg.WithParticipant(cfg.Participant),

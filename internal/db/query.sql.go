@@ -220,6 +220,30 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 	return items, nil
 }
 
+const activeSession = `-- name: ActiveSession :one
+SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
+FROM learning_sessions WHERE ended_at IS NULL
+ORDER BY started_at DESC LIMIT 1
+`
+
+// Find a session that hasn't ended yet.
+func (q *Queries) ActiveSession(ctx context.Context) (LearningSession, error) {
+	row := q.db.QueryRow(ctx, activeSession)
+	var i LearningSession
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.SessionMode,
+		&i.JournalID,
+		&i.DailyPlanItemID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const addContentTag = `-- name: AddContentTag :exec
 INSERT INTO content_tags (content_id, tag_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING
@@ -576,6 +600,74 @@ func (q *Queries) ArchiveTaskByNotionPageID(ctx context.Context, notionPageID *s
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const attemptCountForItem = `-- name: AttemptCountForItem :one
+SELECT COALESCE(MAX(attempt_number), 0)::int AS max_number
+FROM attempts WHERE learning_item_id = $1
+`
+
+func (q *Queries) AttemptCountForItem(ctx context.Context, learningItemID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, attemptCountForItem, learningItemID)
+	var max_number int32
+	err := row.Scan(&max_number)
+	return max_number, err
+}
+
+const attemptsBySession = `-- name: AttemptsBySession :many
+SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at,
+       li.title AS item_title, li.external_id AS item_external_id
+FROM attempts a
+JOIN learning_items li ON li.id = a.learning_item_id
+WHERE a.session_id = $1
+ORDER BY a.attempted_at
+`
+
+type AttemptsBySessionRow struct {
+	ID              uuid.UUID  `json:"id"`
+	LearningItemID  uuid.UUID  `json:"learning_item_id"`
+	SessionID       *uuid.UUID `json:"session_id"`
+	AttemptNumber   int32      `json:"attempt_number"`
+	Outcome         string     `json:"outcome"`
+	DurationMinutes *int32     `json:"duration_minutes"`
+	StuckAt         *string    `json:"stuck_at"`
+	ApproachUsed    *string    `json:"approach_used"`
+	AttemptedAt     time.Time  `json:"attempted_at"`
+	ItemTitle       string     `json:"item_title"`
+	ItemExternalID  *string    `json:"item_external_id"`
+}
+
+func (q *Queries) AttemptsBySession(ctx context.Context, sessionID *uuid.UUID) ([]AttemptsBySessionRow, error) {
+	rows, err := q.db.Query(ctx, attemptsBySession, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AttemptsBySessionRow{}
+	for rows.Next() {
+		var i AttemptsBySessionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.LearningItemID,
+			&i.SessionID,
+			&i.AttemptNumber,
+			&i.Outcome,
+			&i.DurationMinutes,
+			&i.StuckAt,
+			&i.ApproachUsed,
+			&i.AttemptedAt,
+			&i.ItemTitle,
+			&i.ItemExternalID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const autoDisableFeed = `-- name: AutoDisableFeed :exec
@@ -1398,6 +1490,52 @@ func (q *Queries) CountEventsBySourcePrefix(ctx context.Context, arg CountEvents
 	return column_1, err
 }
 
+const createAttempt = `-- name: CreateAttempt :one
+INSERT INTO attempts (learning_item_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, learning_item_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, note_id, metadata, attempted_at, created_at
+`
+
+type CreateAttemptParams struct {
+	LearningItemID  uuid.UUID  `json:"learning_item_id"`
+	SessionID       *uuid.UUID `json:"session_id"`
+	AttemptNumber   int32      `json:"attempt_number"`
+	Outcome         string     `json:"outcome"`
+	DurationMinutes *int32     `json:"duration_minutes"`
+	StuckAt         *string    `json:"stuck_at"`
+	ApproachUsed    *string    `json:"approach_used"`
+	Metadata        []byte     `json:"metadata"`
+}
+
+func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (Attempt, error) {
+	row := q.db.QueryRow(ctx, createAttempt,
+		arg.LearningItemID,
+		arg.SessionID,
+		arg.AttemptNumber,
+		arg.Outcome,
+		arg.DurationMinutes,
+		arg.StuckAt,
+		arg.ApproachUsed,
+		arg.Metadata,
+	)
+	var i Attempt
+	err := row.Scan(
+		&i.ID,
+		&i.LearningItemID,
+		&i.SessionID,
+		&i.AttemptNumber,
+		&i.Outcome,
+		&i.DurationMinutes,
+		&i.StuckAt,
+		&i.ApproachUsed,
+		&i.NoteID,
+		&i.Metadata,
+		&i.AttemptedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createCollectedData = `-- name: CreateCollectedData :one
 INSERT INTO feed_entries (source_url, title, original_content, url_hash, feed_id, relevance_score, published_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -1916,6 +2054,44 @@ func (q *Queries) CreateMilestone(ctx context.Context, arg CreateMilestoneParams
 	return i, err
 }
 
+const createObservation = `-- name: CreateObservation :one
+INSERT INTO attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, created_at
+`
+
+type CreateObservationParams struct {
+	AttemptID  uuid.UUID `json:"attempt_id"`
+	ConceptID  uuid.UUID `json:"concept_id"`
+	SignalType string    `json:"signal_type"`
+	Category   string    `json:"category"`
+	Severity   *string   `json:"severity"`
+	Detail     *string   `json:"detail"`
+}
+
+func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationParams) (AttemptObservation, error) {
+	row := q.db.QueryRow(ctx, createObservation,
+		arg.AttemptID,
+		arg.ConceptID,
+		arg.SignalType,
+		arg.Category,
+		arg.Severity,
+		arg.Detail,
+	)
+	var i AttemptObservation
+	err := row.Scan(
+		&i.ID,
+		&i.AttemptID,
+		&i.ConceptID,
+		&i.SignalType,
+		&i.Category,
+		&i.Severity,
+		&i.Detail,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
                       problem, solution, architecture, results, github_url, live_url, featured, is_public, sort_order, status)
@@ -2084,6 +2260,35 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Cre
 		&i.ReviewerNotes,
 		&i.SubmittedAt,
 		&i.ReviewedAt,
+	)
+	return i, err
+}
+
+const createSession = `-- name: CreateSession :one
+INSERT INTO learning_sessions (domain, session_mode, daily_plan_item_id)
+VALUES ($1, $2, $3)
+RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
+`
+
+type CreateSessionParams struct {
+	Domain          string     `json:"domain"`
+	SessionMode     string     `json:"session_mode"`
+	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (LearningSession, error) {
+	row := q.db.QueryRow(ctx, createSession, arg.Domain, arg.SessionMode, arg.DailyPlanItemID)
+	var i LearningSession
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.SessionMode,
+		&i.JournalID,
+		&i.DailyPlanItemID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.Metadata,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -2631,6 +2836,34 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 	return items, nil
 }
 
+const endSession = `-- name: EndSession :one
+UPDATE learning_sessions SET ended_at = now(), journal_id = $1
+WHERE id = $2 AND ended_at IS NULL
+RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
+`
+
+type EndSessionParams struct {
+	JournalID *int64    `json:"journal_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (LearningSession, error) {
+	row := q.db.QueryRow(ctx, endSession, arg.JournalID, arg.ID)
+	var i LearningSession
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.SessionMode,
+		&i.JournalID,
+		&i.DailyPlanItemID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const entriesByDateRange = `-- name: EntriesByDateRange :many
 SELECT id, kind, source, content, metadata, entry_date, created_at
 FROM journal
@@ -2934,6 +3167,85 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const findOrCreateConcept = `-- name: FindOrCreateConcept :one
+INSERT INTO concepts (slug, name, domain, kind)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (domain, LOWER(slug))
+DO UPDATE SET updated_at = now()
+RETURNING id, slug, name, domain, kind, parent_id, tag_id, description, created_at, updated_at
+`
+
+type FindOrCreateConceptParams struct {
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Domain string `json:"domain"`
+	Kind   string `json:"kind"`
+}
+
+// Upsert a concept by domain + slug.
+func (q *Queries) FindOrCreateConcept(ctx context.Context, arg FindOrCreateConceptParams) (Concept, error) {
+	row := q.db.QueryRow(ctx, findOrCreateConcept,
+		arg.Slug,
+		arg.Name,
+		arg.Domain,
+		arg.Kind,
+	)
+	var i Concept
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Domain,
+		&i.Kind,
+		&i.ParentID,
+		&i.TagID,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const findOrCreateItem = `-- name: FindOrCreateItem :one
+INSERT INTO learning_items (domain, title, external_id, difficulty)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
+DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, learning_items.difficulty), updated_at = now()
+RETURNING id, domain, title, external_id, difficulty, note_id, content_id, project_id, metadata, created_at, updated_at
+`
+
+type FindOrCreateItemParams struct {
+	Domain     string  `json:"domain"`
+	Title      string  `json:"title"`
+	ExternalID *string `json:"external_id"`
+	Difficulty *string `json:"difficulty"`
+}
+
+// Upsert a learning item by domain + external_id (if present) or domain + title.
+func (q *Queries) FindOrCreateItem(ctx context.Context, arg FindOrCreateItemParams) (LearningItem, error) {
+	row := q.db.QueryRow(ctx, findOrCreateItem,
+		arg.Domain,
+		arg.Title,
+		arg.ExternalID,
+		arg.Difficulty,
+	)
+	var i LearningItem
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.Title,
+		&i.ExternalID,
+		&i.Difficulty,
+		&i.NoteID,
+		&i.ContentID,
+		&i.ProjectID,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const flowFailureStats = `-- name: FlowFailureStats :many
@@ -4373,6 +4685,56 @@ func (q *Queries) NotionTaskPageIDs(ctx context.Context) ([]*string, error) {
 	return items, nil
 }
 
+const observationsByAttempt = `-- name: ObservationsByAttempt :many
+SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
+       c.slug AS concept_slug, c.name AS concept_name
+FROM attempt_observations ao
+JOIN concepts c ON c.id = ao.concept_id
+WHERE ao.attempt_id = $1
+`
+
+type ObservationsByAttemptRow struct {
+	ID          uuid.UUID `json:"id"`
+	AttemptID   uuid.UUID `json:"attempt_id"`
+	ConceptID   uuid.UUID `json:"concept_id"`
+	SignalType  string    `json:"signal_type"`
+	Category    string    `json:"category"`
+	Severity    *string   `json:"severity"`
+	Detail      *string   `json:"detail"`
+	ConceptSlug string    `json:"concept_slug"`
+	ConceptName string    `json:"concept_name"`
+}
+
+func (q *Queries) ObservationsByAttempt(ctx context.Context, attemptID uuid.UUID) ([]ObservationsByAttemptRow, error) {
+	rows, err := q.db.Query(ctx, observationsByAttempt, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ObservationsByAttemptRow{}
+	for rows.Next() {
+		var i ObservationsByAttemptRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AttemptID,
+			&i.ConceptID,
+			&i.SignalType,
+			&i.Category,
+			&i.Severity,
+			&i.Detail,
+			&i.ConceptSlug,
+			&i.ConceptName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const obsidianContentSlugs = `-- name: ObsidianContentSlugs :many
 SELECT slug FROM contents WHERE source_type = 'obsidian' ORDER BY slug
 `
@@ -5730,6 +6092,51 @@ func (q *Queries) RecentReports(ctx context.Context, arg RecentReportsParams) ([
 	return items, nil
 }
 
+const recentSessions = `-- name: RecentSessions :many
+SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
+FROM learning_sessions
+WHERE ($1::text IS NULL OR domain = $1)
+  AND started_at >= $2
+ORDER BY started_at DESC
+LIMIT $3
+`
+
+type RecentSessionsParams struct {
+	Domain     *string   `json:"domain"`
+	Since      time.Time `json:"since"`
+	MaxResults int32     `json:"max_results"`
+}
+
+func (q *Queries) RecentSessions(ctx context.Context, arg RecentSessionsParams) ([]LearningSession, error) {
+	rows, err := q.db.Query(ctx, recentSessions, arg.Domain, arg.Since, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LearningSession{}
+	for rows.Next() {
+		var i LearningSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Domain,
+			&i.SessionMode,
+			&i.JournalID,
+			&i.DailyPlanItemID,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recurringTaskByProject = `-- name: RecurringTaskByProject :one
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
@@ -6653,6 +7060,28 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Sea
 		return nil, err
 	}
 	return items, nil
+}
+
+const sessionByID = `-- name: SessionByID :one
+SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
+FROM learning_sessions WHERE id = $1
+`
+
+func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (LearningSession, error) {
+	row := q.db.QueryRow(ctx, sessionByID, id)
+	var i LearningSession
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.SessionMode,
+		&i.JournalID,
+		&i.DailyPlanItemID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const similarContents = `-- name: SimilarContents :many
