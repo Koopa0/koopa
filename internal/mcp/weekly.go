@@ -8,7 +8,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/journal"
-	"github.com/Koopa0/koopa0.dev/internal/learnsession"
+	"github.com/Koopa0/koopa0.dev/internal/learning"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
@@ -26,8 +26,8 @@ type WeeklySummaryOutput struct {
 	TasksCreated   int                              `json:"tasks_created"`
 	TasksCompleted []task.CompletedTaskDetail       `json:"tasks_completed"`
 	JournalEntries []journal.Entry                  `json:"journal_entries"`
-	Sessions       []learnsession.Session           `json:"sessions"`
-	Mastery        []learnsession.ConceptMasteryRow `json:"mastery"`
+	Sessions       []learning.Session           `json:"sessions"`
+	Mastery        []learning.ConceptMasteryRow `json:"mastery"`
 }
 
 func (s *Server) weeklySummary(ctx context.Context, _ *sdkmcp.CallToolRequest, input WeeklySummaryInput) (*sdkmcp.CallToolResult, WeeklySummaryOutput, error) {

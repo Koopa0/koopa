@@ -57,7 +57,7 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 	switch cfg.Transport {
 	case "stdio":
 		logger.Info("starting MCP v2 server over stdio")
-		return server.MCPServer().Run(ctx, &mcp.StdioTransport{})
+		return server.Run(ctx, &mcp.StdioTransport{})
 	case "http":
 		return runHTTP(ctx, cfg, server, logger)
 	default:
@@ -105,9 +105,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 		},
 	}, logger)
 
-	handler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
-		return server.MCPServer()
-	}, nil)
+	handler := server.HTTPHandler()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

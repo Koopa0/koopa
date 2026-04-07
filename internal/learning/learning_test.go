@@ -1,4 +1,4 @@
-package learnsession
+package learning
 
 import "testing"
 

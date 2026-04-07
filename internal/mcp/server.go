@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"reflect"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
-	"github.com/Koopa0/koopa0.dev/internal/learnsession"
+	"github.com/Koopa0/koopa0.dev/internal/learning"
 	"github.com/Koopa0/koopa0.dev/internal/note"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/report"
@@ -49,7 +50,7 @@ type Server struct {
 	insights   *insight.Store
 
 	// Phase 3 stores
-	learn *learnsession.Store
+	learn *learning.Store
 
 	// Phase 4 stores (optional)
 	feeds       *feed.Store
@@ -120,7 +121,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		directives:  directive.NewStore(pool),
 		reports:     report.NewStore(pool),
 		insights:    insight.NewStore(pool),
-		learn:       learnsession.NewStore(pool),
+		learn:       learning.NewStore(pool),
 		feedEntries: entry.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
@@ -311,9 +312,16 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	return s
 }
 
-// MCPServer returns the underlying mcp.Server for use with transports.
-func (s *Server) MCPServer() *mcp.Server {
-	return s.server
+// Run starts the MCP server with the given transport and blocks until ctx is cancelled.
+func (s *Server) Run(ctx context.Context, transport mcp.Transport) error {
+	return s.server.Run(ctx, transport)
+}
+
+// HTTPHandler returns an http.Handler for Streamable HTTP transport.
+func (s *Server) HTTPHandler() http.Handler {
+	return mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+		return s.server
+	}, nil)
 }
 
 // today returns the current date in the user's timezone.

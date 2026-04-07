@@ -10,7 +10,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/journal"
-	"github.com/Koopa0/koopa0.dev/internal/learnsession"
+	"github.com/Koopa0/koopa0.dev/internal/learning"
 )
 
 // --- start_session ---
@@ -22,7 +22,7 @@ type StartSessionInput struct {
 }
 
 type StartSessionOutput struct {
-	Session learnsession.Session `json:"session"`
+	Session learning.Session `json:"session"`
 }
 
 func (s *Server) startSession(ctx context.Context, _ *sdkmcp.CallToolRequest, input StartSessionInput) (*sdkmcp.CallToolResult, StartSessionOutput, error) {
@@ -30,10 +30,10 @@ func (s *Server) startSession(ctx context.Context, _ *sdkmcp.CallToolRequest, in
 		return nil, StartSessionOutput{}, fmt.Errorf("domain is required")
 	}
 
-	mode := learnsession.Mode(input.Mode)
+	mode := learning.Mode(input.Mode)
 	switch mode {
-	case learnsession.ModeRetrieval, learnsession.ModePractice, learnsession.ModeMixed,
-		learnsession.ModeReview, learnsession.ModeReading:
+	case learning.ModeRetrieval, learning.ModePractice, learning.ModeMixed,
+		learning.ModeReview, learning.ModeReading:
 		// valid
 	default:
 		return nil, StartSessionOutput{}, fmt.Errorf("invalid mode %q", input.Mode)
@@ -86,7 +86,7 @@ type ObservationInput struct {
 }
 
 type RecordAttemptOutput struct {
-	Attempt              learnsession.Attempt `json:"attempt"`
+	Attempt              learning.Attempt `json:"attempt"`
 	ObservationsRecorded int                  `json:"observations_recorded"`
 	PendingObservations  []ObservationInput   `json:"pending_observations,omitempty"`
 }
@@ -108,7 +108,7 @@ func (s *Server) recordAttempt(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 	}
 
 	// Map outcome.
-	outcome, err := learnsession.MapOutcome(session.Mode, input.Outcome)
+	outcome, err := learning.MapOutcome(session.Mode, input.Outcome)
 	if err != nil {
 		return nil, RecordAttemptOutput{}, err
 	}
@@ -159,8 +159,8 @@ type EndSessionInput struct {
 }
 
 type EndSessionOutput struct {
-	Session  learnsession.Session   `json:"session"`
-	Attempts []learnsession.Attempt `json:"attempts"`
+	Session  learning.Session   `json:"session"`
+	Attempts []learning.Attempt `json:"attempts"`
 	Duration string                 `json:"duration"`
 }
 
@@ -218,12 +218,12 @@ type LearningDashboardInput struct {
 type LearningDashboardOutput struct {
 	View       string                           `json:"view"`
 	Total      int                              `json:"total"`
-	Sessions   []learnsession.Session           `json:"sessions,omitempty"`
-	Mastery    []learnsession.ConceptMasteryRow `json:"mastery,omitempty"`
-	Weaknesses []learnsession.WeaknessRow       `json:"weaknesses,omitempty"`
-	Retrieval  []learnsession.RetrievalItem     `json:"retrieval,omitempty"`
-	Timeline   []learnsession.TimelineSession   `json:"timeline,omitempty"`
-	Variations []learnsession.ItemRelation      `json:"variations,omitempty"`
+	Sessions   []learning.Session           `json:"sessions,omitempty"`
+	Mastery    []learning.ConceptMasteryRow `json:"mastery,omitempty"`
+	Weaknesses []learning.WeaknessRow       `json:"weaknesses,omitempty"`
+	Retrieval  []learning.RetrievalItem     `json:"retrieval,omitempty"`
+	Timeline   []learning.TimelineSession   `json:"timeline,omitempty"`
+	Variations []learning.ItemRelation      `json:"variations,omitempty"`
 }
 
 func (s *Server) learningDashboard(ctx context.Context, _ *sdkmcp.CallToolRequest, input LearningDashboardInput) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {

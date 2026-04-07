@@ -9,7 +9,7 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa0.dev/internal/learnsession"
+	"github.com/Koopa0/koopa0.dev/internal/learning"
 )
 
 // newTestServer creates a Server with no stores — only useful for validation tests
@@ -395,50 +395,50 @@ func TestManageContent_Validation(t *testing.T) {
 func TestMapOutcome(t *testing.T) {
 	tests := []struct {
 		name    string
-		mode    learnsession.Mode
+		mode    learning.Mode
 		input   string
 		want    string
 		wantErr bool
 	}{
 		// Raw pass-through
-		{name: "raw solved_independent", mode: learnsession.ModePractice, input: "solved_independent", want: "solved_independent"},
-		{name: "raw gave_up", mode: learnsession.ModeReading, input: "gave_up", want: "gave_up"},
-		{name: "raw completed", mode: learnsession.ModePractice, input: "completed", want: "completed"},
+		{name: "raw solved_independent", mode: learning.ModePractice, input: "solved_independent", want: "solved_independent"},
+		{name: "raw gave_up", mode: learning.ModeReading, input: "gave_up", want: "gave_up"},
+		{name: "raw completed", mode: learning.ModePractice, input: "completed", want: "completed"},
 
 		// Practice mode semantic
-		{name: "practice got it", mode: learnsession.ModePractice, input: "got it", want: "solved_independent"},
-		{name: "practice needed help", mode: learnsession.ModePractice, input: "needed help", want: "solved_with_hint"},
-		{name: "practice saw answer", mode: learnsession.ModePractice, input: "saw answer", want: "solved_after_solution"},
-		{name: "practice didn't finish", mode: learnsession.ModePractice, input: "didn't finish", want: "incomplete"},
-		{name: "practice gave up", mode: learnsession.ModePractice, input: "gave up", want: "gave_up"},
+		{name: "practice got it", mode: learning.ModePractice, input: "got it", want: "solved_independent"},
+		{name: "practice needed help", mode: learning.ModePractice, input: "needed help", want: "solved_with_hint"},
+		{name: "practice saw answer", mode: learning.ModePractice, input: "saw answer", want: "solved_after_solution"},
+		{name: "practice didn't finish", mode: learning.ModePractice, input: "didn't finish", want: "incomplete"},
+		{name: "practice gave up", mode: learning.ModePractice, input: "gave up", want: "gave_up"},
 
 		// Retrieval mode (same mapping as practice)
-		{name: "retrieval solved it", mode: learnsession.ModeRetrieval, input: "solved it", want: "solved_independent"},
-		{name: "retrieval nailed it", mode: learnsession.ModeRetrieval, input: "nailed it", want: "solved_independent"},
-		{name: "retrieval needed a hint", mode: learnsession.ModeRetrieval, input: "needed a hint", want: "solved_with_hint"},
+		{name: "retrieval solved it", mode: learning.ModeRetrieval, input: "solved it", want: "solved_independent"},
+		{name: "retrieval nailed it", mode: learning.ModeRetrieval, input: "nailed it", want: "solved_independent"},
+		{name: "retrieval needed a hint", mode: learning.ModeRetrieval, input: "needed a hint", want: "solved_with_hint"},
 
 		// Reading mode
-		{name: "reading got it", mode: learnsession.ModeReading, input: "got it", want: "completed"},
-		{name: "reading finished", mode: learnsession.ModeReading, input: "finished", want: "completed"},
-		{name: "reading needed help", mode: learnsession.ModeReading, input: "needed help", want: "completed_with_support"},
-		{name: "reading didn't finish", mode: learnsession.ModeReading, input: "didn't finish", want: "incomplete"},
-		{name: "reading stuck", mode: learnsession.ModeReading, input: "stuck", want: "gave_up"},
+		{name: "reading got it", mode: learning.ModeReading, input: "got it", want: "completed"},
+		{name: "reading finished", mode: learning.ModeReading, input: "finished", want: "completed"},
+		{name: "reading needed help", mode: learning.ModeReading, input: "needed help", want: "completed_with_support"},
+		{name: "reading didn't finish", mode: learning.ModeReading, input: "didn't finish", want: "incomplete"},
+		{name: "reading stuck", mode: learning.ModeReading, input: "stuck", want: "gave_up"},
 
 		// Mixed mode uses practice mapping
-		{name: "mixed got help", mode: learnsession.ModeMixed, input: "got help", want: "solved_with_hint"},
+		{name: "mixed got help", mode: learning.ModeMixed, input: "got help", want: "solved_with_hint"},
 
 		// Review mode uses practice mapping
-		{name: "review saw the answer first", mode: learnsession.ModeReview, input: "saw the answer first", want: "solved_after_solution"},
+		{name: "review saw the answer first", mode: learning.ModeReview, input: "saw the answer first", want: "solved_after_solution"},
 
 		// Errors
-		{name: "practice unknown", mode: learnsession.ModePractice, input: "something else", wantErr: true},
-		{name: "reading unknown", mode: learnsession.ModeReading, input: "solved it", wantErr: true},
+		{name: "practice unknown", mode: learning.ModePractice, input: "something else", wantErr: true},
+		{name: "reading unknown", mode: learning.ModeReading, input: "solved it", wantErr: true},
 		{name: "unknown mode", mode: "unknown", input: "got it", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := learnsession.MapOutcome(tt.mode, tt.input)
+			got, err := learning.MapOutcome(tt.mode, tt.input)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("MapOutcome(%q, %q) = %q, want error", tt.mode, tt.input, got)

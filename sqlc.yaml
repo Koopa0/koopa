@@ -19,7 +19,7 @@ sql:
       - "internal/directive/query.sql"
       - "internal/report/query.sql"
       - "internal/insight/query.sql"
-      - "internal/learnsession/query.sql"
+      - "internal/learning/query.sql"
     schema: "migrations/"
     gen:
       go:

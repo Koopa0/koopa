@@ -1,8 +1,8 @@
-// Package learnsession provides learning session orchestration.
+// Package learning provides learning session orchestration.
 //
 // A session has explicit start/end, a mode, and contains attempts.
 // The session produces a journal entry, not the other way around.
-package learnsession
+package learning
 
 import (
 	"errors"
@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	ErrNotFound     = errors.New("learnsession: not found")
-	ErrActiveExists = errors.New("learnsession: active session exists")
-	ErrNoActive     = errors.New("learnsession: no active session")
-	ErrAlreadyEnded = errors.New("learnsession: session already ended")
+	ErrNotFound     = errors.New("learning: not found")
+	ErrActiveExists = errors.New("learning: active session exists")
+	ErrNoActive     = errors.New("learning: no active session")
+	ErrAlreadyEnded = errors.New("learning: session already ended")
 )
 
 // Mode represents a learning session mode.
