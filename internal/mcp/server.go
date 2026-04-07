@@ -16,6 +16,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/directive"
+	"github.com/Koopa0/koopa0.dev/internal/feed"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
@@ -44,6 +45,9 @@ type Server struct {
 
 	// Phase 3 stores
 	learn *learnsession.Store
+
+	// Phase 4 stores (optional — feed management)
+	feeds *feed.Store
 
 	// Configuration
 	participant    string         // calling participant name (from env)
@@ -76,6 +80,11 @@ func WithParticipant(name string) ServerOption {
 // WithLocation sets the user timezone for day boundary calculations.
 func WithLocation(loc *time.Location) ServerOption {
 	return func(s *Server) { s.loc = loc }
+}
+
+// WithFeedStore enables feed management tools.
+func WithFeedStore(fs *feed.Store) ServerOption {
+	return func(s *Server) { s.feeds = fs }
 }
 
 // WithTelemetry enables async tool call logging.
@@ -257,6 +266,28 @@ func NewServer(
 		Description: "Learning analytics: recent sessions, streaks, and activity. Views: overview (default), timeline. Filter by domain and lookback period.",
 		Annotations: readOnly,
 	}, s.learningDashboard)
+
+	// --- Phase 4: Content & Feeds ---
+
+	addTool(s, &mcp.Tool{
+		Name:        "manage_content",
+		Description: "Content lifecycle: create (draft), update (draft/review fields), publish (→published). Requires content_id for update/publish. Use for managing knowledge content.",
+		Annotations: additive,
+	}, s.manageContent)
+
+	if s.feeds != nil {
+		addTool(s, &mcp.Tool{
+			Name:        "manage_feeds",
+			Description: "Feed management: list, add (url+name), update (enable/disable), remove. Use for RSS feed subscription management.",
+			Annotations: additive,
+		}, s.manageFeeds)
+	}
+
+	addTool(s, &mcp.Tool{
+		Name:        "system_status",
+		Description: "System health: pipeline stats, feed health, flow run summaries. Scopes: summary (default), pipelines, flows.",
+		Annotations: readOnly,
+	}, s.systemStatus)
 
 	return s
 }
