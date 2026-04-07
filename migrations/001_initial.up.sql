@@ -758,7 +758,7 @@ CREATE TABLE daily_plan_items (
     selected_by TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
     position    INT NOT NULL DEFAULT 0,
     reason      TEXT,
-    journal_id  BIGINT REFERENCES journal(id) ON DELETE SET NULL,
+    journal_id  BIGINT,  -- FK to journal(id) added via ALTER TABLE after journal table creation
     status      TEXT NOT NULL DEFAULT 'planned'
                 CHECK (status IN ('planned', 'done', 'deferred', 'dropped')),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1123,6 +1123,12 @@ COMMENT ON COLUMN journal.metadata IS
 
 CREATE INDEX idx_journal_date ON journal (entry_date DESC);
 CREATE INDEX idx_journal_kind ON journal (entry_date, kind);
+
+-- Deferred FK: daily_plan_items.journal_id → journal(id)
+-- daily_plan_items is created before journal, so the FK is added here.
+ALTER TABLE daily_plan_items
+    ADD CONSTRAINT fk_daily_plan_items_journal
+    FOREIGN KEY (journal_id) REFERENCES journal(id) ON DELETE SET NULL;
 
 -- ============================================================
 -- IPC: insights (was: session_notes WHERE note_type = 'insight')

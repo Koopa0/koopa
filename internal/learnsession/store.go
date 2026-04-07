@@ -90,6 +90,9 @@ func (s *Store) RecordAttempt(ctx context.Context, itemID, sessionID uuid.UUID, 
 		return nil, fmt.Errorf("counting attempts: %w", err)
 	}
 
+	if metadata == nil {
+		metadata = json.RawMessage("{}")
+	}
 	row, err := s.q.CreateAttempt(ctx, db.CreateAttemptParams{
 		LearningItemID:  itemID,
 		SessionID:       &sessionID,
