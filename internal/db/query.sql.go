@@ -2122,16 +2122,6 @@ func (q *Queries) DeleteFeed(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const deleteItemsByDate = `-- name: DeleteItemsByDate :exec
-DELETE FROM daily_plan_items WHERE plan_date = $1
-`
-
-// Remove all plan items for a date (used when re-planning).
-func (q *Queries) DeleteItemsByDate(ctx context.Context, planDate time.Time) error {
-	_, err := q.db.Exec(ctx, deleteItemsByDate, planDate)
-	return err
-}
-
 const deleteNoteLinksByNoteID = `-- name: DeleteNoteLinksByNoteID :exec
 DELETE FROM note_links WHERE source_note_id = $1
 `
@@ -2188,6 +2178,17 @@ func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deletePlannedItemsByDate = `-- name: DeletePlannedItemsByDate :exec
+DELETE FROM daily_plan_items WHERE plan_date = $1 AND status = 'planned'
+`
+
+// Remove only 'planned' items for a date (used when re-planning).
+// Preserves done/deferred/dropped items as historical records.
+func (q *Queries) DeletePlannedItemsByDate(ctx context.Context, planDate time.Time) error {
+	_, err := q.db.Exec(ctx, deletePlannedItemsByDate, planDate)
+	return err
 }
 
 const deleteProject = `-- name: DeleteProject :exec

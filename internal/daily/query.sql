@@ -52,6 +52,7 @@ LEFT JOIN projects p ON p.id = t.project_id
 WHERE dpi.plan_date >= @start_date AND dpi.plan_date <= @end_date
 ORDER BY dpi.plan_date DESC, dpi.position;
 
--- name: DeleteItemsByDate :exec
--- Remove all plan items for a date (used when re-planning).
-DELETE FROM daily_plan_items WHERE plan_date = @plan_date;
+-- name: DeletePlannedItemsByDate :exec
+-- Remove only 'planned' items for a date (used when re-planning).
+-- Preserves done/deferred/dropped items as historical records.
+DELETE FROM daily_plan_items WHERE plan_date = @plan_date AND status = 'planned';

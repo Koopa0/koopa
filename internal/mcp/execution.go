@@ -38,6 +38,16 @@ func (s *Server) advanceWork(ctx context.Context, _ *sdkmcp.CallToolRequest, inp
 		return nil, AdvanceWorkOutput{}, fmt.Errorf("invalid task_id: %w", err)
 	}
 
+	// Fetch current task to validate state transition.
+	current, err := s.tasks.TaskByID(ctx, taskID)
+	if err != nil {
+		return nil, AdvanceWorkOutput{}, fmt.Errorf("task not found: %w", err)
+	}
+
+	if err := validateTransition(current.Status, input.Action); err != nil {
+		return nil, AdvanceWorkOutput{}, err
+	}
+
 	switch input.Action {
 	case "clarify":
 		return s.advanceClarify(ctx, taskID, input)
@@ -50,6 +60,27 @@ func (s *Server) advanceWork(ctx context.Context, _ *sdkmcp.CallToolRequest, inp
 	default:
 		return nil, AdvanceWorkOutput{}, fmt.Errorf("invalid action %q (valid: clarify, start, complete, defer)", input.Action)
 	}
+}
+
+// validateTransition checks if the action is valid for the current task status.
+func validateTransition(current task.Status, action string) error {
+	valid := map[task.Status][]string{
+		task.StatusInbox:      {"clarify", "defer"},
+		task.StatusTodo:       {"start", "complete", "defer"},
+		task.StatusInProgress: {"complete", "defer"},
+		task.StatusSomeday:    {"clarify", "start"},
+		// done tasks cannot be transitioned
+	}
+	allowed, ok := valid[current]
+	if !ok {
+		return fmt.Errorf("task status %q does not support transitions", current)
+	}
+	for _, a := range allowed {
+		if a == action {
+			return nil
+		}
+	}
+	return fmt.Errorf("cannot %q a task in %q status (allowed: %v)", action, current, allowed)
 }
 
 func (s *Server) advanceClarify(ctx context.Context, taskID uuid.UUID, input AdvanceWorkInput) (*sdkmcp.CallToolResult, AdvanceWorkOutput, error) {
@@ -145,8 +176,8 @@ type PlanDayItem struct {
 
 // PlanDayOutput is the output of the plan_day tool.
 type PlanDayOutput struct {
-	Date         string           `json:"date"`
-	ItemsCreated int              `json:"items_created"`
+	Date         string       `json:"date"`
+	ItemsCreated int          `json:"items_created"`
 	Items        []daily.Item `json:"items"`
 }
 
@@ -165,7 +196,7 @@ func (s *Server) planDay(ctx context.Context, _ *sdkmcp.CallToolRequest, input P
 	}
 
 	// Delete existing planned items for this date (idempotent re-plan).
-	if err := s.dayplan.DeleteByDate(ctx, date); err != nil {
+	if err := s.dayplan.DeletePlannedByDate(ctx, date); err != nil {
 		return nil, PlanDayOutput{}, fmt.Errorf("clearing existing plan: %w", err)
 	}
 

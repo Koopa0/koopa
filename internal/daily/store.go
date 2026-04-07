@@ -75,9 +75,10 @@ func (s *Store) CompleteByTask(ctx context.Context, taskID uuid.UUID, date time.
 	})
 }
 
-// DeleteByDate removes all plan items for a date (used when re-planning).
-func (s *Store) DeleteByDate(ctx context.Context, date time.Time) error {
-	return s.q.DeleteItemsByDate(ctx, date)
+// DeletePlannedByDate removes only 'planned' items for a date (re-planning).
+// Preserves done/deferred/dropped items as historical records.
+func (s *Store) DeletePlannedByDate(ctx context.Context, date time.Time) error {
+	return s.q.DeletePlannedItemsByDate(ctx, date)
 }
 
 func rawToItem(r *db.DailyPlanItem) *Item {
