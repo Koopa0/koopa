@@ -171,3 +171,15 @@ RETURNING *;
 -- Append a review log entry after rating a card.
 INSERT INTO review_logs (card_id, rating, scheduled_days, elapsed_days, state, reviewed_at)
 VALUES (@card_id, @rating, @scheduled_days, @elapsed_days, @state, @reviewed_at);
+
+-- name: CardByID :one
+-- Get a review card by its primary key (used after retrieval queue lookup).
+SELECT * FROM review_cards WHERE id = @id;
+
+-- name: ReviewLogsByCard :many
+-- Review history for a card, newest first. Supports idx_review_logs_card index.
+SELECT id, card_id, rating, scheduled_days, elapsed_days, state, reviewed_at
+FROM review_logs
+WHERE card_id = @card_id
+ORDER BY reviewed_at DESC
+LIMIT @max_results;

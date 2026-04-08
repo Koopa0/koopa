@@ -698,6 +698,27 @@ func (q *Queries) BulkUpsertNoteLinks(ctx context.Context, arg BulkUpsertNoteLin
 	return err
 }
 
+const cardByID = `-- name: CardByID :one
+SELECT id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at FROM review_cards WHERE id = $1
+`
+
+// Get a review card by its primary key (used after retrieval queue lookup).
+func (q *Queries) CardByID(ctx context.Context, id int64) (ReviewCard, error) {
+	row := q.db.QueryRow(ctx, cardByID, id)
+	var i ReviewCard
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.LearningItemID,
+		&i.TagID,
+		&i.CardState,
+		&i.Due,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const cardByLearningItem = `-- name: CardByLearningItem :one
 
 SELECT id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at FROM review_cards WHERE learning_item_id = $1
@@ -6843,6 +6864,48 @@ func (q *Queries) ReviewByID(ctx context.Context, id uuid.UUID) (ReviewByIDRow, 
 		&i.ReviewedAt,
 	)
 	return i, err
+}
+
+const reviewLogsByCard = `-- name: ReviewLogsByCard :many
+SELECT id, card_id, rating, scheduled_days, elapsed_days, state, reviewed_at
+FROM review_logs
+WHERE card_id = $1
+ORDER BY reviewed_at DESC
+LIMIT $2
+`
+
+type ReviewLogsByCardParams struct {
+	CardID     int64 `json:"card_id"`
+	MaxResults int32 `json:"max_results"`
+}
+
+// Review history for a card, newest first. Supports idx_review_logs_card index.
+func (q *Queries) ReviewLogsByCard(ctx context.Context, arg ReviewLogsByCardParams) ([]ReviewLog, error) {
+	rows, err := q.db.Query(ctx, reviewLogsByCard, arg.CardID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReviewLog{}
+	for rows.Next() {
+		var i ReviewLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.CardID,
+			&i.Rating,
+			&i.ScheduledDays,
+			&i.ElapsedDays,
+			&i.State,
+			&i.ReviewedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const searchContents = `-- name: SearchContents :many

@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrNotFound     = errors.New("learning: not found")
+	ErrConflict     = errors.New("learning: conflict")
 	ErrActiveExists = errors.New("learning: active session exists")
 	ErrNoActive     = errors.New("learning: no active session")
 	ErrAlreadyEnded = errors.New("learning: session already ended")
