@@ -630,6 +630,16 @@ func (s *Store) TasksByProjectGrouped(ctx context.Context, projectID uuid.UUID) 
 }
 
 // Delete hard-deletes a task. Used only for inbox discard.
+// Delete hard-deletes an inbox task. Returns ErrNotFound if the task
+// doesn't exist or is not in inbox status (status guard prevents
+// accidental deletion of non-inbox tasks).
 func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
-	return s.q.DeleteTask(ctx, id)
+	n, err := s.q.DeleteTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("deleting task %s: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

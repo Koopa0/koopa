@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
 )
@@ -249,6 +251,9 @@ func (s *Store) CreateMilestoneSimple(ctx context.Context, goalID uuid.UUID, tit
 		Position: position,
 	})
 	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return nil, ErrConflict
+		}
 		return nil, fmt.Errorf("creating milestone: %w", err)
 	}
 	return &Milestone{

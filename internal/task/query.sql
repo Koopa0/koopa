@@ -367,9 +367,9 @@ SET status = 'todo',
 WHERE id = @id AND status = 'inbox'
 RETURNING *;
 
--- name: DeleteTask :exec
--- Hard delete a task (used for inbox discard only).
-DELETE FROM tasks WHERE id = @id;
+-- name: DeleteTask :execrows
+-- Hard delete an inbox task. Status guard prevents accidental deletion of non-inbox tasks.
+DELETE FROM tasks WHERE id = @id AND status = 'inbox';
 
 -- name: BacklogTasks :many
 -- Filtered task list for admin backlog view.
@@ -401,6 +401,7 @@ ORDER BY
         WHEN 'inbox' THEN 2
         WHEN 'someday' THEN 3
         WHEN 'done' THEN 4
+        ELSE 5
     END,
     t.due NULLS LAST, t.created_at DESC;
 

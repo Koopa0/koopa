@@ -15,6 +15,13 @@ func (h *Handler) ProjectsOverview(w http.ResponseWriter, r *http.Request) {
 	if status == "" {
 		status = "active"
 	}
+	switch status {
+	case "active", "planned", "in-progress", "on-hold", "completed", "maintained", "archived", "all":
+		// valid
+	default:
+		writeError(w, http.StatusBadRequest, "invalid status filter")
+		return
+	}
 
 	projects, err := h.projects.ListByStatus(ctx, status)
 	if err != nil {

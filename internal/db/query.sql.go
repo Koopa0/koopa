@@ -3135,14 +3135,17 @@ func (q *Queries) DeleteTag(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const deleteTask = `-- name: DeleteTask :exec
-DELETE FROM tasks WHERE id = $1
+const deleteTask = `-- name: DeleteTask :execrows
+DELETE FROM tasks WHERE id = $1 AND status = 'inbox'
 `
 
-// Hard delete a task (used for inbox discard only).
-func (q *Queries) DeleteTask(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteTask, id)
-	return err
+// Hard delete an inbox task. Status guard prevents accidental deletion of non-inbox tasks.
+func (q *Queries) DeleteTask(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTask, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteTopic = `-- name: DeleteTopic :exec
@@ -8549,6 +8552,7 @@ ORDER BY
         WHEN 'inbox' THEN 2
         WHEN 'someday' THEN 3
         WHEN 'done' THEN 4
+        ELSE 5
     END,
     t.due NULLS LAST, t.created_at DESC
 `

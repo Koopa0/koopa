@@ -42,4 +42,6 @@ type Goal struct {
 var (
 	// ErrNotFound indicates the goal does not exist.
 	ErrNotFound = errors.New("goal: not found")
+	// ErrConflict indicates a uniqueness violation.
+	ErrConflict = errors.New("goal: conflict")
 )
