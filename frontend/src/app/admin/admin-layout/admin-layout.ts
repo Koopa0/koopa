@@ -16,19 +16,23 @@ import { filter } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
-  LayoutDashboard,
-  Activity,
+  Sun,
+  Inbox,
+  Target,
+  FolderOpen,
+  ListTodo,
+  BookOpen,
+  FileText,
+  PenLine,
   Rss,
   Tags,
+  Activity,
   Menu,
   LogOut,
-  Home,
   PanelLeftClose,
   PanelLeft,
-  FolderOpen,
-  Target,
-  FileText,
-  Inbox,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -36,15 +40,17 @@ import { ToastComponent } from '../../shared/toast/toast.component';
 interface NavItem {
   label: string;
   route: string;
-  icon: typeof LayoutDashboard;
+  icon: typeof Sun;
   exact: boolean;
   disabled: boolean;
-  queryParams?: Record<string, string>;
+  badge?: number;
 }
 
 interface NavGroup {
   title: string;
   items: NavItem[];
+  collapsible: boolean;
+  collapsed?: boolean;
 }
 
 @Component({
@@ -70,32 +76,22 @@ export class AdminLayoutComponent {
   protected readonly isMobileSidebarOpen = signal(false);
 
   protected readonly LogOutIcon = LogOut;
-  protected readonly HomeIcon = Home;
   protected readonly PanelLeftCloseIcon = PanelLeftClose;
   protected readonly PanelLeftIcon = PanelLeft;
   protected readonly MenuIcon = Menu;
+  protected readonly ChevronDownIcon = ChevronDown;
+  protected readonly ChevronRightIcon = ChevronRight;
 
   protected readonly navGroups: NavGroup[] = [
     {
-      title: '總覽',
+      title: '',
+      collapsible: false,
       items: [
         {
-          label: 'Dashboard',
-          route: '/admin',
-          icon: LayoutDashboard,
+          label: 'Today',
+          route: '/admin/today',
+          icon: Sun,
           exact: true,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: '內容',
-      items: [
-        {
-          label: 'Library',
-          route: '/admin/contents',
-          icon: FileText,
-          exact: false,
           disabled: false,
         },
         {
@@ -105,42 +101,84 @@ export class AdminLayoutComponent {
           exact: false,
           disabled: false,
         },
+      ],
+    },
+    {
+      title: 'Plan',
+      collapsible: true,
+      items: [
         {
-          label: 'Feeds',
-          route: '/admin/feeds',
-          icon: Rss,
+          label: 'Goals',
+          route: '/admin/plan/goals',
+          icon: Target,
           exact: false,
           disabled: false,
         },
         {
-          label: 'Tags',
-          route: '/admin/tags',
-          icon: Tags,
+          label: 'Projects',
+          route: '/admin/plan/projects',
+          icon: FolderOpen,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Tasks',
+          route: '/admin/plan/tasks',
+          icon: ListTodo,
           exact: false,
           disabled: false,
         },
       ],
     },
     {
-      title: '管理',
+      title: 'Library',
+      collapsible: true,
       items: [
         {
-          label: 'Projects',
-          route: '/admin/projects',
-          icon: FolderOpen,
+          label: 'Pipeline',
+          route: '/admin/library/pipeline',
+          icon: PenLine,
           exact: false,
           disabled: false,
         },
         {
-          label: 'Goals',
-          route: '/admin/goals',
-          icon: Target,
+          label: 'Contents',
+          route: '/admin/library/contents',
+          icon: FileText,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Editor',
+          route: '/admin/library/editor',
+          icon: BookOpen,
+          exact: true,
+          disabled: false,
+        },
+      ],
+    },
+    {
+      title: 'System',
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          label: 'Feeds',
+          route: '/admin/system/feeds',
+          icon: Rss,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Tags',
+          route: '/admin/system/tags',
+          icon: Tags,
           exact: false,
           disabled: false,
         },
         {
           label: 'Activity',
-          route: '/admin/activity',
+          route: '/admin/system/activity',
           icon: Activity,
           exact: false,
           disabled: false,
@@ -149,8 +187,9 @@ export class AdminLayoutComponent {
     },
   ];
 
+  protected readonly collapsedGroups = signal<Set<string>>(new Set(['System']));
+
   constructor() {
-    // 手機版導航後自動收合
     this.router.events
       .pipe(
         filter(
@@ -162,7 +201,6 @@ export class AdminLayoutComponent {
         this.isMobileSidebarOpen.set(false);
       });
 
-    // 預設手機版收合（使用 CDK BreakpointObserver 取代 window.innerWidth）
     this.breakpointObserver
       .observe(['(max-width: 767.98px)'])
       .pipe(takeUntilDestroyed())
@@ -185,12 +223,24 @@ export class AdminLayoutComponent {
     this.isMobileSidebarOpen.set(false);
   }
 
-  protected logout(): void {
-    this.authService.logout();
-    this.router.navigate(['/']);
+  protected toggleGroup(title: string): void {
+    this.collapsedGroups.update((set) => {
+      const next = new Set(set);
+      if (next.has(title)) {
+        next.delete(title);
+      } else {
+        next.add(title);
+      }
+      return next;
+    });
   }
 
-  protected backToSite(): void {
+  protected isGroupCollapsed(title: string): boolean {
+    return this.collapsedGroups().has(title);
+  }
+
+  protected logout(): void {
+    this.authService.logout();
     this.router.navigate(['/']);
   }
 }

@@ -1,53 +1,202 @@
-<!-- Header -->
-<section class="border-b border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+<div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+  <!-- Header + Stats -->
+  <div class="mb-6 flex items-center justify-between">
     <div>
-      <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
-        <lucide-icon [img]="InboxIcon" [size]="24" />
-        Inbox
-      </h1>
-      <p class="mt-1 text-sm text-zinc-400">RSS 收集文章分類與內容審核</p>
+      <h1 class="text-lg font-semibold text-zinc-100">Inbox</h1>
+      <p class="text-sm text-zinc-500">捕獲想法、澄清後行動</p>
+    </div>
+    @if (stats(); as s) {
+    <div class="flex items-center gap-3 text-xs text-zinc-600">
+      <span>{{ s.total }} 項待處理</span>
+      @if (s.oldest_age_days > 0) {
+      <span class="text-amber-500">最舊 {{ s.oldest_age_days }}d</span>
+      }
+    </div>
+    }
+  </div>
+
+  <!-- Quick Capture -->
+  <div class="mb-6">
+    <div class="flex gap-2">
+      <input
+        type="text"
+        [value]="captureText()"
+        (input)="onCaptureInput($event)"
+        (keydown)="onCaptureKeydown($event)"
+        placeholder="快速捕獲想法... (Enter 送出)"
+        class="flex-1 rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-zinc-600 focus:outline-hidden"
+      />
+      <button
+        type="button"
+        (click)="capture()"
+        [disabled]="!captureText().trim()"
+        class="shrink-0 rounded-sm bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <lucide-icon [img]="PlusIcon" [size]="16" />
+      </button>
     </div>
   </div>
-</section>
 
-<!-- Tabs -->
-<section class="border-b border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-    <nav class="flex gap-6" aria-label="Tabs">
-      <button
-        type="button"
-        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
-        [class]="activeTab() === 'collected'
-          ? 'border-white text-white'
-          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
-        (click)="switchTab('collected')"
-      >
-        <span class="flex items-center gap-1.5">
-          <lucide-icon [img]="DatabaseIcon" [size]="14" />
-          收集文章
-        </span>
-      </button>
-      <button
-        type="button"
-        class="border-b-2 px-1 py-3 text-sm font-medium transition-colors"
-        [class]="activeTab() === 'review'
-          ? 'border-white text-white'
-          : 'border-transparent text-zinc-400 hover:text-zinc-200'"
-        (click)="switchTab('review')"
-      >
-        <span class="flex items-center gap-1.5">
-          <lucide-icon [img]="ClipboardCheckIcon" [size]="14" />
-          審核佇列
-        </span>
-      </button>
-    </nav>
+  <!-- Loading -->
+  @if (isLoading()) {
+  <div class="flex h-32 items-center justify-center">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+    ></div>
   </div>
-</section>
+  } @else if (items().length === 0) {
+  <!-- Empty State -->
+  <div
+    class="rounded-sm border border-dashed border-zinc-800 px-6 py-16 text-center"
+  >
+    <lucide-icon
+      [img]="InboxIcon"
+      [size]="32"
+      class="mx-auto mb-3 text-zinc-700"
+    />
+    <p class="text-sm text-zinc-500 mb-1">Inbox 清空了</p>
+    <p class="text-xs text-zinc-600">有新想法時隨時捕獲</p>
+  </div>
+  } @else {
+  <!-- Inbox Queue -->
+  <div class="space-y-2">
+    @for (item of items(); track item.id) {
+    <div
+      class="rounded-sm border transition-colors"
+      [class]="
+            activeClarifyId() === item.id
+              ? 'border-zinc-600 bg-zinc-900'
+              : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'
+          "
+    >
+      <!-- Item row -->
+      <button
+        type="button"
+        (click)="openClarify(item.id)"
+        class="flex w-full items-start gap-3 px-4 py-3 text-left"
+      >
+        <div class="flex-1 min-w-0">
+          <p class="text-sm text-zinc-200 leading-relaxed">{{ item.text }}</p>
+          <div class="mt-1.5 flex items-center gap-2">
+            <span
+              class="rounded-xs px-1.5 py-0.5 text-[10px] font-medium"
+              [class]="getSourceColor(item.source)"
+            >
+              {{ getSourceLabel(item.source) }}
+            </span>
+            <span class="flex items-center gap-1 text-[11px] text-zinc-600">
+              <lucide-icon [img]="ClockIcon" [size]="10" />
+              {{ formatAge(item.age_hours) }}
+            </span>
+          </div>
+        </div>
+        <lucide-icon
+          [img]="ChevronRightIcon"
+          [size]="14"
+          class="mt-1 shrink-0 text-zinc-700 transition-transform"
+          [class.rotate-90]="activeClarifyId() === item.id"
+        />
+      </button>
 
-<!-- Tab Content -->
-@if (activeTab() === 'collected') {
-<app-collected [hideHeader]="true" />
-} @else {
-<app-review [hideHeader]="true" />
-}
+      <!-- Clarify Panel (inline expand) -->
+      @if (activeClarifyId() === item.id) {
+      <div class="border-t border-zinc-800 px-4 py-4">
+        <p
+          class="mb-3 text-xs font-medium text-zinc-500 uppercase tracking-wider"
+        >
+          這是什麼？
+        </p>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <!-- Task -->
+          <button
+            type="button"
+            (click)="selectClarifyType('task')"
+            class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
+            [class]="
+                    selectedClarifyType() === 'task'
+                      ? 'border-emerald-700 bg-emerald-950/30 text-emerald-400'
+                      : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                  "
+          >
+            <lucide-icon [img]="ListTodoIcon" [size]="18" />
+            <span class="font-medium">任務</span>
+            <span class="text-[10px] text-zinc-600">可被完成的事</span>
+          </button>
+
+          <!-- Journal -->
+          <button
+            type="button"
+            (click)="selectClarifyType('journal')"
+            class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
+            [class]="
+                    selectedClarifyType() === 'journal'
+                      ? 'border-sky-700 bg-sky-950/30 text-sky-400'
+                      : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                  "
+          >
+            <lucide-icon [img]="BookOpenIcon" [size]="18" />
+            <span class="font-medium">日誌</span>
+            <span class="text-[10px] text-zinc-600">想法或反思</span>
+          </button>
+
+          <!-- Insight -->
+          <button
+            type="button"
+            (click)="selectClarifyType('insight')"
+            class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
+            [class]="
+                    selectedClarifyType() === 'insight'
+                      ? 'border-amber-700 bg-amber-950/30 text-amber-400'
+                      : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                  "
+          >
+            <lucide-icon [img]="LightbulbIcon" [size]="18" />
+            <span class="font-medium">洞察</span>
+            <span class="text-[10px] text-zinc-600">待驗證假設</span>
+          </button>
+
+          <!-- Discard -->
+          <button
+            type="button"
+            (click)="selectClarifyType('discard')"
+            class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
+            [class]="
+                    selectedClarifyType() === 'discard'
+                      ? 'border-red-800 bg-red-950/30 text-red-400'
+                      : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                  "
+          >
+            <lucide-icon [img]="Trash2Icon" [size]="18" />
+            <span class="font-medium">刪除</span>
+            <span class="text-[10px] text-zinc-600">不可行動</span>
+          </button>
+        </div>
+
+        <!-- Actions -->
+        @if (selectedClarifyType()) {
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            (click)="closeClarify()"
+            class="rounded-sm px-3 py-1.5 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            (click)="confirmClarify()"
+            class="rounded-sm bg-zinc-700 px-4 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-600"
+          >
+            @switch (selectedClarifyType()) { @case ('task') { 轉為任務 } @case
+            ('journal') { 寫入日誌 } @case ('insight') { 建立洞察 } @case
+            ('discard') { 確認刪除 } }
+          </button>
+        </div>
+        }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+</div>

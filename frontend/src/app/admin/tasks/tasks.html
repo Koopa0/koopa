@@ -1,0 +1,125 @@
+<div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-lg font-semibold text-zinc-100">Tasks</h1>
+    <p class="text-sm text-zinc-500">可操作的任務 backlog</p>
+  </div>
+
+  <!-- Filters -->
+  <div
+    class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+  >
+    <!-- Status tabs -->
+    <div class="flex gap-1 rounded-sm bg-zinc-900 p-0.5">
+      @for ( tab of [ { key: 'todo', label: 'Todo' }, { key: 'in-progress',
+      label: 'Active' }, { key: 'someday', label: 'Someday' }, { key: 'all',
+      label: 'All' }, ]; track tab.key ) {
+      <button
+        type="button"
+        (click)="setStatusFilter($any(tab.key))"
+        class="rounded-xs px-3 py-1 text-xs font-medium transition-colors"
+        [class]="
+            statusFilter() === tab.key
+              ? 'bg-zinc-800 text-zinc-200'
+              : 'text-zinc-500 hover:text-zinc-300'
+          "
+      >
+        {{ tab.label }}
+        <span class="ml-1 text-zinc-600">{{ getStatusCount(tab.key) }}</span>
+      </button>
+      }
+    </div>
+
+    <!-- Search -->
+    <div class="relative">
+      <lucide-icon
+        [img]="SearchIcon"
+        [size]="14"
+        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600"
+      />
+      <input
+        type="text"
+        (input)="onSearchInput($event)"
+        placeholder="搜尋任務..."
+        class="w-full rounded-sm border border-zinc-800 bg-zinc-900/50 py-1.5 pl-8 pr-3 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-hidden sm:w-48"
+      />
+    </div>
+  </div>
+
+  <!-- Task List -->
+  @if (isLoading()) {
+  <div class="flex h-32 items-center justify-center">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+    ></div>
+  </div>
+  } @else if (filteredTasks().length === 0) {
+  <div
+    class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
+  >
+    <p class="text-sm text-zinc-600">沒有符合條件的任務</p>
+  </div>
+  } @else {
+  <div class="space-y-1.5">
+    @for (task of filteredTasks(); track task.id) {
+    <div
+      class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 transition-colors hover:border-zinc-700"
+    >
+      <!-- 操作按鈕 -->
+      @if (task.status === 'todo') {
+      <button
+        type="button"
+        (click)="advanceTask(task.id, 'start')"
+        class="shrink-0 rounded-xs p-1 text-zinc-600 transition-colors hover:text-emerald-400"
+        title="開始"
+      >
+        <lucide-icon [img]="PlayIcon" [size]="14" />
+      </button>
+      } @else if (task.status === 'in-progress') {
+      <button
+        type="button"
+        (click)="advanceTask(task.id, 'complete')"
+        class="shrink-0 rounded-xs p-1 text-amber-400 transition-colors hover:text-emerald-400"
+        title="完成"
+      >
+        <lucide-icon [img]="CheckIcon" [size]="14" />
+      </button>
+      } @else {
+      <div class="size-6"></div>
+      }
+
+      <!-- 標題 -->
+      <span class="flex-1 text-sm text-zinc-300 truncate min-w-0">
+        {{ task.title }}
+      </span>
+
+      <!-- 元資料 -->
+      @if (task.project_title) {
+      <span class="hidden shrink-0 text-xs text-zinc-600 sm:inline">
+        {{ task.project_title }}
+      </span>
+      }
+
+      <span
+        class="shrink-0 text-[10px] font-bold"
+        [class]="getEnergyColor(task.energy)"
+      >
+        {{ task.energy === 'high' ? 'H' : task.energy === 'medium' ? 'M' : 'L'
+        }}
+      </span>
+
+      <span
+        class="shrink-0 text-[10px] font-medium"
+        [class]="getPriorityColor(task.priority)"
+      >
+        {{ task.priority }}
+      </span>
+
+      @if (task.due) {
+      <span class="shrink-0 text-xs text-zinc-600"> {{ task.due }} </span>
+      }
+    </div>
+    }
+  </div>
+  }
+</div>

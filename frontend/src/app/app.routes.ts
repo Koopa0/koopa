@@ -111,7 +111,6 @@ export const routes: Routes = [
     redirectTo: '/about',
     pathMatch: 'full',
   },
-  // /uses page removed from navigation
   {
     path: 'about',
     loadComponent: () =>
@@ -144,68 +143,130 @@ export const routes: Routes = [
       ),
     canActivate: [adminGuard],
     children: [
+      // — 預設導向 Today —
       {
         path: '',
-        loadComponent: () =>
-          import('./admin/dashboard/dashboard').then(
-            (m) => m.DashboardComponent,
-          ),
+        redirectTo: 'today',
+        pathMatch: 'full',
       },
       {
-        path: 'feeds',
+        path: 'today',
         loadComponent: () =>
-          import('./admin/feeds/feeds').then((m) => m.FeedsComponent),
+          import('./admin/today/today').then((m) => m.TodayComponent),
       },
+
+      // — Inbox —
       {
         path: 'inbox',
         loadComponent: () =>
           import('./admin/inbox/inbox').then((m) => m.InboxComponent),
       },
-      { path: 'collected', redirectTo: 'inbox', pathMatch: 'full' },
+
+      // — Plan —
       {
-        path: 'contents',
+        path: 'plan',
+        redirectTo: 'plan/goals',
+        pathMatch: 'full',
+      },
+      {
+        path: 'plan/goals',
         loadComponent: () =>
-          import('./admin/contents/contents').then(
-            (m) => m.AdminContentsComponent,
+          import('./admin/goals/goals').then((m) => m.GoalsComponent),
+      },
+      {
+        path: 'plan/goals/:id',
+        loadComponent: () =>
+          import('./admin/goals/goal-detail').then(
+            (m) => m.GoalDetailComponent,
           ),
       },
       {
-        path: 'tags',
-        loadComponent: () =>
-          import('./admin/tags/tags').then((m) => m.TagsComponent),
-      },
-      {
-        path: 'activity',
-        loadComponent: () =>
-          import('./admin/activity/activity').then((m) => m.ActivityComponent),
-      },
-      {
-        path: 'projects',
+        path: 'plan/projects',
         loadComponent: () =>
           import('./admin/projects/projects').then(
             (m) => m.AdminProjectsComponent,
           ),
       },
       {
-        path: 'goals',
+        path: 'plan/projects/:id',
         loadComponent: () =>
-          import('./admin/goals/goals').then((m) => m.GoalsComponent),
+          import('./admin/projects/project-detail').then(
+            (m) => m.ProjectDetailComponent,
+          ),
       },
       {
-        path: 'editor',
+        path: 'plan/tasks',
+        loadComponent: () =>
+          import('./admin/tasks/tasks').then((m) => m.TasksComponent),
+      },
+
+      // — Library —
+      {
+        path: 'library',
+        redirectTo: 'library/pipeline',
+        pathMatch: 'full',
+      },
+      {
+        path: 'library/pipeline',
+        loadComponent: () =>
+          import('./admin/library/library-pipeline').then(
+            (m) => m.LibraryPipelineComponent,
+          ),
+      },
+      {
+        path: 'library/contents',
+        loadComponent: () =>
+          import('./admin/contents/contents').then(
+            (m) => m.AdminContentsComponent,
+          ),
+      },
+      {
+        path: 'library/editor',
         loadComponent: () =>
           import('./admin/article-editor/article-editor').then(
             (m) => m.ArticleEditorComponent,
           ),
         canDeactivate: [unsavedChangesGuard],
       },
+      {
+        path: 'library/editor/:id',
+        loadComponent: () =>
+          import('./admin/article-editor/article-editor').then(
+            (m) => m.ArticleEditorComponent,
+          ),
+        canDeactivate: [unsavedChangesGuard],
+      },
+
+      // — System（現有頁面暫放此區）—
+      {
+        path: 'system/feeds',
+        loadComponent: () =>
+          import('./admin/feeds/feeds').then((m) => m.FeedsComponent),
+      },
+      {
+        path: 'system/tags',
+        loadComponent: () =>
+          import('./admin/tags/tags').then((m) => m.TagsComponent),
+      },
+      {
+        path: 'system/activity',
+        loadComponent: () =>
+          import('./admin/activity/activity').then((m) => m.ActivityComponent),
+      },
+
+      // — Legacy redirects（避免舊書籤失效）—
+      { path: 'dashboard', redirectTo: 'today', pathMatch: 'full' },
+      { path: 'contents', redirectTo: 'library/contents', pathMatch: 'full' },
+      { path: 'feeds', redirectTo: 'system/feeds', pathMatch: 'full' },
+      { path: 'tags', redirectTo: 'system/tags', pathMatch: 'full' },
+      { path: 'activity', redirectTo: 'system/activity', pathMatch: 'full' },
+      { path: 'projects', redirectTo: 'plan/projects', pathMatch: 'full' },
+      { path: 'goals', redirectTo: 'plan/goals', pathMatch: 'full' },
+      { path: 'editor', redirectTo: 'library/editor', pathMatch: 'full' },
       {
         path: 'editor/:id',
-        loadComponent: () =>
-          import('./admin/article-editor/article-editor').then(
-            (m) => m.ArticleEditorComponent,
-          ),
-        canDeactivate: [unsavedChangesGuard],
+        redirectTo: 'library/editor/:id',
+        pathMatch: 'full',
       },
       {
         path: 'project-editor',

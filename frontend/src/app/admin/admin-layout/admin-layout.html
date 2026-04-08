@@ -22,16 +22,20 @@
   class="z-50 flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 transition-all duration-200"
   [class]="
     isMobileSidebarOpen()
-      ? 'fixed inset-y-0 left-0 w-64 top-[57px]'
-      : 'hidden md:flex ' + (isSidebarOpen() ? 'w-64' : 'w-16')
+      ? 'fixed inset-y-0 left-0 w-56 top-[57px]'
+      : 'hidden md:flex ' + (isSidebarOpen() ? 'w-56' : 'w-14')
   "
   role="navigation"
   aria-label="Admin navigation"
 >
   <!-- 側邊欄頂部 -->
-  <div class="flex h-12 items-center justify-between border-b border-zinc-800 px-3">
+  <div
+    class="flex h-11 items-center justify-between border-b border-zinc-800 px-3"
+  >
     @if (isSidebarOpen() || isMobileSidebarOpen()) {
-    <span class="text-sm font-semibold text-zinc-300">Admin</span>
+    <span class="text-xs font-semibold tracking-wide text-zinc-500 uppercase"
+      >Console</span
+    >
     }
     <button
       type="button"
@@ -48,28 +52,46 @@
   </div>
 
   <!-- 導航群組 -->
-  <nav class="flex-1 overflow-y-auto px-2 py-3">
+  <nav class="flex-1 overflow-y-auto px-2 py-2">
     @for (group of navGroups; track group.title) {
-    <div class="mb-4">
-      @if (isSidebarOpen() || isMobileSidebarOpen()) {
+    <div class="mb-1">
+      <!-- 群組標題（可展開收合） -->
+      @if (group.title && (isSidebarOpen() || isMobileSidebarOpen())) { @if
+      (group.collapsible) {
+      <button
+        type="button"
+        (click)="toggleGroup(group.title)"
+        class="flex w-full items-center justify-between px-2 py-1.5 text-[11px] font-semibold tracking-wider text-zinc-600 uppercase hover:text-zinc-400"
+      >
+        <span>{{ group.title }}</span>
+        @if (isGroupCollapsed(group.title)) {
+        <lucide-icon [img]="ChevronRightIcon" [size]="12" />
+        } @else {
+        <lucide-icon [img]="ChevronDownIcon" [size]="12" />
+        }
+      </button>
+      } @else {
       <p
-        class="mb-1 px-2 text-[11px] font-semibold tracking-wider text-zinc-600 uppercase"
+        class="px-2 py-1.5 text-[11px] font-semibold tracking-wider text-zinc-600 uppercase"
       >
         {{ group.title }}
       </p>
-      }
+      } }
 
-      @for (item of group.items; track item.route) {
-      @if (item.disabled) {
+      <!-- 群組項目 -->
+      @if (!group.collapsible || !isGroupCollapsed(group.title)) { @for (item of
+      group.items; track item.route) { @if (item.disabled) {
       <span
-        class="flex items-center gap-3 rounded-xs px-2 py-2 text-sm text-zinc-600 cursor-not-allowed"
+        class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-600 cursor-not-allowed"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
         [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (即將推出)' : '即將推出'"
       >
-        <lucide-icon [img]="item.icon" [size]="18" class="shrink-0" />
+        <lucide-icon [img]="item.icon" [size]="16" class="shrink-0" />
         @if (isSidebarOpen() || isMobileSidebarOpen()) {
         <span>{{ item.label }}</span>
-        <span class="ml-auto rounded-xs bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">
+        <span
+          class="ml-auto rounded-xs bg-zinc-800/60 px-1.5 py-0.5 text-[10px] text-zinc-600"
+        >
           Soon
         </span>
         }
@@ -77,34 +99,38 @@
       } @else {
       <a
         [routerLink]="item.route"
-        [queryParams]="item.queryParams ?? {}"
-        routerLinkActive="bg-zinc-800 text-white"
+        routerLinkActive="bg-zinc-800/80 text-white"
         [routerLinkActiveOptions]="{ exact: item.exact }"
-        class="flex items-center gap-3 rounded-xs px-2 py-2 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-100"
+        class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
         [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label : null"
       >
-        <lucide-icon [img]="item.icon" [size]="18" class="shrink-0" />
+        <lucide-icon [img]="item.icon" [size]="16" class="shrink-0" />
         @if (isSidebarOpen() || isMobileSidebarOpen()) {
         <span>{{ item.label }}</span>
-        }
+        @if (item.badge) {
+        <span
+          class="ml-auto rounded-full bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
+        >
+          {{ item.badge }}
+        </span>
+        } }
       </a>
-      }
-      }
+      } } }
     </div>
     }
   </nav>
 
   <!-- 側邊欄底部 -->
-  <div class="border-t border-zinc-800 px-2 py-3">
+  <div class="border-t border-zinc-800 px-2 py-2">
     <button
       type="button"
       (click)="logout()"
-      class="flex w-full items-center gap-3 rounded-xs px-2 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
+      class="flex w-full items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
       [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
       [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? 'Sign out' : null"
     >
-      <lucide-icon [img]="LogOutIcon" [size]="18" class="shrink-0" />
+      <lucide-icon [img]="LogOutIcon" [size]="16" class="shrink-0" />
       @if (isSidebarOpen() || isMobileSidebarOpen()) {
       <span>Sign out</span>
       }

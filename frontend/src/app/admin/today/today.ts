@@ -1,0 +1,234 @@
+import {
+  Component,
+  ChangeDetectionStrategy,
+  inject,
+  signal,
+  computed,
+  OnInit,
+  DestroyRef,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
+import { DatePipe } from '@angular/common';
+import {
+  LucideAngularModule,
+  Sun,
+  AlertTriangle,
+  Inbox,
+  FileText,
+  BookOpen,
+  Target,
+  ArrowRight,
+  Check,
+  RotateCcw,
+  X,
+  Clock,
+  Zap,
+  ChevronRight,
+  Play,
+} from 'lucide-angular';
+import { TodayService } from '../../core/services/today.service';
+import { NotificationService } from '../../core/services/notification.service';
+import type {
+  MyDayContext,
+  DailyPlanItem,
+  GoalPulse,
+  OverdueTask,
+  NeedsAttention,
+} from '../../core/models/admin.model';
+
+@Component({
+  selector: 'app-today',
+  standalone: true,
+  imports: [RouterLink, DatePipe, LucideAngularModule],
+  templateUrl: './today.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class TodayComponent implements OnInit {
+  private readonly todayService = inject(TodayService);
+  private readonly notificationService = inject(NotificationService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly context = signal<MyDayContext | null>(null);
+  protected readonly isLoading = signal(true);
+
+  // 衍生狀態
+  protected readonly yesterdayUnfinished = computed(
+    () => this.context()?.yesterday_unfinished ?? [],
+  );
+  protected readonly todayPlan = computed(
+    () => this.context()?.today_plan ?? [],
+  );
+  protected readonly overdueTasks = computed(
+    () => this.context()?.overdue_tasks ?? [],
+  );
+  protected readonly needsAttention = computed(
+    () => this.context()?.needs_attention ?? null,
+  );
+  protected readonly goalPulse = computed(
+    () => this.context()?.goal_pulse ?? [],
+  );
+  protected readonly contextLine = computed(
+    () => this.context()?.context_line ?? '',
+  );
+  protected readonly todayDate = computed(() => this.context()?.date ?? '');
+
+  protected readonly hasOverdue = computed(
+    () => this.overdueTasks().length > 0,
+  );
+  protected readonly hasUnfinished = computed(
+    () => this.yesterdayUnfinished().length > 0,
+  );
+  protected readonly totalAttention = computed(() => {
+    const n = this.needsAttention();
+    if (!n) return 0;
+    return (
+      n.inbox_count +
+      n.pending_directives +
+      n.unread_reports +
+      n.due_reviews +
+      n.overdue_tasks
+    );
+  });
+  protected readonly totalPlannedMinutes = computed(() =>
+    this.todayPlan().reduce(
+      (sum, item) => sum + (item.estimated_minutes ?? 0),
+      0,
+    ),
+  );
+
+  // Lucide icons
+  protected readonly SunIcon = Sun;
+  protected readonly AlertTriangleIcon = AlertTriangle;
+  protected readonly InboxIcon = Inbox;
+  protected readonly FileTextIcon = FileText;
+  protected readonly BookOpenIcon = BookOpen;
+  protected readonly TargetIcon = Target;
+  protected readonly ArrowRightIcon = ArrowRight;
+  protected readonly CheckIcon = Check;
+  protected readonly RotateCcwIcon = RotateCcw;
+  protected readonly XIcon = X;
+  protected readonly ClockIcon = Clock;
+  protected readonly ZapIcon = Zap;
+  protected readonly ChevronRightIcon = ChevronRight;
+  protected readonly PlayIcon = Play;
+
+  ngOnInit(): void {
+    this.loadContext();
+  }
+
+  private loadContext(): void {
+    this.isLoading.set(true);
+    this.todayService
+      .getMyDayContext()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.context.set(data);
+          this.isLoading.set(false);
+        },
+        error: () => {
+          this.isLoading.set(false);
+          this.notificationService.error('無法載入今日 context');
+        },
+      });
+  }
+
+  protected resolveItem(
+    itemId: string,
+    action: 'complete' | 'defer' | 'drop',
+  ): void {
+    this.todayService
+      .resolveDailyItem(itemId, action)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          // 從本地更新狀態
+          this.context.update((ctx) => {
+            if (!ctx) return ctx;
+            return {
+              ...ctx,
+              yesterday_unfinished: ctx.yesterday_unfinished.filter(
+                (i) => i.id !== itemId,
+              ),
+              today_plan:
+                action === 'complete' ? ctx.today_plan : ctx.today_plan,
+            };
+          });
+        },
+        error: () => this.notificationService.error('操作失敗'),
+      });
+  }
+
+  protected completePlanItem(itemId: string): void {
+    this.todayService
+      .resolveDailyItem(itemId, 'complete')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.context.update((ctx) => {
+            if (!ctx) return ctx;
+            return {
+              ...ctx,
+              today_plan: ctx.today_plan.map((i) =>
+                i.id === itemId ? { ...i, status: 'done' as const } : i,
+              ),
+            };
+          });
+        },
+        error: () => this.notificationService.error('操作失敗'),
+      });
+  }
+
+  protected getEnergyLabel(energy: string): string {
+    const labels: Record<string, string> = {
+      high: 'H',
+      medium: 'M',
+      low: 'L',
+    };
+    return labels[energy] ?? energy;
+  }
+
+  protected getEnergyColor(energy: string): string {
+    const colors: Record<string, string> = {
+      high: 'text-red-400',
+      medium: 'text-amber-400',
+      low: 'text-emerald-400',
+    };
+    return colors[energy] ?? 'text-zinc-400';
+  }
+
+  protected getMilestoneProgress(goal: GoalPulse): number {
+    if (goal.milestones_total === 0) return 0;
+    return Math.round((goal.milestones_done / goal.milestones_total) * 100);
+  }
+
+  protected getDeadlineUrgency(daysRemaining: number | null): string {
+    if (daysRemaining === null) return 'text-zinc-500';
+    if (daysRemaining < 7) return 'text-red-400';
+    if (daysRemaining < 30) return 'text-amber-400';
+    return 'text-zinc-400';
+  }
+
+  protected getAreaBg(area: string): string {
+    const colors: Record<string, string> = {
+      backend: 'violet-900/40',
+      learning: 'sky-900/40',
+      studio: 'amber-900/40',
+      career: 'emerald-900/40',
+      frontend: 'blue-900/40',
+    };
+    return colors[area] ?? 'zinc-800';
+  }
+
+  protected getAreaText(area: string): string {
+    const colors: Record<string, string> = {
+      backend: 'violet-400',
+      learning: 'sky-400',
+      studio: 'amber-400',
+      career: 'emerald-400',
+      frontend: 'blue-400',
+    };
+    return colors[area] ?? 'zinc-400';
+  }
+}
