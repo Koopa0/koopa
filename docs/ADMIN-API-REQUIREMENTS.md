@@ -968,6 +968,115 @@
 
 ---
 
+### GET /api/admin/reflect/journal
+
+**用途**：取得 journal 條目列表。
+
+**Query params**：`limit` (default 20), `kind` (optional filter)
+
+**Response**：
+```json
+{
+  "entries": [
+    {
+      "kind": "reflection",
+      "body": "今天的 admin redesign 討論收穫很大...",
+      "date": "2026-04-08"
+    }
+  ]
+}
+```
+
+**Backend 邏輯**：`journal ORDER BY created_at DESC LIMIT $limit`，可選 `WHERE kind = $kind`
+
+---
+
+### GET /api/admin/reflect/insights
+
+**用途**：取得 insights 列表。
+
+**Response**：
+```json
+{
+  "insights": [
+    {
+      "id": "1",
+      "hypothesis": "pgvector HNSW 在 100K 以上效能下降",
+      "status": "unverified",
+      "age_days": 14
+    }
+  ]
+}
+```
+
+**Backend 邏輯**：`insights ORDER BY created_at DESC`，`age_days = EXTRACT(DAY FROM now() - created_at)`
+
+---
+
+### GET /api/admin/dashboard/trends
+
+**用途**：系統趨勢分析數據（Dashboard 頁）。所有值由 backend 聚合計算。
+
+**Response**：
+```json
+{
+  "period": "2026-04-01 ~ 2026-04-07",
+  "execution": {
+    "tasks_completed_this_week": 12,
+    "tasks_completed_last_week": 10,
+    "trend": "up"
+  },
+  "plan_adherence": {
+    "completion_rate_this_week": 78,
+    "completion_rate_last_week": 65
+  },
+  "goal_health": {
+    "on_track": 3,
+    "at_risk": 1,
+    "stalled": 0
+  },
+  "learning": {
+    "sessions_this_week": 4,
+    "weakness_count": 8,
+    "weakness_change": -4,
+    "mastery_count": 8,
+    "mastery_change": 3,
+    "review_backlog": 5
+  },
+  "content": {
+    "published_this_month": 4,
+    "published_target": 12,
+    "drafts_in_progress": 2
+  },
+  "inbox_health": {
+    "current_count": 5,
+    "week_start_count": 8,
+    "clarified_this_week": 6,
+    "captured_this_week": 3
+  },
+  "someday_health": {
+    "total": 12,
+    "stale_count": 5
+  },
+  "directive_health": {
+    "open_count": 2,
+    "avg_resolution_days": 3.5
+  }
+}
+```
+
+**Backend 邏輯**：
+- `execution`：`COUNT tasks WHERE completed_at BETWEEN this_week/last_week`
+- `plan_adherence`：`daily_plan_items WHERE status='done' / total WHERE plan_date BETWEEN`
+- `goal_health`：計算每個 active goal 的 health（同 goal detail 的 health 邏輯）
+- `learning`：`COUNT attempt_observations GROUP BY signal_type` 本週 vs 上週
+- `content`：`COUNT contents WHERE published_at` 本月 + draft count
+- `inbox_health`：`COUNT tasks WHERE status='inbox'` + 本週 capture/clarify delta
+- `someday_health`：`COUNT tasks WHERE status='someday'`，stale = `updated_at < now() - 30d`
+- `directive_health`：`COUNT directives WHERE resolved_at IS NULL`，avg = `AVG(resolved_at - created_at)`
+
+---
+
 ## 9. Studio — IPC 協作（Phase 3）
 
 > **Schema 已更新（2026-04-08）**：directives 表已有 `resolved_at TIMESTAMPTZ` + `resolution_report_id BIGINT FK reports(id)` + `chk_resolved_requires_ack` CHECK constraint。
@@ -1074,6 +1183,9 @@
 | Daily Review | `GET /api/admin/reflect/daily` | Phase 2 |
 | Weekly Review | `GET /api/admin/reflect/weekly` | Phase 2 |
 | Write Journal | `POST /api/admin/reflect/journal` | Phase 2 |
+| Journal 列表 | `GET /api/admin/reflect/journal` | Phase 2 |
+| Insights 列表 | `GET /api/admin/reflect/insights` | Phase 2 |
+| Dashboard 趨勢 | `GET /api/admin/dashboard/trends` | Phase 2 |
 | Studio Overview | `GET /api/admin/studio/overview` | Phase 3 |
 | Propose Directive | `POST /api/admin/studio/directives/propose` | Phase 3 |
 | System Health | `GET /api/admin/system/health` | Phase 3 |
