@@ -32,7 +32,8 @@ backend/vendor/
 .gemini/
 .agents/
 
-
+# Secrets reference (local only)
+SECRETS.md
 
 # Build artifacts
 /app
