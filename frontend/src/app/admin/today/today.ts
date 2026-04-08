@@ -112,6 +112,7 @@ export class TodayComponent implements OnInit {
     studio: 'bg-amber-900/40 text-amber-400',
     career: 'bg-emerald-900/40 text-emerald-400',
     frontend: 'bg-blue-900/40 text-blue-400',
+    ops: 'bg-orange-900/40 text-orange-400',
   };
 
   // Lucide icons

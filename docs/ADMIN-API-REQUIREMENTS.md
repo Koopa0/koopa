@@ -921,3 +921,40 @@
 | **P2 — Phase 3** | studio (2), system (1) | IPC + 系統監控 |
 
 **注意**：前端會先用 mock data 開發，API 準備好後切換。每個 service 都會有 `useMock` flag。
+
+---
+
+## Schema 對齊備註
+
+> 以下記錄 API response 與 migrations/001_initial.up.sql 的欄位對應關係，
+> 避免前後端 mapping 成本。
+
+### 關鍵差異與決策
+
+| API response 欄位 | Schema 欄位 | 說明 |
+|---|---|---|
+| `task.area` | tasks 表**沒有** area 欄位 | 需透過 `tasks.project_id → projects.area_id → areas.name` JOIN 衍生。無 project 的 task area 為 null |
+| `task.status` | `task_status` 列舉含 5 值：`inbox, todo, in-progress, done, someday` | 前端 TaskStatus type 需包含全部 5 值 |
+| `goal.area_name` | `goals.area_id` UUID FK → `areas.name` | API 回傳 denormalized 的 `area_id` + `area_name`，省去前端 JOIN |
+| `milestone.completed` | Schema 用 `completed_at TIMESTAMPTZ`（null = 未完成）| API 回傳 `completed: boolean`（衍生自 `completed_at IS NOT NULL`）+ 原始 `completed_at` |
+| `daily_plan_item.title` | Schema 只有 `task_id` FK | API 回傳 denormalized 的 `title`（JOIN tasks.title）|
+| `daily_plan_item.area` | 同上，需 JOIN tasks → projects → areas | API denormalize |
+| `directive.title` | Schema 只有 `content TEXT` | API 可從 `content` 前 N 字截取作 title，或前端直接用 `content` |
+| `directive` lifecycle | Schema **已有** `resolved_at` + `resolution_report_id` | lifecycle_status 可直接從 schema 欄位計算，不需 JOIN 推斷 |
+| `insight.evidence` | Schema 用 `metadata JSONB` | evidence 存在 metadata.evidence 中（如有） |
+| `attempt.outcome` | 7 值列舉：`solved_independent, solved_with_hint, solved_after_solution, completed, completed_with_support, incomplete, gave_up` | 前端 type 需包含全部 7 值 |
+| `session.mode` | `session_mode` CHECK 5 值：`retrieval, practice, mixed, review, reading` | 前端需定義對應 type |
+| `observation.signal_type` | 3 值：`weakness, improvement, mastery` | 注意不是 `weakness, strength, misconception`——schema 用 `improvement` 和 `mastery` |
+| `observation.severity` | `minor, moderate, critical`，且只有 `signal_type='weakness'` 時才有值 | `chk_severity_weakness_only` 約束 |
+| `concept.kind` | 3 值：`pattern, skill, principle` | |
+| `areas` seed | 6 個：backend, learning, studio, frontend, career, ops | 前端 AREA_CLASSES 顏色映射需覆蓋這 6 個 |
+
+### 前端 TypeScript model 需修正
+
+1. `TaskStatus` 改為 `'inbox' | 'todo' | 'in-progress' | 'done' | 'someday'`（目前缺 inbox 和 someday）
+2. `MilestoneWithProjects.completed` 改為 `completed_at: string | null`（布林由前端 computed 衍生）
+3. `AREA_CLASSES` 色彩映射加入 `ops`
+4. `AttemptOutcome` 定義為 7 值 union type
+5. `SessionMode` 定義為 5 值 union type
+6. `ObservationSignal` 改為 `weakness | improvement | mastery`（不是 weakness/strength/misconception）
+7. `DirectiveSummary` 的 `title` 改為 `content`（或在 API 層截取）

@@ -61,7 +61,6 @@ export type ContentStatus = 'draft' | 'review' | 'published' | 'archived';
 
 export type ReviewLevel = 'auto' | 'light' | 'standard' | 'strict';
 
-
 /** Backend Topic object */
 export interface ApiTopic {
   id: string;
@@ -156,7 +155,7 @@ export interface ApiSessionNote {
   created_at: string;
 }
 
-export type TaskStatus = 'todo' | 'in-progress' | 'done';
+export type TaskStatus = 'inbox' | 'todo' | 'in-progress' | 'done' | 'someday';
 
 /** Admin — Task write requests */
 export interface ApiCreateTaskRequest {
@@ -193,7 +192,11 @@ export interface ApiInsight {
   conclusion: string;
 }
 
-export type InsightStatus = 'unverified' | 'verified' | 'invalidated' | 'archived';
+export type InsightStatus =
+  | 'unverified'
+  | 'verified'
+  | 'invalidated'
+  | 'archived';
 
 export interface ApiInsightsResponse {
   insights: ApiInsight[];
@@ -606,14 +609,24 @@ export interface ApiUpdateNotionSourceRequest {
 
 /** Admin — Stats */
 export interface ApiStatsOverview {
-  contents: { total: number; by_status: Record<string, number>; by_type: Record<string, number>; published: number };
+  contents: {
+    total: number;
+    by_status: Record<string, number>;
+    by_type: Record<string, number>;
+    published: number;
+  };
   collected: { total: number; by_status: Record<string, number> };
   feeds: { total: number; enabled: number };
   flow_runs: { total: number; by_status: Record<string, number> };
   projects: { total: number; by_status: Record<string, number> };
   reviews: { pending: number; total: number };
   notes: { total: number; by_type: Record<string, number> };
-  activity: { total: number; last_24h: number; last_7d: number; by_source: Record<string, number> };
+  activity: {
+    total: number;
+    last_24h: number;
+    last_7d: number;
+    by_source: Record<string, number>;
+  };
   sources: { total: number; enabled: number };
   tags: { canonical: number; aliases: number; unconfirmed: number };
 }
@@ -633,8 +646,17 @@ export interface ApiAreaDrift {
 }
 
 export interface ApiLearningDashboard {
-  notes: { total: number; last_week: number; last_month: number; by_type: Record<string, number> };
-  activity: { this_week: number; last_week: number; trend: 'up' | 'down' | 'stable' };
+  notes: {
+    total: number;
+    last_week: number;
+    last_month: number;
+    by_type: Record<string, number>;
+  };
+  activity: {
+    this_week: number;
+    last_week: number;
+    trend: 'up' | 'down' | 'stable';
+  };
   top_tags: ApiTagCount[];
 }
 

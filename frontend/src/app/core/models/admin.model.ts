@@ -473,35 +473,90 @@ export interface JournalEntry {
   date?: string;
 }
 
+// === Schema-aligned enums (from migrations/001_initial.up.sql) ===
+
+/** attempt.outcome — 7 值，涵蓋解題 + 沉浸式兩種範式 */
+export type AttemptOutcome =
+  | 'solved_independent'
+  | 'solved_with_hint'
+  | 'solved_after_solution'
+  | 'completed'
+  | 'completed_with_support'
+  | 'incomplete'
+  | 'gave_up';
+
+/** sessions.session_mode */
+export type SessionMode =
+  | 'retrieval'
+  | 'practice'
+  | 'mixed'
+  | 'review'
+  | 'reading';
+
+/** attempt_observations.signal_type */
+export type ObservationSignal = 'weakness' | 'improvement' | 'mastery';
+
+/** attempt_observations.severity — 只有 weakness 才有值 */
+export type ObservationSeverity = 'minor' | 'moderate' | 'critical';
+
+/** concepts.kind */
+export type ConceptKind = 'pattern' | 'skill' | 'principle';
+
+/** items.difficulty */
+export type ItemDifficulty = 'easy' | 'medium' | 'hard';
+
+/** directives.priority */
+export type DirectivePriority = 'p0' | 'p1' | 'p2';
+
+/** directives lifecycle — 衍生自 schema 欄位，非獨立欄位 */
+export type DirectiveLifecycle =
+  | 'pending'
+  | 'acknowledged'
+  | 'has_report'
+  | 'resolved';
+
 // === Studio (Phase 3) ===
 
 export interface StudioOverview {
-  pending_directives: DirectiveSummary[];
+  open_directives: DirectiveSummary[];
   unread_reports: ReportSummary[];
   participants: ParticipantSummary[];
 }
 
+/** 對齊 schema: directives.content (TEXT), 不是 title + description */
 export interface DirectiveSummary {
-  id: string;
-  title: string;
+  id: number;
+  content: string;
+  source: string;
   target: string;
+  priority: DirectivePriority;
+  lifecycle_status: DirectiveLifecycle;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  issued_date: string;
   created_at: string;
-  status: string;
+  days_open: number;
 }
 
 export interface ReportSummary {
-  id: string;
-  title: string;
+  id: number;
   source: string;
-  directive_title: string | null;
-  filed_at: string;
+  content: string;
+  in_response_to: number | null;
+  directive_content: string | null;
+  reported_date: string;
+  created_at: string;
 }
 
 export interface ParticipantSummary {
   name: string;
+  platform: string;
   active_directives: number;
   recent_reports: number;
-  capabilities: string[];
+  can_issue_directives: boolean;
+  can_receive_directives: boolean;
+  can_write_reports: boolean;
+  task_assignable: boolean;
 }
 
 // === System (Phase 3) ===
