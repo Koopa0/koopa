@@ -16,6 +16,7 @@
       label: 'All' }, ]; track tab.key ) {
       <button
         type="button"
+        [attr.data-testid]="'tab-' + tab.key"
         (click)="setStatusFilter($any(tab.key))"
         class="rounded-xs px-3 py-1 text-xs font-medium transition-colors"
         [class]="
@@ -38,6 +39,7 @@
         class="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600"
       />
       <input
+        data-testid="task-search"
         type="text"
         (input)="onSearchInput($event)"
         placeholder="搜尋任務..."
@@ -63,12 +65,14 @@
   <div class="space-y-1.5">
     @for (task of filteredTasks(); track task.id) {
     <div
+      data-testid="task-item"
       class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 transition-colors hover:border-zinc-700"
     >
       <!-- 操作按鈕 -->
       @if (task.status === 'todo') {
       <button
         type="button"
+        data-testid="task-start"
         (click)="advanceTask(task.id, 'start')"
         class="shrink-0 rounded-xs p-1 text-zinc-600 transition-colors hover:text-emerald-400"
         title="開始"
@@ -78,6 +82,7 @@
       } @else if (task.status === 'in-progress') {
       <button
         type="button"
+        data-testid="task-complete"
         (click)="advanceTask(task.id, 'complete')"
         class="shrink-0 rounded-xs p-1 text-amber-400 transition-colors hover:text-emerald-400"
         title="完成"

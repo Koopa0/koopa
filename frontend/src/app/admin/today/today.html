@@ -1,12 +1,12 @@
 @if (isLoading()) {
-<div class="flex h-64 items-center justify-center">
+<div data-testid="today-loading" class="flex h-64 items-center justify-center">
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
 </div>
 } @else if (context(); as ctx) {
 
-<div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+<div data-testid="today-content" class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <!-- Morning Header -->
   <div class="mb-8">
     <div class="flex items-center gap-3 mb-1">
@@ -22,7 +22,10 @@
 
   <!-- Overdue Banner -->
   @if (hasOverdue()) {
-  <div class="mb-6 rounded-sm border border-red-900/50 bg-red-950/30 px-4 py-3">
+  <div
+    data-testid="overdue-banner"
+    class="mb-6 rounded-sm border border-red-900/50 bg-red-950/30 px-4 py-3"
+  >
     <div class="flex items-center gap-2 text-sm font-medium text-red-400">
       <lucide-icon [img]="AlertTriangleIcon" [size]="16" />
       <span>{{ overdueTasks().length }} 個任務已逾期</span>
@@ -51,6 +54,7 @@
     <div class="space-y-2">
       @for (item of yesterdayUnfinished(); track item.id) {
       <div
+        data-testid="unfinished-item"
         class="flex items-center justify-between rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3"
       >
         <div class="flex items-center gap-3 min-w-0">
@@ -65,6 +69,7 @@
         <div class="flex items-center gap-1 shrink-0 ml-3">
           <button
             type="button"
+            data-testid="defer-btn"
             (click)="resolveItem(item.id, 'defer')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-amber-400"
             title="再做一天"
@@ -73,6 +78,7 @@
           </button>
           <button
             type="button"
+            data-testid="complete-btn"
             (click)="resolveItem(item.id, 'complete')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-emerald-400"
             title="已完成"
@@ -81,6 +87,7 @@
           </button>
           <button
             type="button"
+            data-testid="drop-btn"
             (click)="resolveItem(item.id, 'drop')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
             title="放棄"
@@ -110,6 +117,7 @@
 
     @if (todayPlan().length === 0) {
     <div
+      data-testid="empty-plan"
       class="rounded-sm border border-dashed border-zinc-800 px-4 py-8 text-center"
     >
       <p class="text-sm text-zinc-600 mb-3">尚未規劃今天的任務</p>
@@ -125,6 +133,7 @@
     <div class="space-y-1.5">
       @for (item of todayPlan(); track item.id) {
       <div
+        data-testid="plan-item"
         class="flex items-center gap-3 rounded-sm border px-4 py-2.5 transition-colors"
         [class]="item.status === 'done'
           ? 'border-zinc-800/50 bg-zinc-900/30'
@@ -133,6 +142,7 @@
         <!-- 完成按鈕 -->
         <button
           type="button"
+          data-testid="plan-complete-btn"
           (click)="completePlanItem(item.id)"
           class="shrink-0 flex size-5 items-center justify-center rounded-full border transition-colors"
           [class]="item.status === 'done'
@@ -175,7 +185,7 @@
 
   <!-- Needs Attention -->
   @if (needsAttention(); as attn) { @if (totalAttention() > 0) {
-  <section class="mb-6">
+  <section data-testid="needs-attention" class="mb-6">
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
@@ -222,7 +232,7 @@
 
   <!-- Goal Pulse -->
   @if (goalPulse().length > 0) {
-  <section>
+  <section data-testid="goal-pulse">
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
         目標脈搏

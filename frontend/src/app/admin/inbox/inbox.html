@@ -19,6 +19,7 @@
   <div class="mb-6">
     <div class="flex gap-2">
       <input
+        data-testid="capture-input"
         type="text"
         [value]="captureText()"
         (input)="onCaptureInput($event)"
@@ -27,6 +28,7 @@
         class="flex-1 rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-zinc-600 focus:outline-hidden"
       />
       <button
+        data-testid="capture-btn"
         type="button"
         (click)="capture()"
         [disabled]="!captureText().trim()"
@@ -47,6 +49,7 @@
   } @else if (items().length === 0) {
   <!-- Empty State -->
   <div
+    data-testid="inbox-empty"
     class="rounded-sm border border-dashed border-zinc-800 px-6 py-16 text-center"
   >
     <lucide-icon
@@ -62,6 +65,7 @@
   <div class="space-y-2">
     @for (item of items(); track item.id) {
     <div
+      data-testid="inbox-item"
       class="rounded-sm border transition-colors"
       [class]="
             activeClarifyId() === item.id
@@ -100,7 +104,10 @@
 
       <!-- Clarify Panel (inline expand) -->
       @if (activeClarifyId() === item.id) {
-      <div class="border-t border-zinc-800 px-4 py-4">
+      <div
+        data-testid="clarify-panel"
+        class="border-t border-zinc-800 px-4 py-4"
+      >
         <p
           class="mb-3 text-xs font-medium text-zinc-500 uppercase tracking-wider"
         >
@@ -109,6 +116,7 @@
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <!-- Task -->
           <button
+            data-testid="clarify-task"
             type="button"
             (click)="selectClarifyType('task')"
             class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
@@ -125,6 +133,7 @@
 
           <!-- Journal -->
           <button
+            data-testid="clarify-journal"
             type="button"
             (click)="selectClarifyType('journal')"
             class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
@@ -141,6 +150,7 @@
 
           <!-- Insight -->
           <button
+            data-testid="clarify-insight"
             type="button"
             (click)="selectClarifyType('insight')"
             class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
@@ -157,6 +167,7 @@
 
           <!-- Discard -->
           <button
+            data-testid="clarify-discard"
             type="button"
             (click)="selectClarifyType('discard')"
             class="flex flex-col items-center gap-1.5 rounded-sm border px-3 py-3 text-xs transition-colors"
@@ -177,6 +188,7 @@
         <div class="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
+            data-testid="clarify-cancel"
             (click)="closeClarify()"
             class="rounded-sm px-3 py-1.5 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
           >
@@ -184,6 +196,7 @@
           </button>
           <button
             type="button"
+            data-testid="clarify-confirm"
             (click)="confirmClarify()"
             class="rounded-sm bg-zinc-700 px-4 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-600"
           >
