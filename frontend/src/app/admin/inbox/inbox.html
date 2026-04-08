@@ -198,6 +198,181 @@
           </button>
         </div>
 
+        <!-- Type-specific form fields -->
+        @if (selectedClarifyType() === 'insight') {
+        <div
+          data-testid="insight-form"
+          class="mt-3 space-y-3 rounded-sm border border-amber-900/30 bg-amber-950/10 p-3"
+        >
+          <div>
+            <label
+              for="insight-hypothesis"
+              class="mb-1 block text-[11px] font-medium text-zinc-400"
+              >假設 <span class="text-red-400">*</span></label
+            >
+            <textarea
+              id="insight-hypothesis"
+              data-testid="insight-hypothesis"
+              rows="2"
+              placeholder="這個假設是什麼？"
+              [value]="insightHypothesis()"
+              (input)="insightHypothesis.set($any($event.target).value)"
+              class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
+            ></textarea>
+          </div>
+          <div>
+            <label
+              for="insight-invalidation"
+              class="mb-1 block text-[11px] font-medium text-zinc-400"
+              >推翻條件 <span class="text-red-400">*</span></label
+            >
+            <textarea
+              id="insight-invalidation"
+              data-testid="insight-invalidation"
+              rows="2"
+              placeholder="什麼情況會推翻這個假設？"
+              [value]="insightInvalidation()"
+              (input)="insightInvalidation.set($any($event.target).value)"
+              class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
+            ></textarea>
+          </div>
+          <div>
+            <label
+              for="insight-evidence"
+              class="mb-1 block text-[11px] font-medium text-zinc-400"
+              >初始證據</label
+            >
+            <textarea
+              id="insight-evidence"
+              data-testid="insight-evidence"
+              rows="2"
+              placeholder="初始證據（選填）"
+              [value]="insightEvidence()"
+              (input)="insightEvidence.set($any($event.target).value)"
+              class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
+            ></textarea>
+          </div>
+        </div>
+        } @else if (selectedClarifyType() === 'journal') {
+        <div
+          data-testid="journal-form"
+          class="mt-3 space-y-3 rounded-sm border border-sky-900/30 bg-sky-950/10 p-3"
+        >
+          <div>
+            <span class="mb-1.5 block text-[11px] font-medium text-zinc-400"
+              >類別</span
+            >
+            <div class="flex gap-1.5">
+              @for (kind of journalKinds; track kind) {
+              <button
+                type="button"
+                [attr.data-testid]="'journal-kind-' + kind"
+                (click)="journalKind.set(kind)"
+                class="rounded-sm border px-2.5 py-1 text-[11px] font-medium transition-colors"
+                [class]="
+                  journalKind() === kind
+                    ? 'border-sky-700 bg-sky-950/40 text-sky-300'
+                    : 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
+                "
+              >
+                {{ kind }}
+              </button>
+              }
+            </div>
+          </div>
+          <div>
+            <label
+              for="journal-body"
+              class="mb-1 block text-[11px] font-medium text-zinc-400"
+              >內容 <span class="text-red-400">*</span></label
+            >
+            <textarea
+              id="journal-body"
+              data-testid="journal-body"
+              rows="3"
+              placeholder="寫下你的想法..."
+              [value]="journalBody()"
+              (input)="journalBody.set($any($event.target).value)"
+              class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
+            ></textarea>
+          </div>
+        </div>
+        } @else if (selectedClarifyType() === 'task') {
+        <div
+          data-testid="task-form"
+          class="mt-3 space-y-3 rounded-sm border border-emerald-900/30 bg-emerald-950/10 p-3"
+        >
+          <div>
+            <span class="mb-1.5 block text-[11px] font-medium text-zinc-400"
+              >領域</span
+            >
+            <div class="flex flex-wrap gap-1.5">
+              @for (area of areas; track area.slug) {
+              <button
+                type="button"
+                [attr.data-testid]="'task-area-' + area.slug"
+                (click)="taskAreaId.set(taskAreaId() === area.slug ? null : area.slug)"
+                class="rounded-sm border px-2.5 py-1 text-[11px] font-medium transition-colors"
+                [class]="
+                  taskAreaId() === area.slug
+                    ? 'border-emerald-700 bg-emerald-950/40 text-emerald-300'
+                    : 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
+                "
+              >
+                {{ area.name }}
+              </button>
+              }
+            </div>
+          </div>
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <span class="mb-1.5 block text-[11px] font-medium text-zinc-400"
+                >優先級</span
+              >
+              <div class="flex gap-1.5">
+                @for (level of priorityLevels; track level) {
+                <button
+                  type="button"
+                  [attr.data-testid]="'task-priority-' + level"
+                  (click)="taskPriority.set(taskPriority() === level ? null : level)"
+                  class="rounded-sm border px-2.5 py-1 text-[11px] font-medium transition-colors"
+                  [class]="
+                    taskPriority() === level
+                      ? 'border-emerald-700 bg-emerald-950/40 text-emerald-300'
+                      : 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
+                  "
+                >
+                  {{ level }}
+                </button>
+                }
+              </div>
+            </div>
+            <div class="flex-1">
+              <span class="mb-1.5 block text-[11px] font-medium text-zinc-400"
+                >精力</span
+              >
+              <div class="flex gap-1.5">
+                @for (level of energyLevels; track level) {
+                <button
+                  type="button"
+                  [attr.data-testid]="'task-energy-' + level"
+                  (click)="taskEnergy.set(taskEnergy() === level ? null : level)"
+                  class="rounded-sm border px-2.5 py-1 text-[11px] font-medium transition-colors"
+                  [class]="
+                    taskEnergy() === level
+                      ? 'border-emerald-700 bg-emerald-950/40 text-emerald-300'
+                      : 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
+                  "
+                >
+                  {{ level }}
+                </button>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+        }
+
         <!-- Actions -->
         @if (selectedClarifyType()) {
         <div class="mt-4 flex items-center justify-end gap-2">
@@ -213,7 +388,8 @@
             type="button"
             data-testid="clarify-confirm"
             (click)="confirmClarify()"
-            class="rounded-sm bg-zinc-700 px-4 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-600"
+            [disabled]="isConfirmDisabled()"
+            class="rounded-sm bg-zinc-700 px-4 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             @switch (selectedClarifyType()) { @case ('task') { 轉為任務 } @case
             ('journal') { 寫入日誌 } @case ('insight') { 建立洞察 } @case

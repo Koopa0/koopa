@@ -28,9 +28,27 @@ import type {
   InboxItem,
   InboxStats,
   ClarifyDecision,
+  JournalKind,
 } from '../../core/models/admin.model';
 
 type ClarifyTarget = 'task' | 'journal' | 'insight' | 'discard';
+
+interface AreaOption {
+  readonly slug: string;
+  readonly name: string;
+}
+
+const AREAS: readonly AreaOption[] = [
+  { slug: 'backend', name: 'Backend' },
+  { slug: 'learning', name: 'Learning' },
+  { slug: 'studio', name: 'Studio' },
+  { slug: 'frontend', name: 'Frontend' },
+  { slug: 'career', name: 'Career' },
+  { slug: 'ops', name: 'Ops' },
+] as const;
+
+type PriorityLevel = 'high' | 'medium' | 'low';
+type EnergyLevel = 'high' | 'medium' | 'low';
 
 @Component({
   selector: 'app-inbox',
@@ -50,6 +68,53 @@ export class InboxComponent implements OnInit {
   protected readonly captureText = signal('');
   protected readonly activeClarifyId = signal<string | null>(null);
   protected readonly selectedClarifyType = signal<ClarifyTarget | null>(null);
+
+  // Insight form signals
+  protected readonly insightHypothesis = signal('');
+  protected readonly insightInvalidation = signal('');
+  protected readonly insightEvidence = signal('');
+
+  // Journal form signals
+  protected readonly journalBody = signal('');
+  protected readonly journalKind = signal<JournalKind>('reflection');
+
+  // Task form signals
+  protected readonly taskAreaId = signal<string | null>(null);
+  protected readonly taskPriority = signal<PriorityLevel | null>(null);
+  protected readonly taskEnergy = signal<EnergyLevel | null>(null);
+
+  // Constants for template
+  protected readonly areas = AREAS;
+  protected readonly journalKinds: readonly JournalKind[] = [
+    'plan',
+    'reflection',
+    'context',
+    'metrics',
+  ];
+  protected readonly priorityLevels: readonly PriorityLevel[] = [
+    'high',
+    'medium',
+    'low',
+  ];
+  protected readonly energyLevels: readonly EnergyLevel[] = [
+    'high',
+    'medium',
+    'low',
+  ];
+
+  protected readonly isConfirmDisabled = computed(() => {
+    const type = this.selectedClarifyType();
+    if (!type) return true;
+    if (type === 'insight') {
+      return (
+        !this.insightHypothesis().trim() || !this.insightInvalidation().trim()
+      );
+    }
+    if (type === 'journal') {
+      return !this.journalBody().trim();
+    }
+    return false;
+  });
 
   protected readonly activeItem = computed(() => {
     const id = this.activeClarifyId();
@@ -127,9 +192,22 @@ export class InboxComponent implements OnInit {
   protected closeClarify(): void {
     this.activeClarifyId.set(null);
     this.selectedClarifyType.set(null);
+    this.resetFormSignals();
+  }
+
+  private resetFormSignals(): void {
+    this.insightHypothesis.set('');
+    this.insightInvalidation.set('');
+    this.insightEvidence.set('');
+    this.journalBody.set('');
+    this.journalKind.set('reflection');
+    this.taskAreaId.set(null);
+    this.taskPriority.set(null);
+    this.taskEnergy.set(null);
   }
 
   protected selectClarifyType(type: ClarifyTarget): void {
+    this.resetFormSignals();
     this.selectedClarifyType.set(type);
   }
 
@@ -140,18 +218,30 @@ export class InboxComponent implements OnInit {
 
     let decision: ClarifyDecision;
     switch (type) {
-      case 'task':
-        decision = { type: 'task' };
+      case 'task': {
+        const taskDecision: ClarifyDecision = { type: 'task' };
+        const areaId = this.taskAreaId();
+        const priority = this.taskPriority();
+        const energy = this.taskEnergy();
+        if (areaId) taskDecision.area_id = areaId;
+        if (priority) taskDecision.priority = priority;
+        if (energy) taskDecision.energy = energy;
+        decision = taskDecision;
         break;
+      }
       case 'journal':
-        decision = { type: 'journal', kind: 'reflection', body: '' };
+        decision = {
+          type: 'journal',
+          kind: this.journalKind(),
+          body: this.journalBody().trim(),
+        };
         break;
       case 'insight':
         decision = {
           type: 'insight',
-          hypothesis: '',
-          invalidation_condition: '',
-          initial_evidence: '',
+          hypothesis: this.insightHypothesis().trim(),
+          invalidation_condition: this.insightInvalidation().trim(),
+          initial_evidence: this.insightEvidence().trim() || undefined,
         };
         break;
       case 'discard':
