@@ -1,4 +1,4 @@
-package mcpauth
+package mcp
 
 import (
 	"testing"

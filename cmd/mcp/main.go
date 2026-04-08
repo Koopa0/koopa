@@ -21,7 +21,6 @@ import (
 	"golang.org/x/oauth2/google"
 
 	mcpkg "github.com/Koopa0/koopa0.dev/internal/mcp"
-	"github.com/Koopa0/koopa0.dev/internal/mcpauth"
 )
 
 func main() {
@@ -92,7 +91,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 		return fmt.Errorf("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and ADMIN_EMAIL are required for HTTP transport")
 	}
 
-	oauth := mcpauth.New(mcpauth.Config{
+	oauth := mcpkg.NewAuth(mcpkg.AuthConfig{
 		StaticToken: cfg.MCPToken,
 		AdminEmail:  cfg.AdminEmail,
 		BaseURL:     cfg.MCPBaseURL,
@@ -125,7 +124,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 	mux.HandleFunc("GET /oauth/google/callback", oauth.GoogleCallback)
 	mux.HandleFunc("POST /oauth/token", oauth.Token)
 	mux.HandleFunc("POST /oauth/register", oauth.Register)
-	mux.Handle("/mcp", mcpauth.BearerAuth(handler, oauth))
+	mux.Handle("/mcp", mcpkg.BearerAuth(handler, oauth))
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

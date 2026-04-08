@@ -1,4 +1,4 @@
-package mcpauth
+package mcp
 
 // oauth_adversarial_test.go — adversarial tests for the OAuth 2.1 provider.
 //
@@ -35,7 +35,7 @@ import (
 // newTestOAuth returns a minimal OAuthProvider with a stopped cleanup goroutine.
 func newTestOAuth(t *testing.T) *Provider {
 	t.Helper()
-	o := New(Config{
+	o := NewAuth(AuthConfig{
 		StaticToken: "static-test-token",
 		AdminEmail:  "admin@example.com",
 		BaseURL:     "https://mcp.example.com",
@@ -945,7 +945,7 @@ func BenchmarkRegister(b *testing.B) {
 // newTestOAuthB is the benchmark variant of newTestOAuth (accepts *testing.B).
 func newTestOAuthB(b *testing.B) *Provider {
 	b.Helper()
-	o := New(Config{
+	o := NewAuth(AuthConfig{
 		StaticToken: "static-test-token",
 		AdminEmail:  "admin@example.com",
 		BaseURL:     "https://mcp.example.com",

@@ -1,5 +1,5 @@
-// Package mcpauth implements OAuth 2.1 with Google login and PKCE for the MCP server.
-package mcpauth
+
+package mcp
 
 import (
 	"context"
@@ -21,8 +21,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// Config holds the parameters needed to create a Provider.
-type Config struct {
+// AuthConfig holds the parameters needed to create a Provider.
+type AuthConfig struct {
 	StaticToken string         // MCP_TOKEN — accepted directly as Bearer token
 	AdminEmail  string         // only this email can authorize
 	BaseURL     string         // public URL (e.g. "https://mcp.koopa0.dev")
@@ -67,8 +67,8 @@ type Provider struct {
 	Done chan struct{}
 }
 
-// New creates a Provider and starts its cleanup goroutine.
-func New(cfg Config, logger *slog.Logger) *Provider {
+// NewAuth creates a Provider and starts its cleanup goroutine.
+func NewAuth(cfg AuthConfig, logger *slog.Logger) *Provider {
 	o := &Provider{
 		staticToken:  cfg.StaticToken,
 		baseURL:      cfg.BaseURL,

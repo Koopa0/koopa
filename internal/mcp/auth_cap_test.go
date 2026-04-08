@@ -1,4 +1,4 @@
-package mcpauth
+package mcp
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 
 func newTestProvider(t *testing.T) *Provider {
 	t.Helper()
-	o := New(Config{
+	o := NewAuth(AuthConfig{
 		StaticToken: "test-static-token",
 		AdminEmail:  "admin@example.com",
 		BaseURL:     "https://mcp.example.com",
