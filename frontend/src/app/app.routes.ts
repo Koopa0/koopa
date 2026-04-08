@@ -265,6 +265,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'learn/concepts',
+        loadComponent: () =>
+          import('./admin/learn/concept-list').then(
+            (m) => m.ConceptListComponent,
+          ),
+      },
+      {
         path: 'learn/concepts/:slug',
         loadComponent: () =>
           import('./admin/learn/concept-drilldown').then(
