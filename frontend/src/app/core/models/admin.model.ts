@@ -20,6 +20,7 @@ export interface MyDayContext {
   reflection_context: ReflectionContext | null;
 }
 
+/** estimated_minutes: 衍生自 tasks 表，daily_plan_items schema 沒有此欄位 */
 export interface DailyPlanItem {
   id: string;
   task_id: string;
@@ -243,8 +244,6 @@ export interface ProjectSummary {
 export interface GoalBreadcrumb {
   goal_id: string;
   goal_title: string;
-  milestone_id: string | null;
-  milestone_title: string | null;
 }
 
 export interface ProjectDetail {
@@ -568,11 +567,7 @@ export type ItemDifficulty = 'easy' | 'medium' | 'hard';
 export type DirectivePriority = 'p0' | 'p1' | 'p2';
 
 /** directives lifecycle — 衍生自 schema 欄位，非獨立欄位 */
-export type DirectiveLifecycle =
-  | 'pending'
-  | 'acknowledged'
-  | 'has_report'
-  | 'resolved';
+export type DirectiveLifecycle = 'pending' | 'acknowledged' | 'resolved';
 
 // === Studio (Phase 3) ===
 
@@ -590,6 +585,7 @@ export interface DirectiveSummary {
   target: string;
   priority: DirectivePriority;
   lifecycle_status: DirectiveLifecycle;
+  has_report: boolean;
   acknowledged_at: string | null;
   resolved_at: string | null;
   issued_date: string;
@@ -616,6 +612,53 @@ export interface ParticipantSummary {
   can_receive_directives: boolean;
   can_write_reports: boolean;
   task_assignable: boolean;
+}
+
+// === Dashboard ===
+
+export interface DashboardTrends {
+  period: string;
+  execution: {
+    tasks_completed_this_week: number;
+    tasks_completed_last_week: number;
+    trend: 'up' | 'down' | 'stable';
+  };
+  plan_adherence: {
+    completion_rate_this_week: number;
+    completion_rate_last_week: number;
+  };
+  goal_health: {
+    on_track: number;
+    at_risk: number;
+    stalled: number;
+  };
+  learning: {
+    sessions_this_week: number;
+    weakness_count: number;
+    weakness_change: number;
+    mastery_count: number;
+    mastery_change: number;
+    review_backlog: number;
+  };
+  content: {
+    published_this_month: number;
+    published_target: number;
+    drafts_in_progress: number;
+  };
+  inbox_health: {
+    current_count: number;
+    week_start_count: number;
+    clarified_this_week: number;
+    captured_this_week: number;
+  };
+  someday_health: {
+    total: number;
+    stale_count: number;
+  };
+  directive_health: {
+    open_count: number;
+    avg_resolution_days: number;
+  };
 }
 
 // === System (Phase 3) ===

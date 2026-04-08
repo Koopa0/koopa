@@ -42,6 +42,7 @@ import {
   ScrollText,
   Users,
   HeartPulse,
+  BarChart3,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -100,6 +101,13 @@ export class AdminLayoutComponent {
           label: 'Today',
           route: '/admin/today',
           icon: Sun,
+          exact: true,
+          disabled: false,
+        },
+        {
+          label: 'Dashboard',
+          route: '/admin/dashboard',
+          icon: BarChart3,
           exact: true,
           disabled: false,
         },

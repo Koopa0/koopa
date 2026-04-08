@@ -88,6 +88,8 @@
 }
 ```
 
+> **⚠ Schema 對齊**：daily_plan_items 表沒有 estimated_minutes 欄位。此值需要從 tasks 表或 metadata 取得。建議：(a) 加欄位到 daily_plan_items，或 (b) JOIN tasks 取得估計時間，或 (c) 前端不顯示此欄位。
+
 **Backend 邏輯**：
 - `context_line`：根據最近 deadline 的 active goal 生成，或根據本週 journal(kind=plan) 提取 focus
 - `yesterday_unfinished`：`daily_plan_items WHERE planned_date = yesterday AND status = 'planned'`
@@ -432,8 +434,8 @@
       "status": "in-progress",
       "area": "backend",
       "goal_breadcrumb": {
-        "goal_title": "Launch knowledge engine",
-        "milestone_title": "MCP redesign"
+        "goal_id": "goal_uuid",
+        "goal_title": "Launch knowledge engine"
       },
       "task_progress": { "total": 12, "done": 5 },
       "staleness_days": 0,
@@ -444,7 +446,7 @@
 ```
 
 **Backend 邏輯**：
-- `goal_breadcrumb`：project → milestone → goal 的 chain（可能為 null）
+- `goal_breadcrumb`：project → goal 的直接 FK（可能為 null，schema 無 milestone FK）
 - `task_progress`：`COUNT tasks WHERE project_id = X GROUP BY status`
 - `staleness_days`：`EXTRACT(DAY FROM now() - last_activity_at)`
 
@@ -465,7 +467,7 @@
   "architecture": "...",
   "status": "in-progress",
   "area": "backend",
-  "goal_breadcrumb": { "goal_id": "...", "goal_title": "...", "milestone_id": "...", "milestone_title": "..." },
+  "goal_breadcrumb": { "goal_id": "...", "goal_title": "..." },
   "tasks_by_status": {
     "in_progress": [{ "id": "...", "title": "...", "priority": "...", "energy": "..." }],
     "todo": [],
@@ -578,7 +580,7 @@
   "recent_sessions": [
     {
       "id": "session_uuid",
-      "domain": "algorithms",
+      "domain": "leetcode",
       "started_at": "2026-04-07T20:00:00+08:00",
       "duration_minutes": 47,
       "attempts_count": 4,
@@ -608,6 +610,8 @@
 }
 ```
 
+> **⚠ Schema 對齊**：streak 是從 sessions 表聚合計算（consecutive days with ≥1 session），不是存儲的值。
+
 ---
 
 ### POST /api/admin/learn/sessions/start
@@ -617,7 +621,7 @@
 **Request**：
 ```json
 {
-  "domain": "algorithms",
+  "domain": "leetcode",
   "session_mode": "practice"
 }
 ```
@@ -724,7 +728,7 @@
 **Response**：
 ```json
 {
-  "concept": { "slug": "binary-search", "name": "Binary Search", "domain": "algorithms", "kind": "pattern" },
+  "concept": { "slug": "binary-search", "name": "Binary Search", "domain": "leetcode", "kind": "pattern" },
   "observation_trend": [
     { "date": "2026-03-01", "weakness_count": 3, "improvement_count": 0, "mastery_count": 0 },
     { "date": "2026-03-15", "weakness_count": 1, "improvement_count": 2, "mastery_count": 0 },
@@ -740,6 +744,31 @@
     { "id": "...", "title": "LeetCode 704", "difficulty": "easy", "last_outcome": "solved" }
   ],
   "next_review": "2026-04-10"
+}
+```
+
+---
+
+### GET /api/admin/learn/review-queue
+
+**用途**：取得今天到期的 review cards（具體 items，不只是 count）。
+
+**Response**：
+```json
+{
+  "due_today": [
+    {
+      "card_id": 1,
+      "target_type": "learning_item",
+      "target_id": "item_uuid",
+      "title": "LeetCode 704: Binary Search",
+      "domain": "leetcode",
+      "due": "2026-04-08",
+      "last_reviewed_at": "2026-04-01"
+    }
+  ],
+  "due_this_week": 12,
+  "overdue": 3
 }
 ```
 
@@ -761,7 +790,7 @@
     {
       "id": "plan_uuid",
       "title": "Google 200 題計劃",
-      "domain": "algorithms",
+      "domain": "leetcode",
       "status": "active",
       "items_total": 200,
       "items_completed": 45,
@@ -782,7 +811,7 @@
 {
   "id": "plan_uuid",
   "title": "Google 200 題計劃",
-  "domain": "algorithms",
+  "domain": "leetcode",
   "status": "active",
   "description": "...",
   "items": [
@@ -826,6 +855,37 @@
 ```
 
 > **⚠ Policy**：reason 欄位對 completions 應該是必填（審計建議），記錄「為什麼認為完成了」。
+
+### POST /api/admin/learn/plans/{id}/items
+
+**用途**：批次新增 items 到 plan。
+
+**Request**：
+```json
+{ "item_ids": ["item_uuid_1", "item_uuid_2"] }
+```
+
+### DELETE /api/admin/learn/plans/{id}/items/{item_id}
+
+**用途**：從 plan 移除 item。
+
+### POST /api/admin/learn/plans/{id}/reorder
+
+**用途**：重排 plan items 順序。
+
+**Request**：
+```json
+{ "item_ids": ["item_uuid_2", "item_uuid_1"] }
+```
+
+### PATCH /api/admin/learn/plans/{id}
+
+**用途**：更新 plan 本身（title, status）。
+
+**Request**：
+```json
+{ "status": "paused", "title": "..." }
+```
 
 ---
 
@@ -926,7 +986,7 @@
       "title": "...",
       "target": "research-lab",
       "created_at": "...",
-      "lifecycle_status": "pending" | "acknowledged" | "has_report" | "resolved",
+      "lifecycle_status": "pending" | "acknowledged" | "resolved",
       "acknowledged_at": null,
       "has_report": false,
       "days_open": 3
@@ -941,11 +1001,12 @@
 }
 ```
 
-**Backend 邏輯**（`lifecycle_status` 計算）：
+**Backend 邏輯**（`lifecycle_status` 計算，3 值）：
 - `pending`：`acknowledged_at IS NULL`
-- `acknowledged`：`acknowledged_at IS NOT NULL AND 沒有 report`
-- `has_report`：`有 report 但 follow_up_needed = true`
-- `resolved`：`有 report 且 follow_up_needed = false`，或 `resolved_at IS NOT NULL`（如果加了這個欄位）
+- `acknowledged`：`acknowledged_at IS NOT NULL AND resolved_at IS NULL`
+- `resolved`：`resolved_at IS NOT NULL`
+
+`has_report: boolean` 作為獨立欄位存在於 DirectiveSummary 上，不影響 lifecycle_status。
 
 ---
 

@@ -277,8 +277,6 @@ const MOCK_PROJECTS: ProjectSummary[] = [
     goal_breadcrumb: {
       goal_id: 'goal-001',
       goal_title: 'Ship koopa0.dev v1',
-      milestone_id: 'ms-001',
-      milestone_title: 'Core API endpoints',
     },
     task_progress: { total: 22, done: 14 },
     staleness_days: 0,
@@ -293,8 +291,6 @@ const MOCK_PROJECTS: ProjectSummary[] = [
     goal_breadcrumb: {
       goal_id: 'goal-001',
       goal_title: 'Ship koopa0.dev v1',
-      milestone_id: 'ms-002',
-      milestone_title: 'Admin UI redesign',
     },
     task_progress: { total: 18, done: 7 },
     staleness_days: 0,
@@ -309,8 +305,6 @@ const MOCK_PROJECTS: ProjectSummary[] = [
     goal_breadcrumb: {
       goal_id: 'goal-002',
       goal_title: 'Publish 12 articles',
-      milestone_id: null,
-      milestone_title: null,
     },
     task_progress: { total: 5, done: 3 },
     staleness_days: 2,
@@ -343,8 +337,6 @@ const MOCK_PROJECT_DETAIL: ProjectDetail = {
   goal_breadcrumb: {
     goal_id: 'goal-001',
     goal_title: 'Ship koopa0.dev v1',
-    milestone_id: 'ms-002',
-    milestone_title: 'Admin UI redesign',
   },
   tasks_by_status: {
     in_progress: [

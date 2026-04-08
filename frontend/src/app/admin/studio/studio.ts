@@ -73,14 +73,12 @@ export class StudioComponent implements OnInit {
   protected readonly LIFECYCLE_CLASSES: Record<DirectiveLifecycle, string> = {
     pending: 'bg-amber-900/40 text-amber-400',
     acknowledged: 'bg-sky-900/40 text-sky-400',
-    has_report: 'bg-violet-900/40 text-violet-400',
     resolved: 'bg-emerald-900/40 text-emerald-400',
   };
 
   protected readonly LIFECYCLE_LABELS: Record<DirectiveLifecycle, string> = {
     pending: '待回應',
     acknowledged: '已接收',
-    has_report: '已回報',
     resolved: '已解決',
   };
 

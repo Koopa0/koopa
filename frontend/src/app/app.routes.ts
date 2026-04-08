@@ -154,6 +154,13 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./admin/today/today').then((m) => m.TodayComponent),
       },
+      {
+        path: 'dashboard',
+        loadComponent: () =>
+          import('./admin/dashboard/dashboard').then(
+            (m) => m.DashboardComponent,
+          ),
+      },
 
       // — Inbox —
       {
