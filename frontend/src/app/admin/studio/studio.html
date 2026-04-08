@@ -15,7 +15,12 @@
   <!-- Header -->
   <div class="mb-8">
     <div class="flex items-center gap-3 mb-1">
-      <lucide-icon [img]="RadioIcon" [size]="20" class="text-violet-400" />
+      <lucide-icon
+        [img]="RadioIcon"
+        [size]="20"
+        class="text-violet-400"
+        aria-hidden="true"
+      />
       <h1 class="text-lg font-semibold text-zinc-100">Studio 協調中心</h1>
     </div>
     <p class="text-sm text-zinc-500 pl-8">誰在做什麼、什麼待處理、什麼回來了</p>
@@ -24,7 +29,12 @@
   <!-- ===== Open Directives ===== -->
   <section class="mb-8">
     <div class="flex items-center gap-2 mb-4">
-      <lucide-icon [img]="SendIcon" [size]="16" class="text-amber-400" />
+      <lucide-icon
+        [img]="SendIcon"
+        [size]="16"
+        class="text-amber-400"
+        aria-hidden="true"
+      />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
         進行中的指令
       </h2>
@@ -44,6 +54,7 @@
         [img]="CheckCircleIcon"
         [size]="24"
         class="mx-auto mb-2 text-emerald-500"
+        aria-hidden="true"
       />
       <p class="text-sm text-zinc-600">目前沒有進行中的指令</p>
     </div>
@@ -69,7 +80,7 @@
             {{ LIFECYCLE_LABELS[directive.lifecycle_status] }}
           </span>
           <span class="ml-auto flex items-center gap-1 text-xs text-zinc-600">
-            <lucide-icon [img]="ClockIcon" [size]="12" />
+            <lucide-icon [img]="ClockIcon" [size]="12" aria-hidden="true" />
             {{ directive.days_open }}d
           </span>
         </div>
@@ -82,7 +93,7 @@
         <!-- 路徑：source → target -->
         <div class="flex items-center gap-1.5 text-xs text-zinc-500">
           <span class="font-medium text-zinc-400">{{ directive.source }}</span>
-          <lucide-icon [img]="ArrowRightIcon" [size]="12" />
+          <lucide-icon [img]="ArrowRightIcon" [size]="12" aria-hidden="true" />
           <span class="font-medium text-zinc-400">{{ directive.target }}</span>
           <span class="ml-2 text-zinc-700">|</span>
           <span>{{ directive.issued_date | date: 'M/d' }}</span>
@@ -96,7 +107,12 @@
   <!-- ===== Reports ===== -->
   <section class="mb-8">
     <div class="flex items-center gap-2 mb-4">
-      <lucide-icon [img]="FileTextIcon" [size]="16" class="text-sky-400" />
+      <lucide-icon
+        [img]="FileTextIcon"
+        [size]="16"
+        class="text-sky-400"
+        aria-hidden="true"
+      />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
         未讀報告
       </h2>
@@ -116,6 +132,7 @@
         [img]="FileTextIcon"
         [size]="24"
         class="mx-auto mb-2 text-zinc-700"
+        aria-hidden="true"
       />
       <p class="text-sm text-zinc-600">沒有未讀報告</p>
     </div>
@@ -158,7 +175,12 @@
   <!-- ===== Participants ===== -->
   <section>
     <div class="flex items-center gap-2 mb-4">
-      <lucide-icon [img]="UsersIcon" [size]="16" class="text-emerald-400" />
+      <lucide-icon
+        [img]="UsersIcon"
+        [size]="16"
+        class="text-emerald-400"
+        aria-hidden="true"
+      />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
         參與者
       </h2>
@@ -192,6 +214,7 @@
               [img]="SendIcon"
               [size]="12"
               class="text-amber-400/70"
+              aria-hidden="true"
             />
             {{ participant.active_directives }} 指令
           </span>
@@ -200,6 +223,7 @@
               [img]="FileTextIcon"
               [size]="12"
               class="text-sky-400/70"
+              aria-hidden="true"
             />
             {{ participant.recent_reports }} 報告
           </span>

@@ -19,6 +19,7 @@
         [img]="GraduationCapIcon"
         [size]="20"
         class="text-violet-400"
+        aria-hidden="true"
       />
       <h1 class="text-lg font-semibold text-zinc-100">學習儀表板</h1>
     </div>
@@ -28,7 +29,12 @@
       data-testid="streak-badge"
       class="flex items-center gap-1.5 rounded-sm bg-amber-900/30 px-2.5 py-1"
     >
-      <lucide-icon [img]="FlameIcon" [size]="14" class="text-amber-400" />
+      <lucide-icon
+        [img]="FlameIcon"
+        [size]="14"
+        class="text-amber-400"
+        aria-hidden="true"
+      />
       <span class="text-sm font-semibold text-amber-300">
         {{ streak().current_days }}
       </span>
@@ -44,7 +50,12 @@
     class="mb-6 flex items-center justify-between rounded-sm border border-violet-900/50 bg-violet-950/30 px-4 py-3 no-underline transition-colors hover:border-violet-800/60"
   >
     <div class="flex items-center gap-3">
-      <lucide-icon [img]="RotateCcwIcon" [size]="18" class="text-violet-400" />
+      <lucide-icon
+        [img]="RotateCcwIcon"
+        [size]="18"
+        class="text-violet-400"
+        aria-hidden="true"
+      />
       <div>
         <div class="text-sm font-medium text-zinc-200">
           {{ dueReviewsCount() }} 張卡片待複習
@@ -58,7 +69,7 @@
       class="inline-flex items-center gap-1 rounded-sm bg-violet-900/50 px-3 py-1.5 text-xs font-medium text-violet-300"
     >
       開始複習
-      <lucide-icon [img]="ChevronRightIcon" [size]="14" />
+      <lucide-icon [img]="ChevronRightIcon" [size]="14" aria-hidden="true" />
     </span>
   </a>
   }
@@ -82,6 +93,7 @@
             [img]="AlertTriangleIcon"
             [size]="14"
             class="shrink-0 text-amber-400"
+            aria-hidden="true"
           />
           <div class="min-w-0">
             <a
@@ -151,6 +163,7 @@
               [img]="BrainIcon"
               [size]="14"
               [class]="DOMAIN_COLORS[domain.domain] ?? 'text-zinc-400'"
+              aria-hidden="true"
             />
             <span class="text-sm font-medium text-zinc-200">
               {{ domain.domain }}
@@ -162,7 +175,14 @@
         </div>
 
         <!-- 進度條 -->
-        <div class="h-1.5 rounded-full bg-zinc-800 overflow-hidden mb-2">
+        <div
+          class="h-1.5 rounded-full bg-zinc-800 overflow-hidden mb-2"
+          role="progressbar"
+          [attr.aria-valuenow]="domain.concepts_mastered"
+          aria-valuemin="0"
+          [attr.aria-valuemax]="domain.concepts_total"
+          [attr.aria-label]="domain.domain + ' 領域掌握度'"
+        >
           <div
             class="h-full rounded-full bg-emerald-500 transition-all"
             [style.width.%]="getMasteryPercent(domain)"
@@ -235,7 +255,12 @@
   >
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2">
-        <lucide-icon [img]="TrophyIcon" [size]="14" class="text-amber-400" />
+        <lucide-icon
+          [img]="TrophyIcon"
+          [size]="14"
+          class="text-amber-400"
+          aria-hidden="true"
+        />
         <span class="text-sm text-zinc-300">學習紀錄</span>
       </div>
       <div class="flex items-center gap-4 text-xs">

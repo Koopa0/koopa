@@ -85,7 +85,7 @@
       <span
         class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-600 cursor-not-allowed"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-        [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (即將推出)' : '即將推出'"
+        [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (即將推出)' : '即將推出'"
       >
         <lucide-icon [img]="item.icon" [size]="16" class="shrink-0" />
         @if (isSidebarOpen() || isMobileSidebarOpen()) {
@@ -104,7 +104,7 @@
         [routerLinkActiveOptions]="{ exact: item.exact }"
         class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-        [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label : null"
+        [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label : null"
       >
         <lucide-icon [img]="item.icon" [size]="16" class="shrink-0" />
         @if (isSidebarOpen() || isMobileSidebarOpen()) {
@@ -129,7 +129,7 @@
       (click)="logout()"
       class="flex w-full items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
       [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-      [attr.title]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? 'Sign out' : null"
+      [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? 'Sign out' : null"
     >
       <lucide-icon [img]="LogOutIcon" [size]="16" class="shrink-0" />
       @if (isSidebarOpen() || isMobileSidebarOpen()) {
