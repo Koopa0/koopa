@@ -801,10 +801,8 @@
 
 ## 9. Studio — IPC 協作（Phase 3）
 
-> **Schema 審計發現**：directives 表目前沒有 `status` / `resolved_at` 欄位。
-> 完成狀態從 report metadata (`follow_up_needed`) 推斷。
-> **建議**：在 directives 表加入 `resolved_at TIMESTAMPTZ` 欄位，或在 backend 用 JOIN 推斷。
-> 前端 API 需要一個明確的 `lifecycle_status` 欄位（backend 負責計算）。
+> **Schema 已更新（2026-04-08）**：directives 表已有 `resolved_at TIMESTAMPTZ` + `resolution_report_id BIGINT FK reports(id)` + `chk_resolved_requires_ack` CHECK constraint。
+> `lifecycle_status` 可直接從 schema 欄位計算：pending（unacked）/ acknowledged / resolved。
 
 ### GET /api/admin/studio/overview
 
