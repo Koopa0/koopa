@@ -220,7 +220,14 @@
 
           <!-- 任務進度條 -->
           <div class="mt-1.5 flex items-center gap-2">
-            <div class="h-1.5 flex-1 rounded-full bg-zinc-800 overflow-hidden">
+            <div
+              class="h-1.5 flex-1 rounded-full bg-zinc-800 overflow-hidden"
+              role="progressbar"
+              [attr.aria-valuenow]="proj.task_progress.done"
+              aria-valuemin="0"
+              [attr.aria-valuemax]="proj.task_progress.total"
+              [attr.aria-label]="proj.title + ' 任務進度'"
+            >
               <div
                 class="h-full rounded-full bg-emerald-500 transition-all"
                 [style.width.%]="getProjectProgress(proj.task_progress.total, proj.task_progress.done)"

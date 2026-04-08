@@ -1,15 +1,21 @@
 <!-- 系統趨勢 Dashboard -->
 <div class="space-y-6 p-6" data-testid="dashboard-page">
   @if (isLoading()) {
-  <div class="flex items-center justify-center py-20">
+  <div class="flex items-center justify-center py-20" role="status">
     <div
       class="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300"
+      aria-hidden="true"
     ></div>
+    <span class="sr-only">載入中...</span>
   </div>
   } @else if (trends()) {
   <!-- Header -->
   <div class="flex items-center gap-3">
-    <lucide-angular [img]="BarChart3Icon" class="size-5 text-zinc-400" />
+    <lucide-angular
+      [img]="BarChart3Icon"
+      class="size-5 text-zinc-400"
+      aria-hidden="true"
+    />
     <div>
       <h1 class="text-lg font-semibold text-zinc-100">系統趨勢</h1>
       <p class="text-xs text-zinc-500">{{ period() }}</p>
@@ -48,16 +54,22 @@
           <lucide-angular
             [img]="TrendingUpIcon"
             class="size-4 text-emerald-400"
+            aria-hidden="true"
           />
           <span class="text-xs text-emerald-400">上升</span>
           } @else if (exec.trend === 'down') {
           <lucide-angular
             [img]="TrendingDownIcon"
             class="size-4 text-red-400"
+            aria-hidden="true"
           />
           <span class="text-xs text-red-400">下降</span>
           } @else {
-          <lucide-angular [img]="MinusIcon" class="size-4 text-zinc-500" />
+          <lucide-angular
+            [img]="MinusIcon"
+            class="size-4 text-zinc-500"
+            aria-hidden="true"
+          />
           <span class="text-xs text-zinc-500">持平</span>
           }
         </div>
@@ -76,7 +88,14 @@
             >{{ pa.completion_rate_this_week }}%</span
           >
         </div>
-        <div class="mt-1.5 h-1.5 rounded-full bg-zinc-800">
+        <div
+          class="mt-1.5 h-1.5 rounded-full bg-zinc-800"
+          role="progressbar"
+          [attr.aria-valuenow]="pa.completion_rate_this_week"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-label="計畫達成率"
+        >
           <div
             class="h-1.5 rounded-full transition-all"
             [class]="pa.completion_rate_this_week >= 70 ? 'bg-emerald-500' : pa.completion_rate_this_week >= 50 ? 'bg-amber-500' : 'bg-red-500'"
@@ -212,7 +231,14 @@
             >{{ ct.published_this_month }} / {{ ct.published_target }}</span
           >
         </div>
-        <div class="mt-1.5 h-1.5 rounded-full bg-zinc-800">
+        <div
+          class="mt-1.5 h-1.5 rounded-full bg-zinc-800"
+          role="progressbar"
+          [attr.aria-valuenow]="ct.published_this_month"
+          aria-valuemin="0"
+          [attr.aria-valuemax]="ct.published_target"
+          aria-label="內容發佈進度"
+        >
           <div
             class="h-1.5 rounded-full bg-sky-500 transition-all"
             [style.width.%]="contentProgress()"
@@ -251,6 +277,7 @@
         <lucide-angular
           [img]="AlertTriangleIcon"
           class="size-3.5 text-amber-400"
+          aria-hidden="true"
         />
         <span class="text-xs text-amber-400"
           >{{ sh.stale_count }} 個 Someday 任務超過 30 天未動</span
@@ -266,7 +293,11 @@
     class="flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900 px-5 py-3"
     data-testid="directive-health"
   >
-    <lucide-angular [img]="SendIcon" class="size-4 text-zinc-500" />
+    <lucide-angular
+      [img]="SendIcon"
+      class="size-4 text-zinc-500"
+      aria-hidden="true"
+    />
     <span class="text-sm text-zinc-400">指令狀態</span>
     <span class="text-sm font-medium text-zinc-200"
       >{{ dh.open_count }} 個進行中</span
