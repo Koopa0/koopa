@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/stats"
 )
@@ -20,7 +20,7 @@ type SystemStatusOutput struct {
 	Overview *stats.Overview `json:"overview,omitempty"`
 }
 
-func (s *Server) systemStatus(ctx context.Context, _ *sdkmcp.CallToolRequest, input SystemStatusInput) (*sdkmcp.CallToolResult, SystemStatusOutput, error) {
+func (s *Server) systemStatus(ctx context.Context, _ *mcp.CallToolRequest, input SystemStatusInput) (*mcp.CallToolResult, SystemStatusOutput, error) {
 	scope := "summary"
 	if input.Scope != nil && *input.Scope != "" {
 		scope = *input.Scope

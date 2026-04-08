@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/directive"
 	"github.com/Koopa0/koopa0.dev/internal/insight"
+	"github.com/Koopa0/koopa0.dev/internal/plan"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 )
 
@@ -18,7 +19,7 @@ import (
 
 // ProposeCommitmentInput is the input for the propose_commitment tool.
 type ProposeCommitmentInput struct {
-	Type   string         `json:"type" jsonschema:"required" jsonschema_description:"Entity type: goal, project, milestone, directive, insight"`
+	Type   string         `json:"type" jsonschema:"required" jsonschema_description:"Entity type: goal, project, milestone, directive, insight, learning_plan"`
 	Fields map[string]any `json:"fields" jsonschema:"required" jsonschema_description:"Type-specific fields"`
 }
 
@@ -30,12 +31,12 @@ type ProposeCommitmentOutput struct {
 	ProposalToken string         `json:"proposal_token"`
 }
 
-func (s *Server) proposeCommitment(ctx context.Context, _ *sdkmcp.CallToolRequest, input ProposeCommitmentInput) (*sdkmcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeCommitment(ctx context.Context, _ *mcp.CallToolRequest, input ProposeCommitmentInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
 	switch input.Type {
-	case "goal", "project", "milestone", "directive", "insight":
+	case "goal", "project", "milestone", "directive", "insight", "learning_plan":
 		// valid
 	default:
-		return nil, ProposeCommitmentOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, directive, insight)", input.Type)
+		return nil, ProposeCommitmentOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, directive, insight, learning_plan)", input.Type)
 	}
 
 	// Resolve references and validate fields.
@@ -74,6 +75,8 @@ func (s *Server) resolveProposalFields(ctx context.Context, entityType string, f
 		warnings = s.resolveDirectiveFields(ctx, resolved)
 	case "insight":
 		warnings = resolveInsightFields(resolved)
+	case "learning_plan":
+		warnings = s.resolveLearningPlanFields(ctx, resolved)
 	}
 	return resolved, warnings
 }
@@ -184,7 +187,7 @@ type CommitProposalOutput struct {
 	Committed bool   `json:"committed"`
 }
 
-func (s *Server) commitProposal(ctx context.Context, _ *sdkmcp.CallToolRequest, input CommitProposalInput) (*sdkmcp.CallToolResult, CommitProposalOutput, error) {
+func (s *Server) commitProposal(ctx context.Context, _ *mcp.CallToolRequest, input CommitProposalInput) (*mcp.CallToolResult, CommitProposalOutput, error) {
 	payload, err := verifyProposal(s.proposalSecret, input.ProposalToken)
 	if err != nil {
 		return nil, CommitProposalOutput{}, fmt.Errorf("invalid proposal: %w", err)
@@ -222,6 +225,8 @@ func (s *Server) commitEntity(ctx context.Context, entityType string, fields map
 		return s.commitDirective(ctx, fields)
 	case "insight":
 		return s.commitInsight(ctx, fields)
+	case "learning_plan":
+		return s.commitLearningPlan(ctx, fields)
 	default:
 		return "", fmt.Errorf("unknown entity type: %s", entityType)
 	}
@@ -385,4 +390,68 @@ func (s *Server) commitInsight(ctx context.Context, fields map[string]any) (stri
 		return "", fmt.Errorf("creating insight: %w", err)
 	}
 	return fmt.Sprintf("%d", ins.ID), nil
+}
+
+func (s *Server) resolveLearningPlanFields(ctx context.Context, f map[string]any) []string {
+	var w []string
+	if _, ok := f["title"]; !ok {
+		w = append(w, "title is required for learning_plan")
+	}
+	if _, ok := f["domain"]; !ok {
+		w = append(w, "domain is required for learning_plan")
+	}
+	// Resolve goal_title → goal_id (same pattern as milestone).
+	if goalTitle, ok := f["goal_title"].(string); ok && goalTitle != "" {
+		if g, err := s.goals.GoalByTitle(ctx, goalTitle); err == nil {
+			f["goal_id"] = g.ID.String()
+		} else {
+			w = append(w, fmt.Sprintf("goal %q not found — plan will have no goal", goalTitle))
+		}
+		delete(f, "goal_title")
+	}
+	return w
+}
+
+func (s *Server) commitLearningPlan(ctx context.Context, fields map[string]any) (string, error) {
+	title, _ := fields["title"].(string)
+	description, _ := fields["description"].(string)
+	domain, _ := fields["domain"].(string)
+
+	if title == "" || domain == "" {
+		return "", fmt.Errorf("title and domain are required for learning_plan")
+	}
+
+	var goalID *uuid.UUID
+	if v, ok := fields["goal_id"].(string); ok {
+		if id, err := uuid.Parse(v); err == nil {
+			goalID = &id
+		}
+	}
+
+	var targetCount *int32
+	if v, ok := fields["target_count"].(float64); ok && v > 0 && v <= 100000 {
+		tc := int32(v) // #nosec G115 — bounded above
+		targetCount = &tc
+	}
+
+	var planConfig json.RawMessage
+	if v, ok := fields["plan_config"]; ok {
+		planConfig, _ = json.Marshal(v)
+	}
+
+	createdBy := s.callerIdentity(ctx)
+
+	p, err := s.plans.CreatePlan(ctx, &plan.CreatePlanParams{
+		Title:       title,
+		Description: description,
+		Domain:      domain,
+		GoalID:      goalID,
+		TargetCount: targetCount,
+		PlanConfig:  planConfig,
+		CreatedBy:   createdBy,
+	})
+	if err != nil {
+		return "", fmt.Errorf("creating learning plan: %w", err)
+	}
+	return p.ID.String(), nil
 }

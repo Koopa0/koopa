@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 )
@@ -23,7 +23,7 @@ type WriteJournalOutput struct {
 	Entry journal.Entry `json:"entry"`
 }
 
-func (s *Server) writeJournal(ctx context.Context, _ *sdkmcp.CallToolRequest, input WriteJournalInput) (*sdkmcp.CallToolResult, WriteJournalOutput, error) {
+func (s *Server) writeJournal(ctx context.Context, _ *mcp.CallToolRequest, input WriteJournalInput) (*mcp.CallToolResult, WriteJournalOutput, error) {
 	if input.Content == "" {
 		return nil, WriteJournalOutput{}, fmt.Errorf("content is required")
 	}

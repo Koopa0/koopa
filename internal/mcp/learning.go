@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
@@ -25,7 +25,7 @@ type StartSessionOutput struct {
 	Session learning.Session `json:"session"`
 }
 
-func (s *Server) startSession(ctx context.Context, _ *sdkmcp.CallToolRequest, input StartSessionInput) (*sdkmcp.CallToolResult, StartSessionOutput, error) {
+func (s *Server) startSession(ctx context.Context, _ *mcp.CallToolRequest, input StartSessionInput) (*mcp.CallToolResult, StartSessionOutput, error) {
 	if input.Domain == "" {
 		return nil, StartSessionOutput{}, fmt.Errorf("domain is required")
 	}
@@ -86,13 +86,25 @@ type ObservationInput struct {
 }
 
 type RecordAttemptOutput struct {
-	Attempt              learning.Attempt `json:"attempt"`
-	ObservationsRecorded int                  `json:"observations_recorded"`
-	PendingObservations  []ObservationInput   `json:"pending_observations,omitempty"`
+	Attempt              learning.Attempt   `json:"attempt"`
+	ObservationsRecorded int                `json:"observations_recorded"`
+	PendingObservations  []ObservationInput `json:"pending_observations,omitempty"`
+	PlanContext          []PlanContextItem  `json:"plan_context,omitempty"`
+}
+
+// PlanContextItem represents a learning plan item that contains the attempted item.
+// Returned by record_attempt so Claude can decide whether to mark plan items as completed.
+type PlanContextItem struct {
+	PlanID    string `json:"plan_id"`
+	PlanTitle string `json:"plan_title"`
+	ItemID    string `json:"item_id"`
+	Position  int32  `json:"position"`
+	Phase     string `json:"phase,omitempty"`
+	Status    string `json:"status"`
 }
 
 //nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
-func (s *Server) recordAttempt(ctx context.Context, _ *sdkmcp.CallToolRequest, input RecordAttemptInput) (*sdkmcp.CallToolResult, RecordAttemptOutput, error) {
+func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, input RecordAttemptInput) (*mcp.CallToolResult, RecordAttemptOutput, error) {
 	sessionID, err := uuid.Parse(input.SessionID)
 	if err != nil {
 		return nil, RecordAttemptOutput{}, fmt.Errorf("invalid session_id: %w", err)
@@ -142,12 +154,34 @@ func (s *Server) recordAttempt(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 
 	recorded, pending := s.processObservations(ctx, attempt.ID, domain, input.Observations)
 
+	// Query active plans containing this item (D3: plan context for Claude's judgment).
+	var planCtx []PlanContextItem
+	if planItems, pErr := s.plans.ItemsByLearningItem(ctx, itemID); pErr == nil {
+		for i := range planItems {
+			pi := &planItems[i]
+			pci := PlanContextItem{
+				PlanID:    pi.PlanID.String(),
+				PlanTitle: pi.PlanTitle,
+				ItemID:    pi.ID.String(),
+				Position:  pi.Position,
+				Status:    string(pi.Status),
+			}
+			if pi.Phase != nil {
+				pci.Phase = *pi.Phase
+			}
+			planCtx = append(planCtx, pci)
+		}
+	} else {
+		s.logger.Warn("record_attempt: plan context lookup failed", "item_id", itemID, "error", pErr)
+	}
+
 	s.logger.Info("record_attempt", "session", sessionID, "item", input.Item.Title, "outcome", outcome,
-		"observations", recorded, "pending", len(pending))
+		"observations", recorded, "pending", len(pending), "plan_context", len(planCtx))
 	return nil, RecordAttemptOutput{
 		Attempt:              *attempt,
 		ObservationsRecorded: recorded,
 		PendingObservations:  pending,
+		PlanContext:          planCtx,
 	}, nil
 }
 
@@ -161,10 +195,10 @@ type EndSessionInput struct {
 type EndSessionOutput struct {
 	Session  learning.Session   `json:"session"`
 	Attempts []learning.Attempt `json:"attempts"`
-	Duration string                 `json:"duration"`
+	Duration string             `json:"duration"`
 }
 
-func (s *Server) endSession(ctx context.Context, _ *sdkmcp.CallToolRequest, input EndSessionInput) (*sdkmcp.CallToolResult, EndSessionOutput, error) {
+func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input EndSessionInput) (*mcp.CallToolResult, EndSessionOutput, error) {
 	sessionID, err := uuid.Parse(input.SessionID)
 	if err != nil {
 		return nil, EndSessionOutput{}, fmt.Errorf("invalid session_id: %w", err)
@@ -216,8 +250,8 @@ type LearningDashboardInput struct {
 }
 
 type LearningDashboardOutput struct {
-	View       string                           `json:"view"`
-	Total      int                              `json:"total"`
+	View       string                       `json:"view"`
+	Total      int                          `json:"total"`
 	Sessions   []learning.Session           `json:"sessions,omitempty"`
 	Mastery    []learning.ConceptMasteryRow `json:"mastery,omitempty"`
 	Weaknesses []learning.WeaknessRow       `json:"weaknesses,omitempty"`
@@ -226,7 +260,7 @@ type LearningDashboardOutput struct {
 	Variations []learning.ItemRelation      `json:"variations,omitempty"`
 }
 
-func (s *Server) learningDashboard(ctx context.Context, _ *sdkmcp.CallToolRequest, input LearningDashboardInput) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, input LearningDashboardInput) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	days := clamp(int(input.Days), 1, 365, 30)
 	since := time.Now().AddDate(0, 0, -days)
 
@@ -258,7 +292,7 @@ func (s *Server) learningDashboard(ctx context.Context, _ *sdkmcp.CallToolReques
 	}
 }
 
-func (s *Server) dashboardOverview(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardOverview(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	sessions, err := s.learn.RecentSessions(ctx, domain, since, 50)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying sessions: %w", err)
@@ -270,7 +304,7 @@ func (s *Server) dashboardOverview(ctx context.Context, domain *string, since ti
 	}, nil
 }
 
-func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	rows, err := s.learn.ConceptMastery(ctx, domain, since)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
@@ -282,7 +316,7 @@ func (s *Server) dashboardMastery(ctx context.Context, domain *string, since tim
 	}, nil
 }
 
-func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	rows, err := s.learn.WeaknessAnalysis(ctx, domain, since)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying weakness analysis: %w", err)
@@ -294,7 +328,7 @@ func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since 
 	}, nil
 }
 
-func (s *Server) dashboardRetrieval(ctx context.Context, domain *string) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardRetrieval(ctx context.Context, domain *string) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	items, err := s.learn.RetrievalQueue(ctx, domain, time.Now(), 50)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying retrieval queue: %w", err)
@@ -306,7 +340,7 @@ func (s *Server) dashboardRetrieval(ctx context.Context, domain *string) (*sdkmc
 	}, nil
 }
 
-func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since time.Time) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	sessions, err := s.learn.SessionTimeline(ctx, domain, since)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying session timeline: %w", err)
@@ -318,7 +352,7 @@ func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since ti
 	}, nil
 }
 
-func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*sdkmcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	relations, err := s.learn.ItemVariations(ctx, domain, 100)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying item variations: %w", err)

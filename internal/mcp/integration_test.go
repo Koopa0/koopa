@@ -18,7 +18,8 @@ func setupIntegrationServer(t *testing.T) *Server {
 	t.Helper()
 	pool := testdb.NewPool(t)
 	testdb.Truncate(t, pool,
-		"attempt_observations", "attempts", "learning_sessions",
+		"attempt_observations", "attempts", "sessions",
+		"plan_items", "plans",
 		"daily_plan_items", "journal", "tasks",
 		"directives", "reports", "insights",
 		"milestones", "goals", "projects",

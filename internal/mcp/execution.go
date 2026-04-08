@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/task"
@@ -47,7 +47,7 @@ type AdvanceWorkOutput struct {
 	NextDue           *string   `json:"next_due,omitempty"`
 }
 
-func (s *Server) advanceWork(ctx context.Context, _ *sdkmcp.CallToolRequest, input AdvanceWorkInput) (*sdkmcp.CallToolResult, AdvanceWorkOutput, error) {
+func (s *Server) advanceWork(ctx context.Context, _ *mcp.CallToolRequest, input AdvanceWorkInput) (*mcp.CallToolResult, AdvanceWorkOutput, error) {
 	taskID, err := uuid.Parse(input.TaskID)
 	if err != nil {
 		return nil, AdvanceWorkOutput{}, fmt.Errorf("invalid task_id: %w", err)
@@ -98,7 +98,7 @@ func validateTransition(current task.Status, action string) error {
 	return fmt.Errorf("cannot %q a task in %q status (allowed: %v)", action, current, allowed)
 }
 
-func (s *Server) advanceClarify(ctx context.Context, taskID uuid.UUID, input AdvanceWorkInput) (*sdkmcp.CallToolResult, AdvanceWorkOutput, error) {
+func (s *Server) advanceClarify(ctx context.Context, taskID uuid.UUID, input AdvanceWorkInput) (*mcp.CallToolResult, AdvanceWorkOutput, error) {
 	params := &task.UpdateParams{ID: taskID}
 
 	newStatus := task.StatusTodo
@@ -130,7 +130,7 @@ func (s *Server) advanceClarify(ctx context.Context, taskID uuid.UUID, input Adv
 	return nil, AdvanceWorkOutput{Task: *updated}, nil
 }
 
-func (s *Server) advanceTransition(ctx context.Context, taskID uuid.UUID, status task.Status) (*sdkmcp.CallToolResult, AdvanceWorkOutput, error) {
+func (s *Server) advanceTransition(ctx context.Context, taskID uuid.UUID, status task.Status) (*mcp.CallToolResult, AdvanceWorkOutput, error) {
 	updated, err := s.tasks.UpdateStatus(ctx, taskID, status)
 	if err != nil {
 		return nil, AdvanceWorkOutput{}, fmt.Errorf("transitioning task to %s: %w", status, err)
@@ -140,7 +140,7 @@ func (s *Server) advanceTransition(ctx context.Context, taskID uuid.UUID, status
 	return nil, AdvanceWorkOutput{Task: *updated}, nil
 }
 
-func (s *Server) advanceComplete(ctx context.Context, taskID uuid.UUID) (*sdkmcp.CallToolResult, AdvanceWorkOutput, error) {
+func (s *Server) advanceComplete(ctx context.Context, taskID uuid.UUID) (*mcp.CallToolResult, AdvanceWorkOutput, error) {
 	// Use a transaction for task completion + daily plan item side effect.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -210,7 +210,7 @@ type PlanDayOutput struct {
 	Items        []daily.Item `json:"items"`
 }
 
-func (s *Server) planDay(ctx context.Context, _ *sdkmcp.CallToolRequest, input PlanDayInput) (*sdkmcp.CallToolResult, PlanDayOutput, error) {
+func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input PlanDayInput) (*mcp.CallToolResult, PlanDayOutput, error) {
 	if len(input.Items) == 0 {
 		return nil, PlanDayOutput{}, fmt.Errorf("items is required (at least one task)")
 	}

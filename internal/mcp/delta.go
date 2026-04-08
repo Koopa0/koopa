@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/task"
@@ -27,7 +27,7 @@ type SessionDeltaOutput struct {
 	SessionCount   int                        `json:"session_count"`
 }
 
-func (s *Server) sessionDelta(ctx context.Context, _ *sdkmcp.CallToolRequest, input SessionDeltaInput) (*sdkmcp.CallToolResult, SessionDeltaOutput, error) {
+func (s *Server) sessionDelta(ctx context.Context, _ *mcp.CallToolRequest, input SessionDeltaInput) (*mcp.CallToolResult, SessionDeltaOutput, error) {
 	since := time.Now().Add(-24 * time.Hour)
 	if input.Since != nil && *input.Since != "" {
 		t, err := time.Parse(time.DateOnly, *input.Since)

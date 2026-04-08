@@ -1,26 +1,26 @@
 -- name: CreateSession :one
-INSERT INTO learning_sessions (domain, session_mode, daily_plan_item_id)
+INSERT INTO sessions (domain, session_mode, daily_plan_item_id)
 VALUES (@domain, @session_mode, @daily_plan_item_id)
 RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at;
 
 -- name: SessionByID :one
 SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM learning_sessions WHERE id = @id;
+FROM sessions WHERE id = @id;
 
 -- name: ActiveSession :one
 -- Find a session that hasn't ended yet.
 SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM learning_sessions WHERE ended_at IS NULL
+FROM sessions WHERE ended_at IS NULL
 ORDER BY started_at DESC LIMIT 1;
 
 -- name: EndSession :one
-UPDATE learning_sessions SET ended_at = now(), journal_id = @journal_id
+UPDATE sessions SET ended_at = now(), journal_id = @journal_id
 WHERE id = @id AND ended_at IS NULL
 RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at;
 
 -- name: RecentSessions :many
 SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM learning_sessions
+FROM sessions
 WHERE (sqlc.narg('domain')::text IS NULL OR domain = sqlc.narg('domain'))
   AND started_at >= @since
 ORDER BY started_at DESC
@@ -28,10 +28,10 @@ LIMIT @max_results;
 
 -- name: FindOrCreateItem :one
 -- Upsert a learning item by domain + external_id (if present) or domain + title.
-INSERT INTO learning_items (domain, title, external_id, difficulty)
+INSERT INTO items (domain, title, external_id, difficulty)
 VALUES (@domain, @title, @external_id, @difficulty)
 ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
-DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, learning_items.difficulty), updated_at = now()
+DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, items.difficulty), updated_at = now()
 RETURNING id, domain, title, external_id, difficulty, note_id, content_id, project_id, metadata, created_at, updated_at;
 
 -- name: CreateAttempt :one
@@ -61,7 +61,7 @@ SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
        a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at,
        li.title AS item_title, li.external_id AS item_external_id
 FROM attempts a
-JOIN learning_items li ON li.id = a.learning_item_id
+JOIN items li ON li.id = a.learning_item_id
 WHERE a.session_id = @session_id
 ORDER BY a.attempted_at;
 
@@ -114,7 +114,7 @@ ORDER BY critical_count DESC, occurrence_count DESC;
 SELECT rc.id AS card_id, rc.due,
        li.id AS item_id, li.title, li.domain, li.difficulty, li.external_id
 FROM review_cards rc
-JOIN learning_items li ON li.id = rc.learning_item_id
+JOIN items li ON li.id = rc.learning_item_id
 WHERE rc.due <= @due_before
   AND (sqlc.narg('domain')::text IS NULL OR li.domain = sqlc.narg('domain'))
 ORDER BY rc.due ASC
@@ -126,7 +126,7 @@ LIMIT @max_results;
 SELECT ls.id, ls.domain, ls.session_mode, ls.started_at, ls.ended_at,
        COUNT(a.id) AS attempt_count,
        COUNT(*) FILTER (WHERE a.outcome IN ('solved_independent', 'completed')) AS success_count
-FROM learning_sessions ls
+FROM sessions ls
 LEFT JOIN attempts a ON a.session_id = ls.id
 WHERE (sqlc.narg('domain')::text IS NULL OR ls.domain = sqlc.narg('domain'))
   AND ls.started_at >= @since
@@ -140,8 +140,8 @@ SELECT ir.id AS relation_id, ir.relation_type,
        src.id AS source_id, src.title AS source_title, src.domain AS source_domain,
        tgt.id AS target_id, tgt.title AS target_title, tgt.domain AS target_domain
 FROM item_relations ir
-JOIN learning_items src ON src.id = ir.source_item_id
-JOIN learning_items tgt ON tgt.id = ir.target_item_id
+JOIN items src ON src.id = ir.source_item_id
+JOIN items tgt ON tgt.id = ir.target_item_id
 WHERE (sqlc.narg('domain')::text IS NULL OR src.domain = sqlc.narg('domain'))
 ORDER BY ir.created_at DESC
 LIMIT @max_results;

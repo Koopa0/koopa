@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/report"
 )
@@ -25,7 +25,7 @@ type FileReportOutput struct {
 	Report report.Report `json:"report"`
 }
 
-func (s *Server) fileReport(ctx context.Context, _ *sdkmcp.CallToolRequest, input FileReportInput) (*sdkmcp.CallToolResult, FileReportOutput, error) {
+func (s *Server) fileReport(ctx context.Context, _ *mcp.CallToolRequest, input FileReportInput) (*mcp.CallToolResult, FileReportOutput, error) {
 	if input.Content == "" {
 		return nil, FileReportOutput{}, fmt.Errorf("content is required")
 	}
@@ -82,7 +82,7 @@ type AcknowledgeDirectiveOutput struct {
 	Acknowledged   bool   `json:"acknowledged"`
 }
 
-func (s *Server) acknowledgeDirective(ctx context.Context, _ *sdkmcp.CallToolRequest, input AcknowledgeDirectiveInput) (*sdkmcp.CallToolResult, AcknowledgeDirectiveOutput, error) {
+func (s *Server) acknowledgeDirective(ctx context.Context, _ *mcp.CallToolRequest, input AcknowledgeDirectiveInput) (*mcp.CallToolResult, AcknowledgeDirectiveOutput, error) {
 	id := int64(input.DirectiveID)
 	if id <= 0 {
 		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("valid directive_id is required")

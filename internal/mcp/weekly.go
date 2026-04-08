@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
@@ -21,16 +21,16 @@ type WeeklySummaryInput struct {
 
 // WeeklySummaryOutput is the output of the weekly_summary tool.
 type WeeklySummaryOutput struct {
-	WeekStart      string                           `json:"week_start"`
-	WeekEnd        string                           `json:"week_end"`
-	TasksCreated   int                              `json:"tasks_created"`
-	TasksCompleted []task.CompletedTaskDetail       `json:"tasks_completed"`
-	JournalEntries []journal.Entry                  `json:"journal_entries"`
+	WeekStart      string                       `json:"week_start"`
+	WeekEnd        string                       `json:"week_end"`
+	TasksCreated   int                          `json:"tasks_created"`
+	TasksCompleted []task.CompletedTaskDetail   `json:"tasks_completed"`
+	JournalEntries []journal.Entry              `json:"journal_entries"`
 	Sessions       []learning.Session           `json:"sessions"`
 	Mastery        []learning.ConceptMasteryRow `json:"mastery"`
 }
 
-func (s *Server) weeklySummary(ctx context.Context, _ *sdkmcp.CallToolRequest, input WeeklySummaryInput) (*sdkmcp.CallToolResult, WeeklySummaryOutput, error) {
+func (s *Server) weeklySummary(ctx context.Context, _ *mcp.CallToolRequest, input WeeklySummaryInput) (*mcp.CallToolResult, WeeklySummaryOutput, error) {
 	now := time.Now().In(s.loc)
 	weekStart := mondayOf(now)
 	if input.WeekOf != nil && *input.WeekOf != "" {

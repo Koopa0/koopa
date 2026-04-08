@@ -20,6 +20,7 @@ sql:
       - "internal/report/query.sql"
       - "internal/insight/query.sql"
       - "internal/learning/query.sql"
+      - "internal/plan/query.sql"
     schema: "migrations/"
     gen:
       go:
@@ -83,6 +84,11 @@ sql:
             go_type: "string"
           # feeds.filter_config non-nullable JSONB → json.RawMessage
           - column: "feeds.filter_config"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          # plans.plan_config non-nullable JSONB → json.RawMessage
+          - column: "plans.plan_config"
             go_type:
               import: "encoding/json"
               type: "RawMessage"

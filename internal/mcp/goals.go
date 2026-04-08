@@ -3,7 +3,7 @@ package mcp
 import (
 	"context"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 )
@@ -22,7 +22,7 @@ type GoalProgressOutput struct {
 	Total int                      `json:"total"`
 }
 
-func (s *Server) goalProgress(ctx context.Context, _ *sdkmcp.CallToolRequest, _ GoalProgressInput) (*sdkmcp.CallToolResult, GoalProgressOutput, error) {
+func (s *Server) goalProgress(ctx context.Context, _ *mcp.CallToolRequest, _ GoalProgressInput) (*mcp.CallToolResult, GoalProgressOutput, error) {
 	goals, err := s.goals.ActiveGoals(ctx)
 	if err != nil {
 		return nil, GoalProgressOutput{}, err

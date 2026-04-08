@@ -748,6 +748,33 @@ CREATE INDEX idx_tasks_assignee_active ON tasks (assignee, status) WHERE status 
 CREATE INDEX idx_tasks_created_by ON tasks (created_by, created_at DESC);
 
 -- ============================================================
+-- IPC: journal (was: session_notes WHERE note_type IN ('plan','context','reflection','metrics'))
+-- Moved before daily_plan_items so the FK can be inlined.
+-- ============================================================
+
+CREATE TABLE journal (
+    id         BIGSERIAL PRIMARY KEY,
+    kind       TEXT NOT NULL CHECK (kind IN ('plan', 'context', 'reflection', 'metrics')),
+    source     TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
+    content    TEXT NOT NULL,
+    metadata   JSONB,
+    entry_date DATE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE journal IS 'Session log — plans, context snapshots, reflections, metrics. Self-directed, not cross-project.';
+COMMENT ON COLUMN journal.kind IS 'plan = daily plan. context = end-of-session state. reflection = review. metrics = quantitative snapshot.';
+COMMENT ON COLUMN journal.entry_date IS 'Date of this journal entry.';
+COMMENT ON COLUMN journal.metadata IS
+    'Structured metadata per kind. '
+    'plan: {reasoning}. Daily task selection tracked in daily_plan_items, not here. '
+    'metrics: {tasks_planned, tasks_completed, adjustments}. '
+    'context, reflection: no required metadata schema.';
+
+CREATE INDEX idx_journal_date ON journal (entry_date DESC);
+CREATE INDEX idx_journal_kind ON journal (entry_date, kind);
+
+-- ============================================================
 -- Daily plan items (replaces tasks.my_day boolean)
 -- ============================================================
 
@@ -758,7 +785,7 @@ CREATE TABLE daily_plan_items (
     selected_by TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
     position    INT NOT NULL DEFAULT 0,
     reason      TEXT,
-    journal_id  BIGINT,  -- FK to journal(id) added via ALTER TABLE after journal table creation
+    journal_id  BIGINT REFERENCES journal(id) ON DELETE SET NULL,
     status      TEXT NOT NULL DEFAULT 'planned'
                 CHECK (status IN ('planned', 'done', 'deferred', 'dropped')),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -799,7 +826,7 @@ COMMENT ON COLUMN daily_plan_items.journal_id IS
     'Optional link to the journal(kind=''plan'') entry that drove this planning session. '
     'All items from the same planning session share the same journal_id. '
     'Enables "which reasoning led to these task selections" queries. '
-    'Symmetric with learning_sessions.journal_id — session produces journal entry, '
+    'Symmetric with sessions.journal_id — session produces journal entry, '
     'journal_id links back. SET NULL on journal deletion.';
 COMMENT ON COLUMN daily_plan_items.reason IS
     'Optional rationale for selecting this task today. NULL = no specific reason recorded.';
@@ -1099,38 +1126,6 @@ CREATE INDEX idx_reports_date ON reports (reported_date DESC);
 CREATE INDEX idx_reports_directive ON reports (in_response_to) WHERE in_response_to IS NOT NULL;
 
 -- ============================================================
--- IPC: journal (was: session_notes WHERE note_type IN ('plan','context','reflection','metrics'))
--- ============================================================
-
-CREATE TABLE journal (
-    id         BIGSERIAL PRIMARY KEY,
-    kind       TEXT NOT NULL CHECK (kind IN ('plan', 'context', 'reflection', 'metrics')),
-    source     TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    content    TEXT NOT NULL,
-    metadata   JSONB,
-    entry_date DATE NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE journal IS 'Session log — plans, context snapshots, reflections, metrics. Self-directed, not cross-project.';
-COMMENT ON COLUMN journal.kind IS 'plan = daily plan. context = end-of-session state. reflection = review. metrics = quantitative snapshot.';
-COMMENT ON COLUMN journal.entry_date IS 'Date of this journal entry.';
-COMMENT ON COLUMN journal.metadata IS
-    'Structured metadata per kind. '
-    'plan: {reasoning}. Daily task selection tracked in daily_plan_items, not here. '
-    'metrics: {tasks_planned, tasks_completed, adjustments}. '
-    'context, reflection: no required metadata schema.';
-
-CREATE INDEX idx_journal_date ON journal (entry_date DESC);
-CREATE INDEX idx_journal_kind ON journal (entry_date, kind);
-
--- Deferred FK: daily_plan_items.journal_id → journal(id)
--- daily_plan_items is created before journal, so the FK is added here.
-ALTER TABLE daily_plan_items
-    ADD CONSTRAINT fk_daily_plan_items_journal
-    FOREIGN KEY (journal_id) REFERENCES journal(id) ON DELETE SET NULL;
-
--- ============================================================
 -- IPC: insights (was: session_notes WHERE note_type = 'insight')
 -- ============================================================
 
@@ -1174,8 +1169,8 @@ CREATE INDEX idx_insights_date ON insights (observed_date DESC);
 -- weak at binary search", "which attempts support that judgment",
 -- and "what should I practice next".
 --
--- review_cards is defined AFTER learning_items so it can
--- directly reference both contents(id) and learning_items(id).
+-- review_cards is defined AFTER items so it can
+-- directly reference both contents(id) and items(id).
 -- ============================================================
 
 -- Concepts: learning ontology (independent from tags)
@@ -1253,7 +1248,7 @@ CREATE INDEX idx_concepts_tag ON concepts (tag_id) WHERE tag_id IS NOT NULL;
 -- you write a note about it. A book chapter exists before you do
 -- a reading session.
 
-CREATE TABLE learning_items (
+CREATE TABLE items (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain      TEXT NOT NULL
                CHECK (domain = lower(btrim(domain)) AND domain <> ''),
@@ -1268,62 +1263,63 @@ CREATE TABLE learning_items (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE learning_items IS
+COMMENT ON TABLE items IS
     'Learning targets — what to learn, practice, and revisit. Lifecycle differs from '
     'notes: items follow not-attempted → practicing → mastered (learning progress), '
     'while notes follow seed → evergreen → archived (knowledge maturity). Items exist '
     'before notes are written.';
-COMMENT ON COLUMN learning_items.domain IS
+COMMENT ON COLUMN items.domain IS
     'Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.';
-COMMENT ON COLUMN learning_items.title IS
+COMMENT ON COLUMN items.title IS
     'Display title. LeetCode: problem name. Reading: chapter title. '
     'Japanese: grammar point or drill name.';
-COMMENT ON COLUMN learning_items.external_id IS
+COMMENT ON COLUMN items.external_id IS
     'Provider-specific identifier. LeetCode problem number, textbook section ID, '
     'JLPT grammar point ID. NULL for custom drills without external identity. '
     'Partial unique: one item per (domain, external_id) where external_id IS NOT NULL.';
-COMMENT ON COLUMN learning_items.difficulty IS
+COMMENT ON COLUMN items.difficulty IS
     'Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. '
     'NULL = not categorized. Consistent with notes.difficulty CHECK.';
-COMMENT ON COLUMN learning_items.note_id IS
+COMMENT ON COLUMN items.note_id IS
     'Optional link to the item-level summary note (e.g. a LeetCode solve note). '
     'Distinct from attempts.note_id which links to an attempt-level working note. '
     'SET NULL on note deletion — the item persists without its note.';
-COMMENT ON COLUMN learning_items.content_id IS
+COMMENT ON COLUMN items.content_id IS
     'Rare — for when a published article/essay is itself a learning target. '
     'Most items will not have this. SET NULL on content deletion.';
-COMMENT ON COLUMN learning_items.project_id IS
-    'Optional PARA project association. A "LeetCode 200 題計畫" PARA project links '
-    'its constituent problems via this FK. SET NULL on project deletion.';
-COMMENT ON COLUMN learning_items.metadata IS
+COMMENT ON COLUMN items.project_id IS
+    'Optional PARA project association for catalog-level grouping. '
+    'Plan membership and ordering is tracked via plan_items, not this FK. '
+    'SET NULL on project deletion — the item persists without its project.';
+COMMENT ON COLUMN items.metadata IS
     'Domain-specific data not needing WHERE/JOIN/GROUP BY. '
     'Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. '
     'LeetCode: {problem_url, companies, frequency, constraints}. '
     'Japanese: {jlpt_level, textbook, chapter, grammar_point}. '
     'System Design: {source_book, chapter, scenario_type}. '
     'Reading: {book_title, chapter, page_range}.';
-COMMENT ON COLUMN learning_items.updated_at IS
+COMMENT ON COLUMN items.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
-CREATE UNIQUE INDEX idx_learning_items_domain_external
-    ON learning_items (domain, external_id)
+CREATE UNIQUE INDEX idx_items_domain_external
+    ON items (domain, external_id)
     WHERE external_id IS NOT NULL;
-CREATE INDEX idx_learning_items_domain ON learning_items (domain);
-CREATE INDEX idx_learning_items_note ON learning_items (note_id) WHERE note_id IS NOT NULL;
-CREATE INDEX idx_learning_items_project ON learning_items (project_id) WHERE project_id IS NOT NULL;
-CREATE INDEX idx_learning_items_content ON learning_items (content_id) WHERE content_id IS NOT NULL;
+CREATE INDEX idx_items_domain ON items (domain);
+CREATE INDEX idx_items_note ON items (note_id) WHERE note_id IS NOT NULL;
+CREATE INDEX idx_items_project ON items (project_id) WHERE project_id IS NOT NULL;
+CREATE INDEX idx_items_content ON items (content_id) WHERE content_id IS NOT NULL;
 
 -- ============================================================
 -- Spaced repetition: review_cards + review_logs
 --
--- Placed after learning_items so both FK targets (contents, learning_items)
+-- Placed after items so both FK targets (contents, items)
 -- exist at definition time. No ALTER TABLE needed.
 -- ============================================================
 
 CREATE TABLE review_cards (
     id                BIGSERIAL PRIMARY KEY,
     content_id        UUID REFERENCES contents(id) ON DELETE CASCADE,
-    learning_item_id  UUID REFERENCES learning_items(id) ON DELETE CASCADE,
+    learning_item_id  UUID REFERENCES items(id) ON DELETE CASCADE,
     tag_id            UUID REFERENCES tags(id) ON DELETE CASCADE,
     card_state        JSONB NOT NULL,
     due               TIMESTAMPTZ NOT NULL,
@@ -1395,8 +1391,8 @@ CREATE INDEX idx_review_logs_card ON review_logs (card_id, reviewed_at DESC);
 
 -- Learning item ↔ concept junction
 
-CREATE TABLE learning_item_concepts (
-    learning_item_id UUID NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+CREATE TABLE item_concepts (
+    learning_item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     concept_id       UUID NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
     relevance        TEXT NOT NULL DEFAULT 'primary'
                      CHECK (relevance IN ('primary', 'secondary')),
@@ -1404,17 +1400,17 @@ CREATE TABLE learning_item_concepts (
     PRIMARY KEY (learning_item_id, concept_id)
 );
 
-COMMENT ON TABLE learning_item_concepts IS
+COMMENT ON TABLE item_concepts IS
     'Junction: which concepts a learning item exercises. A LeetCode problem''s primary '
     'concept is two-pointers; secondary might include hash-map. CASCADE on both sides — '
     'deleting an item or concept removes the association.';
-COMMENT ON COLUMN learning_item_concepts.relevance IS
+COMMENT ON COLUMN item_concepts.relevance IS
     'primary: the core concept this item drills. '
     'secondary: a supporting concept also exercised. '
     'Convention: one primary per item. Multiple primaries should be rare; '
     'if frequent, revisit the relevance model.';
 
-CREATE INDEX idx_learning_item_concepts_concept ON learning_item_concepts (concept_id);
+CREATE INDEX idx_item_concepts_concept ON item_concepts (concept_id);
 
 -- Learning sessions: orchestration boundary
 --
@@ -1425,7 +1421,7 @@ CREATE INDEX idx_learning_item_concepts_concept ON learning_item_concepts (conce
 -- No participant column: personal scale = always Koopa. Participant
 -- is traceable via journal_id → journal.source if needed.
 
-CREATE TABLE learning_sessions (
+CREATE TABLE sessions (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain              TEXT NOT NULL
                         CHECK (domain = lower(btrim(domain)) AND domain <> ''),
@@ -1442,38 +1438,38 @@ CREATE TABLE learning_sessions (
         CHECK (ended_at IS NULL OR ended_at >= started_at)
 );
 
-COMMENT ON TABLE learning_sessions IS
+COMMENT ON TABLE sessions IS
     'Session orchestration boundary — explicit start/end, mode, and attempt container. '
     'Distinct from journal: journal is post-hoc reflection (plan, context, reflection, '
     'metrics), sessions are in-progress orchestration. A session ending may produce a '
     'journal(kind=''reflection'') entry, linked via journal_id. '
     'No updated_at — sessions are write-once with ended_at set on completion.';
-COMMENT ON COLUMN learning_sessions.domain IS
+COMMENT ON COLUMN sessions.domain IS
     'Learning domain for this session (same convention as concepts.domain).';
-COMMENT ON COLUMN learning_sessions.session_mode IS
+COMMENT ON COLUMN sessions.session_mode IS
     'retrieval: recall-based testing (no hints). '
     'practice: active problem-solving with coaching. '
     'mixed: combination of retrieval and practice. '
     'review: revisiting previously solved items. '
     'reading: comprehension-focused (DDIA, O''Reilly, literary texts).';
-COMMENT ON COLUMN learning_sessions.journal_id IS
+COMMENT ON COLUMN sessions.journal_id IS
     'Optional link to the reflection journal entry written after the session. '
     'The session produces the journal entry, not the other way around. '
     'SET NULL on journal entry deletion.';
-COMMENT ON COLUMN learning_sessions.daily_plan_item_id IS
+COMMENT ON COLUMN sessions.daily_plan_item_id IS
     'If this session was planned in the daily plan, link here. '
     'Enables plan adherence analysis. SET NULL on plan item deletion.';
-COMMENT ON COLUMN learning_sessions.started_at IS
+COMMENT ON COLUMN sessions.started_at IS
     'Session start time. DEFAULT now() for immediate starts.';
-COMMENT ON COLUMN learning_sessions.ended_at IS
+COMMENT ON COLUMN sessions.ended_at IS
     'NULL until session ends. NULL + old started_at = abandoned/crashed session.';
-COMMENT ON COLUMN learning_sessions.metadata IS
+COMMENT ON COLUMN sessions.metadata IS
     'Session orchestration details: coaching prompt used, session summary, '
     'configuration. Not queryable — stays in JSONB.';
 
-CREATE INDEX idx_learning_sessions_started ON learning_sessions (started_at DESC);
-CREATE INDEX idx_learning_sessions_domain ON learning_sessions (domain);
-CREATE INDEX idx_learning_sessions_journal ON learning_sessions (journal_id)
+CREATE INDEX idx_sessions_started ON sessions (started_at DESC);
+CREATE INDEX idx_sessions_domain ON sessions (domain);
+CREATE INDEX idx_sessions_journal ON sessions (journal_id)
     WHERE journal_id IS NOT NULL;
 
 -- Attempts: individual learning attempt records
@@ -1491,8 +1487,8 @@ CREATE INDEX idx_learning_sessions_journal ON learning_sessions (journal_id)
 
 CREATE TABLE attempts (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    learning_item_id  UUID NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
-    session_id        UUID REFERENCES learning_sessions(id) ON DELETE SET NULL,
+    learning_item_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    session_id        UUID REFERENCES sessions(id) ON DELETE SET NULL,
     attempt_number    INT NOT NULL DEFAULT 1,
     outcome           TEXT NOT NULL
                       CHECK (outcome IN (
@@ -1514,7 +1510,7 @@ CREATE TABLE attempts (
 
 COMMENT ON TABLE attempts IS
     'Individual learning attempt records. One learning item can have multiple attempts '
-    '(first try, revisit, re-practice). CASCADE from learning_items — deleting an item '
+    '(first try, revisit, re-practice). CASCADE from items — deleting an item '
     'deletes its attempt history. No is_revisit column — derivable as attempt_number > 1. '
     'Append-only — no updated_at.';
 COMMENT ON COLUMN attempts.learning_item_id IS
@@ -1541,7 +1537,7 @@ COMMENT ON COLUMN attempts.stuck_at IS
 COMMENT ON COLUMN attempts.approach_used IS
     'Free-text: what method you used. Coaching context, not a queryable enum.';
 COMMENT ON COLUMN attempts.note_id IS
-    'Optional link to an attempt-level working note. Distinct from learning_items.note_id '
+    'Optional link to an attempt-level working note. Distinct from items.note_id '
     '(item-level summary). SET NULL on note deletion.';
 COMMENT ON COLUMN attempts.metadata IS
     'Narrative data: coaching hints given, alternative approaches considered, code quality '
@@ -1618,8 +1614,8 @@ CREATE INDEX idx_attempt_observations_attempt ON attempt_observations (attempt_i
 
 CREATE TABLE item_relations (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_item_id  UUID NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
-    target_item_id  UUID NOT NULL REFERENCES learning_items(id) ON DELETE CASCADE,
+    source_item_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    target_item_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     relation_type   TEXT NOT NULL
                     CHECK (relation_type IN (
                         'easier_variant', 'harder_variant', 'prerequisite',
@@ -1760,3 +1756,124 @@ COMMENT ON COLUMN schedule_runs.error IS 'Error details on failure. NULL on succ
 COMMENT ON COLUMN schedule_runs.metadata IS 'Run-specific data: produced artifact IDs, execution duration, backend-specific info.';
 
 CREATE INDEX idx_schedule_runs_schedule ON schedule_runs (schedule_id, started_at DESC);
+
+-- ============================================================
+-- Learning plans: ordered, mutable curricula linking plans to items
+-- ============================================================
+
+CREATE TABLE plans (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title        TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    domain       TEXT NOT NULL
+                 CHECK (domain = lower(btrim(domain)) AND domain <> ''),
+    goal_id      UUID REFERENCES goals(id) ON DELETE SET NULL,
+    status       TEXT NOT NULL DEFAULT 'draft'
+                 CHECK (status IN ('draft', 'active', 'completed', 'paused', 'abandoned')),
+    target_count INT CHECK (target_count IS NULL OR target_count > 0),
+    plan_config  JSONB NOT NULL DEFAULT '{}',
+    created_by   TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_plans_domain ON plans (domain);
+CREATE INDEX idx_plans_goal ON plans (goal_id) WHERE goal_id IS NOT NULL;
+CREATE INDEX idx_plans_status ON plans (status) WHERE status IN ('draft', 'active');
+CREATE INDEX idx_plans_created_by ON plans (created_by);
+
+COMMENT ON TABLE plans IS
+    'Ordered, mutable learning curricula — a named commitment to practice a specific '
+    'set of learning items. Plans serve aspirations (goals), not execution vehicles '
+    '(projects). Status lifecycle: draft → active → completed/paused/abandoned. '
+    'Draft = workspace/uncommitted. Active = committed curriculum being tracked '
+    'against execution.';
+COMMENT ON COLUMN plans.id IS
+    'Primary key. Auto-generated UUID.';
+COMMENT ON COLUMN plans.title IS
+    'Display title (e.g., "LeetCode 200 題計畫"). Not unique — allows v1/v2 scenarios.';
+COMMENT ON COLUMN plans.description IS
+    'Plan description, strategy notes. Empty string = no description.';
+COMMENT ON COLUMN plans.domain IS
+    'Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.';
+COMMENT ON COLUMN plans.goal_id IS
+    'Optional aspirational target. NULL = area-level maintenance plan (no specific goal). '
+    'SET NULL on goal deletion.';
+COMMENT ON COLUMN plans.status IS
+    'Lifecycle state. draft → active → completed. Can pause from active, abandon from '
+    'draft/active/paused. Draft plans are not tracked in execution. See '
+    'mcp-decision-policy.md for mutation rules per status.';
+COMMENT ON COLUMN plans.target_count IS
+    'Advisory target item count (e.g., 200). NULL = open-ended plan. Not enforced by DB.';
+COMMENT ON COLUMN plans.plan_config IS
+    'Plan-creation parameters that do NOT need WHERE/JOIN/GROUP BY. If any field needs '
+    'filtering, promote to a column. Examples: difficulty_distribution, focus_areas, '
+    'pacing_notes.';
+COMMENT ON COLUMN plans.created_by IS
+    'Which participant created this plan. RESTRICT on delete — cannot remove a participant '
+    'who owns plans.';
+COMMENT ON COLUMN plans.created_at IS
+    'Row creation timestamp.';
+COMMENT ON COLUMN plans.updated_at IS
+    'Application-managed. Set explicitly in UPDATE queries.';
+
+CREATE TABLE plan_items (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id          UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    learning_item_id UUID NOT NULL REFERENCES items(id) ON DELETE RESTRICT,
+    position         INT NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'planned'
+                     CHECK (status IN ('planned', 'completed', 'skipped', 'substituted')),
+    phase            TEXT,
+    substituted_by   UUID REFERENCES plan_items(id) ON DELETE SET NULL,
+    reason           TEXT,
+    added_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at     TIMESTAMPTZ,
+
+    UNIQUE (plan_id, learning_item_id),
+    CONSTRAINT chk_substituted_by_requires_status
+        CHECK (substituted_by IS NULL OR status = 'substituted'),
+    CONSTRAINT chk_completed_at_requires_status
+        CHECK (completed_at IS NULL OR status = 'completed')
+);
+
+CREATE INDEX idx_plan_items_plan ON plan_items (plan_id, position);
+CREATE INDEX idx_plan_items_item ON plan_items (learning_item_id);
+CREATE INDEX idx_plan_items_phase ON plan_items (plan_id, phase) WHERE phase IS NOT NULL;
+CREATE INDEX idx_plan_items_status ON plan_items (plan_id, status);
+
+COMMENT ON TABLE plan_items IS
+    'Junction between plans and items — plan membership with ordering '
+    'and per-item lifecycle. Same item can appear in multiple plans (cross-plan '
+    'reuse). CASCADE from plan deletion. RESTRICT from item deletion — cannot '
+    'silently remove items from a plan. Append-style with status tracking — no updated_at '
+    '(status transitions are the audit trail).';
+COMMENT ON COLUMN plan_items.id IS
+    'Primary key. Auto-generated UUID.';
+COMMENT ON COLUMN plan_items.plan_id IS
+    'Parent learning plan. CASCADE — deleting a plan removes all its items.';
+COMMENT ON COLUMN plan_items.learning_item_id IS
+    'The learning target included in this plan. RESTRICT on delete — cannot silently '
+    'remove a plan item by deleting its catalog entry. Resolve plan references first.';
+COMMENT ON COLUMN plan_items.position IS
+    'Ordering within the plan (0-based). NOT unique in DB — application invariant '
+    'maintains uniqueness. Follows milestones and daily_plan_items pattern.';
+COMMENT ON COLUMN plan_items.status IS
+    'Plan-item lifecycle: planned → completed (via explicit tool call after successful '
+    'attempt) | skipped (plan decision to not do it) | substituted (replaced by another '
+    'item). Distinct from attempt.outcome — plan_status is a plan-domain decision, not '
+    'an execution result.';
+COMMENT ON COLUMN plan_items.phase IS
+    'Optional grouping label within the plan (e.g., "1-arrays", "phase-2-trees"). '
+    'Free-text with kebab-case validation enforced in Go, not DB. NULL = no phase grouping.';
+COMMENT ON COLUMN plan_items.substituted_by IS
+    'If status=''substituted'', points to the plan_items.id of the replacement '
+    'item WITHIN THE SAME PLAN. NULL for non-substituted items. SET NULL if replacement '
+    'item is deleted.';
+COMMENT ON COLUMN plan_items.reason IS
+    'Why this item was skipped or substituted. NULL for planned/completed items.';
+COMMENT ON COLUMN plan_items.added_at IS
+    'When this item was added to the plan.';
+COMMENT ON COLUMN plan_items.completed_at IS
+    'When this item was marked completed in the plan context. NULL until status → '
+    'completed. Set by manage_plan tool call, not derived from attempts.';

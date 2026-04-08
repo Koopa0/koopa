@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/directive"
@@ -44,7 +44,7 @@ type RSSHighlight struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (s *Server) morningContext(ctx context.Context, _ *sdkmcp.CallToolRequest, input MorningContextInput) (*sdkmcp.CallToolResult, MorningContextOutput, error) {
+func (s *Server) morningContext(ctx context.Context, _ *mcp.CallToolRequest, input MorningContextInput) (*mcp.CallToolResult, MorningContextOutput, error) {
 	date := s.today()
 	if input.Date != nil && *input.Date != "" {
 		t, err := time.Parse(time.DateOnly, *input.Date)

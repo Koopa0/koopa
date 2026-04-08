@@ -389,7 +389,7 @@ func (s *Store) ItemVariations(ctx context.Context, domain *string, limit int32)
 	return result, nil
 }
 
-func rowToSession(r *db.LearningSession) *Session {
+func rowToSession(r *db.Session) *Session {
 	return &Session{
 		ID:              r.ID,
 		Domain:          r.Domain,

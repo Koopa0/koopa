@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
 )
@@ -29,7 +29,7 @@ type ManageContentOutput struct {
 	Action string `json:"action"`
 }
 
-func (s *Server) manageContent(ctx context.Context, _ *sdkmcp.CallToolRequest, input ManageContentInput) (*sdkmcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) manageContent(ctx context.Context, _ *mcp.CallToolRequest, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	switch input.Action {
 	case "create":
 		return s.mcCreateContent(ctx, input)
@@ -42,7 +42,7 @@ func (s *Server) manageContent(ctx context.Context, _ *sdkmcp.CallToolRequest, i
 	}
 }
 
-func (s *Server) mcCreateContent(ctx context.Context, input ManageContentInput) (*sdkmcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) mcCreateContent(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if input.Title == nil || *input.Title == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("title is required for create")
 	}
@@ -78,7 +78,7 @@ func (s *Server) mcCreateContent(ctx context.Context, input ManageContentInput) 
 	return nil, ManageContentOutput{ID: c.ID.String(), Title: c.Title, Status: string(c.Status), Action: "create"}, nil
 }
 
-func (s *Server) mcUpdateContent(ctx context.Context, input ManageContentInput) (*sdkmcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) mcUpdateContent(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if input.ContentID == nil || *input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for update")
 	}
@@ -106,7 +106,7 @@ func (s *Server) mcUpdateContent(ctx context.Context, input ManageContentInput) 
 	return nil, ManageContentOutput{ID: c.ID.String(), Title: c.Title, Status: string(c.Status), Action: "update"}, nil
 }
 
-func (s *Server) mcPublishContent(ctx context.Context, input ManageContentInput) (*sdkmcp.CallToolResult, ManageContentOutput, error) {
+func (s *Server) mcPublishContent(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if input.ContentID == nil || *input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for publish")
 	}

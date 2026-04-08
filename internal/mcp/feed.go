@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/feed"
 )
@@ -26,7 +26,7 @@ type ManageFeedsOutput struct {
 	Action string      `json:"action"`
 }
 
-func (s *Server) manageFeeds(ctx context.Context, _ *sdkmcp.CallToolRequest, input ManageFeedsInput) (*sdkmcp.CallToolResult, ManageFeedsOutput, error) {
+func (s *Server) manageFeeds(ctx context.Context, _ *mcp.CallToolRequest, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
 	if s.feeds == nil {
 		return nil, ManageFeedsOutput{}, fmt.Errorf("feed store not configured")
 	}
@@ -44,7 +44,7 @@ func (s *Server) manageFeeds(ctx context.Context, _ *sdkmcp.CallToolRequest, inp
 	}
 }
 
-func (s *Server) mfList(ctx context.Context) (*sdkmcp.CallToolResult, ManageFeedsOutput, error) {
+func (s *Server) mfList(ctx context.Context) (*mcp.CallToolResult, ManageFeedsOutput, error) {
 	feeds, err := s.feeds.Feeds(ctx, nil)
 	if err != nil {
 		return nil, ManageFeedsOutput{}, fmt.Errorf("listing feeds: %w", err)
@@ -52,7 +52,7 @@ func (s *Server) mfList(ctx context.Context) (*sdkmcp.CallToolResult, ManageFeed
 	return nil, ManageFeedsOutput{Feeds: feeds, Action: "list"}, nil
 }
 
-func (s *Server) mfAdd(ctx context.Context, input ManageFeedsInput) (*sdkmcp.CallToolResult, ManageFeedsOutput, error) {
+func (s *Server) mfAdd(ctx context.Context, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
 	if input.URL == nil || *input.URL == "" {
 		return nil, ManageFeedsOutput{}, fmt.Errorf("url is required for add")
 	}
@@ -70,7 +70,7 @@ func (s *Server) mfAdd(ctx context.Context, input ManageFeedsInput) (*sdkmcp.Cal
 	return nil, ManageFeedsOutput{Feed: f, Action: "add"}, nil
 }
 
-func (s *Server) mfUpdate(ctx context.Context, input ManageFeedsInput) (*sdkmcp.CallToolResult, ManageFeedsOutput, error) {
+func (s *Server) mfUpdate(ctx context.Context, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
 	id, err := parseFeedID(input.FeedID)
 	if err != nil {
 		return nil, ManageFeedsOutput{}, err
@@ -85,7 +85,7 @@ func (s *Server) mfUpdate(ctx context.Context, input ManageFeedsInput) (*sdkmcp.
 	return nil, ManageFeedsOutput{Feed: f, Action: "update"}, nil
 }
 
-func (s *Server) mfRemove(ctx context.Context, input ManageFeedsInput) (*sdkmcp.CallToolResult, ManageFeedsOutput, error) {
+func (s *Server) mfRemove(ctx context.Context, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
 	id, err := parseFeedID(input.FeedID)
 	if err != nil {
 		return nil, ManageFeedsOutput{}, err

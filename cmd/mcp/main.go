@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	mcpkg "github.com/Koopa0/koopa0.dev/internal/mcp"
+	"github.com/Koopa0/koopa0.dev/internal/mcp"
 )
 
 func main() {
@@ -48,15 +48,15 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
 	}
 
-	server := mcpkg.NewServer(pool, logger,
-		mcpkg.WithLocation(taipeiLoc),
-		mcpkg.WithParticipant(cfg.Participant),
+	server := mcp.NewServer(pool, logger,
+		mcp.WithLocation(taipeiLoc),
+		mcp.WithParticipant(cfg.Participant),
 	)
 
 	switch cfg.Transport {
 	case "stdio":
 		logger.Info("starting MCP v2 server over stdio")
-		return server.Run(ctx, &mcp.StdioTransport{})
+		return server.Run(ctx, &mcpsdk.StdioTransport{})
 	case "http":
 		return runHTTP(ctx, cfg, server, logger)
 	default:
@@ -83,7 +83,7 @@ func connectDB(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slog.Logger) error {
+func runHTTP(ctx context.Context, cfg *config, server *mcp.Server, logger *slog.Logger) error {
 	if cfg.MCPToken == "" {
 		return fmt.Errorf("MCP_TOKEN is required for HTTP transport")
 	}
@@ -91,7 +91,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 		return fmt.Errorf("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and ADMIN_EMAIL are required for HTTP transport")
 	}
 
-	oauth := mcpkg.NewAuth(mcpkg.AuthConfig{
+	oauth := mcp.NewAuth(mcp.AuthConfig{
 		StaticToken: cfg.MCPToken,
 		AdminEmail:  cfg.AdminEmail,
 		BaseURL:     cfg.MCPBaseURL,
@@ -124,7 +124,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcpkg.Server, logger *slo
 	mux.HandleFunc("GET /oauth/google/callback", oauth.GoogleCallback)
 	mux.HandleFunc("POST /oauth/token", oauth.Token)
 	mux.HandleFunc("POST /oauth/register", oauth.Register)
-	mux.Handle("/mcp", mcpkg.BearerAuth(handler, oauth))
+	mux.Handle("/mcp", mcp.BearerAuth(handler, oauth))
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -26,6 +26,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
 	"github.com/Koopa0/koopa0.dev/internal/note"
+	"github.com/Koopa0/koopa0.dev/internal/plan"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/report"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
@@ -52,6 +53,7 @@ type Server struct {
 
 	// Phase 3 stores
 	learn *learning.Store
+	plans *plan.Store
 
 	// Phase 4 stores (optional)
 	feeds       *feed.Store
@@ -113,6 +115,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		reports:     report.NewStore(pool),
 		insights:    insight.NewStore(pool),
 		learn:       learning.NewStore(pool),
+		plans:       plan.NewStore(pool),
 		feedEntries: entry.NewStore(pool),
 		feeds:       feed.NewStore(pool, logger),
 		stats:       stats.NewStore(pool),
@@ -265,6 +268,12 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts), weaknesses (cross-pattern weakness analysis), retrieval (spaced review queue), timeline (sessions with attempt stats), variations (problem relationship graph). Filter by domain and lookback period.",
 		Annotations: readOnly,
 	}, s.learningDashboard)
+
+	addTool(s, &mcp.Tool{
+		Name:        "manage_plan",
+		Description: "Manages learning plan lifecycle and items. Actions: add_items, remove_items (draft only), update_item (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress (read-only stats). After a successful attempt, check the plan_context field in record_attempt output — it lists active plans containing the attempted item. Use your judgment to determine whether the attempt outcome warrants marking the plan item as completed (action=update_item, status=completed). Consider the domain, the plan's goals, and the attempt outcome quality.",
+		Annotations: destructive,
+	}, s.managePlan)
 
 	// --- Phase 4: Content & Feeds ---
 

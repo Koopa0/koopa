@@ -3,15 +3,18 @@
 -- tool_call_logs + views removed — offloaded to Loki/Prometheus/Grafana
 
 -- Learning analytics + spaced repetition
--- review_cards/review_logs must drop before learning_items (FK dependency)
+-- review_cards/review_logs must drop before items (FK dependency)
+-- plan_items must drop before plans and items (FK dependency)
+DROP TABLE IF EXISTS plan_items;
+DROP TABLE IF EXISTS plans;
 DROP TABLE IF EXISTS item_relations;
 DROP TABLE IF EXISTS attempt_observations;
 DROP TABLE IF EXISTS attempts;
-DROP TABLE IF EXISTS learning_sessions;
-DROP TABLE IF EXISTS learning_item_concepts;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS item_concepts;
 DROP TABLE IF EXISTS review_logs;
 DROP TABLE IF EXISTS review_cards;
-DROP TABLE IF EXISTS learning_items;
+DROP TABLE IF EXISTS items;
 DROP TABLE IF EXISTS concepts;
 
 DROP TABLE IF EXISTS schedule_runs;

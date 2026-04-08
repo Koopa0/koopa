@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 )
@@ -25,7 +25,7 @@ type TrackInsightOutput struct {
 	Updated bool            `json:"updated"`
 }
 
-func (s *Server) trackInsight(ctx context.Context, _ *sdkmcp.CallToolRequest, input TrackInsightInput) (*sdkmcp.CallToolResult, TrackInsightOutput, error) {
+func (s *Server) trackInsight(ctx context.Context, _ *mcp.CallToolRequest, input TrackInsightInput) (*mcp.CallToolResult, TrackInsightOutput, error) {
 	id := int64(input.InsightID)
 	if id <= 0 {
 		return nil, TrackInsightOutput{}, fmt.Errorf("valid insight_id is required")
@@ -45,7 +45,7 @@ func (s *Server) trackInsight(ctx context.Context, _ *sdkmcp.CallToolRequest, in
 	}
 }
 
-func (s *Server) updateInsightStatus(ctx context.Context, id int64, status insight.Status) (*sdkmcp.CallToolResult, TrackInsightOutput, error) {
+func (s *Server) updateInsightStatus(ctx context.Context, id int64, status insight.Status) (*mcp.CallToolResult, TrackInsightOutput, error) {
 	ins, err := s.insights.UpdateStatus(ctx, id, status)
 	if err != nil {
 		return nil, TrackInsightOutput{}, fmt.Errorf("updating insight status: %w", err)
@@ -54,7 +54,7 @@ func (s *Server) updateInsightStatus(ctx context.Context, id int64, status insig
 	return nil, TrackInsightOutput{Insight: *ins, Updated: true}, nil
 }
 
-func (s *Server) addInsightEvidence(ctx context.Context, id int64, evidence map[string]any) (*sdkmcp.CallToolResult, TrackInsightOutput, error) {
+func (s *Server) addInsightEvidence(ctx context.Context, id int64, evidence map[string]any) (*mcp.CallToolResult, TrackInsightOutput, error) {
 	// Fetch current insight to merge evidence into metadata.
 	current, err := s.insights.ByID(ctx, id)
 	if err != nil {

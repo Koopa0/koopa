@@ -531,7 +531,7 @@ type Area struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Individual learning attempt records. One learning item can have multiple attempts (first try, revisit, re-practice). CASCADE from learning_items — deleting an item deletes its attempt history. No is_revisit column — derivable as attempt_number > 1. Append-only — no updated_at.
+// Individual learning attempt records. One learning item can have multiple attempts (first try, revisit, re-practice). CASCADE from items — deleting an item deletes its attempt history. No is_revisit column — derivable as attempt_number > 1. Append-only — no updated_at.
 type Attempt struct {
 	ID uuid.UUID `json:"id"`
 	// The learning target attempted. CASCADE — attempts are meaningless without their item.
@@ -548,7 +548,7 @@ type Attempt struct {
 	StuckAt *string `json:"stuck_at"`
 	// Free-text: what method you used. Coaching context, not a queryable enum.
 	ApproachUsed *string `json:"approach_used"`
-	// Optional link to an attempt-level working note. Distinct from learning_items.note_id (item-level summary). SET NULL on note deletion.
+	// Optional link to an attempt-level working note. Distinct from items.note_id (item-level summary). SET NULL on note deletion.
 	NoteID *int64 `json:"note_id"`
 	// Narrative data: coaching hints given, alternative approaches considered, code quality observations, LLM transcript excerpts. Not queryable — stays in JSONB. If a field needs WHERE/JOIN/GROUP BY, promote to a column.
 	Metadata []byte `json:"metadata"`
@@ -665,7 +665,7 @@ type DailyPlanItem struct {
 	Position int32 `json:"position"`
 	// Optional rationale for selecting this task today. NULL = no specific reason recorded.
 	Reason *string `json:"reason"`
-	// Optional link to the journal(kind='plan') entry that drove this planning session. All items from the same planning session share the same journal_id. Enables "which reasoning led to these task selections" queries. Symmetric with learning_sessions.journal_id — session produces journal entry, journal_id links back. SET NULL on journal deletion.
+	// Optional link to the journal(kind='plan') entry that drove this planning session. All items from the same planning session share the same journal_id. Enables "which reasoning led to these task selections" queries. Symmetric with sessions.journal_id — session produces journal entry, journal_id links back. SET NULL on journal deletion.
 	JournalID *int64 `json:"journal_id"`
 	// Lifecycle state. planned = committed for today. done = completed within this day (independent of tasks.status for recurring tasks). deferred = not done today, carry-over candidate for future planning. dropped = explicitly removed from plan, no intent to carry over.
 	Status    string    `json:"status"`
@@ -857,6 +857,39 @@ type Insight struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// Learning targets — what to learn, practice, and revisit. Lifecycle differs from notes: items follow not-attempted → practicing → mastered (learning progress), while notes follow seed → evergreen → archived (knowledge maturity). Items exist before notes are written.
+type Item struct {
+	ID uuid.UUID `json:"id"`
+	// Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.
+	Domain string `json:"domain"`
+	// Display title. LeetCode: problem name. Reading: chapter title. Japanese: grammar point or drill name.
+	Title string `json:"title"`
+	// Provider-specific identifier. LeetCode problem number, textbook section ID, JLPT grammar point ID. NULL for custom drills without external identity. Partial unique: one item per (domain, external_id) where external_id IS NOT NULL.
+	ExternalID *string `json:"external_id"`
+	// Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. NULL = not categorized. Consistent with notes.difficulty CHECK.
+	Difficulty *string `json:"difficulty"`
+	// Optional link to the item-level summary note (e.g. a LeetCode solve note). Distinct from attempts.note_id which links to an attempt-level working note. SET NULL on note deletion — the item persists without its note.
+	NoteID *int64 `json:"note_id"`
+	// Rare — for when a published article/essay is itself a learning target. Most items will not have this. SET NULL on content deletion.
+	ContentID *uuid.UUID `json:"content_id"`
+	// Optional PARA project association for catalog-level grouping. Plan membership and ordering is tracked via plan_items, not this FK. SET NULL on project deletion — the item persists without its project.
+	ProjectID *uuid.UUID `json:"project_id"`
+	// Domain-specific data not needing WHERE/JOIN/GROUP BY. Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. LeetCode: {problem_url, companies, frequency, constraints}. Japanese: {jlpt_level, textbook, chapter, grammar_point}. System Design: {source_book, chapter, scenario_type}. Reading: {book_title, chapter, page_range}.
+	Metadata  []byte    `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Junction: which concepts a learning item exercises. A LeetCode problem's primary concept is two-pointers; secondary might include hash-map. CASCADE on both sides — deleting an item or concept removes the association.
+type ItemConcept struct {
+	LearningItemID uuid.UUID `json:"learning_item_id"`
+	ConceptID      uuid.UUID `json:"concept_id"`
+	// primary: the core concept this item drills. secondary: a supporting concept also exercised. Convention: one primary per item. Multiple primaries should be rare; if frequent, revisit the relevance model.
+	Relevance string    `json:"relevance"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Directed graph of learning item relationships. Direction: source is the reference point, target is the related item, relation_type describes how target relates to source. Example: (source=42, target=167, easier_variant) means "167 is an easier variant of 42." CASCADE on both sides. Append-only — no updated_at. APPLICATION INVARIANT: contradictory pairs (e.g. same ordered pair with both easier_variant and harder_variant) and symmetric conflicts (e.g. mutual prerequisite) are not DDL-enforced — Go validation must prevent them during post-session analysis. Same-domain invariant: both items must share the same domain — enforced by Go, not DB.
 type ItemRelation struct {
 	ID uuid.UUID `json:"id"`
@@ -880,59 +913,6 @@ type Journal struct {
 	Metadata json.RawMessage `json:"metadata"`
 	// Date of this journal entry.
 	EntryDate time.Time `json:"entry_date"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Learning targets — what to learn, practice, and revisit. Lifecycle differs from notes: items follow not-attempted → practicing → mastered (learning progress), while notes follow seed → evergreen → archived (knowledge maturity). Items exist before notes are written.
-type LearningItem struct {
-	ID uuid.UUID `json:"id"`
-	// Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.
-	Domain string `json:"domain"`
-	// Display title. LeetCode: problem name. Reading: chapter title. Japanese: grammar point or drill name.
-	Title string `json:"title"`
-	// Provider-specific identifier. LeetCode problem number, textbook section ID, JLPT grammar point ID. NULL for custom drills without external identity. Partial unique: one item per (domain, external_id) where external_id IS NOT NULL.
-	ExternalID *string `json:"external_id"`
-	// Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. NULL = not categorized. Consistent with notes.difficulty CHECK.
-	Difficulty *string `json:"difficulty"`
-	// Optional link to the item-level summary note (e.g. a LeetCode solve note). Distinct from attempts.note_id which links to an attempt-level working note. SET NULL on note deletion — the item persists without its note.
-	NoteID *int64 `json:"note_id"`
-	// Rare — for when a published article/essay is itself a learning target. Most items will not have this. SET NULL on content deletion.
-	ContentID *uuid.UUID `json:"content_id"`
-	// Optional PARA project association. A "LeetCode 200 題計畫" PARA project links its constituent problems via this FK. SET NULL on project deletion.
-	ProjectID *uuid.UUID `json:"project_id"`
-	// Domain-specific data not needing WHERE/JOIN/GROUP BY. Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. LeetCode: {problem_url, companies, frequency, constraints}. Japanese: {jlpt_level, textbook, chapter, grammar_point}. System Design: {source_book, chapter, scenario_type}. Reading: {book_title, chapter, page_range}.
-	Metadata  []byte    `json:"metadata"`
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Junction: which concepts a learning item exercises. A LeetCode problem's primary concept is two-pointers; secondary might include hash-map. CASCADE on both sides — deleting an item or concept removes the association.
-type LearningItemConcept struct {
-	LearningItemID uuid.UUID `json:"learning_item_id"`
-	ConceptID      uuid.UUID `json:"concept_id"`
-	// primary: the core concept this item drills. secondary: a supporting concept also exercised. Convention: one primary per item. Multiple primaries should be rare; if frequent, revisit the relevance model.
-	Relevance string    `json:"relevance"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Session orchestration boundary — explicit start/end, mode, and attempt container. Distinct from journal: journal is post-hoc reflection (plan, context, reflection, metrics), sessions are in-progress orchestration. A session ending may produce a journal(kind='reflection') entry, linked via journal_id. No updated_at — sessions are write-once with ended_at set on completion.
-type LearningSession struct {
-	ID uuid.UUID `json:"id"`
-	// Learning domain for this session (same convention as concepts.domain).
-	Domain string `json:"domain"`
-	// retrieval: recall-based testing (no hints). practice: active problem-solving with coaching. mixed: combination of retrieval and practice. review: revisiting previously solved items. reading: comprehension-focused (DDIA, O'Reilly, literary texts).
-	SessionMode string `json:"session_mode"`
-	// Optional link to the reflection journal entry written after the session. The session produces the journal entry, not the other way around. SET NULL on journal entry deletion.
-	JournalID *int64 `json:"journal_id"`
-	// If this session was planned in the daily plan, link here. Enables plan adherence analysis. SET NULL on plan item deletion.
-	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
-	// Session start time. DEFAULT now() for immediate starts.
-	StartedAt time.Time `json:"started_at"`
-	// NULL until session ends. NULL + old started_at = abandoned/crashed session.
-	EndedAt *time.Time `json:"ended_at"`
-	// Session orchestration details: coaching prompt used, session summary, configuration. Not queryable — stays in JSONB.
-	Metadata  []byte    `json:"metadata"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -1065,6 +1045,56 @@ type ParticipantSchedule struct {
 	CreatedAt     time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Ordered, mutable learning curricula — a named commitment to practice a specific set of learning items. Plans serve aspirations (goals), not execution vehicles (projects). Status lifecycle: draft → active → completed/paused/abandoned. Draft = workspace/uncommitted. Active = committed curriculum being tracked against execution.
+type Plan struct {
+	// Primary key. Auto-generated UUID.
+	ID uuid.UUID `json:"id"`
+	// Display title (e.g., "LeetCode 200 題計畫"). Not unique — allows v1/v2 scenarios.
+	Title string `json:"title"`
+	// Plan description, strategy notes. Empty string = no description.
+	Description string `json:"description"`
+	// Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.
+	Domain string `json:"domain"`
+	// Optional aspirational target. NULL = area-level maintenance plan (no specific goal). SET NULL on goal deletion.
+	GoalID *uuid.UUID `json:"goal_id"`
+	// Lifecycle state. draft → active → completed. Can pause from active, abandon from draft/active/paused. Draft plans are not tracked in execution. See mcp-decision-policy.md for mutation rules per status.
+	Status string `json:"status"`
+	// Advisory target item count (e.g., 200). NULL = open-ended plan. Not enforced by DB.
+	TargetCount *int32 `json:"target_count"`
+	// Plan-creation parameters that do NOT need WHERE/JOIN/GROUP BY. If any field needs filtering, promote to a column. Examples: difficulty_distribution, focus_areas, pacing_notes.
+	PlanConfig json.RawMessage `json:"plan_config"`
+	// Which participant created this plan. RESTRICT on delete — cannot remove a participant who owns plans.
+	CreatedBy string `json:"created_by"`
+	// Row creation timestamp.
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Junction between plans and items — plan membership with ordering and per-item lifecycle. Same item can appear in multiple plans (cross-plan reuse). CASCADE from plan deletion. RESTRICT from item deletion — cannot silently remove items from a plan. Append-style with status tracking — no updated_at (status transitions are the audit trail).
+type PlanItem struct {
+	// Primary key. Auto-generated UUID.
+	ID uuid.UUID `json:"id"`
+	// Parent learning plan. CASCADE — deleting a plan removes all its items.
+	PlanID uuid.UUID `json:"plan_id"`
+	// The learning target included in this plan. RESTRICT on delete — cannot silently remove a plan item by deleting its catalog entry. Resolve plan references first.
+	LearningItemID uuid.UUID `json:"learning_item_id"`
+	// Ordering within the plan (0-based). NOT unique in DB — application invariant maintains uniqueness. Follows milestones and daily_plan_items pattern.
+	Position int32 `json:"position"`
+	// Plan-item lifecycle: planned → completed (via explicit tool call after successful attempt) | skipped (plan decision to not do it) | substituted (replaced by another item). Distinct from attempt.outcome — plan_status is a plan-domain decision, not an execution result.
+	Status string `json:"status"`
+	// Optional grouping label within the plan (e.g., "1-arrays", "phase-2-trees"). Free-text with kebab-case validation enforced in Go, not DB. NULL = no phase grouping.
+	Phase *string `json:"phase"`
+	// If status='substituted', points to the plan_items.id of the replacement item WITHIN THE SAME PLAN. NULL for non-substituted items. SET NULL if replacement item is deleted.
+	SubstitutedBy *uuid.UUID `json:"substituted_by"`
+	// Why this item was skipped or substituted. NULL for planned/completed items.
+	Reason *string `json:"reason"`
+	// When this item was added to the plan.
+	AddedAt time.Time `json:"added_at"`
+	// When this item was marked completed in the plan context. NULL until status → completed. Set by manage_plan tool call, not derived from attempts.
+	CompletedAt *time.Time `json:"completed_at"`
 }
 
 // AI environment or human context. Each platform hosts one or more participants (projects/agents).
@@ -1245,6 +1275,26 @@ type ScheduleRun struct {
 	// Run-specific data: produced artifact IDs, execution duration, backend-specific info.
 	Metadata  json.RawMessage `json:"metadata"`
 	CreatedAt time.Time       `json:"created_at"`
+}
+
+// Session orchestration boundary — explicit start/end, mode, and attempt container. Distinct from journal: journal is post-hoc reflection (plan, context, reflection, metrics), sessions are in-progress orchestration. A session ending may produce a journal(kind='reflection') entry, linked via journal_id. No updated_at — sessions are write-once with ended_at set on completion.
+type Session struct {
+	ID uuid.UUID `json:"id"`
+	// Learning domain for this session (same convention as concepts.domain).
+	Domain string `json:"domain"`
+	// retrieval: recall-based testing (no hints). practice: active problem-solving with coaching. mixed: combination of retrieval and practice. review: revisiting previously solved items. reading: comprehension-focused (DDIA, O'Reilly, literary texts).
+	SessionMode string `json:"session_mode"`
+	// Optional link to the reflection journal entry written after the session. The session produces the journal entry, not the other way around. SET NULL on journal entry deletion.
+	JournalID *int64 `json:"journal_id"`
+	// If this session was planned in the daily plan, link here. Enables plan adherence analysis. SET NULL on plan item deletion.
+	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
+	// Session start time. DEFAULT now() for immediate starts.
+	StartedAt time.Time `json:"started_at"`
+	// NULL until session ends. NULL + old started_at = abandoned/crashed session.
+	EndedAt *time.Time `json:"ended_at"`
+	// Session orchestration details: coaching prompt used, session summary, configuration. Not queryable — stays in JSONB.
+	Metadata  []byte    `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // External data source sync configuration. Provider column distinguishes Notion, Linear, etc. UPGRADE PATH: when a second provider is added for the same role (e.g. Google Calendar for tasks), change UNIQUE(role) to UNIQUE(provider, role) to allow multiple sources per role.

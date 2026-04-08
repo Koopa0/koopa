@@ -105,6 +105,45 @@ func (q *Queries) ActiveGoals(ctx context.Context) ([]ActiveGoalsRow, error) {
 	return items, nil
 }
 
+const activePlans = `-- name: ActivePlans :many
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
+FROM plans WHERE status IN ('draft', 'active')
+ORDER BY updated_at DESC
+`
+
+// Plans that are draft or active (for plan management views).
+func (q *Queries) ActivePlans(ctx context.Context) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, activePlans)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Domain,
+			&i.GoalID,
+			&i.Status,
+			&i.TargetCount,
+			&i.PlanConfig,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
@@ -164,14 +203,14 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 
 const activeSession = `-- name: ActiveSession :one
 SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM learning_sessions WHERE ended_at IS NULL
+FROM sessions WHERE ended_at IS NULL
 ORDER BY started_at DESC LIMIT 1
 `
 
 // Find a session that hasn't ended yet.
-func (q *Queries) ActiveSession(ctx context.Context) (LearningSession, error) {
+func (q *Queries) ActiveSession(ctx context.Context) (Session, error) {
 	row := q.db.QueryRow(ctx, activeSession)
-	var i LearningSession
+	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
@@ -214,6 +253,42 @@ type AddContentTopicParams struct {
 func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams) error {
 	_, err := q.db.Exec(ctx, addContentTopic, arg.ContentID, arg.TopicID)
 	return err
+}
+
+const addPlanItem = `-- name: AddPlanItem :one
+INSERT INTO plan_items (plan_id, learning_item_id, position, phase)
+VALUES ($1, $2, $3, $4)
+RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
+`
+
+type AddPlanItemParams struct {
+	PlanID         uuid.UUID `json:"plan_id"`
+	LearningItemID uuid.UUID `json:"learning_item_id"`
+	Position       int32     `json:"position"`
+	Phase          *string   `json:"phase"`
+}
+
+func (q *Queries) AddPlanItem(ctx context.Context, arg AddPlanItemParams) (PlanItem, error) {
+	row := q.db.QueryRow(ctx, addPlanItem,
+		arg.PlanID,
+		arg.LearningItemID,
+		arg.Position,
+		arg.Phase,
+	)
+	var i PlanItem
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.LearningItemID,
+		&i.Position,
+		&i.Status,
+		&i.Phase,
+		&i.SubstitutedBy,
+		&i.Reason,
+		&i.AddedAt,
+		&i.CompletedAt,
+	)
+	return i, err
 }
 
 const adminListContents = `-- name: AdminListContents :many
@@ -532,7 +607,7 @@ SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
        a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at,
        li.title AS item_title, li.external_id AS item_external_id
 FROM attempts a
-JOIN learning_items li ON li.id = a.learning_item_id
+JOIN items li ON li.id = a.learning_item_id
 WHERE a.session_id = $1
 ORDER BY a.attempted_at
 `
@@ -2040,6 +2115,51 @@ func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationPa
 	return i, err
 }
 
+const createPlan = `-- name: CreatePlan :one
+INSERT INTO plans (title, description, domain, goal_id, status, target_count, plan_config, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
+`
+
+type CreatePlanParams struct {
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Domain      string          `json:"domain"`
+	GoalID      *uuid.UUID      `json:"goal_id"`
+	Status      string          `json:"status"`
+	TargetCount *int32          `json:"target_count"`
+	PlanConfig  json.RawMessage `json:"plan_config"`
+	CreatedBy   string          `json:"created_by"`
+}
+
+func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
+	row := q.db.QueryRow(ctx, createPlan,
+		arg.Title,
+		arg.Description,
+		arg.Domain,
+		arg.GoalID,
+		arg.Status,
+		arg.TargetCount,
+		arg.PlanConfig,
+		arg.CreatedBy,
+	)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Domain,
+		&i.GoalID,
+		&i.Status,
+		&i.TargetCount,
+		&i.PlanConfig,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (slug, title, description, long_description, role, tech_stack, highlights,
                       problem, solution, architecture, results, github_url, live_url, featured, is_public, sort_order, status)
@@ -2213,7 +2333,7 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Cre
 }
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO learning_sessions (domain, session_mode, daily_plan_item_id)
+INSERT INTO sessions (domain, session_mode, daily_plan_item_id)
 VALUES ($1, $2, $3)
 RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
 `
@@ -2224,9 +2344,9 @@ type CreateSessionParams struct {
 	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (LearningSession, error) {
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
 	row := q.db.QueryRow(ctx, createSession, arg.Domain, arg.SessionMode, arg.DailyPlanItemID)
-	var i LearningSession
+	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
@@ -2612,6 +2732,30 @@ func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64
 	return result.RowsAffected(), nil
 }
 
+const deletePlanItem = `-- name: DeletePlanItem :exec
+DELETE FROM plan_items WHERE id = $1
+`
+
+func (q *Queries) DeletePlanItem(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deletePlanItem, id)
+	return err
+}
+
+const deletePlanItems = `-- name: DeletePlanItems :exec
+DELETE FROM plan_items WHERE plan_id = $1 AND id = ANY($2::uuid[])
+`
+
+type DeletePlanItemsParams struct {
+	PlanID  uuid.UUID   `json:"plan_id"`
+	ItemIds []uuid.UUID `json:"item_ids"`
+}
+
+// Batch delete plan items by plan_id and item IDs (for remove_items action on draft plans).
+func (q *Queries) DeletePlanItems(ctx context.Context, arg DeletePlanItemsParams) error {
+	_, err := q.db.Exec(ctx, deletePlanItems, arg.PlanID, arg.ItemIds)
+	return err
+}
+
 const deletePlannedItemsByDate = `-- name: DeletePlannedItemsByDate :exec
 DELETE FROM daily_plan_items WHERE plan_date = $1 AND status = 'planned'
 `
@@ -2772,7 +2916,7 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 }
 
 const endSession = `-- name: EndSession :one
-UPDATE learning_sessions SET ended_at = now(), journal_id = $1
+UPDATE sessions SET ended_at = now(), journal_id = $1
 WHERE id = $2 AND ended_at IS NULL
 RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
 `
@@ -2782,9 +2926,9 @@ type EndSessionParams struct {
 	ID        uuid.UUID `json:"id"`
 }
 
-func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (LearningSession, error) {
+func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (Session, error) {
 	row := q.db.QueryRow(ctx, endSession, arg.JournalID, arg.ID)
-	var i LearningSession
+	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
@@ -3144,10 +3288,10 @@ func (q *Queries) FindOrCreateConcept(ctx context.Context, arg FindOrCreateConce
 }
 
 const findOrCreateItem = `-- name: FindOrCreateItem :one
-INSERT INTO learning_items (domain, title, external_id, difficulty)
+INSERT INTO items (domain, title, external_id, difficulty)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
-DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, learning_items.difficulty), updated_at = now()
+DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, items.difficulty), updated_at = now()
 RETURNING id, domain, title, external_id, difficulty, note_id, content_id, project_id, metadata, created_at, updated_at
 `
 
@@ -3159,14 +3303,14 @@ type FindOrCreateItemParams struct {
 }
 
 // Upsert a learning item by domain + external_id (if present) or domain + title.
-func (q *Queries) FindOrCreateItem(ctx context.Context, arg FindOrCreateItemParams) (LearningItem, error) {
+func (q *Queries) FindOrCreateItem(ctx context.Context, arg FindOrCreateItemParams) (Item, error) {
 	row := q.db.QueryRow(ctx, findOrCreateItem,
 		arg.Domain,
 		arg.Title,
 		arg.ExternalID,
 		arg.Difficulty,
 	)
-	var i LearningItem
+	var i Item
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
@@ -3726,8 +3870,8 @@ SELECT ir.id AS relation_id, ir.relation_type,
        src.id AS source_id, src.title AS source_title, src.domain AS source_domain,
        tgt.id AS target_id, tgt.title AS target_title, tgt.domain AS target_domain
 FROM item_relations ir
-JOIN learning_items src ON src.id = ir.source_item_id
-JOIN learning_items tgt ON tgt.id = ir.target_item_id
+JOIN items src ON src.id = ir.source_item_id
+JOIN items tgt ON tgt.id = ir.target_item_id
 WHERE ($1::text IS NULL OR src.domain = $1)
 ORDER BY ir.created_at DESC
 LIMIT $2
@@ -4906,6 +5050,265 @@ func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksW
 	return items, nil
 }
 
+const plan = `-- name: Plan :one
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
+FROM plans WHERE id = $1
+`
+
+func (q *Queries) Plan(ctx context.Context, id uuid.UUID) (Plan, error) {
+	row := q.db.QueryRow(ctx, plan, id)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Domain,
+		&i.GoalID,
+		&i.Status,
+		&i.TargetCount,
+		&i.PlanConfig,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const planItem = `-- name: PlanItem :one
+SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
+FROM plan_items WHERE id = $1
+`
+
+func (q *Queries) PlanItem(ctx context.Context, id uuid.UUID) (PlanItem, error) {
+	row := q.db.QueryRow(ctx, planItem, id)
+	var i PlanItem
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.LearningItemID,
+		&i.Position,
+		&i.Status,
+		&i.Phase,
+		&i.SubstitutedBy,
+		&i.Reason,
+		&i.AddedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const planItems = `-- name: PlanItems :many
+SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
+FROM plan_items WHERE plan_id = $1
+ORDER BY position
+`
+
+// All items in a plan, ordered by position.
+func (q *Queries) PlanItems(ctx context.Context, planID uuid.UUID) ([]PlanItem, error) {
+	rows, err := q.db.Query(ctx, planItems, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PlanItem{}
+	for rows.Next() {
+		var i PlanItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.LearningItemID,
+			&i.Position,
+			&i.Status,
+			&i.Phase,
+			&i.SubstitutedBy,
+			&i.Reason,
+			&i.AddedAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const planItemsByLearningItem = `-- name: PlanItemsByLearningItem :many
+SELECT lpi.id, lpi.plan_id, lpi.learning_item_id, lpi.position, lpi.status, lpi.phase,
+       lpi.substituted_by, lpi.reason, lpi.added_at, lpi.completed_at,
+       lp.title AS plan_title
+FROM plan_items lpi
+JOIN plans lp ON lp.id = lpi.plan_id
+WHERE lpi.learning_item_id = $1
+  AND lp.status = 'active'
+`
+
+type PlanItemsByLearningItemRow struct {
+	ID             uuid.UUID  `json:"id"`
+	PlanID         uuid.UUID  `json:"plan_id"`
+	LearningItemID uuid.UUID  `json:"learning_item_id"`
+	Position       int32      `json:"position"`
+	Status         string     `json:"status"`
+	Phase          *string    `json:"phase"`
+	SubstitutedBy  *uuid.UUID `json:"substituted_by"`
+	Reason         *string    `json:"reason"`
+	AddedAt        time.Time  `json:"added_at"`
+	CompletedAt    *time.Time `json:"completed_at"`
+	PlanTitle      string     `json:"plan_title"`
+}
+
+// Find plan items for a learning_item across ACTIVE plans only.
+// Used by record_attempt to provide plan context. Excludes draft/paused/completed/abandoned.
+func (q *Queries) PlanItemsByLearningItem(ctx context.Context, learningItemID uuid.UUID) ([]PlanItemsByLearningItemRow, error) {
+	rows, err := q.db.Query(ctx, planItemsByLearningItem, learningItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PlanItemsByLearningItemRow{}
+	for rows.Next() {
+		var i PlanItemsByLearningItemRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.LearningItemID,
+			&i.Position,
+			&i.Status,
+			&i.Phase,
+			&i.SubstitutedBy,
+			&i.Reason,
+			&i.AddedAt,
+			&i.CompletedAt,
+			&i.PlanTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const planProgress = `-- name: PlanProgress :one
+SELECT
+    count(*)::int AS total,
+    count(*) FILTER (WHERE status = 'completed')::int AS completed,
+    count(*) FILTER (WHERE status = 'skipped')::int AS skipped,
+    count(*) FILTER (WHERE status = 'substituted')::int AS substituted,
+    count(*) FILTER (WHERE status = 'planned')::int AS remaining
+FROM plan_items WHERE plan_id = $1
+`
+
+type PlanProgressRow struct {
+	Total       int32 `json:"total"`
+	Completed   int32 `json:"completed"`
+	Skipped     int32 `json:"skipped"`
+	Substituted int32 `json:"substituted"`
+	Remaining   int32 `json:"remaining"`
+}
+
+// Aggregate progress stats for a plan.
+func (q *Queries) PlanProgress(ctx context.Context, planID uuid.UUID) (PlanProgressRow, error) {
+	row := q.db.QueryRow(ctx, planProgress, planID)
+	var i PlanProgressRow
+	err := row.Scan(
+		&i.Total,
+		&i.Completed,
+		&i.Skipped,
+		&i.Substituted,
+		&i.Remaining,
+	)
+	return i, err
+}
+
+const plansByDomain = `-- name: PlansByDomain :many
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
+FROM plans
+WHERE domain = $1
+  AND ($2::text IS NULL OR status = $2)
+ORDER BY created_at DESC
+`
+
+type PlansByDomainParams struct {
+	Domain string  `json:"domain"`
+	Status *string `json:"status"`
+}
+
+// Filter plans by domain, optionally by status.
+func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, plansByDomain, arg.Domain, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Domain,
+			&i.GoalID,
+			&i.Status,
+			&i.TargetCount,
+			&i.PlanConfig,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const plansByGoal = `-- name: PlansByGoal :many
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
+FROM plans WHERE goal_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) PlansByGoal(ctx context.Context, goalID *uuid.UUID) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, plansByGoal, goalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Domain,
+			&i.GoalID,
+			&i.Status,
+			&i.TargetCount,
+			&i.PlanConfig,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const projectByAlias = `-- name: ProjectByAlias :one
 SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
@@ -5839,7 +6242,7 @@ func (q *Queries) RecentReports(ctx context.Context, arg RecentReportsParams) ([
 
 const recentSessions = `-- name: RecentSessions :many
 SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM learning_sessions
+FROM sessions
 WHERE ($1::text IS NULL OR domain = $1)
   AND started_at >= $2
 ORDER BY started_at DESC
@@ -5852,15 +6255,15 @@ type RecentSessionsParams struct {
 	MaxResults int32     `json:"max_results"`
 }
 
-func (q *Queries) RecentSessions(ctx context.Context, arg RecentSessionsParams) ([]LearningSession, error) {
+func (q *Queries) RecentSessions(ctx context.Context, arg RecentSessionsParams) ([]Session, error) {
 	rows, err := q.db.Query(ctx, recentSessions, arg.Domain, arg.Since, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LearningSession{}
+	items := []Session{}
 	for rows.Next() {
-		var i LearningSession
+		var i Session
 		if err := rows.Scan(
 			&i.ID,
 			&i.Domain,
@@ -6196,7 +6599,7 @@ const retrievalQueue = `-- name: RetrievalQueue :many
 SELECT rc.id AS card_id, rc.due,
        li.id AS item_id, li.title, li.domain, li.difficulty, li.external_id
 FROM review_cards rc
-JOIN learning_items li ON li.id = rc.learning_item_id
+JOIN items li ON li.id = rc.learning_item_id
 WHERE rc.due <= $1
   AND ($2::text IS NULL OR li.domain = $2)
 ORDER BY rc.due ASC
@@ -6825,12 +7228,12 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Sea
 
 const sessionByID = `-- name: SessionByID :one
 SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM learning_sessions WHERE id = $1
+FROM sessions WHERE id = $1
 `
 
-func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (LearningSession, error) {
+func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (Session, error) {
 	row := q.db.QueryRow(ctx, sessionByID, id)
-	var i LearningSession
+	var i Session
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
@@ -6849,7 +7252,7 @@ const sessionTimeline = `-- name: SessionTimeline :many
 SELECT ls.id, ls.domain, ls.session_mode, ls.started_at, ls.ended_at,
        COUNT(a.id) AS attempt_count,
        COUNT(*) FILTER (WHERE a.outcome IN ('solved_independent', 'completed')) AS success_count
-FROM learning_sessions ls
+FROM sessions ls
 LEFT JOIN attempts a ON a.session_id = ls.id
 WHERE ($1::text IS NULL OR ls.domain = $1)
   AND ls.started_at >= $2
@@ -8188,6 +8591,92 @@ type UpdateNoteEmbeddingParams struct {
 func (q *Queries) UpdateNoteEmbedding(ctx context.Context, arg UpdateNoteEmbeddingParams) error {
 	_, err := q.db.Exec(ctx, updateNoteEmbedding, arg.ID, arg.Embedding)
 	return err
+}
+
+const updatePlanItemPosition = `-- name: UpdatePlanItemPosition :execrows
+UPDATE plan_items SET position = $1 WHERE id = $2
+`
+
+type UpdatePlanItemPositionParams struct {
+	Position int32     `json:"position"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) UpdatePlanItemPosition(ctx context.Context, arg UpdatePlanItemPositionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePlanItemPosition, arg.Position, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updatePlanItemStatus = `-- name: UpdatePlanItemStatus :one
+UPDATE plan_items
+SET status = $1, reason = $2, completed_at = $3, substituted_by = $4
+WHERE id = $5
+RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
+`
+
+type UpdatePlanItemStatusParams struct {
+	Status        string     `json:"status"`
+	Reason        *string    `json:"reason"`
+	CompletedAt   *time.Time `json:"completed_at"`
+	SubstitutedBy *uuid.UUID `json:"substituted_by"`
+	ID            uuid.UUID  `json:"id"`
+}
+
+func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemStatusParams) (PlanItem, error) {
+	row := q.db.QueryRow(ctx, updatePlanItemStatus,
+		arg.Status,
+		arg.Reason,
+		arg.CompletedAt,
+		arg.SubstitutedBy,
+		arg.ID,
+	)
+	var i PlanItem
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.LearningItemID,
+		&i.Position,
+		&i.Status,
+		&i.Phase,
+		&i.SubstitutedBy,
+		&i.Reason,
+		&i.AddedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const updatePlanStatus = `-- name: UpdatePlanStatus :one
+UPDATE plans SET status = $1, updated_at = now()
+WHERE id = $2
+RETURNING id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
+`
+
+type UpdatePlanStatusParams struct {
+	Status string    `json:"status"`
+	ID     uuid.UUID `json:"id"`
+}
+
+func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusParams) (Plan, error) {
+	row := q.db.QueryRow(ctx, updatePlanStatus, arg.Status, arg.ID)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Domain,
+		&i.GoalID,
+		&i.Status,
+		&i.TargetCount,
+		&i.PlanConfig,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateProject = `-- name: UpdateProject :one

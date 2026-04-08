@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
@@ -29,7 +29,7 @@ type ReflectionContextOutput struct {
 	TodayPlan      *journal.Entry  `json:"today_plan,omitempty"`
 }
 
-func (s *Server) reflectionContext(ctx context.Context, _ *sdkmcp.CallToolRequest, input ReflectionContextInput) (*sdkmcp.CallToolResult, ReflectionContextOutput, error) {
+func (s *Server) reflectionContext(ctx context.Context, _ *mcp.CallToolRequest, input ReflectionContextInput) (*mcp.CallToolResult, ReflectionContextOutput, error) {
 	date := s.today()
 	if input.Date != nil && *input.Date != "" {
 		t, err := time.Parse(time.DateOnly, *input.Date)

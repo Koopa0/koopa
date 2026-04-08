@@ -86,6 +86,9 @@ If the AI is uncertain between two levels, it MUST pick the lower one.
 | Observation (high confidence) | — | — | — | Via record_attempt |
 | Observation (low confidence) | — | User confirm in conversation | — | — |
 | Content | — | Yes (create as draft) | — | — |
+| Learning plan (shell) | — | Always (propose_commitment) | — | — |
+| Learning plan item | Yes, via manage_plan | — | — | — |
+| Learning plan status | — | — | — | Via manage_plan (Claude's semantic judgment) |
 | Review card | — | — | — | System-managed (FSRS) |
 
 ### Entity transition ownership
@@ -102,6 +105,11 @@ If the AI is uncertain between two levels, it MUST pick the lower one.
 | Insight: unverified → verified/invalidated | User (AI may suggest with evidence) | track_insight |
 | Directive: → acknowledged | Target participant | acknowledge_directive |
 | Learning session: → ended | User or AI at natural end | end_session |
+| Learning plan: draft → active | User (via commit or manage_plan) | manage_plan(action=update_plan) |
+| Learning plan: active → paused/completed | User | manage_plan(action=update_plan) |
+| Learning plan: → abandoned | User | manage_plan(action=update_plan) |
+| Plan item: → completed | Claude's semantic judgment after successful attempt | manage_plan(action=update_item) |
+| Plan item: → skipped/substituted | User decision | manage_plan(action=update_item) |
 
 ---
 
@@ -296,15 +304,16 @@ when ALL conditions are met:
 
 | Tool | Actions | Justification |
 |------|---------|---------------|
-| propose_commitment | goal, project, milestone, directive, insight | Same workflow (propose→preview→commit), conceptually unified |
+| propose_commitment | goal, project, milestone, directive, insight, learning_plan | Same workflow (propose→preview→commit), conceptually unified |
 | advance_work | clarify, start, complete, defer, drop | Same entity (task), same lifecycle state machine |
 | manage_content | create, update, publish, bookmark_rss | Same entity (content), small action set |
 | manage_feeds | list, add, update, remove | Same entity (feed), small action set |
 | learning_dashboard | overview, mastery, weaknesses, retrieval, timeline, variations | Same domain (learning analytics), same filters, different projections |
+| manage_plan | add_items, remove_items, update_item, reorder, update_plan, progress | Same entity (learning_plan/items), 6 actions (at ceiling). Includes one read-only action (progress) — approved exception to read+write mixing because progress is intrinsic to the plan lifecycle |
 
 ### Prohibited multiplexer patterns
 
-- Combining read + write operations in one tool (except manage_feeds.list which is read-only)
+- Combining read + write operations in one tool (except manage_feeds.list which is read-only). Exception: a single read-only action within an otherwise write-oriented multiplexer is permitted when the read action is intrinsic to the entity lifecycle (e.g., plan progress within manage_plan).
 - Action sets > 6
 - Actions with fundamentally different input schemas (e.g., "search" + "create" + "delete" in one tool)
 

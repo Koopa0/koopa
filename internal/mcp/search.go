@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/note"
@@ -42,7 +42,7 @@ type SearchKnowledgeOutput struct {
 	Query   string                  `json:"query"`
 }
 
-func (s *Server) searchKnowledge(ctx context.Context, _ *sdkmcp.CallToolRequest, input SearchKnowledgeInput) (*sdkmcp.CallToolResult, SearchKnowledgeOutput, error) {
+func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, input SearchKnowledgeInput) (*mcp.CallToolResult, SearchKnowledgeOutput, error) {
 	if input.Query == "" {
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query is required")
 	}

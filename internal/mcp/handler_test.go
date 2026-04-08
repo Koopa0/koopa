@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/learning"
 )
@@ -23,7 +23,7 @@ func newTestServer() *Server {
 	}
 }
 
-func callHandler[I, O any](t *testing.T, handler func(context.Context, *sdkmcp.CallToolRequest, I) (*sdkmcp.CallToolResult, O, error), input I) (*sdkmcp.CallToolResult, O, error) {
+func callHandler[I, O any](t *testing.T, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error), input I) (*mcp.CallToolResult, O, error) {
 	t.Helper()
 	return handler(t.Context(), nil, input)
 }

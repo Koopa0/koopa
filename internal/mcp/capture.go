@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
@@ -29,7 +29,7 @@ type CaptureInboxOutput struct {
 }
 
 //nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
-func (s *Server) captureInbox(ctx context.Context, _ *sdkmcp.CallToolRequest, input CaptureInboxInput) (*sdkmcp.CallToolResult, CaptureInboxOutput, error) {
+func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input CaptureInboxInput) (*mcp.CallToolResult, CaptureInboxOutput, error) {
 	if input.Title == "" {
 		return nil, CaptureInboxOutput{}, fmt.Errorf("title is required")
 	}
