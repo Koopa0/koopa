@@ -9,18 +9,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	gofsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
 )
 
-// Store handles database operations for learning sessions, attempts, and observations.
+// Store handles database operations for learning sessions, attempts, observations, and FSRS review cards.
 type Store struct {
-	q *db.Queries
+	q     *db.Queries
+	sched *scheduler
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{q: db.New(dbtx)}
+	return &Store{q: db.New(dbtx), sched: newScheduler()}
 }
 
 // StartSession creates a new learning session. Fails if an active session exists.
@@ -400,4 +402,81 @@ func rowToSession(r *db.Session) *Session {
 		EndedAt:         r.EndedAt,
 		CreatedAt:       r.CreatedAt,
 	}
+}
+
+// --- FSRS review card operations ---
+
+// ReviewItem performs a spaced repetition review on a learning item's card.
+// If no card exists, one is created lazily. Returns the next due date.
+func (s *Store) ReviewItem(ctx context.Context, itemID uuid.UUID, outcome string, now time.Time) (time.Time, error) {
+	rating := RatingFromOutcome(outcome)
+
+	row, err := s.q.CardByLearningItem(ctx, &itemID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.createAndReviewCard(ctx, itemID, rating, now)
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("querying card for item %s: %w", itemID, err)
+	}
+
+	cardState, err := unmarshalCardState(row.CardState)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("unmarshaling card state for card %d: %w", row.ID, err)
+	}
+
+	updated, log := s.sched.review(cardState, rating, now)
+	state, err := marshalCardState(updated)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("marshaling card state: %w", err)
+	}
+
+	if _, err := s.q.UpdateCardState(ctx, db.UpdateCardStateParams{
+		CardState: state,
+		Due:       updated.Due,
+		ID:        row.ID,
+	}); err != nil {
+		return time.Time{}, fmt.Errorf("updating review card %d: %w", row.ID, err)
+	}
+
+	if err := s.insertReviewLog(ctx, row.ID, log, now); err != nil {
+		return time.Time{}, err
+	}
+
+	return updated.Due, nil
+}
+
+func (s *Store) createAndReviewCard(ctx context.Context, itemID uuid.UUID, rating gofsrs.Rating, now time.Time) (time.Time, error) {
+	newCard := s.sched.newCard()
+	updated, log := s.sched.review(newCard, rating, now)
+
+	state, err := marshalCardState(updated)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("marshaling card state: %w", err)
+	}
+
+	row, err := s.q.CreateCardForItem(ctx, db.CreateCardForItemParams{
+		LearningItemID: &itemID,
+		CardState:      state,
+		Due:            updated.Due,
+	})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("creating review card for item %s: %w", itemID, err)
+	}
+
+	if err := s.insertReviewLog(ctx, row.ID, log, now); err != nil {
+		return time.Time{}, err
+	}
+
+	return updated.Due, nil
+}
+
+func (s *Store) insertReviewLog(ctx context.Context, cardID int64, log gofsrs.ReviewLog, now time.Time) error {
+	return s.q.InsertReviewLog(ctx, db.InsertReviewLogParams{
+		CardID:        cardID,
+		Rating:        int32(log.Rating),
+		ScheduledDays: int32(log.ScheduledDays), //nolint:gosec // G115: FSRS values are small
+		ElapsedDays:   int32(log.ElapsedDays),   //nolint:gosec // G115: FSRS values are small
+		State:         int32(log.State),
+		ReviewedAt:    now,
+	})
 }

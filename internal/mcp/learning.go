@@ -154,6 +154,11 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 	recorded, pending := s.processObservations(ctx, attempt.ID, domain, input.Observations)
 
+	// Update FSRS review card based on attempt outcome.
+	if _, srsErr := s.learn.ReviewItem(ctx, itemID, string(outcome), time.Now()); srsErr != nil {
+		s.logger.Warn("record_attempt: fsrs review failed", "item_id", itemID, "error", srsErr)
+	}
+
 	// Query active plans containing this item (D3: plan context for Claude's judgment).
 	var planCtx []PlanContextItem
 	if planItems, pErr := s.plans.ItemsByLearningItem(ctx, itemID); pErr == nil {

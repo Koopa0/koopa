@@ -145,3 +145,29 @@ JOIN items tgt ON tgt.id = ir.target_item_id
 WHERE (sqlc.narg('domain')::text IS NULL OR src.domain = sqlc.narg('domain'))
 ORDER BY ir.created_at DESC
 LIMIT @max_results;
+
+-- ============================================================
+-- FSRS review cards + review logs
+-- ============================================================
+
+-- name: CardByLearningItem :one
+-- Get the review card for a learning item.
+SELECT * FROM review_cards WHERE learning_item_id = @learning_item_id;
+
+-- name: CreateCardForItem :one
+-- Create a new FSRS review card for a learning item.
+INSERT INTO review_cards (learning_item_id, card_state, due)
+VALUES (@learning_item_id, @card_state, @due)
+RETURNING *;
+
+-- name: UpdateCardState :one
+-- Update card state and due date after a review.
+UPDATE review_cards
+SET card_state = @card_state, due = @due, updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- name: InsertReviewLog :exec
+-- Append a review log entry after rating a card.
+INSERT INTO review_logs (card_id, rating, scheduled_days, elapsed_days, state, reviewed_at)
+VALUES (@card_id, @rating, @scheduled_days, @elapsed_days, @state, @reviewed_at);

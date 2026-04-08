@@ -698,6 +698,31 @@ func (q *Queries) BulkUpsertNoteLinks(ctx context.Context, arg BulkUpsertNoteLin
 	return err
 }
 
+const cardByLearningItem = `-- name: CardByLearningItem :one
+
+SELECT id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at FROM review_cards WHERE learning_item_id = $1
+`
+
+// ============================================================
+// FSRS review cards + review logs
+// ============================================================
+// Get the review card for a learning item.
+func (q *Queries) CardByLearningItem(ctx context.Context, learningItemID *uuid.UUID) (ReviewCard, error) {
+	row := q.db.QueryRow(ctx, cardByLearningItem, learningItemID)
+	var i ReviewCard
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.LearningItemID,
+		&i.TagID,
+		&i.CardState,
+		&i.Due,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const collectedData = `-- name: CollectedData :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
@@ -1589,6 +1614,35 @@ func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (A
 		&i.Metadata,
 		&i.AttemptedAt,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCardForItem = `-- name: CreateCardForItem :one
+INSERT INTO review_cards (learning_item_id, card_state, due)
+VALUES ($1, $2, $3)
+RETURNING id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at
+`
+
+type CreateCardForItemParams struct {
+	LearningItemID *uuid.UUID `json:"learning_item_id"`
+	CardState      []byte     `json:"card_state"`
+	Due            time.Time  `json:"due"`
+}
+
+// Create a new FSRS review card for a learning item.
+func (q *Queries) CreateCardForItem(ctx context.Context, arg CreateCardForItemParams) (ReviewCard, error) {
+	row := q.db.QueryRow(ctx, createCardForItem, arg.LearningItemID, arg.CardState, arg.Due)
+	var i ReviewCard
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.LearningItemID,
+		&i.TagID,
+		&i.CardState,
+		&i.Due,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -3601,6 +3655,33 @@ type InsertNoteTagsParams struct {
 
 func (q *Queries) InsertNoteTags(ctx context.Context, arg InsertNoteTagsParams) error {
 	_, err := q.db.Exec(ctx, insertNoteTags, arg.NoteID, arg.TagIds)
+	return err
+}
+
+const insertReviewLog = `-- name: InsertReviewLog :exec
+INSERT INTO review_logs (card_id, rating, scheduled_days, elapsed_days, state, reviewed_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertReviewLogParams struct {
+	CardID        int64     `json:"card_id"`
+	Rating        int32     `json:"rating"`
+	ScheduledDays int32     `json:"scheduled_days"`
+	ElapsedDays   int32     `json:"elapsed_days"`
+	State         int32     `json:"state"`
+	ReviewedAt    time.Time `json:"reviewed_at"`
+}
+
+// Append a review log entry after rating a card.
+func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams) error {
+	_, err := q.db.Exec(ctx, insertReviewLog,
+		arg.CardID,
+		arg.Rating,
+		arg.ScheduledDays,
+		arg.ElapsedDays,
+		arg.State,
+		arg.ReviewedAt,
+	)
 	return err
 }
 
@@ -8363,6 +8444,36 @@ func (q *Queries) UnverifiedInsights(ctx context.Context, maxResults int32) ([]I
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateCardState = `-- name: UpdateCardState :one
+UPDATE review_cards
+SET card_state = $1, due = $2, updated_at = now()
+WHERE id = $3
+RETURNING id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at
+`
+
+type UpdateCardStateParams struct {
+	CardState []byte    `json:"card_state"`
+	Due       time.Time `json:"due"`
+	ID        int64     `json:"id"`
+}
+
+// Update card state and due date after a review.
+func (q *Queries) UpdateCardState(ctx context.Context, arg UpdateCardStateParams) (ReviewCard, error) {
+	row := q.db.QueryRow(ctx, updateCardState, arg.CardState, arg.Due, arg.ID)
+	var i ReviewCard
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.LearningItemID,
+		&i.TagID,
+		&i.CardState,
+		&i.Due,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateCollectedFeedback = `-- name: UpdateCollectedFeedback :exec
