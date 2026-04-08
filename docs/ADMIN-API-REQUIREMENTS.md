@@ -65,7 +65,12 @@
     "pending_directives": 1,
     "unread_reports": 1,
     "due_reviews": 3,
-    "overdue_tasks": 1
+    "overdue_tasks": 1,
+    "stale_someday_count": 5
+  },
+  "reflection_context": {
+    "has_yesterday_reflection": true,
+    "reflection_excerpt": "決定把重心放在 admin redesign..."
   },
   "goal_pulse": [
     {
@@ -89,6 +94,9 @@
 - `today_plan`：`daily_plan_items WHERE planned_date = today`
 - `overdue_tasks`：`tasks WHERE due < today AND status NOT IN ('done', 'someday')`
 - `needs_attention`：各 domain 的 count 聚合
+  - `stale_someday_count`：`tasks WHERE status = 'someday' AND updated_at < now() - interval '30 days'`（GTD 要求定期審查 someday 項目，否則會無聲腐爛）
+- `reflection_context`：昨晚是否有 reflection journal？如有，提取摘要。讓使用者規劃今天時有昨日反思的 context
+  - `SELECT content FROM journal WHERE source = 'human' AND kind = 'reflection' AND created_at::date = yesterday ORDER BY created_at DESC LIMIT 1`
 - `goal_pulse`：`goals WHERE status = 'in-progress'` + milestone count
 
 ---
@@ -793,6 +801,11 @@
 
 ## 9. Studio — IPC 協作（Phase 3）
 
+> **Schema 審計發現**：directives 表目前沒有 `status` / `resolved_at` 欄位。
+> 完成狀態從 report metadata (`follow_up_needed`) 推斷。
+> **建議**：在 directives 表加入 `resolved_at TIMESTAMPTZ` 欄位，或在 backend 用 JOIN 推斷。
+> 前端 API 需要一個明確的 `lifecycle_status` 欄位（backend 負責計算）。
+
 ### GET /api/admin/studio/overview
 
 **用途**：IPC 全局狀態。
@@ -800,8 +813,17 @@
 **Response**：
 ```json
 {
-  "pending_directives": [
-    { "id": "...", "title": "...", "target": "research-lab", "created_at": "...", "status": "pending" }
+  "open_directives": [
+    {
+      "id": "...",
+      "title": "...",
+      "target": "research-lab",
+      "created_at": "...",
+      "lifecycle_status": "pending" | "acknowledged" | "has_report" | "resolved",
+      "acknowledged_at": null,
+      "has_report": false,
+      "days_open": 3
+    }
   ],
   "unread_reports": [
     { "id": "...", "title": "...", "source": "research-lab", "directive_title": "...", "filed_at": "..." }
@@ -811,6 +833,12 @@
   ]
 }
 ```
+
+**Backend 邏輯**（`lifecycle_status` 計算）：
+- `pending`：`acknowledged_at IS NULL`
+- `acknowledged`：`acknowledged_at IS NOT NULL AND 沒有 report`
+- `has_report`：`有 report 但 follow_up_needed = true`
+- `resolved`：`有 report 且 follow_up_needed = false`，或 `resolved_at IS NOT NULL`（如果加了這個欄位）
 
 ---
 

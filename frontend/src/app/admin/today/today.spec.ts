@@ -75,7 +75,9 @@ const MOCK_CONTEXT: MyDayContext = {
     unread_reports: 0,
     due_reviews: 3,
     overdue_tasks: 1,
+    stale_someday_count: 0,
   },
+  reflection_context: null,
   goal_pulse: [
     {
       id: 'goal-001',
@@ -236,6 +238,7 @@ describe('TodayComponent', () => {
           unread_reports: 0,
           due_reviews: 0,
           overdue_tasks: 0,
+          stale_someday_count: 0,
         },
       };
       todayService.getMyDayContext.mockReturnValue(of(cleanContext));

@@ -17,6 +17,7 @@ export interface MyDayContext {
   overdue_tasks: OverdueTask[];
   needs_attention: NeedsAttention;
   goal_pulse: GoalPulse[];
+  reflection_context: ReflectionContext | null;
 }
 
 export interface DailyPlanItem {
@@ -48,6 +49,13 @@ export interface NeedsAttention {
   unread_reports: number;
   due_reviews: number;
   overdue_tasks: number;
+  stale_someday_count: number;
+}
+
+/** 昨日反思 context — 讓使用者規劃時有反思基礎 */
+export interface ReflectionContext {
+  has_yesterday_reflection: boolean;
+  reflection_excerpt: string | null;
 }
 
 export interface GoalPulse {

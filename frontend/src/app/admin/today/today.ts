@@ -81,7 +81,8 @@ export class TodayComponent implements OnInit {
       n.pending_directives +
       n.unread_reports +
       n.due_reviews +
-      n.overdue_tasks
+      n.overdue_tasks +
+      n.stale_someday_count
     );
   });
   protected readonly totalPlannedMinutes = computed(() =>

@@ -25,6 +25,16 @@
     }
   </div>
 
+  <!-- 昨日反思 Context -->
+  @if (context()?.reflection_context?.has_yesterday_reflection) {
+  <div class="mb-6 rounded-sm border border-zinc-800 bg-zinc-900/30 px-4 py-3">
+    <p class="text-xs font-medium text-zinc-500 mb-1">昨日反思</p>
+    <p class="text-sm text-zinc-400 italic">
+      {{ context()?.reflection_context?.reflection_excerpt }}
+    </p>
+  </div>
+  }
+
   <!-- Overdue Banner -->
   @if (hasOverdue()) {
   <div
@@ -231,6 +241,20 @@
           <div class="text-xs text-zinc-600">待複習</div>
         </div>
       </div>
+      } @if (attn.stale_someday_count > 0) {
+      <a
+        routerLink="/admin/plan/tasks"
+        [queryParams]="{ status: 'someday' }"
+        class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400 no-underline transition-colors hover:border-zinc-700 hover:text-zinc-200"
+      >
+        <lucide-icon [img]="ClockIcon" [size]="16" class="text-zinc-500" />
+        <div>
+          <div class="font-medium text-zinc-300">
+            {{ attn.stale_someday_count }}
+          </div>
+          <div class="text-xs text-zinc-600">someday 待審查</div>
+        </div>
+      </a>
       }
     </div>
   </section>

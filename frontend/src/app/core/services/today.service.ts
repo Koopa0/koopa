@@ -110,6 +110,11 @@ const MOCK_TODAY: MyDayContext = {
     unread_reports: 0,
     due_reviews: 3,
     overdue_tasks: 1,
+    stale_someday_count: 5,
+  },
+  reflection_context: {
+    has_yesterday_reflection: true,
+    reflection_excerpt: '決定把重心放在 admin redesign，NATS 整合延後一週。',
   },
   goal_pulse: [
     {
