@@ -373,4 +373,50 @@
   }
 </div>
 
+} @else {
+
+<!-- 無資料或 API 錯誤 -->
+<div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+  <div class="mb-8">
+    <div class="flex items-center gap-3 mb-1">
+      <lucide-icon
+        [img]="SunIcon"
+        [size]="20"
+        class="text-amber-400"
+        aria-hidden="true"
+      />
+      <h1 class="text-lg font-semibold text-zinc-100">Today</h1>
+    </div>
+  </div>
+  <div
+    class="rounded-sm border border-dashed border-zinc-800 px-6 py-16 text-center"
+  >
+    <lucide-icon
+      [img]="SunIcon"
+      [size]="32"
+      class="mx-auto mb-3 text-zinc-700"
+      aria-hidden="true"
+    />
+    <p class="text-sm text-zinc-300 mb-1">今天還沒有安排任務</p>
+    <p class="text-xs text-zinc-500 mb-4">
+      從任務清單選取要做的事，或直接捕獲新想法
+    </p>
+    <div class="flex items-center justify-center gap-3">
+      <a
+        routerLink="/admin/plan/tasks"
+        class="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline hover:bg-zinc-700"
+      >
+        瀏覽任務
+        <lucide-icon [img]="ArrowRightIcon" [size]="14" aria-hidden="true" />
+      </a>
+      <a
+        routerLink="/admin/inbox"
+        class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-800 px-4 py-2 text-sm text-zinc-400 no-underline hover:border-zinc-700 hover:text-zinc-300"
+      >
+        捕獲想法
+      </a>
+    </div>
+  </div>
+</div>
+
 }
