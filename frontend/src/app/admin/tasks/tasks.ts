@@ -16,9 +16,11 @@ import {
   Clock,
   Zap,
   Search,
+  CalendarPlus,
 } from 'lucide-angular';
 import { FormsModule } from '@angular/forms';
 import { PlanService } from '../../core/services/plan.service';
+import { TodayService } from '../../core/services/today.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type {
   TaskBacklogItem,
@@ -36,6 +38,7 @@ type StatusFilter = 'all' | 'todo' | 'in-progress' | 'someday';
 })
 export class TasksComponent implements OnInit {
   private readonly planService = inject(PlanService);
+  private readonly todayService = inject(TodayService);
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -92,6 +95,7 @@ export class TasksComponent implements OnInit {
   protected readonly ClockIcon = Clock;
   protected readonly ZapIcon = Zap;
   protected readonly SearchIcon = Search;
+  protected readonly CalendarPlusIcon = CalendarPlus;
 
   ngOnInit(): void {
     this.loadTasks();
@@ -138,6 +142,23 @@ export class TasksComponent implements OnInit {
           );
         },
         error: () => this.notificationService.error('操作失敗'),
+      });
+  }
+
+  protected addToToday(taskId: string): void {
+    this.todayService
+      .planToday([{ task_id: taskId, position: 0 }])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.tasks.update((list) =>
+            list.map((t) =>
+              t.id === taskId ? { ...t, is_in_today_plan: true } : t,
+            ),
+          );
+          this.notificationService.success('已加入今日計劃');
+        },
+        error: () => this.notificationService.error('加入今日計劃失敗'),
       });
   }
 

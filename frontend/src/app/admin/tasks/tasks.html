@@ -95,6 +95,20 @@
       <div class="size-6"></div>
       }
 
+      <!-- 加入今日計劃 -->
+      @if (!task.is_in_today_plan && (task.status === 'todo' || task.status ===
+      'in-progress')) {
+      <button
+        type="button"
+        data-testid="task-add-today"
+        (click)="addToToday(task.id)"
+        aria-label="加入今日計劃"
+        class="shrink-0 rounded-xs p-1 text-zinc-600 transition-colors hover:text-sky-400"
+      >
+        <lucide-icon [img]="CalendarPlusIcon" [size]="14" aria-hidden="true" />
+      </button>
+      }
+
       <!-- 標題 -->
       <span class="flex-1 text-sm text-zinc-300 truncate min-w-0">
         {{ task.title }}

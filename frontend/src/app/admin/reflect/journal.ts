@@ -38,6 +38,8 @@ export class JournalComponent implements OnInit {
   protected readonly entries = signal<JournalEntry[]>([]);
   protected readonly isLoading = signal(true);
   protected readonly activeFilter = signal<JournalFilter>('all');
+  protected readonly composeKind = signal<JournalKind>('reflection');
+  protected readonly composeBody = signal('');
 
   protected readonly filteredEntries = computed(() => {
     const filter = this.activeFilter();
@@ -98,6 +100,34 @@ export class JournalComponent implements OnInit {
 
   protected setFilter(filter: JournalFilter): void {
     this.activeFilter.set(filter);
+  }
+
+  protected setComposeKind(kind: JournalKind): void {
+    this.composeKind.set(kind);
+  }
+
+  protected onComposeInput(event: Event): void {
+    this.composeBody.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected submitJournal(): void {
+    const body = this.composeBody().trim();
+    if (!body) return;
+
+    this.reflectService
+      .writeJournal({ kind: this.composeKind(), body })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.entries.update((list) => [
+            { kind: this.composeKind(), body, date: new Date().toISOString() },
+            ...list,
+          ]);
+          this.composeBody.set('');
+          this.notificationService.success('日誌已儲存');
+        },
+        error: () => this.notificationService.error('儲存失敗'),
+      });
   }
 
   protected getKindIcon(kind: string): typeof ScrollText {

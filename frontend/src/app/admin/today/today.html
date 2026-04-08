@@ -15,7 +15,12 @@
   <!-- Morning Header -->
   <div class="mb-8">
     <div class="flex items-center gap-3 mb-1">
-      <lucide-icon [img]="SunIcon" [size]="20" class="text-amber-400" />
+      <lucide-icon
+        [img]="SunIcon"
+        [size]="20"
+        class="text-amber-400"
+        aria-hidden="true"
+      />
       <h1 class="text-lg font-semibold text-zinc-100">
         {{ todayDate() | date: 'EEEE, MMMM d' }}
       </h1>
@@ -42,7 +47,7 @@
     class="mb-6 rounded-sm border border-red-900/50 bg-red-950/30 px-4 py-3"
   >
     <div class="flex items-center gap-2 text-sm font-medium text-red-400">
-      <lucide-icon [img]="AlertTriangleIcon" [size]="16" />
+      <lucide-icon [img]="AlertTriangleIcon" [size]="16" aria-hidden="true" />
       <span>{{ overdueTasks().length }} 個任務已逾期</span>
     </div>
     <div class="mt-2 space-y-1.5 pl-6">
@@ -124,7 +129,7 @@
       </h2>
       @if (totalPlannedMinutes() > 0) {
       <span class="flex items-center gap-1 text-xs text-zinc-600">
-        <lucide-icon [img]="ClockIcon" [size]="12" />
+        <lucide-icon [img]="ClockIcon" [size]="12" aria-hidden="true" />
         {{ totalPlannedMinutes() }} min
       </span>
       }
@@ -141,7 +146,7 @@
         class="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
       >
         從任務清單選取
-        <lucide-icon [img]="ArrowRightIcon" [size]="14" />
+        <lucide-icon [img]="ArrowRightIcon" [size]="14" aria-hidden="true" />
       </a>
     </div>
     } @else {
@@ -149,7 +154,7 @@
       @for (item of todayPlan(); track item.id) {
       <div
         data-testid="plan-item"
-        class="flex items-center gap-3 rounded-sm border px-4 py-2.5 transition-colors"
+        class="group flex items-center gap-3 rounded-sm border px-4 py-2.5 transition-colors"
         [class]="item.status === 'done'
           ? 'border-zinc-800/50 bg-zinc-900/30'
           : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'"
@@ -167,7 +172,7 @@
           [attr.aria-label]="'完成 ' + item.title"
         >
           @if (item.status === 'done') {
-          <lucide-icon [img]="CheckIcon" [size]="12" />
+          <lucide-icon [img]="CheckIcon" [size]="12" aria-hidden="true" />
           }
         </button>
 
@@ -193,6 +198,19 @@
           {{ item.estimated_minutes }}m
         </span>
         }
+
+        <!-- 延後按鈕 -->
+        @if (item.status !== 'done') {
+        <button
+          type="button"
+          data-testid="plan-defer-btn"
+          (click)="resolvePlanItem(item.id, 'defer')"
+          aria-label="延後此項目"
+          class="shrink-0 rounded-xs p-0.5 text-zinc-600 transition-colors hover:text-amber-400 opacity-0 group-hover:opacity-100"
+        >
+          <lucide-icon [img]="RotateCcwIcon" [size]="12" aria-hidden="true" />
+        </button>
+        }
       </div>
       }
     </div>
@@ -213,7 +231,12 @@
         routerLink="/admin/inbox"
         class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400 no-underline transition-colors hover:border-zinc-700 hover:text-zinc-200"
       >
-        <lucide-icon [img]="InboxIcon" [size]="16" class="text-amber-400" />
+        <lucide-icon
+          [img]="InboxIcon"
+          [size]="16"
+          class="text-amber-400"
+          aria-hidden="true"
+        />
         <div>
           <div class="font-medium text-zinc-300">{{ attn.inbox_count }}</div>
           <div class="text-xs text-zinc-600">未澄清 inbox</div>
@@ -223,7 +246,12 @@
       <div
         class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400"
       >
-        <lucide-icon [img]="FileTextIcon" [size]="16" class="text-sky-400" />
+        <lucide-icon
+          [img]="FileTextIcon"
+          [size]="16"
+          class="text-sky-400"
+          aria-hidden="true"
+        />
         <div>
           <div class="font-medium text-zinc-300">
             {{ attn.pending_directives }}
@@ -235,7 +263,12 @@
       <div
         class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400"
       >
-        <lucide-icon [img]="BookOpenIcon" [size]="16" class="text-violet-400" />
+        <lucide-icon
+          [img]="BookOpenIcon"
+          [size]="16"
+          class="text-violet-400"
+          aria-hidden="true"
+        />
         <div>
           <div class="font-medium text-zinc-300">{{ attn.due_reviews }}</div>
           <div class="text-xs text-zinc-600">待複習</div>
@@ -247,7 +280,12 @@
         [queryParams]="{ status: 'someday' }"
         class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400 no-underline transition-colors hover:border-zinc-700 hover:text-zinc-200"
       >
-        <lucide-icon [img]="ClockIcon" [size]="16" class="text-zinc-500" />
+        <lucide-icon
+          [img]="ClockIcon"
+          [size]="16"
+          class="text-zinc-500"
+          aria-hidden="true"
+        />
         <div>
           <div class="font-medium text-zinc-300">
             {{ attn.stale_someday_count }}
@@ -282,7 +320,14 @@
       >
         <!-- 進度 bar -->
         <div class="w-16 shrink-0">
-          <div class="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+          <div
+            class="h-1.5 rounded-full bg-zinc-800 overflow-hidden"
+            role="progressbar"
+            [attr.aria-valuenow]="goal.milestones_done"
+            aria-valuemin="0"
+            [attr.aria-valuemax]="goal.milestones_total"
+            [attr.aria-label]="goal.title + ' 目標進度'"
+          >
             <div
               class="h-full rounded-full bg-emerald-500 transition-all"
               [style.width.%]="getMilestoneProgress(goal)"
@@ -317,6 +362,7 @@
           [img]="ChevronRightIcon"
           [size]="14"
           class="shrink-0 text-zinc-700"
+          aria-hidden="true"
         />
       </a>
       }

@@ -216,7 +216,7 @@
               rows="2"
               placeholder="這個假設是什麼？"
               [value]="insightHypothesis()"
-              (input)="insightHypothesis.set($any($event.target).value)"
+              (input)="onInsightHypothesisInput($event)"
               class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
             ></textarea>
           </div>
@@ -232,7 +232,7 @@
               rows="2"
               placeholder="什麼情況會推翻這個假設？"
               [value]="insightInvalidation()"
-              (input)="insightInvalidation.set($any($event.target).value)"
+              (input)="onInsightInvalidationInput($event)"
               class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
             ></textarea>
           </div>
@@ -248,7 +248,7 @@
               rows="2"
               placeholder="初始證據（選填）"
               [value]="insightEvidence()"
-              (input)="insightEvidence.set($any($event.target).value)"
+              (input)="onInsightEvidenceInput($event)"
               class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
             ></textarea>
           </div>
@@ -292,7 +292,7 @@
               rows="3"
               placeholder="寫下你的想法..."
               [value]="journalBody()"
-              (input)="journalBody.set($any($event.target).value)"
+              (input)="onJournalBodyInput($event)"
               class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
             ></textarea>
           </div>

@@ -122,6 +122,23 @@ export class InboxComponent implements OnInit {
     return this.items().find((i) => i.id === id) ?? null;
   });
 
+  // Typed event handlers for textarea inputs
+  protected onInsightHypothesisInput(event: Event): void {
+    this.insightHypothesis.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected onInsightInvalidationInput(event: Event): void {
+    this.insightInvalidation.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected onInsightEvidenceInput(event: Event): void {
+    this.insightEvidence.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected onJournalBodyInput(event: Event): void {
+    this.journalBody.set((event.target as HTMLTextAreaElement).value);
+  }
+
   // Icons
   protected readonly InboxIcon = Inbox;
   protected readonly PlusIcon = Plus;

@@ -178,6 +178,24 @@ export class TodayComponent implements OnInit {
       });
   }
 
+  protected resolvePlanItem(itemId: string, action: 'defer' | 'drop'): void {
+    this.todayService
+      .resolveDailyItem(itemId, action)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.context.update((ctx) => {
+            if (!ctx) return ctx;
+            return {
+              ...ctx,
+              today_plan: ctx.today_plan.filter((i) => i.id !== itemId),
+            };
+          });
+        },
+        error: () => this.notificationService.error('操作失敗'),
+      });
+  }
+
   protected completePlanItem(itemId: string): void {
     this.todayService
       .resolveDailyItem(itemId, 'complete')

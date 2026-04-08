@@ -18,6 +18,48 @@
     <p class="mt-1 text-sm text-zinc-500">計劃、反思、脈絡記錄</p>
   </div>
 
+  <!-- Quick Compose -->
+  <div
+    class="mb-5 rounded-sm border border-zinc-800 bg-zinc-900/50 p-4"
+    data-testid="journal-compose"
+  >
+    <div class="mb-2 flex gap-1">
+      @for (kind of filterTabs.slice(1); track kind.key) {
+      <button
+        type="button"
+        (click)="setComposeKind($any(kind.key))"
+        [attr.aria-pressed]="composeKind() === kind.key"
+        class="rounded-xs px-2 py-0.5 text-[10px] font-medium transition-colors"
+        [class]="composeKind() === kind.key
+          ? (KIND_CLASSES[$any(kind.key)] ?? 'bg-zinc-800 text-zinc-200')
+          : 'bg-zinc-800/50 text-zinc-600 hover:text-zinc-400'"
+      >
+        {{ kind.label }}
+      </button>
+      }
+    </div>
+    <textarea
+      data-testid="journal-compose-input"
+      [value]="composeBody()"
+      (input)="onComposeInput($event)"
+      placeholder="寫下想法..."
+      rows="2"
+      aria-label="撰寫日誌"
+      class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
+    ></textarea>
+    <div class="mt-2 flex justify-end">
+      <button
+        type="button"
+        data-testid="journal-compose-submit"
+        (click)="submitJournal()"
+        [disabled]="!composeBody().trim()"
+        class="rounded-sm bg-zinc-700 px-4 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        儲存
+      </button>
+    </div>
+  </div>
+
   <!-- Filter Tabs -->
   <div class="mb-5 flex gap-1 rounded-sm bg-zinc-900 p-0.5">
     @for (tab of filterTabs; track tab.key) {
