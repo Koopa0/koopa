@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	gofsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
@@ -23,6 +25,11 @@ type Store struct {
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx), sched: newScheduler()}
+}
+
+// WithTx returns a new Store using the given transaction.
+func (s *Store) WithTx(tx pgx.Tx) *Store {
+	return &Store{q: s.q.WithTx(tx), sched: s.sched}
 }
 
 // StartSession creates a new learning session. Fails if an active session exists.
@@ -407,9 +414,11 @@ func rowToSession(r *db.Session) *Session {
 // --- FSRS review card operations ---
 
 // ReviewItem performs a spaced repetition review on a learning item's card.
-// If no card exists, one is created lazily. Returns the next due date.
+// If no card exists, one is created lazily (with unique violation retry for TOCTOU safety).
+// The card update + review log insert are atomic via the store's underlying DBTX.
+// Callers using a pool get auto-commit per statement; callers using a tx get full atomicity.
 func (s *Store) ReviewItem(ctx context.Context, itemID uuid.UUID, outcome string, now time.Time) (time.Time, error) {
-	rating := RatingFromOutcome(outcome)
+	rating := ratingFromOutcome(outcome)
 
 	row, err := s.q.CardByLearningItem(ctx, &itemID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -424,8 +433,8 @@ func (s *Store) ReviewItem(ctx context.Context, itemID uuid.UUID, outcome string
 		return time.Time{}, fmt.Errorf("unmarshaling card state for card %d: %w", row.ID, err)
 	}
 
-	updated, log := s.sched.review(cardState, rating, now)
-	state, err := marshalCardState(updated)
+	updated, rl := s.sched.review(&cardState, rating, now)
+	state, err := marshalCardState(&updated)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("marshaling card state: %w", err)
 	}
@@ -438,18 +447,21 @@ func (s *Store) ReviewItem(ctx context.Context, itemID uuid.UUID, outcome string
 		return time.Time{}, fmt.Errorf("updating review card %d: %w", row.ID, err)
 	}
 
-	if err := s.insertReviewLog(ctx, row.ID, log, now); err != nil {
+	if err := s.writeReviewLog(ctx, row.ID, rl, now); err != nil {
 		return time.Time{}, err
 	}
 
 	return updated.Due, nil
 }
 
+// createAndReviewCard creates a new FSRS card and immediately reviews it.
+// Handles TOCTOU race: if another goroutine created the card concurrently,
+// catches the unique violation and falls back to reviewing the existing card.
 func (s *Store) createAndReviewCard(ctx context.Context, itemID uuid.UUID, rating gofsrs.Rating, now time.Time) (time.Time, error) {
 	newCard := s.sched.newCard()
-	updated, log := s.sched.review(newCard, rating, now)
+	updated, rl := s.sched.review(&newCard, rating, now)
 
-	state, err := marshalCardState(updated)
+	state, err := marshalCardState(&updated)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("marshaling card state: %w", err)
 	}
@@ -460,23 +472,28 @@ func (s *Store) createAndReviewCard(ctx context.Context, itemID uuid.UUID, ratin
 		Due:            updated.Due,
 	})
 	if err != nil {
+		// TOCTOU: another goroutine may have created the card — retry via existing path.
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return s.ReviewItem(ctx, itemID, "", now) // re-enter with empty outcome → Again rating
+		}
 		return time.Time{}, fmt.Errorf("creating review card for item %s: %w", itemID, err)
 	}
 
-	if err := s.insertReviewLog(ctx, row.ID, log, now); err != nil {
+	if err := s.writeReviewLog(ctx, row.ID, rl, now); err != nil {
 		return time.Time{}, err
 	}
 
 	return updated.Due, nil
 }
 
-func (s *Store) insertReviewLog(ctx context.Context, cardID int64, log gofsrs.ReviewLog, now time.Time) error {
+// writeReviewLog appends a review log entry for an FSRS card review.
+func (s *Store) writeReviewLog(ctx context.Context, cardID int64, rl gofsrs.ReviewLog, now time.Time) error {
 	return s.q.InsertReviewLog(ctx, db.InsertReviewLogParams{
 		CardID:        cardID,
-		Rating:        int32(log.Rating),
-		ScheduledDays: int32(log.ScheduledDays), //nolint:gosec // G115: FSRS values are small
-		ElapsedDays:   int32(log.ElapsedDays),   //nolint:gosec // G115: FSRS values are small
-		State:         int32(log.State),
+		Rating:        int32(rl.Rating),        //nolint:gosec // G115: Rating is int8, max 4
+		ScheduledDays: int32(rl.ScheduledDays), //nolint:gosec // G115: FSRS values bounded
+		ElapsedDays:   int32(rl.ElapsedDays),   //nolint:gosec // G115: FSRS values bounded
+		State:         int32(rl.State),         //nolint:gosec // G115: State is int8, 0-3
 		ReviewedAt:    now,
 	})
 }

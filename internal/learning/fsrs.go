@@ -7,14 +7,6 @@ import (
 	gofsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 )
 
-// FSRS rating constants re-exported for callers.
-const (
-	RatingAgain = gofsrs.Again // 1 — forgot
-	RatingHard  = gofsrs.Hard  // 2 — partial recall
-	RatingGood  = gofsrs.Good  // 3 — remembered
-	RatingEasy  = gofsrs.Easy  // 4 — effortless
-)
-
 // scheduler wraps the FSRS algorithm with default parameters.
 type scheduler struct {
 	fsrs *gofsrs.FSRS
@@ -30,13 +22,14 @@ func (s *scheduler) newCard() gofsrs.Card {
 }
 
 // review applies a rating to a card and returns the updated state + review log.
-func (s *scheduler) review(card gofsrs.Card, rating gofsrs.Rating, now time.Time) (gofsrs.Card, gofsrs.ReviewLog) {
-	info := s.fsrs.Next(card, now, rating)
+// Accepts pointer to avoid copying the 104-byte Card struct.
+func (s *scheduler) review(card *gofsrs.Card, rating gofsrs.Rating, now time.Time) (gofsrs.Card, gofsrs.ReviewLog) {
+	info := s.fsrs.Next(*card, now, rating) // gofsrs.Next takes value — dereference here
 	return info.Card, info.ReviewLog
 }
 
 // marshalCardState serializes an FSRS Card to JSON for card_state JSONB column.
-func marshalCardState(card gofsrs.Card) (json.RawMessage, error) {
+func marshalCardState(card *gofsrs.Card) (json.RawMessage, error) {
 	return json.Marshal(card)
 }
 
@@ -47,9 +40,11 @@ func unmarshalCardState(data json.RawMessage) (gofsrs.Card, error) {
 	return card, err
 }
 
-// RatingFromOutcome maps an attempt outcome string to an FSRS rating.
+// ratingFromOutcome maps an attempt outcome string to an FSRS rating.
 // This bridges the learning domain (attempt outcomes) and the SRS domain (ratings).
-func RatingFromOutcome(outcome string) gofsrs.Rating {
+// Default is Again (forgot) — unknown outcomes stay in the near-term review queue
+// rather than being silently promoted to "remembered."
+func ratingFromOutcome(outcome string) gofsrs.Rating {
 	switch outcome {
 	case "solved_independent", "completed":
 		return gofsrs.Good
@@ -58,6 +53,6 @@ func RatingFromOutcome(outcome string) gofsrs.Rating {
 	case "incomplete", "gave_up":
 		return gofsrs.Again
 	default:
-		return gofsrs.Good
+		return gofsrs.Again
 	}
 }
