@@ -34,7 +34,6 @@ const MOCK_INBOX: InboxResponse = {
 };
 
 describe('InboxComponent', () => {
-  let component: InboxComponent;
   let fixture: ComponentFixture<InboxComponent>;
   let inboxService: {
     getInbox: ReturnType<typeof vi.fn>;
@@ -54,15 +53,13 @@ describe('InboxComponent', () => {
           age_hours: 0,
         }),
       ),
-      clarify: vi
-        .fn()
-        .mockReturnValue(
-          of({
-            result: 'clarified' as const,
-            entity_type: 'task',
-            entity_id: 'task-123',
-          }),
-        ),
+      clarify: vi.fn().mockReturnValue(
+        of({
+          result: 'clarified' as const,
+          entity_type: 'task',
+          entity_id: 'task-123',
+        }),
+      ),
     };
 
     await TestBed.configureTestingModule({
@@ -77,7 +74,6 @@ describe('InboxComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(InboxComponent);
-    component = fixture.componentInstance;
     fixture.detectChanges();
   });
 

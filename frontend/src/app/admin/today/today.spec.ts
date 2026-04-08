@@ -92,7 +92,6 @@ const MOCK_CONTEXT: MyDayContext = {
 };
 
 describe('TodayComponent', () => {
-  let component: TodayComponent;
   let fixture: ComponentFixture<TodayComponent>;
   let todayService: {
     getMyDayContext: ReturnType<typeof vi.fn>;
@@ -117,7 +116,6 @@ describe('TodayComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(TodayComponent);
-    component = fixture.componentInstance;
     fixture.detectChanges();
   });
 

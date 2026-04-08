@@ -29,13 +29,7 @@ import {
 } from 'lucide-angular';
 import { TodayService } from '../../core/services/today.service';
 import { NotificationService } from '../../core/services/notification.service';
-import type {
-  MyDayContext,
-  DailyPlanItem,
-  GoalPulse,
-  OverdueTask,
-  NeedsAttention,
-} from '../../core/models/admin.model';
+import type { MyDayContext, GoalPulse } from '../../core/models/admin.model';
 
 @Component({
   selector: 'app-today',

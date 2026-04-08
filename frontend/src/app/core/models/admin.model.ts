@@ -2,11 +2,9 @@
 
 import type {
   ContentType,
-  ContentStatus,
   GoalStatus,
   InsightStatus,
   ReviewLevel,
-  TaskStatus,
 } from './api.model';
 
 // === Today ===

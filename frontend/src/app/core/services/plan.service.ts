@@ -48,7 +48,7 @@ export class PlanService {
     });
   }
 
-  commitGoalProposal(proposalId: string): Observable<GoalDetail> {
+  commitGoalProposal(_proposalId: string): Observable<GoalDetail> {
     // TODO: return this.api.postData<GoalDetail>(`/api/admin/plan/goals/propose/${proposalId}/commit`, {});
     return of(MOCK_GOAL_DETAILS['goal-001']);
   }
@@ -95,7 +95,7 @@ export class PlanService {
     return of({ projects: filtered });
   }
 
-  getProjectDetail(id: string): Observable<ProjectDetail> {
+  getProjectDetail(_id: string): Observable<ProjectDetail> {
     // TODO: return this.api.getData<ProjectDetail>(`/api/admin/plan/projects/${id}`);
     return of(MOCK_PROJECT_DETAIL);
   }
@@ -114,7 +114,7 @@ export class PlanService {
     return of({ tasks, meta: { total: tasks.length } });
   }
 
-  advanceTask(id: string, action: TaskAdvanceAction): Observable<void> {
+  advanceTask(_id: string, _action: TaskAdvanceAction): Observable<void> {
     // TODO: return this.api.postVoid(`/api/admin/plan/tasks/${id}/advance`, { action });
     return of(undefined);
   }

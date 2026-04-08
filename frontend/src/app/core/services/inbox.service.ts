@@ -14,7 +14,7 @@ export class InboxService {
   private readonly api = inject(ApiService);
 
   /** 取得收件匣項目 */
-  getInbox(cursor?: string, limit?: number): Observable<InboxResponse> {
+  getInbox(_cursor?: string, _limit?: number): Observable<InboxResponse> {
     // TODO: const params: Record<string, string | number> = {};
     // if (cursor) params['cursor'] = cursor;
     // if (limit) params['limit'] = limit;

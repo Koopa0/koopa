@@ -176,7 +176,6 @@ describe('TasksComponent', () => {
   });
 
   it('should display correct tab counts', () => {
-    const el = fixture.nativeElement as HTMLElement;
     // todo tab should show count 2
     const todoTab = fixture.debugElement.query(
       By.css('[data-testid="tab-todo"]'),
