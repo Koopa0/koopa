@@ -254,20 +254,6 @@ export const routes: Routes = [
           import('./admin/activity/activity').then((m) => m.ActivityComponent),
       },
 
-      // — Legacy redirects（避免舊書籤失效）—
-      { path: 'dashboard', redirectTo: 'today', pathMatch: 'full' },
-      { path: 'contents', redirectTo: 'library/contents', pathMatch: 'full' },
-      { path: 'feeds', redirectTo: 'system/feeds', pathMatch: 'full' },
-      { path: 'tags', redirectTo: 'system/tags', pathMatch: 'full' },
-      { path: 'activity', redirectTo: 'system/activity', pathMatch: 'full' },
-      { path: 'projects', redirectTo: 'plan/projects', pathMatch: 'full' },
-      { path: 'goals', redirectTo: 'plan/goals', pathMatch: 'full' },
-      { path: 'editor', redirectTo: 'library/editor', pathMatch: 'full' },
-      {
-        path: 'editor/:id',
-        redirectTo: 'library/editor/:id',
-        pathMatch: 'full',
-      },
       {
         path: 'project-editor',
         loadComponent: () =>
