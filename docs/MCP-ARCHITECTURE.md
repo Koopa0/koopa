@@ -94,7 +94,7 @@ morning_context（看到什麼需要做）
 - `assignee` — 誰來做（human, 或 AI participant）
 - `created_by` — 誰建立的（追蹤來源）
 - `energy` — high/medium/low（GTD 的 Engage by energy）
-- `priority` — p1/p2/p3
+- `priority` — high/medium/low（task）, p0/p1/p2（directive）
 - `due` — 截止日
 
 ### 2.3 Goal Tracking（目標管理）

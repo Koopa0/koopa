@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Note represents a knowledge note from the obsidian_notes table.
+// Note represents a knowledge note from the notes table.
 type Note struct {
 	ID           int64      `json:"id"`
 	FilePath     string     `json:"file_path"`

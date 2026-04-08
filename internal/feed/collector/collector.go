@@ -1,4 +1,4 @@
-// Package collector fetches RSS feeds and writes new items to collected_data.
+// Package collector fetches RSS feeds and writes new items to feed_entries.
 package collector
 
 import (
@@ -29,7 +29,7 @@ const (
 	userAgent           = "koopa0.dev/rss-collector (+https://koopa0.dev)"
 )
 
-// Collector fetches RSS feeds and writes new items to collected_data.
+// Collector fetches RSS feeds and writes new items to feed_entries.
 type Collector struct {
 	writer  *entry.Store
 	feeds   *feed.Store
@@ -64,7 +64,7 @@ func (c *Collector) Stop() {
 	c.limiter.Stop()
 }
 
-// FetchFeed fetches a single feed and returns IDs of newly created collected_data rows.
+// FetchFeed fetches a single feed and returns IDs of newly created feed_entries rows.
 func (c *Collector) FetchFeed(ctx context.Context, f *feed.Feed) ([]uuid.UUID, error) {
 	logger := c.logger.With("feed_id", f.ID, "feed_name", f.Name)
 

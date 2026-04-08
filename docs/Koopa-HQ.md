@@ -67,8 +67,8 @@
 |------|-----------|
 | 設定目標 | `propose_commitment(as:"hq", type:"goal", fields:{title:"...", area:"engineering", quarter:"2026-Q2"})` |
 | 建立專案 | `propose_commitment(as:"hq", type:"project", fields:{title:"...", slug:"..."})` |
-| 下達指令 | `propose_commitment(as:"hq", type:"directive", fields:{source:"hq", target:"content-studio", priority:"p1", content:"..."})` |
-| 記錄假說 | `propose_commitment(as:"hq", type:"insight", fields:{hypothesis:"...", invalidation_condition:"..."})` |
+| 下達指令 | `propose_commitment(as:"hq", type:"directive", fields:{source:"hq", target:"content-studio", priority:"p1", content:"..."})` — priority: p0/p1/p2 |
+| 記錄假說 | `propose_commitment(as:"hq", type:"insight", fields:{hypothesis:"...", invalidation_condition:"...", content:"觀察描述"})` — 三個欄位都必填 |
 | 確認提議 | `commit_proposal(as:"hq", proposal_token:"...")` |
 | 追蹤假說 | `track_insight(as:"hq", insight_id:1, action:"verify")` |
 

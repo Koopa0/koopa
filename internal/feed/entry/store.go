@@ -394,7 +394,7 @@ func datumToItem(r *db.FeedEntry) Item {
 }
 
 // CollectionStats returns per-feed and global collection statistics.
-// Raw SQL is required: this aggregation joins collected_data and feeds tables
+// Raw SQL is required: this aggregation joins feed_entries and feeds tables
 // with GROUP BY, which cannot be expressed efficiently via sqlc-generated queries.
 // Parameters use pgx placeholders ($1, $2), no string interpolation.
 func (s *Store) CollectionStats(ctx context.Context, feedID *uuid.UUID, days int) (*Stats, error) {
@@ -407,7 +407,7 @@ func (s *Store) CollectionStats(ctx context.Context, feedID *uuid.UUID, days int
 		       COALESCE(AVG(cd.relevance_score), 0) AS avg_score,
 		       MAX(cd.collected_at) AS last_collected_at
 		FROM feeds f
-		LEFT JOIN collected_data cd ON cd.feed_id = f.id AND cd.collected_at >= $1
+		LEFT JOIN feed_entries cd ON cd.feed_id = f.id AND cd.collected_at >= $1
 	`
 	args := []any{cutoff}
 	if feedID != nil {
@@ -441,7 +441,7 @@ func (s *Store) CollectionStats(ctx context.Context, feedID *uuid.UUID, days int
 		       COALESCE(AVG(relevance_score), 0) AS avg_score,
 		       COUNT(*) FILTER (WHERE status = 'unread')::int AS unread_count,
 		       COUNT(*) FILTER (WHERE status = 'curated')::int AS curated_count
-		FROM collected_data
+		FROM feed_entries
 		WHERE collected_at >= $1
 	`
 	globalArgs := []any{cutoff}

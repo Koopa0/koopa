@@ -308,9 +308,9 @@ func (s *Store) DeleteAlias(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// BackfillNoteTags scans all obsidian_notes with raw tags JSONB,
+// BackfillNoteTags scans all notes with raw tags JSONB,
 // resolves each through the 4-step normalization pipeline,
-// and writes resolved tag IDs to obsidian_note_tags.
+// and writes resolved tag IDs to note_tags.
 // Additive only — existing junction rows are preserved (ON CONFLICT DO NOTHING).
 func (s *Store) BackfillNoteTags(ctx context.Context) (*BackfillResult, error) {
 	rows, err := s.q.NotesWithRawTags(ctx)

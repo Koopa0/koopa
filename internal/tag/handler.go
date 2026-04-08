@@ -227,7 +227,7 @@ func (h *Handler) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 
 // Backfill handles POST /api/admin/tags/backfill.
 // Scans all obsidian notes with raw tags, resolves through tag aliases,
-// and writes resolved tag IDs to the obsidian_note_tags junction table.
+// and writes resolved tag IDs to the note_tags junction table.
 func (h *Handler) Backfill(w http.ResponseWriter, r *http.Request) {
 	result, err := h.store.BackfillNoteTags(r.Context())
 	if err != nil {

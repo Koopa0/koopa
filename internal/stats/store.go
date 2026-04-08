@@ -176,13 +176,13 @@ func (s *Store) queryActivityStats(ctx context.Context, as *ActivityStats) error
 			COUNT(*),
 			COUNT(*) FILTER (WHERE timestamp > now() - interval '24 hours'),
 			COUNT(*) FILTER (WHERE timestamp > now() - interval '7 days')
-		FROM activity_events`,
+		FROM events`,
 	).Scan(&as.Total, &as.Last24h, &as.Last7d)
 	if err != nil {
 		return err
 	}
 
-	rows, err := s.dbtx.Query(ctx, `SELECT source, COUNT(*) FROM activity_events GROUP BY source`)
+	rows, err := s.dbtx.Query(ctx, `SELECT source, COUNT(*) FROM events GROUP BY source`)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func (s *Store) queryGoalsByArea(ctx context.Context) (map[string]int, int, erro
 func (s *Store) queryEventsByArea(ctx context.Context, days int) (map[string]int, int, error) { //nolint:gocritic // named results conflict with local := declarations
 	rows, err := s.dbtx.Query(ctx, `
 		SELECT COALESCE(a.name, 'unset'), COUNT(*)
-		FROM activity_events ae
+		FROM events ae
 		LEFT JOIN projects p ON ae.project = p.slug OR (p.repo IS NOT NULL AND p.repo != '' AND ae.project = p.repo)
 		LEFT JOIN areas a ON a.id = p.area_id
 		WHERE ae.timestamp > now() - make_interval(days => $1)
@@ -490,7 +490,7 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 		hasData = true
 	}
 
-	// Weekly activity comparison (activity_events)
+	// Weekly activity comparison (events)
 	if err := s.learningWeeklyActivity(ctx, ld); err != nil {
 		slog.Warn("learning: weekly activity query failed, returning zeros", "error", err)
 	} else {
@@ -563,7 +563,7 @@ func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboar
 		SELECT
 			COUNT(*) FILTER (WHERE timestamp > now() - interval '7 days'),
 			COUNT(*) FILTER (WHERE timestamp > now() - interval '14 days' AND timestamp <= now() - interval '7 days')
-		FROM activity_events`).Scan(&ld.Activity.ThisWeek, &ld.Activity.LastWeek)
+		FROM events`).Scan(&ld.Activity.ThisWeek, &ld.Activity.LastWeek)
 	if err != nil {
 		return fmt.Errorf("weekly activity: %w", err)
 	}
