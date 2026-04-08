@@ -14,15 +14,17 @@ import (
 
 // FileReportInput is the input for the file_report tool.
 type FileReportInput struct {
-	Source       string         `json:"source,omitempty" jsonschema_description:"Reporting participant (default: calling participant)"`
-	InResponseTo *FlexInt       `json:"in_response_to,omitempty" jsonschema_description:"Directive ID this report responds to (optional)"`
-	Content      string         `json:"content" jsonschema:"required" jsonschema_description:"Report content (markdown)"`
-	Metadata     map[string]any `json:"metadata,omitempty" jsonschema_description:"Optional metadata (follow_up_needed, artifacts, etc)"`
+	Source           string         `json:"source,omitempty" jsonschema_description:"Reporting participant (default: calling participant)"`
+	InResponseTo     *FlexInt       `json:"in_response_to,omitempty" jsonschema_description:"Directive ID this report responds to (optional)"`
+	Content          string         `json:"content" jsonschema:"required" jsonschema_description:"Report content (markdown)"`
+	ResolveDirective bool           `json:"resolve_directive,omitempty" jsonschema_description:"If true and in_response_to is set, marks the directive as resolved with this report as the resolution. Requires directive to be acknowledged first."`
+	Metadata         map[string]any `json:"metadata,omitempty" jsonschema_description:"Optional metadata (follow_up_needed, artifacts, etc)"`
 }
 
 // FileReportOutput is the output of the file_report tool.
 type FileReportOutput struct {
-	Report report.Report `json:"report"`
+	Report            report.Report `json:"report"`
+	DirectiveResolved bool          `json:"directive_resolved,omitempty"`
 }
 
 func (s *Server) fileReport(ctx context.Context, _ *mcp.CallToolRequest, input FileReportInput) (*mcp.CallToolResult, FileReportOutput, error) {
@@ -53,6 +55,10 @@ func (s *Server) fileReport(ctx context.Context, _ *mcp.CallToolRequest, input F
 		metadata, _ = json.Marshal(input.Metadata)
 	}
 
+	if input.ResolveDirective && inResponseTo == nil {
+		return nil, FileReportOutput{}, fmt.Errorf("resolve_directive requires in_response_to to be set")
+	}
+
 	rpt, err := s.reports.Create(ctx, &report.CreateParams{
 		Source:       source,
 		InResponseTo: inResponseTo,
@@ -64,8 +70,23 @@ func (s *Server) fileReport(ctx context.Context, _ *mcp.CallToolRequest, input F
 		return nil, FileReportOutput{}, fmt.Errorf("filing report: %w", err)
 	}
 
-	s.logger.Info("file_report", "id", rpt.ID, "source", source, "in_response_to", inResponseTo)
-	return nil, FileReportOutput{Report: *rpt}, nil
+	out := FileReportOutput{Report: *rpt}
+
+	// Resolve the directive if requested — atomic with report creation.
+	if input.ResolveDirective && inResponseTo != nil {
+		if _, rErr := s.directives.Resolve(ctx, *inResponseTo, &rpt.ID); rErr != nil {
+			// Report was created but directive resolution failed.
+			// Log the error but return the report — caller can retry resolution.
+			s.logger.Error("file_report: directive resolution failed",
+				"directive_id", *inResponseTo, "report_id", rpt.ID, "error", rErr)
+		} else {
+			out.DirectiveResolved = true
+		}
+	}
+
+	s.logger.Info("file_report", "id", rpt.ID, "source", source,
+		"in_response_to", inResponseTo, "resolved", out.DirectiveResolved)
+	return nil, out, nil
 }
 
 // --- acknowledge_directive ---

@@ -193,6 +193,9 @@ COMMENT ON COLUMN tag_aliases.raw_tag IS 'Original tag string as found in source
 COMMENT ON COLUMN tag_aliases.tag_id IS 'Resolved canonical tag. NULL for unmapped/rejected aliases.';
 COMMENT ON COLUMN tag_aliases.match_method IS 'How the alias was resolved: exact, case-insensitive, manual (admin), unmapped (pending), rejected (admin declined).';
 COMMENT ON COLUMN tag_aliases.confirmed IS 'Whether an admin has verified this mapping. Unconfirmed auto-matches may be wrong.';
+COMMENT ON COLUMN tag_aliases.confirmed_at IS
+    'When an admin confirmed this mapping. NULL iff confirmed = false '
+    '(enforced by chk_confirmed_pair). Set together with confirmed = true.';
 
 CREATE INDEX idx_tag_aliases_tag ON tag_aliases(tag_id);
 CREATE INDEX idx_tag_aliases_confirmed ON tag_aliases(confirmed);
@@ -1022,6 +1025,10 @@ COMMENT ON COLUMN events.repo IS 'GitHub repository full name (e.g. Koopa0/koopa
 COMMENT ON COLUMN events.ref IS 'Git ref (branch name or tag).';
 COMMENT ON COLUMN events.title IS 'Event summary (e.g. commit message, PR title, task name).';
 COMMENT ON COLUMN events.body IS 'Event detail body. May contain markdown.';
+COMMENT ON COLUMN events.timestamp IS
+    'When the event occurred in the source system. Distinct from created_at '
+    '(when the row was inserted into this DB). For webhook events, timestamp may '
+    'predate created_at due to delivery delay.';
 COMMENT ON COLUMN events.metadata IS 'Event-specific structured data (JSONB). GitHub: diff stats. Notion: changed fields.';
 
 CREATE INDEX idx_events_timestamp ON events (timestamp DESC);
@@ -1066,16 +1073,18 @@ CREATE UNIQUE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(al
 -- ============================================================
 
 CREATE TABLE directives (
-    id              BIGSERIAL PRIMARY KEY,
-    source          TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    target          TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    priority        TEXT NOT NULL CHECK (priority IN ('p0', 'p1', 'p2')),
-    acknowledged_at TIMESTAMPTZ,
-    acknowledged_by TEXT REFERENCES participant(name) ON DELETE RESTRICT,
-    content         TEXT NOT NULL,
-    metadata        JSONB,
-    issued_date     DATE NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id                    BIGSERIAL PRIMARY KEY,
+    source                TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
+    target                TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
+    priority              TEXT NOT NULL CHECK (priority IN ('p0', 'p1', 'p2')),
+    acknowledged_at       TIMESTAMPTZ,
+    acknowledged_by       TEXT REFERENCES participant(name) ON DELETE RESTRICT,
+    resolved_at           TIMESTAMPTZ,
+    resolution_report_id  BIGINT,
+    content               TEXT NOT NULL,
+    metadata              JSONB,
+    issued_date           DATE NOT NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_no_self_target
         CHECK (source <> target),
@@ -1083,15 +1092,33 @@ CREATE TABLE directives (
         CHECK ((acknowledged_at IS NULL AND acknowledged_by IS NULL)
             OR (acknowledged_at IS NOT NULL AND acknowledged_by IS NOT NULL)),
     CONSTRAINT chk_ack_must_be_target
-        CHECK (acknowledged_by IS NULL OR acknowledged_by = target)
+        CHECK (acknowledged_by IS NULL OR acknowledged_by = target),
+    CONSTRAINT chk_resolved_requires_ack
+        CHECK (resolved_at IS NULL OR acknowledged_at IS NOT NULL),
+    CONSTRAINT chk_resolution_report_requires_resolved
+        CHECK (resolution_report_id IS NULL OR resolved_at IS NOT NULL)
 );
 
-COMMENT ON TABLE directives IS 'IPC — coordination instructions between participants. Source must have can_issue_directives = true, target must have can_receive_directives = true (Go-validated). For work assignment to execution agents, use tasks.assignee.';
+COMMENT ON TABLE directives IS
+    'IPC — coordination instructions between participants. '
+    'Source must have can_issue_directives = true, target must have can_receive_directives = true (Go-validated). '
+    'For work assignment to execution agents, use tasks.assignee. '
+    'Lifecycle: issued → acknowledged → resolved. '
+    'chk_resolved_requires_ack enforces that resolution requires prior acknowledgement.';
 COMMENT ON COLUMN directives.source IS 'Who issued this directive. FK to participant. Go layer validates participant.can_issue_directives = true.';
 COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive must have a target. Go layer validates participant.can_receive_directives = true.';
 COMMENT ON COLUMN directives.priority IS 'p0 = immediate, p1 = today, p2 = this week.';
 COMMENT ON COLUMN directives.acknowledged_at IS 'When target picked up this directive. NULL = unacknowledged.';
 COMMENT ON COLUMN directives.acknowledged_by IS 'Must equal target (chk_ack_must_be_target).';
+COMMENT ON COLUMN directives.resolved_at IS
+    'When this directive was resolved (work completed or explicitly closed). '
+    'NULL = open/in-progress. chk_resolved_requires_ack ensures a directive must be '
+    'acknowledged before it can be resolved. Set by file_report or explicit resolution.';
+COMMENT ON COLUMN directives.resolution_report_id IS
+    'Optional link to the report that resolved this directive. '
+    'FK added via ALTER TABLE after reports table creation. '
+    'NULL = resolved without a specific report, or not yet resolved.';
+COMMENT ON COLUMN directives.content IS 'The directive body — what the target should do. Free-text, may contain markdown.';
 COMMENT ON COLUMN directives.issued_date IS 'Date this directive was issued.';
 COMMENT ON COLUMN directives.metadata IS
     'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs. '
@@ -1101,6 +1128,8 @@ CREATE INDEX idx_directives_date ON directives (issued_date DESC);
 CREATE INDEX idx_directives_target ON directives (target, issued_date DESC);
 CREATE INDEX idx_directives_unacked ON directives (target, issued_date DESC)
     WHERE acknowledged_at IS NULL;
+CREATE INDEX idx_directives_unresolved ON directives (target, issued_date DESC)
+    WHERE resolved_at IS NULL AND acknowledged_at IS NOT NULL;
 
 -- ============================================================
 -- IPC: reports (departments → HQ, or self-initiated)
@@ -1116,7 +1145,13 @@ CREATE TABLE reports (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE reports IS 'IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion signal: currently inferred from report metadata (follow_up_needed) — acceptable for early stage. When completion needs to be systemically queried (dashboard, overdue detection, completion rate), upgrade to directives.resolved_at or report metadata.kind = progress|final|addendum.';
+COMMENT ON TABLE reports IS
+    'IPC — department output. No target column — report recipients are implicit: '
+    'directive-driven reports are read by the directive source; self-initiated reports '
+    'are read by HQ in morning briefing. Cardinality: one directive may have multiple '
+    'reports (progress, completion, follow-up). Directive resolution is tracked via '
+    'directives.resolved_at + directives.resolution_report_id. The resolution report '
+    'is the final deliverable; earlier reports are progress updates.';
 COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant. Go layer validates participant.can_write_reports = true. Expandable by setting capability flag on any participant.';
 COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
 COMMENT ON COLUMN reports.reported_date IS 'Date this report was filed.';
@@ -1124,6 +1159,15 @@ COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-
 
 CREATE INDEX idx_reports_date ON reports (reported_date DESC);
 CREATE INDEX idx_reports_directive ON reports (in_response_to) WHERE in_response_to IS NOT NULL;
+
+-- Deferred FK: directives.resolution_report_id → reports(id)
+-- Cannot be inline because reports is defined after directives.
+ALTER TABLE directives
+    ADD CONSTRAINT fk_directives_resolution_report
+    FOREIGN KEY (resolution_report_id) REFERENCES reports(id) ON DELETE SET NULL;
+
+CREATE INDEX idx_directives_resolution_report ON directives (resolution_report_id)
+    WHERE resolution_report_id IS NOT NULL;
 
 -- ============================================================
 -- IPC: insights (was: session_notes WHERE note_type = 'insight')
@@ -1356,6 +1400,8 @@ COMMENT ON COLUMN review_cards.card_state IS
     'Serialized algorithm state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.';
 COMMENT ON COLUMN review_cards.due IS
     'Denormalized from card_state for index-based due-date queries.';
+COMMENT ON COLUMN review_cards.updated_at IS
+    'Application-managed. Set explicitly in UPDATE queries (after FSRS review).';
 
 -- Content-based cards: two partial indexes.
 -- One whole-content card per content (tag_id IS NULL).
@@ -1382,6 +1428,11 @@ CREATE TABLE review_logs (
 );
 
 COMMENT ON TABLE review_logs IS 'Append-only review history. One row per review event.';
+COMMENT ON COLUMN review_logs.card_id IS
+    'The review card this log belongs to. CASCADE — card deletion removes its history.';
+COMMENT ON COLUMN review_logs.reviewed_at IS
+    'When this review occurred. May differ from row insertion time if backfilled. '
+    'DEFAULT now() for real-time reviews.';
 COMMENT ON COLUMN review_logs.rating IS '1=Again (forgot), 2=Hard (partial), 3=Good (remembered), 4=Easy.';
 COMMENT ON COLUMN review_logs.scheduled_days IS 'Days the FSRS algorithm scheduled between this and the previous review.';
 COMMENT ON COLUMN review_logs.elapsed_days IS 'Actual days elapsed since the previous review.';
@@ -1682,8 +1733,16 @@ CREATE TABLE reconcile_runs (
 );
 
 COMMENT ON TABLE reconcile_runs IS 'Weekly reconciliation run history for system health and drift trend analysis.';
+COMMENT ON COLUMN reconcile_runs.started_at IS 'When the reconciliation run began.';
 COMMENT ON COLUMN reconcile_runs.completed_at IS 'NULL until run finishes. NULL + old started_at = crashed run.';
+COMMENT ON COLUMN reconcile_runs.obsidian_missing IS 'Notes in Obsidian vault but not yet synced to DB.';
+COMMENT ON COLUMN reconcile_runs.obsidian_orphaned IS 'Notes in DB but file no longer exists in Obsidian vault.';
+COMMENT ON COLUMN reconcile_runs.notion_proj_missing IS 'Projects in Notion but not yet synced to DB.';
+COMMENT ON COLUMN reconcile_runs.notion_proj_orphan IS 'Projects in DB but no longer in Notion source.';
+COMMENT ON COLUMN reconcile_runs.notion_goal_missing IS 'Goals in Notion but not yet synced to DB.';
+COMMENT ON COLUMN reconcile_runs.notion_goal_orphan IS 'Goals in DB but no longer in Notion source.';
 COMMENT ON COLUMN reconcile_runs.total_drift IS 'Sum of all missing+orphaned counts. Zero = fully consistent.';
+COMMENT ON COLUMN reconcile_runs.error_count IS 'Number of errors encountered during the run. 0 = clean run.';
 COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
 
 CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);
@@ -1753,6 +1812,9 @@ CREATE TABLE schedule_runs (
 COMMENT ON TABLE schedule_runs IS 'Append-only execution history for participant_schedules. Full history from day one — enables trend analysis, hit rate, and failure diagnosis.';
 COMMENT ON COLUMN schedule_runs.status IS 'success = run completed without execution error. failure = errored. skipped = missed_run_policy decided to skip. Note: success does not guarantee expected_outputs were produced — output completeness is a separate monitoring concern.';
 COMMENT ON COLUMN schedule_runs.error IS 'Error details on failure. NULL on success/skip.';
+COMMENT ON COLUMN schedule_runs.ended_at IS
+    'When the run finished. NULL = still running or crashed. '
+    'NULL + old started_at = abandoned/crashed run (same pattern as sessions.ended_at).';
 COMMENT ON COLUMN schedule_runs.metadata IS 'Run-specific data: produced artifact IDs, execution duration, backend-specific info.';
 
 CREATE INDEX idx_schedule_runs_schedule ON schedule_runs (schedule_id, started_at DESC);
@@ -1818,29 +1880,34 @@ COMMENT ON COLUMN plans.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE TABLE plan_items (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    plan_id          UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    learning_item_id UUID NOT NULL REFERENCES items(id) ON DELETE RESTRICT,
-    position         INT NOT NULL DEFAULT 0,
-    status           TEXT NOT NULL DEFAULT 'planned'
-                     CHECK (status IN ('planned', 'completed', 'skipped', 'substituted')),
-    phase            TEXT,
-    substituted_by   UUID REFERENCES plan_items(id) ON DELETE SET NULL,
-    reason           TEXT,
-    added_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at     TIMESTAMPTZ,
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id                 UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    learning_item_id        UUID NOT NULL REFERENCES items(id) ON DELETE RESTRICT,
+    position                INT NOT NULL DEFAULT 0,
+    status                  TEXT NOT NULL DEFAULT 'planned'
+                            CHECK (status IN ('planned', 'completed', 'skipped', 'substituted')),
+    phase                   TEXT,
+    substituted_by          UUID REFERENCES plan_items(id) ON DELETE SET NULL,
+    completed_by_attempt_id UUID REFERENCES attempts(id) ON DELETE SET NULL,
+    reason                  TEXT,
+    added_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at            TIMESTAMPTZ,
 
     UNIQUE (plan_id, learning_item_id),
     CONSTRAINT chk_substituted_by_requires_status
         CHECK (substituted_by IS NULL OR status = 'substituted'),
     CONSTRAINT chk_completed_at_requires_status
-        CHECK (completed_at IS NULL OR status = 'completed')
+        CHECK (completed_at IS NULL OR status = 'completed'),
+    CONSTRAINT chk_completed_by_attempt_requires_status
+        CHECK (completed_by_attempt_id IS NULL OR status = 'completed')
 );
 
 CREATE INDEX idx_plan_items_plan ON plan_items (plan_id, position);
 CREATE INDEX idx_plan_items_item ON plan_items (learning_item_id);
 CREATE INDEX idx_plan_items_phase ON plan_items (plan_id, phase) WHERE phase IS NOT NULL;
 CREATE INDEX idx_plan_items_status ON plan_items (plan_id, status);
+CREATE INDEX idx_plan_items_attempt ON plan_items (completed_by_attempt_id)
+    WHERE completed_by_attempt_id IS NOT NULL;
 
 COMMENT ON TABLE plan_items IS
     'Junction between plans and items — plan membership with ordering '
@@ -1870,8 +1937,18 @@ COMMENT ON COLUMN plan_items.substituted_by IS
     'If status=''substituted'', points to the plan_items.id of the replacement '
     'item WITHIN THE SAME PLAN. NULL for non-substituted items. SET NULL if replacement '
     'item is deleted.';
+COMMENT ON COLUMN plan_items.completed_by_attempt_id IS
+    'The attempt that triggered plan-item completion. FK to attempts(id). '
+    'NULL for planned/skipped/substituted items, and for manually completed items '
+    '(e.g., completed outside a session or on another platform with no attempt record). '
+    'Policy: when Claude marks an item completed via manage_plan, this field is MANDATORY '
+    '(enforced by policy, not schema). Schema stays nullable to allow future manual/UI '
+    'completion paths. SET NULL on attempt deletion — completion decision survives.';
 COMMENT ON COLUMN plan_items.reason IS
-    'Why this item was skipped or substituted. NULL for planned/completed items.';
+    'Context for status transitions. For completed: what attempt outcome and reasoning '
+    'informed the completion decision (policy-mandatory when Claude completes). '
+    'For skipped/substituted: why the item was removed from active tracking. '
+    'NULL for planned items only.';
 COMMENT ON COLUMN plan_items.added_at IS
     'When this item was added to the plan.';
 COMMENT ON COLUMN plan_items.completed_at IS

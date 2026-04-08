@@ -18,22 +18,23 @@ import (
 
 // MorningContextInput is the input for the morning_context tool.
 type MorningContextInput struct {
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, directives, insights, plan_history"`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, directives, insights, rss, plan_history"`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
 // MorningContextOutput is the output of the morning_context tool.
 type MorningContextOutput struct {
-	Date               string                   `json:"date"`
-	OverdueTasks       []task.PendingTaskDetail `json:"overdue_tasks"`
-	TodayTasks         []task.PendingTaskDetail `json:"today_tasks"`
-	CommittedTasks     []daily.Item             `json:"committed_tasks"`
-	UpcomingTasks      []task.PendingTaskDetail `json:"upcoming_tasks"`
-	ActiveGoals        []goal.ActiveGoalSummary `json:"active_goals"`
-	UnackedDirectives  []directive.Directive    `json:"unacked_directives"`
-	UnverifiedInsights []insight.Insight        `json:"unverified_insights"`
-	RSSHighlights      []RSSHighlight           `json:"rss_highlights"`
-	PlanHistory        []journal.Entry          `json:"plan_history"`
+	Date                 string                   `json:"date"`
+	OverdueTasks         []task.PendingTaskDetail `json:"overdue_tasks"`
+	TodayTasks           []task.PendingTaskDetail `json:"today_tasks"`
+	CommittedTasks       []daily.Item             `json:"committed_tasks"`
+	UpcomingTasks        []task.PendingTaskDetail `json:"upcoming_tasks"`
+	ActiveGoals          []goal.ActiveGoalSummary `json:"active_goals"`
+	UnackedDirectives    []directive.Directive    `json:"unacked_directives"`
+	UnresolvedDirectives []directive.Directive    `json:"unresolved_directives"`
+	UnverifiedInsights   []insight.Insight        `json:"unverified_insights"`
+	RSSHighlights        []RSSHighlight           `json:"rss_highlights"`
+	PlanHistory          []journal.Entry          `json:"plan_history"`
 }
 
 // RSSHighlight is a recent high-priority RSS item.
@@ -131,10 +132,16 @@ func (s *Server) fillGoals(ctx context.Context, out *MorningContextOutput) {
 }
 
 func (s *Server) fillDirectives(ctx context.Context, out *MorningContextOutput) {
-	if dirs, err := s.directives.UnackedForTarget(ctx, s.callerIdentity(ctx)); err == nil {
+	caller := s.callerIdentity(ctx)
+	if dirs, err := s.directives.UnackedForTarget(ctx, caller); err == nil {
 		out.UnackedDirectives = dirs
 	} else {
 		s.logger.Warn("morning_context: unacked directives", "error", err)
+	}
+	if dirs, err := s.directives.UnresolvedForTarget(ctx, caller); err == nil {
+		out.UnresolvedDirectives = dirs
+	} else {
+		s.logger.Warn("morning_context: unresolved directives", "error", err)
 	}
 }
 

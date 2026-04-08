@@ -32,7 +32,7 @@ MCP v2 將 49 個 v1 CRUD tools 重寫為 22 個 workflow-driven tools。
 | Tool | 用途 | Annotation |
 |------|------|------------|
 | `capture_inbox` | 快速任務捕獲到 inbox（只需 title） | additive |
-| `propose_commitment` | 提議建立 goal/project/milestone/directive/insight — **不寫入 DB**，回傳 token | readOnly |
+| `propose_commitment` | 提議建立 goal/project/milestone/directive/insight/learning_plan — **不寫入 DB**，回傳 token | readOnly |
 | `commit_proposal` | 用 token 提交提議，寫入 DB | additive |
 
 ### Execution Tools（4 tools）

@@ -1,56 +1,50 @@
 -- name: CreatePlan :one
 INSERT INTO plans (title, description, domain, goal_id, status, target_count, plan_config, created_by)
 VALUES (@title, @description, @domain, @goal_id, @status, @target_count, @plan_config, @created_by)
-RETURNING id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at;
+RETURNING *;
 
 -- name: Plan :one
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans WHERE id = @id;
+SELECT * FROM plans WHERE id = @id;
 
 -- name: PlansByDomain :many
 -- Filter plans by domain, optionally by status.
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans
+SELECT * FROM plans
 WHERE domain = @domain
   AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'))
 ORDER BY created_at DESC;
 
 -- name: PlansByGoal :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans WHERE goal_id = @goal_id
+SELECT * FROM plans WHERE goal_id = @goal_id
 ORDER BY created_at DESC;
 
 -- name: ActivePlans :many
 -- Plans that are draft or active (for plan management views).
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans WHERE status IN ('draft', 'active')
+SELECT * FROM plans WHERE status IN ('draft', 'active')
 ORDER BY updated_at DESC;
 
 -- name: UpdatePlanStatus :one
 UPDATE plans SET status = @status, updated_at = now()
 WHERE id = @id
-RETURNING id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at;
+RETURNING *;
 
 -- name: AddPlanItem :one
 INSERT INTO plan_items (plan_id, learning_item_id, position, phase)
 VALUES (@plan_id, @learning_item_id, @position, @phase)
-RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at;
+RETURNING *;
 
 -- name: PlanItem :one
-SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
-FROM plan_items WHERE id = @id;
+SELECT * FROM plan_items WHERE id = @id;
 
 -- name: PlanItems :many
 -- All items in a plan, ordered by position.
-SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
-FROM plan_items WHERE plan_id = @plan_id
+SELECT * FROM plan_items WHERE plan_id = @plan_id
 ORDER BY position;
 
 -- name: PlanItemsByLearningItem :many
 -- Find plan items for a learning_item across ACTIVE plans only.
 -- Used by record_attempt to provide plan context. Excludes draft/paused/completed/abandoned.
 SELECT lpi.id, lpi.plan_id, lpi.learning_item_id, lpi.position, lpi.status, lpi.phase,
-       lpi.substituted_by, lpi.reason, lpi.added_at, lpi.completed_at,
+       lpi.substituted_by, lpi.completed_by_attempt_id, lpi.reason, lpi.added_at, lpi.completed_at,
        lp.title AS plan_title
 FROM plan_items lpi
 JOIN plans lp ON lp.id = lpi.plan_id
@@ -59,9 +53,10 @@ WHERE lpi.learning_item_id = @learning_item_id
 
 -- name: UpdatePlanItemStatus :one
 UPDATE plan_items
-SET status = @status, reason = @reason, completed_at = @completed_at, substituted_by = @substituted_by
+SET status = @status, reason = @reason, completed_at = @completed_at,
+    substituted_by = @substituted_by, completed_by_attempt_id = @completed_by_attempt_id
 WHERE id = @id
-RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at;
+RETURNING *;
 
 -- name: UpdatePlanItemPosition :execrows
 UPDATE plan_items SET position = @position WHERE id = @id;

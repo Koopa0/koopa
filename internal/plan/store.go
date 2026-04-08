@@ -36,11 +36,12 @@ type AddItemParams struct {
 
 // UpdateItemStatusParams holds the input for updating a plan item's status.
 type UpdateItemStatusParams struct {
-	ID            uuid.UUID
-	Status        ItemStatus
-	Reason        *string
-	CompletedAt   *time.Time
-	SubstitutedBy *uuid.UUID
+	ID                   uuid.UUID
+	Status               ItemStatus
+	Reason               *string
+	CompletedAt          *time.Time
+	SubstitutedBy        *uuid.UUID
+	CompletedByAttemptID *uuid.UUID
 }
 
 // Store handles database operations for learning plans.
@@ -204,16 +205,17 @@ func (s *Store) ItemsByLearningItem(ctx context.Context, learningItemID uuid.UUI
 		r := &rows[i]
 		result[i] = PlanItemWithTitle{
 			PlanItem: PlanItem{
-				ID:             r.ID,
-				PlanID:         r.PlanID,
-				LearningItemID: r.LearningItemID,
-				Position:       r.Position,
-				Status:         ItemStatus(r.Status),
-				Phase:          r.Phase,
-				SubstitutedBy:  r.SubstitutedBy,
-				Reason:         r.Reason,
-				AddedAt:        r.AddedAt,
-				CompletedAt:    r.CompletedAt,
+				ID:                   r.ID,
+				PlanID:               r.PlanID,
+				LearningItemID:       r.LearningItemID,
+				Position:             r.Position,
+				Status:               ItemStatus(r.Status),
+				Phase:                r.Phase,
+				SubstitutedBy:        r.SubstitutedBy,
+				CompletedByAttemptID: r.CompletedByAttemptID,
+				Reason:               r.Reason,
+				AddedAt:              r.AddedAt,
+				CompletedAt:          r.CompletedAt,
 			},
 			PlanTitle: r.PlanTitle,
 		}
@@ -224,11 +226,12 @@ func (s *Store) ItemsByLearningItem(ctx context.Context, learningItemID uuid.UUI
 // UpdateItemStatus transitions a plan item to a new status.
 func (s *Store) UpdateItemStatus(ctx context.Context, p UpdateItemStatusParams) (*PlanItem, error) {
 	row, err := s.q.UpdatePlanItemStatus(ctx, db.UpdatePlanItemStatusParams{
-		Status:        string(p.Status),
-		Reason:        p.Reason,
-		CompletedAt:   p.CompletedAt,
-		SubstitutedBy: p.SubstitutedBy,
-		ID:            p.ID,
+		Status:               string(p.Status),
+		Reason:               p.Reason,
+		CompletedAt:          p.CompletedAt,
+		SubstitutedBy:        p.SubstitutedBy,
+		CompletedByAttemptID: p.CompletedByAttemptID,
+		ID:                   p.ID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -299,16 +302,17 @@ func rowToPlan(r *db.Plan) *Plan {
 
 func rowToItem(r *db.PlanItem) *PlanItem {
 	return &PlanItem{
-		ID:             r.ID,
-		PlanID:         r.PlanID,
-		LearningItemID: r.LearningItemID,
-		Position:       r.Position,
-		Status:         ItemStatus(r.Status),
-		Phase:          r.Phase,
-		SubstitutedBy:  r.SubstitutedBy,
-		Reason:         r.Reason,
-		AddedAt:        r.AddedAt,
-		CompletedAt:    r.CompletedAt,
+		ID:                   r.ID,
+		PlanID:               r.PlanID,
+		LearningItemID:       r.LearningItemID,
+		Position:             r.Position,
+		Status:               ItemStatus(r.Status),
+		Phase:                r.Phase,
+		SubstitutedBy:        r.SubstitutedBy,
+		CompletedByAttemptID: r.CompletedByAttemptID,
+		Reason:               r.Reason,
+		AddedAt:              r.AddedAt,
+		CompletedAt:          r.CompletedAt,
 	}
 }
 

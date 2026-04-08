@@ -31,6 +31,7 @@ type ManagePlanInput struct {
 	Status                   *string `json:"status,omitempty" jsonschema_description:"New status: completed, skipped, substituted (for update_item) or active, paused, completed, abandoned (for update_plan)"`
 	Reason                   *string `json:"reason,omitempty" jsonschema_description:"Why skipped/substituted"`
 	SubstituteLearningItemID *string `json:"substitute_learning_item_id,omitempty" jsonschema_description:"learning_items.id of the replacement (for status=substituted)"`
+	CompletedByAttemptID     *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision (policy-mandatory for AI-initiated completions)"`
 
 	// reorder
 	Positions []ManagePlanPositionInput `json:"positions,omitempty" jsonschema_description:"[{item_id, position}] for reordering"`
@@ -199,25 +200,23 @@ func (s *Server) mpUpdateItem(ctx context.Context, planID uuid.UUID, input *Mana
 
 	status := plan.ItemStatus(*input.Status)
 	switch status {
-	case plan.ItemCompleted:
-		now := time.Now()
-		_, err = s.plans.UpdateItemStatus(ctx, plan.UpdateItemStatusParams{
-			ID:          itemID,
-			Status:      plan.ItemCompleted,
-			CompletedAt: &now,
-		})
-		if err != nil {
-			return nil, ManagePlanOutput{}, fmt.Errorf("completing item: %w", err)
-		}
-
-	case plan.ItemSkipped:
-		_, err = s.plans.UpdateItemStatus(ctx, plan.UpdateItemStatusParams{
+	case plan.ItemCompleted, plan.ItemSkipped:
+		params := plan.UpdateItemStatusParams{
 			ID:     itemID,
-			Status: plan.ItemSkipped,
+			Status: status,
 			Reason: input.Reason,
-		})
-		if err != nil {
-			return nil, ManagePlanOutput{}, fmt.Errorf("skipping item: %w", err)
+		}
+		if status == plan.ItemCompleted {
+			now := time.Now()
+			params.CompletedAt = &now
+			aid, parseErr := parseOptionalUUID(input.CompletedByAttemptID)
+			if parseErr != nil {
+				return nil, ManagePlanOutput{}, fmt.Errorf("invalid completed_by_attempt_id: %w", parseErr)
+			}
+			params.CompletedByAttemptID = aid
+		}
+		if _, err = s.plans.UpdateItemStatus(ctx, params); err != nil {
+			return nil, ManagePlanOutput{}, fmt.Errorf("updating item to %s: %w", status, err)
 		}
 
 	case plan.ItemSubstituted:
@@ -377,4 +376,17 @@ func validatePlanTransition(from, to plan.Status) error {
 		}
 	}
 	return fmt.Errorf("invalid plan transition %s → %s", from, to)
+}
+
+// parseOptionalUUID parses a nullable string pointer as a UUID.
+// Returns (nil, nil) when the input is nil or empty.
+func parseOptionalUUID(s *string) (*uuid.UUID, error) {
+	if s == nil || *s == "" {
+		return nil, nil
+	}
+	id, err := uuid.Parse(*s)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
 }

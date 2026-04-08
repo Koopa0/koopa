@@ -674,7 +674,7 @@ type DailyPlanItem struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// IPC — coordination instructions between participants. Source must have can_issue_directives = true, target must have can_receive_directives = true (Go-validated). For work assignment to execution agents, use tasks.assignee.
+// IPC — coordination instructions between participants. Source must have can_issue_directives = true, target must have can_receive_directives = true (Go-validated). For work assignment to execution agents, use tasks.assignee. Lifecycle: issued → acknowledged → resolved. chk_resolved_requires_ack enforces that resolution requires prior acknowledgement.
 type Directive struct {
 	ID int64 `json:"id"`
 	// Who issued this directive. FK to participant. Go layer validates participant.can_issue_directives = true.
@@ -687,7 +687,12 @@ type Directive struct {
 	AcknowledgedAt *time.Time `json:"acknowledged_at"`
 	// Must equal target (chk_ack_must_be_target).
 	AcknowledgedBy *string `json:"acknowledged_by"`
-	Content        string  `json:"content"`
+	// When this directive was resolved (work completed or explicitly closed). NULL = open/in-progress. chk_resolved_requires_ack ensures a directive must be acknowledged before it can be resolved. Set by file_report or explicit resolution.
+	ResolvedAt *time.Time `json:"resolved_at"`
+	// Optional link to the report that resolved this directive. FK added via ALTER TABLE after reports table creation. NULL = resolved without a specific report, or not yet resolved.
+	ResolutionReportID *int64 `json:"resolution_report_id"`
+	// The directive body — what the target should do. Free-text, may contain markdown.
+	Content string `json:"content"`
 	// Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs. UPGRADE PATH: when IPC dashboard or overdue detection is built, promote correlation_id to a first-class column.
 	Metadata json.RawMessage `json:"metadata"`
 	// Date this directive was issued.
@@ -699,7 +704,8 @@ type Directive struct {
 type Event struct {
 	ID int64 `json:"id"`
 	// Event ID in the origin system (e.g. GitHub delivery ID). Used for dedup.
-	SourceID  *string   `json:"source_id"`
+	SourceID *string `json:"source_id"`
+	// When the event occurred in the source system. Distinct from created_at (when the row was inserted into this DB). For webhook events, timestamp may predate created_at due to delivery delay.
 	Timestamp time.Time `json:"timestamp"`
 	// Event classification. PostgreSQL ENUM — closed contract, all values defined in Go code. Adding a new event type requires ALTER TYPE ADD VALUE + Go code change. UPGRADE PATH: if event types grow significantly after Gmail/Calendar integration, consider migrating from ENUM to TEXT + CHECK for easier extensibility.
 	EventType EventType `json:"event_type"`
@@ -1089,7 +1095,9 @@ type PlanItem struct {
 	Phase *string `json:"phase"`
 	// If status='substituted', points to the plan_items.id of the replacement item WITHIN THE SAME PLAN. NULL for non-substituted items. SET NULL if replacement item is deleted.
 	SubstitutedBy *uuid.UUID `json:"substituted_by"`
-	// Why this item was skipped or substituted. NULL for planned/completed items.
+	// The attempt that triggered plan-item completion. FK to attempts(id). NULL for planned/skipped/substituted items, and for manually completed items (e.g., completed outside a session or on another platform with no attempt record). Policy: when Claude marks an item completed via manage_plan, this field is MANDATORY (enforced by policy, not schema). Schema stays nullable to allow future manual/UI completion paths. SET NULL on attempt deletion — completion decision survives.
+	CompletedByAttemptID *uuid.UUID `json:"completed_by_attempt_id"`
+	// Context for status transitions. For completed: what attempt outcome and reasoning informed the completion decision (policy-mandatory when Claude completes). For skipped/substituted: why the item was removed from active tracking. NULL for planned items only.
 	Reason *string `json:"reason"`
 	// When this item was added to the plan.
 	AddedAt time.Time `json:"added_at"`
@@ -1168,18 +1176,26 @@ type ProjectAlias struct {
 
 // Weekly reconciliation run history for system health and drift trend analysis.
 type ReconcileRun struct {
-	ID        int64     `json:"id"`
+	ID int64 `json:"id"`
+	// When the reconciliation run began.
 	StartedAt time.Time `json:"started_at"`
 	// NULL until run finishes. NULL + old started_at = crashed run.
-	CompletedAt       *time.Time `json:"completed_at"`
-	ObsidianMissing   int32      `json:"obsidian_missing"`
-	ObsidianOrphaned  int32      `json:"obsidian_orphaned"`
-	NotionProjMissing int32      `json:"notion_proj_missing"`
-	NotionProjOrphan  int32      `json:"notion_proj_orphan"`
-	NotionGoalMissing int32      `json:"notion_goal_missing"`
-	NotionGoalOrphan  int32      `json:"notion_goal_orphan"`
+	CompletedAt *time.Time `json:"completed_at"`
+	// Notes in Obsidian vault but not yet synced to DB.
+	ObsidianMissing int32 `json:"obsidian_missing"`
+	// Notes in DB but file no longer exists in Obsidian vault.
+	ObsidianOrphaned int32 `json:"obsidian_orphaned"`
+	// Projects in Notion but not yet synced to DB.
+	NotionProjMissing int32 `json:"notion_proj_missing"`
+	// Projects in DB but no longer in Notion source.
+	NotionProjOrphan int32 `json:"notion_proj_orphan"`
+	// Goals in Notion but not yet synced to DB.
+	NotionGoalMissing int32 `json:"notion_goal_missing"`
+	// Goals in DB but no longer in Notion source.
+	NotionGoalOrphan int32 `json:"notion_goal_orphan"`
 	// Sum of all missing+orphaned counts. Zero = fully consistent.
 	TotalDrift int32 `json:"total_drift"`
+	// Number of errors encountered during the run. 0 = clean run.
 	ErrorCount int32 `json:"error_count"`
 	// JSON array of error strings from the run. NULL when error_count=0.
 	Errors    json.RawMessage `json:"errors"`
@@ -1198,7 +1214,7 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Completion signal: currently inferred from report metadata (follow_up_needed) — acceptable for early stage. When completion needs to be systemically queried (dashboard, overdue detection, completion rate), upgrade to directives.resolved_at or report metadata.kind = progress|final|addendum.
+// IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Directive resolution is tracked via directives.resolved_at + directives.resolution_report_id. The resolution report is the final deliverable; earlier reports are progress updates.
 type Report struct {
 	ID int64 `json:"id"`
 	// Who wrote this report. FK to participant. Go layer validates participant.can_write_reports = true. Expandable by setting capability flag on any participant.
@@ -1227,12 +1243,14 @@ type ReviewCard struct {
 	// Denormalized from card_state for index-based due-date queries.
 	Due       time.Time `json:"due"`
 	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries (after FSRS review).
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Append-only review history. One row per review event.
 type ReviewLog struct {
-	ID     int64 `json:"id"`
+	ID int64 `json:"id"`
+	// The review card this log belongs to. CASCADE — card deletion removes its history.
 	CardID int64 `json:"card_id"`
 	// 1=Again (forgot), 2=Hard (partial), 3=Good (remembered), 4=Easy.
 	Rating int32 `json:"rating"`
@@ -1241,7 +1259,8 @@ type ReviewLog struct {
 	// Actual days elapsed since the previous review.
 	ElapsedDays int32 `json:"elapsed_days"`
 	// Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.
-	State      int32     `json:"state"`
+	State int32 `json:"state"`
+	// When this review occurred. May differ from row insertion time if backfilled. DEFAULT now() for real-time reviews.
 	ReviewedAt time.Time `json:"reviewed_at"`
 }
 
@@ -1267,9 +1286,10 @@ type ScheduleRun struct {
 	ID         int64     `json:"id"`
 	ScheduleID uuid.UUID `json:"schedule_id"`
 	// success = run completed without execution error. failure = errored. skipped = missed_run_policy decided to skip. Note: success does not guarantee expected_outputs were produced — output completeness is a separate monitoring concern.
-	Status    string     `json:"status"`
-	StartedAt time.Time  `json:"started_at"`
-	EndedAt   *time.Time `json:"ended_at"`
+	Status    string    `json:"status"`
+	StartedAt time.Time `json:"started_at"`
+	// When the run finished. NULL = still running or crashed. NULL + old started_at = abandoned/crashed run (same pattern as sessions.ended_at).
+	EndedAt *time.Time `json:"ended_at"`
 	// Error details on failure. NULL on success/skip.
 	Error *string `json:"error"`
 	// Run-specific data: produced artifact IDs, execution duration, backend-specific info.
@@ -1345,7 +1365,8 @@ type TagAlias struct {
 	// How the alias was resolved: exact, case-insensitive, manual (admin), unmapped (pending), rejected (admin declined).
 	MatchMethod string `json:"match_method"`
 	// Whether an admin has verified this mapping. Unconfirmed auto-matches may be wrong.
-	Confirmed   bool       `json:"confirmed"`
+	Confirmed bool `json:"confirmed"`
+	// When an admin confirmed this mapping. NULL iff confirmed = false (enforced by chk_confirmed_pair). Set together with confirmed = true.
 	ConfirmedAt *time.Time `json:"confirmed_at"`
 	CreatedAt   time.Time  `json:"created_at"`
 }

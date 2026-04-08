@@ -21,6 +21,11 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
+// WithTx returns a new Store using the given transaction.
+func (s *Store) WithTx(tx pgx.Tx) *Store {
+	return &Store{q: s.q.WithTx(tx)}
+}
+
 // Participant holds resolved participant capabilities.
 type Participant struct {
 	Name                 string
@@ -128,18 +133,48 @@ func (s *Store) UnackedForTarget(ctx context.Context, target string) ([]Directiv
 
 func rowToDirective(r *db.Directive) *Directive {
 	d := &Directive{
-		ID:             r.ID,
-		Source:         r.Source,
-		Target:         r.Target,
-		Priority:       r.Priority,
-		AcknowledgedAt: r.AcknowledgedAt,
-		AcknowledgedBy: r.AcknowledgedBy,
-		Content:        r.Content,
-		IssuedDate:     r.IssuedDate,
-		CreatedAt:      r.CreatedAt,
+		ID:                 r.ID,
+		Source:             r.Source,
+		Target:             r.Target,
+		Priority:           r.Priority,
+		AcknowledgedAt:     r.AcknowledgedAt,
+		AcknowledgedBy:     r.AcknowledgedBy,
+		ResolvedAt:         r.ResolvedAt,
+		ResolutionReportID: r.ResolutionReportID,
+		Content:            r.Content,
+		IssuedDate:         r.IssuedDate,
+		CreatedAt:          r.CreatedAt,
 	}
 	if r.Metadata != nil {
 		_ = json.Unmarshal(r.Metadata, &d.Metadata)
 	}
 	return d
+}
+
+// Resolve marks a directive as resolved, linking to the resolution report.
+func (s *Store) Resolve(ctx context.Context, id int64, reportID *int64) (*Directive, error) {
+	row, err := s.q.ResolveDirective(ctx, db.ResolveDirectiveParams{
+		ID:                 id,
+		ResolutionReportID: reportID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("resolving directive %d: %w", id, err)
+	}
+	return rowToDirective(&row), nil
+}
+
+// UnresolvedForTarget returns acknowledged but unresolved directives for a participant.
+func (s *Store) UnresolvedForTarget(ctx context.Context, target string) ([]Directive, error) {
+	rows, err := s.q.UnresolvedDirectivesForTarget(ctx, target)
+	if err != nil {
+		return nil, fmt.Errorf("querying unresolved directives for %s: %w", target, err)
+	}
+	result := make([]Directive, len(rows))
+	for i := range rows {
+		result[i] = *rowToDirective(&rows[i])
+	}
+	return result, nil
 }

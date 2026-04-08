@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -269,4 +270,37 @@ func rowToProject(r *db.Project) Project {
 		CreatedAt:       r.CreatedAt,
 		UpdatedAt:       r.UpdatedAt,
 	}
+}
+
+// ProjectSummary is a lightweight project view for goal_progress output.
+type ProjectSummary struct {
+	ID             uuid.UUID  `json:"id"`
+	Slug           string     `json:"slug"`
+	Title          string     `json:"title"`
+	Status         Status     `json:"status"`
+	GoalID         *uuid.UUID `json:"goal_id,omitempty"`
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+}
+
+// SummariesByGoalIDs returns lightweight project info for a set of goal IDs.
+func (s *Store) SummariesByGoalIDs(ctx context.Context, goalIDs []uuid.UUID) ([]ProjectSummary, error) {
+	if len(goalIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.q.ProjectSummariesByGoalIDs(ctx, goalIDs)
+	if err != nil {
+		return nil, fmt.Errorf("querying project summaries by goal IDs: %w", err)
+	}
+	result := make([]ProjectSummary, len(rows))
+	for i := range rows {
+		result[i] = ProjectSummary{
+			ID:             rows[i].ID,
+			Slug:           rows[i].Slug,
+			Title:          rows[i].Title,
+			Status:         Status(rows[i].Status),
+			GoalID:         rows[i].GoalID,
+			LastActivityAt: rows[i].LastActivityAt,
+		}
+	}
+	return result, nil
 }

@@ -227,7 +227,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	addTool(s, &mcp.Tool{
 		Name:        "file_report",
-		Description: "Create a report. Optionally links to a directive via in_response_to. Source must be a participant with can_write_reports. Use when a participant needs to report output back to HQ or the directive issuer.",
+		Description: "Create a report. Optionally links to a directive via in_response_to. Set resolve_directive=true to mark the directive as resolved (requires directive to be acknowledged first). Source must be a participant with can_write_reports. Use when a participant completes directive work and files the final deliverable.",
 		Annotations: additive,
 	}, s.fileReport)
 

@@ -104,11 +104,12 @@ If the AI is uncertain between two levels, it MUST pick the lower one.
 | Goal: status change | User | propose_commitment or track via goal_progress |
 | Insight: unverified → verified/invalidated | User (AI may suggest with evidence) | track_insight |
 | Directive: → acknowledged | Target participant | acknowledge_directive |
+| Directive: → resolved | Source or target, after final report | file_report (sets resolved_at + resolution_report_id) |
 | Learning session: → ended | User or AI at natural end | end_session |
 | Learning plan: draft → active | User (via commit or manage_plan) | manage_plan(action=update_plan) |
 | Learning plan: active → paused/completed | User | manage_plan(action=update_plan) |
 | Learning plan: → abandoned | User | manage_plan(action=update_plan) |
-| Plan item: → completed | Claude's semantic judgment after successful attempt | manage_plan(action=update_item) |
+| Plan item: → completed | Claude's semantic judgment after successful attempt | manage_plan(action=update_item). MUST include completed_by_attempt_id and reason. |
 | Plan item: → skipped/substituted | User decision | manage_plan(action=update_item) |
 
 ---
@@ -187,6 +188,22 @@ High-confidence observations are written to `attempt_observations` immediately.
 Low-confidence observations are returned in the response as `pending_observations`
 for the AI to present to the user. If the user confirms, a follow-up call records them.
 
+### Concrete examples by domain
+
+**LeetCode:**
+- HIGH: User said "I forgot how binary search works on rotated arrays" → `{concept: "binary-search", signal: "weakness", category: "pattern-recognition"}`. Concept exists, signal directly stated by user.
+- HIGH: User solved Two Sum independently in 3 minutes → `{concept: "hash-map", signal: "mastery", category: "data-structure"}`. Concept exists, mastery evidenced by independent solve + speed.
+- LOW: User failed 3Sum but the AI suspects weak two-pointer skills → `{concept: "two-pointer", signal: "weakness", category: "algorithm"}`. Signal is inferred (the user didn't mention two-pointers; the AI diagnosed it). Present to user first.
+- LOW: User struggled with a problem, AI thinks a new concept "monotonic-stack" explains it but that concept doesn't exist yet → auto-creation + inference = low confidence.
+
+**Japanese:**
+- HIGH: User conjugated te-form incorrectly 3 times in a drill → `{concept: "te-form", signal: "weakness", category: "conjugation-accuracy"}`. Directly evidenced by repeated errors.
+- LOW: User struggled with a listening passage; AI infers vocabulary weakness → `{concept: "N3-vocabulary", signal: "weakness", category: "vocabulary-recall"}`. Inferred from comprehension failure, not directly evidenced.
+
+**System Design:**
+- HIGH: User couldn't estimate QPS for a URL shortener → `{concept: "capacity-estimation", signal: "weakness", category: "capacity-estimation"}`. Directly evidenced.
+- LOW: User's design lacked a cache layer; AI infers they don't understand caching tradeoffs → `{concept: "caching-strategy", signal: "weakness", category: "tradeoff-analysis"}`. Inferred.
+
 ---
 
 ## 6. Concept Auto-Creation Boundary
@@ -232,13 +249,29 @@ It is NOT a scratch pad, thought dump, or idea journal.
 - "今天決定不做 X 了，因為 Y" — decision record (kind=context or reflection)
 - "這週的重點是把 Phase 1 完成" — plan statement (kind=plan)
 
+### Goes into insight (propose_commitment)
+
+- "我發現每次做 graph 題都卡在 DFS termination condition" — falsifiable hypothesis
+- "我覺得 LeetCode 的弱點是 state definition 不是 transition" — testable pattern with implicit invalidation condition
+- NOT insight: "今天效率不錯" — no hypothesis, no invalidation condition → journal(reflection)
+- NOT insight: "最近 DP 做得不好" — feeling without a specific, testable claim → conversation or journal(reflection)
+
+### Journal kind routing rule
+
+When the input contains both quantitative data and narrative:
+- **Use `reflection` as kind, put structured metrics into `metadata`.**
+- Example: "今天完成 5 題但覺得效率不好" → `write_journal(kind=reflection, content="...", metadata={tasks_completed: 5})`
+- Pure-narrative reflections ("覺得最近方向不對") → `reflection` with no metrics metadata
+- Pure-metrics snapshots without narrative are rare in human use. When they occur, they are typically **AI-generated** (e.g., end-of-session auto-summary). In that case: `write_journal(kind=metrics, source=<ai_participant>)`.
+- **Practical implication**: `metrics` kind will primarily be written by AI participants as automated quantitative snapshots, not by human users. Human journal entries almost always carry some narrative → `reflection` is the de facto default human kind.
+
 ### The test
 
 Before writing to inbox, ask: **"Can this become a single task with a clear done state?"**
 - Yes → inbox
 - No, it's a direction → conversation (M0-M1)
 - No, it's a reflection → journal
-- No, it's a hypothesis → propose_commitment(type=insight)
+- No, it's a falsifiable hypothesis → propose_commitment(type=insight)
 
 ---
 
@@ -400,3 +433,54 @@ a code review or general conversation), it should:
 
 Rationale: the session boundary is the orchestration guarantee. Without it,
 attempt data becomes noisy and unstructured.
+
+---
+
+## 13. Plan Item Completion Audit Trail
+
+When Claude marks a plan item as completed via `manage_plan(action=update_item, status=completed)`,
+the following fields are **MANDATORY** (policy-enforced, not schema-enforced):
+
+| Field | Requirement | Example |
+|-------|------------|---------|
+| `completed_by_attempt_id` | The attempt UUID that informed the completion decision | `"a1b2c3..."` |
+| `reason` | What attempt outcome and reasoning informed the decision | `"solved_independent on attempt #2, 8 min, clean implementation"` |
+
+### Why policy-enforced, not schema-enforced
+
+`completed_by_attempt_id` is nullable in the schema to allow future manual/UI completion
+paths (e.g., user completed the item on another platform with no attempt record). The
+schema constraint `chk_completed_by_attempt_requires_status` only ensures the FK is NULL
+for non-completed items — it does NOT enforce NOT NULL for completed items.
+
+The **AI path** (manage_plan called by Claude) MUST always provide both fields. The
+**manual path** (future UI) MAY omit `completed_by_attempt_id` but SHOULD still provide
+`reason` (e.g., "completed on LeetCode directly, no session").
+
+### Reasoning
+
+Without this audit trail, plan item completion is a black box — "Claude decided it was done"
+with no traceable connection to the evidence. The attempt_id enables:
+- `JOIN attempts ON plan_items.completed_by_attempt_id` for learning analytics
+- Auditing completion quality (was a `solved_with_hint` really sufficient for this plan?)
+- Detecting patterns (does Claude complete too aggressively for certain plan types?)
+
+---
+
+## 14. Directive Resolution
+
+Directives have a three-phase lifecycle: **issued → acknowledged → resolved**.
+
+| Phase | Column | Who sets it |
+|-------|--------|-------------|
+| Issued | `issued_date`, `created_at` | Source participant (via propose_commitment → commit_proposal) |
+| Acknowledged | `acknowledged_at`, `acknowledged_by` | Target participant (via acknowledge_directive) |
+| Resolved | `resolved_at`, `resolution_report_id` | Source or target (via file_report with resolution flag, or explicit resolution) |
+
+### Rules
+
+- A directive MUST be acknowledged before it can be resolved (`chk_resolved_requires_ack`)
+- `resolution_report_id` links to the report that constitutes the final deliverable
+- A directive with reports but no `resolved_at` is in-progress (reports are progress updates)
+- `morning_context` queries unresolved directives via `WHERE resolved_at IS NULL AND acknowledged_at IS NOT NULL`
+- Unacknowledged directives use the existing `idx_directives_unacked` partial index

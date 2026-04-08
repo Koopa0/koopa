@@ -59,16 +59,17 @@ type Plan struct {
 
 // PlanItem represents a single entry in a learning plan's ordered sequence.
 type PlanItem struct {
-	ID             uuid.UUID  `json:"id"`
-	PlanID         uuid.UUID  `json:"plan_id"`
-	LearningItemID uuid.UUID  `json:"learning_item_id"`
-	Position       int32      `json:"position"`
-	Status         ItemStatus `json:"status"`
-	Phase          *string    `json:"phase,omitempty"`
-	SubstitutedBy  *uuid.UUID `json:"substituted_by,omitempty"`
-	Reason         *string    `json:"reason,omitempty"`
-	AddedAt        time.Time  `json:"added_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	ID                   uuid.UUID  `json:"id"`
+	PlanID               uuid.UUID  `json:"plan_id"`
+	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	Position             int32      `json:"position"`
+	Status               ItemStatus `json:"status"`
+	Phase                *string    `json:"phase,omitempty"`
+	SubstitutedBy        *uuid.UUID `json:"substituted_by,omitempty"`
+	CompletedByAttemptID *uuid.UUID `json:"completed_by_attempt_id,omitempty"`
+	Reason               *string    `json:"reason,omitempty"`
+	AddedAt              time.Time  `json:"added_at"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
 }
 
 // PlanItemWithTitle extends PlanItem with the parent plan's title,

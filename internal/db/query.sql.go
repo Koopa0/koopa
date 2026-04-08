@@ -18,7 +18,7 @@ const acknowledgeDirective = `-- name: AcknowledgeDirective :one
 UPDATE directives
 SET acknowledged_at = now(), acknowledged_by = $1
 WHERE id = $2 AND acknowledged_at IS NULL
-RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
+RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at
 `
 
 type AcknowledgeDirectiveParams struct {
@@ -36,6 +36,8 @@ func (q *Queries) AcknowledgeDirective(ctx context.Context, arg AcknowledgeDirec
 		&i.Priority,
 		&i.AcknowledgedAt,
 		&i.AcknowledgedBy,
+		&i.ResolvedAt,
+		&i.ResolutionReportID,
 		&i.Content,
 		&i.Metadata,
 		&i.IssuedDate,
@@ -106,8 +108,7 @@ func (q *Queries) ActiveGoals(ctx context.Context) ([]ActiveGoalsRow, error) {
 }
 
 const activePlans = `-- name: ActivePlans :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans WHERE status IN ('draft', 'active')
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans WHERE status IN ('draft', 'active')
 ORDER BY updated_at DESC
 `
 
@@ -258,7 +259,7 @@ func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams
 const addPlanItem = `-- name: AddPlanItem :one
 INSERT INTO plan_items (plan_id, learning_item_id, position, phase)
 VALUES ($1, $2, $3, $4)
-RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
+RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at
 `
 
 type AddPlanItemParams struct {
@@ -284,6 +285,7 @@ func (q *Queries) AddPlanItem(ctx context.Context, arg AddPlanItemParams) (PlanI
 		&i.Status,
 		&i.Phase,
 		&i.SubstitutedBy,
+		&i.CompletedByAttemptID,
 		&i.Reason,
 		&i.AddedAt,
 		&i.CompletedAt,
@@ -1739,7 +1741,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 const createDirective = `-- name: CreateDirective :one
 INSERT INTO directives (source, target, priority, content, metadata, issued_date)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
+RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at
 `
 
 type CreateDirectiveParams struct {
@@ -1768,6 +1770,8 @@ func (q *Queries) CreateDirective(ctx context.Context, arg CreateDirectiveParams
 		&i.Priority,
 		&i.AcknowledgedAt,
 		&i.AcknowledgedBy,
+		&i.ResolvedAt,
+		&i.ResolutionReportID,
 		&i.Content,
 		&i.Metadata,
 		&i.IssuedDate,
@@ -2806,8 +2810,7 @@ func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 }
 
 const directiveByID = `-- name: DirectiveByID :one
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
-FROM directives WHERE id = $1
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives WHERE id = $1
 `
 
 func (q *Queries) DirectiveByID(ctx context.Context, id int64) (Directive, error) {
@@ -2820,6 +2823,8 @@ func (q *Queries) DirectiveByID(ctx context.Context, id int64) (Directive, error
 		&i.Priority,
 		&i.AcknowledgedAt,
 		&i.AcknowledgedBy,
+		&i.ResolvedAt,
+		&i.ResolutionReportID,
 		&i.Content,
 		&i.Metadata,
 		&i.IssuedDate,
@@ -5051,8 +5056,7 @@ func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksW
 }
 
 const plan = `-- name: Plan :one
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans WHERE id = $1
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans WHERE id = $1
 `
 
 func (q *Queries) Plan(ctx context.Context, id uuid.UUID) (Plan, error) {
@@ -5075,8 +5079,7 @@ func (q *Queries) Plan(ctx context.Context, id uuid.UUID) (Plan, error) {
 }
 
 const planItem = `-- name: PlanItem :one
-SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
-FROM plan_items WHERE id = $1
+SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at FROM plan_items WHERE id = $1
 `
 
 func (q *Queries) PlanItem(ctx context.Context, id uuid.UUID) (PlanItem, error) {
@@ -5090,6 +5093,7 @@ func (q *Queries) PlanItem(ctx context.Context, id uuid.UUID) (PlanItem, error) 
 		&i.Status,
 		&i.Phase,
 		&i.SubstitutedBy,
+		&i.CompletedByAttemptID,
 		&i.Reason,
 		&i.AddedAt,
 		&i.CompletedAt,
@@ -5098,8 +5102,7 @@ func (q *Queries) PlanItem(ctx context.Context, id uuid.UUID) (PlanItem, error) 
 }
 
 const planItems = `-- name: PlanItems :many
-SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
-FROM plan_items WHERE plan_id = $1
+SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at FROM plan_items WHERE plan_id = $1
 ORDER BY position
 `
 
@@ -5121,6 +5124,7 @@ func (q *Queries) PlanItems(ctx context.Context, planID uuid.UUID) ([]PlanItem, 
 			&i.Status,
 			&i.Phase,
 			&i.SubstitutedBy,
+			&i.CompletedByAttemptID,
 			&i.Reason,
 			&i.AddedAt,
 			&i.CompletedAt,
@@ -5137,7 +5141,7 @@ func (q *Queries) PlanItems(ctx context.Context, planID uuid.UUID) ([]PlanItem, 
 
 const planItemsByLearningItem = `-- name: PlanItemsByLearningItem :many
 SELECT lpi.id, lpi.plan_id, lpi.learning_item_id, lpi.position, lpi.status, lpi.phase,
-       lpi.substituted_by, lpi.reason, lpi.added_at, lpi.completed_at,
+       lpi.substituted_by, lpi.completed_by_attempt_id, lpi.reason, lpi.added_at, lpi.completed_at,
        lp.title AS plan_title
 FROM plan_items lpi
 JOIN plans lp ON lp.id = lpi.plan_id
@@ -5146,17 +5150,18 @@ WHERE lpi.learning_item_id = $1
 `
 
 type PlanItemsByLearningItemRow struct {
-	ID             uuid.UUID  `json:"id"`
-	PlanID         uuid.UUID  `json:"plan_id"`
-	LearningItemID uuid.UUID  `json:"learning_item_id"`
-	Position       int32      `json:"position"`
-	Status         string     `json:"status"`
-	Phase          *string    `json:"phase"`
-	SubstitutedBy  *uuid.UUID `json:"substituted_by"`
-	Reason         *string    `json:"reason"`
-	AddedAt        time.Time  `json:"added_at"`
-	CompletedAt    *time.Time `json:"completed_at"`
-	PlanTitle      string     `json:"plan_title"`
+	ID                   uuid.UUID  `json:"id"`
+	PlanID               uuid.UUID  `json:"plan_id"`
+	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	Position             int32      `json:"position"`
+	Status               string     `json:"status"`
+	Phase                *string    `json:"phase"`
+	SubstitutedBy        *uuid.UUID `json:"substituted_by"`
+	CompletedByAttemptID *uuid.UUID `json:"completed_by_attempt_id"`
+	Reason               *string    `json:"reason"`
+	AddedAt              time.Time  `json:"added_at"`
+	CompletedAt          *time.Time `json:"completed_at"`
+	PlanTitle            string     `json:"plan_title"`
 }
 
 // Find plan items for a learning_item across ACTIVE plans only.
@@ -5178,6 +5183,7 @@ func (q *Queries) PlanItemsByLearningItem(ctx context.Context, learningItemID uu
 			&i.Status,
 			&i.Phase,
 			&i.SubstitutedBy,
+			&i.CompletedByAttemptID,
 			&i.Reason,
 			&i.AddedAt,
 			&i.CompletedAt,
@@ -5226,8 +5232,7 @@ func (q *Queries) PlanProgress(ctx context.Context, planID uuid.UUID) (PlanProgr
 }
 
 const plansByDomain = `-- name: PlansByDomain :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans
 WHERE domain = $1
   AND ($2::text IS NULL OR status = $2)
 ORDER BY created_at DESC
@@ -5272,8 +5277,7 @@ func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([
 }
 
 const plansByGoal = `-- name: PlansByGoal :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
-FROM plans WHERE goal_id = $1
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans WHERE goal_id = $1
 ORDER BY created_at DESC
 `
 
@@ -5527,6 +5531,51 @@ func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, er
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const projectSummariesByGoalIDs = `-- name: ProjectSummariesByGoalIDs :many
+SELECT id, slug, title, status, goal_id, last_activity_at
+FROM projects
+WHERE goal_id = ANY($1::uuid[])
+  AND status NOT IN ('archived')
+ORDER BY goal_id, sort_order
+`
+
+type ProjectSummariesByGoalIDsRow struct {
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Status         ProjectStatus `json:"status"`
+	GoalID         *uuid.UUID    `json:"goal_id"`
+	LastActivityAt *time.Time    `json:"last_activity_at"`
+}
+
+// Lightweight project info for goal_progress output.
+func (q *Queries) ProjectSummariesByGoalIDs(ctx context.Context, goalIds []uuid.UUID) ([]ProjectSummariesByGoalIDsRow, error) {
+	rows, err := q.db.Query(ctx, projectSummariesByGoalIDs, goalIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectSummariesByGoalIDsRow{}
+	for rows.Next() {
+		var i ProjectSummariesByGoalIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Status,
+			&i.GoalID,
+			&i.LastActivityAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const projects = `-- name: Projects :many
@@ -6591,6 +6640,38 @@ func (q *Queries) ResetRecurringTask(ctx context.Context, arg ResetRecurringTask
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const resolveDirective = `-- name: ResolveDirective :one
+UPDATE directives
+SET resolved_at = now(), resolution_report_id = $1
+WHERE id = $2 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
+RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at
+`
+
+type ResolveDirectiveParams struct {
+	ResolutionReportID *int64 `json:"resolution_report_id"`
+	ID                 int64  `json:"id"`
+}
+
+func (q *Queries) ResolveDirective(ctx context.Context, arg ResolveDirectiveParams) (Directive, error) {
+	row := q.db.QueryRow(ctx, resolveDirective, arg.ResolutionReportID, arg.ID)
+	var i Directive
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.Target,
+		&i.Priority,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
+		&i.ResolvedAt,
+		&i.ResolutionReportID,
+		&i.Content,
+		&i.Metadata,
+		&i.IssuedDate,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -8169,8 +8250,7 @@ func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) (
 }
 
 const unackedDirectivesForTarget = `-- name: UnackedDirectivesForTarget :many
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, content, metadata, issued_date, created_at
-FROM directives
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
 WHERE target = $1 AND acknowledged_at IS NULL
 ORDER BY issued_date DESC, created_at DESC
 `
@@ -8191,6 +8271,47 @@ func (q *Queries) UnackedDirectivesForTarget(ctx context.Context, target string)
 			&i.Priority,
 			&i.AcknowledgedAt,
 			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const unresolvedDirectivesForTarget = `-- name: UnresolvedDirectivesForTarget :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
+WHERE target = $1 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
+ORDER BY issued_date DESC, created_at DESC
+`
+
+func (q *Queries) UnresolvedDirectivesForTarget(ctx context.Context, target string) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, unresolvedDirectivesForTarget, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
 			&i.Content,
 			&i.Metadata,
 			&i.IssuedDate,
@@ -8612,17 +8733,19 @@ func (q *Queries) UpdatePlanItemPosition(ctx context.Context, arg UpdatePlanItem
 
 const updatePlanItemStatus = `-- name: UpdatePlanItemStatus :one
 UPDATE plan_items
-SET status = $1, reason = $2, completed_at = $3, substituted_by = $4
-WHERE id = $5
-RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, reason, added_at, completed_at
+SET status = $1, reason = $2, completed_at = $3,
+    substituted_by = $4, completed_by_attempt_id = $5
+WHERE id = $6
+RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at
 `
 
 type UpdatePlanItemStatusParams struct {
-	Status        string     `json:"status"`
-	Reason        *string    `json:"reason"`
-	CompletedAt   *time.Time `json:"completed_at"`
-	SubstitutedBy *uuid.UUID `json:"substituted_by"`
-	ID            uuid.UUID  `json:"id"`
+	Status               string     `json:"status"`
+	Reason               *string    `json:"reason"`
+	CompletedAt          *time.Time `json:"completed_at"`
+	SubstitutedBy        *uuid.UUID `json:"substituted_by"`
+	CompletedByAttemptID *uuid.UUID `json:"completed_by_attempt_id"`
+	ID                   uuid.UUID  `json:"id"`
 }
 
 func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemStatusParams) (PlanItem, error) {
@@ -8631,6 +8754,7 @@ func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemSt
 		arg.Reason,
 		arg.CompletedAt,
 		arg.SubstitutedBy,
+		arg.CompletedByAttemptID,
 		arg.ID,
 	)
 	var i PlanItem
@@ -8642,6 +8766,7 @@ func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemSt
 		&i.Status,
 		&i.Phase,
 		&i.SubstitutedBy,
+		&i.CompletedByAttemptID,
 		&i.Reason,
 		&i.AddedAt,
 		&i.CompletedAt,

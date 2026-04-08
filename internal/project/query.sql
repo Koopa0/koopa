@@ -111,3 +111,11 @@ RETURNING id, slug, title, description, long_description, role, tech_stack, high
           problem, solution, architecture, results, github_url, live_url,
           featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at;
+
+-- name: ProjectSummariesByGoalIDs :many
+-- Lightweight project info for goal_progress output.
+SELECT id, slug, title, status, goal_id, last_activity_at
+FROM projects
+WHERE goal_id = ANY(@goal_ids::uuid[])
+  AND status NOT IN ('archived')
+ORDER BY goal_id, sort_order;

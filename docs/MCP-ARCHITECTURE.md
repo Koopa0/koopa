@@ -195,6 +195,16 @@ Platform: human
 | **Journal** | self | 自己的日記（plan/context/reflection/metrics） |
 | **Insight** | self → shared | 假說追蹤。經過 propose → commit → verify/invalidate 生命週期 |
 
+**Directive 生命週期：**
+```
+issued → acknowledged → resolved
+              │              │
+              └── resolved_at + resolution_report_id
+```
+- `acknowledged_at` — target 收到了
+- `resolved_at` — 工作完成（需先 acknowledged）
+- `resolution_report_id` — 最終交付物的 report
+
 **Directive vs Task 判斷準則：**
 - 產出是**報告**（需要判斷力）→ Directive
 - 產出是**狀態變更**（執行性工作）→ Task
@@ -220,14 +230,14 @@ Platform: human
 
 | # | Tool | Input | Output | Annotation |
 |---|------|-------|--------|------------|
-| 1 | `morning_context` | sections?, date? | overdue_tasks, today_tasks, committed_tasks, upcoming_tasks, active_goals, unacked_directives, pending_reports, insights, rss, plan_history | readOnly |
+| 1 | `morning_context` | sections?, date? | overdue_tasks, today_tasks, committed_tasks, upcoming_tasks, active_goals, unacked_directives, unresolved_directives, pending_reports, insights, rss, plan_history | readOnly |
 | 2 | `reflection_context` | date? | planned_items, completed/deferred/planned counts, completion_rate, today_journals | readOnly |
 | 3 | `search_knowledge` | query, content_type?, project?, limit? | contents[] with excerpt + similarity | readOnly |
-| 4 | `goal_progress` | area?, status? | goals[] with milestone_total/milestone_done, area_name | readOnly |
+| 4 | `goal_progress` | area?, status? | goals[] with milestone_total/milestone_done, area_name, projects[] | readOnly |
 | 5 | `learning_dashboard` | domain?, view?, days? | view-specific data (see §2.4) | readOnly |
 | 6 | `system_status` | scope? | overview (pipeline stats, feed health) | readOnly |
 | 7 | `capture_inbox` | title, description?, project?, assignee?, energy?, due? | task (status=inbox) | additive |
-| 8 | `propose_commitment` | type (goal/project/milestone/directive/insight), fields | preview + warnings + proposal_token | readOnly |
+| 8 | `propose_commitment` | type (goal/project/milestone/directive/insight/learning_plan), fields | preview + warnings + proposal_token | readOnly |
 | 9 | `commit_proposal` | proposal_token, modifications? | type + id + message | additive |
 | 10 | `advance_work` | task_id, action (clarify/start/complete/defer), project?, due?, priority?, energy? | task + plan_item_updated? | destructive |
 | 11 | `plan_day` | items[{task_id, position}], date? | items[] | additiveIdempotent |
@@ -235,7 +245,7 @@ Platform: human
 | 13 | `acknowledge_directive` | directive_id | acknowledged + directive | additiveIdempotent |
 | 14 | `track_insight` | insight_id, action (verify/invalidate/archive/add_evidence), evidence? | insight | additiveIdempotent |
 | 15 | `start_session` | domain, mode, daily_plan_item_id? | session | additive |
-| 16 | `record_attempt` | session_id, item{title, external_id?, difficulty?}, outcome, duration?, stuck_at?, approach?, observations[]? | attempt + observations_recorded + pending_observations | additive |
+| 16 | `record_attempt` | session_id, item{title, external_id?, difficulty?}, outcome, duration?, stuck_at?, approach?, observations[]? | attempt + observations_recorded + pending_observations + plan_context | additive |
 | 17 | `end_session` | session_id, reflection? | session + attempts[] + duration | additive |
 | 18 | `write_journal` | kind (plan/context/reflection/metrics), content, metadata? | entry | additive |
 | 19 | `manage_content` | action (create/update/publish), title?, body?, content_type?, content_id?, project? | id + title + status | additive |
