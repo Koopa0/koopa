@@ -237,7 +237,92 @@ export const routes: Routes = [
         canDeactivate: [unsavedChangesGuard],
       },
 
-      // — System（現有頁面暫放此區）—
+      // — Learn（Phase 2）—
+      {
+        path: 'learn',
+        redirectTo: 'learn/dashboard',
+        pathMatch: 'full',
+      },
+      {
+        path: 'learn/dashboard',
+        loadComponent: () =>
+          import('./admin/learn/learn-dashboard').then(
+            (m) => m.LearnDashboardComponent,
+          ),
+      },
+      {
+        path: 'learn/session/:id',
+        loadComponent: () =>
+          import('./admin/learn/session-workspace').then(
+            (m) => m.SessionWorkspaceComponent,
+          ),
+      },
+      {
+        path: 'learn/concepts/:slug',
+        loadComponent: () =>
+          import('./admin/learn/concept-drilldown').then(
+            (m) => m.ConceptDrilldownComponent,
+          ),
+      },
+      {
+        path: 'learn/review',
+        loadComponent: () =>
+          import('./admin/learn/review-queue').then(
+            (m) => m.ReviewQueueComponent,
+          ),
+      },
+
+      // — Reflect（Phase 2）—
+      {
+        path: 'reflect',
+        redirectTo: 'reflect/daily',
+        pathMatch: 'full',
+      },
+      {
+        path: 'reflect/daily',
+        loadComponent: () =>
+          import('./admin/reflect/daily-review').then(
+            (m) => m.DailyReviewComponent,
+          ),
+      },
+      {
+        path: 'reflect/weekly',
+        loadComponent: () =>
+          import('./admin/reflect/weekly-review').then(
+            (m) => m.WeeklyReviewComponent,
+          ),
+      },
+      {
+        path: 'reflect/insights',
+        loadComponent: () =>
+          import('./admin/reflect/insights').then((m) => m.InsightsComponent),
+      },
+      {
+        path: 'reflect/journal',
+        loadComponent: () =>
+          import('./admin/reflect/journal').then((m) => m.JournalComponent),
+      },
+
+      // — Studio（Phase 3）—
+      {
+        path: 'studio',
+        loadComponent: () =>
+          import('./admin/studio/studio').then((m) => m.StudioComponent),
+      },
+
+      // — System —
+      {
+        path: 'system',
+        redirectTo: 'system/health',
+        pathMatch: 'full',
+      },
+      {
+        path: 'system/health',
+        loadComponent: () =>
+          import('./admin/system/system-health').then(
+            (m) => m.SystemHealthComponent,
+          ),
+      },
       {
         path: 'system/feeds',
         loadComponent: () =>

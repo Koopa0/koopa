@@ -1,0 +1,87 @@
+@if (isLoading()) {
+<div
+  data-testid="journal-loading"
+  class="flex h-64 items-center justify-center"
+  role="status"
+>
+  <div
+    class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+  ></div>
+  <span class="sr-only">載入中...</span>
+</div>
+} @else {
+
+<div data-testid="journal-content" class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-lg font-semibold text-zinc-100">日誌時間線</h1>
+    <p class="mt-1 text-sm text-zinc-500">計劃、反思、脈絡記錄</p>
+  </div>
+
+  <!-- Filter Tabs -->
+  <div class="mb-5 flex gap-1 rounded-sm bg-zinc-900 p-0.5">
+    @for (tab of filterTabs; track tab.key) {
+    <button
+      type="button"
+      [attr.data-testid]="'journal-tab-' + tab.key"
+      (click)="setFilter(tab.key)"
+      class="rounded-xs px-3 py-1.5 text-xs font-medium transition-colors"
+      [class]="activeFilter() === tab.key
+        ? 'bg-zinc-800 text-zinc-200'
+        : 'text-zinc-500 hover:text-zinc-300'"
+    >
+      {{ tab.label }}
+    </button>
+    }
+  </div>
+
+  <!-- Entries List -->
+  @if (filteredEntries().length === 0) {
+  <div
+    data-testid="journal-empty"
+    class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
+  >
+    <lucide-icon
+      [img]="ScrollTextIcon"
+      [size]="28"
+      class="mx-auto mb-2 text-zinc-700"
+      aria-hidden="true"
+    />
+    <p class="text-sm text-zinc-500">沒有日誌記錄</p>
+  </div>
+  } @else {
+  <div class="space-y-2">
+    @for (entry of filteredEntries(); track $index) {
+    <div
+      data-testid="journal-entry"
+      class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+    >
+      <div class="flex items-center gap-2 mb-2">
+        <lucide-icon
+          [img]="getKindIcon(entry.kind)"
+          [size]="12"
+          class="text-zinc-500"
+          aria-hidden="true"
+        />
+        <span
+          class="rounded-xs px-1.5 py-0.5 text-[10px] font-medium"
+          [class]="KIND_CLASSES[entry.kind] ?? 'bg-zinc-800 text-zinc-400'"
+        >
+          {{ KIND_LABELS[entry.kind] ?? entry.kind }}
+        </span>
+        @if (entry.date) {
+        <span class="text-xs text-zinc-600">
+          {{ entry.date | date: 'M/d EEE' }}
+        </span>
+        }
+      </div>
+      <p class="text-sm text-zinc-300 leading-relaxed line-clamp-3">
+        {{ entry.body }}
+      </p>
+    </div>
+    }
+  </div>
+  }
+</div>
+
+}

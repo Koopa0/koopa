@@ -33,6 +33,15 @@ import {
   PanelLeft,
   ChevronDown,
   ChevronRight,
+  GraduationCap,
+  Brain,
+  RotateCcw,
+  NotebookPen,
+  CalendarCheck,
+  Lightbulb,
+  ScrollText,
+  Users,
+  HeartPulse,
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -158,10 +167,92 @@ export class AdminLayoutComponent {
       ],
     },
     {
+      title: 'Learn',
+      collapsible: true,
+      items: [
+        {
+          label: 'Dashboard',
+          route: '/admin/learn/dashboard',
+          icon: GraduationCap,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Concepts',
+          route: '/admin/learn/concepts',
+          icon: Brain,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Review',
+          route: '/admin/learn/review',
+          icon: RotateCcw,
+          exact: false,
+          disabled: false,
+        },
+      ],
+    },
+    {
+      title: 'Reflect',
+      collapsible: true,
+      items: [
+        {
+          label: 'Daily',
+          route: '/admin/reflect/daily',
+          icon: NotebookPen,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Weekly',
+          route: '/admin/reflect/weekly',
+          icon: CalendarCheck,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Insights',
+          route: '/admin/reflect/insights',
+          icon: Lightbulb,
+          exact: false,
+          disabled: false,
+        },
+        {
+          label: 'Journal',
+          route: '/admin/reflect/journal',
+          icon: ScrollText,
+          exact: false,
+          disabled: false,
+        },
+      ],
+    },
+    {
+      title: 'Coordinate',
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          label: 'Studio',
+          route: '/admin/studio',
+          icon: Users,
+          exact: false,
+          disabled: false,
+        },
+      ],
+    },
+    {
       title: 'System',
       collapsible: true,
       collapsed: true,
       items: [
+        {
+          label: 'Health',
+          route: '/admin/system/health',
+          icon: HeartPulse,
+          exact: false,
+          disabled: false,
+        },
         {
           label: 'Feeds',
           route: '/admin/system/feeds',
