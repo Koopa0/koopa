@@ -112,6 +112,7 @@ export interface ClarifyAsJournal {
 export interface ClarifyAsInsight {
   type: 'insight';
   hypothesis: string;
+  invalidation_condition: string;
   initial_evidence?: string;
 }
 
@@ -157,6 +158,7 @@ export interface GoalSummary {
   quarter: string;
 }
 
+/** Goal detail — milestones 和 projects 是 siblings，不是 parent-child */
 export interface GoalDetail {
   id: string;
   title: string;
@@ -168,22 +170,24 @@ export interface GoalDetail {
   quarter: string;
   created_at: string;
   health: GoalHealth;
-  milestones: MilestoneWithProjects[];
+  milestones: Milestone[];
+  projects: GoalProject[];
   recent_activity: ActivityItem[];
 }
 
 export type GoalHealth = 'on-track' | 'at-risk' | 'stalled';
 
-export interface MilestoneWithProjects {
+/** Milestone — 二元完成（completed_at null = 未完成）*/
+export interface Milestone {
   id: string;
   title: string;
   completed: boolean;
   completed_at: string | null;
   position: number;
-  projects: ProjectInMilestone[];
 }
 
-export interface ProjectInMilestone {
+/** Project linked to goal via projects.goal_id（不經過 milestone）*/
+export interface GoalProject {
   id: string;
   title: string;
   status: string;
@@ -368,6 +372,61 @@ export interface DomainMastery {
 export interface LearningStreak {
   current_days: number;
   longest: number;
+}
+
+// === Learning Plans ===
+
+export type PlanStatus =
+  | 'draft'
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'abandoned';
+export type PlanItemStatus =
+  | 'planned'
+  | 'completed'
+  | 'skipped'
+  | 'substituted';
+
+export interface LearningPlanSummary {
+  id: string;
+  title: string;
+  domain: string;
+  status: PlanStatus;
+  items_total: number;
+  items_completed: number;
+  items_skipped: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LearningPlanDetail {
+  id: string;
+  title: string;
+  domain: string;
+  status: PlanStatus;
+  description: string;
+  items: PlanItemDetail[];
+  progress: PlanProgress;
+}
+
+export interface PlanItemDetail {
+  id: string;
+  learning_item_id: string;
+  title: string;
+  difficulty: ItemDifficulty | null;
+  position: number;
+  status: PlanItemStatus;
+  completed_at: string | null;
+  reason: string | null;
+}
+
+export interface PlanProgress {
+  total: number;
+  completed: number;
+  skipped: number;
+  substituted: number;
+  planned: number;
 }
 
 // === Reflect (Phase 2) ===

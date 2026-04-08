@@ -147,7 +147,12 @@ export class InboxComponent implements OnInit {
         decision = { type: 'journal', kind: 'reflection', body: '' };
         break;
       case 'insight':
-        decision = { type: 'insight', hypothesis: '', initial_evidence: '' };
+        decision = {
+          type: 'insight',
+          hypothesis: '',
+          invalidation_condition: '',
+          initial_evidence: '',
+        };
         break;
       case 'discard':
         decision = { type: 'discard' };

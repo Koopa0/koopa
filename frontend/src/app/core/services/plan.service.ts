@@ -6,7 +6,7 @@ import type {
   GoalDetail,
   GoalProposal,
   GoalProposalResult,
-  MilestoneWithProjects,
+  Milestone,
   ProjectSummary,
   ProjectDetail,
   TaskFilters,
@@ -57,7 +57,7 @@ export class PlanService {
     goalId: string,
     title: string,
     position: number,
-  ): Observable<MilestoneWithProjects> {
+  ): Observable<Milestone> {
     return of({
       id: `ms-${Date.now()}`,
       title,
@@ -68,10 +68,7 @@ export class PlanService {
     });
   }
 
-  toggleMilestone(
-    goalId: string,
-    milestoneId: string,
-  ): Observable<MilestoneWithProjects> {
+  toggleMilestone(goalId: string, milestoneId: string): Observable<Milestone> {
     return of({
       id: milestoneId,
       title: 'Admin UI redesign',
@@ -218,14 +215,6 @@ const MOCK_GOAL_DETAILS: Record<string, GoalDetail> = {
         position: 1,
         completed: true,
         completed_at: '2026-03-01T14:00:00+08:00',
-        projects: [
-          {
-            id: 'proj-001',
-            title: 'koopa0.dev Backend',
-            status: 'in-progress',
-            task_progress: { total: 22, done: 14 },
-          },
-        ],
       },
       {
         id: 'ms-002',
@@ -233,14 +222,6 @@ const MOCK_GOAL_DETAILS: Record<string, GoalDetail> = {
         position: 2,
         completed: false,
         completed_at: null,
-        projects: [
-          {
-            id: 'proj-002',
-            title: 'koopa0.dev Frontend',
-            status: 'in-progress',
-            task_progress: { total: 18, done: 7 },
-          },
-        ],
       },
       {
         id: 'ms-003',
@@ -248,7 +229,6 @@ const MOCK_GOAL_DETAILS: Record<string, GoalDetail> = {
         position: 3,
         completed: true,
         completed_at: '2026-03-20T16:00:00+08:00',
-        projects: [],
       },
       {
         id: 'ms-004',
@@ -256,7 +236,20 @@ const MOCK_GOAL_DETAILS: Record<string, GoalDetail> = {
         position: 4,
         completed: false,
         completed_at: null,
-        projects: [],
+      },
+    ],
+    projects: [
+      {
+        id: 'proj-001',
+        title: 'koopa0.dev Backend',
+        status: 'in-progress',
+        task_progress: { total: 22, done: 14 },
+      },
+      {
+        id: 'proj-002',
+        title: 'koopa0.dev Frontend',
+        status: 'in-progress',
+        task_progress: { total: 18, done: 7 },
       },
     ],
     recent_activity: [

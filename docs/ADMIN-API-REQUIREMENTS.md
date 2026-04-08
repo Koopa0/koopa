@@ -220,6 +220,7 @@
 {
   "type": "insight",
   "hypothesis": "pgvector HNSW 在 100K 以上效能會顯著下降",
+  "invalidation_condition": "benchmark 100K rows HNSW vs IVFFlat，如果 HNSW 仍然 <10ms 則推翻",
   "initial_evidence": "看到 GitHub issue 討論"
 }
 
@@ -282,10 +283,12 @@
 ```
 
 **Backend 邏輯**：
-- `goals` + `LEFT JOIN milestones` + `LEFT JOIN projects ON projects.milestone_id`
+- `goals` + `LEFT JOIN milestones` + `LEFT JOIN projects ON projects.goal_id = goals.id`
+- ⚠ projects 和 milestones 都直接掛在 goal 下，是 siblings 關係，不是 parent-child
 - 按 area 分組
 - `days_remaining` = deadline - today（null if no deadline）
 - `next_milestone_title` = 第一個未完成的 milestone
+- `projects_count` = `COUNT(projects WHERE goal_id = goal.id)`
 
 ---
 
@@ -314,15 +317,15 @@
       "title": "Benchmark IVFFlat vs HNSW",
       "completed": false,
       "completed_at": null,
-      "position": 1,
-      "projects": [
-        {
-          "id": "proj_uuid",
-          "title": "pgvector PoC",
-          "status": "in-progress",
-          "task_progress": { "total": 5, "done": 2 }
-        }
-      ]
+      "position": 1
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj_uuid",
+      "title": "pgvector PoC",
+      "status": "in-progress",
+      "task_progress": { "total": 5, "done": 2 }
     }
   ],
   "recent_activity": [
@@ -333,6 +336,10 @@
     }
   ]
 }
+```
+
+> **⚠ Schema 對齊**：projects.goal_id 直接指向 goals.id，沒有經過 milestones。
+> milestones 和 projects 是 goal 的兩個獨立面向（完成指標 vs 執行載體），不是 parent-child。
 ```
 
 **Backend 邏輯**：
@@ -519,7 +526,7 @@
 - `start`：task.status → in-progress
 - `complete`：task.status → done, task.completed_at → now, if daily_plan_item exists → mark done
 - `defer`：task.status → someday
-- `drop`：soft delete or archive
+- `drop`：只影響 daily_plan_item.status → dropped（不刪除 task 本身）。如果 task 不在今日計劃中，此 action 無效
 
 ---
 
@@ -611,9 +618,13 @@
 ```json
 {
   "domain": "algorithms",
-  "focus_concept_slugs": ["binary-search", "two-pointers"]
+  "session_mode": "practice"
 }
 ```
+
+> **⚠ Schema 對齊**：sessions 表沒有 focus_concept_slugs 欄位。
+> focus 概念可放在 metadata JSONB 中，或作為 suggested_items 的篩選參數。
+> session_mode 必須是 schema 定義的 5 值之一：retrieval / practice / mixed / review / reading。
 
 **Response**：
 ```json
@@ -642,15 +653,23 @@
 ```json
 {
   "item_id": "item_uuid",
-  "outcome": "partial",
-  "duration_seconds": 720,
-  "ease_rating": 3,
-  "notes": "差點解出來，卡在邊界條件",
+  "outcome": "incomplete",
+  "duration_minutes": 12,
+  "stuck_at": "邊界條件處理",
+  "approach_used": "binary search with left/right pointers",
   "observations": [
-    { "concept_slug": "binary-search", "signal": "weakness", "category": "boundary-conditions", "confidence": "high" },
-    { "concept_slug": "off-by-one", "signal": "misconception", "category": "indexing", "confidence": "low" }
+    { "concept_slug": "binary-search", "signal_type": "weakness", "category": "boundary-conditions", "confidence": "high" },
+    { "concept_slug": "off-by-one", "signal_type": "weakness", "category": "indexing", "confidence": "low" }
   ]
 }
+```
+
+> **⚠ Schema 對齊**：
+> - outcome 必須是 7 值之一：solved_independent / solved_with_hint / solved_after_solution / completed / completed_with_support / incomplete / gave_up（沒有 "partial"）
+> - 用 duration_minutes INT，不是 duration_seconds
+> - 沒有 ease_rating（FSRS rating 在 review_logs，不在 attempts）
+> - signal_type 必須是：weakness / improvement / mastery（沒有 "misconception"）
+> - attempts 有 stuck_at TEXT 和 approach_used TEXT 欄位
 ```
 
 **Response**：
@@ -661,7 +680,7 @@
     { "concept_slug": "binary-search", "signal": "weakness" }
   ],
   "pending_observations": [
-    { "concept_slug": "off-by-one", "signal": "misconception", "reason": "concept would be auto-created" }
+    { "concept_slug": "off-by-one", "signal_type": "weakness", "reason": "concept would be auto-created" }
   ]
 }
 ```
@@ -680,13 +699,19 @@
   "attempts_count": 4,
   "solved_count": 2,
   "concept_impact": [
-    { "concept_slug": "binary-search", "mastery_before": 0.6, "mastery_after": 0.55, "direction": "down" }
+    { "concept_slug": "binary-search", "signal_type": "weakness", "observation_count": 2, "direction": "declining" }
   ],
   "observations_summary": {
     "weaknesses": ["binary-search boundary conditions"],
-    "strengths": ["basic iteration"],
-    "misconceptions": []
+    "improvements": ["basic iteration"],
+    "masteries": []
   }
+}
+```
+
+> **⚠ Schema 對齊**：mastery 不是存儲的數值——是從 attempt_observations 聚合計算的衍生狀態。
+> concept_impact 應該基於本次 session 記錄的 observations，而非 mastery 分數差。
+> observations_summary 的 key 用 schema 的 signal_type 名稱：weaknesses / improvements / masteries（不是 strengths / misconceptions）。
 }
 ```
 
@@ -700,16 +725,16 @@
 ```json
 {
   "concept": { "slug": "binary-search", "name": "Binary Search", "domain": "algorithms", "kind": "pattern" },
-  "mastery_trend": [
-    { "date": "2026-03-01", "mastery": 0.3 },
-    { "date": "2026-03-15", "mastery": 0.5 },
-    { "date": "2026-04-01", "mastery": 0.6 }
+  "observation_trend": [
+    { "date": "2026-03-01", "weakness_count": 3, "improvement_count": 0, "mastery_count": 0 },
+    { "date": "2026-03-15", "weakness_count": 1, "improvement_count": 2, "mastery_count": 0 },
+    { "date": "2026-04-01", "weakness_count": 1, "improvement_count": 1, "mastery_count": 1 }
   ],
   "recent_attempts": [
-    { "item_title": "LeetCode 704", "outcome": "solved", "date": "2026-03-28" }
+    { "item_title": "LeetCode 704", "outcome": "solved_independent", "date": "2026-03-28" }
   ],
   "observations": [
-    { "signal": "weakness", "category": "boundary-conditions", "date": "2026-04-07" }
+    { "signal_type": "weakness", "category": "boundary-conditions", "date": "2026-04-07" }
   ],
   "related_items": [
     { "id": "...", "title": "LeetCode 704", "difficulty": "easy", "last_outcome": "solved" }
@@ -717,6 +742,90 @@
   "next_review": "2026-04-10"
 }
 ```
+
+---
+
+## 7.5 Learn — Learning Plans（Phase 2）
+
+> Schema 表：`plans`（status lifecycle）+ `plan_items`（UNIQUE per plan+item）
+> MCP 工具：`manage_plan`（6 actions: add_items, remove_items, update_item, reorder, update_plan, progress）
+
+### GET /api/admin/learn/plans
+
+**用途**：列出所有 learning plans。
+
+**Response**：
+```json
+{
+  "plans": [
+    {
+      "id": "plan_uuid",
+      "title": "Google 200 題計劃",
+      "domain": "algorithms",
+      "status": "active",
+      "items_total": 200,
+      "items_completed": 45,
+      "items_skipped": 3,
+      "created_at": "2026-03-01",
+      "updated_at": "2026-04-07"
+    }
+  ]
+}
+```
+
+### GET /api/admin/learn/plans/{id}
+
+**用途**：Plan detail — items with status, progress。
+
+**Response**：
+```json
+{
+  "id": "plan_uuid",
+  "title": "Google 200 題計劃",
+  "domain": "algorithms",
+  "status": "active",
+  "description": "...",
+  "items": [
+    {
+      "id": "plan_item_uuid",
+      "learning_item_id": "item_uuid",
+      "title": "LeetCode 704: Binary Search",
+      "difficulty": "easy",
+      "position": 1,
+      "status": "completed",
+      "completed_at": "2026-03-28",
+      "completion_reason": "solved_independent on attempt #2"
+    }
+  ],
+  "progress": {
+    "total": 200,
+    "completed": 45,
+    "skipped": 3,
+    "substituted": 1,
+    "planned": 151
+  }
+}
+```
+
+> **⚠ Schema 對齊**：
+> - plan_items.status：planned / completed / skipped / substituted
+> - plan_items 有 reason TEXT 欄位（記錄 completion/skip 理由）
+> - UNIQUE(plan_id, learning_item_id) 確保不重複
+> - 同一 item 在不同 plan 中的完成狀態獨立
+
+### POST /api/admin/learn/plans/{id}/items/{item_id}/update
+
+**用途**：更新 plan item 狀態。Semantic command。
+
+**Request**：
+```json
+{
+  "status": "completed",
+  "reason": "solved_independent on attempt #2"
+}
+```
+
+> **⚠ Policy**：reason 欄位對 completions 應該是必填（審計建議），記錄「為什麼認為完成了」。
 
 ---
 
