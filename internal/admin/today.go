@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Koopa0/koopa0.dev/internal/api"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/task"
@@ -93,7 +94,7 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 	h.fillGoalPulse(ctx, &resp)
 	h.fillContextLine(ctx, date, &resp)
 
-	writeJSON(w, http.StatusOK, resp)
+	api.Encode(w, http.StatusOK, resp)
 }
 
 func (h *Handler) fillTodayPlan(ctx context.Context, date time.Time, resp *TodayResponse) {

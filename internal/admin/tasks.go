@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Koopa0/koopa0.dev/internal/api"
+	"github.com/Koopa0/koopa0.dev/internal/db"
 	"github.com/google/uuid"
 )
 
@@ -17,12 +19,15 @@ func (h *Handler) TasksBacklog(w http.ResponseWriter, r *http.Request) {
 	if status == "" {
 		status = "todo"
 	}
-	switch status {
-	case "inbox", "todo", "in-progress", "done", "someday", "all":
+	switch db.TaskStatus(status) {
+	case db.TaskStatusInbox, db.TaskStatusTodo, db.TaskStatusInProgress,
+		db.TaskStatusDone, db.TaskStatusSomeday:
 		// valid
 	default:
-		writeError(w, http.StatusBadRequest, "invalid status: must be inbox, todo, in-progress, done, someday, or all")
-		return
+		if status != "all" {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid status")
+			return
+		}
 	}
 	projectID := q.Get("project_id")
 	energy := q.Get("energy")
@@ -40,7 +45,7 @@ func (h *Handler) TasksBacklog(w http.ResponseWriter, r *http.Request) {
 	tasks, err := h.tasks.BacklogTasks(ctx, status, projectID, energy, priority, search, limit)
 	if err != nil {
 		h.logger.Error("tasks backlog", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -86,7 +91,7 @@ func (h *Handler) TasksBacklog(w http.ResponseWriter, r *http.Request) {
 		result[i] = row
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	api.Encode(w, http.StatusOK, map[string]any{
 		"tasks": result,
 		"meta":  map[string]int{"total": len(result)},
 	})
@@ -101,12 +106,12 @@ type AdvanceTaskRequest struct {
 func (h *Handler) AdvanceTask(w http.ResponseWriter, r *http.Request) {
 	taskID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid task id")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid task id")
 		return
 	}
 
-	req, ok := decodeBody[AdvanceTaskRequest](w, r)
-	if !ok {
+	req, err := api.Decode[AdvanceTaskRequest](w, r)
+	if err != nil {
 		return
 	}
 
@@ -116,26 +121,26 @@ func (h *Handler) AdvanceTask(w http.ResponseWriter, r *http.Request) {
 	case "start":
 		if err := h.tasks.Start(ctx, taskID); err != nil {
 			h.logger.Error("advance task start", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 	case "complete":
 		now := time.Now()
 		if err := h.tasks.Complete(ctx, taskID, &now); err != nil {
 			h.logger.Error("advance task complete", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 	case "defer":
 		if err := h.tasks.DeferTask(ctx, taskID); err != nil {
 			h.logger.Error("advance task defer", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "invalid action: must be start, complete, or defer. Use today/items/{id}/resolve for drop.")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid action: must be start, complete, or defer. Use today/items/{id}/resolve for drop.")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"result": req.Action})
+	api.Encode(w, http.StatusOK, map[string]string{"result": req.Action})
 }

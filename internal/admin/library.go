@@ -3,6 +3,8 @@ package admin
 import (
 	"net/http"
 	"time"
+
+	"github.com/Koopa0/koopa0.dev/internal/api"
 )
 
 // LibraryPipelineResponse is the payload for GET /api/admin/library/pipeline.
@@ -56,5 +58,5 @@ func (h *Handler) LibraryPipeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	api.Encode(w, http.StatusOK, resp)
 }

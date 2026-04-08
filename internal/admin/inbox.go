@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Koopa0/koopa0.dev/internal/api"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
@@ -39,7 +40,7 @@ func (h *Handler) Inbox(w http.ResponseWriter, r *http.Request) {
 	tasks, err := h.tasks.InboxTasks(ctx)
 	if err != nil {
 		h.logger.Error("inbox: listing", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -64,7 +65,7 @@ func (h *Handler) Inbox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, InboxResponse{
+	api.Encode(w, http.StatusOK, InboxResponse{
 		Items: items,
 		Stats: InboxStats{
 			Total:         len(items),
@@ -81,12 +82,12 @@ type CaptureInboxRequest struct {
 
 // InboxCapture handles POST /api/admin/inbox/capture.
 func (h *Handler) InboxCapture(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodeBody[CaptureInboxRequest](w, r)
-	if !ok {
+	req, err := api.Decode[CaptureInboxRequest](w, r)
+	if err != nil {
 		return
 	}
 	if req.Text == "" {
-		writeError(w, http.StatusBadRequest, "text is required")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "text is required")
 		return
 	}
 
@@ -97,11 +98,11 @@ func (h *Handler) InboxCapture(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		h.logger.Error("inbox capture", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	api.Encode(w, http.StatusCreated, map[string]any{
 		"id":          t.ID.String(),
 		"text":        t.Title,
 		"captured_at": t.CreatedAt.Format(time.RFC3339),
@@ -126,12 +127,12 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	taskID, err := uuid.Parse(idStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid task id")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid task id")
 		return
 	}
 
-	req, ok := decodeBody[ClarifyRequest](w, r)
-	if !ok {
+	req, err := api.Decode[ClarifyRequest](w, r)
+	if err != nil {
 		return
 	}
 
@@ -144,7 +145,7 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 		if req.Due != nil {
 			d, pErr := time.Parse(time.DateOnly, *req.Due)
 			if pErr != nil {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid due date: %s", *req.Due))
+				api.Error(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("invalid due date: %s", *req.Due))
 				return
 			}
 			due = &d
@@ -156,10 +157,10 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 		})
 		if cErr != nil {
 			h.logger.Error("inbox clarify task", "error", cErr)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		api.Encode(w, http.StatusOK, map[string]any{
 			"result":      "clarified",
 			"entity_type": "task",
 			"entity_id":   updated.ID.String(),
@@ -168,10 +169,10 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 	case "discard":
 		if dErr := h.tasks.Delete(ctx, taskID); dErr != nil {
 			h.logger.Error("inbox discard", "error", dErr)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		api.Encode(w, http.StatusOK, map[string]any{
 			"result":      "discarded",
 			"entity_type": "task",
 			"entity_id":   taskID.String(),
@@ -179,7 +180,7 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 
 	case "journal":
 		if req.Body == nil || *req.Body == "" {
-			writeError(w, http.StatusBadRequest, "body is required for journal clarification")
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "body is required for journal clarification")
 			return
 		}
 		kind := "reflection"
@@ -194,18 +195,18 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 		})
 		if jErr != nil {
 			h.logger.Error("inbox clarify journal", "error", jErr)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 		// Delete the original inbox task.
 		_ = h.tasks.Delete(ctx, taskID) // best-effort
-		writeJSON(w, http.StatusOK, map[string]any{
+		api.Encode(w, http.StatusOK, map[string]any{
 			"result":      "clarified",
 			"entity_type": "journal",
 			"entity_id":   entry.ID,
 		})
 
 	default:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported clarify type %q", req.Type))
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("unsupported clarify type %q", req.Type))
 	}
 }

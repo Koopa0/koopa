@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Koopa0/koopa0.dev/internal/api"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 )
 
@@ -22,12 +23,12 @@ type PlanDayItem struct {
 
 // TodayPlan handles POST /api/admin/today/plan.
 func (h *Handler) TodayPlan(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodeBody[PlanDayRequest](w, r)
-	if !ok {
+	req, err := api.Decode[PlanDayRequest](w, r)
+	if err != nil {
 		return
 	}
 	if len(req.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "items is required")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "items is required")
 		return
 	}
 
@@ -35,19 +36,19 @@ func (h *Handler) TodayPlan(w http.ResponseWriter, r *http.Request) {
 	date := h.today()
 
 	for _, item := range req.Items {
-		taskID, err := uuid.Parse(item.TaskID)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid task_id: "+item.TaskID)
+		taskID, parseErr := uuid.Parse(item.TaskID)
+		if parseErr != nil {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid task_id: "+item.TaskID)
 			return
 		}
-		if _, err := h.dayplan.Upsert(ctx, &daily.UpsertParams{
+		if _, uErr := h.dayplan.Upsert(ctx, &daily.UpsertParams{
 			PlanDate:   date,
 			TaskID:     taskID,
 			SelectedBy: "human",
 			Position:   int32(item.Position), //nolint:gosec // G115: position bounded by UI
-		}); err != nil {
-			h.logger.Error("today plan upsert", "task_id", taskID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+		}); uErr != nil {
+			h.logger.Error("today plan upsert", "task_id", taskID, "error", uErr)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 	}
@@ -56,7 +57,7 @@ func (h *Handler) TodayPlan(w http.ResponseWriter, r *http.Request) {
 	items, err := h.dayplan.ItemsByDate(ctx, date)
 	if err != nil {
 		h.logger.Error("today plan list", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -64,7 +65,7 @@ func (h *Handler) TodayPlan(w http.ResponseWriter, r *http.Request) {
 	for i := range items {
 		result[i] = planItemToSummary(&items[i], date)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	api.Encode(w, http.StatusOK, map[string]any{
 		"date":  date.Format(time.DateOnly),
 		"items": result,
 	})
@@ -80,12 +81,12 @@ func (h *Handler) ResolvePlanItem(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	itemID, err := uuid.Parse(idStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid plan item id")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid plan item id")
 		return
 	}
 
-	req, ok := decodeBody[ResolvePlanItemRequest](w, r)
-	if !ok {
+	req, err := api.Decode[ResolvePlanItemRequest](w, r)
+	if err != nil {
 		return
 	}
 
@@ -95,7 +96,7 @@ func (h *Handler) ResolvePlanItem(w http.ResponseWriter, r *http.Request) {
 	case "complete":
 		if err := h.dayplan.Complete(ctx, itemID); err != nil {
 			h.logger.Error("resolve plan item complete", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 		// Also complete the linked task.
@@ -108,21 +109,21 @@ func (h *Handler) ResolvePlanItem(w http.ResponseWriter, r *http.Request) {
 	case "defer":
 		if err := h.dayplan.Defer(ctx, itemID); err != nil {
 			h.logger.Error("resolve plan item defer", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 
 	case "drop":
 		if err := h.dayplan.Drop(ctx, itemID); err != nil {
 			h.logger.Error("resolve plan item drop", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 			return
 		}
 
 	default:
-		writeError(w, http.StatusBadRequest, "invalid action: must be complete, defer, or drop")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid action: must be complete, defer, or drop")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"result": req.Action})
+	api.Encode(w, http.StatusOK, map[string]string{"result": req.Action})
 }

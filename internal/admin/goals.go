@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Koopa0/koopa0.dev/internal/api"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 )
 
@@ -44,7 +45,7 @@ func (h *Handler) GoalsOverview(w http.ResponseWriter, r *http.Request) {
 	goals, err := h.goals.ActiveGoals(ctx)
 	if err != nil {
 		h.logger.Error("goals overview", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -105,7 +106,7 @@ func (h *Handler) GoalsOverview(w http.ResponseWriter, r *http.Request) {
 		result = append(result, *areaMap[key])
 	}
 
-	writeJSON(w, http.StatusOK, GoalsOverviewResponse{ByArea: result})
+	api.Encode(w, http.StatusOK, GoalsOverviewResponse{ByArea: result})
 }
 
 // GoalDetailResponse is the payload for GET /api/admin/plan/goals/{id}.
@@ -144,7 +145,7 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	goalID, err := uuid.Parse(idStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid goal id")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
 		return
 	}
 
@@ -152,12 +153,12 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 
 	g, err := h.goals.ByID(ctx, goalID)
 	if errors.Is(err, goal.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "goal not found")
+		api.Error(w, http.StatusNotFound, "NOT_FOUND", "goal not found")
 		return
 	}
 	if err != nil {
 		h.logger.Error("goal detail", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -206,7 +207,7 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	api.Encode(w, http.StatusOK, resp)
 }
 
 // GoalProposeRequest is the request body for POST /api/admin/plan/goals/propose.
@@ -220,12 +221,12 @@ type GoalProposeRequest struct {
 
 // GoalPropose handles POST /api/admin/plan/goals/propose.
 func (h *Handler) GoalPropose(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodeBody[GoalProposeRequest](w, r)
-	if !ok {
+	req, err := api.Decode[GoalProposeRequest](w, r)
+	if err != nil {
 		return
 	}
 	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "title is required")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
 		return
 	}
 
@@ -260,7 +261,7 @@ func (h *Handler) GoalPropose(w http.ResponseWriter, r *http.Request) {
 	proposalID := uuid.New().String()
 	h.storeProposal(proposalID, "goal", req)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	api.Encode(w, http.StatusOK, map[string]any{
 		"proposal_id": proposalID,
 		"preview":     preview,
 	})
@@ -271,13 +272,13 @@ func (h *Handler) GoalCommit(w http.ResponseWriter, r *http.Request) {
 	proposalID := r.PathValue("proposal_id")
 	data, ok := h.loadProposal(proposalID)
 	if !ok {
-		writeError(w, http.StatusNotFound, "proposal not found or expired")
+		api.Error(w, http.StatusNotFound, "NOT_FOUND", "proposal not found or expired")
 		return
 	}
 
 	req, ok := data.(GoalProposeRequest)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "invalid proposal data")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "invalid proposal data")
 		return
 	}
 
@@ -285,7 +286,7 @@ func (h *Handler) GoalCommit(w http.ResponseWriter, r *http.Request) {
 	if req.Deadline != nil {
 		d, err := time.Parse(time.DateOnly, *req.Deadline)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid deadline")
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid deadline")
 			return
 		}
 		deadline = &d
@@ -295,7 +296,7 @@ func (h *Handler) GoalCommit(w http.ResponseWriter, r *http.Request) {
 	if req.AreaID != nil {
 		id, err := uuid.Parse(*req.AreaID)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid area_id")
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid area_id")
 			return
 		}
 		areaID = &id
@@ -310,11 +311,11 @@ func (h *Handler) GoalCommit(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		h.logger.Error("goal commit", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	api.Encode(w, http.StatusCreated, map[string]any{
 		"id":    g.ID.String(),
 		"title": g.Title,
 	})
@@ -330,16 +331,16 @@ type MilestoneCreateRequest struct {
 func (h *Handler) MilestoneCreate(w http.ResponseWriter, r *http.Request) {
 	goalID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid goal id")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
 		return
 	}
 
-	req, ok := decodeBody[MilestoneCreateRequest](w, r)
-	if !ok {
+	req, err := api.Decode[MilestoneCreateRequest](w, r)
+	if err != nil {
 		return
 	}
 	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "title is required")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
 		return
 	}
 
@@ -351,27 +352,27 @@ func (h *Handler) MilestoneCreate(w http.ResponseWriter, r *http.Request) {
 	ms, err := h.goals.CreateMilestoneSimple(r.Context(), goalID, req.Title, pos)
 	if err != nil {
 		h.logger.Error("milestone create", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, ms)
+	api.Encode(w, http.StatusCreated, ms)
 }
 
 // MilestoneToggle handles POST /api/admin/plan/goals/{id}/milestones/{ms_id}/toggle.
 func (h *Handler) MilestoneToggle(w http.ResponseWriter, r *http.Request) {
 	msID, err := uuid.Parse(r.PathValue("ms_id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid milestone id")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid milestone id")
 		return
 	}
 
 	ms, err := h.goals.ToggleMilestone(r.Context(), msID)
 	if err != nil {
 		h.logger.Error("milestone toggle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, ms)
+	api.Encode(w, http.StatusOK, ms)
 }

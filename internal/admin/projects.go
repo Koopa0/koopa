@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Koopa0/koopa0.dev/internal/api"
+	"github.com/Koopa0/koopa0.dev/internal/db"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/google/uuid"
 )
@@ -15,18 +17,21 @@ func (h *Handler) ProjectsOverview(w http.ResponseWriter, r *http.Request) {
 	if status == "" {
 		status = "active"
 	}
-	switch status {
-	case "active", "planned", "in-progress", "on-hold", "completed", "maintained", "archived", "all":
-		// valid
+	switch db.ProjectStatus(status) {
+	case db.ProjectStatusPlanned, db.ProjectStatusInProgress, db.ProjectStatusOnHold,
+		db.ProjectStatusCompleted, db.ProjectStatusMaintained, db.ProjectStatusArchived:
+		// valid enum value
 	default:
-		writeError(w, http.StatusBadRequest, "invalid status filter")
-		return
+		if status != "active" && status != "all" {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid status filter")
+			return
+		}
 	}
 
 	projects, err := h.projects.ListByStatus(ctx, status)
 	if err != nil {
 		h.logger.Error("projects overview", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -80,26 +85,26 @@ func (h *Handler) ProjectsOverview(w http.ResponseWriter, r *http.Request) {
 		result[i] = row
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"projects": result})
+	api.Encode(w, http.StatusOK, map[string]any{"projects": result})
 }
 
 // ProjectDetail handles GET /api/admin/plan/projects/{id}.
 func (h *Handler) ProjectDetail(w http.ResponseWriter, r *http.Request) {
 	projID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid project id")
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid project id")
 		return
 	}
 
 	ctx := r.Context()
 	p, err := h.projects.ProjectByID(ctx, projID)
 	if errors.Is(err, project.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "project not found")
+		api.Error(w, http.StatusNotFound, "NOT_FOUND", "project not found")
 		return
 	}
 	if err != nil {
 		h.logger.Error("project detail", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 
@@ -124,5 +129,5 @@ func (h *Handler) ProjectDetail(w http.ResponseWriter, r *http.Request) {
 	tasksByStatus, _ := h.tasks.TasksByProjectGrouped(ctx, projID)
 	resp["tasks_by_status"] = tasksByStatus
 
-	writeJSON(w, http.StatusOK, resp)
+	api.Encode(w, http.StatusOK, resp)
 }

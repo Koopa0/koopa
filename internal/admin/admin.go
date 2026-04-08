@@ -3,12 +3,12 @@
 // Unlike per-feature handlers (content.Handler, task.Handler), these handlers
 // cross multiple stores to serve workflow-driven aggregate views.
 // Each endpoint maps to a frontend screen, not a database table.
+//
+// Uses internal/api for shared response helpers (Encode, Decode, Error, HandleError).
 package admin
 
 import (
-	"encoding/json"
 	"log/slog"
-	"net/http"
 	"sync"
 	"time"
 
@@ -81,36 +81,6 @@ func NewHandler(pool *pgxpool.Pool, loc *time.Location, logger *slog.Logger) *Ha
 func (h *Handler) today() time.Time {
 	now := time.Now().In(h.loc)
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
-}
-
-// maxBodySize is the maximum request body size (1 MiB).
-const maxBodySize = 1 << 20
-
-// decodeBody reads and decodes a JSON request body with size limiting.
-func decodeBody[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
-	var v T
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return v, false
-	}
-	return v, true
-}
-
-// writeJSON encodes v as JSON and writes it with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		// Connection probably closed — nothing useful to do.
-		_ = err // best-effort
-	}
-}
-
-// writeError writes a JSON error response.
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }
 
 // storeProposal caches a proposal for the two-step propose→commit flow.
