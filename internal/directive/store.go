@@ -181,3 +181,12 @@ func (s *Store) UnresolvedForTarget(ctx context.Context, target string) ([]Direc
 	}
 	return result, nil
 }
+
+// UnackedCount returns the total number of unacknowledged directives.
+func (s *Store) UnackedCount(ctx context.Context) (int, error) {
+	n, err := s.q.UnackedCount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("counting unacked directives: %w", err)
+	}
+	return int(n), nil
+}

@@ -32,3 +32,7 @@ UPDATE directives
 SET resolved_at = now(), resolution_report_id = @resolution_report_id
 WHERE id = @id AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
 RETURNING *;
+
+-- name: UnackedCount :one
+-- Count of unacknowledged directives (for needs_attention badge).
+SELECT count(*)::int FROM directives WHERE acknowledged_at IS NULL;

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa0.dev/internal/activity"
+	"github.com/Koopa0/koopa0.dev/internal/admin"
 	"github.com/Koopa0/koopa0.dev/internal/auth"
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/feed"
@@ -39,6 +40,7 @@ type handlers struct {
 	review   *review.Handler
 	upload   *upload.Handler
 	note     *note.Handler
+	adminV2  *admin.Handler
 
 	pool   *pgxpool.Pool
 	logger *slog.Logger
@@ -160,5 +162,14 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	// --- Admin: Upload ---
 	if h.upload != nil {
 		mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(h.upload.Upload)))
+	}
+
+	// --- Admin v2: Aggregate workflow endpoints ---
+	if h.adminV2 != nil {
+		a := h.adminV2
+		mux.Handle("GET /api/admin/today", authMid(http.HandlerFunc(a.Today)))
+		mux.Handle("GET /api/admin/inbox", authMid(http.HandlerFunc(a.Inbox)))
+		mux.Handle("POST /api/admin/inbox/capture", authMid(http.HandlerFunc(a.InboxCapture)))
+		mux.Handle("POST /api/admin/inbox/{id}/clarify", authMid(http.HandlerFunc(a.InboxClarify)))
 	}
 }

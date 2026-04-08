@@ -744,6 +744,54 @@ func (q *Queries) CardByLearningItem(ctx context.Context, learningItemID *uuid.U
 	return i, err
 }
 
+const clarifyTask = `-- name: ClarifyTask :one
+UPDATE tasks
+SET status = 'todo',
+    priority = COALESCE($1, priority),
+    energy = COALESCE($2, energy),
+    due = COALESCE($3, due),
+    updated_at = now()
+WHERE id = $4 AND status = 'inbox'
+RETURNING id, title, status, due, project_id, notion_page_id, completed_at, energy, priority, recur_interval, recur_unit, description, assignee, created_by, created_at, updated_at
+`
+
+type ClarifyTaskParams struct {
+	Priority *string    `json:"priority"`
+	Energy   *string    `json:"energy"`
+	Due      *time.Time `json:"due"`
+	ID       uuid.UUID  `json:"id"`
+}
+
+// Promote inbox task to todo with clarification fields.
+func (q *Queries) ClarifyTask(ctx context.Context, arg ClarifyTaskParams) (Task, error) {
+	row := q.db.QueryRow(ctx, clarifyTask,
+		arg.Priority,
+		arg.Energy,
+		arg.Due,
+		arg.ID,
+	)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Status,
+		&i.Due,
+		&i.ProjectID,
+		&i.NotionPageID,
+		&i.CompletedAt,
+		&i.Energy,
+		&i.Priority,
+		&i.RecurInterval,
+		&i.RecurUnit,
+		&i.Description,
+		&i.Assignee,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const collectedData = `-- name: CollectedData :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
@@ -2875,6 +2923,16 @@ func (q *Queries) DeleteTag(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteTask = `-- name: DeleteTask :exec
+DELETE FROM tasks WHERE id = $1
+`
+
+// Hard delete a task (used for inbox discard only).
+func (q *Queries) DeleteTask(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTask, id)
+	return err
+}
+
 const deleteTopic = `-- name: DeleteTopic :exec
 DELETE FROM topics WHERE id = $1
 `
@@ -2906,6 +2964,18 @@ func (q *Queries) DirectiveByID(ctx context.Context, id int64) (Directive, error
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const dueReviewCount = `-- name: DueReviewCount :one
+SELECT count(*)::int FROM review_cards WHERE due <= $1
+`
+
+// Count of review cards due before a given time (for needs_attention badge).
+func (q *Queries) DueReviewCount(ctx context.Context, dueBefore time.Time) (int32, error) {
+	row := q.db.QueryRow(ctx, dueReviewCount, dueBefore)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const enabledFeeds = `-- name: EnabledFeeds :many
@@ -3572,6 +3642,60 @@ UPDATE feed_entries SET status = 'ignored' WHERE id = $1
 func (q *Queries) IgnoreCollected(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, ignoreCollected, id)
 	return err
+}
+
+const inboxCount = `-- name: InboxCount :one
+SELECT count(*)::int FROM tasks WHERE status = 'inbox'
+`
+
+// Count of tasks in inbox status (for needs_attention badge).
+func (q *Queries) InboxCount(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, inboxCount)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const inboxTasks = `-- name: InboxTasks :many
+SELECT id, title, status, due, project_id, notion_page_id, completed_at, energy, priority, recur_interval, recur_unit, description, assignee, created_by, created_at, updated_at FROM tasks WHERE status = 'inbox' ORDER BY created_at DESC
+`
+
+// List all inbox tasks, newest first.
+func (q *Queries) InboxTasks(ctx context.Context) ([]Task, error) {
+	rows, err := q.db.Query(ctx, inboxTasks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Task{}
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.Due,
+			&i.ProjectID,
+			&i.NotionPageID,
+			&i.CompletedAt,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.Description,
+			&i.Assignee,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const incrementFeedFailure = `-- name: IncrementFeedFailure :one
@@ -6528,6 +6652,42 @@ func (q *Queries) RecurringTasksDueToday(ctx context.Context, today *time.Time) 
 	return items, nil
 }
 
+const reflectionForDate = `-- name: ReflectionForDate :many
+SELECT id, kind, source, content, metadata, entry_date, created_at
+FROM journal
+WHERE kind = 'reflection' AND entry_date = $1
+ORDER BY created_at DESC
+`
+
+// Get reflection journal entries for a specific date.
+func (q *Queries) ReflectionForDate(ctx context.Context, entryDate time.Time) ([]Journal, error) {
+	rows, err := q.db.Query(ctx, reflectionForDate, entryDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Journal{}
+	for rows.Next() {
+		var i Journal
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Source,
+			&i.Content,
+			&i.Metadata,
+			&i.EntryDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const refreshTokenByHash = `-- name: RefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens
@@ -7751,6 +7911,19 @@ func (q *Queries) SkipHistoryByTask(ctx context.Context, arg SkipHistoryByTaskPa
 	return items, nil
 }
 
+const staleSomedayCount = `-- name: StaleSomedayCount :one
+SELECT count(*)::int FROM tasks
+WHERE status = 'someday' AND updated_at < $1
+`
+
+// Count of someday tasks not updated in N days (GTD review signal).
+func (q *Queries) StaleSomedayCount(ctx context.Context, staleBefore time.Time) (int32, error) {
+	row := q.db.QueryRow(ctx, staleSomedayCount, staleBefore)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const tagByID = `-- name: TagByID :one
 SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags WHERE id = $1
 `
@@ -8391,6 +8564,18 @@ func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const unackedCount = `-- name: UnackedCount :one
+SELECT count(*)::int FROM directives WHERE acknowledged_at IS NULL
+`
+
+// Count of unacknowledged directives (for needs_attention badge).
+func (q *Queries) UnackedCount(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, unackedCount)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const unackedDirectivesForTarget = `-- name: UnackedDirectivesForTarget :many

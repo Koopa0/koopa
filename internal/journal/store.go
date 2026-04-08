@@ -98,7 +98,20 @@ func rowToEntry(r *db.Journal) *Entry {
 		CreatedAt: r.CreatedAt,
 	}
 	if r.Metadata != nil {
-		_ = json.Unmarshal(r.Metadata, &e.Metadata)
+		_ = json.Unmarshal(r.Metadata, &e.Metadata) // best-effort
 	}
 	return e
+}
+
+// ReflectionForDate returns reflection journal entries for a specific date.
+func (s *Store) ReflectionForDate(ctx context.Context, date time.Time) ([]Entry, error) {
+	rows, err := s.q.ReflectionForDate(ctx, date)
+	if err != nil {
+		return nil, fmt.Errorf("querying reflection for %s: %w", date.Format(time.DateOnly), err)
+	}
+	entries := make([]Entry, len(rows))
+	for i := range rows {
+		entries[i] = *rowToEntry(&rows[i])
+	}
+	return entries, nil
 }

@@ -27,3 +27,10 @@ FROM journal
 WHERE kind = @kind
 ORDER BY entry_date DESC, created_at DESC
 LIMIT 1;
+
+-- name: ReflectionForDate :many
+-- Get reflection journal entries for a specific date.
+SELECT id, kind, source, content, metadata, entry_date, created_at
+FROM journal
+WHERE kind = 'reflection' AND entry_date = @entry_date
+ORDER BY created_at DESC;

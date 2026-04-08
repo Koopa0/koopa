@@ -497,3 +497,12 @@ func (s *Store) writeReviewLog(ctx context.Context, cardID int64, rl gofsrs.Revi
 		ReviewedAt:    now,
 	})
 }
+
+// DueReviewCount returns the number of review cards due before the given time.
+func (s *Store) DueReviewCount(ctx context.Context, before time.Time) (int, error) {
+	n, err := s.q.DueReviewCount(ctx, before)
+	if err != nil {
+		return 0, fmt.Errorf("counting due reviews: %w", err)
+	}
+	return int(n), nil
+}

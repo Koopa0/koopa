@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa0.dev/internal/activity"
+	"github.com/Koopa0/koopa0.dev/internal/admin"
 	"github.com/Koopa0/koopa0.dev/internal/auth"
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/feed"
@@ -117,6 +118,7 @@ func run(logger *slog.Logger) error {
 		review:   review.NewHandler(reviewStore, logger),
 		upload:   uploadHandler,
 		note:     note.NewHandler(noteStore, logger),
+		adminV2:  admin.NewHandler(pool, nil, logger),
 		pool:     pool,
 		logger:   logger,
 	}

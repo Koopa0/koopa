@@ -183,3 +183,7 @@ FROM review_logs
 WHERE card_id = @card_id
 ORDER BY reviewed_at DESC
 LIMIT @max_results;
+
+-- name: DueReviewCount :one
+-- Count of review cards due before a given time (for needs_attention badge).
+SELECT count(*)::int FROM review_cards WHERE due <= @due_before;

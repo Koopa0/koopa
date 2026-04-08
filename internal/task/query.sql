@@ -343,3 +343,31 @@ WHERE t.project_id = @project_id
   AND sl.skipped_date >= @since
 ORDER BY sl.skipped_date DESC;
 
+-- name: InboxCount :one
+-- Count of tasks in inbox status (for needs_attention badge).
+SELECT count(*)::int FROM tasks WHERE status = 'inbox';
+
+-- name: StaleSomedayCount :one
+-- Count of someday tasks not updated in N days (GTD review signal).
+SELECT count(*)::int FROM tasks
+WHERE status = 'someday' AND updated_at < @stale_before;
+
+-- name: InboxTasks :many
+-- List all inbox tasks, newest first.
+SELECT * FROM tasks WHERE status = 'inbox' ORDER BY created_at DESC;
+
+-- name: ClarifyTask :one
+-- Promote inbox task to todo with clarification fields.
+UPDATE tasks
+SET status = 'todo',
+    priority = COALESCE(sqlc.narg('priority'), priority),
+    energy = COALESCE(sqlc.narg('energy'), energy),
+    due = COALESCE(sqlc.narg('due'), due),
+    updated_at = now()
+WHERE id = @id AND status = 'inbox'
+RETURNING *;
+
+-- name: DeleteTask :exec
+-- Hard delete a task (used for inbox discard only).
+DELETE FROM tasks WHERE id = @id;
+

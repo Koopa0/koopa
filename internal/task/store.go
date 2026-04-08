@@ -453,3 +453,65 @@ func rowToTask(r *db.Task) Task {
 		UpdatedAt:     r.UpdatedAt,
 	}
 }
+
+// InboxCount returns the number of tasks with status=inbox.
+func (s *Store) InboxCount(ctx context.Context) (int, error) {
+	n, err := s.q.InboxCount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("counting inbox tasks: %w", err)
+	}
+	return int(n), nil
+}
+
+// StaleSomedayCount returns the number of someday tasks not updated in staleDays.
+func (s *Store) StaleSomedayCount(ctx context.Context, staleDays int) (int, error) {
+	before := time.Now().AddDate(0, 0, -staleDays)
+	n, err := s.q.StaleSomedayCount(ctx, before)
+	if err != nil {
+		return 0, fmt.Errorf("counting stale someday tasks: %w", err)
+	}
+	return int(n), nil
+}
+
+// InboxTasks returns all tasks with status=inbox, newest first.
+func (s *Store) InboxTasks(ctx context.Context) ([]Task, error) {
+	rows, err := s.q.InboxTasks(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing inbox tasks: %w", err)
+	}
+	tasks := make([]Task, len(rows))
+	for i := range rows {
+		tasks[i] = rowToTask(&rows[i])
+	}
+	return tasks, nil
+}
+
+// ClarifyParams holds fields for promoting inbox → todo.
+type ClarifyParams struct {
+	Priority *string
+	Energy   *string
+	Due      *time.Time
+}
+
+// Clarify promotes an inbox task to todo with optional fields.
+func (s *Store) Clarify(ctx context.Context, id uuid.UUID, p *ClarifyParams) (*Task, error) {
+	row, err := s.q.ClarifyTask(ctx, db.ClarifyTaskParams{
+		ID:       id,
+		Priority: p.Priority,
+		Energy:   p.Energy,
+		Due:      p.Due,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("clarifying task %s: %w", id, err)
+	}
+	t := rowToTask(&row)
+	return &t, nil
+}
+
+// Delete hard-deletes a task. Used only for inbox discard.
+func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
+	return s.q.DeleteTask(ctx, id)
+}
