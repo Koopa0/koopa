@@ -91,6 +91,28 @@ export class TodayComponent implements OnInit {
     ),
   );
 
+  // 常量映射 — 避免模板 @for 迴圈中的方法呼叫
+  protected readonly ENERGY_LABELS: Record<string, string> = {
+    high: 'H',
+    medium: 'M',
+    low: 'L',
+  };
+
+  protected readonly ENERGY_COLORS: Record<string, string> = {
+    high: 'text-red-400',
+    medium: 'text-amber-400',
+    low: 'text-emerald-400',
+  };
+
+  // 完整 class 字串 — Tailwind JIT 無法解析動態拼接的 class
+  protected readonly AREA_CLASSES: Record<string, string> = {
+    backend: 'bg-violet-900/40 text-violet-400',
+    learning: 'bg-sky-900/40 text-sky-400',
+    studio: 'bg-amber-900/40 text-amber-400',
+    career: 'bg-emerald-900/40 text-emerald-400',
+    frontend: 'bg-blue-900/40 text-blue-400',
+  };
+
   // Lucide icons
   protected readonly SunIcon = Sun;
   protected readonly AlertTriangleIcon = AlertTriangle;
@@ -174,24 +196,6 @@ export class TodayComponent implements OnInit {
       });
   }
 
-  protected getEnergyLabel(energy: string): string {
-    const labels: Record<string, string> = {
-      high: 'H',
-      medium: 'M',
-      low: 'L',
-    };
-    return labels[energy] ?? energy;
-  }
-
-  protected getEnergyColor(energy: string): string {
-    const colors: Record<string, string> = {
-      high: 'text-red-400',
-      medium: 'text-amber-400',
-      low: 'text-emerald-400',
-    };
-    return colors[energy] ?? 'text-zinc-400';
-  }
-
   protected getMilestoneProgress(goal: GoalPulse): number {
     if (goal.milestones_total === 0) return 0;
     return Math.round((goal.milestones_done / goal.milestones_total) * 100);
@@ -202,27 +206,5 @@ export class TodayComponent implements OnInit {
     if (daysRemaining < 7) return 'text-red-400';
     if (daysRemaining < 30) return 'text-amber-400';
     return 'text-zinc-400';
-  }
-
-  protected getAreaBg(area: string): string {
-    const colors: Record<string, string> = {
-      backend: 'violet-900/40',
-      learning: 'sky-900/40',
-      studio: 'amber-900/40',
-      career: 'emerald-900/40',
-      frontend: 'blue-900/40',
-    };
-    return colors[area] ?? 'zinc-800';
-  }
-
-  protected getAreaText(area: string): string {
-    const colors: Record<string, string> = {
-      backend: 'violet-400',
-      learning: 'sky-400',
-      studio: 'amber-400',
-      career: 'emerald-400',
-      frontend: 'blue-400',
-    };
-    return colors[area] ?? 'zinc-400';
   }
 }

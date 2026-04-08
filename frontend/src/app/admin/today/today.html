@@ -1,8 +1,13 @@
 @if (isLoading()) {
-<div data-testid="today-loading" class="flex h-64 items-center justify-center">
+<div
+  data-testid="today-loading"
+  class="flex h-64 items-center justify-center"
+  role="status"
+>
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
+  <span class="sr-only">載入中...</span>
 </div>
 } @else if (context(); as ctx) {
 
@@ -61,7 +66,7 @@
           <span class="text-sm text-zinc-300 truncate">{{ item.title }}</span>
           <span
             class="shrink-0 rounded-xs px-1.5 py-0.5 text-[10px] font-medium"
-            [class]="'bg-' + getAreaBg(item.area) + ' text-' + getAreaText(item.area)"
+            [class]="AREA_CLASSES[item.area] ?? 'bg-zinc-800 text-zinc-400'"
           >
             {{ item.area }}
           </span>
@@ -72,27 +77,27 @@
             data-testid="defer-btn"
             (click)="resolveItem(item.id, 'defer')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-amber-400"
-            title="再做一天"
+            aria-label="再做一天"
           >
-            <lucide-icon [img]="RotateCcwIcon" [size]="14" />
+            <lucide-icon [img]="RotateCcwIcon" [size]="14" aria-hidden="true" />
           </button>
           <button
             type="button"
             data-testid="complete-btn"
             (click)="resolveItem(item.id, 'complete')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-emerald-400"
-            title="已完成"
+            aria-label="已完成"
           >
-            <lucide-icon [img]="CheckIcon" [size]="14" />
+            <lucide-icon [img]="CheckIcon" [size]="14" aria-hidden="true" />
           </button>
           <button
             type="button"
             data-testid="drop-btn"
             (click)="resolveItem(item.id, 'drop')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
-            title="放棄"
+            aria-label="放棄"
           >
-            <lucide-icon [img]="XIcon" [size]="14" />
+            <lucide-icon [img]="XIcon" [size]="14" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -149,6 +154,7 @@
             ? 'border-emerald-600 bg-emerald-600 text-white'
             : 'border-zinc-600 hover:border-emerald-500'"
           [disabled]="item.status === 'done'"
+          [attr.aria-label]="'完成 ' + item.title"
         >
           @if (item.status === 'done') {
           <lucide-icon [img]="CheckIcon" [size]="12" />
@@ -166,9 +172,9 @@
         <!-- Energy 標籤 -->
         <span
           class="shrink-0 text-[10px] font-bold"
-          [class]="getEnergyColor(item.energy)"
+          [class]="ENERGY_COLORS[item.energy] ?? 'text-zinc-400'"
         >
-          {{ getEnergyLabel(item.energy) }}
+          {{ ENERGY_LABELS[item.energy] ?? item.energy }}
         </span>
 
         <!-- 預估時間 -->

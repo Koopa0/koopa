@@ -61,10 +61,11 @@
       <button
         type="button"
         (click)="toggleGroup(group.title)"
+        [attr.aria-expanded]="!collapsedGroups().has(group.title)"
         class="flex w-full items-center justify-between px-2 py-1.5 text-[11px] font-semibold tracking-wider text-zinc-600 uppercase hover:text-zinc-400"
       >
         <span>{{ group.title }}</span>
-        @if (isGroupCollapsed(group.title)) {
+        @if (collapsedGroups().has(group.title)) {
         <lucide-icon [img]="ChevronRightIcon" [size]="12" />
         } @else {
         <lucide-icon [img]="ChevronDownIcon" [size]="12" />
@@ -79,8 +80,8 @@
       } }
 
       <!-- 群組項目 -->
-      @if (!group.collapsible || !isGroupCollapsed(group.title)) { @for (item of
-      group.items; track item.route) { @if (item.disabled) {
+      @if (!group.collapsible || !collapsedGroups().has(group.title)) { @for
+      (item of group.items; track item.route) { @if (item.disabled) {
       <span
         class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-600 cursor-not-allowed"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"

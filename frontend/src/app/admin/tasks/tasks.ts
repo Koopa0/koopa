@@ -39,6 +39,26 @@ export class TasksComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly statusTabs: { key: StatusFilter; label: string }[] = [
+    { key: 'todo', label: 'Todo' },
+    { key: 'in-progress', label: 'Active' },
+    { key: 'someday', label: 'Someday' },
+    { key: 'all', label: 'All' },
+  ];
+
+  protected readonly ENERGY_COLORS: Record<string, string> = {
+    high: 'text-red-400',
+    medium: 'text-amber-400',
+    low: 'text-emerald-400',
+  };
+
+  protected readonly PRIORITY_COLORS: Record<string, string> = {
+    urgent: 'text-red-400',
+    high: 'text-amber-400',
+    medium: 'text-zinc-300',
+    low: 'text-zinc-500',
+  };
+
   protected readonly tasks = signal<TaskBacklogItem[]>([]);
   protected readonly isLoading = signal(true);
   protected readonly statusFilter = signal<StatusFilter>('todo');
@@ -54,15 +74,17 @@ export class TasksComponent implements OnInit {
     });
   });
 
-  protected readonly statusCounts = computed(() => {
-    const all = this.tasks();
-    return {
-      all: all.length,
-      todo: all.filter((t) => t.status === 'todo').length,
-      'in-progress': all.filter((t) => t.status === 'in-progress').length,
-      someday: all.filter((t) => t.status === 'someday').length,
-    };
-  });
+  protected readonly statusCounts = computed<Record<StatusFilter, number>>(
+    () => {
+      const all = this.tasks();
+      return {
+        all: all.length,
+        todo: all.filter((t) => t.status === 'todo').length,
+        'in-progress': all.filter((t) => t.status === 'in-progress').length,
+        someday: all.filter((t) => t.status === 'someday').length,
+      };
+    },
+  );
 
   protected readonly ListTodoIcon = ListTodo;
   protected readonly PlayIcon = Play;
@@ -122,29 +144,5 @@ export class TasksComponent implements OnInit {
   protected onSearchInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.searchQuery.set(value);
-  }
-
-  protected getEnergyColor(energy: string): string {
-    const colors: Record<string, string> = {
-      high: 'text-red-400',
-      medium: 'text-amber-400',
-      low: 'text-emerald-400',
-    };
-    return colors[energy] ?? 'text-zinc-400';
-  }
-
-  protected getStatusCount(key: string): number {
-    const counts = this.statusCounts();
-    return (counts as Record<string, number>)[key] ?? 0;
-  }
-
-  protected getPriorityColor(priority: string): string {
-    const colors: Record<string, string> = {
-      urgent: 'text-red-400',
-      high: 'text-amber-400',
-      medium: 'text-zinc-300',
-      low: 'text-zinc-500',
-    };
-    return colors[priority] ?? 'text-zinc-400';
   }
 }

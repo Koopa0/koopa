@@ -11,13 +11,11 @@
   >
     <!-- Status tabs -->
     <div class="flex gap-1 rounded-sm bg-zinc-900 p-0.5">
-      @for ( tab of [ { key: 'todo', label: 'Todo' }, { key: 'in-progress',
-      label: 'Active' }, { key: 'someday', label: 'Someday' }, { key: 'all',
-      label: 'All' }, ]; track tab.key ) {
+      @for (tab of statusTabs; track tab.key) {
       <button
         type="button"
         [attr.data-testid]="'tab-' + tab.key"
-        (click)="setStatusFilter($any(tab.key))"
+        (click)="setStatusFilter(tab.key)"
         class="rounded-xs px-3 py-1 text-xs font-medium transition-colors"
         [class]="
             statusFilter() === tab.key
@@ -26,7 +24,7 @@
           "
       >
         {{ tab.label }}
-        <span class="ml-1 text-zinc-600">{{ getStatusCount(tab.key) }}</span>
+        <span class="ml-1 text-zinc-600">{{ statusCounts()[tab.key] }}</span>
       </button>
       }
     </div>
@@ -40,7 +38,8 @@
       />
       <input
         data-testid="task-search"
-        type="text"
+        type="search"
+        aria-label="搜尋任務"
         (input)="onSearchInput($event)"
         placeholder="搜尋任務..."
         class="w-full rounded-sm border border-zinc-800 bg-zinc-900/50 py-1.5 pl-8 pr-3 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-hidden sm:w-48"
@@ -50,10 +49,11 @@
 
   <!-- Task List -->
   @if (isLoading()) {
-  <div class="flex h-32 items-center justify-center">
+  <div class="flex h-32 items-center justify-center" role="status">
     <div
       class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
     ></div>
+    <span class="sr-only">載入中...</span>
   </div>
   } @else if (filteredTasks().length === 0) {
   <div
@@ -76,6 +76,7 @@
         (click)="advanceTask(task.id, 'start')"
         class="shrink-0 rounded-xs p-1 text-zinc-600 transition-colors hover:text-emerald-400"
         title="開始"
+        aria-label="開始任務"
       >
         <lucide-icon [img]="PlayIcon" [size]="14" />
       </button>
@@ -86,6 +87,7 @@
         (click)="advanceTask(task.id, 'complete')"
         class="shrink-0 rounded-xs p-1 text-amber-400 transition-colors hover:text-emerald-400"
         title="完成"
+        aria-label="完成任務"
       >
         <lucide-icon [img]="CheckIcon" [size]="14" />
       </button>
@@ -107,7 +109,7 @@
 
       <span
         class="shrink-0 text-[10px] font-bold"
-        [class]="getEnergyColor(task.energy)"
+        [class]="ENERGY_COLORS[task.energy] ?? 'text-zinc-400'"
       >
         {{ task.energy === 'high' ? 'H' : task.energy === 'medium' ? 'M' : 'L'
         }}
@@ -115,7 +117,7 @@
 
       <span
         class="shrink-0 text-[10px] font-medium"
-        [class]="getPriorityColor(task.priority)"
+        [class]="PRIORITY_COLORS[task.priority] ?? 'text-zinc-400'"
       >
         {{ task.priority }}
       </span>

@@ -235,10 +235,6 @@ export class AdminLayoutComponent {
     });
   }
 
-  protected isGroupCollapsed(title: string): boolean {
-    return this.collapsedGroups().has(title);
-  }
-
   protected logout(): void {
     this.authService.logout();
     this.router.navigate(['/']);
