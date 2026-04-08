@@ -156,6 +156,30 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	return contents, int(countRow), nil
 }
 
+// ByStatus returns contents filtered by status, limited to limit results.
+func (s *Store) ByStatus(ctx context.Context, status string, limit int) ([]Content, error) {
+	rows, err := s.q.ContentsByStatus(ctx, db.ContentsByStatusParams{
+		Status:     db.ContentStatus(status),
+		MaxResults: int32(limit), // #nosec G115 -- bounded by caller
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing contents by status %q: %w", status, err)
+	}
+	contents := make([]Content, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		contents[i] = rowToContent(contentRow{
+			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		})
+	}
+	return contents, nil
+}
+
 // AdminContents returns a paginated list of all contents for admin (no status/visibility filter).
 func (s *Store) AdminContents(ctx context.Context, f AdminFilter) ([]Content, int, error) {
 	ct := nullContentType(f.Type)

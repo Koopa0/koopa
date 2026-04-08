@@ -371,3 +371,36 @@ RETURNING *;
 -- Hard delete a task (used for inbox discard only).
 DELETE FROM tasks WHERE id = @id;
 
+-- name: BacklogTasks :many
+-- Filtered task list for admin backlog view.
+SELECT t.id, t.title, t.status, t.due, t.project_id,
+       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.assignee, t.created_by, t.created_at, t.updated_at,
+       COALESCE(p.title, '') AS project_title,
+       COALESCE(p.slug, '') AS project_slug
+FROM tasks t
+LEFT JOIN projects p ON p.id = t.project_id
+WHERE t.status = @status::task_status
+  AND (sqlc.narg('project_id')::uuid IS NULL OR t.project_id = sqlc.narg('project_id'))
+  AND (sqlc.narg('energy')::text IS NULL OR t.energy = sqlc.narg('energy'))
+  AND (sqlc.narg('priority')::text IS NULL OR t.priority = sqlc.narg('priority'))
+  AND (sqlc.narg('search')::text IS NULL OR t.title ILIKE '%' || sqlc.narg('search') || '%')
+ORDER BY t.due NULLS LAST, t.priority NULLS LAST, t.created_at DESC
+LIMIT @max_results;
+
+-- name: TasksByProjectGrouped :many
+-- Tasks for a project, used for admin project detail grouping by status.
+SELECT t.id, t.title, t.status, t.due, t.energy, t.priority,
+       t.assignee, t.created_at, t.updated_at
+FROM tasks t
+WHERE t.project_id = @project_id
+ORDER BY
+    CASE t.status
+        WHEN 'in-progress' THEN 0
+        WHEN 'todo' THEN 1
+        WHEN 'inbox' THEN 2
+        WHEN 'someday' THEN 3
+        WHEN 'done' THEN 4
+    END,
+    t.due NULLS LAST, t.created_at DESC;
+

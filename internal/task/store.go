@@ -511,6 +511,124 @@ func (s *Store) Clarify(ctx context.Context, id uuid.UUID, p *ClarifyParams) (*T
 	return &t, nil
 }
 
+// Start sets a task's status to in-progress.
+func (s *Store) Start(ctx context.Context, id uuid.UUID) error {
+	_, err := s.UpdateStatus(ctx, id, StatusInProgress)
+	return err
+}
+
+// Complete sets a task's status to done with the given completion time.
+func (s *Store) Complete(ctx context.Context, id uuid.UUID, completedAt *time.Time) error {
+	_, err := s.UpdateStatus(ctx, id, StatusDone)
+	return err
+}
+
+// DeferTask sets a task's status to someday.
+func (s *Store) DeferTask(ctx context.Context, id uuid.UUID) error {
+	_, err := s.UpdateStatus(ctx, id, StatusSomeday)
+	return err
+}
+
+// BacklogTasks returns a filtered list of tasks for the admin backlog view.
+func (s *Store) BacklogTasks(ctx context.Context, status, projectID, energy, priority, search string, limit int) ([]PendingTaskDetail, error) {
+	var projID *uuid.UUID
+	if projectID != "" {
+		id, err := uuid.Parse(projectID)
+		if err == nil {
+			projID = &id
+		}
+	}
+	var energyPtr, priorityPtr, searchPtr *string
+	if energy != "" {
+		energyPtr = &energy
+	}
+	if priority != "" {
+		priorityPtr = &priority
+	}
+	if search != "" {
+		escaped := escapeILIKE(search)
+		searchPtr = &escaped
+	}
+
+	rows, err := s.q.BacklogTasks(ctx, db.BacklogTasksParams{
+		Status:     db.TaskStatus(status),
+		ProjectID:  projID,
+		Energy:     energyPtr,
+		Priority:   priorityPtr,
+		Search:     searchPtr,
+		MaxResults: int32(limit), // #nosec G115 -- bounded by caller
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing backlog tasks: %w", err)
+	}
+	tasks := make([]PendingTaskDetail, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		tasks[i] = PendingTaskDetail{
+			ID: r.ID, Title: r.Title, Status: Status(r.Status), Due: r.Due,
+			ProjectTitle: r.ProjectTitle, ProjectSlug: r.ProjectSlug,
+			Energy: r.Energy, Priority: r.Priority,
+			RecurInterval: r.RecurInterval, RecurUnit: r.RecurUnit,
+			Assignee: r.Assignee, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	}
+	return tasks, nil
+}
+
+// GroupedTasks holds tasks grouped by status for admin project detail.
+type GroupedTasks struct {
+	InProgress []TaskBrief `json:"in_progress"`
+	Todo       []TaskBrief `json:"todo"`
+	Done       []TaskBrief `json:"done"`
+	Other      []TaskBrief `json:"other"`
+}
+
+// TaskBrief is a lightweight task for grouped views.
+type TaskBrief struct {
+	ID       uuid.UUID  `json:"id"`
+	Title    string     `json:"title"`
+	Status   Status     `json:"status"`
+	Due      *time.Time `json:"due,omitempty"`
+	Energy   *string    `json:"energy,omitempty"`
+	Priority *string    `json:"priority,omitempty"`
+}
+
+// TasksByProjectGrouped returns tasks for a project grouped by status.
+func (s *Store) TasksByProjectGrouped(ctx context.Context, projectID uuid.UUID) (*GroupedTasks, error) {
+	rows, err := s.q.TasksByProjectGrouped(ctx, &projectID)
+	if err != nil {
+		return nil, fmt.Errorf("listing tasks for project %s: %w", projectID, err)
+	}
+	result := &GroupedTasks{
+		InProgress: []TaskBrief{},
+		Todo:       []TaskBrief{},
+		Done:       []TaskBrief{},
+		Other:      []TaskBrief{},
+	}
+	for i := range rows {
+		r := &rows[i]
+		tb := TaskBrief{
+			ID:       r.ID,
+			Title:    r.Title,
+			Status:   Status(r.Status),
+			Due:      r.Due,
+			Energy:   r.Energy,
+			Priority: r.Priority,
+		}
+		switch Status(r.Status) {
+		case StatusInProgress:
+			result.InProgress = append(result.InProgress, tb)
+		case StatusTodo:
+			result.Todo = append(result.Todo, tb)
+		case StatusDone:
+			result.Done = append(result.Done, tb)
+		default:
+			result.Other = append(result.Other, tb)
+		}
+	}
+	return result, nil
+}
+
 // Delete hard-deletes a task. Used only for inbox discard.
 func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.q.DeleteTask(ctx, id)

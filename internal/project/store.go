@@ -282,6 +282,20 @@ type ProjectSummary struct {
 	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
 }
 
+// ListByStatus returns projects filtered by status.
+// Special values: "active" returns in-progress + maintained, "all" returns everything.
+func (s *Store) ListByStatus(ctx context.Context, status string) ([]Project, error) {
+	rows, err := s.q.ListByStatus(ctx, status)
+	if err != nil {
+		return nil, fmt.Errorf("listing projects by status %q: %w", status, err)
+	}
+	projects := make([]Project, len(rows))
+	for i := range rows {
+		projects[i] = rowToProject(&rows[i])
+	}
+	return projects, nil
+}
+
 // SummariesByGoalIDs returns lightweight project info for a set of goal IDs.
 func (s *Store) SummariesByGoalIDs(ctx context.Context, goalIDs []uuid.UUID) ([]ProjectSummary, error) {
 	if len(goalIDs) == 0 {

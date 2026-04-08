@@ -103,6 +103,7 @@ type Milestone struct {
 	Description    string     `json:"description"`
 	TargetDeadline *time.Time `json:"target_deadline,omitempty"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	Position       int32      `json:"position"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
@@ -118,16 +119,7 @@ func (s *Store) CreateMilestone(ctx context.Context, goalID uuid.UUID, title, de
 	if err != nil {
 		return nil, fmt.Errorf("creating milestone: %w", err)
 	}
-	return &Milestone{
-		ID:             r.ID,
-		GoalID:         r.GoalID,
-		Title:          r.Title,
-		Description:    r.Description,
-		TargetDeadline: r.TargetDeadline,
-		CompletedAt:    r.CompletedAt,
-		CreatedAt:      r.CreatedAt,
-		UpdatedAt:      r.UpdatedAt,
-	}, nil
+	return rowToMilestone(&r), nil
 }
 
 // ActiveGoalSummary represents an active goal with milestone progress.
@@ -165,6 +157,147 @@ func (s *Store) ActiveGoals(ctx context.Context) ([]ActiveGoalSummary, error) {
 		}
 	}
 	return result, nil
+}
+
+// GoalWithArea is a goal with its area name resolved.
+type GoalWithArea struct {
+	Goal
+	AreaName string `json:"area_name"`
+}
+
+// ByID returns a single goal by ID with area name resolved.
+func (s *Store) ByID(ctx context.Context, id uuid.UUID) (*GoalWithArea, error) {
+	r, err := s.q.GoalByIDWithArea(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying goal %s with area: %w", id, err)
+	}
+	return &GoalWithArea{
+		Goal: Goal{
+			ID:           r.ID,
+			Title:        r.Title,
+			Description:  r.Description,
+			Status:       Status(r.Status),
+			AreaID:       r.AreaID,
+			Quarter:      r.Quarter,
+			Deadline:     r.Deadline,
+			NotionPageID: r.NotionPageID,
+			CreatedAt:    r.CreatedAt,
+			UpdatedAt:    r.UpdatedAt,
+		},
+		AreaName: r.AreaName,
+	}, nil
+}
+
+// MilestonesByGoal returns milestones for a goal ordered by position.
+func (s *Store) MilestonesByGoal(ctx context.Context, goalID uuid.UUID) ([]Milestone, error) {
+	rows, err := s.q.MilestonesByGoal(ctx, goalID)
+	if err != nil {
+		return nil, fmt.Errorf("listing milestones for goal %s: %w", goalID, err)
+	}
+	milestones := make([]Milestone, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		milestones[i] = Milestone{
+			ID:             r.ID,
+			GoalID:         r.GoalID,
+			Title:          r.Title,
+			Description:    r.Description,
+			TargetDeadline: r.TargetDeadline,
+			CompletedAt:    r.CompletedAt,
+			Position:       r.Position,
+			CreatedAt:      r.CreatedAt,
+			UpdatedAt:      r.UpdatedAt,
+		}
+	}
+	return milestones, nil
+}
+
+// CreateParams holds the parameters for creating a new goal.
+type CreateParams struct {
+	Title       string
+	Description string
+	AreaID      *uuid.UUID
+	Deadline    *time.Time
+	Quarter     *string
+}
+
+// Create inserts a new goal with status=not-started.
+func (s *Store) Create(ctx context.Context, p *CreateParams) (*Goal, error) {
+	r, err := s.q.CreateGoal(ctx, db.CreateGoalParams{
+		Title:       p.Title,
+		Description: p.Description,
+		Status:      db.GoalStatusNotStarted,
+		AreaID:      p.AreaID,
+		Quarter:     p.Quarter,
+		Deadline:    p.Deadline,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating goal: %w", err)
+	}
+	g := rowToGoal(&r)
+	return &g, nil
+}
+
+// CreateMilestoneSimple inserts a new milestone with only title and position.
+func (s *Store) CreateMilestoneSimple(ctx context.Context, goalID uuid.UUID, title string, position int32) (*Milestone, error) {
+	r, err := s.q.CreateMilestoneWithPosition(ctx, db.CreateMilestoneWithPositionParams{
+		GoalID:   goalID,
+		Title:    title,
+		Position: position,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating milestone: %w", err)
+	}
+	return &Milestone{
+		ID:             r.ID,
+		GoalID:         r.GoalID,
+		Title:          r.Title,
+		Description:    r.Description,
+		TargetDeadline: r.TargetDeadline,
+		CompletedAt:    r.CompletedAt,
+		Position:       r.Position,
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+	}, nil
+}
+
+// ToggleMilestone toggles a milestone's completed_at (set to now if null, null if set).
+func (s *Store) ToggleMilestone(ctx context.Context, id uuid.UUID) (*Milestone, error) {
+	r, err := s.q.ToggleMilestone(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("toggling milestone %s: %w", id, err)
+	}
+	return &Milestone{
+		ID:             r.ID,
+		GoalID:         r.GoalID,
+		Title:          r.Title,
+		Description:    r.Description,
+		TargetDeadline: r.TargetDeadline,
+		CompletedAt:    r.CompletedAt,
+		Position:       r.Position,
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+	}, nil
+}
+
+func rowToMilestone(r *db.CreateMilestoneRow) *Milestone {
+	return &Milestone{
+		ID:             r.ID,
+		GoalID:         r.GoalID,
+		Title:          r.Title,
+		Description:    r.Description,
+		TargetDeadline: r.TargetDeadline,
+		CompletedAt:    r.CompletedAt,
+		Position:       r.Position,
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+	}
 }
 
 func rowToGoal(r *db.Goal) Goal {

@@ -295,6 +295,16 @@ WHERE c.type = 'til'
 ORDER BY c.embedding <=> @target_embedding::vector
 LIMIT @max_results;
 
+-- name: ContentsByStatus :many
+-- List contents by status, ordered by updated_at descending. Used by admin pipeline.
+SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+       series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
+       cover_image, published_at, created_at, updated_at
+FROM contents
+WHERE status = @status::content_status
+ORDER BY updated_at DESC
+LIMIT @max_results;
+
 -- name: ContentsWithoutEmbedding :many
 -- Contents that need embedding generation (TILs, articles, notes).
 SELECT id, slug, title, body FROM contents

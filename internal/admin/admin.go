@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,9 +41,16 @@ type Handler struct {
 	plans      *plan.Store
 	entries    *entry.Store
 
-	pool   *pgxpool.Pool
-	loc    *time.Location
-	logger *slog.Logger
+	pool      *pgxpool.Pool
+	loc       *time.Location
+	logger    *slog.Logger
+	proposals sync.Map // proposal_id → proposalEntry
+}
+
+// proposalEntry holds a cached proposal for the two-step propose→commit flow.
+type proposalEntry struct {
+	entityType string
+	data       any
 }
 
 // NewHandler creates an admin Handler with all required stores.
@@ -91,4 +99,19 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// storeProposal caches a proposal for the two-step propose→commit flow.
+func (h *Handler) storeProposal(id, entityType string, data any) {
+	h.proposals.Store(id, proposalEntry{entityType: entityType, data: data})
+}
+
+// loadProposal retrieves a cached proposal by ID.
+func (h *Handler) loadProposal(id string) (any, bool) {
+	v, ok := h.proposals.LoadAndDelete(id)
+	if !ok {
+		return nil, false
+	}
+	e := v.(proposalEntry) //nolint:errcheck // type assertion is safe — only proposalEntry is stored
+	return e.data, true
 }

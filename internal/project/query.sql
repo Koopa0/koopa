@@ -112,6 +112,20 @@ RETURNING id, slug, title, description, long_description, role, tech_stack, high
           featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at;
 
+-- name: ListByStatus :many
+-- List projects filtered by status. "active" maps to in-progress + maintained.
+SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
+       problem, solution, architecture, results, github_url, live_url,
+       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       expected_cadence, created_at, updated_at
+FROM projects
+WHERE CASE @status_filter::text
+    WHEN 'active' THEN status IN ('in-progress', 'maintained')
+    WHEN 'all' THEN true
+    ELSE status = @status_filter::project_status
+END
+ORDER BY featured DESC, sort_order, title;
+
 -- name: ProjectSummariesByGoalIDs :many
 -- Lightweight project info for goal_progress output.
 SELECT id, slug, title, status, goal_id, last_activity_at

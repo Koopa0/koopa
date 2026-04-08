@@ -167,9 +167,34 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	// --- Admin v2: Aggregate workflow endpoints ---
 	if h.adminV2 != nil {
 		a := h.adminV2
+
+		// Today
 		mux.Handle("GET /api/admin/today", authMid(http.HandlerFunc(a.Today)))
+		mux.Handle("POST /api/admin/today/plan", authMid(http.HandlerFunc(a.TodayPlan)))
+		mux.Handle("POST /api/admin/today/items/{id}/resolve", authMid(http.HandlerFunc(a.ResolvePlanItem)))
+
+		// Inbox
 		mux.Handle("GET /api/admin/inbox", authMid(http.HandlerFunc(a.Inbox)))
 		mux.Handle("POST /api/admin/inbox/capture", authMid(http.HandlerFunc(a.InboxCapture)))
 		mux.Handle("POST /api/admin/inbox/{id}/clarify", authMid(http.HandlerFunc(a.InboxClarify)))
+
+		// Goals
+		mux.Handle("GET /api/admin/plan/goals", authMid(http.HandlerFunc(a.GoalsOverview)))
+		mux.Handle("GET /api/admin/plan/goals/{id}", authMid(http.HandlerFunc(a.GoalDetail)))
+		mux.Handle("POST /api/admin/plan/goals/propose", authMid(http.HandlerFunc(a.GoalPropose)))
+		mux.Handle("POST /api/admin/plan/goals/propose/{proposal_id}/commit", authMid(http.HandlerFunc(a.GoalCommit)))
+		mux.Handle("POST /api/admin/plan/goals/{id}/milestones", authMid(http.HandlerFunc(a.MilestoneCreate)))
+		mux.Handle("POST /api/admin/plan/goals/{id}/milestones/{ms_id}/toggle", authMid(http.HandlerFunc(a.MilestoneToggle)))
+
+		// Projects
+		mux.Handle("GET /api/admin/plan/projects", authMid(http.HandlerFunc(a.ProjectsOverview)))
+		mux.Handle("GET /api/admin/plan/projects/{id}", authMid(http.HandlerFunc(a.ProjectDetail)))
+
+		// Tasks
+		mux.Handle("GET /api/admin/plan/tasks", authMid(http.HandlerFunc(a.TasksBacklog)))
+		mux.Handle("POST /api/admin/plan/tasks/{id}/advance", authMid(http.HandlerFunc(a.AdvanceTask)))
+
+		// Library
+		mux.Handle("GET /api/admin/library/pipeline", authMid(http.HandlerFunc(a.LibraryPipeline)))
 	}
 }
