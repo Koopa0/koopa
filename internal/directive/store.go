@@ -39,7 +39,10 @@ type Participant struct {
 func (s *Store) ParticipantByName(ctx context.Context, name string) (*Participant, error) {
 	row, err := s.q.ParticipantByName(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("participant %q not found: %w", name, err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying participant %q: %w", name, err)
 	}
 	return &Participant{
 		Name:                 row.Name,

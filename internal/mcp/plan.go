@@ -214,6 +214,10 @@ func (s *Server) mpUpdateItem(ctx context.Context, planID uuid.UUID, input *Mana
 				return nil, ManagePlanOutput{}, fmt.Errorf("invalid completed_by_attempt_id: %w", parseErr)
 			}
 			params.CompletedByAttemptID = aid
+			if aid == nil {
+				s.logger.Warn("manage_plan: completed without attempt id",
+					"plan_id", planID, "item_id", itemID)
+			}
 		}
 		if _, err = s.plans.UpdateItemStatus(ctx, params); err != nil {
 			return nil, ManagePlanOutput{}, fmt.Errorf("updating item to %s: %w", status, err)

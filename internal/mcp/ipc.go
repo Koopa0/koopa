@@ -59,6 +59,17 @@ func (s *Server) fileReport(ctx context.Context, _ *mcp.CallToolRequest, input F
 		return nil, FileReportOutput{}, fmt.Errorf("resolve_directive requires in_response_to to be set")
 	}
 
+	// When resolving a directive, wrap report creation + resolution in a transaction.
+	if input.ResolveDirective && inResponseTo != nil {
+		out, txErr := s.fileReportAndResolve(ctx, source, inResponseTo, input.Content, metadata)
+		if txErr != nil {
+			return nil, FileReportOutput{}, txErr
+		}
+		s.logger.Info("file_report", "id", out.Report.ID, "source", source,
+			"in_response_to", inResponseTo, "resolved", true)
+		return nil, *out, nil
+	}
+
 	rpt, err := s.reports.Create(ctx, &report.CreateParams{
 		Source:       source,
 		InResponseTo: inResponseTo,
@@ -70,23 +81,45 @@ func (s *Server) fileReport(ctx context.Context, _ *mcp.CallToolRequest, input F
 		return nil, FileReportOutput{}, fmt.Errorf("filing report: %w", err)
 	}
 
-	out := FileReportOutput{Report: *rpt}
+	s.logger.Info("file_report", "id", rpt.ID, "source", source,
+		"in_response_to", inResponseTo, "resolved", false)
+	return nil, FileReportOutput{Report: *rpt}, nil
+}
 
-	// Resolve the directive if requested — atomic with report creation.
-	if input.ResolveDirective && inResponseTo != nil {
-		if _, rErr := s.directives.Resolve(ctx, *inResponseTo, &rpt.ID); rErr != nil {
-			// Report was created but directive resolution failed.
-			// Log the error but return the report — caller can retry resolution.
-			s.logger.Error("file_report: directive resolution failed",
-				"directive_id", *inResponseTo, "report_id", rpt.ID, "error", rErr)
-		} else {
-			out.DirectiveResolved = true
-		}
+// fileReportAndResolve creates a report and resolves its directive atomically.
+func (s *Server) fileReportAndResolve(ctx context.Context, source string, directiveID *int64, content string, metadata json.RawMessage) (*FileReportOutput, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback is no-op after commit
+
+	txReports := s.reports.WithTx(tx)
+	txDirectives := s.directives.WithTx(tx)
+
+	rpt, err := txReports.Create(ctx, &report.CreateParams{
+		Source:       source,
+		InResponseTo: directiveID,
+		Content:      content,
+		Metadata:     metadata,
+		ReportedDate: s.today(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("filing report: %w", err)
 	}
 
-	s.logger.Info("file_report", "id", rpt.ID, "source", source,
-		"in_response_to", inResponseTo, "resolved", out.DirectiveResolved)
-	return nil, out, nil
+	if _, err := txDirectives.Resolve(ctx, *directiveID, &rpt.ID); err != nil {
+		return nil, fmt.Errorf("resolving directive %d: %w", *directiveID, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing report+resolution: %w", err)
+	}
+
+	return &FileReportOutput{
+		Report:            *rpt,
+		DirectiveResolved: true,
+	}, nil
 }
 
 // --- acknowledge_directive ---

@@ -21,6 +21,11 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
+// WithTx returns a new Store using the given transaction.
+func (s *Store) WithTx(tx pgx.Tx) *Store {
+	return &Store{q: s.q.WithTx(tx)}
+}
+
 // Create inserts a new report.
 func (s *Store) Create(ctx context.Context, p *CreateParams) (*Report, error) {
 	row, err := s.q.CreateReport(ctx, db.CreateReportParams{
