@@ -243,8 +243,9 @@
         </div>
       </a>
       } @if (attn.pending_directives > 0) {
-      <div
-        class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400"
+      <a
+        routerLink="/admin/studio"
+        class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400 no-underline transition-colors hover:border-zinc-700 hover:text-zinc-200"
       >
         <lucide-icon
           [img]="FileTextIcon"
@@ -258,10 +259,11 @@
           </div>
           <div class="text-xs text-zinc-600">待回應指令</div>
         </div>
-      </div>
+      </a>
       } @if (attn.due_reviews > 0) {
-      <div
-        class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400"
+      <a
+        routerLink="/admin/learn/review"
+        class="flex items-center gap-2.5 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400 no-underline transition-colors hover:border-zinc-700 hover:text-zinc-200"
       >
         <lucide-icon
           [img]="BookOpenIcon"
@@ -273,7 +275,7 @@
           <div class="font-medium text-zinc-300">{{ attn.due_reviews }}</div>
           <div class="text-xs text-zinc-600">待複習</div>
         </div>
-      </div>
+      </a>
       } @if (attn.stale_someday_count > 0) {
       <a
         routerLink="/admin/plan/tasks"

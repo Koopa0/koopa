@@ -118,6 +118,13 @@ export class AdminLayoutComponent {
           exact: false,
           disabled: false,
         },
+        {
+          label: 'Studio',
+          route: '/admin/studio',
+          icon: Users,
+          exact: false,
+          disabled: false,
+        },
       ],
     },
     {
@@ -230,20 +237,6 @@ export class AdminLayoutComponent {
           label: 'Journal',
           route: '/admin/reflect/journal',
           icon: ScrollText,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'Coordinate',
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          label: 'Studio',
-          route: '/admin/studio',
-          icon: Users,
           exact: false,
           disabled: false,
         },
