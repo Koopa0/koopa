@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,6 +16,13 @@ func (h *Handler) TasksBacklog(w http.ResponseWriter, r *http.Request) {
 	status := q.Get("status")
 	if status == "" {
 		status = "todo"
+	}
+	switch status {
+	case "inbox", "todo", "in-progress", "done", "someday", "all":
+		// valid
+	default:
+		writeError(w, http.StatusBadRequest, "invalid status: must be inbox, todo, in-progress, done, someday, or all")
+		return
 	}
 	projectID := q.Get("project_id")
 	energy := q.Get("energy")
@@ -99,9 +105,8 @@ func (h *Handler) AdvanceTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req AdvanceTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	req, ok := decodeBody[AdvanceTaskRequest](w, r)
+	if !ok {
 		return
 	}
 
@@ -128,7 +133,7 @@ func (h *Handler) AdvanceTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "invalid action: must be start, complete, or defer")
+		writeError(w, http.StatusBadRequest, "invalid action: must be start, complete, or defer. Use today/items/{id}/resolve for drop.")
 		return
 	}
 

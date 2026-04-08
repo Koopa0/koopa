@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -23,9 +22,8 @@ type PlanDayItem struct {
 
 // TodayPlan handles POST /api/admin/today/plan.
 func (h *Handler) TodayPlan(w http.ResponseWriter, r *http.Request) {
-	var req PlanDayRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	req, ok := decodeBody[PlanDayRequest](w, r)
+	if !ok {
 		return
 	}
 	if len(req.Items) == 0 {
@@ -86,9 +84,8 @@ func (h *Handler) ResolvePlanItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req ResolvePlanItemRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	req, ok := decodeBody[ResolvePlanItemRequest](w, r)
+	if !ok {
 		return
 	}
 

@@ -1,7 +1,7 @@
 package admin
 
 import (
-	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -151,9 +151,13 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	g, err := h.goals.ByID(ctx, goalID)
+	if errors.Is(err, goal.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "goal not found")
+		return
+	}
 	if err != nil {
 		h.logger.Error("goal detail", "error", err)
-		writeError(w, http.StatusNotFound, "goal not found")
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -216,9 +220,8 @@ type GoalProposeRequest struct {
 
 // GoalPropose handles POST /api/admin/plan/goals/propose.
 func (h *Handler) GoalPropose(w http.ResponseWriter, r *http.Request) {
-	var req GoalProposeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	req, ok := decodeBody[GoalProposeRequest](w, r)
+	if !ok {
 		return
 	}
 	if req.Title == "" {
@@ -291,9 +294,11 @@ func (h *Handler) GoalCommit(w http.ResponseWriter, r *http.Request) {
 	var areaID *uuid.UUID
 	if req.AreaID != nil {
 		id, err := uuid.Parse(*req.AreaID)
-		if err == nil {
-			areaID = &id
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid area_id")
+			return
 		}
+		areaID = &id
 	}
 
 	g, err := h.goals.Create(r.Context(), &goal.CreateParams{
@@ -329,9 +334,8 @@ func (h *Handler) MilestoneCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req MilestoneCreateRequest
-	if decErr := json.NewDecoder(r.Body).Decode(&req); decErr != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	req, ok := decodeBody[MilestoneCreateRequest](w, r)
+	if !ok {
 		return
 	}
 	if req.Title == "" {

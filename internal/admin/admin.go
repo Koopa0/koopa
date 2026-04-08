@@ -41,7 +41,6 @@ type Handler struct {
 	plans      *plan.Store
 	entries    *entry.Store
 
-	pool      *pgxpool.Pool
 	loc       *time.Location
 	logger    *slog.Logger
 	proposals sync.Map // proposal_id → proposalEntry
@@ -73,7 +72,6 @@ func NewHandler(pool *pgxpool.Pool, loc *time.Location, logger *slog.Logger) *Ha
 		learn:      learning.NewStore(pool),
 		plans:      plan.NewStore(pool),
 		entries:    entry.NewStore(pool),
-		pool:       pool,
 		loc:        loc,
 		logger:     logger,
 	}
@@ -83,6 +81,20 @@ func NewHandler(pool *pgxpool.Pool, loc *time.Location, logger *slog.Logger) *Ha
 func (h *Handler) today() time.Time {
 	now := time.Now().In(h.loc)
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
+}
+
+// maxBodySize is the maximum request body size (1 MiB).
+const maxBodySize = 1 << 20
+
+// decodeBody reads and decodes a JSON request body with size limiting.
+func decodeBody[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
+	var v T
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return v, false
+	}
+	return v, true
 }
 
 // writeJSON encodes v as JSON and writes it with the given status code.
@@ -112,6 +124,9 @@ func (h *Handler) loadProposal(id string) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	e := v.(proposalEntry) //nolint:errcheck // type assertion is safe — only proposalEntry is stored
+	e, ok2 := v.(proposalEntry)
+	if !ok2 {
+		return nil, false
+	}
 	return e.data, true
 }

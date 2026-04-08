@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -82,9 +81,8 @@ type CaptureInboxRequest struct {
 
 // InboxCapture handles POST /api/admin/inbox/capture.
 func (h *Handler) InboxCapture(w http.ResponseWriter, r *http.Request) {
-	var req CaptureInboxRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	req, ok := decodeBody[CaptureInboxRequest](w, r)
+	if !ok {
 		return
 	}
 	if req.Text == "" {
@@ -132,9 +130,8 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req ClarifyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	req, ok := decodeBody[ClarifyRequest](w, r)
+	if !ok {
 		return
 	}
 
