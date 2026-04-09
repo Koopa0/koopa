@@ -209,6 +209,11 @@ export const routes: Routes = [
             (m) => m.IntelligenceComponent,
           ),
       },
+      {
+        path: 'content/collected',
+        loadComponent: () =>
+          import('./admin/content/collected').then((m) => m.CollectedComponent),
+      },
 
       // — Commitments —
       {

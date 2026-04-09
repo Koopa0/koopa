@@ -8,6 +8,7 @@ import {
   DestroyRef,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { DatePipe } from '@angular/common';
 import {
   LucideAngularModule,
   Rss,
@@ -16,12 +17,13 @@ import {
 } from 'lucide-angular';
 import { FeedService } from '../../core/services/feed.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { StatusBadgeComponent } from '../../shared/components/status-badge/status-badge.component';
 import type { ApiFeed } from '../../core/models';
 
 @Component({
   selector: 'app-intelligence',
   standalone: true,
-  imports: [LucideAngularModule],
+  imports: [DatePipe, LucideAngularModule, StatusBadgeComponent],
   templateUrl: './intelligence.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
