@@ -530,15 +530,6 @@ func (q *Queries) AllTopicSlugs(ctx context.Context) ([]AllTopicSlugsRow, error)
 	return items, nil
 }
 
-const approveReview = `-- name: ApproveReview :exec
-UPDATE review_queue SET status = 'approved', reviewed_at = now() WHERE id = $1
-`
-
-func (q *Queries) ApproveReview(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, approveReview, id)
-	return err
-}
-
 const archiveContent = `-- name: ArchiveContent :exec
 UPDATE contents SET status = 'archived', updated_at = now() WHERE id = $1
 `
@@ -1347,7 +1338,8 @@ SELECT c.id, c.slug, c.name, c.domain, c.kind,
        COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'mastery') AS mastery_count,
        COUNT(*) AS total_observations,
-       MAX(ao.created_at) AS last_observed_at
+       MIN(ao.created_at)::timestamptz AS first_observed_at,
+       MAX(ao.created_at)::timestamptz AS last_observed_at
 FROM concepts c
 JOIN attempt_observations ao ON ao.concept_id = c.id
 JOIN attempts a ON a.id = ao.attempt_id
@@ -1363,20 +1355,22 @@ type ConceptMasteryParams struct {
 }
 
 type ConceptMasteryRow struct {
-	ID                uuid.UUID   `json:"id"`
-	Slug              string      `json:"slug"`
-	Name              string      `json:"name"`
-	Domain            string      `json:"domain"`
-	Kind              string      `json:"kind"`
-	WeaknessCount     int64       `json:"weakness_count"`
-	ImprovementCount  int64       `json:"improvement_count"`
-	MasteryCount      int64       `json:"mastery_count"`
-	TotalObservations int64       `json:"total_observations"`
-	LastObservedAt    interface{} `json:"last_observed_at"`
+	ID                uuid.UUID `json:"id"`
+	Slug              string    `json:"slug"`
+	Name              string    `json:"name"`
+	Domain            string    `json:"domain"`
+	Kind              string    `json:"kind"`
+	WeaknessCount     int64     `json:"weakness_count"`
+	ImprovementCount  int64     `json:"improvement_count"`
+	MasteryCount      int64     `json:"mastery_count"`
+	TotalObservations int64     `json:"total_observations"`
+	FirstObservedAt   time.Time `json:"first_observed_at"`
+	LastObservedAt    time.Time `json:"last_observed_at"`
 }
 
 // Per-concept mastery with signal counts from attempt_observations.
-// Used by learning_dashboard mastery view.
+// Used by learning_dashboard mastery view. Stage is derived in Go (not SQL)
+// from the signal counts — see learning.deriveMasteryStage.
 func (q *Queries) ConceptMastery(ctx context.Context, arg ConceptMasteryParams) ([]ConceptMasteryRow, error) {
 	rows, err := q.db.Query(ctx, conceptMastery, arg.Domain, arg.Since)
 	if err != nil {
@@ -1396,6 +1390,7 @@ func (q *Queries) ConceptMastery(ctx context.Context, arg ConceptMasteryParams) 
 			&i.ImprovementCount,
 			&i.MasteryCount,
 			&i.TotalObservations,
+			&i.FirstObservedAt,
 			&i.LastObservedAt,
 		); err != nil {
 			return nil, err
@@ -2714,44 +2709,6 @@ func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Rep
 		&i.Metadata,
 		&i.ReportedDate,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const createReview = `-- name: CreateReview :one
-INSERT INTO review_queue (content_id, review_level, reviewer_notes)
-VALUES ($1, $2, $3)
-RETURNING id, content_id, review_level::text AS rq_review_level,
-          status::text AS rq_status, reviewer_notes, submitted_at, reviewed_at
-`
-
-type CreateReviewParams struct {
-	ContentID     uuid.UUID   `json:"content_id"`
-	ReviewLevel   ReviewLevel `json:"review_level"`
-	ReviewerNotes *string     `json:"reviewer_notes"`
-}
-
-type CreateReviewRow struct {
-	ID            uuid.UUID  `json:"id"`
-	ContentID     uuid.UUID  `json:"content_id"`
-	RqReviewLevel string     `json:"rq_review_level"`
-	RqStatus      string     `json:"rq_status"`
-	ReviewerNotes *string    `json:"reviewer_notes"`
-	SubmittedAt   time.Time  `json:"submitted_at"`
-	ReviewedAt    *time.Time `json:"reviewed_at"`
-}
-
-func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (CreateReviewRow, error) {
-	row := q.db.QueryRow(ctx, createReview, arg.ContentID, arg.ReviewLevel, arg.ReviewerNotes)
-	var i CreateReviewRow
-	err := row.Scan(
-		&i.ID,
-		&i.ContentID,
-		&i.RqReviewLevel,
-		&i.RqStatus,
-		&i.ReviewerNotes,
-		&i.SubmittedAt,
-		&i.ReviewedAt,
 	)
 	return i, err
 }
@@ -4206,6 +4163,26 @@ type InsertEventTagsParams struct {
 // Bulk-link an activity event to multiple canonical tags. Silently ignores duplicates.
 func (q *Queries) InsertEventTags(ctx context.Context, arg InsertEventTagsParams) error {
 	_, err := q.db.Exec(ctx, insertEventTags, arg.EventID, arg.TagIds)
+	return err
+}
+
+const insertItemRelation = `-- name: InsertItemRelation :exec
+INSERT INTO item_relations (source_item_id, target_item_id, relation_type)
+VALUES ($1, $2, $3)
+ON CONFLICT (source_item_id, target_item_id, relation_type) DO NOTHING
+`
+
+type InsertItemRelationParams struct {
+	SourceItemID uuid.UUID `json:"source_item_id"`
+	TargetItemID uuid.UUID `json:"target_item_id"`
+	RelationType string    `json:"relation_type"`
+}
+
+// Idempotent insert into item_relations. Conflicts on
+// (source_item_id, target_item_id, relation_type) are ignored so re-recording
+// the same relationship during a later session is safe.
+func (q *Queries) InsertItemRelation(ctx context.Context, arg InsertItemRelationParams) error {
+	_, err := q.db.Exec(ctx, insertItemRelation, arg.SourceItemID, arg.TargetItemID, arg.RelationType)
 	return err
 }
 
@@ -5837,75 +5814,6 @@ func (q *Queries) ParticipantsForStudio(ctx context.Context, since time.Time) ([
 	return items, nil
 }
 
-const pendingReviewExistsForContent = `-- name: PendingReviewExistsForContent :one
-SELECT EXISTS(
-    SELECT 1 FROM review_queue
-    WHERE content_id = $1 AND status = 'pending'
-) AS exists
-`
-
-func (q *Queries) PendingReviewExistsForContent(ctx context.Context, contentID uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, pendingReviewExistsForContent, contentID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
-const pendingReviews = `-- name: PendingReviews :many
-SELECT rq.id, rq.content_id, rq.review_level::text AS rq_review_level,
-       rq.status::text AS rq_status, rq.reviewer_notes, rq.submitted_at, rq.reviewed_at,
-       c.title AS content_title, c.slug AS content_slug, c.type::text AS content_type
-FROM review_queue rq
-JOIN contents c ON c.id = rq.content_id
-WHERE rq.status = 'pending'
-  AND c.status != 'published'
-ORDER BY rq.submitted_at
-`
-
-type PendingReviewsRow struct {
-	ID            uuid.UUID  `json:"id"`
-	ContentID     uuid.UUID  `json:"content_id"`
-	RqReviewLevel string     `json:"rq_review_level"`
-	RqStatus      string     `json:"rq_status"`
-	ReviewerNotes *string    `json:"reviewer_notes"`
-	SubmittedAt   time.Time  `json:"submitted_at"`
-	ReviewedAt    *time.Time `json:"reviewed_at"`
-	ContentTitle  string     `json:"content_title"`
-	ContentSlug   string     `json:"content_slug"`
-	ContentType   string     `json:"content_type"`
-}
-
-func (q *Queries) PendingReviews(ctx context.Context) ([]PendingReviewsRow, error) {
-	rows, err := q.db.Query(ctx, pendingReviews)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PendingReviewsRow{}
-	for rows.Next() {
-		var i PendingReviewsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.ContentID,
-			&i.RqReviewLevel,
-			&i.RqStatus,
-			&i.ReviewerNotes,
-			&i.SubmittedAt,
-			&i.ReviewedAt,
-			&i.ContentTitle,
-			&i.ContentSlug,
-			&i.ContentType,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const pendingTasks = `-- name: PendingTasks :many
 SELECT id, title, status, due, project_id, notion_page_id,
        completed_at, energy, priority, recur_interval, recur_unit,
@@ -6210,6 +6118,76 @@ func (q *Queries) PlanItemsByLearningItem(ctx context.Context, learningItemID uu
 			&i.AddedAt,
 			&i.CompletedAt,
 			&i.PlanTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const planItemsDetailed = `-- name: PlanItemsDetailed :many
+SELECT lpi.id, lpi.plan_id, lpi.learning_item_id, lpi.position, lpi.status, lpi.phase,
+       lpi.substituted_by, lpi.completed_by_attempt_id, lpi.reason, lpi.added_at, lpi.completed_at,
+       li.title       AS item_title,
+       li.domain      AS item_domain,
+       li.difficulty  AS item_difficulty,
+       li.external_id AS item_external_id
+FROM plan_items lpi
+JOIN items li ON li.id = lpi.learning_item_id
+WHERE lpi.plan_id = $1
+ORDER BY lpi.position
+`
+
+type PlanItemsDetailedRow struct {
+	ID                   uuid.UUID  `json:"id"`
+	PlanID               uuid.UUID  `json:"plan_id"`
+	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	Position             int32      `json:"position"`
+	Status               string     `json:"status"`
+	Phase                *string    `json:"phase"`
+	SubstitutedBy        *uuid.UUID `json:"substituted_by"`
+	CompletedByAttemptID *uuid.UUID `json:"completed_by_attempt_id"`
+	Reason               *string    `json:"reason"`
+	AddedAt              time.Time  `json:"added_at"`
+	CompletedAt          *time.Time `json:"completed_at"`
+	ItemTitle            string     `json:"item_title"`
+	ItemDomain           string     `json:"item_domain"`
+	ItemDifficulty       *string    `json:"item_difficulty"`
+	ItemExternalID       *string    `json:"item_external_id"`
+}
+
+// Plan items joined with the items table, ordered by position.
+// Used by manage_plan(progress) so the caller has plan_item_id + display title
+// available without a second round-trip.
+func (q *Queries) PlanItemsDetailed(ctx context.Context, planID uuid.UUID) ([]PlanItemsDetailedRow, error) {
+	rows, err := q.db.Query(ctx, planItemsDetailed, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PlanItemsDetailedRow{}
+	for rows.Next() {
+		var i PlanItemsDetailedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.LearningItemID,
+			&i.Position,
+			&i.Status,
+			&i.Phase,
+			&i.SubstitutedBy,
+			&i.CompletedByAttemptID,
+			&i.Reason,
+			&i.AddedAt,
+			&i.CompletedAt,
+			&i.ItemTitle,
+			&i.ItemDomain,
+			&i.ItemDifficulty,
+			&i.ItemExternalID,
 		); err != nil {
 			return nil, err
 		}
@@ -7607,20 +7585,6 @@ func (q *Queries) RejectContent(ctx context.Context, arg RejectContentParams) (R
 	return i, err
 }
 
-const rejectReview = `-- name: RejectReview :exec
-UPDATE review_queue SET status = 'rejected', reviewer_notes = $2, reviewed_at = now() WHERE id = $1
-`
-
-type RejectReviewParams struct {
-	ID            uuid.UUID `json:"id"`
-	ReviewerNotes *string   `json:"reviewer_notes"`
-}
-
-func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) error {
-	_, err := q.db.Exec(ctx, rejectReview, arg.ID, arg.ReviewerNotes)
-	return err
-}
-
 const relatedTagsForTopic = `-- name: RelatedTagsForTopic :many
 SELECT tag::text, COUNT(*)::int AS count
 FROM content_topics ct
@@ -7908,37 +7872,6 @@ func (q *Queries) RetrievalQueue(ctx context.Context, arg RetrievalQueueParams) 
 		return nil, err
 	}
 	return items, nil
-}
-
-const reviewByID = `-- name: ReviewByID :one
-SELECT id, content_id, review_level::text AS rq_review_level,
-       status::text AS rq_status, reviewer_notes, submitted_at, reviewed_at
-FROM review_queue WHERE id = $1
-`
-
-type ReviewByIDRow struct {
-	ID            uuid.UUID  `json:"id"`
-	ContentID     uuid.UUID  `json:"content_id"`
-	RqReviewLevel string     `json:"rq_review_level"`
-	RqStatus      string     `json:"rq_status"`
-	ReviewerNotes *string    `json:"reviewer_notes"`
-	SubmittedAt   time.Time  `json:"submitted_at"`
-	ReviewedAt    *time.Time `json:"reviewed_at"`
-}
-
-func (q *Queries) ReviewByID(ctx context.Context, id uuid.UUID) (ReviewByIDRow, error) {
-	row := q.db.QueryRow(ctx, reviewByID, id)
-	var i ReviewByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.ContentID,
-		&i.RqReviewLevel,
-		&i.RqStatus,
-		&i.ReviewerNotes,
-		&i.SubmittedAt,
-		&i.ReviewedAt,
-	)
-	return i, err
 }
 
 const reviewLogsByCard = `-- name: ReviewLogsByCard :many

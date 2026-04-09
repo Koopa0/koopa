@@ -2,10 +2,30 @@ package learning
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	gofsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 )
+
+// fsrsRatingFromInt converts a 1..4 integer rating to an FSRS rating.
+// 1=Again (forgot), 2=Hard (remembered with difficulty), 3=Good (remembered),
+// 4=Easy (remembered without effort). Used when the caller has a direct
+// recall-difficulty signal that is independent of attempt outcome.
+func fsrsRatingFromInt(n int) (gofsrs.Rating, error) {
+	switch n {
+	case 1:
+		return gofsrs.Again, nil
+	case 2:
+		return gofsrs.Hard, nil
+	case 3:
+		return gofsrs.Good, nil
+	case 4:
+		return gofsrs.Easy, nil
+	default:
+		return 0, fmt.Errorf("fsrs rating must be 1..4, got %d", n)
+	}
+}
 
 // scheduler wraps the FSRS algorithm with default parameters.
 type scheduler struct {

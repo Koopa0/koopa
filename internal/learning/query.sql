@@ -34,6 +34,14 @@ ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
 DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, items.difficulty), updated_at = now()
 RETURNING id, domain, title, external_id, difficulty, note_id, content_id, project_id, metadata, created_at, updated_at;
 
+-- name: InsertItemRelation :exec
+-- Idempotent insert into item_relations. Conflicts on
+-- (source_item_id, target_item_id, relation_type) are ignored so re-recording
+-- the same relationship during a later session is safe.
+INSERT INTO item_relations (source_item_id, target_item_id, relation_type)
+VALUES (@source_item_id, @target_item_id, @relation_type)
+ON CONFLICT (source_item_id, target_item_id, relation_type) DO NOTHING;
+
 -- name: CreateAttempt :one
 INSERT INTO attempts (learning_item_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, metadata)
 VALUES (@learning_item_id, @session_id, @attempt_number, @outcome, @duration_minutes, @stuck_at, @approach_used, @metadata)
@@ -74,13 +82,15 @@ WHERE ao.attempt_id = @attempt_id;
 
 -- name: ConceptMastery :many
 -- Per-concept mastery with signal counts from attempt_observations.
--- Used by learning_dashboard mastery view.
+-- Used by learning_dashboard mastery view. Stage is derived in Go (not SQL)
+-- from the signal counts — see learning.deriveMasteryStage.
 SELECT c.id, c.slug, c.name, c.domain, c.kind,
        COUNT(*) FILTER (WHERE ao.signal_type = 'weakness') AS weakness_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'mastery') AS mastery_count,
        COUNT(*) AS total_observations,
-       MAX(ao.created_at) AS last_observed_at
+       MIN(ao.created_at)::timestamptz AS first_observed_at,
+       MAX(ao.created_at)::timestamptz AS last_observed_at
 FROM concepts c
 JOIN attempt_observations ao ON ao.concept_id = c.id
 JOIN attempts a ON a.id = ao.attempt_id

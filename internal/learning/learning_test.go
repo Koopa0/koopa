@@ -1,6 +1,70 @@
 package learning
 
-import "testing"
+import (
+	"testing"
+
+	gofsrs "github.com/open-spaced-repetition/go-fsrs/v4"
+)
+
+func TestFSRSRatingFromInt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      int
+		want    gofsrs.Rating
+		wantErr bool
+	}{
+		{name: "again", in: 1, want: gofsrs.Again},
+		{name: "hard", in: 2, want: gofsrs.Hard},
+		{name: "good", in: 3, want: gofsrs.Good},
+		{name: "easy", in: 4, want: gofsrs.Easy},
+		{name: "zero rejected", in: 0, wantErr: true},
+		{name: "negative rejected", in: -1, wantErr: true},
+		{name: "above range rejected", in: 5, wantErr: true},
+		{name: "large rejected", in: 999, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := fsrsRatingFromInt(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("fsrsRatingFromInt(%d) error = %v, wantErr = %v", tt.in, err, tt.wantErr)
+			}
+			if err == nil && got != tt.want {
+				t.Errorf("fsrsRatingFromInt(%d) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidRelationType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in   RelationType
+		want bool
+	}{
+		{in: RelationEasierVariant, want: true},
+		{in: RelationHarderVariant, want: true},
+		{in: RelationPrerequisite, want: true},
+		{in: RelationFollowUp, want: true},
+		{in: RelationSamePattern, want: true},
+		{in: RelationSimilarStructure, want: true},
+		{in: "nonsense", want: false},
+		{in: "", want: false},
+		{in: "EASIER_VARIANT", want: false}, // case-sensitive
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.in), func(t *testing.T) {
+			t.Parallel()
+			if got := ValidRelationType(tt.in); got != tt.want {
+				t.Errorf("ValidRelationType(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestMapOutcome(t *testing.T) {
 	tests := []struct {

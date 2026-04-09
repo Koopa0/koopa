@@ -25,8 +25,10 @@ func TestValidRedirectURI_OpenRedirectBypass(t *testing.T) {
 		{name: "127.0.0.1 dev", uri: "http://127.0.0.1:8080/callback", want: true},
 
 		// attacks: prefix passes but destination is attacker-controlled
-		{name: "authority confusion localhost@evil", uri: "http://localhost:80@evil.com/callback", want: false},
-		{name: "authority confusion 127.0.0.1@evil", uri: "http://127.0.0.1:8080@evil.com/steal", want: false},
+		// These two URIs embed userinfo; gosec G101 false-positives on the `host:port@host` shape.
+		// They are test fixtures for URL allowlist bypass detection, not real credentials.
+		{name: "authority confusion localhost@evil", uri: "http://localhost:80@evil.com/callback", want: false}, // #nosec G101 -- test fixture, not a credential
+		{name: "authority confusion 127.0.0.1@evil", uri: "http://127.0.0.1:8080@evil.com/steal", want: false},  // #nosec G101 -- test fixture, not a credential
 		{name: "authority confusion claude.ai@evil", uri: "https://claude.ai/@evil.com/phish", want: false},
 		{name: "backslash bypass", uri: "https://claude.ai\\@evil.com/steal", want: false},
 		{name: "fragment injection", uri: "http://localhost:3000/callback#@evil.com", want: true}, // fragment is client-side, safe

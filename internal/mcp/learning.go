@@ -67,6 +67,9 @@ type RecordAttemptInput struct {
 	StuckAt      *string            `json:"stuck_at,omitempty" jsonschema_description:"Where you got stuck (free text)"`
 	Approach     *string            `json:"approach_used,omitempty" jsonschema_description:"Approach used (free text)"`
 	Observations []ObservationInput `json:"observations,omitempty" jsonschema_description:"Concept observations"`
+	Metadata     json.RawMessage    `json:"metadata,omitempty" jsonschema_description:"Free-form JSON for 8-step checklist outputs: complexity {time,space}, pattern, related problem slugs, solve context. Persisted on attempts.metadata."`
+	FSRSRating   *int               `json:"fsrs_rating,omitempty" jsonschema_description:"Optional FSRS recall-difficulty override (1=Again, 2=Hard, 3=Good, 4=Easy). When set, this replaces the outcome-derived rating for spaced repetition scheduling. Use when recall difficulty diverges from solve outcome — e.g. solved but painful recall, or needed help but core concept is solid."`
+	RelatedItems []RelatedItemInput `json:"related_items,omitempty" jsonschema_description:"Learning items related to the attempted item (variations, follow-ups, prerequisites). Each entry is find-or-created then linked via item_relations. Same-domain only; cross-domain relations are rejected with a warning."`
 }
 
 type AttemptItem struct {
@@ -74,6 +77,18 @@ type AttemptItem struct {
 	ExternalID *string `json:"external_id,omitempty"`
 	Domain     *string `json:"domain,omitempty"`
 	Difficulty *string `json:"difficulty,omitempty"`
+}
+
+// RelatedItemInput describes a learning item related to the attempted item,
+// used by record_attempt to record item_relations (variation graph).
+// The target item is resolved via find-or-create semantics (same as AttemptItem),
+// then a directed relation source→target is inserted with the given relation_type.
+type RelatedItemInput struct {
+	Title        string  `json:"title" jsonschema:"required" jsonschema_description:"Target item title"`
+	ExternalID   *string `json:"external_id,omitempty" jsonschema_description:"Target item provider ID (e.g. LeetCode number)"`
+	Domain       *string `json:"domain,omitempty" jsonschema_description:"Target item domain — defaults to the session/source domain; must match source domain"`
+	Difficulty   *string `json:"difficulty,omitempty"`
+	RelationType string  `json:"relation_type" jsonschema:"required" jsonschema_description:"How target relates to the attempted item. Allowed: easier_variant, harder_variant, prerequisite, follow_up, same_pattern, similar_structure"`
 }
 
 type ObservationInput struct {
@@ -90,7 +105,20 @@ type RecordAttemptOutput struct {
 	ObservationsRecorded int                `json:"observations_recorded"`
 	PendingObservations  []ObservationInput `json:"pending_observations,omitempty"`
 	PlanContext          []PlanContextItem  `json:"plan_context,omitempty"`
+	RelationsLinked      int                `json:"relations_linked,omitempty"`
+	RelationWarnings     []string           `json:"relation_warnings,omitempty"`
+	// FSRSReviewFailed is true when the attempt was persisted but the
+	// spaced-repetition review card update failed. The attempt itself is
+	// still valid — surface this so the caller can retry or warn the user
+	// instead of silently losing a review tick.
+	FSRSReviewFailed bool `json:"fsrs_review_failed,omitempty"`
 }
+
+// maxMetadataBytes caps the attempts.metadata JSONB payload to keep
+// attempt rows cheap to index and transfer. The 8-step checklist outputs
+// this field holds are well under 1 KiB in practice; 32 KiB is a generous
+// ceiling that still blocks obvious abuse without forcing a doc expansion.
+const maxMetadataBytes = 32 * 1024
 
 // PlanContextItem represents a learning plan item that contains the attempted item.
 // Returned by record_attempt so Claude can decide whether to mark plan items as completed.
@@ -103,91 +131,222 @@ type PlanContextItem struct {
 	Status    string `json:"status"`
 }
 
+// attemptPrep holds the inputs derived during validation — the values that
+// aren't already on RecordAttemptInput. Metadata is intentionally absent;
+// recordAttempt reads input.Metadata directly (it's validated in prepareAttempt
+// but not copied here to avoid the duplicate field). Returned by value —
+// six scalar fields, no benefit from a pointer.
+type attemptPrep struct {
+	sessionID uuid.UUID
+	outcome   string
+	domain    string
+	itemID    uuid.UUID
+	duration  *int32
+}
+
 //nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
 func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, input RecordAttemptInput) (*mcp.CallToolResult, RecordAttemptOutput, error) {
-	sessionID, err := uuid.Parse(input.SessionID)
-	if err != nil {
-		return nil, RecordAttemptOutput{}, fmt.Errorf("invalid session_id: %w", err)
-	}
-
-	// Verify session is active.
-	session, err := s.learn.ActiveSession(ctx)
-	if err != nil {
-		return nil, RecordAttemptOutput{}, fmt.Errorf("no active session: %w", err)
-	}
-	if session.ID != sessionID {
-		return nil, RecordAttemptOutput{}, fmt.Errorf("session %s is not the active session", sessionID)
-	}
-
-	// Map outcome.
-	outcome, err := learning.MapOutcome(session.Mode, input.Outcome)
+	prep, err := s.prepareAttempt(ctx, &input)
 	if err != nil {
 		return nil, RecordAttemptOutput{}, err
 	}
 
-	// Find or create item.
-	domain := session.Domain
-	if input.Item.Domain != nil && *input.Item.Domain != "" {
-		domain = *input.Item.Domain
-	}
-	itemID, err := s.learn.FindOrCreateItem(ctx, domain, input.Item.Title, input.Item.ExternalID, input.Item.Difficulty)
-	if err != nil {
-		return nil, RecordAttemptOutput{}, err
-	}
-
-	// Record attempt.
-	var dur *int32
-	if input.Duration != nil {
-		d := clamp(int(*input.Duration), 1, 1440, 0) // cap at 24 hours
-		if d > 0 {
-			v := int32(d) // #nosec G115 — clamped above
-			dur = &v
-		}
-	}
-	var metadata json.RawMessage
-	attempt, err := s.learn.RecordAttempt(ctx, itemID, sessionID, outcome, dur, input.StuckAt, input.Approach, metadata)
+	attempt, err := s.learn.RecordAttempt(ctx, prep.itemID, prep.sessionID, prep.outcome, prep.duration, input.StuckAt, input.Approach, input.Metadata)
 	if err != nil {
 		return nil, RecordAttemptOutput{}, err
 	}
 	attempt.ItemTitle = input.Item.Title
 	attempt.ItemExternalID = input.Item.ExternalID
 
-	recorded, pending := s.processObservations(ctx, attempt.ID, domain, input.Observations)
+	// Side effects: none of these fail the attempt — each helper logs its own
+	// failures and returns a best-effort result so the caller still gets a
+	// persisted attempt record. updateFSRSReview returns a bool surfaced in
+	// the output so callers can detect silent review-card data loss.
+	recorded, pending := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
+	fsrsFailed := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
+	linked, relWarnings := s.processRelatedItems(ctx, prep.itemID, prep.domain, input.RelatedItems)
+	planCtx := s.lookupPlanContext(ctx, prep.itemID)
 
-	// Update FSRS review card based on attempt outcome.
-	if _, srsErr := s.learn.ReviewItem(ctx, itemID, outcome, time.Now()); srsErr != nil {
-		s.logger.Warn("record_attempt: fsrs review failed", "item_id", itemID, "error", srsErr)
-	}
-
-	// Query active plans containing this item (D3: plan context for Claude's judgment).
-	var planCtx []PlanContextItem
-	if planItems, pErr := s.plans.ItemsByLearningItem(ctx, itemID); pErr == nil {
-		for i := range planItems {
-			pi := &planItems[i]
-			pci := PlanContextItem{
-				PlanID:    pi.PlanID.String(),
-				PlanTitle: pi.PlanTitle,
-				ItemID:    pi.ID.String(),
-				Position:  pi.Position,
-				Status:    string(pi.Status),
-			}
-			if pi.Phase != nil {
-				pci.Phase = *pi.Phase
-			}
-			planCtx = append(planCtx, pci)
-		}
-	} else {
-		s.logger.Warn("record_attempt: plan context lookup failed", "item_id", itemID, "error", pErr)
-	}
-
-	s.logger.Info("record_attempt", "session", sessionID, "item", input.Item.Title, "outcome", outcome,
-		"observations", recorded, "pending", len(pending), "plan_context", len(planCtx))
+	s.logger.Info("record_attempt",
+		"session", prep.sessionID, "item", input.Item.Title, "outcome", prep.outcome,
+		"observations", recorded, "pending", len(pending), "plan_context", len(planCtx),
+		"relations_linked", linked, "relation_warnings", len(relWarnings),
+		"fsrs_review_failed", fsrsFailed)
 	return nil, RecordAttemptOutput{
 		Attempt:              *attempt,
 		ObservationsRecorded: recorded,
 		PendingObservations:  pending,
 		PlanContext:          planCtx,
+		RelationsLinked:      linked,
+		RelationWarnings:     relWarnings,
+		FSRSReviewFailed:     fsrsFailed,
 	}, nil
+}
+
+// prepareAttempt validates and resolves everything record_attempt needs before
+// writing the attempt row: parses the session ID, confirms it is the active
+// session, maps the semantic outcome to its schema enum, resolves the learning
+// item (find-or-create with domain fallback from the session), clamps the
+// optional duration, and validates the optional metadata (size cap + JSON
+// syntax check).
+//
+// All fallible lookups live here so recordAttempt itself contains no
+// validation branches — the only error path in recordAttempt is the final
+// RecordAttempt call on the core write path. Validation errors wrap
+// learning.ErrInvalidInput so observability layers can classify them.
+func (s *Server) prepareAttempt(ctx context.Context, input *RecordAttemptInput) (attemptPrep, error) {
+	sessionID, err := uuid.Parse(input.SessionID)
+	if err != nil {
+		return attemptPrep{}, fmt.Errorf("%w: invalid session_id: %w", learning.ErrInvalidInput, err)
+	}
+
+	session, err := s.learn.ActiveSession(ctx)
+	if err != nil {
+		return attemptPrep{}, fmt.Errorf("no active session: %w", err)
+	}
+	if session.ID != sessionID {
+		return attemptPrep{}, fmt.Errorf("%w: session %s is not the active session", learning.ErrInvalidInput, sessionID)
+	}
+
+	outcome, err := learning.MapOutcome(session.Mode, input.Outcome)
+	if err != nil {
+		return attemptPrep{}, err
+	}
+
+	domain := session.Domain
+	if input.Item.Domain != nil && *input.Item.Domain != "" {
+		domain = *input.Item.Domain
+	}
+	itemID, err := s.learn.FindOrCreateItem(ctx, domain, input.Item.Title, input.Item.ExternalID, input.Item.Difficulty)
+	if err != nil {
+		return attemptPrep{}, err
+	}
+
+	if len(input.Metadata) > maxMetadataBytes {
+		return attemptPrep{}, fmt.Errorf("%w: metadata exceeds %d bytes (got %d)", learning.ErrInvalidInput, maxMetadataBytes, len(input.Metadata))
+	}
+	if len(input.Metadata) > 0 && !json.Valid(input.Metadata) {
+		return attemptPrep{}, fmt.Errorf("%w: metadata is not valid JSON", learning.ErrInvalidInput)
+	}
+
+	return attemptPrep{
+		sessionID: sessionID,
+		outcome:   outcome,
+		domain:    domain,
+		itemID:    itemID,
+		duration:  clampDurationMinutes(input.Duration),
+	}, nil
+}
+
+// clampDurationMinutes converts an optional duration (in minutes) to an int32
+// pointer bounded to 1..1440 (24 hours). Nil, zero, or negative values return
+// nil so the attempt row stores NULL rather than a fabricated 1-minute span.
+// Values above 1440 are clamped down to the 24-hour ceiling.
+func clampDurationMinutes(d *FlexInt) *int32 {
+	if d == nil || *d <= 0 {
+		return nil
+	}
+	m := clamp(int(*d), 1, 1440, 0)
+	if m <= 0 {
+		return nil
+	}
+	v := int32(m) // #nosec G115 — clamped to 1..1440 above
+	return &v
+}
+
+// lookupPlanContext returns the active plan items that contain itemID, so
+// record_attempt can expose plan membership to the caller. Lookup failures
+// are logged and return an empty slice — plan context is auxiliary.
+func (s *Server) lookupPlanContext(ctx context.Context, itemID uuid.UUID) []PlanContextItem {
+	planItems, err := s.plans.ItemsByLearningItem(ctx, itemID)
+	if err != nil {
+		s.logger.Warn("record_attempt: plan context lookup failed", "item_id", itemID, "error", err)
+		return nil
+	}
+	out := make([]PlanContextItem, 0, len(planItems))
+	for i := range planItems {
+		pi := &planItems[i]
+		pci := PlanContextItem{
+			PlanID:    pi.PlanID.String(),
+			PlanTitle: pi.PlanTitle,
+			ItemID:    pi.ID.String(),
+			Position:  pi.Position,
+			Status:    string(pi.Status),
+		}
+		if pi.Phase != nil {
+			pci.Phase = *pi.Phase
+		}
+		out = append(out, pci)
+	}
+	return out
+}
+
+// updateFSRSReview applies a spaced-repetition review for itemID. When
+// override is non-nil it is used directly (1..4 rating); otherwise the
+// outcome string is mapped to a rating via the learning store.
+//
+// Returns true when the review card update failed — the attempt is still
+// persisted, but the FSRS queue was not advanced. The caller should surface
+// this bool in the tool response so agents can warn users or retry, instead
+// of silently losing a review tick.
+func (s *Server) updateFSRSReview(ctx context.Context, itemID uuid.UUID, outcome string, override *int) bool {
+	now := time.Now()
+	if override != nil {
+		if _, err := s.learn.ReviewItemWithRating(ctx, itemID, *override, now); err != nil {
+			s.logger.Warn("record_attempt: fsrs review (override) failed", "item_id", itemID, "rating", *override, "error", err)
+			return true
+		}
+		return false
+	}
+	if _, err := s.learn.ReviewItem(ctx, itemID, outcome, now); err != nil {
+		s.logger.Warn("record_attempt: fsrs review failed", "item_id", itemID, "error", err)
+		return true
+	}
+	return false
+}
+
+// processRelatedItems resolves each RelatedItemInput to a learning item and
+// links it to the source via item_relations. Per-entry errors become warnings
+// — the caller still sees a successful attempt record.
+//
+// Domain handling: LinkItems in the store layer no longer enforces same-domain
+// (to avoid N+1 lookups per attempt). This function is the enforcer. It uses
+// sourceDomain as the default target domain; if the caller explicitly
+// overrides with a different domain the entry is rejected as a cross-domain
+// relation. Because the target is then resolved via FindOrCreateItem with
+// sourceDomain, the inserted row is guaranteed same-domain by construction.
+func (s *Server) processRelatedItems(ctx context.Context, sourceID uuid.UUID, sourceDomain string, items []RelatedItemInput) (linked int, warnings []string) {
+	if len(items) == 0 {
+		return 0, nil
+	}
+	for i := range items {
+		ri := &items[i]
+		if ri.Title == "" {
+			warnings = append(warnings, fmt.Sprintf("related_items[%d]: title required", i))
+			continue
+		}
+		if !learning.ValidRelationType(learning.RelationType(ri.RelationType)) {
+			warnings = append(warnings, fmt.Sprintf("related_items[%d] (%q): unknown relation_type %q", i, ri.Title, ri.RelationType))
+			continue
+		}
+		// Cross-domain rejection moved to this layer — source domain is already
+		// in scope from prepareAttempt, no DB lookup needed.
+		if ri.Domain != nil && *ri.Domain != "" && *ri.Domain != sourceDomain {
+			warnings = append(warnings, fmt.Sprintf("related_items[%d] (%q): cross-domain relation rejected (source=%q, target=%q)", i, ri.Title, sourceDomain, *ri.Domain))
+			continue
+		}
+		targetID, err := s.learn.FindOrCreateItem(ctx, sourceDomain, ri.Title, ri.ExternalID, ri.Difficulty)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("related_items[%d] (%q): find-or-create failed: %v", i, ri.Title, err))
+			continue
+		}
+		if err := s.learn.LinkItems(ctx, sourceID, targetID, learning.RelationType(ri.RelationType)); err != nil {
+			warnings = append(warnings, fmt.Sprintf("related_items[%d] (%q): link failed: %v", i, ri.Title, err))
+			continue
+		}
+		linked++
+	}
+	return linked, warnings
 }
 
 // --- end_session ---
@@ -255,14 +414,92 @@ type LearningDashboardInput struct {
 }
 
 type LearningDashboardOutput struct {
-	View       string                       `json:"view"`
-	Total      int                          `json:"total"`
-	Sessions   []learning.Session           `json:"sessions,omitempty"`
-	Mastery    []learning.ConceptMasteryRow `json:"mastery,omitempty"`
-	Weaknesses []learning.WeaknessRow       `json:"weaknesses,omitempty"`
-	Retrieval  []learning.RetrievalItem     `json:"retrieval,omitempty"`
-	Timeline   []learning.TimelineSession   `json:"timeline,omitempty"`
-	Variations []learning.ItemRelation      `json:"variations,omitempty"`
+	View       string                     `json:"view"`
+	Total      int                        `json:"total"`
+	Sessions   []learning.Session         `json:"sessions,omitempty"`
+	Mastery    []MasteryRow               `json:"mastery,omitempty"`
+	Weaknesses []learning.WeaknessRow     `json:"weaknesses,omitempty"`
+	Retrieval  []learning.RetrievalItem   `json:"retrieval,omitempty"`
+	Timeline   []learning.TimelineSession `json:"timeline,omitempty"`
+	Variations []learning.ItemRelation    `json:"variations,omitempty"`
+}
+
+// MasteryStage is a presentation-layer summary of a concept's observation
+// history. It lives in the mcp package (not learning) because it is a
+// dashboard formatting decision, not a domain invariant — the heuristic can
+// evolve without touching storage.
+type MasteryStage string
+
+// Mastery stages, roughly ordered from least to most proficient.
+// StageUnexplored is not returned today because the underlying SQL query
+// uses inner joins against attempt_observations, so a concept with zero
+// observations never reaches this layer. The constant is intentionally
+// omitted rather than dead code — if the query ever switches to LEFT JOIN
+// to surface unexplored concepts, add it back explicitly.
+const (
+	StageStruggling MasteryStage = "struggling" // weakness dominates, no mastery signals yet
+	StageDeveloping MasteryStage = "developing" // improvement signals present or mixed mastery/weakness
+	StageSolid      MasteryStage = "solid"      // mastery signals dominate
+)
+
+// MasteryRow is the dashboard representation of a concept's mastery state —
+// the raw signal counts from the learning store plus a derived stage.
+type MasteryRow struct {
+	ID                uuid.UUID    `json:"id"`
+	Slug              string       `json:"slug"`
+	Name              string       `json:"name"`
+	Domain            string       `json:"domain"`
+	Kind              string       `json:"kind"`
+	WeaknessCount     int64        `json:"weakness_count"`
+	ImprovementCount  int64        `json:"improvement_count"`
+	MasteryCount      int64        `json:"mastery_count"`
+	TotalObservations int64        `json:"total_observations"`
+	Stage             MasteryStage `json:"stage"`
+	FirstObservedAt   time.Time    `json:"first_observed_at"`
+	LastObservedAt    time.Time    `json:"last_observed_at"`
+}
+
+// deriveMasteryStage applies the mastery-stage heuristic to raw signal counts.
+// Rules, in priority order:
+//  1. mastery > weakness AND mastery > 0 → solid
+//  2. improvement > 0 OR (mastery > 0 AND weakness > 0) → developing
+//  3. otherwise → struggling
+//
+// Callers only reach this function for concepts with at least one observation
+// (the SQL query guarantees it), so "unexplored" is not a possible output.
+func deriveMasteryStage(weakness, improvement, mastery int64) MasteryStage {
+	switch {
+	case mastery > weakness && mastery > 0:
+		return StageSolid
+	case improvement > 0 || (mastery > 0 && weakness > 0):
+		return StageDeveloping
+	default:
+		return StageStruggling
+	}
+}
+
+// toMasteryRows converts learning.ConceptMasteryRow slice (raw counts) to
+// the dashboard MasteryRow shape with stage derivation.
+func toMasteryRows(rows []learning.ConceptMasteryRow) []MasteryRow {
+	out := make([]MasteryRow, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out[i] = MasteryRow{
+			ID:                r.ID,
+			Slug:              r.Slug,
+			Name:              r.Name,
+			Domain:            r.Domain,
+			Kind:              r.Kind,
+			WeaknessCount:     r.WeaknessCount,
+			ImprovementCount:  r.ImprovementCount,
+			MasteryCount:      r.MasteryCount,
+			TotalObservations: r.TotalObservations,
+			Stage:             deriveMasteryStage(r.WeaknessCount, r.ImprovementCount, r.MasteryCount),
+			FirstObservedAt:   r.FirstObservedAt,
+			LastObservedAt:    r.LastObservedAt,
+		}
+	}
+	return out
 }
 
 func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, input LearningDashboardInput) (*mcp.CallToolResult, LearningDashboardOutput, error) {
@@ -314,10 +551,11 @@ func (s *Server) dashboardMastery(ctx context.Context, domain *string, since tim
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
 	}
+	mastery := toMasteryRows(rows)
 	return nil, LearningDashboardOutput{
 		View:    "mastery",
-		Mastery: rows,
-		Total:   len(rows),
+		Mastery: mastery,
+		Total:   len(mastery),
 	}, nil
 }
 

@@ -40,6 +40,21 @@ SELECT * FROM plan_items WHERE id = @id;
 SELECT * FROM plan_items WHERE plan_id = @plan_id
 ORDER BY position;
 
+-- name: PlanItemsDetailed :many
+-- Plan items joined with the items table, ordered by position.
+-- Used by manage_plan(progress) so the caller has plan_item_id + display title
+-- available without a second round-trip.
+SELECT lpi.id, lpi.plan_id, lpi.learning_item_id, lpi.position, lpi.status, lpi.phase,
+       lpi.substituted_by, lpi.completed_by_attempt_id, lpi.reason, lpi.added_at, lpi.completed_at,
+       li.title       AS item_title,
+       li.domain      AS item_domain,
+       li.difficulty  AS item_difficulty,
+       li.external_id AS item_external_id
+FROM plan_items lpi
+JOIN items li ON li.id = lpi.learning_item_id
+WHERE lpi.plan_id = @plan_id
+ORDER BY lpi.position;
+
 -- name: PlanItemsByLearningItem :many
 -- Find plan items for a learning_item across ACTIVE plans only.
 -- Used by record_attempt to provide plan context. Excludes draft/paused/completed/abandoned.

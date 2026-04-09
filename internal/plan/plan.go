@@ -79,6 +79,30 @@ type PlanItemWithTitle struct {
 	PlanTitle string `json:"plan_title"`
 }
 
+// PlanItemDetail is the plan-item projection returned by manage_plan(progress).
+// It is flat (no embedded PlanItem) so the JSON field name for the plan-item
+// primary key is explicitly `plan_item_id` — the exact identifier callers pass
+// back in update_item. Embedding PlanItem would serialize its ID as "id" and
+// create ambiguity with LearningItemID.
+type PlanItemDetail struct {
+	PlanItemID           uuid.UUID  `json:"plan_item_id"`
+	PlanID               uuid.UUID  `json:"plan_id"`
+	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	Position             int32      `json:"position"`
+	Status               ItemStatus `json:"status"`
+	Phase                *string    `json:"phase,omitempty"`
+	SubstitutedBy        *uuid.UUID `json:"substituted_by,omitempty"`
+	CompletedByAttemptID *uuid.UUID `json:"completed_by_attempt_id,omitempty"`
+	Reason               *string    `json:"reason,omitempty"`
+	AddedAt              time.Time  `json:"added_at"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+
+	ItemTitle      string  `json:"item_title"`
+	ItemDomain     string  `json:"item_domain"`
+	ItemDifficulty *string `json:"item_difficulty,omitempty"`
+	ItemExternalID *string `json:"item_external_id,omitempty"`
+}
+
 // Progress summarises a plan's item completion counts.
 type Progress struct {
 	Total       int32 `json:"total"`

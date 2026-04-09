@@ -271,7 +271,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	addTool(s, &mcp.Tool{
 		Name:        "manage_plan",
-		Description: "Manages learning plan lifecycle and items. Actions: add_items, remove_items (draft only), update_item (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress (read-only stats). After a successful attempt, check the plan_context field in record_attempt output — it lists active plans containing the attempted item. Use your judgment to determine whether the attempt outcome warrants marking the plan item as completed (action=update_item, status=completed). Consider the domain, the plan's goals, and the attempt outcome quality.",
+		Description: "Learning plan lifecycle and items. Actions: add_items, remove_items (draft only), update_item (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat item list with plan_item_id, learning_item_id, title, position, status, phase — call it before update_item to look up plan_item_id.",
 		Annotations: destructive,
 	}, s.managePlan)
 

@@ -21,13 +21,13 @@ type WeeklySummaryInput struct {
 
 // WeeklySummaryOutput is the output of the weekly_summary tool.
 type WeeklySummaryOutput struct {
-	WeekStart      string                       `json:"week_start"`
-	WeekEnd        string                       `json:"week_end"`
-	TasksCreated   int                          `json:"tasks_created"`
-	TasksCompleted []task.CompletedTaskDetail   `json:"tasks_completed"`
-	JournalEntries []journal.Entry              `json:"journal_entries"`
-	Sessions       []learning.Session           `json:"sessions"`
-	Mastery        []learning.ConceptMasteryRow `json:"mastery"`
+	WeekStart      string                     `json:"week_start"`
+	WeekEnd        string                     `json:"week_end"`
+	TasksCreated   int                        `json:"tasks_created"`
+	TasksCompleted []task.CompletedTaskDetail `json:"tasks_completed"`
+	JournalEntries []journal.Entry            `json:"journal_entries"`
+	Sessions       []learning.Session         `json:"sessions"`
+	Mastery        []MasteryRow               `json:"mastery"`
 }
 
 func (s *Server) weeklySummary(ctx context.Context, _ *mcp.CallToolRequest, input WeeklySummaryInput) (*mcp.CallToolResult, WeeklySummaryOutput, error) {
@@ -62,7 +62,7 @@ func (s *Server) weeklySummary(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, WeeklySummaryOutput{}, fmt.Errorf("querying learning sessions: %w", err)
 	}
 
-	mastery, err := s.learn.ConceptMastery(ctx, nil, weekStart)
+	masteryRaw, err := s.learn.ConceptMastery(ctx, nil, weekStart)
 	if err != nil {
 		return nil, WeeklySummaryOutput{}, fmt.Errorf("querying concept mastery: %w", err)
 	}
@@ -74,7 +74,7 @@ func (s *Server) weeklySummary(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		TasksCompleted: completed,
 		JournalEntries: journals,
 		Sessions:       sessions,
-		Mastery:        mastery,
+		Mastery:        toMasteryRows(masteryRaw),
 	}, nil
 }
 

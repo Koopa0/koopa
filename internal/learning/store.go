@@ -91,6 +91,65 @@ func (s *Store) FindOrCreateItem(ctx context.Context, domain, title string, exte
 	return row.ID, nil
 }
 
+// RelationType is a learning item relationship kind — must match the
+// item_relations.relation_type CHECK constraint in migration 001.
+type RelationType string
+
+// item_relations.relation_type allowed values.
+const (
+	RelationEasierVariant    RelationType = "easier_variant"
+	RelationHarderVariant    RelationType = "harder_variant"
+	RelationPrerequisite     RelationType = "prerequisite"
+	RelationFollowUp         RelationType = "follow_up"
+	RelationSamePattern      RelationType = "same_pattern"
+	RelationSimilarStructure RelationType = "similar_structure"
+)
+
+var validRelationTypes = map[RelationType]struct{}{
+	RelationEasierVariant:    {},
+	RelationHarderVariant:    {},
+	RelationPrerequisite:     {},
+	RelationFollowUp:         {},
+	RelationSamePattern:      {},
+	RelationSimilarStructure: {},
+}
+
+// ValidRelationType reports whether r is a supported relation type.
+func ValidRelationType(r RelationType) bool {
+	_, ok := validRelationTypes[r]
+	return ok
+}
+
+// LinkItems inserts an item_relations row from sourceID to targetID with
+// relation. Enforces the invariants LinkItems owns:
+//   - sourceID != targetID
+//   - relation is in the allowlist
+//
+// Cross-domain rejection is NOT enforced here. The caller already has the
+// source domain in scope and resolves the target via FindOrCreateItem, which
+// bakes the domain into the row — a domain check here would be two extra
+// round-trips per attempt for a rule the caller can check locally. The
+// caller is expected to pre-validate same-domain before calling LinkItems.
+//
+// Idempotent: conflicts on (source, target, relation) are ignored so the
+// same pair can be re-linked from a later session without error.
+func (s *Store) LinkItems(ctx context.Context, sourceID, targetID uuid.UUID, relation RelationType) error {
+	if sourceID == targetID {
+		return fmt.Errorf("%w: cannot link item %s to itself", ErrInvalidInput, sourceID)
+	}
+	if !ValidRelationType(relation) {
+		return fmt.Errorf("%w: unknown relation_type %q", ErrInvalidInput, relation)
+	}
+	if err := s.q.InsertItemRelation(ctx, db.InsertItemRelationParams{
+		SourceItemID: sourceID,
+		TargetItemID: targetID,
+		RelationType: string(relation),
+	}); err != nil {
+		return fmt.Errorf("inserting item relation: %w", err)
+	}
+	return nil
+}
+
 // RecordAttempt creates an attempt and returns it.
 func (s *Store) RecordAttempt(ctx context.Context, itemID, sessionID uuid.UUID, outcome string, durationMin *int32, stuckAt, approachUsed *string, metadata json.RawMessage) (*Attempt, error) {
 	// Get next attempt number.
@@ -210,6 +269,10 @@ func (s *Store) RecentSessions(ctx context.Context, domain *string, since time.T
 }
 
 // ConceptMasteryRow represents per-concept mastery with signal counts.
+// Timestamps are non-null by construction: the ConceptMastery SQL query uses
+// INNER JOINs against attempt_observations, so every returned row has at
+// least one observation in the window and MIN/MAX(created_at) cannot be NULL.
+// If that query ever switches to LEFT JOIN, these must become pointers.
 type ConceptMasteryRow struct {
 	ID                uuid.UUID `json:"id"`
 	Slug              string    `json:"slug"`
@@ -220,9 +283,15 @@ type ConceptMasteryRow struct {
 	ImprovementCount  int64     `json:"improvement_count"`
 	MasteryCount      int64     `json:"mastery_count"`
 	TotalObservations int64     `json:"total_observations"`
+	FirstObservedAt   time.Time `json:"first_observed_at"`
+	LastObservedAt    time.Time `json:"last_observed_at"`
 }
 
-// ConceptMastery returns per-concept mastery with signal counts.
+// ConceptMastery returns per-concept mastery with signal counts and
+// first/last observation timestamps. Rows contain only concepts with at
+// least one observation in the window — unexplored concepts are not
+// returned. Presentation-layer formatting (e.g. mastery stage derivation)
+// belongs to the caller, not this store.
 func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.Time) ([]ConceptMasteryRow, error) {
 	rows, err := s.q.ConceptMastery(ctx, db.ConceptMasteryParams{
 		Domain: domain,
@@ -244,6 +313,8 @@ func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.T
 			ImprovementCount:  r.ImprovementCount,
 			MasteryCount:      r.MasteryCount,
 			TotalObservations: r.TotalObservations,
+			FirstObservedAt:   r.FirstObservedAt,
+			LastObservedAt:    r.LastObservedAt,
 		}
 	}
 	return result, nil
@@ -417,13 +488,35 @@ func rowToSession(r *db.Session) *Session {
 
 // --- FSRS review card operations ---
 
-// ReviewItem performs a spaced repetition review on a learning item's card.
+// ReviewItem performs a spaced repetition review on a learning item's card,
+// deriving the FSRS rating from the attempt outcome via ratingFromOutcome.
 // If no card exists, one is created lazily (with unique violation retry for TOCTOU safety).
 // The card update + review log insert are atomic via the store's underlying DBTX.
 // Callers using a pool get auto-commit per statement; callers using a tx get full atomicity.
 func (s *Store) ReviewItem(ctx context.Context, itemID uuid.UUID, outcome string, now time.Time) (time.Time, error) {
-	rating := ratingFromOutcome(outcome)
+	return s.reviewItemWithRating(ctx, itemID, ratingFromOutcome(outcome), now)
+}
 
+// ReviewItemWithRating performs a spaced repetition review using an explicit
+// FSRS rating (1=Again, 2=Hard, 3=Good, 4=Easy) instead of deriving it from an
+// attempt outcome. Use this when recall difficulty is independent of outcome —
+// e.g. the attempt was solved_independent but recall was painful (rating=2),
+// or needed_help but core concept is solid (rating=3).
+//
+// Validation errors are wrapped so callers can distinguish an invalid rating
+// (user/input error) from a DB failure (infrastructure error).
+func (s *Store) ReviewItemWithRating(ctx context.Context, itemID uuid.UUID, rating int, now time.Time) (time.Time, error) {
+	fr, err := fsrsRatingFromInt(rating)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid fsrs rating: %w", err)
+	}
+	return s.reviewItemWithRating(ctx, itemID, fr, now)
+}
+
+// reviewItemWithRating is the shared implementation behind ReviewItem and
+// ReviewItemWithRating. It takes a resolved gofsrs.Rating so both code paths
+// converge without re-doing card lookup or state marshaling.
+func (s *Store) reviewItemWithRating(ctx context.Context, itemID uuid.UUID, rating gofsrs.Rating, now time.Time) (time.Time, error) {
 	row, err := s.q.CardByLearningItem(ctx, &itemID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s.createAndReviewCard(ctx, itemID, rating, now)
@@ -476,9 +569,11 @@ func (s *Store) createAndReviewCard(ctx context.Context, itemID uuid.UUID, ratin
 		Due:            updated.Due,
 	})
 	if err != nil {
-		// TOCTOU: another goroutine may have created the card — retry via existing path.
+		// TOCTOU: another goroutine created the card first. Retry via the review
+		// path preserving the caller's original rating — previously this called
+		// ReviewItem with "" which silently demoted every rating to Again.
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return s.ReviewItem(ctx, itemID, "", now) // re-enter with empty outcome → Again rating
+			return s.reviewItemWithRating(ctx, itemID, rating, now)
 		}
 		return time.Time{}, fmt.Errorf("creating review card for item %s: %w", itemID, err)
 	}
@@ -494,10 +589,10 @@ func (s *Store) createAndReviewCard(ctx context.Context, itemID uuid.UUID, ratin
 func (s *Store) writeReviewLog(ctx context.Context, cardID int64, rl gofsrs.ReviewLog, now time.Time) error {
 	return s.q.InsertReviewLog(ctx, db.InsertReviewLogParams{
 		CardID:        cardID,
-		Rating:        int32(rl.Rating),        //nolint:gosec // G115: Rating is int8, max 4
-		ScheduledDays: int32(rl.ScheduledDays), //nolint:gosec // G115: FSRS values bounded
-		ElapsedDays:   int32(rl.ElapsedDays),   //nolint:gosec // G115: FSRS values bounded
-		State:         int32(rl.State),         //nolint:gosec // G115: State is int8, 0-3
+		Rating:        int32(rl.Rating),
+		ScheduledDays: int32(rl.ScheduledDays), //nolint:gosec // G115: FSRS ScheduledDays is small (days), never exceeds int32
+		ElapsedDays:   int32(rl.ElapsedDays),   //nolint:gosec // G115: FSRS ElapsedDays is small (days), never exceeds int32
+		State:         int32(rl.State),
 		ReviewedAt:    now,
 	})
 }

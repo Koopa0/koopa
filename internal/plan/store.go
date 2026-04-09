@@ -284,6 +284,38 @@ func (s *Store) Progress(ctx context.Context, planID uuid.UUID) (*Progress, erro
 	}, nil
 }
 
+// ItemsDetailed returns plan items joined with learning item display fields,
+// ordered by position. This is the read path for manage_plan(progress) when
+// callers need plan_item_id plus the parent item's title/domain/difficulty.
+func (s *Store) ItemsDetailed(ctx context.Context, planID uuid.UUID) ([]PlanItemDetail, error) {
+	rows, err := s.q.PlanItemsDetailed(ctx, planID)
+	if err != nil {
+		return nil, fmt.Errorf("querying detailed plan items for %s: %w", planID, err)
+	}
+	out := make([]PlanItemDetail, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out[i] = PlanItemDetail{
+			PlanItemID:           r.ID,
+			PlanID:               r.PlanID,
+			LearningItemID:       r.LearningItemID,
+			Position:             r.Position,
+			Status:               ItemStatus(r.Status),
+			Phase:                r.Phase,
+			SubstitutedBy:        r.SubstitutedBy,
+			CompletedByAttemptID: r.CompletedByAttemptID,
+			Reason:               r.Reason,
+			AddedAt:              r.AddedAt,
+			CompletedAt:          r.CompletedAt,
+			ItemTitle:            r.ItemTitle,
+			ItemDomain:           r.ItemDomain,
+			ItemDifficulty:       r.ItemDifficulty,
+			ItemExternalID:       r.ItemExternalID,
+		}
+	}
+	return out, nil
+}
+
 func rowToPlan(r *db.Plan) *Plan {
 	return &Plan{
 		ID:          r.ID,

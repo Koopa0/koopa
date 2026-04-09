@@ -52,10 +52,11 @@ type ManagePlanPositionInput struct {
 
 // ManagePlanOutput holds the result of a manage_plan action.
 type ManagePlanOutput struct {
-	Action   string         `json:"action"`
-	PlanID   string         `json:"plan_id"`
-	Message  string         `json:"message"`
-	Progress *plan.Progress `json:"progress,omitempty"`
+	Action   string                `json:"action"`
+	PlanID   string                `json:"plan_id"`
+	Message  string                `json:"message"`
+	Progress *plan.Progress        `json:"progress,omitempty"`
+	Items    []plan.PlanItemDetail `json:"items,omitempty"` // populated by action=progress so update_item callers have plan_item_id + title
 }
 
 //nolint:gocritic // hugeParam: addTool generic requires value type I, cannot pass by pointer.
@@ -348,17 +349,30 @@ func (s *Server) mpUpdatePlan(ctx context.Context, planID uuid.UUID, input *Mana
 }
 
 func (s *Server) mpProgress(ctx context.Context, planID uuid.UUID) (*mcp.CallToolResult, ManagePlanOutput, error) {
+	// Verify plan exists before computing progress — without this, a bogus
+	// plan_id returns {total:0, items:[]} which looks like an empty plan.
+	// Every other mp* action already does this lookup; progress was the only
+	// read path where a wrong plan_id silently succeeded.
+	if _, err := s.plans.Plan(ctx, planID); err != nil {
+		return nil, ManagePlanOutput{}, fmt.Errorf("fetching plan: %w", err)
+	}
+
 	progress, err := s.plans.Progress(ctx, planID)
 	if err != nil {
 		return nil, ManagePlanOutput{}, fmt.Errorf("fetching plan progress: %w", err)
 	}
+	items, err := s.plans.ItemsDetailed(ctx, planID)
+	if err != nil {
+		return nil, ManagePlanOutput{}, fmt.Errorf("fetching plan items: %w", err)
+	}
 
-	s.logger.Info("manage_plan", "action", "progress", "plan_id", planID)
+	s.logger.Info("manage_plan", "action", "progress", "plan_id", planID, "item_count", len(items))
 	return nil, ManagePlanOutput{
 		Action:   "progress",
 		PlanID:   planID.String(),
 		Message:  fmt.Sprintf("%d/%d completed", progress.Completed, progress.Total),
 		Progress: progress,
+		Items:    items,
 	}, nil
 }
 

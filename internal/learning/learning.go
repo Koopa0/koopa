@@ -18,6 +18,11 @@ var (
 	ErrActiveExists = errors.New("learning: active session exists")
 	ErrNoActive     = errors.New("learning: no active session")
 	ErrAlreadyEnded = errors.New("learning: session already ended")
+	// ErrInvalidInput marks caller-side input validation failures (bad UUID,
+	// oversized metadata, unknown relation_type, etc). Wrapped with %w so
+	// callers can classify validation failures for logging/metrics via
+	// errors.Is, even if the current handler stack doesn't branch on it.
+	ErrInvalidInput = errors.New("learning: invalid input")
 )
 
 // Mode represents a learning session mode.
