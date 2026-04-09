@@ -1,29 +1,112 @@
 # Admin Frontend — Semantic API 需求文件
 
-> 這份文件定義前端 admin 重新設計所需的後端 API。
-> 每個 endpoint 從 **使用者工作流** 反推，不是 CRUD 包裝。
-> 前端開發不阻塞——API 未就緒前使用 mock data。
+> **架構變更（2026-04-09）**：Admin frontend 已重新定義為**唯讀觀測介面**。
+> 所有實質操作（capture、plan、advance task、start session、record attempt、write journal、propose goal、issue directive 等）由 **Claude Cowork / Claude Code 透過 MCP 完成**。
+> Admin 的角色是**呈現系統狀態**讓使用者掃視、診斷、做不可委派的判斷（content publish 決定）。
+>
+> 這份文件記錄哪些 API：
+> - ✅ **保留** — read endpoint，admin frontend 在用
+> - ❌ **移除** — write endpoint，admin 不再需要（Claude/MCP 端的 MCP tool 已經有對應的寫入路徑）
+> - ➕ **新增/修改** — 為了支撐新 admin 的觀測需求
+> - 🟡 **保留但非 admin 用** — backend 仍可保留供 MCP 或其他 client 使用，但不歸 admin frontend 需求
 
 ---
 
-## 設計原則
+## 設計原則（已調整）
 
-1. **Aggregate views** — 前端不應拼裝 5 個 endpoint 來渲染一個畫面。Backend 負責聚合。
-2. **Semantic commands** — `advanceTask(id, "complete")` 而非 `PATCH /tasks/:id { status: "done" }`。
-3. **Workflow-aware** — API 反映使用者意圖（clarify, propose, commit），不是資料表操作。
-4. **Backend 決定 context** — `context_line`、`health` 等衍生欄位由 backend 計算。
+1. **Read-only by default** — Admin frontend 預設只讀。任何 write endpoint 都需要明確的「為什麼必須在 admin UI 做」理由。
+2. **Aggregate views** — 一個畫面對應一個 endpoint，backend 負責聚合。
+3. **Workflow-aware naming** — 命名反映使用者觀測意圖（getOverview、getWeaknessMap、getDirectiveBoard），不是 CRUD（list / get / update）。
+4. **Backend 計算衍生欄位** — `health`、`days_remaining`、`mastery_level`、`severity_score` 都由 backend 算好，前端不二次計算。
+5. **單一寫入例外** — 整個 admin 只有 **content review/publish** 是允許的 write，因為這是人類本人必須親自判斷的事。
 
 ---
 
-## 1. Today — 每日操作面
+## ❌ Section A — 應該移除的 Endpoints
 
-### GET /api/admin/today
+這些 endpoint 在 admin frontend 不再有對應 UI 觸發。建議：
+- **方案 1（推薦）**：從 admin 路由樹中移除，避免未來誤用
+- **方案 2**：標註 `// admin-deprecated`，但保留 handler 以利測試或其他 client
 
-**用途**：渲染 Today 畫面。一次取得今日所需的全部 context。
+> 注意：這些操作的「語意對等物」**仍存在於 MCP tool 層**（例如 `capture_inbox`、`plan_day`、`advance_work`、`propose_commitment`、`commit_proposal`、`record_attempt`、`write_journal` 等）。移除 admin endpoint 不會破壞 Claude / Cowork 的功能。
 
-**為什麼需要**：使用者每天第一個看到的畫面。不能讓前端打 6 個 API 拼起來。
+### A.1 Today / Daily Plan Operations
 
-**Response**：
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `POST` | `/api/admin/today/plan` | 規劃今日在 Claude 對話中完成（MCP `plan_day`） |
+| `POST` | `/api/admin/today/items/{id}/resolve` | Plan item 推進在 Claude 完成（MCP `advance_work`） |
+
+### A.2 Inbox
+
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `GET`  | `/api/admin/inbox` | 沒有獨立的 Inbox 頁面。Inbox count 已在 `GET /api/admin/today` 的 `needs_attention.inbox_count` 提供 |
+| `POST` | `/api/admin/inbox/capture` | 捕獲在 Claude 完成（MCP `capture_inbox`） |
+| `POST` | `/api/admin/inbox/{id}/clarify` | Clarify 在 Claude 完成（MCP `advance_work` action=clarify 或 polymorphic routing） |
+
+### A.3 Goals — Write 操作
+
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `POST` | `/api/admin/plan/goals/propose` | Goal 提案在 Claude（MCP `propose_commitment` type=goal） |
+| `POST` | `/api/admin/plan/goals/propose/{proposal_id}/commit` | Goal commit 在 Claude（MCP `commit_proposal`） |
+| `POST` | `/api/admin/plan/goals/{id}/milestones` | Milestone 建立在 Claude |
+| `POST` | `/api/admin/plan/goals/{id}/milestones/{ms_id}/toggle` | Milestone 完成切換在 Claude |
+
+### A.4 Tasks
+
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `GET`  | `/api/admin/plan/tasks` | 沒有獨立的 Tasks Backlog 頁面。任務在 project detail 中顯示，由 `GET /api/admin/plan/projects/{id}` 提供 |
+| `POST` | `/api/admin/plan/tasks/{id}/advance` | Task 推進在 Claude（MCP `advance_work`） |
+
+### A.5 Learning — Session & Attempt 操作
+
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `POST` | `/api/admin/learn/sessions/start` | Session 開始在 Claude（MCP `start_session`） |
+| `POST` | `/api/admin/learn/sessions/{id}/attempt` | Attempt 記錄在 Claude（MCP `record_attempt`） |
+| `POST` | `/api/admin/learn/sessions/{id}/end` | Session 結束在 Claude（MCP `end_session`） |
+
+### A.6 Learning Plans — Write 操作
+
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `POST`   | `/api/admin/learn/plans/{id}/items` | Plan item 新增在 Claude（MCP `manage_plan` action=add_items） |
+| `DELETE` | `/api/admin/learn/plans/{id}/items/{item_id}` | Plan item 移除在 Claude |
+| `POST`   | `/api/admin/learn/plans/{id}/items/{item_id}/update` | Plan item 狀態變更在 Claude |
+| `POST`   | `/api/admin/learn/plans/{id}/reorder` | Plan item 重排在 Claude |
+| `PATCH`  | `/api/admin/learn/plans/{id}` | Plan 狀態變更在 Claude |
+
+### A.7 Reflect — Journal Write
+
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `POST` | `/api/admin/reflect/journal` | Journal 寫入在 Claude（MCP `write_journal`） |
+
+### A.8 Studio — Directive Write
+
+| Method | Endpoint | 移除理由 |
+|--------|----------|---------|
+| `POST` | `/api/admin/studio/directives/propose` | Directive 提案在 Claude（MCP `propose_commitment` type=directive） |
+
+> 註：原本沒有 `commit` / `acknowledge` / `resolve` 的 admin endpoint，這些都在 MCP（`commit_proposal`, `acknowledge_directive`, `file_report`），不需要新增。
+
+---
+
+## ✅ Section B — 保留的 Read Endpoints
+
+這些 endpoint admin frontend 在用，必須保留並按下方標註修改 response shape。
+
+### B.1 Overview Page → `GET /api/admin/today`
+
+> 前端已將「Today」頁面更名為「Overview」，但 endpoint path 暫不需要重新命名（為了避免破壞現有實作）。
+> 如果之後要重命名，建議改為 `GET /api/admin/overview`。
+
+**用途**：渲染 Overview 畫面。一次取得當天觀測所需的全部 context。
+
+**Response**（修改後）：
 ```json
 {
   "date": "2026-04-08",
@@ -88,1153 +171,453 @@
 }
 ```
 
-> **⚠ Schema 對齊**：daily_plan_items 表沒有 estimated_minutes 欄位。此值需要從 tasks 表或 metadata 取得。建議：(a) 加欄位到 daily_plan_items，或 (b) JOIN tasks 取得估計時間，或 (c) 前端不顯示此欄位。
-
-**Backend 邏輯**：
-- `context_line`：根據最近 deadline 的 active goal 生成，或根據本週 journal(kind=plan) 提取 focus
-- `yesterday_unfinished`：`daily_plan_items WHERE planned_date = yesterday AND status = 'planned'`
-- `today_plan`：`daily_plan_items WHERE planned_date = today`
-- `overdue_tasks`：`tasks WHERE due < today AND status NOT IN ('done', 'someday')`
-- `needs_attention`：各 domain 的 count 聚合
-  - `stale_someday_count`：`tasks WHERE status = 'someday' AND updated_at < now() - interval '30 days'`（GTD 要求定期審查 someday 項目，否則會無聲腐爛）
-- `reflection_context`：昨晚是否有 reflection journal？如有，提取摘要。讓使用者規劃今天時有昨日反思的 context
-  - `SELECT content FROM journal WHERE source = 'human' AND kind = 'reflection' AND created_at::date = yesterday ORDER BY created_at DESC LIMIT 1`
-- `goal_pulse`：`goals WHERE status = 'in-progress'` + milestone count
+**狀態**：✅ 保留，shape 不變。
 
 ---
 
-### POST /api/admin/today/plan
+### B.2 `GET /api/admin/dashboard/trends`
 
-**用途**：規劃今日。將 tasks 加入今日計劃。
+**用途**：Overview 畫面的趨勢區塊。週對週的 metrics。
 
-**為什麼需要**：My Day planning 是一個 batch 操作，不是逐個 API call。
-
-**Request**：
-```json
-{
-  "items": [
-    { "task_id": "task_uuid", "position": 1, "estimated_minutes": 30 },
-    { "task_id": "task_uuid", "position": 2, "estimated_minutes": 60 }
-  ]
-}
-```
-
-**Response**：更新後的 `today_plan` 陣列。
-
-**Backend 邏輯**：為每個 item 建立 `daily_plan_items` record (planned_date=today, status=planned)。
+**Response**：見原文件 §8 — shape 不變，✅ 保留。
 
 ---
 
-### POST /api/admin/today/items/{id}/resolve
+### B.3 Goals — Read
 
-**用途**：處理 daily plan item 的狀態轉換。
+#### `GET /api/admin/plan/goals`
+✅ 保留。原 shape 不變。前端 `commitments/goals` 頁使用。
 
-**為什麼需要**：前端不該直接 PATCH daily_plan_items 的 status — 這個操作有 side effects（complete 需要同步更新 task.status）。
-
-**Request**：
-```json
-{ "action": "complete" | "defer" | "drop" }
-```
-
-**Backend 邏輯**：
-- `complete`：daily_plan_item.status → done，如果 linked task 存在，task.status → done，task.completed_at → now
-- `defer`：daily_plan_item.status → deferred。不自動建立明天的 plan item（使用者明天早上自己決定）
-- `drop`：daily_plan_item.status → dropped
+#### `GET /api/admin/plan/goals/{id}`
+✅ 保留，但 **建議擴充 `recent_activity[].type`**（見 §C.4）。
 
 ---
 
-## 2. Inbox — GTD 捕獲與澄清
+### B.4 Projects — Read
 
-### GET /api/admin/inbox
+#### `GET /api/admin/plan/projects`
+✅ 保留。原 shape 不變。
 
-**用途**：列出所有未澄清的 inbox items。
-
-**為什麼需要**：Inbox 不只是 task.status=inbox — 它是一個 workflow queue。
-
-**Query params**：`cursor`, `limit` (default 20)
-
-**Response**：
-```json
-{
-  "items": [
-    {
-      "id": "task_uuid",
-      "text": "也許應該研究一下 pgvector indexing 策略",
-      "source": "manual",
-      "captured_at": "2026-04-08T09:30:00+08:00",
-      "age_hours": 2.5
-    }
-  ],
-  "stats": {
-    "total": 4,
-    "oldest_age_days": 3,
-    "by_source": { "manual": 2, "mcp": 1, "rss": 1 }
-  }
-}
-```
-
-**Backend 邏輯**：`tasks WHERE status = 'inbox' ORDER BY created_at DESC`
+#### `GET /api/admin/plan/projects/{id}`
+✅ 保留。原 shape 不變。
 
 ---
 
-### POST /api/admin/inbox/capture
+### B.5 Library — Pipeline
 
-**用途**：快速捕獲一個想法到 inbox。
+#### `GET /api/admin/library/pipeline`
+✅ 保留。原 shape 不變。
 
-**為什麼需要**：最低摩擦的 capture — 只要一段文字。不需要 type / area / priority。
-
-**Request**：
-```json
-{ "text": "研究 NATS exactly-once delivery" }
-```
-
-**Response**：建立的 inbox item（`{ id, text, captured_at }`）
-
-**Backend 邏輯**：`INSERT INTO tasks (title, status, created_by) VALUES ($text, 'inbox', 'human')`
+> 建議路徑搬遷到 `/api/admin/content/pipeline` 以對齊新的 admin 路由 `/admin/content/pipeline`，但**不阻塞**——前端 service 層已經 hardcode `/api/admin/library/pipeline`，可在 Phase 4 統一改名。
 
 ---
 
-### POST /api/admin/inbox/{id}/clarify
+### B.6 Learn — Read
 
-**用途**：將 inbox item 澄清為具體 entity。這是 GTD clarify 的 semantic command。
+#### `GET /api/admin/learn/dashboard`
+✅ 保留，但 **建議擴充 `weakness_spotlight[].severity_summary`**（見 §C.5）。
 
-**為什麼需要**：Clarify 不是 `PATCH task.status` — 它可能 transform 成完全不同的 entity（journal, insight, goal direction）。
+#### `GET /api/admin/learn/concepts/{slug}`
+✅ 保留。原 shape 不變。
 
-**Request** — polymorphic by `type`：
-```json
-// 澄清為 task
-{
-  "type": "task",
-  "area_id": "area_uuid",
-  "priority": "medium",
-  "energy": "high",
-  "due": "2026-04-15"
-}
+#### `GET /api/admin/learn/review-queue`
+✅ 保留。原 shape 不變。
 
-// 澄清為 journal entry
-{
-  "type": "journal",
-  "kind": "reflection",
-  "body": "決定不研究這個方向，因為..."
-}
+#### `GET /api/admin/learn/plans`
+✅ 保留。原 shape 不變。
 
-// 澄清為 insight proposal
-{
-  "type": "insight",
-  "hypothesis": "pgvector HNSW 在 100K 以上效能會顯著下降",
-  "invalidation_condition": "benchmark 100K rows HNSW vs IVFFlat，如果 HNSW 仍然 <10ms 則推翻",
-  "initial_evidence": "看到 GitHub issue 討論"
-}
-
-// 刪除
-{
-  "type": "discard"
-}
-```
-
-**Response**：
-```json
-{
-  "result": "clarified",
-  "entity_type": "task",
-  "entity_id": "task_uuid"
-}
-```
-
-**Backend 邏輯**：
-- `task`：更新 task.status → todo，設定 area/priority/energy/due
-- `journal`：建立 journal record，刪除原 inbox task
-- `insight`：建立 insight（status=unverified），刪除原 inbox task
-- `discard`：刪除 inbox task
+#### `GET /api/admin/learn/plans/{id}`
+✅ 保留。原 shape 不變。
 
 ---
 
-## 3. Plan — Goals
+### B.7 Reflect — Read
 
-### GET /api/admin/plan/goals
+#### `GET /api/admin/reflect/daily?date=YYYY-MM-DD`
+✅ 保留。原 shape 不變。
 
-**用途**：Goals overview，按 area 分組。
+#### `GET /api/admin/reflect/weekly?week_start=YYYY-MM-DD`
+✅ 保留。原 shape 不變。
 
-**為什麼需要**：前端需要一次取得所有 goals + milestone 進度 + area grouping。
+#### `GET /api/admin/reflect/journal`
+✅ 保留，但 **必須補上 `source` 欄位**（見 §C.2）。
 
-**Response**：
-```json
-{
-  "by_area": [
-    {
-      "area_id": "area_uuid",
-      "area_name": "Backend",
-      "area_slug": "backend",
-      "goals": [
-        {
-          "id": "goal_uuid",
-          "title": "Master pgvector indexing",
-          "status": "in-progress",
-          "deadline": "2026-06-01",
-          "days_remaining": 54,
-          "milestones_total": 3,
-          "milestones_done": 1,
-          "next_milestone_title": "Benchmark IVFFlat vs HNSW",
-          "projects_count": 1,
-          "quarter": "2026-Q2"
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Backend 邏輯**：
-- `goals` + `LEFT JOIN milestones` + `LEFT JOIN projects ON projects.goal_id = goals.id`
-- ⚠ projects 和 milestones 都直接掛在 goal 下，是 siblings 關係，不是 parent-child
-- 按 area 分組
-- `days_remaining` = deadline - today（null if no deadline）
-- `next_milestone_title` = 第一個未完成的 milestone
-- `projects_count` = `COUNT(projects WHERE goal_id = goal.id)`
+#### `GET /api/admin/reflect/insights`
+✅ 保留，但 **必須補上 `invalidation_condition` 欄位**（見 §C.1）。
 
 ---
 
-### GET /api/admin/plan/goals/{id}
+### B.8 Studio (Directives) — Read
 
-**用途**：Goal detail — milestones, linked projects, recent activity。
-
-**為什麼需要**：Goal detail 需要跨 entity 的聚合（milestones + projects + tasks + activity）。
-
-**Response**：
-```json
-{
-  "id": "goal_uuid",
-  "title": "Master pgvector indexing",
-  "description": "...",
-  "status": "in-progress",
-  "area_id": "area_uuid",
-  "area_name": "Backend",
-  "deadline": "2026-06-01",
-  "quarter": "2026-Q2",
-  "created_at": "2026-03-01",
-  "health": "on-track",
-  "milestones": [
-    {
-      "id": "ms_uuid",
-      "title": "Benchmark IVFFlat vs HNSW",
-      "completed": false,
-      "completed_at": null,
-      "position": 1
-    }
-  ],
-  "projects": [
-    {
-      "id": "proj_uuid",
-      "title": "pgvector PoC",
-      "status": "in-progress",
-      "task_progress": { "total": 5, "done": 2 }
-    }
-  ],
-  "recent_activity": [
-    {
-      "type": "task_completed",
-      "title": "Set up pgvector extension",
-      "timestamp": "2026-04-07T16:30:00+08:00"
-    }
-  ]
-}
-```
-
-> **⚠ Schema 對齊**：projects.goal_id 直接指向 goals.id，沒有經過 milestones。
-> milestones 和 projects 是 goal 的兩個獨立面向（完成指標 vs 執行載體），不是 parent-child。
-```
-
-**Backend 邏輯**：
-- `health`：on-track（有 milestone progress 且 deadline 未到）/ at-risk（deadline < 14 天且 progress < 50%）/ stalled（> 14 天沒有任何 related task completion）
-- `recent_activity`：related task completions + commits + build logs，最近 10 筆
+#### `GET /api/admin/studio/overview`
+✅ 保留，但 **建議擴充：**
+- 加入 `?include_resolved=true` query param 支援（見 §C.3）
+- `participants[]` 補上 capability flags 詳情（見 §C.6）
 
 ---
 
-### POST /api/admin/plan/goals/propose
+### B.9 System Health
 
-**用途**：提案建立 goal。返回 preview 而不立即建立。
+#### `GET /api/admin/system/health`
+✅ 保留。原 shape 不變。
 
-**為什麼需要**：Goal 是 commitment-level entity — 必須 proposal-first。
-
-**Request**：
-```json
-{
-  "title": "Master pgvector indexing",
-  "description": "...",
-  "area_id": "area_uuid",
-  "deadline": "2026-06-01",
-  "quarter": "2026-Q2"
-}
-```
-
-**Response**：
-```json
-{
-  "proposal_id": "prop_uuid",
-  "preview": {
-    "title": "Master pgvector indexing",
-    "area_name": "Backend",
-    "deadline": "2026-06-01",
-    "existing_goals_in_area": 2,
-    "quarter": "2026-Q2"
-  }
-}
-```
-
-**Backend 邏輯**：儲存 proposal（可用 temp table 或 JSON field），不建立 goal。返回 context（同 area 有幾個 goal）幫助使用者判斷。
+> 注意：原文件未明確記載此 endpoint，但前端 SystemHealthComponent 在用，需要確認 backend 已實作。
 
 ---
 
-### POST /api/admin/plan/goals/propose/{proposal_id}/commit
+## ➕ Section C — 需要新增 / 修改的部分
 
-**用途**：確認並建立 goal。
+### C.1 [MODIFY] `GET /api/admin/reflect/insights` — 補上 `invalidation_condition`
 
-**Response**：建立的 goal。
+**問題**：目前 response 只有 `id, hypothesis, status, age_days`。但 insight 的核心結構是 **hypothesis + invalidation_condition** — 沒有 invalidation_condition 就不是「可證偽的假設」，只是普通筆記。前端的 Insights 頁面語意核心被遮蔽。
 
----
-
-### POST /api/admin/plan/goals/{id}/milestones
-
-**用途**：為 goal 新增 milestone。
-
-**Request**：
-```json
-{
-  "title": "Benchmark IVFFlat vs HNSW on 100K rows",
-  "position": 1
-}
-```
-
----
-
-### POST /api/admin/plan/goals/{id}/milestones/{ms_id}/toggle
-
-**用途**：Toggle milestone 完成狀態。
-
-**Response**：更新後的 milestone。
-
----
-
-## 4. Plan — Projects
-
-### GET /api/admin/plan/projects
-
-**用途**：Projects overview。
-
-**Query params**：`status` (active / planned / on-hold / completed / all)
-
-**Response**：
-```json
-{
-  "projects": [
-    {
-      "id": "proj_uuid",
-      "title": "koopa0.dev MCP v2",
-      "slug": "koopa0-dev-mcp-v2",
-      "status": "in-progress",
-      "area": "backend",
-      "goal_breadcrumb": {
-        "goal_id": "goal_uuid",
-        "goal_title": "Launch knowledge engine"
-      },
-      "task_progress": { "total": 12, "done": 5 },
-      "staleness_days": 0,
-      "last_activity_at": "2026-04-08T10:00:00+08:00"
-    }
-  ]
-}
-```
-
-**Backend 邏輯**：
-- `goal_breadcrumb`：project → goal 的直接 FK（可能為 null，schema 無 milestone FK）
-- `task_progress`：`COUNT tasks WHERE project_id = X GROUP BY status`
-- `staleness_days`：`EXTRACT(DAY FROM now() - last_activity_at)`
-
----
-
-### GET /api/admin/plan/projects/{id}
-
-**用途**：Project detail — tasks by status, milestone link, activity。
-
-**Response**：
-```json
-{
-  "id": "proj_uuid",
-  "title": "koopa0.dev MCP v2",
-  "description": "...",
-  "problem": "...",
-  "solution": "...",
-  "architecture": "...",
-  "status": "in-progress",
-  "area": "backend",
-  "goal_breadcrumb": { "goal_id": "...", "goal_title": "..." },
-  "tasks_by_status": {
-    "in_progress": [{ "id": "...", "title": "...", "priority": "...", "energy": "..." }],
-    "todo": [],
-    "done": [],
-    "someday": []
-  },
-  "recent_activity": [],
-  "related_content": [
-    { "id": "...", "title": "...", "type": "build-log", "slug": "..." }
-  ]
-}
-```
-
----
-
-## 5. Plan — Tasks
-
-### GET /api/admin/plan/tasks
-
-**用途**：Task backlog — 所有已澄清的 tasks。
-
-**Query params**：`status` (todo/in-progress/someday/all), `area_id`, `energy`, `priority`, `project_id`, `search`, `cursor`, `limit`
-
-**Response**：
-```json
-{
-  "tasks": [
-    {
-      "id": "task_uuid",
-      "title": "Add rate limiting to auth middleware",
-      "status": "todo",
-      "area": "backend",
-      "priority": "high",
-      "energy": "high",
-      "due": "2026-04-15",
-      "project_title": "koopa0.dev",
-      "is_in_today_plan": false
-    }
-  ],
-  "meta": { "total": 42, "cursor": "..." }
-}
-```
-
----
-
-### POST /api/admin/plan/tasks/{id}/advance
-
-**用途**：推進 task 狀態。Semantic command。
-
-**為什麼需要**：不是 PATCH status — advance 有 side effects（start 設定 started_at, complete 設定 completed_at + 更新 daily_plan_item）。
-
-**Request**：
-```json
-{ "action": "start" | "complete" | "defer" | "drop" }
-```
-
-**Backend 邏輯**：
-- `start`：task.status → in-progress
-- `complete`：task.status → done, task.completed_at → now, if daily_plan_item exists → mark done
-- `defer`：task.status → someday
-- `drop`：只影響 daily_plan_item.status → dropped（不刪除 task 本身）。如果 task 不在今日計劃中，此 action 無效
-
----
-
-## 6. Library — Contents
-
-### GET /api/admin/library/pipeline
-
-**用途**：Content pipeline view — 按 workflow stage 分組。
-
-**為什麼需要**：使用者打開 Library 不是來看表格，是來回答「我該繼續寫哪個 draft？」
-
-**Response**：
-```json
-{
-  "drafts_needing_work": [
-    { "id": "...", "title": "...", "type": "article", "updated_at": "...", "word_count": 1200 }
-  ],
-  "in_review": [
-    { "id": "...", "title": "...", "type": "til", "submitted_at": "...", "review_level": "standard" }
-  ],
-  "ready_to_publish": [
-    { "id": "...", "title": "...", "type": "article", "reviewed_at": "..." }
-  ],
-  "recently_published": [
-    { "id": "...", "title": "...", "type": "article", "published_at": "..." }
-  ]
-}
-```
-
-**Backend 邏輯**：
-- `drafts_needing_work`：`contents WHERE status = 'draft' ORDER BY updated_at DESC LIMIT 10`
-- `in_review`：`contents WHERE status = 'review'` + join review_queue
-- `ready_to_publish`：`review_queue WHERE status = 'approved'` + join contents
-- `recently_published`：`contents WHERE status = 'published' ORDER BY published_at DESC LIMIT 5`
-
----
-
-## 7. Learn — 學習引擎（Phase 2）
-
-### GET /api/admin/learn/dashboard
-
-**用途**：Learning overview — due reviews, weakness, recent sessions。
-
-**Response**：
-```json
-{
-  "due_reviews_count": 12,
-  "due_reviews_today": 5,
-  "recent_sessions": [
-    {
-      "id": "session_uuid",
-      "domain": "leetcode",
-      "started_at": "2026-04-07T20:00:00+08:00",
-      "duration_minutes": 47,
-      "attempts_count": 4,
-      "solved_count": 2
-    }
-  ],
-  "weakness_spotlight": [
-    {
-      "concept_slug": "channel-direction",
-      "concept_name": "Channel Direction",
-      "domain": "go",
-      "fail_count_30d": 5,
-      "last_practiced": "2026-03-25",
-      "days_since_practice": 14
-    }
-  ],
-  "mastery_by_domain": [
-    {
-      "domain": "go",
-      "concepts_total": 24,
-      "concepts_mastered": 8,
-      "concepts_weak": 5,
-      "concepts_untested": 11
-    }
-  ],
-  "streak": { "current_days": 3, "longest": 14 }
-}
-```
-
-> **⚠ Schema 對齊**：streak 是從 sessions 表聚合計算（consecutive days with ≥1 session），不是存儲的值。
-
----
-
-### POST /api/admin/learn/sessions/start
-
-**用途**：開始學習 session。
-
-**Request**：
-```json
-{
-  "domain": "leetcode",
-  "session_mode": "practice"
-}
-```
-
-> **⚠ Schema 對齊**：sessions 表沒有 focus_concept_slugs 欄位。
-> focus 概念可放在 metadata JSONB 中，或作為 suggested_items 的篩選參數。
-> session_mode 必須是 schema 定義的 5 值之一：retrieval / practice / mixed / review / reading。
-
-**Response**：
-```json
-{
-  "session_id": "session_uuid",
-  "suggested_items": [
-    {
-      "id": "item_uuid",
-      "title": "LeetCode 704: Binary Search",
-      "difficulty": "easy",
-      "concepts": ["binary-search"],
-      "last_attempt_outcome": "solved",
-      "fsrs_due": "2026-04-08"
-    }
-  ]
-}
-```
-
----
-
-### POST /api/admin/learn/sessions/{id}/attempt
-
-**用途**：記錄一次 attempt。
-
-**Request**：
-```json
-{
-  "item_id": "item_uuid",
-  "outcome": "incomplete",
-  "duration_minutes": 12,
-  "stuck_at": "邊界條件處理",
-  "approach_used": "binary search with left/right pointers",
-  "observations": [
-    { "concept_slug": "binary-search", "signal_type": "weakness", "category": "boundary-conditions", "confidence": "high" },
-    { "concept_slug": "off-by-one", "signal_type": "weakness", "category": "indexing", "confidence": "low" }
-  ]
-}
-```
-
-> **⚠ Schema 對齊**：
-> - outcome 必須是 7 值之一：solved_independent / solved_with_hint / solved_after_solution / completed / completed_with_support / incomplete / gave_up（沒有 "partial"）
-> - 用 duration_minutes INT，不是 duration_seconds
-> - 沒有 ease_rating（FSRS rating 在 review_logs，不在 attempts）
-> - signal_type 必須是：weakness / improvement / mastery（沒有 "misconception"）
-> - attempts 有 stuck_at TEXT 和 approach_used TEXT 欄位
-```
-
-**Response**：
-```json
-{
-  "attempt_id": "attempt_uuid",
-  "confirmed_observations": [
-    { "concept_slug": "binary-search", "signal": "weakness" }
-  ],
-  "pending_observations": [
-    { "concept_slug": "off-by-one", "signal_type": "weakness", "reason": "concept would be auto-created" }
-  ]
-}
-```
-
----
-
-### POST /api/admin/learn/sessions/{id}/end
-
-**用途**：結束 session，取得 summary。
-
-**Response**：
-```json
-{
-  "session_id": "session_uuid",
-  "duration_minutes": 47,
-  "attempts_count": 4,
-  "solved_count": 2,
-  "concept_impact": [
-    { "concept_slug": "binary-search", "signal_type": "weakness", "observation_count": 2, "direction": "declining" }
-  ],
-  "observations_summary": {
-    "weaknesses": ["binary-search boundary conditions"],
-    "improvements": ["basic iteration"],
-    "masteries": []
-  }
-}
-```
-
-> **⚠ Schema 對齊**：mastery 不是存儲的數值——是從 attempt_observations 聚合計算的衍生狀態。
-> concept_impact 應該基於本次 session 記錄的 observations，而非 mastery 分數差。
-> observations_summary 的 key 用 schema 的 signal_type 名稱：weaknesses / improvements / masteries（不是 strengths / misconceptions）。
-}
-```
-
----
-
-### GET /api/admin/learn/concepts/{slug}
-
-**用途**：Concept drilldown — 歷史趨勢, attempts, related items。
-
-**Response**：
-```json
-{
-  "concept": { "slug": "binary-search", "name": "Binary Search", "domain": "leetcode", "kind": "pattern" },
-  "observation_trend": [
-    { "date": "2026-03-01", "weakness_count": 3, "improvement_count": 0, "mastery_count": 0 },
-    { "date": "2026-03-15", "weakness_count": 1, "improvement_count": 2, "mastery_count": 0 },
-    { "date": "2026-04-01", "weakness_count": 1, "improvement_count": 1, "mastery_count": 1 }
-  ],
-  "recent_attempts": [
-    { "item_title": "LeetCode 704", "outcome": "solved_independent", "date": "2026-03-28" }
-  ],
-  "observations": [
-    { "signal_type": "weakness", "category": "boundary-conditions", "date": "2026-04-07" }
-  ],
-  "related_items": [
-    { "id": "...", "title": "LeetCode 704", "difficulty": "easy", "last_outcome": "solved" }
-  ],
-  "next_review": "2026-04-10"
-}
-```
-
----
-
-### GET /api/admin/learn/review-queue
-
-**用途**：取得今天到期的 review cards（具體 items，不只是 count）。
-
-**Response**：
-```json
-{
-  "due_today": [
-    {
-      "card_id": 1,
-      "target_type": "learning_item",
-      "target_id": "item_uuid",
-      "title": "LeetCode 704: Binary Search",
-      "domain": "leetcode",
-      "due": "2026-04-08",
-      "last_reviewed_at": "2026-04-01"
-    }
-  ],
-  "due_this_week": 12,
-  "overdue": 3
-}
-```
-
----
-
-## 7.5 Learn — Learning Plans（Phase 2）
-
-> Schema 表：`plans`（status lifecycle）+ `plan_items`（UNIQUE per plan+item）
-> MCP 工具：`manage_plan`（6 actions: add_items, remove_items, update_item, reorder, update_plan, progress）
-
-### GET /api/admin/learn/plans
-
-**用途**：列出所有 learning plans。
-
-**Response**：
-```json
-{
-  "plans": [
-    {
-      "id": "plan_uuid",
-      "title": "Google 200 題計劃",
-      "domain": "leetcode",
-      "status": "active",
-      "items_total": 200,
-      "items_completed": 45,
-      "items_skipped": 3,
-      "created_at": "2026-03-01",
-      "updated_at": "2026-04-07"
-    }
-  ]
-}
-```
-
-### GET /api/admin/learn/plans/{id}
-
-**用途**：Plan detail — items with status, progress。
-
-**Response**：
-```json
-{
-  "id": "plan_uuid",
-  "title": "Google 200 題計劃",
-  "domain": "leetcode",
-  "status": "active",
-  "description": "...",
-  "items": [
-    {
-      "id": "plan_item_uuid",
-      "learning_item_id": "item_uuid",
-      "title": "LeetCode 704: Binary Search",
-      "difficulty": "easy",
-      "position": 1,
-      "status": "completed",
-      "completed_at": "2026-03-28",
-      "completion_reason": "solved_independent on attempt #2"
-    }
-  ],
-  "progress": {
-    "total": 200,
-    "completed": 45,
-    "skipped": 3,
-    "substituted": 1,
-    "planned": 151
-  }
-}
-```
-
-> **⚠ Schema 對齊**：
-> - plan_items.status：planned / completed / skipped / substituted
-> - plan_items 有 reason TEXT 欄位（記錄 completion/skip 理由）
-> - UNIQUE(plan_id, learning_item_id) 確保不重複
-> - 同一 item 在不同 plan 中的完成狀態獨立
-
-### POST /api/admin/learn/plans/{id}/items/{item_id}/update
-
-**用途**：更新 plan item 狀態。Semantic command。
-
-**Request**：
-```json
-{
-  "status": "completed",
-  "reason": "solved_independent on attempt #2"
-}
-```
-
-> **⚠ Policy**：reason 欄位對 completions 應該是必填（審計建議），記錄「為什麼認為完成了」。
-
-### POST /api/admin/learn/plans/{id}/items
-
-**用途**：批次新增 items 到 plan。
-
-**Request**：
-```json
-{ "item_ids": ["item_uuid_1", "item_uuid_2"] }
-```
-
-### DELETE /api/admin/learn/plans/{id}/items/{item_id}
-
-**用途**：從 plan 移除 item。
-
-### POST /api/admin/learn/plans/{id}/reorder
-
-**用途**：重排 plan items 順序。
-
-**Request**：
-```json
-{ "item_ids": ["item_uuid_2", "item_uuid_1"] }
-```
-
-### PATCH /api/admin/learn/plans/{id}
-
-**用途**：更新 plan 本身（title, status）。
-
-**Request**：
-```json
-{ "status": "paused", "title": "..." }
-```
-
----
-
-## 8. Reflect — 回顧（Phase 2）
-
-### GET /api/admin/reflect/daily?date=2026-04-08
-
-**用途**：每日回顧 context 聚合。
-
-**為什麼需要**：前端不應自己拼裝 tasks + sessions + commits — backend 一次聚合。
-
-**Response**：
-```json
-{
-  "date": "2026-04-08",
-  "plan_vs_actual": { "planned": 6, "completed": 4, "deferred": 1, "dropped": 1 },
-  "completed_tasks": [
-    { "id": "...", "title": "Design admin IA", "area": "studio" }
-  ],
-  "learning_sessions": [
-    { "domain": "go", "duration_minutes": 47, "solved": 2, "total": 4 }
-  ],
-  "content_changes": [
-    { "title": "pgvector indexing guide", "type": "article", "action": "updated" }
-  ],
-  "commits_count": 5,
-  "inbox_delta": { "captured": 3, "clarified": 1, "net": 2 }
-}
-```
-
----
-
-### GET /api/admin/reflect/weekly?week_start=2026-04-01
-
-**用途**：週回顧聚合。
-
-**Response**：
-```json
-{
-  "week_start": "2026-04-01",
-  "week_end": "2026-04-07",
-  "goal_progress": [
-    { "goal_title": "GDE Application", "milestones_completed_this_week": 1, "total_done": 3, "total": 4 }
-  ],
-  "project_health": [
-    { "title": "MCP v2", "status": "in-progress", "tasks_completed": 3, "stalled": false }
-  ],
-  "learning_summary": {
-    "sessions_count": 4,
-    "total_minutes": 180,
-    "concepts_improved": ["mutex-usage", "goroutine-lifecycle"],
-    "concepts_declined": ["channel-direction"]
-  },
-  "content_output": {
-    "published": 1,
-    "drafted": 2
-  },
-  "inbox_health": { "start_count": 8, "end_count": 5, "clarified": 6, "captured": 3 },
-  "insights_needing_check": [
-    { "id": "...", "hypothesis": "...", "status": "unverified", "age_days": 14 }
-  ],
-  "metrics": { "tasks_completed": 12, "commits": 23, "build_logs": 3 }
-}
-```
-
----
-
-### POST /api/admin/reflect/journal
-
-**用途**：寫 journal entry。
-
-**Request**：
-```json
-{
-  "kind": "reflection",
-  "body": "今天的 admin redesign 討論收穫很大...",
-  "date": "2026-04-08"
-}
-```
-
----
-
-### GET /api/admin/reflect/journal
-
-**用途**：取得 journal 條目列表。
-
-**Query params**：`limit` (default 20), `kind` (optional filter)
-
-**Response**：
-```json
-{
-  "entries": [
-    {
-      "kind": "reflection",
-      "body": "今天的 admin redesign 討論收穫很大...",
-      "date": "2026-04-08"
-    }
-  ]
-}
-```
-
-**Backend 邏輯**：`journal ORDER BY created_at DESC LIMIT $limit`，可選 `WHERE kind = $kind`
-
----
-
-### GET /api/admin/reflect/insights
-
-**用途**：取得 insights 列表。
-
-**Response**：
+**修改後 response**：
 ```json
 {
   "insights": [
     {
       "id": "1",
       "hypothesis": "pgvector HNSW 在 100K 以上效能下降",
+      "invalidation_condition": "benchmark 100K rows HNSW vs IVFFlat，如果 HNSW 仍然 <10ms 則推翻",
       "status": "unverified",
-      "age_days": 14
+      "source": "human",
+      "observed_date": "2026-03-25",
+      "age_days": 14,
+      "evidence_count": 2
     }
   ]
-}
-```
-
-**Backend 邏輯**：`insights ORDER BY created_at DESC`，`age_days = EXTRACT(DAY FROM now() - created_at)`
-
----
-
-### GET /api/admin/dashboard/trends
-
-**用途**：系統趨勢分析數據（Dashboard 頁）。所有值由 backend 聚合計算。
-
-**Response**：
-```json
-{
-  "period": "2026-04-01 ~ 2026-04-07",
-  "execution": {
-    "tasks_completed_this_week": 12,
-    "tasks_completed_last_week": 10,
-    "trend": "up"
-  },
-  "plan_adherence": {
-    "completion_rate_this_week": 78,
-    "completion_rate_last_week": 65
-  },
-  "goal_health": {
-    "on_track": 3,
-    "at_risk": 1,
-    "stalled": 0
-  },
-  "learning": {
-    "sessions_this_week": 4,
-    "weakness_count": 8,
-    "weakness_change": -4,
-    "mastery_count": 8,
-    "mastery_change": 3,
-    "review_backlog": 5
-  },
-  "content": {
-    "published_this_month": 4,
-    "published_target": 12,
-    "drafts_in_progress": 2
-  },
-  "inbox_health": {
-    "current_count": 5,
-    "week_start_count": 8,
-    "clarified_this_week": 6,
-    "captured_this_week": 3
-  },
-  "someday_health": {
-    "total": 12,
-    "stale_count": 5
-  },
-  "directive_health": {
-    "open_count": 2,
-    "avg_resolution_days": 3.5
-  }
 }
 ```
 
 **Backend 邏輯**：
-- `execution`：`COUNT tasks WHERE completed_at BETWEEN this_week/last_week`
-- `plan_adherence`：`daily_plan_items WHERE status='done' / total WHERE plan_date BETWEEN`
-- `goal_health`：計算每個 active goal 的 health（同 goal detail 的 health 邏輯）
-- `learning`：`COUNT attempt_observations GROUP BY signal_type` 本週 vs 上週
-- `content`：`COUNT contents WHERE published_at` 本月 + draft count
-- `inbox_health`：`COUNT tasks WHERE status='inbox'` + 本週 capture/clarify delta
-- `someday_health`：`COUNT tasks WHERE status='someday'`，stale = `updated_at < now() - 30d`
-- `directive_health`：`COUNT directives WHERE resolved_at IS NULL`，avg = `AVG(resolved_at - created_at)`
+- `invalidation_condition`：直接從 `insights.invalidation_condition` 欄位取（schema 已有此欄位）
+- `source`：直接從 `insights.source` 取
+- `observed_date`：從 `insights.observed_date` 取
+- `evidence_count`：`COALESCE(jsonb_array_length(metadata->'evidence'), 0)`
+
+**Migration 影響**：無，schema 已有 `invalidation_condition` 欄位（`internal/insight/insight.go` 已定義）。只需要 handler 把欄位塞進 response。
 
 ---
 
-## 9. Studio — IPC 協作（Phase 3）
+### C.2 [MODIFY] `GET /api/admin/reflect/journal` — 補上 `source` 和 `id`
 
-> **Schema 已更新（2026-04-08）**：directives 表已有 `resolved_at TIMESTAMPTZ` + `resolution_report_id BIGINT FK reports(id)` + `chk_resolved_requires_ack` CHECK constraint。
-> `lifecycle_status` 可直接從 schema 欄位計算：pending（unacked）/ acknowledged / resolved。
+**問題**：目前 response 只有 `kind, body, date`。但 Journal 是 multi-participant 系統 — 不同 participant（human、claude-code、cowork、content-studio）寫的 journal 應該標明來源，否則使用者看不出哪些是自己寫的、哪些是 AI agent 自動產生的。
 
-### GET /api/admin/studio/overview
-
-**用途**：IPC 全局狀態。
-
-**Response**：
+**修改後 response**：
 ```json
 {
-  "open_directives": [
+  "entries": [
     {
-      "id": "...",
-      "title": "...",
-      "target": "research-lab",
-      "created_at": "...",
-      "lifecycle_status": "pending" | "acknowledged" | "resolved",
-      "acknowledged_at": null,
-      "has_report": false,
-      "days_open": 3
+      "id": 123,
+      "kind": "reflection",
+      "body": "今天的 admin redesign 討論收穫很大...",
+      "source": "human",
+      "entry_date": "2026-04-08",
+      "created_at": "2026-04-08T22:30:00+08:00"
     }
-  ],
-  "unread_reports": [
-    { "id": "...", "title": "...", "source": "research-lab", "directive_title": "...", "filed_at": "..." }
-  ],
-  "participants": [
-    { "name": "research-lab", "active_directives": 2, "recent_reports": 1, "capabilities": ["can_receive_directives"] }
   ]
 }
 ```
 
-**Backend 邏輯**（`lifecycle_status` 計算，3 值）：
-- `pending`：`acknowledged_at IS NULL`
-- `acknowledged`：`acknowledged_at IS NOT NULL AND resolved_at IS NULL`
-- `resolved`：`resolved_at IS NOT NULL`
-
-`has_report: boolean` 作為獨立欄位存在於 DirectiveSummary 上，不影響 lifecycle_status。
+**Backend 邏輯**：所有欄位 schema 都已存在（`internal/journal/journal.go`），只需要 handler 把欄位帶出來。
 
 ---
 
-### POST /api/admin/studio/directives/propose
+### C.3 [MODIFY] `GET /api/admin/studio/overview` — 加 `?include_resolved` 查詢
 
-**用途**：提案 directive。
+**問題**：目前 response 只回 `open_directives`（unresolved）。前端的 Directive Board 頁面需要 **CEO 視角的歷史追蹤**：「我發出去的 directive 哪些已經完成、報告品質如何」。沒有歷史視圖，使用者無法做組織回顧。
+
+**修改**：加入 query parameter。
+
+```
+GET /api/admin/studio/overview?include_resolved=true&limit=20
+```
+
+**修改後 response**（當 `include_resolved=true`）：
+```json
+{
+  "open_directives": [...],          // 同原本
+  "resolved_directives": [             // 新增
+    {
+      "id": 42,
+      "content": "研究 NATS exactly-once",
+      "source": "hq",
+      "target": "research-lab",
+      "priority": "p1",
+      "lifecycle_status": "resolved",
+      "issued_date": "2026-03-25",
+      "acknowledged_at": "2026-03-25T10:00:00+08:00",
+      "resolved_at": "2026-04-02T16:30:00+08:00",
+      "resolution_report_id": 87,
+      "days_to_resolution": 8
+    }
+  ],
+  "unread_reports": [...],
+  "participants": [...]
+}
+```
+
+**Backend 邏輯**：
+- 預設行為（不傳 query param）：只回 open（保持 backward compatible）
+- `include_resolved=true`：額外回 `resolved_directives`，按 `resolved_at DESC` 排序，預設 `limit=20`
+
+---
+
+### C.4 [MODIFY] `GET /api/admin/plan/goals/{id}` — `recent_activity[].type` 改為 typed enum
+
+**問題**：目前 `recent_activity[].type` 是 generic string。前端無法根據 type 給不同 icon / 顏色，只能展示成 grey badge。語意表達被壓平。
+
+**修改後 type 列舉**（前後端共識）：
+```typescript
+type GoalActivityType =
+  | 'task_completed'
+  | 'milestone_completed'
+  | 'project_status_changed'
+  | 'content_published'    // related content (e.g., build-log) published
+  | 'attempt_solved'       // learning attempt linked to this goal
+  | 'directive_resolved';  // directive linked to this goal resolved
+```
+
+**修改後 response 範例**：
+```json
+{
+  "recent_activity": [
+    {
+      "type": "milestone_completed",
+      "title": "Set up pgvector extension",
+      "ref_id": "ms_uuid",
+      "timestamp": "2026-04-07T16:30:00+08:00"
+    },
+    {
+      "type": "content_published",
+      "title": "pgvector indexing guide",
+      "ref_id": "content_uuid",
+      "ref_slug": "pgvector-indexing-guide",
+      "timestamp": "2026-04-06T20:00:00+08:00"
+    }
+  ]
+}
+```
+
+**Backend 邏輯**：
+- UNION 查詢多個 source：tasks (completed_at), milestones (completed_at), projects (status_changed_at if tracked), contents (published_at), attempts (joined to goal via project), directives (resolved_at)
+- 按 timestamp DESC，limit 10
+
+---
+
+### C.5 [MODIFY] `GET /api/admin/learn/dashboard` — `weakness_spotlight` 補上 severity 聚合
+
+**問題**：目前 `weakness_spotlight[]` 只有 `fail_count_30d`。但 schema 已經有 `attempt_observations.severity`（minor / moderate / critical），這個資訊是診斷弱點的關鍵——「3 次 critical 弱點」遠比「10 次 minor 弱點」嚴重。
+
+**修改後 response 範例**：
+```json
+{
+  "weakness_spotlight": [
+    {
+      "concept_slug": "channel-direction",
+      "concept_name": "Channel Direction",
+      "domain": "go",
+      "fail_count_30d": 5,
+      "severity_summary": {
+        "critical": 1,
+        "moderate": 3,
+        "minor": 1
+      },
+      "severity_score": 8,
+      "last_practiced": "2026-03-25",
+      "days_since_practice": 14
+    }
+  ]
+}
+```
+
+**Backend 邏輯**：
+- `severity_summary`：`COUNT GROUP BY severity` 限制在最近 30 天 + 該 concept 的 weakness 觀察
+- `severity_score`：`critical*5 + moderate*2 + minor*1`（讓前端可以單一數值排序）
+
+---
+
+### C.6 [MODIFY] `GET /api/admin/studio/overview` — `participants[]` 補 capability 細節
+
+**問題**：目前 `participants[]` 只有 `name`、`active_directives`、`recent_reports`、`capabilities` array。前端 Directive Board 想顯示「這個 participant 能不能 issue / receive / write reports / 接 task」的 chip，但 generic string array 沒辦法明確區分。
+
+**修改後 response 範例**：
+```json
+{
+  "participants": [
+    {
+      "name": "research-lab",
+      "platform": "claude-code",
+      "active_directives": 2,
+      "recent_reports": 1,
+      "can_issue_directives": false,
+      "can_receive_directives": true,
+      "can_write_reports": true,
+      "task_assignable": false,
+      "has_schedule": true
+    }
+  ]
+}
+```
+
+**Backend 邏輯**：直接 SELECT participants 表的 capability flag 欄位即可，schema 已存在。
+
+---
+
+### C.7 [ADD] Content Review — 新的 write endpoints（**唯一允許的 admin write**）
+
+> 整個 admin 唯一保留的 write 路徑：content review。
+> 因為「要不要把這篇東西公開發布」是 Koopa 本人必須親自做的判斷，無法委派給 Claude / AI。
+
+#### 既有 endpoints — 確認用途
+
+backend 目前有：
+- `POST /api/admin/contents/{id}/publish` ✅ 用於 approve（status → published）
+- `PATCH /api/admin/contents/{id}/is-public` ✅ 用於控制公開可見性
+
+#### 缺的 endpoint — 需新增
+
+**`POST /api/admin/contents/{id}/reject`**
+
+**用途**：退回 draft 狀態，附帶 reviewer notes（給寫作者後續修改參考）。
 
 **Request**：
 ```json
 {
-  "target": "research-lab",
-  "title": "研究 NATS exactly-once semantics",
-  "description": "...",
-  "context": "...",
-  "deadline": "2026-04-15"
+  "reviewer_notes": "結論段落需要更具體的數據支撐"
 }
 ```
 
----
+**Response**：更新後的 content（status=draft）。
 
-## 10. System（Phase 3）
+**Backend 邏輯**：
+- `UPDATE contents SET status='draft', updated_at=now() WHERE id=$1`
+- 將 `reviewer_notes` 寫入 `contents.metadata->'review_notes'` JSONB（或新建欄位 `review_notes TEXT`，建議前者以避免 schema 變更）
+- 同時 INSERT 一筆 `review_queue` 紀錄（若該表存在），記錄 reviewer + reason + timestamp，供之後 audit
 
-### GET /api/admin/system/health
+#### 還需要的 read endpoint
 
-**用途**：系統健康總覽。
+**`GET /api/admin/contents/{id}`**
 
-**Response**：
-```json
-{
-  "feeds": { "total": 15, "healthy": 13, "failing": 2, "failing_feeds": [{ "name": "...", "error": "...", "since": "..." }] },
-  "pipelines": { "recent_runs": 10, "failed": 0, "last_run_at": "..." },
-  "ai_budget": { "today_tokens": 45000, "daily_limit": 100000 },
-  "database": { "contents_count": 142, "tasks_count": 67, "notes_count": 320 }
-}
-```
+> 已存在於 backend (`h.content.AdminGet`)，✅ 保留。前端 ContentReviewWorkspace 用此取得單一 content 完整內容（含 body）。
 
 ---
 
-## API 命名對照表
+### C.8 [REMOVE-OR-INTERNAL] 不歸 admin 的 endpoints
 
-| 前端需求 | Endpoint | 語意 |
-|---------|----------|------|
-| Today 畫面 | `GET /api/admin/today` | 聚合今日 context |
-| 規劃今日 | `POST /api/admin/today/plan` | Batch plan items |
-| 處理 plan item | `POST /api/admin/today/items/:id/resolve` | Semantic transition |
-| Inbox 列表 | `GET /api/admin/inbox` | GTD inbox queue |
-| 快速捕獲 | `POST /api/admin/inbox/capture` | Frictionless capture |
-| 澄清 inbox item | `POST /api/admin/inbox/:id/clarify` | Polymorphic clarify |
-| Goals 總覽 | `GET /api/admin/plan/goals` | By-area grouped |
-| Goal 詳情 | `GET /api/admin/plan/goals/:id` | Cross-entity aggregate |
-| 提案 Goal | `POST /api/admin/plan/goals/propose` | Proposal-first |
-| 確認 Goal | `POST /api/admin/plan/goals/propose/:id/commit` | Commit proposal |
-| 新增 Milestone | `POST /api/admin/plan/goals/:id/milestones` | Direct create |
-| Toggle Milestone | `POST /api/admin/plan/goals/:id/milestones/:ms_id/toggle` | Binary toggle |
-| Projects 總覽 | `GET /api/admin/plan/projects` | With breadcrumbs |
-| Project 詳情 | `GET /api/admin/plan/projects/:id` | Tasks + activity |
-| Tasks Backlog | `GET /api/admin/plan/tasks` | Filtered list |
-| 推進 Task | `POST /api/admin/plan/tasks/:id/advance` | Semantic command |
-| Content Pipeline | `GET /api/admin/library/pipeline` | Workflow stages |
-| Learning Dashboard | `GET /api/admin/learn/dashboard` | Phase 2 |
-| Start Session | `POST /api/admin/learn/sessions/start` | Phase 2 |
-| Record Attempt | `POST /api/admin/learn/sessions/:id/attempt` | Phase 2 |
-| End Session | `POST /api/admin/learn/sessions/:id/end` | Phase 2 |
-| Concept Drilldown | `GET /api/admin/learn/concepts/:slug` | Phase 2 |
-| Daily Review | `GET /api/admin/reflect/daily` | Phase 2 |
-| Weekly Review | `GET /api/admin/reflect/weekly` | Phase 2 |
-| Write Journal | `POST /api/admin/reflect/journal` | Phase 2 |
-| Journal 列表 | `GET /api/admin/reflect/journal` | Phase 2 |
-| Insights 列表 | `GET /api/admin/reflect/insights` | Phase 2 |
-| Dashboard 趨勢 | `GET /api/admin/dashboard/trends` | Phase 2 |
-| Studio Overview | `GET /api/admin/studio/overview` | Phase 3 |
-| Propose Directive | `POST /api/admin/studio/directives/propose` | Phase 3 |
-| System Health | `GET /api/admin/system/health` | Phase 3 |
+以下 endpoints 在 `cmd/app/routes.go` 還註冊著，但 admin frontend 完全不使用。建議**移到非 admin 路由** 或 **加註 `// internal-use`**：
+
+| 路由 | 現況 | 建議 |
+|------|------|------|
+| `POST /api/admin/contents` (create) | CRUD 編輯器用 | 移到非 admin，或標 `// editor-only` — Obsidian sync 走別的路徑，不需要 admin 開放 |
+| `PUT /api/admin/contents/{id}` (update) | 編輯器用 | 同上 |
+| `DELETE /api/admin/contents/{id}` | 編輯器用 | 同上，admin 不刪內容 |
+| `POST /api/admin/projects` / `PUT` / `DELETE` | Project editor 用 | 移到非 admin 或標 `// internal-use` |
+| `PUT /api/admin/goals/{id}/status` | 舊 goal CRUD | 移除（操作走 MCP） |
+| `POST /api/admin/topics` / `PUT` / `DELETE` | Topic CRUD | 移除或標 `// admin-internal` |
+| `POST /api/admin/tags` / `PUT` / `DELETE` / `merge` / `backfill` | Tag CRUD | 移除或標 `// admin-internal` |
+| `POST /api/admin/aliases/*` | Tag alias 管理 | 移除或標 `// admin-internal` |
+| `POST /api/admin/feeds` / `PUT` / `DELETE` / `fetch` | Feed CRUD | 移除（操作走 MCP `manage_feeds`），保留 `GET /api/admin/feeds`（intelligence 頁面 read 用） |
+| `POST /api/admin/collected/*` | Collected items 操作 | 移除（操作走 MCP `manage_content` action=bookmark_rss） |
+| `GET /api/admin/notes` / `decisions` | Notes search | 評估，可能移到 search service |
+| `GET /api/admin/activity/sessions` / `changelog` | Activity log | 評估是否融入 system health |
+| `GET /api/admin/stats` / `drift` / `learning` | Old stats | 評估，與 dashboard/trends 重疊則移除 |
+| `POST /api/admin/upload` | 編輯器附檔上傳 | 移除（admin 沒有編輯器） |
+| `GET /api/admin/review` + `/approve` / `/reject` / `/edit` | 舊 review queue | **改用 §C.7 的新 endpoints**，或保留並讓 `POST /api/admin/contents/{id}/reject` 作為 alias |
 
 ---
 
-## 實作優先級
+## Section D — Frontend 對應頁面與 endpoint 清單
 
-| Priority | Endpoints | 理由 |
-|----------|-----------|------|
-| **P0 — Day One** | today, inbox (3), plan/goals (5), plan/projects (2), plan/tasks (2), library/pipeline | 前端 Day One 必要 |
-| **P1 — Phase 2** | learn (5), reflect (3) | 學習 + 回顧 workflow |
-| **P2 — Phase 3** | studio (2), system (1) | IPC + 系統監控 |
-
-**注意**：前端會先用 mock data 開發，API 準備好後切換。每個 service 都會有 `useMock` flag。
+| 頁面 | Endpoints 用到 |
+|------|---------------|
+| `/admin/overview` | `GET /api/admin/today` + `GET /api/admin/dashboard/trends` |
+| `/admin/learn/weaknesses` | `GET /api/admin/learn/dashboard` |
+| `/admin/learn/concepts/:slug` | `GET /api/admin/learn/concepts/:slug` |
+| `/admin/learn/sessions` | `GET /api/admin/learn/dashboard`（recent_sessions）— 未來可能單獨做 `GET /api/admin/learn/sessions` |
+| `/admin/learn/plans` | `GET /api/admin/learn/plans` |
+| `/admin/learn/plans/:id` | `GET /api/admin/learn/plans/:id` |
+| `/admin/content/pipeline` | `GET /api/admin/library/pipeline` |
+| `/admin/content/review/:id` | `GET /api/admin/contents/:id` + `POST /api/admin/contents/:id/publish` + `POST /api/admin/contents/:id/reject`（新） + `PATCH /api/admin/contents/:id/is-public` |
+| `/admin/content/library` | `GET /api/admin/contents`（list） |
+| `/admin/content/intelligence` | `GET /api/admin/feeds`（list） |
+| `/admin/commitments/goals` | `GET /api/admin/plan/goals` |
+| `/admin/commitments/goals/:id` | `GET /api/admin/plan/goals/:id` |
+| `/admin/commitments/projects` | `GET /api/admin/plan/projects` |
+| `/admin/commitments/projects/:id` | `GET /api/admin/plan/projects/:id` |
+| `/admin/commitments/directives` | `GET /api/admin/studio/overview`（含 `?include_resolved=true` 選用） |
+| `/admin/activity/daily` | `GET /api/admin/reflect/daily?date=` |
+| `/admin/activity/weekly` | `GET /api/admin/reflect/weekly?week_start=` |
+| `/admin/activity/insights` | `GET /api/admin/reflect/insights` |
+| `/admin/activity/journal` | `GET /api/admin/reflect/journal` |
+| `/admin/system` | `GET /api/admin/system/health` |
 
 ---
 
-## Schema 對齊備註
+## Section E — 實作優先級
 
-> 以下記錄 API response 與 migrations/001_initial.up.sql 的欄位對應關係，
-> 避免前後端 mapping 成本。
+### P0 — 立刻做（解語意 bug）
+
+這些是 admin frontend 已經部署但 response shape 缺欄位導致語意呈現不完整的：
+
+1. **§C.1** — `GET /api/admin/reflect/insights` 補上 `invalidation_condition`、`source`、`observed_date`、`evidence_count`
+2. **§C.2** — `GET /api/admin/reflect/journal` 補上 `id`、`source`、`entry_date`、`created_at`
+
+> 這兩項 schema 都已支援，只是 handler 沒帶出來。改動量極小（每個約 5 行 Go），但語意修復顯著。
+
+### P1 — 短期（前端已有 placeholder，等後端就能上）
+
+3. **§C.3** — `GET /api/admin/studio/overview` 支援 `?include_resolved=true` 並回 `resolved_directives`
+4. **§C.5** — `GET /api/admin/learn/dashboard` 補上 `weakness_spotlight[].severity_summary` 和 `severity_score`
+5. **§C.6** — `GET /api/admin/studio/overview` 的 `participants[]` 補上 capability flag 細節
+6. **§C.7** — 新增 `POST /api/admin/contents/{id}/reject`
+
+### P2 — 中期（語意提升，但不阻塞）
+
+7. **§C.4** — `GET /api/admin/plan/goals/{id}` 的 `recent_activity[].type` 改為 typed enum + 加上 `ref_id`、`ref_slug`
+
+### P3 — 整理階段（清理技術債）
+
+8. **§A** 的所有移除動作 — 可以一次清理或漸進
+9. **§C.8** — 把不歸 admin 的 endpoints 移到別的命名空間
+
+---
+
+## Section F — Schema 對齊備註
+
+> 以下記錄 API response 與 `migrations/001_initial.up.sql` 的欄位對應關係。
 
 ### 關鍵差異與決策
 
 | API response 欄位 | Schema 欄位 | 說明 |
 |---|---|---|
-| `task.area` | tasks 表**沒有** area 欄位 | 需透過 `tasks.project_id → projects.area_id → areas.name` JOIN 衍生。無 project 的 task area 為 null |
-| `task.status` | `task_status` 列舉含 5 值：`inbox, todo, in-progress, done, someday` | 前端 TaskStatus type 需包含全部 5 值 |
-| `goal.area_name` | `goals.area_id` UUID FK → `areas.name` | API 回傳 denormalized 的 `area_id` + `area_name`，省去前端 JOIN |
-| `milestone.completed` | Schema 用 `completed_at TIMESTAMPTZ`（null = 未完成）| API 回傳 `completed: boolean`（衍生自 `completed_at IS NOT NULL`）+ 原始 `completed_at` |
-| `daily_plan_item.title` | Schema 只有 `task_id` FK | API 回傳 denormalized 的 `title`（JOIN tasks.title）|
-| `daily_plan_item.area` | 同上，需 JOIN tasks → projects → areas | API denormalize |
-| `directive.title` | Schema 只有 `content TEXT` | API 可從 `content` 前 N 字截取作 title，或前端直接用 `content` |
-| `directive` lifecycle | Schema **已有** `resolved_at` + `resolution_report_id` | lifecycle_status 可直接從 schema 欄位計算，不需 JOIN 推斷 |
-| `insight.evidence` | Schema 用 `metadata JSONB` | evidence 存在 metadata.evidence 中（如有） |
-| `attempt.outcome` | 7 值列舉：`solved_independent, solved_with_hint, solved_after_solution, completed, completed_with_support, incomplete, gave_up` | 前端 type 需包含全部 7 值 |
-| `session.mode` | `session_mode` CHECK 5 值：`retrieval, practice, mixed, review, reading` | 前端需定義對應 type |
-| `observation.signal_type` | 3 值：`weakness, improvement, mastery` | 注意不是 `weakness, strength, misconception`——schema 用 `improvement` 和 `mastery` |
-| `observation.severity` | `minor, moderate, critical`，且只有 `signal_type='weakness'` 時才有值 | `chk_severity_weakness_only` 約束 |
+| `task.area` | tasks 表**沒有** area 欄位 | 透過 `tasks.project_id → projects.area_id → areas.name` JOIN 衍生 |
+| `task.status` | `task_status` enum 5 值：`inbox, todo, in-progress, done, someday` | 前端 type 包含全部 5 值 |
+| `goal.area_name` | `goals.area_id` UUID FK → `areas.name` | 回傳 denormalized `area_id` + `area_name` |
+| `milestone.completed` | Schema 用 `completed_at TIMESTAMPTZ`（null = 未完成）| API 回 `completed: boolean` + 原始 `completed_at` |
+| `daily_plan_item.title` | Schema 只有 `task_id` FK | API 回 denormalized `title`（JOIN tasks.title）|
+| `daily_plan_item.area` | 同上 | API denormalize |
+| `directive.title` | Schema 只有 `content TEXT` | 前端直接用 `content` 顯示 |
+| `directive` lifecycle | Schema 有 `resolved_at` + `resolution_report_id` | lifecycle_status 從欄位計算（pending / acknowledged / resolved）|
+| `insight.invalidation_condition` | Schema 有此欄位（但 admin handler 漏帶出來）| **§C.1 修復** |
+| `insight.evidence` | Schema 用 `metadata JSONB` | evidence 存在 `metadata.evidence` 中 |
+| `journal.source` | Schema 有此欄位 | **§C.2 修復**：admin handler 補帶出來 |
+| `attempt.outcome` | 7 值 enum：`solved_independent, solved_with_hint, solved_after_solution, completed, completed_with_support, incomplete, gave_up` | 前端 type 7 值 |
+| `session.mode` | `session_mode` 5 值：`retrieval, practice, mixed, review, reading` | |
+| `observation.signal_type` | 3 值：`weakness, improvement, mastery` | 不是 `weakness, strength, misconception` |
+| `observation.severity` | `minor, moderate, critical`，僅 weakness 有值 | `chk_severity_weakness_only` 約束 |
+| `observation.severity_summary` | derived | **§C.5 新增**：handler 聚合計算 |
 | `concept.kind` | 3 值：`pattern, skill, principle` | |
-| `areas` seed | 6 個：backend, learning, studio, frontend, career, ops | 前端 AREA_CLASSES 顏色映射需覆蓋這 6 個 |
+| `participant.has_schedule` | Schema 有此欄位 | **§C.6 補帶出來** |
+| `areas` seed | 6 個：backend, learning, studio, frontend, career, ops | 前端 AREA_CLASSES 顏色映射覆蓋這 6 個 |
 
-### 前端 TypeScript model 需修正
+### Frontend TypeScript model 修正項目
 
-1. `TaskStatus` 改為 `'inbox' | 'todo' | 'in-progress' | 'done' | 'someday'`（目前缺 inbox 和 someday）
-2. `MilestoneWithProjects.completed` 改為 `completed_at: string | null`（布林由前端 computed 衍生）
-3. `AREA_CLASSES` 色彩映射加入 `ops`
-4. `AttemptOutcome` 定義為 7 值 union type
-5. `SessionMode` 定義為 5 值 union type
-6. `ObservationSignal` 改為 `weakness | improvement | mastery`（不是 weakness/strength/misconception）
-7. `DirectiveSummary` 的 `title` 改為 `content`（或在 API 層截取）
+1. `JournalEntry` 加入 `id, source, entry_date, created_at`
+2. `InsightCheck` 加入 `invalidation_condition, source, observed_date, evidence_count`
+3. `DirectiveSummary` lifecycle 維持 `pending | acknowledged | resolved`
+4. `ParticipantSummary` 確認 capability boolean 欄位齊全（已對齊）
+5. `ConceptWeakness` 加入 `severity_summary, severity_score`
+6. `StudioOverview` 加入 `resolved_directives?: DirectiveSummary[]`
+7. `ActivityItem` 的 `type` 改為 typed enum 而非 string
+8. 新增 `RejectContentRequest { reviewer_notes: string }` 用於 §C.7
