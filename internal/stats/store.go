@@ -611,3 +611,86 @@ func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) erro
 	}
 	return tagRows.Err()
 }
+
+// SystemHealth returns the snapshot consumed by the admin SystemHealthComponent.
+//
+// Composes feed health, recent pipeline activity (last 24h), and core entity
+// counts. AI budget tracking is not yet implemented — those fields return
+// zero placeholders so the frontend contract holds.
+func (s *Store) SystemHealth(ctx context.Context) (*SystemHealthSnapshot, error) {
+	out := &SystemHealthSnapshot{
+		Feeds:     FeedHealth{FailingFeeds: []FailingFeed{}},
+		Pipelines: PipelineHealth{},
+		AIBudget:  AIBudget{},
+		Database:  DatabaseStats{},
+	}
+
+	// Feed counts: total, healthy (consecutive_failures = 0), failing (> 0).
+	if err := s.dbtx.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE consecutive_failures = 0),
+			COUNT(*) FILTER (WHERE consecutive_failures > 0)
+		FROM feeds`,
+	).Scan(&out.Feeds.Total, &out.Feeds.Healthy, &out.Feeds.Failing); err != nil {
+		return nil, fmt.Errorf("querying feed counts: %w", err)
+	}
+
+	// Failing feed details. last_fetched_at is used as a proxy for "since"
+	// (when this feed last attempted and failed) — the schema does not
+	// track a dedicated first_failed_at column.
+	failingRows, err := s.dbtx.Query(ctx, `
+		SELECT name, COALESCE(last_error, ''), last_fetched_at
+		FROM feeds
+		WHERE consecutive_failures > 0
+		ORDER BY consecutive_failures DESC, name`)
+	if err != nil {
+		return nil, fmt.Errorf("querying failing feeds: %w", err)
+	}
+	defer failingRows.Close()
+	for failingRows.Next() {
+		var ff FailingFeed
+		var since *time.Time
+		if scanErr := failingRows.Scan(&ff.Name, &ff.Error, &since); scanErr != nil {
+			return nil, fmt.Errorf("scanning failing feed: %w", scanErr)
+		}
+		if since != nil {
+			ff.Since = since.Format(time.RFC3339)
+		}
+		out.Feeds.FailingFeeds = append(out.Feeds.FailingFeeds, ff)
+	}
+	if err := failingRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating failing feeds: %w", err)
+	}
+
+	// Pipeline activity: last 24h flow runs and most recent run timestamp.
+	since := time.Now().Add(-24 * time.Hour)
+	var lastRunAt *time.Time
+	if err := s.dbtx.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'failed'),
+			MAX(created_at)
+		FROM flow_runs
+		WHERE created_at >= $1`,
+		since,
+	).Scan(&out.Pipelines.RecentRuns, &out.Pipelines.Failed, &lastRunAt); err != nil {
+		return nil, fmt.Errorf("querying pipeline activity: %w", err)
+	}
+	if lastRunAt != nil {
+		s := lastRunAt.Format(time.RFC3339)
+		out.Pipelines.LastRunAt = &s
+	}
+
+	// Database entity counts. Single-row scalar subqueries keep this to one round trip.
+	if err := s.dbtx.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM contents),
+			(SELECT COUNT(*) FROM tasks),
+			(SELECT COUNT(*) FROM notes)`,
+	).Scan(&out.Database.ContentsCount, &out.Database.TasksCount, &out.Database.NotesCount); err != nil {
+		return nil, fmt.Errorf("querying database counts: %w", err)
+	}
+
+	return out, nil
+}

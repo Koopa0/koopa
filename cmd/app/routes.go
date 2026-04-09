@@ -160,6 +160,9 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	mux.Handle("GET /api/admin/stats/drift", authMid(http.HandlerFunc(h.stats.Drift)))
 	mux.Handle("GET /api/admin/stats/learning", authMid(http.HandlerFunc(h.stats.Learning)))
 
+	// --- Admin: System ---
+	mux.Handle("GET /api/admin/system/health", authMid(http.HandlerFunc(h.stats.SystemHealth)))
+
 	// --- Admin: Upload ---
 	if h.upload != nil {
 		mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(h.upload.Upload)))

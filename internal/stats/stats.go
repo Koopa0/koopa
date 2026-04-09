@@ -159,3 +159,54 @@ type PipelineSummary struct {
 	LastRunAt  *string `json:"last_run_at,omitempty"`
 	LastStatus *string `json:"last_status,omitempty"`
 }
+
+// SystemHealthSnapshot is the response shape for GET /api/admin/system/health.
+// It is consumed by the frontend SystemHealthComponent and matches the
+// SystemHealth interface in admin.model.ts.
+type SystemHealthSnapshot struct {
+	Feeds     FeedHealth     `json:"feeds"`
+	Pipelines PipelineHealth `json:"pipelines"`
+	AIBudget  AIBudget       `json:"ai_budget"`
+	Database  DatabaseStats  `json:"database"`
+}
+
+// FeedHealth is the feed health section of SystemHealthSnapshot.
+type FeedHealth struct {
+	Total        int           `json:"total"`
+	Healthy      int           `json:"healthy"`
+	Failing      int           `json:"failing"`
+	FailingFeeds []FailingFeed `json:"failing_feeds"`
+}
+
+// FailingFeed is one failing feed entry. Since uses last_fetched_at as a
+// proxy for "when did this feed start failing" since the schema does not
+// track first_failed_at separately.
+type FailingFeed struct {
+	Name  string `json:"name"`
+	Error string `json:"error"`
+	Since string `json:"since,omitempty"`
+}
+
+// PipelineHealth is the pipeline section of SystemHealthSnapshot.
+// Counts cover the last 24h of flow_runs.
+type PipelineHealth struct {
+	RecentRuns int     `json:"recent_runs"`
+	Failed     int     `json:"failed"`
+	LastRunAt  *string `json:"last_run_at"`
+}
+
+// AIBudget is the AI token budget section of SystemHealthSnapshot.
+// Not yet wired to a real source — both fields return zero. Reserved
+// for the SystemHealthComponent contract so the frontend does not need
+// a conditional rendering branch.
+type AIBudget struct {
+	TodayTokens int `json:"today_tokens"`
+	DailyLimit  int `json:"daily_limit"`
+}
+
+// DatabaseStats is the database section of SystemHealthSnapshot.
+type DatabaseStats struct {
+	ContentsCount int `json:"contents_count"`
+	TasksCount    int `json:"tasks_count"`
+	NotesCount    int `json:"notes_count"`
+}

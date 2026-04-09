@@ -59,3 +59,15 @@ func (h *Handler) Learning(w http.ResponseWriter, r *http.Request) {
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: dashboard})
 }
+
+// SystemHealth handles GET /api/admin/system/health. Returns feed/pipeline/
+// database snapshots for the admin SystemHealthComponent.
+func (h *Handler) SystemHealth(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := h.store.SystemHealth(r.Context())
+	if err != nil {
+		h.logger.Error("querying system health", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query system health")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: snapshot})
+}
