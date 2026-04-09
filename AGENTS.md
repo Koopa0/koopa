@@ -17,15 +17,15 @@
 ├── docs/             → 審計報告、MCP 工具參考
 ├── sqlc.yaml         → sqlc configuration (pgx/v5)
 ├── go.mod            → module github.com/Koopa0/koopa0.dev
-└── CLAUDE.md         → 你現在在讀的這份
+└── AGENTS.md         → 你現在在讀的這份
 ```
 
 ## 必讀文件
 
 | 文件 | 用途 |
 |------|------|
-| `frontend/CLAUDE.md` | Angular 前端開發規範（元件、規則、命名、測試） |
-| `.claude/rules/` | Go 後端開發規範（規則、命名、測試、安全） |
+| `frontend/AGENTS.md` | Angular 前端開發規範（元件、規則、命名、測試） |
+| `.Codex/rules/` | Go 後端開發規範（規則、命名、測試、安全） |
 | `docs/AUDIT-REPORT-2026-03-30.md` | 專案現況審計報告（系統拓撲、工具盤點、資料層、完成度矩陣） |
 | `docs/MCP-TOOLS-REFERENCE.md` | MCP 49 工具完整參考（參數、標記、條件啟用） |
 
@@ -99,9 +99,8 @@ Every code change follows one of three tiers:
 | 2 | Existing feature, no new packages | lightweight comprehend → implement → `/verify` + reviewers |
 | 3 | New feature, new package, design decisions | `comprehend` → `planner` → implement → `/verify` + reviewers |
 
-**Quick decision**: See `.claude/QUICKSTART.md` for the decision tree.
-**Tier selection + escalation**: `.claude/rules/development-lifecycle.md` (always-loaded, ~120 lines)
-**Full phase details**: `/lifecycle-phases` skill (Phase 0-4, holistic review, plan changes — on demand)
+**Quick decision**: See `.Codex/QUICKSTART.md` for the decision tree.
+**Full details**: See `.Codex/rules/development-lifecycle.md`.
 
 ## Available Agents
 
@@ -119,14 +118,12 @@ Every code change follows one of three tiers:
 | `refactor` | sonnet | — | Simplify code, flatten abstractions, remove DDD |
 | `build-resolver` | sonnet | — | Fix build, vet, and lint errors |
 
-**Invocation**: Use `Agent` tool with `subagent_type="<agent-name>"`. See `.claude/QUICKSTART.md`.
+**Invocation**: Use `Agent` tool with `subagent_type="<agent-name>"`. See `.Codex/QUICKSTART.md`.
 
 ## Available Skills
 
 | Skill | Command | Purpose |
 |-------|---------|---------|
-| `using-go-spec` | `/using-go-spec` | Active skill routing table — consult before coding |
-| `lifecycle-phases` | `/lifecycle-phases` | Full phase details (Phase 0-4, holistic review, plan changes) |
 | `verify` | `/verify` | Run full verification chain: build → vet → lint → test |
 | `checkpoint` | `/checkpoint` | Create git checkpoint before risky changes |
 | `pgx-patterns` | `/pgx-patterns` | pgx/v5 best practices reference |
@@ -180,43 +177,12 @@ Before any commit or PR, run `/verify` or:
 go build ./... && go vet ./... && golangci-lint run ./... && go test ./...
 ```
 
-## Search Strategy — codebase-retrieval First
-
-You have `mcp__auggie-mcp__codebase-retrieval` (Augment Context Engine) available.
-**This is not optional reference material — it is the FIRST tool for discovery queries.**
-
-| Query type | Tool | Why |
-|---|---|---|
-| "How does X work?" / "What patterns are used for Y?" | `codebase-retrieval` | Semantic, cross-file |
-| "What would break if I change Z?" / "Where does W happen?" | `codebase-retrieval` | Impact + discovery |
-| Audit / understand a feature area before changing it | `codebase-retrieval` | Maps relationships grep misses |
-| "Find all uses of `pgxpool.Pool`" | `Grep` | Exact symbol, exhaustive |
-| "Find definition of struct X" | `Grep` | Known identifier |
-| Verify a hypothesis from codebase-retrieval | `Grep`/`Read` | Pass 2 of two-pass protocol |
-
-### Anti-Rationalization Red Flags
-
-STOP if you find yourself thinking ANY of these — they are rationalizations, not reasons:
-
-- "Grep is sufficient, I don't need codebase-retrieval"
-- "The project workflow doesn't include auggie" (it does — this section)
-- "auggie is just grep with extra steps" (unfounded — Augment uses semantic embeddings)
-- "I'll use Grep/Read because they're faster/more direct"
-- "This task is too small for codebase-retrieval"
-
-If you decline `codebase-retrieval`, you MUST cite a specific reason from the current task
-(e.g., "I already know the exact file from this conversation"). Generic claims about the
-tool are not acceptable.
-
-**Two-pass protocol** for any non-trivial discovery: Pass 1 = `codebase-retrieval` for the
-semantic map. Pass 2 = `Grep`/`Read` for exact verification. If they disagree, trust grep.
-
 ## 開發分工
 
 | 負責人 | 範圍 |
 |--------|------|
 | Koopa | Go API、AI Pipeline、Obsidian 整合、資料收集 |
-| Claude Code | Angular 前端、API 對接、Admin UI、設計調整 |
+| Codex | Angular 前端、API 對接、Admin UI、設計調整 |
 
 ## Language Convention
 
