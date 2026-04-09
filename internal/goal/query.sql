@@ -76,3 +76,55 @@ RETURNING id, goal_id, title, description, target_deadline, completed_at, positi
 INSERT INTO milestones (goal_id, title, position)
 VALUES (@goal_id, @title, @position)
 RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at;
+
+-- name: GoalRecentActivity :many
+-- Recent activity for a single goal — UNION across milestones, tasks (via project),
+-- and contents (via project). Each row carries a typed activity_type that the admin
+-- frontend can dispatch on for icons / colors.
+--
+-- Sources:
+--   milestone_completed     — milestones.completed_at where milestone.goal_id = @goal_id
+--   task_completed          — tasks.completed_at where tasks.project_id ∈ (projects under this goal)
+--   content_published       — contents.published_at where contents.project_id ∈ (projects under this goal)
+SELECT
+    activity_type::text AS activity_type,
+    title,
+    ref_id,
+    ref_slug,
+    ts
+FROM (
+    SELECT
+        'milestone_completed' AS activity_type,
+        m.title               AS title,
+        m.id::text            AS ref_id,
+        NULL::text            AS ref_slug,
+        m.completed_at        AS ts
+    FROM milestones m
+    WHERE m.goal_id = @goal_id AND m.completed_at IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+        'task_completed' AS activity_type,
+        t.title          AS title,
+        t.id::text       AS ref_id,
+        NULL::text       AS ref_slug,
+        t.completed_at   AS ts
+    FROM tasks t
+    JOIN projects p ON p.id = t.project_id
+    WHERE p.goal_id = @goal_id AND t.completed_at IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+        'content_published' AS activity_type,
+        c.title             AS title,
+        c.id::text          AS ref_id,
+        c.slug              AS ref_slug,
+        c.published_at      AS ts
+    FROM contents c
+    JOIN projects p ON p.id = c.project_id
+    WHERE p.goal_id = @goal_id AND c.published_at IS NOT NULL
+) AS activity
+ORDER BY ts DESC NULLS LAST
+LIMIT @max_results;

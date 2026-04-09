@@ -10,6 +10,24 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/learning"
 )
 
+// SeveritySummary breaks down weakness observation severity counts.
+type SeveritySummary struct {
+	Critical int64 `json:"critical"`
+	Moderate int64 `json:"moderate"`
+	Minor    int64 `json:"minor"`
+}
+
+// WeaknessSpotlight is the admin-facing weakness row with severity aggregation.
+type WeaknessSpotlight struct {
+	ConceptSlug     string          `json:"concept_slug"`
+	ConceptName     string          `json:"concept_name"`
+	Domain          string          `json:"domain"`
+	Category        string          `json:"category"`
+	FailCount30d    int64           `json:"fail_count_30d"`
+	SeveritySummary SeveritySummary `json:"severity_summary"`
+	SeverityScore   int64           `json:"severity_score"`
+}
+
 // LearnDashboard handles GET /api/admin/learn/dashboard.
 func (h *Handler) LearnDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -20,14 +38,18 @@ func (h *Handler) LearnDashboard(w http.ResponseWriter, r *http.Request) {
 		DueReviewsCount int                          `json:"due_reviews_count"`
 		DueReviewsToday int                          `json:"due_reviews_today"`
 		RecentSessions  []learning.Session           `json:"recent_sessions"`
-		WeaknessSpot    []learning.WeaknessRow       `json:"weakness_spotlight"`
+		WeaknessSpot    []WeaknessSpotlight          `json:"weakness_spotlight"`
 		MasteryByDomain []learning.ConceptMasteryRow `json:"mastery_by_domain"`
 		Streak          struct {
 			CurrentDays int `json:"current_days"`
 		} `json:"streak"`
 	}
 
-	var out resp
+	out := resp{
+		RecentSessions:  []learning.Session{},
+		WeaknessSpot:    []WeaknessSpotlight{},
+		MasteryByDomain: []learning.ConceptMasteryRow{},
+	}
 
 	if n, err := h.learn.DueReviewCount(ctx, now); err == nil {
 		out.DueReviewsCount = n
@@ -37,22 +59,34 @@ func (h *Handler) LearnDashboard(w http.ResponseWriter, r *http.Request) {
 		out.DueReviewsToday = n
 	}
 
-	if sessions, err := h.learn.RecentSessions(ctx, nil, since30d, 10); err == nil {
+	if sessions, err := h.learn.RecentSessions(ctx, nil, since30d, 10); err == nil && sessions != nil {
 		out.RecentSessions = sessions
-	} else {
-		out.RecentSessions = []learning.Session{}
 	}
 
 	if ws, err := h.learn.WeaknessAnalysis(ctx, nil, since30d); err == nil {
-		out.WeaknessSpot = ws
-	} else {
-		out.WeaknessSpot = []learning.WeaknessRow{}
+		out.WeaknessSpot = make([]WeaknessSpotlight, len(ws))
+		for i := range ws {
+			row := &ws[i]
+			// severity_score: critical*5 + moderate*2 + minor*1 (weighted ranking).
+			score := row.CriticalCount*5 + row.ModerateCount*2 + row.MinorCount
+			out.WeaknessSpot[i] = WeaknessSpotlight{
+				ConceptSlug:  row.ConceptSlug,
+				ConceptName:  row.ConceptName,
+				Domain:       row.Domain,
+				Category:     row.Category,
+				FailCount30d: row.OccurrenceCount,
+				SeveritySummary: SeveritySummary{
+					Critical: row.CriticalCount,
+					Moderate: row.ModerateCount,
+					Minor:    row.MinorCount,
+				},
+				SeverityScore: score,
+			}
+		}
 	}
 
-	if ms, err := h.learn.ConceptMastery(ctx, nil, since30d); err == nil {
+	if ms, err := h.learn.ConceptMastery(ctx, nil, since30d); err == nil && ms != nil {
 		out.MasteryByDomain = ms
-	} else {
-		out.MasteryByDomain = []learning.ConceptMasteryRow{}
 	}
 
 	if s, err := h.learn.Streak(ctx); err == nil {

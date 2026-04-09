@@ -5,36 +5,63 @@ import (
 	"time"
 
 	"github.com/Koopa0/koopa0.dev/internal/api"
+	"github.com/Koopa0/koopa0.dev/internal/directive"
 )
 
+// resolvedDirectivesDefaultLimit caps the resolved directive history slice.
+const resolvedDirectivesDefaultLimit = 20
+
+type directiveSummary struct {
+	ID                 int64   `json:"id"`
+	Content            string  `json:"content"`
+	Source             string  `json:"source"`
+	Target             string  `json:"target"`
+	Priority           string  `json:"priority"`
+	LifecycleStatus    string  `json:"lifecycle_status"`
+	AcknowledgedAt     *string `json:"acknowledged_at,omitempty"`
+	ResolvedAt         *string `json:"resolved_at,omitempty"`
+	ResolutionReportID *int64  `json:"resolution_report_id,omitempty"`
+	IssuedDate         string  `json:"issued_date"`
+	AgeDays            int     `json:"age_days"`
+	DaysToResolution   *int    `json:"days_to_resolution,omitempty"`
+}
+
+type reportSummary struct {
+	ID           int64  `json:"id"`
+	Source       string `json:"source"`
+	Content      string `json:"content"`
+	ReportedDate string `json:"reported_date"`
+	InResponseTo *int64 `json:"in_response_to,omitempty"`
+}
+
+type studioParticipantSummary struct {
+	Name                 string `json:"name"`
+	Platform             string `json:"platform"`
+	ActiveDirectives     int    `json:"active_directives"`
+	RecentReports        int    `json:"recent_reports"`
+	CanIssueDirectives   bool   `json:"can_issue_directives"`
+	CanReceiveDirectives bool   `json:"can_receive_directives"`
+	CanWriteReports      bool   `json:"can_write_reports"`
+	TaskAssignable       bool   `json:"task_assignable"`
+	HasSchedule          bool   `json:"has_schedule"`
+}
+
 // StudioOverview handles GET /api/admin/studio/overview.
+//
+// Query params:
+//   - include_resolved=true — also return up to 20 most recently resolved directives
+//     (Directive Board CEO history view).
 func (h *Handler) StudioOverview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	type directiveSummary struct {
-		ID              int64   `json:"id"`
-		Content         string  `json:"content"`
-		Source          string  `json:"source"`
-		Target          string  `json:"target"`
-		Priority        string  `json:"priority"`
-		LifecycleStatus string  `json:"lifecycle_status"`
-		AcknowledgedAt  *string `json:"acknowledged_at,omitempty"`
-		IssuedDate      string  `json:"issued_date"`
-		AgeDays         int     `json:"age_days"`
-	}
-
-	type reportSummary struct {
-		ID           int64  `json:"id"`
-		Source       string `json:"source"`
-		Content      string `json:"content"`
-		ReportedDate string `json:"reported_date"`
-		InResponseTo *int64 `json:"in_response_to,omitempty"`
-	}
+	includeResolved := r.URL.Query().Get("include_resolved") == "true"
 
 	type resp struct {
-		OpenDirectives []directiveSummary `json:"open_directives"`
-		RecentReports  []reportSummary    `json:"recent_reports"`
-		Stats          struct {
+		OpenDirectives     []directiveSummary         `json:"open_directives"`
+		ResolvedDirectives []directiveSummary         `json:"resolved_directives,omitempty"`
+		RecentReports      []reportSummary            `json:"recent_reports"`
+		Participants       []studioParticipantSummary `json:"participants"`
+		Stats              struct {
 			UnackedCount    int `json:"unacked_count"`
 			InProgressCount int `json:"in_progress_count"`
 		} `json:"stats"`
@@ -43,6 +70,7 @@ func (h *Handler) StudioOverview(w http.ResponseWriter, r *http.Request) {
 	out := resp{
 		OpenDirectives: []directiveSummary{},
 		RecentReports:  []reportSummary{},
+		Participants:   []studioParticipantSummary{},
 	}
 
 	// Open directives.
@@ -52,28 +80,25 @@ func (h *Handler) StudioOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range dirs {
 		d := &dirs[i]
-		status := "pending"
+		ds := summarizeDirective(d)
 		if d.AcknowledgedAt != nil {
-			status = "acknowledged"
-		}
-		ds := directiveSummary{
-			ID:              d.ID,
-			Content:         d.Content,
-			Source:          d.Source,
-			Target:          d.Target,
-			Priority:        d.Priority,
-			LifecycleStatus: status,
-			IssuedDate:      d.IssuedDate.Format(time.DateOnly),
-			AgeDays:         int(time.Since(d.IssuedDate).Hours() / 24),
-		}
-		if d.AcknowledgedAt != nil {
-			s := d.AcknowledgedAt.Format(time.RFC3339)
-			ds.AcknowledgedAt = &s
 			out.Stats.InProgressCount++
 		} else {
 			out.Stats.UnackedCount++
 		}
 		out.OpenDirectives = append(out.OpenDirectives, ds)
+	}
+
+	// Resolved directives (optional history view).
+	if includeResolved {
+		out.ResolvedDirectives = []directiveSummary{}
+		resolved, rErr := h.directives.ResolvedDirectivesRecent(ctx, resolvedDirectivesDefaultLimit)
+		if rErr != nil {
+			h.logger.Warn("studio: resolved directives", "error", rErr)
+		}
+		for i := range resolved {
+			out.ResolvedDirectives = append(out.ResolvedDirectives, summarizeDirective(&resolved[i]))
+		}
 	}
 
 	// Recent reports (last 30 days).
@@ -95,5 +120,61 @@ func (h *Handler) StudioOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Participants enriched with directive/report counts.
+	if parts, err := h.directives.ParticipantsForStudio(ctx, since); err == nil {
+		for i := range parts {
+			p := &parts[i]
+			out.Participants = append(out.Participants, studioParticipantSummary{
+				Name:                 p.Name,
+				Platform:             p.Platform,
+				ActiveDirectives:     p.ActiveDirectives,
+				RecentReports:        p.RecentReports,
+				CanIssueDirectives:   p.CanIssueDirectives,
+				CanReceiveDirectives: p.CanReceiveDirectives,
+				CanWriteReports:      p.CanWriteReports,
+				TaskAssignable:       p.TaskAssignable,
+				HasSchedule:          p.HasSchedule,
+			})
+		}
+	} else {
+		h.logger.Warn("studio: participants", "error", err)
+	}
+
 	api.Encode(w, http.StatusOK, out)
+}
+
+// summarizeDirective converts a domain directive to its admin response shape.
+// Computes lifecycle_status from acknowledged_at/resolved_at and derives
+// days_to_resolution when both timestamps are present.
+func summarizeDirective(d *directive.Directive) directiveSummary {
+	status := "pending"
+	switch {
+	case d.ResolvedAt != nil:
+		status = "resolved"
+	case d.AcknowledgedAt != nil:
+		status = "acknowledged"
+	}
+
+	ds := directiveSummary{
+		ID:                 d.ID,
+		Content:            d.Content,
+		Source:             d.Source,
+		Target:             d.Target,
+		Priority:           d.Priority,
+		LifecycleStatus:    status,
+		ResolutionReportID: d.ResolutionReportID,
+		IssuedDate:         d.IssuedDate.Format(time.DateOnly),
+		AgeDays:            int(time.Since(d.IssuedDate).Hours() / 24),
+	}
+	if d.AcknowledgedAt != nil {
+		s := d.AcknowledgedAt.Format(time.RFC3339)
+		ds.AcknowledgedAt = &s
+	}
+	if d.ResolvedAt != nil {
+		s := d.ResolvedAt.Format(time.RFC3339)
+		ds.ResolvedAt = &s
+		days := int(d.ResolvedAt.Sub(d.IssuedDate).Hours() / 24)
+		ds.DaysToResolution = &days
+	}
+	return ds
 }

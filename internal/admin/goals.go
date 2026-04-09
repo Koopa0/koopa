@@ -111,17 +111,28 @@ func (h *Handler) GoalsOverview(w http.ResponseWriter, r *http.Request) {
 
 // GoalDetailResponse is the payload for GET /api/admin/plan/goals/{id}.
 type GoalDetailResponse struct {
-	ID          string             `json:"id"`
-	Title       string             `json:"title"`
-	Description string             `json:"description"`
-	Status      string             `json:"status"`
-	AreaName    string             `json:"area_name,omitempty"`
-	Deadline    string             `json:"deadline,omitempty"`
-	Quarter     string             `json:"quarter,omitempty"`
-	CreatedAt   string             `json:"created_at"`
-	Health      string             `json:"health"`
-	Milestones  []MilestoneSummary `json:"milestones"`
-	Projects    []ProjectBrief     `json:"projects"`
+	ID             string             `json:"id"`
+	Title          string             `json:"title"`
+	Description    string             `json:"description"`
+	Status         string             `json:"status"`
+	AreaName       string             `json:"area_name,omitempty"`
+	Deadline       string             `json:"deadline,omitempty"`
+	Quarter        string             `json:"quarter,omitempty"`
+	CreatedAt      string             `json:"created_at"`
+	Health         string             `json:"health"`
+	Milestones     []MilestoneSummary `json:"milestones"`
+	Projects       []ProjectBrief     `json:"projects"`
+	RecentActivity []GoalActivityItem `json:"recent_activity"`
+}
+
+// GoalActivityItem is one entry in a goal's recent activity timeline.
+// type is a typed enum: milestone_completed | task_completed | content_published.
+type GoalActivityItem struct {
+	Type      string `json:"type"`
+	Title     string `json:"title"`
+	RefID     string `json:"ref_id"`
+	RefSlug   string `json:"ref_slug,omitempty"`
+	Timestamp string `json:"timestamp"`
 }
 
 // MilestoneSummary is a milestone for goal detail.
@@ -205,6 +216,26 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 			Title:  projSummaries[i].Title,
 			Status: string(projSummaries[i].Status),
 		}
+	}
+
+	// Recent activity (UNION across milestones, tasks, contents).
+	resp.RecentActivity = []GoalActivityItem{}
+	activity, aErr := h.goals.RecentActivity(ctx, goalID, 10)
+	if aErr != nil {
+		h.logger.Warn("goal recent activity", "goal_id", goalID, "error", aErr)
+	}
+	for i := range activity {
+		a := &activity[i]
+		item := GoalActivityItem{
+			Type:      string(a.Type),
+			Title:     a.Title,
+			RefID:     a.RefID,
+			Timestamp: a.Timestamp.Format(time.RFC3339),
+		}
+		if a.RefSlug != nil {
+			item.RefSlug = *a.RefSlug
+		}
+		resp.RecentActivity = append(resp.RecentActivity, item)
 	}
 
 	api.Encode(w, http.StatusOK, resp)

@@ -3869,6 +3869,99 @@ func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
 	return i, err
 }
 
+const goalRecentActivity = `-- name: GoalRecentActivity :many
+SELECT
+    activity_type::text AS activity_type,
+    title,
+    ref_id,
+    ref_slug,
+    ts
+FROM (
+    SELECT
+        'milestone_completed' AS activity_type,
+        m.title               AS title,
+        m.id::text            AS ref_id,
+        NULL::text            AS ref_slug,
+        m.completed_at        AS ts
+    FROM milestones m
+    WHERE m.goal_id = $1 AND m.completed_at IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+        'task_completed' AS activity_type,
+        t.title          AS title,
+        t.id::text       AS ref_id,
+        NULL::text       AS ref_slug,
+        t.completed_at   AS ts
+    FROM tasks t
+    JOIN projects p ON p.id = t.project_id
+    WHERE p.goal_id = $1 AND t.completed_at IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+        'content_published' AS activity_type,
+        c.title             AS title,
+        c.id::text          AS ref_id,
+        c.slug              AS ref_slug,
+        c.published_at      AS ts
+    FROM contents c
+    JOIN projects p ON p.id = c.project_id
+    WHERE p.goal_id = $1 AND c.published_at IS NOT NULL
+) AS activity
+ORDER BY ts DESC NULLS LAST
+LIMIT $2
+`
+
+type GoalRecentActivityParams struct {
+	GoalID     uuid.UUID `json:"goal_id"`
+	MaxResults int32     `json:"max_results"`
+}
+
+type GoalRecentActivityRow struct {
+	ActivityType string     `json:"activity_type"`
+	Title        string     `json:"title"`
+	RefID        string     `json:"ref_id"`
+	RefSlug      *string    `json:"ref_slug"`
+	Ts           *time.Time `json:"ts"`
+}
+
+// Recent activity for a single goal — UNION across milestones, tasks (via project),
+// and contents (via project). Each row carries a typed activity_type that the admin
+// frontend can dispatch on for icons / colors.
+//
+// Sources:
+//
+//	milestone_completed     — milestones.completed_at where milestone.goal_id = @goal_id
+//	task_completed          — tasks.completed_at where tasks.project_id ∈ (projects under this goal)
+//	content_published       — contents.published_at where contents.project_id ∈ (projects under this goal)
+func (q *Queries) GoalRecentActivity(ctx context.Context, arg GoalRecentActivityParams) ([]GoalRecentActivityRow, error) {
+	rows, err := q.db.Query(ctx, goalRecentActivity, arg.GoalID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GoalRecentActivityRow{}
+	for rows.Next() {
+		var i GoalRecentActivityRow
+		if err := rows.Scan(
+			&i.ActivityType,
+			&i.Title,
+			&i.RefID,
+			&i.RefSlug,
+			&i.Ts,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const goals = `-- name: Goals :many
 SELECT id, title, description, status, area_id, quarter, deadline,
        notion_page_id, created_at, updated_at
@@ -5670,6 +5763,78 @@ func (q *Queries) ParticipantByName(ctx context.Context, name string) (Participa
 	return i, err
 }
 
+const participantsForStudio = `-- name: ParticipantsForStudio :many
+SELECT
+    p.name,
+    p.platform,
+    p.can_issue_directives,
+    p.can_receive_directives,
+    p.can_write_reports,
+    p.task_assignable,
+    p.can_own_schedules,
+    COALESCE(ad.cnt, 0)::int AS active_directives,
+    COALESCE(rr.cnt, 0)::int AS recent_reports
+FROM participant p
+LEFT JOIN (
+    SELECT target, count(*)::int AS cnt
+    FROM directives
+    WHERE resolved_at IS NULL
+    GROUP BY target
+) ad ON ad.target = p.name
+LEFT JOIN (
+    SELECT source, count(*)::int AS cnt
+    FROM reports
+    WHERE reported_date >= $1
+    GROUP BY source
+) rr ON rr.source = p.name
+ORDER BY p.name
+`
+
+type ParticipantsForStudioRow struct {
+	Name                 string `json:"name"`
+	Platform             string `json:"platform"`
+	CanIssueDirectives   bool   `json:"can_issue_directives"`
+	CanReceiveDirectives bool   `json:"can_receive_directives"`
+	CanWriteReports      bool   `json:"can_write_reports"`
+	TaskAssignable       bool   `json:"task_assignable"`
+	CanOwnSchedules      bool   `json:"can_own_schedules"`
+	ActiveDirectives     int32  `json:"active_directives"`
+	RecentReports        int32  `json:"recent_reports"`
+}
+
+// Participants with directive and report counts for the Directive Board.
+// active_directives = unresolved directives where this participant is the target.
+// recent_reports = reports written by this participant since @since.
+func (q *Queries) ParticipantsForStudio(ctx context.Context, since time.Time) ([]ParticipantsForStudioRow, error) {
+	rows, err := q.db.Query(ctx, participantsForStudio, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ParticipantsForStudioRow{}
+	for rows.Next() {
+		var i ParticipantsForStudioRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.Platform,
+			&i.CanIssueDirectives,
+			&i.CanReceiveDirectives,
+			&i.CanWriteReports,
+			&i.TaskAssignable,
+			&i.CanOwnSchedules,
+			&i.ActiveDirectives,
+			&i.RecentReports,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pendingReviewExistsForContent = `-- name: PendingReviewExistsForContent :one
 SELECT EXISTS(
     SELECT 1 FROM review_queue
@@ -7362,6 +7527,80 @@ func (q *Queries) RejectAlias(ctx context.Context, id uuid.UUID) (TagAlias, erro
 	return i, err
 }
 
+const rejectContent = `-- name: RejectContent :one
+UPDATE contents
+SET status     = 'draft',
+    ai_metadata = COALESCE(ai_metadata, '{}'::jsonb)
+                  || jsonb_build_object(
+                       'review_notes', $2::text,
+                       'review_rejected_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF')
+                     ),
+    updated_at = now()
+WHERE id = $1
+RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+          series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
+          cover_image, published_at, created_at, updated_at
+`
+
+type RejectContentParams struct {
+	ID          uuid.UUID `json:"id"`
+	ReviewNotes string    `json:"review_notes"`
+}
+
+type RejectContentRow struct {
+	ID             uuid.UUID       `json:"id"`
+	Slug           string          `json:"slug"`
+	Title          string          `json:"title"`
+	Body           string          `json:"body"`
+	Excerpt        string          `json:"excerpt"`
+	Type           ContentType     `json:"type"`
+	Status         ContentStatus   `json:"status"`
+	Source         *string         `json:"source"`
+	SourceType     NullSourceType  `json:"source_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	ReviewLevel    ReviewLevel     `json:"review_level"`
+	IsPublic       bool            `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	AiMetadata     json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin int32           `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
+	PublishedAt    *time.Time      `json:"published_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
+// Reject a content during review: send back to draft and stash reviewer notes in
+// ai_metadata.review_notes (with a review_rejected_at timestamp). Used by admin
+// ContentReviewWorkspace.
+func (q *Queries) RejectContent(ctx context.Context, arg RejectContentParams) (RejectContentRow, error) {
+	row := q.db.QueryRow(ctx, rejectContent, arg.ID, arg.ReviewNotes)
+	var i RejectContentRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.Source,
+		&i.SourceType,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.ReviewLevel,
+		&i.IsPublic,
+		&i.ProjectID,
+		&i.AiMetadata,
+		&i.ReadingTimeMin,
+		&i.CoverImage,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const rejectReview = `-- name: RejectReview :exec
 UPDATE review_queue SET status = 'rejected', reviewer_notes = $2, reviewed_at = now() WHERE id = $1
 `
@@ -7565,6 +7804,47 @@ func (q *Queries) ResolveDirective(ctx context.Context, arg ResolveDirectivePara
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const resolvedDirectivesRecent = `-- name: ResolvedDirectivesRecent :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
+WHERE resolved_at IS NOT NULL
+ORDER BY resolved_at DESC
+LIMIT $1
+`
+
+// Resolved directives, newest resolution first. For Directive Board history view.
+func (q *Queries) ResolvedDirectivesRecent(ctx context.Context, maxResults int32) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, resolvedDirectivesRecent, maxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const retrievalQueue = `-- name: RetrievalQueue :many

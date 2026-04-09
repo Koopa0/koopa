@@ -44,3 +44,39 @@ WHERE resolved_at IS NULL
 ORDER BY
     CASE priority WHEN 'p0' THEN 0 WHEN 'p1' THEN 1 ELSE 2 END,
     issued_date DESC;
+
+-- name: ResolvedDirectivesRecent :many
+-- Resolved directives, newest resolution first. For Directive Board history view.
+SELECT * FROM directives
+WHERE resolved_at IS NOT NULL
+ORDER BY resolved_at DESC
+LIMIT @max_results;
+
+-- name: ParticipantsForStudio :many
+-- Participants with directive and report counts for the Directive Board.
+-- active_directives = unresolved directives where this participant is the target.
+-- recent_reports = reports written by this participant since @since.
+SELECT
+    p.name,
+    p.platform,
+    p.can_issue_directives,
+    p.can_receive_directives,
+    p.can_write_reports,
+    p.task_assignable,
+    p.can_own_schedules,
+    COALESCE(ad.cnt, 0)::int AS active_directives,
+    COALESCE(rr.cnt, 0)::int AS recent_reports
+FROM participant p
+LEFT JOIN (
+    SELECT target, count(*)::int AS cnt
+    FROM directives
+    WHERE resolved_at IS NULL
+    GROUP BY target
+) ad ON ad.target = p.name
+LEFT JOIN (
+    SELECT source, count(*)::int AS cnt
+    FROM reports
+    WHERE reported_date >= @since
+    GROUP BY source
+) rr ON rr.source = p.name
+ORDER BY p.name;

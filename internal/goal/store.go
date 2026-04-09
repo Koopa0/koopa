@@ -291,6 +291,51 @@ func (s *Store) ToggleMilestone(ctx context.Context, id uuid.UUID) (*Milestone, 
 	}, nil
 }
 
+// ActivityType is a typed enum of goal activity sources.
+type ActivityType string
+
+const (
+	ActivityMilestoneCompleted ActivityType = "milestone_completed"
+	ActivityTaskCompleted      ActivityType = "task_completed"
+	ActivityContentPublished   ActivityType = "content_published"
+)
+
+// ActivityItem is a single entry in a goal's recent activity timeline.
+type ActivityItem struct {
+	Type      ActivityType
+	Title     string
+	RefID     string
+	RefSlug   *string
+	Timestamp time.Time
+}
+
+// RecentActivity returns a goal's recent activity (UNION across milestones,
+// tasks via project, and contents via project), newest first.
+func (s *Store) RecentActivity(ctx context.Context, goalID uuid.UUID, limit int32) ([]ActivityItem, error) {
+	rows, err := s.q.GoalRecentActivity(ctx, db.GoalRecentActivityParams{
+		GoalID:     goalID,
+		MaxResults: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying goal recent activity %s: %w", goalID, err)
+	}
+	result := make([]ActivityItem, 0, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		if r.Ts == nil {
+			continue
+		}
+		result = append(result, ActivityItem{
+			Type:      ActivityType(r.ActivityType),
+			Title:     r.Title,
+			RefID:     r.RefID,
+			RefSlug:   r.RefSlug,
+			Timestamp: *r.Ts,
+		})
+	}
+	return result, nil
+}
+
 func rowToMilestone(r *db.CreateMilestoneRow) *Milestone {
 	return &Milestone{
 		ID:             r.ID,

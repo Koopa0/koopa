@@ -226,6 +226,42 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
 }
 
+// maxReviewerNotesLength caps reviewer notes to keep ai_metadata bounded.
+const maxReviewerNotesLength = 4000
+
+// Reject handles POST /api/admin/contents/{id}/reject. Sends content back to
+// draft with reviewer notes stored in ai_metadata.review_notes.
+func (h *Handler) Reject(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
+		return
+	}
+
+	type rejectBody struct {
+		ReviewerNotes string `json:"reviewer_notes"`
+	}
+	body, decErr := api.Decode[rejectBody](w, r)
+	if decErr != nil {
+		return
+	}
+	if body.ReviewerNotes == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "reviewer_notes is required")
+		return
+	}
+	if len(body.ReviewerNotes) > maxReviewerNotesLength {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "reviewer_notes too long")
+		return
+	}
+
+	c, err := h.store.RejectContent(r.Context(), id, body.ReviewerNotes)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: c})
+}
+
 const maxSlugLength = 200
 
 // Related handles GET /api/contents/related/{slug}.

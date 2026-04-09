@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -200,6 +201,58 @@ func (s *Store) OpenDirectives(ctx context.Context) ([]Directive, error) {
 	result := make([]Directive, len(rows))
 	for i := range rows {
 		result[i] = *rowToDirective(&rows[i])
+	}
+	return result, nil
+}
+
+// ResolvedDirectivesRecent returns recently resolved directives, newest first.
+func (s *Store) ResolvedDirectivesRecent(ctx context.Context, limit int32) ([]Directive, error) {
+	rows, err := s.q.ResolvedDirectivesRecent(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying resolved directives: %w", err)
+	}
+	result := make([]Directive, len(rows))
+	for i := range rows {
+		result[i] = *rowToDirective(&rows[i])
+	}
+	return result, nil
+}
+
+// StudioParticipant is a participant row enriched with directive/report counts
+// for the Directive Board overview.
+type StudioParticipant struct {
+	Name                 string
+	Platform             string
+	CanIssueDirectives   bool
+	CanReceiveDirectives bool
+	CanWriteReports      bool
+	TaskAssignable       bool
+	HasSchedule          bool
+	ActiveDirectives     int
+	RecentReports        int
+}
+
+// ParticipantsForStudio returns participants enriched with directive/report counts.
+// recentSince bounds the report count window.
+func (s *Store) ParticipantsForStudio(ctx context.Context, recentSince time.Time) ([]StudioParticipant, error) {
+	rows, err := s.q.ParticipantsForStudio(ctx, recentSince)
+	if err != nil {
+		return nil, fmt.Errorf("querying participants for studio: %w", err)
+	}
+	result := make([]StudioParticipant, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = StudioParticipant{
+			Name:                 r.Name,
+			Platform:             r.Platform,
+			CanIssueDirectives:   r.CanIssueDirectives,
+			CanReceiveDirectives: r.CanReceiveDirectives,
+			CanWriteReports:      r.CanWriteReports,
+			TaskAssignable:       r.TaskAssignable,
+			HasSchedule:          r.CanOwnSchedules,
+			ActiveDirectives:     int(r.ActiveDirectives),
+			RecentReports:        int(r.RecentReports),
+		}
 	}
 	return result, nil
 }

@@ -93,6 +93,7 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	mux.Handle("PUT /api/admin/contents/{id}", authMid(http.HandlerFunc(h.content.Update)))
 	mux.Handle("DELETE /api/admin/contents/{id}", authMid(http.HandlerFunc(h.content.Delete)))
 	mux.Handle("POST /api/admin/contents/{id}/publish", authMid(http.HandlerFunc(h.content.Publish)))
+	mux.Handle("POST /api/admin/contents/{id}/reject", authMid(http.HandlerFunc(h.content.Reject)))
 	mux.Handle("PATCH /api/admin/contents/{id}/is-public", authMid(http.HandlerFunc(h.content.SetIsPublic)))
 
 	// --- Admin: Review ---
@@ -168,63 +169,46 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	if h.adminV2 != nil {
 		a := h.adminV2
 
-		// Today
+		// Admin frontend is read-only as of 2026-04-09. All write operations
+		// (capture/plan/advance/start_session/record_attempt/write_journal/
+		// propose_commitment/etc) move to MCP. The endpoints removed below
+		// have been deleted from this routing tree per docs/ADMIN-API-REQUIREMENTS.md
+		// Section A. Handler methods on the admin package remain for tests
+		// and potential reuse by other clients.
+
+		// Today / Overview
 		mux.Handle("GET /api/admin/today", authMid(http.HandlerFunc(a.Today)))
-		mux.Handle("POST /api/admin/today/plan", authMid(http.HandlerFunc(a.TodayPlan)))
-		mux.Handle("POST /api/admin/today/items/{id}/resolve", authMid(http.HandlerFunc(a.ResolvePlanItem)))
 
-		// Inbox
-		mux.Handle("GET /api/admin/inbox", authMid(http.HandlerFunc(a.Inbox)))
-		mux.Handle("POST /api/admin/inbox/capture", authMid(http.HandlerFunc(a.InboxCapture)))
-		mux.Handle("POST /api/admin/inbox/{id}/clarify", authMid(http.HandlerFunc(a.InboxClarify)))
-
-		// Goals
+		// Goals (read-only)
 		mux.Handle("GET /api/admin/plan/goals", authMid(http.HandlerFunc(a.GoalsOverview)))
 		mux.Handle("GET /api/admin/plan/goals/{id}", authMid(http.HandlerFunc(a.GoalDetail)))
-		mux.Handle("POST /api/admin/plan/goals/propose", authMid(http.HandlerFunc(a.GoalPropose)))
-		mux.Handle("POST /api/admin/plan/goals/propose/{proposal_id}/commit", authMid(http.HandlerFunc(a.GoalCommit)))
-		mux.Handle("POST /api/admin/plan/goals/{id}/milestones", authMid(http.HandlerFunc(a.MilestoneCreate)))
-		mux.Handle("POST /api/admin/plan/goals/{id}/milestones/{ms_id}/toggle", authMid(http.HandlerFunc(a.MilestoneToggle)))
 
-		// Projects
+		// Projects (read-only)
 		mux.Handle("GET /api/admin/plan/projects", authMid(http.HandlerFunc(a.ProjectsOverview)))
 		mux.Handle("GET /api/admin/plan/projects/{id}", authMid(http.HandlerFunc(a.ProjectDetail)))
-
-		// Tasks
-		mux.Handle("GET /api/admin/plan/tasks", authMid(http.HandlerFunc(a.TasksBacklog)))
-		mux.Handle("POST /api/admin/plan/tasks/{id}/advance", authMid(http.HandlerFunc(a.AdvanceTask)))
 
 		// Library
 		mux.Handle("GET /api/admin/library/pipeline", authMid(http.HandlerFunc(a.LibraryPipeline)))
 
-		// Learn
+		// Learn (read-only)
 		mux.Handle("GET /api/admin/learn/dashboard", authMid(http.HandlerFunc(a.LearnDashboard)))
-		mux.Handle("POST /api/admin/learn/sessions/start", authMid(http.HandlerFunc(a.SessionStart)))
-		mux.Handle("POST /api/admin/learn/sessions/{id}/attempt", authMid(http.HandlerFunc(a.SessionAttempt)))
-		mux.Handle("POST /api/admin/learn/sessions/{id}/end", authMid(http.HandlerFunc(a.SessionEnd)))
 		mux.Handle("GET /api/admin/learn/concepts/{slug}", authMid(http.HandlerFunc(a.ConceptDrilldown)))
 		mux.Handle("GET /api/admin/learn/review-queue", authMid(http.HandlerFunc(a.ReviewQueue)))
 
-		// Learn Plans
+		// Learn Plans (read-only)
 		mux.Handle("GET /api/admin/learn/plans", authMid(http.HandlerFunc(a.LearnPlans)))
 		mux.Handle("GET /api/admin/learn/plans/{id}", authMid(http.HandlerFunc(a.LearnPlanDetail)))
-		mux.Handle("POST /api/admin/learn/plans/{id}/items", authMid(http.HandlerFunc(a.LearnPlanAddItems)))
-		mux.Handle("DELETE /api/admin/learn/plans/{id}/items/{item_id}", authMid(http.HandlerFunc(a.LearnPlanRemoveItem)))
-		mux.Handle("POST /api/admin/learn/plans/{id}/items/{item_id}/update", authMid(http.HandlerFunc(a.LearnPlanUpdateItem)))
-		mux.Handle("POST /api/admin/learn/plans/{id}/reorder", authMid(http.HandlerFunc(a.LearnPlanReorder)))
-		mux.Handle("PATCH /api/admin/learn/plans/{id}", authMid(http.HandlerFunc(a.LearnPlanUpdate)))
 
-		// Reflect
+		// Reflect (read-only)
 		mux.Handle("GET /api/admin/reflect/daily", authMid(http.HandlerFunc(a.ReflectDaily)))
 		mux.Handle("GET /api/admin/reflect/weekly", authMid(http.HandlerFunc(a.ReflectWeekly)))
-		mux.Handle("POST /api/admin/reflect/journal", authMid(http.HandlerFunc(a.JournalWrite)))
 		mux.Handle("GET /api/admin/reflect/journal", authMid(http.HandlerFunc(a.JournalList)))
 		mux.Handle("GET /api/admin/reflect/insights", authMid(http.HandlerFunc(a.InsightsList)))
 
 		// Dashboard
 		mux.Handle("GET /api/admin/dashboard/trends", authMid(http.HandlerFunc(a.DashboardTrends)))
 
-		// Studio IPC
+		// Studio IPC (read-only — supports ?include_resolved=true)
 		mux.Handle("GET /api/admin/studio/overview", authMid(http.HandlerFunc(a.StudioOverview)))
 	}
 }

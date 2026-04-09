@@ -278,19 +278,32 @@ func (h *Handler) InsightsList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type insightSummary struct {
-		ID         int64  `json:"id"`
-		Hypothesis string `json:"hypothesis"`
-		Status     string `json:"status"`
-		AgeDays    int    `json:"age_days"`
+		ID                    int64  `json:"id"`
+		Hypothesis            string `json:"hypothesis"`
+		InvalidationCondition string `json:"invalidation_condition"`
+		Status                string `json:"status"`
+		Source                string `json:"source"`
+		ObservedDate          string `json:"observed_date"`
+		AgeDays               int    `json:"age_days"`
+		EvidenceCount         int    `json:"evidence_count"`
 	}
 
 	result := make([]insightSummary, len(insights))
 	for i := range insights {
+		ins := &insights[i]
+		evidenceCount := 0
+		if ev, ok := ins.Metadata["evidence"].([]any); ok {
+			evidenceCount = len(ev)
+		}
 		result[i] = insightSummary{
-			ID:         insights[i].ID,
-			Hypothesis: insights[i].Hypothesis,
-			Status:     string(insights[i].Status),
-			AgeDays:    int(time.Since(insights[i].CreatedAt).Hours() / 24),
+			ID:                    ins.ID,
+			Hypothesis:            ins.Hypothesis,
+			InvalidationCondition: ins.InvalidationCondition,
+			Status:                string(ins.Status),
+			Source:                ins.Source,
+			ObservedDate:          ins.ObservedDate.Format(time.DateOnly),
+			AgeDays:               int(time.Since(ins.CreatedAt).Hours() / 24),
+			EvidenceCount:         evidenceCount,
 		}
 	}
 

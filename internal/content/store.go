@@ -993,6 +993,44 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 	return &c, nil
 }
 
+// RejectContent sends a content back to draft and stores reviewer notes in
+// ai_metadata.review_notes. Used by admin ContentReviewWorkspace.
+func (s *Store) RejectContent(ctx context.Context, id uuid.UUID, reviewerNotes string) (*Content, error) {
+	r, err := s.q.RejectContent(ctx, db.RejectContentParams{
+		ID:          id,
+		ReviewNotes: reviewerNotes,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("rejecting content %s: %w", id, err)
+	}
+
+	c := rowToContent(contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
+
+	topics, err := s.TopicsForContent(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.Topics = topics
+
+	tags, err := s.TagsForContent(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.Tags = tags
+
+	return &c, nil
+}
+
 // TopicsForContent returns topic references for a content item.
 func (s *Store) TopicsForContent(ctx context.Context, contentID uuid.UUID) ([]TopicRef, error) {
 	rows, err := s.q.TopicsForContent(ctx, contentID)
